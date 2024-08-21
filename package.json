@@ -1,6 +1,6 @@
 {
   "name": "stitchapi",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Stitchapi is a powerful and flexible library designed to streamline the process of building API integrations. Whether you’re connecting to a single API or stitching together multiple APIs, this package provides all the tools you need to create seamless, robust integrations with minimal effort.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
