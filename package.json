@@ -21,19 +21,21 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rejifald/Apitch.git"
+    "url": "git+https://github.com/rejifald/Stitchapi.git"
   },
   "keywords": [
     "oas",
     "openapi",
+    "streamline",
+    "client",
     "api"
   ],
   "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/rejifald/Apitch/issues"
+    "url": "https://github.com/rejifald/Stitchapi/issues"
   },
-  "homepage": "https://github.com/rejifald/Apitch#readme",
+  "homepage": "https://github.com/rejifald/Stitchapi#readme",
   "devDependencies": {
     "@babel/preset-env": "^7.25.3",
     "@babel/preset-typescript": "^7.24.7",
