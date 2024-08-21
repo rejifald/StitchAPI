@@ -1,26 +1,15 @@
-import { StitchOptions } from "./types/stitch-options";
+import { StitchOptions, StitchArgs } from "./types/stitch";
 
 import get from "lodash/get";
-import intersection from "lodash/intersection";
 import isEmpty from "lodash/isEmpty";
 import qs from "qs";
 import { joinURL, parseURL, stringifyParsedURL } from "ufo";
 import { parseTemplate, PrimitiveValue } from "url-template";
-
-interface StitchArgs<
-  TQuery extends object = Record<string, string>,
-  TBody = unknown,
-  TParams extends object = Record<string, string>,
-> {
-  params?: TParams;
-  body?: TBody;
-  query?: TQuery;
-  fetchOptions?: RequestInit;
-}
+import { unwrap } from "./unwrap";
 
 export const stitch = <
-  TParams extends object,
   TResponse,
+  TParams extends object,
   TBody extends object,
   TQuery extends object,
 >(
@@ -28,9 +17,6 @@ export const stitch = <
 ) => {
   const spec: StitchOptions =
     typeof options === "string" ? { path: options, method: "GET" } : options;
-  const placeholders = [...spec.path.matchAll(/{([^{}]+)}|([^{}]+)/g)]
-    .map((match) => match[1])
-    .filter(Boolean);
 
   const path: string = joinURL(get(options, "baseUrl", ""), spec.path);
   const urlTemplate = parseTemplate(path);
@@ -41,34 +27,16 @@ export const stitch = <
     body = {} as TBody,
     fetchOptions = {},
   }: StitchArgs<TQuery, TBody, TParams> = {}): Promise<TResponse> => {
-    let url: string;
-    for (const placeholder of placeholders) {
-      if (!(params as Record<string, unknown>)[placeholder]) {
-        throw new Error(`Missing path param: ${placeholder}`);
-      }
-    }
-
-    try {
-      url = urlTemplate.expand(params as Record<string, PrimitiveValue>);
-    } catch (e: unknown) {
-      throw new Error(
-        `Failed to resolve url template. Reason: ${(e as Error).message}`,
-      );
-    }
+    let url = urlTemplate.expand({ ...params, ...query } as Record<
+      string,
+      PrimitiveValue
+    >);
 
     if (!isEmpty(query)) {
       const { search, ...restUrlParts } = parseURL(url);
       const predefinedQuery = qs.parse(search, {
         ignoreQueryPrefix: true,
       });
-      const conflictedKeys = intersection(
-        Object.keys(predefinedQuery),
-        Object.keys(query),
-      );
-
-      if (conflictedKeys.length) {
-        console.warn("Conflicted query keys:", conflictedKeys.join(", "));
-      }
 
       const combinedQuery = { ...predefinedQuery, ...query };
       url = stringifyParsedURL({
@@ -87,9 +55,7 @@ export const stitch = <
     });
 
     const json = await response.json();
-    if (spec.unwrap) {
-      return get(json, spec.unwrap);
-    }
-    return json;
+
+    return unwrap(json, spec.unwrap);
   };
 };
