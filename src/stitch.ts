@@ -1,11 +1,11 @@
 import { StitchOptions, StitchArgs } from "./types/stitch";
+import unwrap from "./unwrap";
 
 import get from "lodash/get";
 import isEmpty from "lodash/isEmpty";
 import qs from "qs";
 import { joinURL, parseURL, stringifyParsedURL } from "ufo";
 import { parseTemplate, PrimitiveValue } from "url-template";
-import { unwrap } from "./unwrap";
 
 export const stitch = <
   TResponse,

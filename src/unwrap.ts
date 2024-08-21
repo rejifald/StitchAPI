@@ -8,3 +8,5 @@ export const unwrap = (response: unknown, config: StitchOptions["unwrap"]) => {
 
   return get(response, config);
 };
+
+export default unwrap;
