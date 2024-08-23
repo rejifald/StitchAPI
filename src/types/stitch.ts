@@ -1,8 +1,17 @@
-export interface StitchOptions {
+import { ZodSchema } from "zod";
+import { Adapter } from "./adapter";
+
+export type CreateStitchInput<TResponse> =
+  | string
+  | (Partial<StitchConfig<TResponse>> & Pick<StitchConfig<TResponse>, "path">);
+
+export interface StitchConfig<TResponse> {
   path: string;
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  unwrap?: string;
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   baseUrl?: string;
+  unwrap?: keyof TResponse;
+  validate?: ZodSchema;
+  adapter: Adapter;
 }
 
 export interface StitchArgs<
@@ -13,5 +22,4 @@ export interface StitchArgs<
   params?: TParams;
   body?: TBody;
   query?: TQuery;
-  fetchOptions?: RequestInit;
 }

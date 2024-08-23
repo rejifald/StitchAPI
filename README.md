@@ -12,7 +12,7 @@ Stitchapi is a simple and powerful open-source library designed to help develope
 
 ### 0.2.0
 
-- typesafety
+- Custom fetcher libraries (fetch, axios, request)
 
 ### 0.3.0
 
@@ -20,7 +20,7 @@ Stitchapi is a simple and powerful open-source library designed to help develope
 
 ### 0.4.0
 
-- Custom fetcher libraries (fetch, axios, request)
+- typesafety
 
 ### 0.5.0
 

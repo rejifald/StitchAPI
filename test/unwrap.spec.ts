@@ -21,6 +21,7 @@ describe("unwrap", () => {
       method: "GET",
       body: undefined,
       headers: {
+        Accept: "application/json",
         "Content-Type": "application/json",
       },
     });

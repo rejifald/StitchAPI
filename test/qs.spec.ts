@@ -22,6 +22,7 @@ describe("qs", () => {
       {
         method: "PATCH",
         headers: {
+          Accept: "application/json",
           "Content-Type": "application/json",
         },
       },
@@ -48,6 +49,7 @@ describe("qs", () => {
       {
         method: "PATCH",
         headers: {
+          Accept: "application/json",
           "Content-Type": "application/json",
         },
       },
@@ -75,6 +77,7 @@ describe("qs", () => {
       {
         method: "PATCH",
         headers: {
+          Accept: "application/json",
           "Content-Type": "application/json",
         },
       },

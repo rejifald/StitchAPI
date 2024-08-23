@@ -1,32 +1,45 @@
-import { StitchOptions, StitchArgs } from "./types/stitch";
-import unwrap from "./unwrap";
+import { StitchArgs, CreateStitchInput, StitchConfig } from "./types/stitch";
 
 import get from "lodash/get";
 import isEmpty from "lodash/isEmpty";
 import qs from "qs";
 import { joinURL, parseURL, stringifyParsedURL } from "ufo";
 import { parseTemplate, PrimitiveValue } from "url-template";
+import { GetUnwrappedType } from "./types/get-unwrapped-type";
+import { validate } from "./validate";
+import unwrap from "./unwrap";
+import defaults from "lodash/defaults";
+import { fetchAdapter } from "./adapters/fetch-adapter";
 
 export const stitch = <
-  TResponse,
-  TParams extends object,
-  TBody extends object,
-  TQuery extends object,
+  TOptions extends StitchConfig<TResponse>,
+  TResponse extends object = {
+    success: boolean;
+    error: object;
+    total: number;
+  },
+  TParams extends object = object,
+  TBody extends object = object,
+  TQuery extends object = object,
 >(
-  options: StitchOptions | string,
+  options: CreateStitchInput<TResponse>,
 ) => {
-  const spec: StitchOptions =
-    typeof options === "string" ? { path: options, method: "GET" } : options;
+  const config: StitchConfig<TResponse> = defaults(
+    typeof options === "string" ? { path: options } : options,
+    { method: "GET", adapter: fetchAdapter() },
+  );
 
-  const path: string = joinURL(get(options, "baseUrl", ""), spec.path);
+  const fetcher = config.adapter;
+  const path: string = joinURL(get(options, "baseUrl", ""), config.path);
   const urlTemplate = parseTemplate(path);
 
   return async ({
     params = {} as TParams,
     query = {} as TQuery,
     body = {} as TBody,
-    fetchOptions = {},
-  }: StitchArgs<TQuery, TBody, TParams> = {}): Promise<TResponse> => {
+  }: StitchArgs<TQuery, TBody, TParams> = {}): Promise<
+    GetUnwrappedType<TResponse, TOptions>
+  > => {
     let url = urlTemplate.expand({ ...params, ...query } as Record<
       string,
       PrimitiveValue
@@ -45,17 +58,14 @@ export const stitch = <
       });
     }
 
-    const response = await fetch(url, {
-      method: spec.method || "GET",
-      body: isEmpty(body) ? undefined : JSON.stringify(body),
-      headers: {
-        "Content-Type": "application/json",
-      },
-      ...fetchOptions,
-    });
+    const json = (await fetcher({
+      url,
+      method: config.method,
+      body,
+    })) as TResponse;
 
-    const json = await response.json();
+    const validated = validate(json, config.validate);
 
-    return unwrap(json, spec.unwrap);
+    return unwrap(validated, config.unwrap);
   };
 };

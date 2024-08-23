@@ -24,6 +24,7 @@ describe("stitch", () => {
         job: "zion resident",
       }),
       headers: {
+        Accept: "application/json",
         "Content-Type": "application/json",
       },
     });

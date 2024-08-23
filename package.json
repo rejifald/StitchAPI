@@ -37,6 +37,7 @@
   },
   "homepage": "https://github.com/rejifald/Stitchapi#readme",
   "devDependencies": {
+    "@types/axios": "^0.14.0",
     "@babel/preset-env": "^7.25.3",
     "@babel/preset-typescript": "^7.24.7",
     "@jest/globals": "^29.7.0",
@@ -45,6 +46,7 @@
     "@types/lodash": "^4.17.7",
     "@types/qs": "^6.9.15",
     "@types/url-template": "^2.0.31",
+    "axios-mock-adapter": "^2.0.0",
     "eslint": "^9.9.0",
     "eslint-plugin-lodash": "^8.0.0",
     "husky": "^9.1.5",
@@ -56,10 +58,14 @@
     "typescript-eslint": "^8.2.0",
     "typescript-eslint-parser": "^22.0.0"
   },
+  "peerDependencies": {
+    "axios": "^1.7.4"
+  },
   "dependencies": {
     "lodash": "^4.17.21",
     "qs": "^6.13.0",
     "ufo": "^1.5.4",
-    "url-template": "^3.1.1"
+    "url-template": "^3.1.1",
+    "zod": "^3.23.8"
   }
 }
