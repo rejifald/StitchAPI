@@ -42,4 +42,19 @@ describe("validation", () => {
       })(),
     ).rejects.toEqual(new Error("Invalid response"));
   });
+
+  it("Should validate query", async () => {
+    await expect(() =>
+      stitch({
+        path: "https://reqres.in/api/users/",
+        validate: {
+          body: z.object({
+            email: z.string(),
+            id: z.object({}),
+            name: z.string(),
+          }),
+        },
+      })(),
+    ).rejects.toEqual(new Error("Invalid body"));
+  });
 });

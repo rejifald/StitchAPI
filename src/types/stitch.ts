@@ -1,5 +1,5 @@
-import { ZodSchema } from "zod";
 import { Adapter } from "./adapter";
+import { ValidateOptions } from "./validate";
 
 export type CreateStitchInput<TResponse> =
   | string
@@ -10,7 +10,7 @@ export interface StitchConfig<TResponse> {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   baseUrl?: string;
   unwrap?: keyof TResponse;
-  validate?: ZodSchema;
+  validate?: ValidateOptions;
   adapter: Adapter;
 }
 

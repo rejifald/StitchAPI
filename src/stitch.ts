@@ -10,6 +10,9 @@ import { validate } from "./validate";
 import unwrap from "./unwrap";
 import defaults from "lodash/defaults";
 import { fetchAdapter } from "./adapters/fetch-adapter";
+import isObject from "lodash/isObject";
+import { ZodSchema } from "zod";
+import { ValidateIndexSignature } from "./types/validate";
 
 export const stitch = <
   TOptions extends StitchConfig<TResponse>,
@@ -58,14 +61,30 @@ export const stitch = <
       });
     }
 
+    if (isObject(config.validate) && !get(config.validate, "safeParse")) {
+      const context = { query, params, body };
+      for (const key of Object.keys(context)) {
+        try {
+          validate(
+            context[key as keyof typeof context],
+            (config.validate as Record<ValidateIndexSignature, ZodSchema>)[
+              key as keyof typeof context
+            ],
+          );
+        } catch (e) {
+          throw new Error(`Invalid ${key}, reason: ${(e as Error).message}`);
+        }
+      }
+    }
+
     const json = (await fetcher({
       url,
       method: config.method,
       body,
     })) as TResponse;
 
-    const validated = validate(json, config.validate);
+    validate(json, config.validate);
 
-    return unwrap(validated, config.unwrap);
+    return unwrap(json, config.unwrap);
   };
 };
