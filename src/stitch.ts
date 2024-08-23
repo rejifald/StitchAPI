@@ -9,7 +9,7 @@ import { GetUnwrappedType } from "./types/get-unwrapped-type";
 import { validate } from "./validate";
 import unwrap from "./unwrap";
 import defaults from "lodash/defaults";
-import { fetchAdapter } from "./adapters/fetch-adapter";
+import { fetchAdapter } from "./adapters/fetch";
 import isObject from "lodash/isObject";
 import { ZodSchema } from "zod";
 import { ValidateIndexSignature } from "./types/validate";

@@ -1,6 +1,6 @@
 import axios from "axios";
 import { stitch } from "../src";
-import { axiosAdapter } from "../src/adapters/axios-adapter";
+import { axiosAdapter } from "../src/adapters/axios";
 import MockAdapter from "axios-mock-adapter";
 
 const mock = new MockAdapter(axios);
