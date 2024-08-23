@@ -40,7 +40,9 @@ describe("validation", () => {
           name: z.string(),
         }),
       })(),
-    ).rejects.toEqual(new Error("Invalid response"));
+    ).rejects.toEqual(
+      new Error('Validation error: Expected object, received string at "id"'),
+    );
   });
 
   it("Should validate query", async () => {
@@ -55,6 +57,10 @@ describe("validation", () => {
           }),
         },
       })(),
-    ).rejects.toEqual(new Error("Invalid body"));
+    ).rejects.toEqual(
+      new Error(
+        'Invalid body, reason: Validation error: Required at "email"; Required at "id"; Required at "name"',
+      ),
+    );
   });
 });

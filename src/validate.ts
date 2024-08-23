@@ -1,4 +1,5 @@
 import { StitchConfig } from "./types/stitch";
+import { fromError } from "zod-validation-error";
 
 export const validate = <TData, TOptions extends StitchConfig<TData>>(
   data: TData,
@@ -9,7 +10,7 @@ export const validate = <TData, TOptions extends StitchConfig<TData>>(
     if (validate.success) {
       return data;
     } else {
-      throw new Error("Invalid response");
+      throw new Error(fromError(validate.error).toString());
     }
   }
 
