@@ -16,11 +16,7 @@ import { ValidateIndexSignature } from "./types/validate";
 
 export const stitch = <
   TOptions extends StitchConfig<TResponse>,
-  TResponse extends object = {
-    success: boolean;
-    error: object;
-    total: number;
-  },
+  TResponse extends object = object,
   TParams extends object = object,
   TBody extends object = object,
   TQuery extends object = object,

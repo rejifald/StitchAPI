@@ -9,6 +9,7 @@
     "strict": true /* Enable all strict type-checking options. */,
     "skipLibCheck": true /* Skip type checking all .d.ts files. */,
     "sourceMap": true /* Generates corresponding '.map' file. */,
+    "emitDeclarationOnly": true,
     "declaration": true /* Generates corresponding '.d.ts' file. */,
     "declarationMap": true /* Generates a sourcemap for each corresponding '.d.ts' file. */
   },
