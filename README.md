@@ -121,7 +121,7 @@ const findUsers = stitch({
 Use Different Adapters
 
 ```js
-import { axiosAdapter } from "stitchapi/lib/adapters/axios";
+import { stitch, axiosAdapter } from "stitchapi";
 
 const findUsers = stitch({
   path: "/api/users?sort=name&type=admin",
