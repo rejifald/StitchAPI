@@ -9,8 +9,8 @@ The name StitchAPI combines the words “stitch” and “API,” reflecting its
 ## Features
 
 - **URL Templates** - Supports dynamic URL generation using the [RFC 6570 URI Template specification](https://datatracker.ietf.org/doc/html/rfc6570), allowing for flexible and customizable API endpoint construction.
+- **URL Query String Builder** - Leverages the [qs](https://www.npmjs.com/package/qs) library to efficiently build and manage query strings, ensuring accurate and consistent URL query parameters.
 - **Response unwrap** - Automatically extracts and returns the core data from the API response, simplifying access to the information you need without additional processing.
-- **Built-in Query String** - Leverages the [qs](https://www.npmjs.com/package/qs) library to efficiently build and manage query strings, ensuring accurate and consistent URL query parameters.
 - **On-the-Fly Validation** - Performs real-time validation of query parameters, request bodies, path parameters, and API responses using the Zod library, ensuring data integrity and type safety throughout every interaction.
 - **Flexible Adapters** - Offers the ability to use different HTTP adapters, such as Axios, or even your very own solution, allowing you to choose the best-suited tool for making API requests in your project.
 - **_Coming soon_**: **Code Generation** - Generate API stitches and corresponding TypeScript type definitions directly from your OpenAPI specification.
