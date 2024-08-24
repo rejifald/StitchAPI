@@ -1,5 +1,7 @@
 # StitchAPI
 
+> WARNING: This lib is still under heavy construction. Despite it feedback is appreciated.
+
 StitchAPI is a tool designed to seamlessly integrate (“stitch”) any JSON-based API into your project, simplifying the process of connecting and working with various APIs.
 
 The name StitchAPI combines the words “stitch” and “API,” reflecting its core purpose: to “stitch” or seamlessly connect any JSON-based API into your project. The term “stitch” conveys the idea of binding or linking various APIs into a unified system within your project.
