@@ -2,7 +2,8 @@
   "name": "stitchapi",
   "version": "0.3.3",
   "description": "StitchAPI is a tool designed to seamlessly integrate (“stitch”) any JSON-based API into your project, simplifying the process of connecting and working with various APIs.",
-  "main": "lib/index.js",
+  "main": "lib/stitchapi.umd.js",
+  "module": "lib/stitchapi.mjs",
   "types": "lib/index.d.ts",
   "files": [
     "lib"
@@ -12,10 +13,11 @@
     "check:types": "tsc",
     "check:format": "prettier --check .",
     "check:lint": "eslint . --flag unstable_ts_config",
-    "build": "esbuild src/index.ts src/adapters/fetch.ts src/adapters/axios.ts --outdir=lib --bundle --minify --sourcemap && tsc",
     "lint": "eslint . --flag unstable_ts_config",
     "format": "jiti ./node_modules/.bin/prettier --write .",
-    "dev": "tsc -w",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "prepare": "husky",
     "prepack": "npm run build"
   },
@@ -86,7 +88,9 @@
     "type-fest": "^4.25.0",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.2.0",
-    "typescript-eslint-parser": "^22.0.0"
+    "typescript-eslint-parser": "^22.0.0",
+    "vite": "^5.4.2",
+    "vite-plugin-dts": "^4.0.3"
   },
   "peerDependencies": {
     "axios": "^1.7.4"
