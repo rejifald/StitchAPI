@@ -13,6 +13,8 @@ The name StitchAPI combines the words “stitch” and “API,” reflecting its
 - **Built-in Query String** - Leverages the [qs](https://www.npmjs.com/package/qs) library to efficiently build and manage query strings, ensuring accurate and consistent URL query parameters.
 - **On-the-Fly Validation** - Performs real-time validation of query parameters, request bodies, path parameters, and API responses using the Zod library, ensuring data integrity and type safety throughout every interaction.
 - **Flexible Adapters** - Offers the ability to use different HTTP adapters, such as Axios, or even your very own solution, allowing you to choose the best-suited tool for making API requests in your project.
+- **_Coming soon_**: **Code Generation** - Generate API stitches and corresponding TypeScript type definitions directly from your OpenAPI specification.
+- **_Coming soon_**: **Modular structure** - Allows each library component to be bundled separately, providing flexibility and enabling you to include only the specific functionalities you need in your project.
 
 ## Installing
 
