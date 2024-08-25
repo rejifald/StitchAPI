@@ -10,18 +10,18 @@ describe("stitch", () => {
     expect(stitched).toBeInstanceOf(Function);
 
     await stitched({
-      params: { id: "2" },
+      params: { id: 1 },
       body: {
-        name: "morpheus",
-        job: "zion resident",
+        name: "morpheus v2",
+        job: "zion resident v2",
       },
     });
 
-    expect(fetch).toHaveBeenCalledWith("https://reqres.in/api/users/2", {
+    expect(fetch).toHaveBeenCalledWith("https://reqres.in/api/users/1", {
       method: "PATCH",
       body: JSON.stringify({
-        name: "morpheus",
-        job: "zion resident",
+        name: "morpheus v2",
+        job: "zion resident v2",
       }),
       headers: {
         Accept: "application/json",
