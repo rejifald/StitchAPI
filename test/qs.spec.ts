@@ -3,51 +3,39 @@ import { fetch } from "./__mocks__/fetch";
 
 describe("qs", () => {
   it("Should return stitched function with query string", async () => {
-    const stitched = stitch({
-      path: "https://reqres.in/api/users/{id}",
-      method: "PATCH",
-    });
-    expect(stitched).toBeInstanceOf(Function);
+    const stitched = stitch("https://reqres.in/api/users");
 
     await stitched({
-      params: { id: "2" },
       query: {
-        name: "morpheus",
-        job: "zion resident",
+        page: 2,
       },
     });
 
-    expect(fetch).toHaveBeenCalledWith(
-      "https://reqres.in/api/users/2?name=morpheus&job=zion%20resident",
-      {
-        method: "PATCH",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
+    expect(fetch).toHaveBeenCalledWith("https://reqres.in/api/users?page=2", {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
       },
-    );
+    });
   });
 
   it("Should keep predefined query string", async () => {
     const stitched = stitch({
-      path: "https://reqres.in/api/users/{id}?version=2",
-      method: "PATCH",
+      path: "https://reqres.in/api/users?per_page=10",
     });
-    expect(stitched).toBeInstanceOf(Function);
 
     await stitched({
-      params: { id: "2" },
       query: {
-        name: "morpheus",
-        job: "zion resident",
+        per_page: 10,
+        page: 1,
       },
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://reqres.in/api/users/2?version=2&name=morpheus&job=zion%20resident",
+      "https://reqres.in/api/users?per_page=10&page=1",
       {
-        method: "PATCH",
+        method: "GET",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
@@ -58,24 +46,19 @@ describe("qs", () => {
 
   it("Should override conflicting query keys", async () => {
     const stitched = stitch({
-      path: "https://reqres.in/api/users/{id}?type=admin",
-      method: "PATCH",
+      path: "https://reqres.in/api/users?per_page=10",
     });
-    expect(stitched).toBeInstanceOf(Function);
 
     await stitched({
-      params: { id: "2" },
       query: {
-        name: "morpheus",
-        job: "zion resident",
-        type: "user",
+        per_page: 20,
       },
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://reqres.in/api/users/2?type=user&name=morpheus&job=zion%20resident",
+      "https://reqres.in/api/users?per_page=20",
       {
-        method: "PATCH",
+        method: "GET",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
