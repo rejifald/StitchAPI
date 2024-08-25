@@ -18,6 +18,11 @@ jobs:
             - run: npm ci
             - run: npm test -- --coverage
 
+            - name: Upload results to Codecov
+              uses: codecov/codecov-action@v4
+              with:
+                  token: ${{ secrets.CODECOV_TOKEN }}
+
     publish-npm:
         needs: build
         runs-on: ubuntu-latest
