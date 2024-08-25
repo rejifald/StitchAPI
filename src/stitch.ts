@@ -15,8 +15,11 @@ import { ValidateIndexSignature } from "./types/validate";
 import { GetResponseType } from "./types/get-response-type";
 import merge from "lodash/merge";
 import { Adapter } from "./types/adapter";
+import { GetUnwrappedType } from "./types/get-unwrapped-type";
 
-export const stitch = <TOptions extends CreateStitchInput<unknown>>(
+export const stitch = <
+  TOptions extends CreateStitchInput<GetResponseType<TOptions>>,
+>(
   options: TOptions,
 ) => {
   const config: StitchConfig<GetResponseType<TOptions>> = defaults(
@@ -31,7 +34,7 @@ export const stitch = <TOptions extends CreateStitchInput<unknown>>(
   const urlTemplate = parseTemplate(path);
 
   return async ({ params, query, body }: StitchArgs<TOptions> = {}): Promise<
-    GetResponseType<TOptions>
+    GetUnwrappedType<TOptions>
   > => {
     let url = urlTemplate.expand(merge(params || {}, query || {}));
 

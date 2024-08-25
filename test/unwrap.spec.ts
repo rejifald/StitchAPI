@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { stitch } from "../src";
 import { fetch } from "./__mocks__/fetch";
 
@@ -6,8 +7,20 @@ describe("unwrap", () => {
     const unwrappedResult = await stitch({
       path: "https://reqres.in/api/users/{id}",
       unwrap: "success",
+      validate: {
+        response: z.object({
+          success: z.object({
+            email: z.string(),
+            id: z.string(),
+            name: z.string(),
+          }),
+        }),
+        params: z.object({
+          id: z.number(),
+        }),
+      },
     })({
-      params: { id: "123" },
+      params: { id: 123 },
     });
 
     const wrappedResult = await stitch({
