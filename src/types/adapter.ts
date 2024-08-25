@@ -4,6 +4,4 @@ export type AdapterInput = {
     body?: unknown;
 };
 
-export type Adapter = {
-    (input: AdapterInput): Promise<unknown>;
-};
+export type Adapter = (input: AdapterInput) => Promise<unknown>;

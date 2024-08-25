@@ -36,7 +36,7 @@ export const stitch = <
     return async ({ params, query, body }: StitchArgs<TOptions> = {}): Promise<
         GetUnwrappedType<TOptions>
     > => {
-        let url = urlTemplate.expand(merge(params || {}, query || {}));
+        let url = urlTemplate.expand(merge(params ?? {}, query ?? {}));
 
         if (!isEmpty(query)) {
             const { search, ...restUrlParts } = parseURL(url);
@@ -56,7 +56,7 @@ export const stitch = <
             for (const key of Object.keys(context)) {
                 try {
                     validate(
-                        context[key as keyof typeof context] || {},
+                        context[key as keyof typeof context] ?? {},
                         (
                             config.validate as Record<
                                 ValidateIndexSignature,
