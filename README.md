@@ -6,6 +6,17 @@ StitchAPI is a tool designed to seamlessly integrate (or “stitch”) any JSON-
 
 The name StitchAPI combines the words “stitch” and “API,” reflecting its core purpose: to “stitch” or seamlessly connect any JSON-based API into your project. The term “stitch” conveys the idea of binding or linking various APIs into a unified system within your project.
 
+<div align="center">
+
+[![npm version](https://img.shields.io/npm/v/stitchapi.svg?style=flat)](https://www.npmjs.org/package/stitchapi)
+![Discord](https://img.shields.io/discord/1277332872814137505)
+![Libraries.io dependency status for latest release](https://img.shields.io/librariesio/release/npm/StitchAPI)
+![Codecov](https://img.shields.io/codecov/c/github/rejifald/stitchapi)
+![npm bundle size](https://img.shields.io/bundlephobia/minzip/stitchapi)
+[![npm downloads](https://img.shields.io/npm/dm/stitchapi.svg?style=flat-square)](https://npm-stat.com/charts.html?package=stitchapi)
+
+</div>
+
 ## Table of Contents
 
 -   [Motivation](#motivation)
