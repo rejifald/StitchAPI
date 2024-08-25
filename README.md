@@ -8,6 +8,13 @@ The name StitchAPI combines the words “stitch” and “API,” reflecting its
 
 <div align="center">
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=rejifald_StitchAPI&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=rejifald_StitchAPI)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=rejifald_StitchAPI&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=rejifald_StitchAPI)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=rejifald_StitchAPI&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=rejifald_StitchAPI)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=rejifald_StitchAPI&metric=bugs)](https://sonarcloud.io/summary/new_code?id=rejifald_StitchAPI)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=rejifald_StitchAPI&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=rejifald_StitchAPI)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=rejifald_StitchAPI&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=rejifald_StitchAPI)
+
 [![Discord](https://img.shields.io/discord/1277332872814137505)](https://discord.gg/mAx9RQWN)
 [![npm version](https://img.shields.io/npm/v/stitchapi.svg)](https://www.npmjs.org/package/stitchapi)
 [![npm downloads](https://img.shields.io/npm/dm/stitchapi.svg)](https://npm-stat.com/charts.html?package=stitchapi)
