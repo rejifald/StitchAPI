@@ -4,8 +4,7 @@ import get from "lodash/get";
 import isEmpty from "lodash/isEmpty";
 import qs from "qs";
 import { joinURL, parseURL, stringifyParsedURL } from "ufo";
-import { parseTemplate, PrimitiveValue } from "url-template";
-import { GetUnwrappedType } from "./types/get-unwrapped-type";
+import { parseTemplate } from "url-template";
 import { validate } from "./validate";
 import unwrap from "./unwrap";
 import defaults from "lodash/defaults";
@@ -13,36 +12,28 @@ import { fetchAdapter } from "./adapters/fetch";
 import isObject from "lodash/isObject";
 import { ZodSchema } from "zod";
 import { ValidateIndexSignature } from "./types/validate";
+import { GetResponseType } from "./types/get-response-type";
+import merge from "lodash/merge";
+import { Adapter } from "./types/adapter";
 
-export const stitch = <
-  TOptions extends StitchConfig<TResponse>,
-  TResponse extends object = object,
-  TParams extends object = object,
-  TBody extends object = object,
-  TQuery extends object = object,
->(
-  options: CreateStitchInput<TResponse>,
+export const stitch = <TOptions extends CreateStitchInput<unknown>>(
+  options: TOptions,
 ) => {
-  const config: StitchConfig<TResponse> = defaults(
+  const config: StitchConfig<GetResponseType<TOptions>> = defaults(
     typeof options === "string" ? { path: options } : options,
-    { method: "GET", adapter: fetchAdapter() },
+    { method: "GET", adapter: fetchAdapter() } as StitchConfig<
+      GetResponseType<TOptions>
+    >,
   );
 
-  const fetcher = config.adapter;
+  const fetcher: Adapter = config.adapter!;
   const path: string = joinURL(get(options, "baseUrl", ""), config.path);
   const urlTemplate = parseTemplate(path);
 
-  return async ({
-    params = {} as TParams,
-    query = {} as TQuery,
-    body = {} as TBody,
-  }: StitchArgs<TQuery, TBody, TParams> = {}): Promise<
-    GetUnwrappedType<TResponse, TOptions>
+  return async ({ params, query, body }: StitchArgs<TOptions> = {}): Promise<
+    GetResponseType<TOptions>
   > => {
-    let url = urlTemplate.expand({ ...params, ...query } as Record<
-      string,
-      PrimitiveValue
-    >);
+    let url = urlTemplate.expand(merge(params || {}, query || {}));
 
     if (!isEmpty(query)) {
       const { search, ...restUrlParts } = parseURL(url);
@@ -62,7 +53,7 @@ export const stitch = <
       for (const key of Object.keys(context)) {
         try {
           validate(
-            context[key as keyof typeof context],
+            context[key as keyof typeof context] || {},
             (config.validate as Record<ValidateIndexSignature, ZodSchema>)[
               key as keyof typeof context
             ],
@@ -77,7 +68,7 @@ export const stitch = <
       url,
       method: config.method,
       body,
-    })) as TResponse;
+    })) as GetResponseType<TOptions>;
 
     validate(json, config.validate);
 
