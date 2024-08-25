@@ -1,43 +1,11 @@
-import { z } from "zod";
 import { stitch } from "../src";
-import { fetch } from "./__mocks__/fetch";
-
-const GetUsersResponseSchema = z.object({
-  page: z.number(),
-  per_page: z.number(),
-  total: z.number(),
-  total_pages: z.number(),
-  data: z.array(
-    z.object({
-      id: z.number(),
-      email: z.string(),
-      first_name: z.string(),
-      last_name: z.string(),
-      avatar: z.string(),
-    }),
-  ),
-});
+import fetch from "jest-fetch-mock";
+import getUsersResponseMock from "./__mocks__/get_users_response.json";
+import { GetUsersResponseSchema } from "./__mocks__/get-users-response-schema";
 
 describe("unwrap", () => {
   beforeEach(() => {
-    fetch.mockClear();
-    fetch.mockResolvedValue({
-      json: () => ({
-        page: 2,
-        per_page: 6,
-        total: 12,
-        total_pages: 2,
-        data: [
-          {
-            id: 7,
-            email: "michael.lawson@reqres.in",
-            first_name: "Michael",
-            last_name: "Lawson",
-            avatar: "https://reqres.in/img/faces/7-image.jpg",
-          },
-        ],
-      }),
-    });
+    fetch.mockResponse(JSON.stringify(getUsersResponseMock));
   });
   it("Should unwrap response", async () => {
     const response = await stitch({
@@ -56,14 +24,6 @@ describe("unwrap", () => {
       },
     });
 
-    expect(response).toEqual([
-      {
-        avatar: "https://reqres.in/img/faces/7-image.jpg",
-        email: "michael.lawson@reqres.in",
-        first_name: "Michael",
-        id: 7,
-        last_name: "Lawson",
-      },
-    ]);
+    expect(response).toEqual(getUsersResponseMock.data);
   });
 });

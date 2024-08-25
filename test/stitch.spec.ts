@@ -1,7 +1,12 @@
 import { stitch } from "../src/stitch";
-import { fetch } from "./__mocks__/fetch";
+import fetch from "jest-fetch-mock";
+import getUserResponseMock from "./__mocks__/get_user_response.json";
 
 describe("stitch", () => {
+  beforeEach(() => {
+    fetch.mockResponse(JSON.stringify(getUserResponseMock));
+  });
+
   it("Should return stitched function with method", async () => {
     const stitched = stitch({
       path: "https://reqres.in/api/users/{id}",

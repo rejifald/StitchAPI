@@ -1,9 +1,10 @@
 import { stitch } from "../src";
-import { fetch } from "./__mocks__/fetch";
+import fetch from "jest-fetch-mock";
+import getUserResponseMock from "./__mocks__/get_user_response.json";
 
 describe("url templates", () => {
   beforeEach(() => {
-    fetch.mockClear();
+    fetch.mockResponse(JSON.stringify(getUserResponseMock));
   });
 
   it("Should resolve url template", () => {

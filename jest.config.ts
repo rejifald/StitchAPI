@@ -185,6 +185,7 @@ const config: Config = {
   //   "/node_modules/(?!(url-template)/)",
   //   //   //   "\\.pnp\\.[^\\/]+$"
   // ],
+  // testEnvironment: "jsdom",
 
   transformIgnorePatterns: ["node_modules/(?!url-template)"],
   // An array of regexp pattern strings that are matched against all modules before the module loader will automatically return a mock for them
@@ -198,6 +199,8 @@ const config: Config = {
 
   // Whether to use watchman for file crawling
   // watchman: true,
+  automock: false,
+  setupFiles: ["./test/setup.js"],
 };
 
 export default config;

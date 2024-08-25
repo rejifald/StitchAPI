@@ -1,47 +1,33 @@
 import { z } from "zod";
 import { stitch } from "../src/stitch";
-import { fetch } from "./__mocks__/fetch";
+import fetch from "jest-fetch-mock";
+import getUserResponseMock from "./__mocks__/get_user_response.json";
+import { GetUsersResponseSchema } from "./__mocks__/get-users-response-schema";
+import { GetUserResponseSchema } from "./__mocks__/get-user-response-schema";
 
 describe("validation", () => {
   beforeEach(() => {
-    fetch.mockClear();
-    fetch.mockResolvedValue({
-      json: async () => ({
-        email: "[email protected]",
-        id: "123",
-        name: "John Doe",
-      }),
-    } as Response);
+    fetch.mockResponse(JSON.stringify(getUserResponseMock));
   });
   it("Should pass if response is valid", async () => {
     const result = await stitch({
       path: "https://reqres.in/api/users/{id}",
-      validate: z.object({
-        email: z.string(),
-        id: z.string(),
-        name: z.string(),
-      }),
+      validate: GetUserResponseSchema,
     })({});
 
-    expect(result).toEqual({
-      email: "[email protected]",
-      id: "123",
-      name: "John Doe",
-    });
+    expect(result).toEqual(getUserResponseMock);
   });
 
   it("Should throw if response is invalid", async () => {
     await expect(() =>
       stitch({
         path: "https://reqres.in/api/users/",
-        validate: z.object({
-          email: z.string(),
-          id: z.object({}),
-          name: z.string(),
-        }),
+        validate: GetUsersResponseSchema,
       })(),
     ).rejects.toEqual(
-      new Error('Validation error: Expected object, received string at "id"'),
+      new Error(
+        'Validation error: Required at "page"; Required at "per_page"; Required at "total"; Required at "total_pages"; Expected array, received object at "data"',
+      ),
     );
   });
 
