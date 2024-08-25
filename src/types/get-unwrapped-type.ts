@@ -1,4 +1,4 @@
-import { GetResponseType } from './get-response-type';
+import { GetResponseType } from '@/types/get-response-type';
 
 export type GetUnwrappedType<
     TOptions,

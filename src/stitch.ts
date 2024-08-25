@@ -1,12 +1,11 @@
-import { fetchAdapter } from './adapters/fetch';
-import unwrap from './unwrap';
-import { validate } from './validate';
-
+import { fetchAdapter } from '@/adapters/fetch';
 import { Adapter } from '@/types/adapter';
 import { GetResponseType } from '@/types/get-response-type';
 import { GetUnwrappedType } from '@/types/get-unwrapped-type';
 import { CreateStitchInput, StitchArgs, StitchConfig } from '@/types/stitch';
 import { ValidateIndexSignature } from '@/types/validate';
+import unwrap from '@/unwrap';
+import { validate } from '@/validate';
 
 import defaults from 'lodash/defaults';
 import get from 'lodash/get';

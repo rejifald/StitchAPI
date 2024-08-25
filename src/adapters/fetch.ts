@@ -1,4 +1,4 @@
-import { AdapterInput } from '../types/adapter';
+import { AdapterInput } from '@/types/adapter';
 
 import 'cross-fetch/polyfill';
 import isEmpty from 'lodash/isEmpty';

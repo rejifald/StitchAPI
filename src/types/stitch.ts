@@ -1,8 +1,8 @@
-import { Adapter } from './adapter';
-import { GetBodyType } from './get-body-type';
-import { GetParamsType } from './get-params-type';
-import { GetQueryType } from './get-query-type';
-import { ValidateOptions } from './validate';
+import { Adapter } from '@/types/adapter';
+import { GetBodyType } from '@/types/get-body-type';
+import { GetParamsType } from '@/types/get-params-type';
+import { GetQueryType } from '@/types/get-query-type';
+import { ValidateOptions } from '@/types/validate';
 
 export type CreateStitchInput<TResponse> =
     | string

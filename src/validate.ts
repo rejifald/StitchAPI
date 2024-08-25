@@ -1,4 +1,4 @@
-import { StitchConfig } from './types/stitch';
+import { StitchConfig } from '@/types/stitch';
 
 import { fromError } from 'zod-validation-error';
 

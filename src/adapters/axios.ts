@@ -1,4 +1,4 @@
-import { AdapterInput } from '../types/adapter';
+import { AdapterInput } from '@/types/adapter';
 
 import axios, { AxiosRequestConfig } from 'axios';
 import merge from 'lodash/merge';
