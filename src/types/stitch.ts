@@ -1,4 +1,7 @@
 import { Adapter } from "./adapter";
+import { GetBodyType } from "./get-body-type";
+import { GetParamsType } from "./get-params-type";
+import { GetQueryType } from "./get-query-type";
 import { ValidateOptions } from "./validate";
 
 export type CreateStitchInput<TResponse> =
@@ -11,15 +14,11 @@ export interface StitchConfig<TResponse> {
   baseUrl?: string;
   unwrap?: keyof TResponse;
   validate?: ValidateOptions;
-  adapter: Adapter;
+  adapter?: Adapter;
 }
 
-export interface StitchArgs<
-  TQuery extends object = Record<string, string>,
-  TBody = unknown,
-  TParams extends object = Record<string, string>,
-> {
-  params?: TParams;
-  body?: TBody;
-  query?: TQuery;
+export interface StitchArgs<TOptions = unknown> {
+  params?: GetParamsType<TOptions>;
+  body?: GetBodyType<TOptions>;
+  query?: GetQueryType<TOptions>;
 }
