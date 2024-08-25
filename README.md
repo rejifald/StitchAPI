@@ -46,6 +46,10 @@ import { stitch } from "stitchapi";
 const { stitch } = require("stitchapi");
 ```
 
+## Live example
+
+[![Edit StitchAPI Get Users](https://codesandbox.io/static/img/play-codesandbox.svg)](https://codesandbox.io/p/sandbox/stitchapi-get-users-4y7y2d)
+
 ## Example
 
 Create the first stitch
