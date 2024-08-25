@@ -8,6 +8,7 @@ The name StitchAPI combines the words “stitch” and “API,” reflecting its
 
 ## Features
 
+- **Platform agnostic** - Works in browser and Node thanks to [cross-fetch](https://www.npmjs.com/package/cross-fetch).
 - **URL Templates** - Supports dynamic URL generation using the [RFC 6570 URI Template specification](https://datatracker.ietf.org/doc/html/rfc6570), allowing for flexible and customizable API endpoint construction.
 - **URL Query String Builder** - Leverages the [qs](https://www.npmjs.com/package/qs) library to efficiently build and manage query strings, ensuring accurate and consistent URL query parameters.
 - **Response unwrap** - Automatically extracts and returns the core data from the API response, simplifying access to the information you need without additional processing.
