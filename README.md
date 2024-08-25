@@ -14,6 +14,7 @@ The name StitchAPI combines the words “stitch” and “API,” reflecting its
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=rejifald_StitchAPI&metric=bugs)](https://sonarcloud.io/summary/new_code?id=rejifald_StitchAPI)
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=rejifald_StitchAPI&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=rejifald_StitchAPI)
 [![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=rejifald_StitchAPI&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=rejifald_StitchAPI)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=rejifald_StitchAPI&metric=coverage)](https://sonarcloud.io/summary/new_code?id=rejifald_StitchAPI)
 
 [![Discord](https://img.shields.io/discord/1277332872814137505)](https://discord.gg/mAx9RQWN)
 [![npm version](https://img.shields.io/npm/v/stitchapi.svg)](https://www.npmjs.org/package/stitchapi)
