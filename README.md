@@ -75,18 +75,37 @@ const { stitch } = require("stitchapi");
 Create the first stitch
 
 ```js
-// Assuming we have a GET /api/users endpoint that responds with [{id: 1, name: "John Doe"}, ...]
-const findUsers = stitch('/api/users');
+import { stitch } from 'stitchapi';
+
+// Refer to https://reqres.in for API description
+// Assuming we have a GET https://reqres.in/api/users that responds with
+// {
+//  "page": 1,
+//  "per_page": 10,
+//  "total": 12,
+//  "total_pages": 2,
+//  "data": [
+//      {
+//          "id": 7,
+//          "email": "michael.lawson@reqres.in",
+//          "first_name": "Michael",
+//          "last_name": "Lawson",
+//          "avatar": "https://reqres.in/img/faces/7-image.jpg"
+//      },
+//   ...
+//  ]
+// }
+
+const findUsers = stitch('https://reqres.in/api/users');
 
 // Call it whenever needed to retrieve data from the "stitched" endpoint
 const users = await findUsers();
-console.log(users); // -> [{id: 1, name: "John Doe"}, ...]
+console.log(users); // -> JSON response from above
 ```
 
 Use URL Templates
 
 ```js
-// Refer to [url-template](https://www.npmjs.com/package/url-template) for advanced templating
 const findUser = stitch('/api/users/{id}');
 
 const user = await findUser({ params: { id: 1 } });
