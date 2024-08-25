@@ -2,56 +2,68 @@ import { z } from "zod";
 import { stitch } from "../src";
 import { fetch } from "./__mocks__/fetch";
 
+const GetUsersResponseSchema = z.object({
+  page: z.number(),
+  per_page: z.number(),
+  total: z.number(),
+  total_pages: z.number(),
+  data: z.array(
+    z.object({
+      id: z.number(),
+      email: z.string(),
+      first_name: z.string(),
+      last_name: z.string(),
+      avatar: z.string(),
+    }),
+  ),
+});
+
 describe("unwrap", () => {
+  beforeEach(() => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      json: () => ({
+        page: 2,
+        per_page: 6,
+        total: 12,
+        total_pages: 2,
+        data: [
+          {
+            id: 7,
+            email: "michael.lawson@reqres.in",
+            first_name: "Michael",
+            last_name: "Lawson",
+            avatar: "https://reqres.in/img/faces/7-image.jpg",
+          },
+        ],
+      }),
+    });
+  });
   it("Should unwrap response", async () => {
-    const unwrappedResult = await stitch({
-      path: "https://reqres.in/api/users/{id}",
-      unwrap: "success",
+    const response = await stitch({
+      path: "https://reqres.in/api/users",
+      unwrap: "data",
       validate: {
-        response: z.object({
-          success: z.object({
-            email: z.string(),
-            id: z.string(),
-            name: z.string(),
-          }),
-        }),
-        params: z.object({
-          id: z.number(),
-        }),
+        response: GetUsersResponseSchema,
       },
-    })({
-      params: { id: 123 },
-    });
+    })();
 
-    const wrappedResult = await stitch({
-      path: "https://reqres.in/api/users/{id}",
-    })({
-      params: { id: "123" },
-    });
-
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(fetch).toHaveBeenCalledWith("https://reqres.in/api/users/123", {
+    expect(fetch).toHaveBeenCalledWith("https://reqres.in/api/users", {
       method: "GET",
-      body: undefined,
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
     });
 
-    expect(unwrappedResult).toEqual({
-      email: "[email protected]",
-      id: "123",
-      name: "John Doe",
-    });
-    expect(wrappedResult).toEqual({
-      error: null,
-      total: 1,
-      success: {
-        email: "[email protected]",
-        id: "123",
-        name: "John Doe",
+    expect(response).toEqual([
+      {
+        avatar: "https://reqres.in/img/faces/7-image.jpg",
+        email: "michael.lawson@reqres.in",
+        first_name: "Michael",
+        id: 7,
+        last_name: "Lawson",
       },
-    });
+    ]);
   });
 });
