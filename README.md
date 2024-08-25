@@ -8,12 +8,14 @@ The name StitchAPI combines the words “stitch” and “API,” reflecting its
 
 <div align="center">
 
-[![npm version](https://img.shields.io/npm/v/stitchapi.svg?style=flat)](https://www.npmjs.org/package/stitchapi)
-![Discord](https://img.shields.io/discord/1277332872814137505)
-![Libraries.io dependency status for latest release](https://img.shields.io/librariesio/release/npm/StitchAPI)
-![Codecov](https://img.shields.io/codecov/c/github/rejifald/stitchapi)
+[![Discord](https://img.shields.io/discord/1277332872814137505)](https://discord.gg/mAx9RQWN)
+[![npm version](https://img.shields.io/npm/v/stitchapi.svg)](https://www.npmjs.org/package/stitchapi)
+[![npm downloads](https://img.shields.io/npm/dm/stitchapi.svg)](https://npm-stat.com/charts.html?package=stitchapi)
+[![NPM Type Definitions](https://img.shields.io/npm/types/stitchapi)](https://www.npmjs.org/package/stitchapi)
+
+[![Codecov](https://img.shields.io/codecov/c/github/rejifald/stitchapi)](https://codecov.io/github/rejifald/StitchAPI)
 ![npm bundle size](https://img.shields.io/bundlephobia/minzip/stitchapi)
-[![npm downloads](https://img.shields.io/npm/dm/stitchapi.svg?style=flat-square)](https://npm-stat.com/charts.html?package=stitchapi)
+![Tree Shaking](https://badgen.net/bundlephobia/tree-shaking/stitchapi)
 
 </div>
 
