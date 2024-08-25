@@ -11,7 +11,11 @@
     "sourceMap": true /* Generates corresponding '.map' file. */,
     "emitDeclarationOnly": true,
     "declaration": true /* Generates corresponding '.d.ts' file. */,
-    "declarationMap": true /* Generates a sourcemap for each corresponding '.d.ts' file. */
+    "declarationMap": true /* Generates a sourcemap for each corresponding '.d.ts' file. */,
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": ["src/**/*.ts"]
 }
