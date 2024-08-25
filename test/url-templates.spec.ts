@@ -8,13 +8,12 @@ describe("url templates", () => {
 
   it("Should resolve url template", () => {
     stitch({ path: "https://reqres.in/api/users/{id}" })({
-      params: { id: "123" },
+      params: { id: 1 },
     });
 
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(fetch).toHaveBeenCalledWith("https://reqres.in/api/users/123", {
+    expect(fetch).toHaveBeenCalledWith("https://reqres.in/api/users/1", {
       method: "GET",
-      body: undefined,
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
