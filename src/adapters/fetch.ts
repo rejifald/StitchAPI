@@ -1,6 +1,7 @@
 import isEmpty from "lodash/isEmpty";
 import { AdapterInput } from "../types/adapter";
 import merge from "lodash/merge";
+import "cross-fetch/polyfill";
 import { fetch } from "cross-fetch";
 
 export const fetchAdapter =
