@@ -22,10 +22,6 @@ jobs:
               uses: codecov/codecov-action@v4
               with:
                   token: ${{ secrets.CODECOV_TOKEN }}
-            - name: SonarCloud Scan
-              uses: SonarSource/sonarcloud-github-action@master
-              env:
-                  SONAR_TOKEN: ${{ secrets.SONARCLOUD_TOKEN }}
 
     publish-npm:
         needs: build
