@@ -1,10 +1,10 @@
-import { JsonObject } from "type-fest";
-import { z, ZodSchema } from "zod";
+import { JsonObject } from 'type-fest';
+import { ZodSchema, z } from 'zod';
 
 export type GetQueryType<TOptions> = TOptions extends {
-  validate: {
-    query: ZodSchema;
-  };
+    validate: {
+        query: ZodSchema;
+    };
 }
-  ? z.infer<TOptions["validate"]["query"]>
-  : JsonObject;
+    ? z.infer<TOptions['validate']['query']>
+    : JsonObject;

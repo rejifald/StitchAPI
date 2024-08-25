@@ -1,10 +1,10 @@
-import { GetResponseType } from "./get-response-type";
+import { GetResponseType } from './get-response-type';
 
 export type GetUnwrappedType<
-  TOptions,
-  TResponse = GetResponseType<TOptions>,
+    TOptions,
+    TResponse = GetResponseType<TOptions>,
 > = TOptions extends {
-  unwrap: keyof TResponse;
+    unwrap: keyof TResponse;
 }
-  ? TResponse[TOptions["unwrap"]]
-  : TResponse;
+    ? TResponse[TOptions['unwrap']]
+    : TResponse;

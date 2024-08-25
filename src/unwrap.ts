@@ -1,15 +1,16 @@
-import get from "lodash/get";
-import { StitchConfig } from "./types/stitch";
+import { StitchConfig } from './types/stitch';
+
+import get from 'lodash/get';
 
 export const unwrap = <TData>(
-  response: TData,
-  config?: StitchConfig<TData>["unwrap"],
+    response: TData,
+    config?: StitchConfig<TData>['unwrap'],
 ) => {
-  if (!config) {
-    return response;
-  }
+    if (!config) {
+        return response;
+    }
 
-  return get(response, config);
+    return get(response, config);
 };
 
 export default unwrap;

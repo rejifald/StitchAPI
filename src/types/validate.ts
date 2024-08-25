@@ -1,9 +1,9 @@
-import { ZodSchema } from "zod";
-import { RequireAtLeastOne } from "type-fest";
+import { RequireAtLeastOne } from 'type-fest';
+import { ZodSchema } from 'zod';
 
-export type ValidateIndexSignature = "params" | "query" | "body" | "response";
+export type ValidateIndexSignature = 'params' | 'query' | 'body' | 'response';
 
 export type ValidateOptions =
-  | ZodSchema
-  | undefined
-  | RequireAtLeastOne<Record<ValidateIndexSignature, ZodSchema>>;
+    | ZodSchema
+    | undefined
+    | RequireAtLeastOne<Record<ValidateIndexSignature, ZodSchema>>;

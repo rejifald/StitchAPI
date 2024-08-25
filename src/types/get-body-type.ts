@@ -1,10 +1,10 @@
-import { JsonObject } from "type-fest";
-import { z, ZodSchema } from "zod";
+import { JsonObject } from 'type-fest';
+import { ZodSchema, z } from 'zod';
 
 export type GetBodyType<TOptions> = TOptions extends {
-  validate: {
-    body: ZodSchema;
-  };
+    validate: {
+        body: ZodSchema;
+    };
 }
-  ? z.infer<TOptions["validate"]["body"]>
-  : JsonObject;
+    ? z.infer<TOptions['validate']['body']>
+    : JsonObject;

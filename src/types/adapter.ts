@@ -1,9 +1,9 @@
 export type AdapterInput = {
-  url: string;
-  method: string;
-  body?: unknown;
+    url: string;
+    method: string;
+    body?: unknown;
 };
 
 export type Adapter = {
-  (input: AdapterInput): Promise<unknown>;
+    (input: AdapterInput): Promise<unknown>;
 };
