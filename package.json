@@ -1,6 +1,6 @@
 {
   "name": "stitchapi",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "StitchAPI is a tool designed to seamlessly integrate (“stitch”) any JSON-based API into your project, simplifying the process of connecting and working with various APIs.",
   "main": "lib/stitchapi.umd.js",
   "module": "lib/stitchapi.mjs",
