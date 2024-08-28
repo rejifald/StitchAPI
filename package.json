@@ -13,6 +13,7 @@
         "check:types": "tsc",
         "check:format": "prettier --check .",
         "check:lint": "eslint . --flag unstable_ts_config",
+        "check:exports": "attw --pack .",
         "lint": "eslint . --flag unstable_ts_config",
         "format": "jiti ./node_modules/.bin/prettier --write .",
         "dev": "vite",
@@ -67,6 +68,7 @@
     },
     "homepage": "https://github.com/rejifald/StitchAPI#readme",
     "devDependencies": {
+        "@arethetypeswrong/cli": "^0.15.4",
         "@babel/preset-env": "^7.25.3",
         "@babel/preset-typescript": "^7.24.7",
         "@jest/globals": "^29.7.0",

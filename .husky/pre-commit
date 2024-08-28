@@ -1,4 +1,5 @@
 npm run check:lint
 npm run check:format
 npm run check:types
+npm run check:exports
 npm run test
