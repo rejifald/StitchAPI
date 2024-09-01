@@ -1,4 +1,6 @@
-# StitchAPI
+<img src="./docs/media/logo_baner_light.png"/>
+
+---
 
 > WARNING: This lib is still under heavy construction. Despite it feedback is appreciated.
 
