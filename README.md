@@ -1,4 +1,4 @@
-<img src="./docs/media/logo_baner_light.png"/>
+<img src="https://github.com/rejifald/StitchAPI/blob/9c65d767e6e2ecff7e0a7a2922843a7cdc38a0b5/docs/media/logo_baner_light.png?raw=true" alt="StitchAPI Logo Banner"/>
 
 ---
 
