@@ -14,6 +14,7 @@ export interface StitchConfig<TResponse> {
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     baseUrl?: string;
     unwrap?: keyof TResponse;
+    assert?: (response: TResponse) => boolean;
     validate?: ValidateOptions;
     adapter?: Adapter;
 }

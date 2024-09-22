@@ -78,6 +78,13 @@ export const stitch = <
             body,
         })) as GetResponseType<TOptions>;
 
+        const assertation = config.assert?.(json);
+        if (assertation) {
+            throw new Error(
+                assertation === true ? 'Assertion failed' : assertation,
+            );
+        }
+
         validate(json, config.validate);
 
         return unwrap(json, config.unwrap);
