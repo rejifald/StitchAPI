@@ -1,4 +1,5 @@
 import { fetchAdapter } from '@/adapters/fetch';
+import { StitchError } from '@/errors/stitch-error';
 import { Adapter } from '@/types/adapter';
 import { GetResponseType } from '@/types/get-response-type';
 import { GetUnwrappedType } from '@/types/get-unwrapped-type';
@@ -65,23 +66,32 @@ export const stitch = <
                         )[key as keyof typeof context],
                     );
                 } catch (e) {
-                    throw new Error(
+                    throw new StitchError(
                         `Invalid ${key}, reason: ${(e as Error).message}`,
+                        { config, original: e },
                     );
                 }
             }
         }
 
-        const json = (await fetcher({
-            url,
-            method: config.method,
-            body,
-        })) as GetResponseType<TOptions>;
-
+        let json: GetResponseType<TOptions>;
+        try {
+            json = (await fetcher({
+                url,
+                method: config.method,
+                body,
+            })) as GetResponseType<TOptions>;
+        } catch (e) {
+            throw new StitchError((e as Error).message, {
+                config,
+                original: e,
+            });
+        }
         const assertation = config.assert?.(json);
         if (assertation) {
-            throw new Error(
+            throw new StitchError(
                 assertation === true ? 'Assertion failed' : assertation,
+                { config },
             );
         }
 
