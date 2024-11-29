@@ -5,13 +5,15 @@ import tseslint from 'typescript-eslint';
 export default [
     {
         ...js.configs.recommended,
-        ignores: ['node_modules', 'lib/**/*.*'],
+        ignores: ['node_modules', 'lib/*', 'coverage/*'],
     },
     ...tseslint.configs.recommended.map((config) => ({
         ...config,
-        ignores: ['node_modules', 'lib/**/*.*'],
+        ignores: ['node_modules', 'lib/*', 'coverage/*'],
     })),
     {
+        files: ['src/**/*.ts'],
+        ignores: ['node_modules', 'lib/*', 'coverage/*'],
         rules: {
             'no-restricted-imports': [
                 'error',
