@@ -21,10 +21,8 @@ describe('axiosAdapter', () => {
         });
 
         const response = await stitched({
-            params: {
-                id: 2,
-            },
-        });
+            id: 2,
+        })();
         expect(response).toEqual({
             success: true,
             error: {},

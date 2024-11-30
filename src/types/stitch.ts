@@ -1,3 +1,7 @@
+import { HttpMethod } from './HttpMethod';
+import { PluginOptions } from './plugin-options';
+import { ExtractRFCParams } from './utils/get-template-type';
+
 import { Adapter } from '@/types/adapter';
 import { GetBodyType } from '@/types/get-body-type';
 import { GetParamsType } from '@/types/get-params-type';
@@ -11,16 +15,30 @@ export type CreateStitchInput<TResponse> =
 
 export interface StitchConfig<TResponse> {
     path: string;
-    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    method: HttpMethod;
     baseUrl?: string;
     unwrap?: keyof TResponse;
     assert?: (response: TResponse) => boolean;
     validate?: ValidateOptions;
     adapter?: Adapter;
+    plugins?: PluginOptions[];
 }
 
-export interface StitchArgs<TOptions = unknown> {
-    params?: GetParamsType<TOptions>;
-    body?: GetBodyType<TOptions>;
-    query?: GetQueryType<TOptions>;
-}
+export type ParametricStitch<TParams, TStitch> = (params: TParams) => TStitch;
+export type StitchExecutor<
+    TResponse,
+    TOptions extends StitchConfig<TResponse>,
+> = TOptions['method'] extends 'GET' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'TRACE'
+    ? (query: GetQueryType<TOptions>) => Promise<TResponse>
+    : (
+          body: GetBodyType<TOptions>,
+          query: GetQueryType<TOptions>,
+      ) => Promise<TResponse>;
+
+export type Stitch<TResponse, TOptions extends StitchConfig<TResponse>> =
+    ExtractRFCParams<TOptions['path']> extends never
+        ? StitchExecutor<TResponse, TOptions>
+        : ParametricStitch<
+              GetParamsType<TOptions>,
+              StitchExecutor<TResponse, TOptions>
+          >;

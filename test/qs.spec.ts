@@ -11,9 +11,7 @@ describe('qs', () => {
         const stitched = stitch('https://reqres.in/api/users');
 
         await stitched({
-            query: {
-                page: 2,
-            },
+            page: 2,
         });
 
         expect(fetch).toHaveBeenCalledWith(
@@ -34,10 +32,8 @@ describe('qs', () => {
         });
 
         await stitched({
-            query: {
-                per_page: 10,
-                page: 1,
-            },
+            per_page: 10,
+            page: 1,
         });
 
         expect(fetch).toHaveBeenCalledWith(
@@ -58,9 +54,7 @@ describe('qs', () => {
         });
 
         await stitched({
-            query: {
-                per_page: 20,
-            },
+            per_page: 20,
         });
 
         expect(fetch).toHaveBeenCalledWith(

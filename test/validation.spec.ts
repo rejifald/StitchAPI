@@ -14,7 +14,9 @@ describe('validation', () => {
         const result = await stitch({
             path: 'https://reqres.in/api/users/{id}',
             validate: GetUserResponseSchema,
-        })({});
+        })({
+            id: 2,
+        })();
 
         expect(result).toEqual(getUserResponseMock);
     });
@@ -27,7 +29,7 @@ describe('validation', () => {
             })(),
         ).rejects.toEqual(
             new Error(
-                'Validation error: Required at "page"; Required at "per_page"; Required at "total"; Required at "total_pages"; Expected array, received object at "data"',
+                'Invalid response, reason: Validation error: Required at "page"; Required at "per_page"; Required at "total"; Required at "total_pages"; Expected array, received object at "data"',
             ),
         );
     });

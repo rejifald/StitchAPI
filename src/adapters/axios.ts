@@ -1,6 +1,7 @@
 import { AdapterInput } from '@/types/adapter';
 
 import axios, { AxiosRequestConfig } from 'axios';
+import { isEmpty } from 'lodash';
 import merge from 'lodash/merge';
 
 export const axiosAdapter =
@@ -10,7 +11,7 @@ export const axiosAdapter =
             merge(initial, {
                 url,
                 method,
-                data: body,
+                data: isEmpty(body) ? undefined : body,
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',

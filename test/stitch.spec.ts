@@ -13,14 +13,10 @@ describe('stitch', () => {
             path: 'https://reqres.in/api/users/{id}',
             method: 'PATCH',
         });
-        expect(stitched).toBeInstanceOf(Function);
 
-        await stitched({
-            params: { id: 1 },
-            body: {
-                name: 'morpheus v2',
-                job: 'zion resident v2',
-            },
+        await stitched({ id: 1 })({
+            name: 'morpheus v2',
+            job: 'zion resident v2',
         });
 
         expect(fetch).toHaveBeenCalledWith('https://reqres.in/api/users/1', {

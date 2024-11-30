@@ -9,9 +9,7 @@ describe('url templates', () => {
     });
 
     it('Should resolve url template', () => {
-        stitch({ path: 'https://reqres.in/api/users/{id}' })({
-            params: { id: 1 },
-        });
+        stitch({ path: 'https://reqres.in/api/users/{id}' })({ id: 1 })();
 
         expect(fetch).toHaveBeenCalledTimes(1);
         expect(fetch).toHaveBeenCalledWith('https://reqres.in/api/users/1', {
