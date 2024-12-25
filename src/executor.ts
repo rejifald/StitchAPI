@@ -1,3 +1,4 @@
+import { fetchAdapter } from './adapters';
 import { StitchError } from './errors';
 import { UrlService } from './services/UrlService';
 import { ZodValidationService } from './services/ZodValidationService';
@@ -25,7 +26,7 @@ export const executor = async <
     input: ExecutorInput<StitchConfig<GetResponseType<TOptions>>>,
 ): Promise<GetResponseType<TOptions>> => {
     const { query, body, params, config } = input;
-    const fetcher: Adapter = config.adapter!;
+    const fetcher: Adapter = fetchAdapter();
     const urlTemplate = UrlService.template(config);
 
     let url = urlTemplate.expand(merge(params ?? {}, query ?? {}));
@@ -48,13 +49,13 @@ export const executor = async <
     try {
         validationService.validate(query, config.validate?.query);
     } catch (e: unknown) {
-        throw new Error(`Invalid query, reason: ${e.message}`);
+        throw new StitchError(`Invalid query`, { config, original: e });
     }
 
     try {
         validationService.validate(body, config.validate?.body);
     } catch (e: unknown) {
-        throw new Error(`Invalid body, reason: ${e.message}`);
+        throw new StitchError(`Invalid body`, { config, original: e });
     }
 
     let json: GetResponseType<TOptions>;
@@ -81,7 +82,7 @@ export const executor = async <
     try {
         validationService.validate(json, config.validate?.response);
     } catch (e) {
-        throw new Error(`Invalid response, reason: ${e.message}`);
+        throw new StitchError(`Invalid response`, { config, original: e });
     }
     return unwrap(json, config.unwrap);
 };
@@ -96,7 +97,7 @@ export const create = <
     try {
         validationService.validate(params, config.validate?.params);
     } catch (e) {
-        throw new Error(`Invalid params, reason: ${e.message}`);
+        throw new StitchError(`Invalid params`, { config, original: e });
     }
     if (StatefulHttpMethods.includes(config.method)) {
         return (body?: GetBodyType<TOptions>, query?: GetQueryType<TOptions>) =>

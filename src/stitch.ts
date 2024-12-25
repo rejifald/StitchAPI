@@ -18,8 +18,11 @@ export const stitch = <
     const extractedParams = UrlService.extractRFCParams(config.path);
 
     if (extractedParams.length) {
-        return (params: GetParamsType<TOptions>) => create(config, params);
+        return ((params: GetParamsType<TOptions>) => create(config, params));
     }
 
-    return create(config);
+    return create(config) as Stitch<
+        GetResponseType<TOptions>,
+        StitchConfig<GetResponseType<TOptions>>
+    >;
 };
