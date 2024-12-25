@@ -77,7 +77,6 @@
         "@types/qs": "^6.9.15",
         "@types/url-template": "^2.0.31",
         "axios-mock-adapter": "^2.0.0",
-        "esbuild": "0.23.1",
         "eslint": "^9.9.0",
         "eslint-plugin-lodash": "^8.0.0",
         "husky": "^9.1.5",
