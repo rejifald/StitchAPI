@@ -185,22 +185,6 @@ const findUsers = stitch({
 });
 ```
 
-Use Different Adapters
-
-```js
-import { axiosAdapter, stitch } from 'stitchapi';
-
-const findUsers = stitch({
-    path: '/api/users?sort=name&type=admin',
-    method: 'GET',
-    adapter: axiosAdapter({
-        // Predefined axios parameters
-    }),
-});
-```
-
-> **Note**: Ensure you have axios installed as a dependency.
-
 Unwrap Response Data
 
 ```js
