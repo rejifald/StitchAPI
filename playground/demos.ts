@@ -6,9 +6,9 @@ import { join } from 'node:path';
 
 import { z } from 'zod';
 
-import { apiKey, bearer, cookieSession, defineStitch, drift, env, graphql, preset, stitch } from '../prototype/src';
-import type { Stitch, StitchInput } from '../prototype/src/types';
-import type { MockServer } from '../prototype/test/support/mock-server';
+import { apiKey, bearer, cookieSession, defineStitch, drift, env, graphql, preset, stitch } from '../src';
+import type { Stitch, StitchInput } from '../src/types';
+import type { MockServer } from '../test/support/mock-server';
 
 export interface Play {
     label?: string;

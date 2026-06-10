@@ -7,7 +7,7 @@ import { extname, join, normalize } from 'node:path';
 
 process.env.STITCH_TRACE_FILE = join(tmpdir(), 'stitch-playground.jsonl');
 
-import { startMockServer } from '../prototype/test/support/mock-server';
+import { startMockServer } from '../test/support/mock-server';
 import { demos } from './demos';
 import type { ServerResponse } from 'node:http';
 

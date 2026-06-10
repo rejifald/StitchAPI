@@ -162,9 +162,7 @@ const config: Config = {
         '**/?(*.)+(spec|test).[tj]s?(x)',
     ],
 
-    // The prototype harness has its own jest config (real fetch, no global mock);
-    // keep it out of the main suite.
-    testPathIgnorePatterns: ['/node_modules/', '/prototype/'],
+    testPathIgnorePatterns: ['/node_modules/'],
 
     // An array of regexp pattern strings that are matched against all test paths, matched tests are skipped
     // testPathIgnorePatterns: [
@@ -207,7 +205,6 @@ const config: Config = {
     // Whether to use watchman for file crawling
     // watchman: true,
     automock: false,
-    setupFiles: ['./test/setup.js'],
 };
 
 export default config;
