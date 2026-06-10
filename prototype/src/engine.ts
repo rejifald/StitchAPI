@@ -44,8 +44,9 @@ function joinUrl(base: string, path: string): string {
 }
 
 function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
+    const isGql = cfg.kind === 'graphql';
     const base = typeof cfg.baseUrl === 'function' ? cfg.baseUrl() : cfg.baseUrl ?? '';
-    const raw = cfg.path ?? '';
+    const raw = cfg.path ?? (isGql ? '/graphql' : '');
     const qIdx = raw.indexOf('?');
     let tpl = raw;
     let predefined: Record<string, unknown> = {};
@@ -58,10 +59,10 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const url = joinUrl(base, path) + buildQuery(query);
     return {
         url,
-        method: (cfg.method ?? 'GET').toUpperCase(),
-        headers: { ...(input.headers ?? {}) },
-        body: input.body,
-        bodyType: cfg.bodyType,
+        method: (cfg.method ?? (isGql ? 'POST' : 'GET')).toUpperCase(),
+        headers: { ...(cfg.headers ?? {}), ...(input.headers ?? {}) },
+        body: isGql ? { query: cfg.query, variables: input.variables ?? input.body ?? {} } : input.body,
+        bodyType: isGql ? 'json' : cfg.bodyType,
     };
 }
 
@@ -221,6 +222,23 @@ export async function* execute(rt: Runtime, input: StitchInput = {}): AsyncGener
         yield errEvt(e, name, state.attempts);
         yield doneEvt(false, t0, state.attempts);
         return;
+    }
+
+    // GraphQL: a 200 response carrying `errors` is a failure.
+    if (cfg.kind === 'graphql') {
+        const errs = (res.body as { errors?: Array<{ message?: string }> })?.errors;
+        if (errs && errs.length) {
+            yield {
+                type: 'error',
+                name,
+                message: `GraphQL: ${errs.map((e) => e.message ?? 'error').join('; ')}`,
+                status: res.status,
+                attempts: state.attempts,
+                at: now(),
+            };
+            yield doneEvt(false, t0, state.attempts);
+            return;
+        }
     }
 
     // transform (e.g. scrape HTML -> structured), then unwrap, then validate/drift the result.

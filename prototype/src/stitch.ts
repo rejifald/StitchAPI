@@ -199,6 +199,11 @@ export function drift(schema: unknown, options: DriftOptions = {}): DriftSpec {
     return { __kind: 'drift', schema: toValidator(schema) as Validator, options };
 }
 
+/** graphql(): a stitch preset for GraphQL-over-HTTP — POST { query, variables }, unwrap `data`. */
+export function graphql<T = unknown>(config: Partial<StitchConfig> & { query: string }): Stitch<T> {
+    return makeStitch<T>({ ...config, kind: 'graphql', method: 'POST', unwrap: config.unwrap ?? 'data' });
+}
+
 // ---- fluent builder facade ------------------------------------------------
 export interface Builder {
     (input?: StitchInput): StitchResult<unknown>;

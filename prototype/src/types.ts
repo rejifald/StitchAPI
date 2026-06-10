@@ -7,6 +7,7 @@ export interface StitchInput {
     query?: Record<string, unknown>;
     body?: unknown;
     headers?: Record<string, string>;
+    variables?: Record<string, unknown>; // GraphQL variables (kind: 'graphql')
 }
 
 // ---- Drift ----------------------------------------------------------------
@@ -120,11 +121,13 @@ export interface InputSchemas {
 }
 export interface StitchConfig {
     name?: string;
-    kind?: 'http';
+    kind?: 'http' | 'graphql';
     method?: string;
     bodyType?: 'json' | 'form' | 'multipart'; // request body encoding (default 'json')
     baseUrl?: string | (() => string);
     path?: string;
+    headers?: Record<string, string>; // static default headers merged into every request
+    query?: string; // GraphQL query string (kind: 'graphql')
     input?: InputSchemas;
     output?: Validator | DriftSpec;
     unwrap?: string;

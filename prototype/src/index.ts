@@ -1,4 +1,4 @@
-export { stitch, defineStitch, preset, drift } from './stitch';
+export { stitch, defineStitch, preset, drift, graphql } from './stitch';
 export { bearer, apiKey, basic, cookieSession, env, keychain } from './auth';
 export { fetchAdapter } from './http-adapter';
 export { createTrace } from './trace';
