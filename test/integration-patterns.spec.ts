@@ -2,16 +2,18 @@
 // production apps, kept deliberately brand-neutral). Each test proves a hand-rolled per-
 // integration pain is replaced by one declarative stitch. Headline: a silent HTML-scrape
 // breakage becomes a loud drift error.
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-process.env.STITCH_TRACE_FILE = join(tmpdir(), `stitch-patterns-${process.pid}.jsonl`);
-
-import { z } from 'zod';
-
 import { apiKey, bearer, cookieSession, drift, env, stitch } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
+
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { z } from 'zod';
+
+process.env.STITCH_TRACE_FILE = join(
+    tmpdir(),
+    `stitch-patterns-${process.pid}.jsonl`,
+);
 
 let server: MockServer;
 beforeAll(async () => {
@@ -24,13 +26,20 @@ beforeEach(() => server.reset());
 
 // A faithful-enough HTML scraper. The score selector is hardcoded to `td.score` — exactly
 // the kind of selector a markup rename (score -> rank) silently breaks.
-function scrapeListings(html: unknown): { items: Array<Record<string, unknown>> } {
+function scrapeListings(html: unknown): {
+    items: Array<Record<string, unknown>>;
+} {
     const text = String(html);
     const rows = text.split(/<tr[^>]*class="(?:row1|row2)"[^>]*>/i).slice(1);
     const items = rows.map((row) => {
         const item: Record<string, unknown> = {};
-        const title = /<td[^>]*class="title"[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i.exec(row);
-        const score = /<td[^>]*class="score"[^>]*>\s*(\d+)\s*<\/td>/i.exec(row)?.[1];
+        const title =
+            /<td[^>]*class="title"[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i.exec(
+                row,
+            );
+        const score = /<td[^>]*class="score"[^>]*>\s*(\d+)\s*<\/td>/i.exec(
+            row,
+        )?.[1];
         if (title) {
             item.title = title[2].trim();
             item.link = title[1];
@@ -49,7 +58,10 @@ const listingRow = (scoreClass: string) =>
 describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx)', () => {
     test('sends the ApiKey header and retries on 429, then succeeds', async () => {
         process.env.METADATA_API_KEY = 'sk_meta_123';
-        server.route('POST', '/graphql', { statuses: [429, 200], body: { data: { query: { count: 1 } } } });
+        server.route('POST', '/graphql', {
+            statuses: [429, 200],
+            body: { data: { query: { count: 1 } } },
+        });
 
         const query = stitch({
             method: 'POST',
@@ -60,10 +72,14 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
             unwrap: 'data',
         });
 
-        const out = await query({ body: { query: 'query { query { count } }' } });
+        const out = await query({
+            body: { query: 'query { query { count } }' },
+        });
         expect(out).toEqual({ query: { count: 1 } });
         expect(server.callCount('/graphql')).toBe(2); // 429 then 200
-        expect(server.calls('/graphql').at(-1)?.headers['apikey']).toBe('sk_meta_123');
+        expect(server.calls('/graphql').at(-1)?.headers['apikey']).toBe(
+            'sk_meta_123',
+        );
     });
 
     test('throttles to ~1 request/second across calls', async () => {
@@ -87,11 +103,22 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
     test('auto-logs-in, replays the session cookie, and re-logs-in on a 403 — never exposing the password', async () => {
         process.env.CLIENT_USER = 'admin';
         process.env.CLIENT_PASS = 'secret';
-        server.route('POST', '/auth/login', { setCookie: { name: 'SID', value: 'SID-OK' }, body: { ok: true } });
+        server.route('POST', '/auth/login', {
+            setCookie: { name: 'SID', value: 'SID-OK' },
+            body: { ok: true },
+        });
         // first data call 403 (stale/no session) -> after re-login, 200
-        server.route('GET', '/resources', { statuses: [403, 200], body: () => [{ id: 'abc', state: 'active' }] });
+        server.route('GET', '/resources', {
+            statuses: [403, 200],
+            body: () => [{ id: 'abc', state: 'active' }],
+        });
 
-        const login = stitch({ method: 'POST', baseUrl: server.url, path: '/auth/login', bodyType: 'form' });
+        const login = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/auth/login',
+            bodyType: 'form',
+        });
         const resources = stitch({
             baseUrl: server.url,
             path: '/resources',
@@ -99,7 +126,12 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
                 login,
                 cookie: 'SID',
                 refreshOn: [403], // this integration uses 403, not 401
-                loginInput: () => ({ body: { username: env('CLIENT_USER')(), password: env('CLIENT_PASS')() } }),
+                loginInput: () => ({
+                    body: {
+                        username: env('CLIENT_USER')(),
+                        password: env('CLIENT_PASS')(),
+                    },
+                }),
             }),
         });
 
@@ -107,7 +139,9 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
         expect(out).toEqual([{ id: 'abc', state: 'active' }]);
         expect(server.callCount('/auth/login')).toBe(2); // initial auto-login + refresh after 403
         expect(server.callCount('/resources')).toBe(2);
-        expect(server.calls('/resources').at(-1)?.cookies['SID']).toBe('SID-OK');
+        expect(server.calls('/resources').at(-1)?.cookies['SID']).toBe(
+            'SID-OK',
+        );
     });
 });
 
@@ -116,31 +150,59 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
     test('a markup class rename (score -> rank) is caught as a drift ERROR instead of silent undefined', async () => {
         process.env.SCRAPE_USER = 'u';
         process.env.SCRAPE_PASS = 'p';
-        const snapshotFile = join(tmpdir(), `patterns-scrape-${process.pid}-${Date.now()}.contract.json`);
+        const snapshotFile = join(
+            tmpdir(),
+            `patterns-scrape-${process.pid}-${Date.now()}.contract.json`,
+        );
 
-        server.route('POST', '/login', { setCookie: { name: 'session_id', value: 'SESS' }, body: 'ok' });
+        server.route('POST', '/login', {
+            setCookie: { name: 'session_id', value: 'SESS' },
+            body: 'ok',
+        });
         // call #1 has the original markup; call #2 renames the score cell class.
         server.route('GET', '/search', {
             requireCookie: { name: 'session_id' },
-            body: [`<table>${listingRow('score')}</table>`, `<table>${listingRow('rank')}</table>`],
+            body: [
+                `<table>${listingRow('score')}</table>`,
+                `<table>${listingRow('rank')}</table>`,
+            ],
         });
 
-        const login = stitch({ method: 'POST', baseUrl: server.url, path: '/login', bodyType: 'form' });
+        const login = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/login',
+            bodyType: 'form',
+        });
         const search = stitch({
             baseUrl: server.url,
             path: '/search',
             auth: cookieSession({
                 login,
                 cookie: 'session_id',
-                loginInput: () => ({ body: { username: env('SCRAPE_USER')(), password: env('SCRAPE_PASS')() } }),
+                loginInput: () => ({
+                    body: {
+                        username: env('SCRAPE_USER')(),
+                        password: env('SCRAPE_PASS')(),
+                    },
+                }),
             }),
             throttle: { rate: '5/s' },
             transform: scrapeListings, // HTML -> { items: [...] }
             unwrap: 'items',
-            output: drift(z.array(z.object({ title: z.string(), link: z.string().optional(), score: z.number().optional() })), {
-                critical: ['[].score'], // losing score silently corrupts ranking -> make it loud
-                snapshotFile,
-            }),
+            output: drift(
+                z.array(
+                    z.object({
+                        title: z.string(),
+                        link: z.string().optional(),
+                        score: z.number().optional(),
+                    }),
+                ),
+                {
+                    critical: ['[].score'], // losing score silently corrupts ranking -> make it loud
+                    snapshotFile,
+                },
+            ),
         });
 
         // call #1: original markup -> score present, records the baseline contract.
@@ -148,7 +210,8 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
         expect(first).toEqual([{ title: 'Item A', link: '/i/1', score: 42 }]);
 
         // call #2: renamed markup -> scraper silently drops score. The runtime must SHOUT.
-        const findings: Array<{ level: string; path: string; change: string }> = [];
+        const findings: Array<{ level: string; path: string; change: string }> =
+            [];
         let rejected = false;
         try {
             for await (const ev of search.stream({ query: { q: 'item' } })) {
@@ -176,26 +239,45 @@ describe('Diverse co-located auth (three providers, three header formats)', () =
         server.route('GET', '/system', { body: { name: 'a' } });
         server.route('GET', '/node', { body: { name: 'b' } });
 
-        const restApi = stitch({ baseUrl: server.url, path: '/catalog', auth: bearer(env('REST_API_KEY')) });
+        const restApi = stitch({
+            baseUrl: server.url,
+            path: '/catalog',
+            auth: bearer(env('REST_API_KEY')),
+        });
         const mediaA = stitch({
             baseUrl: server.url,
             path: '/system',
-            auth: apiKey({ header: 'authorization', value: () => `MediaToken token="${env('MEDIA_A_TOKEN')()}"` }),
+            auth: apiKey({
+                header: 'authorization',
+                value: () => `MediaToken token="${env('MEDIA_A_TOKEN')()}"`,
+            }),
         });
         const mediaB = stitch({
             baseUrl: server.url,
             path: '/node',
-            auth: apiKey({ header: 'x-media-token', value: env('MEDIA_B_TOKEN') }),
-            hooks: { onRequest: ({ req }) => void (req && (req.headers['x-client-id'] = 'app')) },
+            auth: apiKey({
+                header: 'x-media-token',
+                value: env('MEDIA_B_TOKEN'),
+            }),
+            hooks: {
+                onRequest: ({ req }) =>
+                    void (req && (req.headers['x-client-id'] = 'app')),
+            },
         });
 
         await restApi();
         await mediaA();
         await mediaB();
 
-        expect(server.calls('/catalog')[0]?.headers['authorization']).toBe('Bearer rest_tok');
-        expect(server.calls('/system')[0]?.headers['authorization']).toBe('MediaToken token="media_a"');
-        expect(server.calls('/node')[0]?.headers['x-media-token']).toBe('media_b');
+        expect(server.calls('/catalog')[0]?.headers['authorization']).toBe(
+            'Bearer rest_tok',
+        );
+        expect(server.calls('/system')[0]?.headers['authorization']).toBe(
+            'MediaToken token="media_a"',
+        );
+        expect(server.calls('/node')[0]?.headers['x-media-token']).toBe(
+            'media_b',
+        );
         expect(server.calls('/node')[0]?.headers['x-client-id']).toBe('app');
     });
 });

@@ -1,14 +1,16 @@
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-process.env.STITCH_TRACE_FILE = join(tmpdir(), `stitch-drift-${process.pid}.jsonl`);
-
-import { z } from 'zod';
-
-import { stitch, drift } from '../src';
+import { drift, stitch } from '../src';
+import type { DriftFinding, StitchEvent } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
-import type { DriftFinding, StitchEvent } from '../src';
+
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { z } from 'zod';
+
+process.env.STITCH_TRACE_FILE = join(
+    tmpdir(),
+    `stitch-drift-${process.pid}.jsonl`,
+);
 
 let server: MockServer;
 
@@ -23,7 +25,10 @@ beforeEach(() => server.reset());
 // Give each drift test its own snapshot file so baselines never collide.
 let snapSeq = 0;
 const freshSnapshot = (): string =>
-    join(tmpdir(), `stitch-drift-snap-${process.pid}-${snapSeq++}-${Date.now()}.json`);
+    join(
+        tmpdir(),
+        `stitch-drift-snap-${process.pid}-${snapSeq++}-${Date.now()}.json`,
+    );
 
 // Drain a stream, returning every event (so we can inspect drift findings + ordering).
 async function collect<T>(
@@ -36,7 +41,10 @@ async function collect<T>(
 
 const driftFindings = (events: StitchEvent[]): DriftFinding[] =>
     events
-        .filter((e): e is Extract<StitchEvent, { type: 'drift' }> => e.type === 'drift')
+        .filter(
+            (e): e is Extract<StitchEvent, { type: 'drift' }> =>
+                e.type === 'drift',
+        )
         .map((e) => e.finding);
 
 // ---------------------------------------------------------------------------
@@ -122,7 +130,9 @@ test('drift info: new field detected on the second call', async () => {
 test('drift error: missing critical field rejects on the second call', async () => {
     const snapshotFile = freshSnapshot();
     const schema = z.object({ name: z.string() }).passthrough();
-    server.route('GET', '/shrink', { body: [{ id: 1, name: 'x' }, { name: 'x' }] });
+    server.route('GET', '/shrink', {
+        body: [{ id: 1, name: 'x' }, { name: 'x' }],
+    });
     const s = stitch({
         baseUrl: server.url,
         path: '/shrink',
@@ -156,7 +166,12 @@ test('drift warn: non-critical type change is non-fatal', async () => {
     const snapshotFile = freshSnapshot();
     // score is permissive so the type change itself does not fail validation.
     const schema = z.object({ id: z.number(), score: z.any() });
-    server.route('GET', '/score', { body: [{ id: 1, score: 1 }, { id: 1, score: '1' }] });
+    server.route('GET', '/score', {
+        body: [
+            { id: 1, score: 1 },
+            { id: 1, score: '1' },
+        ],
+    });
     const s = stitch({
         baseUrl: server.url,
         path: '/score',
@@ -188,13 +203,17 @@ test('drift warn: non-critical type change is non-fatal', async () => {
 // ---------------------------------------------------------------------------
 test('standard schema (non-Zod): valid resolves, invalid rejects with error/invalid', async () => {
     const isValid = (v: unknown): v is { id: number } =>
-        !!v && typeof v === 'object' && typeof (v as { id?: unknown }).id === 'number';
+        !!v &&
+        typeof v === 'object' &&
+        typeof (v as { id?: unknown }).id === 'number';
     const standard = {
         '~standard': {
             version: 1 as const,
             vendor: 'test',
             validate: (v: unknown) =>
-                isValid(v) ? { value: v } : { issues: [{ message: 'bad', path: ['id'] }] },
+                isValid(v)
+                    ? { value: v }
+                    : { issues: [{ message: 'bad', path: ['id'] }] },
         },
     };
 

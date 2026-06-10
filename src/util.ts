@@ -18,7 +18,9 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /** "30s" | "500ms" | "2m" | 1500 -> milliseconds. */
-export function parseDuration(d: number | string | undefined): number | undefined {
+export function parseDuration(
+    d: number | string | undefined,
+): number | undefined {
     if (d == null) return undefined;
     if (typeof d === 'number') return d;
     const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m)$/.exec(d.trim());
@@ -45,7 +47,13 @@ export function deepMerge<T>(a: T, b: T): T {
     if (isObj(a) && isObj(b)) {
         const out: Record<string, unknown> = { ...a };
         for (const k of Object.keys(b)) {
-            out[k] = k in a ? deepMerge((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]) : (b as Record<string, unknown>)[k];
+            out[k] =
+                k in a
+                    ? deepMerge(
+                          (a as Record<string, unknown>)[k],
+                          (b as Record<string, unknown>)[k],
+                      )
+                    : (b as Record<string, unknown>)[k];
         }
         return out as T;
     }
@@ -54,7 +62,13 @@ export function deepMerge<T>(a: T, b: T): T {
 
 export function getPath(obj: unknown, path: string): unknown {
     if (!path) return obj;
-    return path.split('.').reduce<unknown>((acc, k) => (acc == null ? acc : (acc as Record<string, unknown>)[k]), obj);
+    return path
+        .split('.')
+        .reduce<unknown>(
+            (acc, k) =>
+                acc == null ? acc : (acc as Record<string, unknown>)[k],
+            obj,
+        );
 }
 
 /** Expand `/users/{id}` with params, URL-encoding values. Returns { path, used }. */
@@ -89,13 +103,18 @@ export function buildQuery(q: Record<string, unknown> | undefined): string {
  */
 export function matchPath(pattern: string, path: string): boolean {
     if (pattern === path) return true;
-    if (path.startsWith(pattern + '.') || path.startsWith(pattern + '[')) return true;
+    if (path.startsWith(pattern + '.') || path.startsWith(pattern + '['))
+        return true;
     if (pattern.includes('*')) {
         const rx = new RegExp(
             '^' +
                 pattern
                     .split('.')
-                    .map((s) => (s === '*' ? '[^.]+' : s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+                    .map((s) =>
+                        s === '*'
+                            ? '[^.]+'
+                            : s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                    )
                     .join('\\.') +
                 '($|\\.|\\[)',
         );
@@ -104,6 +123,9 @@ export function matchPath(pattern: string, path: string): boolean {
     return false;
 }
 
-export function matchAny(patterns: string[] | undefined, path: string): boolean {
+export function matchAny(
+    patterns: string[] | undefined,
+    path: string,
+): boolean {
     return !!patterns && patterns.some((p) => matchPath(p, path));
 }

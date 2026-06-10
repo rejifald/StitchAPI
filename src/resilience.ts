@@ -96,7 +96,8 @@ export function createThrottle(opts?: ThrottleOptions): {
         const s = states.get(key);
         if (!s || limit == null) return;
         const next = s.waiters.shift();
-        if (next) next(); // hand the held slot directly to the FIFO-next waiter
+        if (next)
+            next(); // hand the held slot directly to the FIFO-next waiter
         else if (s.inFlight > 0) s.inFlight--;
     }
 
@@ -108,7 +109,10 @@ export function createThrottle(opts?: ThrottleOptions): {
  * TimeoutError and ensure the signal is aborted. If `ms` is undefined, just run
  * `fn` with a non-aborting signal.
  */
-export function withTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, ms?: number): Promise<T> {
+export function withTimeout<T>(
+    fn: (signal: AbortSignal) => Promise<T>,
+    ms?: number,
+): Promise<T> {
     const controller = new AbortController();
     if (ms == null) return fn(controller.signal);
     return new Promise<T>((resolve, reject) => {

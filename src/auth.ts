@@ -1,7 +1,14 @@
 // Auth strategies + secret resolvers. The key idea: the stitch holds the credential,
 // resolved at call time — the caller (an agent) never sees it. `cookieSession` performs
 // a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
-import type { AdapterResponse, AuthContext, AuthStrategy, StitchInput } from './types';
+import type {
+    AdapterResponse,
+    AuthContext,
+    AuthStrategy,
+    StitchInput,
+} from './types';
+
+import { existsSync, readFileSync } from 'node:fs';
 
 export type Secret = string | (() => string);
 const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
@@ -19,11 +26,12 @@ export function env(name: string): () => string {
 export function keychain(name: string): () => string {
     return () => {
         try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const fs = require('node:fs');
             const file = `${process.env.HOME}/.stitch/secrets.json`;
-            if (fs.existsSync(file)) {
-                const obj = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (existsSync(file)) {
+                const obj = JSON.parse(readFileSync(file, 'utf8')) as Record<
+                    string,
+                    unknown
+                >;
                 if (obj[name] != null) return String(obj[name]);
             }
         } catch {
@@ -58,7 +66,9 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
     return {
         name: 'basic',
         apply(req) {
-            const token = Buffer.from(`${resolve(opts.user)}:${resolve(opts.pass)}`).toString('base64');
+            const token = Buffer.from(
+                `${resolve(opts.user)}:${resolve(opts.pass)}`,
+            ).toString('base64');
             req.headers['authorization'] = `Basic ${token}`;
         },
     };
@@ -88,9 +98,11 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
     const doRefresh = async (ctx: AuthContext) => {
         ctx.emit('auth', 'login');
         const res = await opts.login.__raw(opts.loginInput?.());
-        const setCookie = (res.headers['set-cookie'] ?? res.headers['Set-Cookie']) as string | undefined;
+        const setCookie = (res.headers['set-cookie'] ??
+            res.headers['Set-Cookie']) as string | undefined;
         const value = parseCookie(setCookie, opts.cookie);
-        if (value != null) await ctx.store.set(nsKey, `${opts.cookie}=${value}`, opts.ttlMs);
+        if (value != null)
+            await ctx.store.set(nsKey, `${opts.cookie}=${value}`, opts.ttlMs);
     };
 
     return {
@@ -102,7 +114,9 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
                 cookie = (await ctx.store.get(nsKey)) as string | undefined;
             }
             if (cookie) {
-                req.headers['cookie'] = [req.headers['cookie'], cookie].filter(Boolean).join('; ');
+                req.headers['cookie'] = [req.headers['cookie'], cookie]
+                    .filter(Boolean)
+                    .join('; ');
             }
         },
         shouldRefresh(res) {
@@ -114,12 +128,16 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
     };
 }
 
-function parseCookie(setCookie: string | undefined, name: string): string | undefined {
+function parseCookie(
+    setCookie: string | undefined,
+    name: string,
+): string | undefined {
     if (!setCookie) return undefined;
     for (const part of setCookie.split(/,(?=[^;]+=)/)) {
         const seg = part.trim().split(';')[0];
         const eq = seg.indexOf('=');
-        if (eq > 0 && seg.slice(0, eq).trim() === name) return seg.slice(eq + 1).trim();
+        if (eq > 0 && seg.slice(0, eq).trim() === name)
+            return seg.slice(eq + 1).trim();
     }
     return undefined;
 }

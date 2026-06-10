@@ -1,8 +1,9 @@
 // Zero-infra observability sink: append every StitchEvent as a JSONL record and,
 // optionally, print a compact colored one-line-per-event summary to stderr. No deps.
+import type { DriftLevel, StitchEvent, TraceSink } from './types';
+
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { DriftLevel, StitchEvent, TraceSink } from './types';
 
 export interface TraceOptions {
     console?: boolean; // pretty one-line-per-event to stderr (default true)
@@ -17,7 +18,11 @@ const BLUE = '\x1b[34m';
 const GREEN = '\x1b[32m';
 const CYAN = '\x1b[36m';
 
-const LEVEL_COLOR: Record<DriftLevel, string> = { error: RED, warn: YELLOW, info: BLUE };
+const LEVEL_COLOR: Record<DriftLevel, string> = {
+    error: RED,
+    warn: YELLOW,
+    info: BLUE,
+};
 
 function paint(color: string, text: string): string {
     return `${color}${text}${RESET}`;
@@ -29,8 +34,12 @@ function format(name: string, event: StitchEvent): string | null {
         case 'start':
             return `${paint(CYAN, '→')} ${name} ${event.method} ${event.url}`;
         case 'progress': {
-            const waited = event.waitedMs != null ? ` waited ${event.waitedMs}ms` : '';
-            return paint(DIM, `  · ${name} ${event.phase}#${event.attempt}${waited}`);
+            const waited =
+                event.waitedMs != null ? ` waited ${event.waitedMs}ms` : '';
+            return paint(
+                DIM,
+                `  · ${name} ${event.phase}#${event.attempt}${waited}`,
+            );
         }
         case 'drift': {
             const f = event.finding;
@@ -56,11 +65,14 @@ function format(name: string, event: StitchEvent): string | null {
 // Resolve the JSONL path once: `false` disables (null), `undefined` => default under $HOME.
 function resolvePath(file: TraceOptions['file']): string | null {
     if (file === false) return null;
-    if (file === undefined) return `${process.env.HOME}/.stitch/runs/proto.jsonl`;
+    if (file === undefined)
+        return `${process.env.HOME}/.stitch/runs/proto.jsonl`;
     return file;
 }
 
-export function createTrace(opts?: TraceOptions): TraceSink & { path: string | null } {
+export function createTrace(
+    opts?: TraceOptions,
+): TraceSink & { path: string | null } {
     const toConsole = opts?.console ?? true;
     const path = resolvePath(opts?.file);
     let dirReady = false;
@@ -73,7 +85,10 @@ export function createTrace(opts?: TraceOptions): TraceSink & { path: string | n
                     mkdirSync(dirname(path), { recursive: true });
                     dirReady = true;
                 }
-                appendFileSync(path, `${JSON.stringify({ name: ctx.name, ...event })}\n`);
+                appendFileSync(
+                    path,
+                    `${JSON.stringify({ name: ctx.name, ...event })}\n`,
+                );
             }
             if (toConsole) {
                 const line = format(ctx.name, event);

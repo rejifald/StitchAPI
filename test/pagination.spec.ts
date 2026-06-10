@@ -1,13 +1,16 @@
 // Pagination: one logical stitch call that follows pages and aggregates items. Each page is
 // a full request (so auth/retry/throttle apply) and emits a `paginate` progress event.
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-process.env.STITCH_TRACE_FILE = join(tmpdir(), `stitch-paginate-${process.pid}.jsonl`);
-
 import { stitch } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
+
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+process.env.STITCH_TRACE_FILE = join(
+    tmpdir(),
+    `stitch-paginate-${process.pid}.jsonl`,
+);
 
 let server: MockServer;
 beforeAll(async () => {
@@ -34,7 +37,10 @@ const listAll = () =>
         path: '/list',
         unwrap: 'data',
         paginate: {
-            next: (body, fetched) => ((body as { hasMore: boolean }).hasMore ? { query: { page: fetched + 1 } } : undefined),
+            next: (body, fetched) =>
+                (body as { hasMore: boolean }).hasMore
+                    ? { query: { page: fetched + 1 } }
+                    : undefined,
         },
     });
 
@@ -57,7 +63,9 @@ test('emits a paginate progress event per page', async () => {
 });
 
 test('max caps the page loop (guards a runaway paginator)', async () => {
-    server.route('GET', '/loop', { body: () => ({ data: [1], hasMore: true }) }); // never signals "done"
+    server.route('GET', '/loop', {
+        body: () => ({ data: [1], hasMore: true }),
+    }); // never signals "done"
     const list = stitch({
         baseUrl: server.url,
         path: '/loop',

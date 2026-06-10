@@ -7,7 +7,8 @@ import { now, parseRate, sleep } from './util';
 /** Default store: in-memory, single process, with TTL + atomic incr. */
 export function memoryStore(): StitchStore {
     const data = new Map<string, { value: unknown; expires: number }>();
-    const live = (e?: { expires: number }) => !!e && (e.expires === 0 || e.expires > now());
+    const live = (e?: { expires: number }) =>
+        !!e && (e.expires === 0 || e.expires > now());
     return {
         async get(key) {
             const e = data.get(key);
@@ -27,7 +28,10 @@ export function memoryStore(): StitchStore {
         async incr(key, ttlMs) {
             const e = data.get(key);
             const n = (live(e) ? (e!.value as number) : 0) + 1;
-            data.set(key, { value: n, expires: live(e) ? e!.expires : now() + ttlMs });
+            data.set(key, {
+                value: n,
+                expires: live(e) ? e!.expires : now() + ttlMs,
+            });
             return n;
         },
     };
@@ -43,10 +47,16 @@ export interface Throttle {
  * SHARED store paces calls across processes; concurrency stays in-process (a distributed
  * semaphore needs leases — out of scope here).
  */
-export function createStoreThrottle(opts: ThrottleOptions | undefined, store: StitchStore): Throttle {
+export function createStoreThrottle(
+    opts: ThrottleOptions | undefined,
+    store: StitchStore,
+): Throttle {
     const limit = opts?.concurrency;
     const rate = opts?.rate ? parseRate(opts.rate) : undefined;
-    const local = new Map<string, { inFlight: number; waiters: Array<() => void> }>();
+    const local = new Map<
+        string,
+        { inFlight: number; waiters: Array<() => void> }
+    >();
 
     const stateFor = (key: string) => {
         let s = local.get(key);
@@ -74,7 +84,10 @@ export function createStoreThrottle(opts: ThrottleOptions | undefined, store: St
             // wait for the next window boundary and re-check.
             for (;;) {
                 const windowStart = Math.floor(now() / rate.perMs) * rate.perMs;
-                const count = await store.incr(`rl:${key}:${windowStart}`, rate.perMs + 100);
+                const count = await store.incr(
+                    `rl:${key}:${windowStart}`,
+                    rate.perMs + 100,
+                );
                 if (count <= rate.count) break;
                 const waitMs = windowStart + rate.perMs - now();
                 if (waitMs > 0) await sleep(waitMs);

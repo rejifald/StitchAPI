@@ -12,7 +12,12 @@ export interface StitchInput {
 
 // ---- Drift ----------------------------------------------------------------
 export type DriftLevel = 'error' | 'warn' | 'info';
-export type DriftChange = 'missing' | 'type-changed' | 'nullable' | 'new' | 'invalid';
+export type DriftChange =
+    | 'missing'
+    | 'type-changed'
+    | 'nullable'
+    | 'new'
+    | 'invalid';
 export interface DriftFinding {
     level: DriftLevel;
     path: string;
@@ -95,9 +100,21 @@ export interface Hooks {
 }
 
 // ---- Events (the streaming spine) -----------------------------------------
-export type ProgressPhase = 'auth' | 'request' | 'throttled' | 'retry' | 'paginate';
+export type ProgressPhase =
+    | 'auth'
+    | 'request'
+    | 'throttled'
+    | 'retry'
+    | 'paginate';
 export type StitchEvent<T = unknown> =
-    | { type: 'start'; name: string; method: string; url: string; input: StitchInput; at: number }
+    | {
+          type: 'start';
+          name: string;
+          method: string;
+          url: string;
+          input: StitchInput;
+          at: number;
+      }
     | {
           type: 'progress';
           phase: ProgressPhase;
@@ -109,7 +126,14 @@ export type StitchEvent<T = unknown> =
     | { type: 'drift'; finding: DriftFinding; at: number }
     | { type: 'delta'; chunk: unknown; at: number }
     | { type: 'result'; value: T; status: number; attempts: number; at: number }
-    | { type: 'error'; name: string; message: string; status?: number; attempts: number; at: number }
+    | {
+          type: 'error';
+          name: string;
+          message: string;
+          status?: number;
+          attempts: number;
+          at: number;
+      }
     | { type: 'done'; ok: boolean; ms: number; attempts: number; at: number };
 
 // ---- Config & the Stitch callable ----------------------------------------
@@ -135,7 +159,10 @@ export interface StitchConfig {
     paginate?: {
         // Given the previous page's raw body + how many pages were fetched, return the input
         // (merged over the original) for the next page, or undefined to stop.
-        next: (prevBody: unknown, pagesFetched: number) => StitchInput | undefined;
+        next: (
+            prevBody: unknown,
+            pagesFetched: number,
+        ) => StitchInput | undefined;
         items?: (value: unknown) => unknown[]; // pull the array from each unwrapped page (default: the value if it's an array)
         max?: number; // safety cap on pages (default 50)
     };
@@ -144,7 +171,7 @@ export interface StitchConfig {
     throttle?: ThrottleOptions;
     timeout?: TimeoutOptions;
     hooks?: Hooks;
-    extends?: Array<Partial<StitchConfig> | Stitch>;
+    extends?: Array<Partial<StitchConfig> | Stitch | string>;
     adapter?: Adapter; // test seam / custom transport
     store?: StitchStore; // pluggable state store (throttle + session); default in-memory
 }
@@ -161,7 +188,10 @@ export interface Stitch<T = unknown> {
 }
 
 export function isStitch(x: unknown): x is Stitch {
-    return typeof x === 'function' && (x as { __stitch?: boolean }).__stitch === true;
+    return (
+        typeof x === 'function' &&
+        (x as { __stitch?: boolean }).__stitch === true
+    );
 }
 
 // A trace sink consumes every event a stitch emits.

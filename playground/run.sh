@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the live playground. Uses ts-node (transpile-only, commonjs) so the TS prototype
+# Run the live playground. Uses ts-node (transpile-only, commonjs) so the TS library
 # loads without a build step.
 set -euo pipefail
 cd "$(dirname "$0")/.."

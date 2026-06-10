@@ -21,9 +21,14 @@ export function toValidator(schema: unknown): Validator | undefined {
     if (schema == null) return undefined;
 
     // Already a Validator
-    if (typeof (schema as Validator).validate === 'function' && !isStandardSchema(schema)) {
+    if (
+        typeof (schema as Validator).validate === 'function' &&
+        !isStandardSchema(schema)
+    ) {
         // Zod also has `.parse`, distinguish by checking for safeParse below first.
-        if (typeof (schema as { safeParse?: unknown }).safeParse !== 'function') {
+        if (
+            typeof (schema as { safeParse?: unknown }).safeParse !== 'function'
+        ) {
             return schema as Validator;
         }
     }
@@ -56,7 +61,9 @@ export function toValidator(schema: unknown): Validator | undefined {
                         ok: false,
                         issues: r.issues.map((i) => ({
                             path: (i.path ?? []).map((p) =>
-                                typeof p === 'object' ? (p.key as string | number) : (p as string | number),
+                                typeof p === 'object'
+                                    ? (p.key as string | number)
+                                    : (p as string | number),
                             ),
                             message: i.message,
                         })),

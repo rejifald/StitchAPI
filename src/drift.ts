@@ -5,11 +5,11 @@
 //   - brand-new fields that appear                   -> info (or opts.onNew)
 // (For the spike the snapshot stores a representative body; a real impl would store
 // just the shape/schema. The first run records the baseline and reports nothing.)
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
-
 import type { DriftFinding, DriftOptions } from './types';
 import { matchAny } from './util';
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 type Shape = Map<string, string>;
 
@@ -24,7 +24,11 @@ function shapeOf(value: unknown, base: string, out: Shape): Shape {
     const t = typeOf(value);
     if (t === 'object') {
         for (const k of Object.keys(value as Record<string, unknown>)) {
-            shapeOf((value as Record<string, unknown>)[k], base ? `${base}.${k}` : k, out);
+            shapeOf(
+                (value as Record<string, unknown>)[k],
+                base ? `${base}.${k}` : k,
+                out,
+            );
         }
     } else if (t === 'array' && (value as unknown[]).length > 0) {
         shapeOf((value as unknown[])[0], `${base}[]`, out);
@@ -37,7 +41,9 @@ const isDescendant = (parent: string, child: string): boolean =>
 
 /** Drop paths that are covered by an ancestor already in the same set (reduces noise). */
 function topmost(paths: string[]): string[] {
-    return paths.filter((p) => !paths.some((q) => q !== p && isDescendant(q, p)));
+    return paths.filter(
+        (p) => !paths.some((q) => q !== p && isDescendant(q, p)),
+    );
 }
 
 export function classifyDrift(

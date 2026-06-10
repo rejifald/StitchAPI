@@ -1,13 +1,13 @@
 // The authoring surface: stitch() + the three composition facades (extends / defineStitch /
 // builder) + `.with()` partial application, all resolving to one canonical config.
-import { execute, executeRaw, makeRuntime, type Runtime } from './engine';
-import { createTrace } from './trace';
+import { type Runtime, execute, executeRaw, makeRuntime } from './engine';
 import { createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
+import { createTrace } from './trace';
 import {
-    isStitch,
     type DriftOptions,
     type DriftSpec,
+    type HookContext,
     type Hooks,
     type InputSchemas,
     type Stitch,
@@ -16,9 +16,10 @@ import {
     type StitchResult,
     type StitchStore,
     type TraceSink,
+    isStitch,
 } from './types';
 import { deepMerge } from './util';
-import { toValidator, type Validator } from './validator';
+import { type Validator, toValidator } from './validator';
 
 type Fragment = Partial<StitchConfig> | Stitch | string;
 
@@ -34,7 +35,8 @@ function flatten(layers: Fragment[]): Partial<StitchConfig>[] {
     for (const layer of layers) {
         const cfg = asConfig(layer);
         if (cfg.extends) out.push(...flatten(cfg.extends as Fragment[]));
-        const { extends: _drop, ...rest } = cfg;
+        const rest = { ...cfg };
+        delete (rest as { extends?: unknown }).extends;
         out.push(rest);
     }
     return out;
@@ -42,16 +44,24 @@ function flatten(layers: Fragment[]): Partial<StitchConfig>[] {
 
 function chainHooks(layers: Hooks[]): Hooks | undefined {
     if (!layers.length) return undefined;
-    const keys: (keyof Hooks)[] = ['onRequest', 'onResponse', 'onError', 'onRetry'];
+    const keys: (keyof Hooks)[] = [
+        'onRequest',
+        'onResponse',
+        'onError',
+        'onRetry',
+    ];
     const merged: Hooks = {};
     for (const k of keys) {
-        const fns = layers.map((h) => h[k]).filter(Boolean) as Array<(c: never) => unknown>;
+        const fns = layers.map((h) => h[k]).filter(Boolean) as Array<
+            (c: HookContext) => unknown
+        >;
         if (!fns.length) continue;
         // onResponse/onError/onRetry unwind child→base; onRequest runs base→child.
         const ordered = k === 'onRequest' ? fns : fns.slice().reverse();
-        merged[k] = async (ctx: never) => {
+        const chained = async (ctx: HookContext) => {
             for (const fn of ordered) await fn(ctx);
         };
+        (merged as Record<string, unknown>)[k] = chained;
     }
     return merged;
 }
@@ -62,7 +72,9 @@ function normalizeOutput(out: StitchConfig['output']): StitchConfig['output'] {
     return toValidator(out) as Validator;
 }
 
-function normalizeInput(input: InputSchemas | undefined): InputSchemas | undefined {
+function normalizeInput(
+    input: InputSchemas | undefined,
+): InputSchemas | undefined {
     if (!input) return undefined;
     const out: InputSchemas = {};
     for (const k of ['params', 'query', 'body', 'headers'] as const) {
@@ -79,7 +91,11 @@ function compose(config: Fragment): StitchConfig {
     for (const layer of layers) {
         if (layer.hooks) hookLayers.push(layer.hooks);
         if (layer.store) store = layer.store;
-        merged = deepMerge(merged, { ...layer, hooks: undefined, store: undefined });
+        merged = deepMerge(merged, {
+            ...layer,
+            hooks: undefined,
+            store: undefined,
+        });
     }
     merged.hooks = chainHooks(hookLayers);
     merged.store = store;
@@ -97,15 +113,20 @@ function getTrace(): TraceSink {
 }
 
 // ---- the streaming spine + await sugar ------------------------------------
-async function consume<T>(gen: AsyncGenerator<{ type: string } & Record<string, unknown>>): Promise<T> {
+async function consume<T>(
+    gen: AsyncGenerator<{ type: string } & Record<string, unknown>>,
+): Promise<T> {
     let result: T | undefined;
     let failure: { message?: string; status?: number } | undefined;
     for await (const ev of gen) {
         if (ev.type === 'result') result = ev.value as T;
-        else if (ev.type === 'error') failure = ev as { message?: string; status?: number };
+        else if (ev.type === 'error')
+            failure = ev as { message?: string; status?: number };
     }
     if (failure) {
-        const e = new Error(failure.message ?? 'stitch failed') as Error & { status?: number };
+        const e = new Error(failure.message ?? 'stitch failed') as Error & {
+            status?: number;
+        };
         e.name = 'StitchError';
         e.status = failure.status;
         throw e;
@@ -139,17 +160,21 @@ function mergeInput(a: StitchInput = {}, b: StitchInput = {}): StitchInput {
 function makeStitch<T = unknown>(config: Fragment): Stitch<T> {
     const cfg = compose(config);
     const store = cfg.store ?? memoryStore();
-    const throttle = cfg.store ? createStoreThrottle(cfg.throttle, store) : createThrottle(cfg.throttle);
+    const throttle = cfg.store
+        ? createStoreThrottle(cfg.throttle, store)
+        : createThrottle(cfg.throttle);
     const rt: Runtime = makeRuntime(cfg, throttle, getTrace(), store);
     const name = cfg.name ?? cfg.path ?? 'stitch';
 
-    const streamFn = (input?: StitchInput) => tee<T>(execute(rt, input ?? {}) as never, rt.trace, name);
+    const streamFn = (input?: StitchInput) =>
+        tee<T>(execute(rt, input ?? {}) as never, rt.trace, name);
 
     const result = (input?: StitchInput): StitchResult<T> => {
         const make = () => streamFn(input);
         return {
             then: (onF, onR) => consume<T>(make() as never).then(onF, onR),
-            catch: (onR: (e: unknown) => unknown) => consume<T>(make() as never).catch(onR),
+            catch: (onR: (e: unknown) => unknown) =>
+                consume<T>(make() as never).catch(onR),
             stream: () => make(),
         } as StitchResult<T>;
     };
@@ -160,12 +185,16 @@ function makeStitch<T = unknown>(config: Fragment): Stitch<T> {
     stitchFn.stream = streamFn;
     stitchFn.with = (partial: StitchInput) => {
         // bind partial input; the bound stitch reuses the same runtime (cookies/throttle persist)
-        const bound = ((input?: StitchInput) => result(mergeInput(partial, input))) as unknown as Stitch<T> & {
+        const bound = ((input?: StitchInput) =>
+            result(mergeInput(partial, input))) as unknown as Stitch<T> & {
             __raw: (input?: StitchInput) => Promise<unknown>;
         };
-        bound.stream = (input?: StitchInput) => streamFn(mergeInput(partial, input));
-        bound.with = (more: StitchInput) => stitchFn.with(mergeInput(partial, more));
-        bound.__raw = (input?: StitchInput) => executeRaw(rt, mergeInput(partial, input));
+        bound.stream = (input?: StitchInput) =>
+            streamFn(mergeInput(partial, input));
+        bound.with = (more: StitchInput) =>
+            stitchFn.with(mergeInput(partial, more));
+        bound.__raw = (input?: StitchInput) =>
+            executeRaw(rt, mergeInput(partial, input));
         Object.defineProperty(bound, '__config', { value: cfg });
         Object.defineProperty(bound, '__stitch', { value: true });
         return bound;
@@ -178,37 +207,56 @@ function makeStitch<T = unknown>(config: Fragment): Stitch<T> {
 
 // ---- public API -----------------------------------------------------------
 export interface StitchFn {
-    <T = unknown>(config: string | (Partial<StitchConfig> & { path?: string })): Stitch<T>;
+    <T = unknown>(
+        config: string | (Partial<StitchConfig> & { path?: string }),
+    ): Stitch<T>;
     use(...fragments: Fragment[]): Builder;
 }
 
 export const stitch: StitchFn = Object.assign(
-    <T = unknown>(config: string | Partial<StitchConfig>) => makeStitch<T>(config as Fragment),
+    <T = unknown>(config: string | Partial<StitchConfig>) =>
+        makeStitch<T>(config as Fragment),
     {
         use: (...fragments: Fragment[]) => makeBuilder({ extends: fragments }),
     },
 );
 
 /** preset(): a named bundle of reusable defaults (just an identity-tagged fragment). */
-export const preset = (cfg: Partial<StitchConfig>): Partial<StitchConfig> => cfg;
+export const preset = (cfg: Partial<StitchConfig>): Partial<StitchConfig> =>
+    cfg;
 
 /** defineStitch(): bind base fragments, return a stitch() factory (evolution of prestitch). */
 export function defineStitch(...fragments: Fragment[]) {
     return <T = unknown>(config: string | Partial<StitchConfig>): Stitch<T> => {
-        const c: Partial<StitchConfig> = typeof config === 'string' ? { path: config } : { ...config };
-        c.extends = [...fragments, ...((c.extends as Fragment[]) ?? [])] as StitchConfig['extends'];
+        const c: Partial<StitchConfig> =
+            typeof config === 'string' ? { path: config } : { ...config };
+        c.extends = [
+            ...fragments,
+            ...((c.extends as Fragment[]) ?? []),
+        ] as StitchConfig['extends'];
         return makeStitch<T>(c);
     };
 }
 
 /** drift(): wrap an output schema with leveled drift options. */
 export function drift(schema: unknown, options: DriftOptions = {}): DriftSpec {
-    return { __kind: 'drift', schema: toValidator(schema) as Validator, options };
+    return {
+        __kind: 'drift',
+        schema: toValidator(schema) as Validator,
+        options,
+    };
 }
 
 /** graphql(): a stitch preset for GraphQL-over-HTTP — POST { query, variables }, unwrap `data`. */
-export function graphql<T = unknown>(config: Partial<StitchConfig> & { query: string }): Stitch<T> {
-    return makeStitch<T>({ ...config, kind: 'graphql', method: 'POST', unwrap: config.unwrap ?? 'data' });
+export function graphql<T = unknown>(
+    config: Partial<StitchConfig> & { query: string },
+): Stitch<T> {
+    return makeStitch<T>({
+        ...config,
+        kind: 'graphql',
+        method: 'POST',
+        unwrap: config.unwrap ?? 'data',
+    });
 }
 
 // ---- fluent builder facade ------------------------------------------------
@@ -236,12 +284,23 @@ function makeBuilder(initial: Partial<StitchConfig>): Builder {
     const invalidate = () => (built = null);
 
     const fn = ((input?: StitchInput) => ensure()(input)) as Builder;
-    fn.use = (...f) => ((acc.extends = [...((acc.extends as Fragment[]) ?? []), ...f] as StitchConfig['extends']), invalidate(), fn);
+    fn.use = (...f) => (
+        (acc.extends = [
+            ...((acc.extends as Fragment[]) ?? []),
+            ...f,
+        ] as StitchConfig['extends']),
+        invalidate(),
+        fn
+    );
     fn.get = (p) => ((acc.method = 'GET'), (acc.path = p), invalidate(), fn);
     fn.post = (p) => ((acc.method = 'POST'), (acc.path = p), invalidate(), fn);
     fn.put = (p) => ((acc.method = 'PUT'), (acc.path = p), invalidate(), fn);
-    fn.delete = (p) => ((acc.method = 'DELETE'), (acc.path = p), invalidate(), fn);
-    fn.returns = (schema) => ((acc.output = schema as StitchConfig['output']), invalidate(), fn);
+    fn.delete = (p) => (
+        (acc.method = 'DELETE'), (acc.path = p), invalidate(), fn
+    );
+    fn.returns = (schema) => (
+        (acc.output = schema as StitchConfig['output']), invalidate(), fn
+    );
     fn.unwrap = (key) => ((acc.unwrap = key), invalidate(), fn);
     fn.auth = (a) => ((acc.auth = a), invalidate(), fn);
     fn.retry = (r) => ((acc.retry = r), invalidate(), fn);

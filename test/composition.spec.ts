@@ -1,14 +1,16 @@
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-process.env.STITCH_TRACE_FILE = join(tmpdir(), 'stitch-composition-' + process.pid + '.jsonl');
-
-import { z } from 'zod';
-
-import { stitch, defineStitch, preset } from '../src';
+import { defineStitch, preset, stitch } from '../src';
+import type { StitchEvent } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
-import type { StitchEvent } from '../src';
+
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { z } from 'zod';
+
+process.env.STITCH_TRACE_FILE = join(
+    tmpdir(),
+    'stitch-composition-' + process.pid + '.jsonl',
+);
 
 let server: MockServer;
 
@@ -21,14 +23,19 @@ afterAll(async () => {
 beforeEach(() => server.reset());
 
 // Drain a stitch stream into an array of events.
-async function collect<T>(gen: AsyncGenerator<StitchEvent<T>, void, unknown>): Promise<StitchEvent<T>[]> {
+async function collect<T>(
+    gen: AsyncGenerator<StitchEvent<T>, void, unknown>,
+): Promise<StitchEvent<T>[]> {
     const out: StitchEvent<T>[] = [];
     for await (const ev of gen) out.push(ev);
     return out;
 }
 
 const resultOf = <T>(events: StitchEvent<T>[]) =>
-    events.find((e): e is Extract<StitchEvent<T>, { type: 'result' }> => e.type === 'result');
+    events.find(
+        (e): e is Extract<StitchEvent<T>, { type: 'result' }> =>
+            e.type === 'result',
+    );
 
 // 1) Three composition facades resolve to the same canonical stitch and same result.
 test('three facades (extends / defineStitch / builder) are equivalent', async () => {
@@ -38,14 +45,26 @@ test('three facades (extends / defineStitch / builder) are equivalent', async ()
     const base = preset({ baseUrl: server.url, unwrap: 'data' });
 
     // (a) extends
-    const viaExtends = stitch({ extends: [base], path: '/items', output: schema });
+    const viaExtends = stitch({
+        extends: [base],
+        path: '/items',
+        output: schema,
+    });
     // (b) factory
     const viaFactory = defineStitch(base)({ path: '/items', output: schema });
     // (c) builder
-    const viaBuilder = stitch.use(base).get('/items').returns(schema).unwrap('data');
+    const viaBuilder = stitch
+        .use(base)
+        .get('/items')
+        .returns(schema)
+        .unwrap('data');
 
     const expected = [{ id: 1, name: 'Ada' }];
-    const [a, b, c] = await Promise.all([viaExtends(), viaFactory(), viaBuilder()]);
+    const [a, b, c] = await Promise.all([
+        viaExtends(),
+        viaFactory(),
+        viaBuilder(),
+    ]);
 
     expect(a).toEqual(expected);
     expect(b).toEqual(expected);
@@ -60,8 +79,13 @@ test('three facades (extends / defineStitch / builder) are equivalent', async ()
 test('predefined query merges with call-time query (input wins on conflict)', async () => {
     server.route('GET', '/items', { body: { ok: true } });
 
-    const items = stitch({ baseUrl: server.url, path: '/items?sort=name&type=admin' });
-    await expect(items({ query: { type: 'user' } })).resolves.toEqual({ ok: true });
+    const items = stitch({
+        baseUrl: server.url,
+        path: '/items?sort=name&type=admin',
+    });
+    await expect(items({ query: { type: 'user' } })).resolves.toEqual({
+        ok: true,
+    });
 
     const call = server.calls('/items')[0];
     expect(call?.query).toEqual({ sort: 'name', type: 'user' });
@@ -69,7 +93,10 @@ test('predefined query merges with call-time query (input wins on conflict)', as
 
 // 3) Objects deep-merge across layers: base retry {attempts,on} survives a child adding {baseMs}.
 test('deep-merge keeps base retry.attempts/on when child adds retry.baseMs', async () => {
-    server.route('GET', '/flaky', { statuses: [503, 503, 200], body: { ok: true } });
+    server.route('GET', '/flaky', {
+        statuses: [503, 503, 200],
+        body: { ok: true },
+    });
 
     const retryPreset = preset({ retry: { attempts: 3, on: [503] } });
     // Child only sets baseMs; if merge replaced the object wholesale, attempts/on would be lost
@@ -132,7 +159,9 @@ test('.with() partial application sends bound query alongside call-time query', 
     const items = stitch({ baseUrl: server.url, path: '/items' });
     const adminItems = items.with({ query: { role: 'admin' } });
 
-    await expect(adminItems({ query: { q: 'ada' } })).resolves.toEqual({ ok: true });
+    await expect(adminItems({ query: { q: 'ada' } })).resolves.toEqual({
+        ok: true,
+    });
 
     const call = server.calls('/items')[0];
     expect(call?.query).toEqual({ role: 'admin', q: 'ada' });

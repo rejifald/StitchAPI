@@ -3,7 +3,9 @@ import type { Adapter, AdapterRequest, AdapterResponse } from './types';
 // Returns an Adapter backed by Node's global `fetch`. Never throws on non-2xx —
 // only network/abort errors propagate; the engine decides what to do with the response.
 export function fetchAdapter(): Adapter {
-    return async function fetchAdapterRequest(req: AdapterRequest): Promise<AdapterResponse> {
+    return async function fetchAdapterRequest(
+        req: AdapterRequest,
+    ): Promise<AdapterResponse> {
         const method = req.method.toUpperCase();
         const headers: Record<string, string> = { ...req.headers };
 
@@ -12,26 +14,36 @@ export function fetchAdapter(): Adapter {
         let body: string | FormData | undefined;
         const noBodyMethod = method === 'GET' || method === 'HEAD';
         const hasContentType = () =>
-            Object.keys(headers).some((k) => k.toLowerCase() === 'content-type');
+            Object.keys(headers).some(
+                (k) => k.toLowerCase() === 'content-type',
+            );
         if (!noBodyMethod && req.body !== undefined && req.body !== null) {
             if (typeof req.body === 'string') {
                 body = req.body;
             } else if (req.bodyType === 'form') {
                 const params = new URLSearchParams();
-                for (const [k, v] of Object.entries(req.body as Record<string, unknown>)) {
-                    if (v !== undefined && v !== null) params.append(k, String(v));
+                for (const [k, v] of Object.entries(
+                    req.body as Record<string, unknown>,
+                )) {
+                    if (v !== undefined && v !== null)
+                        params.append(k, String(v));
                 }
                 body = params.toString();
-                if (!hasContentType()) headers['content-type'] = 'application/x-www-form-urlencoded';
+                if (!hasContentType())
+                    headers['content-type'] =
+                        'application/x-www-form-urlencoded';
             } else if (req.bodyType === 'multipart') {
                 const form = new FormData();
-                for (const [k, v] of Object.entries(req.body as Record<string, unknown>)) {
+                for (const [k, v] of Object.entries(
+                    req.body as Record<string, unknown>,
+                )) {
                     appendForm(form, k, v);
                 }
                 body = form; // do NOT set content-type — fetch adds the multipart boundary
             } else {
                 body = JSON.stringify(req.body);
-                if (!hasContentType()) headers['content-type'] = 'application/json';
+                if (!hasContentType())
+                    headers['content-type'] = 'application/json';
             }
         }
 
@@ -48,7 +60,9 @@ export function fetchAdapter(): Adapter {
         response.headers.forEach((value, key) => {
             resHeaders[key.toLowerCase()] = value;
         });
-        const getSetCookie = response.headers.getSetCookie?.bind(response.headers);
+        const getSetCookie = response.headers.getSetCookie?.bind(
+            response.headers,
+        );
         const setCookies = getSetCookie ? getSetCookie() : undefined;
         if (setCookies && setCookies.length > 0) {
             resHeaders['set-cookie'] = setCookies.join(', ');
@@ -61,7 +75,9 @@ export function fetchAdapter(): Adapter {
 
         // Parse the body: JSON when content-type is json-ish, else text.
         const contentType = (resHeaders['content-type'] || '').toLowerCase();
-        const isJson = contentType.includes('application/json') || contentType.includes('+json');
+        const isJson =
+            contentType.includes('application/json') ||
+            contentType.includes('+json');
         let parsed: unknown;
         if (isJson) {
             const text = await response.text();
@@ -79,12 +95,19 @@ export function fetchAdapter(): Adapter {
 function appendForm(form: FormData, key: string, v: unknown): void {
     if (v instanceof Blob) return void form.append(key, v);
     if (v instanceof Uint8Array) return void form.append(key, new Blob([v]));
-    if (v && typeof v === 'object' && 'value' in (v as Record<string, unknown>)) {
+    if (
+        v &&
+        typeof v === 'object' &&
+        'value' in (v as Record<string, unknown>)
+    ) {
         const f = v as { value: unknown; filename?: string; type?: string };
         const blob =
             f.value instanceof Blob
                 ? f.value
-                : new Blob([f.value as BlobPart], f.type ? { type: f.type } : undefined);
+                : new Blob(
+                      [f.value as BlobPart],
+                      f.type ? { type: f.type } : undefined,
+                  );
         if (f.filename) form.append(key, blob, f.filename);
         else form.append(key, blob);
         return;

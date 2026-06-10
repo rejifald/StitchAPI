@@ -17,14 +17,25 @@ import type {
     StitchInput,
     StitchStore,
     TraceSink,
-    Validator,
 } from './types';
-import { buildQuery, expandPath, getPath, matchAny, now, parseDuration, sleep } from './util';
+import {
+    buildQuery,
+    expandPath,
+    getPath,
+    matchAny,
+    now,
+    parseDuration,
+    sleep,
+} from './util';
+import type { Validator } from './validator';
 
 export interface Runtime {
     cfg: StitchConfig;
     adapter: Adapter;
-    throttle: { acquire(key: string): Promise<{ waitedMs: number }>; release(key: string): void };
+    throttle: {
+        acquire(key: string): Promise<{ waitedMs: number }>;
+        release(key: string): void;
+    };
     trace: TraceSink;
     store: StitchStore;
     authCtx: AuthContext;
@@ -37,7 +48,14 @@ export function makeRuntime(
     store: StitchStore,
 ): Runtime {
     const authCtx: AuthContext = { store, emit: () => {} };
-    return { cfg, adapter: cfg.adapter ?? fetchAdapter(), throttle, trace, store, authCtx };
+    return {
+        cfg,
+        adapter: cfg.adapter ?? fetchAdapter(),
+        throttle,
+        trace,
+        store,
+        authCtx,
+    };
 }
 
 const nameOf = (cfg: StitchConfig) => cfg.name ?? cfg.path ?? 'stitch';
@@ -45,19 +63,26 @@ const nameOf = (cfg: StitchConfig) => cfg.name ?? cfg.path ?? 'stitch';
 function joinUrl(base: string, path: string): string {
     if (/^https?:\/\//i.test(path)) return path;
     if (!base) return path;
-    return base.replace(/\/+$/, '') + (path.startsWith('/') ? path : '/' + path);
+    return (
+        base.replace(/\/+$/, '') + (path.startsWith('/') ? path : '/' + path)
+    );
 }
 
 function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const isGql = cfg.kind === 'graphql';
-    const base = typeof cfg.baseUrl === 'function' ? cfg.baseUrl() : cfg.baseUrl ?? '';
+    const base =
+        typeof cfg.baseUrl === 'function' ? cfg.baseUrl() : (cfg.baseUrl ?? '');
     const raw = cfg.path ?? (isGql ? '/graphql' : '');
     const qIdx = raw.indexOf('?');
     let tpl = raw;
     let predefined: Record<string, unknown> = {};
     if (qIdx >= 0) {
         tpl = raw.slice(0, qIdx);
-        predefined = Object.fromEntries(new URLSearchParams(raw.slice(qIdx + 1)) as unknown as Iterable<[string, string]>);
+        predefined = Object.fromEntries(
+            new URLSearchParams(raw.slice(qIdx + 1)) as unknown as Iterable<
+                [string, string]
+            >,
+        );
     }
     const { path } = expandPath(tpl, input.params ?? {});
     const query = { ...predefined, ...(input.query ?? {}) };
@@ -66,12 +91,20 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
         url,
         method: (cfg.method ?? (isGql ? 'POST' : 'GET')).toUpperCase(),
         headers: { ...(cfg.headers ?? {}), ...(input.headers ?? {}) },
-        body: isGql ? { query: cfg.query, variables: input.variables ?? input.body ?? {} } : input.body,
+        body: isGql
+            ? {
+                  query: cfg.query,
+                  variables: input.variables ?? input.body ?? {},
+              }
+            : input.body,
         bodyType: isGql ? 'json' : cfg.bodyType,
     };
 }
 
-const cloneReq = (r: AdapterRequest): AdapterRequest => ({ ...r, headers: { ...r.headers } });
+const cloneReq = (r: AdapterRequest): AdapterRequest => ({
+    ...r,
+    headers: { ...r.headers },
+});
 const hostKey = (req: AdapterRequest, cfg: StitchConfig): string => {
     if (cfg.throttle?.scope === 'host') {
         try {
@@ -85,7 +118,14 @@ const hostKey = (req: AdapterRequest, cfg: StitchConfig): string => {
 
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const e = err as { message?: string; status?: number };
-    return { type: 'error', name, message: e?.message ?? String(err), status: e?.status, attempts, at: now() };
+    return {
+        type: 'error',
+        name,
+        message: e?.message ?? String(err),
+        status: e?.status,
+        attempts,
+        at: now(),
+    };
 }
 const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
     type: 'done',
@@ -95,25 +135,35 @@ const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
     at: now(),
 });
 
-async function validateInput(cfg: StitchConfig, input: StitchInput): Promise<void> {
+async function validateInput(
+    cfg: StitchConfig,
+    input: StitchInput,
+): Promise<void> {
     for (const part of ['params', 'query', 'body', 'headers'] as const) {
         const v = cfg.input?.[part] as Validator | undefined;
         if (!v) continue;
         const r = await v.validate((input as Record<string, unknown>)[part]);
         if (!r.ok) {
-            const e = new Error(`invalid ${part}: ${r.issues.map((i) => i.message).join(', ')}`);
+            const e = new Error(
+                `invalid ${part}: ${r.issues.map((i) => i.message).join(', ')}`,
+            );
             e.name = 'ValidationError';
             throw e;
         }
     }
 }
 
-async function validateOutput(cfg: StitchConfig, body: unknown): Promise<DriftFinding[]> {
+async function validateOutput(
+    cfg: StitchConfig,
+    body: unknown,
+): Promise<DriftFinding[]> {
     const out = cfg.output;
     if (!out) return [];
     const findings: DriftFinding[] = [];
     const isDrift = (out as DriftSpec).__kind === 'drift';
-    const validator: Validator | undefined = isDrift ? (out as DriftSpec).schema : (out as Validator);
+    const validator: Validator | undefined = isDrift
+        ? (out as DriftSpec).schema
+        : (out as Validator);
     const opts = isDrift ? (out as DriftSpec).options : {};
 
     if (validator) {
@@ -121,8 +171,16 @@ async function validateOutput(cfg: StitchConfig, body: unknown): Promise<DriftFi
         if (!r.ok) {
             for (const iss of r.issues) {
                 const path = iss.path.join('.');
-                const level = matchAny(opts.watch, path) && !matchAny(opts.critical, path) ? 'warn' : 'error';
-                findings.push({ level, path, change: 'invalid', detail: iss.message });
+                const level =
+                    matchAny(opts.watch, path) && !matchAny(opts.critical, path)
+                        ? 'warn'
+                        : 'error';
+                findings.push({
+                    level,
+                    path,
+                    change: 'invalid',
+                    detail: iss.message,
+                });
             }
         }
     }
@@ -143,14 +201,23 @@ async function* attemptLoop(
     const { cfg } = rt;
     const max = cfg.retry?.attempts ?? 1;
     const retryOn = cfg.retry?.on ?? [429, 502, 503, 504];
-    const perAttemptMs = parseDuration(cfg.timeout?.perAttempt) ?? parseDuration(cfg.timeout?.total);
+    const perAttemptMs =
+        parseDuration(cfg.timeout?.perAttempt) ??
+        parseDuration(cfg.timeout?.total);
     const key = hostKey(baseReq, cfg);
     let refreshed = false;
 
     for (let attempt = 1; attempt <= max; attempt++) {
         state.attempts = attempt;
         const { waitedMs } = await rt.throttle.acquire(key);
-        if (waitedMs > 0) yield { type: 'progress', phase: 'throttled', attempt, waitedMs, at: now() };
+        if (waitedMs > 0)
+            yield {
+                type: 'progress',
+                phase: 'throttled',
+                attempt,
+                waitedMs,
+                at: now(),
+            };
         try {
             const req = cloneReq(baseReq);
             if (cfg.auth) await cfg.auth.apply(req, rt.authCtx);
@@ -159,12 +226,29 @@ async function* attemptLoop(
 
             let res: AdapterResponse;
             try {
-                res = await withTimeout((signal) => rt.adapter({ ...req, signal }), perAttemptMs);
+                res = await withTimeout(
+                    (signal) => rt.adapter({ ...req, signal }),
+                    perAttemptMs,
+                );
             } catch (err) {
-                await cfg.hooks?.onError?.({ name: nameOf(cfg), attempt, error: err });
+                await cfg.hooks?.onError?.({
+                    name: nameOf(cfg),
+                    attempt,
+                    error: err,
+                });
                 if (attempt < max) {
-                    yield { type: 'progress', phase: 'retry', attempt, detail: String((err as Error)?.message ?? err), at: now() };
-                    await cfg.hooks?.onRetry?.({ name: nameOf(cfg), attempt, error: err });
+                    yield {
+                        type: 'progress',
+                        phase: 'retry',
+                        attempt,
+                        detail: String((err as Error)?.message ?? err),
+                        at: now(),
+                    };
+                    await cfg.hooks?.onRetry?.({
+                        name: nameOf(cfg),
+                        attempt,
+                        error: err,
+                    });
                     await sleep(backoffDelay(attempt + 1, cfg.retry));
                     continue;
                 }
@@ -173,24 +257,45 @@ async function* attemptLoop(
 
             await cfg.hooks?.onResponse?.({ name: nameOf(cfg), attempt, res });
 
-            if (cfg.auth?.shouldRefresh?.(res) && !refreshed && cfg.auth.refresh) {
+            if (
+                cfg.auth?.shouldRefresh?.(res) &&
+                !refreshed &&
+                cfg.auth.refresh
+            ) {
                 refreshed = true;
-                yield { type: 'progress', phase: 'auth', attempt, detail: 'refresh', at: now() };
+                yield {
+                    type: 'progress',
+                    phase: 'auth',
+                    attempt,
+                    detail: 'refresh',
+                    at: now(),
+                };
                 await cfg.auth.refresh(rt.authCtx);
                 attempt--; // redo this attempt with fresh auth, don't count it
                 continue;
             }
 
             if (retryOn.includes(res.status) && attempt < max) {
-                const ra = cfg.retry?.respectRetryAfter ? parseRetryAfter(res.headers['retry-after']) : undefined;
-                yield { type: 'progress', phase: 'retry', attempt, detail: `status ${res.status}`, at: now() };
+                const ra = cfg.retry?.respectRetryAfter
+                    ? parseRetryAfter(res.headers['retry-after'])
+                    : undefined;
+                yield {
+                    type: 'progress',
+                    phase: 'retry',
+                    attempt,
+                    detail: `status ${res.status}`,
+                    at: now(),
+                };
                 await cfg.hooks?.onRetry?.({ name: nameOf(cfg), attempt, res });
                 await sleep(ra ?? backoffDelay(attempt + 1, cfg.retry));
                 continue;
             }
 
             if (res.status >= 400) {
-                const e = new Error(`HTTP ${res.status}`) as Error & { status: number; response: AdapterResponse };
+                const e = new Error(`HTTP ${res.status}`) as Error & {
+                    status: number;
+                    response: AdapterResponse;
+                };
                 e.status = res.status;
                 e.response = res;
                 throw e;
@@ -230,7 +335,14 @@ async function* paginated(
     let lastStatus = 200;
 
     const first = buildRequest(cfg, pageInput);
-    yield { type: 'start', name, method: first.method, url: first.url, input, at: now() };
+    yield {
+        type: 'start',
+        name,
+        method: first.method,
+        url: first.url,
+        input,
+        at: now(),
+    };
 
     for (;;) {
         const req = buildRequest(cfg, pageInput);
@@ -247,7 +359,11 @@ async function* paginated(
         let value: unknown = res.body;
         if (cfg.transform) value = await cfg.transform(value);
         if (cfg.unwrap) value = getPath(value, cfg.unwrap);
-        const items = pg.items ? pg.items(value) : Array.isArray(value) ? value : [value];
+        const items = pg.items
+            ? pg.items(value)
+            : Array.isArray(value)
+              ? value
+              : [value];
         acc.push(...items);
         page += 1;
         yield {
@@ -271,16 +387,32 @@ async function* paginated(
         if (finding.level === 'error') fatal = true;
     }
     if (fatal) {
-        yield { type: 'error', name, message: 'contract violation (drift)', status: lastStatus, attempts: state.attempts, at: now() };
+        yield {
+            type: 'error',
+            name,
+            message: 'contract violation (drift)',
+            status: lastStatus,
+            attempts: state.attempts,
+            at: now(),
+        };
         yield doneEvt(false, t0, state.attempts);
         return;
     }
 
-    yield { type: 'result', value: acc, status: lastStatus, attempts: state.attempts, at: now() };
+    yield {
+        type: 'result',
+        value: acc,
+        status: lastStatus,
+        attempts: state.attempts,
+        at: now(),
+    };
     yield doneEvt(true, t0, state.attempts);
 }
 
-export async function* execute(rt: Runtime, input: StitchInput = {}): AsyncGenerator<StitchEvent, void, unknown> {
+export async function* execute(
+    rt: Runtime,
+    input: StitchInput = {},
+): AsyncGenerator<StitchEvent, void, unknown> {
     const { cfg } = rt;
     const name = nameOf(cfg);
     const t0 = now();
@@ -300,7 +432,14 @@ export async function* execute(rt: Runtime, input: StitchInput = {}): AsyncGener
     }
 
     const baseReq = buildRequest(cfg, input);
-    yield { type: 'start', name, method: baseReq.method, url: baseReq.url, input, at: now() };
+    yield {
+        type: 'start',
+        name,
+        method: baseReq.method,
+        url: baseReq.url,
+        input,
+        at: now(),
+    };
 
     let res: AdapterResponse;
     try {
@@ -313,7 +452,8 @@ export async function* execute(rt: Runtime, input: StitchInput = {}): AsyncGener
 
     // GraphQL: a 200 response carrying `errors` is a failure.
     if (cfg.kind === 'graphql') {
-        const errs = (res.body as { errors?: Array<{ message?: string }> })?.errors;
+        const errs = (res.body as { errors?: Array<{ message?: string }> })
+            ?.errors;
         if (errs && errs.length) {
             yield {
                 type: 'error',
@@ -339,16 +479,32 @@ export async function* execute(rt: Runtime, input: StitchInput = {}): AsyncGener
         if (finding.level === 'error') fatal = true;
     }
     if (fatal) {
-        yield { type: 'error', name, message: 'contract violation (drift)', status: res.status, attempts: state.attempts, at: now() };
+        yield {
+            type: 'error',
+            name,
+            message: 'contract violation (drift)',
+            status: res.status,
+            attempts: state.attempts,
+            at: now(),
+        };
         yield doneEvt(false, t0, state.attempts);
         return;
     }
 
-    yield { type: 'result', value, status: res.status, attempts: state.attempts, at: now() };
+    yield {
+        type: 'result',
+        value,
+        status: res.status,
+        attempts: state.attempts,
+        at: now(),
+    };
     yield doneEvt(true, t0, state.attempts);
 }
 
-export async function executeRaw(rt: Runtime, input: StitchInput = {}): Promise<AdapterResponse> {
+export async function executeRaw(
+    rt: Runtime,
+    input: StitchInput = {},
+): Promise<AdapterResponse> {
     const baseReq = buildRequest(rt.cfg, input);
     const state = { attempts: 0 };
     const gen = attemptLoop(rt, baseReq, state);

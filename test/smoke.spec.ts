@@ -1,13 +1,15 @@
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-process.env.STITCH_TRACE_FILE = join(tmpdir(), `stitch-smoke-${process.pid}.jsonl`);
-
-import { z } from 'zod';
-
 import { stitch } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
+
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { z } from 'zod';
+
+process.env.STITCH_TRACE_FILE = join(
+    tmpdir(),
+    `stitch-smoke-${process.pid}.jsonl`,
+);
 
 let server: MockServer;
 
@@ -43,6 +45,8 @@ test('event stream emits start -> request -> result -> done in order', async () 
 test('path params expand and query is appended', async () => {
     server.route('GET', '/users/1', { body: { id: 1 } });
     const getUser = stitch({ baseUrl: server.url, path: '/users/{id}' });
-    await expect(getUser({ params: { id: 1 }, query: { expand: 'roles' } })).resolves.toEqual({ id: 1 });
+    await expect(
+        getUser({ params: { id: 1 }, query: { expand: 'roles' } }),
+    ).resolves.toEqual({ id: 1 });
     expect(server.calls('/users/1')[0]?.query).toEqual({ expand: 'roles' });
 });

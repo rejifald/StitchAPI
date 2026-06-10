@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import type { IncomingMessage, ServerResponse, Server } from 'node:http';
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 
 export interface ReqInfo {
     method: string;
@@ -30,7 +30,8 @@ export interface MockServer {
     close(): Promise<void>;
 }
 
-const at = (arr: unknown[], i: number): unknown => arr[Math.min(i, arr.length - 1)];
+const at = (arr: unknown[], i: number): unknown =>
+    arr[Math.min(i, arr.length - 1)];
 
 const parseCookies = (header: string | undefined): Record<string, string> => {
     const out: Record<string, string> = {};
@@ -46,7 +47,9 @@ const parseCookies = (header: string | undefined): Record<string, string> => {
 const collectHeaders = (req: IncomingMessage): Record<string, string> => {
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) {
-        out[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : String(v ?? '');
+        out[k.toLowerCase()] = Array.isArray(v)
+            ? v.join(', ')
+            : String(v ?? '');
     }
     return out;
 };
@@ -71,9 +74,13 @@ export function startMockServer(): Promise<MockServer> {
     const routes = new Map<string, RouteBehavior>();
     const counters = new Map<string, number>();
     const log: ReqInfo[] = [];
-    const key = (method: string, path: string): string => `${method.toUpperCase()} ${path}`;
+    const key = (method: string, path: string): string =>
+        `${method.toUpperCase()} ${path}`;
 
-    const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const handler = async (
+        req: IncomingMessage,
+        res: ServerResponse,
+    ): Promise<void> => {
         const method = (req.method ?? 'GET').toUpperCase();
         const parsed = new URL(req.url ?? '/', 'http://127.0.0.1');
         const path = parsed.pathname;
@@ -92,11 +99,20 @@ export function startMockServer(): Promise<MockServer> {
 
         const rk = key(method, path);
         const behavior = routes.get(rk);
-        const send = (status: number, payload: unknown, extra?: RouteBehavior): void => {
-            const out: Record<string, string> = { 'content-type': 'application/json' };
+        const send = (
+            status: number,
+            payload: unknown,
+            extra?: RouteBehavior,
+        ): void => {
+            const out: Record<string, string> = {
+                'content-type': 'application/json',
+            };
             if (extra?.headers) Object.assign(out, extra.headers);
-            if (extra?.setCookie) out['Set-Cookie'] = `${extra.setCookie.name}=${extra.setCookie.value}`;
-            if (extra?.retryAfter !== undefined) out['Retry-After'] = String(extra.retryAfter);
+            if (extra?.setCookie)
+                out['Set-Cookie'] =
+                    `${extra.setCookie.name}=${extra.setCookie.value}`;
+            if (extra?.retryAfter !== undefined)
+                out['Retry-After'] = String(extra.retryAfter);
             res.writeHead(status, out);
             res.end(JSON.stringify(payload));
         };
@@ -104,22 +120,34 @@ export function startMockServer(): Promise<MockServer> {
         if (!behavior) return send(404, { error: 'not_found' });
 
         const ck = behavior.requireCookie;
-        if (ck && (info.cookies[ck.name] === undefined || (ck.value !== undefined && info.cookies[ck.name] !== ck.value)))
+        if (
+            ck &&
+            (info.cookies[ck.name] === undefined ||
+                (ck.value !== undefined && info.cookies[ck.name] !== ck.value))
+        )
             return send(401, { error: 'unauthorized' });
         const hd = behavior.requireHeader;
         if (hd) {
             const have = headers[hd.name.toLowerCase()];
-            if (have === undefined || (hd.value !== undefined && have !== hd.value))
+            if (
+                have === undefined ||
+                (hd.value !== undefined && have !== hd.value)
+            )
                 return send(401, { error: 'unauthorized' });
         }
 
         const idx = counters.get(rk) ?? 0;
         counters.set(rk, idx + 1);
 
-        const status = behavior.statuses ? (at(behavior.statuses, idx) as number) : 200;
+        const status = behavior.statuses
+            ? (at(behavior.statuses, idx) as number)
+            : 200;
         let body: unknown = {};
         if (typeof behavior.body === 'function') {
-            body = (behavior.body as (i: number, r: ReqInfo) => unknown)(idx, info);
+            body = (behavior.body as (i: number, r: ReqInfo) => unknown)(
+                idx,
+                info,
+            );
         } else if (Array.isArray(behavior.body)) {
             body = at(behavior.body, idx);
         } else if (behavior.body !== undefined) {
@@ -127,7 +155,8 @@ export function startMockServer(): Promise<MockServer> {
         }
 
         let delay = 0;
-        if (Array.isArray(behavior.delayMs)) delay = (at(behavior.delayMs, idx) as number) ?? 0;
+        if (Array.isArray(behavior.delayMs))
+            delay = (at(behavior.delayMs, idx) as number) ?? 0;
         else if (typeof behavior.delayMs === 'number') delay = behavior.delayMs;
 
         const respond = (): void => send(status, body, behavior);
@@ -137,12 +166,14 @@ export function startMockServer(): Promise<MockServer> {
 
     const server: Server = createServer((req, res) => {
         handler(req, res).catch(() => {
-            if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+            if (!res.headersSent)
+                res.writeHead(500, { 'content-type': 'application/json' });
             res.end(JSON.stringify({ error: 'internal' }));
         });
     });
 
-    const filter = (path?: string): ReqInfo[] => (path ? log.filter((r) => r.path === path) : log.slice());
+    const filter = (path?: string): ReqInfo[] =>
+        path ? log.filter((r) => r.path === path) : log.slice();
 
     return new Promise((resolve) => {
         server.listen(0, '127.0.0.1', () => {
@@ -160,7 +191,8 @@ export function startMockServer(): Promise<MockServer> {
                     counters.clear();
                     log.length = 0;
                 },
-                close: () => new Promise<void>((res) => server.close(() => res())),
+                close: () =>
+                    new Promise<void>((res) => server.close(() => res())),
             });
         });
     });

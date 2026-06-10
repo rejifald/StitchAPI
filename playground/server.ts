@@ -1,15 +1,15 @@
 // Live playground server: serves the UI, lists demos, and streams each demo's stitch event
 // stream to the browser over SSE. Run: bash playground/run.sh
+import { startMockServer } from '../test/support/mock-server';
+import { demos } from './demos';
+
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import type { ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { extname, join, normalize } from 'node:path';
 
 process.env.STITCH_TRACE_FILE = join(tmpdir(), 'stitch-playground.jsonl');
-
-import { startMockServer } from '../test/support/mock-server';
-import { demos } from './demos';
-import type { ServerResponse } from 'node:http';
 
 const PORT = Number(process.env.PORT ?? 5174);
 const PUBLIC = join(__dirname, 'public');
@@ -27,11 +27,23 @@ const server = createServer(async (req, res) => {
     try {
         if (path === '/api/demos') {
             res.writeHead(200, { 'content-type': 'application/json' });
-            res.end(JSON.stringify(demos.map((d) => ({ id: d.id, title: d.title, blurb: d.blurb, group: d.group }))));
+            res.end(
+                JSON.stringify(
+                    demos.map((d) => ({
+                        id: d.id,
+                        title: d.title,
+                        blurb: d.blurb,
+                        group: d.group,
+                    })),
+                ),
+            );
             return;
         }
         if (path.startsWith('/api/run/')) {
-            await runDemo(decodeURIComponent(path.slice('/api/run/'.length)), res);
+            await runDemo(
+                decodeURIComponent(path.slice('/api/run/'.length)),
+                res,
+            );
             return;
         }
         await serveStatic(path === '/' ? '/index.html' : path, res);
@@ -50,7 +62,9 @@ async function serveStatic(p: string, res: ServerResponse): Promise<void> {
     }
     try {
         const data = await readFile(file);
-        res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
+        res.writeHead(200, {
+            'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+        });
         res.end(data);
     } catch {
         res.writeHead(404);
@@ -70,15 +84,22 @@ async function runDemo(id: string, res: ServerResponse): Promise<void> {
         'cache-control': 'no-cache',
         connection: 'keep-alive',
     });
-    const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const send = (event: string, data: unknown) =>
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
     const mock = await startMockServer();
     try {
         const { plays, note } = demo.setup(mock);
-        send('meta', { id: demo.id, title: demo.title, note, plays: plays.length });
+        send('meta', {
+            id: demo.id,
+            title: demo.title,
+            note,
+            plays: plays.length,
+        });
         for (let i = 0; i < plays.length; i++) {
             send('play', { index: i, label: plays[i].label });
-            for await (const ev of plays[i].stitch.stream(plays[i].input)) send('stitch', { play: i, ...ev });
+            for await (const ev of plays[i].stitch.stream(plays[i].input))
+                send('stitch', { play: i, ...ev });
         }
     } catch (e) {
         send('fail', { message: (e as Error).message });
@@ -89,4 +110,6 @@ async function runDemo(id: string, res: ServerResponse): Promise<void> {
     }
 }
 
-server.listen(PORT, () => console.log(`StitchAPI playground → http://localhost:${PORT}`));
+server.listen(PORT, () =>
+    console.log(`StitchAPI playground → http://localhost:${PORT}`),
+);

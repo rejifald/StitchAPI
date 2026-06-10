@@ -1,12 +1,15 @@
+import { stitch } from '../src';
+import type { StitchEvent } from '../src/types';
+import { startMockServer } from './support/mock-server';
+import type { MockServer } from './support/mock-server';
+
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.STITCH_TRACE_FILE = join(tmpdir(), `stitch-resilience-${process.pid}.jsonl`);
-
-import { stitch } from '../src';
-import { startMockServer } from './support/mock-server';
-import type { MockServer } from './support/mock-server';
-import type { StitchEvent } from '../src/types';
+process.env.STITCH_TRACE_FILE = join(
+    tmpdir(),
+    `stitch-resilience-${process.pid}.jsonl`,
+);
 
 let server: MockServer;
 
@@ -19,7 +22,9 @@ afterAll(async () => {
 beforeEach(() => server.reset());
 
 // Drain a stitch's event stream into an array (and let it run to completion).
-async function collect(s: { stream(): AsyncGenerator<StitchEvent> }): Promise<StitchEvent[]> {
+async function collect(s: {
+    stream(): AsyncGenerator<StitchEvent>;
+}): Promise<StitchEvent[]> {
     const events: StitchEvent[] = [];
     for await (const ev of s.stream()) events.push(ev);
     return events;
@@ -27,7 +32,10 @@ async function collect(s: { stream(): AsyncGenerator<StitchEvent> }): Promise<St
 
 // ── 1. Retry then succeed ──────────────────────────────────────────────────
 test('retries on 503 then succeeds, reporting attempts and retry progress', async () => {
-    server.route('GET', '/flaky', { statuses: [503, 503, 200], body: { ok: true } });
+    server.route('GET', '/flaky', {
+        statuses: [503, 503, 200],
+        body: { ok: true },
+    });
     const call = stitch({
         baseUrl: server.url,
         path: '/flaky',
@@ -40,7 +48,9 @@ test('retries on 503 then succeeds, reporting attempts and retry progress', asyn
     expect(result).toBeDefined();
     expect(result).toMatchObject({ type: 'result', attempts: 3 });
 
-    const retryProgress = events.filter((e) => e.type === 'progress' && e.phase === 'retry');
+    const retryProgress = events.filter(
+        (e) => e.type === 'progress' && e.phase === 'retry',
+    );
     expect(retryProgress.length).toBeGreaterThanOrEqual(2);
 
     // The await sugar resolves to the unwrapped value.
@@ -49,7 +59,10 @@ test('retries on 503 then succeeds, reporting attempts and retry progress', asyn
 
 // ── 2. Retry exhausted → error ─────────────────────────────────────────────
 test('rejects with status 503 after exhausting all retry attempts', async () => {
-    server.route('GET', '/down', { statuses: [503, 503, 503], body: { error: 'unavailable' } });
+    server.route('GET', '/down', {
+        statuses: [503, 503, 503],
+        body: { error: 'unavailable' },
+    });
     const call = stitch({
         baseUrl: server.url,
         path: '/down',
@@ -62,7 +75,11 @@ test('rejects with status 503 after exhausting all retry attempts', async () => 
 
 // ── 3. Respects Retry-After ────────────────────────────────────────────────
 test('honors the Retry-After header instead of the short backoff', async () => {
-    server.route('GET', '/limited', { statuses: [429, 200], retryAfter: 1, body: { ok: true } });
+    server.route('GET', '/limited', {
+        statuses: [429, 200],
+        retryAfter: 1,
+        body: { ok: true },
+    });
     const call = stitch({
         baseUrl: server.url,
         path: '/limited',

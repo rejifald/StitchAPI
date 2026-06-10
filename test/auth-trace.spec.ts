@@ -1,17 +1,19 @@
+import { cookieSession, env, stitch } from '../src';
+import { startMockServer } from './support/mock-server';
+import type { MockServer } from './support/mock-server';
+
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // We must control the JSONL trace path BEFORE importing `../src`: getTrace() reads
 // STITCH_TRACE_FILE when each stitch is constructed. Capture the path so scenario 3
 // can read the records back and prove zero-infra observability.
-process.env.STITCH_TRACE_FILE = join(tmpdir(), `stitch-auth-${process.pid}.jsonl`);
+process.env.STITCH_TRACE_FILE = join(
+    tmpdir(),
+    `stitch-auth-${process.pid}.jsonl`,
+);
 const TRACE_FILE = process.env.STITCH_TRACE_FILE;
-
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-
-import { stitch, cookieSession, env } from '../src';
-import { startMockServer } from './support/mock-server';
-import type { MockServer } from './support/mock-server';
 
 let server: MockServer;
 
@@ -32,10 +34,20 @@ beforeEach(() => server.reset());
 // credential. The caller invokes `me()` with NO arguments and never sees a secret:
 // the strategy auto-logs-in behind the wall, captures `sid`, and replays it.
 test('auth-wall: me() auto-logs-in and never asks the caller for a secret', async () => {
-    server.route('POST', '/login', { setCookie: { name: 'sid', value: 'GOOD' }, body: { ok: true } });
-    server.route('GET', '/me', { requireCookie: { name: 'sid' }, body: { user: 'ada' } });
+    server.route('POST', '/login', {
+        setCookie: { name: 'sid', value: 'GOOD' },
+        body: { ok: true },
+    });
+    server.route('GET', '/me', {
+        requireCookie: { name: 'sid' },
+        body: { user: 'ada' },
+    });
 
-    const signIn = stitch({ method: 'POST', baseUrl: server.url, path: '/login' });
+    const signIn = stitch({
+        method: 'POST',
+        baseUrl: server.url,
+        path: '/login',
+    });
 
     // Set per the task. STITCH_USER/STITCH_PASS are inert here; the loginInput below
     // resolves DEMO_USER / DEMO_PASS at call time via env().
@@ -70,10 +82,17 @@ test('auth-wall: me() auto-logs-in and never asks the caller for a secret', asyn
 // Expected: login runs twice (initial auto-login + post-401 refresh) and /data is
 // hit twice (the 401, then the 200).
 test('refresh on the 401 wall re-logs-in and retries the request', async () => {
-    server.route('POST', '/login', { setCookie: { name: 'sid', value: 'GOOD' }, body: { ok: true } });
+    server.route('POST', '/login', {
+        setCookie: { name: 'sid', value: 'GOOD' },
+        body: { ok: true },
+    });
     server.route('GET', '/data', { statuses: [401, 200], body: { ok: true } });
 
-    const signIn = stitch({ method: 'POST', baseUrl: server.url, path: '/login' });
+    const signIn = stitch({
+        method: 'POST',
+        baseUrl: server.url,
+        path: '/login',
+    });
 
     const data = stitch({
         baseUrl: server.url,

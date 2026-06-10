@@ -63,7 +63,8 @@
             return res.json();
         })
         .then(function (demos) {
-            if (!Array.isArray(demos)) throw new Error('Unexpected response shape.');
+            if (!Array.isArray(demos))
+                throw new Error('Unexpected response shape.');
             render(demos);
         })
         .catch(function (err) {
@@ -76,7 +77,9 @@
         clear(root);
 
         if (demos.length === 0) {
-            root.appendChild(el('div', 'page-msg', 'No features registered yet.'));
+            root.appendChild(
+                el('div', 'page-msg', 'No features registered yet.'),
+            );
             return;
         }
 
@@ -115,7 +118,9 @@
         const card = el('article', 'card');
 
         const head = el('div', 'card-head');
-        head.appendChild(el('h3', null, demo.title || id || 'Untitled feature'));
+        head.appendChild(
+            el('h3', null, demo.title || id || 'Untitled feature'),
+        );
         if (demo.blurb) head.appendChild(el('p', 'blurb', demo.blurb));
         card.appendChild(head);
 
@@ -222,7 +227,11 @@
         try {
             source = new EventSource('/api/run/' + encodeURIComponent(id));
         } catch (err) {
-            finish('fail', 'Could not open event stream: ' + (err && err.message ? err.message : String(err)));
+            finish(
+                'fail',
+                'Could not open event stream: ' +
+                    (err && err.message ? err.message : String(err)),
+            );
             return;
         }
         state.source = source;
@@ -245,12 +254,20 @@
             const data = parse(e.data) || {};
             const log = ensureLog();
             // Only show a divider when it adds signal: a label, or 2nd+ play.
-            const hasLabel = data.label != null && String(data.label).length > 0;
+            const hasLabel =
+                data.label != null && String(data.label).length > 0;
             if (hasLabel || playSeen) {
                 const div = el('div', 'play-divider');
-                const idx = typeof data.index === 'number' ? data.index + 1 : null;
-                const label = hasLabel ? String(data.label) : idx != null ? 'play ' + idx : 'next play';
-                div.appendChild(el('span', 'label', (idx != null ? '◇ ' : '') + label));
+                const idx =
+                    typeof data.index === 'number' ? data.index + 1 : null;
+                const label = hasLabel
+                    ? String(data.label)
+                    : idx != null
+                      ? 'play ' + idx
+                      : 'next play';
+                div.appendChild(
+                    el('span', 'label', (idx != null ? '◇ ' : '') + label),
+                );
                 div.appendChild(el('span', 'line'));
                 log.appendChild(div);
             }
@@ -348,7 +365,10 @@
     function rowProgress(ev) {
         const phase = ev.phase || 'request';
         const emph = phase === 'retry' || phase === 'throttled';
-        const r = evRow('progress' + (emph ? ' emph' : ''), glyphForPhase(phase));
+        const r = evRow(
+            'progress' + (emph ? ' emph' : ''),
+            glyphForPhase(phase),
+        );
         r.body.appendChild(el('span', 'phase', phase));
 
         if (ev.attempt != null) {
@@ -367,7 +387,8 @@
 
     function rowDrift(ev) {
         const f = ev.finding || {};
-        const level = f.level === 'error' || f.level === 'warn' ? f.level : 'info';
+        const level =
+            f.level === 'error' || f.level === 'warn' ? f.level : 'info';
         const r = evRow('drift lvl-' + level, glyphForDrift(level));
 
         const tag = el('span', 'tag', level);
@@ -385,8 +406,10 @@
         const r = evRow('result', '✓'); // ✓
         const head = el('div', 'head');
         head.appendChild(document.createTextNode('result'));
-        if (ev.status != null) head.appendChild(el('span', 'meta', 'status ' + ev.status));
-        if (ev.attempts != null) head.appendChild(el('span', 'meta', 'attempts ' + ev.attempts));
+        if (ev.status != null)
+            head.appendChild(el('span', 'meta', 'status ' + ev.status));
+        if (ev.attempts != null)
+            head.appendChild(el('span', 'meta', 'attempts ' + ev.attempts));
         r.body.appendChild(head);
         // Pretty-print the value, indented, in a <pre>.
         const pre = el('pre', null, pretty(ev.value));
@@ -398,8 +421,10 @@
         const r = evRow('error', '✗'); // ✗
         const head = el('div', 'head');
         head.appendChild(document.createTextNode(ev.name ? ev.name : 'error'));
-        if (ev.status != null) head.appendChild(el('span', 'meta', 'status ' + ev.status));
-        if (ev.attempts != null) head.appendChild(el('span', 'meta', 'attempts ' + ev.attempts));
+        if (ev.status != null)
+            head.appendChild(el('span', 'meta', 'status ' + ev.status));
+        if (ev.attempts != null)
+            head.appendChild(el('span', 'meta', 'attempts ' + ev.attempts));
         r.body.appendChild(head);
         if (ev.message) {
             const msg = el('div', 'msg', String(ev.message));
@@ -414,7 +439,10 @@
         const parts = [];
         parts.push(ok ? 'done' : 'done (failed)');
         if (ev.ms != null) parts.push(ev.ms + 'ms');
-        if (ev.attempts != null) parts.push(ev.attempts + (ev.attempts === 1 ? ' attempt' : ' attempts'));
+        if (ev.attempts != null)
+            parts.push(
+                ev.attempts + (ev.attempts === 1 ? ' attempt' : ' attempts'),
+            );
         r.body.appendChild(document.createTextNode(parts.join(' · ')));
         return r.row;
     }
