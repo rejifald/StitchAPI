@@ -91,7 +91,7 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
         // first data call 403 (stale/no session) -> after re-login, 200
         server.route('GET', '/resources', { statuses: [403, 200], body: () => [{ id: 'abc', state: 'active' }] });
 
-        const login = stitch({ method: 'POST', baseUrl: server.url, path: '/auth/login' });
+        const login = stitch({ method: 'POST', baseUrl: server.url, path: '/auth/login', bodyType: 'form' });
         const resources = stitch({
             baseUrl: server.url,
             path: '/resources',
@@ -125,7 +125,7 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
             body: [`<table>${listingRow('score')}</table>`, `<table>${listingRow('rank')}</table>`],
         });
 
-        const login = stitch({ method: 'POST', baseUrl: server.url, path: '/login' });
+        const login = stitch({ method: 'POST', baseUrl: server.url, path: '/login', bodyType: 'form' });
         const search = stitch({
             baseUrl: server.url,
             path: '/search',

@@ -36,6 +36,7 @@ export interface AdapterRequest {
     method: string;
     headers: Record<string, string>;
     body?: unknown;
+    bodyType?: 'json' | 'form' | 'multipart';
     signal?: AbortSignal;
 }
 export interface AdapterResponse {
@@ -121,6 +122,7 @@ export interface StitchConfig {
     name?: string;
     kind?: 'http';
     method?: string;
+    bodyType?: 'json' | 'form' | 'multipart'; // request body encoding (default 'json')
     baseUrl?: string | (() => string);
     path?: string;
     input?: InputSchemas;

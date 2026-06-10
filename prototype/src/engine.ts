@@ -61,6 +61,7 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
         method: (cfg.method ?? 'GET').toUpperCase(),
         headers: { ...(input.headers ?? {}) },
         body: input.body,
+        bodyType: cfg.bodyType,
     };
 }
 

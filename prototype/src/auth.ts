@@ -73,6 +73,8 @@ export interface CookieSessionOpts {
     loginInput?: () => StitchInput;
     /** Statuses that mean "the wall" and should trigger a re-login. Default [401]. */
     refreshOn?: number[];
+    /** Inspect the response (status + body) for a soft wall — e.g. a 200 that is actually a login page. */
+    refreshWhen?: (res: AdapterResponse) => boolean;
 }
 
 export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
@@ -97,7 +99,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
             }
         },
         shouldRefresh(res) {
-            return refreshOn.includes(res.status);
+            return refreshOn.includes(res.status) || !!opts.refreshWhen?.(res);
         },
         async refresh(ctx) {
             ctx.store.cookie = undefined;

@@ -7,20 +7,31 @@ export function fetchAdapter(): Adapter {
         const method = req.method.toUpperCase();
         const headers: Record<string, string> = { ...req.headers };
 
-        // Body handling: never send a body for GET/HEAD.
-        let body: string | undefined;
+        // Body encoding: never send a body for GET/HEAD. Encode per req.bodyType
+        // (default 'json'): 'form' -> x-www-form-urlencoded, 'multipart' -> FormData.
+        let body: string | FormData | undefined;
         const noBodyMethod = method === 'GET' || method === 'HEAD';
+        const hasContentType = () =>
+            Object.keys(headers).some((k) => k.toLowerCase() === 'content-type');
         if (!noBodyMethod && req.body !== undefined && req.body !== null) {
             if (typeof req.body === 'string') {
                 body = req.body;
+            } else if (req.bodyType === 'form') {
+                const params = new URLSearchParams();
+                for (const [k, v] of Object.entries(req.body as Record<string, unknown>)) {
+                    if (v !== undefined && v !== null) params.append(k, String(v));
+                }
+                body = params.toString();
+                if (!hasContentType()) headers['content-type'] = 'application/x-www-form-urlencoded';
+            } else if (req.bodyType === 'multipart') {
+                const form = new FormData();
+                for (const [k, v] of Object.entries(req.body as Record<string, unknown>)) {
+                    appendForm(form, k, v);
+                }
+                body = form; // do NOT set content-type — fetch adds the multipart boundary
             } else {
                 body = JSON.stringify(req.body);
-                const hasContentType = Object.keys(headers).some(
-                    (k) => k.toLowerCase() === 'content-type',
-                );
-                if (!hasContentType) {
-                    headers['content-type'] = 'application/json';
-                }
+                if (!hasContentType()) headers['content-type'] = 'application/json';
             }
         }
 
@@ -61,4 +72,22 @@ export function fetchAdapter(): Adapter {
 
         return { status: response.status, headers: resHeaders, body: parsed };
     };
+}
+
+// Append a value to multipart FormData: a Blob/Uint8Array becomes a file part; a
+// { value, filename?, type? } wrapper becomes a named file; everything else a string field.
+function appendForm(form: FormData, key: string, v: unknown): void {
+    if (v instanceof Blob) return void form.append(key, v);
+    if (v instanceof Uint8Array) return void form.append(key, new Blob([v]));
+    if (v && typeof v === 'object' && 'value' in (v as Record<string, unknown>)) {
+        const f = v as { value: unknown; filename?: string; type?: string };
+        const blob =
+            f.value instanceof Blob
+                ? f.value
+                : new Blob([f.value as BlobPart], f.type ? { type: f.type } : undefined);
+        if (f.filename) form.append(key, blob, f.filename);
+        else form.append(key, blob);
+        return;
+    }
+    form.append(key, String(v));
 }
