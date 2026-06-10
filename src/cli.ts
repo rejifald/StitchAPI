@@ -4,6 +4,7 @@
 // Flags map onto a stitch's single input object ({ params, query, body, headers });
 // every event the stitch emits is written to stdout as one line of JSON, so the
 // output pipes straight into jq and friends. No app boot required.
+import { serveStdio } from './mcp';
 import {
     type StitchRegistry,
     loadStitches,
@@ -361,6 +362,7 @@ usage:
   stitch run <name> [--module <path>] [--flags…]   run a stitch, stream JSONL events
   stitch trace [--file <path>] [--since 1h] [--name <x>] [--json]
   stitch serve [--module <path>] [--port <n>] [--host <h>]   HTTP: POST /stitch/:name
+  stitch mcp [--module <path>]                               MCP over stdio (run_stitch)
 
 run:
   --module, -m <path>   stitches module to load (default: ./stitches.{ts,js,…})
@@ -484,6 +486,35 @@ async function serveCommand(args: string[], io: CliIO): Promise<number> {
     return 0;
 }
 
+// stitch mcp [--module <path>] — expose the registry to agents over MCP (stdio).
+// JSON-RPC speaks on stdout; the startup notice goes to stderr to keep stdout clean.
+async function mcpCommand(args: string[], io: CliIO): Promise<number> {
+    let modulePath: string | undefined;
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === '--module' || a === '-m') modulePath = args[++i];
+    }
+
+    let registry: StitchRegistry;
+    try {
+        registry = await io.load(resolveModulePath(modulePath, io.cwd));
+    } catch (e) {
+        io.writeErr(`${(e as Error).message}\n`);
+        return 1;
+    }
+
+    serveStdio(registry);
+    io.writeErr(
+        `stitch mcp: ${Object.keys(registry).length} stitch(es) over MCP (stdio); run_stitch tool ready\n`,
+    );
+    await new Promise<void>((resolve) => {
+        process.stdin.once('close', resolve);
+        process.once('SIGINT', resolve);
+        process.once('SIGTERM', resolve);
+    });
+    return 0;
+}
+
 // Entry point. Returns the process exit code; the bin shim calls process.exit.
 export async function main(
     argv: string[],
@@ -498,6 +529,8 @@ export async function main(
             return traceCommand(rest, io);
         case 'serve':
             return serveCommand(rest, io);
+        case 'mcp':
+            return mcpCommand(rest, io);
         case undefined:
         case '-h':
         case '--help':
