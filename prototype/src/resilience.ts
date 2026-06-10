@@ -1,0 +1,130 @@
+// Resilience primitives: retry backoff math, Retry-After parsing, a proactive
+// throttle (rate + concurrency, per key), and a timeout wrapper. Dependency-free;
+// pacing/cancellation go through the shared `sleep`/`now` helpers from `./util`.
+import type { RetryOptions, ThrottleOptions } from './types';
+import { now, parseRate, sleep } from './util';
+
+export class TimeoutError extends Error {}
+
+/**
+ * Backoff (ms) BEFORE the given 1-based `attempt` (attempt=2 is the first retry).
+ * 'expo' = baseMs * 2^(attempt-2); 'expo-jitter' adds random jitter in [0, computed];
+ * 'fixed' = baseMs. Result is clamped to maxMs.
+ */
+export function backoffDelay(attempt: number, opts?: RetryOptions): number {
+    const kind = opts?.backoff ?? 'expo-jitter';
+    const baseMs = opts?.baseMs ?? 100;
+    const maxMs = opts?.maxMs ?? 10_000;
+    const exp = Math.max(0, attempt - 2); // attempt 2 -> 2^0
+    let delay: number;
+    if (kind === 'fixed') {
+        delay = baseMs;
+    } else {
+        const computed = baseMs * 2 ** exp;
+        delay = kind === 'expo-jitter' ? Math.random() * computed : computed;
+    }
+    return Math.min(delay, maxMs);
+}
+
+/** Parse a `Retry-After` header (delta-seconds OR HTTP-date) into ms, or undefined. */
+export function parseRetryAfter(headerValue?: string): number | undefined {
+    if (headerValue == null) return undefined;
+    const raw = headerValue.trim();
+    if (raw === '') return undefined;
+    if (/^\d+$/.test(raw)) return parseInt(raw, 10) * 1000;
+    const when = Date.parse(raw); // HTTP-date
+    if (Number.isNaN(when)) return undefined;
+    return Math.max(0, when - now());
+}
+
+interface KeyState {
+    inFlight: number;
+    waiters: Array<() => void>; // FIFO concurrency waiters; each resolves its acquire
+    nextGrantAt: number; // earliest time the next rate-limited acquire may proceed
+}
+
+/**
+ * Proactive limiter. `rate` ("2/s") enforces a minimum spacing between successive
+ * acquires for a key; `concurrency` caps simultaneous in-flight holders for a key.
+ * `acquire` resolves once a slot is free (reporting how long it waited) and MUST be
+ * paired with `release`. Concurrency waiters are served FIFO.
+ */
+export function createThrottle(opts?: ThrottleOptions): {
+    acquire(key: string): Promise<{ waitedMs: number }>;
+    release(key: string): void;
+} {
+    const limit = opts?.concurrency;
+    const rate = opts?.rate ? parseRate(opts.rate) : undefined;
+    const spacing = rate ? rate.perMs / rate.count : 0; // ms between grants
+    const states = new Map<string, KeyState>();
+
+    const stateFor = (key: string): KeyState => {
+        let s = states.get(key);
+        if (!s) {
+            s = { inFlight: 0, waiters: [], nextGrantAt: 0 };
+            states.set(key, s);
+        }
+        return s;
+    };
+
+    // Resolves once this acquire holds a concurrency slot (immediately if there is
+    // capacity, otherwise when an earlier holder releases). No-op when unbounded.
+    const takeSlot = (s: KeyState): Promise<void> => {
+        if (limit == null) return Promise.resolve();
+        if (s.inFlight < limit) {
+            s.inFlight++;
+            return Promise.resolve();
+        }
+        return new Promise<void>((resolve) => s.waiters.push(resolve));
+    };
+
+    async function acquire(key: string): Promise<{ waitedMs: number }> {
+        const s = stateFor(key);
+        const start = now();
+        await takeSlot(s); // gate entry on concurrency first
+        if (spacing > 0) {
+            // Then pace within the held slot: reserve the next grant time and wait for it.
+            const at = Math.max(now(), s.nextGrantAt);
+            s.nextGrantAt = at + spacing;
+            const wait = at - now();
+            if (wait > 0) await sleep(wait);
+        }
+        return { waitedMs: now() - start };
+    }
+
+    function release(key: string): void {
+        const s = states.get(key);
+        if (!s || limit == null) return;
+        const next = s.waiters.shift();
+        if (next) next(); // hand the held slot directly to the FIFO-next waiter
+        else if (s.inFlight > 0) s.inFlight--;
+    }
+
+    return { acquire, release };
+}
+
+/**
+ * Run `fn` with an AbortSignal that aborts after `ms`. On timeout, reject with
+ * TimeoutError and ensure the signal is aborted. If `ms` is undefined, just run
+ * `fn` with a non-aborting signal.
+ */
+export function withTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, ms?: number): Promise<T> {
+    const controller = new AbortController();
+    if (ms == null) return fn(controller.signal);
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => {
+            controller.abort();
+            reject(new TimeoutError(`timed out after ${ms}ms`));
+        }, ms);
+        fn(controller.signal).then(
+            (value) => {
+                clearTimeout(timer);
+                resolve(value);
+            },
+            (err) => {
+                clearTimeout(timer);
+                reject(err);
+            },
+        );
+    });
+}

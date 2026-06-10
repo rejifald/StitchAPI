@@ -162,6 +162,10 @@ const config: Config = {
         '**/?(*.)+(spec|test).[tj]s?(x)',
     ],
 
+    // The prototype harness has its own jest config (real fetch, no global mock);
+    // keep it out of the main suite.
+    testPathIgnorePatterns: ['/node_modules/', '/prototype/'],
+
     // An array of regexp pattern strings that are matched against all test paths, matched tests are skipped
     // testPathIgnorePatterns: [
     //   "/node_modules/"
