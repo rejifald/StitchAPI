@@ -1,9 +1,10 @@
 // The authoring surface: stitch() + the three composition facades (extends / defineStitch /
 // builder) + `.with()` partial application, all resolving to one canonical config.
 import { type Runtime, execute, executeRaw, makeRuntime } from './engine';
+import { otlpTrace } from './otlp';
 import { createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
-import { createTrace } from './trace';
+import { createTrace, exportsFromEnv, multiplex } from './trace';
 import {
     type DriftOptions,
     type DriftSpec,
@@ -105,11 +106,15 @@ function compose(config: Fragment): StitchConfig {
 }
 
 // ---- shared trace sink (zero-infra: console off in tests, JSONL file) ------
+// Always tees console/JSONL; STITCH_EXPORT=otlp ALSO fans the same events to an OTLP collector.
 function getTrace(): TraceSink {
-    return createTrace({
+    const base = createTrace({
         console: process.env.STITCH_TRACE_CONSOLE === '1',
         file: process.env.STITCH_TRACE_FILE || undefined,
     });
+    if (!exportsFromEnv(process.env.STITCH_EXPORT).includes('otlp'))
+        return base;
+    return multiplex(base, otlpTrace());
 }
 
 // ---- the streaming spine + await sugar ------------------------------------
