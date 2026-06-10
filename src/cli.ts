@@ -10,6 +10,7 @@ import {
     resolveModulePath,
     selectStitch,
 } from './registry';
+import { serve } from './serve';
 import type { Stitch, StitchEvent, StitchInput } from './types';
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -359,6 +360,7 @@ const HELP = `stitch — one stitch definition, many front doors
 usage:
   stitch run <name> [--module <path>] [--flags…]   run a stitch, stream JSONL events
   stitch trace [--file <path>] [--since 1h] [--name <x>] [--json]
+  stitch serve [--module <path>] [--port <n>] [--host <h>]   HTTP: POST /stitch/:name
 
 run:
   --module, -m <path>   stitches module to load (default: ./stitches.{ts,js,…})
@@ -449,6 +451,39 @@ function traceCommand(args: string[], io: CliIO): number {
     return 0;
 }
 
+// stitch serve [--module <path>] [--port <n>] [--host <h>] — expose the registry
+// over HTTP and block until the process is signalled.
+async function serveCommand(args: string[], io: CliIO): Promise<number> {
+    let modulePath: string | undefined;
+    let port: number | undefined;
+    let host: string | undefined;
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === '--module' || a === '-m') modulePath = args[++i];
+        else if (a === '--port' || a === '-p') port = Number(args[++i]);
+        else if (a === '--host') host = args[++i];
+    }
+
+    let registry: StitchRegistry;
+    try {
+        registry = await io.load(resolveModulePath(modulePath, io.cwd));
+    } catch (e) {
+        io.writeErr(`${(e as Error).message}\n`);
+        return 1;
+    }
+
+    const handle = await serve(registry, { port, host });
+    io.writeErr(
+        `stitch serve listening on ${handle.url} — POST /stitch/:name\n`,
+    );
+    await new Promise<void>((resolve) => {
+        const stop = () => handle.close().then(resolve);
+        process.once('SIGINT', stop);
+        process.once('SIGTERM', stop);
+    });
+    return 0;
+}
+
 // Entry point. Returns the process exit code; the bin shim calls process.exit.
 export async function main(
     argv: string[],
@@ -461,6 +496,8 @@ export async function main(
             return runCommand(rest, io);
         case 'trace':
             return traceCommand(rest, io);
+        case 'serve':
+            return serveCommand(rest, io);
         case undefined:
         case '-h':
         case '--help':
