@@ -17,6 +17,7 @@ export interface RouteBehavior {
     requireCookie?: { name: string; value?: string };
     requireHeader?: { name: string; value?: string };
     setCookie?: { name: string; value: string };
+    setCookies?: Array<{ name: string; value: string }>;
     retryAfter?: number;
     headers?: Record<string, string>;
 }
@@ -104,13 +105,18 @@ export function startMockServer(): Promise<MockServer> {
             payload: unknown,
             extra?: RouteBehavior,
         ): void => {
-            const out: Record<string, string> = {
+            const out: Record<string, string | string[]> = {
                 'content-type': 'application/json',
             };
             if (extra?.headers) Object.assign(out, extra.headers);
             if (extra?.setCookie)
                 out['Set-Cookie'] =
                     `${extra.setCookie.name}=${extra.setCookie.value}`;
+            if (extra?.setCookies)
+                // Multiple Set-Cookie headers (array value → one header line each).
+                out['Set-Cookie'] = extra.setCookies.map(
+                    (c) => `${c.name}=${c.value}`,
+                );
             if (extra?.retryAfter !== undefined)
                 out['Retry-After'] = String(extra.retryAfter);
             res.writeHead(status, out);
