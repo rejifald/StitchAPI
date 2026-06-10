@@ -3,6 +3,7 @@
 import { execute, executeRaw, makeRuntime, type Runtime } from './engine';
 import { createTrace } from './trace';
 import { createThrottle } from './resilience';
+import { createStoreThrottle, memoryStore } from './store';
 import {
     isStitch,
     type DriftOptions,
@@ -13,6 +14,7 @@ import {
     type StitchConfig,
     type StitchInput,
     type StitchResult,
+    type StitchStore,
     type TraceSink,
 } from './types';
 import { deepMerge } from './util';
@@ -73,11 +75,14 @@ function compose(config: Fragment): StitchConfig {
     const layers = flatten([config]);
     let merged: Partial<StitchConfig> = {};
     const hookLayers: Hooks[] = [];
+    let store: StitchStore | undefined;
     for (const layer of layers) {
         if (layer.hooks) hookLayers.push(layer.hooks);
-        merged = deepMerge(merged, { ...layer, hooks: undefined });
+        if (layer.store) store = layer.store;
+        merged = deepMerge(merged, { ...layer, hooks: undefined, store: undefined });
     }
     merged.hooks = chainHooks(hookLayers);
+    merged.store = store;
     merged.output = normalizeOutput(merged.output);
     merged.input = normalizeInput(merged.input);
     return merged as StitchConfig;
@@ -133,7 +138,9 @@ function mergeInput(a: StitchInput = {}, b: StitchInput = {}): StitchInput {
 
 function makeStitch<T = unknown>(config: Fragment): Stitch<T> {
     const cfg = compose(config);
-    const rt: Runtime = makeRuntime(cfg, createThrottle(cfg.throttle), getTrace());
+    const store = cfg.store ?? memoryStore();
+    const throttle = cfg.store ? createStoreThrottle(cfg.throttle, store) : createThrottle(cfg.throttle);
+    const rt: Runtime = makeRuntime(cfg, throttle, getTrace(), store);
     const name = cfg.name ?? cfg.path ?? 'stitch';
 
     const streamFn = (input?: StitchInput) => tee<T>(execute(rt, input ?? {}) as never, rt.trace, name);

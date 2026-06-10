@@ -68,7 +68,7 @@ export interface TimeoutOptions {
 
 // ---- Auth -----------------------------------------------------------------
 export interface AuthContext {
-    store: Record<string, unknown>; // per-stitch mutable bag (cookies, tokens)
+    store: StitchStore; // throttle/session state — in-memory by default, shareable when configured
     emit: (phase: ProgressPhase, detail?: string) => void;
     runLogin?: () => Promise<AdapterResponse>; // for cookieSession: invoke the login stitch
 }
@@ -139,6 +139,7 @@ export interface StitchConfig {
     hooks?: Hooks;
     extends?: Array<Partial<StitchConfig> | Stitch>;
     adapter?: Adapter; // test seam / custom transport
+    store?: StitchStore; // pluggable state store (throttle + session); default in-memory
 }
 
 export interface StitchResult<T> extends PromiseLike<T> {
@@ -160,4 +161,13 @@ export function isStitch(x: unknown): x is Stitch {
 export interface TraceSink {
     handle(event: StitchEvent, ctx: { name: string }): void;
     flush?(): void | Promise<void>;
+}
+
+// A pluggable state store for throttle counters + auth session/token state. Default is
+// in-memory (single process). A Redis/Postgres adapter makes throttle distributed and
+// sessions persistent/shared across workers — see DESIGN.md §13.
+export interface StitchStore {
+    get(key: string): Promise<unknown | undefined>;
+    set(key: string, value: unknown, ttlMs?: number): Promise<void>;
+    incr(key: string, ttlMs: number): Promise<number>;
 }

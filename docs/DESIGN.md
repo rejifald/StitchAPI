@@ -16,6 +16,8 @@ A stitch is a typed, declarative, composable unit: `input → validated output`,
 - **Spec-less long tail** — every serious competitor (Massimo, Orval, Speakeasy, Stainless) needs an OpenAPI spec. A stitch needs one endpoint or one example.
 - **Heterogeneous + agent-native** — the closest competitor, **Windmill**, is ~85% there but is a heavy server *platform* that treats HTTP/LLM as "just code." We are a **lightweight library** where HTTP/GraphQL/shell/LLM are symmetric *declared primitives*, consumed natively by agents.
 
+**What it's not.** A stitch is a *per-call primitive*, not a workflow / queue / iPaaS engine. Orchestration, job queues, inbound webhooks, app-level caching, and business state stay the app's job — see the scope boundary in §12. Absorbing them is exactly how we'd drift into the heavy platform we're positioned against.
+
 ---
 
 ## 2. Principles
@@ -378,27 +380,72 @@ const enrich = pipe(
 
 ---
 
-## 12. Dogfooding targets
+## 12. Coverage & scope — validated against two real apps
 
-Validated against two real apps (kept brand-neutral here):
-- **An auth-gated SaaS** — replace hand-written fetch wrappers; first real test = unblock an agent on a cookie-walled `GET /api/websites` via a `cookieSession` stitch. Also covers Bearer and OAuth2 client_credentials integrations.
-- **A multi-provider aggregator** — replace per-provider hand-rolled auth+retry+throttle across: a GraphQL API (ApiKey + 1/s bucket), a cookie-session client (403→relogin), an HTML-scrape provider (drift-prone), a Bearer REST API, and two media servers with bespoke token headers.
+Two production apps (brand-neutral here) were audited end to end to test fit:
+- **An auth-gated SaaS** — a cookie-walled API plus a domain registrar (Bearer), an SMS gateway (OAuth2 client_credentials), and currency feeds.
+- **A multi-provider aggregator** — a GraphQL API (ApiKey + 1/s bucket), a cookie-session download client (403→relogin), a multi-cookie HTML-scrape tracker (drift-prone), a Bearer REST API, and two media servers with bespoke token headers.
 
-If the abstraction makes these clean, it works.
+A stitch is a **per-call primitive**, so the audit splits into three buckets.
+
+**Covered today (replaces hand-rolled code in both):** auth header injection (bearer/apikey/basic), cookie login + re-login on status, **content-aware "soft-auth" refresh** (a 200 that is really a login page), retry + `Retry-After`, in-process throttle (rate + concurrency), timeout/abort, form/multipart encoding, validation + leveled drift, HTML-scrape transform, GraphQL, static headers.
+
+**Planned additions (in scope, mostly additive):**
+| Addition | Why |
+|---|---|
+| **Pluggable state store** ⭐ | throttle + session/token state are in-memory; a `store` interface (in-memory default; Redis/Postgres adapter) turns *distributed rate-limiting* and *persistent/shared sessions* into a config choice. See §13. |
+| Pagination | auto-loop cursor/offset/Link; neither app has a generic one. |
+| OAuth2 `client_credentials` | token fetch + cache + expiry refresh, as an auth strategy. |
+| Multi-cookie jar | capture the full Set-Cookie set, not one named cookie. |
+| Binary/blob responses (+ stream) | arraybuffer/stream return for downloads. |
+| Circuit breaker · idempotency keys · OTLP export | resilience + the observability bridge (both apps already run OTel). |
+
+**Out of scope — a stitch is not a platform:** job queues, inbound webhooks, business/DB idempotency, multi-step rollback/compensation, app-level response-cache policy, broad fan-out orchestration. These stay app concerns; absorbing them is how StitchAPI would become the heavy platform it's positioned against (§1).
+
+**Verdict:** covers ~80–90% of what both apps reinvent at the integration layer, with a bounded, mostly-additive list for the rest.
 
 ---
 
-## 13. Roadmap (phasing)
+## 13. State & stores (pluggable) [proposed]
 
-1. **Core vertical slice (HTTP):** stitch config + event-stream + `await` sugar; validation + drift levels; retry/throttle/timeout; zero-infra console/JSONL trace.
-2. **Composition:** fragments + `extends` + `defineStitch` (pick syntax from §4); auth strategies + inference; the auth-wall demo on a real cookie-walled app.
-3. **Surfaces:** CLI (`run`/`trace`) → MCP → HTTP serve.
-4. **Depth:** OTLP export; contract snapshots + CI gate; Mermaid diagram from definition.
-5. **Kinds:** GraphQL → shell → LLM; `pipe()` composition; live trace overlay on the diagram.
+The two gaps both audits flagged *critical* — distributed rate limiting and persistent/shared sessions — are the same question: **where does a stitch's state live?** Today it's process-local. The fix is one small seam:
+
+```ts
+interface StitchStore {
+  get(key: string): Promise<unknown | undefined>;
+  set(key: string, value: unknown, ttlMs?: number): Promise<void>;
+  incr(key: string, ttlMs: number): Promise<number>; // atomic — for rate windows
+}
+
+const api = defineStitch(
+  preset({ store: redisStore(redis) }),   // default is an in-memory store
+);
+```
+
+- **Throttle** reads/writes its rate counters through the store → a Redis-backed store gives *cross-process* rate limiting with no change to the call site.
+- **Auth** (`cookieSession`, future `oauth2`) reads/writes the cookie jar / token through the store → sessions & tokens **survive restarts and are shared across workers**.
+
+Default is in-memory (zero-config, single process). You opt into Redis/Postgres only when you scale out — progressive disclosure (§2) applied to state.
 
 ---
 
-## 14. Open questions
+## 14. Roadmap (phasing)
+
+Built in the prototype: HTTP + GraphQL kinds; config + composition; event-stream + await; validation + leveled drift; retry/throttle/timeout; auth (bearer/apikey/basic/cookieSession + content-aware refresh); form/multipart; static headers; transform; zero-infra trace.
+
+Next, to close the validated gaps (§12), in leverage order:
+1. **Pluggable state store** (§13) — unlocks distributed throttle + persistent/shared sessions in one move.
+2. **Pagination** (auto-loop).
+3. **OAuth2 `client_credentials`** auth strategy.
+4. **Multi-cookie jar** for `cookieSession`.
+5. **Binary/blob responses.**
+6. **Circuit breaker · idempotency keys.**
+7. **Depth:** OTLP export; CI contract-snapshot gate; the four surfaces (CLI/HTTP/MCP); Mermaid-from-definition.
+8. **Kinds:** shell → LLM; `pipe()` composition.
+
+---
+
+## 15. Open questions
 
 - ~~Composition syntax / call convention~~ — **resolved**: all three composition facades supported (extends / factory / builder); call = single-input-object + `.with()` + optional curried.
 - **Validation lib** — move from Zod-locked to **Standard Schema** (Zod/Valibot/ArkType)? (Recommended; affects bundle size.)

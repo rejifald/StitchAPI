@@ -75,34 +75,40 @@ export interface CookieSessionOpts {
     refreshOn?: number[];
     /** Inspect the response (status + body) for a soft wall — e.g. a 200 that is actually a login page. */
     refreshWhen?: (res: AdapterResponse) => boolean;
+    /** Store namespace — give two stitches the same `key` + a shared `store` to share one session. */
+    key?: string;
+    /** Optional TTL (ms) for the stored cookie. */
+    ttlMs?: number;
 }
 
 export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
+    const nsKey = 'cookie:' + (opts.key ?? opts.cookie);
 
     const doRefresh = async (ctx: AuthContext) => {
         ctx.emit('auth', 'login');
         const res = await opts.login.__raw(opts.loginInput?.());
         const setCookie = (res.headers['set-cookie'] ?? res.headers['Set-Cookie']) as string | undefined;
         const value = parseCookie(setCookie, opts.cookie);
-        if (value != null) ctx.store.cookie = `${opts.cookie}=${value}`;
+        if (value != null) await ctx.store.set(nsKey, `${opts.cookie}=${value}`, opts.ttlMs);
     };
 
     return {
         name: 'cookieSession',
         async apply(req, ctx) {
-            if (!ctx.store.cookie) await doRefresh(ctx);
-            if (ctx.store.cookie) {
-                req.headers['cookie'] = [req.headers['cookie'], ctx.store.cookie]
-                    .filter(Boolean)
-                    .join('; ');
+            let cookie = (await ctx.store.get(nsKey)) as string | undefined;
+            if (!cookie) {
+                await doRefresh(ctx);
+                cookie = (await ctx.store.get(nsKey)) as string | undefined;
+            }
+            if (cookie) {
+                req.headers['cookie'] = [req.headers['cookie'], cookie].filter(Boolean).join('; ');
             }
         },
         shouldRefresh(res) {
             return refreshOn.includes(res.status) || !!opts.refreshWhen?.(res);
         },
         async refresh(ctx) {
-            ctx.store.cookie = undefined;
             await doRefresh(ctx);
         },
     };

@@ -15,6 +15,7 @@ import type {
     StitchConfig,
     StitchEvent,
     StitchInput,
+    StitchStore,
     TraceSink,
     Validator,
 } from './types';
@@ -25,12 +26,16 @@ export interface Runtime {
     adapter: Adapter;
     throttle: { acquire(key: string): Promise<{ waitedMs: number }>; release(key: string): void };
     trace: TraceSink;
-    store: Record<string, unknown>;
+    store: StitchStore;
     authCtx: AuthContext;
 }
 
-export function makeRuntime(cfg: StitchConfig, throttle: Runtime['throttle'], trace: TraceSink): Runtime {
-    const store: Record<string, unknown> = {};
+export function makeRuntime(
+    cfg: StitchConfig,
+    throttle: Runtime['throttle'],
+    trace: TraceSink,
+    store: StitchStore,
+): Runtime {
     const authCtx: AuthContext = { store, emit: () => {} };
     return { cfg, adapter: cfg.adapter ?? fetchAdapter(), throttle, trace, store, authCtx };
 }
