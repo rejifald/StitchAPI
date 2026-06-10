@@ -29,6 +29,8 @@ import {
 } from './util';
 import type { Validator } from './validator';
 
+import { randomUUID } from 'node:crypto';
+
 export interface Runtime {
     cfg: StitchConfig;
     adapter: Adapter;
@@ -68,6 +70,29 @@ function joinUrl(base: string, path: string): string {
     );
 }
 
+// Inject a stable Idempotency-Key on writes. The key is computed once per logical call (here,
+// in buildRequest) and the attempt loop reuses the same request, so it stays constant across
+// retries. GET/HEAD are skipped, and a caller-provided header (case-insensitive) wins.
+function applyIdempotency(
+    cfg: StitchConfig,
+    input: StitchInput,
+    method: string,
+    headers: Record<string, string>,
+): void {
+    if (!cfg.idempotency) return;
+    if (method === 'GET' || method === 'HEAD') return; // writes only
+    const header = cfg.idempotency.header ?? 'Idempotency-Key';
+    if (
+        Object.keys(headers).some(
+            (h) => h.toLowerCase() === header.toLowerCase(),
+        )
+    )
+        return;
+    headers[header] = cfg.idempotency.key
+        ? cfg.idempotency.key(input)
+        : randomUUID();
+}
+
 function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const isGql = cfg.kind === 'graphql';
     const base =
@@ -87,10 +112,13 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const { path } = expandPath(tpl, input.params ?? {});
     const query = { ...predefined, ...(input.query ?? {}) };
     const url = joinUrl(base, path) + buildQuery(query);
+    const method = (cfg.method ?? (isGql ? 'POST' : 'GET')).toUpperCase();
+    const headers = { ...(cfg.headers ?? {}), ...(input.headers ?? {}) };
+    applyIdempotency(cfg, input, method, headers);
     return {
         url,
-        method: (cfg.method ?? (isGql ? 'POST' : 'GET')).toUpperCase(),
-        headers: { ...(cfg.headers ?? {}), ...(input.headers ?? {}) },
+        method,
+        headers,
         body: isGql
             ? {
                   query: cfg.query,

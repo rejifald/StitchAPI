@@ -70,6 +70,10 @@ export interface TimeoutOptions {
     total?: number | string;
     perAttempt?: number | string;
 }
+export interface IdempotencyOptions {
+    header?: string; // header name (default 'Idempotency-Key')
+    key?: (input: StitchInput) => string; // stable key per logical call (default: a random uuid)
+}
 
 // ---- Auth -----------------------------------------------------------------
 export interface AuthContext {
@@ -170,6 +174,7 @@ export interface StitchConfig {
     retry?: RetryOptions;
     throttle?: ThrottleOptions;
     timeout?: TimeoutOptions;
+    idempotency?: IdempotencyOptions; // inject a stable Idempotency-Key header on writes
     hooks?: Hooks;
     extends?: Array<Partial<StitchConfig> | Stitch | string>;
     adapter?: Adapter; // test seam / custom transport
