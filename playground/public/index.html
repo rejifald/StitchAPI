@@ -1,34 +1,51 @@
 <!doctype html>
 <html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>StitchAPI Playground</title>
-    <meta name="description" content="Live playground for the StitchAPI runtime — stream each feature's event stream over SSE." />
-    <link rel="stylesheet" href="/style.css" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>%F0%9F%A7%B5</text></svg>" />
-</head>
-<body>
-    <main class="page">
-        <header class="masthead">
-            <div>
-                <h1><span class="mark">stitch</span>API playground</h1>
-                <p class="tagline">Press <strong>Run</strong> on any feature to stream its live event log over SSE.</p>
-            </div>
-            <div class="spacer"></div>
-            <div class="legend" aria-hidden="true">
-                <span class="swatch"><span class="dot progress"></span>progress</span>
-                <span class="swatch"><span class="dot drift"></span>drift</span>
-                <span class="swatch"><span class="dot result"></span>result</span>
-                <span class="swatch"><span class="dot error"></span>error</span>
-            </div>
-        </header>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>StitchAPI Playground</title>
+        <meta
+            name="description"
+            content="Live playground for the StitchAPI runtime — stream each feature's event stream over SSE."
+        />
+        <link rel="stylesheet" href="/style.css" />
+        <link
+            rel="icon"
+            href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>%F0%9F%A7%B5</text></svg>"
+        />
+    </head>
+    <body>
+        <main class="page">
+            <header class="masthead">
+                <div>
+                    <h1><span class="mark">stitch</span>API playground</h1>
+                    <p class="tagline">
+                        Press <strong>Run</strong> on any feature to stream its
+                        live event log over SSE.
+                    </p>
+                </div>
+                <div class="spacer"></div>
+                <div class="legend" aria-hidden="true">
+                    <span class="swatch"
+                        ><span class="dot progress"></span>progress</span
+                    >
+                    <span class="swatch"
+                        ><span class="dot drift"></span>drift</span
+                    >
+                    <span class="swatch"
+                        ><span class="dot result"></span>result</span
+                    >
+                    <span class="swatch"
+                        ><span class="dot error"></span>error</span
+                    >
+                </div>
+            </header>
 
-        <div id="root">
-            <div class="page-msg">Loading features…</div>
-        </div>
-    </main>
+            <div id="root">
+                <div class="page-msg">Loading features…</div>
+            </div>
+        </main>
 
-    <script src="/app.js"></script>
-</body>
+        <script src="/app.js"></script>
+    </body>
 </html>

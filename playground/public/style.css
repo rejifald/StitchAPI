@@ -32,8 +32,10 @@
     --info-bg: #58a6ff16;
 
     /* Type */
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo,
+        Consolas, monospace;
+    --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+        sans-serif;
 
     /* Geometry */
     --radius: 14px;
@@ -53,8 +55,11 @@ body {
 }
 
 body {
-    background:
-        radial-gradient(1200px 600px at 82% -12%, #1b2540 0%, transparent 58%),
+    background: radial-gradient(
+            1200px 600px at 82% -12%,
+            #1b2540 0%,
+            transparent 58%
+        ),
         radial-gradient(900px 520px at -5% -5%, #12223e 0%, transparent 55%),
         var(--bg);
     background-attachment: fixed;
@@ -136,22 +141,47 @@ body {
     border-radius: 50%;
     display: inline-block;
 }
-.legend .dot.progress { background: var(--fg-faint); }
-.legend .dot.drift { background: var(--info); }
-.legend .dot.result { background: var(--ok); }
-.legend .dot.error { background: var(--err); }
+.legend .dot.progress {
+    background: var(--fg-faint);
+}
+.legend .dot.drift {
+    background: var(--info);
+}
+.legend .dot.result {
+    background: var(--ok);
+}
+.legend .dot.error {
+    background: var(--err);
+}
 
 /* ---- Sections + grid --------------------------------------------------- */
 
 /* Per-category accent — gives 13 cards a scannable rhythm. */
-.group { --group-accent: var(--accent); margin-bottom: 40px; }
-.group[data-group="Core"]        { --group-accent: #6c9bff; }
-.group[data-group="Resilience"]  { --group-accent: #e0a52a; }
-.group[data-group="Auth"]        { --group-accent: #b98bff; }
-.group[data-group="Contracts"]   { --group-accent: #4ac45e; }
-.group[data-group="Composition"] { --group-accent: #2dd4bf; }
-.group[data-group="Requests"]    { --group-accent: #ff86c2; }
-.group[data-group="Kinds"]       { --group-accent: #58a6ff; }
+.group {
+    --group-accent: var(--accent);
+    margin-bottom: 40px;
+}
+.group[data-group='Core'] {
+    --group-accent: #6c9bff;
+}
+.group[data-group='Resilience'] {
+    --group-accent: #e0a52a;
+}
+.group[data-group='Auth'] {
+    --group-accent: #b98bff;
+}
+.group[data-group='Contracts'] {
+    --group-accent: #4ac45e;
+}
+.group[data-group='Composition'] {
+    --group-accent: #2dd4bf;
+}
+.group[data-group='Requests'] {
+    --group-accent: #ff86c2;
+}
+.group[data-group='Kinds'] {
+    --group-accent: #58a6ff;
+}
 
 .group-head {
     display: flex;
@@ -173,7 +203,7 @@ body {
 }
 
 .group-head h2::before {
-    content: "";
+    content: '';
     width: 8px;
     height: 8px;
     border-radius: 2.5px;
@@ -184,7 +214,11 @@ body {
 .group-head .rule {
     flex: 1 1 auto;
     height: 1px;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--group-accent) 45%, transparent) 0%, transparent 100%);
+    background: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--group-accent) 45%, transparent) 0%,
+        transparent 100%
+    );
 }
 
 .grid {
@@ -200,25 +234,33 @@ body {
     position: relative;
     background: linear-gradient(180deg, var(--card) 0%, var(--bg-elev) 100%);
     border: 1px solid var(--border);
-    border-top: 2px solid color-mix(in srgb, var(--group-accent) 42%, var(--border));
+    border-top: 2px solid
+        color-mix(in srgb, var(--group-accent) 42%, var(--border));
     border-radius: var(--radius);
     padding: 18px 18px 16px;
     display: flex;
     flex-direction: column;
     gap: 14px;
     min-width: 0;
-    transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+    transition:
+        border-color 0.16s ease,
+        transform 0.16s ease,
+        box-shadow 0.16s ease;
 }
 
 .card:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--group-accent) 55%, var(--border));
-    box-shadow: 0 14px 34px -22px #000, 0 0 0 1px color-mix(in srgb, var(--group-accent) 20%, transparent);
+    box-shadow:
+        0 14px 34px -22px #000,
+        0 0 0 1px color-mix(in srgb, var(--group-accent) 20%, transparent);
 }
 
 .card.is-running {
     border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-quiet), 0 10px 34px -14px #5b8cff55;
+    box-shadow:
+        0 0 0 1px var(--accent-quiet),
+        0 10px 34px -14px #5b8cff55;
 }
 
 .card-head {
@@ -263,7 +305,11 @@ body {
     padding: 0 18px;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: background 0.13s ease, color 0.13s ease, box-shadow 0.13s ease, border-color 0.13s ease;
+    transition:
+        background 0.13s ease,
+        color 0.13s ease,
+        box-shadow 0.13s ease,
+        border-color 0.13s ease;
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -296,7 +342,9 @@ body {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* Status reads as an intentional pill once a run finishes. */
@@ -314,8 +362,14 @@ body {
     padding: 3px 10px;
     border-radius: 999px;
 }
-.card-status.ok { color: var(--ok); background: var(--ok-bg); }
-.card-status.err { color: var(--err); background: var(--err-bg); }
+.card-status.ok {
+    color: var(--ok);
+    background: var(--ok-bg);
+}
+.card-status.err {
+    color: var(--err);
+    background: var(--err-bg);
+}
 
 /* ---- Output panel ------------------------------------------------------ */
 
@@ -339,7 +393,7 @@ body {
     justify-content: center;
 }
 .panel:empty::before {
-    content: "Idle — press Run to stream live events";
+    content: 'Idle — press Run to stream live events';
     color: var(--fg-faint);
 }
 
@@ -390,8 +444,14 @@ body {
 }
 
 @keyframes fade-in {
-    from { opacity: 0; transform: translateY(2px); }
-    to { opacity: 1; transform: none; }
+    from {
+        opacity: 0;
+        transform: translateY(2px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
 }
 
 .ev .glyph {
@@ -458,9 +518,19 @@ body {
 }
 
 /* drift */
-.ev.ev-drift { background: var(--info-bg); color: var(--info); padding: 5px 7px; }
-.ev.ev-drift.lvl-warn { background: var(--warn-bg); color: var(--warn); }
-.ev.ev-drift.lvl-error { background: var(--err-bg); color: var(--err); }
+.ev.ev-drift {
+    background: var(--info-bg);
+    color: var(--info);
+    padding: 5px 7px;
+}
+.ev.ev-drift.lvl-warn {
+    background: var(--warn-bg);
+    color: var(--warn);
+}
+.ev.ev-drift.lvl-error {
+    background: var(--err-bg);
+    color: var(--err);
+}
 .ev.ev-drift .path {
     font-weight: 700;
 }
@@ -520,8 +590,12 @@ body {
     padding-top: 7px;
     font-size: 11.5px;
 }
-.ev.ev-done.ok .glyph { color: var(--ok); }
-.ev.ev-done.bad .glyph { color: var(--err); }
+.ev.ev-done.ok .glyph {
+    color: var(--ok);
+}
+.ev.ev-done.bad .glyph {
+    color: var(--err);
+}
 
 /* transport / client-level message */
 .ev.ev-sys {
@@ -586,5 +660,7 @@ body {
         animation: none !important;
         transition: none !important;
     }
-    .card:hover { transform: none; }
+    .card:hover {
+        transform: none;
+    }
 }

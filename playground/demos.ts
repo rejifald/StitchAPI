@@ -1,14 +1,23 @@
 // The feature registry. Each demo wires a behavior-simulating mock backend (reusing the
 // tested mock-server) and one or more "plays" (a stitch + input) that the server streams
 // live to the browser. Keep it brand-neutral — these are integration ARCHETYPES.
+import {
+    apiKey,
+    bearer,
+    cookieSession,
+    defineStitch,
+    drift,
+    env,
+    graphql,
+    preset,
+    stitch,
+} from '../src';
+import type { Stitch, StitchInput } from '../src/types';
+import type { MockServer } from '../test/support/mock-server';
+
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
 import { z } from 'zod';
-
-import { apiKey, bearer, cookieSession, defineStitch, drift, env, graphql, preset, stitch } from '../prototype/src';
-import type { Stitch, StitchInput } from '../prototype/src/types';
-import type { MockServer } from '../prototype/test/support/mock-server';
 
 export interface Play {
     label?: string;
@@ -37,8 +46,15 @@ export const demos: Demo[] = [
         title: 'Live event stream + await',
         blurb: 'One GET emits start → request → result → done, streamed live.',
         setup(mock) {
-            mock.route('GET', '/hello', { delayMs: 300, body: { message: 'hello from a stitch' } });
-            return { plays: [{ stitch: stitch({ baseUrl: mock.url, path: '/hello' }) }] };
+            mock.route('GET', '/hello', {
+                delayMs: 300,
+                body: { message: 'hello from a stitch' },
+            });
+            return {
+                plays: [
+                    { stitch: stitch({ baseUrl: mock.url, path: '/hello' }) },
+                ],
+            };
         },
     },
     {
@@ -47,9 +63,20 @@ export const demos: Demo[] = [
         title: 'Retry with backoff',
         blurb: 'The server fails twice (503) then succeeds — watch the retry events arrive.',
         setup(mock) {
-            mock.route('GET', '/flaky', { statuses: [503, 503, 200], delayMs: 120, body: { ok: true } });
-            const s = stitch({ baseUrl: mock.url, path: '/flaky', retry: { attempts: 3, on: [503], baseMs: 300 } });
-            return { plays: [{ stitch: s }], note: 'retry: { attempts: 3, on: [503] } — backoff is visible between attempts.' };
+            mock.route('GET', '/flaky', {
+                statuses: [503, 503, 200],
+                delayMs: 120,
+                body: { ok: true },
+            });
+            const s = stitch({
+                baseUrl: mock.url,
+                path: '/flaky',
+                retry: { attempts: 3, on: [503], baseMs: 300 },
+            });
+            return {
+                plays: [{ stitch: s }],
+                note: 'retry: { attempts: 3, on: [503] } — backoff is visible between attempts.',
+            };
         },
     },
     {
@@ -60,19 +87,39 @@ export const demos: Demo[] = [
         setup(mock) {
             process.env.PG_USER = 'admin';
             process.env.PG_PASS = 'secret';
-            mock.route('POST', '/login', { setCookie: { name: 'SID', value: 'OK' }, body: { ok: true } });
-            mock.route('GET', '/me', { requireCookie: { name: 'SID' }, delayMs: 150, body: { user: 'ada' } });
-            const login = stitch({ method: 'POST', baseUrl: mock.url, path: '/login', bodyType: 'form' });
+            mock.route('POST', '/login', {
+                setCookie: { name: 'SID', value: 'OK' },
+                body: { ok: true },
+            });
+            mock.route('GET', '/me', {
+                requireCookie: { name: 'SID' },
+                delayMs: 150,
+                body: { user: 'ada' },
+            });
+            const login = stitch({
+                method: 'POST',
+                baseUrl: mock.url,
+                path: '/login',
+                bodyType: 'form',
+            });
             const me = stitch({
                 baseUrl: mock.url,
                 path: '/me',
                 auth: cookieSession({
                     login,
                     cookie: 'SID',
-                    loginInput: () => ({ body: { username: env('PG_USER')(), password: env('PG_PASS')() } }),
+                    loginInput: () => ({
+                        body: {
+                            username: env('PG_USER')(),
+                            password: env('PG_PASS')(),
+                        },
+                    }),
                 }),
             });
-            return { plays: [{ stitch: me }], note: 'me() is called with NO arguments — the stitch holds the credential.' };
+            return {
+                plays: [{ stitch: me }],
+                note: 'me() is called with NO arguments — the stitch holds the credential.',
+            };
         },
     },
     {
@@ -81,14 +128,19 @@ export const demos: Demo[] = [
         title: 'Leveled drift detection',
         blurb: 'Run 1 records the contract; run 2 ships a shape change and fires a drift event.',
         setup(mock) {
-            mock.route('GET', '/item', { body: [{ id: 1, score: 42 }, { id: 1 }] }); // [baseline, score removed]
+            mock.route('GET', '/item', {
+                body: [{ id: 1, score: 42 }, { id: 1 }],
+            }); // [baseline, score removed]
             const s = stitch({
                 baseUrl: mock.url,
                 path: '/item',
-                output: drift(z.object({ id: z.number(), score: z.number().optional() }), {
-                    critical: ['score'],
-                    snapshotFile: snap('drift'),
-                }),
+                output: drift(
+                    z.object({ id: z.number(), score: z.number().optional() }),
+                    {
+                        critical: ['score'],
+                        snapshotFile: snap('drift'),
+                    },
+                ),
             });
             return {
                 plays: [
@@ -109,7 +161,11 @@ export const demos: Demo[] = [
             const base = preset({ baseUrl: mock.url });
 
             // A) extends: list the preset as a fragment.
-            const viaExtends = stitch({ extends: [base], path: '/thing', unwrap: 'data' });
+            const viaExtends = stitch({
+                extends: [base],
+                path: '/thing',
+                unwrap: 'data',
+            });
             // B) defineStitch: bind the preset, then call the returned factory.
             const make = defineStitch(base);
             const viaDefine = make({ path: '/thing', unwrap: 'data' });
@@ -134,7 +190,11 @@ export const demos: Demo[] = [
         setup(mock) {
             mock.route('GET', '/ping', { body: { pong: true } });
             // ONE stitch instance reused across plays: its runtime holds the shared throttle state.
-            const s = stitch({ baseUrl: mock.url, path: '/ping', throttle: { rate: '2/s' } });
+            const s = stitch({
+                baseUrl: mock.url,
+                path: '/ping',
+                throttle: { rate: '2/s' },
+            });
             return {
                 plays: [
                     { label: 'call 1 (immediate)', stitch: s },
@@ -152,7 +212,11 @@ export const demos: Demo[] = [
         blurb: 'The server sleeps 800ms; a 200ms total timeout aborts the request instead of hanging.',
         setup(mock) {
             mock.route('GET', '/slow', { delayMs: 800, body: { ok: true } });
-            const s = stitch({ baseUrl: mock.url, path: '/slow', timeout: { total: 200 } });
+            const s = stitch({
+                baseUrl: mock.url,
+                path: '/slow',
+                timeout: { total: 200 },
+            });
             return {
                 plays: [{ stitch: s }],
                 note: 'timeout: { total: 200 } — the run errors at ~200ms, not after the 800ms server delay.',
@@ -171,14 +235,20 @@ export const demos: Demo[] = [
             // Each route requires its auth header (401 otherwise) and echoes the received value.
             mock.route('GET', '/bearer', {
                 requireHeader: { name: 'authorization' },
-                body: (_i, req) => ({ authorization: req.headers['authorization'] }),
+                body: (_i, req) => ({
+                    authorization: req.headers['authorization'],
+                }),
             });
             mock.route('GET', '/apikey', {
                 requireHeader: { name: 'x-api-key' },
                 body: (_i, req) => ({ 'x-api-key': req.headers['x-api-key'] }),
             });
 
-            const bearerStitch = stitch({ baseUrl: mock.url, path: '/bearer', auth: bearer(env('PG_BEARER')) });
+            const bearerStitch = stitch({
+                baseUrl: mock.url,
+                path: '/bearer',
+                auth: bearer(env('PG_BEARER')),
+            });
             const apiKeyStitch = stitch({
                 baseUrl: mock.url,
                 path: '/apikey',
@@ -188,7 +258,10 @@ export const demos: Demo[] = [
             return {
                 plays: [
                     { label: 'bearer(env("PG_BEARER"))', stitch: bearerStitch },
-                    { label: 'apiKey({ header: "x-api-key" })', stitch: apiKeyStitch },
+                    {
+                        label: 'apiKey({ header: "x-api-key" })',
+                        stitch: apiKeyStitch,
+                    },
                 ],
                 note: 'The result echoes the injected header — the caller passed no secret.',
             };
@@ -203,14 +276,22 @@ export const demos: Demo[] = [
             process.env.PG_SOFT_USER = 'u';
             process.env.PG_SOFT_PASS = 'p';
 
-            mock.route('POST', '/login', { setCookie: { name: 'SID', value: 'OK' }, body: 'ok' });
+            mock.route('POST', '/login', {
+                setCookie: { name: 'SID', value: 'OK' },
+                body: 'ok',
+            });
             // call #0: a 200 login page (stale session); call #1: the real data.
             mock.route('GET', '/data', {
                 statuses: [200, 200],
                 body: ['<html>please log in</html>', { items: [1, 2] }],
             });
 
-            const login = stitch({ method: 'POST', baseUrl: mock.url, path: '/login', bodyType: 'form' });
+            const login = stitch({
+                method: 'POST',
+                baseUrl: mock.url,
+                path: '/login',
+                bodyType: 'form',
+            });
             const data = stitch({
                 baseUrl: mock.url,
                 path: '/data',
@@ -218,8 +299,15 @@ export const demos: Demo[] = [
                     login,
                     cookie: 'SID',
                     // status is 200, so only a content predicate can catch this wall:
-                    refreshWhen: (res) => typeof res.body === 'string' && /log in/i.test(res.body),
-                    loginInput: () => ({ body: { u: env('PG_SOFT_USER')(), p: env('PG_SOFT_PASS')() } }),
+                    refreshWhen: (res) =>
+                        typeof res.body === 'string' &&
+                        /log in/i.test(res.body),
+                    loginInput: () => ({
+                        body: {
+                            u: env('PG_SOFT_USER')(),
+                            p: env('PG_SOFT_PASS')(),
+                        },
+                    }),
                 }),
             });
 
@@ -237,19 +325,44 @@ export const demos: Demo[] = [
         setup(mock) {
             // Echo the received content-type + body so encoding is visible in the result.
             mock.route('POST', '/echo', {
-                body: (_i, req) => ({ contentType: req.headers['content-type'], received: req.body }),
+                body: (_i, req) => ({
+                    contentType: req.headers['content-type'],
+                    received: req.body,
+                }),
             });
 
-            const form = stitch({ method: 'POST', baseUrl: mock.url, path: '/echo', bodyType: 'form' });
-            const multipart = stitch({ method: 'POST', baseUrl: mock.url, path: '/echo', bodyType: 'multipart' });
+            const form = stitch({
+                method: 'POST',
+                baseUrl: mock.url,
+                path: '/echo',
+                bodyType: 'form',
+            });
+            const multipart = stitch({
+                method: 'POST',
+                baseUrl: mock.url,
+                path: '/echo',
+                bodyType: 'multipart',
+            });
 
             return {
                 plays: [
-                    { label: 'form', stitch: form, input: { body: { a: 1, b: 'x y' } } },
+                    {
+                        label: 'form',
+                        stitch: form,
+                        input: { body: { a: 1, b: 'x y' } },
+                    },
                     {
                         label: 'multipart',
                         stitch: multipart,
-                        input: { body: { field: 'v', file: { value: new Uint8Array([1, 2, 3]), filename: 'a.bin' } } },
+                        input: {
+                            body: {
+                                field: 'v',
+                                file: {
+                                    value: new Uint8Array([1, 2, 3]),
+                                    filename: 'a.bin',
+                                },
+                            },
+                        },
                     },
                 ],
                 note: 'bodyType: "form" → x-www-form-urlencoded; "multipart" → multipart/form-data with a named file part.',
@@ -263,7 +376,10 @@ export const demos: Demo[] = [
         blurb: 'A graphql() stitch posts { query, variables } and unwraps data; a 200 carrying errors[] surfaces as an error.',
         setup(mock) {
             mock.route('POST', '/graphql', {
-                body: [{ data: { thing: { name: 'Ada' } } }, { errors: [{ message: 'thing not found' }] }],
+                body: [
+                    { data: { thing: { name: 'Ada' } } },
+                    { errors: [{ message: 'thing not found' }] },
+                ],
             });
             const s = graphql({
                 baseUrl: mock.url,
@@ -271,8 +387,16 @@ export const demos: Demo[] = [
             });
             return {
                 plays: [
-                    { label: 'resolves', stitch: s, input: { variables: { id: 1 } } },
-                    { label: 'GraphQL error', stitch: s, input: { variables: { id: 999 } } },
+                    {
+                        label: 'resolves',
+                        stitch: s,
+                        input: { variables: { id: 1 } },
+                    },
+                    {
+                        label: 'GraphQL error',
+                        stitch: s,
+                        input: { variables: { id: 999 } },
+                    },
                 ],
                 note: 'Play 2 returns HTTP 200 but carries errors[] — the runtime treats it as a failure.',
             };
@@ -286,13 +410,21 @@ export const demos: Demo[] = [
         setup(mock) {
             // A small scraper: one row per <tr>, title from td.title's anchor, score from td.score.
             // When the score cell's class is renamed, the selector misses and score is OMITTED.
-            const scrape = (html: unknown): { items: Array<Record<string, unknown>> } => {
+            const scrape = (
+                html: unknown,
+            ): { items: Array<Record<string, unknown>> } => {
                 const text = String(html);
                 const rows = text.split(/<tr[^>]*>/i).slice(1);
                 const items = rows.map((row) => {
                     const item: Record<string, unknown> = {};
-                    const title = /<td[^>]*class="title"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i.exec(row);
-                    const score = /<td[^>]*class="score"[^>]*>\s*(\d+)\s*<\/td>/i.exec(row)?.[1];
+                    const title =
+                        /<td[^>]*class="title"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i.exec(
+                            row,
+                        );
+                    const score =
+                        /<td[^>]*class="score"[^>]*>\s*(\d+)\s*<\/td>/i.exec(
+                            row,
+                        )?.[1];
                     if (title) item.title = title[1].trim();
                     if (score !== undefined) item.score = Number(score); // omitted when the class is renamed
                     return item;
@@ -303,17 +435,30 @@ export const demos: Demo[] = [
             const row = (scoreClass: string) =>
                 `<tr><td class="title"><a href="/i/1">Item A</a></td><td class="${scoreClass}">42</td></tr>`;
             // call #1: original markup (td.score); call #2: class renamed to td.rank.
-            mock.route('GET', '/search', { body: [`<table>${row('score')}</table>`, `<table>${row('rank')}</table>`] });
+            mock.route('GET', '/search', {
+                body: [
+                    `<table>${row('score')}</table>`,
+                    `<table>${row('rank')}</table>`,
+                ],
+            });
 
             const s = stitch({
                 baseUrl: mock.url,
                 path: '/search',
                 transform: scrape,
                 unwrap: 'items',
-                output: drift(z.array(z.object({ title: z.string(), score: z.number().optional() })), {
-                    critical: ['[].score'],
-                    snapshotFile: snap('scrape'),
-                }),
+                output: drift(
+                    z.array(
+                        z.object({
+                            title: z.string(),
+                            score: z.number().optional(),
+                        }),
+                    ),
+                    {
+                        critical: ['[].score'],
+                        snapshotFile: snap('scrape'),
+                    },
+                ),
             });
 
             return {
@@ -331,11 +476,20 @@ export const demos: Demo[] = [
         title: 'Static headers: merge + override',
         blurb: 'A preset header, a stitch header, and a per-call header layer and override — the echo route shows the final set.',
         setup(mock) {
-            mock.route('GET', '/echo-headers', { body: (_i, req) => ({ received: req.headers }) });
+            mock.route('GET', '/echo-headers', {
+                body: (_i, req) => ({ received: req.headers }),
+            });
             const base = preset({ headers: { 'x-trace': 't1' } });
-            const s = stitch({ extends: [base], baseUrl: mock.url, path: '/echo-headers', headers: { 'x-app': 'demo' } });
+            const s = stitch({
+                extends: [base],
+                baseUrl: mock.url,
+                path: '/echo-headers',
+                headers: { 'x-app': 'demo' },
+            });
             return {
-                plays: [{ stitch: s, input: { headers: { 'x-app': 'override' } } }],
+                plays: [
+                    { stitch: s, input: { headers: { 'x-app': 'override' } } },
+                ],
                 note: 'x-trace from the preset survives; x-app from the stitch is overridden by the per-call header.',
             };
         },
@@ -343,4 +497,15 @@ export const demos: Demo[] = [
 ];
 
 // Re-exported so the demo-completion agent can use the same helpers/types.
-export { apiKey, bearer, cookieSession, drift, env, graphql, preset, stitch, z, snap };
+export {
+    apiKey,
+    bearer,
+    cookieSession,
+    drift,
+    env,
+    graphql,
+    preset,
+    stitch,
+    z,
+    snap,
+};
