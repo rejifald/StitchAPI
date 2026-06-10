@@ -18,8 +18,12 @@
         }
     },
     "sideEffects": false,
+    "bin": {
+        "stitch": "bin/stitch"
+    },
     "files": [
-        "lib"
+        "lib",
+        "bin"
     ],
     "scripts": {
         "test": "jest",
@@ -29,7 +33,7 @@
         "check:exports": "attw --pack .",
         "lint": "eslint src --flag unstable_ts_config",
         "format": "jiti ./node_modules/.bin/prettier --write .",
-        "build": "tsup src/index.ts --format cjs,esm --minify --dts --out-dir lib",
+        "build": "tsup",
         "prepare": "husky",
         "prepack": "npm run build"
     },
