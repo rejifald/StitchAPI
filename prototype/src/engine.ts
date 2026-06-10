@@ -203,6 +203,83 @@ async function* attemptLoop(
     throw new Error('retry attempts exhausted');
 }
 
+function mergeInput(a: StitchInput, b: StitchInput): StitchInput {
+    return {
+        params: { ...(a.params ?? {}), ...(b.params ?? {}) },
+        query: { ...(a.query ?? {}), ...(b.query ?? {}) },
+        headers: { ...(a.headers ?? {}), ...(b.headers ?? {}) },
+        body: b.body !== undefined ? b.body : a.body,
+    };
+}
+
+// Pagination: one logical call that follows pages until `paginate.next` returns undefined
+// (or `max` is hit), aggregating items. Each page is a full request — auth/retry/throttle apply.
+async function* paginated(
+    rt: Runtime,
+    input: StitchInput,
+    state: { attempts: number },
+    t0: number,
+): AsyncGenerator<StitchEvent, void, unknown> {
+    const { cfg } = rt;
+    const name = nameOf(cfg);
+    const pg = cfg.paginate!;
+    const max = pg.max ?? 50;
+    const acc: unknown[] = [];
+    let pageInput = input;
+    let page = 0;
+    let lastStatus = 200;
+
+    const first = buildRequest(cfg, pageInput);
+    yield { type: 'start', name, method: first.method, url: first.url, input, at: now() };
+
+    for (;;) {
+        const req = buildRequest(cfg, pageInput);
+        let res: AdapterResponse;
+        try {
+            res = yield* attemptLoop(rt, req, state);
+        } catch (e) {
+            yield errEvt(e, name, state.attempts);
+            yield doneEvt(false, t0, state.attempts);
+            return;
+        }
+        lastStatus = res.status;
+
+        let value: unknown = res.body;
+        if (cfg.transform) value = await cfg.transform(value);
+        if (cfg.unwrap) value = getPath(value, cfg.unwrap);
+        const items = pg.items ? pg.items(value) : Array.isArray(value) ? value : [value];
+        acc.push(...items);
+        page += 1;
+        yield {
+            type: 'progress',
+            phase: 'paginate',
+            attempt: state.attempts,
+            detail: `page ${page} (+${items.length}, total ${acc.length})`,
+            at: now(),
+        };
+
+        if (items.length === 0 || page >= max) break;
+        const nextPartial = pg.next(res.body, page);
+        if (!nextPartial) break;
+        pageInput = mergeInput(input, nextPartial);
+    }
+
+    const findings = await validateOutput(cfg, acc);
+    let fatal = false;
+    for (const finding of findings) {
+        yield { type: 'drift', finding, at: now() };
+        if (finding.level === 'error') fatal = true;
+    }
+    if (fatal) {
+        yield { type: 'error', name, message: 'contract violation (drift)', status: lastStatus, attempts: state.attempts, at: now() };
+        yield doneEvt(false, t0, state.attempts);
+        return;
+    }
+
+    yield { type: 'result', value: acc, status: lastStatus, attempts: state.attempts, at: now() };
+    yield doneEvt(true, t0, state.attempts);
+}
+
 export async function* execute(rt: Runtime, input: StitchInput = {}): AsyncGenerator<StitchEvent, void, unknown> {
     const { cfg } = rt;
     const name = nameOf(cfg);
@@ -214,6 +291,11 @@ export async function* execute(rt: Runtime, input: StitchInput = {}): AsyncGener
     } catch (e) {
         yield errEvt(e, name, 0);
         yield doneEvt(false, t0, 0);
+        return;
+    }
+
+    if (cfg.paginate) {
+        yield* paginated(rt, input, state, t0);
         return;
     }
 

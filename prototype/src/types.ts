@@ -132,6 +132,13 @@ export interface StitchConfig {
     output?: Validator | DriftSpec;
     unwrap?: string;
     transform?: (body: unknown) => unknown | Promise<unknown>; // e.g. scrape HTML -> structured, before unwrap/validate
+    paginate?: {
+        // Given the previous page's raw body + how many pages were fetched, return the input
+        // (merged over the original) for the next page, or undefined to stop.
+        next: (prevBody: unknown, pagesFetched: number) => StitchInput | undefined;
+        items?: (value: unknown) => unknown[]; // pull the array from each unwrapped page (default: the value if it's an array)
+        max?: number; // safety cap on pages (default 50)
+    };
     auth?: AuthStrategy;
     retry?: RetryOptions;
     throttle?: ThrottleOptions;
