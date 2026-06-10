@@ -37,12 +37,15 @@ export interface DriftSpec {
 }
 
 // ---- Adapter (HTTP kind) --------------------------------------------------
+/** How to read the response body. Default (unset) = auto: JSON when the content-type is json-ish, else text. */
+export type ResponseType = 'json' | 'text' | 'arrayBuffer' | 'blob';
 export interface AdapterRequest {
     url: string;
     method: string;
     headers: Record<string, string>;
     body?: unknown;
     bodyType?: 'json' | 'form' | 'multipart';
+    responseType?: ResponseType;
     signal?: AbortSignal;
 }
 export interface AdapterResponse {
@@ -148,6 +151,7 @@ export interface StitchConfig {
     kind?: 'http' | 'graphql';
     method?: string;
     bodyType?: 'json' | 'form' | 'multipart'; // request body encoding (default 'json')
+    responseType?: ResponseType; // how to read the response body (default: auto by content-type)
     baseUrl?: string | (() => string);
     path?: string;
     headers?: Record<string, string>; // static default headers merged into every request

@@ -98,6 +98,7 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
               }
             : input.body,
         bodyType: isGql ? 'json' : cfg.bodyType,
+        responseType: cfg.responseType,
     };
 }
 
