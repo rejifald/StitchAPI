@@ -1,7 +1,12 @@
 // Resilience primitives: retry backoff math, Retry-After parsing, a proactive
 // throttle (rate + concurrency, per key), and a timeout wrapper. Dependency-free;
 // pacing/cancellation go through the shared `sleep`/`now` helpers from `./util`.
-import type { RetryOptions, ThrottleOptions } from './types';
+import type {
+    CircuitOptions,
+    RetryOptions,
+    StitchStore,
+    ThrottleOptions,
+} from './types';
 import { now, parseRate, sleep } from './util';
 
 export class TimeoutError extends Error {}
@@ -131,4 +136,70 @@ export function withTimeout<T>(
             },
         );
     });
+}
+
+/** Thrown (and surfaced as an `error` event) when a stitch fast-fails because its breaker is open. */
+export class CircuitOpenError extends Error {
+    readonly status = 503;
+    constructor(message = 'circuit open') {
+        super(message);
+        this.name = 'CircuitOpenError';
+    }
+}
+
+export type CircuitPhase = 'closed' | 'open' | 'half-open';
+interface CircuitRecord {
+    failures: number; // consecutive failures
+    openedAt: number; // epoch ms the breaker opened; 0 = closed
+}
+
+/**
+ * A store-backed circuit breaker. After `failureThreshold` consecutive failures it OPENS:
+ * calls fast-fail for `cooldownMs`, then it goes HALF-OPEN and lets a single trial through —
+ * a success closes it, another failure re-opens it. State lives in the StitchStore, so a shared
+ * store gives a breaker shared across workers (DESIGN.md §13).
+ */
+export function createCircuit(
+    opts: CircuitOptions,
+    store: StitchStore,
+    fallbackKey: string,
+): {
+    phase(): Promise<CircuitPhase>;
+    onSuccess(): Promise<void>;
+    onFailure(): Promise<boolean>;
+} {
+    const halfOpenAfter = opts.halfOpenAfterMs ?? opts.cooldownMs;
+    const nsKey = 'circuit:' + (opts.key ?? fallbackKey);
+
+    const read = async (): Promise<CircuitRecord> =>
+        ((await store.get(nsKey)) as CircuitRecord | undefined) ?? {
+            failures: 0,
+            openedAt: 0,
+        };
+
+    return {
+        // Current phase given the clock: closed, open (fast-fail), or half-open (one trial).
+        async phase(): Promise<CircuitPhase> {
+            const r = await read();
+            if (r.openedAt === 0) return 'closed';
+            return now() - r.openedAt >= halfOpenAfter ? 'half-open' : 'open';
+        },
+        // A success closes the breaker and clears the failure count.
+        async onSuccess(): Promise<void> {
+            await store.set(nsKey, { failures: 0, openedAt: 0 });
+        },
+        // A failure increments the count; returns true iff THIS failure opened the breaker.
+        async onFailure(): Promise<boolean> {
+            const r = await read();
+            const failures = r.failures + 1;
+            const wasOpen = r.openedAt !== 0;
+            if (wasOpen || failures >= opts.failureThreshold) {
+                // (re)open — arm a fresh cooldown window.
+                await store.set(nsKey, { failures, openedAt: now() });
+                return !wasOpen; // "newly opened" only when it had been closed
+            }
+            await store.set(nsKey, { failures, openedAt: 0 });
+            return false;
+        },
+    };
 }

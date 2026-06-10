@@ -70,6 +70,12 @@ export interface TimeoutOptions {
     total?: number | string;
     perAttempt?: number | string;
 }
+export interface CircuitOptions {
+    failureThreshold: number; // consecutive failures that trip the breaker OPEN
+    cooldownMs: number; // fast-fail window after opening, before a half-open trial
+    halfOpenAfterMs?: number; // when to allow a half-open trial (default cooldownMs)
+    key?: string; // store namespace to share a breaker across stitches (default: stitch/host key)
+}
 
 // ---- Auth -----------------------------------------------------------------
 export interface AuthContext {
@@ -105,7 +111,8 @@ export type ProgressPhase =
     | 'request'
     | 'throttled'
     | 'retry'
-    | 'paginate';
+    | 'paginate'
+    | 'circuit';
 export type StitchEvent<T = unknown> =
     | {
           type: 'start';
@@ -170,6 +177,7 @@ export interface StitchConfig {
     retry?: RetryOptions;
     throttle?: ThrottleOptions;
     timeout?: TimeoutOptions;
+    circuit?: CircuitOptions;
     hooks?: Hooks;
     extends?: Array<Partial<StitchConfig> | Stitch | string>;
     adapter?: Adapter; // test seam / custom transport
