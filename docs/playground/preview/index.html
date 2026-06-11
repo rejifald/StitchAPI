@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>StitchAPI — Docs Playground (preview)</title>
+        <style>
+            :root {
+                color-scheme: dark;
+                --bg: #0d1117;
+                --panel: #161b22;
+                --panel2: #0b0f14;
+                --border: #30363d;
+                --fg: #e6edf3;
+                --muted: #8b949e;
+                --accent: #58a6ff;
+                --ok: #3fb950;
+                --warn: #d29922;
+                --err: #f85149;
+                --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                background: var(--bg);
+                color: var(--fg);
+                font:
+                    14px/1.55 -apple-system,
+                    system-ui,
+                    Segoe UI,
+                    sans-serif;
+            }
+            header {
+                padding: 20px 24px;
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            header h1 {
+                font-size: 16px;
+                margin: 0;
+                font-weight: 650;
+            }
+            .badge {
+                font-size: 11px;
+                padding: 3px 8px;
+                border-radius: 999px;
+                border: 1px solid var(--border);
+                color: var(--muted);
+            }
+            .badge.warn {
+                color: var(--warn);
+                border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+            }
+            main {
+                display: grid;
+                grid-template-columns: 1.1fr 0.9fr;
+                gap: 16px;
+                padding: 16px;
+                max-width: 1200px;
+                margin: 0 auto;
+            }
+            @media (max-width: 860px) {
+                main {
+                    grid-template-columns: 1fr;
+                }
+            }
+            .card {
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                overflow: hidden;
+            }
+            .card > h2 {
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: var(--muted);
+                margin: 0;
+                padding: 10px 14px;
+                border-bottom: 1px solid var(--border);
+                background: var(--panel2);
+            }
+            .pad {
+                padding: 14px;
+            }
+            .toolbar {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 8px 14px;
+                border-bottom: 1px solid var(--border);
+            }
+            .status {
+                font: 12px var(--mono);
+                color: var(--muted);
+                margin-left: auto;
+            }
+            button {
+                font: inherit;
+                font-size: 13px;
+                color: var(--fg);
+                background: #21262d;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                padding: 5px 12px;
+                cursor: pointer;
+            }
+            button.primary {
+                background: var(--accent);
+                color: #06121f;
+                border-color: transparent;
+                font-weight: 600;
+            }
+            button:active {
+                transform: translateY(1px);
+            }
+            textarea {
+                width: 100%;
+                height: 200px;
+                resize: vertical;
+                border: 0;
+                outline: 0;
+                padding: 14px;
+                background: var(--panel2);
+                color: var(--fg);
+                font: 13px/1.5 var(--mono);
+            }
+            .output {
+                padding: 12px 14px;
+                min-height: 120px;
+                font: 12.5px/1.5 var(--mono);
+                border-top: 1px solid var(--border);
+                background: var(--panel2);
+            }
+            .log {
+                white-space: pre-wrap;
+            }
+            .log[data-level='warn'] {
+                color: var(--warn);
+            }
+            .log[data-level='error'] {
+                color: var(--err);
+            }
+            .value {
+                color: var(--ok);
+                white-space: pre-wrap;
+                margin: 8px 0 0;
+            }
+            .hint {
+                color: var(--muted);
+            }
+            .trace {
+                margin-top: 10px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .node {
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                padding: 4px 8px;
+                background: var(--panel);
+            }
+            .arrow {
+                color: var(--muted);
+            }
+            pre.mermaid {
+                margin: 0;
+                padding: 14px;
+                text-align: center;
+                min-height: 220px;
+            }
+            .note {
+                color: var(--muted);
+                font-size: 12px;
+                padding: 0 14px 14px;
+            }
+            code {
+                font: 12px var(--mono);
+                background: #21262d;
+                padding: 1px 5px;
+                border-radius: 4px;
+            }
+            footer {
+                color: var(--muted);
+                font-size: 12px;
+                text-align: center;
+                padding: 8px 16px 24px;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>StitchAPI · Docs Playground</h1>
+            <span class="badge">preview</span>
+            <span class="badge warn">execution mocked · engine deferred</span>
+        </header>
+
+        <main>
+            <section class="card">
+                <h2>Playground</h2>
+                <div class="toolbar">
+                    <button class="primary" id="run">Run</button>
+                    <button id="reset">Reset</button>
+                    <span class="status" id="status">ready</span>
+                </div>
+                <textarea id="editor" spellcheck="false"></textarea>
+                <div class="output" id="output">
+                    <span class="hint">Run a snippet to see output.</span>
+                </div>
+                <p class="note">
+                    Output is produced by a <strong>mock runner</strong> — the
+                    in-house execution engine is deferred (see
+                    <code>docs/playground/REQUIREMENTS.md</code>). The editor is
+                    a plain textarea here; CodeMirror 6 slots in later.
+                </p>
+            </section>
+
+            <section class="card">
+                <h2>How a build-stitch runs</h2>
+                <pre class="mermaid">
+flowchart LR
+  subgraph Browser["Browser · docs origin"]
+    ED[Editor] --> RUN[CodeRunner<br/>deferred]
+    RUN -. injects .-> ST[stitch<br/>browser build]
+    RUN --> OUT[Output panel]
+  end
+  ST -->|same-origin proxy| PX[Allowlisted proxy<br/>injects secrets]
+  PX --> API[(Third-party APIs)]
+                </pre>
+                <p class="note" id="diagram-note">
+                    Mermaid renders the build-stitch pipeline. If the diagram is
+                    blank, the CDN is unreachable from this preview — the rest
+                    of the page still works.
+                </p>
+            </section>
+        </main>
+
+        <footer>
+            StitchAPI docs playground · preview build · no real network calls
+            are made
+        </footer>
+
+        <script>
+            const DEFAULT_SNIPPET = `// Edit and run. Output is mocked — the execution engine is deferred.
+const user = await stitch('https://reqres.in/api/users/2');
+console.log(user);
+`;
+            const editor = document.getElementById('editor');
+            const output = document.getElementById('output');
+            const statusEl = document.getElementById('status');
+            editor.value = DEFAULT_SNIPPET;
+
+            // Mirrors mockRunner in docs/playground/component/runner.ts
+            function mockRun(code) {
+                const looksLikeStitch = /\bstitch\s*\(/.test(code);
+                return {
+                    durationMs: 128,
+                    logs: looksLikeStitch
+                        ? [
+                              ['info', '[mock] executing snippet…'],
+                              [
+                                  'log',
+                                  'GET https://reqres.in/api/users/2 → 200',
+                              ],
+                          ]
+                        : [
+                              [
+                                  'warn',
+                                  '[mock] no stitch() call detected in snippet',
+                              ],
+                          ],
+                    value: looksLikeStitch
+                        ? {
+                              data: {
+                                  id: 2,
+                                  first_name: 'Janet',
+                                  last_name: 'Weaver',
+                              },
+                          }
+                        : 'mock runner: no stitch() call detected',
+                    trace: looksLikeStitch
+                        ? [{ label: 'getUser', status: 200 }]
+                        : [],
+                };
+            }
+
+            function esc(s) {
+                return String(s).replace(
+                    /[&<>]/g,
+                    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c],
+                );
+            }
+
+            function render(res) {
+                const parts = [];
+                for (const [level, msg] of res.logs) {
+                    parts.push(
+                        `<div class="log" data-level="${level}">${esc(msg)}</div>`,
+                    );
+                }
+                if (typeof res.value === 'string') {
+                    parts.push(`<div class="value">${esc(res.value)}</div>`);
+                } else {
+                    parts.push(
+                        `<pre class="value">${esc(JSON.stringify(res.value, null, 2))}</pre>`,
+                    );
+                }
+                if (res.trace && res.trace.length) {
+                    const nodes = res.trace
+                        .map(
+                            (t) =>
+                                `<span class="node">${esc(t.label)} · ${t.status}</span>`,
+                        )
+                        .join('<span class="arrow">→</span>');
+                    parts.push(
+                        `<div class="trace"><span class="hint">build-stitch:</span>${nodes}<span class="arrow">→</span><span class="node">result</span></div>`,
+                    );
+                }
+                output.innerHTML = parts.join('');
+            }
+
+            function run() {
+                statusEl.textContent = 'running…';
+                const res = mockRun(editor.value);
+                // Simulate async resolution of the stitch() promise.
+                setTimeout(() => {
+                    render(res);
+                    statusEl.textContent = `done · ${res.durationMs}ms (mock)`;
+                }, 180);
+            }
+
+            document.getElementById('run').addEventListener('click', run);
+            document.getElementById('reset').addEventListener('click', () => {
+                editor.value = DEFAULT_SNIPPET;
+                output.innerHTML =
+                    '<span class="hint">Run a snippet to see output.</span>';
+                statusEl.textContent = 'ready';
+            });
+        </script>
+        <script type="module">
+            try {
+                const mermaid = (
+                    await import(
+                        'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'
+                    )
+                ).default;
+                mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+                await mermaid.run({ querySelector: 'pre.mermaid' });
+                document.getElementById('diagram-note').textContent =
+                    'Build-stitch pipeline: editor → CodeRunner → output, with authenticated calls routed through a same-origin allowlisted proxy.';
+            } catch (e) {
+                document.getElementById('diagram-note').textContent =
+                    'Mermaid CDN unreachable from this preview — diagram shown as source above.';
+            }
+        </script>
+    </body>
+</html>

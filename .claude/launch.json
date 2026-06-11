@@ -7,6 +7,13 @@
             "runtimeArgs": ["playground/run.sh"],
             "port": 5174,
             "autoPort": true
+        },
+        {
+            "name": "preview",
+            "runtimeExecutable": "node",
+            "runtimeArgs": ["docs/playground/preview/server.mjs"],
+            "port": 3000,
+            "autoPort": true
         }
     ]
 }
