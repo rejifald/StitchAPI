@@ -48,7 +48,6 @@ The name StitchAPI combines the words “stitch” and “API,” reflecting its
 -   [Transform](#transform)
 -   [Zero-infra observability](#zero-infra-observability)
 -   [The stitch CLI](#the-stitch-cli)
--   [Live playground](#live-playground)
 -   [Scope & roadmap](#scope--roadmap)
 -   [License](#license)
 
@@ -550,16 +549,6 @@ total: 12 run(s), 11 ok, 1 failed
 ```
 
 `--name <stitch>` filters to one stitch, `--file <path>` reads another log, `--json` emits the summary as JSON.
-
-## Live playground
-
-A runnable showcase streams the event stream of every feature above to the browser live (over SSE), against a behavior-simulating mock backend — no build step:
-
-```bash
-pnpm --filter @stitchapi/playground dev   # → http://localhost:5174
-```
-
-See [`packages/playground/README.md`](../playground/README.md) for how it is wired.
 
 ## Scope & roadmap
 

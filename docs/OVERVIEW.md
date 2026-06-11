@@ -195,7 +195,6 @@ third-party **service names stay out of public artifacts** (neutral archetypes).
     prettier, `tsc`, `attw`, 42 tests / 10 suites, `tsup` ESM+CJS+DTS build).
 -   **CLI surface shipped** — `stitch run` + `stitch trace` (`bin/stitch`, `src/cli.ts`,
     `src/registry.ts`).
--   **Live playground** — a separate SSE showcase of every feature (`packages/playground/`).
 -   **In progress** — OAuth2 client_credentials.
 -   Validated against synthetic scenarios **and** two real apps' integration patterns.
 -   **Branch workflow:** integration branch `develop`; feature branches → PR → `develop` →
