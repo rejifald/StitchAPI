@@ -5,16 +5,71 @@ description: 'Authentication failed, or a soft 200 login wall was hit and could 
 
 ## What you'll see
 
-Stub.
+A call that depends on a session fails after the runtime has tried to
+re-authenticate. With [`cookieSession`](/docs/guides/auth/cookie-session) the
+login is re-run on the configured `refreshOn` status (default `401`) and the
+request retried once; when that retry still can't get through, the stitch
+surfaces the failure instead of looping. The downstream response keeps coming
+back unauthenticated — most often a `401`, sometimes a `200` whose body is
+actually the login page.
 
 ## Why it happens
 
-Stub.
+Two distinct triggers land here:
+
+-   **The login no longer establishes a session.** Bad or expired credentials,
+    rotated form fields, or a login endpoint that now sets a different cookie than
+    the one you capture — so `cookieSession` replays a cookie the API rejects.
+-   **A soft 200 wall.** The API answers an unauthenticated request with `200` and
+    an HTML login page rather than a `401`. `refreshOn` only matches status codes,
+    so the wall slips past it and the body is treated as a successful response.
 
 ## How to fix
 
-Stub.
+Confirm the credentials resolve at call time (see
+[secret resolvers](/docs/guides/auth/secret-resolvers)) and that `cookie`
+captures the cookie the API actually checks — `'*'` captures the whole jar when
+you're unsure which one matters.
+
+For a soft 200 wall, add `refreshWhen` so a login page served with `200`
+triggers a re-login instead of passing as data:
+
+```ts twoslash
+import { cookieSession, env, stitch } from '@stitchapi/core';
+
+const login = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/login',
+    bodyType: 'form',
+});
+
+const me = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/me',
+    auth: cookieSession({
+        login,
+        cookie: '*',
+        loginInput: () => ({
+            body: { user: env('USER')(), pass: env('PASS')() },
+        }),
+        // A 200 that is really the login page is a soft wall — re-login on it.
+        refreshWhen: (res) =>
+            typeof res.body === 'string' && res.body.includes('id="login"'),
+    }),
+});
+```
 
 ## Related
 
-Stub.
+<Cards>
+    <Card
+        title="Guide: cookieSession"
+        href="/docs/guides/auth/cookie-session"
+    />
+    <Card title="Secret resolvers" href="/docs/guides/auth/secret-resolvers" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+</Cards>

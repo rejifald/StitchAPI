@@ -158,39 +158,67 @@ export interface InputSchemas {
     headers?: Validator;
 }
 export interface StitchConfig {
+    /** Label used in events and traces; defaults to `path` or `'stitch'`. */
     name?: string;
+    /** Request kind. `'http'` (default) or `'graphql'` for a POST `{ query, variables }`. */
     kind?: 'http' | 'graphql';
+    /** HTTP method; defaults to `GET`. */
     method?: string;
-    bodyType?: 'json' | 'form' | 'multipart'; // request body encoding (default 'json')
-    responseType?: ResponseType; // how to read the response body (default: auto by content-type)
+    /** Request body encoding. Default `'json'`. */
+    bodyType?: 'json' | 'form' | 'multipart';
+    /** How to read the response body. Default: auto by content-type. */
+    responseType?: ResponseType;
+    /** Origin for the request, as a string or a thunk resolved at call time. */
     baseUrl?: string | (() => string);
+    /** Path appended to `baseUrl`; may include `{param}` slots and a `?query` string. */
     path?: string;
-    headers?: Record<string, string>; // static default headers merged into every request
-    query?: string; // GraphQL query string (kind: 'graphql')
+    /** Static default headers merged into every request. */
+    headers?: Record<string, string>;
+    /** GraphQL query string (`kind: 'graphql'`). */
+    query?: string;
+    /** Schemas validating params, query, body, and headers before the request. */
     input?: InputSchemas;
+    /** Response schema, or a {@link DriftSpec} for leveled drift detection. */
     output?: Validator | DriftSpec;
+    /** Dot-path selecting the part of the response to return. */
     unwrap?: string;
-    transform?: (body: unknown) => unknown; // e.g. scrape HTML -> structured, before unwrap/validate
+    /** Reshape the raw body before unwrap and validation (e.g. scrape HTML to structured data). */
+    transform?: (body: unknown) => unknown;
+    /** Auto-loop pages, aggregating items, with auth/retry/throttle applied to every page. */
     paginate?: {
-        // Given the previous page's raw body + how many pages were fetched, return the input
-        // (merged over the original) for the next page, or undefined to stop.
+        /**
+         * Given the previous page's raw body and how many pages were fetched, return the
+         * input (merged over the original) for the next page, or `undefined` to stop.
+         */
         next: (
             prevBody: unknown,
             pagesFetched: number,
         ) => StitchInput | undefined;
-        items?: (value: unknown) => unknown[]; // pull the array from each unwrapped page (default: the value if it's an array)
-        max?: number; // safety cap on pages (default 50)
+        /** Pull the array from each unwrapped page. Default: the value if it is an array. */
+        items?: (value: unknown) => unknown[];
+        /** Safety cap on pages. Default 50. */
+        max?: number;
     };
+    /** Auth strategy — the stitch holds the credential; the caller never sees it. */
     auth?: AuthStrategy;
+    /** Retry-and-backoff policy. */
     retry?: RetryOptions;
+    /** Rate and concurrency limits. */
     throttle?: ThrottleOptions;
+    /** Total and per-attempt timeouts. */
     timeout?: TimeoutOptions;
+    /** Circuit breaker that fast-fails a repeatedly failing dependency. */
     circuit?: CircuitOptions;
-    idempotency?: IdempotencyOptions; // inject a stable Idempotency-Key header on writes
+    /** Inject a stable Idempotency-Key header on writes so safe retries don't duplicate. */
+    idempotency?: IdempotencyOptions;
+    /** Request/response/error/retry lifecycle hooks. */
     hooks?: Hooks;
+    /** Fragments to deep-merge under this config — strings, partials, or other stitches. */
     extends?: (Partial<StitchConfig> | Stitch | string)[];
-    adapter?: Adapter; // test seam / custom transport
-    store?: StitchStore; // pluggable state store (throttle + session); default in-memory
+    /** Test seam / custom transport. */
+    adapter?: Adapter;
+    /** Pluggable state store for throttle + session. Default in-memory. */
+    store?: StitchStore;
 }
 
 export interface StitchResult<T> extends PromiseLike<T> {
