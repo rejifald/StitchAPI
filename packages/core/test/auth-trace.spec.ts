@@ -9,11 +9,11 @@ import { join } from 'node:path';
 // We must control the JSONL trace path BEFORE importing `../src`: getTrace() reads
 // STITCH_TRACE_FILE when each stitch is constructed. Capture the path so scenario 3
 // can read the records back and prove zero-infra observability.
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-auth-${process.pid}.jsonl`,
 );
-const TRACE_FILE = process.env.STITCH_TRACE_FILE;
+const TRACE_FILE = process.env['STITCH_TRACE_FILE'];
 
 let server: MockServer;
 
@@ -53,10 +53,10 @@ test('auth-wall: me() auto-logs-in and never asks the caller for a secret', asyn
 
     // Set per the task. STITCH_USER/STITCH_PASS are inert here; the loginInput below
     // resolves DEMO_USER / DEMO_PASS at call time via env().
-    process.env.STITCH_USER = 'u';
-    process.env.STITCH_PASS = 'p';
-    process.env.DEMO_USER = 'u';
-    process.env.DEMO_PASS = 'p';
+    process.env['STITCH_USER'] = 'u';
+    process.env['STITCH_PASS'] = 'p';
+    process.env['DEMO_USER'] = 'u';
+    process.env['DEMO_PASS'] = 'p';
 
     const me = stitch({
         baseUrl: server.url,
@@ -76,7 +76,7 @@ test('auth-wall: me() auto-logs-in and never asks the caller for a secret', asyn
     expect(server.callCount('/login')).toBe(1);
 
     const meReq = server.calls('/me')[0];
-    expect(meReq?.cookies.sid).toBe('GOOD');
+    expect(meReq?.cookies['sid']).toBe('GOOD');
 });
 
 // Scenario 2 — Refresh on the 401 wall.

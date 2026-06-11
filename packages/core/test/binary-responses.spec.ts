@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-binary-${process.pid}.jsonl`,
 );

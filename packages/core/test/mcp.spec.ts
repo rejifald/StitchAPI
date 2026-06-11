@@ -4,13 +4,14 @@ import { createMcpServer, serveStdio } from '../src/mcp';
 import type { JsonRpcMessage } from '../src/mcp';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
+import { asValidator } from './support/schema';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough, type Readable } from 'node:stream';
 import { z } from 'zod';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-mcp-${process.pid}.jsonl`,
 );
@@ -39,7 +40,7 @@ beforeEach(() => {
         baseUrl: api.url,
         path: '/widgets/{id}',
         unwrap: 'data',
-        output: z.object({ id: z.number() }),
+        output: asValidator(z.object({ id: z.number() })),
     });
     const ping = stitch({ baseUrl: api.url, path: '/ping' });
     server = createMcpServer({ getWidget, ping });
@@ -91,7 +92,7 @@ test('tools/call run_stitch maps input and returns the validated result', async 
     );
     const result = res?.result as ToolCallResult;
     expect(result.isError).toBeFalsy();
-    expect(JSON.parse(result.content[0].text)).toEqual({ id: 7 });
+    expect(JSON.parse(result.content[0]!.text)).toEqual({ id: 7 });
     expect(api.callCount('/widgets/7')).toBe(1);
 });
 
@@ -101,7 +102,7 @@ test('tools/call run_stitch on an unknown stitch is a tool error, not a crash', 
     );
     const result = res?.result as ToolCallResult;
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('unknown stitch "nope"');
+    expect(result.content[0]!.text).toContain('unknown stitch "nope"');
 });
 
 test('tools/call list_stitches enumerates name/method/path', async () => {
@@ -109,7 +110,7 @@ test('tools/call list_stitches enumerates name/method/path', async () => {
         req('tools/call', { name: 'list_stitches' }),
     );
     const result = res?.result as ToolCallResult;
-    const list = JSON.parse(result.content[0].text) as {
+    const list = JSON.parse(result.content[0]!.text) as {
         name: string;
         method: string;
         path: string;
@@ -192,7 +193,7 @@ test('a run_stitch call over stdio returns the result', async () => {
         );
         const res = await pending;
         const result = res.result as ToolCallResult;
-        expect(JSON.parse(result.content[0].text)).toEqual({ ok: true });
+        expect(JSON.parse(result.content[0]!.text)).toEqual({ ok: true });
     } finally {
         close();
     }

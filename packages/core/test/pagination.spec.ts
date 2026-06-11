@@ -7,7 +7,7 @@ import type { MockServer } from './support/mock-server';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-paginate-${process.pid}.jsonl`,
 );
@@ -26,7 +26,7 @@ beforeEach(() => {
 // A 3-page endpoint keyed off ?page=N.
 function paged() {
     return (_i: number, req: { query: Record<string, string> }) => {
-        const page = Number(req.query.page ?? '1');
+        const page = Number(req.query['page'] ?? '1');
         const pages = [[1, 2], [3, 4], [5]];
         const data = pages[page - 1] ?? [];
         return { data, page, hasMore: page < pages.length };

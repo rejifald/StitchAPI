@@ -7,7 +7,7 @@ import type { MockServer } from './support/mock-server';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-encoding-${process.pid}.jsonl`,
 );
@@ -94,8 +94,8 @@ describe('Body encoding', () => {
 
 describe('cookieSession content-aware refresh (soft wall)', () => {
     test('re-logs-in when a 200 response is actually a login page', async () => {
-        process.env.SOFT_USER = 'u';
-        process.env.SOFT_PASS = 'p';
+        process.env['SOFT_USER'] = 'u';
+        process.env['SOFT_PASS'] = 'p';
         server.route('POST', '/auth', {
             setCookie: { name: 'SID', value: 'OK' },
             body: 'ok',

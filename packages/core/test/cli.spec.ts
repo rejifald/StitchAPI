@@ -10,13 +10,14 @@ import {
 import { collectStitches, loadStitches, selectStitch } from '../src/registry';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
+import { asValidator } from './support/schema';
 
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-cli-${process.pid}.jsonl`,
 );
@@ -169,7 +170,9 @@ describe('runStitch (arg → input → JSONL)', () => {
             baseUrl: server.url,
             path: '/widgets',
             unwrap: 'data',
-            output: z.array(z.object({ id: z.number(), name: z.string() })),
+            output: asValidator(
+                z.array(z.object({ id: z.number(), name: z.string() })),
+            ),
         });
 
         const lines: string[] = [];

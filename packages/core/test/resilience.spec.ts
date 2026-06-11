@@ -6,7 +6,7 @@ import type { MockServer } from './support/mock-server';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-resilience-${process.pid}.jsonl`,
 );

@@ -2,12 +2,13 @@ import { defineStitch, preset, stitch } from '../src';
 import type { StitchEvent } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
+import { asValidator } from './support/schema';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     'stitch-composition-' + process.pid + '.jsonl',
 );
@@ -43,7 +44,9 @@ const resultOf = <T>(events: StitchEvent<T>[]) =>
 test('three facades (extends / defineStitch / builder) are equivalent', async () => {
     server.route('GET', '/items', { body: { data: [{ id: 1, name: 'Ada' }] } });
 
-    const schema = z.array(z.object({ id: z.number(), name: z.string() }));
+    const schema = asValidator(
+        z.array(z.object({ id: z.number(), name: z.string() })),
+    );
     const base = preset({ baseUrl: server.url, unwrap: 'data' });
 
     // (a) extends

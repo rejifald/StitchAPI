@@ -2,12 +2,13 @@ import { drift, stitch } from '../src';
 import type { DriftFinding, StitchEvent } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
+import { asValidator } from './support/schema';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-drift-${process.pid}.jsonl`,
 );
@@ -57,7 +58,7 @@ test('schema valid: await resolves with the validated value', async () => {
     const s = stitch({
         baseUrl: server.url,
         path: '/ok',
-        output: z.object({ id: z.number(), name: z.string() }),
+        output: asValidator(z.object({ id: z.number(), name: z.string() })),
     });
     await expect(s()).resolves.toEqual({ id: 1, name: 'Ada' });
 
@@ -76,7 +77,7 @@ test('schema invalid: await rejects and stream emits error/invalid drift', async
     const s = stitch({
         baseUrl: server.url,
         path: '/bad',
-        output: z.object({ id: z.number() }),
+        output: asValidator(z.object({ id: z.number() })),
     });
 
     await expect(s()).rejects.toThrow();
@@ -221,13 +222,21 @@ test('standard schema (non-Zod): valid resolves, invalid rejects with error/inva
 
     // Valid response resolves.
     server.route('GET', '/std', { body: { id: 7 } });
-    const ok = stitch({ baseUrl: server.url, path: '/std', output: standard });
+    const ok = stitch({
+        baseUrl: server.url,
+        path: '/std',
+        output: asValidator(standard),
+    });
     await expect(ok()).resolves.toEqual({ id: 7 });
 
     // Invalid response (id is a string) rejects with an error/invalid drift finding.
     server.reset();
     server.route('GET', '/std', { body: { id: 'nope' } });
-    const bad = stitch({ baseUrl: server.url, path: '/std', output: standard });
+    const bad = stitch({
+        baseUrl: server.url,
+        path: '/std',
+        output: asValidator(standard),
+    });
 
     await expect(bad()).rejects.toThrow();
 

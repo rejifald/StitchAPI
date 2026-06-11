@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-patterns-${process.pid}.jsonl`,
 );
@@ -43,10 +43,10 @@ function scrapeListings(html: unknown): {
             row,
         )?.[1];
         if (title) {
-            item.title = title[2].trim();
-            item.link = title[1];
+            item['title'] = title[2]!.trim();
+            item['link'] = title[1];
         }
-        if (score) item.score = Number(score); // omitted when the selector misses
+        if (score) item['score'] = Number(score); // omitted when the selector misses
         return item;
     });
     return { items };
@@ -59,7 +59,7 @@ const listingRow = (scoreClass: string) =>
 // =========================================================================================
 describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx)', () => {
     test('sends the ApiKey header and retries on 429, then succeeds', async () => {
-        process.env.METADATA_API_KEY = 'sk_meta_123';
+        process.env['METADATA_API_KEY'] = 'sk_meta_123';
         server.route('POST', '/graphql', {
             statuses: [429, 200],
             body: { data: { query: { count: 1 } } },
@@ -79,7 +79,7 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
         });
         expect(out).toEqual({ query: { count: 1 } });
         expect(server.callCount('/graphql')).toBe(2); // 429 then 200
-        expect(server.calls('/graphql').at(-1)?.headers.apikey).toBe(
+        expect(server.calls('/graphql').at(-1)?.headers['apikey']).toBe(
             'sk_meta_123',
         );
     });
@@ -103,8 +103,8 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
 // =========================================================================================
 describe('Session-cookie admin API (auto re-login on 403)', () => {
     test('auto-logs-in, replays the session cookie, and re-logs-in on a 403 — never exposing the password', async () => {
-        process.env.CLIENT_USER = 'admin';
-        process.env.CLIENT_PASS = 'secret';
+        process.env['CLIENT_USER'] = 'admin';
+        process.env['CLIENT_PASS'] = 'secret';
         server.route('POST', '/auth/login', {
             setCookie: { name: 'SID', value: 'SID-OK' },
             body: { ok: true },
@@ -141,15 +141,17 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
         expect(out).toEqual([{ id: 'abc', state: 'active' }]);
         expect(server.callCount('/auth/login')).toBe(2); // initial auto-login + refresh after 403
         expect(server.callCount('/resources')).toBe(2);
-        expect(server.calls('/resources').at(-1)?.cookies.SID).toBe('SID-OK');
+        expect(server.calls('/resources').at(-1)?.cookies['SID']).toBe(
+            'SID-OK',
+        );
     });
 });
 
 // =========================================================================================
 describe('HTML scrape provider — silent markup breakage becomes a loud drift error', () => {
     test('a markup class rename (score -> rank) is caught as a drift ERROR instead of silent undefined', async () => {
-        process.env.SCRAPE_USER = 'u';
-        process.env.SCRAPE_PASS = 'p';
+        process.env['SCRAPE_USER'] = 'u';
+        process.env['SCRAPE_PASS'] = 'p';
         const snapshotFile = join(
             tmpdir(),
             `patterns-scrape-${process.pid}-${Date.now()}.contract.json`,
@@ -231,9 +233,9 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
 // =========================================================================================
 describe('Diverse co-located auth (three providers, three header formats)', () => {
     test('each provider sends its own auth header format', async () => {
-        process.env.REST_API_KEY = 'rest_tok';
-        process.env.MEDIA_A_TOKEN = 'media_a';
-        process.env.MEDIA_B_TOKEN = 'media_b';
+        process.env['REST_API_KEY'] = 'rest_tok';
+        process.env['MEDIA_A_TOKEN'] = 'media_a';
+        process.env['MEDIA_B_TOKEN'] = 'media_b';
         server.route('GET', '/catalog', { body: { results: [] } });
         server.route('GET', '/system', { body: { name: 'a' } });
         server.route('GET', '/node', { body: { name: 'b' } });
@@ -268,10 +270,10 @@ describe('Diverse co-located auth (three providers, three header formats)', () =
         await mediaA();
         await mediaB();
 
-        expect(server.calls('/catalog')[0]?.headers.authorization).toBe(
+        expect(server.calls('/catalog')[0]?.headers['authorization']).toBe(
             'Bearer rest_tok',
         );
-        expect(server.calls('/system')[0]?.headers.authorization).toBe(
+        expect(server.calls('/system')[0]?.headers['authorization']).toBe(
             'MediaToken token="media_a"',
         );
         expect(server.calls('/node')[0]?.headers['x-media-token']).toBe(

@@ -1,12 +1,13 @@
 import { stitch } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
+import { asValidator } from './support/schema';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-smoke-${process.pid}.jsonl`,
 );
@@ -29,7 +30,9 @@ test('await sugar returns the unwrapped, validated result', async () => {
         baseUrl: server.url,
         path: '/users',
         unwrap: 'data',
-        output: z.array(z.object({ id: z.number(), name: z.string() })),
+        output: asValidator(
+            z.array(z.object({ id: z.number(), name: z.string() })),
+        ),
     });
     await expect(users()).resolves.toEqual([{ id: 1, name: 'Ada' }]);
 });

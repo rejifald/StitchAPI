@@ -97,7 +97,7 @@ export function startMockServer(): Promise<MockServer> {
             method,
             path,
             headers,
-            cookies: parseCookies(headers.cookie),
+            cookies: parseCookies(headers['cookie']),
             query,
             body: await readBody(req),
         };

@@ -10,7 +10,7 @@ import type { MockServer } from './support/mock-server';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-otlp-${process.pid}.jsonl`,
 );
@@ -65,7 +65,7 @@ test('maps a successful call to one CLIENT span with OTel HTTP semconv attribute
     for (const ev of events) sink.handle(ev, { name });
 
     expect(spans).toHaveLength(1);
-    const span = spans[0];
+    const span = spans[0]!;
     expect(span.kind).toBe('CLIENT');
     expect(span.attributes['http.request.method']).toBe('GET');
     expect(span.attributes['url.full']).toBe('http://api.example.com/x');
@@ -103,10 +103,10 @@ test('maps an error to an ERROR span with error.type and status_code', () => {
     for (const ev of events) sink.handle(ev, { name });
 
     expect(spans).toHaveLength(1);
-    expect(spans[0].status.code).toBe('ERROR');
-    expect(spans[0].status.message).toBe('HTTP 500');
-    expect(spans[0].attributes['http.response.status_code']).toBe(500);
-    expect(spans[0].attributes['error.type']).toBe('500');
+    expect(spans[0]!.status.code).toBe('ERROR');
+    expect(spans[0]!.status.message).toBe('HTTP 500');
+    expect(spans[0]!.attributes['http.response.status_code']).toBe(500);
+    expect(spans[0]!.attributes['error.type']).toBe('500');
 });
 
 test('end-to-end: a real stitch call exports one span to the stub exporter', async () => {
@@ -119,10 +119,10 @@ test('end-to-end: a real stitch call exports one span to the stub exporter', asy
     for await (const ev of ping.stream()) sink.handle(ev, { name: 'ping' });
 
     expect(spans).toHaveLength(1);
-    expect(spans[0].attributes['http.request.method']).toBe('GET');
-    expect(String(spans[0].attributes['url.full'])).toContain('/ping');
-    expect(spans[0].attributes['http.response.status_code']).toBe(200);
-    expect(spans[0].status.code).toBe('OK');
+    expect(spans[0]!.attributes['http.request.method']).toBe('GET');
+    expect(String(spans[0]!.attributes['url.full'])).toContain('/ping');
+    expect(spans[0]!.attributes['http.response.status_code']).toBe(200);
+    expect(spans[0]!.status.code).toBe('OK');
 });
 
 test('STITCH_EXPORT parses to a list and multiplex fans out to every sink', () => {

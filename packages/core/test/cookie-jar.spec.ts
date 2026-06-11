@@ -8,7 +8,7 @@ import type { MockServer } from './support/mock-server';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-cookiejar-${process.pid}.jsonl`,
 );
@@ -22,8 +22,8 @@ afterAll(async () => {
 });
 beforeEach(() => {
     server.reset();
-    process.env.CJ_USER = 'u';
-    process.env.CJ_PASS = 'p';
+    process.env['CJ_USER'] = 'u';
+    process.env['CJ_PASS'] = 'p';
 });
 
 const loginInput = () => ({
@@ -60,9 +60,9 @@ test('cookie: "*" captures and replays every cookie the login set', async () => 
     await expect(data()).resolves.toEqual({ ok: true });
     expect(server.callCount('/login')).toBe(1);
 
-    const req = server.calls('/data')[0];
-    expect(req.cookies.sid).toBe('ABC'); // both cookies from the jar replay together
-    expect(req.cookies.csrf).toBe('XYZ');
+    const req = server.calls('/data')[0]!;
+    expect(req.cookies['sid']).toBe('ABC'); // both cookies from the jar replay together
+    expect(req.cookies['csrf']).toBe('XYZ');
 });
 
 test('jar: true is equivalent to cookie: "*"', async () => {
@@ -90,9 +90,9 @@ test('jar: true is equivalent to cookie: "*"', async () => {
     });
 
     await expect(data()).resolves.toEqual({ ok: true });
-    const req = server.calls('/data')[0];
-    expect(req.cookies.sid).toBe('ABC');
-    expect(req.cookies.csrf).toBe('XYZ');
+    const req = server.calls('/data')[0]!;
+    expect(req.cookies['sid']).toBe('ABC');
+    expect(req.cookies['csrf']).toBe('XYZ');
 });
 
 test('a single named cookie still replays only that one (regression)', async () => {
@@ -119,7 +119,7 @@ test('a single named cookie still replays only that one (regression)', async () 
     });
 
     await expect(data()).resolves.toEqual({ ok: true });
-    const req = server.calls('/data')[0];
-    expect(req.cookies.sid).toBe('ABC'); // captured
-    expect(req.cookies.csrf).toBeUndefined(); // NOT captured — named mode is scoped to one cookie
+    const req = server.calls('/data')[0]!;
+    expect(req.cookies['sid']).toBe('ABC'); // captured
+    expect(req.cookies['csrf']).toBeUndefined(); // NOT captured — named mode is scoped to one cookie
 });

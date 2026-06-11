@@ -9,7 +9,7 @@ import type { MockServer } from './support/mock-server';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-store-${process.pid}.jsonl`,
 );
@@ -44,8 +44,8 @@ async function wasThrottled(s: Stitch): Promise<number> {
 
 describe('Pluggable store — sessions', () => {
     test('a SHARED store makes two stitches share one login', async () => {
-        process.env.ST_USER = 'u';
-        process.env.ST_PASS = 'p';
+        process.env['ST_USER'] = 'u';
+        process.env['ST_PASS'] = 'p';
         server.route('POST', '/login', {
             setCookie: { name: 'SID', value: 'OK' },
             body: { ok: true },
@@ -95,8 +95,8 @@ describe('Pluggable store — sessions', () => {
     });
 
     test('default (separate) stores → each stitch logs in independently', async () => {
-        process.env.ST_USER = 'u';
-        process.env.ST_PASS = 'p';
+        process.env['ST_USER'] = 'u';
+        process.env['ST_PASS'] = 'p';
         server.route('POST', '/login', {
             setCookie: { name: 'SID', value: 'OK' },
             body: { ok: true },

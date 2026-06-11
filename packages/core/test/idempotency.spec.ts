@@ -8,7 +8,7 @@ import type { MockServer } from './support/mock-server';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-idempotency-${process.pid}.jsonl`,
 );
@@ -41,9 +41,9 @@ test('injects a stable Idempotency-Key on a write, unchanged across a retry', as
 
     const calls = server.calls('/create');
     expect(calls.length).toBe(2); // 503 then 200
-    const key = calls[0].headers['idempotency-key'];
+    const key = calls[0]!.headers['idempotency-key'];
     expect(key).toBeTruthy();
-    expect(calls[1].headers['idempotency-key']).toBe(key); // identical across the retry
+    expect(calls[1]!.headers['idempotency-key']).toBe(key); // identical across the retry
 });
 
 test('uses a custom key function derived from the input', async () => {
@@ -65,8 +65,8 @@ test('uses a custom key function derived from the input', async () => {
     await create({ body: { id: 42 } });
 
     const calls = server.calls('/orders');
-    expect(calls[0].headers['x-idempotency-key']).toBe('order-42');
-    expect(calls[1].headers['x-idempotency-key']).toBe('order-42'); // stable + deterministic
+    expect(calls[0]!.headers['x-idempotency-key']).toBe('order-42');
+    expect(calls[1]!.headers['x-idempotency-key']).toBe('order-42'); // stable + deterministic
 });
 
 test('separate logical calls get distinct generated keys', async () => {
@@ -82,8 +82,8 @@ test('separate logical calls get distinct generated keys', async () => {
     await create({ body: {} });
 
     const calls = server.calls('/c');
-    expect(calls[0].headers['idempotency-key']).not.toBe(
-        calls[1].headers['idempotency-key'],
+    expect(calls[0]!.headers['idempotency-key']).not.toBe(
+        calls[1]!.headers['idempotency-key'],
     );
 });
 
@@ -96,5 +96,7 @@ test('does not inject on GET (writes only)', async () => {
     });
 
     await read();
-    expect(server.calls('/read')[0].headers['idempotency-key']).toBeUndefined();
+    expect(
+        server.calls('/read')[0]!.headers['idempotency-key'],
+    ).toBeUndefined();
 });

@@ -9,7 +9,7 @@ import type { MockServer } from './support/mock-server';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-oauth2-${process.pid}.jsonl`,
 );
@@ -23,8 +23,8 @@ afterAll(async () => {
 });
 beforeEach(() => {
     server.reset();
-    process.env.OAUTH_CLIENT_ID = 'cid';
-    process.env.OAUTH_CLIENT_SECRET = 'csecret';
+    process.env['OAUTH_CLIENT_ID'] = 'cid';
+    process.env['OAUTH_CLIENT_SECRET'] = 'csecret';
 });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -38,7 +38,7 @@ const protectedStitch = (
     stitch({
         baseUrl: server.url,
         path,
-        store,
+        ...(store ? { store } : {}),
         auth: oauth2({
             tokenUrl: `${server.url}/token`,
             clientId: env('OAUTH_CLIENT_ID'),
@@ -64,7 +64,7 @@ test('fetches one token, reuses it across calls, and sends it as a Bearer', asyn
     expect(server.callCount('/data')).toBe(2);
 
     // The token POST is a form-encoded client_credentials grant carrying the resolved id.
-    const tokenReq = server.calls('/token')[0];
+    const tokenReq = server.calls('/token')[0]!;
     expect(String(tokenReq.body)).toContain('grant_type=client_credentials');
     expect(String(tokenReq.body)).toContain('client_id=cid');
 });
@@ -93,7 +93,7 @@ test('a SHARED store lets two stitches share one token', async () => {
 
 test('refreshes the token after it expires', async () => {
     server.route('POST', '/token', {
-        body: (i) => ({
+        body: (i: number) => ({
             access_token: i === 0 ? 'T1' : 'T2',
             token_type: 'Bearer',
             expires_in: 1, // 1s TTL
@@ -112,13 +112,13 @@ test('refreshes the token after it expires', async () => {
 
     expect(server.callCount('/token')).toBe(2); // expired → re-fetched
     const calls = server.calls('/data');
-    expect(calls[0].headers.authorization).toBe('Bearer T1');
-    expect(calls[1].headers.authorization).toBe('Bearer T2'); // the refreshed token
+    expect(calls[0]!.headers['authorization']).toBe('Bearer T1');
+    expect(calls[1]!.headers['authorization']).toBe('Bearer T2'); // the refreshed token
 }, 10000);
 
 test('refreshes proactively BEFORE expiry using refreshSkewMs', async () => {
     server.route('POST', '/token', {
-        body: (i) => ({
+        body: (i: number) => ({
             access_token: i === 0 ? 'T1' : 'T2',
             token_type: 'Bearer',
             expires_in: 2, // real expiry at +2s
@@ -137,12 +137,12 @@ test('refreshes proactively BEFORE expiry using refreshSkewMs', async () => {
 
     expect(server.callCount('/token')).toBe(2); // refreshed early, not at the 2s boundary
     const calls = server.calls('/data');
-    expect(calls[1].headers.authorization).toBe('Bearer T2');
+    expect(calls[1]!.headers['authorization']).toBe('Bearer T2');
 }, 10000);
 
 test('re-fetches the token when the resource server rejects it (401)', async () => {
     server.route('POST', '/token', {
-        body: (i) => ({
+        body: (i: number) => ({
             access_token: i === 0 ? 'STALE' : 'FRESH',
             token_type: 'Bearer',
             expires_in: 3600,
@@ -159,6 +159,6 @@ test('re-fetches the token when the resource server rejects it (401)', async () 
 
     expect(server.callCount('/token')).toBe(2); // initial fetch + forced refresh on 401
     const calls = server.calls('/data');
-    expect(calls[0].headers.authorization).toBe('Bearer STALE');
-    expect(calls[1].headers.authorization).toBe('Bearer FRESH');
+    expect(calls[0]!.headers['authorization']).toBe('Bearer STALE');
+    expect(calls[1]!.headers['authorization']).toBe('Bearer FRESH');
 });

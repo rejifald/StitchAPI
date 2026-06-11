@@ -4,12 +4,13 @@ import { serve } from '../src/serve';
 import type { ServeHandle } from '../src/serve';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
+import { asValidator } from './support/schema';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-process.env.STITCH_TRACE_FILE = join(
+process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
     `stitch-serve-${process.pid}.jsonl`,
 );
@@ -40,7 +41,7 @@ beforeAll(async () => {
         baseUrl: api.url,
         path: '/widgets/{id}',
         unwrap: 'data',
-        output: z.object({ id: z.number() }),
+        output: asValidator(z.object({ id: z.number() })),
     });
     const ping = stitch({ baseUrl: api.url, path: '/ping' });
     handle = await serve({ getWidget, ping }, { port: 0 });
