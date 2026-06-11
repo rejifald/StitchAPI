@@ -1,0 +1,11 @@
+{
+    "title": "Auth",
+    "pages": [
+        "bearer",
+        "api-key",
+        "basic",
+        "cookie-session",
+        "oauth2",
+        "secret-resolvers"
+    ]
+}

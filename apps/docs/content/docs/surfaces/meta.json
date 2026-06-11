@@ -1,0 +1,5 @@
+{
+    "title": "Surfaces",
+    "icon": "Layers",
+    "pages": ["function", "cli", "http-serve", "mcp"]
+}
