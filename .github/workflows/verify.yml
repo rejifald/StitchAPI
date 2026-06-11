@@ -36,3 +36,8 @@ jobs:
             - run: pnpm check:types
             - run: pnpm test
             - run: pnpm check:exports
+            # Render gate: `tsc` type-checks the docs but never renders a page, so a
+            # broken AutoTypeTable path/name, an unregistered MDX component, or a
+            # generator throw all pass type-check and only fail at build. Building the
+            # docs app runs generateStaticParams over every page and surfaces those.
+            - run: pnpm --filter @stitchapi/docs build

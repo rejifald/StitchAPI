@@ -21,3 +21,7 @@ pre-push:
           run: pnpm check:types
         - name: test
           run: pnpm test
+        # Render gate — see verify.yml. `tsc` never renders a page, so building the
+        # docs app is what actually exercises AutoTypeTable and MDX components.
+        - name: build-docs
+          run: pnpm --filter @stitchapi/docs build
