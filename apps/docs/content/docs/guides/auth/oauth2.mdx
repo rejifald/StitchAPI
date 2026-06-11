@@ -3,16 +3,64 @@ title: 'oauth2'
 description: 'OAuth2 client_credentials: fetch, cache, and auto-refresh a token behind the capability boundary.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Use `oauth2` when an API authenticates with the OAuth2 `client_credentials`
+grant and you want the access token fetched, cached, and refreshed for you — the
+stitch holds the client id and secret, the caller never sees the token.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { env, oauth2, stitch } from '@stitchapi/core';
+
+const orders = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    auth: oauth2({
+        tokenUrl: 'https://api.example.com/oauth/token',
+        clientId: env('CLIENT_ID'),
+        clientSecret: env('CLIENT_SECRET'),
+        scope: 'orders.read',
+    }),
+});
+```
+
+The first call to `orders()` POSTs the form-encoded token request, caches the
+token in the stitch store (TTL from `expires_in`), and attaches it as
+`Authorization: Bearer …`; later calls reuse the cached token until it nears
+expiry, all behind the capability boundary.
 
 ## Options
 
-Stub.
+`tokenUrl` is the `client_credentials` token endpoint. Pass `clientId` and
+`clientSecret` as [secret resolvers](/docs/guides/auth/secret-resolvers) — e.g.
+`env('CLIENT_ID')` — so the credentials are read at call time and never
+committed. `scope` is an optional space-delimited scope string.
+
+The token is cached and auto-refreshed: `refreshSkewMs` (default `30_000`)
+refreshes it that many milliseconds before expiry, so it is never used
+mid-flight, and `refreshOn` (default `[401]`) lists the statuses that mean the
+token was rejected and force a fresh fetch plus retry.
+
+Give two stitches the same `key` plus a shared `store` and one token serves them
+all — across stitches and across workers, surviving restarts. See
+[Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
+
+<Callout type="warn">
+    The token lives only in the store and the outgoing `Authorization` header —
+    the caller, an agent included, never receives it. That is the capability
+    boundary; see [Capability, not
+    credential](/docs/concepts/capability-not-credential).
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Secret resolvers" href="/docs/guides/auth/secret-resolvers" />
+    <Card title="bearer" href="/docs/guides/auth/bearer" />
+    <Card title="Pluggable store" href="/docs/guides/state/pluggable-store" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="Auth strategies" href="/docs/reference/auth-strategies" />
+</Cards>
