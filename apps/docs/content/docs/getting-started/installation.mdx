@@ -1,70 +1,51 @@
 ---
 title: 'Installation'
-description: 'Install @stitchapi/core and set up the zero-dependency runtime in Node or the browser.'
+description: 'Install stitchapi and set up the zero-dependency runtime in Node or the browser.'
 ---
 
-Install the `@stitchapi/core` runtime and confirm it resolves, in a Node
-project or a browser bundle. The runtime ships with zero dependencies, so this
-is one install and a one-line type check — no peer packages required to get a
-stitch type-checking.
+Install the package, import `stitch`, and make one typed call to confirm the
+runtime works. `stitchapi` has zero dependencies and runs anywhere `fetch`
+does — Node, the browser, and edge runtimes.
 
 ## Install
 
-Add `@stitchapi/core` with your package manager:
-
-```bash
-npm install @stitchapi/core
+```package-install
+stitchapi
 ```
 
-```bash
-pnpm add @stitchapi/core
+## Import it
+
+`stitch` is a named export. Pick the form that matches your module system —
+everything after the import is identical.
+
+```ts twoslash tab="ESM" tabGroup="module"
+import { stitch } from 'stitchapi';
 ```
 
-```bash
-yarn add @stitchapi/core
+```js tab="CommonJS" tabGroup="module"
+const { stitch } = require('stitchapi');
 ```
-
-```bash
-bun add @stitchapi/core
-```
-
-## Requirements
-
-The runtime has zero dependencies. It runs on a modern Node runtime, and in the
-browser via any bundler — there is no minimum Node version to pin and nothing to
-install alongside it.
-
-Validation is optional. If you want runtime validation of params, body, or the
-response, bring any [Standard Schema](https://standardschema.dev) validator —
-Zod, Valibot, or ArkType — as your own dependency. It is an optional add-on, not
-a requirement; see [Standard Schema](/docs/guides/validation/standard-schema).
 
 ## Verify
 
-Declare a trivial stitch and confirm the types resolve. If this snippet
-type-checks, the install is good:
+Declare a stitch from one URL and call it like a function — no config object, no
+client to construct:
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
 
-const me = stitch({
-    baseUrl: 'https://api.example.com',
-    path: '/me',
-});
+const getUsers = stitch('https://api.example.com/users');
+
+const users = await getUsers(); // GET, parsed JSON
 ```
 
-<Callout type="info">
-    No type error means `@stitchapi/core` resolved and `me` is a typed, callable
-    stitch — you are ready to write a real one.
-</Callout>
+If that returns without throwing, the runtime is wired up. Add an `output` schema
+next and you get TypeScript types, runtime validation, and drift detection in one
+move — see Quickstart.
 
-## Next steps
+## See also
 
 <Cards>
     <Card title="Quickstart" href="/docs/getting-started/quickstart" />
-    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
-    <Card
-        title="Standard Schema"
-        href="/docs/guides/validation/standard-schema"
-    />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
 </Cards>

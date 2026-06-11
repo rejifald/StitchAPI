@@ -16,7 +16,7 @@ The thing every project reaches for is `fetch`, and `fetch` hands back opaque by
 **One primitive, three facades.** There is exactly one thing — the stitch — reached through three authoring surfaces that all resolve to the same engine. The string form is the smallest possible declaration; the config form is the same declaration with more fields; the fluent builder is the same fields set one call at a time. None is a different kind of object: each compiles to one canonical config and produces the same callable.
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
 
 // The string form: a bare URL is the smallest complete stitch.
 const a = stitch('https://api.example.com/users');

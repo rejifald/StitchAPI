@@ -1,3 +1,4 @@
+import { Popup, PopupContent, PopupTrigger } from 'fumadocs-twoslash/ui';
 import { createGenerator } from 'fumadocs-typescript';
 import { AutoTypeTable } from 'fumadocs-typescript/ui';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
@@ -21,6 +22,10 @@ export function getMDXComponents(components?: MDXComponents) {
         AutoTypeTable: (props: AutoTypeTableProps) => (
             <AutoTypeTable generator={generator} {...props} />
         ),
+        // Twoslash hover popups — emitted by the transformer wired in source.config.ts.
+        Popup,
+        PopupContent,
+        PopupTrigger,
         ...components,
     } satisfies MDXComponents;
 }

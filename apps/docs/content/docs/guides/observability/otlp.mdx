@@ -23,7 +23,7 @@ To wire it yourself — to set headers, or to tee OTLP next to your own sink —
 build the sink with `otlpTrace()` and combine sinks with `multiplex`:
 
 ```ts twoslash
-import { createTrace, multiplex, otlpTrace } from '@stitchapi/core';
+import { createTrace, multiplex, otlpTrace } from 'stitchapi';
 
 const trace = multiplex(
     createTrace({ console: true }),

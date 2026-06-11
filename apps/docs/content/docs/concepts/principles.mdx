@@ -19,7 +19,7 @@ auth, retries, observability) has a sane default and reveals its knobs only when
 you ask, so simple things stay one line and the depth is there when you need it.
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
 
 // A string is a whole stitch.
 const getUsers = stitch('https://api.example.com/users');
@@ -50,7 +50,7 @@ from it inherits it. You share a fragment instead of re-typing config, and a
 stitch is itself a composable value others can extend.
 
 ```ts twoslash
-import { defineStitch, preset } from '@stitchapi/core';
+import { defineStitch, preset } from 'stitchapi';
 
 const api = preset({
     baseUrl: 'https://api.example.com',

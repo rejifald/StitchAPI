@@ -1,5 +1,6 @@
 import './global.css';
 
+import 'fumadocs-twoslash/twoslash.css';
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import { Inter } from 'next/font/google';
 

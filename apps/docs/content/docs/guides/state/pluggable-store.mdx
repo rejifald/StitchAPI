@@ -11,8 +11,8 @@ or anything else by implementing three async methods and attaching it via
 ## Example
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
-import type { StitchStore } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
+import type { StitchStore } from 'stitchapi';
 
 // A StitchStore is just three async methods + TTL — back it with anything.
 const redisStore: StitchStore = {

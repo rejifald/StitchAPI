@@ -10,7 +10,7 @@ for you — the stitch holds the login, the caller never touches a cookie.
 ## Example
 
 ```ts twoslash
-import { cookieSession, env, stitch } from '@stitchapi/core';
+import { cookieSession, env, stitch } from 'stitchapi';
 
 // The login is itself a stitch — its Set-Cookie response seeds the session.
 const login = stitch({

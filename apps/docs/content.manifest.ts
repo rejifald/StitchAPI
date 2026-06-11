@@ -99,7 +99,7 @@ export const pages: Page[] = [
         path: 'getting-started/installation',
         title: 'Installation',
         description:
-            'Install @stitchapi/core and set up the zero-dependency runtime in Node or the browser.',
+            'Install stitchapi and set up the zero-dependency runtime in Node or the browser.',
         kind: 'tutorial',
     },
     {
