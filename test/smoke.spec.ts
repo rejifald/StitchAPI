@@ -19,7 +19,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 test('await sugar returns the unwrapped, validated result', async () => {
     server.route('GET', '/users', { body: { data: [{ id: 1, name: 'Ada' }] } });

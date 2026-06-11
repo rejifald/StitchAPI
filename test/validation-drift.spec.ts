@@ -20,7 +20,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 // Give each drift test its own snapshot file so baselines never collide.
 let snapSeq = 0;
@@ -32,7 +34,7 @@ const freshSnapshot = (): string =>
 
 // Drain a stream, returning every event (so we can inspect drift findings + ordering).
 async function collect<T>(
-    gen: AsyncGenerator<StitchEvent<T>, void, unknown>,
+    gen: AsyncGenerator<StitchEvent<T>, void>,
 ): Promise<StitchEvent<T>[]> {
     const events: StitchEvent<T>[] = [];
     for await (const ev of gen) events.push(ev);

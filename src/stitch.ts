@@ -12,6 +12,7 @@ import {
     type InputSchemas,
     type Stitch,
     type StitchConfig,
+    type StitchEvent,
     type StitchInput,
     type StitchResult,
     type StitchStore,
@@ -19,7 +20,7 @@ import {
     isStitch,
 } from './types';
 import { deepMerge } from './util';
-import { type Validator, toValidator } from './validator';
+import { toValidator } from './validator';
 
 type Fragment = Partial<StitchConfig> | Stitch | string;
 
@@ -34,7 +35,7 @@ function flatten(layers: Fragment[]): Partial<StitchConfig>[] {
     const out: Partial<StitchConfig>[] = [];
     for (const layer of layers) {
         const cfg = asConfig(layer);
-        if (cfg.extends) out.push(...flatten(cfg.extends as Fragment[]));
+        if (cfg.extends) out.push(...flatten(cfg.extends));
         const rest = { ...cfg };
         delete (rest as { extends?: unknown }).extends;
         out.push(rest);
@@ -52,9 +53,9 @@ function chainHooks(layers: Hooks[]): Hooks | undefined {
     ];
     const merged: Hooks = {};
     for (const k of keys) {
-        const fns = layers.map((h) => h[k]).filter(Boolean) as Array<
-            (c: HookContext) => unknown
-        >;
+        const fns = layers.map((h) => h[k]).filter(Boolean) as ((
+            c: HookContext,
+        ) => unknown)[];
         if (!fns.length) continue;
         // onResponse/onError/onRetry unwind child→base; onRequest runs base→child.
         const ordered = k === 'onRequest' ? fns : fns.slice().reverse();
@@ -69,7 +70,7 @@ function chainHooks(layers: Hooks[]): Hooks | undefined {
 function normalizeOutput(out: StitchConfig['output']): StitchConfig['output'] {
     if (!out) return undefined;
     if ((out as DriftSpec).__kind === 'drift') return out;
-    return toValidator(out) as Validator;
+    return toValidator(out);
 }
 
 function normalizeInput(
@@ -78,7 +79,10 @@ function normalizeInput(
     if (!input) return undefined;
     const out: InputSchemas = {};
     for (const k of ['params', 'query', 'body', 'headers'] as const) {
-        if (input[k]) out[k] = toValidator(input[k]) as Validator;
+        if (input[k]) {
+            const v = toValidator(input[k]);
+            if (v) out[k] = v;
+        }
     }
     return out;
 }
@@ -91,24 +95,27 @@ function compose(config: Fragment): StitchConfig {
     for (const layer of layers) {
         if (layer.hooks) hookLayers.push(layer.hooks);
         if (layer.store) store = layer.store;
-        merged = deepMerge(merged, {
-            ...layer,
-            hooks: undefined,
-            store: undefined,
-        });
+        const rest: Partial<StitchConfig> = { ...layer };
+        delete rest.hooks;
+        delete rest.store;
+        merged = deepMerge(merged, rest);
     }
-    merged.hooks = chainHooks(hookLayers);
-    merged.store = store;
-    merged.output = normalizeOutput(merged.output);
-    merged.input = normalizeInput(merged.input);
-    return merged as StitchConfig;
+    const hooks = chainHooks(hookLayers);
+    if (hooks) merged.hooks = hooks;
+    if (store) merged.store = store;
+    const output = normalizeOutput(merged.output);
+    if (output) merged.output = output;
+    const input = normalizeInput(merged.input);
+    if (input) merged.input = input;
+    return merged;
 }
 
 // ---- shared trace sink (zero-infra: console off in tests, JSONL file) ------
 function getTrace(): TraceSink {
+    const file = process.env['STITCH_TRACE_FILE'];
     return createTrace({
-        console: process.env.STITCH_TRACE_CONSOLE === '1',
-        file: process.env.STITCH_TRACE_FILE || undefined,
+        console: process.env['STITCH_TRACE_CONSOLE'] === '1',
+        ...(file ? { file } : {}),
     });
 }
 
@@ -119,7 +126,7 @@ async function consume<T>(
     let result: T | undefined;
     let failure: { message?: string; status?: number } | undefined;
     for await (const ev of gen) {
-        if (ev.type === 'result') result = ev.value as T;
+        if (ev.type === 'result') result = ev['value'] as T;
         else if (ev.type === 'error')
             failure = ev as { message?: string; status?: number };
     }
@@ -128,17 +135,17 @@ async function consume<T>(
             status?: number;
         };
         e.name = 'StitchError';
-        e.status = failure.status;
+        if (failure.status !== undefined) e.status = failure.status;
         throw e;
     }
     return result as T;
 }
 
 function tee<T>(
-    gen: AsyncGenerator<import('./types').StitchEvent<T>, void, unknown>,
+    gen: AsyncGenerator<StitchEvent<T>, void>,
     trace: TraceSink,
     name: string,
-): AsyncGenerator<import('./types').StitchEvent<T>, void, unknown> {
+): AsyncGenerator<StitchEvent<T>, void> {
     async function* wrapped() {
         for await (const ev of gen) {
             trace.handle(ev, { name });
@@ -233,16 +240,18 @@ export function defineStitch(...fragments: Fragment[]) {
         c.extends = [
             ...fragments,
             ...((c.extends as Fragment[]) ?? []),
-        ] as StitchConfig['extends'];
+        ] as NonNullable<StitchConfig['extends']>;
         return makeStitch<T>(c);
     };
 }
 
 /** drift(): wrap an output schema with leveled drift options. */
 export function drift(schema: unknown, options: DriftOptions = {}): DriftSpec {
+    const schemaV = toValidator(schema);
+    if (!schemaV) throw new Error('drift() requires a schema');
     return {
         __kind: 'drift',
-        schema: toValidator(schema) as Validator,
+        schema: schemaV,
         options,
     };
 }
@@ -288,7 +297,7 @@ function makeBuilder(initial: Partial<StitchConfig>): Builder {
         (acc.extends = [
             ...((acc.extends as Fragment[]) ?? []),
             ...f,
-        ] as StitchConfig['extends']),
+        ] as NonNullable<StitchConfig['extends']>),
         invalidate(),
         fn
     );
@@ -299,13 +308,31 @@ function makeBuilder(initial: Partial<StitchConfig>): Builder {
         (acc.method = 'DELETE'), (acc.path = p), invalidate(), fn
     );
     fn.returns = (schema) => (
-        (acc.output = schema as StitchConfig['output']), invalidate(), fn
+        (acc.output = schema as NonNullable<StitchConfig['output']>),
+        invalidate(),
+        fn
     );
     fn.unwrap = (key) => ((acc.unwrap = key), invalidate(), fn);
-    fn.auth = (a) => ((acc.auth = a), invalidate(), fn);
-    fn.retry = (r) => ((acc.retry = r), invalidate(), fn);
-    fn.throttle = (t) => ((acc.throttle = t), invalidate(), fn);
-    fn.timeout = (t) => ((acc.timeout = t), invalidate(), fn);
+    fn.auth = (a) => {
+        if (a) acc.auth = a;
+        invalidate();
+        return fn;
+    };
+    fn.retry = (r) => {
+        if (r) acc.retry = r;
+        invalidate();
+        return fn;
+    };
+    fn.throttle = (t) => {
+        if (t) acc.throttle = t;
+        invalidate();
+        return fn;
+    };
+    fn.timeout = (t) => {
+        if (t) acc.timeout = t;
+        invalidate();
+        return fn;
+    };
     fn.stream = (input) => ensure().stream(input);
     fn.with = (partial) => ensure().with(partial);
     return fn;

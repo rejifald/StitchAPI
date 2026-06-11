@@ -22,12 +22,14 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 // A faithful-enough HTML scraper. The score selector is hardcoded to `td.score` — exactly
 // the kind of selector a markup rename (score -> rank) silently breaks.
 function scrapeListings(html: unknown): {
-    items: Array<Record<string, unknown>>;
+    items: Record<string, unknown>[];
 } {
     const text = String(html);
     const rows = text.split(/<tr[^>]*class="(?:row1|row2)"[^>]*>/i).slice(1);
@@ -210,8 +212,7 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
         expect(first).toEqual([{ title: 'Item A', link: '/i/1', score: 42 }]);
 
         // call #2: renamed markup -> scraper silently drops score. The runtime must SHOUT.
-        const findings: Array<{ level: string; path: string; change: string }> =
-            [];
+        const findings: { level: string; path: string; change: string }[] = [];
         let rejected = false;
         try {
             for await (const ev of search.stream({ query: { q: 'item' } })) {

@@ -1,0 +1,37 @@
+# The verify gate: same checks as the local lefthook hooks, on every PR + push to
+# an integration branch. Green is required to merge. See ~/Development/handbook
+# conventions/global/ci-canonical.md.
+name: Verify
+
+on:
+    pull_request:
+        branches: [main, develop]
+    push:
+        branches: [main, develop]
+
+# Default-deny; this gate only reads the repo.
+permissions:
+    contents: read
+
+# Cancel superseded PR runs; let integration-branch runs queue.
+concurrency:
+    group: verify-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+    verify:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+            - run: npm ci
+            # Cheap → expensive: a fast failure surfaces first.
+            - run: npm run check:format
+            - run: npm run check:lint
+            - run: npm run check:types
+            - run: npm test
+            - run: npm run check:exports

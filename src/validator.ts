@@ -80,5 +80,5 @@ export function toValidator(schema: unknown): Validator | undefined {
 interface ZodResult {
     success: boolean;
     data?: unknown;
-    error?: { issues?: Array<{ path?: (string | number)[]; message: string }> };
+    error?: { issues?: { path?: (string | number)[]; message: string }[] };
 }

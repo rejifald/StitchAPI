@@ -51,8 +51,8 @@ export function fetchAdapter(): Adapter {
         const response = await fetch(req.url, {
             method,
             headers,
-            body,
-            signal: req.signal,
+            ...(body !== undefined ? { body } : {}),
+            ...(req.signal ? { signal: req.signal } : {}),
         });
 
         // Collect response headers with lowercased keys; join multiple set-cookie with ', '.
@@ -93,8 +93,14 @@ export function fetchAdapter(): Adapter {
 // Append a value to multipart FormData: a Blob/Uint8Array becomes a file part; a
 // { value, filename?, type? } wrapper becomes a named file; everything else a string field.
 function appendForm(form: FormData, key: string, v: unknown): void {
-    if (v instanceof Blob) return void form.append(key, v);
-    if (v instanceof Uint8Array) return void form.append(key, new Blob([v]));
+    if (v instanceof Blob) {
+        form.append(key, v);
+        return;
+    }
+    if (v instanceof Uint8Array) {
+        form.append(key, new Blob([v]));
+        return;
+    }
     if (
         v &&
         typeof v === 'object' &&

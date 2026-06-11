@@ -19,7 +19,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 describe('Body encoding', () => {
     test('form -> application/x-www-form-urlencoded (with escaping)', async () => {

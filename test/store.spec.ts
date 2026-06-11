@@ -21,7 +21,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 const loginInput = () => ({
     body: { u: env('ST_USER')(), p: env('ST_PASS')() },

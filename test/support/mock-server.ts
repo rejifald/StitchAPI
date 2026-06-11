@@ -60,14 +60,19 @@ const readBody = (req: IncomingMessage): Promise<unknown> =>
         req.on('data', (c: Buffer) => chunks.push(c));
         req.on('end', () => {
             const raw = Buffer.concat(chunks).toString('utf8');
-            if (!raw) return resolve(undefined);
+            if (!raw) {
+                resolve(undefined);
+                return;
+            }
             try {
                 resolve(JSON.parse(raw));
             } catch {
                 resolve(raw);
             }
         });
-        req.on('error', () => resolve(undefined));
+        req.on('error', () => {
+            resolve(undefined);
+        });
     });
 
 export function startMockServer(): Promise<MockServer> {
@@ -117,23 +122,30 @@ export function startMockServer(): Promise<MockServer> {
             res.end(JSON.stringify(payload));
         };
 
-        if (!behavior) return send(404, { error: 'not_found' });
+        if (!behavior) {
+            send(404, { error: 'not_found' });
+            return;
+        }
 
         const ck = behavior.requireCookie;
         if (
             ck &&
             (info.cookies[ck.name] === undefined ||
                 (ck.value !== undefined && info.cookies[ck.name] !== ck.value))
-        )
-            return send(401, { error: 'unauthorized' });
+        ) {
+            send(401, { error: 'unauthorized' });
+            return;
+        }
         const hd = behavior.requireHeader;
         if (hd) {
             const have = headers[hd.name.toLowerCase()];
             if (
                 have === undefined ||
                 (hd.value !== undefined && have !== hd.value)
-            )
-                return send(401, { error: 'unauthorized' });
+            ) {
+                send(401, { error: 'unauthorized' });
+                return;
+            }
         }
 
         const idx = counters.get(rk) ?? 0;
@@ -159,7 +171,9 @@ export function startMockServer(): Promise<MockServer> {
             delay = (at(behavior.delayMs, idx) as number) ?? 0;
         else if (typeof behavior.delayMs === 'number') delay = behavior.delayMs;
 
-        const respond = (): void => send(status, body, behavior);
+        const respond = (): void => {
+            send(status, body, behavior);
+        };
         if (delay > 0) setTimeout(respond, delay);
         else respond();
     };
@@ -192,7 +206,11 @@ export function startMockServer(): Promise<MockServer> {
                     log.length = 0;
                 },
                 close: () =>
-                    new Promise<void>((res) => server.close(() => res())),
+                    new Promise<void>((res) =>
+                        server.close(() => {
+                            res();
+                        }),
+                    ),
             });
         });
     });

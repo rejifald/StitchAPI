@@ -20,11 +20,13 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 // Drain a stitch stream into an array of events.
 async function collect<T>(
-    gen: AsyncGenerator<StitchEvent<T>, void, unknown>,
+    gen: AsyncGenerator<StitchEvent<T>, void>,
 ): Promise<StitchEvent<T>[]> {
     const out: StitchEvent<T>[] = [];
     for await (const ev of gen) out.push(ev);

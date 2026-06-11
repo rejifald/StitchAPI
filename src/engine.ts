@@ -87,6 +87,7 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const { path } = expandPath(tpl, input.params ?? {});
     const query = { ...predefined, ...(input.query ?? {}) };
     const url = joinUrl(base, path) + buildQuery(query);
+    const bodyType = isGql ? 'json' : cfg.bodyType;
     return {
         url,
         method: (cfg.method ?? (isGql ? 'POST' : 'GET')).toUpperCase(),
@@ -97,7 +98,7 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
                   variables: input.variables ?? input.body ?? {},
               }
             : input.body,
-        bodyType: isGql ? 'json' : cfg.bodyType,
+        ...(bodyType ? { bodyType } : {}),
     };
 }
 
@@ -118,11 +119,12 @@ const hostKey = (req: AdapterRequest, cfg: StitchConfig): string => {
 
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const e = err as { message?: string; status?: number };
+    const status = e?.status;
     return {
         type: 'error',
         name,
         message: e?.message ?? String(err),
-        status: e?.status,
+        ...(status !== undefined ? { status } : {}),
         attempts,
         at: now(),
     };
@@ -140,7 +142,7 @@ async function validateInput(
     input: StitchInput,
 ): Promise<void> {
     for (const part of ['params', 'query', 'body', 'headers'] as const) {
-        const v = cfg.input?.[part] as Validator | undefined;
+        const v = cfg.input?.[part];
         if (!v) continue;
         const r = await v.validate((input as Record<string, unknown>)[part]);
         if (!r.ok) {
@@ -197,7 +199,7 @@ async function* attemptLoop(
     rt: Runtime,
     baseReq: AdapterRequest,
     state: { attempts: number },
-): AsyncGenerator<StitchEvent, AdapterResponse, unknown> {
+): AsyncGenerator<StitchEvent, AdapterResponse> {
     const { cfg } = rt;
     const max = cfg.retry?.attempts ?? 1;
     const retryOn = cfg.retry?.on ?? [429, 502, 503, 504];
@@ -324,7 +326,7 @@ async function* paginated(
     input: StitchInput,
     state: { attempts: number },
     t0: number,
-): AsyncGenerator<StitchEvent, void, unknown> {
+): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
     const name = nameOf(cfg);
     const pg = cfg.paginate!;
@@ -412,7 +414,7 @@ async function* paginated(
 export async function* execute(
     rt: Runtime,
     input: StitchInput = {},
-): AsyncGenerator<StitchEvent, void, unknown> {
+): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
     const name = nameOf(cfg);
     const t0 = now();
@@ -452,9 +454,8 @@ export async function* execute(
 
     // GraphQL: a 200 response carrying `errors` is a failure.
     if (cfg.kind === 'graphql') {
-        const errs = (res.body as { errors?: Array<{ message?: string }> })
-            ?.errors;
-        if (errs && errs.length) {
+        const errs = (res.body as { errors?: { message?: string }[] })?.errors;
+        if (errs?.length) {
             yield {
                 type: 'error',
                 name,

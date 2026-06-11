@@ -171,17 +171,17 @@ export interface StitchConfig {
     throttle?: ThrottleOptions;
     timeout?: TimeoutOptions;
     hooks?: Hooks;
-    extends?: Array<Partial<StitchConfig> | Stitch | string>;
+    extends?: (Partial<StitchConfig> | Stitch | string)[];
     adapter?: Adapter; // test seam / custom transport
     store?: StitchStore; // pluggable state store (throttle + session); default in-memory
 }
 
 export interface StitchResult<T> extends PromiseLike<T> {
-    stream(): AsyncGenerator<StitchEvent<T>, void, unknown>;
+    stream(): AsyncGenerator<StitchEvent<T>, void>;
 }
 export interface Stitch<T = unknown> {
     (input?: StitchInput): StitchResult<T>;
-    stream(input?: StitchInput): AsyncGenerator<StitchEvent<T>, void, unknown>;
+    stream(input?: StitchInput): AsyncGenerator<StitchEvent<T>, void>;
     with(partial: StitchInput): Stitch<T>;
     readonly __config: StitchConfig;
     readonly __stitch: true;

@@ -26,7 +26,7 @@ export function env(name: string): () => string {
 export function keychain(name: string): () => string {
     return () => {
         try {
-            const file = `${process.env.HOME}/.stitch/secrets.json`;
+            const file = `${process.env['HOME']}/.stitch/secrets.json`;
             if (existsSync(file)) {
                 const obj = JSON.parse(readFileSync(file, 'utf8')) as Record<
                     string,
@@ -98,8 +98,8 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
     const doRefresh = async (ctx: AuthContext) => {
         ctx.emit('auth', 'login');
         const res = await opts.login.__raw(opts.loginInput?.());
-        const setCookie = (res.headers['set-cookie'] ??
-            res.headers['Set-Cookie']) as string | undefined;
+        const setCookie =
+            res.headers['set-cookie'] ?? res.headers['Set-Cookie'];
         const value = parseCookie(setCookie, opts.cookie);
         if (value != null)
             await ctx.store.set(nsKey, `${opts.cookie}=${value}`, opts.ttlMs);
@@ -134,7 +134,7 @@ function parseCookie(
 ): string | undefined {
     if (!setCookie) return undefined;
     for (const part of setCookie.split(/,(?=[^;]+=)/)) {
-        const seg = part.trim().split(';')[0];
+        const seg = part.trim().split(';')[0] ?? '';
         const eq = seg.indexOf('=');
         if (eq > 0 && seg.slice(0, eq).trim() === name)
             return seg.slice(eq + 1).trim();

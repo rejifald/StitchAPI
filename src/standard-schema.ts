@@ -13,11 +13,11 @@ export interface StandardSchemaV1<Output = unknown> {
 
 export type StandardResult<Output> =
     | { readonly value: Output; readonly issues?: undefined }
-    | { readonly issues: ReadonlyArray<StandardIssue> };
+    | { readonly issues: readonly StandardIssue[] };
 
 export interface StandardIssue {
     readonly message: string;
-    readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>;
+    readonly path?: readonly (PropertyKey | { readonly key: PropertyKey })[];
 }
 
 export function isStandardSchema(x: unknown): x is StandardSchemaV1 {

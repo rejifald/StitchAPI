@@ -19,7 +19,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 describe('GraphQL kind', () => {
     test('POSTs { query, variables }, sends auth, and unwraps data', async () => {
