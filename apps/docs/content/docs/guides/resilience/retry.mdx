@@ -3,16 +3,61 @@ title: 'Retry & backoff'
 description: 'Retry on configurable status codes with expo/jitter/fixed backoff and respect for Retry-After.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Add `retry` when an API returns transient failures — rate limits and gateway
+hiccups — and you want the stitch to wait and try again instead of surfacing the
+first error.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { stitch } from '@stitchapi/core';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    retry: {
+        attempts: 3,
+        on: [429, 503],
+        backoff: 'expo-jitter',
+        baseMs: 200,
+        respectRetryAfter: true,
+    },
+});
+```
 
 ## Options
 
-Stub.
+`attempts` is the **total** number of attempts including the first call, so
+`attempts: 3` means up to two retries; the default is `1`, which disables
+retrying.
+
+`on` lists the response status codes that trigger a retry. It defaults to
+`[429, 502, 503, 504]` — the usual transient set — and you narrow or widen it
+per stitch.
+
+`backoff` chooses how long to wait between attempts, paced from `baseMs` and
+clamped to `maxMs`: `'expo'` doubles the delay each attempt, `'expo-jitter'`
+spreads it randomly up to that exponential value to avoid thundering herds, and
+`'fixed'` waits a constant `baseMs` every time.
+
+`respectRetryAfter` honors a `Retry-After` header on the failing response —
+delta-seconds or an HTTP-date — using it in place of the computed backoff when
+the server tells you when to come back.
+
+Each retry surfaces as a `progress` event (phase `retry`) on the
+[event stream](/docs/concepts/event-stream), so a trace sees every wait and
+re-attempt. For the exhaustive field list and defaults, see
+[Reference → Config types](/docs/reference/config-types).
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Timeout" href="/docs/guides/resilience/timeout" />
+    <Card
+        title="Circuit breaker"
+        href="/docs/guides/resilience/circuit-breaker"
+    />
+    <Card title="Idempotency" href="/docs/guides/resilience/idempotency" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="Config types" href="/docs/reference/config-types" />
+</Cards>
