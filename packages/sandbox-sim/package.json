@@ -1,0 +1,20 @@
+{
+    "name": "@stitchapi/sandbox-sim",
+    "version": "0.0.0",
+    "private": true,
+    "description": "Isomorphic fake-API simulator for the StitchAPI playground — handlers and adapters for testing snippet execution across browser and server tiers.",
+    "scripts": {
+        "check:types": "tsc --noEmit"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "typescript": "^5.9.3"
+    },
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/sandbox-sim"
+    }
+}

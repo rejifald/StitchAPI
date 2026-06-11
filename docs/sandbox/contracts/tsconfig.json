@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+        "strict": true
+    },
+    "include": ["*.ts", "../component/runner.ts"]
+}
