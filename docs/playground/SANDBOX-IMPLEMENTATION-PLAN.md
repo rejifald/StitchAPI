@@ -33,24 +33,27 @@ Opus-tier pass reserved for the load-bearing design, security, and integration w
 
 ## 2. Task map at a glance
 
-| ID | Task | Tier | Depends on | Wave |
-|---|---|---|---|---|
-| **C1** | Freeze shared contracts (runner + sim + dispatch types) | T3 | — | 0 |
-| **C2** | Security & isolation spec sign-off (caps, CSP, no-egress invariants) | T3 | — | 0 |
-| **S1** | Simulator package scaffold (`@stitchapi/sandbox-sim`) | T1 | C1 | 1 |
-| **B1** | Browser `stitch` build with Node-surface shims | T3 | C1 | 1 |
-| **S2** | Simulator handlers — errors/status + latency | T2 | S1 | 2 |
-| **S3** | Simulator handlers — streaming/SSE + LLM endpoint | T2 | S1 | 2 |
-| **S4** | Simulator handlers — auth/capability + rate-limit/retry/drift | T2 | S1 | 2 |
-| **S5** | Sim adapters: browser fetch-shim + node fetch-shim (isomorphic) | T2 | S1 | 2 |
-| **R1** | Browser Web Worker runner (`browserWorkerRunner`) | T2 | C1, C2, B1, S5 | 3 |
-| **R2** | Transpile module (Sucrase + Babel fallback, lazy) | T2 | C1 | 2 |
-| **D1** | Dispatcher + static surface scan (`dispatchRunner`) | T3 | C1, R1 | 4 |
-| **U1** | Wire `<StitchPlayground/>` to `dispatchRunner`; output panel streaming/DAG | T2 | C1, R1 | 4 |
-| **F1** | Fixtures + sandbox index (`/__sandbox`) + seed data | T1 | S2–S4 | 3 |
-| **T-α** | Test suite: runner caps, no-egress, determinism, acceptance §9 | T2 | R1, D1, U1 | 5 |
-| **SR1** | Server run-service (isolated-vm pool) — **Phase 3, deferred** | T3 | C1, C2, B1, S5 | (later) |
-| **I1** | Integration + acceptance sign-off (SANDBOX §9) | T3 | all of Wave 5 | 6 |
+> **Status column** added by I1 (2026-06-11) — reflects reality; see
+> [SANDBOX-STATUS.md](./SANDBOX-STATUS.md) for evidence.
+
+| ID | Task | Tier | Depends on | Wave | Status |
+|---|---|---|---|---|---|
+| **C1** | Freeze shared contracts (runner + sim + dispatch types) | T3 | — | 0 | done |
+| **C2** | Security & isolation spec sign-off (caps, CSP, no-egress invariants) | T3 | — | 0 | done |
+| **S1** | Simulator package scaffold (`@stitchapi/sandbox-sim`) | T1 | C1 | 1 | done |
+| **B1** | Browser `stitch` build with Node-surface shims | T3 | C1 | 1 | done |
+| **S2** | Simulator handlers — errors/status + latency | T2 | S1 | 2 | done |
+| **S3** | Simulator handlers — streaming/SSE + LLM endpoint | T2 | S1 | 2 | done |
+| **S4** | Simulator handlers — auth/capability + rate-limit/retry/drift | T2 | S1 | 2 | done |
+| **S5** | Sim adapters: browser fetch-shim + node fetch-shim (isomorphic) | T2 | S1 | 2 | done |
+| **R1** | Browser Web Worker runner (`browserWorkerRunner`) | T2 | C1, C2, B1, S5 | 3 | done |
+| **R2** | Transpile module (Sucrase + Babel fallback, lazy) | T2 | C1 | 2 | done |
+| **D1** | Dispatcher + static surface scan (`dispatchRunner`) | T3 | C1, R1 | 4 | done |
+| **U1** | Wire `<StitchPlayground/>` to `dispatchRunner`; output panel streaming/DAG | T2 | C1, R1 | 4 | done (live DAG/stream render browser-deferred) |
+| **F1** | Fixtures + sandbox index (`/__sandbox`) + seed data | T1 | S2–S4 | 3 | done |
+| **T-α** | Test suite: runner caps, no-egress, determinism, acceptance §9 | T2 | R1, D1, U1 | 5 | done |
+| **SR1** | Server run-service (isolated-vm pool) — **Phase 3, deferred** | T3 | C1, C2, B1, S5 | (later) | deferred |
+| **I1** | Integration + acceptance sign-off (SANDBOX §9) | T3 | all of Wave 5 | 6 | done |
 
 ---
 
