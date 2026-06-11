@@ -14,7 +14,7 @@ Pass a string when the URL is all you need; pass a config object when you want a
 awaited value.
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
 
 // String form — the string becomes the path; a full URL is fine.
 const listUsers = stitch<{ id: number; name: string }[]>(

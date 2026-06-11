@@ -14,7 +14,7 @@ The smallest stitch is a URL. Pass it to `stitch()` as a string and you get back
 a callable — the string sets the `path`:
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
 
 const getUsers = stitch('https://api.example.com/users');
 ```
@@ -26,7 +26,7 @@ sugar that consumes the underlying stream and returns the final, validated
 value (a `GET` with parsed JSON here):
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
 
 const getUsers = stitch('https://api.example.com/users');
 
@@ -40,7 +40,7 @@ a single input object, so a path param goes under `params` and query keys under
 `query`:
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
 
 const getUser = stitch('https://api.example.com/users/{id}');
 
@@ -54,7 +54,7 @@ Pass a type argument to `stitch<T>()` and the awaited value is typed as `T`,
 with no extra dependency:
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
 
 const getUser = stitch<{ id: number; name: string }>(
     'https://api.example.com/users/{id}',
@@ -75,7 +75,7 @@ A stitch does not return `Promise<bytes>` — it yields a typed event stream, an
 retries, and drift as they happen:
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
 
 const getUsers = stitch('https://api.example.com/users');
 

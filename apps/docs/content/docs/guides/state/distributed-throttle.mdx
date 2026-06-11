@@ -10,8 +10,8 @@ shared `store` and one budget spans every worker that uses it.
 ## Example
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
-import type { StitchStore } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
+import type { StitchStore } from 'stitchapi';
 
 // A Redis- or Postgres-backed store, shared across workers — see The pluggable store.
 declare const sharedStore: StitchStore;

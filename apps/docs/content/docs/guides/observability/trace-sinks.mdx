@@ -30,7 +30,7 @@ To consume events as your own sink, iterate the stream — that's the public sea
 for custom handling:
 
 ```ts twoslash
-import { stitch } from '@stitchapi/core';
+import { stitch } from 'stitchapi';
 
 const search = stitch({ baseUrl: 'https://api.example.com', path: '/search' });
 
@@ -52,7 +52,7 @@ see [OTLP export](/docs/guides/observability/otlp).
 To build sinks in code instead, `createTrace({ console, file })` returns a sink
 that writes JSONL and/or the console stream, and `multiplex(a, b, ...)` fans one
 event stream out to several sinks at once. Both are exported from
-[`@stitchapi/core`](/docs/reference/helpers).
+[`stitchapi`](/docs/reference/helpers).
 
 A `TraceSink` is just `{ handle(event, ctx), flush?() }` — implement those two
 and you have a custom consumer you can pass to `multiplex`. The same shape backs
