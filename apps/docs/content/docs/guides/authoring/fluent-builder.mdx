@@ -10,7 +10,7 @@ incrementally or add behavior conditionally rather than declaring it all at once
 ## Example
 
 ```ts twoslash
-import { stitch, bearer, env } from '@stitchapi/core';
+import { bearer, env, stitch } from '@stitchapi/core';
 
 const getUser = stitch
     .use({ baseUrl: 'https://api.example.com' })
@@ -35,20 +35,20 @@ well.
 
 The chainable methods, each returning the builder:
 
-- `.use(...fragments)` merges config fragments into the accumulator.
-- `.get(path)` / `.post(path)` / `.put(path)` / `.delete(path)` set both the
-  method and the path.
-- `.returns(schema)` sets the output schema; `.unwrap(key)` pulls a nested key
-  out of the response.
-- `.auth(strategy)` attaches an auth strategy such as `bearer(env(...))`.
-- `.retry(opts)` / `.throttle(opts)` / `.timeout(opts)` add resilience options.
+-   `.use(...fragments)` merges config fragments into the accumulator.
+-   `.get(path)` / `.post(path)` / `.put(path)` / `.delete(path)` set both the
+    method and the path.
+-   `.returns(schema)` sets the output schema; `.unwrap(key)` pulls a nested key
+    out of the response.
+-   `.auth(strategy)` attaches an auth strategy such as `bearer(env(...))`.
+-   `.retry(opts)` / `.throttle(opts)` / `.timeout(opts)` add resilience options.
 
 The result also carries `.stream(input)` for the event stream and
 [`.with(partial)`](/docs/guides/authoring/with) for partial application.
 
 <Callout type="info">
-    The builder is callable: the value at the end of the chain is the stitch,
-    so you invoke it directly — there is no separate build step.
+    The builder is callable: the value at the end of the chain is the stitch, so
+    you invoke it directly — there is no separate build step.
 </Callout>
 
 ## See also
