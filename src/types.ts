@@ -79,6 +79,10 @@ export interface CircuitOptions {
     halfOpenAfterMs?: number; // when to allow a half-open trial (default cooldownMs)
     key?: string; // store namespace to share a breaker across stitches (default: stitch/host key)
 }
+export interface IdempotencyOptions {
+    header?: string; // header name (default 'Idempotency-Key')
+    key?: (input: StitchInput) => string; // stable key per logical call (default: a random uuid)
+}
 
 // ---- Auth -----------------------------------------------------------------
 export interface AuthContext {
@@ -182,6 +186,7 @@ export interface StitchConfig {
     throttle?: ThrottleOptions;
     timeout?: TimeoutOptions;
     circuit?: CircuitOptions;
+    idempotency?: IdempotencyOptions; // inject a stable Idempotency-Key header on writes
     hooks?: Hooks;
     extends?: Array<Partial<StitchConfig> | Stitch | string>;
     adapter?: Adapter; // test seam / custom transport
