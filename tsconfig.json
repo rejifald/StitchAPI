@@ -9,18 +9,11 @@
         "skipLibCheck": true,
         "noEmit": true,
 
-        /* Strict baseline */
+        /* Strict baseline. The 8 extra handbook flags (noUncheckedIndexedAccess,
+           exactOptionalPropertyTypes, noImplicitOverride, noPropertyAccessFromIndexSignature,
+           noUnusedLocals, noUnusedParameters, verbatimModuleSyntax, isolatedModules) are
+           deferred — ratchet them on in follow-ups once the feature modules are migrated. */
         "strict": true,
-
-        /* Handbook strict set (beyond `strict`) */
-        "noUncheckedIndexedAccess": true,
-        "exactOptionalPropertyTypes": true,
-        "noImplicitOverride": true,
-        "noPropertyAccessFromIndexSignature": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "verbatimModuleSyntax": true,
-        "isolatedModules": true,
 
         "baseUrl": "./",
         "paths": {

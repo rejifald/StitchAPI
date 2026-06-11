@@ -73,17 +73,30 @@ export function fetchAdapter(): Adapter {
             }
         }
 
-        // Parse the body: JSON when content-type is json-ish, else text.
-        const contentType = (resHeaders['content-type'] || '').toLowerCase();
-        const isJson =
-            contentType.includes('application/json') ||
-            contentType.includes('+json');
+        // Read the body. An explicit responseType wins (arrayBuffer/blob for binary
+        // downloads, text/json to force a shape); otherwise auto-detect by content-type.
         let parsed: unknown;
-        if (isJson) {
-            const text = await response.text();
-            parsed = text === '' ? undefined : JSON.parse(text);
-        } else {
+        const responseType = req.responseType;
+        if (responseType === 'arrayBuffer') {
+            parsed = await response.arrayBuffer();
+        } else if (responseType === 'blob') {
+            parsed = await response.blob();
+        } else if (responseType === 'text') {
             parsed = await response.text();
+        } else {
+            const contentType = (
+                resHeaders['content-type'] || ''
+            ).toLowerCase();
+            const isJson =
+                responseType === 'json' ||
+                contentType.includes('application/json') ||
+                contentType.includes('+json');
+            if (isJson) {
+                const text = await response.text();
+                parsed = text === '' ? undefined : JSON.parse(text);
+            } else {
+                parsed = await response.text();
+            }
         }
 
         return { status: response.status, headers: resHeaders, body: parsed };

@@ -37,12 +37,15 @@ export interface DriftSpec {
 }
 
 // ---- Adapter (HTTP kind) --------------------------------------------------
+/** How to read the response body. Default (unset) = auto: JSON when the content-type is json-ish, else text. */
+export type ResponseType = 'json' | 'text' | 'arrayBuffer' | 'blob';
 export interface AdapterRequest {
     url: string;
     method: string;
     headers: Record<string, string>;
     body?: unknown;
     bodyType?: 'json' | 'form' | 'multipart';
+    responseType?: ResponseType;
     signal?: AbortSignal;
 }
 export interface AdapterResponse {
@@ -69,6 +72,16 @@ export interface ThrottleOptions {
 export interface TimeoutOptions {
     total?: number | string;
     perAttempt?: number | string;
+}
+export interface CircuitOptions {
+    failureThreshold: number; // consecutive failures that trip the breaker OPEN
+    cooldownMs: number; // fast-fail window after opening, before a half-open trial
+    halfOpenAfterMs?: number; // when to allow a half-open trial (default cooldownMs)
+    key?: string; // store namespace to share a breaker across stitches (default: stitch/host key)
+}
+export interface IdempotencyOptions {
+    header?: string; // header name (default 'Idempotency-Key')
+    key?: (input: StitchInput) => string; // stable key per logical call (default: a random uuid)
 }
 
 // ---- Auth -----------------------------------------------------------------
@@ -105,7 +118,8 @@ export type ProgressPhase =
     | 'request'
     | 'throttled'
     | 'retry'
-    | 'paginate';
+    | 'paginate'
+    | 'circuit';
 export type StitchEvent<T = unknown> =
     | {
           type: 'start';
@@ -148,6 +162,7 @@ export interface StitchConfig {
     kind?: 'http' | 'graphql';
     method?: string;
     bodyType?: 'json' | 'form' | 'multipart'; // request body encoding (default 'json')
+    responseType?: ResponseType; // how to read the response body (default: auto by content-type)
     baseUrl?: string | (() => string);
     path?: string;
     headers?: Record<string, string>; // static default headers merged into every request
@@ -170,6 +185,8 @@ export interface StitchConfig {
     retry?: RetryOptions;
     throttle?: ThrottleOptions;
     timeout?: TimeoutOptions;
+    circuit?: CircuitOptions;
+    idempotency?: IdempotencyOptions; // inject a stable Idempotency-Key header on writes
     hooks?: Hooks;
     extends?: (Partial<StitchConfig> | Stitch | string)[];
     adapter?: Adapter; // test seam / custom transport

@@ -66,7 +66,7 @@ function format(name: string, event: StitchEvent): string | null {
 function resolvePath(file: TraceOptions['file']): string | null {
     if (file === false) return null;
     if (file === undefined)
-        return `${process.env['HOME']}/.stitch/runs/proto.jsonl`;
+        return `${process.env.HOME}/.stitch/runs/proto.jsonl`;
     return file;
 }
 
@@ -98,4 +98,24 @@ export function createTrace(
         // Sync appends mean there is nothing buffered to drain.
         flush(): void {},
     };
+}
+
+/** Fan every event out to several sinks (e.g. console/JSONL + OTLP) — one event stream, many consumers. */
+export function multiplex(...sinks: TraceSink[]): TraceSink {
+    return {
+        handle(event, ctx): void {
+            for (const sink of sinks) sink.handle(event, ctx);
+        },
+        async flush(): Promise<void> {
+            for (const sink of sinks) await sink.flush?.();
+        },
+    };
+}
+
+/** Parse `STITCH_EXPORT` (comma list, e.g. "otlp" or "console,otlp") into lowercased export names. */
+export function exportsFromEnv(value: string | undefined): string[] {
+    return (value ?? '')
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
 }

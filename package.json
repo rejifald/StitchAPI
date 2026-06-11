@@ -18,8 +18,12 @@
         }
     },
     "sideEffects": false,
+    "bin": {
+        "stitch": "bin/stitch"
+    },
     "files": [
-        "lib"
+        "lib",
+        "bin"
     ],
     "scripts": {
         "test": "vitest run",
@@ -31,7 +35,7 @@
         "check:exports": "attw --pack .",
         "lint": "eslint src test",
         "format": "prettier --write .",
-        "build": "tsup src/index.ts --format cjs,esm --minify --dts --out-dir lib",
+        "build": "tsup",
         "prepare": "lefthook install",
         "prepack": "npm run build"
     },

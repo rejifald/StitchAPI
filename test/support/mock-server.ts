@@ -17,6 +17,7 @@ export interface RouteBehavior {
     requireCookie?: { name: string; value?: string };
     requireHeader?: { name: string; value?: string };
     setCookie?: { name: string; value: string };
+    setCookies?: { name: string; value: string }[];
     retryAfter?: number;
     headers?: Record<string, string>;
 }
@@ -109,17 +110,28 @@ export function startMockServer(): Promise<MockServer> {
             payload: unknown,
             extra?: RouteBehavior,
         ): void => {
-            const out: Record<string, string> = {
-                'content-type': 'application/json',
+            // A Buffer/Uint8Array body is sent as raw bytes (octet-stream by default);
+            // anything else is JSON-encoded. Lets routes serve binary downloads.
+            const isBytes =
+                Buffer.isBuffer(payload) || payload instanceof Uint8Array;
+            const out: Record<string, string | string[]> = {
+                'content-type': isBytes
+                    ? 'application/octet-stream'
+                    : 'application/json',
             };
             if (extra?.headers) Object.assign(out, extra.headers);
             if (extra?.setCookie)
                 out['Set-Cookie'] =
                     `${extra.setCookie.name}=${extra.setCookie.value}`;
+            if (extra?.setCookies)
+                // Multiple Set-Cookie headers (array value → one header line each).
+                out['Set-Cookie'] = extra.setCookies.map(
+                    (c) => `${c.name}=${c.value}`,
+                );
             if (extra?.retryAfter !== undefined)
                 out['Retry-After'] = String(extra.retryAfter);
             res.writeHead(status, out);
-            res.end(JSON.stringify(payload));
+            res.end(isBytes ? Buffer.from(payload) : JSON.stringify(payload));
         };
 
         if (!behavior) {

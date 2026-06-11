@@ -1,9 +1,10 @@
 // The authoring surface: stitch() + the three composition facades (extends / defineStitch /
 // builder) + `.with()` partial application, all resolving to one canonical config.
 import { type Runtime, execute, executeRaw, makeRuntime } from './engine';
+import { otlpTrace } from './otlp';
 import { createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
-import { createTrace } from './trace';
+import { createTrace, exportsFromEnv, multiplex } from './trace';
 import {
     type DriftOptions,
     type DriftSpec,
@@ -12,7 +13,6 @@ import {
     type InputSchemas,
     type Stitch,
     type StitchConfig,
-    type StitchEvent,
     type StitchInput,
     type StitchResult,
     type StitchStore,
@@ -20,7 +20,7 @@ import {
     isStitch,
 } from './types';
 import { deepMerge } from './util';
-import { toValidator } from './validator';
+import { type Validator, toValidator } from './validator';
 
 type Fragment = Partial<StitchConfig> | Stitch | string;
 
@@ -79,10 +79,7 @@ function normalizeInput(
     if (!input) return undefined;
     const out: InputSchemas = {};
     for (const k of ['params', 'query', 'body', 'headers'] as const) {
-        if (input[k]) {
-            const v = toValidator(input[k]);
-            if (v) out[k] = v;
-        }
+        if (input[k]) out[k] = toValidator(input[k]);
     }
     return out;
 }
@@ -95,28 +92,29 @@ function compose(config: Fragment): StitchConfig {
     for (const layer of layers) {
         if (layer.hooks) hookLayers.push(layer.hooks);
         if (layer.store) store = layer.store;
-        const rest: Partial<StitchConfig> = { ...layer };
-        delete rest.hooks;
-        delete rest.store;
-        merged = deepMerge(merged, rest);
+        merged = deepMerge(merged, {
+            ...layer,
+            hooks: undefined,
+            store: undefined,
+        });
     }
-    const hooks = chainHooks(hookLayers);
-    if (hooks) merged.hooks = hooks;
-    if (store) merged.store = store;
-    const output = normalizeOutput(merged.output);
-    if (output) merged.output = output;
-    const input = normalizeInput(merged.input);
-    if (input) merged.input = input;
+    merged.hooks = chainHooks(hookLayers);
+    merged.store = store;
+    merged.output = normalizeOutput(merged.output);
+    merged.input = normalizeInput(merged.input);
     return merged;
 }
 
 // ---- shared trace sink (zero-infra: console off in tests, JSONL file) ------
+// Always tees console/JSONL; STITCH_EXPORT=otlp ALSO fans the same events to an OTLP collector.
 function getTrace(): TraceSink {
-    const file = process.env['STITCH_TRACE_FILE'];
-    return createTrace({
-        console: process.env['STITCH_TRACE_CONSOLE'] === '1',
-        ...(file ? { file } : {}),
+    const base = createTrace({
+        console: process.env.STITCH_TRACE_CONSOLE === '1',
+        file: process.env.STITCH_TRACE_FILE || undefined,
     });
+    if (!exportsFromEnv(process.env.STITCH_EXPORT).includes('otlp'))
+        return base;
+    return multiplex(base, otlpTrace());
 }
 
 // ---- the streaming spine + await sugar ------------------------------------
@@ -126,7 +124,7 @@ async function consume<T>(
     let result: T | undefined;
     let failure: { message?: string; status?: number } | undefined;
     for await (const ev of gen) {
-        if (ev.type === 'result') result = ev['value'] as T;
+        if (ev.type === 'result') result = ev.value as T;
         else if (ev.type === 'error')
             failure = ev as { message?: string; status?: number };
     }
@@ -135,17 +133,17 @@ async function consume<T>(
             status?: number;
         };
         e.name = 'StitchError';
-        if (failure.status !== undefined) e.status = failure.status;
+        e.status = failure.status;
         throw e;
     }
     return result as T;
 }
 
 function tee<T>(
-    gen: AsyncGenerator<StitchEvent<T>, void>,
+    gen: AsyncGenerator<import('./types').StitchEvent<T>, void>,
     trace: TraceSink,
     name: string,
-): AsyncGenerator<StitchEvent<T>, void> {
+): AsyncGenerator<import('./types').StitchEvent<T>, void> {
     async function* wrapped() {
         for await (const ev of gen) {
             trace.handle(ev, { name });
@@ -240,18 +238,16 @@ export function defineStitch(...fragments: Fragment[]) {
         c.extends = [
             ...fragments,
             ...((c.extends as Fragment[]) ?? []),
-        ] as NonNullable<StitchConfig['extends']>;
+        ] as StitchConfig['extends'];
         return makeStitch<T>(c);
     };
 }
 
 /** drift(): wrap an output schema with leveled drift options. */
 export function drift(schema: unknown, options: DriftOptions = {}): DriftSpec {
-    const schemaV = toValidator(schema);
-    if (!schemaV) throw new Error('drift() requires a schema');
     return {
         __kind: 'drift',
-        schema: schemaV,
+        schema: toValidator(schema) as Validator,
         options,
     };
 }
@@ -297,7 +293,7 @@ function makeBuilder(initial: Partial<StitchConfig>): Builder {
         (acc.extends = [
             ...((acc.extends as Fragment[]) ?? []),
             ...f,
-        ] as NonNullable<StitchConfig['extends']>),
+        ] as StitchConfig['extends']),
         invalidate(),
         fn
     );
@@ -308,31 +304,13 @@ function makeBuilder(initial: Partial<StitchConfig>): Builder {
         (acc.method = 'DELETE'), (acc.path = p), invalidate(), fn
     );
     fn.returns = (schema) => (
-        (acc.output = schema as NonNullable<StitchConfig['output']>),
-        invalidate(),
-        fn
+        (acc.output = schema as StitchConfig['output']), invalidate(), fn
     );
     fn.unwrap = (key) => ((acc.unwrap = key), invalidate(), fn);
-    fn.auth = (a) => {
-        if (a) acc.auth = a;
-        invalidate();
-        return fn;
-    };
-    fn.retry = (r) => {
-        if (r) acc.retry = r;
-        invalidate();
-        return fn;
-    };
-    fn.throttle = (t) => {
-        if (t) acc.throttle = t;
-        invalidate();
-        return fn;
-    };
-    fn.timeout = (t) => {
-        if (t) acc.timeout = t;
-        invalidate();
-        return fn;
-    };
+    fn.auth = (a) => ((acc.auth = a), invalidate(), fn);
+    fn.retry = (r) => ((acc.retry = r), invalidate(), fn);
+    fn.throttle = (t) => ((acc.throttle = t), invalidate(), fn);
+    fn.timeout = (t) => ((acc.timeout = t), invalidate(), fn);
     fn.stream = (input) => ensure().stream(input);
     fn.with = (partial) => ensure().with(partial);
     return fn;

@@ -4,7 +4,13 @@
 // response (used by cookieSession to read Set-Cookie from a login stitch).
 import { classifyDrift, loadSnapshot, saveSnapshot } from './drift';
 import { fetchAdapter } from './http-adapter';
-import { backoffDelay, parseRetryAfter, withTimeout } from './resilience';
+import {
+    CircuitOpenError,
+    backoffDelay,
+    createCircuit,
+    parseRetryAfter,
+    withTimeout,
+} from './resilience';
 import type {
     Adapter,
     AdapterRequest,
@@ -28,6 +34,8 @@ import {
     sleep,
 } from './util';
 import type { Validator } from './validator';
+
+import { randomUUID } from 'node:crypto';
 
 export interface Runtime {
     cfg: StitchConfig;
@@ -68,6 +76,29 @@ function joinUrl(base: string, path: string): string {
     );
 }
 
+// Inject a stable Idempotency-Key on writes. The key is computed once per logical call (here,
+// in buildRequest) and the attempt loop reuses the same request, so it stays constant across
+// retries. GET/HEAD are skipped, and a caller-provided header (case-insensitive) wins.
+function applyIdempotency(
+    cfg: StitchConfig,
+    input: StitchInput,
+    method: string,
+    headers: Record<string, string>,
+): void {
+    if (!cfg.idempotency) return;
+    if (method === 'GET' || method === 'HEAD') return; // writes only
+    const header = cfg.idempotency.header ?? 'Idempotency-Key';
+    if (
+        Object.keys(headers).some(
+            (h) => h.toLowerCase() === header.toLowerCase(),
+        )
+    )
+        return;
+    headers[header] = cfg.idempotency.key
+        ? cfg.idempotency.key(input)
+        : randomUUID();
+}
+
 function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const isGql = cfg.kind === 'graphql';
     const base =
@@ -87,18 +118,21 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const { path } = expandPath(tpl, input.params ?? {});
     const query = { ...predefined, ...(input.query ?? {}) };
     const url = joinUrl(base, path) + buildQuery(query);
-    const bodyType = isGql ? 'json' : cfg.bodyType;
+    const method = (cfg.method ?? (isGql ? 'POST' : 'GET')).toUpperCase();
+    const headers = { ...(cfg.headers ?? {}), ...(input.headers ?? {}) };
+    applyIdempotency(cfg, input, method, headers);
     return {
         url,
-        method: (cfg.method ?? (isGql ? 'POST' : 'GET')).toUpperCase(),
-        headers: { ...(cfg.headers ?? {}), ...(input.headers ?? {}) },
+        method,
+        headers,
         body: isGql
             ? {
                   query: cfg.query,
                   variables: input.variables ?? input.body ?? {},
               }
             : input.body,
-        ...(bodyType ? { bodyType } : {}),
+        bodyType: isGql ? 'json' : cfg.bodyType,
+        responseType: cfg.responseType,
     };
 }
 
@@ -119,12 +153,11 @@ const hostKey = (req: AdapterRequest, cfg: StitchConfig): string => {
 
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const e = err as { message?: string; status?: number };
-    const status = e?.status;
     return {
         type: 'error',
         name,
         message: e?.message ?? String(err),
-        ...(status !== undefined ? { status } : {}),
+        status: e?.status,
         attempts,
         at: now(),
     };
@@ -310,6 +343,50 @@ async function* attemptLoop(
     throw new Error('retry attempts exhausted');
 }
 
+// Wraps attemptLoop with a circuit breaker (when configured). When the breaker is OPEN it
+// fast-fails BEFORE any network call (emitting a `circuit` progress event), so a failing
+// dependency stops being hammered; a success closes it, a failure (re)opens it. With no
+// `circuit` config this is a transparent pass-through.
+async function* attemptWithCircuit(
+    rt: Runtime,
+    baseReq: AdapterRequest,
+    state: { attempts: number },
+): AsyncGenerator<StitchEvent, AdapterResponse> {
+    const { cfg } = rt;
+    if (!cfg.circuit) {
+        return yield* attemptLoop(rt, baseReq, state);
+    }
+    const circuit = createCircuit(cfg.circuit, rt.store, hostKey(baseReq, cfg));
+    if ((await circuit.phase()) === 'open') {
+        yield {
+            type: 'progress',
+            phase: 'circuit',
+            attempt: state.attempts,
+            detail: 'open',
+            at: now(),
+        };
+        throw new CircuitOpenError(); // fast-fail: do NOT touch the network
+    }
+    try {
+        const res = yield* attemptLoop(rt, baseReq, state);
+        await circuit.onSuccess();
+        return res;
+    } catch (e) {
+        if (!(e instanceof CircuitOpenError)) {
+            const opened = await circuit.onFailure();
+            if (opened)
+                yield {
+                    type: 'progress',
+                    phase: 'circuit',
+                    attempt: state.attempts,
+                    detail: 'open',
+                    at: now(),
+                };
+        }
+        throw e;
+    }
+}
+
 function mergeInput(a: StitchInput, b: StitchInput): StitchInput {
     return {
         params: { ...(a.params ?? {}), ...(b.params ?? {}) },
@@ -350,7 +427,7 @@ async function* paginated(
         const req = buildRequest(cfg, pageInput);
         let res: AdapterResponse;
         try {
-            res = yield* attemptLoop(rt, req, state);
+            res = yield* attemptWithCircuit(rt, req, state);
         } catch (e) {
             yield errEvt(e, name, state.attempts);
             yield doneEvt(false, t0, state.attempts);
@@ -445,7 +522,7 @@ export async function* execute(
 
     let res: AdapterResponse;
     try {
-        res = yield* attemptLoop(rt, baseReq, state);
+        res = yield* attemptWithCircuit(rt, baseReq, state);
     } catch (e) {
         yield errEvt(e, name, state.attempts);
         yield doneEvt(false, t0, state.attempts);

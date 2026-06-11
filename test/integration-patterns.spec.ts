@@ -79,7 +79,7 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
         });
         expect(out).toEqual({ query: { count: 1 } });
         expect(server.callCount('/graphql')).toBe(2); // 429 then 200
-        expect(server.calls('/graphql').at(-1)?.headers['apikey']).toBe(
+        expect(server.calls('/graphql').at(-1)?.headers.apikey).toBe(
             'sk_meta_123',
         );
     });
@@ -141,9 +141,7 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
         expect(out).toEqual([{ id: 'abc', state: 'active' }]);
         expect(server.callCount('/auth/login')).toBe(2); // initial auto-login + refresh after 403
         expect(server.callCount('/resources')).toBe(2);
-        expect(server.calls('/resources').at(-1)?.cookies['SID']).toBe(
-            'SID-OK',
-        );
+        expect(server.calls('/resources').at(-1)?.cookies.SID).toBe('SID-OK');
     });
 });
 
@@ -270,10 +268,10 @@ describe('Diverse co-located auth (three providers, three header formats)', () =
         await mediaA();
         await mediaB();
 
-        expect(server.calls('/catalog')[0]?.headers['authorization']).toBe(
+        expect(server.calls('/catalog')[0]?.headers.authorization).toBe(
             'Bearer rest_tok',
         );
-        expect(server.calls('/system')[0]?.headers['authorization']).toBe(
+        expect(server.calls('/system')[0]?.headers.authorization).toBe(
             'MediaToken token="media_a"',
         );
         expect(server.calls('/node')[0]?.headers['x-media-token']).toBe(
