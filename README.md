@@ -90,7 +90,12 @@ const { stitch } = require("stitchapi");
 
 ## Live example
 
-[![Edit StitchAPI Get Users](https://codesandbox.io/static/img/play-codesandbox.svg)](https://codesandbox.io/p/sandbox/stitchapi-get-users-4y7y2d)
+The [`examples/get-users`](examples/get-users) folder is a self-contained demo: it
+stitches against a **fake API served inside the sandbox itself** (a small Vite
+middleware in [`examples/get-users/fake-api`](examples/get-users/fake-api)), so it
+depends on no third-party service. Open it directly in CodeSandbox:
+
+[![Edit StitchAPI Get Users](https://codesandbox.io/static/img/play-codesandbox.svg)](https://codesandbox.io/p/sandbox/github/rejifald/StitchAPI/tree/main/examples/get-users)
 
 ## Example
 
