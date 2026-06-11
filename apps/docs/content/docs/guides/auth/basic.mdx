@@ -3,16 +3,46 @@ title: 'basic'
 description: 'HTTP Basic authentication with credentials resolved from a secret resolver.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Use `basic` when an API authenticates with HTTP Basic — it base64-encodes
+`user:pass` and sets the `Authorization: Basic …` header, with both halves
+resolved at call time so the caller never holds the credential.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { basic, env, stitch } from '@stitchapi/core';
+
+const report = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/report',
+    auth: basic({ user: env('API_USER'), pass: env('API_PASS') }),
+});
+```
+
+Each call to `report()` resolves `API_USER` and `API_PASS`, encodes them, and
+attaches the header — behind the capability boundary, so the credential is never
+passed in by the caller.
 
 ## Options
 
-Stub.
+`user` and `pass` each take a string or a resolver. Prefer a resolver like
+[`env()`](/docs/guides/auth/secret-resolvers): it reads the secret per call, so
+nothing is captured in the config or committed to source — the
+[capability, not credential](/docs/concepts/capability-not-credential) boundary.
+A literal string works but bakes the secret into the stitch. See
+[Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Secret resolvers" href="/docs/guides/auth/secret-resolvers" />
+    <Card title="bearer" href="/docs/guides/auth/bearer" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card
+        title="Reference: Auth strategies"
+        href="/docs/reference/auth-strategies"
+    />
+</Cards>
