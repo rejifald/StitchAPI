@@ -5,16 +5,66 @@ description: 'An error-level drift finding broke the response contract.'
 
 ## What you'll see
 
-Stub.
+A call fails right after a `drift` event whose finding carries `level: 'error'`.
+The event names the offending `path` and the `change` it detected — `missing`,
+`type-changed`, or `nullable` — and the call then surfaces a `StitchError`
+instead of a `result`. The stable code is `STITCH_DRIFT` (provisional while the
+runtime error taxonomy settles).
+
+<Callout type="info">
+    `warn`- and `info`-level findings still stream as `drift` events, but they
+    do not fail the call — only an `error`-level finding breaks the contract.
+</Callout>
 
 ## Why it happens
 
-Stub.
+Drift compares the live response's shape against a committed snapshot
+(`snapshotFile`, the `<name>.contract.json` baseline) and classifies each delta
+by level. A path you listed under `critical` changed shape versus that baseline:
+a field went missing, switched type, or became nullable. That is a real contract
+break on a path you declared fatal, so the finding is raised to `error` and the
+call stops rather than handing back a response that no longer matches what you
+committed to.
 
 ## How to fix
 
-Stub.
+Read the finding's `path` and `change` to see exactly what moved, then decide
+which of two cases you're in:
+
+-   **The change is intended.** The upstream shape genuinely changed and you want
+    the new shape. Update the committed snapshot (and any output schema) to match,
+    re-commit the `<name>.contract.json` baseline, and the path stops drifting.
+-   **It's a vendor regression.** You did not expect this change — that is the
+    signal `critical` exists to give you. Treat the broken call as the alert and
+    act on the upstream break.
+
+If a path shouldn't be fatal at all, re-level it from `critical` to `watch` so
+its changes stream as `warn` findings without failing the call:
+
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+
+const user = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/user',
+    output: drift((body: unknown) => body, {
+        // `id` must never change shape — a change here fails the call.
+        critical: ['id'],
+        // `displayName` is allowed to drift; it only warns.
+        watch: ['displayName'],
+        snapshotFile: 'user.contract.json',
+    }),
+});
+```
+
+See the [drift guide](/docs/guides/validation/drift) for how `critical`,
+`watch`, and `onNew` map onto finding levels.
 
 ## Related
 
-Stub.
+<Cards>
+    <Card title="Guide: drift detection" href="/docs/guides/validation/drift" />
+    <Card title="Guide: validation" href="/docs/guides/validation/validation" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="Reference: config types" href="/docs/reference/config-types" />
+</Cards>
