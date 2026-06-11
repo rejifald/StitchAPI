@@ -3,16 +3,61 @@ title: 'In-process function'
 description: 'Call a stitch directly as a typed async function, awaited or streamed.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+A stitch is a typed async function — no server, no transport. `await` it for the
+final unwrapped, validated value, or iterate its event stream for everything that
+happened on the way there. This is the closest of the four surfaces: the same
+definition you call here also runs from the CLI, over HTTP, and through MCP.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch<{ id: number; name: string }>({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+// Await it for just the value…
+const user = await getUser({ params: { id: 1 } });
+
+// …or iterate the typed event stream for everything that happened.
+for await (const event of getUser.stream({ params: { id: 1 } })) {
+    if (event.type === 'result') console.log(event.value);
+}
+```
 
 ## Options
 
-Stub.
+**Awaited vs streamed.** `await getUser(input)` resolves to the final value,
+already unwrapped and validated. `getUser.stream(input)` yields the typed
+[event stream](/docs/concepts/event-stream) — `start → progress → drift →
+result → done` — so you can observe retries, throttling, and drift as they
+happen. Same call, two altitudes.
+
+**Pre-binding input.** `getUser.with(partial)` returns a new stitch with part of
+the input baked in, so a shared header or a fixed path param is set once and
+reused across calls. See [`.with()` partial application](/docs/guides/authoring/with).
+
+**One definition, four surfaces.** The in-process function is one surface over a
+single definition. The same stitch is reachable from the [CLI](/docs/surfaces/cli),
+served over [HTTP](/docs/surfaces/http-serve), and exposed to agents through
+[MCP](/docs/surfaces/mcp) — nothing about the definition changes.
+
+<Callout type="info">
+    Calling the stitch returns a result you can both `await` and `.stream()`;
+    `getUser.stream(input)` is shorthand for streaming that same result.
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card
+        title=".with() partial application"
+        href="/docs/guides/authoring/with"
+    />
+    <Card title="CLI" href="/docs/surfaces/cli" />
+    <Card title="HTTP serve" href="/docs/surfaces/http-serve" />
+    <Card title="MCP" href="/docs/surfaces/mcp" />
+</Cards>
