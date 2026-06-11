@@ -3,16 +3,58 @@ title: 'The stitch primitive'
 description: 'A typed, declarative, composable unit that turns input into validated output with auth, resilience, and observability built in.'
 ---
 
-Stub — what it is, in one or two sentences. See AUTHORING.md.
+A stitch is the one primitive StitchAPI is built on: a typed, declarative, composable unit that turns a single API call into a resilient, validated, observable function — declared once, callable by your code, the CLI, or an agent.
 
 ## Why it's shaped this way
 
-Stub.
+The thing every project reaches for is `fetch`, and `fetch` hands back opaque bytes. Everything that actually makes an integration reliable — the auth lifecycle, retries, rate limits, timeouts, response validation, drift detection, tracing — is left to be re-implemented at every call site, where each wrapper rots on its own. A stitch exists to make those concerns properties of the call itself rather than scaffolding you rebuild by hand.
+
+**Declarative, not an imperative wrapper.** A stitch is a description of an API call, not a function body that performs one. You state _what_ the call is — its URL, its input and output shapes, how it authenticates, how it should behave under failure — and the engine decides _how_ to carry it out. That inversion is what lets one declaration be read at runtime to validate every live response, surface drift, emit a trace, and back a CLI command. An imperative wrapper around `fetch` is just code; it can't be introspected, composed, or invoked by an agent without bespoke glue. A declaration can.
+
+**Atomic, not spec-first.** A stitch describes exactly one call, and it needs nothing more than a URL to exist. There is no OpenAPI document to obtain first, no codegen step, no generated artifact to commit and regenerate when the API changes. Spec-based generators can't emit anything until a complete, accurate spec exists — which most internal services and long-tail vendors never have. Working one call at a time means you can wrap the API in front of you today, and because every stitch carries its own schema, the contract accretes from the calls you actually make rather than from a document someone has to maintain.
+
+**One primitive, three facades.** There is exactly one thing — the stitch — reached through three authoring surfaces that all resolve to the same engine. The string form is the smallest possible declaration; the config form is the same declaration with more fields; the fluent builder is the same fields set one call at a time. None is a different kind of object: each compiles to one canonical config and produces the same callable.
+
+```ts twoslash
+import { stitch } from '@stitchapi/core';
+
+// The string form: a bare URL is the smallest complete stitch.
+const a = stitch('https://api.example.com/users');
+
+// The config form: the same declaration, with room to grow.
+const b = stitch({ baseUrl: 'https://api.example.com', path: '/users' });
+```
+
+The point of three facades is reach, not variety. A single shape can't be both the one-liner a quick call wants and the structured object a fully-specified integration needs, so the surface flexes while the primitive underneath stays singular. That singularity is what keeps the mental model small: learn the stitch once, and every facade is just a different door into it.
 
 ## How it relates
 
-Stub.
+A stitch is the unit everything else in StitchAPI attaches to or is built from.
+
+What a call _returns_ is the [event stream](/docs/concepts/event-stream) — an async iterable of typed events rather than `Promise<bytes>`. Awaiting a stitch is sugar that consumes that stream and hands back the final validated value; the cross-cutting features all report through the same spine.
+
+How a stitch _authenticates_ is the [capability, not credential](/docs/concepts/capability-not-credential) boundary. Auth is a field on the stitch, so a caller invokes it and receives data without ever touching the secret — which matters most when the caller is an agent.
+
+Because a stitch is itself a value, stitches _compose_: a reusable fragment can be extended, a base can be bound into a factory, and partial input can be pre-applied, all without any global configuration. The composition facades are covered in the [authoring guides](/docs/guides/authoring/stitch).
+
+And because the declaration is the runtime, one stitch is reachable through more than one [surface](/docs/surfaces/function) — an in-process function and a CLI command today — without re-describing the call for each.
+
+<Callout type="info">
+    A stitch is a per-call primitive, not a workflow engine. Multi-step
+    orchestration, queues, and inbound webhooks stay your application's job —
+    the stitch is the durable unit those things are composed _from_.
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="Principles" href="/docs/concepts/principles" />
+    <Card title="Guide: stitch()" href="/docs/guides/authoring/stitch" />
+    <Card title="Surface: function" href="/docs/surfaces/function" />
+    <Card title="Reference: stitch()" href="/docs/reference/stitch" />
+</Cards>

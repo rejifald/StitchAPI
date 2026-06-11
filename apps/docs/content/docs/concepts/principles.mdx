@@ -3,16 +3,115 @@ title: 'Principles'
 description: 'Progressive disclosure, atomic stitches, composition over configuration, and the other ideas that shape the API.'
 ---
 
-Stub — what it is, in one or two sentences. See AUTHORING.md.
+A handful of design principles explain why the API looks the way it does — why
+the smallest stitch is a bare string, why there is no central config object, and
+why the same definition answers to an agent. This page is the synthesis; each
+principle links to the surface that embodies it.
 
 ## Why it's shaped this way
 
-Stub.
+### Progressive disclosure
+
+Complexity is opt-in. A bare URL string is a working stitch; reach for more and
+the same call grows into a config object, and then — when you want a chainable,
+discoverable surface — into the fluent builder. Every capability (validation,
+auth, retries, observability) has a sane default and reveals its knobs only when
+you ask, so simple things stay one line and the depth is there when you need it.
+
+```ts twoslash
+import { stitch } from '@stitchapi/core';
+
+// A string is a whole stitch.
+const getUsers = stitch('https://api.example.com/users');
+
+// Grow into a config object when you want more than the default.
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    retry: { attempts: 3 },
+});
+```
+
+### Atomic stitches
+
+A stitch is one endpoint at a time and nothing else — self-contained, with no
+spec to author, no client to generate, and no server to run. It needs only a URL
+and (optionally) an example response, which is why it reaches the spec-less long
+tail of internal and undocumented APIs that codegen never covers. The
+declaration _is_ the runtime; there is nothing to commit, diff, and regenerate.
+
+### Composition over configuration
+
+Cross-cutting concerns — `baseUrl`, auth, `unwrap`, retry, throttle, timeout —
+are named, shareable values you compose, not a central config object far from the
+call site. `extends` folds fragments into a stitch, `preset()` bundles defaults
+into one such fragment, and `defineStitch()` binds a base so every stitch built
+from it inherits it. You share a fragment instead of re-typing config, and a
+stitch is itself a composable value others can extend.
+
+```ts twoslash
+import { defineStitch, preset } from '@stitchapi/core';
+
+const api = preset({
+    baseUrl: 'https://api.example.com',
+    retry: { attempts: 3, on: [429, 503] },
+});
+
+// Bind the base once; every stitch built from it inherits the fragment.
+const apiStitch = defineStitch(api);
+const getWebsite = apiStitch('/websites/{id}');
+```
+
+### One source of truth
+
+The product sells anti-drift discipline; the API holds itself to the same rule.
+Responses are validated on every live call, and differences from a committed
+contract surface as a _leveled_ drift signal — error, warn, or info — instead of
+a silent `undefined` three layers downstream. The docs apply the principle to
+themselves: a fact lives in exactly one place — full type tables only in
+Reference, error remediation only in Errors & pitfalls — and everywhere else
+links to it rather than restating (and risking drift from) it.
+
+### Agent-native
+
+An agent is a first-class caller, not an afterthought bolted on with a server.
+Three things follow. A stitch hands the caller a capability, not a credential:
+the secret resolves at call time and never reaches the caller, human or agent.
+Every call yields a typed event stream — `start → progress → drift → result →
+done` — so an agent gets structured, validated, traceable results instead of
+opaque bytes. And the agent surface is one code-mode tool the agent drives, not
+one tool per endpoint, which keeps its context frugal.
 
 ## How it relates
 
-Stub.
+-   **Progressive disclosure** runs from the [stitch primitive](/docs/concepts/the-stitch)
+    through the [fluent builder](/docs/guides/authoring/fluent-builder) — the
+    string, the config object, and the chainable surface are three altitudes of
+    one call.
+-   **Atomic stitches** are the [stitch](/docs/concepts/the-stitch) itself: one
+    endpoint, no spec, no codegen, no server.
+-   **Composition over configuration** is what [`extends`](/docs/guides/authoring/extends)
+    expresses — and `preset()` and `defineStitch()` are the fragments and factories
+    it composes.
+-   **One source of truth** shows up at runtime as [leveled drift](/docs/guides/validation/drift),
+    the same anti-drift rule this documentation follows.
+-   **Agent-native** is spelled out across [capability, not credential](/docs/concepts/capability-not-credential),
+    the [event stream](/docs/concepts/event-stream), and the [agent surfaces](/docs/agents).
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card
+        title="The fluent builder"
+        href="/docs/guides/authoring/fluent-builder"
+    />
+    <Card title="extends" href="/docs/guides/authoring/extends" />
+    <Card title="Leveled drift" href="/docs/guides/validation/drift" />
+    <Card title="For agents" href="/docs/agents" />
+</Cards>
