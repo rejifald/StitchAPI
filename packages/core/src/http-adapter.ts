@@ -111,7 +111,11 @@ function appendForm(form: FormData, key: string, v: unknown): void {
         return;
     }
     if (v instanceof Uint8Array) {
-        form.append(key, new Blob([v]));
+        // `as BlobPart`: on TS 5.7+ TypedArrays are generic over their backing
+        // buffer (Uint8Array<ArrayBufferLike>), and ArrayBufferLike admits
+        // SharedArrayBuffer, which the DOM BlobPart rejects. The instanceof
+        // guard proves this is a real byte view, so assert (matches f.value below).
+        form.append(key, new Blob([v as BlobPart]));
         return;
     }
     if (
