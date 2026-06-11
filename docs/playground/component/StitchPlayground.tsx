@@ -15,8 +15,8 @@
  * library build (tsconfig `include` is `src/**\/*.ts`). Requires `react` (and later
  * `@codemirror/*`) once relocated into the docs app.
  */
-import { type CodeRunner, type RunResult, mockRunner } from './runner';
-import { buildRunView } from './output-format';
+import { type CodeRunner, type RunEvent, type RunResult, mockRunner } from './runner';
+import { applyEvent, buildRunView, emptyRunView, type RunView } from './output-format';
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 
@@ -62,6 +62,9 @@ export function StitchPlayground({
 }: StitchPlaygroundProps) {
     const [code, setCode] = useState(initialCode);
     const [result, setResult] = useState<RunResult | null>(null);
+    // Incremental view state — updated as RunEvents arrive via onEvent.
+    // null = no run started yet; non-null = a run is in progress or complete.
+    const [view, setView] = useState<RunView | null>(null);
     const [running, setRunning] = useState(false);
     const abortRef = useRef<AbortController | null>(null);
 
@@ -72,19 +75,33 @@ export function StitchPlayground({
         const ac = new AbortController();
         abortRef.current = ac;
         setRunning(true);
+        // Reset incremental view to empty so the output panel shows a fresh slate.
+        setView(emptyRunView());
+        setResult(null);
         try {
-            const res = await runner.run({ code, scope, signal: ac.signal });
-            if (!ac.signal.aborted) setResult(res);
+            // RUNNER INTEGRATION POINT — incremental rendering is active when the
+            // runner emits onEvent (Wave 4+). Each event is folded into React state
+            // via applyEvent so the output panel updates immediately as logs, chunks,
+            // traces, and notices arrive. On resolve, the final RunResult is reconciled
+            // via buildRunView so value/error/durationMs always reflect the authoritative
+            // final state. Runners that never call onEvent (e.g. mockRunner) fall back
+            // to showing the final result only, with no intermediate updates.
+            const onEvent = (event: RunEvent) => {
+                if (ac.signal.aborted) return;
+                setView((prev) => applyEvent(prev ?? emptyRunView(), event));
+            };
+            const res = await runner.run({ code, scope, signal: ac.signal, onEvent });
+            if (!ac.signal.aborted) {
+                // Reconcile: final result wins for value/error/durationMs/logs/notices.
+                setResult(res);
+                setView(buildRunView(res));
+            }
         } finally {
             if (!ac.signal.aborted) setRunning(false);
         }
     }, [code, runner, scope]);
 
     const stop = useCallback(() => abortRef.current?.abort(), []);
-    const reset = useCallback(() => {
-        setCode(initialCode);
-        setResult(null);
-    }, [initialCode]);
 
     const status = useMemo(() => {
         if (isDeferred) return 'engine deferred';
@@ -93,6 +110,13 @@ export function StitchPlayground({
         if (result) return `done · ${result.durationMs}ms`;
         return 'ready';
     }, [isDeferred, running, result]);
+
+    // Reset view and result together when resetting the editor.
+    const reset = useCallback(() => {
+        setCode(initialCode);
+        setResult(null);
+        setView(null);
+    }, [initialCode]);
 
     return (
         <div className="stitch-playground" data-runner={runner.id}>
@@ -131,33 +155,37 @@ export function StitchPlayground({
                 aria-label="StitchAPI playground editor"
             />
 
-            <StitchOutput result={result} deferred={isDeferred} />
+            <StitchOutput view={view} result={result} deferred={isDeferred} running={running} />
         </div>
     );
 }
 
 /**
- * Output panel — renders:
- *   · ordered console logs
- *   · resolved value (pretty-printed)
- *   · structured error (showing error.reason when present)
- *   · notices strip (e.g. "ran `keychain` shimmed")
- *   · Mermaid DAG built from result.trace via traceToMermaid
+ * Output panel — renders incrementally as RunEvents arrive via onEvent, and
+ * reconciles with the final RunResult on resolve.
  *
- * Streaming note: CodeRunner.run() is single-shot — it resolves once with a
- * fully assembled RunResult. The `isStreaming` flag (derived from trace entries
- * with `.stream`) marks results that *contained* chunked/SSE/LLM data, rendered
- * with a visual hint below. True incremental UI streaming (chunk-by-chunk display
- * as the response arrives) requires a contract extension (e.g. an async iterable
- * on CodeRunner or RunResult). The frozen CodeRunner contract does not provide
- * this. See the U1 implementation report — flagged for the contract owner (D1/R1).
+ * Rendering strategy:
+ *   · During a run: `view` is updated by `applyEvent` for every RunEvent the runner
+ *     emits, so logs, streamed chunks, trace DAG, and notices appear immediately.
+ *   · After a run: `view` is replaced by `buildRunView(result)` so value/error/
+ *     durationMs always reflect the authoritative final state.
+ *   · Runners that do not emit onEvent (e.g. mockRunner, DeferredRunner) never call
+ *     the callback; the panel simply shows the final result after run() resolves.
+ *
+ * The `result` prop is still accepted for the `data-level` log attribute lookup
+ * (log level is not part of RunView's flat string array, only the formatted text).
+ * During streaming it is null; the level attr is omitted until final reconcile.
  */
 function StitchOutput({
+    view,
     result,
     deferred,
+    running,
 }: {
+    view: RunView | null;
     result: RunResult | null;
     deferred: boolean;
+    running: boolean;
 }) {
     if (deferred) {
         return (
@@ -168,14 +196,18 @@ function StitchOutput({
             </div>
         );
     }
-    if (!result)
+    if (!view && !running)
         return (
             <div className="stitch-playground__output">
                 Run a snippet to see output.
             </div>
         );
-
-    const view = buildRunView(result);
+    if (!view)
+        return (
+            <div className="stitch-playground__output">
+                running…
+            </div>
+        );
 
     return (
         <div className="stitch-playground__output">
@@ -183,7 +215,7 @@ function StitchOutput({
             {view.logs.map((line, i) => (
                 <div
                     key={i}
-                    data-level={result.logs[i]?.level}
+                    data-level={result?.logs[i]?.level}
                     className="stitch-playground__log"
                 >
                     {line}
@@ -197,7 +229,7 @@ function StitchOutput({
                 </pre>
             )}
 
-            {/* ── Resolved value ───────────────────────────────────────── */}
+            {/* ── Resolved value / streamed text ───────────────────────── */}
             {view.errorText === null && view.valueText !== null && (
                 <pre className="stitch-playground__value">
                     {view.valueText}
@@ -216,12 +248,11 @@ function StitchOutput({
             )}
 
             {/* ── Mermaid DAG ──────────────────────────────────────────── */}
-            {result.trace && result.trace.length > 0 && (
+            {/* Show the DAG as soon as any trace event has been folded in. */}
+            {view.mermaid && !view.mermaid.includes('_empty') && (
                 <div className="stitch-playground__dag">
-                    {/* Streaming badge: shown when the trace contains a stream entry.
-                        NOTE: This marks a result that *included* streaming data — it
-                        does NOT mean the panel updated incrementally as chunks arrived.
-                        Incremental rendering needs a streaming contract extension. */}
+                    {/* Streaming badge: shown when any chunk event arrived or any
+                        trace entry carries `.stream`. Active during and after the run. */}
                     {view.isStreaming && (
                         <span className="stitch-playground__dag-streaming-badge">
                             streaming

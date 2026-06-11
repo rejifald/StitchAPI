@@ -21,6 +21,11 @@ import type { SimRequest, SimResponse } from '../../../../docs/playground/contra
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Typed assertion — asserts `c` is truthy, narrowing away undefined/null. */
+function assertDefined<T>(c: T | undefined | null, msg?: string): asserts c is T {
+    if (c == null) throw new Error(msg ?? 'Expected defined value, got ' + String(c));
+}
+
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -35,7 +40,7 @@ function makeReq(method: string, pathname: string, body?: unknown): SimRequest {
 
 function findHandler(req: SimRequest) {
     const h = streamingLlmHandlers.find((h) => h.match(req));
-    assert(h !== undefined, `No handler matched ${req.method} ${req.url.pathname}`);
+    if (!h) throw new Error(`No handler matched ${req.method} ${req.url.pathname}`);
     return h;
 }
 
@@ -76,7 +81,7 @@ async function main() {
         const h = findHandler(req);
         const res = await h.handle(req, {}) as SimResponse;
         assert.equal(res.status, 200, 'GET /stream status');
-        assert(res.stream, 'GET /stream must have a stream');
+        assertDefined(res.stream, 'GET /stream must have a stream');
 
         const bytes = await collectStream(res.stream);
         const text = dec.decode(bytes);
@@ -85,7 +90,7 @@ async function main() {
 
         // Determinism: run the handler again, compare bytes
         const res2 = await h.handle(req, {}) as SimResponse;
-        assert(res2.stream, 'GET /stream second run must have a stream');
+        assertDefined(res2.stream, 'GET /stream second run must have a stream');
         const bytes2 = await collectStream(res2.stream);
         assert(bytesEqual(bytes, bytes2), 'GET /stream: two runs must be byte-identical');
     }
@@ -98,7 +103,7 @@ async function main() {
         const h = findHandler(req);
         const res = await h.handle(req, {}) as SimResponse;
         assert.equal(res.status, 200, 'chat/completions SSE status');
-        assert(res.stream, 'chat/completions SSE must have a stream');
+        assertDefined(res.stream, 'chat/completions SSE must have a stream');
 
         const bytes = await collectStream(res.stream);
         const text = dec.decode(bytes);
@@ -110,7 +115,7 @@ async function main() {
 
         // Determinism
         const res2 = await h.handle(req, {}) as SimResponse;
-        assert(res2.stream, 'second run must have stream');
+        assertDefined(res2.stream, 'second run must have stream');
         const bytes2 = await collectStream(res2.stream);
         assert(bytesEqual(bytes, bytes2), 'chat/completions SSE: two runs must be byte-identical');
     }
@@ -127,7 +132,7 @@ async function main() {
         const h = findHandler(req);
         const res = await h.handle(req, {}) as SimResponse;
         assert.equal(res.status, 200, 'chat/completions tool SSE status');
-        assert(res.stream, 'chat/completions tool SSE must have a stream');
+        assertDefined(res.stream, 'chat/completions tool SSE must have a stream');
 
         const bytes = await collectStream(res.stream);
         const text = dec.decode(bytes);
@@ -139,7 +144,7 @@ async function main() {
 
         // Determinism
         const res2 = await h.handle(req, {}) as SimResponse;
-        assert(res2.stream, 'second run must have stream');
+        assertDefined(res2.stream, 'second run must have stream');
         const bytes2 = await collectStream(res2.stream);
         assert(bytesEqual(bytes, bytes2), 'chat/completions tool SSE: two runs must be byte-identical');
     }

@@ -41,19 +41,20 @@ async function main() {
         Array.isArray(catalogueBody.routes),
         'Catalogue should have a "routes" array',
     );
+    const routes = catalogueBody.routes as unknown[];
     assert(
-        catalogueBody.routes.length > 0,
+        routes.length > 0,
         'Catalogue routes array should not be empty',
     );
     // Verify /drift is present in the catalogue.
-    const driftRoute = (catalogueBody.routes as unknown[]).find(
+    const driftRoute = routes.find(
         (r: unknown) =>
             typeof r === 'object' &&
             r !== null &&
             (r as Record<string, unknown>).path === '/drift',
     );
     assert(driftRoute, 'Catalogue should include /drift route');
-    console.log(`✓ GET /__sandbox returns catalogue with ${catalogueBody.routes.length} routes`);
+    console.log(`✓ GET /__sandbox returns catalogue with ${routes.length} routes`);
 
     // 3. Test GET /users — verify a known route still dispatches.
     const usersUrl = new URL('http://demo.stitchapi.dev/users');

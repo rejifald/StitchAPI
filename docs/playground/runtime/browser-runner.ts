@@ -52,6 +52,7 @@ import { transpile as defaultTranspile } from './transpile';
 import type {
     RunMessage,
     ResultMessage,
+    FromWorker,
     WireLog,
     WireNotice,
     WireError,
@@ -199,9 +200,33 @@ class BrowserWorkerRunner implements CodeRunner {
                 req.signal.addEventListener('abort', onAbort, { once: true });
             }
 
-            /* -- worker result: snippet success or throw (SEC-39a) --------- */
+            /* -- worker result OR progress (SEC-39a / A1 §8) --------------- */
             worker.onmessage = (ev: { data: unknown }) => {
-                const data = ev.data as ResultMessage | undefined;
+                const data = ev.data as FromWorker | undefined;
+                // A1: a `progress` message is pure observation — forward it to
+                // the host `onEvent` (if any) and KEEP WAITING for the terminal
+                // `result`. It must never settle the run, never reach snippet
+                // code, and a throwing host callback must not crash the run.
+                if (data && data.type === 'progress') {
+                    if (settled) return; // late progress after kill — drop it
+                    const onEvent = req.onEvent;
+                    if (onEvent) {
+                        try {
+                            onEvent(data.event);
+                        } catch {
+                            // A throwing host callback is contained: the run is
+                            // unaffected and still resolves the full RunResult.
+                            try {
+                                // Last-resort visibility; never rethrow.
+                                // eslint-disable-next-line no-console
+                                console.error('[browser-runner] onEvent threw; ignored');
+                            } catch {
+                                /* ignore */
+                            }
+                        }
+                    }
+                    return;
+                }
                 if (!data || data.type !== 'result') {
                     // Malformed message from the worker = engine failure.
                     finish(errorResult(since(), internalError(

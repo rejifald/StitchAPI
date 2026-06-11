@@ -40,10 +40,11 @@
 import type {
     RunMessage,
     ResultMessage,
+    ProgressMessage,
     WireLog,
     WireNotice,
 } from './worker-protocol';
-import type { LogLevel } from '../component/runner';
+import type { LogLevel, LogEntry, RunEvent } from '../component/runner';
 
 /* -------------------------------------------------------------------------- */
 /*  Injected worker environment (the allow-listed scope, SEC-34)              */
@@ -86,7 +87,29 @@ export interface WorkerEnv {
      * once after the run; result → `RunResult.notices` (SANDBOX §5.7, SEC-33).
      */
     drainNotices: () => WireNotice[];
+    /**
+     * OPTIONAL progressive observation seam (A1, Wave 4 — additive). When the
+     * runner wants incremental events, it hands the worker body a `ProgressSink`
+     * and the body forwards it here so env-side producers (the S5 sim `fetch`'s
+     * stream chunks, completed `stitch()` traces, and shim notices as they fire)
+     * can emit `RunEvent`s IN REAL ORDER. Returns a teardown the body calls when
+     * the run settles. PURE observation: it must NOT change anything the env
+     * later reports via `drainNotices()` / the snippet's resolved value, so a run
+     * with no sink (or an env that ignores this hook) is byte-for-byte unchanged.
+     *
+     * `console.*` `log` events are emitted by the worker body itself (it owns the
+     * capturing console), so an env need only wire chunk/trace/notice here.
+     */
+    bindProgress?: (sink: ProgressSink) => (() => void) | void;
 }
+
+/**
+ * The progress callback an env may invoke to surface chunk/trace/notice events
+ * during a run (A1). The worker body owns it, fans `log` events in itself, and
+ * relays every event to the main thread as a `progress` message. Guarded so a
+ * producer throwing inside `emit` can never derail the snippet (best-effort).
+ */
+export type ProgressSink = (event: RunEvent) => void;
 
 /* -------------------------------------------------------------------------- */
 /*  Console capture (SEC-35: ordered, never leaked to host)                   */
@@ -99,13 +122,28 @@ const LEVELS: LogLevel[] = ['log', 'info', 'warn', 'error', 'debug'];
  * console is what the snippet sees — it writes into `logs`, never to the host
  * console (which, inside a real Worker, would surface in the page devtools).
  */
-function makeCapturingConsole(startedAt: () => number): {
+function makeCapturingConsole(
+    startedAt: () => number,
+    onLog?: (entry: LogEntry) => void,
+): {
     console: Record<LogLevel, (...args: unknown[]) => void> & Record<string, unknown>;
     logs: WireLog[];
 } {
     const logs: WireLog[] = [];
     const sink = (level: LogLevel) => (...args: unknown[]): void => {
-        logs.push({ level, args: args.map(safeClone), at: startedAt() });
+        const entry: WireLog = { level, args: args.map(safeClone), at: startedAt() };
+        logs.push(entry);
+        // Progressive observation (A1): forward this line as a `log` event the
+        // instant it's captured, BEFORE the run settles. The buffered `logs`
+        // array is still the source of truth for the final result — this is a
+        // pure side-emit. A throwing sink must not drop the captured line.
+        if (onLog) {
+            try {
+                onLog({ level: entry.level, args: entry.args, at: entry.at });
+            } catch {
+                /* swallow — host-side observation must never break capture */
+            }
+        }
     };
     const console = {} as Record<LogLevel, (...args: unknown[]) => void> &
         Record<string, unknown>;
@@ -169,9 +207,38 @@ export function safeClone(value: unknown): unknown {
 export async function runSnippetInWorker(
     env: WorkerEnv,
     msg: RunMessage,
+    onProgress?: ProgressSink,
 ): Promise<ResultMessage> {
     const t0 = Date.now();
-    const { console, logs } = makeCapturingConsole(() => Date.now() - t0);
+
+    // A1: wrap the host sink so a throwing onEvent/relay can never derail the
+    // snippet, and so a `log` emitted by the console capture and a chunk/trace/
+    // notice emitted by the env both funnel through ONE ordered relay.
+    const emit: ProgressSink | undefined = onProgress
+        ? (event: RunEvent): void => {
+              try {
+                  onProgress(event);
+              } catch {
+                  /* swallow — observation must never break the run */
+              }
+          }
+        : undefined;
+
+    // Let the env wire its chunk/trace/notice producers to the progress relay
+    // (optional + best-effort). Returns a teardown we run once the snippet ends.
+    let unbindProgress: (() => void) | void = undefined;
+    if (emit && env.bindProgress) {
+        try {
+            unbindProgress = env.bindProgress(emit);
+        } catch {
+            unbindProgress = undefined;
+        }
+    }
+
+    const { console, logs } = makeCapturingConsole(
+        () => Date.now() - t0,
+        emit ? (entry: LogEntry) => emit({ type: 'log', entry }) : undefined,
+    );
 
     // Build the allow-listed scope (SEC-34). These are the ONLY names a snippet
     // can reach by identifier; everything else is whatever the worker bundle's
@@ -227,6 +294,7 @@ export async function runSnippetInWorker(
         // problem, but it is reported as a snippet error here; the main thread
         // still gets a renderable result. (Most commonly this never fires
         // because transpile already validated syntax.)
+        teardownProgress(unbindProgress);
         return {
             type: 'result',
             logs,
@@ -237,6 +305,7 @@ export async function runSnippetInWorker(
 
     try {
         const value = await runner(...values);
+        teardownProgress(unbindProgress);
         return {
             type: 'result',
             logs,
@@ -244,12 +313,24 @@ export async function runSnippetInWorker(
             value: safeClone(value),
         };
     } catch (runErr) {
+        teardownProgress(unbindProgress);
         return {
             type: 'result',
             logs,
             notices: drainSafely(env),
             error: toWireError(runErr),
         };
+    }
+}
+
+/** Run the env's progress teardown once, best-effort (A1). */
+function teardownProgress(unbind: (() => void) | void): void {
+    if (typeof unbind === 'function') {
+        try {
+            unbind();
+        } catch {
+            /* ignore — teardown is best-effort */
+        }
     }
 }
 
@@ -292,10 +373,23 @@ export function installWorkerEntry(global: WorkerGlobal, env: WorkerEnv): void {
     global.onmessage = (ev: { data: unknown }): void => {
         const data = ev.data as RunMessage | undefined;
         if (!data || data.type !== 'run') return;
+        // A1: relay every progressive event back to the main thread AS IT HAPPENS
+        // as a `progress` message (structured-cloneable). This is the wire half of
+        // the §8 "forward chunks via postMessage as they arrive" amendment. Posting
+        // is best-effort and never throws into the producer; the terminal `result`
+        // message is still posted exactly once below, unchanged.
+        const onProgress: ProgressSink = (event: RunEvent): void => {
+            try {
+                const progress: ProgressMessage = { type: 'progress', event };
+                global.postMessage(progress);
+            } catch {
+                /* swallow — a failed progress post must not break the run */
+            }
+        };
         // Resolve and post; runSnippetInWorker never rejects, but guard anyway
         // so a defect can't leave the main thread hanging (it has its own
         // timeout, which would then fire as `internal`/`timeout`).
-        runSnippetInWorker(env, data).then(
+        runSnippetInWorker(env, data, onProgress).then(
             (result) => global.postMessage(result),
             (fatal) => {
                 const result: ResultMessage = {

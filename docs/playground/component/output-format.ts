@@ -8,6 +8,7 @@
  */
 import type {
     LogEntry,
+    RunEvent,
     RunNotice,
     RunResult,
     StitchTraceEntry,
@@ -184,4 +185,113 @@ export function buildRunView(result: RunResult): RunView {
     const isStreaming = trace.some((e) => e.stream !== undefined);
 
     return { logs, valueText, errorText, notices, mermaid, isStreaming };
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Incremental accumulator — emptyRunView / applyEvent                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Extended RunView that carries internal incremental state not surfaced in the
+ * rendered fields:
+ *   - `_traceEntries` — accumulated StitchTraceEntry[] so traceToMermaid can be
+ *     recomputed on every `trace` event without losing prior entries.
+ *   - `_streamChunks` — Map<traceId, string> keeping per-stream accumulated text
+ *     in order; the sentinel key "" is used when traceId is absent.
+ *
+ * The extra fields are prefixed `_` and excluded from the public RunView surface
+ * so consuming code (the component) never needs to know about them.
+ */
+interface RunViewInternal extends RunView {
+    _traceEntries: StitchTraceEntry[];
+    _streamChunks: Map<string, string>;
+}
+
+/**
+ * Return the initial, empty RunView before any event has been received.
+ * Safe to pass to `applyEvent` immediately.
+ */
+export function emptyRunView(): RunView {
+    const internal: RunViewInternal = {
+        logs: [],
+        valueText: null,
+        errorText: null,
+        notices: [],
+        mermaid: traceToMermaid([]),
+        isStreaming: false,
+        _traceEntries: [],
+        _streamChunks: new Map(),
+    };
+    return internal;
+}
+
+/**
+ * Fold a single `RunEvent` into the current `RunView` immutably, returning a
+ * new view with the event applied. Framework-free; call from a React setState
+ * updater or any other state management approach.
+ *
+ * Event semantics:
+ *   - `log`    → append a formatted log line.
+ *   - `chunk`  → append streamed text for the given traceId (key "" when absent),
+ *                set isStreaming=true on the first chunk ever received.
+ *   - `trace`  → append the StitchTraceEntry and recompute the Mermaid DAG.
+ *   - `notice` → append the summarized notice string.
+ *
+ * The internal `_traceEntries` and `_streamChunks` maps are copied so each
+ * returned view is fully independent of the prior one (immutable fold).
+ */
+export function applyEvent(view: RunView, event: RunEvent): RunView {
+    // Cast to internal to access accumulated state; it was created by emptyRunView
+    // or a prior applyEvent call, so the hidden fields are always present.
+    const prev = view as RunViewInternal;
+
+    switch (event.type) {
+        case 'log': {
+            return {
+                ...prev,
+                logs: [...prev.logs, formatLog(event.entry)],
+            } as RunViewInternal;
+        }
+
+        case 'chunk': {
+            const key = event.traceId ?? '';
+            const prevText = prev._streamChunks.get(key) ?? '';
+            const newChunks = new Map(prev._streamChunks);
+            newChunks.set(key, prevText + event.text);
+            // Concatenate all chunk streams in insertion order for valueText.
+            const streamedText = Array.from(newChunks.values()).join('');
+            return {
+                ...prev,
+                valueText: streamedText,
+                isStreaming: true,
+                _streamChunks: newChunks,
+            } as RunViewInternal;
+        }
+
+        case 'trace': {
+            const newTraceEntries = [...prev._traceEntries, event.entry];
+            const newMermaid = traceToMermaid(newTraceEntries);
+            // isStreaming grows monotonically — true if already set OR this entry has stream.
+            const nowStreaming = prev.isStreaming || event.entry.stream !== undefined;
+            return {
+                ...prev,
+                mermaid: newMermaid,
+                isStreaming: nowStreaming,
+                _traceEntries: newTraceEntries,
+            } as RunViewInternal;
+        }
+
+        case 'notice': {
+            const newNotices = summarizeNotices([event.notice]);
+            return {
+                ...prev,
+                notices: [...prev.notices, ...newNotices],
+            } as RunViewInternal;
+        }
+
+        default: {
+            // Exhaustiveness guard — unknown event types are ignored safely.
+            return prev;
+        }
+    }
 }

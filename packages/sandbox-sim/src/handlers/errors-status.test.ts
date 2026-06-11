@@ -33,10 +33,14 @@ const EMPTY_KNOBS: SimKnobs = {};
 // Helper: find the first handler that matches, assert one exists.
 // ---------------------------------------------------------------------------
 
-function dispatch(req: SimRequest) {
+function findHandler(req: SimRequest) {
     const h = errorsStatusHandlers.find((handler) => handler.match(req));
-    assert.ok(h, `No handler matched ${req.method} ${req.url.pathname}`);
-    return h.handle(req, EMPTY_KNOBS);
+    if (!h) throw new Error(`No handler matched ${req.method} ${req.url.pathname}`);
+    return h;
+}
+
+function dispatch(req: SimRequest) {
+    return findHandler(req).handle(req, EMPTY_KNOBS);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,8 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "types": ["node"]
+    },
+    "include": ["src/**/*.ts"],
+    "comment": "CI/install-checked type-check for test files. Extends the package tsconfig (strict, ES2022, Bundler moduleResolution) and adds @types/node so node:assert, node:assert/strict, and process are all in scope. Replaces the source tsconfig's exclude of test files. Run with: npx tsc --noEmit -p packages/sandbox-sim/tsconfig.test.json"
+}

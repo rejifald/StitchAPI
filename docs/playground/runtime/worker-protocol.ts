@@ -10,9 +10,18 @@
  * thread posts ONE `RunMessage`, the worker posts back ONE `ResultMessage`.
  * Nothing here carries a function — functions are wired INSIDE the worker scope
  * (the bundled stitch build + fetch shim), never sent across `postMessage`.
+ *
+ * Wave-4 amendment (A1, additive): alongside the single final `ResultMessage`,
+ * the worker MAY post zero-or-more `ProgressMessage`s *as events happen* (a
+ * console line, a stream chunk, a completed stitch trace, a shim notice) so the
+ * main thread can forward them to `RunRequest.onEvent` for incremental render
+ * (SANDBOX §8 / §9). Progress is PURE observation: it never alters the final
+ * `ResultMessage`, and a worker that emits no progress behaves exactly as before.
+ * Like everything here, the payload is pure data / structured-cloneable — the
+ * `RunEvent` shapes mirror the frozen `runner.ts` union, carried by value.
  */
 
-import type { LogLevel } from '../component/runner';
+import type { LogLevel, RunEvent } from '../component/runner';
 
 /* -------------------------------------------------------------------------- */
 /*  Main thread → Worker                                                       */
@@ -87,5 +96,20 @@ export interface ResultMessage {
     error?: WireError;
 }
 
-/** Anything the worker can post. (Only `result` in v1.) */
-export type FromWorker = ResultMessage;
+/**
+ * A progressive observation posted by the worker DURING a run (A1, Wave 4).
+ * Carries one {@link RunEvent} by value (structured-cloneable — the union's
+ * fields are plain data: `LogEntry`, text, `StitchTraceEntry`, `RunNotice`).
+ *
+ * Emitted in real execution order, interleaved with nothing else from the
+ * worker until the single terminal `ResultMessage`. Purely additive: it never
+ * changes the final result, and the main thread forwards it to
+ * `RunRequest.onEvent` (and only there — never to snippet code).
+ */
+export interface ProgressMessage {
+    type: 'progress';
+    event: RunEvent;
+}
+
+/** Anything the worker can post: zero-or-more `progress`, then one `result`. */
+export type FromWorker = ResultMessage | ProgressMessage;

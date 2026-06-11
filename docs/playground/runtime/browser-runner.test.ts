@@ -22,9 +22,13 @@
 
 import { Worker as ThreadWorkerImpl } from 'node:worker_threads';
 import { makeBrowserWorkerRunner, type WorkerLike } from './browser-runner';
-import { runSnippetInWorker, type WorkerEnv } from './worker-entry';
+import {
+    runSnippetInWorker,
+    type WorkerEnv,
+    type ProgressSink,
+} from './worker-entry';
 import type { RunMessage, ResultMessage } from './worker-protocol';
-import type { RunResult } from '../component/runner';
+import type { RunResult, RunEvent } from '../component/runner';
 
 /* -------------------------------------------------------------------------- */
 /*  Tiny assertion harness (mirrors transpile.test.ts convention)             */
@@ -80,6 +84,64 @@ function makeFakeEnv(): WorkerEnv {
     };
 }
 
+/**
+ * A1 progress-emitting fake env. Its `stitch` simulates a streamed call: it
+ * emits a completed `trace` then two stream `chunk` events (in order) via the
+ * progress sink the worker body wires through `bindProgress`. `keychain` emits
+ * a `notice` event AND buffers the same notice for the final-result drain, so
+ * the test can prove the progressive `notice` reconciles with `RunResult.notices`.
+ * The shapes mirror the frozen `RunEvent` union (runner.ts).
+ */
+function makeProgressEnv(): WorkerEnv {
+    let pending: { kind: 'shim' | 'info'; surface?: string; message: string }[] = [];
+    let sink: ProgressSink | undefined;
+    const traceId = 's1';
+    return {
+        stitchBuild: {
+            stitch: (url: string) => {
+                // A completed stitch trace, then the stream chunks for it — the
+                // §8 "forward chunks as they arrive" path, in real order.
+                sink?.({
+                    type: 'trace',
+                    entry: {
+                        id: traceId,
+                        request: { method: 'GET', url },
+                        response: { status: 200, ok: true, durationMs: 5 },
+                        stream: { chunks: 2 },
+                    },
+                });
+                sink?.({ type: 'chunk', traceId, text: 'Hel' });
+                sink?.({ type: 'chunk', traceId, text: 'lo' });
+                return Promise.resolve({ ok: true, url, body: 'Hello' });
+            },
+            keychain: (name: string) => {
+                const notice = {
+                    kind: 'shim' as const,
+                    surface: 'keychain',
+                    message: `running shimmed — \`keychain\` is simulated`,
+                };
+                pending.push(notice);
+                sink?.({ type: 'notice', notice });
+                return `demo-${name}-secret`;
+            },
+        },
+        fetch: async () => ({ status: 200 }),
+        process: { env: {}, platform: 'browser', versions: {} },
+        crypto: { randomUUID: () => 'uuid-0000' },
+        drainNotices: () => {
+            const out = pending;
+            pending = [];
+            return out;
+        },
+        bindProgress: (s: ProgressSink) => {
+            sink = s;
+            return () => {
+                sink = undefined;
+            };
+        },
+    };
+}
+
 /* -------------------------------------------------------------------------- */
 /*  (B) In-process fake worker — drives the REAL runSnippetInWorker           */
 /* -------------------------------------------------------------------------- */
@@ -97,7 +159,14 @@ class InProcWorker implements WorkerLike {
 
     postMessage(message: unknown): void {
         const msg = message as RunMessage;
-        runSnippetInWorker(this.env, msg).then((result: ResultMessage) => {
+        // A1: mirror a real worker — relay each progressive event as a `progress`
+        // message AS IT HAPPENS (dropped after terminate, like a killed worker),
+        // then deliver the single terminal `result`.
+        const onProgress: ProgressSink = (event: RunEvent) => {
+            if (this.terminated) return;
+            this.onmessage?.({ data: { type: 'progress', event } });
+        };
+        runSnippetInWorker(this.env, msg, onProgress).then((result: ResultMessage) => {
             if (this.terminated) return; // killed → never deliver (containment)
             this.onmessage?.({ data: result });
         });
@@ -315,6 +384,152 @@ async function runTests(): Promise<void> {
             result?.error?.reason !== 'throw' && result?.error?.phase !== 'transpile',
             result?.error,
         );
+    }
+
+    /* === A1 — progressive onEvent emission (Wave 4) ====================== */
+
+    // A1 — onEvent fires log/trace/chunk/notice IN ORDER during the run, and the
+    // events reconcile with the final RunResult (same logs + same notices).
+    {
+        const events: RunEvent[] = [];
+        const runner = makeBrowserWorkerRunner({
+            transpileFn: passthroughTranspile,
+            workerFactory: () => new InProcWorker(makeProgressEnv()),
+        });
+        const result = await runner.run({
+            // log → (stitch emits trace+2 chunks) → log → keychain emits notice.
+            code:
+                `console.log('start');` +
+                `const r = await stitch('https://demo/x');` +
+                `console.log('mid');` +
+                `const s = keychain('GH_TOKEN');` +
+                `return r;`,
+            onEvent: (e) => events.push(e),
+        });
+
+        const types = events.map((e) => e.type);
+        assert(
+            'A1 events in real order: log, trace, chunk, chunk, log, notice',
+            JSON.stringify(types) ===
+                JSON.stringify(['log', 'trace', 'chunk', 'chunk', 'log', 'notice']),
+            types,
+        );
+
+        // chunk events carry traceId + text in order.
+        const chunks = events.filter((e) => e.type === 'chunk') as Extract<RunEvent, { type: 'chunk' }>[];
+        assert(
+            'A1 chunk events carry traceId + ordered text',
+            chunks.length === 2 &&
+                chunks[0]?.traceId === 's1' && chunks[0]?.text === 'Hel' &&
+                chunks[1]?.text === 'lo',
+            chunks,
+        );
+
+        // trace event content matches what a stitch() produced.
+        const traceEv = events.find((e) => e.type === 'trace') as Extract<RunEvent, { type: 'trace' }> | undefined;
+        assert(
+            'A1 trace event has id + stream chunk count',
+            traceEv?.entry.id === 's1' && traceEv?.entry.stream?.chunks === 2,
+            traceEv,
+        );
+
+        // RECONCILIATION: progressive log events === final RunResult.logs.
+        const logEvents = events.filter((e) => e.type === 'log') as Extract<RunEvent, { type: 'log' }>[];
+        assert(
+            'A1 progressive logs reconcile with final RunResult.logs',
+            logEvents.length === result.logs.length &&
+                logEvents.every((le, i) =>
+                    le.entry.level === result.logs[i]?.level &&
+                    JSON.stringify(le.entry.args) === JSON.stringify(result.logs[i]?.args),
+                ),
+            { logEvents, finalLogs: result.logs },
+        );
+
+        // RECONCILIATION: progressive notice events === final RunResult.notices.
+        const noticeEvents = events.filter((e) => e.type === 'notice') as Extract<RunEvent, { type: 'notice' }>[];
+        assert(
+            'A1 progressive notices reconcile with final RunResult.notices',
+            noticeEvents.length === (result.notices?.length ?? 0) &&
+                noticeEvents.every((ne, i) =>
+                    ne.notice.surface === result.notices?.[i]?.surface &&
+                    ne.notice.kind === result.notices?.[i]?.kind &&
+                    ne.notice.message === result.notices?.[i]?.message,
+                ),
+            { noticeEvents, finalNotices: result.notices },
+        );
+
+        // run() still single-shot: the final value is intact.
+        assert(
+            'A1 run() still resolves the full RunResult (value intact)',
+            !!result.value && (result.value as { ok: boolean }).ok === true && result.error === undefined,
+            result,
+        );
+    }
+
+    // A1 — a run with NO onEvent resolves an IDENTICAL RunResult (no-op cost).
+    {
+        const code =
+            `console.log('start');` +
+            `const r = await stitch('https://demo/x');` +
+            `console.log('mid');` +
+            `const s = keychain('GH_TOKEN');` +
+            `return r;`;
+        const withEvents: RunEvent[] = [];
+        const runnerA = makeBrowserWorkerRunner({
+            transpileFn: passthroughTranspile,
+            workerFactory: () => new InProcWorker(makeProgressEnv()),
+        });
+        const runnerB = makeBrowserWorkerRunner({
+            transpileFn: passthroughTranspile,
+            workerFactory: () => new InProcWorker(makeProgressEnv()),
+        });
+        const rWith = await runnerA.run({ code, onEvent: (e) => withEvents.push(e) });
+        const rWithout = await runnerB.run({ code }); // no onEvent
+
+        // Compare the result minus wall-clock fields (durationMs + per-log `at`
+        // vary run-to-run), proving the observation channel did not perturb the
+        // byte-for-byte final result content.
+        const strip = (r: RunResult) => ({
+            ...r,
+            durationMs: 0,
+            logs: r.logs.map((l) => ({ ...l, at: 0 })),
+        });
+        assert(
+            'A1 no-onEvent RunResult identical to onEvent RunResult',
+            JSON.stringify(strip(rWithout)) === JSON.stringify(strip(rWith)),
+            { rWith, rWithout },
+        );
+        assert('A1 no-onEvent path emitted nothing observable (still produced result)', !!rWithout.value, rWithout);
+    }
+
+    // A1 — a THROWING onEvent callback does NOT break the run (still resolves).
+    {
+        let rejected = false;
+        let result: RunResult | undefined;
+        const runner = makeBrowserWorkerRunner({
+            transpileFn: passthroughTranspile,
+            workerFactory: () => new InProcWorker(makeProgressEnv()),
+        });
+        try {
+            result = await runner.run({
+                code:
+                    `console.log('x');` +
+                    `const r = await stitch('https://demo/x');` +
+                    `return r;`,
+                onEvent: () => {
+                    throw new Error('host onEvent blew up');
+                },
+            });
+        } catch {
+            rejected = true;
+        }
+        assert('A1 throwing onEvent did NOT reject run()', !rejected);
+        assert(
+            'A1 throwing onEvent still resolved the full RunResult',
+            !!result?.value && (result.value as { ok: boolean }).ok === true && result?.error === undefined,
+            result,
+        );
+        assert('A1 throwing onEvent still captured logs', result?.logs.length === 1, result?.logs);
     }
 
     /* === (A) worker_threads proofs: REAL terminate() ===================== */
