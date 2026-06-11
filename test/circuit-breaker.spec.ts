@@ -21,7 +21,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

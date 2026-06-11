@@ -55,7 +55,7 @@ export function createStoreThrottle(
     const rate = opts?.rate ? parseRate(opts.rate) : undefined;
     const local = new Map<
         string,
-        { inFlight: number; waiters: Array<() => void> }
+        { inFlight: number; waiters: (() => void)[] }
     >();
 
     const stateFor = (key: string) => {
@@ -77,8 +77,12 @@ export function createStoreThrottle(
     };
 
     async function acquire(key: string): Promise<{ waitedMs: number }> {
-        const start = now();
+        // Only a real concurrency block counts as "waited" — not incidental store or
+        // scheduling time — so waitedMs (and the 'throttled' event) is deterministic.
+        const blocked = limit != null && stateFor(key).inFlight >= limit;
+        const blockStart = now();
         await takeSlot(key);
+        let waitedMs = blocked ? now() - blockStart : 0;
         if (rate) {
             // At most rate.count grants per rate.perMs window. If we land over the limit,
             // wait for the next window boundary and re-check.
@@ -90,10 +94,13 @@ export function createStoreThrottle(
                 );
                 if (count <= rate.count) break;
                 const waitMs = windowStart + rate.perMs - now();
-                if (waitMs > 0) await sleep(waitMs);
+                if (waitMs > 0) {
+                    await sleep(waitMs);
+                    waitedMs += waitMs;
+                }
             }
         }
-        return { waitedMs: now() - start };
+        return { waitedMs };
     }
 
     function release(key: string): void {

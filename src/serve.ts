@@ -39,7 +39,9 @@ function readBody(req: IncomingMessage): Promise<string> {
         let data = '';
         req.setEncoding('utf8');
         req.on('data', (c: string) => (data += c));
-        req.on('end', () => resolve(data));
+        req.on('end', () => {
+            resolve(data);
+        });
         req.on('error', reject);
     });
 }
@@ -173,7 +175,12 @@ export function serve(
                 url: `http://${host}:${port}`,
                 port,
                 server,
-                close: () => new Promise<void>((r) => server.close(() => r())),
+                close: () =>
+                    new Promise<void>((r) =>
+                        server.close(() => {
+                            r();
+                        }),
+                    ),
             });
         });
     });

@@ -26,7 +26,7 @@ export interface JsonRpcMessage {
 }
 
 interface ToolResult {
-    content: Array<{ type: 'text'; text: string }>;
+    content: { type: 'text'; text: string }[];
     isError?: boolean;
 }
 
@@ -113,7 +113,7 @@ export function createMcpServer(
             return errorResult((e as Error).message);
         }
         try {
-            const value = await stitch((a.input ?? {}) as StitchInput);
+            const value = await stitch(a.input ?? {});
             return textResult(value);
         } catch (e) {
             return errorResult((e as Error).message);

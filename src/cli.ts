@@ -69,15 +69,21 @@ export function argsToInput(
 
         switch (head) {
             case 'params':
-            case 'param':
-                return put('params', tail, bool ? true : coerce(raw));
+            case 'param': {
+                put('params', tail, bool ? true : coerce(raw));
+                return;
+            }
             case 'query':
-            case 'q':
-                return put('query', tail, bool ? true : coerce(raw));
+            case 'q': {
+                put('query', tail, bool ? true : coerce(raw));
+                return;
+            }
             case 'headers':
             case 'header':
-            case 'H':
-                return put('headers', tail, bool ? 'true' : raw);
+            case 'H': {
+                put('headers', tail, bool ? 'true' : raw);
+                return;
+            }
             case 'body': {
                 if (!tail) {
                     input.body = bool ? true : coerce(raw);
@@ -93,7 +99,8 @@ export function argsToInput(
             }
             default: {
                 const bucket: Bucket = params.has(key) ? 'params' : 'query';
-                return put(bucket, key, bool ? true : coerce(raw));
+                put(bucket, key, bool ? true : coerce(raw));
+                return;
             }
         }
     };
@@ -298,7 +305,7 @@ export function formatTraceSummary(summary: TraceSummary): string {
         p95: `${s.p95}ms`,
         p99: `${s.p99}ms`,
     }));
-    const cols: Array<[keyof (typeof rows)[0], string]> = [
+    const cols: [keyof (typeof rows)[0], string][] = [
         ['name', 'stitch'],
         ['runs', 'runs'],
         ['ok', 'ok'],
@@ -388,9 +395,9 @@ async function runCommand(args: string[], io: CliIO): Promise<number> {
         return 1;
     }
     try {
-        return await runStitch(registry, name, flags, (l) =>
-            io.write(`${l}\n`),
-        );
+        return await runStitch(registry, name, flags, (l) => {
+            io.write(`${l}\n`);
+        });
     } catch (e) {
         io.writeErr(`${(e as Error).message}\n`);
         return 1;

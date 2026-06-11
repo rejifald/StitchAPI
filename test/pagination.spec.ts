@@ -19,7 +19,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 // A 3-page endpoint keyed off ?page=N.
 function paged() {

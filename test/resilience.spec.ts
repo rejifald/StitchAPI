@@ -19,7 +19,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 // Drain a stitch's event stream into an array (and let it run to completion).
 async function collect(s: {

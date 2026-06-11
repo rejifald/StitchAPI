@@ -4,7 +4,10 @@ export const now = (): number => Date.now();
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
-        if (signal?.aborted) return reject(new Error('aborted'));
+        if (signal?.aborted) {
+            reject(new Error('aborted'));
+            return;
+        }
         const t = setTimeout(resolve, ms);
         signal?.addEventListener(
             'abort',
@@ -25,7 +28,7 @@ export function parseDuration(
     if (typeof d === 'number') return d;
     const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m)$/.exec(d.trim());
     if (!m) return Number(d) || undefined;
-    const n = parseFloat(m[1]);
+    const n = parseFloat(m[1] ?? '');
     return m[2] === 'ms' ? n : m[2] === 's' ? n * 1000 : n * 60000;
 }
 
@@ -34,7 +37,7 @@ export function parseRate(r: string): { count: number; perMs: number } {
     const m = /^(\d+)\s*\/\s*(ms|s|m)$/.exec(r.trim());
     if (!m) throw new Error(`bad rate: ${r}`);
     const per = m[2] === 'ms' ? 1 : m[2] === 's' ? 1000 : 60000;
-    return { count: parseInt(m[1], 10), perMs: per };
+    return { count: parseInt(m[1] ?? '', 10), perMs: per };
 }
 
 export const isObj = (x: unknown): x is Record<string, unknown> =>
@@ -89,7 +92,10 @@ export function buildQuery(q: Record<string, unknown> | undefined): string {
     const sp = new URLSearchParams();
     for (const [k, v] of Object.entries(q)) {
         if (v == null) continue;
-        if (Array.isArray(v)) v.forEach((x) => sp.append(k, String(x)));
+        if (Array.isArray(v))
+            v.forEach((x) => {
+                sp.append(k, String(x));
+            });
         else sp.append(k, String(v));
     }
     const s = sp.toString();

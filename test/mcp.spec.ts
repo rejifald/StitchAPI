@@ -17,10 +17,10 @@ process.env.STITCH_TRACE_FILE = join(
 
 // Minimal shapes for reading into the JSON-RPC results in assertions.
 interface ToolListResult {
-    tools: Array<{ name: string; description: string; inputSchema: unknown }>;
+    tools: { name: string; description: string; inputSchema: unknown }[];
 }
 interface ToolCallResult {
-    content: Array<{ type: string; text: string }>;
+    content: { type: string; text: string }[];
     isError?: boolean;
 }
 
@@ -109,11 +109,11 @@ test('tools/call list_stitches enumerates name/method/path', async () => {
         req('tools/call', { name: 'list_stitches' }),
     );
     const result = res?.result as ToolCallResult;
-    const list = JSON.parse(result.content[0].text) as Array<{
+    const list = JSON.parse(result.content[0].text) as {
         name: string;
         method: string;
         path: string;
-    }>;
+    }[];
     expect(list.map((s) => s.name)).toEqual(['getWidget', 'ping']);
     expect(list[0]).toMatchObject({ method: 'GET', path: '/widgets/{id}' });
 });

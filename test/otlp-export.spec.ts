@@ -35,7 +35,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 test('maps a successful call to one CLIENT span with OTel HTTP semconv attributes', () => {
     const { exporter, spans } = stubExporter();

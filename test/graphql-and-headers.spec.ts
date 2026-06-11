@@ -19,7 +19,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 describe('GraphQL kind', () => {
     test('POSTs { query, variables }, sends auth, and unwraps data', async () => {
@@ -38,7 +40,7 @@ describe('GraphQL kind', () => {
         expect(out).toEqual({ thing: { name: 'Ada' } }); // unwrapped `data`
 
         const call = server.calls('/graphql')[0];
-        expect(call?.headers['apikey']).toBe('gql_tok');
+        expect(call?.headers.apikey).toBe('gql_tok');
         expect((call?.body as { variables: unknown })?.variables).toEqual({
             id: 1,
         });

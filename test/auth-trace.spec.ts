@@ -23,7 +23,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 // ---------------------------------------------------------------------------
 // AUTH-AS-BOUNDARY

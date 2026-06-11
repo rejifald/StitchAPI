@@ -112,8 +112,8 @@ test('refreshes the token after it expires', async () => {
 
     expect(server.callCount('/token')).toBe(2); // expired → re-fetched
     const calls = server.calls('/data');
-    expect(calls[0].headers['authorization']).toBe('Bearer T1');
-    expect(calls[1].headers['authorization']).toBe('Bearer T2'); // the refreshed token
+    expect(calls[0].headers.authorization).toBe('Bearer T1');
+    expect(calls[1].headers.authorization).toBe('Bearer T2'); // the refreshed token
 }, 10000);
 
 test('refreshes proactively BEFORE expiry using refreshSkewMs', async () => {
@@ -137,7 +137,7 @@ test('refreshes proactively BEFORE expiry using refreshSkewMs', async () => {
 
     expect(server.callCount('/token')).toBe(2); // refreshed early, not at the 2s boundary
     const calls = server.calls('/data');
-    expect(calls[1].headers['authorization']).toBe('Bearer T2');
+    expect(calls[1].headers.authorization).toBe('Bearer T2');
 }, 10000);
 
 test('re-fetches the token when the resource server rejects it (401)', async () => {
@@ -159,6 +159,6 @@ test('re-fetches the token when the resource server rejects it (401)', async () 
 
     expect(server.callCount('/token')).toBe(2); // initial fetch + forced refresh on 401
     const calls = server.calls('/data');
-    expect(calls[0].headers['authorization']).toBe('Bearer STALE');
-    expect(calls[1].headers['authorization']).toBe('Bearer FRESH');
+    expect(calls[0].headers.authorization).toBe('Bearer STALE');
+    expect(calls[1].headers.authorization).toBe('Bearer FRESH');
 });

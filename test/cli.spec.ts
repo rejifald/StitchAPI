@@ -28,7 +28,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 const parseLines = (lines: string[]) => lines.map((l) => JSON.parse(l));
 

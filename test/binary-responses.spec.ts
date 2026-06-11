@@ -21,7 +21,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 const sha = (b: Buffer): string => createHash('sha256').update(b).digest('hex');
 // A deterministic payload spanning every byte value 0..255 (catches encoding corruption).

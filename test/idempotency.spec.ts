@@ -20,7 +20,9 @@ beforeAll(async () => {
 afterAll(async () => {
     await server.close();
 });
-beforeEach(() => server.reset());
+beforeEach(() => {
+    server.reset();
+});
 
 test('injects a stable Idempotency-Key on a write, unchanged across a retry', async () => {
     server.route('POST', '/create', {

@@ -4,21 +4,22 @@
         "lib": ["ES2022", "DOM"],
         "module": "ESNext",
         "moduleResolution": "Bundler",
-        "outDir": "lib" /* Specify an output folder for all emitted files. */,
-        "esModuleInterop": true /* Emit additional JavaScript to ease support for importing CommonJS modules. This enables 'allowSyntheticDefaultImports' for type compatibility. */,
-        "forceConsistentCasingInFileNames": true /* Ensure that casing is correct in imports. */,
-        "strict": true /* Enable all strict type-checking options. */,
-        "skipLibCheck": true /* Skip type checking all .d.ts files. */,
-        "sourceMap": true /* Generates corresponding '.map' file. */,
-        "emitDeclarationOnly": true,
-        "declaration": true /* Generates corresponding '.d.ts' file. */,
-        "declarationMap": true /* Generates a sourcemap for each corresponding '.d.ts' file. */,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+
+        /* Strict baseline. The 8 extra handbook flags (noUncheckedIndexedAccess,
+           exactOptionalPropertyTypes, noImplicitOverride, noPropertyAccessFromIndexSignature,
+           noUnusedLocals, noUnusedParameters, verbatimModuleSyntax, isolatedModules) are
+           deferred — ratchet them on in follow-ups once the feature modules are migrated. */
+        "strict": true,
+
         "baseUrl": "./",
         "paths": {
             "@/*": ["src/*"]
-        },
-        "rootDir": "./"
+        }
     },
     "include": ["src/**/*.ts"],
-    "exclude": ["lib"]
+    "exclude": ["lib", "node_modules"]
 }

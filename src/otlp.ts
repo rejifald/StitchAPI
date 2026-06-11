@@ -66,7 +66,7 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
     };
     const top = (name: string): OtelSpan | undefined => {
         const stack = open.get(name);
-        return stack && stack[stack.length - 1];
+        return stack?.[stack.length - 1];
     };
 
     const emit = (span: OtelSpan): void => {

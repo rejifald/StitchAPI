@@ -35,7 +35,7 @@ function flatten(layers: Fragment[]): Partial<StitchConfig>[] {
     const out: Partial<StitchConfig>[] = [];
     for (const layer of layers) {
         const cfg = asConfig(layer);
-        if (cfg.extends) out.push(...flatten(cfg.extends as Fragment[]));
+        if (cfg.extends) out.push(...flatten(cfg.extends));
         const rest = { ...cfg };
         delete (rest as { extends?: unknown }).extends;
         out.push(rest);
@@ -53,9 +53,9 @@ function chainHooks(layers: Hooks[]): Hooks | undefined {
     ];
     const merged: Hooks = {};
     for (const k of keys) {
-        const fns = layers.map((h) => h[k]).filter(Boolean) as Array<
-            (c: HookContext) => unknown
-        >;
+        const fns = layers.map((h) => h[k]).filter(Boolean) as ((
+            c: HookContext,
+        ) => unknown)[];
         if (!fns.length) continue;
         // onResponse/onError/onRetry unwind child→base; onRequest runs base→child.
         const ordered = k === 'onRequest' ? fns : fns.slice().reverse();
@@ -70,7 +70,7 @@ function chainHooks(layers: Hooks[]): Hooks | undefined {
 function normalizeOutput(out: StitchConfig['output']): StitchConfig['output'] {
     if (!out) return undefined;
     if ((out as DriftSpec).__kind === 'drift') return out;
-    return toValidator(out) as Validator;
+    return toValidator(out);
 }
 
 function normalizeInput(
@@ -79,7 +79,7 @@ function normalizeInput(
     if (!input) return undefined;
     const out: InputSchemas = {};
     for (const k of ['params', 'query', 'body', 'headers'] as const) {
-        if (input[k]) out[k] = toValidator(input[k]) as Validator;
+        if (input[k]) out[k] = toValidator(input[k]);
     }
     return out;
 }
@@ -102,7 +102,7 @@ function compose(config: Fragment): StitchConfig {
     merged.store = store;
     merged.output = normalizeOutput(merged.output);
     merged.input = normalizeInput(merged.input);
-    return merged as StitchConfig;
+    return merged;
 }
 
 // ---- shared trace sink (zero-infra: console off in tests, JSONL file) ------
@@ -140,10 +140,10 @@ async function consume<T>(
 }
 
 function tee<T>(
-    gen: AsyncGenerator<import('./types').StitchEvent<T>, void, unknown>,
+    gen: AsyncGenerator<import('./types').StitchEvent<T>, void>,
     trace: TraceSink,
     name: string,
-): AsyncGenerator<import('./types').StitchEvent<T>, void, unknown> {
+): AsyncGenerator<import('./types').StitchEvent<T>, void> {
     async function* wrapped() {
         for await (const ev of gen) {
             trace.handle(ev, { name });

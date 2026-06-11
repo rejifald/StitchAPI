@@ -50,7 +50,9 @@ afterAll(async () => {
     await handle.close();
     await api.close();
 });
-beforeEach(() => api.reset());
+beforeEach(() => {
+    api.reset();
+});
 
 test('serve binds an ephemeral port and reports it', () => {
     expect(handle.port).toBeGreaterThan(0);

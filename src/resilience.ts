@@ -44,7 +44,7 @@ export function parseRetryAfter(headerValue?: string): number | undefined {
 
 interface KeyState {
     inFlight: number;
-    waiters: Array<() => void>; // FIFO concurrency waiters; each resolves its acquire
+    waiters: (() => void)[]; // FIFO concurrency waiters; each resolves its acquire
     nextGrantAt: number; // earliest time the next rate-limited acquire may proceed
 }
 
@@ -85,16 +85,23 @@ export function createThrottle(opts?: ThrottleOptions): {
 
     async function acquire(key: string): Promise<{ waitedMs: number }> {
         const s = stateFor(key);
-        const start = now();
+        // Only a real concurrency block counts as "waited" — not incidental scheduling
+        // jitter — so waitedMs (and the 'throttled' event) is deterministic.
+        const blocked = limit != null && s.inFlight >= limit;
+        const blockStart = now();
         await takeSlot(s); // gate entry on concurrency first
+        let waitedMs = blocked ? now() - blockStart : 0;
         if (spacing > 0) {
             // Then pace within the held slot: reserve the next grant time and wait for it.
             const at = Math.max(now(), s.nextGrantAt);
             s.nextGrantAt = at + spacing;
             const wait = at - now();
-            if (wait > 0) await sleep(wait);
+            if (wait > 0) {
+                await sleep(wait);
+                waitedMs += wait;
+            }
         }
-        return { waitedMs: now() - start };
+        return { waitedMs };
     }
 
     function release(key: string): void {

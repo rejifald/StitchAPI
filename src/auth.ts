@@ -50,7 +50,7 @@ export function bearer(token: Secret): AuthStrategy {
     return {
         name: 'bearer',
         apply(req) {
-            req.headers['authorization'] = `Bearer ${resolve(token)}`;
+            req.headers.authorization = `Bearer ${resolve(token)}`;
         },
     };
 }
@@ -72,7 +72,7 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
             const token = Buffer.from(
                 `${resolve(opts.user)}:${resolve(opts.pass)}`,
             ).toString('base64');
-            req.headers['authorization'] = `Basic ${token}`;
+            req.headers.authorization = `Basic ${token}`;
         },
     };
 }
@@ -164,7 +164,7 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
     return {
         name: 'oauth2',
         async apply(req, ctx) {
-            req.headers['authorization'] = `Bearer ${await tokenFor(ctx)}`;
+            req.headers.authorization = `Bearer ${await tokenFor(ctx)}`;
         },
         shouldRefresh(res) {
             return refreshOn.includes(res.status);
@@ -236,7 +236,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
                 ? serializeJar(stored as Record<string, string> | undefined)
                 : (stored as string | undefined);
             if (cookie) {
-                req.headers['cookie'] = [req.headers['cookie'], cookie]
+                req.headers.cookie = [req.headers.cookie, cookie]
                     .filter(Boolean)
                     .join('; ');
             }
