@@ -14,7 +14,7 @@
 import type {
     SimHandler,
     SimRequest,
-} from '../../../../docs/playground/contracts/sim';
+} from '../../../../docs/sandbox/contracts/sim';
 import { dispatch } from '../dispatch';
 
 /** Build a SimRequest from the raw fetch arguments. */

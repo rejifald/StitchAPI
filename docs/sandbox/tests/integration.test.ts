@@ -11,7 +11,7 @@
  * (CSP, Worker termination, globalThis isolation) remain in R1's worker_threads
  * harness — that's the right home for them.
  *
- * Run with:  npx -y tsx docs/playground/tests/integration.test.ts
+ * Run with:  npx -y tsx docs/sandbox/tests/integration.test.ts
  * Expected:  prints "T-ALPHA OK" with a pass/fail count, exits 0.
  */
 import { createFetchShim } from '../../../packages/sandbox-sim/src/adapters/node';

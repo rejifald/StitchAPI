@@ -13,7 +13,7 @@ recommended shape (B1-SPIKE §6). `packages/core` is untouched; all of the Node
 entanglement is redirected at bundle time.
 
 ```
-docs/playground/runtime/
+docs/sandbox/runtime/
   stitch-browser.ts          ← THE ENTRY. Re-exports core's browser-safe surface,
                                 wires the shimmed Node-only surfaces + server stubs.
   build-stitch-browser.mjs   ← esbuild build script (alias + define), emits ESM.
@@ -54,22 +54,22 @@ Three knobs, all proven in the spike (B1-SPIKE §4):
 
 ```bash
 # Workspace with esbuild installed:
-node docs/playground/runtime/build-stitch-browser.mjs           # → /tmp/b1-out/stitch-browser.mjs
-OUT=/tmp/stitch-browser.mjs node docs/playground/runtime/build-stitch-browser.mjs
+node docs/sandbox/runtime/build-stitch-browser.mjs           # → /tmp/b1-out/stitch-browser.mjs
+OUT=/tmp/stitch-browser.mjs node docs/sandbox/runtime/build-stitch-browser.mjs
 
 # Deps not installed (spike method): point ESBUILD at any esbuild build:
 ESBUILD=/abs/path/to/esbuild/lib/main.js \
-  node docs/playground/runtime/build-stitch-browser.mjs
+  node docs/sandbox/runtime/build-stitch-browser.mjs
 ```
 
 ### Equivalent esbuild CLI (the spike's `npx` method)
 
 ```bash
-npx -y esbuild docs/playground/runtime/stitch-browser.ts \
+npx -y esbuild docs/sandbox/runtime/stitch-browser.ts \
   --bundle --format=esm --platform=browser --target=es2022 \
-  --alias:node:crypto=docs/playground/runtime/shims/node-crypto.ts \
-  --alias:node:fs=docs/playground/runtime/shims/node-fs.ts \
-  --alias:node:path=docs/playground/runtime/shims/node-path.ts \
+  --alias:node:crypto=docs/sandbox/runtime/shims/node-crypto.ts \
+  --alias:node:fs=docs/sandbox/runtime/shims/node-fs.ts \
+  --alias:node:path=docs/sandbox/runtime/shims/node-path.ts \
   --alias:@stitchapi/core=packages/core/src/index.ts \
   --define:process='{"env":{},"platform":"browser","versions":{}}' \
   --outfile=/tmp/b1-out/stitch-browser.mjs

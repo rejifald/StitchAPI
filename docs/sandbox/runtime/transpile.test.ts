@@ -8,7 +8,7 @@
  *   (b) A syntax error maps to `{ error: { phase:'transpile', ... } }` and
  *       does NOT throw.
  *
- * Run with:  npx -y tsx docs/playground/runtime/transpile.test.ts
+ * Run with:  npx -y tsx docs/sandbox/runtime/transpile.test.ts
  */
 import type { RunError } from '../component/runner';
 import { transpile } from './transpile';

@@ -12,7 +12,7 @@
 import type {
     SimKnobs,
     SimRequest,
-} from '../../../../docs/playground/contracts/sim';
+} from '../../../../docs/sandbox/contracts/sim';
 import { errorsStatusHandlers } from './errors-status';
 
 import assert from 'node:assert/strict';

@@ -13,7 +13,7 @@ function serverTierOnly(surface: string): never {
     throw new Error(
         `\`${surface}\` is a server-tier surface and cannot run in the browser ` +
             `sandbox (it needs process/stdio/server access). Run this snippet on ` +
-            `the server tier. See docs/playground/SANDBOX.md §3.`,
+            `the server tier. See docs/sandbox/SANDBOX.md §3.`,
     );
 }
 

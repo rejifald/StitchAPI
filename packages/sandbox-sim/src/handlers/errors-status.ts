@@ -19,7 +19,7 @@ import type {
     SimKnobs,
     SimRequest,
     SimResponse,
-} from '../../../../docs/playground/contracts/sim';
+} from '../../../../docs/sandbox/contracts/sim';
 
 // ---------------------------------------------------------------------------
 // Fixed fixture — deterministic, never derived from runtime state.

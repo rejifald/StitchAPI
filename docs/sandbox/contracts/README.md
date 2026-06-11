@@ -31,7 +31,7 @@ that lower-tier tasks can be dispatched safely in isolation.
 ## Type-check
 
 ```sh
-npx -y -p typescript@5 tsc --noEmit -p docs/playground/contracts/tsconfig.json
+npx -y -p typescript@5 tsc --noEmit -p docs/sandbox/contracts/tsconfig.json
 ```
 
 Pure TypeScript, framework-agnostic, no runtime deps — mirrors `runner.ts`.

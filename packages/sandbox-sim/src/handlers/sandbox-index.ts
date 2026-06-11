@@ -12,7 +12,7 @@ import type {
     SimKnobs,
     SimRequest,
     SimResponse,
-} from '../../../../docs/playground/contracts/sim';
+} from '../../../../docs/sandbox/contracts/sim';
 
 // ---------------------------------------------------------------------------
 // Static catalogue — hand-written, deterministic

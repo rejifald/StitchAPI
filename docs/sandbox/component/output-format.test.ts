@@ -1,7 +1,7 @@
 /**
  * output-format.test.ts — tsx smoke tests for the pure output-format helpers.
  *
- * Run with: npx -y tsx docs/playground/component/output-format.test.ts
+ * Run with: npx -y tsx docs/sandbox/component/output-format.test.ts
  * Expected: prints "U1 OK" and exits 0.
  *
  * Uses node:assert (strict). No test framework required.

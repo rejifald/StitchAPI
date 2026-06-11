@@ -15,7 +15,7 @@
 import type {
     SimRequest,
     SimResponse,
-} from '../../../../docs/playground/contracts/sim.js';
+} from '../../../../docs/sandbox/contracts/sim.js';
 import { streamingLlmHandlers } from './streaming-llm.js';
 
 import assert from 'node:assert/strict';

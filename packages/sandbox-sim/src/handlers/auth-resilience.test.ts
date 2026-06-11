@@ -7,7 +7,7 @@
 import type {
     SimKnobs,
     SimRequest,
-} from '../../../../docs/playground/contracts/sim';
+} from '../../../../docs/sandbox/contracts/sim';
 import { authResilienceHandlers } from './auth-resilience';
 
 import assert from 'node:assert/strict';

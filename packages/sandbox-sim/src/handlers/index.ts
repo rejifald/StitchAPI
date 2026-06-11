@@ -7,7 +7,7 @@
  *
  * This module is the single source of truth for which handlers are active.
  */
-import type { SimHandler } from '../../../../docs/playground/contracts/sim';
+import type { SimHandler } from '../../../../docs/sandbox/contracts/sim';
 import { registerHandler, resetHandlers } from '../index';
 import { authResilienceHandlers } from './auth-resilience';
 // Import all handler arrays

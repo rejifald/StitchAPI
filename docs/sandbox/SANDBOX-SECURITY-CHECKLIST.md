@@ -2,7 +2,7 @@
 
 > **Status:** Accepted (C2 sign-off) · implementation **NOT STARTED** > **Date:** 2026-06-11 · **Decider:** @rejifald · **Tier:** T3 (Opus)
 > **Design of record:** [SANDBOX.md](./SANDBOX.md) §7 (security model), §9 (acceptance), §10 (risks)
-> **Implemented as tests by:** [SANDBOX-IMPLEMENTATION-PLAN.md](./SANDBOX-IMPLEMENTATION-PLAN.md) task **T-α** > **Contract under test:** [`component/runner.ts`](./component/runner.ts) > **Revises the older model in:** [REQUIREMENTS.md](./REQUIREMENTS.md) §7–§8 (proxy-allowlist trust boundary — superseded)
+> **Implemented as tests by:** [SANDBOX-IMPLEMENTATION-PLAN.md](./SANDBOX-IMPLEMENTATION-PLAN.md) task **T-α** > **Contract under test:** [`component/runner.ts`](./component/runner.ts) > **Revises the older model in:** [REQUIREMENTS.md](../playground/REQUIREMENTS.md) §7–§8 (proxy-allowlist trust boundary — superseded)
 
 This document turns the [SANDBOX.md](./SANDBOX.md) §7 security model and §9 acceptance
 criteria into **binary, testable invariants**. Each row is a **contract the runners MUST

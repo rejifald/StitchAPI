@@ -2,16 +2,16 @@
  * Isomorphic fake-API simulator handler registry (S1 scaffold).
  *
  * Handlers added in S2–S4; adapters in S5. Registry typed against the frozen
- * SimHandler contract — do not widen it (see docs/playground/contracts/README.md).
+ * SimHandler contract — do not widen it (see docs/sandbox/contracts/README.md).
  */
-import type { SimHandler } from '../../../docs/playground/contracts/sim';
+import type { SimHandler } from '../../../docs/sandbox/contracts/sim';
 
 export type {
     SimHandler,
     SimRequest,
     SimResponse,
     SimKnobs,
-} from '../../../docs/playground/contracts/sim';
+} from '../../../docs/sandbox/contracts/sim';
 
 /** Handler registry: empty at S1; populated by S2–S4. */
 const handlers: SimHandler[] = [];

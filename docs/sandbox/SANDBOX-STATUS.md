@@ -73,7 +73,7 @@ Every plan task (SANDBOX-IMPLEMENTATION-PLAN.md §2) → status → one-line evi
 
 ## 3. Verification (re-run for this sign-off, 2026-06-11)
 
-### 3.1 Test suites — `node docs/playground/tests/run-all.mjs`
+### 3.1 Test suites — `node docs/sandbox/tests/run-all.mjs`
 
 ```
 running packages/sandbox-sim/src/handlers/errors-status.test.ts … PASS
@@ -81,22 +81,22 @@ running packages/sandbox-sim/src/handlers/streaming-llm.test.ts … PASS
 running packages/sandbox-sim/src/handlers/auth-resilience.test.ts … PASS
 running packages/sandbox-sim/src/handlers/registration.test.ts … PASS
 running packages/sandbox-sim/src/dispatch.test.ts … PASS
-running docs/playground/contracts/dispatch.test.ts … PASS
-running docs/playground/runtime/transpile.test.ts … PASS
-running docs/playground/runtime/browser-runner.test.ts … PASS
-running docs/playground/component/output-format.test.ts … PASS
-running docs/playground/tests/integration.test.ts … PASS
+running docs/sandbox/contracts/dispatch.test.ts … PASS
+running docs/sandbox/runtime/transpile.test.ts … PASS
+running docs/sandbox/runtime/browser-runner.test.ts … PASS
+running docs/sandbox/component/output-format.test.ts … PASS
+running docs/sandbox/tests/integration.test.ts … PASS
 
 10/10 suites passed
 ```
 
 ### 3.2 Source type-checks — `npx -y -p typescript@5 tsc --noEmit -p <P>/tsconfig.json`
 
-| Project                                   | Exit  |
-| ----------------------------------------- | ----- |
-| `docs/playground/contracts/tsconfig.json` | **0** |
-| `docs/playground/runtime/tsconfig.json`   | **0** |
-| `packages/sandbox-sim/tsconfig.json`      | **0** |
+| Project                                | Exit  |
+| -------------------------------------- | ----- |
+| `docs/sandbox/contracts/tsconfig.json` | **0** |
+| `docs/sandbox/runtime/tsconfig.json`   | **0** |
+| `packages/sandbox-sim/tsconfig.json`   | **0** |
 
 ### 3.3 Build commits — `git log --oneline a4b7c3a..HEAD`
 
@@ -203,7 +203,7 @@ the no-install build loop. To land:
 3. `pnpm check:lint` — `pnpm -r check:lint` across packages.
 4. **Run the install-only type-checks not exercised in the no-install loop:**
     - `npx tsc --noEmit -p packages/sandbox-sim/tsconfig.test.json` (test sources).
-    - `npx tsc --noEmit -p docs/playground/runtime/tsconfig.browser.json` (DOM/WebWorker
+    - `npx tsc --noEmit -p docs/sandbox/runtime/tsconfig.browser.json` (DOM/WebWorker
       lib browser build).
     - The **React/`.tsx`** type-check of `StitchPlayground.tsx` — runs only once the docs
       app deps (React + types) are present (not resolvable in the no-install loop).

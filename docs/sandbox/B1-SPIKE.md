@@ -2,8 +2,8 @@
 
 > **Status:** Spike complete — **GO-WITH-CAVEATS**. Implementation NOT STARTED.
 > **Date:** 2026-06-11 · **Spiker:** B1 (Tier-3)
-> **Answers open risk:** [SANDBOX.md](./SANDBOX.md) §10.4 ("browser `stitch` build … largest single unknown") · [REQUIREMENTS.md](./REQUIREMENTS.md) §6, §10.1
-> **Keys on:** [`contracts/dispatch.ts`](./contracts/dispatch.ts) `NODE_ONLY_SURFACES` · **Fallback if NO-GO:** [RATIONALE.md](./RATIONALE.md) §"Confidence & escape hatch" (self-hosted LiveCodes)
+> **Answers open risk:** [SANDBOX.md](./SANDBOX.md) §10.4 ("browser `stitch` build … largest single unknown") · [REQUIREMENTS.md](../playground/REQUIREMENTS.md) §6, §10.1
+> **Keys on:** [`contracts/dispatch.ts`](./contracts/dispatch.ts) `NODE_ONLY_SURFACES` · **Fallback if NO-GO:** [RATIONALE.md](../playground/RATIONALE.md) §"Confidence & escape hatch" (self-hosted LiveCodes)
 > **Downstream:** R1 (Worker runner — injects this build), D1 (dispatcher)
 
 ## Verdict

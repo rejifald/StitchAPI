@@ -2,8 +2,8 @@
 
 > **Status:** Accepted design (implementation **NOT STARTED**)
 > **Date:** 2026-06-11 · **Decider:** @rejifald
-> **Supersedes parts of:** [REQUIREMENTS.md](./REQUIREMENTS.md) §2 FR2, §6–§8 · [RATIONALE.md](./RATIONALE.md) "same-origin proxy"
-> **Related:** [COMPETITORS.md](./COMPETITORS.md) · contract in [`component/runner.ts`](./component/runner.ts) · UI in [`component/StitchPlayground.tsx`](./component/StitchPlayground.tsx) > **Build sequencing:** [SANDBOX-IMPLEMENTATION-PLAN.md](./SANDBOX-IMPLEMENTATION-PLAN.md)
+> **Supersedes parts of:** [REQUIREMENTS.md](../playground/REQUIREMENTS.md) §2 FR2, §6–§8 · [RATIONALE.md](../playground/RATIONALE.md) "same-origin proxy"
+> **Related:** [COMPETITORS.md](../playground/COMPETITORS.md) · contract in [`component/runner.ts`](./component/runner.ts) · UI in [`component/StitchPlayground.tsx`](./component/StitchPlayground.tsx) > **Build sequencing:** [SANDBOX-IMPLEMENTATION-PLAN.md](./SANDBOX-IMPLEMENTATION-PLAN.md)
 
 This document defines **how a docs `stitch()` snippet actually runs**: where it
 executes, how it is isolated, and what it talks to instead of the real internet.
@@ -15,7 +15,7 @@ purpose-built fake-API simulator — no real network, ever.**
 
 ## 1. What changed, and why
 
-The earlier spec ([REQUIREMENTS.md](./REQUIREMENTS.md)) committed to **in-page,
+The earlier spec ([REQUIREMENTS.md](../playground/REQUIREMENTS.md)) committed to **in-page,
 same-origin** eval whose trust boundary was a **server-side allowlist proxy** that
 injected real secrets to reach **real authenticated APIs**. This design reverses
 three of those decisions:
@@ -26,7 +26,7 @@ three of those decisions:
 | **R2** | A same-origin **allowlist proxy injects real secrets** to call real APIs (Tier 2). | **No proxy, no secrets, no real egress.** All network is answered by an in-process **fake-API simulator**.                                      | The product is now deterministic demos that _simulate_ behaviour (errors, streaming, auth, rate-limits, LLM responses), not live calls. With no real secret/egress, the proxy's reason to exist is gone. |
 | **R3** | Trust boundary = the proxy allowlist; blast radius = "the visitor's own session."  | Trust boundary = **the runtime has no network at all** + a fetch shim only the simulator answers. Server-side runs add an **isolate** boundary. | Mocked-everything shrinks the client threat surface to near zero; the only place untrusted code meets _our_ infra is the optional server tier, which is isolated.                                        |
 
-Everything else in [REQUIREMENTS.md](./REQUIREMENTS.md) (FR1, FR3–FR6, FR8, the
+Everything else in [REQUIREMENTS.md](../playground/REQUIREMENTS.md) (FR1, FR3–FR6, FR8, the
 `CodeRunner` contract, the output panel / Mermaid DAG payoff) **still holds**.
 
 ---

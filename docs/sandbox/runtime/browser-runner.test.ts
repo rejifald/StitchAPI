@@ -17,7 +17,7 @@
  *      (SEC-39a), shim notices (SEC-33), and the transpile/internal paths
  *      (SEC-39b/d) against the real worker body.
  *
- * Run with:  npx -y tsx docs/playground/runtime/browser-runner.test.ts
+ * Run with:  npx -y tsx docs/sandbox/runtime/browser-runner.test.ts
  */
 import type { RunEvent, RunResult } from '../component/runner';
 import { type WorkerLike, makeBrowserWorkerRunner } from './browser-runner';

@@ -14,7 +14,7 @@ import type {
     SimKnobs,
     SimRequest,
     SimResponse,
-} from '../../../../docs/playground/contracts/sim';
+} from '../../../../docs/sandbox/contracts/sim';
 
 // ---------------------------------------------------------------------------
 // Shared constants

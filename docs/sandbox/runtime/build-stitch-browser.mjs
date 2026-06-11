@@ -23,8 +23,8 @@
  *   OUT=/path/to/bundle.mjs  and  CORE=/path/to/packages/core/src/index.ts
  *
  * Usage:
- *   node docs/playground/runtime/build-stitch-browser.mjs
- *   OUT=/tmp/stitch-browser.mjs node docs/playground/runtime/build-stitch-browser.mjs
+ *   node docs/sandbox/runtime/build-stitch-browser.mjs
+ *   OUT=/tmp/stitch-browser.mjs node docs/sandbox/runtime/build-stitch-browser.mjs
  *
  * esbuild is resolved from node_modules if present, else via `npx -y esbuild`
  * (the spike used npx; this script prefers the JS API but the equivalent CLI is

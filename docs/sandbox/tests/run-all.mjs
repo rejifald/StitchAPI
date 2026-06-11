@@ -4,7 +4,7 @@
  *
  * Exits 0 when all suites pass; exits 1 if any fail.
  *
- * Run with:  node docs/playground/tests/run-all.mjs
+ * Run with:  node docs/sandbox/tests/run-all.mjs
  */
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
@@ -31,15 +31,15 @@ const SUITES = [
     // S5 — dispatch core + node adapter
     'packages/sandbox-sim/src/dispatch.test.ts',
     // D1 — scanSurface + dispatchRunner
-    'docs/playground/contracts/dispatch.test.ts',
+    'docs/sandbox/contracts/dispatch.test.ts',
     // R2 — transpile smoke
-    'docs/playground/runtime/transpile.test.ts',
+    'docs/sandbox/runtime/transpile.test.ts',
     // R1 — browser-worker runner harness (worker_threads proofs)
-    'docs/playground/runtime/browser-runner.test.ts',
+    'docs/sandbox/runtime/browser-runner.test.ts',
     // U1 — output-format helpers
-    'docs/playground/component/output-format.test.ts',
+    'docs/sandbox/component/output-format.test.ts',
     // T-α — integration over REAL sim + dispatch
-    'docs/playground/tests/integration.test.ts',
+    'docs/sandbox/tests/integration.test.ts',
 ];
 
 // ---------------------------------------------------------------------------
