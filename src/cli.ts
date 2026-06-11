@@ -34,7 +34,9 @@ function coerce(raw: string): unknown {
 // params, matching the engine's own `{param}` expansion.
 export function paramNamesOf(stitch: Stitch): string[] {
     const path = stitch.__config.path ?? '';
-    return [...path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+    return [...path.matchAll(/\{(\w+)\}/g)]
+        .map((m) => m[1])
+        .filter((n): n is string => n !== undefined);
 }
 
 // Map CLI flags onto a StitchInput. Conventions:
@@ -107,6 +109,7 @@ export function argsToInput(
 
     for (let i = 0; i < argv.length; i++) {
         const tok = argv[i];
+        if (tok === undefined) continue;
         if (!tok.startsWith('--')) {
             positionals.push(tok);
             continue;
@@ -162,8 +165,8 @@ export async function runStitch(
 // Pull our own options (`--module`/`-m`) and the leading stitch name out of the
 // run argv; everything else is passed through to argsToInput untouched.
 function splitRunArgs(args: string[]): {
-    name?: string;
-    modulePath?: string;
+    name?: string | undefined;
+    modulePath?: string | undefined;
     flags: string[];
 } {
     const flags: string[] = [];
@@ -171,6 +174,7 @@ function splitRunArgs(args: string[]): {
     let modulePath: string | undefined;
     for (let i = 0; i < args.length; i++) {
         const a = args[i];
+        if (a === undefined) continue;
         if (a === '--module' || a === '-m') {
             modulePath = args[++i];
         } else if (a.startsWith('--module=')) {
@@ -218,7 +222,7 @@ function percentile(sortedAsc: number[], p: number): number {
         sortedAsc.length - 1,
         Math.floor((p / 100) * sortedAsc.length),
     );
-    return sortedAsc[idx];
+    return sortedAsc[idx] ?? 0;
 }
 
 // Fold a flat list of trace records into per-stitch stats. Pure: no clock, no I/O.
@@ -319,7 +323,7 @@ export function formatTraceSummary(summary: TraceSummary): string {
     const width = (key: keyof (typeof rows)[0], header: string) =>
         Math.max(header.length, ...rows.map((r) => r[key].length));
     const line = (cells: Record<string, string>) =>
-        cols.map(([k, h]) => cells[k].padEnd(width(k, h))).join('  ');
+        cols.map(([k, h]) => (cells[k] ?? '').padEnd(width(k, h))).join('  ');
 
     const head = line(Object.fromEntries(cols.map(([k, h]) => [k, h])));
     const body = rows.map((r) => line(r));
@@ -336,9 +340,10 @@ export function formatTraceSummary(summary: TraceSummary): string {
 function parseSince(s: string): number | undefined {
     const m = /^(\d+(?:\.\d+)?)\s*(s|m|h|d)$/.exec(s.trim());
     if (!m) return undefined;
-    const n = parseFloat(m[1]);
-    const unit = { s: 1e3, m: 6e4, h: 36e5, d: 864e5 }[m[2]] ?? 1;
-    return n * unit;
+    const [, num, unitKey] = m;
+    if (num === undefined || unitKey === undefined) return undefined;
+    const units: Record<string, number> = { s: 1e3, m: 6e4, h: 36e5, d: 864e5 };
+    return parseFloat(num) * (units[unitKey] ?? 1);
 }
 
 // ---- process glue ---------------------------------------------------------
@@ -406,8 +411,8 @@ async function runCommand(args: string[], io: CliIO): Promise<number> {
 
 function defaultTraceFile(io: CliIO): string {
     return (
-        io.env.STITCH_TRACE_FILE ||
-        `${io.env.HOME ?? '.'}/.stitch/runs/proto.jsonl`
+        io.env['STITCH_TRACE_FILE'] ||
+        `${io.env['HOME'] ?? '.'}/.stitch/runs/proto.jsonl`
     );
 }
 
@@ -481,7 +486,10 @@ async function serveCommand(args: string[], io: CliIO): Promise<number> {
         return 1;
     }
 
-    const handle = await serve(registry, { port, host });
+    const handle = await serve(registry, {
+        ...(port !== undefined ? { port } : {}),
+        ...(host !== undefined ? { host } : {}),
+    });
     io.writeErr(
         `stitch serve listening on ${handle.url} — POST /stitch/:name\n`,
     );

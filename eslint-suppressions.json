@@ -11,9 +11,6 @@
     "@typescript-eslint/no-misused-promises": {
       "count": 2
     },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 1
     },
@@ -21,20 +18,12 @@
       "count": 1
     }
   },
-  "src/drift.ts": {
-    "@typescript-eslint/no-redundant-type-constituents": {
-      "count": 2
-    }
-  },
   "src/engine.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    },
     "@typescript-eslint/no-non-null-assertion": {
       "count": 1
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 7
+      "count": 5
     },
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 1
@@ -51,21 +40,6 @@
       "count": 2
     }
   },
-  "src/mcp.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/otlp.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 2
-    }
-  },
-  "src/registry.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
   "src/resilience.ts": {
     "@typescript-eslint/prefer-promise-reject-errors": {
       "count": 1
@@ -75,14 +49,8 @@
     }
   },
   "src/stitch.ts": {
-    "@typescript-eslint/consistent-type-imports": {
-      "count": 2
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 3
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
     }
   },
   "src/store.ts": {
@@ -90,21 +58,8 @@
       "count": 3
     }
   },
-  "src/trace.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    }
-  },
-  "src/types.ts": {
-    "@typescript-eslint/no-redundant-type-constituents": {
-      "count": 2
-    }
-  },
   "src/util.ts": {
     "@typescript-eslint/no-base-to-string": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
     }
   },
@@ -113,37 +68,19 @@
       "count": 1
     }
   },
-  "test/auth-trace.spec.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
-  "test/body-encoding.spec.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 6
-    }
-  },
   "test/cli.spec.ts": {
     "@typescript-eslint/no-unsafe-return": {
       "count": 2
     }
   },
   "test/composition.spec.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    },
     "@typescript-eslint/restrict-plus-operands": {
       "count": 1
     }
   },
   "test/graphql-and-headers.spec.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 7
-    }
-  },
-  "test/pagination.spec.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
+      "count": 2
     }
   },
   "test/support/mock-server.ts": {
@@ -151,7 +88,7 @@
       "count": 1
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 3
+      "count": 1
     },
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 1

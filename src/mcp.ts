@@ -8,7 +8,7 @@
 // zero-dependency stance. `handle()` is transport-agnostic, so the same core can back a
 // Streamable HTTP transport too (see the `serve` surface for the HTTP pattern).
 import { type StitchRegistry, selectStitch } from './registry';
-import type { Stitch, StitchInput } from './types';
+import type { Stitch } from './types';
 
 import type { Readable, Writable } from 'node:stream';
 
@@ -124,11 +124,11 @@ export function createMcpServer(
         const list = Object.keys(registry)
             .sort()
             .map((name) => {
-                const cfg = registry[name].__config;
+                const cfg = registry[name]?.__config;
                 return {
                     name,
-                    method: (cfg.method ?? 'GET').toUpperCase(),
-                    path: cfg.path ?? '',
+                    method: (cfg?.method ?? 'GET').toUpperCase(),
+                    path: cfg?.path ?? '',
                 };
             });
         return textResult(list);

@@ -13,6 +13,7 @@ import {
     type InputSchemas,
     type Stitch,
     type StitchConfig,
+    type StitchEvent,
     type StitchInput,
     type StitchResult,
     type StitchStore,
@@ -79,7 +80,10 @@ function normalizeInput(
     if (!input) return undefined;
     const out: InputSchemas = {};
     for (const k of ['params', 'query', 'body', 'headers'] as const) {
-        if (input[k]) out[k] = toValidator(input[k]);
+        const schema = input[k];
+        if (!schema) continue;
+        const v = toValidator(schema);
+        if (v) out[k] = v;
     }
     return out;
 }
@@ -92,27 +96,32 @@ function compose(config: Fragment): StitchConfig {
     for (const layer of layers) {
         if (layer.hooks) hookLayers.push(layer.hooks);
         if (layer.store) store = layer.store;
-        merged = deepMerge(merged, {
-            ...layer,
-            hooks: undefined,
-            store: undefined,
-        });
+        // hooks/store are accumulated above; strip them so deepMerge only folds the rest
+        // (exactOptionalPropertyTypes forbids spreading them back in as `undefined`).
+        const rest = { ...layer };
+        delete rest.hooks;
+        delete rest.store;
+        merged = deepMerge(merged, rest);
     }
-    merged.hooks = chainHooks(hookLayers);
-    merged.store = store;
-    merged.output = normalizeOutput(merged.output);
-    merged.input = normalizeInput(merged.input);
+    const hooks = chainHooks(hookLayers);
+    if (hooks) merged.hooks = hooks;
+    if (store) merged.store = store;
+    const output = normalizeOutput(merged.output);
+    if (output !== undefined) merged.output = output;
+    const input = normalizeInput(merged.input);
+    if (input !== undefined) merged.input = input;
     return merged;
 }
 
 // ---- shared trace sink (zero-infra: console off in tests, JSONL file) ------
 // Always tees console/JSONL; STITCH_EXPORT=otlp ALSO fans the same events to an OTLP collector.
 function getTrace(): TraceSink {
+    const file = process.env['STITCH_TRACE_FILE'];
     const base = createTrace({
-        console: process.env.STITCH_TRACE_CONSOLE === '1',
-        file: process.env.STITCH_TRACE_FILE || undefined,
+        console: process.env['STITCH_TRACE_CONSOLE'] === '1',
+        ...(file ? { file } : {}),
     });
-    if (!exportsFromEnv(process.env.STITCH_EXPORT).includes('otlp'))
+    if (!exportsFromEnv(process.env['STITCH_EXPORT']).includes('otlp'))
         return base;
     return multiplex(base, otlpTrace());
 }
@@ -124,7 +133,7 @@ async function consume<T>(
     let result: T | undefined;
     let failure: { message?: string; status?: number } | undefined;
     for await (const ev of gen) {
-        if (ev.type === 'result') result = ev.value as T;
+        if (ev.type === 'result') result = ev['value'] as T;
         else if (ev.type === 'error')
             failure = ev as { message?: string; status?: number };
     }
@@ -133,17 +142,17 @@ async function consume<T>(
             status?: number;
         };
         e.name = 'StitchError';
-        e.status = failure.status;
+        if (failure.status !== undefined) e.status = failure.status;
         throw e;
     }
     return result as T;
 }
 
 function tee<T>(
-    gen: AsyncGenerator<import('./types').StitchEvent<T>, void>,
+    gen: AsyncGenerator<StitchEvent<T>, void>,
     trace: TraceSink,
     name: string,
-): AsyncGenerator<import('./types').StitchEvent<T>, void> {
+): AsyncGenerator<StitchEvent<T>, void> {
     async function* wrapped() {
         for await (const ev of gen) {
             trace.handle(ev, { name });
@@ -238,7 +247,7 @@ export function defineStitch(...fragments: Fragment[]) {
         c.extends = [
             ...fragments,
             ...((c.extends as Fragment[]) ?? []),
-        ] as StitchConfig['extends'];
+        ] as NonNullable<StitchConfig['extends']>;
         return makeStitch<T>(c);
     };
 }
@@ -293,7 +302,7 @@ function makeBuilder(initial: Partial<StitchConfig>): Builder {
         (acc.extends = [
             ...((acc.extends as Fragment[]) ?? []),
             ...f,
-        ] as StitchConfig['extends']),
+        ] as NonNullable<StitchConfig['extends']>),
         invalidate(),
         fn
     );
@@ -304,13 +313,19 @@ function makeBuilder(initial: Partial<StitchConfig>): Builder {
         (acc.method = 'DELETE'), (acc.path = p), invalidate(), fn
     );
     fn.returns = (schema) => (
-        (acc.output = schema as StitchConfig['output']), invalidate(), fn
+        (acc.output = schema as NonNullable<StitchConfig['output']>),
+        invalidate(),
+        fn
     );
     fn.unwrap = (key) => ((acc.unwrap = key), invalidate(), fn);
-    fn.auth = (a) => ((acc.auth = a), invalidate(), fn);
-    fn.retry = (r) => ((acc.retry = r), invalidate(), fn);
-    fn.throttle = (t) => ((acc.throttle = t), invalidate(), fn);
-    fn.timeout = (t) => ((acc.timeout = t), invalidate(), fn);
+    fn.auth = (a) => (a !== undefined && (acc.auth = a), invalidate(), fn);
+    fn.retry = (r) => (r !== undefined && (acc.retry = r), invalidate(), fn);
+    fn.throttle = (t) => (
+        t !== undefined && (acc.throttle = t), invalidate(), fn
+    );
+    fn.timeout = (t) => (
+        t !== undefined && (acc.timeout = t), invalidate(), fn
+    );
     fn.stream = (input) => ensure().stream(input);
     fn.with = (partial) => ensure().with(partial);
     return fn;

@@ -85,7 +85,7 @@ export function fetchAdapter(): Adapter {
             parsed = await response.text();
         } else {
             const contentType = (
-                resHeaders['content-type'] || ''
+                resHeaders['content-type'] ?? ''
             ).toLowerCase();
             const isJson =
                 responseType === 'json' ||

@@ -48,7 +48,7 @@ function topmost(paths: string[]): string[] {
 
 export function classifyDrift(
     actual: unknown,
-    snapshot: unknown | undefined,
+    snapshot: unknown,
     opts: DriftOptions = {},
 ): DriftFinding[] {
     if (snapshot === undefined) return []; // first run = baseline
@@ -91,7 +91,7 @@ export function classifyDrift(
     return findings;
 }
 
-export function loadSnapshot(file: string): unknown | undefined {
+export function loadSnapshot(file: string): unknown {
     try {
         if (!existsSync(file)) return undefined;
         return JSON.parse(readFileSync(file, 'utf8'));

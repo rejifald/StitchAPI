@@ -29,7 +29,7 @@ export function env(name: string): () => string {
 export function keychain(name: string): () => string {
     return () => {
         try {
-            const file = `${process.env.HOME}/.stitch/secrets.json`;
+            const file = `${process.env['HOME']}/.stitch/secrets.json`;
             if (existsSync(file)) {
                 const obj = JSON.parse(readFileSync(file, 'utf8')) as Record<
                     string,
@@ -50,7 +50,7 @@ export function bearer(token: Secret): AuthStrategy {
     return {
         name: 'bearer',
         apply(req) {
-            req.headers.authorization = `Bearer ${resolve(token)}`;
+            req.headers['authorization'] = `Bearer ${resolve(token)}`;
         },
     };
 }
@@ -72,7 +72,7 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
             const token = Buffer.from(
                 `${resolve(opts.user)}:${resolve(opts.pass)}`,
             ).toString('base64');
-            req.headers.authorization = `Basic ${token}`;
+            req.headers['authorization'] = `Basic ${token}`;
         },
     };
 }
@@ -125,7 +125,7 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
             client_id: resolve(opts.clientId),
             client_secret: resolve(opts.clientSecret),
         };
-        if (opts.scope) body.scope = opts.scope;
+        if (opts.scope) body['scope'] = opts.scope;
 
         const res = await adapter({
             url: opts.tokenUrl,
@@ -164,7 +164,7 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
     return {
         name: 'oauth2',
         async apply(req, ctx) {
-            req.headers.authorization = `Bearer ${await tokenFor(ctx)}`;
+            req.headers['authorization'] = `Bearer ${await tokenFor(ctx)}`;
         },
         shouldRefresh(res) {
             return refreshOn.includes(res.status);
@@ -205,8 +205,8 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
     const doRefresh = async (ctx: AuthContext) => {
         ctx.emit('auth', 'login');
         const res = await opts.login.__raw(opts.loginInput?.());
-        const setCookie = (res.headers['set-cookie'] ??
-            res.headers['Set-Cookie']) as string | undefined;
+        const setCookie =
+            res.headers['set-cookie'] ?? res.headers['Set-Cookie'];
         if (jarMode) {
             // Capture the full jar: every name=value pair the login set.
             const jar = parseCookieJar(setCookie);
@@ -236,7 +236,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
                 ? serializeJar(stored as Record<string, string> | undefined)
                 : (stored as string | undefined);
             if (cookie) {
-                req.headers.cookie = [req.headers.cookie, cookie]
+                req.headers['cookie'] = [req.headers['cookie'], cookie]
                     .filter(Boolean)
                     .join('; ');
             }
@@ -258,7 +258,7 @@ function parseCookieJar(setCookie: string | undefined): Record<string, string> {
     const jar: Record<string, string> = {};
     if (!setCookie) return jar;
     for (const part of setCookie.split(/,(?=[^;]+=)/)) {
-        const seg = part.trim().split(';')[0];
+        const seg = part.trim().split(';')[0] ?? '';
         const eq = seg.indexOf('=');
         if (eq > 0) jar[seg.slice(0, eq).trim()] = seg.slice(eq + 1).trim();
     }
