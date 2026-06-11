@@ -130,4 +130,7 @@ dist
 .pnp.*
 
 lib
+# apps/docs/lib/ is Fumadocs source (lib/source.ts, lib/shared.ts, …), not build
+# output — exempt it from the generic `lib` rule above.
+!apps/docs/lib/
 .DS_Store
