@@ -3,16 +3,63 @@ title: 'Circuit breaker'
 description: 'Stop hammering a failing dependency by opening a circuit after repeated failures.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Add `circuit` when a dependency is failing and you want the stitch to stop
+hammering it — after a run of failures the breaker opens and calls fast-fail
+for a cooldown, giving the dependency room to recover before a single trial
+call probes it again.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { stitch } from '@stitchapi/core';
+
+const orders = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    circuit: { failureThreshold: 5, cooldownMs: 30_000 },
+});
+```
+
+After 5 consecutive failures the breaker opens; for the next 30 seconds calls
+to `orders()` fast-fail instead of hitting `api.example.com`.
 
 ## Options
 
-Stub.
+The breaker moves through four states. It starts **closed** (calls pass
+through). After `failureThreshold` consecutive failures it trips **open** and
+calls fast-fail for `cooldownMs`. It then goes **half-open** and lets a single
+trial call through: a success **closes** it and clears the count, another
+failure re-**opens** it for a fresh cooldown. The breaker emits `progress`
+events with phase `circuit`.
+
+`failureThreshold` and `cooldownMs` are both required — `failureThreshold` is
+the count of consecutive failures that trips the breaker open, and `cooldownMs`
+is the fast-fail window after opening, before a half-open trial is allowed.
+
+`halfOpenAfterMs` controls when the half-open trial is permitted (default
+`cooldownMs`), letting you fast-fail and probe on different clocks.
+
+`key` is a store namespace: give two stitches the same `key` plus a shared
+[`store`](/docs/guides/state/pluggable-store) to share one breaker, so a failing
+host opens the circuit for every stitch that talks to it. The default key is the
+stitch/host key.
+
+<Callout type="warn">
+    While the breaker is open, a call fast-fails instead of reaching the
+    dependency — see [STITCH_CIRCUIT_OPEN](/docs/errors/stitch-circuit-open) for
+    what callers see and how to handle it.
+</Callout>
+
+See [Reference → Config types](/docs/reference/config-types) for every field.
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Retry" href="/docs/guides/resilience/retry" />
+    <Card title="Timeout" href="/docs/guides/resilience/timeout" />
+    <Card title="Pluggable store" href="/docs/guides/state/pluggable-store" />
+    <Card
+        title="STITCH_CIRCUIT_OPEN"
+        href="/docs/errors/stitch-circuit-open"
+    />
+</Cards>

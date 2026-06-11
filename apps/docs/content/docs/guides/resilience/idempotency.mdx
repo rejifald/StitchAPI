@@ -3,16 +3,68 @@ title: 'Idempotency keys'
 description: "Attach idempotency keys to writes so safe retries don't duplicate side effects."
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Add `idempotency` to a write stitch so each logical call carries a stable
+`Idempotency-Key` header — when a retry replays the same write, the server sees
+the same key and dedupes the side effect instead of running it twice. Reach for
+it on `POST`/`PUT` where a duplicate would double-charge, double-ship, or
+double-create.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { stitch } from '@stitchapi/core';
+
+// Default: a fresh random key per call, sent as 'Idempotency-Key'.
+const charge = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/charges',
+    idempotency: {},
+});
+
+// Custom: derive a stable key from the input. `body` is `unknown`, so narrow it.
+const createOrder = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    idempotency: {
+        key: (input) => `order-${(input.body as { ref: string }).ref}`,
+    },
+});
+```
+
+A single `charge()` call generates one key and reuses it across every retry of
+that call, so a network blip that triggers a retry settles a single charge.
 
 ## Options
 
-Stub.
+`header` is the header name the key rides on, default `'Idempotency-Key'`. Set
+it when the API expects a different header.
+
+`key` builds the key from the call's [`StitchInput`](/docs/reference/config-types)
+(`params`, `query`, `body`, `headers`, `variables`). The default is a random
+uuid generated once per logical call; a custom `key` lets you derive a stable
+key from the request — for example an order reference — so the same logical
+write maps to the same key. `body` is typed `unknown`, so narrow or cast it
+before reading a property, as the `createOrder` example does.
+
+Why it matters: idempotency only pays off alongside [retries](/docs/guides/resilience/retry).
+A retried write replays the same key, so the server can recognize the duplicate
+and skip the side effect — safe retries don't double-charge.
+
+<Callout type="warn">
+    A custom `key` derived from `body` must be stable for a given logical call
+    and unique across distinct ones — colliding keys make the server dedupe two
+    different writes into one.
+</Callout>
+
+See [Reference → Config types](/docs/reference/config-types) for the full
+`IdempotencyOptions` shape.
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Retry" href="/docs/guides/resilience/retry" />
+    <Card title="Body encoding" href="/docs/guides/data/body-encoding" />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>
