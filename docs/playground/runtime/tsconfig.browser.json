@@ -1,0 +1,20 @@
+{
+    "//": "B1 browser stitch build. These files import @stitchapi/core and shim node:* builtins, so they type-check only with the workspace installed (pnpm install) + @types/node — run in CI, NOT in the dependency-free no-install smoke. B1 verified clean under this config; see B1-README.md.",
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+        "strict": true,
+        "exactOptionalPropertyTypes": true,
+        "types": ["node"],
+        "paths": {
+            "@stitchapi/core": ["../../../packages/core/src/index.ts"]
+        }
+    },
+    "include": ["stitch-browser.ts", "shims/**/*.ts"]
+}

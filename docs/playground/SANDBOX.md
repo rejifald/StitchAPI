@@ -273,6 +273,10 @@ so a memory bomb is acceptable (server isolate keeps a real memory cap). CSP int
    `process.env`, so even a Tier-1 snippet pulls Node in. Both are trivial shims, but **R1
    must provide `process`/`process.env` and a `crypto` (Web Crypto) alias in the Worker
    scope**, and the browser OTLP exporter must be a no-op (don't rely on CSP alone).
+   **Further blocker found during the B1 build:** core's `createTrace` console branch
+   calls `process.stderr.write` and defaults `console:true`; the browser entry forces
+   `console:false`, so R1 must not re-enable core console trace nor set
+   `STITCH_TRACE_CONSOLE=1` (trace surfaces via `StitchTraceEntry`). See `runtime/B1-README.md`.
 5. **`isolated-vm` deploy** (native addon, hosted Node) is incompatible with static/edge
    export — hence Phase 3 is isolated as a separate service and deferred.
 

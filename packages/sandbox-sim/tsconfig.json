@@ -10,5 +10,7 @@
         "noEmit": true,
         "strict": true
     },
-    "include": ["src/**/*.ts"]
+    "include": ["src/**/*.ts"],
+    "comment-exclude": "Shipped source must type-check dependency-free. Test files (*.test.ts) use node:assert + process and are verified by execution (tsx) now; their static type-check + strict-null cleanup is owned by task T-α and runs under pnpm install in CI.",
+    "exclude": ["**/*.test.ts"]
 }
