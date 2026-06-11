@@ -3,16 +3,64 @@ title: 'OTLP export'
 description: 'Export traces as OpenTelemetry spans for your existing observability stack.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Reach for OTLP export when you want a stitch's events as OpenTelemetry spans in
+the observability stack you already run — each call's event stream maps to one
+CLIENT span, so a stitch drops into your existing OTel collector with no new
+plumbing. It is just another [trace sink](/docs/guides/observability/trace-sinks),
+teed alongside the console/JSONL sink rather than replacing it.
 
 ## Example
 
-Stub.
+The zero-code path is an env toggle: set `STITCH_EXPORT=otlp` and every stitch
+also fans its events to an OTLP collector (default
+`http://localhost:4318/v1/traces`, or `OTEL_EXPORTER_OTLP_ENDPOINT`).
+
+```bash
+STITCH_EXPORT=otlp OTEL_EXPORTER_OTLP_ENDPOINT=https://api.example.com node app.js
+```
+
+To wire it yourself — to set headers, or to tee OTLP next to your own sink —
+build the sink with `otlpTrace()` and combine sinks with `multiplex`:
+
+```ts twoslash
+import { createTrace, multiplex, otlpTrace } from '@stitchapi/core';
+
+const trace = multiplex(
+    createTrace({ console: true }),
+    otlpTrace({
+        endpoint: 'https://api.example.com',
+        headers: { authorization: 'Bearer token' },
+    }),
+);
+```
 
 ## Options
 
-Stub.
+`STITCH_EXPORT=otlp` is the toggle (a comma list, e.g. `console,otlp`);
+`OTEL_EXPORTER_OTLP_ENDPOINT` sets the collector base URL.
+
+`otlpTrace(opts?)` returns a sink. `OtlpOptions` carries `endpoint` (OTLP/HTTP
+base URL), `headers` (extra headers on the POST, e.g. auth), and `exporter` (a
+custom `SpanExporter` destination, defaulting to the built-in HTTP exporter).
+
+`otlpHttpExporter({ endpoint?, headers? })` is that default exporter — it POSTs
+OTLP/JSON to `${endpoint}/v1/traces`. `toOtlpJson(spans)` serializes collected
+spans to the OTLP/JSON `ResourceSpans` shape a collector accepts, if you ship
+them some other way.
+
+See [Reference → Helpers](/docs/reference/helpers) for the helper signatures and
+[Reference → Events](/docs/reference/events) for the event types each span is
+built from.
+
+<Callout type="warn">
+    Export is fire-and-forget: a missing collector or network error drops the
+    batch and never breaks a stitch call.
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Trace sinks" href="/docs/guides/observability/trace-sinks" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="Reference: Helpers" href="/docs/reference/helpers" />
+</Cards>

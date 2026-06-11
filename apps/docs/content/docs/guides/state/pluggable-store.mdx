@@ -3,16 +3,70 @@ title: 'The pluggable store'
 description: 'Swap the in-memory store for a shared one to back throttle and sessions with get/set/incr + TTL.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Swap the in-memory store for a shared one when you want throttle counters and
+auth sessions to live outside a single process — back them with Redis, Postgres,
+or anything else by implementing three async methods and attaching it via
+`store`.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { stitch } from '@stitchapi/core';
+import type { StitchStore } from '@stitchapi/core';
+
+// A StitchStore is just three async methods + TTL — back it with anything.
+const redisStore: StitchStore = {
+    async get(key) {
+        /* read from your shared backend */
+        return undefined;
+    },
+    async set(key, value, ttlMs) {
+        /* write, honoring ttlMs */
+    },
+    async incr(key, ttlMs) {
+        /* atomic counter with a TTL window */
+        return 1;
+    },
+};
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    store: redisStore,
+});
+```
 
 ## Options
 
-Stub.
+A store is the `StitchStore` contract — three async methods: `get(key)` returns
+the value or `undefined`, `set(key, value, ttlMs?)` writes with an optional
+expiry, and `incr(key, ttlMs)` is an atomic counter scoped to a TTL window. The
+runtime holds two kinds of state behind this interface: throttle counters (the
+fixed-window rate counter) and auth session/token state (captured cookies and
+refreshed tokens).
+
+The default is `memoryStore()` — single process, in-memory. It works until you
+run more than one worker, where each process keeps its own counters and its own
+sessions.
+
+Point `store` at one shared backend and that splits apart: the rate counter
+becomes a single window every process increments, so the limit holds across the
+fleet — see [Distributed throttle](/docs/guides/state/distributed-throttle) —
+and a captured session is written once and replayed everywhere, so workers don't
+each re-run the login — see [Shared sessions](/docs/guides/state/shared-sessions).
+
+<Callout type="info">
+    Concurrency limits stay in-process even with a shared store; only the rate
+    counter is distributed. See [throttle](/docs/guides/resilience/throttle).
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card
+        title="Distributed throttle"
+        href="/docs/guides/state/distributed-throttle"
+    />
+    <Card title="Shared sessions" href="/docs/guides/state/shared-sessions" />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>
