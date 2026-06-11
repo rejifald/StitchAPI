@@ -1,5 +1,5 @@
 {
-    "name": "stitchapi-monorepo",
+    "name": "@stitchapi/workspace",
     "version": "0.0.0",
     "private": true,
     "description": "Workspace root for StitchAPI — the published library lives in packages/core.",

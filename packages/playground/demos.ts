@@ -12,8 +12,9 @@ import {
     preset,
     stitch,
 } from '../core/src';
+import type { Builder } from '../core/src/stitch';
 import type { Stitch, StitchInput } from '../core/src/types';
-import type { MockServer } from '../core/test/support/mock-server';
+import type { MockServer, ReqInfo } from '../core/test/support/mock-server';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,7 +22,8 @@ import { z } from 'zod';
 
 export interface Play {
     label?: string;
-    stitch: Stitch;
+    // A Stitch or the fluent Builder — both are streamable, which is all the server consumes.
+    stitch: Stitch | Builder;
     input?: StitchInput;
 }
 export interface DemoRun {
@@ -106,6 +108,7 @@ export const demos: Demo[] = [
                 baseUrl: mock.url,
                 path: '/me',
                 auth: cookieSession({
+                    // @ts-expect-error login expects { __raw }; stitch() returns Stitch (core type gap, runtime is fine)
                     login,
                     cookie: 'SID',
                     loginInput: () => ({
@@ -235,13 +238,15 @@ export const demos: Demo[] = [
             // Each route requires its auth header (401 otherwise) and echoes the received value.
             mock.route('GET', '/bearer', {
                 requireHeader: { name: 'authorization' },
-                body: (_i, req) => ({
+                body: (_i: number, req: ReqInfo) => ({
                     authorization: req.headers['authorization'],
                 }),
             });
             mock.route('GET', '/apikey', {
                 requireHeader: { name: 'x-api-key' },
-                body: (_i, req) => ({ 'x-api-key': req.headers['x-api-key'] }),
+                body: (_i: number, req: ReqInfo) => ({
+                    'x-api-key': req.headers['x-api-key'],
+                }),
             });
 
             const bearerStitch = stitch({
@@ -296,6 +301,7 @@ export const demos: Demo[] = [
                 baseUrl: mock.url,
                 path: '/data',
                 auth: cookieSession({
+                    // @ts-expect-error login expects { __raw }; stitch() returns Stitch (core type gap, runtime is fine)
                     login,
                     cookie: 'SID',
                     // status is 200, so only a content predicate can catch this wall:
@@ -325,7 +331,7 @@ export const demos: Demo[] = [
         setup(mock) {
             // Echo the received content-type + body so encoding is visible in the result.
             mock.route('POST', '/echo', {
-                body: (_i, req) => ({
+                body: (_i: number, req: ReqInfo) => ({
                     contentType: req.headers['content-type'],
                     received: req.body,
                 }),
@@ -477,7 +483,7 @@ export const demos: Demo[] = [
         blurb: 'A preset header, a stitch header, and a per-call header layer and override — the echo route shows the final set.',
         setup(mock) {
             mock.route('GET', '/echo-headers', {
-                body: (_i, req) => ({ received: req.headers }),
+                body: (_i: number, req: ReqInfo) => ({ received: req.headers }),
             });
             const base = preset({ headers: { 'x-trace': 't1' } });
             const s = stitch({

@@ -1,5 +1,5 @@
 // Live playground server: serves the UI, lists demos, and streams each demo's stitch event
-// stream to the browser over SSE. Run: bash playground/run.sh
+// stream to the browser over SSE. Run: pnpm --filter @stitchapi/playground dev
 import { startMockServer } from '../core/test/support/mock-server';
 import { demos } from './demos';
 

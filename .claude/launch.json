@@ -4,7 +4,7 @@
         {
             "name": "playground",
             "runtimeExecutable": "bash",
-            "runtimeArgs": ["playground/run.sh"],
+            "runtimeArgs": ["packages/playground/run.sh"],
             "port": 5174,
             "autoPort": true
         },

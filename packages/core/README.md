@@ -556,10 +556,10 @@ total: 12 run(s), 11 ok, 1 failed
 A runnable showcase streams the event stream of every feature above to the browser live (over SSE), against a behavior-simulating mock backend — no build step:
 
 ```bash
-bash playground/run.sh   # → http://localhost:5174
+pnpm --filter @stitchapi/playground dev   # → http://localhost:5174
 ```
 
-See [`playground/README.md`](playground/README.md) for how it is wired.
+See [`packages/playground/README.md`](../playground/README.md) for how it is wired.
 
 ## Scope & roadmap
 
