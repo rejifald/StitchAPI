@@ -1,0 +1,70 @@
+---
+title: 'cookieSession'
+description: 'Log in once, capture and replay cookies, and refresh the session on a status code or a soft 200 wall.'
+---
+
+Use `cookieSession` when an API authenticates with a login form and a cookie
+instead of a token, and you want the session captured, replayed, and refreshed
+for you — the stitch holds the login, the caller never touches a cookie.
+
+## Example
+
+```ts twoslash
+import { cookieSession, env, stitch } from '@stitchapi/core';
+
+// The login is itself a stitch — its Set-Cookie response seeds the session.
+const login = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/login',
+    bodyType: 'form',
+});
+
+const me = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/me',
+    auth: cookieSession({
+        login,
+        cookie: '*',
+        loginInput: () => ({
+            body: { user: env('USER')(), pass: env('PASS')() },
+        }),
+        refreshOn: [401],
+    }),
+});
+```
+
+The first call to `me()` runs `login` once, captures its cookies, and replays
+them; a `401` afterward re-runs the login and retries, all behind the
+capability boundary.
+
+## Options
+
+Point `login` at the stitch that authenticates, and pass `loginInput` to supply
+its credentials, resolved at call time with [`env()`](/docs/guides/auth/secret-resolvers).
+
+`cookie` selects what to keep: a single cookie name, or `'*'` (equivalently
+`jar: true`) to capture and replay the whole Set-Cookie jar.
+
+`refreshOn` re-runs the login on a status code (default `[401]`); `refreshWhen`
+re-runs it on a content predicate, for soft 200 walls where a login page is
+served with a `200`. Give two stitches the same `key` plus a shared `store` to
+share one session. See
+[Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
+
+<Callout type="warn">
+    A soft 200 wall — a login page returned with status `200` — slips past
+    `refreshOn`. Catch it with `refreshWhen`; see
+    [STITCH_AUTH_WALL](/docs/errors/stitch-auth-wall).
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Shared sessions" href="/docs/guides/state/shared-sessions" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="STITCH_AUTH_WALL" href="/docs/errors/stitch-auth-wall" />
+</Cards>

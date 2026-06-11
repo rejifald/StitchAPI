@@ -1,0 +1,13 @@
+{
+    "title": "Guides",
+    "icon": "BookOpen",
+    "pages": [
+        "authoring",
+        "auth",
+        "resilience",
+        "data",
+        "validation",
+        "observability",
+        "state"
+    ]
+}

@@ -1,0 +1,10 @@
+{
+    "title": "Concepts",
+    "icon": "Lightbulb",
+    "pages": [
+        "the-stitch",
+        "event-stream",
+        "capability-not-credential",
+        "principles"
+    ]
+}

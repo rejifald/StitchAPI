@@ -1,0 +1,60 @@
+---
+title: 'The event stream'
+description: 'Why a stitch returns an async iterable of typed events — start, progress, drift, result, done — instead of Promise<bytes>.'
+---
+
+A stitch returns an async iterable of typed events —
+`start → progress → drift → result → done` — not `Promise<bytes>`. Awaiting it
+gives you just the final value; iterating its stream gives you everything that
+happened on the way there.
+
+## Why it's shaped this way
+
+A single `Promise<bytes>` collapses a call to two outcomes — it resolved, or it
+threw — and throws away the story in between: the retry that succeeded on the
+third attempt, the throttle that paused for 400ms, the field that silently
+changed shape. That story is exactly what an agent needs to reason about a call,
+and what an operator needs to debug one.
+
+So a stitch is a single source that you can read at the altitude you need:
+
+```ts twoslash
+import { stitch } from '@stitchapi/core';
+
+const search = stitch({ baseUrl: 'https://api.example.com', path: '/search' });
+
+// Await it for just the value…
+const result = await search({ query: { q: 'mango' } });
+
+// …or iterate the typed event stream for everything that happened.
+for await (const event of search({ query: { q: 'mango' } }).stream()) {
+    if (event.type === 'progress') console.log(event.phase, event.attempt);
+    if (event.type === 'drift')
+        console.log(event.finding.level, event.finding.path);
+    if (event.type === 'result') console.log(event.value);
+}
+```
+
+The events form a fixed spine — `start`, then any number of `progress` (auth,
+throttle, retry, pagination) and `drift` findings, then exactly one terminal
+`result` or `error`, then `done`. The union is discriminated on `type`, so
+narrowing one field tells the compiler the shape of the rest.
+
+## How it relates
+
+The stream is what every cross-cutting feature reports through:
+[retry](/docs/guides/resilience/retry), [throttle](/docs/guides/resilience/throttle),
+and auth emit `progress`; [leveled drift](/docs/guides/validation/drift) emits
+`drift`. It is also the seam observability plugs into — a
+[trace sink](/docs/guides/observability/trace-sinks) is just a consumer of these
+same events, which is how console logs, JSONL, and
+[OTLP spans](/docs/guides/observability/otlp) all come from one source without
+the call site knowing.
+
+## See also
+
+<Cards>
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+    <Card title="Trace sinks" href="/docs/guides/observability/trace-sinks" />
+    <Card title="Event types" href="/docs/reference/events" />
+</Cards>

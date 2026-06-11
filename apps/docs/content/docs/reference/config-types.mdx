@@ -1,0 +1,48 @@
+---
+title: 'Config types'
+description: 'StitchConfig and the retry, throttle, timeout, auth, validation, and drift option shapes.'
+---
+
+The configuration object accepted by `stitch()`. Every field is optional; a
+stitch is the result of deep-merging these fragments through `extends`.
+
+## StitchConfig
+
+```ts twoslash
+import type { StitchConfig } from '@stitchapi/core';
+```
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="StitchConfig" />
+
+## Option shapes
+
+The resilience, validation, and drift fields above are themselves typed shapes.
+Each is documented from the source so it can never drift from the runtime.
+
+### RetryOptions
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="RetryOptions" />
+
+### ThrottleOptions
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="ThrottleOptions" />
+
+### TimeoutOptions
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="TimeoutOptions" />
+
+### CircuitOptions
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="CircuitOptions" />
+
+### DriftOptions
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="DriftOptions" />
+
+## See also
+
+<Cards>
+    <Card title="stitch() & the builder" href="/docs/reference/stitch" />
+    <Card title="Auth strategies" href="/docs/reference/auth-strategies" />
+    <Card title="Guide: stitch()" href="/docs/guides/authoring/stitch" />
+</Cards>
