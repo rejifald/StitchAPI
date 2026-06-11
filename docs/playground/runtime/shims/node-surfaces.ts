@@ -16,8 +16,9 @@
  *     IN-MEMORY jar), so we re-export core's `cookieSession` unchanged but with a
  *     one-time shim notice.
  */
-import { cookieSession as coreCookieSession } from '@stitchapi/core';
 import { emitShimNotice } from './notices';
+
+import { cookieSession as coreCookieSession } from '@stitchapi/core';
 
 // `CookieSessionOpts`/`AuthStrategy` aren't re-exported from core's barrel, so we
 // derive the exact param/return types from the function itself — keeps the shim

@@ -7,8 +7,12 @@
  *
  * Determinism: pure static const, no Date.now, no Math.random.
  */
-
-import type { SimHandler, SimRequest, SimResponse, SimKnobs } from '../../../../docs/playground/contracts/sim';
+import type {
+    SimHandler,
+    SimKnobs,
+    SimRequest,
+    SimResponse,
+} from '../../../../docs/playground/contracts/sim';
 
 // ---------------------------------------------------------------------------
 // Static catalogue — hand-written, deterministic
@@ -38,7 +42,8 @@ const SANDBOX_CATALOGUE = {
         {
             method: 'GET',
             path: '/malformed',
-            description: 'Return 200 with text/html body (not JSON), for parse-failure demos',
+            description:
+                'Return 200 with text/html body (not JSON), for parse-failure demos',
             knobs: ['__status', '__latencyMs', '__stream', '__flaky'],
         },
         // Streaming / LLM (S3)
@@ -59,26 +64,36 @@ const SANDBOX_CATALOGUE = {
         {
             method: 'GET',
             path: '/auth/me',
-            description: 'Requires bearer token or session cookie; returns 401 without credentials',
+            description:
+                'Requires bearer token or session cookie; returns 401 without credentials',
             knobs: ['__status', '__latencyMs', '__stream', '__flaky'],
         },
         {
             method: 'GET',
             path: '/limited',
-            description: 'Always returns 429 (Too Many Requests); flaky knob allows retry-succeed demo',
+            description:
+                'Always returns 429 (Too Many Requests); flaky knob allows retry-succeed demo',
             knobs: ['__status', '__latencyMs', '__stream', '__flaky'],
         },
         {
             method: 'GET',
             path: '/drift',
-            description: 'Schema-valid response by default; __drift=1 returns drifted (invalid) payload',
-            knobs: ['__status', '__latencyMs', '__stream', '__flaky', '__drift'],
+            description:
+                'Schema-valid response by default; __drift=1 returns drifted (invalid) payload',
+            knobs: [
+                '__status',
+                '__latencyMs',
+                '__stream',
+                '__flaky',
+                '__drift',
+            ],
         },
     ],
     knobs: [
         {
             name: '__status',
-            description: 'Force this HTTP status code (overrides handler default)',
+            description:
+                'Force this HTTP status code (overrides handler default)',
             example: '?__status=500',
         },
         {
@@ -88,17 +103,20 @@ const SANDBOX_CATALOGUE = {
         },
         {
             name: '__stream',
-            description: 'Stream the body as raw chunks ("chunked") or SSE token frames ("sse")',
+            description:
+                'Stream the body as raw chunks ("chunked") or SSE token frames ("sse")',
             example: '?__stream=sse',
         },
         {
             name: '__drift',
-            description: 'Return a schema-drifted body (violates the declared schema) for validation demos',
+            description:
+                'Return a schema-drifted body (violates the declared schema) for validation demos',
             example: '?__drift=1',
         },
         {
             name: '__flaky',
-            description: 'Fail the first N attempts with 503, then succeed deterministically',
+            description:
+                'Fail the first N attempts with 503, then succeed deterministically',
             example: '?__flaky=2',
         },
     ],

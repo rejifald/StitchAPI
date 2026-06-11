@@ -11,7 +11,6 @@
  * Transpile *syntax* errors from the snippet are returned as
  * `{ error: RunError(phase:'transpile') }` — they never throw (FR6, CodeRunner contract).
  */
-
 import type { RunError } from '../component/runner';
 
 /* -------------------------------------------------------------------------- */
@@ -111,7 +110,11 @@ function applyTransform(
 /** Map any thrown value to a `RunError` with `phase:'transpile'`. */
 function mapToRunError(err: unknown): RunError {
     if (err instanceof Error) {
-        const e = err as Error & { line?: number; col?: number; column?: number };
+        const e = err as Error & {
+            line?: number;
+            col?: number;
+            column?: number;
+        };
         return {
             name: e.name || 'TranspileError',
             message: e.message,
@@ -146,10 +149,12 @@ async function transpileWithSucrase(code: string): Promise<TranspileResult> {
         throw new TranspilerLoadError(e);
     }
 
-    return applyTransform(code, (src) =>
-        transform(src, {
-            transforms: ['typescript', 'jsx', 'imports'],
-        }).code,
+    return applyTransform(
+        code,
+        (src) =>
+            transform(src, {
+                transforms: ['typescript', 'jsx', 'imports'],
+            }).code,
     );
 }
 

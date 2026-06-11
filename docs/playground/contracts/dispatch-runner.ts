@@ -20,9 +20,9 @@
  * Fail-safe (SEC-48): the dispatcher is the routing authority, so a scan that ever
  * throws is caught here and treated as the browser tier — never the isolate.
  */
-import type { CodeRunner, RunRequest, RunResult } from './runner';
 import type { RunNotice } from '../component/runner';
 import type { DispatchOpts, SurfaceScan } from './dispatch';
+import type { CodeRunner, RunRequest, RunResult } from './runner';
 import { scanSurface } from './scan-surface';
 
 /** Build a shim notice for a Node-only surface routed to the browser. */

@@ -19,16 +19,16 @@
  *
  * Run with:  npx -y tsx docs/playground/runtime/browser-runner.test.ts
  */
+import type { RunEvent, RunResult } from '../component/runner';
+import { type WorkerLike, makeBrowserWorkerRunner } from './browser-runner';
+import {
+    type ProgressSink,
+    type WorkerEnv,
+    runSnippetInWorker,
+} from './worker-entry';
+import type { ResultMessage, RunMessage } from './worker-protocol';
 
 import { Worker as ThreadWorkerImpl } from 'node:worker_threads';
-import { makeBrowserWorkerRunner, type WorkerLike } from './browser-runner';
-import {
-    runSnippetInWorker,
-    type WorkerEnv,
-    type ProgressSink,
-} from './worker-entry';
-import type { RunMessage, ResultMessage } from './worker-protocol';
-import type { RunResult, RunEvent } from '../component/runner';
 
 /* -------------------------------------------------------------------------- */
 /*  Tiny assertion harness (mirrors transpile.test.ts convention)             */
@@ -60,7 +60,11 @@ const passthroughTranspile = (async (code: string) => ({ js: code })) as never;
  * reset per run, proving the drain-and-clear contract).
  */
 function makeFakeEnv(): WorkerEnv {
-    let pending: { kind: 'shim' | 'info'; surface?: string; message: string }[] = [];
+    let pending: {
+        kind: 'shim' | 'info';
+        surface?: string;
+        message: string;
+    }[] = [];
     return {
         stitchBuild: {
             stitch: (url: string) => Promise.resolve({ ok: true, url }),
@@ -93,7 +97,11 @@ function makeFakeEnv(): WorkerEnv {
  * The shapes mirror the frozen `RunEvent` union (runner.ts).
  */
 function makeProgressEnv(): WorkerEnv {
-    let pending: { kind: 'shim' | 'info'; surface?: string; message: string }[] = [];
+    let pending: {
+        kind: 'shim' | 'info';
+        surface?: string;
+        message: string;
+    }[] = [];
     let sink: ProgressSink | undefined;
     const traceId = 's1';
     return {
@@ -166,10 +174,12 @@ class InProcWorker implements WorkerLike {
             if (this.terminated) return;
             this.onmessage?.({ data: { type: 'progress', event } });
         };
-        runSnippetInWorker(this.env, msg, onProgress).then((result: ResultMessage) => {
-            if (this.terminated) return; // killed → never deliver (containment)
-            this.onmessage?.({ data: result });
-        });
+        runSnippetInWorker(this.env, msg, onProgress).then(
+            (result: ResultMessage) => {
+                if (this.terminated) return; // killed → never deliver (containment)
+                this.onmessage?.({ data: result });
+            },
+        );
     }
     terminate(): void {
         this.terminated = true;
@@ -261,7 +271,11 @@ async function runTests(): Promise<void> {
         let leaks = 0;
         (console as { log: typeof console.log }).log = (...a: unknown[]) => {
             // Only count snippet-shaped leaks (the snippet logs 'a','b','c').
-            if (a.length === 1 && (a[0] === 'a' || a[0] === 'b' || a[0] === 'c')) leaks++;
+            if (
+                a.length === 1 &&
+                (a[0] === 'a' || a[0] === 'b' || a[0] === 'c')
+            )
+                leaks++;
             hostCalls.push(a);
         };
         let result: RunResult;
@@ -276,16 +290,27 @@ async function runTests(): Promise<void> {
         } finally {
             (console as { log: typeof console.log }).log = realLog;
         }
-        assert('SEC-35 host console.log NOT leaked (0 snippet logs)', leaks === 0, leaks);
+        assert(
+            'SEC-35 host console.log NOT leaked (0 snippet logs)',
+            leaks === 0,
+            leaks,
+        );
         assert('SEC-35 captured 3 logs', result.logs.length === 3, result.logs);
         assert(
             'SEC-35 logs in order with correct levels',
-            result.logs[0]?.args[0] === 'a' && result.logs[0]?.level === 'log' &&
-            result.logs[1]?.args[0] === 'b' && result.logs[1]?.level === 'warn' &&
-            result.logs[2]?.args[0] === 'c' && result.logs[2]?.level === 'log',
+            result.logs[0]?.args[0] === 'a' &&
+                result.logs[0]?.level === 'log' &&
+                result.logs[1]?.args[0] === 'b' &&
+                result.logs[1]?.level === 'warn' &&
+                result.logs[2]?.args[0] === 'c' &&
+                result.logs[2]?.level === 'log',
             result.logs,
         );
-        assert('SEC-35 run resolved (no error)', result.error === undefined, result.error);
+        assert(
+            'SEC-35 run resolved (no error)',
+            result.error === undefined,
+            result.error,
+        );
     }
 
     // SEC-39a — a snippet throw → reason:'throw', RunResult NEVER rejects.
@@ -302,9 +327,21 @@ async function runTests(): Promise<void> {
             rejected = true;
         }
         assert('SEC-39a run() did NOT reject on snippet throw', !rejected);
-        assert("SEC-39a error.phase === 'runtime'", result?.error?.phase === 'runtime', result?.error);
-        assert("SEC-39a error.reason === 'throw'", result?.error?.reason === 'throw', result?.error);
-        assert('SEC-39a message includes boom', !!result?.error?.message.includes('boom'), result?.error);
+        assert(
+            "SEC-39a error.phase === 'runtime'",
+            result?.error?.phase === 'runtime',
+            result?.error,
+        );
+        assert(
+            "SEC-39a error.reason === 'throw'",
+            result?.error?.reason === 'throw',
+            result?.error,
+        );
+        assert(
+            'SEC-39a message includes boom',
+            !!result?.error?.message.includes('boom'),
+            result?.error,
+        );
     }
 
     // top-level await + final value resolved (SANDBOX §5.3).
@@ -332,11 +369,20 @@ async function runTests(): Promise<void> {
         const result = await runner.run({
             code: `const s = keychain('GH_TOKEN'); console.log(s); return s;`,
         });
-        assert('SEC-33 demo value returned', result.value === 'demo-GH_TOKEN-secret', result.value);
-        assert('SEC-33 notices has 1 entry', (result.notices?.length ?? 0) === 1, result.notices);
+        assert(
+            'SEC-33 demo value returned',
+            result.value === 'demo-GH_TOKEN-secret',
+            result.value,
+        );
+        assert(
+            'SEC-33 notices has 1 entry',
+            (result.notices?.length ?? 0) === 1,
+            result.notices,
+        );
         assert(
             "SEC-33 notice surface === 'keychain', kind 'shim'",
-            result.notices?.[0]?.surface === 'keychain' && result.notices?.[0]?.kind === 'shim',
+            result.notices?.[0]?.surface === 'keychain' &&
+                result.notices?.[0]?.kind === 'shim',
             result.notices,
         );
     }
@@ -344,7 +390,13 @@ async function runTests(): Promise<void> {
     // SEC-39b — transpile error → phase:'transpile', never rejects.
     {
         const failingTranspile = (async () => ({
-            error: { name: 'SyntaxError', message: 'Unexpected token (1:7)', phase: 'transpile' as const, line: 1, column: 7 },
+            error: {
+                name: 'SyntaxError',
+                message: 'Unexpected token (1:7)',
+                phase: 'transpile' as const,
+                line: 1,
+                column: 7,
+            },
         })) as never;
         const runner = makeBrowserWorkerRunner({
             transpileFn: failingTranspile,
@@ -358,8 +410,16 @@ async function runTests(): Promise<void> {
             rejected = true;
         }
         assert('SEC-39b run() did NOT reject on transpile error', !rejected);
-        assert("SEC-39b error.phase === 'transpile'", result?.error?.phase === 'transpile', result?.error);
-        assert('SEC-39b line/column preserved', result?.error?.line === 1 && result?.error?.column === 7, result?.error);
+        assert(
+            "SEC-39b error.phase === 'transpile'",
+            result?.error?.phase === 'transpile',
+            result?.error,
+        );
+        assert(
+            'SEC-39b line/column preserved',
+            result?.error?.line === 1 && result?.error?.column === 7,
+            result?.error,
+        );
     }
 
     // SEC-39d — engine failure (worker factory throws) → reason:'internal', resolves.
@@ -378,10 +438,15 @@ async function runTests(): Promise<void> {
             rejected = true;
         }
         assert('SEC-39d engine failure did NOT reject run()', !rejected);
-        assert("SEC-39d error.reason === 'internal'", result?.error?.reason === 'internal', result?.error);
         assert(
-            "SEC-39d internal NOT misclassified as transpile/throw",
-            result?.error?.reason !== 'throw' && result?.error?.phase !== 'transpile',
+            "SEC-39d error.reason === 'internal'",
+            result?.error?.reason === 'internal',
+            result?.error,
+        );
+        assert(
+            'SEC-39d internal NOT misclassified as transpile/throw',
+            result?.error?.reason !== 'throw' &&
+                result?.error?.phase !== 'transpile',
             result?.error,
         );
     }
@@ -411,22 +476,35 @@ async function runTests(): Promise<void> {
         assert(
             'A1 events in real order: log, trace, chunk, chunk, log, notice',
             JSON.stringify(types) ===
-                JSON.stringify(['log', 'trace', 'chunk', 'chunk', 'log', 'notice']),
+                JSON.stringify([
+                    'log',
+                    'trace',
+                    'chunk',
+                    'chunk',
+                    'log',
+                    'notice',
+                ]),
             types,
         );
 
         // chunk events carry traceId + text in order.
-        const chunks = events.filter((e) => e.type === 'chunk') as Extract<RunEvent, { type: 'chunk' }>[];
+        const chunks = events.filter((e) => e.type === 'chunk') as Extract<
+            RunEvent,
+            { type: 'chunk' }
+        >[];
         assert(
             'A1 chunk events carry traceId + ordered text',
             chunks.length === 2 &&
-                chunks[0]?.traceId === 's1' && chunks[0]?.text === 'Hel' &&
+                chunks[0]?.traceId === 's1' &&
+                chunks[0]?.text === 'Hel' &&
                 chunks[1]?.text === 'lo',
             chunks,
         );
 
         // trace event content matches what a stitch() produced.
-        const traceEv = events.find((e) => e.type === 'trace') as Extract<RunEvent, { type: 'trace' }> | undefined;
+        const traceEv = events.find((e) => e.type === 'trace') as
+            | Extract<RunEvent, { type: 'trace' }>
+            | undefined;
         assert(
             'A1 trace event has id + stream chunk count',
             traceEv?.entry.id === 's1' && traceEv?.entry.stream?.chunks === 2,
@@ -434,26 +512,34 @@ async function runTests(): Promise<void> {
         );
 
         // RECONCILIATION: progressive log events === final RunResult.logs.
-        const logEvents = events.filter((e) => e.type === 'log') as Extract<RunEvent, { type: 'log' }>[];
+        const logEvents = events.filter((e) => e.type === 'log') as Extract<
+            RunEvent,
+            { type: 'log' }
+        >[];
         assert(
             'A1 progressive logs reconcile with final RunResult.logs',
             logEvents.length === result.logs.length &&
-                logEvents.every((le, i) =>
-                    le.entry.level === result.logs[i]?.level &&
-                    JSON.stringify(le.entry.args) === JSON.stringify(result.logs[i]?.args),
+                logEvents.every(
+                    (le, i) =>
+                        le.entry.level === result.logs[i]?.level &&
+                        JSON.stringify(le.entry.args) ===
+                            JSON.stringify(result.logs[i]?.args),
                 ),
             { logEvents, finalLogs: result.logs },
         );
 
         // RECONCILIATION: progressive notice events === final RunResult.notices.
-        const noticeEvents = events.filter((e) => e.type === 'notice') as Extract<RunEvent, { type: 'notice' }>[];
+        const noticeEvents = events.filter(
+            (e) => e.type === 'notice',
+        ) as Extract<RunEvent, { type: 'notice' }>[];
         assert(
             'A1 progressive notices reconcile with final RunResult.notices',
             noticeEvents.length === (result.notices?.length ?? 0) &&
-                noticeEvents.every((ne, i) =>
-                    ne.notice.surface === result.notices?.[i]?.surface &&
-                    ne.notice.kind === result.notices?.[i]?.kind &&
-                    ne.notice.message === result.notices?.[i]?.message,
+                noticeEvents.every(
+                    (ne, i) =>
+                        ne.notice.surface === result.notices?.[i]?.surface &&
+                        ne.notice.kind === result.notices?.[i]?.kind &&
+                        ne.notice.message === result.notices?.[i]?.message,
                 ),
             { noticeEvents, finalNotices: result.notices },
         );
@@ -461,7 +547,9 @@ async function runTests(): Promise<void> {
         // run() still single-shot: the final value is intact.
         assert(
             'A1 run() still resolves the full RunResult (value intact)',
-            !!result.value && (result.value as { ok: boolean }).ok === true && result.error === undefined,
+            !!result.value &&
+                (result.value as { ok: boolean }).ok === true &&
+                result.error === undefined,
             result,
         );
     }
@@ -483,7 +571,10 @@ async function runTests(): Promise<void> {
             transpileFn: passthroughTranspile,
             workerFactory: () => new InProcWorker(makeProgressEnv()),
         });
-        const rWith = await runnerA.run({ code, onEvent: (e) => withEvents.push(e) });
+        const rWith = await runnerA.run({
+            code,
+            onEvent: (e) => withEvents.push(e),
+        });
         const rWithout = await runnerB.run({ code }); // no onEvent
 
         // Compare the result minus wall-clock fields (durationMs + per-log `at`
@@ -499,7 +590,11 @@ async function runTests(): Promise<void> {
             JSON.stringify(strip(rWithout)) === JSON.stringify(strip(rWith)),
             { rWith, rWithout },
         );
-        assert('A1 no-onEvent path emitted nothing observable (still produced result)', !!rWithout.value, rWithout);
+        assert(
+            'A1 no-onEvent path emitted nothing observable (still produced result)',
+            !!rWithout.value,
+            rWithout,
+        );
     }
 
     // A1 — a THROWING onEvent callback does NOT break the run (still resolves).
@@ -526,10 +621,16 @@ async function runTests(): Promise<void> {
         assert('A1 throwing onEvent did NOT reject run()', !rejected);
         assert(
             'A1 throwing onEvent still resolved the full RunResult',
-            !!result?.value && (result.value as { ok: boolean }).ok === true && result?.error === undefined,
+            !!result?.value &&
+                (result.value as { ok: boolean }).ok === true &&
+                result?.error === undefined,
             result,
         );
-        assert('A1 throwing onEvent still captured logs', result?.logs.length === 1, result?.logs);
+        assert(
+            'A1 throwing onEvent still captured logs',
+            result?.logs.length === 1,
+            result?.logs,
+        );
     }
 
     /* === (A) worker_threads proofs: REAL terminate() ===================== */
@@ -542,12 +643,31 @@ async function runTests(): Promise<void> {
             defaultTimeoutMs: 200,
         });
         const t0 = Date.now();
-        const result = await runner.run({ code: `while (true) {}`, timeoutMs: 200 });
+        const result = await runner.run({
+            code: `while (true) {}`,
+            timeoutMs: 200,
+        });
         const elapsed = Date.now() - t0;
-        assert('SEC-20 timeout RESOLVED (did not hang)', !!result.error, result);
-        assert("SEC-20 error.reason === 'timeout'", result.error?.reason === 'timeout', result.error);
-        assert("SEC-20 error.phase === 'runtime'", result.error?.phase === 'runtime', result.error);
-        assert('SEC-20/24 settled well under 1s (preemptive kill)', elapsed < 1000, elapsed);
+        assert(
+            'SEC-20 timeout RESOLVED (did not hang)',
+            !!result.error,
+            result,
+        );
+        assert(
+            "SEC-20 error.reason === 'timeout'",
+            result.error?.reason === 'timeout',
+            result.error,
+        );
+        assert(
+            "SEC-20 error.phase === 'runtime'",
+            result.error?.phase === 'runtime',
+            result.error,
+        );
+        assert(
+            'SEC-20/24 settled well under 1s (preemptive kill)',
+            elapsed < 1000,
+            elapsed,
+        );
     }
 
     // SEC-22 — omitted timeoutMs still terminates within the default cap.
@@ -559,7 +679,11 @@ async function runTests(): Promise<void> {
         });
         const t0 = Date.now();
         const result = await runner.run({ code: `while (true) {}` }); // no timeoutMs
-        assert("SEC-22 default cap fired ('timeout')", result.error?.reason === 'timeout', result.error);
+        assert(
+            "SEC-22 default cap fired ('timeout')",
+            result.error?.reason === 'timeout',
+            result.error,
+        );
         assert('SEC-22 settled (< 1s)', Date.now() - t0 < 1000);
     }
 
@@ -573,9 +697,16 @@ async function runTests(): Promise<void> {
         const controller = new AbortController();
         const t0 = Date.now();
         setTimeout(() => controller.abort(), 50);
-        const result = await runner.run({ code: `while (true) {}`, signal: controller.signal });
+        const result = await runner.run({
+            code: `while (true) {}`,
+            signal: controller.signal,
+        });
         assert('SEC-25 abort RESOLVED (did not hang)', !!result.error, result);
-        assert("SEC-25 error.reason === 'abort'", result.error?.reason === 'abort', result.error);
+        assert(
+            "SEC-25 error.reason === 'abort'",
+            result.error?.reason === 'abort',
+            result.error,
+        );
         assert('SEC-25 settled promptly (< 1s)', Date.now() - t0 < 1000);
     }
 
@@ -587,18 +718,26 @@ async function runTests(): Promise<void> {
             defaultTimeoutMs: 2000,
         });
         // Run 1 tries to stash a value on the thread's globalThis.
-        await runner.run({ code: `try { globalThis.__bleed = 'x'; } catch {} return 1;` });
+        await runner.run({
+            code: `try { globalThis.__bleed = 'x'; } catch {} return 1;`,
+        });
         // Run 2 (fresh thread) reads it back.
         const r2 = await runner.run({
             code: `return (typeof globalThis !== 'undefined' && globalThis.__bleed) ? 'BLED' : 'clean';`,
         });
-        assert('SEC-36/37 no globalThis bleed across runs', r2.value === 'clean', r2.value);
+        assert(
+            'SEC-36/37 no globalThis bleed across runs',
+            r2.value === 'clean',
+            r2.value,
+        );
     }
 
     // SEC-21 (partial) — host main thread stayed responsive during the loop.
     {
         let ticks = 0;
-        const ticker = setInterval(() => { ticks++; }, 20);
+        const ticker = setInterval(() => {
+            ticks++;
+        }, 20);
         const runner = makeBrowserWorkerRunner({
             transpileFn: passthroughTranspile,
             workerFactory: () => new ThreadWorker(),
@@ -606,7 +745,11 @@ async function runTests(): Promise<void> {
         });
         await runner.run({ code: `while (true) {}`, timeoutMs: 300 });
         clearInterval(ticker);
-        assert('SEC-21 host main thread kept ticking during loop', ticks >= 3, ticks);
+        assert(
+            'SEC-21 host main thread kept ticking during loop',
+            ticks >= 3,
+            ticks,
+        );
     }
 
     /* === Summary ========================================================== */

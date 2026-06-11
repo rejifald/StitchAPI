@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * B1 — browser `stitch` build script.
  *
@@ -29,8 +30,8 @@
  * (the spike used npx; this script prefers the JS API but the equivalent CLI is
  * documented in B1-README).
  */
-import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '../../..');

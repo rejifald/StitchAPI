@@ -25,7 +25,10 @@ declare module '@babel/standalone' {
     export interface TransformResult {
         code: string | null | undefined;
     }
-    export function transform(code: string, options: TransformOptions): TransformResult;
+    export function transform(
+        code: string,
+        options: TransformOptions,
+    ): TransformResult;
 }
 
 // Node.js `process` — present in tsx/ts-node; shim so tsc accepts the test file.

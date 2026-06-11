@@ -272,7 +272,8 @@ export function applyEvent(view: RunView, event: RunEvent): RunView {
             const newTraceEntries = [...prev._traceEntries, event.entry];
             const newMermaid = traceToMermaid(newTraceEntries);
             // isStreaming grows monotonically — true if already set OR this entry has stream.
-            const nowStreaming = prev.isStreaming || event.entry.stream !== undefined;
+            const nowStreaming =
+                prev.isStreaming || event.entry.stream !== undefined;
             return {
                 ...prev,
                 mermaid: newMermaid,

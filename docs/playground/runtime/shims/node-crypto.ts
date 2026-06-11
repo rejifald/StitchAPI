@@ -18,8 +18,7 @@
  * in a Buffer polyfill.
  */
 
-const webcrypto: Crypto =
-    (globalThis as { crypto?: Crypto }).crypto as Crypto;
+const webcrypto: Crypto = (globalThis as { crypto?: Crypto }).crypto as Crypto;
 
 /** Web Crypto UUID — used by engine.ts on the write hot path. */
 export function randomUUID(): string {

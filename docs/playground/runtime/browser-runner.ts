@@ -39,23 +39,22 @@
  * The exported `browserWorkerRunner` is the production-shaped instance; tests
  * build their own via `makeBrowserWorkerRunner({ transpileFn, workerFactory })`.
  */
-
 import type {
     CodeRunner,
-    RunRequest,
-    RunResult,
+    LogEntry,
     RunError,
     RunNotice,
-    LogEntry,
+    RunRequest,
+    RunResult,
 } from '../component/runner';
 import { transpile as defaultTranspile } from './transpile';
 import type {
-    RunMessage,
-    ResultMessage,
     FromWorker,
+    ResultMessage,
+    RunMessage,
+    WireError,
     WireLog,
     WireNotice,
-    WireError,
 } from './worker-protocol';
 
 /* -------------------------------------------------------------------------- */
@@ -219,7 +218,9 @@ class BrowserWorkerRunner implements CodeRunner {
                             try {
                                 // Last-resort visibility; never rethrow.
                                 // eslint-disable-next-line no-console
-                                console.error('[browser-runner] onEvent threw; ignored');
+                                console.error(
+                                    '[browser-runner] onEvent threw; ignored',
+                                );
                             } catch {
                                 /* ignore */
                             }
@@ -229,10 +230,17 @@ class BrowserWorkerRunner implements CodeRunner {
                 }
                 if (!data || data.type !== 'result') {
                     // Malformed message from the worker = engine failure.
-                    finish(errorResult(since(), internalError(
-                        new Error('worker returned a malformed result message'),
-                        'runtime',
-                    )));
+                    finish(
+                        errorResult(
+                            since(),
+                            internalError(
+                                new Error(
+                                    'worker returned a malformed result message',
+                                ),
+                                'runtime',
+                            ),
+                        ),
+                    );
                     return;
                 }
                 finish(mapResult(data, since()));
@@ -336,9 +344,10 @@ function abortError(): RunError {
 }
 
 function internalError(err: unknown, phase: 'transpile' | 'runtime'): RunError {
-    const base = err instanceof Error
-        ? { name: err.name, message: err.message, stack: err.stack }
-        : { name: 'InternalError', message: String(err) };
+    const base =
+        err instanceof Error
+            ? { name: err.name, message: err.message, stack: err.stack }
+            : { name: 'InternalError', message: String(err) };
     return { ...base, phase, reason: 'internal' };
 }
 

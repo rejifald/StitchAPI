@@ -33,12 +33,20 @@ export function readFileSync(path: unknown, _enc?: unknown): string {
 }
 
 /** JSONL trace writes are no-ops in the browser; the trace is surfaced via StitchTraceEntry. */
-export function writeFileSync(_path: unknown, _data: unknown, _opts?: unknown): void {
+export function writeFileSync(
+    _path: unknown,
+    _data: unknown,
+    _opts?: unknown,
+): void {
     /* no-op: see SANDBOX §5.7 */
 }
 
 /** JSONL append is a no-op in the browser. */
-export function appendFileSync(_path: unknown, _data: unknown, _opts?: unknown): void {
+export function appendFileSync(
+    _path: unknown,
+    _data: unknown,
+    _opts?: unknown,
+): void {
     /* no-op: see SANDBOX §5.7 */
 }
 

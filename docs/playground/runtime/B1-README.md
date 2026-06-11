@@ -37,7 +37,7 @@ Three knobs, all proven in the spike (B1-SPIKE §4):
 
 1. **alias** the 3 reachable Node built-ins to the hand-written shims:
    `node:crypto → shims/node-crypto.ts`, `node:fs → shims/node-fs.ts`,
-   `node:path → shims/node-path.ts`. These are the *only* three built-ins reachable
+   `node:path → shims/node-path.ts`. These are the _only_ three built-ins reachable
    from core's barrel (7 import sites across `engine/otlp/auth/trace/drift`).
 2. **alias** `@stitchapi/core → packages/core/src/index.ts` so the bundle resolves
    **without `pnpm install`** (zod is unused in the reachable graph — B1-SPIKE §1).
@@ -77,19 +77,19 @@ npx -y esbuild docs/playground/runtime/stitch-browser.ts \
 
 ## The shim list (what each stands in for)
 
-| Surface | Shim | Behaviour |
-|---|---|---|
-| `node:crypto` `randomUUID` (engine.ts — **hot path**, write idempotency) | `node-crypto.ts` | `crypto.randomUUID()` (Web Crypto; available in Workers) |
-| `node:crypto` `randomBytes` (otlp.ts span ids) | `node-crypto.ts` | `crypto.getRandomValues` + faithful `.toString('hex')` |
-| `node:fs` (auth/trace/drift) | `node-fs.ts` | no-op writes; `existsSync → false`; `readFileSync` throws ENOENT |
-| `node:path` `dirname` (trace/drift) | `node-path.ts` | pure regex `dirname` |
-| `process.env.*` (stitch getTrace, trace HOME, otlp endpoint, auth) | `process.ts` via `--define` | `{}` → every read `undefined` → safe defaults |
-| `keychain(name)` | `node-surfaces.ts` | documented **demo value** + `RunNotice{kind:'shim'}` |
-| `env(name)` | `node-surfaces.ts` | documented **demo value** + `RunNotice{kind:'shim'}` |
-| `cookieSession` | `node-surfaces.ts` | core's pure-JS strategy; **in-memory jar** (lives in the StitchStore) + notice |
-| `createTrace` | `stitch-browser.ts` | JSONL = no-op; **console forced off** (no `process.stderr`); notice if a file path is set |
-| `otlpTrace` / `otlpHttpExporter` | `otlp-browser.ts` | **no-op exporter, zero network egress** + notice |
-| `cli` / `serve` / `mcp` | `server-tier-stubs.ts` | **throw** — server-tier only |
+| Surface                                                                  | Shim                        | Behaviour                                                                                 |
+| ------------------------------------------------------------------------ | --------------------------- | ----------------------------------------------------------------------------------------- |
+| `node:crypto` `randomUUID` (engine.ts — **hot path**, write idempotency) | `node-crypto.ts`            | `crypto.randomUUID()` (Web Crypto; available in Workers)                                  |
+| `node:crypto` `randomBytes` (otlp.ts span ids)                           | `node-crypto.ts`            | `crypto.getRandomValues` + faithful `.toString('hex')`                                    |
+| `node:fs` (auth/trace/drift)                                             | `node-fs.ts`                | no-op writes; `existsSync → false`; `readFileSync` throws ENOENT                          |
+| `node:path` `dirname` (trace/drift)                                      | `node-path.ts`              | pure regex `dirname`                                                                      |
+| `process.env.*` (stitch getTrace, trace HOME, otlp endpoint, auth)       | `process.ts` via `--define` | `{}` → every read `undefined` → safe defaults                                             |
+| `keychain(name)`                                                         | `node-surfaces.ts`          | documented **demo value** + `RunNotice{kind:'shim'}`                                      |
+| `env(name)`                                                              | `node-surfaces.ts`          | documented **demo value** + `RunNotice{kind:'shim'}`                                      |
+| `cookieSession`                                                          | `node-surfaces.ts`          | core's pure-JS strategy; **in-memory jar** (lives in the StitchStore) + notice            |
+| `createTrace`                                                            | `stitch-browser.ts`         | JSONL = no-op; **console forced off** (no `process.stderr`); notice if a file path is set |
+| `otlpTrace` / `otlpHttpExporter`                                         | `otlp-browser.ts`           | **no-op exporter, zero network egress** + notice                                          |
+| `cli` / `serve` / `mcp`                                                  | `server-tier-stubs.ts`      | **throw** — server-tier only                                                              |
 
 ### Shim-notice channel
 
@@ -161,7 +161,10 @@ Lifted from B1-SPIKE §7, plus what this implementation adds:
 ## Out of scope
 
 `cli`/`serve`/`mcp` (server tier, Tier-3 §7), the fake-API simulator
-(`@stitchapi/sandbox-sim`, task S*), the transpiler (`transpile.ts`, R2), and the
+(`@stitchapi/sandbox-sim`, task S\*), the transpiler (`transpile.ts`, R2), and the
 Worker runner itself (R1). This task delivers only the browser `stitch` build + its
 shims and proves it bundles and runs Node-free.
+
+```
+
 ```

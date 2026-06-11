@@ -7,13 +7,15 @@
  * Prints "S2 OK" and exits 0 on success; throws / exits non-zero on failure.
  * Uses node:assert only — no test framework required.
  */
-
-import assert from 'node:assert/strict';
-
 // The contract import is type-only at runtime (interfaces erase), so tsx handles
 // it without needing the file to exist as JS.
-import type { SimRequest, SimKnobs } from '../../../../docs/playground/contracts/sim';
+import type {
+    SimKnobs,
+    SimRequest,
+} from '../../../../docs/playground/contracts/sim';
 import { errorsStatusHandlers } from './errors-status';
+
+import assert from 'node:assert/strict';
 
 // ---------------------------------------------------------------------------
 // Minimal helpers to build SimRequest objects without a real fetch stack.
@@ -35,7 +37,8 @@ const EMPTY_KNOBS: SimKnobs = {};
 
 function findHandler(req: SimRequest) {
     const h = errorsStatusHandlers.find((handler) => handler.match(req));
-    if (!h) throw new Error(`No handler matched ${req.method} ${req.url.pathname}`);
+    if (!h)
+        throw new Error(`No handler matched ${req.method} ${req.url.pathname}`);
     return h;
 }
 
@@ -58,8 +61,15 @@ async function main() {
         assert.equal(res.status, 200, '/users status should be 200');
         assert.ok(res.body, '/users body should be present');
         const body = res.body as { data: unknown[]; total: number };
-        assert.ok(Array.isArray(body.data), '/users body.data should be an array');
-        assert.equal(body.data.length, 3, '/users should return 3 fixture users');
+        assert.ok(
+            Array.isArray(body.data),
+            '/users body.data should be an array',
+        );
+        assert.equal(
+            body.data.length,
+            3,
+            '/users should return 3 fixture users',
+        );
         assert.equal(body.total, 3, '/users total should equal array length');
         // Spot-check first user shape
         const first = body.data[0] as Record<string, unknown>;
@@ -101,7 +111,11 @@ async function main() {
         const req = makeReq('GET', `https://demo.stitchapi.dev/status/${code}`);
         const res = await dispatch(req);
 
-        assert.equal(res.status, code, `/status/${code} should echo status ${code}`);
+        assert.equal(
+            res.status,
+            code,
+            `/status/${code} should echo status ${code}`,
+        );
         const body = res.body as { status: number; sandbox: boolean };
         assert.equal(body.status, code, `/status/${code} body.status mismatch`);
         assert.equal(body.sandbox, true);
@@ -125,8 +139,14 @@ async function main() {
         const res = await dispatch(req);
 
         assert.equal(res.status, 200, '/malformed status should be 200');
-        assert.ok(typeof res.body === 'string', '/malformed body should be a string (not JSON)');
-        assert.ok((res.body as string).startsWith('<!DOCTYPE html>'), '/malformed body should be HTML');
+        assert.ok(
+            typeof res.body === 'string',
+            '/malformed body should be a string (not JSON)',
+        );
+        assert.ok(
+            (res.body as string).startsWith('<!DOCTYPE html>'),
+            '/malformed body should be HTML',
+        );
         // Confirm content-type is text/html to prove it's not JSON
         assert.equal(res.headers?.['content-type'], 'text/html');
     }
@@ -137,13 +157,24 @@ async function main() {
     {
         const postUsers = makeReq('POST', 'https://demo.stitchapi.dev/users');
         const claimed = errorsStatusHandlers.some((h) => h.match(postUsers));
-        assert.equal(claimed, false, 'POST /users should not be matched by any S2 handler');
+        assert.equal(
+            claimed,
+            false,
+            'POST /users should not be matched by any S2 handler',
+        );
     }
 
     {
-        const unknown = makeReq('GET', 'https://demo.stitchapi.dev/unknown-route');
+        const unknown = makeReq(
+            'GET',
+            'https://demo.stitchapi.dev/unknown-route',
+        );
         const claimed = errorsStatusHandlers.some((h) => h.match(unknown));
-        assert.equal(claimed, false, 'GET /unknown-route should not be matched by any S2 handler');
+        assert.equal(
+            claimed,
+            false,
+            'GET /unknown-route should not be matched by any S2 handler',
+        );
     }
 
     // ------------------------------------------------------------------
@@ -153,7 +184,11 @@ async function main() {
         const req = makeReq('GET', 'https://demo.stitchapi.dev/users/3');
         const r1 = await dispatch(req);
         const r2 = await dispatch(req);
-        assert.deepEqual(r1.body, r2.body, '/users/3 should return identical body on repeated calls');
+        assert.deepEqual(
+            r1.body,
+            r2.body,
+            '/users/3 should return identical body on repeated calls',
+        );
     }
 
     console.log('S2 OK');

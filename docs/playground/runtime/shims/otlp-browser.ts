@@ -16,14 +16,15 @@
  * The `node:crypto` alias already covers `otlpTrace`'s `randomBytes` span ids, so
  * the trace mapping itself still works — it just exports nowhere.
  */
+import { emitShimNotice } from './notices';
+
 import { otlpTrace as coreOtlpTrace } from '@stitchapi/core';
 import type {
+    OtelSpan,
     OtlpOptions,
     SpanExporter,
-    OtelSpan,
     TraceSink,
 } from '@stitchapi/core';
-import { emitShimNotice } from './notices';
 
 const OTLP_NOTICE =
     'OTLP export is simulated in the browser sandbox — spans are built but not ' +
@@ -49,5 +50,8 @@ export function otlpHttpExporter(
 /** Drop-in for core `otlpTrace` — builds spans, exports to the no-op exporter. */
 export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
     emitShimNotice('otlpTrace', OTLP_NOTICE);
-    return coreOtlpTrace({ ...opts, exporter: opts.exporter ?? noopOtlpExporter() });
+    return coreOtlpTrace({
+        ...opts,
+        exporter: opts.exporter ?? noopOtlpExporter(),
+    });
 }

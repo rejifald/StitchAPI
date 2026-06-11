@@ -20,7 +20,6 @@
  * Like everything here, the payload is pure data / structured-cloneable — the
  * `RunEvent` shapes mirror the frozen `runner.ts` union, carried by value.
  */
-
 import type { LogLevel, RunEvent } from '../component/runner';
 
 /* -------------------------------------------------------------------------- */

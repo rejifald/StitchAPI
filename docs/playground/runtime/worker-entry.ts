@@ -36,15 +36,14 @@
  *   - A snippet throw/reject is reported as `error` on the result; the main
  *     thread classifies timeout/abort/internal — see worker-protocol.ts.
  */
-
+import type { LogEntry, LogLevel, RunEvent } from '../component/runner';
 import type {
-    RunMessage,
-    ResultMessage,
     ProgressMessage,
+    ResultMessage,
+    RunMessage,
     WireLog,
     WireNotice,
 } from './worker-protocol';
-import type { LogLevel, LogEntry, RunEvent } from '../component/runner';
 
 /* -------------------------------------------------------------------------- */
 /*  Injected worker environment (the allow-listed scope, SEC-34)              */
@@ -75,7 +74,11 @@ export interface WorkerEnv {
      * to safe defaults. MUST NOT carry `STITCH_TRACE_CONSOLE` or a `stderr`
      * (B1 blocker #1/#4).
      */
-    process: { env: Record<string, string | undefined>; platform: string; versions: Record<string, string> };
+    process: {
+        env: Record<string, string | undefined>;
+        platform: string;
+        versions: Record<string, string>;
+    };
     /**
      * Web Crypto (`crypto.randomUUID` / `getRandomValues`) — backs the B1
      * `node:crypto` alias and the engine write hot path (B1 blocker #2). In a
@@ -126,25 +129,36 @@ function makeCapturingConsole(
     startedAt: () => number,
     onLog?: (entry: LogEntry) => void,
 ): {
-    console: Record<LogLevel, (...args: unknown[]) => void> & Record<string, unknown>;
+    console: Record<LogLevel, (...args: unknown[]) => void> &
+        Record<string, unknown>;
     logs: WireLog[];
 } {
     const logs: WireLog[] = [];
-    const sink = (level: LogLevel) => (...args: unknown[]): void => {
-        const entry: WireLog = { level, args: args.map(safeClone), at: startedAt() };
-        logs.push(entry);
-        // Progressive observation (A1): forward this line as a `log` event the
-        // instant it's captured, BEFORE the run settles. The buffered `logs`
-        // array is still the source of truth for the final result — this is a
-        // pure side-emit. A throwing sink must not drop the captured line.
-        if (onLog) {
-            try {
-                onLog({ level: entry.level, args: entry.args, at: entry.at });
-            } catch {
-                /* swallow — host-side observation must never break capture */
+    const sink =
+        (level: LogLevel) =>
+        (...args: unknown[]): void => {
+            const entry: WireLog = {
+                level,
+                args: args.map(safeClone),
+                at: startedAt(),
+            };
+            logs.push(entry);
+            // Progressive observation (A1): forward this line as a `log` event the
+            // instant it's captured, BEFORE the run settles. The buffered `logs`
+            // array is still the source of truth for the final result — this is a
+            // pure side-emit. A throwing sink must not drop the captured line.
+            if (onLog) {
+                try {
+                    onLog({
+                        level: entry.level,
+                        args: entry.args,
+                        at: entry.at,
+                    });
+                } catch {
+                    /* swallow — host-side observation must never break capture */
+                }
             }
-        }
-    };
+        };
     const console = {} as Record<LogLevel, (...args: unknown[]) => void> &
         Record<string, unknown>;
     for (const level of LEVELS) {
@@ -152,7 +166,16 @@ function makeCapturingConsole(
     }
     // `console.trace`/`table`/`dir`/`group*` etc. map onto 'log' so a snippet
     // calling them doesn't blow up and doesn't reach the host console.
-    const aliasToLog = ['trace', 'table', 'dir', 'group', 'groupEnd', 'groupCollapsed', 'count', 'assert'];
+    const aliasToLog = [
+        'trace',
+        'table',
+        'dir',
+        'group',
+        'groupEnd',
+        'groupCollapsed',
+        'count',
+        'assert',
+    ];
     for (const name of aliasToLog) {
         console[name] = sink('log');
     }
@@ -168,7 +191,12 @@ function makeCapturingConsole(
 export function safeClone(value: unknown): unknown {
     if (value === null) return null;
     const t = typeof value;
-    if (t === 'string' || t === 'number' || t === 'boolean' || t === 'undefined') {
+    if (
+        t === 'string' ||
+        t === 'number' ||
+        t === 'boolean' ||
+        t === 'undefined'
+    ) {
         return value;
     }
     if (t === 'bigint') return `${value as bigint}n`;
@@ -279,7 +307,9 @@ export async function runSnippetInWorker(
     // value is returned. We use AsyncFunction (via constructor) so we don't need
     // `eval`; the body is the transpiled snippet.
     const AsyncFunction = Object.getPrototypeOf(async function () {})
-        .constructor as new (...args: string[]) => (...a: unknown[]) => Promise<unknown>;
+        .constructor as new (
+        ...args: string[]
+    ) => (...a: unknown[]) => Promise<unknown>;
 
     let runner: (...a: unknown[]) => Promise<unknown>;
     try {
@@ -342,9 +372,17 @@ function drainSafely(env: WorkerEnv): WireNotice[] {
     }
 }
 
-function toWireError(err: unknown): { name: string; message: string; stack?: string } {
+function toWireError(err: unknown): {
+    name: string;
+    message: string;
+    stack?: string;
+} {
     if (err instanceof Error) {
-        return { name: err.name || 'Error', message: err.message, stack: err.stack };
+        return {
+            name: err.name || 'Error',
+            message: err.message,
+            stack: err.stack,
+        };
     }
     return { name: 'Error', message: String(err) };
 }

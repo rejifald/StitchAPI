@@ -26,12 +26,7 @@ export type {
 } from './runner';
 
 /* Simulator handler contract. */
-export type {
-    SimRequest,
-    SimResponse,
-    SimHandler,
-    SimKnobs,
-} from './sim';
+export type { SimRequest, SimResponse, SimHandler, SimKnobs } from './sim';
 
 /* Dispatch contract — types, frozen constant, and (D1-implemented) signatures. */
 export type {

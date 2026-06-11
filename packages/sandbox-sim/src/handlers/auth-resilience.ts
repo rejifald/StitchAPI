@@ -26,8 +26,12 @@
  *
  * All handlers are deterministic — no Date.now(), no Math.random().
  */
-
-import type { SimHandler, SimRequest, SimKnobs, SimResponse } from '../../../../docs/playground/contracts/sim';
+import type {
+    SimHandler,
+    SimKnobs,
+    SimRequest,
+    SimResponse,
+} from '../../../../docs/playground/contracts/sim';
 
 // ---------------------------------------------------------------------------
 // GET /auth/me
@@ -38,7 +42,8 @@ import type { SimHandler, SimRequest, SimKnobs, SimResponse } from '../../../../
  * Accepts the form "Bearer <token>" (case-insensitive scheme).
  */
 function extractBearer(req: SimRequest): string | null {
-    const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization');
+    const authHeader =
+        req.headers.get('Authorization') ?? req.headers.get('authorization');
     if (!authHeader) return null;
     const match = authHeader.match(/^Bearer\s+(.+)$/i);
     return match ? match[1] : null;
@@ -77,7 +82,8 @@ const authMeHandler: SimHandler = {
                 headers: {
                     'Content-Type': 'application/json',
                     // RFC 6750 §3 — prompt the client with bearer challenge.
-                    'WWW-Authenticate': 'Bearer realm="sandbox", error="unauthorized"',
+                    'WWW-Authenticate':
+                        'Bearer realm="sandbox", error="unauthorized"',
                 },
                 body: {
                     error: 'unauthorized',
@@ -161,9 +167,9 @@ const driftHandler: SimHandler = {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
                 body: {
-                    id: '42',       // DRIFT: should be number
+                    id: '42', // DRIFT: should be number
                     // name omitted — DRIFT: required field missing
-                    extra: true,    // DRIFT: unexpected field
+                    extra: true, // DRIFT: unexpected field
                 },
             };
         }

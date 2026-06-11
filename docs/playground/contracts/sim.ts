@@ -63,5 +63,8 @@ export interface SimKnobs {
  */
 export interface SimHandler {
     match(req: SimRequest): boolean;
-    handle(req: SimRequest, knobs: SimKnobs): SimResponse | Promise<SimResponse>;
+    handle(
+        req: SimRequest,
+        knobs: SimKnobs,
+    ): SimResponse | Promise<SimResponse>;
 }

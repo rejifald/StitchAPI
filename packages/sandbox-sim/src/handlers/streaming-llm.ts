@@ -9,8 +9,12 @@
  * All output is DETERMINISTIC (fixed token list, no Math.random, no Date.now in payloads).
  * Timing/pacing is not covered by determinism (§4.3).
  */
-
-import type { SimHandler, SimRequest, SimResponse, SimKnobs } from '../../../../docs/playground/contracts/sim';
+import type {
+    SimHandler,
+    SimKnobs,
+    SimRequest,
+    SimResponse,
+} from '../../../../docs/playground/contracts/sim';
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -89,10 +93,18 @@ interface ChatCompletion {
     model: string;
     choices: Array<{
         index: number;
-        message: { role: string; content: string | null; tool_calls?: ToolCall[] };
+        message: {
+            role: string;
+            content: string | null;
+            tool_calls?: ToolCall[];
+        };
         finish_reason: string;
     }>;
-    usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+    usage: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+    };
 }
 
 interface ToolCall {
@@ -169,7 +181,13 @@ async function* makeLlmSseStream(): AsyncIterable<Uint8Array> {
         object: 'chat.completion.chunk',
         created: CREATED_AT,
         model: MODEL_ID,
-        choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
+        choices: [
+            {
+                index: 0,
+                delta: { role: 'assistant', content: '' },
+                finish_reason: null,
+            },
+        ],
     };
     yield sseFrame(roleChunk);
 
@@ -180,7 +198,9 @@ async function* makeLlmSseStream(): AsyncIterable<Uint8Array> {
             object: 'chat.completion.chunk',
             created: CREATED_AT,
             model: MODEL_ID,
-            choices: [{ index: 0, delta: { content: token }, finish_reason: null }],
+            choices: [
+                { index: 0, delta: { content: token }, finish_reason: null },
+            ],
         };
         yield sseFrame(chunk);
     }
@@ -213,7 +233,14 @@ async function* makeLlmToolSseStream(): AsyncIterable<Uint8Array> {
                 delta: {
                     role: 'assistant',
                     content: null,
-                    tool_calls: [{ index: 0, id: TOOL_CALL_ID, type: 'function', function: { name: TOOL_CALL_NAME, arguments: '' } }],
+                    tool_calls: [
+                        {
+                            index: 0,
+                            id: TOOL_CALL_ID,
+                            type: 'function',
+                            function: { name: TOOL_CALL_NAME, arguments: '' },
+                        },
+                    ],
                 },
                 finish_reason: null,
             },
@@ -232,7 +259,11 @@ async function* makeLlmToolSseStream(): AsyncIterable<Uint8Array> {
             choices: [
                 {
                     index: 0,
-                    delta: { tool_calls: [{ index: 0, function: { arguments: argPart } }] },
+                    delta: {
+                        tool_calls: [
+                            { index: 0, function: { arguments: argPart } },
+                        ],
+                    },
                     finish_reason: null,
                 },
             ],
@@ -272,14 +303,21 @@ function makeLlmJsonBody(toolCall: boolean): ChatCompletion {
                             {
                                 id: TOOL_CALL_ID,
                                 type: 'function',
-                                function: { name: TOOL_CALL_NAME, arguments: TOOL_CALL_ARGS },
+                                function: {
+                                    name: TOOL_CALL_NAME,
+                                    arguments: TOOL_CALL_ARGS,
+                                },
                             },
                         ],
                     },
                     finish_reason: 'tool_calls',
                 },
             ],
-            usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+            usage: {
+                prompt_tokens: 10,
+                completion_tokens: 8,
+                total_tokens: 18,
+            },
         };
     }
     return {
@@ -294,13 +332,19 @@ function makeLlmJsonBody(toolCall: boolean): ChatCompletion {
                 finish_reason: 'stop',
             },
         ],
-        usage: { prompt_tokens: 10, completion_tokens: TOKENS.length, total_tokens: 10 + TOKENS.length },
+        usage: {
+            prompt_tokens: 10,
+            completion_tokens: TOKENS.length,
+            total_tokens: 10 + TOKENS.length,
+        },
     };
 }
 
 const chatCompletionsHandler: SimHandler = {
     match(req: SimRequest): boolean {
-        return req.method === 'POST' && req.url.pathname === '/v1/chat/completions';
+        return (
+            req.method === 'POST' && req.url.pathname === '/v1/chat/completions'
+        );
     },
 
     handle(req: SimRequest, _knobs: SimKnobs): SimResponse {
@@ -317,7 +361,8 @@ const chatCompletionsHandler: SimHandler = {
                     'x-sandbox-stream-chunks': String(
                         toolCall
                             ? /* role + 2 arg parts + stop + done */ 5
-                            : /* role + tokens + stop + done */ TOKENS.length + 3,
+                            : /* role + tokens + stop + done */ TOKENS.length +
+                                  3,
                     ),
                 },
                 stream: toolCall ? makeLlmToolSseStream() : makeLlmSseStream(),

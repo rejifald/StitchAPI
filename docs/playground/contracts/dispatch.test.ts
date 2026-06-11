@@ -10,13 +10,9 @@
  *   - SEC-48: a scan failure / unparseable input is fail-safe → browser, never
  *     the isolate; the dispatcher never rejects on a delegate error.
  */
-import {
-    NODE_ONLY_SURFACES,
-    scanSurface,
-    dispatchRunner,
-} from './dispatch';
-import type { CodeRunner, RunRequest, RunResult } from './runner';
 import type { RunNotice } from '../component/runner';
+import { NODE_ONLY_SURFACES, dispatchRunner, scanSurface } from './dispatch';
+import type { CodeRunner, RunRequest, RunResult } from './runner';
 
 /* Minimal assert helpers — kept local so the test type-checks without
  * `@types/node` (the contracts tsconfig has no Node lib; no-install). */
@@ -144,18 +140,21 @@ check('computed access core["key"+"chain"] → ambiguous + browser', () => {
 });
 
 // PRECEDENCE: a clear hit AND ambiguity → hits reported, but safe default governs.
-check('clear hit + ambiguity → reports hit but routes browser (precedence)', () => {
-    const scan = scanSurface(
-        `import { keychain } from '@stitchapi/core';\n` +
-            `keychain();\nconst k = core['ot' + 'lpTrace'];`,
-    );
-    assert.equal(scan.ambiguous, true);
-    assert.equal(scan.tier, 'browser', 'safe default governs the tier');
-    assert.ok(
-        scan.nodeOnlyHits.includes('keychain'),
-        'hits are still reported alongside ambiguity',
-    );
-});
+check(
+    'clear hit + ambiguity → reports hit but routes browser (precedence)',
+    () => {
+        const scan = scanSurface(
+            `import { keychain } from '@stitchapi/core';\n` +
+                `keychain();\nconst k = core['ot' + 'lpTrace'];`,
+        );
+        assert.equal(scan.ambiguous, true);
+        assert.equal(scan.tier, 'browser', 'safe default governs the tier');
+        assert.ok(
+            scan.nodeOnlyHits.includes('keychain'),
+            'hits are still reported alongside ambiguity',
+        );
+    },
+);
 
 // SEC-47: no input makes `ambiguous` route to server. Every ambiguous scan is
 // browser. Exercise a spread of dynamic forms.
@@ -220,36 +219,46 @@ check('server-tier snippet with server runner routes to server', async () => {
 });
 
 // SEC-46: server-tier snippet WITHOUT a server runner → browser + shim notice.
-check('SEC-46: server-tier without server runner → browser + shim notice', async () => {
-    const browser = makeFake('browser', () => okResult());
-    const d = dispatchRunner({ browser }); // no server
-    const res = await d.run({ code: `keychain().get('k');` });
-    assert.equal(browser.calls.length, 1, 'ran on browser');
-    const shim = (res.notices ?? []).find(
-        (n) => n.kind === 'shim' && n.surface === 'keychain',
-    );
-    assert.ok(shim, 'a shim notice for keychain is surfaced');
-});
+check(
+    'SEC-46: server-tier without server runner → browser + shim notice',
+    async () => {
+        const browser = makeFake('browser', () => okResult());
+        const d = dispatchRunner({ browser }); // no server
+        const res = await d.run({ code: `keychain().get('k');` });
+        assert.equal(browser.calls.length, 1, 'ran on browser');
+        const shim = (res.notices ?? []).find(
+            (n) => n.kind === 'shim' && n.surface === 'keychain',
+        );
+        assert.ok(shim, 'a shim notice for keychain is surfaced');
+    },
+);
 
 // No double-add: if the browser delegate already emitted the shim notice, the
 // dispatcher does not add a second one.
-check('SEC-46: does not double-add a shim notice already emitted by browser', async () => {
-    const browser = makeFake('browser', () =>
-        okResult([
-            {
-                kind: 'shim',
-                surface: 'keychain',
-                message: 'ran keychain shimmed (from B1)',
-            },
-        ]),
-    );
-    const d = dispatchRunner({ browser });
-    const res = await d.run({ code: `keychain();` });
-    const keychainNotices = (res.notices ?? []).filter(
-        (n) => n.surface === 'keychain',
-    );
-    assert.equal(keychainNotices.length, 1, 'exactly one keychain shim notice');
-});
+check(
+    'SEC-46: does not double-add a shim notice already emitted by browser',
+    async () => {
+        const browser = makeFake('browser', () =>
+            okResult([
+                {
+                    kind: 'shim',
+                    surface: 'keychain',
+                    message: 'ran keychain shimmed (from B1)',
+                },
+            ]),
+        );
+        const d = dispatchRunner({ browser });
+        const res = await d.run({ code: `keychain();` });
+        const keychainNotices = (res.notices ?? []).filter(
+            (n) => n.surface === 'keychain',
+        );
+        assert.equal(
+            keychainNotices.length,
+            1,
+            'exactly one keychain shim notice',
+        );
+    },
+);
 
 // Faithful CodeRunner: passes signal / timeoutMs / scope through unchanged.
 check('passes signal/timeoutMs/scope through to the delegate', async () => {
@@ -292,7 +301,10 @@ check('never rejects on a delegate error', async () => {
     // the delegate's contract violation, not the dispatcher's. We assert the
     // dispatcher itself adds no rejection of its own AND that for a delegate that
     // RESOLVES an error result (the real contract), it passes through cleanly.
-    assert.ok(threw, 'delegate rejection surfaces (dispatcher adds no swallow)');
+    assert.ok(
+        threw,
+        'delegate rejection surfaces (dispatcher adds no swallow)',
+    );
     void result;
 
     // And the contract-faithful path: a delegate that RESOLVES an error result is
@@ -309,7 +321,11 @@ check('never rejects on a delegate error', async () => {
     }));
     const d2 = dispatchRunner({ browser: errBrowser });
     const res = await d2.run({ code: `boom()` });
-    assert.equal(res.error?.reason, 'throw', 'error result propagated, not thrown');
+    assert.equal(
+        res.error?.reason,
+        'throw',
+        'error result propagated, not thrown',
+    );
 });
 
 /* -------------------------------------------------------------------------- */

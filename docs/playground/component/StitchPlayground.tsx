@@ -15,8 +15,18 @@
  * library build (tsconfig `include` is `src/**\/*.ts`). Requires `react` (and later
  * `@codemirror/*`) once relocated into the docs app.
  */
-import { type CodeRunner, type RunEvent, type RunResult, mockRunner } from './runner';
-import { applyEvent, buildRunView, emptyRunView, type RunView } from './output-format';
+import {
+    type RunView,
+    applyEvent,
+    buildRunView,
+    emptyRunView,
+} from './output-format';
+import {
+    type CodeRunner,
+    type RunEvent,
+    type RunResult,
+    mockRunner,
+} from './runner';
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 
@@ -90,7 +100,12 @@ export function StitchPlayground({
                 if (ac.signal.aborted) return;
                 setView((prev) => applyEvent(prev ?? emptyRunView(), event));
             };
-            const res = await runner.run({ code, scope, signal: ac.signal, onEvent });
+            const res = await runner.run({
+                code,
+                scope,
+                signal: ac.signal,
+                onEvent,
+            });
             if (!ac.signal.aborted) {
                 // Reconcile: final result wins for value/error/durationMs/logs/notices.
                 setResult(res);
@@ -155,7 +170,12 @@ export function StitchPlayground({
                 aria-label="StitchAPI playground editor"
             />
 
-            <StitchOutput view={view} result={result} deferred={isDeferred} running={running} />
+            <StitchOutput
+                view={view}
+                result={result}
+                deferred={isDeferred}
+                running={running}
+            />
         </div>
     );
 }
@@ -202,12 +222,7 @@ function StitchOutput({
                 Run a snippet to see output.
             </div>
         );
-    if (!view)
-        return (
-            <div className="stitch-playground__output">
-                running…
-            </div>
-        );
+    if (!view) return <div className="stitch-playground__output">running…</div>;
 
     return (
         <div className="stitch-playground__output">
@@ -224,16 +239,12 @@ function StitchOutput({
 
             {/* ── Error ────────────────────────────────────────────────── */}
             {view.errorText !== null && (
-                <pre className="stitch-playground__error">
-                    {view.errorText}
-                </pre>
+                <pre className="stitch-playground__error">{view.errorText}</pre>
             )}
 
             {/* ── Resolved value / streamed text ───────────────────────── */}
             {view.errorText === null && view.valueText !== null && (
-                <pre className="stitch-playground__value">
-                    {view.valueText}
-                </pre>
+                <pre className="stitch-playground__value">{view.valueText}</pre>
             )}
 
             {/* ── Notices strip ────────────────────────────────────────── */}

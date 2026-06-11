@@ -4,10 +4,13 @@
  * Uses node:assert + a plain main() function.
  * Run with:  npx tsx packages/sandbox-sim/src/handlers/auth-resilience.test.ts
  */
+import type {
+    SimKnobs,
+    SimRequest,
+} from '../../../../docs/playground/contracts/sim';
+import { authResilienceHandlers } from './auth-resilience';
 
 import assert from 'node:assert/strict';
-import { authResilienceHandlers } from './auth-resilience';
-import type { SimRequest, SimKnobs } from '../../../../docs/playground/contracts/sim';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,7 +32,8 @@ const emptyKnobs: SimKnobs = {};
 
 function findHandler(req: SimRequest) {
     const h = authResilienceHandlers.find((handler) => handler.match(req));
-    if (!h) throw new Error(`No handler matched ${req.method} ${req.url.pathname}`);
+    if (!h)
+        throw new Error(`No handler matched ${req.method} ${req.url.pathname}`);
     return h;
 }
 
@@ -52,7 +56,11 @@ async function main() {
             '/auth/me 401 must include WWW-Authenticate header',
         );
         const body = res.body as Record<string, unknown>;
-        assert.equal(body.error, 'unauthorized', '/auth/me 401 body.error must be "unauthorized"');
+        assert.equal(
+            body.error,
+            'unauthorized',
+            '/auth/me 401 body.error must be "unauthorized"',
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -69,7 +77,9 @@ async function main() {
     // /auth/me — 200 with valid bearer token
     // -----------------------------------------------------------------------
     {
-        const req = makeReq('GET', '/auth/me', { Authorization: 'Bearer my-simulated-token' });
+        const req = makeReq('GET', '/auth/me', {
+            Authorization: 'Bearer my-simulated-token',
+        });
         const h = findHandler(req);
         const res = await h.handle(req, emptyKnobs);
 
@@ -77,20 +87,34 @@ async function main() {
         const body = res.body as Record<string, unknown>;
         assert.ok(body.id, '/auth/me 200 body must have id');
         assert.ok(body.username, '/auth/me 200 body must have username');
-        assert.equal(body.credentialKind, 'bearer', '/auth/me with bearer must report credentialKind=bearer');
+        assert.equal(
+            body.credentialKind,
+            'bearer',
+            '/auth/me with bearer must report credentialKind=bearer',
+        );
     }
 
     // -----------------------------------------------------------------------
     // /auth/me — 200 with session cookie
     // -----------------------------------------------------------------------
     {
-        const req = makeReq('GET', '/auth/me', { Cookie: 'session=abc123; other=val' });
+        const req = makeReq('GET', '/auth/me', {
+            Cookie: 'session=abc123; other=val',
+        });
         const h = findHandler(req);
         const res = await h.handle(req, emptyKnobs);
 
-        assert.equal(res.status, 200, '/auth/me with session cookie must be 200');
+        assert.equal(
+            res.status,
+            200,
+            '/auth/me with session cookie must be 200',
+        );
         const body = res.body as Record<string, unknown>;
-        assert.equal(body.credentialKind, 'cookieSession', '/auth/me with cookie must report credentialKind=cookieSession');
+        assert.equal(
+            body.credentialKind,
+            'cookieSession',
+            '/auth/me with cookie must report credentialKind=cookieSession',
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -99,10 +123,22 @@ async function main() {
     {
         const wrongMethod = makeReq('POST', '/auth/me');
         const wrongPath = makeReq('GET', '/auth/other');
-        const h = authResilienceHandlers.find((handler) => handler.match(wrongMethod));
-        assert.equal(h, undefined, 'POST /auth/me must not match authMeHandler');
-        const h2 = authResilienceHandlers.find((handler) => handler.match(wrongPath));
-        assert.equal(h2, undefined, 'GET /auth/other must not match authMeHandler');
+        const h = authResilienceHandlers.find((handler) =>
+            handler.match(wrongMethod),
+        );
+        assert.equal(
+            h,
+            undefined,
+            'POST /auth/me must not match authMeHandler',
+        );
+        const h2 = authResilienceHandlers.find((handler) =>
+            handler.match(wrongPath),
+        );
+        assert.equal(
+            h2,
+            undefined,
+            'GET /auth/other must not match authMeHandler',
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -120,8 +156,16 @@ async function main() {
             '/limited must include Retry-After: 1',
         );
         const body = res.body as Record<string, unknown>;
-        assert.equal(body.error, 'rate_limited', '/limited body.error must be "rate_limited"');
-        assert.equal(body.retryAfterSeconds, 1, '/limited body.retryAfterSeconds must be 1');
+        assert.equal(
+            body.error,
+            'rate_limited',
+            '/limited body.error must be "rate_limited"',
+        );
+        assert.equal(
+            body.retryAfterSeconds,
+            1,
+            '/limited body.retryAfterSeconds must be 1',
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -136,9 +180,21 @@ async function main() {
         const body = res.body as Record<string, unknown>;
 
         // Schema: { id: number, name: string }
-        assert.equal(typeof body.id, 'number', '/drift (no drift) body.id must be a number');
-        assert.equal(typeof body.name, 'string', '/drift (no drift) body.name must be a string');
-        assert.equal(body.hasOwnProperty('extra'), false, '/drift (no drift) must not have extra field');
+        assert.equal(
+            typeof body.id,
+            'number',
+            '/drift (no drift) body.id must be a number',
+        );
+        assert.equal(
+            typeof body.name,
+            'string',
+            '/drift (no drift) body.name must be a string',
+        );
+        assert.equal(
+            body.hasOwnProperty('extra'),
+            false,
+            '/drift (no drift) must not have extra field',
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -153,9 +209,21 @@ async function main() {
         const body = res.body as Record<string, unknown>;
 
         // Drift violations:
-        assert.equal(typeof body.id, 'string', '/drift (drift=true) body.id must be a STRING (type violation)');
-        assert.equal(body.hasOwnProperty('name'), false, '/drift (drift=true) must be missing name field');
-        assert.equal(body.hasOwnProperty('extra'), true, '/drift (drift=true) must have unexpected extra field');
+        assert.equal(
+            typeof body.id,
+            'string',
+            '/drift (drift=true) body.id must be a STRING (type violation)',
+        );
+        assert.equal(
+            body.hasOwnProperty('name'),
+            false,
+            '/drift (drift=true) must be missing name field',
+        );
+        assert.equal(
+            body.hasOwnProperty('extra'),
+            true,
+            '/drift (drift=true) must have unexpected extra field',
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -174,7 +242,11 @@ async function main() {
         const h = findHandler(req);
         const r1 = await h.handle(req, { drift: true });
         const r2 = await h.handle(req, { drift: true });
-        assert.deepEqual(r1, r2, '/drift (drift=true) responses must be deterministic');
+        assert.deepEqual(
+            r1,
+            r2,
+            '/drift (drift=true) responses must be deterministic',
+        );
     }
 
     console.log('S4 OK');

@@ -32,8 +32,8 @@
  */
 import {
     NODE_ONLY_SURFACES,
-    type SurfaceScan,
     type NodeOnlySurface,
+    type SurfaceScan,
 } from './dispatch';
 
 /** Import specifiers whose bindings we treat as the stitch core surface. */
@@ -193,7 +193,10 @@ function collectHits(clean: string): string[] {
         if (!STITCH_MODULES.has(module)) continue;
         for (const part of clause.split(',')) {
             // handle `keychain as kc` — the imported (original) name is what matters
-            const original = part.trim().split(/\s+as\s+/)[0]?.trim();
+            const original = part
+                .trim()
+                .split(/\s+as\s+/)[0]
+                ?.trim();
             if (original && isNodeOnly(original)) hits.add(original);
         }
     }

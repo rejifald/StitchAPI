@@ -4,11 +4,16 @@
  * Uses only node:assert + inline toy handlers.
  * Run with: npx tsx packages/sandbox-sim/src/dispatch.test.ts
  */
+import type {
+    SimHandler,
+    SimKnobs,
+    SimRequest,
+    SimResponse,
+} from '../../../docs/playground/contracts/sim';
+import { createFetchShim } from './adapters/node';
+import { dispatch, resetFlaky } from './dispatch';
 
 import assert from 'node:assert/strict';
-import { dispatch, resetFlaky } from './dispatch';
-import { createFetchShim } from './adapters/node';
-import type { SimHandler, SimRequest, SimKnobs, SimResponse } from '../../../docs/playground/contracts/sim';
 
 // ---------------------------------------------------------------------------
 // Inline toy handlers
@@ -64,7 +69,10 @@ async function main(): Promise<void> {
     // Test 1: match → handle path
     // -----------------------------------------------------------------------
     {
-        const res = await dispatch(HANDLERS, makeReq('https://demo.stitchapi.dev/hello'));
+        const res = await dispatch(
+            HANDLERS,
+            makeReq('https://demo.stitchapi.dev/hello'),
+        );
         assert.equal(res.status, 200, 'T1: status should be 200');
         assert.deepEqual(
             res.body,
@@ -78,13 +86,18 @@ async function main(): Promise<void> {
     // Test 2: unknown route → sandbox-404 body, never real network
     // -----------------------------------------------------------------------
     {
-        const res = await dispatch(HANDLERS, makeReq('https://demo.stitchapi.dev/not-a-real-route'));
+        const res = await dispatch(
+            HANDLERS,
+            makeReq('https://demo.stitchapi.dev/not-a-real-route'),
+        );
         assert.equal(res.status, 404, 'T2: unknown route should be 404');
         const body = res.body as Record<string, unknown>;
         assert.equal(body.error, 'sandbox_not_found', 'T2: error field');
         assert.ok(
             typeof body.message === 'string' &&
-                body.message.includes('is not reachable inside the StitchAPI sandbox'),
+                body.message.includes(
+                    'is not reachable inside the StitchAPI sandbox',
+                ),
             'T2: message should mention sandbox',
         );
         assert.equal(body.sandbox, true, 'T2: sandbox flag');
@@ -123,7 +136,11 @@ async function main(): Promise<void> {
         assert.equal(r2.status, 503, 'T4: flaky attempt 2 should be 503');
 
         const r3 = await dispatch(HANDLERS, makeReq(url));
-        assert.equal(r3.status, 200, 'T4: flaky attempt 3 should succeed (200)');
+        assert.equal(
+            r3.status,
+            200,
+            'T4: flaky attempt 3 should succeed (200)',
+        );
         assert.deepEqual(
             r3.body,
             { message: 'hello from sandbox' },
@@ -142,19 +159,29 @@ async function main(): Promise<void> {
             makeReq('https://demo.stitchapi.dev/hello?__stream=sse'),
         );
         assert.ok(res.stream !== undefined, 'T5: stream should be present');
-        assert.equal(res.body, undefined, 'T5: body should be undefined when stream is set');
+        assert.equal(
+            res.body,
+            undefined,
+            'T5: body should be undefined when stream is set',
+        );
 
         const chunks: string[] = [];
         for await (const chunk of res.stream!) {
             chunks.push(new TextDecoder().decode(chunk));
         }
         const full = chunks.join('');
-        assert.ok(full.includes('data:'), 'T5: SSE output should contain "data:"');
+        assert.ok(
+            full.includes('data:'),
+            'T5: SSE output should contain "data:"',
+        );
         assert.ok(
             full.includes('hello from sandbox'),
             'T5: SSE output should contain original body content',
         );
-        assert.ok(full.includes('[DONE]'), 'T5: SSE output should contain [DONE]');
+        assert.ok(
+            full.includes('[DONE]'),
+            'T5: SSE output should contain [DONE]',
+        );
         console.log('T5 PASS — __stream=sse wraps body as stream');
     }
 
@@ -165,14 +192,18 @@ async function main(): Promise<void> {
         const fetchShim = createFetchShim(HANDLERS);
         const res = await fetchShim('https://evil.example.com/x');
         assert.equal(res.status, 404, 'T6: unknown host should be 404');
-        const body = await res.json() as Record<string, unknown>;
+        const body = (await res.json()) as Record<string, unknown>;
         assert.equal(body.error, 'sandbox_not_found', 'T6: error field');
         assert.ok(
             typeof body.message === 'string' &&
-                body.message.includes('is not reachable inside the StitchAPI sandbox'),
+                body.message.includes(
+                    'is not reachable inside the StitchAPI sandbox',
+                ),
             'T6: sandbox message for unknown host',
         );
-        console.log('T6 PASS — unknown host via node adapter → sandbox-404, no real network');
+        console.log(
+            'T6 PASS — unknown host via node adapter → sandbox-404, no real network',
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -181,9 +212,17 @@ async function main(): Promise<void> {
     {
         const fetchShim = createFetchShim(HANDLERS);
         const res = await fetchShim('https://demo.stitchapi.dev/hello');
-        assert.equal(res.status, 200, 'T7: status 200 for known route via adapter');
-        const body = await res.json() as Record<string, unknown>;
-        assert.deepEqual(body, { message: 'hello from sandbox' }, 'T7: body via adapter');
+        assert.equal(
+            res.status,
+            200,
+            'T7: status 200 for known route via adapter',
+        );
+        const body = (await res.json()) as Record<string, unknown>;
+        assert.deepEqual(
+            body,
+            { message: 'hello from sandbox' },
+            'T7: body via adapter',
+        );
         console.log('T7 PASS — node adapter known route');
     }
 
@@ -192,9 +231,14 @@ async function main(): Promise<void> {
     // -----------------------------------------------------------------------
     {
         const fetchShim = createFetchShim(HANDLERS);
-        const res = await fetchShim('https://demo.stitchapi.dev/hello?__stream=sse');
+        const res = await fetchShim(
+            'https://demo.stitchapi.dev/hello?__stream=sse',
+        );
         assert.equal(res.status, 200, 'T8: streaming status 200');
-        assert.ok(res.body instanceof ReadableStream, 'T8: body should be ReadableStream');
+        assert.ok(
+            res.body instanceof ReadableStream,
+            'T8: body should be ReadableStream',
+        );
         const text = await res.text();
         assert.ok(text.includes('data:'), 'T8: SSE response text via adapter');
         console.log('T8 PASS — node adapter streaming Response');

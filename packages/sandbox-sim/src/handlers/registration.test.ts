@@ -7,11 +7,11 @@
  *   3. A known route (GET /users) still dispatches
  *   4. No other files changed
  */
+import { dispatch } from '../dispatch';
+import { handlers } from '../index';
+import { allHandlers, registerAllHandlers } from './index';
 
 import assert from 'node:assert';
-import { handlers } from '../index';
-import { registerAllHandlers, allHandlers } from './index';
-import { dispatch } from '../dispatch';
 
 async function main() {
     // 1. Register all handlers and verify count.
@@ -31,7 +31,11 @@ async function main() {
         headers: new Headers(),
     };
     const sandboxRes = await dispatch(handlers, sandboxReq);
-    assert.strictEqual(sandboxRes.status, 200, 'GET /__sandbox should return 200');
+    assert.strictEqual(
+        sandboxRes.status,
+        200,
+        'GET /__sandbox should return 200',
+    );
     assert(
         typeof sandboxRes.body === 'object' && sandboxRes.body !== null,
         'GET /__sandbox body should be an object',
@@ -42,10 +46,7 @@ async function main() {
         'Catalogue should have a "routes" array',
     );
     const routes = catalogueBody.routes as unknown[];
-    assert(
-        routes.length > 0,
-        'Catalogue routes array should not be empty',
-    );
+    assert(routes.length > 0, 'Catalogue routes array should not be empty');
     // Verify /drift is present in the catalogue.
     const driftRoute = routes.find(
         (r: unknown) =>
@@ -54,7 +55,9 @@ async function main() {
             (r as Record<string, unknown>).path === '/drift',
     );
     assert(driftRoute, 'Catalogue should include /drift route');
-    console.log(`✓ GET /__sandbox returns catalogue with ${routes.length} routes`);
+    console.log(
+        `✓ GET /__sandbox returns catalogue with ${routes.length} routes`,
+    );
 
     // 3. Test GET /users — verify a known route still dispatches.
     const usersUrl = new URL('http://demo.stitchapi.dev/users');

@@ -13,8 +13,12 @@
  *
  * `resetFlaky()`: resets the per-path failure counters for test isolation.
  */
-
-import type { SimHandler, SimKnobs, SimRequest, SimResponse } from '../../../docs/playground/contracts/sim';
+import type {
+    SimHandler,
+    SimKnobs,
+    SimRequest,
+    SimResponse,
+} from '../../../docs/playground/contracts/sim';
 
 // ---------------------------------------------------------------------------
 // Sandbox-404 helper (SANDBOX.md §4.3)
@@ -169,14 +173,18 @@ export async function dispatch(
 
     // 5b. Latency — real await, timing is non-deterministic (SANDBOX §4.3).
     if (knobs.latencyMs !== undefined && knobs.latencyMs > 0) {
-        await new Promise<void>((resolve) => setTimeout(resolve, knobs.latencyMs));
+        await new Promise<void>((resolve) =>
+            setTimeout(resolve, knobs.latencyMs),
+        );
     }
 
     // 5c. Stream wrapping — only when the handler didn't already return a stream.
     if (knobs.stream !== undefined && response.stream === undefined) {
         const body = response.body;
         const stream =
-            knobs.stream === 'sse' ? wrapBodyAsSse(body) : wrapBodyAsChunked(body);
+            knobs.stream === 'sse'
+                ? wrapBodyAsSse(body)
+                : wrapBodyAsChunked(body);
         response = {
             ...response,
             stream,

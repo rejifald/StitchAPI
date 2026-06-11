@@ -1,3 +1,8 @@
+import { emitShimNotice } from './shims/notices';
+
+import { createTrace as coreCreateTrace } from '@stitchapi/core';
+import type { TraceSink } from '@stitchapi/core';
+
 /**
  * Browser-targeted `stitch` build entry — B1 (Tier-3).
  *
@@ -58,11 +63,11 @@ export type * from '@stitchapi/core';
 
 /* ---- Node-only surfaces, shimmed (emit a RunNotice) ---------------------- */
 export { keychain, env, cookieSession } from './shims/node-surfaces';
-export { otlpTrace, otlpHttpExporter, noopOtlpExporter } from './shims/otlp-browser';
-
-import { createTrace as coreCreateTrace } from '@stitchapi/core';
-import type { TraceSink } from '@stitchapi/core';
-import { emitShimNotice } from './shims/notices';
+export {
+    otlpTrace,
+    otlpHttpExporter,
+    noopOtlpExporter,
+} from './shims/otlp-browser';
 
 /**
  * Browser `createTrace`: core's JSONL/console sink, neutered for the browser.

@@ -7,15 +7,13 @@
  *
  * This module is the single source of truth for which handlers are active.
  */
-
 import type { SimHandler } from '../../../../docs/playground/contracts/sim';
 import { registerHandler, resetHandlers } from '../index';
-
+import { authResilienceHandlers } from './auth-resilience';
 // Import all handler arrays
 import { errorsStatusHandlers } from './errors-status';
-import { streamingLlmHandlers } from './streaming-llm';
-import { authResilienceHandlers } from './auth-resilience';
 import { sandboxIndexHandlers } from './sandbox-index';
+import { streamingLlmHandlers } from './streaming-llm';
 
 /**
  * Complete list of all handlers.

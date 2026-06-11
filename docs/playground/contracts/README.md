@@ -18,12 +18,12 @@ that lower-tier tasks can be dispatched safely in isolation.
 
 ## What's here
 
-| File          | Frozen surface |
-|---------------|----------------|
+| File          | Frozen surface                                                                                                                                                                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `runner.ts`   | Re-export of the existing `CodeRunner` contract — `CodeRunner`, `RunRequest`, `RunResult`, `RunError`, `StitchTraceEntry`, `LogEntry`, `LogLevel`. Canonical source stays in [`../component/runner.ts`](../component/runner.ts) (moving it would break `StitchPlayground.tsx`). |
-| `sim.ts`      | Fake-API simulator handler contract — `SimRequest`, `SimResponse`, `SimHandler`, `SimKnobs`. |
-| `dispatch.ts` | Dispatch contract — `Tier`, `SurfaceScan`, `DispatchOpts`, the `NODE_ONLY_SURFACES` constant, and the `scanSurface` / `dispatchRunner` **signatures** (behaviour implemented in D1). |
-| `index.ts`    | Barrel — the single import surface (`from '../contracts'`). |
+| `sim.ts`      | Fake-API simulator handler contract — `SimRequest`, `SimResponse`, `SimHandler`, `SimKnobs`.                                                                                                                                                                                    |
+| `dispatch.ts` | Dispatch contract — `Tier`, `SurfaceScan`, `DispatchOpts`, the `NODE_ONLY_SURFACES` constant, and the `scanSurface` / `dispatchRunner` **signatures** (behaviour implemented in D1).                                                                                            |
+| `index.ts`    | Barrel — the single import surface (`from '../contracts'`).                                                                                                                                                                                                                     |
 
 `scanSurface` and `dispatchRunner` ship as throwing stubs marked
 `// implemented in D1`; only their signatures are frozen now.

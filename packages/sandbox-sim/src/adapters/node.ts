@@ -14,9 +14,11 @@
  * Environment assumptions: Node 18+ with `--experimental-fetch` (default on)
  * or Node 21+ where the fetch globals are stable.
  */
-
+import type {
+    SimHandler,
+    SimRequest,
+} from '../../../../docs/playground/contracts/sim';
 import { dispatch } from '../dispatch';
-import type { SimHandler, SimRequest } from '../../../../docs/playground/contracts/sim';
 
 /** Build a SimRequest from the raw fetch arguments. */
 async function toSimRequest(
@@ -27,23 +29,22 @@ async function toSimRequest(
         typeof input === 'string'
             ? new URL(input)
             : input instanceof URL
-            ? input
-            : new URL((input as Request).url);
+              ? input
+              : new URL((input as Request).url);
 
     const method =
-        init?.method ??
-        (input instanceof Request ? input.method : 'GET');
+        init?.method ?? (input instanceof Request ? input.method : 'GET');
 
     const rawHeaders =
-        init?.headers ??
-        (input instanceof Request ? input.headers : undefined);
+        init?.headers ?? (input instanceof Request ? input.headers : undefined);
     const headers =
         rawHeaders instanceof Headers
             ? rawHeaders
             : new Headers(rawHeaders as HeadersInit | undefined);
 
     let body: unknown;
-    const rawBody = init?.body ?? (input instanceof Request ? input.body : undefined);
+    const rawBody =
+        init?.body ?? (input instanceof Request ? input.body : undefined);
     if (rawBody !== undefined && rawBody !== null) {
         if (typeof rawBody === 'string') {
             try {
@@ -81,7 +82,9 @@ async function toSimRequest(
 }
 
 /** Convert a SimResponse to a WHATWG Response. */
-function toResponse(simRes: ReturnType<typeof dispatch> extends Promise<infer R> ? R : never): Response {
+function toResponse(
+    simRes: ReturnType<typeof dispatch> extends Promise<infer R> ? R : never,
+): Response {
     const { status, headers: simHeaders, body, stream } = simRes;
 
     const responseHeaders = new Headers(simHeaders);
@@ -106,8 +109,8 @@ function toResponse(simRes: ReturnType<typeof dispatch> extends Promise<infer R>
         body === undefined || body === null
             ? ''
             : typeof body === 'string'
-            ? body
-            : JSON.stringify(body);
+              ? body
+              : JSON.stringify(body);
 
     return new Response(bodyText || null, { status, headers: responseHeaders });
 }

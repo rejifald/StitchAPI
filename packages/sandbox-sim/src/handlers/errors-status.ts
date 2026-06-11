@@ -14,8 +14,12 @@
  * Determinism: no Date.now / Math.random anywhere in this file. Payloads are
  * derived entirely from the FIXED_USERS fixture below (SANDBOX.md §4.3).
  */
-
-import type { SimHandler, SimRequest, SimResponse, SimKnobs } from '../../../../docs/playground/contracts/sim';
+import type {
+    SimHandler,
+    SimKnobs,
+    SimRequest,
+    SimResponse,
+} from '../../../../docs/playground/contracts/sim';
 
 // ---------------------------------------------------------------------------
 // Fixed fixture — deterministic, never derived from runtime state.
@@ -29,9 +33,24 @@ interface User {
 }
 
 const FIXED_USERS: User[] = [
-    { id: 1, name: 'Alice Liddell',   email: 'alice@demo.stitchapi.dev',  role: 'admin'  },
-    { id: 2, name: 'Bob Hoskins',      email: 'bob@demo.stitchapi.dev',    role: 'member' },
-    { id: 3, name: 'Carol Danvers',    email: 'carol@demo.stitchapi.dev',  role: 'viewer' },
+    {
+        id: 1,
+        name: 'Alice Liddell',
+        email: 'alice@demo.stitchapi.dev',
+        role: 'admin',
+    },
+    {
+        id: 2,
+        name: 'Bob Hoskins',
+        email: 'bob@demo.stitchapi.dev',
+        role: 'member',
+    },
+    {
+        id: 3,
+        name: 'Carol Danvers',
+        email: 'carol@demo.stitchapi.dev',
+        role: 'viewer',
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -82,7 +101,10 @@ const getUserHandler: SimHandler = {
             return {
                 status: 404,
                 headers: { 'content-type': 'application/json' },
-                body: { error: 'not_found', message: `User ${id} does not exist in the sandbox fixture.` },
+                body: {
+                    error: 'not_found',
+                    message: `User ${id} does not exist in the sandbox fixture.`,
+                },
             };
         }
         return {

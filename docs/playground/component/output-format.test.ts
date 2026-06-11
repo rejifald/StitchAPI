@@ -6,7 +6,6 @@
  *
  * Uses node:assert (strict). No test framework required.
  */
-import assert from 'node:assert/strict';
 import {
     applyEvent,
     buildRunView,
@@ -16,7 +15,14 @@ import {
     summarizeNotices,
     traceToMermaid,
 } from './output-format';
-import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner';
+import type {
+    RunEvent,
+    RunNotice,
+    RunResult,
+    StitchTraceEntry,
+} from './runner';
+
+import assert from 'node:assert/strict';
 
 /* -------------------------------------------------------------------------- */
 /*  traceToMermaid                                                             */
@@ -25,8 +31,14 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
 // Empty trace → safe placeholder, not an error.
 {
     const result = traceToMermaid([]);
-    assert.ok(result.startsWith('flowchart TD'), 'empty trace: must start with flowchart TD');
-    assert.ok(result.includes('_empty'), 'empty trace: must include placeholder node');
+    assert.ok(
+        result.startsWith('flowchart TD'),
+        'empty trace: must start with flowchart TD',
+    );
+    assert.ok(
+        result.includes('_empty'),
+        'empty trace: must include placeholder node',
+    );
 }
 
 // Single node with no edges.
@@ -66,7 +78,10 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
     const result = traceToMermaid(trace);
     assert.ok(result.includes('fetch_token'), 'dag edge: parent id sanitised');
     assert.ok(result.includes('get_data'), 'dag edge: child id sanitised');
-    assert.ok(result.includes('fetch_token --> get_data'), 'dag edge: edge present');
+    assert.ok(
+        result.includes('fetch_token --> get_data'),
+        'dag edge: edge present',
+    );
 }
 
 // Streaming entry — annotated with chunk count.
@@ -86,12 +101,24 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
 // Determinism — two calls produce identical output.
 {
     const trace: StitchTraceEntry[] = [
-        { id: 'a', request: { method: 'GET', url: 'https://example.com/a' }, dependsOn: [] },
-        { id: 'b', request: { method: 'GET', url: 'https://example.com/b' }, dependsOn: ['a'] },
+        {
+            id: 'a',
+            request: { method: 'GET', url: 'https://example.com/a' },
+            dependsOn: [],
+        },
+        {
+            id: 'b',
+            request: { method: 'GET', url: 'https://example.com/b' },
+            dependsOn: ['a'],
+        },
     ];
     const r1 = traceToMermaid(trace);
     const r2 = traceToMermaid(trace);
-    assert.equal(r1, r2, 'determinism: two calls must produce identical output');
+    assert.equal(
+        r1,
+        r2,
+        'determinism: two calls must produce identical output',
+    );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -111,7 +138,10 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
 
 {
     const line = formatLog({ level: 'info', args: [undefined], at: 5 });
-    assert.ok(line.includes('undefined'), 'formatLog: undefined rendered as string');
+    assert.ok(
+        line.includes('undefined'),
+        'formatLog: undefined rendered as string',
+    );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -119,9 +149,17 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
 /* -------------------------------------------------------------------------- */
 
 {
-    assert.equal(formatValue(undefined), '(undefined)', 'formatValue: undefined');
+    assert.equal(
+        formatValue(undefined),
+        '(undefined)',
+        'formatValue: undefined',
+    );
     assert.equal(formatValue(null), 'null', 'formatValue: null');
-    assert.equal(formatValue('hello'), 'hello', 'formatValue: string passthrough');
+    assert.equal(
+        formatValue('hello'),
+        'hello',
+        'formatValue: string passthrough',
+    );
     assert.equal(formatValue(42), '42', 'formatValue: number stringified');
 }
 
@@ -136,18 +174,32 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
 /* -------------------------------------------------------------------------- */
 
 {
-    assert.deepEqual(summarizeNotices(undefined), [], 'summarizeNotices: absent → []');
+    assert.deepEqual(
+        summarizeNotices(undefined),
+        [],
+        'summarizeNotices: absent → []',
+    );
     assert.deepEqual(summarizeNotices([]), [], 'summarizeNotices: empty → []');
 }
 
 {
     const notices: RunNotice[] = [
-        { kind: 'shim', surface: 'keychain', message: 'keychain is simulated in the browser sandbox' },
+        {
+            kind: 'shim',
+            surface: 'keychain',
+            message: 'keychain is simulated in the browser sandbox',
+        },
     ];
     const result = summarizeNotices(notices);
     assert.equal(result.length, 1, 'summarizeNotices: shim notice → one entry');
-    assert.ok(result[0].includes('`keychain` shimmed'), 'summarizeNotices: shim surface named');
-    assert.ok(result[0].includes('keychain is simulated'), 'summarizeNotices: shim message included');
+    assert.ok(
+        result[0].includes('`keychain` shimmed'),
+        'summarizeNotices: shim surface named',
+    );
+    assert.ok(
+        result[0].includes('keychain is simulated'),
+        'summarizeNotices: shim message included',
+    );
 }
 
 {
@@ -155,7 +207,11 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
         { kind: 'info', message: 'Running in browser sandbox.' },
     ];
     const result = summarizeNotices(notices);
-    assert.equal(result[0], 'Running in browser sandbox.', 'summarizeNotices: info notice → raw message');
+    assert.equal(
+        result[0],
+        'Running in browser sandbox.',
+        'summarizeNotices: info notice → raw message',
+    );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -176,7 +232,11 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
         ],
     };
     const view = buildRunView(result);
-    assert.equal(view.isStreaming, true, 'RunView: isStreaming true when trace has stream entry');
+    assert.equal(
+        view.isStreaming,
+        true,
+        'RunView: isStreaming true when trace has stream entry',
+    );
 }
 
 // isStreaming false when no stream entries.
@@ -186,15 +246,25 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
         logs: [{ level: 'log', args: ['ok'], at: 0 }],
         value: { data: 'foo' },
         trace: [
-            { id: 's1', request: { method: 'GET', url: 'https://example.com' } },
+            {
+                id: 's1',
+                request: { method: 'GET', url: 'https://example.com' },
+            },
         ],
     };
     const view = buildRunView(result);
-    assert.equal(view.isStreaming, false, 'RunView: isStreaming false when no stream entries');
+    assert.equal(
+        view.isStreaming,
+        false,
+        'RunView: isStreaming false when no stream entries',
+    );
     assert.equal(view.logs.length, 1, 'RunView: logs populated');
     assert.ok(view.valueText !== null, 'RunView: valueText present');
     assert.equal(view.errorText, null, 'RunView: no error → errorText null');
-    assert.ok(view.mermaid.startsWith('flowchart TD'), 'RunView: mermaid output valid');
+    assert.ok(
+        view.mermaid.startsWith('flowchart TD'),
+        'RunView: mermaid output valid',
+    );
 }
 
 // error.reason surfaced in errorText.
@@ -211,8 +281,14 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
     };
     const view = buildRunView(result);
     assert.ok(view.errorText !== null, 'RunView: error → errorText present');
-    assert.ok(view.errorText!.includes('timeout'), 'RunView: error.reason in errorText');
-    assert.ok(view.errorText!.includes('runtime'), 'RunView: error.phase in errorText');
+    assert.ok(
+        view.errorText!.includes('timeout'),
+        'RunView: error.reason in errorText',
+    );
+    assert.ok(
+        view.errorText!.includes('runtime'),
+        'RunView: error.phase in errorText',
+    );
 }
 
 // notices populated.
@@ -220,11 +296,16 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
     const result: RunResult = {
         durationMs: 30,
         logs: [],
-        notices: [{ kind: 'shim', surface: 'env', message: 'env is simulated' }],
+        notices: [
+            { kind: 'shim', surface: 'env', message: 'env is simulated' },
+        ],
     };
     const view = buildRunView(result);
     assert.equal(view.notices.length, 1, 'RunView: notices forwarded');
-    assert.ok(view.notices[0].includes('`env` shimmed'), 'RunView: shim notice formatted');
+    assert.ok(
+        view.notices[0].includes('`env` shimmed'),
+        'RunView: shim notice formatted',
+    );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -242,7 +323,10 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
     assert.equal(v0.errorText, null, 'A2 emptyRunView: errorText null');
     assert.deepEqual(v0.notices, [], 'A2 emptyRunView: notices empty');
     assert.equal(v0.isStreaming, false, 'A2 emptyRunView: isStreaming false');
-    assert.ok(v0.mermaid.startsWith('flowchart TD'), 'A2 emptyRunView: mermaid valid');
+    assert.ok(
+        v0.mermaid.startsWith('flowchart TD'),
+        'A2 emptyRunView: mermaid valid',
+    );
 
     // Step 1: log event.
     const logEvent: RunEvent = {
@@ -251,21 +335,44 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
     };
     const v1 = applyEvent(v0, logEvent);
     assert.equal(v1.logs.length, 1, 'A2 after log: one log line');
-    assert.ok(v1.logs[0].includes('hello from runner'), 'A2 after log: log text present');
-    assert.equal(v1.isStreaming, false, 'A2 after log: isStreaming still false');
+    assert.ok(
+        v1.logs[0].includes('hello from runner'),
+        'A2 after log: log text present',
+    );
+    assert.equal(
+        v1.isStreaming,
+        false,
+        'A2 after log: isStreaming still false',
+    );
 
     // Step 2: first chunk event (traceId='t1').
     const chunk1: RunEvent = { type: 'chunk', traceId: 't1', text: 'Hello, ' };
     const v2 = applyEvent(v1, chunk1);
-    assert.equal(v2.isStreaming, true, 'A2 first chunk: isStreaming flips true');
-    assert.equal(v2.valueText, 'Hello, ', 'A2 first chunk: valueText = first chunk text');
+    assert.equal(
+        v2.isStreaming,
+        true,
+        'A2 first chunk: isStreaming flips true',
+    );
+    assert.equal(
+        v2.valueText,
+        'Hello, ',
+        'A2 first chunk: valueText = first chunk text',
+    );
     assert.equal(v2.logs.length, 1, 'A2 first chunk: log count unchanged');
 
     // Step 3: second chunk event (same traceId='t1') — text must concatenate in order.
     const chunk2: RunEvent = { type: 'chunk', traceId: 't1', text: 'World!' };
     const v3 = applyEvent(v2, chunk2);
-    assert.equal(v3.isStreaming, true, 'A2 second chunk: isStreaming remains true');
-    assert.equal(v3.valueText, 'Hello, World!', 'A2 second chunk: text concatenated in order');
+    assert.equal(
+        v3.isStreaming,
+        true,
+        'A2 second chunk: isStreaming remains true',
+    );
+    assert.equal(
+        v3.valueText,
+        'Hello, World!',
+        'A2 second chunk: text concatenated in order',
+    );
 
     // Step 4: trace event — DAG should grow.
     const traceEvent: RunEvent = {
@@ -273,30 +380,58 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
         entry: {
             id: 'step1',
             label: 'fetchUser',
-            request: { method: 'GET', url: 'https://demo.stitchapi.dev/users/1' },
+            request: {
+                method: 'GET',
+                url: 'https://demo.stitchapi.dev/users/1',
+            },
             response: { status: 200, ok: true, durationMs: 55 },
         },
     };
     const v4 = applyEvent(v3, traceEvent);
-    assert.ok(v4.mermaid.includes('step1'), 'A2 trace: mermaid includes new node id');
-    assert.ok(v4.mermaid.includes('fetchUser'), 'A2 trace: mermaid includes node label');
+    assert.ok(
+        v4.mermaid.includes('step1'),
+        'A2 trace: mermaid includes new node id',
+    );
+    assert.ok(
+        v4.mermaid.includes('fetchUser'),
+        'A2 trace: mermaid includes node label',
+    );
     // isStreaming should remain true (chunks already set it).
-    assert.equal(v4.isStreaming, true, 'A2 trace: isStreaming still true after trace');
+    assert.equal(
+        v4.isStreaming,
+        true,
+        'A2 trace: isStreaming still true after trace',
+    );
 
     // Step 5: notice event.
     const noticeEvent: RunEvent = {
         type: 'notice',
-        notice: { kind: 'shim', surface: 'keychain', message: 'keychain is simulated in the browser sandbox' },
+        notice: {
+            kind: 'shim',
+            surface: 'keychain',
+            message: 'keychain is simulated in the browser sandbox',
+        },
     };
     const v5 = applyEvent(v4, noticeEvent);
     assert.equal(v5.notices.length, 1, 'A2 notice: one notice accumulated');
-    assert.ok(v5.notices[0].includes('`keychain` shimmed'), 'A2 notice: shim surface formatted');
+    assert.ok(
+        v5.notices[0].includes('`keychain` shimmed'),
+        'A2 notice: shim surface formatted',
+    );
 
     // Verify immutability: original views are unaffected.
     assert.equal(v0.logs.length, 0, 'A2 immutability: v0 logs unchanged');
     assert.equal(v1.logs.length, 1, 'A2 immutability: v1 logs unchanged at 1');
-    assert.equal(v1.isStreaming, false, 'A2 immutability: v1 isStreaming unchanged');
-    assert.equal(v2.valueText, 'Hello, ', 'A2 immutability: v2 valueText unchanged');
+    assert.equal(
+        v1.isStreaming,
+        false,
+        'A2 immutability: v1 isStreaming unchanged',
+    );
+    assert.equal(
+        v2.valueText,
+        'Hello, ',
+        'A2 immutability: v2 valueText unchanged',
+    );
 }
 
 // Multiple traceIds — streams must not interleave.
@@ -307,7 +442,11 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
     v = applyEvent(v, { type: 'chunk', traceId: 'a', text: 'A2' });
     v = applyEvent(v, { type: 'chunk', traceId: 'b', text: 'B2' });
     // valueText is all streams joined in insertion order (a before b).
-    assert.equal(v.valueText, 'A1A2B1B2', 'A2 multi-traceId: streams concatenated per traceId in order');
+    assert.equal(
+        v.valueText,
+        'A1A2B1B2',
+        'A2 multi-traceId: streams concatenated per traceId in order',
+    );
 }
 
 // Mermaid grows as traces arrive — two successive trace events.
@@ -315,20 +454,41 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
     let v = emptyRunView();
     v = applyEvent(v, {
         type: 'trace',
-        entry: { id: 'n1', label: 'first', request: { method: 'GET', url: 'https://example.com/1' } },
+        entry: {
+            id: 'n1',
+            label: 'first',
+            request: { method: 'GET', url: 'https://example.com/1' },
+        },
     });
     const mermaid1 = v.mermaid;
-    assert.ok(mermaid1.includes('n1'), 'A2 mermaid grows: n1 present after first trace');
+    assert.ok(
+        mermaid1.includes('n1'),
+        'A2 mermaid grows: n1 present after first trace',
+    );
     assert.ok(!mermaid1.includes('n2'), 'A2 mermaid grows: n2 not yet present');
 
     v = applyEvent(v, {
         type: 'trace',
-        entry: { id: 'n2', label: 'second', request: { method: 'GET', url: 'https://example.com/2' }, dependsOn: ['n1'] },
+        entry: {
+            id: 'n2',
+            label: 'second',
+            request: { method: 'GET', url: 'https://example.com/2' },
+            dependsOn: ['n1'],
+        },
     });
     const mermaid2 = v.mermaid;
-    assert.ok(mermaid2.includes('n1'), 'A2 mermaid grows: n1 still present after second trace');
-    assert.ok(mermaid2.includes('n2'), 'A2 mermaid grows: n2 present after second trace');
-    assert.ok(mermaid2.includes('n1 --> n2'), 'A2 mermaid grows: edge n1→n2 present');
+    assert.ok(
+        mermaid2.includes('n1'),
+        'A2 mermaid grows: n1 still present after second trace',
+    );
+    assert.ok(
+        mermaid2.includes('n2'),
+        'A2 mermaid grows: n2 present after second trace',
+    );
+    assert.ok(
+        mermaid2.includes('n1 --> n2'),
+        'A2 mermaid grows: edge n1→n2 present',
+    );
 }
 
 // Reconciliation: applying all events then calling buildRunView(final) for logs/notices
@@ -338,12 +498,24 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
         durationMs: 200,
         logs: [
             { level: 'info', args: ['[mock] executing snippet…'], at: 0 },
-            { level: 'log', args: ['GET https://reqres.in/api/users/2 → 200'], at: 96 },
+            {
+                level: 'log',
+                args: ['GET https://reqres.in/api/users/2 → 200'],
+                at: 96,
+            },
         ],
         value: { data: { id: 2, first_name: 'Janet' } },
         notices: [{ kind: 'info', message: 'Running in browser sandbox.' }],
         trace: [
-            { id: 'req1', label: 'getUser', request: { method: 'GET', url: 'https://reqres.in/api/users/2' }, response: { status: 200, ok: true, durationMs: 96 } },
+            {
+                id: 'req1',
+                label: 'getUser',
+                request: {
+                    method: 'GET',
+                    url: 'https://reqres.in/api/users/2',
+                },
+                response: { status: 200, ok: true, durationMs: 96 },
+            },
         ],
     };
 
@@ -363,10 +535,22 @@ import type { RunEvent, RunNotice, RunResult, StitchTraceEntry } from './runner'
     const finalView = buildRunView(finalResult);
 
     // Logs and notices should match between the event-accumulated view and the final view.
-    assert.deepEqual(v.logs, finalView.logs, 'A2 reconcile: event-accumulated logs match buildRunView logs');
-    assert.deepEqual(v.notices, finalView.notices, 'A2 reconcile: event-accumulated notices match buildRunView notices');
+    assert.deepEqual(
+        v.logs,
+        finalView.logs,
+        'A2 reconcile: event-accumulated logs match buildRunView logs',
+    );
+    assert.deepEqual(
+        v.notices,
+        finalView.notices,
+        'A2 reconcile: event-accumulated notices match buildRunView notices',
+    );
     // Mermaid should match (same trace entries).
-    assert.equal(v.mermaid, finalView.mermaid, 'A2 reconcile: mermaid matches buildRunView');
+    assert.equal(
+        v.mermaid,
+        finalView.mermaid,
+        'A2 reconcile: mermaid matches buildRunView',
+    );
 }
 
 /* -------------------------------------------------------------------------- */

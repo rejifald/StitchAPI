@@ -10,9 +10,8 @@
  *
  * Run with:  npx -y tsx docs/playground/runtime/transpile.test.ts
  */
-
-import { transpile } from './transpile';
 import type { RunError } from '../component/runner';
+import { transpile } from './transpile';
 
 /* -------------------------------------------------------------------------- */
 /*  Minimal assertion helpers (no test framework required)                    */
@@ -51,10 +50,13 @@ function fakeErase(code: string): string {
 
 /** Always throws, simulating a snippet syntax error. */
 function fakeSyntaxError(code: string): string {
-    const err = Object.assign(new SyntaxError(`Unexpected token (3:5) [fake]`), {
-        line: 3,
-        col: 5,
-    });
+    const err = Object.assign(
+        new SyntaxError(`Unexpected token (3:5) [fake]`),
+        {
+            line: 3,
+            col: 5,
+        },
+    );
     throw err;
 }
 
@@ -99,7 +101,11 @@ async function runTests(): Promise<void> {
         }
 
         assert('(b) transpile does NOT throw on syntax error', !threw);
-        assert('(b) result has .error field', result !== undefined && 'error' in result, result);
+        assert(
+            '(b) result has .error field',
+            result !== undefined && 'error' in result,
+            result,
+        );
 
         if (result && 'error' in result) {
             const err: RunError = result.error;
