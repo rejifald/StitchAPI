@@ -178,8 +178,13 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
 export interface CookieSessionOpts {
     /** The login stitch (exposes __raw to read response headers). */
     login: { __raw: (input?: StitchInput) => Promise<AdapterResponse> };
-    /** Cookie name to capture from Set-Cookie and replay on each request. */
+    /**
+     * Cookie name to capture from Set-Cookie and replay on each request, or `'*'` to capture and
+     * replay the WHOLE Set-Cookie jar (every cookie the login set, not just one named cookie).
+     */
     cookie: string;
+    /** Capture/replay the full Set-Cookie set — equivalent to `cookie: '*'` (in jar mode `cookie` only seeds the store key). */
+    jar?: boolean;
     /** Inputs (credentials) for the login call, resolved at call time. */
     loginInput?: () => StitchInput;
     /** Statuses that mean "the wall" and should trigger a re-login. Default [401]. */
@@ -194,26 +199,42 @@ export interface CookieSessionOpts {
 
 export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
-    const nsKey = 'cookie:' + (opts.key ?? opts.cookie);
+    const jarMode = opts.jar === true || opts.cookie === '*';
+    const nsKey = (jarMode ? 'jar:' : 'cookie:') + (opts.key ?? opts.cookie);
 
     const doRefresh = async (ctx: AuthContext) => {
         ctx.emit('auth', 'login');
         const res = await opts.login.__raw(opts.loginInput?.());
         const setCookie = (res.headers['set-cookie'] ??
             res.headers['Set-Cookie']) as string | undefined;
-        const value = parseCookie(setCookie, opts.cookie);
-        if (value != null)
-            await ctx.store.set(nsKey, `${opts.cookie}=${value}`, opts.ttlMs);
+        if (jarMode) {
+            // Capture the full jar: every name=value pair the login set.
+            const jar = parseCookieJar(setCookie);
+            if (Object.keys(jar).length > 0)
+                await ctx.store.set(nsKey, jar, opts.ttlMs);
+        } else {
+            const value = parseCookie(setCookie, opts.cookie);
+            if (value != null)
+                await ctx.store.set(
+                    nsKey,
+                    `${opts.cookie}=${value}`,
+                    opts.ttlMs,
+                );
+        }
     };
 
     return {
         name: 'cookieSession',
         async apply(req, ctx) {
-            let cookie = (await ctx.store.get(nsKey)) as string | undefined;
-            if (!cookie) {
+            let stored = await ctx.store.get(nsKey);
+            if (!stored) {
                 await doRefresh(ctx);
-                cookie = (await ctx.store.get(nsKey)) as string | undefined;
+                stored = await ctx.store.get(nsKey);
             }
+            // Non-jar: a stored `name=value` string. Jar: a stored map → serialize all pairs.
+            const cookie = jarMode
+                ? serializeJar(stored as Record<string, string> | undefined)
+                : (stored as string | undefined);
             if (cookie) {
                 req.headers['cookie'] = [req.headers['cookie'], cookie]
                     .filter(Boolean)
@@ -229,16 +250,32 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
     };
 }
 
+/**
+ * Parse every `name=value` pair from a (possibly comma-joined) Set-Cookie header into a jar,
+ * keeping only the cookie value (the first segment) and dropping attributes (Path, HttpOnly, …).
+ */
+function parseCookieJar(setCookie: string | undefined): Record<string, string> {
+    const jar: Record<string, string> = {};
+    if (!setCookie) return jar;
+    for (const part of setCookie.split(/,(?=[^;]+=)/)) {
+        const seg = part.trim().split(';')[0];
+        const eq = seg.indexOf('=');
+        if (eq > 0) jar[seg.slice(0, eq).trim()] = seg.slice(eq + 1).trim();
+    }
+    return jar;
+}
+
 function parseCookie(
     setCookie: string | undefined,
     name: string,
 ): string | undefined {
-    if (!setCookie) return undefined;
-    for (const part of setCookie.split(/,(?=[^;]+=)/)) {
-        const seg = part.trim().split(';')[0];
-        const eq = seg.indexOf('=');
-        if (eq > 0 && seg.slice(0, eq).trim() === name)
-            return seg.slice(eq + 1).trim();
-    }
-    return undefined;
+    return parseCookieJar(setCookie)[name];
+}
+
+/** Serialize a captured jar back into a `name=value; name=value` Cookie header. */
+function serializeJar(jar: Record<string, string> | undefined): string {
+    if (!jar) return '';
+    return Object.entries(jar)
+        .map(([k, v]) => `${k}=${v}`)
+        .join('; ');
 }
