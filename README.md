@@ -1,3 +1,16 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/baner_dark.png" />
+    <img alt="StitchAPI — a typed stitch replaces fetch" src="docs/media/baner_light.png" width="100%" />
+  </picture>
+</p>
+
+<p align="center">
+  The agent-native runtime where a typed, declarative <strong>stitch</strong> replaces <code>fetch</code> — for humans and agents alike.
+</p>
+
+---
+
 # StitchAPI — monorepo
 
 This repository is a [pnpm](https://pnpm.io) workspace.

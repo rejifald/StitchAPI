@@ -1,16 +1,28 @@
-import Link from 'next/link';
+import { Cta, Footer } from './components/cta';
+import { Differentiator } from './components/differentiator';
+import { Features } from './components/features';
+import { Hero } from './components/hero';
+import { Problem } from './components/problem';
+import { Surfaces } from './components/surfaces';
+
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+    title: 'StitchAPI — a typed stitch replaces fetch',
+    description:
+        'StitchAPI is an agent-native runtime whose core primitive — a stitch — replaces fetch. Declare one endpoint or one example and call it as a function, CLI, HTTP route, or MCP tool.',
+};
 
 export default function HomePage() {
     return (
-        <div className="flex flex-col justify-center text-center flex-1">
-            <h1 className="text-2xl font-bold mb-4">Hello World</h1>
-            <p>
-                You can open{' '}
-                <Link href="/docs" className="font-medium underline">
-                    /docs
-                </Link>{' '}
-                and see the documentation.
-            </p>
-        </div>
+        <main className="flex flex-1 flex-col">
+            <Hero />
+            <Problem />
+            <Surfaces />
+            <Features />
+            <Differentiator />
+            <Cta />
+            <Footer />
+        </main>
     );
 }
