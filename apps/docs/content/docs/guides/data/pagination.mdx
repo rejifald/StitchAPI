@@ -3,16 +3,63 @@ title: 'Pagination'
 description: 'Auto-loop pages and aggregate items, with auth, retry, and throttle applied to every page.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Add `paginate` when one logical call spans many pages and you want the stitch to
+follow them for you — it loops until you say stop, aggregates every page's items
+into one array, and applies auth, retry, and throttle to each page along the way.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { stitch } from '@stitchapi/core';
+
+const allUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    paginate: {
+        next: (prevBody) => {
+            const cursor = (prevBody as { nextCursor?: string }).nextCursor;
+            return cursor ? { query: { cursor } } : undefined;
+        },
+        items: (value) => (value as { results: unknown[] }).results,
+        max: 20,
+    },
+});
+```
+
+Each page reads `nextCursor` off the raw body and asks for the next page; when
+the body has no cursor, `next` returns `undefined` and the loop stops. `prevBody`
+and `value` arrive as `unknown` — narrow them before you reach in.
 
 ## Options
 
-Stub.
+`next(prevBody, pagesFetched)` receives the previous page's raw body plus the
+page count and returns the [`StitchInput`](/docs/reference/config-types) for the
+next page, merged over the original call — set only what changes, like a cursor
+or page number. Return `undefined` to stop.
+
+`items(value)` selects the array to aggregate from each page's unwrapped value;
+it defaults to the value itself when that value is already an array. The unwrap
+runs first, so pair `items` with [`unwrap`](/docs/guides/data/unwrap) when the
+array sits under an envelope, and use `items` to dig into a nested shape.
+
+`max` caps the page count as a safety net (default `50`) so a misbehaving
+`next` can't loop forever.
+
+Auth, retry, and throttle apply per page, not once for the whole run: a
+[`throttle`](/docs/guides/resilience/throttle) of `"2/s"` paces the page loop,
+and a [`retry`](/docs/guides/resilience/retry) recovers each page on its own.
+
+<Callout type="warn">
+    `next` reads the raw body; `items` reads the value after `unwrap`. Reach for
+    the cursor in `next` from where it actually lives in the response, not from
+    the unwrapped array.
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="unwrap" href="/docs/guides/data/unwrap" />
+    <Card title="throttle" href="/docs/guides/resilience/throttle" />
+    <Card title="retry" href="/docs/guides/resilience/retry" />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>

@@ -3,16 +3,52 @@ title: 'GraphQL'
 description: 'Call a GraphQL endpoint with variables, unwrap data, and treat a 200 carrying errors as a failure.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Use `graphql()` when an API speaks GraphQL-over-HTTP and you want a stitch that
+POSTs a query, passes variables per call, and hands back the `data` payload
+already unwrapped — with a `200` that carries an `errors` array treated as a
+failure, not a success.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { graphql } from '@stitchapi/core';
+
+const getUser = graphql<{ user: { id: string; name: string } }>({
+    baseUrl: 'https://api.example.com',
+    path: '/graphql',
+    query: `query GetUser($id: ID!) { user(id: $id) { id name } }`,
+});
+
+// Variables travel in the input; the result is already unwrapped from `data`.
+const data = await getUser({ variables: { id: '1' } });
+```
 
 ## Options
 
-Stub.
+`graphql()` is a preset over `stitch()`: it fixes `kind: 'graphql'`,
+`method: 'POST'`, and `unwrap: 'data'` for you. You supply the GraphQL document
+as `query`, plus a `baseUrl`/`path` pointing at the endpoint.
+
+Pass GraphQL variables through the input's `variables` field at call time —
+`getUser({ variables: { id: '1' } })` — so one stitch serves every set of
+arguments. Because `unwrap` defaults to `'data'`, the resolved value is the
+contents of the response's `data` object; override `unwrap` if you need a
+different field or the raw envelope.
+
+<Callout type="warn">
+    A GraphQL endpoint can return HTTP `200` while reporting an `errors` array
+    in the body. The stitch treats that as a failure and surfaces it — see
+    [STITCH_GRAPHQL](/docs/errors/stitch-graphql).
+</Callout>
+
+For the full set of fields a stitch accepts, see
+[Reference → Config types](/docs/reference/config-types).
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Unwrap" href="/docs/guides/data/unwrap" />
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card title="STITCH_GRAPHQL" href="/docs/errors/stitch-graphql" />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>
