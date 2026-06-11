@@ -84,27 +84,33 @@ one tool per endpoint, which keeps its context frugal.
 
 ## How it relates
 
-- **Progressive disclosure** runs from the [stitch primitive](/docs/concepts/the-stitch)
-  through the [fluent builder](/docs/guides/authoring/fluent-builder) — the
-  string, the config object, and the chainable surface are three altitudes of
-  one call.
-- **Atomic stitches** are the [stitch](/docs/concepts/the-stitch) itself: one
-  endpoint, no spec, no codegen, no server.
-- **Composition over configuration** is what [`extends`](/docs/guides/authoring/extends)
-  expresses — and `preset()` and `defineStitch()` are the fragments and factories
-  it composes.
-- **One source of truth** shows up at runtime as [leveled drift](/docs/guides/validation/drift),
-  the same anti-drift rule this documentation follows.
-- **Agent-native** is spelled out across [capability, not credential](/docs/concepts/capability-not-credential),
-  the [event stream](/docs/concepts/event-stream), and the [agent surfaces](/docs/agents).
+-   **Progressive disclosure** runs from the [stitch primitive](/docs/concepts/the-stitch)
+    through the [fluent builder](/docs/guides/authoring/fluent-builder) — the
+    string, the config object, and the chainable surface are three altitudes of
+    one call.
+-   **Atomic stitches** are the [stitch](/docs/concepts/the-stitch) itself: one
+    endpoint, no spec, no codegen, no server.
+-   **Composition over configuration** is what [`extends`](/docs/guides/authoring/extends)
+    expresses — and `preset()` and `defineStitch()` are the fragments and factories
+    it composes.
+-   **One source of truth** shows up at runtime as [leveled drift](/docs/guides/validation/drift),
+    the same anti-drift rule this documentation follows.
+-   **Agent-native** is spelled out across [capability, not credential](/docs/concepts/capability-not-credential),
+    the [event stream](/docs/concepts/event-stream), and the [agent surfaces](/docs/agents).
 
 ## See also
 
 <Cards>
     <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
     <Card title="The event stream" href="/docs/concepts/event-stream" />
-    <Card title="Capability, not credential" href="/docs/concepts/capability-not-credential" />
-    <Card title="The fluent builder" href="/docs/guides/authoring/fluent-builder" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card
+        title="The fluent builder"
+        href="/docs/guides/authoring/fluent-builder"
+    />
     <Card title="extends" href="/docs/guides/authoring/extends" />
     <Card title="Leveled drift" href="/docs/guides/validation/drift" />
     <Card title="For agents" href="/docs/agents" />
