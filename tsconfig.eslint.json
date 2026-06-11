@@ -1,9 +1,0 @@
-{
-    // Type-aware lint project: same strict options as the typecheck config, but
-    // also covers tests (with vitest globals). `check:types` stays src-only.
-    "extends": "./tsconfig.json",
-    "compilerOptions": {
-        "types": ["node", "vitest/globals"]
-    },
-    "include": ["src/**/*.ts", "test/**/*.ts"]
-}

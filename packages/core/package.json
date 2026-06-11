@@ -1,0 +1,99 @@
+{
+    "name": "stitchapi",
+    "version": "0.7.0",
+    "description": "StitchAPI is a tool designed to seamlessly integrate (“stitch”) any JSON-based API into your project, simplifying the process of connecting and working with various APIs.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "bin": {
+        "stitch": "bin/stitch"
+    },
+    "files": [
+        "lib",
+        "bin"
+    ],
+    "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "check:types": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+        "check:lint": "eslint src test",
+        "check:exports": "attw --pack .",
+        "lint": "eslint src test",
+        "build": "tsup",
+        "prepack": "tsup"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/core"
+    },
+    "keywords": [
+        "stitch",
+        "stitchapi",
+        "oas",
+        "openapi",
+        "streamline",
+        "integrate",
+        "integration",
+        "validation",
+        "validate",
+        "json",
+        "zod",
+        "url-template",
+        "fetch",
+        "qs",
+        "querystring",
+        "client",
+        "api",
+        "rest",
+        "restful",
+        "API integration",
+        "HTTP client",
+        "API client",
+        "JSON API",
+        "request validation",
+        "response validation",
+        "query parameter validation",
+        "path parameter validation",
+        "real-time validation",
+        "dynamic URL",
+        "template-based URL",
+        "REST API",
+        "adapter"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "bugs": {
+        "url": "https://github.com/rejifald/StitchAPI/issues"
+    },
+    "homepage": "https://github.com/rejifald/StitchAPI#readme",
+    "devDependencies": {
+        "@arethetypeswrong/cli": "^0.18.3",
+        "@eslint/js": "^9.39.4",
+        "@types/node": "^22.10.0",
+        "@vitest/coverage-v8": "^4.1.8",
+        "@vitest/eslint-plugin": "^1.6.20",
+        "eslint": "^9.39.4",
+        "eslint-config-prettier": "^10.1.8",
+        "jiti": "^2.7.0",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.61.0",
+        "vitest": "^4.1.8",
+        "zod": "^3.23.8"
+    }
+}

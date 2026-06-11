@@ -1,23 +1,23 @@
 # Git hooks — same gates as CI (.github/workflows/verify.yml).
-# Activated by `lefthook install`, run automatically via the package.json
-# "prepare" script on `npm install`.
+# Activated by `lefthook install`, run automatically via the root package.json
+# "prepare" script on `pnpm install`.
 pre-commit:
     parallel: false
     jobs:
         - name: format
           glob: '*.{ts,js,mjs,cjs,json,md,yml,yaml}'
-          run: npx prettier --write {staged_files}
+          run: pnpm exec prettier --write {staged_files}
           stage_fixed: true
         - name: lint
           glob: '*.ts'
-          run: npm run check:lint
+          run: pnpm check:lint
         - name: typecheck
-          run: npm run check:types
+          run: pnpm check:types
 
 pre-push:
     parallel: false
     jobs:
         - name: typecheck
-          run: npm run check:types
+          run: pnpm check:types
         - name: test
-          run: npm run test
+          run: pnpm test
