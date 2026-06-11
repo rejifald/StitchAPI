@@ -1,0 +1,36 @@
+{
+    "name": "@stitchapi/docs",
+    "version": "0.0.0",
+    "private": true,
+    "description": "StitchAPI documentation site — Fumadocs (Next.js App Router). Content lands in follow-up PRs.",
+    "scripts": {
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "check:types": "fumadocs-mdx && next typegen && tsc --noEmit",
+        "check:lint": "eslint ."
+    },
+    "dependencies": {
+        "fumadocs-core": "^16.10.0",
+        "fumadocs-mdx": "^15.0.12",
+        "fumadocs-ui": "^16.10.0",
+        "lucide-react": "^1.17.0",
+        "next": "16.2.7",
+        "react": "^19.2.7",
+        "react-dom": "^19.2.7",
+        "tailwind-merge": "^3.6.0",
+        "zod": "^4.4.3"
+    },
+    "devDependencies": {
+        "@tailwindcss/postcss": "^4.3.0",
+        "@types/mdx": "^2.0.13",
+        "@types/node": "^25.9.1",
+        "@types/react": "^19.2.16",
+        "@types/react-dom": "^19.2.3",
+        "eslint": "^9.39.4",
+        "eslint-config-next": "16.2.7",
+        "postcss": "^8.5.15",
+        "tailwindcss": "^4.3.0",
+        "typescript": "^6.0.3"
+    }
+}
