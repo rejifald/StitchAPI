@@ -1,6 +1,6 @@
 // Live playground server: serves the UI, lists demos, and streams each demo's stitch event
 // stream to the browser over SSE. Run: bash playground/run.sh
-import { startMockServer } from '../test/support/mock-server';
+import { startMockServer } from '../core/test/support/mock-server';
 import { demos } from './demos';
 
 import { readFile } from 'node:fs/promises';

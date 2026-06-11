@@ -11,9 +11,9 @@ import {
     graphql,
     preset,
     stitch,
-} from '../src';
-import type { Stitch, StitchInput } from '../src/types';
-import type { MockServer } from '../test/support/mock-server';
+} from '../core/src';
+import type { Stitch, StitchInput } from '../core/src/types';
+import type { MockServer } from '../core/test/support/mock-server';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

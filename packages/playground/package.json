@@ -1,0 +1,16 @@
+{
+    "name": "@stitchapi/playground",
+    "version": "0.0.0",
+    "private": true,
+    "description": "Live, in-repo playground that streams stitch event demos over SSE. Runs against core source (no build step) via tsx.",
+    "scripts": {
+        "dev": "tsx watch server.ts",
+        "start": "tsx server.ts"
+    },
+    "dependencies": {
+        "zod": "^3.23.8"
+    },
+    "devDependencies": {
+        "tsx": "^4.19.2"
+    }
+}

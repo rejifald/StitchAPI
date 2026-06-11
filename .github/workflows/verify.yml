@@ -24,14 +24,15 @@ jobs:
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
             - uses: actions/setup-node@v4
               with:
                   node-version-file: .nvmrc
-                  cache: npm
-            - run: npm ci
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
             # Cheap → expensive: a fast failure surfaces first.
-            - run: npm run check:format
-            - run: npm run check:lint
-            - run: npm run check:types
-            - run: npm test
-            - run: npm run check:exports
+            - run: pnpm check:format
+            - run: pnpm check:lint
+            - run: pnpm check:types
+            - run: pnpm test
+            - run: pnpm check:exports
