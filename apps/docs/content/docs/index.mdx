@@ -3,4 +3,68 @@ title: 'StitchAPI'
 description: 'The agent-native runtime where a typed, declarative stitch replaces fetch for humans and agents alike.'
 ---
 
-Stub — orient the reader and link into this section. See AUTHORING.md.
+A **stitch** is a typed, declarative, composable unit that turns one endpoint
+into a resilient, validated, observable function — you declare it once, and your
+code, the CLI, and an agent all call it without ever touching a credential.
+StitchAPI is the runtime that lets a stitch replace `fetch`.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch<{ id: number; name: string }>(
+    'https://api.example.com/users/{id}',
+);
+
+const user = await getUser({ params: { id: 1 } });
+```
+
+New here? Install the runtime and declare your first stitch in five minutes with
+the [Quickstart](/docs/getting-started/quickstart). For the why behind it, read
+the [Introduction](/docs/getting-started) and
+[The stitch primitive](/docs/concepts/the-stitch).
+
+## Explore the docs
+
+<Cards>
+    <Card
+        title="Getting started"
+        href="/docs/getting-started"
+        description="What a stitch is, how to install it, and your first stitch in five minutes."
+    />
+    <Card
+        title="Concepts"
+        href="/docs/concepts/the-stitch"
+        description="The mental model — the stitch primitive, the event stream, and capability over credential."
+    />
+    <Card
+        title="Guides"
+        href="/docs/guides/authoring/stitch"
+        description="One focused page per feature: authoring, auth, resilience, data, validation, observability, state."
+    />
+    <Card
+        title="Surfaces"
+        href="/docs/surfaces/function"
+        description="The front doors to one definition — in-process function, CLI, HTTP, and MCP."
+    />
+    <Card
+        title="For agents"
+        href="/docs/agents"
+        description="How an agent invokes, authors, and reasons over stitches without ever seeing a secret."
+    />
+    <Card
+        title="Reference"
+        href="/docs/reference/stitch"
+        description="Signatures and option shapes, generated from the real types."
+    />
+    <Card
+        title="Errors & pitfalls"
+        href="/docs/errors"
+        description="Every coded failure, keyed to the URL the runtime points you at."
+    />
+</Cards>
+
+<Callout type="info">
+    Driving stitches from an agent? Head to
+    [Use from an agent](/docs/agents) — one context-frugal `run_stitch` tool, the
+    capability boundary, and the auto-generated `llms.txt`.
+</Callout>
