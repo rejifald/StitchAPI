@@ -264,8 +264,15 @@ so a memory bomb is acceptable (server isolate keeps a real memory cap). CSP int
    be Worker-constructable. *Validate first in Phase 2.*
 3. **Streaming through the `fetch` shim** — the browser `stitch` build must consume
    `ReadableStream`/SSE; verify before committing to the LLM/streaming demos. *Risk: med.*
-4. **Browser `stitch` build with Node shims** (REQUIREMENTS §6) is still the largest
-   single unknown; it is a Phase-1/2 dependency, scoped as task **B1** in the plan.
+4. **Browser `stitch` build with Node shims** (REQUIREMENTS §6) — **de-risked, GO**
+   (see [B1-SPIKE.md](./B1-SPIKE.md)). Entanglement is shallow: only `node:fs`/`node:path`/
+   `node:crypto`, no native deps, no top-level side effects; a docs-side `stitch-browser.ts`
+   + bundler alias/`define` (no fork of `packages/core`, ~0.5–1 day) bundles clean.
+   **Correction to REQUIREMENTS §6's assumption:** the call hot-path is *not* Node-free —
+   `engine.ts` uses `node:crypto` `randomUUID` and `stitch()`'s `getTrace()` reads
+   `process.env`, so even a Tier-1 snippet pulls Node in. Both are trivial shims, but **R1
+   must provide `process`/`process.env` and a `crypto` (Web Crypto) alias in the Worker
+   scope**, and the browser OTLP exporter must be a no-op (don't rely on CSP alone).
 5. **`isolated-vm` deploy** (native addon, hosted Node) is incompatible with static/edge
    export — hence Phase 3 is isolated as a separate service and deferred.
 
