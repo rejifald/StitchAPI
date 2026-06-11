@@ -104,11 +104,18 @@ function applyIdempotency(
         : randomUUID();
 }
 
+const resolveStr = (v: string | (() => string) | undefined): string =>
+    typeof v === 'function' ? v() : (v ?? '');
+
 function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const isGql = cfg.kind === 'graphql';
-    const base =
-        typeof cfg.baseUrl === 'function' ? cfg.baseUrl() : (cfg.baseUrl ?? '');
-    const raw = cfg.path ?? (isGql ? '/graphql' : '');
+    // Endpoint resolution: when `url` is set it IS the whole endpoint (no base), but still
+    // templated + query-split like a path. Otherwise join `baseUrl` + `path`.
+    const usingUrl = cfg.url !== undefined;
+    const base = usingUrl ? '' : resolveStr(cfg.baseUrl);
+    const raw = usingUrl
+        ? resolveStr(cfg.url)
+        : (cfg.path ?? (isGql ? '/graphql' : ''));
     const qIdx = raw.indexOf('?');
     let tpl = raw;
     let predefined: Record<string, unknown> = {};
@@ -123,6 +130,17 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const { path } = expandPath(tpl, input.params ?? {});
     const query = { ...predefined, ...(input.query ?? {}) };
     const url = joinUrl(base, path) + buildQuery(query);
+    // A relative endpoint can't be fetched by the default transport — fail with a clear config
+    // error here instead of a cryptic "Failed to parse URL" from fetch. A custom `adapter` may
+    // legitimately resolve relative URLs, so this only guards the default transport.
+    if (cfg.adapter === undefined && !/^https?:\/\//i.test(url)) {
+        const e = new Error(
+            `stitch ${JSON.stringify(nameOf(cfg))}: request URL ${JSON.stringify(url)} is not absolute. ` +
+                'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared preset).',
+        );
+        e.name = 'StitchConfigError';
+        throw e;
+    }
     const method = (cfg.method ?? (isGql ? 'POST' : 'GET')).toUpperCase();
     const headers = { ...(cfg.headers ?? {}), ...(input.headers ?? {}) };
     applyIdempotency(cfg, input, method, headers);
@@ -519,7 +537,14 @@ export async function* execute(
         return;
     }
 
-    const baseReq = buildRequest(cfg, input);
+    let baseReq: AdapterRequest;
+    try {
+        baseReq = buildRequest(cfg, input);
+    } catch (e) {
+        yield errEvt(e, name, 0);
+        yield doneEvt(false, t0, 0);
+        return;
+    }
     yield {
         type: 'start',
         name,

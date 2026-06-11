@@ -54,7 +54,12 @@ const listWebsites = stitch({
 });
 ```
 
-Everything except a target (a URL or `path`) is optional. The smallest possible stitch is `stitch('https://…')`.
+Everything except a target is optional. Spell the target one of two ways:
+
+-   **`url`** — the whole endpoint as one string (`url: 'https://api.example.com/users/{id}'`). The **atomic spelling**: reach for it when a stitch is exactly one endpoint with no base to share, so you don't pre-split into base + path for a composition that doesn't exist. Templated (`{param}`, including the host) and `?query`-aware just like `path`, and may be a function for lazy/env resolution.
+-   **`baseUrl` + `path`** — a shareable base joined to a per-endpoint path. The **composition spelling**: a `preset` supplies `baseUrl` once and each stitch supplies its own `path` (§4).
+
+The two are mutually exclusive — when both appear, `url` wins. The smallest possible stitch is `stitch('https://…')` (a bare string is shorthand for `path`; an absolute one resolves as-is). A target that resolves to a relative URL (a `path` with no `baseUrl`) is a config error under the default transport.
 
 ### Call convention **[decided]**
 
@@ -154,7 +159,7 @@ const getWebsite = stitch({
 
 ### Merge semantics **[proposed]**
 
--   **Scalars** (`path`, `method`, `baseUrl`, `unwrap`): replace.
+-   **Scalars** (`path`, `method`, `baseUrl`, `url`, `unwrap`): replace. The endpoint is one slot: `url` and `baseUrl`/`path` are mutually exclusive, so the last fragment to set either spelling wins it whole — a child `url` clears an inherited `baseUrl`/`path`, and a child `baseUrl`/`path` clears an inherited `url`.
 -   **Objects** (`retry`, `throttle`, `timeout`, `input`, auth options): deep-merge field-wise.
 -   **`hooks`**: **chain**, don't replace — base `onRequest` runs, then child's; `onResponse` unwinds child→base (middleware order). This is what makes a base like "always log + add trace header" actually composable.
 -   **`output` / contracts**: replace (a child declares its own); compose explicitly with `schema.merge(...)` when you want to extend.
@@ -296,7 +301,7 @@ await user({ params: { id: 1 }, query: { expand: 'roles' } });
 
 ```ts
 const users = stitch({
-    path: 'https://reqres.in/api/users',
+    url: 'https://reqres.in/api/users',
     output: User.array(),
     unwrap: 'data',
 });
