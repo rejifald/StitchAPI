@@ -1,12 +1,15 @@
 // Auth strategies + secret resolvers. The key idea: the stitch holds the credential,
 // resolved at call time — the caller (an agent) never sees it. `cookieSession` performs
 // a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
+import { fetchAdapter } from './http-adapter';
 import type {
+    Adapter,
     AdapterResponse,
     AuthContext,
     AuthStrategy,
     StitchInput,
 } from './types';
+import { now } from './util';
 
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -70,6 +73,104 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
                 `${resolve(opts.user)}:${resolve(opts.pass)}`,
             ).toString('base64');
             req.headers['authorization'] = `Basic ${token}`;
+        },
+    };
+}
+
+export interface OAuth2Opts {
+    /** The `client_credentials` token endpoint (POST, form-encoded). */
+    tokenUrl: string;
+    /** OAuth2 client id; resolved at call time (env/keychain), never committed. */
+    clientId: Secret;
+    /** OAuth2 client secret; resolved at call time. */
+    clientSecret: Secret;
+    /** Optional space-delimited scopes. */
+    scope?: string;
+    /** Statuses that mean the token was rejected and should force a refresh. Default [401]. */
+    refreshOn?: number[];
+    /** Refresh this many ms BEFORE the token's expiry, so it is never used mid-flight. Default 30_000. */
+    refreshSkewMs?: number;
+    /** Store namespace — give two stitches the same `key` + a shared `store` to share one token. Default: `tokenUrl`. */
+    key?: string;
+    /** Test seam / custom transport for the token request (default `fetchAdapter()`). */
+    adapter?: Adapter;
+}
+
+interface CachedToken {
+    token: string;
+    expiresAt: number; // epoch ms; 0 = no known expiry (never proactively refreshed)
+}
+
+/**
+ * OAuth2 `client_credentials`: POST the token endpoint, cache the access token in the
+ * StitchStore (TTL from `expires_in`), refresh it `refreshSkewMs` before expiry, and attach
+ * it as `Authorization: Bearer …`. A SHARED store makes one token serve many stitches/workers
+ * and survive restarts; a rejected token (status in `refreshOn`) forces a fresh fetch + retry.
+ */
+export function oauth2(opts: OAuth2Opts): AuthStrategy {
+    const refreshOn = opts.refreshOn ?? [401];
+    const skew = opts.refreshSkewMs ?? 30_000;
+    const nsKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
+    const adapter = opts.adapter ?? fetchAdapter();
+
+    const isFresh = (t: CachedToken | undefined): boolean =>
+        !!t && (t.expiresAt === 0 || now() < t.expiresAt - skew);
+
+    // Fetch a new token from the endpoint and cache it (with TTL = expires_in). Always hits
+    // the network; callers gate on `isFresh` to reuse the cached token instead.
+    const fetchToken = async (ctx: AuthContext): Promise<string> => {
+        ctx.emit('auth', 'token');
+        const body: Record<string, string> = {
+            grant_type: 'client_credentials',
+            client_id: resolve(opts.clientId),
+            client_secret: resolve(opts.clientSecret),
+        };
+        if (opts.scope) body.scope = opts.scope;
+
+        const res = await adapter({
+            url: opts.tokenUrl,
+            method: 'POST',
+            headers: { accept: 'application/json' },
+            body,
+            bodyType: 'form',
+        });
+        if (res.status >= 400)
+            throw new Error(`oauth2 token request failed: HTTP ${res.status}`);
+
+        const payload = (res.body ?? {}) as {
+            access_token?: string;
+            expires_in?: number;
+        };
+        if (!payload.access_token)
+            throw new Error('oauth2 token response missing access_token');
+
+        const ttlMs =
+            typeof payload.expires_in === 'number'
+                ? payload.expires_in * 1000
+                : undefined;
+        const cached: CachedToken = {
+            token: payload.access_token,
+            expiresAt: ttlMs ? now() + ttlMs : 0,
+        };
+        await ctx.store.set(nsKey, cached, ttlMs);
+        return cached.token;
+    };
+
+    const tokenFor = async (ctx: AuthContext): Promise<string> => {
+        const cached = (await ctx.store.get(nsKey)) as CachedToken | undefined;
+        return isFresh(cached) ? cached!.token : fetchToken(ctx);
+    };
+
+    return {
+        name: 'oauth2',
+        async apply(req, ctx) {
+            req.headers['authorization'] = `Bearer ${await tokenFor(ctx)}`;
+        },
+        shouldRefresh(res) {
+            return refreshOn.includes(res.status);
+        },
+        async refresh(ctx) {
+            await fetchToken(ctx); // force a fresh token, ignoring the cache
         },
     };
 }
