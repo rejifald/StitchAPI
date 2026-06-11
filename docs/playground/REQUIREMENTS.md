@@ -1,11 +1,11 @@
 # Playground Execution Engine — Shape & Requirements
 
 > **Status:** contract defined, implementation **DEFERRED.** > **Snapshot date:** 2026-06-11
-> **Decision to build in-house:** [RATIONALE.md](./RATIONALE.md) · **Options rejected:** [COMPETITORS.md](./COMPETITORS.md) · **Contract in code:** [`component/runner.ts`](./component/runner.ts)
+> **Decision to build in-house:** [RATIONALE.md](./RATIONALE.md) · **Options rejected:** [COMPETITORS.md](./COMPETITORS.md) · **Contract:** the `CodeRunner` interface in §1 below
 
 This document defines what the in-browser code-execution engine must be and do, so
-the playground UI ([`component/StitchPlayground.tsx`](./component/StitchPlayground.tsx))
-and the docs can be built against a stable contract before the engine itself exists.
+the playground UI and the docs can be built against a stable contract before the
+engine itself exists.
 
 The engine is the hard part. It is intentionally deferred. Everything here is the
 _specification_ the deferred work must satisfy — not a description of shipped code.
@@ -25,8 +25,7 @@ results, capture console, surface errors, expose structured stitch traces.
 proxy that injects secrets, and the browser build of `stitch`. Those are dependencies
 of the engine, specified at a high level in §6–§7 and tracked as separate work.
 
-**The contract** every implementation conforms to lives in
-[`component/runner.ts`](./component/runner.ts) as the `CodeRunner` interface:
+**The contract** every implementation conforms to is the `CodeRunner` interface:
 
 ```ts
 interface CodeRunner {
@@ -36,9 +35,10 @@ interface CodeRunner {
 }
 ```
 
-Today two trivial implementations exist: `DeferredRunner` (returns a "not
-implemented" error) and `mockRunner` (canned output, lets the UI be built). The
-deferred work is a third implementation — `InHouseRunner` — that actually runs code.
+Two trivial implementations frame the work: a deferred stub (returns a "not
+implemented" error) and a mock runner (canned output, to build the UI against).
+The deferred work is the real implementation — `InHouseRunner` — that actually
+runs code.
 
 ---
 
@@ -64,7 +64,7 @@ deferred work is a third implementation — `InHouseRunner` — that actually ru
 | **NFR1 — Lightweight**    | The execution core (transpile + eval + capture) is small. The editor and transpiler are **lazy-loaded** so docs pages that don't run code pay ~nothing. Target: no measurable hit to first load of a prose page.                 |
 | **NFR2 — Security**       | The engine `eval`s visitor-typed code. It must isolate that code from the docs app (see §8). The **real trust boundary is the server-side proxy allowlist**, not the eval — the browser can only harm the visitor's own session. |
 | **NFR3 — SSR-safe**       | Client-only. Must not touch `window`/`document` at module load, and must not break Fumadocs/Next SSR or static export. Dynamic-import the engine behind the component.                                                           |
-| **NFR4 — Swappable**      | Conform to `CodeRunner`. We must be able to swap the transpiler (Sucrase ⇄ Babel), swap in-page ⇄ iframe execution, or fall back to a LiveCodes-backed runner, without touching `<StitchPlayground/>`.                           |
+| **NFR4 — Swappable**      | Conform to `CodeRunner`. We must be able to swap the transpiler (Sucrase ⇄ Babel), swap in-page ⇄ iframe execution, or fall back to a LiveCodes-backed runner, without touching the playground UI.                               |
 | **NFR5 — Theming & a11y** | Output panel and editor follow the docs light/dark theme. Editor is keyboard-accessible; Run/Stop/Reset are real buttons with labels.                                                                                            |
 
 ---
@@ -159,7 +159,7 @@ the browser `stitch` build must shim them:
 
 ## 9. Acceptance criteria for engine v1
 
-The deferred work is "done enough" when, dropped into `<StitchPlayground runner={inHouse}/>`:
+The deferred work is "done enough" when, wired into the playground UI with the in-house runner:
 
 -   [ ] Running `const u = await stitch('https://reqres.in/api/users/2'); console.log(u);`
         renders the `console.log`, the resolved value, and `done · <ms>`.
