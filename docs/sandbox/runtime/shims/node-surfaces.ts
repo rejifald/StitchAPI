@@ -18,7 +18,7 @@
  */
 import { emitShimNotice } from './notices';
 
-import { cookieSession as coreCookieSession } from '@stitchapi/core';
+import { cookieSession as coreCookieSession } from 'stitchapi';
 
 // `CookieSessionOpts`/`AuthStrategy` aren't re-exported from core's barrel, so we
 // derive the exact param/return types from the function itself — keeps the shim

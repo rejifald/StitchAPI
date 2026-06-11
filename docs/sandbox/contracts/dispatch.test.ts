@@ -106,9 +106,9 @@ check('each NODE_ONLY_SURFACES identifier → server + hit', () => {
 });
 
 // Named import from a stitch module is detected.
-check('imported Node-only binding from @stitchapi/core → server', () => {
+check('imported Node-only binding from stitchapi → server', () => {
     const scan = scanSurface(
-        `import { keychain } from '@stitchapi/core';\nawait keychain().get('k');`,
+        `import { keychain } from 'stitchapi';\nawait keychain().get('k');`,
     );
     assert.equal(scan.tier, 'server');
     assert.ok(scan.nodeOnlyHits.includes('keychain'));
@@ -144,7 +144,7 @@ check(
     'clear hit + ambiguity → reports hit but routes browser (precedence)',
     () => {
         const scan = scanSurface(
-            `import { keychain } from '@stitchapi/core';\n` +
+            `import { keychain } from 'stitchapi';\n` +
                 `keychain();\nconst k = core['ot' + 'lpTrace'];`,
         );
         assert.equal(scan.ambiguous, true);

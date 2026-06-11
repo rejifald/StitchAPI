@@ -18,13 +18,8 @@
  */
 import { emitShimNotice } from './notices';
 
-import { otlpTrace as coreOtlpTrace } from '@stitchapi/core';
-import type {
-    OtelSpan,
-    OtlpOptions,
-    SpanExporter,
-    TraceSink,
-} from '@stitchapi/core';
+import { otlpTrace as coreOtlpTrace } from 'stitchapi';
+import type { OtelSpan, OtlpOptions, SpanExporter, TraceSink } from 'stitchapi';
 
 const OTLP_NOTICE =
     'OTLP export is simulated in the browser sandbox — spans are built but not ' +

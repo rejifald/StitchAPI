@@ -10,7 +10,7 @@
  *        node:crypto → ./shims/node-crypto.ts   (Web Crypto randomUUID/randomBytes)
  *        node:fs     → ./shims/node-fs.ts        (no-op writes, existsSync→false)
  *        node:path   → ./shims/node-path.ts      (regex dirname)
- *   2. alias `@stitchapi/core` → packages/core/src/index.ts so the bundle resolves
+ *   2. alias `stitchapi` → packages/core/src/index.ts so the bundle resolves
  *      WITHOUT `pnpm install` (zod is unused in the reachable graph — B1-SPIKE §1).
  *   3. define `process` → the browser process value (./shims/process.ts), so every
  *      runtime `process.env.*` read inlines to `{}` and the bundle has ZERO
@@ -88,7 +88,7 @@ const result = await esbuild.build({
         'node:crypto': resolve(__dirname, 'shims/node-crypto.ts'),
         'node:fs': resolve(__dirname, 'shims/node-fs.ts'),
         'node:path': resolve(__dirname, 'shims/node-path.ts'),
-        '@stitchapi/core': CORE,
+        stitchapi: CORE,
     },
     // Knob 3: inline `process` so no `process.env` survives. We also point the
     // injected identifier at the shim module for any bare `process` reference.

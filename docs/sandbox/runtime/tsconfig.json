@@ -10,7 +10,7 @@
         "noEmit": true,
         "strict": true
     },
-    "comment-scope": "Scoped to R2's dependency-free transpile module. B1's stitch-browser.ts + shims/ import @stitchapi/core and are type-checked via tsconfig.browser.json under pnpm install (CI), not here.",
+    "comment-scope": "Scoped to R2's dependency-free transpile module. B1's stitch-browser.ts + shims/ import stitchapi and are type-checked via tsconfig.browser.json under pnpm install (CI), not here.",
     "include": [
         "transpile.ts",
         "transpile.test.ts",
