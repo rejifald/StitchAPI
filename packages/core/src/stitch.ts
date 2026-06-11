@@ -102,6 +102,16 @@ function compose(config: Fragment): StitchConfig {
         delete rest.hooks;
         delete rest.store;
         merged = deepMerge(merged, rest);
+        // Endpoint slot: `url` and `baseUrl`/`path` are two spellings of the same target, and
+        // deepMerge keeps them as separate keys. Reconcile so the last fragment to write either
+        // spelling wins the whole slot — a child `url` clears an inherited baseUrl/path, and a
+        // child baseUrl/path clears an inherited `url`.
+        if (rest.url !== undefined) {
+            delete merged.baseUrl;
+            delete merged.path;
+        } else if (rest.baseUrl !== undefined || rest.path !== undefined) {
+            delete merged.url;
+        }
     }
     const hooks = chainHooks(hookLayers);
     if (hooks) merged.hooks = hooks;

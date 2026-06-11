@@ -168,9 +168,17 @@ export interface StitchConfig {
     bodyType?: 'json' | 'form' | 'multipart';
     /** How to read the response body. Default: auto by content-type. */
     responseType?: ResponseType;
-    /** Origin for the request, as a string or a thunk resolved at call time. */
+    /**
+     * Full request endpoint as one string — the atomic spelling, when a stitch is exactly one
+     * endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware
+     * like `path`; may be a thunk for lazy/env resolution. Mutually exclusive with
+     * `baseUrl`/`path`: when both are set `url` wins, and across composed fragments the last
+     * fragment to write either spelling wins the whole slot.
+     */
+    url?: string | (() => string);
+    /** Origin for the request, as a string or a thunk resolved at call time. Ignored when `url` is set. */
     baseUrl?: string | (() => string);
-    /** Path appended to `baseUrl`; may include `{param}` slots and a `?query` string. */
+    /** Path appended to `baseUrl`; may include `{param}` slots and a `?query` string. Ignored when `url` is set. */
     path?: string;
     /** Static default headers merged into every request. */
     headers?: Record<string, string>;
