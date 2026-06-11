@@ -3,16 +3,64 @@ title: 'Validation'
 description: 'Validate params, query, body, headers, and the response, failing fast before the request when input is wrong.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Use validation when you want a stitch to reject bad input before it leaves the
+process and to verify the response once it arrives — input is checked _before_
+the request, so wrong params, query, body, or headers fail fast with no network
+call.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { stitch, toValidator } from '@stitchapi/core';
+import { z } from 'zod';
+
+const createUser = stitch<{ id: number; name: string }>({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    input: { body: toValidator(z.object({ name: z.string() })) },
+    output: toValidator(z.object({ id: z.number(), name: z.string() })),
+});
+```
+
+A bad `body` rejects before the POST is sent; a response that doesn't match
+`output` rejects after. Either way the stitch throws
+[STITCH_VALIDATION](/docs/errors/stitch-validation), and the `stitch<T>` generic
+keeps the resolved value typed as `{ id: number; name: string }`.
 
 ## Options
 
-Stub.
+`input` is a map of `{ params, query, body, headers }`, each an optional
+`Validator`. Every entry present is validated against the call input _before_
+the request — the fail-fast guarantee — so the request never goes out with input
+the API would reject.
+
+`output` is a single `Validator` that checks the response body after it returns.
+(Pass a `drift()` spec here instead to report changes without throwing — see
+[Schema drift detection](/docs/guides/validation/drift).)
+
+The config fields are typed as `Validator`, and a raw Zod, Valibot, or ArkType
+schema is not structurally a `Validator`. Adapt it with `toValidator()`, which
+coerces a Zod schema, any Standard Schema, or a predicate into a `Validator` —
+see [Bring your own validator](/docs/guides/validation/standard-schema) for the
+full story.
+
+<Callout type="warn">
+    Pass `toValidator(z.object({...}))`, not a raw `z.object({...})` — the raw
+    schema won't satisfy the `Validator` type on `input`/`output`.
+</Callout>
+
+See [Reference → Config types](/docs/reference/config-types) for every field on
+`input` and `output`.
 
 ## See also
 
-Stub.
+<Cards>
+    <Card
+        title="Bring your own validator"
+        href="/docs/guides/validation/standard-schema"
+    />
+    <Card title="Schema drift detection" href="/docs/guides/validation/drift" />
+    <Card title="STITCH_VALIDATION" href="/docs/errors/stitch-validation" />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>

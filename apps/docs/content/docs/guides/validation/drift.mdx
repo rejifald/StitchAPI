@@ -3,16 +3,62 @@ title: 'Leveled drift'
 description: 'Detect silent contract changes as leveled findings (error/warn/info) against a committed snapshot.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Wrap a stitch's `output` with `drift` when you want to catch an API quietly
+changing shape — a field dropped, a type flipped, a new key appearing — and
+classify each change as `error`, `warn`, or `info` against a committed
+baseline.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { drift, stitch } from '@stitchapi/core';
+import { z } from 'zod';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: drift(z.object({ id: z.number(), email: z.string() }), {
+        critical: ['id'],
+        watch: ['email'],
+        snapshotFile: 'users.contract.json',
+    }),
+});
+```
+
+The first call records the baseline; every call after compares the response
+against `users.contract.json` and emits any deltas as leveled findings.
 
 ## Options
 
-Stub.
+`critical` lists paths whose change is an `error`; `watch` lists paths whose
+change is a `warn`; everything else that moves is a `warn` too. `onNew` sets the
+level for brand-new fields (default `'info'`). `snapshotFile` names the
+committed baseline — a `<name>.contract.json` you check into the repo.
+
+Each finding rides the event stream as a `drift` event. An `error`-level finding
+breaks the contract and surfaces as
+[STITCH_DRIFT](/docs/errors/stitch-drift); `warn` and `info` findings are
+reported but do not fail the call, so you watch a field erode before it breaks.
+
+This is the opposite end from plain
+[Validation](/docs/guides/validation/validation): validation rejects a single
+malformed response hard, here and now, while drift watches for the _silent_
+contract change across calls and lets you triage it by severity.
+
+<Callout type="info">
+    Findings arrive as `drift` events on
+    [the event stream](/docs/concepts/event-stream) — subscribe to inspect
+    `warn` and `info` levels that never throw.
+</Callout>
+
+See [Reference → Config types](/docs/reference/config-types) for the full
+`DriftOptions` and `DriftFinding` tables.
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="STITCH_DRIFT" href="/docs/errors/stitch-drift" />
+    <Card title="Config types" href="/docs/reference/config-types" />
+</Cards>

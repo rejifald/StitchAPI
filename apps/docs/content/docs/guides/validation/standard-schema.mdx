@@ -3,16 +3,49 @@ title: 'Standard Schema'
 description: 'Bring any Standard Schema validator — Zod, Valibot, ArkType — for validation and inferred types.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Reach for this when you already have a schema and want a stitch to validate
+against it — StitchAPI is validator-agnostic, so any [Standard Schema](https://standardschema.dev)
+validator (Zod, Valibot, ArkType), a plain predicate, or a `Validator` works,
+adapted by the single `toValidator()` helper.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { stitch, toValidator } from '@stitchapi/core';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+
+const getUser = stitch<{ id: number; name: string }>({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: toValidator(User),
+});
+```
+
+The `output` schema runs against each response; pairing it with the
+`stitch<{ id: number; name: string }>` generic types the validated result.
 
 ## Options
 
-Stub.
+A config's `input` and `output` fields are typed as `Validator`, so a raw
+`z.object(...)` is not directly assignable — wrap it with `toValidator()`. That
+helper is the single adapter: it coerces Zod (`safeParse`), any Standard Schema
+(`~standard`), or a plain predicate into the `Validator` the config expects.
+
+Valibot and ArkType need no special handling — they implement Standard Schema,
+so they go through the same `toValidator()` call identically. Pass an
+already-built `Validator` straight through.
+
+<Callout type="info">
+    Pair `toValidator()` with the `stitch<T>()` generic so the typed result and
+    the runtime check come from one source.
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card title="Drift" href="/docs/guides/validation/drift" />
+    <Card title="Reference → Helpers" href="/docs/reference/helpers" />
+</Cards>
