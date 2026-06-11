@@ -125,6 +125,9 @@ show off. Requested behaviour is selected by route and/or reserved query knobs
 
 - **Deterministic.** Seeded PRNG; no wall-clock/`Math.random` in handler output paths
   — same request → same response, so docs examples are reproducible and snapshot-able.
+  Determinism covers the response **bytes/structure**, *not* delivery **timing**:
+  `__latencyMs` and stream pacing may vary by wall-clock; only payloads are pinned.
+  (Ratified Wave 0 — resolves the §4.2 latency vs §4.3 determinism tension.)
 - **Unknown host/route → documented sandbox-404.** A freely-editable REPL *will* call
   URLs the sim doesn't know. Those return a clean, explanatory body
   (`"<host> is not reachable inside the StitchAPI sandbox; available demo hosts: …"`),
@@ -216,12 +219,23 @@ implementations and one composite:
 - `dispatchRunner(opts): CodeRunner` — wraps the two, does the §3 static scan, and is
   what `<StitchPlayground runner={…}/>` actually receives.
 
-Likely additive (non-breaking) extensions, to be confirmed in the spike:
+Additive (non-breaking) extensions **frozen in Wave 0** (see [`contracts/`](./contracts/),
+[SANDBOX-SECURITY-CHECKLIST.md](./SANDBOX-SECURITY-CHECKLIST.md)):
 
+- `StitchTraceEntry.stream?: { chunks: number }` — render streaming/LLM responses distinctly.
+- `RunError.reason?: 'throw' | 'timeout' | 'abort' | 'internal'` — so the UI and tests can
+  tell a timeout from an abort from a thrown error (`phase` alone can't). Engine failures
+  resolve as `reason: 'internal'`; `run()` rejects only for unrecoverable harness bugs.
+- `RunResult.notices?: RunNotice[]` — the structured channel for the shimmed-surface notice
+  the browser runner shows when a Node-only surface runs shimmed (§3, §5.7).
 - `RunRequest.scope` already carries the browser `stitch` build + sim `fetch`; the
   dispatcher decides the scope per tier.
-- `StitchTraceEntry` may gain a `stream?: { chunks: number }` hint so the output panel
-  can render streaming/LLM responses distinctly. Additive only.
+
+**Browser memory & CSP (ratified Wave 0):** the browser Worker is **time-bounded only** —
+no portable per-Worker memory cap exists, and the blast radius is the visitor's own tab,
+so a memory bomb is acceptable (server isolate keeps a real memory cap). CSP intent is
+`connect-src 'self'` + `worker-src 'self' blob:`; the Worker's own eval needs `'unsafe-eval'`
+*inside the Worker context only*. Exact tokens are validated in the Phase-2 spike.
 
 ---
 

@@ -48,6 +48,12 @@ export interface StitchTraceEntry {
     error?: { name: string; message: string };
     /** Parent step ids, when this stitch was composed from earlier ones. */
     dependsOn?: string[];
+    /**
+     * Streaming hint (additive — see ../SANDBOX.md §8). Present when the
+     * response was a chunked/SSE/LLM stream, so the output panel can render it
+     * distinctly. `chunks` is the number of stream chunks observed.
+     */
+    stream?: { chunks: number };
 }
 
 export interface RunError {
@@ -59,6 +65,30 @@ export interface RunError {
     column?: number;
     /** Where it blew up: transpiling the source, or executing it. */
     phase: 'transpile' | 'runtime';
+    /**
+     * Why it failed, when distinguishable (ratified C1/C2, Wave 0). Lets the UI
+     * and the SANDBOX-SECURITY-CHECKLIST tests tell apart a hit timeout / user
+     * abort / thrown snippet error / engine failure — `phase` alone can't.
+     *   - 'throw'    — the snippet threw (or rejected) at runtime
+     *   - 'timeout'  — killed at `RunRequest.timeoutMs` (Worker terminated)
+     *   - 'abort'    — cancelled via `RunRequest.signal` (Stop / nav)
+     *   - 'internal' — engine/harness failure surfaced as a result, not a reject
+     */
+    reason?: 'throw' | 'timeout' | 'abort' | 'internal';
+}
+
+/**
+ * A non-fatal notice emitted during a run (ratified C1/C2, Wave 0). Primary use:
+ * the shimmed-surface notice the browser runner MUST show when it runs a
+ * Node-only surface in shim mode (SANDBOX.md §3, §5.7; SANDBOX-SECURITY-CHECKLIST
+ * SEC-3x). A structured channel so the UI and the tests assert the same place
+ * instead of scraping `logs`.
+ */
+export interface RunNotice {
+    kind: 'shim' | 'info';
+    /** The stitch surface this concerns, when applicable (e.g. 'keychain'). */
+    surface?: string;
+    message: string;
 }
 
 export interface RunResult {
@@ -72,6 +102,11 @@ export interface RunResult {
     durationMs: number;
     /** Structured stitch() calls for the rich output panel, if any. */
     trace?: StitchTraceEntry[];
+    /**
+     * Non-fatal notices (e.g. "ran `keychain` shimmed"). Additive — ratified
+     * C1/C2, Wave 0. Absent/empty when there's nothing to surface.
+     */
+    notices?: RunNotice[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -104,8 +139,10 @@ export interface CodeRunner {
      * Transpile (TS+JSX erasure) and execute `code` with `scope` injected,
      * awaiting any top-level promise, capturing console output, and resolving
      * to a structured {@link RunResult}. MUST NOT reject for *snippet* errors —
-     * those belong in `result.error`. It MAY reject only for engine/internal
-     * failures (e.g. transpiler failed to load).
+     * those belong in `result.error`. Engine/internal failures (e.g. transpiler
+     * failed to load) SHOULD also resolve, as `error.reason === 'internal'`, so
+     * the UI always has a renderable result (ratified C1/C2, Wave 0). Rejection
+     * is reserved for unrecoverable harness bugs only.
      */
     run(req: RunRequest): Promise<RunResult>;
     /** Release workers/iframes/listeners. Optional. */
