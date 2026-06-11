@@ -2,20 +2,6 @@
     "version": "0.0.1",
     "configurations": [
         {
-            "name": "playground",
-            "runtimeExecutable": "bash",
-            "runtimeArgs": ["packages/playground/run.sh"],
-            "port": 5174,
-            "autoPort": true
-        },
-        {
-            "name": "preview",
-            "runtimeExecutable": "node",
-            "runtimeArgs": ["docs/playground/preview/server.mjs"],
-            "port": 3000,
-            "autoPort": true
-        },
-        {
             "name": "docs",
             "runtimeExecutable": "pnpm",
             "runtimeArgs": ["--filter", "@stitchapi/docs", "dev"],

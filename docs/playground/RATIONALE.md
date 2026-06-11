@@ -2,7 +2,7 @@
 
 > **Status:** Accepted (engine implementation **deferred**)
 > **Date:** 2026-06-11 · **Decider:** @rejifald
-> **Related:** [REQUIREMENTS.md](./REQUIREMENTS.md) (the shape) · [COMPETITORS.md](./COMPETITORS.md) (options rejected) · [`component/runner.ts`](./component/runner.ts) (the contract)
+> **Related:** [REQUIREMENTS.md](./REQUIREMENTS.md) (the shape — incl. the `CodeRunner` contract) · [COMPETITORS.md](./COMPETITORS.md) (options rejected)
 
 ## Context
 
@@ -31,8 +31,8 @@ Three facts shaped the decision:
     in-page async `Function` execution with an injected `stitch` scope and a bespoke
     output panel. Conform to the `CodeRunner` contract so it's swappable.
 -   **Implementation is deferred.** This change defines the engine's _shape and
-    requirements_ and stubs it (`DeferredRunner` / `mockRunner`) so the UI and docs
-    proceed without it.
+    requirements_ (incl. the `CodeRunner` contract) so the UI and docs can proceed
+    against a stable interface before the engine exists.
 
 ## Rationale — why in-house over LiveCodes (the only viable off-the-shelf option)
 

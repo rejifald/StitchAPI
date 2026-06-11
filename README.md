@@ -2,10 +2,9 @@
 
 This repository is a [pnpm](https://pnpm.io) workspace.
 
-| Package                             | Path                  | Description                                                       |
-| ----------------------------------- | --------------------- | ----------------------------------------------------------------- |
-| [`stitchapi`](packages/core)        | `packages/core`       | The published library — the `stitch` runtime, CLI, auth, tracing. |
-| `@stitchapi/playground` _(private)_ | `packages/playground` | Live, in-repo SSE playground that streams `stitch` event demos.   |
+| Package                      | Path            | Description                                                       |
+| ---------------------------- | --------------- | ----------------------------------------------------------------- |
+| [`stitchapi`](packages/core) | `packages/core` | The published library — the `stitch` runtime, CLI, auth, tracing. |
 
 Design notes, overview, and feature lenses live in [`docs/`](docs).
 
