@@ -3,16 +3,56 @@ title: 'extends'
 description: 'Layer fragments — strings, objects, or other stitches — with deep-merge to compose configuration.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Use `extends` to build a stitch from layered fragments — a shared base, an
+options object, and the stitch's own inline fields — deep-merged in order so the
+common configuration lives in one place and each stitch states only what differs.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { stitch } from '@stitchapi/core';
+
+// A base stitch carrying the shared host and headers.
+const base = stitch({
+    baseUrl: 'https://api.example.com',
+    headers: { accept: 'application/json' },
+});
+
+const getUser = stitch({
+    extends: [base, { retry: { attempts: 3 } }],
+    path: '/users/{id}',
+});
+```
+
+`getUser` deep-merges three layers: `base`'s config, the inline retry object, and
+its own `path`. The result carries `baseUrl`, `headers`, `retry`, and `path`.
 
 ## Options
 
-Stub.
+`extends` takes an array of fragments, each normalized to a partial config: a
+**string** becomes `{ path: string }`; another **stitch** contributes its
+resolved config; a plain **object** is used as-is. Nested `extends` inside any
+fragment are flattened first, so a base can itself extend another base.
+
+Layers are deep-merged left to right, and **later layers win** — the stitch's own
+inline fields are the last layer, so they override everything they extend.
+Two exceptions: hooks **chain** instead of overwriting (every layer's
+`onRequest`/`onResponse`/`onError`/`onRetry` runs), and `store` is taken from the
+last layer that sets one.
+
+<Callout type="info">
+    [`preset()`](/docs/guides/authoring/preset) and
+    [`defineStitch()`](/docs/guides/authoring/define-stitch) are conveniences
+    built on this: a preset is a named fragment you drop into `extends`, and
+    `defineStitch()` pre-binds base fragments so every stitch it produces
+    extends them automatically.
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="preset()" href="/docs/guides/authoring/preset" />
+    <Card title="defineStitch()" href="/docs/guides/authoring/define-stitch" />
+    <Card title="stitch()" href="/docs/guides/authoring/stitch" />
+    <Card title="Reference: config types" href="/docs/reference/config-types" />
+</Cards>

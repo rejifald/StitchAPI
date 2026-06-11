@@ -3,16 +3,54 @@ title: '.with() partial application'
 description: 'Pre-bind part of a call and reuse the same runtime so cookies, throttle, and sessions persist.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Use `.with()` when you want to pre-bind part of a stitch's input — a query
+param, a header, a body field — and reuse it across calls, while the bound
+stitch keeps the same runtime so cookies, throttle counters, and session state
+carry over.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { stitch } from '@stitchapi/core';
+
+const search = stitch('https://api.example.com/search');
+
+// Pre-bind a query param; per-call input merges over it.
+const inEurope = search.with({ query: { region: 'eu' } });
+
+await inEurope({ query: { q: 'mango' } }); // → region=eu&q=mango
+```
+
+`inEurope` shares one runtime with `search`, so a throttle budget or a captured
+cookie set is the same whichever you call.
 
 ## Options
 
-Stub.
+`.with(partial)` accepts any slice of `StitchInput` — `params`, `query`,
+`headers`, `body`, or `variables` — and returns a new stitch with that slice
+bound in.
+
+Each call merges its own input **over** the bound partial, so per-call values
+win on conflict (`region` here, overridden if a call passes its own `region`).
+Calls are chainable: `search.with(a).with(b)` layers both partials.
+
+The key point is the shared runtime: the bound stitch does not start fresh. The
+same [cookie session](/docs/guides/auth/cookie-session) jar, throttle counters,
+and [shared session](/docs/guides/state/shared-sessions) state persist across
+every call made through it.
+
+<Callout type="warn">
+    Because the runtime is shared, throttle and circuit state are shared too — a
+    bound stitch is not an isolated copy. See
+    [throttle](/docs/guides/resilience/throttle).
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Fluent builder" href="/docs/guides/authoring/fluent-builder" />
+    <Card title="stitch()" href="/docs/guides/authoring/stitch" />
+    <Card title="cookieSession" href="/docs/guides/auth/cookie-session" />
+    <Card title="Shared sessions" href="/docs/guides/state/shared-sessions" />
+    <Card title="Reference: stitch()" href="/docs/reference/stitch" />
+</Cards>

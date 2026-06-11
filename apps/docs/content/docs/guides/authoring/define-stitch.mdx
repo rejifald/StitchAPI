@@ -3,16 +3,55 @@ title: 'defineStitch()'
 description: 'Bind a set of base fragments once and get a reusable stitch factory.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Use `defineStitch` when many stitches share the same defaults — a base URL,
+retry policy, headers — and you want to bind those once and stamp out each
+stitch from the resulting factory instead of repeating the base on every call.
 
 ## Example
 
-Stub.
+```ts twoslash
+import { defineStitch } from '@stitchapi/core';
+
+// Bind the base once; the factory carries it into every stitch it builds.
+const api = defineStitch({
+    baseUrl: 'https://api.example.com',
+    retry: { attempts: 3 },
+});
+
+const getUser = api('/users/{id}'); // inherits baseUrl + retry
+const createUser = api({ method: 'POST', path: '/users' });
+```
+
+Both `getUser` and `createUser` inherit `baseUrl` and `retry` from the bound
+base; each call adds only what is specific to that stitch.
 
 ## Options
 
-Stub.
+`defineStitch(...fragments)` takes one or more fragments — a `Partial<StitchConfig>`,
+a [`preset()`](/docs/guides/authoring/preset), another stitch, or a bare string
+(shorthand for `{ path }`) — and returns a factory. Calling the factory with a
+string or a partial config produces a stitch whose own config is layered on top
+of the bound fragments.
+
+The split is: `defineStitch` binds what is **shared** across the family; each
+factory call adds what is **unique** to that one stitch. A
+[`preset()`](/docs/guides/authoring/preset) is a named fragment you can pass in
+as a base, reuse across several factories, or merge per call.
+
+Under the hood the bound fragments are prepended to each stitch's
+[`extends`](/docs/guides/authoring/extends) list, so they deep-merge with
+later layers winning. The merge order and precedence rules live with `extends`.
+
+<Callout type="warn">
+    The bound base is prepended, so a value set on an individual factory call
+    overrides the same value from `defineStitch` — later layers win.
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="preset()" href="/docs/guides/authoring/preset" />
+    <Card title="extends" href="/docs/guides/authoring/extends" />
+    <Card title="stitch()" href="/docs/guides/authoring/stitch" />
+    <Card title="Reference: stitch()" href="/docs/reference/stitch" />
+</Cards>
