@@ -72,26 +72,22 @@ export const NODE_ONLY_SURFACES = [
 /** Union of the Node-only surface identifier literals. */
 export type NodeOnlySurface = (typeof NODE_ONLY_SURFACES)[number];
 
-const NOT_IMPLEMENTED =
-    'Dispatch contract is frozen in C1 but implemented in D1 — not available yet.';
-
 /**
  * Static scan of pre-transpile source for Node-only surface references (§3).
  * Signature frozen by C1; implemented in D1.
+ *
+ * The throwing stub was replaced in D1 by the real heuristic, which lives in
+ * ./scan-surface.ts (kept out of this frozen-signatures module so the contract
+ * file stays types-only). Re-exported here so the frozen import surface — and
+ * index.ts — are unchanged.
  */
 // implemented in D1
-export function scanSurface(code: string): SurfaceScan {
-    void code;
-    throw new Error(NOT_IMPLEMENTED);
-}
+export { scanSurface } from './scan-surface';
 
 /**
  * Compose a browser (+ optional server) runner into the single `CodeRunner`
  * that `<StitchPlayground runner={…}/>` receives. Signature frozen by C1;
- * implemented in D1.
+ * implemented in D1 (impl in ./dispatch-runner.ts; re-exported here).
  */
 // implemented in D1
-export function dispatchRunner(opts: DispatchOpts): CodeRunner {
-    void opts;
-    throw new Error(NOT_IMPLEMENTED);
-}
+export { dispatchRunner } from './dispatch-runner';

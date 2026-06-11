@@ -16,6 +16,7 @@
  * `@codemirror/*`) once relocated into the docs app.
  */
 import { type CodeRunner, type RunResult, mockRunner } from './runner';
+import { buildRunView } from './output-format';
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 
@@ -23,8 +24,20 @@ export interface StitchPlaygroundProps {
     /** Initial editor contents. */
     initialCode?: string;
     /**
-     * The execution engine. Defaults to the mock so the shell is usable before
-     * the in-house engine exists. Wire the real `CodeRunner` here later.
+     * The execution engine.
+     *
+     * RUNNER INTEGRATION POINT — wire order (first truthy wins):
+     *   1. Caller supplies a `dispatchRunner(opts)` result (D1) — the real engine
+     *      that does the §3 surface scan and routes to browser / server runner.
+     *   2. Caller supplies any other `CodeRunner` (e.g. a bare browserWorkerRunner).
+     *   3. No runner supplied → falls back to `mockRunner` (canned output for dev/
+     *      snapshot testing). The shell is fully usable in this mode.
+     *
+     * Once D1 lands, the docs app wires it like:
+     *   import { dispatchRunner } from '../contracts/dispatch';
+     *   import { browserWorkerRunner } from '../runtime/browser-worker-runner';
+     *   const runner = dispatchRunner({ browser: browserWorkerRunner });
+     *   <StitchPlayground runner={runner} />
      */
     runner?: CodeRunner;
     /** Globals exposed to the snippet (the browser `stitch` build goes here). */
@@ -124,10 +137,20 @@ export function StitchPlayground({
 }
 
 /**
- * Output panel. Today: logs + value + error. Future (with the real engine): a
- * response card, retry/throttle/drift annotations, and a Mermaid DAG rendered
- * from `result.trace` — this is where the in-house engine earns its keep over a
- * generic playground's console pane (see ../RATIONALE.md).
+ * Output panel — renders:
+ *   · ordered console logs
+ *   · resolved value (pretty-printed)
+ *   · structured error (showing error.reason when present)
+ *   · notices strip (e.g. "ran `keychain` shimmed")
+ *   · Mermaid DAG built from result.trace via traceToMermaid
+ *
+ * Streaming note: CodeRunner.run() is single-shot — it resolves once with a
+ * fully assembled RunResult. The `isStreaming` flag (derived from trace entries
+ * with `.stream`) marks results that *contained* chunked/SSE/LLM data, rendered
+ * with a visual hint below. True incremental UI streaming (chunk-by-chunk display
+ * as the response arrives) requires a contract extension (e.g. an async iterable
+ * on CodeRunner or RunResult). The frozen CodeRunner contract does not provide
+ * this. See the U1 implementation report — flagged for the contract owner (D1/R1).
  */
 function StitchOutput({
     result,
@@ -152,33 +175,70 @@ function StitchOutput({
             </div>
         );
 
+    const view = buildRunView(result);
+
     return (
         <div className="stitch-playground__output">
-            {result.logs.map((l, i) => (
+            {/* ── Logs ─────────────────────────────────────────────────── */}
+            {view.logs.map((line, i) => (
                 <div
                     key={i}
-                    data-level={l.level}
+                    data-level={result.logs[i]?.level}
                     className="stitch-playground__log"
                 >
-                    {l.args
-                        .map((a) =>
-                            typeof a === 'string' ? a : JSON.stringify(a),
-                        )
-                        .join(' ')}
+                    {line}
                 </div>
             ))}
-            {result.error ? (
+
+            {/* ── Error ────────────────────────────────────────────────── */}
+            {view.errorText !== null && (
                 <pre className="stitch-playground__error">
-                    {result.error.name}: {result.error.message}
+                    {view.errorText}
                 </pre>
-            ) : result.value !== undefined ? (
+            )}
+
+            {/* ── Resolved value ───────────────────────────────────────── */}
+            {view.errorText === null && view.valueText !== null && (
                 <pre className="stitch-playground__value">
-                    {typeof result.value === 'string'
-                        ? result.value
-                        : JSON.stringify(result.value, null, 2)}
+                    {view.valueText}
                 </pre>
-            ) : null}
-            {/* TODO(engine): render result.trace as a Mermaid build-stitch DAG. */}
+            )}
+
+            {/* ── Notices strip ────────────────────────────────────────── */}
+            {view.notices.length > 0 && (
+                <div className="stitch-playground__notices" role="note">
+                    {view.notices.map((n, i) => (
+                        <div key={i} className="stitch-playground__notice">
+                            ⚠ {n}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Mermaid DAG ──────────────────────────────────────────── */}
+            {result.trace && result.trace.length > 0 && (
+                <div className="stitch-playground__dag">
+                    {/* Streaming badge: shown when the trace contains a stream entry.
+                        NOTE: This marks a result that *included* streaming data — it
+                        does NOT mean the panel updated incrementally as chunks arrived.
+                        Incremental rendering needs a streaming contract extension. */}
+                    {view.isStreaming && (
+                        <span className="stitch-playground__dag-streaming-badge">
+                            streaming
+                        </span>
+                    )}
+                    {/* The Mermaid flowchart is rendered by the docs framework's
+                        <Mermaid> component (Fumadocs / MDX). We emit the raw graph
+                        string into a <pre data-mermaid> block; the framework's script
+                        picks it up and renders the SVG DAG. */}
+                    <pre
+                        className="stitch-playground__mermaid"
+                        data-mermaid="true"
+                    >
+                        {view.mermaid}
+                    </pre>
+                </div>
+            )}
         </div>
     );
 }

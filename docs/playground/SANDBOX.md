@@ -230,6 +230,12 @@ Additive (non-breaking) extensions **frozen in Wave 0** (see [`contracts/`](./co
   the browser runner shows when a Node-only surface runs shimmed (§3, §5.7).
 - `RunRequest.scope` already carries the browser `stitch` build + sim `fetch`; the
   dispatcher decides the scope per tier.
+- `RunRequest.onEvent?(RunEvent)` (added Wave 4) — an optional progressive channel so
+  the UI can render **incrementally** (the §9 LLM/SSE token-by-token criterion). `run()`
+  stays single-shot; runners without progress just never call it. **Meeting §9's
+  "incrementally" end-to-end requires a scheduled amendment:** R1's worker must forward
+  chunks via `postMessage` as they arrive, and U1 must consume `onEvent` (today U1 renders
+  the *assembled* stream + a streaming badge). Tracked into Wave 5.
 
 **Browser memory & CSP (ratified Wave 0):** the browser Worker is **time-bounded only** —
 no portable per-Worker memory cap exists, and the blast radius is the visitor's own tab,

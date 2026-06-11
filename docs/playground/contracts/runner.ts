@@ -14,6 +14,8 @@ export type {
     RunRequest,
     RunResult,
     RunError,
+    RunNotice,
+    RunEvent,
     StitchTraceEntry,
     LogEntry,
     LogLevel,

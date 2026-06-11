@@ -134,7 +134,29 @@ export interface RunRequest {
     signal?: AbortSignal;
     /** Hard cap; the engine aborts the run past this. Default per-engine. */
     timeoutMs?: number;
+    /**
+     * Optional progressive channel (added Wave 4, additive/non-breaking). A
+     * runner MAY call this as events occur — a `console.*` line, a stream chunk,
+     * a completed stitch trace — so the UI can render incrementally (the §9
+     * "renders streamed output incrementally" / LLM token-by-token criterion).
+     * `run()` still resolves once with the full {@link RunResult}; a runner that
+     * doesn't support progress simply never calls this and the UI falls back to
+     * the final result. Snippet code never sees this — it's runner→host only.
+     */
+    onEvent?: (event: RunEvent) => void;
 }
+
+/**
+ * A progressive event emitted during a run via {@link RunRequest.onEvent}
+ * (added Wave 4). Lets the output panel render incrementally before `run()`
+ * resolves. All fields mirror the final {@link RunResult} pieces so the UI can
+ * append-then-reconcile.
+ */
+export type RunEvent =
+    | { type: 'log'; entry: LogEntry }
+    | { type: 'chunk'; traceId?: string; text: string }
+    | { type: 'trace'; entry: StitchTraceEntry }
+    | { type: 'notice'; notice: RunNotice };
 
 /* -------------------------------------------------------------------------- */
 /*  The contract                                                              */
