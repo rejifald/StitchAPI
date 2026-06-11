@@ -4,7 +4,13 @@
 // response (used by cookieSession to read Set-Cookie from a login stitch).
 import { classifyDrift, loadSnapshot, saveSnapshot } from './drift';
 import { fetchAdapter } from './http-adapter';
-import { backoffDelay, parseRetryAfter, withTimeout } from './resilience';
+import {
+    CircuitOpenError,
+    backoffDelay,
+    createCircuit,
+    parseRetryAfter,
+    withTimeout,
+} from './resilience';
 import type {
     Adapter,
     AdapterRequest,
@@ -309,6 +315,50 @@ async function* attemptLoop(
     throw new Error('retry attempts exhausted');
 }
 
+// Wraps attemptLoop with a circuit breaker (when configured). When the breaker is OPEN it
+// fast-fails BEFORE any network call (emitting a `circuit` progress event), so a failing
+// dependency stops being hammered; a success closes it, a failure (re)opens it. With no
+// `circuit` config this is a transparent pass-through.
+async function* attemptWithCircuit(
+    rt: Runtime,
+    baseReq: AdapterRequest,
+    state: { attempts: number },
+): AsyncGenerator<StitchEvent, AdapterResponse, unknown> {
+    const { cfg } = rt;
+    if (!cfg.circuit) {
+        return yield* attemptLoop(rt, baseReq, state);
+    }
+    const circuit = createCircuit(cfg.circuit, rt.store, hostKey(baseReq, cfg));
+    if ((await circuit.phase()) === 'open') {
+        yield {
+            type: 'progress',
+            phase: 'circuit',
+            attempt: state.attempts,
+            detail: 'open',
+            at: now(),
+        };
+        throw new CircuitOpenError(); // fast-fail: do NOT touch the network
+    }
+    try {
+        const res = yield* attemptLoop(rt, baseReq, state);
+        await circuit.onSuccess();
+        return res;
+    } catch (e) {
+        if (!(e instanceof CircuitOpenError)) {
+            const opened = await circuit.onFailure();
+            if (opened)
+                yield {
+                    type: 'progress',
+                    phase: 'circuit',
+                    attempt: state.attempts,
+                    detail: 'open',
+                    at: now(),
+                };
+        }
+        throw e;
+    }
+}
+
 function mergeInput(a: StitchInput, b: StitchInput): StitchInput {
     return {
         params: { ...(a.params ?? {}), ...(b.params ?? {}) },
@@ -349,7 +399,7 @@ async function* paginated(
         const req = buildRequest(cfg, pageInput);
         let res: AdapterResponse;
         try {
-            res = yield* attemptLoop(rt, req, state);
+            res = yield* attemptWithCircuit(rt, req, state);
         } catch (e) {
             yield errEvt(e, name, state.attempts);
             yield doneEvt(false, t0, state.attempts);
@@ -444,7 +494,7 @@ export async function* execute(
 
     let res: AdapterResponse;
     try {
-        res = yield* attemptLoop(rt, baseReq, state);
+        res = yield* attemptWithCircuit(rt, baseReq, state);
     } catch (e) {
         yield errEvt(e, name, state.attempts);
         yield doneEvt(false, t0, state.attempts);
