@@ -105,8 +105,14 @@ export function startMockServer(): Promise<MockServer> {
             payload: unknown,
             extra?: RouteBehavior,
         ): void => {
+            // A Buffer/Uint8Array body is sent as raw bytes (octet-stream by default);
+            // anything else is JSON-encoded. Lets routes serve binary downloads.
+            const isBytes =
+                Buffer.isBuffer(payload) || payload instanceof Uint8Array;
             const out: Record<string, string | string[]> = {
-                'content-type': 'application/json',
+                'content-type': isBytes
+                    ? 'application/octet-stream'
+                    : 'application/json',
             };
             if (extra?.headers) Object.assign(out, extra.headers);
             if (extra?.setCookie)
@@ -120,7 +126,11 @@ export function startMockServer(): Promise<MockServer> {
             if (extra?.retryAfter !== undefined)
                 out['Retry-After'] = String(extra.retryAfter);
             res.writeHead(status, out);
-            res.end(JSON.stringify(payload));
+            res.end(
+                isBytes
+                    ? Buffer.from(payload as Uint8Array)
+                    : JSON.stringify(payload),
+            );
         };
 
         if (!behavior) return send(404, { error: 'not_found' });
