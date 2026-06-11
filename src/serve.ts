@@ -86,8 +86,10 @@ async function runJson(
     let failure: { message: string; status?: number } | undefined;
     for await (const ev of stream) {
         if (ev.type === 'result') value = ev.value;
-        else if (ev.type === 'error')
-            failure = { message: ev.message, status: ev.status };
+        else if (ev.type === 'error') {
+            failure = { message: ev.message };
+            if (ev.status !== undefined) failure.status = ev.status;
+        }
     }
     if (failure) {
         const status =
@@ -128,7 +130,7 @@ export function createServeHandler(
             return;
         }
 
-        const name = decodeURIComponent(match[1]);
+        const name = decodeURIComponent(match[1] ?? '');
         let stitch;
         try {
             stitch = selectStitch(registry, name);

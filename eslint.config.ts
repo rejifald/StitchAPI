@@ -29,6 +29,13 @@ export default tseslint.config(
             '@typescript-eslint/require-await': 'off',
             // Conflicts with no-non-null-assertion; prefer explicit `as T` or a guard.
             '@typescript-eslint/non-nullable-type-assertion-style': 'off',
+            // tsconfig's noPropertyAccessFromIndexSignature forces bracket access on
+            // index-signature properties (process.env, header maps); allow that here so
+            // the compiler option and dot-notation don't pull in opposite directions.
+            '@typescript-eslint/dot-notation': [
+                'error',
+                { allowIndexSignaturePropertyAccess: true },
+            ],
         },
     },
     {

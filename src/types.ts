@@ -170,7 +170,7 @@ export interface StitchConfig {
     input?: InputSchemas;
     output?: Validator | DriftSpec;
     unwrap?: string;
-    transform?: (body: unknown) => unknown | Promise<unknown>; // e.g. scrape HTML -> structured, before unwrap/validate
+    transform?: (body: unknown) => unknown; // e.g. scrape HTML -> structured, before unwrap/validate
     paginate?: {
         // Given the previous page's raw body + how many pages were fetched, return the input
         // (merged over the original) for the next page, or undefined to stop.
@@ -221,7 +221,7 @@ export interface TraceSink {
 // in-memory (single process). A Redis/Postgres adapter makes throttle distributed and
 // sessions persistent/shared across workers — see DESIGN.md §13.
 export interface StitchStore {
-    get(key: string): Promise<unknown | undefined>;
+    get(key: string): Promise<unknown>;
     set(key: string, value: unknown, ttlMs?: number): Promise<void>;
     incr(key: string, ttlMs: number): Promise<number>;
 }

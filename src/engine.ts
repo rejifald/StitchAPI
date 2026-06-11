@@ -55,7 +55,12 @@ export function makeRuntime(
     trace: TraceSink,
     store: StitchStore,
 ): Runtime {
-    const authCtx: AuthContext = { store, emit: () => {} };
+    const authCtx: AuthContext = {
+        store,
+        emit: () => {
+            /* progress surfaces via yielded events, not authCtx */
+        },
+    };
     return {
         cfg,
         adapter: cfg.adapter ?? fetchAdapter(),
@@ -121,6 +126,7 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const method = (cfg.method ?? (isGql ? 'POST' : 'GET')).toUpperCase();
     const headers = { ...(cfg.headers ?? {}), ...(input.headers ?? {}) };
     applyIdempotency(cfg, input, method, headers);
+    const bodyType = isGql ? 'json' : cfg.bodyType;
     return {
         url,
         method,
@@ -131,8 +137,10 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
                   variables: input.variables ?? input.body ?? {},
               }
             : input.body,
-        bodyType: isGql ? 'json' : cfg.bodyType,
-        responseType: cfg.responseType,
+        ...(bodyType !== undefined ? { bodyType } : {}),
+        ...(cfg.responseType !== undefined
+            ? { responseType: cfg.responseType }
+            : {}),
     };
 }
 
@@ -153,14 +161,15 @@ const hostKey = (req: AdapterRequest, cfg: StitchConfig): string => {
 
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const e = err as { message?: string; status?: number };
-    return {
+    const evt: Extract<StitchEvent, { type: 'error' }> = {
         type: 'error',
         name,
-        message: e?.message ?? String(err),
-        status: e?.status,
+        message: e.message ?? String(err),
         attempts,
         at: now(),
     };
+    if (e.status !== undefined) evt.status = e.status;
+    return evt;
 }
 const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
     type: 'done',

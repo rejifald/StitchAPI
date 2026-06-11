@@ -57,7 +57,10 @@ function serverAddress(url: string): string | undefined {
 export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
     const exporter =
         opts.exporter ??
-        otlpHttpExporter({ endpoint: opts.endpoint, headers: opts.headers });
+        otlpHttpExporter({
+            ...(opts.endpoint !== undefined ? { endpoint: opts.endpoint } : {}),
+            ...(opts.headers !== undefined ? { headers: opts.headers } : {}),
+        });
     const open = new Map<string, OtelSpan[]>();
     const push = (name: string, span: OtelSpan): void => {
         const stack = open.get(name) ?? [];
@@ -72,7 +75,10 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
     const emit = (span: OtelSpan): void => {
         try {
             const r = exporter.export([span]) as unknown;
-            if (r instanceof Promise) r.catch(() => {});
+            if (r instanceof Promise)
+                r.catch(() => {
+                    /* swallow: an export failure must never break the stream */
+                });
         } catch {
             /* an exporter failure must never break the event stream */
         }
@@ -164,7 +170,9 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                 }
             }
         },
-        flush(): void {},
+        flush(): void {
+            /* spans are exported eagerly on 'done'; nothing is buffered */
+        },
     };
 }
 
@@ -238,7 +246,7 @@ export function otlpHttpExporter(
 ): SpanExporter {
     const base =
         opts.endpoint ??
-        process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??
+        process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ??
         'http://localhost:4318';
     const url = base.replace(/\/+$/, '') + '/v1/traces';
     return {
