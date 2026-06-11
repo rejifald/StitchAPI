@@ -120,6 +120,14 @@ export interface RunRequest {
      * Globals injected into the snippet's scope. The playground puts the
      * browser `stitch` build here, plus any helpers. Snippets must NOT reach
      * arbitrary `window`/`globalThis` — see ../REQUIREMENTS.md §Security.
+     *
+     * NOTE (R1, Wave 3): in the isolated tiers (browser Worker / server isolate)
+     * values cross a structured-clone / postMessage boundary, so non-cloneable
+     * `scope` values (live functions, etc.) are NOT transported. The secure
+     * posture is name-allowlisting: the runner binds the allowlisted `stitch`
+     * build inside the isolate by name rather than shipping arbitrary live
+     * values (SEC-34). Treat `scope` here as the allowlist of names to expose,
+     * not a channel for injecting arbitrary host objects.
      */
     scope?: Record<string, unknown>;
     /** Cooperative cancellation (Stop button, page nav). */

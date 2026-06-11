@@ -11,5 +11,5 @@
         "strict": true
     },
     "comment-scope": "Scoped to R2's dependency-free transpile module. B1's stitch-browser.ts + shims/ import @stitchapi/core and are type-checked via tsconfig.browser.json under pnpm install (CI), not here.",
-    "include": ["transpile.ts", "transpile.test.ts", "vendor.d.ts", "../component/runner.ts"]
+    "include": ["transpile.ts", "transpile.test.ts", "browser-runner.ts", "worker-entry.ts", "worker-protocol.ts", "vendor.d.ts", "../component/runner.ts"]
 }
