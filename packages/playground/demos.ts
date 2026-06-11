@@ -108,7 +108,6 @@ export const demos: Demo[] = [
                 baseUrl: mock.url,
                 path: '/me',
                 auth: cookieSession({
-                    // @ts-expect-error login expects { __raw }; stitch() returns Stitch (core type gap, runtime is fine)
                     login,
                     cookie: 'SID',
                     loginInput: () => ({
@@ -301,7 +300,6 @@ export const demos: Demo[] = [
                 baseUrl: mock.url,
                 path: '/data',
                 auth: cookieSession({
-                    // @ts-expect-error login expects { __raw }; stitch() returns Stitch (core type gap, runtime is fine)
                     login,
                     cookie: 'SID',
                     // status is 200, so only a content predicate can catch this wall:

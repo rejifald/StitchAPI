@@ -7,6 +7,7 @@ import type {
     AdapterResponse,
     AuthContext,
     AuthStrategy,
+    Stitch,
     StitchInput,
 } from './types';
 import { now } from './util';
@@ -176,8 +177,8 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
 }
 
 export interface CookieSessionOpts {
-    /** The login stitch (exposes __raw to read response headers). */
-    login: { __raw: (input?: StitchInput) => Promise<AdapterResponse> };
+    /** The login stitch — its raw response (the Set-Cookie headers) seeds the session. */
+    login: Stitch;
     /**
      * Cookie name to capture from Set-Cookie and replay on each request, or `'*'` to capture and
      * replay the WHOLE Set-Cookie jar (every cookie the login set, not just one named cookie).
@@ -204,7 +205,13 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
 
     const doRefresh = async (ctx: AuthContext) => {
         ctx.emit('auth', 'login');
-        const res = await opts.login.__raw(opts.loginInput?.());
+        // `__raw` runs the login once and returns its raw AdapterResponse (headers and all).
+        // It is intentionally not on the public Stitch type, so reach it through a cast.
+        const res = await (
+            opts.login as unknown as {
+                __raw: (input?: StitchInput) => Promise<AdapterResponse>;
+            }
+        ).__raw(opts.loginInput?.());
         const setCookie =
             res.headers['set-cookie'] ?? res.headers['Set-Cookie'];
         if (jarMode) {
