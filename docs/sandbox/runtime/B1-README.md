@@ -39,7 +39,7 @@ Three knobs, all proven in the spike (B1-SPIKE §4):
    `node:crypto → shims/node-crypto.ts`, `node:fs → shims/node-fs.ts`,
    `node:path → shims/node-path.ts`. These are the _only_ three built-ins reachable
    from core's barrel (7 import sites across `engine/otlp/auth/trace/drift`).
-2. **alias** `@stitchapi/core → packages/core/src/index.ts` so the bundle resolves
+2. **alias** `stitchapi → packages/core/src/index.ts` so the bundle resolves
    **without `pnpm install`** (zod is unused in the reachable graph — B1-SPIKE §1).
    In R1's installed workspace this alias is unnecessary; point it at the published
    entry instead.
@@ -70,7 +70,7 @@ npx -y esbuild docs/sandbox/runtime/stitch-browser.ts \
   --alias:node:crypto=docs/sandbox/runtime/shims/node-crypto.ts \
   --alias:node:fs=docs/sandbox/runtime/shims/node-fs.ts \
   --alias:node:path=docs/sandbox/runtime/shims/node-path.ts \
-  --alias:@stitchapi/core=packages/core/src/index.ts \
+  --alias:stitchapi=packages/core/src/index.ts \
   --define:process='{"env":{},"platform":"browser","versions":{}}' \
   --outfile=/tmp/b1-out/stitch-browser.mjs
 ```
@@ -149,7 +149,7 @@ Lifted from B1-SPIKE §7, plus what this implementation adds:
    re-enable core console trace in the browser (and must not set
    `STITCH_TRACE_CONSOLE=1` in any injected `process.env`). Trace is surfaced via
    `StitchTraceEntry`, not stderr.
-5. **The `@stitchapi/core` alias is a spike/no-install convenience.** It points at
+5. **The `stitchapi` alias is a spike/no-install convenience.** It points at
    `packages/core/src/index.ts`. In R1's installed workspace, drop the alias (or
    point it at the package's published ESM entry) — the result is the same or better
    (B1-SPIKE §7).

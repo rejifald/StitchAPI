@@ -9,7 +9,7 @@
  *
  * ─── The conservative contract (SEC-46..48) ────────────────────────────────────
  *   - A CLEAR reference to a Node-only surface (called identifier, imported binding
- *     from `@stitchapi/core` / `stitchapi`, or a member access `x.keychain`) →
+ *     from `stitchapi`, or a member access `x.keychain`) →
  *     `tier:'server'` with the matched identifiers in `nodeOnlyHits`.
  *   - AMBIGUOUS / DYNAMIC access that cannot be statically resolved (computed member
  *     `core['key'+'chain']`, `eval`, a re-aliased import we cannot follow) →
@@ -37,7 +37,7 @@ import {
 } from './dispatch';
 
 /** Import specifiers whose bindings we treat as the stitch core surface. */
-const STITCH_MODULES = new Set(['@stitchapi/core', 'stitchapi']);
+const STITCH_MODULES = new Set(['stitchapi']);
 
 /**
  * Set form of the frozen Node-only list, for O(1) membership checks.
@@ -175,7 +175,7 @@ function isNodeOnly(name: string): name is NodeOnlySurface {
 /**
  * Collect Node-only identifiers that are *clearly* referenced in the (de-strung)
  * source as one of:
- *   - a named import from a stitch module:  import { keychain } from '@stitchapi/core'
+ *   - a named import from a stitch module:  import { keychain } from 'stitchapi'
  *   - a called identifier:                  keychain(...)
  *   - a member access:                      core.keychain / x.env
  *   - a bare word boundary occurrence       (catch-all; only over-shims)

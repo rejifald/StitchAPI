@@ -1,13 +1,13 @@
 import { emitShimNotice } from './shims/notices';
 
-import { createTrace as coreCreateTrace } from '@stitchapi/core';
-import type { TraceSink } from '@stitchapi/core';
+import { createTrace as coreCreateTrace } from 'stitchapi';
+import type { TraceSink } from 'stitchapi';
 
 /**
  * Browser-targeted `stitch` build entry — B1 (Tier-3).
  *
  * This is the docs-side entry the R1 Worker runner injects as the snippet scope's
- * stitch API. It re-exports the BROWSER-SAFE surface of `@stitchapi/core` and wires
+ * stitch API. It re-exports the BROWSER-SAFE surface of `stitchapi` and wires
  * the shims for the Node-only surfaces, per the spike's recommended shape
  * (B1-SPIKE §6 — a thin entry + bundler alias/define, NO fork of packages/core).
  *
@@ -48,7 +48,7 @@ export {
     multiplex,
     // `toOtlpJson` is a pure span→JSON mapper (no Node) — safe verbatim.
     toOtlpJson,
-} from '@stitchapi/core';
+} from 'stitchapi';
 
 // All public types — none carry runtime Node weight. Core's barrel re-exports
 // `./types` via `export *`, so every public type is reachable from the main entry.
@@ -58,8 +58,8 @@ export type {
     OtelSpanEvent,
     SpanAttributes,
     OtlpOptions,
-} from '@stitchapi/core';
-export type * from '@stitchapi/core';
+} from 'stitchapi';
+export type * from 'stitchapi';
 
 /* ---- Node-only surfaces, shimmed (emit a RunNotice) ---------------------- */
 export { keychain, env, cookieSession } from './shims/node-surfaces';
