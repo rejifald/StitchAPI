@@ -89,9 +89,9 @@ deprecation window, and no migration path is owed.
         `loginInput` / `StitchInput`. `loginInput` gains the principal —
         `loginInput?: (principal: string) => StitchInput` — so trusted code maps the identity to
         _that user's_ login credentials; credentials still never originate from the caller.
-    -   Session bytes land in the **vault** namespace (off `__config`, redacted); `scope:
-'principal'` wants `ttlMs` set and a distributed/secret backend at scale (per-user
-        sessions multiply; the in-memory default must evict).
+    -   Session bytes land in the **vault** namespace (off `__config`, redacted). With
+        `scope: 'principal'`, set `ttlMs` and use a distributed/secret backend at scale —
+        per-user sessions multiply and the in-memory default must evict.
 
 4.  **Split storage into two namespaces by capability/visibility — not by backend.**
 
