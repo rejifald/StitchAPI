@@ -3,12 +3,83 @@ title: 'Auth strategies'
 description: 'bearer, apiKey, basic, cookieSession, oauth2, and the env() and keychain() resolvers.'
 ---
 
-Stub — what this page documents. See AUTHORING.md.
+The signatures for every auth strategy and secret resolver. Each strategy holds
+the credential and resolves it at call time, so the caller never sees it. The
+guides under [Auth](/docs/guides/auth/secret-resolvers) show how to use them.
 
-## Signature
+## bearer
 
-Stub.
+Attaches `Authorization: Bearer <token>`.
+
+```ts twoslash
+import { bearer } from 'stitchapi';
+```
+
+## apiKey
+
+Sends a secret in a header (`x-api-key` by default).
+
+```ts twoslash
+import { apiKey } from 'stitchapi';
+```
+
+## basic
+
+Base64-encodes `user:pass` into `Authorization: Basic …`.
+
+```ts twoslash
+import { basic } from 'stitchapi';
+```
+
+## cookieSession
+
+Logs in once, captures the cookie from `Set-Cookie`, replays it on each request,
+and re-logs in on a status code or a soft 200 wall.
+
+<AutoTypeTable
+    path="../../packages/core/src/auth.ts"
+    name="CookieSessionOpts"
+/>
+
+## oauth2
+
+Performs the `client_credentials` grant, caches the access token, refreshes it
+before expiry, and attaches it as `Authorization: Bearer …`.
+
+<AutoTypeTable path="../../packages/core/src/auth.ts" name="OAuth2Opts" />
+
+## env
+
+Resolves a secret from an environment variable at call time.
+
+```ts twoslash
+import { env } from 'stitchapi';
+```
+
+## keychain
+
+Resolves a secret from `~/.stitch/secrets.json`, falling back to the environment.
+
+```ts twoslash
+import { keychain } from 'stitchapi';
+```
 
 ## See also
 
-Stub.
+<Cards>
+    <Card
+        title="Guide: secret resolvers"
+        href="/docs/guides/auth/secret-resolvers"
+    />
+    <Card
+        title="Guide: cookieSession"
+        href="/docs/guides/auth/cookie-session"
+    />
+    <Card title="Guide: oauth2" href="/docs/guides/auth/oauth2" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="STITCH_AUTH_WALL" href="/docs/errors/stitch-auth-wall" />
+    <Card title="Config types" href="/docs/reference/config-types" />
+</Cards>

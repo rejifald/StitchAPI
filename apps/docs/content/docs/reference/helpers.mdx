@@ -3,12 +3,136 @@ title: 'Helpers'
 description: 'fetchAdapter, createTrace, multiplex, the OTLP exporters, memoryStore, and toValidator.'
 ---
 
-Stub — what this page documents. See AUTHORING.md.
+The exported helper functions you wire into a stitch: the default transport, the
+trace sinks (including OTLP export), the default store, and the schema adapter.
+Each signature is below; the guides cover usage in depth and are linked under
+[See also](#see-also).
 
-## Signature
+## Transport
 
-Stub.
+### fetchAdapter
+
+The default fetch-based transport. Returns an `Adapter` backed by the global
+`fetch`; it never throws on a non-2xx response — only network and abort errors
+propagate, leaving the engine to decide what a status means.
+
+```ts twoslash
+import { fetchAdapter } from 'stitchapi';
+
+const adapter = fetchAdapter();
+```
+
+## Tracing & OTLP
+
+### createTrace
+
+Build a zero-infra trace sink: a compact one-line-per-event summary on the
+console and/or an appended JSONL record per event. `console` defaults to `true`;
+`file` defaults to a path under `$HOME`, or `false` to disable the JSONL stream.
+
+```ts twoslash
+import { createTrace } from 'stitchapi';
+
+const sink = createTrace({ console: true, file: false });
+```
+
+### multiplex
+
+Fan one event stream out to several sinks — for example console/JSONL alongside
+OTLP — flushing each in turn.
+
+```ts twoslash
+import { createTrace, multiplex, otlpTrace } from 'stitchapi';
+
+const sink = multiplex(createTrace(), otlpTrace());
+```
+
+### otlpTrace
+
+An opt-in OpenTelemetry sink: it maps each stitch call's events to a single OTel
+`CLIENT` span and hands finished spans to a `SpanExporter`. With no exporter
+supplied it uses `otlpHttpExporter`. Configured by `OtlpOptions` (below).
+
+```ts twoslash
+import { otlpTrace } from 'stitchapi';
+
+const sink = otlpTrace({ endpoint: 'https://api.example.com:4318' });
+```
+
+### otlpHttpExporter
+
+The default exporter: POST spans as OTLP/JSON to `${endpoint}/v1/traces`. The
+endpoint defaults to `OTEL_EXPORTER_OTLP_ENDPOINT` or `http://localhost:4318`.
+Fire-and-forget — a missing collector never breaks a stitch call.
+
+```ts twoslash
+import { otlpHttpExporter } from 'stitchapi';
+
+const exporter = otlpHttpExporter({
+    endpoint: 'https://api.example.com:4318',
+    headers: { authorization: 'Bearer token' },
+});
+```
+
+### toOtlpJson
+
+Serialize finished spans to the OTLP/JSON `ResourceSpans` shape a collector
+accepts on `/v1/traces` — useful for a custom `SpanExporter`.
+
+```ts twoslash
+import { toOtlpJson } from 'stitchapi';
+
+const body = toOtlpJson([]);
+```
+
+#### OtlpOptions
+
+<AutoTypeTable path="../../packages/core/src/otlp.ts" name="OtlpOptions" />
+
+## Store
+
+### memoryStore
+
+The default in-memory `StitchStore`: single-process, with TTL and atomic
+increment. Swap it for a Redis/Postgres-backed store to make throttling
+distributed and sessions shared across workers, with no change to the call site.
+
+```ts twoslash
+import { memoryStore } from 'stitchapi';
+
+const store = memoryStore();
+```
+
+## Validation
+
+### toValidator
+
+Coerce a Zod schema, any Standard Schema, an existing `Validator`, or a
+predicate into a `Validator` — returning `undefined` when passed `null` or
+`undefined`. This is how Zod-first projects keep Zod while Valibot/ArkType also
+work.
+
+```ts twoslash
+import { toValidator } from 'stitchapi';
+
+const validator = toValidator((value: unknown) => typeof value === 'string');
+```
 
 ## See also
 
-Stub.
+<Cards>
+    <Card
+        title="Guide: trace sinks"
+        href="/docs/guides/observability/trace-sinks"
+    />
+    <Card title="Guide: OTLP export" href="/docs/guides/observability/otlp" />
+    <Card
+        title="Guide: pluggable store"
+        href="/docs/guides/state/pluggable-store"
+    />
+    <Card
+        title="Guide: Standard Schema"
+        href="/docs/guides/validation/standard-schema"
+    />
+    <Card title="Config types" href="/docs/reference/config-types" />
+</Cards>
