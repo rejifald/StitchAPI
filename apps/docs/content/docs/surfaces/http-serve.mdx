@@ -3,16 +3,61 @@ title: 'HTTP serve'
 description: "Expose a stitch over HTTP for callers that aren't in-process."
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+Reach for `stitch serve` when a caller can't import your stitches in-process —
+a remote service, another language, a shell script — and you want to expose the
+registry of named stitches over a thin local HTTP front door instead.
 
 ## Example
 
-Stub.
+Start the server, then call a registered stitch by name with a JSON body:
+
+```bash
+# Serves the registry on http://127.0.0.1:8787 by default.
+stitch serve
+
+# List the available stitch names.
+curl http://127.0.0.1:8787/
+
+# Run the `me` stitch; the request body is its input.
+curl -X POST http://127.0.0.1:8787/stitch/me \
+  -H 'content-type: application/json' \
+  -d '{}'
+```
+
+The server runs the named stitch through the same engine as an in-process call
+and returns the final validated result as JSON.
 
 ## Options
 
-Stub.
+Two routes serve the registry of named stitches:
+
+-   `GET /` lists the available stitch names.
+-   `POST /stitch/:name` runs that stitch; the JSON request body is its input.
+    Any other method returns `405`, and an unknown name returns `404`.
+
+The server binds to `127.0.0.1:8787` by default. Responses are the final
+validated result as JSON; send `Accept: text/event-stream` (or add `?stream=1`)
+to receive the live event stream as SSE instead.
+
+<Callout type="warn">
+    Serving a stitch over HTTP changes nothing about the capability boundary —
+    auth, validation, and resilience still run server-side, exactly as they do
+    in-process. The HTTP route exposes the same stitch definition, not a looser
+    one.
+</Callout>
+
+A served stitch is the same definition as the in-process
+[function surface](/docs/surfaces/function) and the
+[`stitch` CLI](/docs/surfaces/cli) — one source of truth, three ways to call it.
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Function surface" href="/docs/surfaces/function" />
+    <Card title="CLI surface" href="/docs/surfaces/cli" />
+    <Card title="MCP surface" href="/docs/surfaces/mcp" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+</Cards>
