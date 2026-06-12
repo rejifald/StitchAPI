@@ -3,12 +3,90 @@ title: 'stitch() & the builder'
 description: 'Signatures for stitch(), defineStitch(), preset(), graphql(), and the fluent builder.'
 ---
 
-Stub — what this page documents. See AUTHORING.md.
+The authoring surface: the four exports that produce a stitch, plus the fluent
+builder they share. For what goes inside the config object, see
+[Reference → Config types](/docs/reference/config-types).
 
-## Signature
+## stitch()
 
-Stub.
+`stitch<T>(config)` takes a path string or a partial config and returns a
+`Stitch<T>`; `stitch.use(...)` starts the fluent builder instead.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const user = stitch<{ id: string }>({
+    path: 'https://api.example.com/me',
+});
+```
+
+## defineStitch()
+
+`defineStitch(...fragments)` binds shared base fragments and returns a `stitch()`
+factory; each call deep-merges the bound fragments under the per-call config.
+
+```ts twoslash
+import { defineStitch } from 'stitchapi';
+
+const api = defineStitch({ path: 'https://api.example.com' });
+const user = api<{ id: string }>('/me');
+```
+
+## preset()
+
+`preset(cfg)` is an identity-tagged fragment — a named bundle of reusable
+defaults you pass through `extends`. It returns the same `Partial<StitchConfig>`.
+
+```ts twoslash
+import { preset } from 'stitchapi';
+
+const base = preset({ retry: { attempts: 3 } });
+```
+
+## graphql()
+
+`graphql<T>(config)` is a stitch preset for GraphQL-over-HTTP: it POSTs
+`{ query, variables }` and unwraps `data`. The config must carry a `query`.
+
+```ts twoslash
+import { graphql } from 'stitchapi';
+
+const viewer = graphql<{ viewer: { id: string } }>({
+    path: 'https://api.example.com/graphql',
+    query: 'query { viewer { id } }',
+});
+```
+
+See [Guide → graphql](/docs/guides/data/graphql) for usage.
+
+## The fluent builder
+
+`stitch.use(...)` returns a `Builder`: a callable object whose chainable methods
+accumulate config, then resolve to a stitch when you call it (or `.stream()` /
+`.with()`).
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const user = stitch.use().get('https://api.example.com/me');
+```
+
+<AutoTypeTable path="../../packages/core/src/stitch.ts" name="Builder" />
+
+<Callout>
+    Setter methods (`.get`, `.auth`, `.retry`, ...) return the same `Builder`
+    for chaining; `.with()` and `.stream()` build and return a `Stitch`.
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="Config types" href="/docs/reference/config-types" />
+    <Card title="Guide: stitch()" href="/docs/guides/authoring/stitch" />
+    <Card
+        title="Guide: the fluent builder"
+        href="/docs/guides/authoring/fluent-builder"
+    />
+    <Card title="Guide: graphql" href="/docs/guides/data/graphql" />
+    <Card title="Auth strategies" href="/docs/reference/auth-strategies" />
+</Cards>
