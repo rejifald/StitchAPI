@@ -2,7 +2,9 @@
 
 ---
 
-> WARNING: This lib is still under heavy construction. Despite it feedback is appreciated.
+> [!WARNING]
+>
+> **StitchAPI is under heavy development.** APIs, packages, and docs are changing fast and may break without notice — not yet recommended for production. Feedback is very welcome.
 
 StitchAPI is an agent-native integration runtime built around one primitive: a **stitch** — a typed, declarative, composable unit that turns a single endpoint into a resilient, validated, observable function. You declare it once; your code calls it, the CLI runs it, and an AI agent can invoke it without ever touching a credential.
 

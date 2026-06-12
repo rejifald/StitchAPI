@@ -9,6 +9,10 @@
   The agent-native runtime where a typed, declarative <strong>stitch</strong> replaces <code>fetch</code> — for humans and agents alike.
 </p>
 
+> [!WARNING]
+>
+> **StitchAPI is under heavy development.** APIs, packages, and docs are changing fast and may break without notice — not yet recommended for production. Feedback is very welcome.
+
 ---
 
 # StitchAPI — monorepo
