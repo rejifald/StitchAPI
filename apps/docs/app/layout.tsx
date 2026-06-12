@@ -1,14 +1,21 @@
 import './global.css';
 
+import { siteUrl } from '@/lib/shared';
+
 import 'fumadocs-twoslash/twoslash.css';
 import { Banner } from 'fumadocs-ui/components/banner';
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import { Construction } from 'lucide-react';
+import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 
 const inter = Inter({
     subsets: ['latin'],
 });
+
+export const metadata: Metadata = {
+    metadataBase: new URL(siteUrl),
+};
 
 export default function Layout({ children }: LayoutProps<'/'>) {
     return (

@@ -80,7 +80,7 @@
     "bugs": {
         "url": "https://github.com/rejifald/StitchAPI/issues"
     },
-    "homepage": "https://github.com/rejifald/StitchAPI#readme",
+    "homepage": "https://stitchapi.dev",
     "devDependencies": {
         "@arethetypeswrong/cli": "^0.18.3",
         "@eslint/js": "^9.39.4",
