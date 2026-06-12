@@ -25,5 +25,10 @@
         "@trivago/prettier-plugin-sort-imports": "^4.3.0",
         "lefthook": "^2.1.9",
         "prettier": "3.3.3"
+    },
+    "pnpm": {
+        "overrides": {
+            "postcss@<8.5.10": ">=8.5.10"
+        }
     }
 }
