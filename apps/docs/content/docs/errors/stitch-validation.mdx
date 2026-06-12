@@ -19,10 +19,11 @@ type mismatch on the response. Where it throws tells you which side failed:
     diverged from the contract.
 
 <Callout type="warn">
-    The stable code `STITCH_VALIDATION` is provisional. Today the runtime throws a
-    `StitchError` carrying the failing path and message; the coded error taxonomy
-    that will populate `error.code` and `error.url` is still landing, so don't
-    match on a literal code string yet — match on the path in the message.
+    The stable code `STITCH_VALIDATION` is provisional. Today the runtime throws
+    a `StitchError` carrying the failing path and message; the coded error
+    taxonomy that will populate `error.code` and `error.url` is still landing,
+    so don't match on a literal code string yet — match on the path in the
+    message.
 </Callout>
 
 ## Why it happens
@@ -84,9 +85,6 @@ for how `input` and `output` are checked.
         title="Bring your own validator"
         href="/docs/guides/validation/standard-schema"
     />
-    <Card
-        title="Schema drift detection"
-        href="/docs/guides/validation/drift"
-    />
+    <Card title="Schema drift detection" href="/docs/guides/validation/drift" />
     <Card title="Reference: Config types" href="/docs/reference/config-types" />
 </Cards>
