@@ -3,16 +3,68 @@ title: 'Author from one example'
 description: 'Have an agent emit a stitch declaration from a single curl, HAR, or doc snippet.'
 ---
 
-Stub — what this does and when you reach for it. See AUTHORING.md.
+An agent can write a complete stitch from one example — a `curl`, a HAR entry, a
+doc snippet — because a stitch is declarative and atomic: it needs only a URL and
+one example, never an OpenAPI spec and never codegen. The agent reads the
+example, maps its parts onto the authoring surface, and emits a `stitch({...})`
+declaration — the same surface a human writes by hand.
 
 ## Example
 
-Stub.
+Give the agent a single `curl`:
+
+```bash
+curl https://api.example.com/users/1
+```
+
+It emits the stitch that example describes:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    method: 'GET',
+});
+
+await getUser({ params: { id: 1 } });
+```
+
+That declaration is the whole integration — no spec to ingest, no generated code
+to commit.
 
 ## Options
 
-Stub.
+The agent maps each part of the one example onto a config field:
+
+-   **URL → `baseUrl` + `path`.** The origin becomes `baseUrl`; the rest becomes
+    `path`, with concrete segments lifted into `{param}` slots (so `/users/1`
+    becomes `/users/{id}`, called with `{ params: { id: 1 } }`).
+-   **Headers → `auth` / `headers`.** An `Authorization: Bearer …` or
+    `x-api-key` header becomes an `auth` strategy resolved at call time; other
+    headers become static `headers`.
+-   **An example response → an `output` schema.** When the example carries a
+    response body, the agent can add an `output` schema — turning one move into
+    TypeScript types, runtime validation, and drift detection.
+
+This works because a stitch is atomic, not spec-first — no OpenAPI document, no
+codegen step. And what the agent emits is the normal authoring surface: a plain
+`stitch({...})` declaration, identical to a hand-written one, that you can read,
+review, and extend.
+
+<Callout type="info">
+    The emitted `stitch({...})` is the same call documented in
+    [stitch()](/docs/guides/authoring/stitch) — add an `output` schema with
+    [validation](/docs/guides/validation/validation) exactly as you would for a
+    hand-authored stitch.
+</Callout>
 
 ## See also
 
-Stub.
+<Cards>
+    <Card title="stitch()" href="/docs/guides/authoring/stitch" />
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card title="Run a stitch as a tool" href="/docs/agents/run-stitch-tool" />
+    <Card title="Principles" href="/docs/concepts/principles" />
+</Cards>
