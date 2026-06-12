@@ -1,0 +1,57 @@
+---
+title: 'Distributed throttle'
+description: 'Share one rate budget across workers by pointing the throttle at a shared store.'
+---
+
+By default a stitch keeps its throttle counters in the in-memory store, so the
+rate budget is per process — each worker gets its own. Point the throttle at a
+shared `store` and one budget spans every worker that uses it.
+
+## Example
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import type { StitchStore } from 'stitchapi';
+
+// A Redis- or Postgres-backed store, shared across workers — see The pluggable store.
+declare const sharedStore: StitchStore;
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    throttle: { rate: '10/s', scope: 'host' },
+    store: sharedStore, // the budget now spans all workers using this store
+});
+```
+
+## Options
+
+`throttle` sets the limits — `rate` (e.g. `'10/s'`), `concurrency`, and
+`scope` — while `store` decides where the counters live. The default in-memory
+store is single-process, so each worker enforces `10/s` on its own and the fleet
+runs at `10/s × workers`. A shared store holds the rate counter as a fixed-window
+count every worker increments, so the whole fleet shares one `10/s` budget.
+(Concurrency stays in-process; only the rate limit is distributed.)
+
+`scope` decides what shares a budget: `'stitch'` (the default) gives each stitch
+its own counter keyed by name, while `'host'` keys by origin so every stitch
+hitting `api.example.com` draws from one budget. Workers share a budget only when
+they point at the same store and resolve to the same key — same scope, same
+stitch name or host.
+
+<Callout type="info">
+    The same shared store also backs auth sessions, so one store gives you both
+    a fleet-wide rate budget and a shared session — see Shared sessions.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card
+        title="The pluggable store"
+        href="/docs/guides/state/pluggable-store"
+    />
+    <Card title="Throttle" href="/docs/guides/resilience/throttle" />
+    <Card title="Shared sessions" href="/docs/guides/state/shared-sessions" />
+    <Card title="Config types" href="/docs/reference/config-types" />
+</Cards>

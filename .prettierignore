@@ -1,4 +1,9 @@
 node_modules
 lib
 coverage
-package-lock.json
+pnpm-lock.yaml
+eslint-suppressions.json
+
+# Fumadocs / Next.js generated output (apps/docs)
+.source
+next-env.d.ts

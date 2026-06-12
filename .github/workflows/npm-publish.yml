@@ -1,38 +1,58 @@
-# This workflow will run tests using node and then publish a package to GitHub Packages when a release is created
-# For more information see: https://docs.github.com/en/actions/publishing-packages/publishing-nodejs-packages
-
-name: Node.js Package
+# Publishes the package to npm when a GitHub release is created. Publishing is
+# gated on the full verify suite passing first. See ~/Development/handbook
+# conventions/global/ci-canonical.md §13.
+name: Publish
 
 on:
     release:
         types: [created]
 
+# Default-deny at the top; elevate per-job only where needed.
+permissions:
+    contents: read
+
+# Never cancel an in-flight publish; queue instead.
+concurrency:
+    group: publish-${{ github.ref }}
+    cancel-in-progress: false
+
 jobs:
-    build:
+    verify:
         runs-on: ubuntu-latest
+        timeout-minutes: 10
         steps:
             - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
             - uses: actions/setup-node@v4
               with:
-                  node-version: 20
-            - run: npm ci
-            - run: npm test -- --coverage
-
-            - name: Upload results to Codecov
-              uses: codecov/codecov-action@v4
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm check:format
+            - run: pnpm check:lint
+            - run: pnpm check:types
+            - run: pnpm test:coverage
+            - run: pnpm check:exports
+            - name: Upload coverage to Codecov
+              uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
               with:
                   token: ${{ secrets.CODECOV_TOKEN }}
+                  files: ./packages/core/coverage/lcov.info
 
     publish-npm:
-        needs: build
+        needs: verify
         runs-on: ubuntu-latest
+        timeout-minutes: 10
         steps:
             - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
             - uses: actions/setup-node@v4
               with:
-                  node-version: 20
+                  node-version-file: .nvmrc
                   registry-url: https://registry.npmjs.org/
-            - run: npm ci
-            - run: npm publish
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm --filter stitchapi build
+            - run: pnpm --filter stitchapi publish --no-git-checks
               env:
-                  NODE_AUTH_TOKEN: ${{secrets.npm_token}}
+                  NODE_AUTH_TOKEN: ${{ secrets.npm_token }}

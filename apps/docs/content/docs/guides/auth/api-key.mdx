@@ -1,0 +1,57 @@
+---
+title: 'apiKey'
+description: 'Send an API key as a header or query parameter, resolved at call time.'
+---
+
+Use `apiKey` when an API authenticates with a static key and you want the stitch
+to attach it as a request header, resolved at call time so the caller never sees
+the secret.
+
+## Example
+
+```ts twoslash
+import { apiKey, env, stitch } from 'stitchapi';
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    auth: apiKey({ value: env('API_KEY') }),
+});
+```
+
+Every call to `search()` sets the `x-api-key` header to the resolved key, behind
+the capability boundary.
+
+## Options
+
+`value` is the key itself — a literal string, or (preferred) a resolver like
+[`env('API_KEY')`](/docs/guides/auth/secret-resolvers) so the secret is read at
+call time and never committed.
+
+`header` overrides the header name (default `x-api-key`, lowercased): pass
+`apiKey({ header: 'X-My-Key', value: env('API_KEY') })` to send the key under a
+custom header.
+
+<Callout type="warn">
+    `apiKey` only sets a header — it does not add a query parameter. For an API
+    that wants the key in the query string, set it through the request `query`
+    input instead.
+</Callout>
+
+See [Reference → Auth strategies](/docs/reference/auth-strategies) for every
+field.
+
+## See also
+
+<Cards>
+    <Card title="Secret resolvers" href="/docs/guides/auth/secret-resolvers" />
+    <Card title="bearer" href="/docs/guides/auth/bearer" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card
+        title="Reference: Auth strategies"
+        href="/docs/reference/auth-strategies"
+    />
+</Cards>

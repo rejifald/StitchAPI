@@ -1,0 +1,65 @@
+---
+title: 'stitch()'
+description: 'Declare an endpoint and get back a typed, callable function — the core authoring move.'
+---
+
+Reach for `stitch()` to declare a single HTTP call once and get back a typed,
+callable function — it is the core authoring move that every other feature
+layers onto.
+
+## Example
+
+Pass a string when the URL is all you need; pass a config object when you want a
+`baseUrl`, a parameterized `path`, or a non-GET `method`. The generic types the
+awaited value.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// String form — the string becomes the path; a full URL is fine.
+const listUsers = stitch<{ id: number; name: string }[]>(
+    'https://api.example.com/users',
+);
+
+// Config form — baseUrl + a {param} slot; method defaults to GET.
+const createUser = stitch<{ id: number; name: string }>({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    method: 'POST',
+});
+
+const users = await listUsers();
+const user = await createUser({ params: { id: 1 } });
+```
+
+## Options
+
+The handful of fields that shape every stitch:
+
+-   **`baseUrl`** + **`path`** — the request target. `path` may contain `{param}`
+    slots and a `?query` string; in string form the whole string becomes `path`.
+-   **`method`** — the HTTP verb. Defaults to `GET`.
+-   **The input object** — `params`, `query`, `headers`, and `body` all travel in
+    one `StitchInput` you pass at call time: `await createUser({ params: { id: 1 } })`.
+-   **The generic** — `stitch<T>(...)` types the awaited value `T`.
+
+<Callout type="info">
+    Auth, retry, and validation are configured on the same config object but
+    documented in their own guides — see below — so there is one source of truth
+    per feature.
+</Callout>
+
+For every field and its default, see
+[Reference → stitch()](/docs/reference/stitch) and
+[Reference → Config types](/docs/reference/config-types).
+
+## See also
+
+<Cards>
+    <Card title="The stitch" href="/docs/concepts/the-stitch" />
+    <Card title="Fluent builder" href="/docs/guides/authoring/fluent-builder" />
+    <Card title="extends" href="/docs/guides/authoring/extends" />
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card title="The function surface" href="/docs/surfaces/function" />
+    <Card title="Reference: stitch()" href="/docs/reference/stitch" />
+</Cards>

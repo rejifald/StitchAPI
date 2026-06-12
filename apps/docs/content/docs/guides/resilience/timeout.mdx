@@ -1,0 +1,60 @@
+---
+title: 'Timeouts'
+description: 'Enforce total and per-attempt timeouts with a real AbortSignal.'
+---
+
+Add `timeout` when a slow or hung response shouldn't be allowed to block the
+caller indefinitely — the stitch bounds the call with a real `AbortSignal`, so a
+breached deadline actually aborts the in-flight request rather than leaking it.
+
+## Example
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const report = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/report',
+    timeout: { total: '10s', perAttempt: '3s' },
+});
+```
+
+Each call to `report()` gives every attempt at most 3 seconds and the whole call
+at most 10 seconds; whichever fires first aborts the request.
+
+## Options
+
+`total` bounds the entire call across every retry; `perAttempt` bounds each
+individual attempt on its own. Both accept either a number of milliseconds
+(`3000`) or a duration string (`'3s'`), so `total: '10s'` and `total: 10000` are
+equivalent.
+
+The deadline is backed by a real `AbortSignal`: when it elapses the stitch
+aborts the underlying request — the connection is actually cancelled, not just
+ignored — and the call fails with a timeout.
+
+With [retry](/docs/guides/resilience/retry), the two timeouts compose: each try
+is gated by `perAttempt`, while `total` caps the sum of all tries plus their
+backoff waits, so a long enough `total` is what lets a slow attempt be retried at
+all.
+
+<Callout type="warn">
+    A breached deadline aborts the call and surfaces as a timeout error. See
+    [STITCH_TIMEOUT](/docs/errors/stitch-timeout) for how it reads and how to
+    fix it.
+</Callout>
+
+See [Reference → Config types](/docs/reference/config-types) for the full
+`TimeoutOptions` shape.
+
+## See also
+
+<Cards>
+    <Card title="Retry" href="/docs/guides/resilience/retry" />
+    <Card
+        title="Circuit breaker"
+        href="/docs/guides/resilience/circuit-breaker"
+    />
+    <Card title="STITCH_TIMEOUT" href="/docs/errors/stitch-timeout" />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>

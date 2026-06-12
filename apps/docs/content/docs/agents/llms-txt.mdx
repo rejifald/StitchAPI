@@ -1,0 +1,63 @@
+---
+title: 'Point an agent at llms.txt'
+description: 'Feed the auto-generated llms.txt and per-page llms.mdx to an agent for context-frugal docs.'
+---
+
+Point an agent at this site's auto-generated `llms.txt` and per-page `llms.mdx`
+instead of scraping rendered HTML — it discovers the docs from a clean index and
+pulls just the page it needs into context, no markup, no token waste.
+
+## Example
+
+Fetch the index to discover structure, then pull a single page as Markdown:
+
+```bash
+# The curated index of every docs page, one line per page.
+curl https://docs.example.com/llms.txt
+
+# The clean Markdown form of one page — just this feature, into context.
+curl https://docs.example.com/docs/agents/run-stitch-tool/llms.mdx
+
+# When the agent needs everything at once, the whole docs concatenated.
+curl https://docs.example.com/llms-full.txt
+```
+
+Each page already stands on its own — restating its premise rather than leaning
+on neighbors — so the Markdown the agent pulls reads correctly in isolation. The
+stitch it documents is the same one-source-of-truth definition the runtime uses.
+
+## Options
+
+The site emits three machine-readable outputs automatically; you never
+hand-author them.
+
+`/llms.txt` is the curated index — one line per page, title plus description — so
+an agent maps the docs structure before pulling anything.
+
+A page's `llms.mdx` variant is the same page as clean Markdown, with rendered
+chrome stripped. Because guides are fine-grained — one page per feature — an
+agent pulls exactly one feature's page into context (say, just
+[`run_stitch`](/docs/agents/run-stitch-tool)) rather than the whole manual. That
+fine-grained, self-contained-pages design is what makes each `llms.mdx` a
+focused, extractable unit.
+
+`/llms-full.txt` is every page concatenated, for when an agent genuinely needs
+the entire corpus in one fetch.
+
+<Callout type="info">
+    These are generated from the page content itself, so they never drift from
+    what a human reads — the same anti-drift, one-source-of-truth principle the
+    stitch enforces at runtime.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Run a stitch as a tool" href="/docs/agents/run-stitch-tool" />
+    <Card
+        title="Author from one example"
+        href="/docs/agents/author-from-one-example"
+    />
+    <Card title="For agents" href="/docs/agents" />
+    <Card title="The stitch" href="/docs/concepts/the-stitch" />
+</Cards>

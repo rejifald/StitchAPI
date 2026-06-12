@@ -1,0 +1,12 @@
+{
+    "title": "Errors & pitfalls",
+    "icon": "TriangleAlert",
+    "pages": [
+        "stitch-validation",
+        "stitch-drift",
+        "stitch-auth-wall",
+        "stitch-timeout",
+        "stitch-circuit-open",
+        "stitch-graphql"
+    ]
+}

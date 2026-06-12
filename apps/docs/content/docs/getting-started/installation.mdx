@@ -1,0 +1,51 @@
+---
+title: 'Installation'
+description: 'Install stitchapi and set up the zero-dependency runtime in Node or the browser.'
+---
+
+Install the package, import `stitch`, and make one typed call to confirm the
+runtime works. `stitchapi` has zero dependencies and runs anywhere `fetch`
+does — Node, the browser, and edge runtimes.
+
+## Install
+
+```package-install
+stitchapi
+```
+
+## Import it
+
+`stitch` is a named export. Pick the form that matches your module system —
+everything after the import is identical.
+
+```ts twoslash tab="ESM" tabGroup="module"
+import { stitch } from 'stitchapi';
+```
+
+```js tab="CommonJS" tabGroup="module"
+const { stitch } = require('stitchapi');
+```
+
+## Verify
+
+Declare a stitch from one URL and call it like a function — no config object, no
+client to construct:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUsers = stitch('https://api.example.com/users');
+
+const users = await getUsers(); // GET, parsed JSON
+```
+
+If that returns without throwing, the runtime is wired up. Add an `output` schema
+next and you get TypeScript types, runtime validation, and drift detection in one
+move — see Quickstart.
+
+## See also
+
+<Cards>
+    <Card title="Quickstart" href="/docs/getting-started/quickstart" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>

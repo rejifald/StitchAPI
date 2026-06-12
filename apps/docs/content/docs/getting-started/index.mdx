@@ -1,0 +1,110 @@
+---
+title: 'Introduction'
+description: 'What a stitch is, the integration pain it removes, and how this documentation is organized.'
+---
+
+A **stitch** is a typed, declarative, composable unit that turns one endpoint
+into a resilient, validated, observable function. You declare it once; your code
+calls it, the CLI runs it, and an agent invokes it — without any of them ever
+touching a credential.
+
+That is the whole idea, and the rest of these docs are an expansion of it. A
+stitch is atomic (one endpoint at a time, no spec required) and it hands the
+caller a capability, not a secret. Everything that normally rots in a `src/api/`
+folder — auth lifecycle, retries, validation, drift detection, tracing — folds
+into the call itself.
+
+## The pain it removes
+
+Most integrations start as a thin wrapper over `fetch` that returns opaque
+bytes, and then every reliability concern gets re-implemented by hand at each
+call site, separately, where it quietly drifts out of date. A stitch replaces
+that wrapper with a declaration:
+
+-   **No spec, no codegen, no server.** A stitch needs a URL and an example
+    response — so it works on the long tail of internal and undocumented APIs
+    that never get a complete OpenAPI document.
+-   **Auth is a boundary.** Bearer, API key, cookie sessions, OAuth2 client
+    credentials — the stitch owns the secret and its lifecycle, and the caller
+    receives data, never the credential.
+-   **Resilience is declared.** Retry with backoff, proactive throttling, and
+    real timeouts are configuration, uniform across every stitch.
+-   **Validation and drift are live.** Responses are validated on every call, and
+    a silently renamed field surfaces as a loud, leveled drift signal instead of
+    an `undefined` three layers downstream.
+-   **Observability ships with it.** Every call emits a typed event stream,
+    traced to a local JSONL log by default — no collector, nothing to deploy.
+
+## The smallest stitch
+
+The smallest stitch is a URL. Declare it once, call it as a typed function:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUsers = stitch('https://api.example.com/users');
+
+const users = await getUsers(); // GET, parsed JSON
+```
+
+That is the entire surface for a basic call. Adding path params, an output
+schema, auth, and resilience is the job of the
+[Quickstart](/docs/getting-started/quickstart), which walks the full first run
+end to end.
+
+<Callout type="info">
+    Awaiting a stitch gives you just the final validated value. The same call is
+    also an event stream you can iterate — that is how progress, retries, and
+    drift become observable for free.
+</Callout>
+
+## How this documentation is organized
+
+The docs are seven top-level sections, ordered for a first read. Start at the
+top and move down, or jump straight to the section that matches what you need.
+
+<Cards>
+    <Card
+        title="Getting started"
+        href="/docs/getting-started/quickstart"
+        description="Install the runtime and declare your first stitch in five minutes."
+    />
+    <Card
+        title="Concepts"
+        href="/docs/concepts/the-stitch"
+        description="The mental model — the stitch primitive, the event stream, capability over credential."
+    />
+    <Card
+        title="Guides"
+        href="/docs/guides/authoring/stitch"
+        description="One focused page per feature: authoring, auth, resilience, data, validation, observability, state."
+    />
+    <Card
+        title="Surfaces"
+        href="/docs/surfaces/function"
+        description="The front doors to one definition — in-process function, CLI, HTTP, and MCP."
+    />
+    <Card
+        title="For agents"
+        href="/docs/agents"
+        description="How an agent invokes, authors, and reasons over stitches without seeing a secret."
+    />
+    <Card
+        title="Reference"
+        href="/docs/reference/stitch"
+        description="Signatures and option shapes, generated from the real types."
+    />
+    <Card
+        title="Errors & pitfalls"
+        href="/docs/errors"
+        description="One catalog page per coded failure, keyed to the URL the runtime points you at."
+    />
+</Cards>
+
+## Next steps
+
+<Cards>
+    <Card title="Installation" href="/docs/getting-started/installation" />
+    <Card title="Quickstart" href="/docs/getting-started/quickstart" />
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+</Cards>

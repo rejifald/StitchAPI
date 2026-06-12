@@ -1,0 +1,63 @@
+---
+title: 'Event types'
+description: 'The StitchEvent union and the shape of each event in the stream.'
+---
+
+The events a stitch emits as it runs. A stitch streams an async iterable of
+`StitchEvent` values; this page documents their shapes.
+
+## StitchEvent
+
+`StitchEvent<T>` is a discriminated union on `type`. The `T` parameter is the
+type of the value carried by the `result` event.
+
+```ts twoslash
+import type { StitchEvent } from 'stitchapi';
+```
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="StitchEvent" />
+
+## The events
+
+A union table can render sparsely, so here is each of the seven variants and its
+fields. Every event carries an `at` field — a millisecond timestamp.
+
+-   **`start`** — the request is about to go out. Fields: `name` (the stitch
+    label), `method`, `url`, `input` (the `StitchInput` for this call), `at`.
+-   **`progress`** — a lifecycle beat within an attempt. Fields: `phase` (a
+    `ProgressPhase`), `attempt` (1-based), `detail?`, `waitedMs?` (set when the
+    phase involved a wait, e.g. `throttled` or `retry`), `at`.
+-   **`drift`** — a single contract-drift observation against the response.
+    Fields: `finding` (a `DriftFinding` with `level`, `path`, `change`,
+    `detail?`), `at`.
+-   **`delta`** — a streamed chunk of the response body. Fields: `chunk`
+    (`unknown`), `at`.
+-   **`result`** — the call succeeded and produced a value. Fields: `value` (the
+    `T`), `status` (HTTP status), `attempts` (how many it took), `at`.
+-   **`error`** — the call failed. Fields: `name`, `message`, `status?`,
+    `attempts`, `at`.
+-   **`done`** — the stream is finished, success or failure. Fields: `ok`, `ms`
+    (total duration), `attempts`, `at`.
+
+`ProgressPhase` is one of `'auth'`, `'request'`, `'throttled'`, `'retry'`,
+`'paginate'`, or `'circuit'`.
+
+<Callout>
+    `result` and `error` are mutually exclusive within one stream, but `done`
+    always fires last — read `done.ok` to know which way it went.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card
+        title="Concept: the event stream"
+        href="/docs/concepts/event-stream"
+    />
+    <Card
+        title="Guide: trace sinks"
+        href="/docs/guides/observability/trace-sinks"
+    />
+    <Card title="Guide: drift" href="/docs/guides/validation/drift" />
+    <Card title="Config types" href="/docs/reference/config-types" />
+</Cards>

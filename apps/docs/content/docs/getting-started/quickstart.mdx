@@ -1,0 +1,98 @@
+---
+title: 'Quickstart'
+description: 'Declare your first stitch from one endpoint and call it as a typed function in five minutes.'
+---
+
+In about five minutes you will declare your first stitch from a single endpoint
+and call it as a typed, async function — no spec, no codegen, no server. This
+page assumes the package is already installed; if not, start with
+[Installation](/docs/getting-started/installation).
+
+## Declare a stitch
+
+The smallest stitch is a URL. Pass it to `stitch()` as a string and you get back
+a callable — the string sets the `path`:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUsers = stitch('https://api.example.com/users');
+```
+
+## Call it as a typed function
+
+The returned value is a function. Call it and `await` the result — `await` is
+sugar that consumes the underlying stream and returns the final, validated
+value (a `GET` with parsed JSON here):
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUsers = stitch('https://api.example.com/users');
+
+const users = await getUsers();
+```
+
+## Add path params and query
+
+Use `{param}` slots in the path. Params, query, headers, and body all travel in
+a single input object, so a path param goes under `params` and query keys under
+`query`:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch('https://api.example.com/users/{id}');
+
+await getUser({ params: { id: 1 }, query: { expand: 'roles' } });
+// → GET https://api.example.com/users/1?expand=roles
+```
+
+## Type the result
+
+Pass a type argument to `stitch<T>()` and the awaited value is typed as `T`,
+with no extra dependency:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch<{ id: number; name: string }>(
+    'https://api.example.com/users/{id}',
+);
+
+const user = await getUser({ params: { id: 1 } });
+```
+
+The generic gives you compile-time types only. To also validate the response at
+runtime — and catch a vendor silently renaming a field — bring a
+[Standard Schema](/docs/guides/validation/standard-schema) validator as the
+`output`; see [Validation](/docs/guides/validation/validation).
+
+## Observe the event stream
+
+A stitch does not return `Promise<bytes>` — it yields a typed event stream, and
+`await` simply consumes it for you. Call `.stream()` instead to watch progress,
+retries, and drift as they happen:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUsers = stitch('https://api.example.com/users');
+
+for await (const ev of getUsers.stream()) {
+    if (ev.type === 'result') console.log(ev.value);
+}
+```
+
+The [event stream](/docs/concepts/event-stream) concept covers every event type
+in depth.
+
+## Next steps
+
+<Cards>
+    <Card title="The stitch" href="/docs/concepts/the-stitch" />
+    <Card title="stitch()" href="/docs/guides/authoring/stitch" />
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card title="Call from a function" href="/docs/surfaces/function" />
+    <Card title="For agents" href="/docs/agents" />
+</Cards>

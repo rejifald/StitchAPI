@@ -1,0 +1,76 @@
+---
+title: 'Trace sinks'
+description: 'Emit the event stream to the console or a JSONL file, or plug in your own TraceSink.'
+---
+
+A trace sink is any consumer of a stitch's [event stream](/docs/concepts/event-stream) —
+reach for one when you want every `start → progress → drift → result → done`
+teed somewhere durable. By default a stitch writes JSONL to disk with zero infra;
+flip an env var for a console stream, or iterate `.stream()` to handle events
+yourself.
+
+## Example
+
+Sinks are wired globally by environment variable — there is no per-stitch `trace`
+config field. With no flags set, a stitch already appends every event as JSONL to
+`~/.stitch/runs/proto.jsonl`; nothing to deploy.
+
+```bash
+# Pretty one-line-per-event stream to stderr, on top of the JSONL file.
+STITCH_TRACE_CONSOLE=1 node run.js
+
+# Send the JSONL somewhere else.
+STITCH_TRACE_FILE=./runs/today.jsonl node run.js
+
+# ALSO fan the same events to an OTLP collector.
+STITCH_EXPORT=otlp node run.js
+```
+
+To consume events as your own sink, iterate the stream — that's the public seam
+for custom handling:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const search = stitch({ baseUrl: 'https://api.example.com', path: '/search' });
+
+for await (const event of search({ query: { q: 'mango' } }).stream()) {
+    if (event.type === 'drift')
+        console.log(event.finding.level, event.finding.path);
+    if (event.type === 'result') console.log(event.value);
+}
+```
+
+## Options
+
+The built-in sink is controlled by three env vars: `STITCH_TRACE_CONSOLE=1`
+turns on the colored stderr stream (off unless set); `STITCH_TRACE_FILE=<path>`
+overrides the JSONL destination, which defaults to `~/.stitch/runs/proto.jsonl`;
+and `STITCH_EXPORT=otlp` adds OTLP as one more sink fed from the same events —
+see [OTLP export](/docs/guides/observability/otlp).
+
+To build sinks in code instead, `createTrace({ console, file })` returns a sink
+that writes JSONL and/or the console stream, and `multiplex(a, b, ...)` fans one
+event stream out to several sinks at once. Both are exported from
+[`stitchapi`](/docs/reference/helpers).
+
+A `TraceSink` is just `{ handle(event, ctx), flush?() }` — implement those two
+and you have a custom consumer you can pass to `multiplex`. The same shape backs
+the console, JSONL, and OTLP sinks, which is why all three come from one source
+without the call site knowing. See [Reference → Helpers](/docs/reference/helpers)
+for the exported building blocks and [Reference → Event types](/docs/reference/events)
+for the `StitchEvent` union a sink receives.
+
+<Callout type="warn">
+    `STITCH_TRACE_CONSOLE` is off by default — a bare run writes the JSONL file
+    but prints nothing. Set it to `1` when you want events on the terminal.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="OTLP export" href="/docs/guides/observability/otlp" />
+    <Card title="Helpers" href="/docs/reference/helpers" />
+    <Card title="Event types" href="/docs/reference/events" />
+</Cards>

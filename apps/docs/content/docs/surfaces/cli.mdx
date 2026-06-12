@@ -1,0 +1,76 @@
+---
+title: 'CLI'
+description: 'Run and trace stitches from the shell with stitch run and stitch trace.'
+---
+
+Reach for the `stitch` CLI when you want to run a stitch and read its trace from
+the shell — no app boot. `stitch run <name>` streams a named stitch's events to
+stdout as JSONL, and `stitch trace` summarizes the run log those events leave
+behind.
+
+## Example
+
+Author your stitches in a module that exports each one by name; the CLI
+discovers them there (default `./stitches.ts`, or pass `--module`).
+
+```ts twoslash
+// stitches.ts
+import { stitch } from 'stitchapi';
+
+export const getUser = stitch({
+    name: 'getUser',
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+```
+
+Run it by name. A bare `--id` routes to the `{id}` path param, and every event
+is printed as one line of JSON, so the stream pipes straight into `jq`:
+
+```bash
+stitch run getUser --id 1
+```
+
+Then summarize what those runs recorded:
+
+```bash
+stitch trace --since 1h
+```
+
+## Options
+
+**`stitch run <name> [--module <path>] [--flags…]`** resolves the stitch named
+`<name>` from the module and streams its event stream to stdout as JSONL — one
+JSON object per line, exit code `1` if an `error` event is seen. Flags map onto
+the stitch's single input object: a bare `--<k>` becomes a path param when `<k>`
+is a `{param}` in the path and a query param otherwise, while `--params.<k>`,
+`--query.<k>`, `--headers.<k>`, and `--body '<json>'` (or `--body.<k> <v>`)
+target a bucket explicitly. `--module, -m` points at the stitches module
+(default `./stitches.ts` and friends).
+
+**`stitch trace [--file <path>] [--since 1h] [--name <x>] [--json]`** folds the
+JSONL run log into per-stitch stats (runs, ok/failed, retries, drift, latency
+percentiles). `--file` picks the log (default `~/.stitch/runs/proto.jsonl`),
+`--since` keeps only records inside a window like `1h`/`30m`/`45s`/`2d`,
+`--name` filters to one stitch, and `--json` emits the raw summary instead of
+the aligned table.
+
+The CLI runs the very same stitch definition as the in-process
+[function](/docs/surfaces/function) — one source of truth, just a different
+front door. The JSONL that `run` streams and `trace` reads is the same log the
+built-in [trace sinks](/docs/guides/observability/trace-sinks) append to, so a
+stitch already records to `~/.stitch/runs/proto.jsonl` with no flags set.
+
+<Callout type="warn">
+    A `.ts` module loads only when the host has a TypeScript loader registered
+    (run under `tsx`); otherwise point `--module` at compiled JS.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Function" href="/docs/surfaces/function" />
+    <Card title="HTTP serve" href="/docs/surfaces/http-serve" />
+    <Card title="Trace sinks" href="/docs/guides/observability/trace-sinks" />
+    <Card title="run_stitch tool" href="/docs/agents/run-stitch-tool" />
+</Cards>

@@ -1,0 +1,50 @@
+---
+title: 'unwrap'
+description: 'Pull just the part of the response you want by dot-path.'
+---
+
+Use `unwrap` when an API wraps the value you want in an envelope and you want
+the stitch to hand back the inner field directly — give it a dot-path and the
+caller never sees the wrapper.
+
+## Example
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch<{ id: number; name: string }>({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    unwrap: 'data.user',
+});
+
+// `user` is the inner { id, name } object, not the { data: { user } } envelope.
+const user = await getUser({ params: { id: 1 } });
+```
+
+## Options
+
+`unwrap` takes a **dot-path** — each segment selects a nested key, so
+`'data.user'` reaches into `{ data: { user: ... } }` and returns the inner
+object.
+
+It sits late in the pipeline: a response is reshaped by
+[`transform`](/docs/guides/data/transform) first, then `unwrap` selects the
+slice, and only then does [validation](/docs/guides/validation/validation) run —
+so a schema sees the unwrapped value, not the envelope. For paged calls, each
+page is unwrapped before its items are collected; see
+[Pagination](/docs/guides/data/pagination).
+
+Pair `unwrap` with the generic on `stitch<T>()` to type the result: the stitch
+returns `T` (the unwrapped value), not the envelope. See
+[Reference → Config types](/docs/reference/config-types) for the full config
+shape.
+
+## See also
+
+<Cards>
+    <Card title="transform" href="/docs/guides/data/transform" />
+    <Card title="Pagination" href="/docs/guides/data/pagination" />
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card title="Config types" href="/docs/reference/config-types" />
+</Cards>

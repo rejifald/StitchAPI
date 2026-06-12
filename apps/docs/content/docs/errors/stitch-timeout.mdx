@@ -1,0 +1,71 @@
+---
+title: 'STITCH_TIMEOUT'
+description: 'A total or per-attempt timeout aborted the call.'
+---
+
+## What you'll see
+
+A call aborts and throws a `StitchError` once a configured timeout elapses.
+`timeout.total` bounds the whole call across every retry and its backoff;
+`timeout.perAttempt` bounds a single attempt. The runtime enforces these with a
+real `AbortSignal`, so the in-flight request is actually aborted rather than left
+running while the call gives up — the underlying request receives the abort.
+
+<Callout type="info">
+    The stable code `STITCH_TIMEOUT` is provisional: the error surfaces as a
+    `StitchError` today, and the code is pending the runtime taxonomy refactor.
+</Callout>
+
+## Why it happens
+
+Two distinct triggers land here:
+
+-   **The dependency is slow or unreachable.** The request genuinely takes longer
+    than the budget you allowed — a degraded upstream, a cold start, or a host that
+    never answers and ties up the attempt until the signal fires.
+-   **The budget is too tight.** `perAttempt` is shorter than the dependency's
+    normal latency, so healthy responses get cut off; or `total` doesn't leave room
+    for every attempt plus the backoff between them, so the whole call aborts mid-
+    way through a retry sequence that would otherwise have succeeded.
+
+## How to fix
+
+Raise `total` and `perAttempt` to a realistic budget for the dependency's actual
+latency. When you also configure [retry](/docs/guides/resilience/retry), make
+`total` large enough to cover the full sequence — as a rule of thumb,
+`total ≥ attempts × (perAttempt + backoff)` — so the call isn't aborted partway
+through a retry that would have landed.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const report = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/reports/slow',
+    retry: { attempts: 3, baseMs: 200 },
+    timeout: {
+        // Each attempt gets 5s; the whole call (3 attempts + backoff) gets 20s.
+        perAttempt: '5s',
+        total: '20s',
+    },
+});
+```
+
+Check the dependency's measured latency before widening the budget — if it is
+consistently slow or flapping, a longer timeout only delays the failure. For a
+dependency that is genuinely failing, pair the timeout with
+[retry](/docs/guides/resilience/retry) for transient blips and a
+[circuit breaker](/docs/guides/resilience/circuit-breaker) to fast-fail once it
+stops responding, instead of waiting out the timeout on every call.
+
+## Related
+
+<Cards>
+    <Card title="Guide: timeout" href="/docs/guides/resilience/timeout" />
+    <Card title="Guide: retry" href="/docs/guides/resilience/retry" />
+    <Card
+        title="Guide: circuit breaker"
+        href="/docs/guides/resilience/circuit-breaker"
+    />
+    <Card title="Reference: config types" href="/docs/reference/config-types" />
+</Cards>

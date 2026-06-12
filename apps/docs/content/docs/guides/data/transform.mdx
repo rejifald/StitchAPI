@@ -1,0 +1,54 @@
+---
+title: 'transform'
+description: 'Reshape a response before unwrap and validation — for example, scrape HTML into structured data.'
+---
+
+Use `transform` when the raw response isn't yet the shape the rest of the
+pipeline expects — scrape HTML text into a structured object, or flatten an odd
+envelope — so a single function reshapes the body before unwrap and validation
+ever see it.
+
+## Example
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const listing = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/listings',
+    // The body is `unknown` — narrow it, then reshape the raw envelope into a
+    // plain array before unwrap and validation run.
+    transform: (body) => (body as { results: unknown[] }).results,
+});
+```
+
+The raw body arrives as a wrapped `{ results: [...] }`; `transform` returns the
+inner array, and everything downstream works against that array instead.
+
+## Options
+
+`transform?: (body: unknown) => unknown` runs **first** in the response
+pipeline — before [`unwrap`](/docs/guides/data/unwrap) and before
+[validation](/docs/guides/validation/validation) (and
+[drift](/docs/guides/validation/drift)). That ordering is the point: reshape a
+raw body — scrape HTML text into a structured object, or flatten an odd
+envelope — into the shape unwrap and validation are written for, rather than
+bending them around the source's quirks.
+
+`body` is typed `unknown`, so narrow it before reading (a cast or a type guard)
+and return any reshaped value. See
+[Reference → Config types](/docs/reference/config-types) for every field.
+
+<Callout type="warn">
+    `transform` runs before validation, so its output is unchecked — a wrong
+    narrowing surfaces later as drift, not here.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="unwrap" href="/docs/guides/data/unwrap" />
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card title="Drift" href="/docs/guides/validation/drift" />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>

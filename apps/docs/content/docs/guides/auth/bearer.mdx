@@ -1,0 +1,53 @@
+---
+title: 'bearer'
+description: 'Attach a bearer token resolved at call time from an env var or the keychain.'
+---
+
+Use `bearer` when an API authenticates with a token sent as
+`Authorization: Bearer <token>`, and you want the token resolved at call time so
+the secret stays out of your code and out of the caller's hands.
+
+## Example
+
+```ts twoslash
+import { bearer, env, stitch } from 'stitchapi';
+
+const me = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/me',
+    auth: bearer(env('API_TOKEN')),
+});
+```
+
+The token is read each time `me()` runs, so a rotated secret takes effect on the
+next call with no rewiring.
+
+## Options
+
+`bearer` accepts either a literal string or a resolver thunk (`() => string`).
+Strongly prefer a resolver: it reads the secret per call from the environment or
+the keychain, so nothing is committed and the stitch hands callers a capability,
+not the credential — see
+[Capability, not credential](/docs/concepts/capability-not-credential).
+
+Use [`env('API_TOKEN')`](/docs/guides/auth/secret-resolvers) for an environment
+variable or `keychain('API_TOKEN')` for the spike keychain; both return a thunk
+resolved at call time. See
+[Reference → Auth strategies](/docs/reference/auth-strategies) for the full auth
+table.
+
+<Callout type="warn">
+    Passing a literal string bakes the secret into your source. Reach for a
+    resolver unless the token is a non-secret placeholder.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Secret resolvers" href="/docs/guides/auth/secret-resolvers" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="Auth strategies" href="/docs/reference/auth-strategies" />
+</Cards>

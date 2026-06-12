@@ -1,0 +1,85 @@
+---
+title: 'Shared sessions'
+description: 'Persist and share a login across stitches and workers via a session key and a shared store.'
+---
+
+Give two stitches the same auth `key` plus a shared `store` and they share one
+login: the session is captured once, replayed by every stitch that names the
+key, and — because the store backs it — it survives restarts and is shared
+across workers, not just within a single process.
+
+## Example
+
+```ts twoslash
+import { cookieSession, env, stitch } from 'stitchapi';
+import type { StitchStore } from 'stitchapi';
+
+// A Redis-backed StitchStore — see The pluggable store.
+declare const sharedStore: StitchStore;
+
+// The login is itself a stitch — its Set-Cookie response seeds the session.
+const login = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/login',
+    bodyType: 'form',
+});
+
+const me = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/me',
+    store: sharedStore,
+    auth: cookieSession({
+        login,
+        cookie: '*',
+        key: 'acme-session', // same key + same store = one shared session
+        loginInput: () => ({
+            body: { user: env('USER')(), pass: env('PASS')() },
+        }),
+    }),
+});
+```
+
+Any other stitch that points its `store` at `sharedStore` and passes
+`key: 'acme-session'` reuses the same captured session — it never re-runs the
+login.
+
+## Options
+
+`key` is the store namespace the session is filed under. Two stitches that share
+a `key` read and write the same session entry; without it each stitch namespaces
+by its own cookie name (or token URL) and stays isolated.
+
+`store` is the backing store the session lives in. The default is in-memory and
+single-process; pointing `store` at a shared, durable store (Redis/Postgres) is
+what makes one login persist across restarts and serve every worker — see
+[The pluggable store](/docs/guides/state/pluggable-store). Within one process,
+[`.with()`](/docs/guides/authoring/with) already reuses the same in-memory
+session across calls.
+
+This works the same for tokens:
+[`oauth2`](/docs/guides/auth/oauth2) caches its access token under `key`, so a
+shared key plus a shared store means one token serves many stitches and workers
+and survives restarts, refreshed once for all of them.
+
+<Callout type="warn">
+    Sharing a session shares the capability, not the credential: callers still
+    only invoke the stitch. The boundary holds — the credential stays inside the
+    stitch and is never handed to the caller.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="cookieSession" href="/docs/guides/auth/cookie-session" />
+    <Card title="oauth2" href="/docs/guides/auth/oauth2" />
+    <Card
+        title="The pluggable store"
+        href="/docs/guides/state/pluggable-store"
+    />
+    <Card title=".with()" href="/docs/guides/authoring/with" />
+    <Card
+        title="Reference: Auth strategies"
+        href="/docs/reference/auth-strategies"
+    />
+</Cards>

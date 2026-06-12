@@ -1,0 +1,50 @@
+---
+title: 'Body encoding'
+description: 'Send request bodies as json, form, or multipart.'
+---
+
+Set `bodyType` when an API expects a request body in a particular wire format —
+JSON, URL-encoded form, or multipart form data — and you want the stitch to
+serialize the `body` you pass at call time into that shape.
+
+## Example
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const submit = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/submit',
+    bodyType: 'form',
+});
+
+await submit({ body: { name: 'mango', qty: 3 } });
+```
+
+The body travels in the call input, not the config: `submit` encodes
+`{ name: 'mango', qty: 3 }` as an `application/x-www-form-urlencoded` body
+because `bodyType` is `'form'`.
+
+## Options
+
+`bodyType` chooses how the call-time `body` is encoded (default `'json'`):
+
+-   `json` — a JSON body with `Content-Type: application/json`. The default;
+    reach for it for ordinary REST payloads.
+-   `form` — a URL-encoded `application/x-www-form-urlencoded` body, for APIs
+    that expect classic HTML-form fields (login forms, OAuth token exchanges).
+-   `multipart` — multipart form data, for file uploads and mixed
+    field-plus-binary payloads; the boundary is set for you.
+
+The body itself always comes from the call input (`await submit({ body })`),
+never from the config — so one stitch encodes whatever you pass it. See
+[Guide → stitch()](/docs/guides/authoring/stitch) for the full configuration.
+
+## See also
+
+<Cards>
+    <Card title="stitch()" href="/docs/guides/authoring/stitch" />
+    <Card title="GraphQL" href="/docs/guides/data/graphql" />
+    <Card title="Config types" href="/docs/reference/config-types" />
+</Cards>

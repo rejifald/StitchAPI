@@ -1,0 +1,77 @@
+---
+title: 'run_stitch & code-mode'
+description: 'Drive stitches from a sandbox with one context-frugal tool instead of flooding the model with per-endpoint tools.'
+---
+
+Drive stitches from an agent sandbox with a single `run_stitch` tool — pass
+`{ name, input }` and it covers every stitch you register, so the model's tool
+list (and its context) stays tiny no matter how many stitches there are. A
+companion `list_stitches` tool discovers the available names.
+
+## Example
+
+The agent first discovers what is available, then runs one by name. Both are
+plain MCP tool calls — there is no library import on the agent side.
+
+```json
+{ "name": "list_stitches", "input": {} }
+```
+
+`list_stitches` returns the registered stitches with their method and path, so
+the agent knows what to pass to `run_stitch`:
+
+```json
+{
+    "name": "run_stitch",
+    "input": { "name": "getUser", "input": { "params": { "id": 1 } } }
+}
+```
+
+Here the inner `input` is the stitch input — `{ params?, query?, body?,
+headers? }` — and the stitch runs against `api.example.com` behind the
+capability boundary. The agent never sees the credential.
+
+## Options
+
+Two tools make up the whole surface. `run_stitch` takes `{ name, input }`,
+where `input` is the stitch input `{ params?, query?, body?, headers? }`;
+`list_stitches` takes no arguments and returns the names, methods, and paths.
+
+This is **code-mode**: one tool for every stitch, rather than one MCP tool per
+endpoint. One-tool-per-endpoint floods the model's context — every registered
+stitch adds another schema the model must carry — while `run_stitch` keeps the
+tool list at a constant two no matter how many stitches you register.
+
+The agent calls `run_stitch` and never touches the credential: it names a
+capability, the server holds the secret. That is
+[capability, not credential](/docs/concepts/capability-not-credential) applied
+to the agent boundary.
+
+<Callout type="info">
+    This page is about the tool shape and why code-mode. For starting the server
+    (`stitch mcp`) and the transport details, see the [MCP
+    surface](/docs/surfaces/mcp).
+</Callout>
+
+If you author the stitch that backs a name like `getUser`, it is an ordinary
+stitch from `stitchapi`:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/:id',
+});
+```
+
+## See also
+
+<Cards>
+    <Card title="MCP surface" href="/docs/surfaces/mcp" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="For agents" href="/docs/agents" />
+</Cards>

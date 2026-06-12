@@ -1,0 +1,73 @@
+---
+title: 'STITCH_GRAPHQL'
+description: 'A GraphQL 200 response carried an errors array and failed the call.'
+---
+
+## What you'll see
+
+A stitch built with [`graphql()`](/docs/guides/data/graphql) throws a
+`StitchError` even though the HTTP status was `200`. The response body carried a
+non-empty top-level `errors` array, so the stitch refused to unwrap `data` and
+surfaced the failure instead. The thrown error carries the GraphQL message(s),
+prefixed `GraphQL:` and joined with `; ` when there is more than one:
+
+```ts twoslash
+import { graphql } from 'stitchapi';
+
+const user = graphql({
+    baseUrl: 'https://api.example.com',
+    path: '/graphql',
+    query: `query ($id: ID!) { user(id: $id) { name } }`,
+});
+
+try {
+    await user({ body: { variables: { id: '42' } } });
+} catch (err) {
+    // err.name === 'StitchError'
+    // err.message === 'GraphQL: Variable "$id" of required type "ID!" was not provided.'
+    console.error(err);
+}
+```
+
+(`STITCH_GRAPHQL` is the provisional registry code for this failure; the runtime
+throws a `StitchError` today.)
+
+## Why it happens
+
+GraphQL-over-HTTP commonly answers with HTTP `200` even when the operation
+failed, reporting the failure in a top-level `errors` array rather than via the
+status line. A `graphql()` stitch treats a `200` that carries a non-empty
+`errors` array as a failure instead of silently unwrapping `data` — so a request
+that "looked successful" at the transport layer still throws.
+
+The entries in `errors` come from the GraphQL server: a malformed query or
+missing variable, a resolver that threw, or an authorization check the server
+enforced in-band. Whatever the cause, the server signalled it in the body, and
+the stitch honours that signal.
+
+## How to fix
+
+Read the GraphQL message(s) on the thrown `StitchError` — they are the server's
+own description of what went wrong — and fix the cause:
+
+-   **Bad query or variables.** Correct the operation string or the `variables`
+    you pass so they satisfy the schema (right field names, required variables
+    provided, correct types).
+-   **Resolver error.** The fault is server-side; reproduce the operation against
+    the GraphQL server and fix it there.
+-   **Authorization.** The server rejected the operation in the `errors` array,
+    not with a status code — supply the credential or capability the operation
+    requires.
+
+Remember that GraphQL signals failure in the response body, not through the HTTP
+status: a `200` is not proof of success. See the
+[GraphQL guide](/docs/guides/data/graphql) for how `graphql()` posts the
+operation and unwraps `data` on the success path.
+
+## Related
+
+<Cards>
+    <Card title="Guide: GraphQL" href="/docs/guides/data/graphql" />
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>

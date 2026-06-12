@@ -1,0 +1,58 @@
+---
+title: 'Throttle'
+description: 'Space requests by rate and cap concurrency, scoped per stitch or per host.'
+---
+
+Add `throttle` to a stitch when you need to stay under an API's rate limit and
+keep in-flight requests bounded — it spaces calls to a target rate and caps how
+many run at once, before any request leaves.
+
+## Example
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+});
+```
+
+Calls to `search()` are spaced to five per second with at most two running
+concurrently. When a call has to wait, the stitch emits a `progress` event with
+phase `throttled`, so a waiting call is visible on the event stream rather than
+silently stalled.
+
+## Options
+
+`rate` is a string like `"5/s"` — a minimum spacing between successive calls,
+not a token bucket. `concurrency` caps simultaneous in-flight calls; either may
+be set on its own.
+
+`scope` decides what shares the budget: `'stitch'` (the default) gives each
+stitch its own budget, while `'host'` pools the budget across every stitch
+hitting the same host — use it when one API publishes a single account-wide
+limit. Throttle state lives in the stitch store, so giving stitches a shared
+[store](/docs/guides/state/pluggable-store) turns a single-process budget into a
+[distributed one](/docs/guides/state/distributed-throttle) that spans workers.
+
+<Callout type="info">
+    A throttled wait surfaces as a `throttled` progress phase on the event
+    stream — see [The event stream](/docs/concepts/event-stream).
+</Callout>
+
+See [Reference → Config types](/docs/reference/config-types) for every field.
+
+## See also
+
+<Cards>
+    <Card
+        title="Distributed throttle"
+        href="/docs/guides/state/distributed-throttle"
+    />
+    <Card title="Pluggable store" href="/docs/guides/state/pluggable-store" />
+    <Card title="Retry" href="/docs/guides/resilience/retry" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="Config types" href="/docs/reference/config-types" />
+</Cards>

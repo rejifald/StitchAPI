@@ -1,0 +1,85 @@
+---
+title: 'Errors & pitfalls'
+description: 'How StitchAPI errors work, the code-to-docs contract, and an index of every coded failure.'
+---
+
+When a stitch can't produce a result, it fails with a `StitchError` — an
+`Error` with `name: 'StitchError'`, a human-readable `message`, and an optional
+`.status` carrying the upstream HTTP status. Await a stitch and that error is
+what `catch` receives:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const me = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/me',
+});
+
+try {
+    await me();
+} catch (e) {
+    if (e instanceof Error && e.name === 'StitchError') {
+        const status = (e as Error & { status?: number }).status;
+        console.error(e.message, status);
+    }
+}
+```
+
+If you read the [event stream](/docs/concepts/event-stream) instead of awaiting,
+the same failure arrives as an `error` event carrying
+`{ name, message, status?, attempts, at }` — `attempts` is how many tries the
+runtime made before giving up, `at` is when it gave up.
+
+## The code-to-docs contract
+
+Each catalog page below owns a stable **code** (`STITCH_VALIDATION`,
+`STITCH_DRIFT`, and so on). The code's page **slug is its URL** — the failure
+documented at `/errors/<slug>` is the page the runtime will deep-link to from a
+thrown error. Slugs are an API: once a page is published its slug is never
+renamed, only added-and-redirected, so a link a runtime emitted a year ago still
+resolves.
+
+<Callout type="warn">
+    These codes are **provisional**. Today the runtime throws a `StitchError`
+    with a `message` and optional `.status` — the stable `code` and `url` fields
+    land with the error-taxonomy refactor. The slugs below are already fixed, so
+    you can rely on the URLs even while the in-runtime codes are still on the
+    way.
+</Callout>
+
+## Every coded failure
+
+<Cards>
+    <Card title="STITCH_VALIDATION" href="/docs/errors/stitch-validation">
+        A response failed its output schema — the shape you asked for isn't the
+        shape you got.
+    </Card>
+    <Card title="STITCH_DRIFT" href="/docs/errors/stitch-drift">
+        A response drifted from the schema past the level you allowed, so the
+        stitch refused it.
+    </Card>
+    <Card title="STITCH_AUTH_WALL" href="/docs/errors/stitch-auth-wall">
+        Authentication failed, or a soft 200 login wall was hit and couldn't be
+        refreshed.
+    </Card>
+    <Card title="STITCH_TIMEOUT" href="/docs/errors/stitch-timeout">
+        A call exceeded its timeout budget before a response arrived.
+    </Card>
+    <Card title="STITCH_CIRCUIT_OPEN" href="/docs/errors/stitch-circuit-open">
+        The circuit breaker is open after repeated failures and is
+        short-circuiting calls.
+    </Card>
+    <Card title="STITCH_GRAPHQL" href="/docs/errors/stitch-graphql">
+        A GraphQL-over-HTTP response came back `200` but carried an `errors`
+        array.
+    </Card>
+</Cards>
+
+## See also
+
+<Cards>
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="STITCH_VALIDATION" href="/docs/errors/stitch-validation" />
+    <Card title="STITCH_DRIFT" href="/docs/errors/stitch-drift" />
+</Cards>

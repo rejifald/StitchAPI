@@ -1,0 +1,11 @@
+{
+    // Typecheck project that also covers the test suite. Same strict options as
+    // tsconfig.json, plus the vitest globals (`describe`/`it`/`expect`) that the
+    // suite relies on (vitest.config.ts sets `globals: true`). Wired into the
+    // `check:types` script so test code is held to the same bar as `src/`.
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "types": ["node", "vitest/globals"]
+    },
+    "include": ["src/**/*.ts", "test/**/*.ts"]
+}

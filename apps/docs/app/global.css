@@ -1,0 +1,158 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+/* --- StitchAPI brand accent (logo blue), theme-aware ----------------------- */
+@theme inline {
+    --color-stitch: var(--stitch);
+    --color-stitch-strong: var(--stitch-strong);
+    --color-stitch-soft: var(--stitch-soft);
+    --color-stitch-border: var(--stitch-border);
+}
+
+:root {
+    --stitch: #3b82f6; /* brand blue, straight from the logo */
+    --stitch-strong: #2563eb;
+    --stitch-soft: #eff6ff;
+    --stitch-border: #bfdbfe;
+}
+
+.dark {
+    --stitch: #60a5fa; /* brighter on dark surfaces, matches the dark banner */
+    --stitch-strong: #93c5fd;
+    --stitch-soft: color-mix(in srgb, #1e3a8a 32%, transparent);
+    --stitch-border: color-mix(in srgb, #60a5fa 26%, transparent);
+}
+
+html {
+    scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+    margin-right: 0px !important;
+    --removed-body-scroll-bar-size: 0px !important;
+}
+
+/* --- Landing backdrop: brand "ripple" rings + soft glow -------------------- */
+.brand-backdrop {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.brand-backdrop__glow {
+    position: absolute;
+    left: 50%;
+    width: 52rem;
+    height: 40rem;
+    transform: translateX(-50%);
+    background: radial-gradient(
+        50% 50% at 50% 50%,
+        color-mix(in srgb, var(--stitch) 36%, transparent),
+        transparent 70%
+    );
+    filter: blur(44px);
+    opacity: 0.3;
+}
+
+.dark .brand-backdrop__glow {
+    opacity: 0.2;
+}
+
+.brand-backdrop__rings {
+    position: absolute;
+    width: min(82rem, 160%);
+    aspect-ratio: 1 / 1;
+    color: var(--stitch);
+    mask-image: radial-gradient(closest-side, #000 56%, transparent 100%);
+    -webkit-mask-image: radial-gradient(
+        closest-side,
+        #000 56%,
+        transparent 100%
+    );
+}
+
+/* Blue-on-black reads hotter than blue-on-white — tone dark back down. */
+.dark .brand-backdrop__rings {
+    opacity: 0.78;
+}
+
+/* Each contour breathes — staggered delays make the pulse ripple outward. */
+.ripple-ring {
+    transform-box: view-box;
+    transform-origin: 500px 500px;
+    animation: ripple-breathe 7s ease-in-out infinite;
+    will-change: transform, opacity;
+}
+
+@keyframes ripple-breathe {
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 0.82;
+    }
+    50% {
+        transform: scale(1.022);
+        opacity: 1;
+    }
+}
+
+/* Hero: whorl anchored toward the top-left corner. */
+.brand-backdrop--hero .brand-backdrop__glow {
+    top: 14%;
+    left: 12%;
+    transform: translate(-50%, -50%);
+}
+.brand-backdrop--hero .brand-backdrop__rings {
+    top: 18%;
+    left: 14%;
+    transform: translate(-50%, -50%);
+}
+
+/* CTA: centered on the section. */
+.brand-backdrop--cta .brand-backdrop__glow {
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+.brand-backdrop--cta .brand-backdrop__rings {
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ripple-ring {
+        animation: none;
+        opacity: 0.85;
+    }
+}
+
+/* --- Minimal token coloring for the static code panels -------------------- */
+.code-panel {
+    tab-size: 4;
+}
+.tok-key {
+    color: var(--stitch);
+}
+.tok-str {
+    color: #c2882a;
+}
+.dark .tok-str {
+    color: #e0b252;
+}
+.tok-fn {
+    color: #2563eb;
+}
+.dark .tok-fn {
+    color: #7aa2f7;
+}
+.tok-com {
+    color: var(--color-fd-muted-foreground);
+    font-style: italic;
+}
+.tok-punc {
+    color: var(--color-fd-muted-foreground);
+}

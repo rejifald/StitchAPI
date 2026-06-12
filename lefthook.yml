@@ -1,0 +1,27 @@
+# Git hooks — same gates as CI (.github/workflows/verify.yml).
+# Activated by `lefthook install`, run automatically via the root package.json
+# "prepare" script on `pnpm install`.
+pre-commit:
+    parallel: false
+    jobs:
+        - name: format
+          glob: '*.{ts,js,mjs,cjs,json,md,yml,yaml}'
+          run: pnpm exec prettier --write {staged_files}
+          stage_fixed: true
+        - name: lint
+          glob: '*.ts'
+          run: pnpm check:lint
+        - name: typecheck
+          run: pnpm check:types
+
+pre-push:
+    parallel: false
+    jobs:
+        - name: typecheck
+          run: pnpm check:types
+        - name: test
+          run: pnpm test
+        # Render gate — see verify.yml. `tsc` never renders a page, so building the
+        # docs app is what actually exercises AutoTypeTable and MDX components.
+        - name: build-docs
+          run: pnpm --filter @stitchapi/docs build

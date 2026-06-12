@@ -1,0 +1,110 @@
+---
+title: 'Use from an agent'
+description: 'How an agent invokes, authors, and reasons over stitches — the agent entry point.'
+---
+
+StitchAPI is agent-native because of two choices that fall out of the stitch
+primitive: an agent receives a **capability, not a credential** — it invokes a
+stitch and gets back structured, validated, traceable data without ever touching
+the secret — and it works through **one context-frugal tool**, not one tool per
+endpoint, so adding APIs never floods the model's context window.
+
+The rest of this section is three things an agent does with a stitch: it invokes
+them, it authors them, and it reasons over them.
+
+## Invoke
+
+An agent drives stitches from a sandbox through a single **code-mode** tool,
+`run_stitch`, rather than a generated tool per endpoint. The agent writes a small
+TypeScript snippet that imports `stitchapi`, calls the stitch, and returns
+the result — and `list_stitches` tells it what is available to call.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch('https://api.example.com/users/{id}');
+
+// The agent writes this in the sandbox; run_stitch executes it.
+const user = await getUser({ params: { id: 7 } });
+```
+
+One tool keeps the context budget flat as the catalog grows, and the credential
+stays behind the boundary — the agent sees the user, never the token.
+
+<Cards>
+    <Card
+        title="run_stitch & code-mode"
+        href="/docs/agents/run-stitch-tool"
+        description="The single tool an agent calls, plus list_stitches for discovery."
+    />
+    <Card
+        title="MCP surface"
+        href="/docs/surfaces/mcp"
+        description="How those tools reach the agent over MCP."
+    />
+</Cards>
+
+## Author
+
+An agent does not need a spec to add an API. Hand it a single example — a `curl`
+command, a HAR entry, or a snippet from a vendor's docs — and it emits a stitch
+declaration: the URL, the input shape, and an `output` schema inferred from the
+one response it saw. The declaration is committable code the agent (or you) can
+review.
+
+<Cards>
+    <Card
+        title="Author from one example"
+        href="/docs/agents/author-from-one-example"
+        description="Turn one curl, HAR, or doc snippet into a stitch declaration."
+    />
+</Cards>
+
+## Reason over
+
+Two outputs let an agent reason about stitches cheaply. The docs build emits an
+auto-generated `llms.txt` and a per-page `llms.mdx`, so an agent pulls just the
+one page it needs into context instead of the whole manual. And every call is a
+typed **event stream** — `start → progress → drift → result → done` — so the
+agent reads not just the final value but the retry that succeeded, the throttle
+that paused, and the field that drifted.
+
+<Cards>
+    <Card
+        title="Point an agent at llms.txt"
+        href="/docs/agents/llms-txt"
+        description="Feed the auto-generated llms.txt and per-page llms.mdx for context-frugal docs."
+    />
+    <Card
+        title="The event stream"
+        href="/docs/concepts/event-stream"
+        description="The typed events a stitch emits, and why an agent reads them."
+    />
+</Cards>
+
+<Callout type="info">
+    These three pages assume the runtime is already installed and a stitch is
+    declared. Start at the [Quickstart](/docs/getting-started/quickstart) if it
+    is not.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+        description="Why an agent gets data, never the secret."
+    />
+    <Card
+        title="The event stream"
+        href="/docs/concepts/event-stream"
+        description="The typed events behind every call."
+    />
+    <Card title="run_stitch & code-mode" href="/docs/agents/run-stitch-tool" />
+    <Card
+        title="Author from one example"
+        href="/docs/agents/author-from-one-example"
+    />
+    <Card title="Point an agent at llms.txt" href="/docs/agents/llms-txt" />
+</Cards>

@@ -1,0 +1,5 @@
+{
+    "title": "Reference",
+    "icon": "Code",
+    "pages": ["stitch", "auth-strategies", "config-types", "helpers", "events"]
+}

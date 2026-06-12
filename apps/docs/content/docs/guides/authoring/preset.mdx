@@ -1,0 +1,60 @@
+---
+title: 'preset()'
+description: 'Bundle reusable defaults under a name and apply them across many stitches.'
+---
+
+Use `preset()` to bundle cross-cutting defaults — retries, timeouts, headers —
+under a name, then apply that bundle to many stitches instead of repeating the
+same fields on each one.
+
+## Example
+
+```ts twoslash
+import { defineStitch, preset, stitch } from 'stitchapi';
+
+// A named bundle of reusable defaults. It does nothing on its own.
+const resilient = preset({
+    retry: { attempts: 3, on: [429, 503] },
+    timeout: { total: '10s' },
+});
+
+// Apply it to a single stitch via `extends`.
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    extends: [resilient],
+});
+
+// Or bind it as a base, so every stitch from this factory inherits it.
+const api = defineStitch(resilient);
+```
+
+A `preset()` is just an identity-tagged fragment: a plain `Partial<StitchConfig>`
+that exists to be reused. You apply it with [`extends`](/docs/guides/authoring/extends)
+or bind it through [`defineStitch()`](/docs/guides/authoring/define-stitch).
+
+## Options
+
+`preset()` accepts a `Partial<StitchConfig>`, so anything a stitch accepts can
+live in one. Reach for it to centralize cross-cutting defaults: `baseUrl`,
+`retry`, `throttle`, `timeout`, `headers`, and `auth`.
+
+Fragments deep-merge when applied, and later layers — including the stitch's own
+fields — win over the preset. So a stitch can adopt `resilient` and still
+override its `timeout` inline. See [`extends`](/docs/guides/authoring/extends)
+for the full deep-merge and override semantics, and
+[Reference → Config types](/docs/reference/config-types) for every field a
+preset may carry.
+
+<Callout type="info">
+    A `preset()` is inert until applied — nothing runs at definition time. It is
+    only the bundle; `extends` and `defineStitch()` are what consume it.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="extends" href="/docs/guides/authoring/extends" />
+    <Card title="defineStitch()" href="/docs/guides/authoring/define-stitch" />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>
