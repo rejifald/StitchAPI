@@ -45,6 +45,7 @@ The name StitchAPI combines the words “stitch” and “API,” reflecting its
 -   [Auth as a boundary](#auth-as-a-boundary)
 -   [Pluggable state store](#pluggable-state-store)
 -   [Request body encoding](#request-body-encoding)
+-   [HTTP transport (adapters)](#http-transport-adapters)
 -   [GraphQL](#graphql)
 -   [Pagination](#pagination)
 -   [Transform](#transform)
@@ -102,6 +103,8 @@ For the full competitive landscape and positioning, see the [Overview](docs/OVER
 -   **Pluggable state store** - throttle counters and sessions/tokens live behind a 3-method store; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
 -   **Zero-infra observability** - every event is appended to a local JSONL trace by default; `stitch trace` summarizes runs, retries, drift, and latency percentiles.
 -   **CLI surface** - the definition your code imports is also runnable from the shell: `stitch run <name>` streams JSONL events (HTTP and MCP surfaces are on the roadmap).
+-   **Typed URLs** - full [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates (`{id}`, `{+path}`, `{?q,sort}`, explode `*`, prefix `:n`), and a `qs`-style query builder that serializes nested objects (`a[b]=c`) and arrays — both dependency-free.
+-   **Pluggable transport** - `fetch` by default; drop in the shipped `axiosAdapter`, or any `Adapter` function, to route requests through axios or another HTTP client.
 -   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable.
 
 ## Documentation
@@ -154,7 +157,7 @@ const getUsers = stitch('https://api.example.com/users');
 const users = await getUsers(); // GET, parsed JSON
 ```
 
-Path params use `{param}` templates (RFC 6570 style); params, query, headers, and body all travel in a single input object:
+Path params use [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates — simple `{id}` interpolation is the common case, with the full operator set available (`{+reserved}`, `{/segment}`, `{?query,keys}`, explode `{list*}`, prefix `{var:3}`). Template variables are filled from `params`; `params`, `query`, `headers`, and `body` all travel in a single input object:
 
 ```ts
 const getUser = stitch('https://api.example.com/users/{id}');
@@ -163,7 +166,7 @@ await getUser({ params: { id: 1 }, query: { expand: 'roles' } });
 // → GET https://api.example.com/users/1?expand=roles
 ```
 
-Query defaults can be baked into the path; call-time query keys merge over them:
+The query builder serializes nested objects and arrays `qs`-style — `{ filter: { type: 'admin' }, ids: [1, 2] }` → `filter[type]=admin&ids[0]=1&ids[1]=2`. Query defaults can be baked into the path; call-time query keys merge over them:
 
 ```ts
 const findUsers = stitch('https://api.example.com/users?sort=name&type=admin');
@@ -457,6 +460,32 @@ const upload = stitch({
 await upload({
     // a { value, filename } field becomes a named file part
     body: { field: 'v', file: { value: bytes, filename: 'a.bin' } },
+});
+```
+
+## HTTP transport (adapters)
+
+A stitch talks to the network through an `Adapter` — `(req) => Promise<{ status, headers, body }>`. The default is the global `fetch`; set `adapter` to route a stitch (or a shared preset) through a different client. The runtime stays zero-dependency, so the shipped `axiosAdapter` takes _your_ axios instance rather than importing one:
+
+```ts
+import axios from 'axios';
+import { axiosAdapter, stitch } from 'stitchapi';
+
+const getUser = stitch({
+    path: 'https://api.example.com/users/{id}',
+    adapter: axiosAdapter(axios), // body encoding, headers, and parsing match fetchAdapter
+});
+```
+
+Body encoding (`json` / `form` / `multipart`), response parsing, and `set-cookie` handling are shared across transports, so swapping adapters doesn't change behavior. Any function matching the `Adapter` shape works — wrap `got`, a test double, or your own client the same way:
+
+```ts
+import type { Adapter } from 'stitchapi';
+
+const echo: Adapter = async (req) => ({
+    status: 200,
+    headers: {},
+    body: { method: req.method, url: req.url },
 });
 ```
 

@@ -61,6 +61,12 @@ Everything except a target is optional. Spell the target one of two ways:
 
 The two are mutually exclusive — when both appear, `url` wins. The smallest possible stitch is `stitch('https://…')` (a bare string is shorthand for `path`; an absolute one resolves as-is). A target that resolves to a relative URL (a `path` with no `baseUrl`) is a config error under the default transport.
 
+### URL templates & query **[decided]**
+
+The target is an [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI template, expanded dependency-free (a faithful port of `url-template` v3): simple `{id}` is the common case, with the full operator set available — `{+reserved}`, `{#fragment}`, `{.label}`, `{/segment}`, `{;path}`, `{?query,keys}`, `{&continuation}` — plus the explode (`{list*}`) and prefix (`{var:3}`) modifiers. **Template variables are filled from `params`** (the path-scoped bucket); the `query` input carries the query string, so the two never double-encode a value.
+
+Query values serialize `qs`-style and dependency-free: nested objects expand to `a[b]=c`, arrays to indexed keys (`ids[0]=1&ids[1]=2`), with brackets percent-encoded exactly as `qs` does by default. A literal `?a=b` baked into `path`/`url` is parsed as predefined defaults that call-time `query` keys merge over. (The array serialization format is fixed for now — see [§15](#15-open-questions).)
+
 ### Call convention **[decided]**
 
 A stitch is called with a **single `input` object** and returns a value that is both awaitable _and_ streamable:
@@ -518,4 +524,5 @@ Next, to close the validated gaps (§12), in leverage order:
 -   ~~Composition syntax / call convention~~ — **resolved**: all three composition facades supported (extends / factory / builder); call = single-input-object + `.with()` + optional curried.
 -   **Validation lib** — move from Zod-locked to **Standard Schema** (Zod/Valibot/ArkType)? (Recommended; affects bundle size.)
 -   **Secret resolvers** — which to ship first: `env()`, `keychain()`, file, cloud secret managers?
+-   **Query array format** — arrays currently serialize `qs`-style indexed (`ids[0]=1&ids[1]=2`), matching the pre-rebuild baseline. Should the format be configurable (`arrayFormat: 'indices' | 'brackets' | 'repeat'`), and which is the right default for the APIs we target? (Flagged for future review; behavior is fixed until then.)
 -   **Visual** — Mermaid-from-definition first; how important is the live interactive trace view for v1?
