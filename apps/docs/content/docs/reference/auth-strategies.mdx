@@ -36,7 +36,10 @@ import { basic } from 'stitchapi';
 Logs in once, captures the cookie from `Set-Cookie`, replays it on each request,
 and re-logs in on a status code or a soft 200 wall.
 
-<AutoTypeTable path="../../packages/core/src/auth.ts" name="CookieSessionOpts" />
+<AutoTypeTable
+    path="../../packages/core/src/auth.ts"
+    name="CookieSessionOpts"
+/>
 
 ## oauth2
 
@@ -64,10 +67,19 @@ import { keychain } from 'stitchapi';
 ## See also
 
 <Cards>
-    <Card title="Guide: secret resolvers" href="/docs/guides/auth/secret-resolvers" />
-    <Card title="Guide: cookieSession" href="/docs/guides/auth/cookie-session" />
+    <Card
+        title="Guide: secret resolvers"
+        href="/docs/guides/auth/secret-resolvers"
+    />
+    <Card
+        title="Guide: cookieSession"
+        href="/docs/guides/auth/cookie-session"
+    />
     <Card title="Guide: oauth2" href="/docs/guides/auth/oauth2" />
-    <Card title="Capability, not credential" href="/docs/concepts/capability-not-credential" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
     <Card title="STITCH_AUTH_WALL" href="/docs/errors/stitch-auth-wall" />
     <Card title="Config types" href="/docs/reference/config-types" />
 </Cards>
