@@ -30,13 +30,22 @@ function coerce(raw: string): unknown {
     }
 }
 
-// Path-template parameter names (`/users/{id}` → ["id"]) so a bare `--id` routes to
-// params, matching the engine's own `{param}` expansion.
+// Template parameter names (`/users/{id}` → ["id"]) so a bare `--id` routes to params,
+// matching the engine's RFC 6570 expansion — operator prefixes (`{+id}`, `{?q,sort}`) and
+// `*`/`:n` modifiers are stripped to the bare names.
 export function paramNamesOf(stitch: Stitch): string[] {
-    const path = stitch.__config.path ?? '';
-    return [...path.matchAll(/\{(\w+)\}/g)]
-        .map((m) => m[1])
-        .filter((n): n is string => n !== undefined);
+    const { path, url } = stitch.__config;
+    const tpl = (path ?? '') + ' ' + (typeof url === 'string' ? url : '');
+    const names: string[] = [];
+    for (const m of tpl.matchAll(/\{([^{}]+)\}/g)) {
+        let expr = m[1] ?? '';
+        if ('+#./;?&'.includes(expr.charAt(0))) expr = expr.slice(1);
+        for (const spec of expr.split(',')) {
+            const name = spec.replace(/[:*].*$/, '').trim();
+            if (name) names.push(name);
+        }
+    }
+    return [...new Set(names)];
 }
 
 // Map CLI flags onto a StitchInput. Conventions:

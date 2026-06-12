@@ -1,4 +1,9 @@
-import type { Adapter, AdapterRequest, AdapterResponse } from './types';
+import type {
+    Adapter,
+    AdapterRequest,
+    AdapterResponse,
+    ResponseType,
+} from './types';
 
 // Returns an Adapter backed by Node's global `fetch`. Never throws on non-2xx —
 // only network/abort errors propagate; the engine decides what to do with the response.
@@ -9,42 +14,12 @@ export function fetchAdapter(): Adapter {
         const method = req.method.toUpperCase();
         const headers: Record<string, string> = { ...req.headers };
 
-        // Body encoding: never send a body for GET/HEAD. Encode per req.bodyType
-        // (default 'json'): 'form' -> x-www-form-urlencoded, 'multipart' -> FormData.
-        let body: string | FormData | undefined;
-        const noBodyMethod = method === 'GET' || method === 'HEAD';
-        const hasContentType = () =>
-            Object.keys(headers).some(
-                (k) => k.toLowerCase() === 'content-type',
-            );
-        if (!noBodyMethod && req.body !== undefined && req.body !== null) {
-            if (typeof req.body === 'string') {
-                body = req.body;
-            } else if (req.bodyType === 'form') {
-                const params = new URLSearchParams();
-                for (const [k, v] of Object.entries(
-                    req.body as Record<string, unknown>,
-                )) {
-                    if (v !== undefined && v !== null)
-                        params.append(k, String(v));
-                }
-                body = params.toString();
-                if (!hasContentType())
-                    headers['content-type'] =
-                        'application/x-www-form-urlencoded';
-            } else if (req.bodyType === 'multipart') {
-                const form = new FormData();
-                for (const [k, v] of Object.entries(
-                    req.body as Record<string, unknown>,
-                )) {
-                    appendForm(form, k, v);
-                }
-                body = form; // do NOT set content-type — fetch adds the multipart boundary
-            } else {
-                body = JSON.stringify(req.body);
-                if (!hasContentType())
-                    headers['content-type'] = 'application/json';
-            }
+        // Encode the body per req.bodyType (shared with other transports). The returned
+        // content-type is applied only when the caller hasn't set one; multipart returns
+        // none, leaving fetch to add the boundary itself.
+        const { body, contentType } = encodeRequestBody(req);
+        if (contentType && !hasHeader(headers, 'content-type')) {
+            headers['content-type'] = contentType;
         }
 
         // Send the request. Network/abort errors propagate to the caller.
@@ -101,6 +76,71 @@ export function fetchAdapter(): Adapter {
 
         return { status: response.status, headers: resHeaders, body: parsed };
     };
+}
+
+const hasHeader = (headers: Record<string, string>, name: string): boolean =>
+    Object.keys(headers).some((k) => k.toLowerCase() === name.toLowerCase());
+
+// Encode a request body per `bodyType` (default 'json'). Shared across transports so
+// form/multipart/json encoding is identical regardless of the underlying HTTP client.
+// Returns the encoded body and the content-type to set when the caller hasn't already;
+// multipart returns no content-type, leaving the transport to add the boundary.
+export function encodeRequestBody(req: AdapterRequest): {
+    body: string | FormData | undefined;
+    contentType?: string;
+} {
+    const method = req.method.toUpperCase();
+    if (method === 'GET' || method === 'HEAD') return { body: undefined };
+    if (req.body === undefined || req.body === null) return { body: undefined };
+    if (typeof req.body === 'string') return { body: req.body };
+    if (req.bodyType === 'form') {
+        const params = new URLSearchParams();
+        for (const [k, v] of Object.entries(
+            req.body as Record<string, unknown>,
+        )) {
+            if (v !== undefined && v !== null) params.append(k, String(v));
+        }
+        return {
+            body: params.toString(),
+            contentType: 'application/x-www-form-urlencoded',
+        };
+    }
+    if (req.bodyType === 'multipart') {
+        const form = new FormData();
+        for (const [k, v] of Object.entries(
+            req.body as Record<string, unknown>,
+        )) {
+            appendForm(form, k, v);
+        }
+        return { body: form };
+    }
+    return { body: JSON.stringify(req.body), contentType: 'application/json' };
+}
+
+// Decode raw response bytes into the value the engine sees: an explicit responseType wins
+// (arrayBuffer/blob for binary, text/json to force a shape), otherwise JSON is auto-detected
+// by content-type. Shared by transports that hand back bytes (e.g. the axios adapter, which
+// requests an arraybuffer and decodes here so its parsing matches fetchAdapter exactly).
+export function decodeResponseBody(
+    responseType: ResponseType | undefined,
+    contentType: string,
+    bytes: ArrayBuffer,
+): unknown {
+    if (responseType === 'arrayBuffer') return bytes;
+    if (responseType === 'blob')
+        return new Blob(
+            [bytes],
+            contentType ? { type: contentType } : undefined,
+        );
+    const text = new TextDecoder().decode(bytes);
+    if (responseType === 'text') return text;
+    const ct = contentType.toLowerCase();
+    const isJson =
+        responseType === 'json' ||
+        ct.includes('application/json') ||
+        ct.includes('+json');
+    if (isJson) return text === '' ? undefined : JSON.parse(text);
+    return text;
 }
 
 // Append a value to multipart FormData: a Blob/Uint8Array becomes a file part; a

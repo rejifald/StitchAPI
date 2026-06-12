@@ -58,11 +58,6 @@
       "count": 3
     }
   },
-  "src/util.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 2
-    }
-  },
   "src/validator.ts": {
     "@typescript-eslint/no-non-null-assertion": {
       "count": 1

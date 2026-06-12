@@ -74,32 +74,228 @@ export function getPath(obj: unknown, path: string): unknown {
         );
 }
 
-/** Expand `/users/{id}` with params, URL-encoding values. Returns { path, used }. */
+// ---- RFC 6570 URI Template expansion --------------------------------------
+// A dependency-free port of the `url-template` (v3) algorithm, covering RFC 6570
+// through Level 4: the operators `+ # . / ; ? &`, the explode (`*`) and prefix
+// (`:n`) modifiers, and list/object values. Plain `{id}` interpolation is the common
+// case; the operators make reserved, path, label, and query expansion available too.
+const TEMPLATE_OPERATORS = ['+', '#', '.', '/', ';', '?', '&'];
+
+// Coerce a leaf value to its string form for URL encoding. Template/query leaves are
+// expected to be primitives; a stray object is JSON-encoded rather than emitted as the
+// useless '[object Object]'.
+function stringifyLeaf(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (
+        typeof value === 'number' ||
+        typeof value === 'boolean' ||
+        typeof value === 'bigint'
+    )
+        return String(value);
+    if (value === null || value === undefined) return '';
+    return JSON.stringify(value);
+}
+
+// Percent-encode everything outside RFC 6570 *unreserved* — i.e. `encodeURIComponent`
+// plus the extra characters it leaves alone (`! ' ( ) *`).
+function encodeUnreserved(str: string): string {
+    return encodeURIComponent(str).replace(
+        /[!'()*]/g,
+        (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase(),
+    );
+}
+
+// Percent-encode but leave *reserved* characters — and existing `%XX` triples —
+// intact. Used by the `+` and `#` operators, where reserved characters pass through.
+function encodeReserved(str: string): string {
+    return str
+        .split(/(%[0-9A-Fa-f]{2})/g)
+        .map((part) =>
+            /%[0-9A-Fa-f]{2}/.test(part)
+                ? part
+                : encodeURI(part).replace(/%5B/g, '[').replace(/%5D/g, ']'),
+        )
+        .join('');
+}
+
+const isKeyOperator = (op: string | null): boolean =>
+    op === ';' || op === '&' || op === '?';
+
+function encodeTemplateValue(
+    op: string | null,
+    value: string,
+    key?: string,
+): string {
+    const v =
+        op === '+' || op === '#'
+            ? encodeReserved(value)
+            : encodeUnreserved(value);
+    return key !== undefined ? encodeUnreserved(key) + '=' + v : v;
+}
+
+// Expand one variable (the `getValues` step of RFC 6570 §3.2.1) into its rendered pieces.
+function expandTemplateVar(
+    vars: Record<string, unknown>,
+    op: string | null,
+    key: string,
+    modifier: string | undefined,
+): string[] {
+    const value = vars[key];
+    const out: string[] = [];
+    const defined = value !== undefined && value !== null;
+    if (defined && value !== '') {
+        if (
+            typeof value === 'string' ||
+            typeof value === 'number' ||
+            typeof value === 'boolean'
+        ) {
+            let s = String(value);
+            if (modifier && modifier !== '*')
+                s = s.substring(0, parseInt(modifier, 10));
+            out.push(
+                encodeTemplateValue(op, s, isKeyOperator(op) ? key : undefined),
+            );
+        } else if (modifier === '*') {
+            // explode: each list item / each object pair becomes its own piece
+            if (Array.isArray(value)) {
+                for (const item of value)
+                    if (item != null)
+                        out.push(
+                            encodeTemplateValue(
+                                op,
+                                String(item),
+                                isKeyOperator(op) ? key : undefined,
+                            ),
+                        );
+            } else {
+                for (const [k, v] of Object.entries(
+                    value as Record<string, unknown>,
+                ))
+                    if (v != null)
+                        out.push(encodeTemplateValue(op, stringifyLeaf(v), k));
+            }
+        } else {
+            // no explode: collapse the list/object into one comma-joined piece
+            const tmp: string[] = [];
+            if (Array.isArray(value)) {
+                for (const item of value)
+                    if (item != null)
+                        tmp.push(encodeTemplateValue(op, String(item)));
+            } else {
+                for (const [k, v] of Object.entries(
+                    value as Record<string, unknown>,
+                ))
+                    if (v != null) {
+                        tmp.push(encodeUnreserved(k));
+                        tmp.push(encodeTemplateValue(op, stringifyLeaf(v)));
+                    }
+            }
+            if (isKeyOperator(op))
+                out.push(encodeUnreserved(key) + '=' + tmp.join(','));
+            else if (tmp.length) out.push(tmp.join(','));
+        }
+    } else if (op === ';') {
+        if (defined) out.push(encodeUnreserved(key)); // empty string → bare `;name`
+    } else if (value === '' && (op === '&' || op === '?')) {
+        out.push(encodeUnreserved(key) + '='); // empty string → `name=`
+    } else if (value === '') {
+        out.push('');
+    }
+    return out;
+}
+
+/** Expand an RFC 6570 template (`/users/{id}`, `/files{/path*}`, `{?q,sort}`, …) against `params`. */
 export function expandPath(
     tpl: string,
     params: Record<string, unknown> = {},
-): { path: string; used: Set<string> } {
-    const used = new Set<string>();
-    const path = tpl.replace(/\{(\w+)\}/g, (_m, k: string) => {
-        used.add(k);
-        return encodeURIComponent(String(params[k] ?? ''));
-    });
-    return { path, used };
+): string {
+    return tpl.replace(
+        /\{([^{}]+)\}|([^{}]+)/g,
+        (_m, expr: string | undefined, literal: string | undefined) => {
+            if (expr === undefined) return encodeReserved(literal ?? '');
+            let body = expr;
+            let op: string | null = null;
+            if (TEMPLATE_OPERATORS.includes(body.charAt(0))) {
+                op = body.charAt(0);
+                body = body.slice(1);
+            }
+            const values: string[] = [];
+            for (const varspec of body.split(',')) {
+                const m = /([^:*]*)(?::(\d+)|(\*))?/.exec(varspec);
+                if (!m) continue;
+                values.push(
+                    ...expandTemplateVar(params, op, m[1] ?? '', m[2] ?? m[3]),
+                );
+            }
+            if (op && op !== '+') {
+                const sep = op === '?' ? '&' : op === '#' ? ',' : op;
+                return (values.length ? op : '') + values.join(sep);
+            }
+            return values.join(',');
+        },
+    );
 }
 
+// ---- Query strings --------------------------------------------------------
+// Build a query string from a possibly-nested object, `qs`-style: nested objects
+// expand to `a[b]=c`, arrays to `a[0]=x&a[1]=y`, and both the bracketed key and the
+// value are percent-encoded (so `a[b]` goes on the wire as `a%5Bb%5D`, which servers
+// decode back to `a[b]`). `null`/`undefined` are skipped; empty objects/arrays add nothing.
+// NOTE: the array format is fixed to `qs`-style indices for now; whether to make it
+// configurable (indices | brackets | repeat) is flagged for review in docs/DESIGN.md §15.
 export function buildQuery(q: Record<string, unknown> | undefined): string {
     if (!q) return '';
-    const sp = new URLSearchParams();
-    for (const [k, v] of Object.entries(q)) {
-        if (v == null) continue;
-        if (Array.isArray(v))
-            v.forEach((x) => {
-                sp.append(k, String(x));
-            });
-        else sp.append(k, String(v));
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(q)) appendQueryParam(k, v, parts);
+    return parts.length ? `?${parts.join('&')}` : '';
+}
+
+function appendQueryParam(key: string, value: unknown, out: string[]): void {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+        value.forEach((item, i) => {
+            appendQueryParam(`${key}[${i}]`, item, out);
+        });
+    } else if (value instanceof Date) {
+        out.push(
+            `${encodeURIComponent(key)}=${encodeURIComponent(value.toISOString())}`,
+        );
+    } else if (typeof value === 'object') {
+        for (const [k, v] of Object.entries(value as Record<string, unknown>))
+            appendQueryParam(`${key}[${k}]`, v, out);
+    } else {
+        out.push(
+            `${encodeURIComponent(key)}=${encodeURIComponent(stringifyLeaf(value))}`,
+        );
     }
-    const s = sp.toString();
-    return s ? `?${s}` : '';
+}
+
+/**
+ * Index of the first `?` that is *not* inside an RFC 6570 `{…}` expression, so a `{?x}`
+ * query operator in a template isn't mistaken for the predefined-query delimiter.
+ */
+export function topLevelQueryIndex(raw: string): number {
+    let depth = 0;
+    for (let i = 0; i < raw.length; i++) {
+        const c = raw[i];
+        if (c === '{') depth++;
+        else if (c === '}') depth = Math.max(0, depth - 1);
+        else if (c === '?' && depth === 0) return i;
+    }
+    return -1;
+}
+
+/**
+ * Append an already-built query string (`?a=b`, or `''`) onto a URL that may already
+ * carry a query (e.g. from a `{?x}` template operator), switching the leading `?` to `&`
+ * as needed. A trailing `#fragment` (from a `{#…}` operator) is preserved at the end.
+ */
+export function appendQueryString(url: string, qs: string): string {
+    if (!qs) return url;
+    const hashIdx = url.indexOf('#');
+    const head = hashIdx === -1 ? url : url.slice(0, hashIdx);
+    const tail = hashIdx === -1 ? '' : url.slice(hashIdx);
+    return head + (head.includes('?') ? '&' + qs.slice(1) : qs) + tail;
 }
 
 /**
