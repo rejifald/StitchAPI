@@ -5,16 +5,86 @@ description: 'Input or response failed schema validation.'
 
 ## What you'll see
 
-Stub.
+A stitch with an `input` or `output` schema throws a `StitchError` whose message
+names the failing path and the issue, e.g. `invalid body: name is required` or a
+type mismatch on the response. Where it throws tells you which side failed:
+
+-   **Input, before the request.** When call input doesn't match the `input`
+    schema, the stitch fails fast — the error is thrown _before_ any network call,
+    so nothing leaves the process. This is the common case for a malformed
+    `params`, `query`, `body`, or `headers`.
+-   **Response, after the request.** When the response doesn't match `output`, the
+    error is thrown after the response returns and has been transformed and
+    unwrapped — the request did go out, and the failure describes how the payload
+    diverged from the contract.
+
+<Callout type="warn">
+    The stable code `STITCH_VALIDATION` is provisional. Today the runtime throws
+    a `StitchError` carrying the failing path and message; the coded error
+    taxonomy that will populate `error.code` and `error.url` is still landing,
+    so don't match on a literal code string yet — match on the path in the
+    message.
+</Callout>
 
 ## Why it happens
 
-Stub.
+The value didn't satisfy the schema you adapted onto the config:
+
+-   **Input didn't match `input`.** A required field is missing, a field has the
+    wrong type, or an extra/renamed field tripped a strict schema — checked against
+    `{ params, query, body, headers }` before the request.
+-   **Response didn't match `output`.** A real contract mismatch: the API dropped a
+    field you require, returned a field with the wrong type, or changed a shape your
+    `output` schema declares. The validator reports each issue with its path.
 
 ## How to fix
 
-Stub.
+Read the failing path off the message and check it against the schema:
+
+-   **If input failed,** fix the call input — or relax the `input` schema if the
+    field really is optional. The request never went out, so there's nothing to
+    retry once the input is correct.
+-   **If the response failed,** decide whether the schema or the API is wrong.
+    Update the `output` schema to match the real payload, or fix the expectation
+    if the API contract genuinely changed.
+
+For a response whose shape shifts in noisy-but-nonbreaking ways, don't reach for
+hard validation — a single new optional field shouldn't throw. Pass a
+[`drift()`](/docs/guides/validation/drift) spec to `output` instead, which
+reports leveled findings without failing the call.
+
+Config fields are typed as `Validator`, so adapt your schema with `toValidator`
+before assigning it. It coerces a Zod schema, any Standard Schema (Valibot,
+ArkType), or a plain predicate into the `Validator` shape `input`/`output`
+expect:
+
+```ts twoslash
+import { stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+const createUser = stitch<{ id: number; name: string }>({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    // Validated before the POST is sent — bad input fails fast.
+    input: { body: toValidator(z.object({ name: z.string() })) },
+    // Validated after the response returns.
+    output: toValidator(z.object({ id: z.number(), name: z.string() })),
+});
+```
+
+See [Bring your own validator](/docs/guides/validation/standard-schema) for
+adapting non-Zod schemas, and [Validation](/docs/guides/validation/validation)
+for how `input` and `output` are checked.
 
 ## Related
 
-Stub.
+<Cards>
+    <Card title="Guide: Validation" href="/docs/guides/validation/validation" />
+    <Card
+        title="Bring your own validator"
+        href="/docs/guides/validation/standard-schema"
+    />
+    <Card title="Schema drift detection" href="/docs/guides/validation/drift" />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>

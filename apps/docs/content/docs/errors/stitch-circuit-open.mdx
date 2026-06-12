@@ -5,16 +5,60 @@ description: 'The circuit breaker is open after repeated failures and short-circ
 
 ## What you'll see
 
-Stub.
+A stitch configured with a [`circuit`](/docs/guides/resilience/circuit-breaker)
+fails _immediately_ — no request leaves the process — with a `StitchError`
+surfaced on the event stream as an `error` event (phase `circuit`). The
+dependency itself isn't being hit: the breaker tripped open after repeated
+failures and is now fast-failing every call to protect it. This is the breaker
+doing its job, not a fresh failure.
+
+<Callout type="info">
+    `STITCH_CIRCUIT_OPEN` is provisional — the stable error-code registry lands
+    with the runtime taxonomy refactor. Today the short-circuit surfaces as a
+    `StitchError`; match on the breaker's `circuit` phase rather than the code
+    string.
+</Callout>
 
 ## Why it happens
 
-Stub.
+The breaker counts _consecutive_ failures. Once it reaches `failureThreshold`,
+it trips **open** and records the moment. While open, every call fast-fails for
+`cooldownMs` instead of touching the dependency. Seeing this error means you are
+inside that cooldown window — the breaker hasn't yet allowed the **half-open**
+trial that decides whether to close again. The real failures that tripped it
+happened on earlier calls; this one is just being short-circuited.
 
 ## How to fix
 
-Stub.
+Most of the time this is working as intended — a failing dependency is being
+shielded from a stampede. Work through these in order:
+
+-   **Wait it out.** After `cooldownMs` (or `halfOpenAfterMs`, if set) the breaker
+    goes half-open and lets a single trial through; a success closes it and traffic
+    resumes. If the dependency has recovered, the next call after the window will
+    succeed.
+-   **Fix the underlying dependency.** The breaker is a symptom, not the cause. Find
+    and fix the real failures — the earlier errors that incremented the count to
+    `failureThreshold` — so the half-open trial can close it.
+-   **Tune the thresholds.** Raise `failureThreshold` if the breaker trips on
+    transient blips; adjust `cooldownMs` / `halfOpenAfterMs` to control how long it
+    fast-fails before retesting.
+-   **Check the `key`.** Breakers are keyed (default: the stitch/host key). If two
+    unrelated stitches share a `key`, one failing dependency trips the breaker for
+    both — give them distinct keys so they don't share a breaker.
+
+Pair the breaker with [retry](/docs/guides/resilience/retry) and
+[timeout](/docs/guides/resilience/timeout): timeouts and retries absorb the
+transient failures, and the breaker steps in only once those keep failing.
 
 ## Related
 
-Stub.
+<Cards>
+    <Card
+        title="Guide: circuit breaker"
+        href="/docs/guides/resilience/circuit-breaker"
+    />
+    <Card title="Guide: timeout" href="/docs/guides/resilience/timeout" />
+    <Card title="Guide: retry" href="/docs/guides/resilience/retry" />
+    <Card title="Reference: config types" href="/docs/reference/config-types" />
+</Cards>
