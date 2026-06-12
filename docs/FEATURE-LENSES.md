@@ -76,7 +76,7 @@ payload), and _Reach_ (where it runs and what it plugs into) — above which sit
     function" move — [`src/stitch.ts`](../src/stitch.ts)
 -   One handle, two modes — `await theStitch()` **or** `theStitch().stream()`
 -   Fluent builder — `.get/.post/.put/.delete/.returns/.unwrap/.auth/.retry/.throttle/.timeout`
--   URL templates (RFC 6570), query-string builder, predefined query baked into the path
+-   URL templates (full RFC 6570 — operators, explode `*`, prefix `:n`) and a `qs`-style query builder for nested objects/arrays, plus predefined query baked into the path
 -   `.with(partial)` partial application — reuses the same runtime so cookies/throttle persist
 
 ### Composability & reuse
@@ -131,6 +131,8 @@ payload), and _Reach_ (where it runs and what it plugs into) — above which sit
 
 -   Every seam is swappable — `Adapter`, `StitchStore`, `TraceSink`, `AuthStrategy`, `Hooks`,
     `transform` — [`src/http-adapter.ts`](../src/http-adapter.ts)
+-   Pluggable HTTP transport — `fetchAdapter` (default) or the shipped `axiosAdapter(client)`
+    that wraps your own axios instance; any `Adapter` function works (got, a fake, your own)
 -   The adapter doubles as a test seam (inject a fake transport)
 
 ### Protocol coverage

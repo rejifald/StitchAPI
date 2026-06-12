@@ -25,6 +25,7 @@ import type {
     TraceSink,
 } from './types';
 import {
+    appendQueryString,
     buildQuery,
     expandPath,
     getPath,
@@ -32,6 +33,7 @@ import {
     now,
     parseDuration,
     sleep,
+    topLevelQueryIndex,
 } from './util';
 import type { Validator } from './validator';
 
@@ -116,7 +118,9 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     const raw = usingUrl
         ? resolveStr(cfg.url)
         : (cfg.path ?? (isGql ? '/graphql' : ''));
-    const qIdx = raw.indexOf('?');
+    // Split off a literal `?predefined=query` (brace-aware, so a `{?x}` template operator
+    // isn't mistaken for it); the template part is expanded, the rest are query defaults.
+    const qIdx = topLevelQueryIndex(raw);
     let tpl = raw;
     let predefined: Record<string, unknown> = {};
     if (qIdx >= 0) {
@@ -127,9 +131,9 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
             >,
         );
     }
-    const { path } = expandPath(tpl, input.params ?? {});
+    const path = expandPath(tpl, input.params ?? {});
     const query = { ...predefined, ...(input.query ?? {}) };
-    const url = joinUrl(base, path) + buildQuery(query);
+    const url = appendQueryString(joinUrl(base, path), buildQuery(query));
     // A relative endpoint can't be fetched by the default transport — fail with a clear config
     // error here instead of a cryptic "Failed to parse URL" from fetch. A custom `adapter` may
     // legitimately resolve relative URLs, so this only guards the default transport.
