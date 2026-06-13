@@ -10,6 +10,12 @@ export function baseOptions(): BaseLayoutProps {
             // JSX supported
             title: <Logo />,
         },
+        links: [
+            {
+                text: 'Playground',
+                url: '/playground',
+            },
+        ],
         githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
     };
 }

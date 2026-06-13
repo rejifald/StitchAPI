@@ -4,6 +4,9 @@
 # generated content
 .source
 
+# generated playground Worker bundle (built by `build:sandbox`)
+/public/sandbox/
+
 # test & build
 /coverage
 /.next/
