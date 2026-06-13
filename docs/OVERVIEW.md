@@ -180,7 +180,12 @@ mostly-additive list for the rest.
 
 **Principles:** progressive disclosure (zero-config to start, opt-in depth) · atomic stitches (no
 global config) · composition over configuration · the stitch is the boundary · one definition,
-many surfaces · the event stream is the spine · kind-agnostic core.
+many surfaces · the event stream is the spine · kind-agnostic core · browser-first (runs wherever
+`fetch` does) · pay only for what you import (subpath exports, enforced tree-shaking) · contract,
+not dependency (core ships seams + conformance kits; vendors live in peer-dep packages) ·
+no side effects by default (state is in-memory and process-local; persistence and sharing are
+opt-in via the store) · declarative spelling (every capability round-trips as JSON; functions
+are sugar).
 
 **Locked decisions:** library-first; HTTP-only but kind-abstraction-ready; event-stream return is
 core; throttle, leveled drift, and zero-infra observability are defaults; state lives behind a
