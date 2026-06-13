@@ -235,11 +235,15 @@ export interface StitchConfig {
     /** Pluggable state store for throttle + session. Default in-memory. */
     store?: StitchStore;
     /**
-     * Trace sink override. `false` disables ALL built-in sinks for this stitch — it
-     * wins over `STITCH_TRACE_FILE`/`STITCH_TRACE_CONSOLE`/`STITCH_EXPORT`. A custom
-     * {@link TraceSink} replaces the env-derived sink entirely. Unset = env-derived default.
+     * Observability sink — **off by default**, because a stitch's only effect on
+     * the world is its call. Opt in with `'console'` (the colored stderr stream),
+     * a sink from `fileSink(path)` / `createTrace(...)` for JSONL on disk, or any
+     * custom {@link TraceSink}. `false` forces it off even when the `STITCH_TRACE_*`
+     * env vars are set. Unset falls back to the env-driven sink, which is itself
+     * silent unless `STITCH_TRACE_CONSOLE` / `STITCH_TRACE_FILE` / `STITCH_EXPORT`
+     * opt in.
      */
-    trace?: false | TraceSink;
+    trace?: TraceSink | 'console' | false;
 }
 
 export interface StitchResult<T> extends PromiseLike<T> {
