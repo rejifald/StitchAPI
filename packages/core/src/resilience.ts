@@ -48,11 +48,22 @@ interface KeyState {
     nextGrantAt: number; // earliest time the next rate-limited acquire may proceed
 }
 
+// In-process registry of host-scoped limiter state. `scope:'host'` must pool the rate
+// budget across SEPARATE stitch() instances hitting the same host even without a shared
+// store (throttle.mdx: "'host' pools the budget across every stitch hitting the same
+// host"). Closure-local maps can't do that, so host-scoped throttles share their KeyState
+// here, keyed by the host. A configured `store` still overrides for cross-process pooling.
+const hostStates = new Map<string, KeyState>();
+
 /**
  * Proactive limiter. `rate` ("2/s") enforces a minimum spacing between successive
  * acquires for a key; `concurrency` caps simultaneous in-flight holders for a key.
  * `acquire` resolves once a slot is free (reporting how long it waited) and MUST be
  * paired with `release`. Concurrency waiters are served FIFO.
+ *
+ * With `scope:'host'`, per-key state lives in the module-level `hostStates` registry so the
+ * budget pools in-process across independent stitch instances; `scope:'stitch'` (default)
+ * keeps state closure-local to this limiter.
  */
 export function createThrottle(opts?: ThrottleOptions): {
     acquire(key: string): Promise<{ waitedMs: number }>;
@@ -61,7 +72,8 @@ export function createThrottle(opts?: ThrottleOptions): {
     const limit = opts?.concurrency;
     const rate = opts?.rate ? parseRate(opts.rate) : undefined;
     const spacing = rate ? rate.perMs / rate.count : 0; // ms between grants
-    const states = new Map<string, KeyState>();
+    const states =
+        opts?.scope === 'host' ? hostStates : new Map<string, KeyState>();
 
     const stateFor = (key: string): KeyState => {
         let s = states.get(key);

@@ -156,3 +156,16 @@ html > body[data-scroll-locked] {
 .tok-punc {
     color: var(--color-fd-muted-foreground);
 }
+
+/* --- Twoslash hover affordance: only underline the token under the cursor ----
+   By default Twoslash reveals the dotted underline on *every* annotated token
+   the moment the pointer enters a block (`.twoslash:hover .twoslash-hover`),
+   which reads as noise. Scope it to the hovered token instead — the type popup
+   still works everywhere, you just don't get the "everything is dotted" wash.
+   The leading `html` bumps specificity over twoslash.css (imported after this). */
+html .twoslash:hover .twoslash-hover {
+    border-color: transparent;
+}
+html .twoslash .twoslash-hover:hover {
+    border-color: currentColor;
+}

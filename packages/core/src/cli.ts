@@ -444,7 +444,17 @@ function traceCommand(args: string[], io: CliIO): number {
         return 1;
     }
 
-    const cutoff = since ? io.now() - (parseSince(since) ?? 0) : undefined;
+    let cutoff: number | undefined;
+    if (since !== undefined) {
+        const sinceMs = parseSince(since);
+        if (sinceMs === undefined) {
+            io.writeErr(
+                `invalid --since value: '${since}'; expected a duration like 1h, 30m, 45s, 2d\n`,
+            );
+            return 2;
+        }
+        cutoff = io.now() - sinceMs;
+    }
     const records: TraceRecord[] = [];
     for (const raw of readFileSync(path, 'utf8').split('\n')) {
         const trimmed = raw.trim();
