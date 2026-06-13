@@ -131,44 +131,6 @@ So a call carrying `authorization: 'Bearer …'` traces as
 happens at the sink boundary, so the live request still sends the real header; only
 the trace copy is scrubbed.
 
-## Turning tracing off
-
-There are two off switches, both of which disable the built-in sinks:
-
-```ts twoslash
-import { stitch } from 'stitchapi';
-// ---cut---
-// Per-stitch: `trace: false` disables ALL built-in sinks for this stitch and wins
-// over every STITCH_TRACE_* env var. (A `TraceSink` value replaces them instead.)
-const quiet = stitch({
-    baseUrl: 'https://api.example.com',
-    path: '/health',
-    trace: false,
-});
-```
-
-Globally, set `STITCH_TRACE_FILE` to `0`, `false`, or an empty string to turn file
-tracing off — these are treated as the off switch, not as a path, so no file named
-`0` or `false` is ever written to the working directory.
-
-## Default secret redaction
-
-Before any event is written to the built-in JSONL (or console) sink, header values
-for a fixed denylist are replaced with the literal `[REDACTED]`, matched
-case-insensitively wherever headers appear in the event payload (the `start`
-event's input headers, response headers, and so on):
-
-- `authorization`
-- `proxy-authorization`
-- `cookie`
-- `set-cookie`
-- `x-api-key`
-
-So a call carrying `authorization: 'Bearer …'` traces as
-`"authorization":"[REDACTED]"` — the raw secret never reaches disk. Redaction
-happens at the sink boundary, so the live request still sends the real header; only
-the trace copy is scrubbed.
-
 A `TraceSink` is just `{ handle(event, ctx), flush?() }` — implement those two
 and you have a custom consumer you can pass to `trace` or `multiplex`. The same
 shape backs the console, JSONL, and OTLP sinks, which is why all three come from
