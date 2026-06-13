@@ -89,6 +89,14 @@ test('a child baseUrl/path overrides an inherited url', async () => {
     await expect(s()).resolves.toEqual({ ok: true });
 });
 
+// baseUrl may itself contain a path prefix; the path is appended, not replaced.
+test('baseUrl with path prefix concatenates with path', async () => {
+    server.route('GET', '/v1/users', { body: { ok: true } });
+    const users = stitch({ baseUrl: `${server.url}/v1`, path: '/users' });
+    await expect(users()).resolves.toEqual({ ok: true });
+    expect(server.callCount('/v1/users')).toBe(1);
+});
+
 // Guard: a relative endpoint can't be fetched — fail with a clear config error rather than a
 // cryptic transport error from fetch.
 test('a relative path with no baseUrl throws a clear config error', async () => {

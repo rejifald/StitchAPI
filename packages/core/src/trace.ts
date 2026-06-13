@@ -1,13 +1,38 @@
 // Zero-infra observability sink: append every StitchEvent as a JSONL record and,
 // optionally, print a compact colored one-line-per-event summary to stderr. No deps.
 import type { DriftLevel, StitchEvent, TraceSink } from './types';
-
-import { appendFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirnameOf, nodeFs, readEnv } from './util';
 
 export interface TraceOptions {
     console?: boolean; // pretty one-line-per-event to stderr (default true)
     file?: string | false; // JSONL path; default `${process.env.HOME}/.stitch/runs/proto.jsonl`; false disables
+}
+
+// Header names whose values are secrets: redacted before any event leaves for a
+// built-in sink (JSONL/console). Matched case-insensitively wherever headers appear
+// in an event payload (start input.headers, result/response headers, etc.).
+const SECRET_HEADERS = new Set([
+    'authorization',
+    'proxy-authorization',
+    'cookie',
+    'set-cookie',
+    'x-api-key',
+]);
+const REDACTED = '[REDACTED]';
+
+// Deep-clone `value`, replacing any object property whose key is a secret header
+// name (case-insensitive) with '[REDACTED]'. Non-mutating: the engine keeps the
+// real headers; only the trace copy is scrubbed.
+function redact(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(redact);
+    if (value !== null && typeof value === 'object') {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            out[k] = SECRET_HEADERS.has(k.toLowerCase()) ? REDACTED : redact(v);
+        }
+        return out;
+    }
+    return value;
 }
 
 const RESET = '\x1b[0m';
@@ -65,34 +90,47 @@ function format(name: string, event: StitchEvent): string | null {
 // Resolve the JSONL path once: `false` disables (null), `undefined` => default under $HOME.
 function resolvePath(file: TraceOptions['file']): string | null {
     if (file === false) return null;
-    if (file === undefined)
-        return `${process.env['HOME']}/.stitch/runs/proto.jsonl`;
+    if (file === undefined) {
+        const home = readEnv('HOME');
+        return home ? `${home}/.stitch/runs/proto.jsonl` : null;
+    }
     return file;
+}
+
+// stderr in Node; console.error in the browser (where `process` doesn't exist).
+function writeLine(line: string): void {
+    const proc = (
+        globalThis as { process?: { stderr?: { write(s: string): void } } }
+    ).process;
+    if (proc?.stderr) proc.stderr.write(`${line}\n`);
+    else console.error(line);
 }
 
 export function createTrace(
     opts?: TraceOptions,
 ): TraceSink & { path: string | null } {
     const toConsole = opts?.console ?? true;
-    const path = resolvePath(opts?.file);
+    // File tracing needs node:fs — absent (browser), it is an explicit no-op.
+    const fs = nodeFs();
+    const path = fs ? resolvePath(opts?.file) : null;
     let dirReady = false;
 
     return {
         path,
         handle(event: StitchEvent, ctx: { name: string }): void {
-            if (path) {
+            if (fs && path) {
                 if (!dirReady) {
-                    mkdirSync(dirname(path), { recursive: true });
+                    fs.mkdirSync(dirnameOf(path), { recursive: true });
                     dirReady = true;
                 }
-                appendFileSync(
+                fs.appendFileSync(
                     path,
-                    `${JSON.stringify({ name: ctx.name, ...event })}\n`,
+                    `${JSON.stringify(redact({ name: ctx.name, ...event }))}\n`,
                 );
             }
             if (toConsole) {
                 const line = format(ctx.name, event);
-                if (line != null) process.stderr.write(`${line}\n`);
+                if (line != null) writeLine(line);
             }
         },
         // Sync appends mean there is nothing buffered to drain.
@@ -100,6 +138,23 @@ export function createTrace(
             /* console/JSONL writes are synchronous; nothing is buffered */
         },
     };
+}
+
+/** A console-only sink: the colored one-line-per-event stream to stderr, nothing on disk. */
+export function consoleSink(): TraceSink {
+    return createTrace({ console: true, file: false });
+}
+
+/**
+ * A file-only sink: append every event as JSONL to `path` (defaults to
+ * `~/.stitch/runs/proto.jsonl`). Writing to disk is a side effect, so you reach
+ * for this explicitly — a stitch never opens a trace file on its own.
+ */
+export function fileSink(path?: string): TraceSink {
+    return createTrace({
+        console: false,
+        ...(path !== undefined ? { file: path } : {}),
+    });
 }
 
 /** Fan every event out to several sinks (e.g. console/JSONL + OTLP) — one event stream, many consumers. */

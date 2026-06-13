@@ -145,7 +145,7 @@ The v1 runtime (in `src/`, **zero runtime dependencies**):
     sessions **persistent/shared across workers** (the two "critical" gaps closed by one seam).
 -   **Body encoding** (json/form/multipart), **GraphQL kind**, **static headers**, **transform**
     (e.g. scrape HTML → structured), **pagination** (auto-loop, aggregate).
--   **Zero-infra observability** — console + JSONL event stream by default; OTLP export opt-in.
+-   **Zero-infra observability** — off by default; opt into the console stream, a JSONL file, or OTLP export with one flag (no side effects by default).
 
 **Four surfaces from one definition:** in-process function · CLI (`stitch run`/`trace`) · HTTP
 serve · MCP.
@@ -183,13 +183,13 @@ global config) · composition over configuration · the stitch is the boundary �
 many surfaces · the event stream is the spine · kind-agnostic core · browser-first (runs wherever
 `fetch` does) · pay only for what you import (subpath exports, enforced tree-shaking) · contract,
 not dependency (core ships seams + conformance kits; vendors live in peer-dep packages) ·
-no side effects by default (state is in-memory and process-local; persistence and sharing are
-opt-in via the store) · declarative spelling (every capability round-trips as JSON; functions
+no side effects by default (state is in-memory and process-local; persistence, sharing, and
+tracing are opt-in) · declarative spelling (every capability round-trips as JSON; functions
 are sugar).
 
 **Locked decisions:** library-first; HTTP-only but kind-abstraction-ready; event-stream return is
-core; throttle, leveled drift, and zero-infra observability are defaults; state lives behind a
-**pluggable store**; validation is **Standard-Schema flexible** (Zod stays first-class);
+core; throttle and leveled drift are defaults, while observability and persistence are **off until
+opted in**; state lives behind a **pluggable store**; validation is **Standard-Schema flexible** (Zod stays first-class);
 third-party **service names stay out of public artifacts** (neutral archetypes).
 
 ---

@@ -43,8 +43,9 @@ existing or proposed — passes through all three before it ships.
 -   The streaming event spine — `start → progress → drift → delta → result → done` / `error` —
     a typed async-iterable, not `Promise<bytes>` — [`src/types.ts`](../src/types.ts)
 -   Progress phases — `auth` / `request` / `throttled` / `retry` / `paginate`
--   Zero-infra trace sink — console (`STITCH_TRACE_CONSOLE=1`) or JSONL file
-    (`STITCH_TRACE_FILE`), pluggable via the `TraceSink` interface — [`src/trace.ts`](../src/trace.ts)
+-   Trace sink — **off by default**; opt in per stitch (`trace: 'console'` / `fileSink(path)` /
+    a custom `TraceSink`) or by env (`STITCH_TRACE_CONSOLE=1`, `STITCH_TRACE_FILE=<path>`) —
+    [`src/trace.ts`](../src/trace.ts)
 -   Timing baked into events — `waitedMs`, `attempts`, total `ms`, per-event `at`
 
 ### Security
@@ -72,10 +73,10 @@ existing or proposed — passes through all three before it ships.
 
 > **No side effects by default.** A stitch's call is its only effect on the world: throttle
 > buckets, the cookie jar, token caches, and the circuit-breaker counter all live in-memory and
-> process-local, and vanish with the process. Persistence and sharing are a single opt-in —
-> attach a shared `store` and the same throttle goes distributed and the same session is shared
-> across workers. Distributed limiting and shared sessions are a config choice, never a default
-> you inherit.
+> process-local, and vanish with the process — and a stitch traces nothing until you ask. Both
+> are a single opt-in: attach a shared `store` and the same throttle goes distributed and the
+> same session is shared across workers; pass `trace: 'console'` / a `fileSink` and the event
+> stream lands somewhere. Persistence and sharing are a config choice, never a default you inherit.
 
 ---
 

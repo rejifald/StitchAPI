@@ -5,7 +5,10 @@ pre-commit:
     parallel: false
     jobs:
         - name: format
-          glob: '*.{ts,js,mjs,cjs,json,md,yml,yaml}'
+          # Keep in sync with CI's `prettier --check .` (verify.yml) — cover every
+          # extension Prettier handles here so committed files are never left unformatted
+          # (notably .mdx, which the docs are written in).
+          glob: '*.{ts,tsx,js,jsx,mjs,cjs,json,md,mdx,yml,yaml,css}'
           run: pnpm exec prettier --write {staged_files}
           stage_fixed: true
         - name: lint

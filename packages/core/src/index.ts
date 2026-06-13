@@ -6,6 +6,8 @@ export {
     cookieSession,
     oauth2,
     env,
+    secretsFile,
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     keychain,
 } from './auth';
 export { fetchAdapter } from './http-adapter';
@@ -15,7 +17,7 @@ export type {
     AxiosLikeConfig,
     AxiosLikeResponse,
 } from './axios-adapter';
-export { createTrace, multiplex } from './trace';
+export { createTrace, consoleSink, fileSink, multiplex } from './trace';
 export { otlpTrace, otlpHttpExporter, toOtlpJson } from './otlp';
 export type {
     SpanExporter,

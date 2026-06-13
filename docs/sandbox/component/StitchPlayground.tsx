@@ -28,7 +28,18 @@ import {
     mockRunner,
 } from './runner';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+
+/**
+ * Props passed to a custom editor (the EDITOR INTEGRATION POINT). A renderer
+ * keeps the controlled `value`/`onChange` contract; the rest is layout.
+ */
+export interface EditorRenderProps {
+    value: string;
+    onChange: (next: string) => void;
+    readOnly: boolean;
+    height: number;
+}
 
 export interface StitchPlaygroundProps {
     /** Initial editor contents. */
@@ -56,6 +67,22 @@ export interface StitchPlaygroundProps {
     height?: number;
     /** Read-only display (docs example you can't edit). */
     readOnly?: boolean;
+    /**
+     * Custom editor (e.g. a CodeMirror integration). Receives the controlled
+     * `value`/`onChange` plus `readOnly`/`height`. Defaults to a plain
+     * <textarea> so the shell stays dependency-free.
+     */
+    renderEditor?: (props: EditorRenderProps) => ReactNode;
+    /**
+     * Custom renderer for the resolved-value text (e.g. a syntax-highlighted
+     * code block). Defaults to a <pre>.
+     */
+    renderValue?: (text: string) => ReactNode;
+    /**
+     * Custom renderer for a single console log line (e.g. highlight JSON output).
+     * Receives the formatted line + its level. Defaults to the raw text.
+     */
+    renderLog?: (text: string, level: string) => ReactNode;
 }
 
 const DEFAULT_SNIPPET = `// Edit and run. Output appears below.
@@ -69,6 +96,9 @@ export function StitchPlayground({
     scope,
     height = 220,
     readOnly = false,
+    renderEditor,
+    renderValue,
+    renderLog,
 }: StitchPlaygroundProps) {
     const [code, setCode] = useState(initialCode);
     const [result, setResult] = useState<RunResult | null>(null);
@@ -157,24 +187,35 @@ export function StitchPlayground({
                 </div>
             </div>
 
-            {/* EDITOR INTEGRATION POINT — replace this <textarea> with CodeMirror 6
-                (lang: TS/JSX, theme synced to the docs light/dark mode). Keep the
-                `code`/`setCode` controlled-value contract and nothing else changes. */}
-            <textarea
-                className="stitch-playground__editor"
-                style={{ height, width: '100%', fontFamily: 'monospace' }}
-                value={code}
-                spellCheck={false}
-                readOnly={readOnly}
-                onChange={(e) => setCode(e.target.value)}
-                aria-label="StitchAPI playground editor"
-            />
+            {/* EDITOR INTEGRATION POINT — `renderEditor` swaps in a real editor
+                (e.g. CodeMirror 6) while keeping the `code`/`setCode` controlled
+                contract; the default is a dependency-free <textarea>. */}
+            {renderEditor ? (
+                renderEditor({
+                    value: code,
+                    onChange: setCode,
+                    readOnly,
+                    height,
+                })
+            ) : (
+                <textarea
+                    className="stitch-playground__editor"
+                    style={{ height, width: '100%', fontFamily: 'monospace' }}
+                    value={code}
+                    spellCheck={false}
+                    readOnly={readOnly}
+                    onChange={(e) => setCode(e.target.value)}
+                    aria-label="StitchAPI playground editor"
+                />
+            )}
 
             <StitchOutput
                 view={view}
                 result={result}
                 deferred={isDeferred}
                 running={running}
+                renderValue={renderValue}
+                renderLog={renderLog}
             />
         </div>
     );
@@ -201,11 +242,15 @@ function StitchOutput({
     result,
     deferred,
     running,
+    renderValue,
+    renderLog,
 }: {
     view: RunView | null;
     result: RunResult | null;
     deferred: boolean;
     running: boolean;
+    renderValue?: (text: string) => ReactNode;
+    renderLog?: (text: string, level: string) => ReactNode;
 }) {
     if (deferred) {
         return (
@@ -227,15 +272,18 @@ function StitchOutput({
     return (
         <div className="stitch-playground__output">
             {/* ── Logs ─────────────────────────────────────────────────── */}
-            {view.logs.map((line, i) => (
-                <div
-                    key={i}
-                    data-level={result?.logs[i]?.level}
-                    className="stitch-playground__log"
-                >
-                    {line}
-                </div>
-            ))}
+            {view.logs.map((line, i) => {
+                const level = result?.logs[i]?.level ?? 'log';
+                return (
+                    <div
+                        key={i}
+                        data-level={result?.logs[i]?.level}
+                        className="stitch-playground__log"
+                    >
+                        {renderLog ? renderLog(line, level) : line}
+                    </div>
+                );
+            })}
 
             {/* ── Error ────────────────────────────────────────────────── */}
             {view.errorText !== null && (
@@ -243,9 +291,15 @@ function StitchOutput({
             )}
 
             {/* ── Resolved value / streamed text ───────────────────────── */}
-            {view.errorText === null && view.valueText !== null && (
-                <pre className="stitch-playground__value">{view.valueText}</pre>
-            )}
+            {view.errorText === null &&
+                view.valueText !== null &&
+                (renderValue ? (
+                    renderValue(view.valueText)
+                ) : (
+                    <pre className="stitch-playground__value">
+                        {view.valueText}
+                    </pre>
+                ))}
 
             {/* ── Notices strip ────────────────────────────────────────── */}
             {view.notices.length > 0 && (

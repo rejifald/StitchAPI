@@ -3,8 +3,7 @@
 // SpanExporter. The default exporter POSTs OTLP/JSON to a collector; tests inject a stub
 // exporter (no running collector). It is a normal TraceSink, so it tees alongside console/JSONL.
 import type { StitchEvent, TraceSink } from './types';
-
-import { randomBytes } from 'node:crypto';
+import { readEnv } from './util';
 
 export type SpanAttributes = Record<string, string | number | boolean>;
 
@@ -37,7 +36,17 @@ export interface OtlpOptions {
     headers?: Record<string, string>; // extra headers for the OTLP POST (e.g. auth)
 }
 
-const hex = (bytes: number): string => randomBytes(bytes).toString('hex');
+// Browser-safe random hex ids: crypto.getRandomValues where available, else Math.random
+// (ids only need to be unique-ish, not secret).
+function hex(bytes: number): string {
+    const buf = new Uint8Array(bytes);
+    const c = globalThis.crypto as Crypto | undefined;
+    if (c?.getRandomValues) c.getRandomValues(buf);
+    else
+        for (let i = 0; i < buf.length; i++)
+            buf[i] = Math.floor(Math.random() * 256);
+    return Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 function serverAddress(url: string): string | undefined {
     try {
@@ -246,7 +255,7 @@ export function otlpHttpExporter(
 ): SpanExporter {
     const base =
         opts.endpoint ??
-        process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ??
+        readEnv('OTEL_EXPORTER_OTLP_ENDPOINT') ??
         'http://localhost:4318';
     const url = base.replace(/\/+$/, '') + '/v1/traces';
     return {

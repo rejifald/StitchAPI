@@ -238,23 +238,43 @@ export function expandPath(
 
 // ---- Query strings --------------------------------------------------------
 // Build a query string from a possibly-nested object, `qs`-style: nested objects
-// expand to `a[b]=c`, arrays to `a[0]=x&a[1]=y`, and both the bracketed key and the
-// value are percent-encoded (so `a[b]` goes on the wire as `a%5Bb%5D`, which servers
-// decode back to `a[b]`). `null`/`undefined` are skipped; empty objects/arrays add nothing.
-// NOTE: the array format is fixed to `qs`-style indices for now; whether to make it
-// configurable (indices | brackets | repeat) is flagged for review in docs/DESIGN.md §15.
-export function buildQuery(q: Record<string, unknown> | undefined): string {
+// expand to `a[b]=c`, and both the bracketed key and the value are percent-encoded
+// (so `a[b]` goes on the wire as `a%5Bb%5D`, which servers decode back to `a[b]`).
+// `null`/`undefined` are skipped; empty objects/arrays add nothing.
+// Array serialisation is controlled by `arrayFormat` (default 'indices'):
+//   'indices'  → a%5B0%5D=x&a%5B1%5D=y  (numeric subscripts)
+//   'brackets' → a%5B%5D=x&a%5B%5D=y    (empty bracket suffix, no index)
+//   'repeat'   → a=x&a=y                 (bare repeated keys, no brackets)
+export type ArrayFormat = 'indices' | 'brackets' | 'repeat';
+
+export function buildQuery(
+    q: Record<string, unknown> | undefined,
+    arrayFormat: ArrayFormat = 'indices',
+): string {
     if (!q) return '';
     const parts: string[] = [];
-    for (const [k, v] of Object.entries(q)) appendQueryParam(k, v, parts);
+    for (const [k, v] of Object.entries(q))
+        appendQueryParam(k, v, parts, arrayFormat);
     return parts.length ? `?${parts.join('&')}` : '';
 }
 
-function appendQueryParam(key: string, value: unknown, out: string[]): void {
+function appendQueryParam(
+    key: string,
+    value: unknown,
+    out: string[],
+    arrayFormat: ArrayFormat,
+): void {
     if (value === undefined || value === null) return;
     if (Array.isArray(value)) {
         value.forEach((item, i) => {
-            appendQueryParam(`${key}[${i}]`, item, out);
+            if (arrayFormat === 'repeat') {
+                appendQueryParam(key, item, out, arrayFormat);
+            } else if (arrayFormat === 'brackets') {
+                appendQueryParam(`${key}[]`, item, out, arrayFormat);
+            } else {
+                // 'indices' — default
+                appendQueryParam(`${key}[${i}]`, item, out, arrayFormat);
+            }
         });
     } else if (value instanceof Date) {
         out.push(
@@ -262,7 +282,7 @@ function appendQueryParam(key: string, value: unknown, out: string[]): void {
         );
     } else if (typeof value === 'object') {
         for (const [k, v] of Object.entries(value as Record<string, unknown>))
-            appendQueryParam(`${key}[${k}]`, v, out);
+            appendQueryParam(`${key}[${k}]`, v, out, arrayFormat);
     } else {
         out.push(
             `${encodeURIComponent(key)}=${encodeURIComponent(stringifyLeaf(value))}`,
@@ -330,4 +350,45 @@ export function matchAny(
     path: string,
 ): boolean {
     return !!patterns && patterns.some((p) => matchPath(p, path));
+}
+
+// ---- platform seam ---------------------------------------------------------
+// Browser-safe access to Node facilities (GAP-AUDIT §1.5). Importing the library
+// must never evaluate `node:*` or assume `process` exists: Node builtins load
+// lazily through `process.getBuiltinModule`, so a browser bundle contains no
+// `node:` specifier at all, and both helpers return undefined off Node — the
+// file-based features treat that as an explicit no-op, never a crash.
+
+interface PlatformGlobals {
+    process?: {
+        env?: Record<string, string | undefined>;
+        getBuiltinModule?: (id: string) => unknown;
+    };
+}
+
+/** Read an environment variable; undefined where `process` doesn't exist (browser). */
+export function readEnv(name: string): string | undefined {
+    return (globalThis as PlatformGlobals).process?.env?.[name];
+}
+
+/** The slice of node:fs the file-based features use (trace JSONL, drift snapshots, secrets). */
+export interface NodeFs {
+    existsSync(path: string): boolean;
+    readFileSync(path: string, encoding: 'utf8'): string;
+    writeFileSync(path: string, data: string): void;
+    appendFileSync(path: string, data: string): void;
+    mkdirSync(path: string, options: { recursive: true }): string | undefined;
+}
+
+/** Lazily load node:fs (Node ≥ 20.16 / 22.3); undefined in the browser. */
+export function nodeFs(): NodeFs | undefined {
+    const proc = (globalThis as PlatformGlobals).process;
+    return proc?.getBuiltinModule?.('node:fs') as NodeFs | undefined;
+}
+
+/** Directory part of a file path (either separator) — node:path's dirname, browser-safe. */
+export function dirnameOf(path: string): string {
+    const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+    if (i < 0) return '.';
+    return i === 0 ? path.slice(0, 1) : path.slice(0, i);
 }

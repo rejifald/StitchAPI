@@ -7,3 +7,9 @@ eslint-suppressions.json
 # Fumadocs / Next.js generated output (apps/docs)
 .source
 next-env.d.ts
+
+# Generated playground Worker bundle (apps/docs, built by build:sandbox)
+apps/docs/public/sandbox/
+
+# Generated sandbox MCP bundles (@stitchapi/sandbox, built by build:mcp)
+docs/sandbox/dist/
