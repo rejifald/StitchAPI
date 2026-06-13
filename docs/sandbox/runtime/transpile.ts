@@ -170,7 +170,9 @@ async function transpileWithBabel(code: string): Promise<TranspileResult> {
     try {
         // @babel/standalone exposes `transform` as a named export (and on
         // the default export when accessed via a bundler).
-        const babel = await import('@babel/standalone');
+        const babel = await import(
+            /* webpackIgnore: true */ '@babel/standalone'
+        );
         babelTransform =
             // named export (ESM build / bundler interop)
             babel.transform ??
