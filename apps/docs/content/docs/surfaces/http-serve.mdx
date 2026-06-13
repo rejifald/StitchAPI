@@ -53,8 +53,10 @@ The CLI is a thin wrapper. To embed the same server in your own process, import
 stitches:
 
 ```ts
-import { serve } from 'stitchapi/serve';
 import { me } from './stitches';
+
+import { serve } from 'stitchapi/serve';
+
 
 const handle = await serve({ me });
 console.log(`listening on ${handle.url}`);

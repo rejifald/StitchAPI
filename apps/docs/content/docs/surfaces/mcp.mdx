@@ -55,8 +55,10 @@ The CLI is a thin wrapper. To run the MCP server in your own process, import
 stitches:
 
 ```ts
-import { serveStdio } from 'stitchapi/mcp';
 import * as stitches from './stitches';
+
+import { serveStdio } from 'stitchapi/mcp';
+
 
 // Reads newline-delimited JSON-RPC from stdin, writes responses to stdout.
 const { close } = serveStdio(stitches);

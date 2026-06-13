@@ -1,5 +1,5 @@
 // `stitch` CLI — one definition, a shell front door (DESIGN.md §10).
-//   stitch run <name> [--module <path>] [--flags…]   run a stitch, stream JSONL events
+//   stitch run <name> [--module <path>] [--trace[=console|<path>]] [--flags…]   run a stitch, stream JSONL events
 //   stitch trace [--file <path>] [--since 1h] [--name x] [--json]   summarize the run log
 // Flags map onto a stitch's single input object ({ params, query, body, headers });
 // every event the stitch emits is written to stdout as one line of JSON, so the
@@ -173,14 +173,16 @@ export async function runStitch(
 
 // Pull our own options (`--module`/`-m`) and the leading stitch name out of the
 // run argv; everything else is passed through to argsToInput untouched.
-function splitRunArgs(args: string[]): {
+export function splitRunArgs(args: string[]): {
     name?: string | undefined;
     modulePath?: string | undefined;
+    trace?: string | undefined;
     flags: string[];
 } {
     const flags: string[] = [];
     let name: string | undefined;
     let modulePath: string | undefined;
+    let trace: string | undefined;
     for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === undefined) continue;
@@ -188,13 +190,17 @@ function splitRunArgs(args: string[]): {
             modulePath = args[++i];
         } else if (a.startsWith('--module=')) {
             modulePath = a.slice('--module='.length);
+        } else if (a === '--trace') {
+            trace = 'default';
+        } else if (a.startsWith('--trace=')) {
+            trace = a.slice('--trace='.length);
         } else if (name === undefined && !a.startsWith('-')) {
             name = a;
         } else {
             flags.push(a);
         }
     }
-    return { name, modulePath, flags };
+    return { name, modulePath, trace, flags };
 }
 
 // ---- trace: summarize the JSONL run log -----------------------------------
@@ -380,27 +386,36 @@ function defaultIO(): CliIO {
 const HELP = `stitch — one stitch definition, many front doors
 
 usage:
-  stitch run <name> [--module <path>] [--flags…]   run a stitch, stream JSONL events
+  stitch run <name> [--module <path>] [--trace[=console|<path>]] [--flags…]   run a stitch, stream JSONL events
   stitch trace [--file <path>] [--since 1h] [--name <x>] [--json]
   stitch serve [--module <path>] [--port <n>] [--host <h>]   HTTP: POST /stitch/:name
   stitch mcp [--module <path>]                               MCP over stdio (run_stitch)
 
 run:
   --module, -m <path>   stitches module to load (default: ./stitches.{ts,js,…})
+  --trace[=target]      record this run (off by default): bare = the default JSONL
+                        file (for \`stitch trace\`), =console = stderr stream, =<path> = JSONL there
   --params.<k> <v>      path param        (bare --<k> also routes here if <k> is in the path)
   --query.<k> <v>       query param       (bare --<k> routes here otherwise)
   --headers.<k> <v>     request header
   --body '<json>' | --body.<k> <v>   request body (whole, or field by field)
 
-Every event the stitch emits is printed as one line of JSON on stdout.
+Every event the stitch emits is printed as one line of JSON on stdout. Tracing is off
+by default (no side effects) — opt in with --trace or the STITCH_TRACE_* env vars.
 `;
 
 async function runCommand(args: string[], io: CliIO): Promise<number> {
-    const { name, modulePath, flags } = splitRunArgs(args);
+    const { name, modulePath, trace, flags } = splitRunArgs(args);
     if (!name) {
-        io.writeErr('usage: stitch run <name> [--module <path>] [--flags…]\n');
+        io.writeErr(
+            'usage: stitch run <name> [--module <path>] [--trace[=console|<path>]] [--flags…]\n',
+        );
         return 2;
     }
+    // No side effects by default: `stitch run` traces nothing unless asked. `--trace` opts
+    // in (default JSONL file / console / a path), applied via env before the module loads
+    // so the trace sink picks it up.
+    applyTraceFlag(trace, io);
     let registry: StitchRegistry;
     try {
         registry = await io.load(resolveModulePath(modulePath, io.cwd));
@@ -419,10 +434,23 @@ async function runCommand(args: string[], io: CliIO): Promise<number> {
 }
 
 function defaultTraceFile(io: CliIO): string {
-    return (
-        io.env['STITCH_TRACE_FILE'] ||
-        `${io.env['HOME'] ?? '.'}/.stitch/runs/proto.jsonl`
-    );
+    const configured = io.env['STITCH_TRACE_FILE']?.trim();
+    return configured
+        ? configured
+        : `${io.env['HOME'] ?? '.'}/.stitch/runs/proto.jsonl`;
+}
+
+// Translate `run --trace[=target]` into the STITCH_TRACE_* env the trace sink reads.
+// Unset → silent (no side effects by default); 'console' → stderr stream; 'default'
+// (bare `--trace`) → the default JSONL file; any other value → a JSONL path.
+function applyTraceFlag(trace: string | undefined, io: CliIO): void {
+    if (trace === undefined) return;
+    if (trace === 'console') {
+        process.env['STITCH_TRACE_CONSOLE'] = '1';
+        return;
+    }
+    process.env['STITCH_TRACE_FILE'] =
+        trace === 'default' ? defaultTraceFile(io) : trace;
 }
 
 function traceCommand(args: string[], io: CliIO): number {

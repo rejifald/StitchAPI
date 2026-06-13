@@ -140,6 +140,23 @@ export function createTrace(
     };
 }
 
+/** A console-only sink: the colored one-line-per-event stream to stderr, nothing on disk. */
+export function consoleSink(): TraceSink {
+    return createTrace({ console: true, file: false });
+}
+
+/**
+ * A file-only sink: append every event as JSONL to `path` (defaults to
+ * `~/.stitch/runs/proto.jsonl`). Writing to disk is a side effect, so you reach
+ * for this explicitly — a stitch never opens a trace file on its own.
+ */
+export function fileSink(path?: string): TraceSink {
+    return createTrace({
+        console: false,
+        ...(path !== undefined ? { file: path } : {}),
+    });
+}
+
 /** Fan every event out to several sinks (e.g. console/JSONL + OTLP) — one event stream, many consumers. */
 export function multiplex(...sinks: TraceSink[]): TraceSink {
     return {

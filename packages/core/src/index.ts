@@ -17,7 +17,7 @@ export type {
     AxiosLikeConfig,
     AxiosLikeResponse,
 } from './axios-adapter';
-export { createTrace, multiplex } from './trace';
+export { createTrace, consoleSink, fileSink, multiplex } from './trace';
 export { otlpTrace, otlpHttpExporter, toOtlpJson } from './otlp';
 export type {
     SpanExporter,
