@@ -5,6 +5,7 @@ import {
     formatTraceSummary,
     paramNamesOf,
     runStitch,
+    splitRunArgs,
     summarizeTrace,
 } from '../src/cli';
 import { collectStitches, loadStitches, selectStitch } from '../src/registry';
@@ -102,6 +103,33 @@ describe('argsToInput', () => {
 test('paramNamesOf reads {param} names from the stitch path', () => {
     const s = stitch({ baseUrl: 'http://x', path: '/orgs/{org}/repos/{repo}' });
     expect(paramNamesOf(s)).toEqual(['org', 'repo']);
+});
+
+// ---- run --trace extraction (off by default) ------------------------------
+
+describe('splitRunArgs (--trace extraction)', () => {
+    test('absent --trace stays undefined: a run traces nothing by default', () => {
+        expect(splitRunArgs(['get-user', '--id', '7']).trace).toBeUndefined();
+    });
+    test('bare --trace, =console, and =<path> are each pulled out', () => {
+        expect(splitRunArgs(['get-user', '--trace']).trace).toBe('default');
+        expect(splitRunArgs(['get-user', '--trace=console']).trace).toBe(
+            'console',
+        );
+        expect(splitRunArgs(['get-user', '--trace=./run.jsonl']).trace).toBe(
+            './run.jsonl',
+        );
+    });
+    test('--trace never leaks into the stitch input flags', () => {
+        const { name, flags } = splitRunArgs([
+            'get-user',
+            '--trace',
+            '--id',
+            '7',
+        ]);
+        expect(name).toBe('get-user');
+        expect(flags).toEqual(['--id', '7']);
+    });
 });
 
 // ---- registry -------------------------------------------------------------

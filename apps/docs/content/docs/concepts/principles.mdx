@@ -117,14 +117,15 @@ is a one-line import change, never a migration.
 Making the call is the only thing a stitch does to the world. The state a
 stitch keeps to do its job — throttle buckets, the cookie jar, cached tokens,
 the circuit-breaker counter — lives in memory, scoped to the process, and is
-gone when the process exits; nothing is persisted or shared across workers
-unless you ask for it. Persistence and sharing are a single opt-in: hand a
-stitch a shared `store` and the same throttle becomes a distributed rate limit
-and the same session survives restarts and is shared across processes.
-Distributed limiting and shared sessions are a config choice you reach for,
-never a default you inherit — which is what keeps a stitch safe to import and
-call anywhere. It is progressive disclosure applied to durability: ephemeral
-and isolated until you opt into more.
+gone when the process exits; nothing is persisted or shared across workers, and
+no trace is written to disk, unless you ask for it. State turns durable and
+shared the moment you hand a stitch a `store`: the same throttle becomes a
+distributed rate limit and the same session survives restarts and is shared
+across processes. Observability is the same opt-in — a stitch traces nothing
+until you pass `trace: 'console'`, a `fileSink`, or your own sink. Persistence
+and sharing are config you reach for, never a default you inherit, which is what
+keeps a stitch safe to import and call anywhere. It is progressive disclosure
+applied to durability: ephemeral and isolated until you opt into more.
 
 ### Declarative spelling
 
@@ -163,10 +164,11 @@ exported as a spec.
     and made enforceable by the
     [conformance kits](/docs/reference/conformance-kits).
 -   **No side effects by default** is the [in-memory store](/docs/guides/state/pluggable-store)
-    that backs every stitch until you swap it — opt into a shared store and the
-    same throttle turns [distributed](/docs/guides/state/distributed-throttle)
-    and the same [session is shared](/docs/guides/state/shared-sessions) across
-    workers, both off by default.
+    behind every stitch and the silent [trace sink](/docs/guides/observability/trace-sinks):
+    opt into a shared store and the same throttle turns
+    [distributed](/docs/guides/state/distributed-throttle) and the same
+    [session is shared](/docs/guides/state/shared-sessions) across workers; opt
+    into a sink and the event stream lands on the console or disk.
 -   **Declarative spelling** keeps every stitch agent-authorable: the
     [config object](/docs/reference/config-types) is the canonical form, and
     the [fluent builder](/docs/guides/authoring/fluent-builder) is sugar over

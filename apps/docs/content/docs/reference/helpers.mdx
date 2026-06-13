@@ -1,6 +1,6 @@
 ---
 title: 'Helpers'
-description: 'fetchAdapter, createTrace, multiplex, the OTLP exporters, memoryStore, and toValidator.'
+description: 'fetchAdapter, consoleSink, fileSink, createTrace, multiplex, the OTLP exporters, memoryStore, and toValidator.'
 ---
 
 The exported helper functions you wire into a stitch: the default transport, the
@@ -24,11 +24,40 @@ const adapter = fetchAdapter();
 
 ## Tracing & OTLP
 
+Tracing is **off by default** — a stitch traces nothing until you pass a `trace`
+sink (or set `STITCH_TRACE_*`). These are the sinks you reach for; see
+[Trace sinks](/docs/guides/observability/trace-sinks) for the full opt-in model.
+
+### consoleSink
+
+A console-only sink: the colored one-line-per-event stream to stderr, nothing on
+disk. The `trace: 'console'` shorthand resolves to this.
+
+```ts twoslash
+import { consoleSink } from 'stitchapi';
+
+const sink = consoleSink();
+```
+
+### fileSink
+
+A file-only sink: append every event as JSONL to `path` (defaults to
+`~/.stitch/runs/proto.jsonl`). Writing to disk is a side effect, so you pass it
+explicitly — a stitch never opens a trace file on its own.
+
+```ts twoslash
+import { fileSink } from 'stitchapi';
+
+const sink = fileSink('./runs/today.jsonl');
+```
+
 ### createTrace
 
 Build a zero-infra trace sink: a compact one-line-per-event summary on the
 console and/or an appended JSONL record per event. `console` defaults to `true`;
 `file` defaults to a path under `$HOME`, or `false` to disable the JSONL stream.
+(This is the low-level builder behind `consoleSink`/`fileSink`; the off-by-default
+behavior lives at the stitch's `trace` field, not here.)
 
 ```ts twoslash
 import { createTrace } from 'stitchapi';

@@ -39,14 +39,17 @@ stitch trace --since 1h
 
 ## Options
 
-**`stitch run <name> [--module <path>] [--flags…]`** resolves the stitch named
-`<name>` from the module and streams its event stream to stdout as JSONL — one
-JSON object per line, exit code `1` if an `error` event is seen. Flags map onto
-the stitch's single input object: a bare `--<k>` becomes a path param when `<k>`
-is a `{param}` in the path and a query param otherwise, while `--params.<k>`,
-`--query.<k>`, `--headers.<k>`, and `--body '<json>'` (or `--body.<k> <v>`)
-target a bucket explicitly. `--module, -m` points at the stitches module
-(default `./stitches.ts` and friends).
+**`stitch run <name> [--module <path>] [--trace[=console|<path>]] [--flags…]`**
+resolves the stitch named `<name>` from the module and streams its event stream
+to stdout as JSONL — one JSON object per line, exit code `1` if an `error` event
+is seen. Flags map onto the stitch's single input object: a bare `--<k>` becomes
+a path param when `<k>` is a `{param}` in the path and a query param otherwise,
+while `--params.<k>`, `--query.<k>`, `--headers.<k>`, and `--body '<json>'` (or
+`--body.<k> <v>`) target a bucket explicitly. `--module, -m` points at the
+stitches module (default `./stitches.ts` and friends). `--trace` records the run
+(off by default): bare writes the default JSONL file for `stitch trace`,
+`--trace=console` streams events to stderr, and `--trace=<path>` writes JSONL to
+that path.
 
 **`stitch trace [--file <path>] [--since 1h] [--name <x>] [--json]`** folds the
 JSONL run log into per-stitch stats (runs, ok/failed, retries, drift, latency
@@ -57,9 +60,12 @@ the aligned table.
 
 The CLI runs the very same stitch definition as the in-process
 [function](/docs/surfaces/function) — one source of truth, just a different
-front door. The JSONL that `run` streams and `trace` reads is the same log the
-built-in [trace sinks](/docs/guides/observability/trace-sinks) append to, so a
-stitch already records to `~/.stitch/runs/proto.jsonl` with no flags set.
+front door. Like the library, the CLI traces nothing by default; pass `--trace`
+to `stitch run` to record the JSONL
+[trace sink](/docs/guides/observability/trace-sinks) at
+`~/.stitch/runs/proto.jsonl` (or `STITCH_TRACE_FILE`) so `stitch trace` has a
+log to read — `--trace=console` streams to stderr, `--trace=<path>` writes JSONL
+there.
 
 <Callout type="warn">
     A `.ts` module loads only when the host has a TypeScript loader registered
