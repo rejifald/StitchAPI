@@ -1,6 +1,9 @@
 'use client';
 
-import { playgroundCompletionSource } from './playground-completions';
+import {
+    instanceCompletionSource,
+    playgroundCompletionSource,
+} from './playground-completions';
 
 import { autocompletion } from '@codemirror/autocomplete';
 import {
@@ -11,6 +14,7 @@ import {
 import type { EditorRenderProps } from '@stitchapi/sandbox/component/StitchPlayground';
 import CodeMirror from '@uiw/react-codemirror';
 import { useEffect, useMemo, useState } from 'react';
+import { stitch } from 'stitchapi';
 
 /** Track the docs theme — Fumadocs toggles a `dark` class on <html>. */
 function useIsDark(): boolean {
@@ -31,7 +35,7 @@ function useIsDark(): boolean {
  * scopeCompletionSource walks these keys to offer completions as the user types.
  */
 const PLAYGROUND_SCOPE = {
-    stitch: () => {},
+    stitch,
     console,
     JSON,
     Math,
@@ -67,6 +71,7 @@ export function CodeEditor({
                     localCompletionSource,
                     scopeCompletionSource(PLAYGROUND_SCOPE),
                     playgroundCompletionSource,
+                    instanceCompletionSource,
                 ],
                 activateOnTyping: true,
             }),
