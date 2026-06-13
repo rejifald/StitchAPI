@@ -1,11 +1,4 @@
-export {
-    stitch,
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    defineStitch,
-    preset,
-    drift,
-    graphql,
-} from './stitch';
+export { stitch, preset, drift, graphql } from './stitch';
 export { seam } from './seam';
 export {
     bearer,

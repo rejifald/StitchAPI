@@ -45,21 +45,21 @@ declaration _is_ the runtime; there is nothing to commit, diff, and regenerate.
 Cross-cutting concerns — `baseUrl`, auth, `unwrap`, retry, throttle, timeout —
 are named, shareable values you compose, not a central config object far from the
 call site. `extends` folds fragments into a stitch, `preset()` bundles defaults
-into one such fragment, and `defineStitch()` binds a base so every stitch built
-from it inherits it. You share a fragment instead of re-typing config, and a
-stitch is itself a composable value others can extend.
+into one such fragment, and the fluent builder's `.use(...)` pulls those fragments
+into a chain. You share a fragment instead of re-typing config, and a stitch is
+itself a composable value others can extend. (For a whole shared surface — shared
+runtime plus a trusted principal boundary — a `seam` owns the fragment instead.)
 
 ```ts twoslash
-import { defineStitch, preset } from 'stitchapi';
+import { preset, stitch } from 'stitchapi';
 
 const api = preset({
     baseUrl: 'https://api.example.com',
     retry: { attempts: 3, on: [429, 503] },
 });
 
-// Bind the base once; every stitch built from it inherits the fragment.
-const apiStitch = defineStitch(api);
-const getWebsite = apiStitch('/websites/{id}');
+// Fold the shared fragment into each stitch; it inherits baseUrl + retry.
+const getWebsite = stitch({ extends: [api], path: '/websites/{id}' });
 ```
 
 ### One source of truth
@@ -145,8 +145,8 @@ exported as a spec.
 -   **Atomic stitches** are the [stitch](/docs/concepts/the-stitch) itself: one
     endpoint, no spec, no codegen, no server.
 -   **Composition over configuration** is what [`extends`](/docs/guides/authoring/extends)
-    expresses — and `preset()` and `defineStitch()` are the fragments and factories
-    it composes.
+    expresses — and `preset()` is the named fragment it composes (a `seam` owns one
+    for a whole shared surface).
 -   **One source of truth** shows up at runtime as [leveled drift](/docs/guides/validation/drift),
     the same anti-drift rule this documentation follows.
 -   **Agent-native** is spelled out across [capability, not credential](/docs/concepts/capability-not-credential),

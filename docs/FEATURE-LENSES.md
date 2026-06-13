@@ -95,7 +95,7 @@ existing or proposed — passes through all three before it ships.
 
 -   `extends` — recursive layering of fragments (string · object · another stitch), deep-merged
 -   `preset()` — a named bundle of reusable defaults
--   `defineStitch(...fragments)` — bind a base, get a stitch factory
+-   `seam(options)` — a long-lived entity stitches belong to: shared fragment + runtime (store, vault, sink) + a trusted principal boundary
 -   `stitch.use(...)` — the same composition through the fluent builder
 -   Hook chaining — `onRequest` runs base→child, the rest unwind child→base
 

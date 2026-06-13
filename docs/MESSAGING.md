@@ -62,8 +62,8 @@ Each line names the objection it answers and the shipped fact that keeps it hone
 > extend-and-override. Callbacks or pure functions, your call.
 
 -   **Kills:** _"This will force one rigid authoring pattern on my codebase."_
--   **Backed by:** three interchangeable facades — `extends` / `defineStitch` / fluent
-    builder — over one engine (OVERVIEW §6).
+-   **Backed by:** two interchangeable facades — `extends` / fluent builder — over one
+    engine, plus `seam` for shared surfaces (OVERVIEW §6).
 
 ---
 

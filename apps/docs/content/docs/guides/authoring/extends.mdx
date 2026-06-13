@@ -41,18 +41,18 @@ Two exceptions: hooks **chain** instead of overwriting (every layer's
 last layer that sets one.
 
 <Callout type="info">
-    [`preset()`](/docs/guides/authoring/preset) and
-    [`defineStitch()`](/docs/guides/authoring/define-stitch) are conveniences
-    built on this: a preset is a named fragment you drop into `extends`, and
-    `defineStitch()` pre-binds base fragments so every stitch it produces
-    extends them automatically.
+    [`preset()`](/docs/guides/authoring/preset) is a convenience built on this:
+    a named fragment you drop into `extends`. The [fluent
+    builder](/docs/guides/authoring/fluent-builder)'s `.use(...)` takes the same
+    fragments. For a whole shared surface — shared _runtime_ and a trusted
+    principal boundary, not just config — reach for a `seam`.
 </Callout>
 
 ## See also
 
 <Cards>
     <Card title="preset()" href="/docs/guides/authoring/preset" />
-    <Card title="defineStitch()" href="/docs/guides/authoring/define-stitch" />
+    <Card title="Fluent builder" href="/docs/guides/authoring/fluent-builder" />
     <Card title="stitch()" href="/docs/guides/authoring/stitch" />
     <Card title="Reference: config types" href="/docs/reference/config-types" />
 </Cards>

@@ -10,11 +10,11 @@ import {
     basic,
     bearer,
     cookieSession,
-    defineStitch,
     drift,
     env,
     keychain,
     preset,
+    seam,
     stitch,
 } from '../src';
 import { startMockServer } from './support/mock-server';
@@ -64,9 +64,9 @@ const s2 = s.with({ query: { role: 'admin' } });   // partial application -> new
 const base = preset({ baseUrl, retry: { attempts: 3 } });
 // A) extends
 stitch({ extends: [base, authStrategy], path: '/x' });
-// B) factory
-const s = defineStitch(base, authStrategy);
-s({ path: '/x' });
+// B) a seam — shares config AND runtime (one store, throttle, sink)
+const api = seam(base);
+api.stitch({ path: '/x', extends: [authStrategy] });
 // C) builder
 stitch.use(base, authStrategy).get('/x').returns(schema).unwrap('data');
 ```

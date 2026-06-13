@@ -365,7 +365,7 @@ lands on, so make it the recommended form.
 | `tabGroup`         | Use when                                | Labels — first is the default                           |
 | ------------------ | --------------------------------------- | ------------------------------------------------------- |
 | `package-manager`  | install / `npx` commands                | npm · pnpm · yarn · bun — _generated, don't hand-write_ |
-| `definition-style` | a stitch is declared ≥2 equivalent ways | `Config object` · `Fluent builder` · `defineStitch`     |
+| `definition-style` | a stitch is declared ≥2 equivalent ways | `Config object` · `Fluent builder`                      |
 | `module`           | imports differ by module system         | `ESM` · `CommonJS`                                      |
 | `consumption`      | how a stitch's result is consumed       | `await` · `Stream` · `.then()`                          |
 | `runtime`          | the same operation in code vs the shell | `Programmatic` · `CLI`                                  |
@@ -374,8 +374,8 @@ Four rules keep it coherent:
 
 -   **Always set `tabGroup`.** It's the persistence key, not decoration.
 -   **Lead with the recommended form.** The first tab is where the reader lands.
--   **Show 2–4 relevant variants, not all of them.** The `defineStitch` page
-    leads with the `defineStitch` tab; it doesn't parade all twelve call styles.
+-   **Show 2–4 relevant variants, not all of them.** The `extends` page leads
+    with the config-object tab; it doesn't parade all twelve call styles.
 -   **A new axis is a new row here first.** Don't coin ad-hoc `tabGroup` values
     inline — add the row above, then use it, so persistence stays consistent.
 

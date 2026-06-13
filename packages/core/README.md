@@ -93,7 +93,7 @@ For the full competitive landscape and positioning, see the [Overview](docs/OVER
 
 ## Features
 
--   **One primitive, three facades** - `stitch(url | config)` returns a typed, callable function; share fragments via `extends`, a bound `defineStitch()` factory, or the fluent builder — all resolving to one engine, with `.with()` partial application on top.
+-   **One primitive, two facades** - `stitch(url | config)` returns a typed, callable function; share fragments via `extends` or the fluent builder — both resolving to one engine, with `.with()` partial application on top. For a whole shared surface (shared store, throttle, sink + a trusted principal boundary), a `seam` owns the fragment.
 -   **Event-stream core** - every call yields a typed stream (`start → progress → drift → result → done`); `await` is sugar that consumes it and returns the final validated value.
 -   **Bring-your-own validation** - validate `params` / `query` / `body` / `headers` and the response with [Zod](https://zod.dev) or any [Standard Schema](https://standardschema.dev) library (Valibot, ArkType, …); TypeScript types are inferred from the schemas.
 -   **Leveled drift detection** - live responses are diffed against a committed contract snapshot; changes surface as `error` / `warn` / `info` findings instead of a silent `undefined`.
@@ -220,10 +220,10 @@ for await (const ev of getUsers.stream()) {
 
 ## Composition & reuse
 
-Everything reusable is a named value, and a stitch composes values — **no global config is ever required**. Three authoring facades resolve to the same engine; pick one or mix them:
+Everything reusable is a named value, and a stitch composes values — **no global config is ever required**. Two authoring facades resolve to the same engine; pick one or mix them:
 
 ```ts
-import { defineStitch, preset, stitch } from 'stitchapi';
+import { preset, seam, stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const api = preset({
@@ -242,9 +242,9 @@ const listWebsites = stitch({
     unwrap: 'data',
 });
 
-// B — a bound factory, when every stitch shares the same base
-const apiStitch = defineStitch(api);
-const getWebsite = apiStitch({ path: '/websites/{id}', output: Website });
+// B — a seam, when a whole surface shares config AND runtime (one store, throttle, sink)
+const surface = seam(api);
+const getWebsite = surface.stitch({ path: '/websites/{id}', output: Website });
 
 // C — the fluent builder
 const search = stitch
@@ -431,11 +431,12 @@ export interface StitchStore {
 ```
 
 ```ts
-import { defineStitch, memoryStore, preset } from 'stitchapi';
+import { memoryStore, seam } from 'stitchapi';
 
 // memoryStore() is the shipped default; swap in your Redis/Postgres-backed
-// implementation of the same interface to go distributed.
-const api = defineStitch(preset({ store: memoryStore() }));
+// implementation of the same interface to go distributed. A seam shares one
+// store across every stitch that belongs to it.
+const api = seam({ store: memoryStore() });
 ```
 
 You opt into a real store only when you scale out — progressive disclosure, applied to state.

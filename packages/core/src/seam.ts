@@ -1,5 +1,5 @@
-// `seam`: a long-lived entity that stitches BELONG to (ADR 0002). Unlike `defineStitch` — a
-// factory that shares config only — a seam shares **runtime**: one `store`, one `vault`, one
+// `seam`: a long-lived entity that stitches BELONG to (ADR 0002). Unlike a plain config fragment
+// or factory (which shares config only), a seam shares **runtime**: one `store`, one `vault`, one
 // trace sink, and one throttle bucket, plus a registry/lifecycle (`flush`/`close`). Its decisive
 // job is the trusted principal boundary: `seam.as(req.user.id)` binds identity in the closure, so
 // a caller can never name another principal (the principal is never in `StitchInput`). Auth is

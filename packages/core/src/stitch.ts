@@ -1,5 +1,6 @@
-// The authoring surface: stitch() + the three composition facades (extends / defineStitch /
-// builder) + `.with()` partial application, all resolving to one canonical config.
+// The authoring surface: stitch() + the two composition facades (extends / fluent builder) +
+// `.with()` partial application, all resolving to one canonical config. For a shared surface —
+// shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
 import { type Runtime, execute, executeRaw, makeRuntime } from './engine';
 import { otlpTrace } from './otlp';
 import { createThrottle } from './resilience';
@@ -333,26 +334,6 @@ export const stitch: StitchFn = Object.assign(
 /** preset(): a named bundle of reusable defaults (just an identity-tagged fragment). */
 export const preset = (cfg: Partial<StitchConfig>): Partial<StitchConfig> =>
     cfg;
-
-/**
- * defineStitch(): bind base fragments, return a stitch() factory (evolution of prestitch).
- *
- * @deprecated Prefer {@link seam} for shared surfaces — a seam shares **runtime** (one store,
- * vault, throttle bucket, sink) and a trusted principal boundary, not just config. `defineStitch`
- * shares config only and is slated for removal (ADR 0002 §1). Use raw `stitch()` for standalone,
- * one-off endpoints.
- */
-export function defineStitch(...fragments: Fragment[]) {
-    return <T = unknown>(config: string | Partial<StitchConfig>): Stitch<T> => {
-        const c: Partial<StitchConfig> =
-            typeof config === 'string' ? { path: config } : { ...config };
-        c.extends = [
-            ...fragments,
-            ...((c.extends as Fragment[]) ?? []),
-        ] as NonNullable<StitchConfig['extends']>;
-        return makeStitch<T>(c);
-    };
-}
 
 /** drift(): wrap an output schema with leveled drift options. */
 export function drift(schema: unknown, options: DriftOptions = {}): DriftSpec {

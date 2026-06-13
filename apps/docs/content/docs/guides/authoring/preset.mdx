@@ -10,7 +10,7 @@ same fields on each one.
 ## Example
 
 ```ts twoslash
-import { defineStitch, preset, stitch } from 'stitchapi';
+import { preset, stitch } from 'stitchapi';
 
 // A named bundle of reusable defaults. It does nothing on its own.
 const resilient = preset({
@@ -25,13 +25,13 @@ const getUser = stitch({
     extends: [resilient],
 });
 
-// Or bind it as a base, so every stitch from this factory inherits it.
-const api = defineStitch(resilient);
+// Or pull it in through the fluent builder's `.use()`.
+const listUsers = stitch.use(resilient).get('https://api.example.com/users');
 ```
 
 A `preset()` is just an identity-tagged fragment: a plain `Partial<StitchConfig>`
 that exists to be reused. You apply it with [`extends`](/docs/guides/authoring/extends)
-or bind it through [`defineStitch()`](/docs/guides/authoring/define-stitch).
+or the [fluent builder](/docs/guides/authoring/fluent-builder)'s `.use()`.
 
 ## Options
 
@@ -48,13 +48,13 @@ preset may carry.
 
 <Callout type="info">
     A `preset()` is inert until applied — nothing runs at definition time. It is
-    only the bundle; `extends` and `defineStitch()` are what consume it.
+    only the bundle; `extends` and the fluent builder are what consume it.
 </Callout>
 
 ## See also
 
 <Cards>
     <Card title="extends" href="/docs/guides/authoring/extends" />
-    <Card title="defineStitch()" href="/docs/guides/authoring/define-stitch" />
+    <Card title="Fluent builder" href="/docs/guides/authoring/fluent-builder" />
     <Card title="Reference: Config types" href="/docs/reference/config-types" />
 </Cards>

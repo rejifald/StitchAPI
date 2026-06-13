@@ -149,13 +149,6 @@ export const pages: Page[] = [
         kind: 'guide',
     },
     {
-        path: 'guides/authoring/define-stitch',
-        title: 'defineStitch()',
-        description:
-            'Bind a set of base fragments once and get a reusable stitch factory.',
-        kind: 'guide',
-    },
-    {
         path: 'guides/authoring/preset',
         title: 'preset()',
         description:
@@ -427,7 +420,7 @@ export const pages: Page[] = [
         path: 'reference/stitch',
         title: 'stitch() & the builder',
         description:
-            'Signatures for stitch(), defineStitch(), preset(), graphql(), and the fluent builder.',
+            'Signatures for stitch(), preset(), graphql(), and the fluent builder.',
         kind: 'reference',
     },
     {

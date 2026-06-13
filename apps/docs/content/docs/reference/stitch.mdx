@@ -1,9 +1,9 @@
 ---
 title: 'stitch() & the builder'
-description: 'Signatures for stitch(), defineStitch(), preset(), graphql(), and the fluent builder.'
+description: 'Signatures for stitch(), preset(), graphql(), and the fluent builder.'
 ---
 
-The authoring surface: the four exports that produce a stitch, plus the fluent
+The authoring surface: the exports that produce a stitch, plus the fluent
 builder they share. For what goes inside the config object, see
 [Reference → Config types](/docs/reference/config-types).
 
@@ -18,18 +18,6 @@ import { stitch } from 'stitchapi';
 const user = stitch<{ id: string }>({
     path: 'https://api.example.com/me',
 });
-```
-
-## defineStitch()
-
-`defineStitch(...fragments)` binds shared base fragments and returns a `stitch()`
-factory; each call deep-merges the bound fragments under the per-call config.
-
-```ts twoslash
-import { defineStitch } from 'stitchapi';
-
-const api = defineStitch({ path: 'https://api.example.com' });
-const user = api<{ id: string }>('/me');
 ```
 
 ## preset()
