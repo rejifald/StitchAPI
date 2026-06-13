@@ -133,8 +133,9 @@ but don't give you a typed, resilient _library_.
 
 The v1 runtime (in `src/`, **zero runtime dependencies**):
 
--   **Primitive + composition** — `stitch()` with three interchangeable facades (`extends` /
-    `defineStitch` / fluent builder) over one engine, plus `.with()` partial application.
+-   **Primitive + composition** — `stitch()` with two interchangeable facades (`extends` /
+    fluent builder) over one engine, plus `.with()` partial application; `seam` owns the
+    fragment + shared runtime for a whole surface.
 -   **Event-stream return** (`start → progress → drift → result → done`) + an `await` convenience.
 -   **Flexible validation** (Zod _and_ Standard Schema) + **leveled drift** (error/warn/info) vs a
     committed contract snapshot.

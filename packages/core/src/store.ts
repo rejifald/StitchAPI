@@ -34,6 +34,48 @@ export function memoryStore(): StitchStore {
             });
             return n;
         },
+        // Lifecycle: drop everything. For the in-memory store this is all the state there is.
+        async close() {
+            data.clear();
+        },
+    };
+}
+
+/**
+ * A namespaced view over a store: the seam's **vault** (ADR 0002 §4). It prefixes every key so
+ * auth tokens/sessions live in a reserved slice of the backend (the same `StitchStore` by
+ * default, or a hardened `secretStore`), kept off `__config` and redacted from traces. It is a
+ * thin lens — `close()` delegates to the backend, so callers close the backend, not the view.
+ */
+export function vaultView(store: StitchStore, prefix = 'vault:'): StitchStore {
+    const view: StitchStore = {
+        get: (key) => store.get(prefix + key),
+        set: (key, value, ttlMs) => store.set(prefix + key, value, ttlMs),
+        incr: (key, ttlMs) => store.incr(prefix + key, ttlMs),
+    };
+    // Delegate lifecycle to the backend (bind keeps `this` for stores that need it).
+    if (store.close) view.close = store.close.bind(store);
+    return view;
+}
+
+/**
+ * Compose throttles so EVERY gate must pass — the engine acquires/releases the chain as one
+ * (ADR 0002 §5, tighten-only). A seam injects `[sharedBucket, stitchLocal]` so a stitch's local
+ * throttle STACKS on the shared budget (intersection) and can never escape it. `waitedMs` sums
+ * across gates; release unwinds in reverse acquisition order.
+ */
+export function chainThrottle(throttles: Throttle[]): Throttle {
+    return {
+        async acquire(key) {
+            let waitedMs = 0;
+            for (const t of throttles)
+                waitedMs += (await t.acquire(key)).waitedMs;
+            return { waitedMs };
+        },
+        release(key) {
+            // Unwind in reverse acquisition order.
+            for (const t of [...throttles].reverse()) t.release(key);
+        },
     };
 }
 

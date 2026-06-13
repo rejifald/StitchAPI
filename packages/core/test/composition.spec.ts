@@ -1,4 +1,4 @@
-import { defineStitch, preset, stitch } from '../src';
+import { seam, stitch } from '../src';
 import type { StitchEvent } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
@@ -40,14 +40,14 @@ const resultOf = <T>(events: StitchEvent<T>[]) =>
             e.type === 'result',
     );
 
-// 1) Three composition facades resolve to the same canonical stitch and same result.
-test('three facades (extends / defineStitch / builder) are equivalent', async () => {
+// 1) Both composition facades resolve to the same canonical stitch and same result.
+test('two facades (extends / builder) are equivalent', async () => {
     server.route('GET', '/items', { body: { data: [{ id: 1, name: 'Ada' }] } });
 
     const schema = asValidator(
         z.array(z.object({ id: z.number(), name: z.string() })),
     );
-    const base = preset({ baseUrl: server.url, unwrap: 'data' });
+    const base = { baseUrl: server.url, unwrap: 'data' };
 
     // (a) extends
     const viaExtends = stitch({
@@ -55,9 +55,7 @@ test('three facades (extends / defineStitch / builder) are equivalent', async ()
         path: '/items',
         output: schema,
     });
-    // (b) factory
-    const viaFactory = defineStitch(base)({ path: '/items', output: schema });
-    // (c) builder
+    // (b) builder
     const viaBuilder = stitch
         .use(base)
         .get('/items')
@@ -65,19 +63,37 @@ test('three facades (extends / defineStitch / builder) are equivalent', async ()
         .unwrap('data');
 
     const expected = [{ id: 1, name: 'Ada' }];
-    const [a, b, c] = await Promise.all([
-        viaExtends(),
-        viaFactory(),
-        viaBuilder(),
-    ]);
+    const [a, b] = await Promise.all([viaExtends(), viaBuilder()]);
 
     expect(a).toEqual(expected);
     expect(b).toEqual(expected);
-    expect(c).toEqual(expected);
-    // All three hit the SAME route; equivalence means identical observable result.
+    // Both hit the SAME route; equivalence means identical observable result.
     expect(a).toEqual(b);
-    expect(b).toEqual(c);
-    expect(server.callCount('/items')).toBe(3);
+    expect(server.callCount('/items')).toBe(2);
+});
+
+// 1b) A seam member resolves to the SAME result as the config-`extends` facade — the seam shares
+// runtime on top, but its config inheritance is the same `flatten`/`compose` machinery.
+test('a seam member is equivalent to the extends facade', async () => {
+    server.route('GET', '/items', { body: { data: [{ id: 1, name: 'Ada' }] } });
+
+    const schema = asValidator(
+        z.array(z.object({ id: z.number(), name: z.string() })),
+    );
+    const base = { baseUrl: server.url, unwrap: 'data' };
+
+    const viaExtends = stitch({
+        extends: [base],
+        path: '/items',
+        output: schema,
+    });
+    const viaSeam = seam(base).stitch({ path: '/items', output: schema });
+
+    const expected = [{ id: 1, name: 'Ada' }];
+    const [a, b] = await Promise.all([viaExtends(), viaSeam()]);
+    expect(a).toEqual(expected);
+    expect(b).toEqual(a);
+    expect(server.callCount('/items')).toBe(2);
 });
 
 // 2) Predefined query in the path merges with call-time query; input wins on conflict.
@@ -103,7 +119,7 @@ test('deep-merge keeps base retry.attempts/on when child adds retry.baseMs', asy
         body: { ok: true },
     });
 
-    const retryPreset = preset({ retry: { attempts: 3, on: [503] } });
+    const retryPreset = { retry: { attempts: 3, on: [503] } };
     // Child only sets baseMs; if merge replaced the object wholesale, attempts/on would be lost
     // and the stitch would NOT retry the two 503s.
     const flaky = stitch({
@@ -127,7 +143,7 @@ test('hooks chain across fragments (onRequest base->child, onResponse child->bas
     server.route('GET', '/hooked', { body: { ok: true } });
 
     const order: string[] = [];
-    const baseFrag = preset({
+    const baseFrag = {
         baseUrl: server.url,
         hooks: {
             onRequest: () => {
@@ -137,7 +153,7 @@ test('hooks chain across fragments (onRequest base->child, onResponse child->bas
                 order.push('res:base');
             },
         },
-    });
+    };
     const childFrag = {
         path: '/hooked',
         hooks: {

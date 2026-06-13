@@ -1,6 +1,6 @@
 ---
 title: 'bearer'
-description: 'Attach a bearer token resolved at call time from an env var or the keychain.'
+description: 'Attach a bearer token resolved at call time from an env var or a secrets file.'
 ---
 
 Use `bearer` when an API authenticates with a token sent as
@@ -26,12 +26,12 @@ next call with no rewiring.
 
 `bearer` accepts either a literal string or a resolver thunk (`() => string`).
 Strongly prefer a resolver: it reads the secret per call from the environment or
-the keychain, so nothing is committed and the stitch hands callers a capability,
+a secrets file, so nothing is committed and the stitch hands callers a capability,
 not the credential — see
 [Capability, not credential](/docs/concepts/capability-not-credential).
 
 Use [`env('API_TOKEN')`](/docs/guides/auth/secret-resolvers) for an environment
-variable or `keychain('API_TOKEN')` for the spike keychain; both return a thunk
+variable or `secretsFile('API_TOKEN')` for `~/.stitch/secrets.json`; both return a thunk
 resolved at call time. See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for the full auth
 table.

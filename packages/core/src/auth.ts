@@ -54,11 +54,6 @@ export function secretsFile(name: string): () => string {
     };
 }
 
-/**
- * @deprecated Use {@link secretsFile} instead — same behaviour, clearer name.
- */
-export const keychain = secretsFile;
-
 export function bearer(token: Secret): AuthStrategy {
     return {
         name: 'bearer',
@@ -93,7 +88,7 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
 export interface OAuth2Opts {
     /** The `client_credentials` token endpoint (POST, form-encoded). */
     tokenUrl: string;
-    /** OAuth2 client id; resolved at call time (env/keychain), never committed. */
+    /** OAuth2 client id; resolved at call time (env/secretsFile), never committed. */
     clientId: Secret;
     /** OAuth2 client secret; resolved at call time. */
     clientSecret: Secret;
@@ -183,12 +178,14 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
             token: payload.access_token,
             expiresAt: ttlMs ? now() + ttlMs : 0,
         };
-        await ctx.store.set(nsKey, cached, ttlMs);
+        // The token is a secret → it lives in the vault (off `__config`, redacted from traces),
+        // not the inspectable store. A shared seam/store still shares one token across workers.
+        await ctx.vault.set(nsKey, cached, ttlMs);
         return cached.token;
     };
 
     const tokenFor = async (ctx: AuthContext): Promise<string> => {
-        const cached = (await ctx.store.get(nsKey)) as CachedToken | undefined;
+        const cached = (await ctx.vault.get(nsKey)) as CachedToken | undefined;
         // Cache miss/stale: coalesce concurrent callers into ONE in-flight fetch.
         return isFresh(cached)
             ? cached!.token
@@ -221,25 +218,64 @@ export interface CookieSessionOpts {
     cookie: string;
     /** Capture/replay the full Set-Cookie set — equivalent to `cookie: '*'` (in jar mode `cookie` only seeds the store key). */
     jar?: boolean;
-    /** Inputs (credentials) for the login call, resolved at call time. */
-    loginInput?: () => StitchInput;
+    /**
+     * Inputs (credentials) for the login call, resolved at call time. Receives the bound
+     * `principal` (from `seam.as(id)`, `undefined` when none) so trusted code can map the
+     * identity to that user's credentials — credentials still never originate from the caller.
+     */
+    loginInput?: (principal?: string) => StitchInput;
     /** Statuses that mean "the wall" and should trigger a re-login. Default [401]. */
     refreshOn?: number[];
     /** Inspect the response (status + body) for a soft wall — e.g. a 200 that is actually a login page. */
     refreshWhen?: (res: AdapterResponse) => boolean;
-    /** Store namespace — give two stitches the same `key` + a shared `store` to share one session. */
+    /** Vault namespace — give two stitches the same `key` + a shared seam/store to share one session. */
     key?: string;
-    /** Optional TTL (ms) for the stored cookie. */
+    /** Optional TTL (ms) for the stored session. With `scope: 'principal'`, set this — per-user sessions multiply. */
     ttlMs?: number;
+    /**
+     * Who the session belongs to (ADR 0002 §3). **Fail-closed default `'principal'`**: the
+     * session is keyed by the seam-bound principal and the call **throws if no principal is
+     * bound** — per-user auth can never silently run app-wide. `'app'` is the explicit opt-in to
+     * sharing ONE session across all callers (the only safe choice for a standalone `stitch()`,
+     * which never has a principal). Sessions always live in the {@link AuthContext.vault}.
+     */
+    scope?: 'principal' | 'app';
 }
 
 export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
     const jarMode = opts.jar === true || opts.cookie === '*';
-    const nsKey = (jarMode ? 'jar:' : 'cookie:') + (opts.key ?? opts.cookie);
+    const scope = opts.scope ?? 'principal';
+    const baseKey = (jarMode ? 'jar:' : 'cookie:') + (opts.key ?? opts.cookie);
     const flight = singleFlight<unknown>();
 
-    const doRefresh = async (ctx: AuthContext) => {
+    // Resolve the session key (in the vault) + login principal for this call. With the
+    // fail-closed `'principal'` default, the seam-bound principal is folded into the key — and a
+    // call with NO principal bound throws, so per-user auth can never silently share a session
+    // (ADR 0002 §3). `'app'` is the explicit opt-in to one shared session.
+    const sessionFor = (
+        ctx: AuthContext,
+    ): { key: string; principal?: string } => {
+        if (scope === 'app') return { key: baseKey };
+        const principal = ctx.principal;
+        if (principal == null || principal === '') {
+            const e = new Error(
+                "cookieSession with scope 'principal' (the default) requires a bound principal: " +
+                    'create the stitch through a seam and call `seam.as(principalId)`, or set ' +
+                    "`scope: 'app'` to deliberately share one session across all callers.",
+            );
+            e.name = 'StitchAuthError';
+            throw e;
+        }
+        // U+0000 can't appear in a principal id or cookie key, so it's a collision-free separator.
+        return { key: `${baseKey}\u0000${principal}`, principal };
+    };
+
+    const doRefresh = async (
+        ctx: AuthContext,
+        key: string,
+        principal: string | undefined,
+    ) => {
         ctx.emit('auth', 'login');
         // `__raw` runs the login once and returns its raw AdapterResponse (headers and all).
         // It is intentionally not on the public Stitch type, so reach it through a cast.
@@ -247,33 +283,31 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
             opts.login as unknown as {
                 __raw: (input?: StitchInput) => Promise<AdapterResponse>;
             }
-        ).__raw(opts.loginInput?.());
+        ).__raw(opts.loginInput?.(principal));
         const setCookie =
             res.headers['set-cookie'] ?? res.headers['Set-Cookie'];
         if (jarMode) {
             // Capture the full jar: every name=value pair the login set.
             const jar = parseCookieJar(setCookie);
             if (Object.keys(jar).length > 0)
-                await ctx.store.set(nsKey, jar, opts.ttlMs);
+                await ctx.vault.set(key, jar, opts.ttlMs);
         } else {
             const value = parseCookie(setCookie, opts.cookie);
             if (value != null)
-                await ctx.store.set(
-                    nsKey,
-                    `${opts.cookie}=${value}`,
-                    opts.ttlMs,
-                );
+                await ctx.vault.set(key, `${opts.cookie}=${value}`, opts.ttlMs);
         }
     };
 
     return {
         name: 'cookieSession',
         async apply(req, ctx) {
-            let stored = await ctx.store.get(nsKey);
+            const { key, principal } = sessionFor(ctx);
+            let stored = await ctx.vault.get(key);
             if (!stored) {
-                // Concurrent cold sessions share ONE login (GAP-AUDIT §2.6).
-                await flight(nsKey, () => doRefresh(ctx));
-                stored = await ctx.store.get(nsKey);
+                // Concurrent cold sessions for the SAME principal share ONE login (the principal
+                // is in the key, so different users never coalesce — GAP-AUDIT §2.6 + ADR §3).
+                await flight(key, () => doRefresh(ctx, key, principal));
+                stored = await ctx.vault.get(key);
             }
             // Non-jar: a stored `name=value` string. Jar: a stored map → serialize all pairs.
             const cookie = jarMode
@@ -289,8 +323,9 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
             return refreshOn.includes(res.status) || !!opts.refreshWhen?.(res);
         },
         async refresh(ctx) {
-            // Simultaneous 401-driven re-logins coalesce into one login call.
-            await flight(nsKey, () => doRefresh(ctx));
+            const { key, principal } = sessionFor(ctx);
+            // Simultaneous 401-driven re-logins for the same principal coalesce into one login.
+            await flight(key, () => doRefresh(ctx, key, principal));
         },
     };
 }

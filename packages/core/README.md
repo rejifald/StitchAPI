@@ -93,13 +93,13 @@ For the full competitive landscape and positioning, see the [Overview](docs/OVER
 
 ## Features
 
--   **One primitive, three facades** - `stitch(url | config)` returns a typed, callable function; share fragments via `extends`, a bound `defineStitch()` factory, or the fluent builder — all resolving to one engine, with `.with()` partial application on top.
+-   **One primitive, two facades** - `stitch(url | config)` returns a typed, callable function; share fragments via `extends` or the fluent builder — both resolving to one engine, with `.with()` partial application on top. For a whole shared surface (shared store, throttle, sink + a trusted principal boundary), a `seam` owns the fragment.
 -   **Event-stream core** - every call yields a typed stream (`start → progress → drift → result → done`); `await` is sugar that consumes it and returns the final validated value.
 -   **Bring-your-own validation** - validate `params` / `query` / `body` / `headers` and the response with [Zod](https://zod.dev) or any [Standard Schema](https://standardschema.dev) library (Valibot, ArkType, …); TypeScript types are inferred from the schemas.
 -   **Leveled drift detection** - live responses are diffed against a committed contract snapshot; changes surface as `error` / `warn` / `info` findings instead of a silent `undefined`.
 -   **Declared resilience** - retry with backoff and `Retry-After`, proactive throttle (rate + concurrency, per stitch or per host), and total / per-attempt timeouts with real aborts.
--   **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `keychain()` and never reach the caller.
--   **Data shaping** - `unwrap` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, `json` / `form` / `multipart` request bodies, and a `graphql()` preset.
+-   **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `secretsFile()` and never reach the caller.
+-   **Data shaping** - `unwrap` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, `json` / `form` / `multipart` request bodies, and a `graphql()` helper.
 -   **Pluggable state store** - throttle counters and sessions/tokens live behind a 3-method store; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
 -   **Zero-infra observability** - every event is appended to a local JSONL trace by default; `stitch trace` summarizes runs, retries, drift, and latency percentiles.
 -   **CLI surface** - the definition your code imports is also runnable from the shell: `stitch run <name>` streams JSONL events (HTTP and MCP surfaces are on the roadmap).
@@ -220,17 +220,18 @@ for await (const ev of getUsers.stream()) {
 
 ## Composition & reuse
 
-Everything reusable is a named value, and a stitch composes values — **no global config is ever required**. Three authoring facades resolve to the same engine; pick one or mix them:
+Everything reusable is a named value, and a stitch composes values — **no global config is ever required**. Two authoring facades resolve to the same engine; pick one or mix them:
 
 ```ts
-import { defineStitch, preset, stitch } from 'stitchapi';
+import { seam, stitch } from 'stitchapi';
 import { z } from 'zod';
 
-const api = preset({
+// A reusable fragment is just a plain object.
+const api = {
     baseUrl: 'https://api.example.com',
     retry: { attempts: 3, on: [429, 503] },
     timeout: { total: '30s' },
-});
+};
 
 const Website = z.object({ id: z.number(), host: z.string() });
 
@@ -242,9 +243,9 @@ const listWebsites = stitch({
     unwrap: 'data',
 });
 
-// B — a bound factory, when every stitch shares the same base
-const apiStitch = defineStitch(api);
-const getWebsite = apiStitch({ path: '/websites/{id}', output: Website });
+// B — a seam, when a whole surface shares config AND runtime (one store, throttle, sink)
+const surface = seam(api);
+const getWebsite = surface.stitch({ path: '/websites/{id}', output: Website });
 
 // C — the fluent builder
 const search = stitch
@@ -339,7 +340,7 @@ Throttle waits and retries emit `throttled` / `retry` events on the stream, so t
 
 ## Auth as a boundary
 
-Auth is a field on the stitch (or on a fragment it extends) — never global. Secrets resolve **at call time**: `env()` reads an environment variable, `keychain()` reads `~/.stitch/secrets.json` (falling back to env). The stitch declaration is committable, and the caller — your code or an agent — invokes the stitch and gets data without ever seeing the credential.
+Auth is a field on the stitch (or on a fragment it extends) — never global. Secrets resolve **at call time**: `env()` reads an environment variable, `secretsFile()` reads `~/.stitch/secrets.json` (falling back to env). The stitch declaration is committable, and the caller — your code or an agent — invokes the stitch and gets data without ever seeing the credential.
 
 Header strategies — `bearer`, `apiKey` (default header `x-api-key`), `basic`:
 
@@ -373,7 +374,7 @@ Give two stitches the same `key` plus a shared [store](#pluggable-state-store) a
 **Cookie sessions** — the marquee case: `cookieSession` runs a login (itself a stitch), captures the cookie from `Set-Cookie`, replays it on every call, and re-logs-in when the wall returns:
 
 ```ts
-import { cookieSession, env, keychain, stitch } from 'stitchapi';
+import { cookieSession, env, secretsFile, stitch } from 'stitchapi';
 
 const signIn = stitch({
     method: 'POST',
@@ -392,7 +393,7 @@ const listWebsites = stitch({
         loginInput: () => ({
             body: {
                 email: env('APP_USER')(),
-                password: keychain('APP_PASS')(),
+                password: secretsFile('APP_PASS')(),
             },
         }),
         refreshOn: [401], // the wall → re-login, then retry (default)
@@ -431,11 +432,12 @@ export interface StitchStore {
 ```
 
 ```ts
-import { defineStitch, memoryStore, preset } from 'stitchapi';
+import { memoryStore, seam } from 'stitchapi';
 
 // memoryStore() is the shipped default; swap in your Redis/Postgres-backed
-// implementation of the same interface to go distributed.
-const api = defineStitch(preset({ store: memoryStore() }));
+// implementation of the same interface to go distributed. A seam shares one
+// store across every stitch that belongs to it.
+const api = seam({ store: memoryStore() });
 ```
 
 You opt into a real store only when you scale out — progressive disclosure, applied to state.
@@ -465,7 +467,7 @@ await upload({
 
 ## HTTP transport (adapters)
 
-A stitch talks to the network through an `Adapter` — `(req) => Promise<{ status, headers, body }>`. The default is the global `fetch`; set `adapter` to route a stitch (or a shared preset) through a different client. The runtime stays zero-dependency, so the shipped `axiosAdapter` takes _your_ axios instance rather than importing one:
+A stitch talks to the network through an `Adapter` — `(req) => Promise<{ status, headers, body }>`. The default is the global `fetch`; set `adapter` to route a stitch (or a shared fragment) through a different client. The runtime stays zero-dependency, so the shipped `axiosAdapter` takes _your_ axios instance rather than importing one:
 
 ```ts
 import axios from 'axios';

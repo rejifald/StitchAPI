@@ -149,20 +149,6 @@ export const pages: Page[] = [
         kind: 'guide',
     },
     {
-        path: 'guides/authoring/define-stitch',
-        title: 'defineStitch()',
-        description:
-            'Bind a set of base fragments once and get a reusable stitch factory.',
-        kind: 'guide',
-    },
-    {
-        path: 'guides/authoring/preset',
-        title: 'preset()',
-        description:
-            'Bundle reusable defaults under a name and apply them across many stitches.',
-        kind: 'guide',
-    },
-    {
         path: 'guides/authoring/extends',
         title: 'extends',
         description:
@@ -189,7 +175,7 @@ export const pages: Page[] = [
         path: 'guides/auth/bearer',
         title: 'bearer',
         description:
-            'Attach a bearer token resolved at call time from an env var or the keychain.',
+            'Attach a bearer token resolved at call time from an env var or a secrets file.',
         kind: 'guide',
     },
     {
@@ -224,7 +210,7 @@ export const pages: Page[] = [
         path: 'guides/auth/secret-resolvers',
         title: 'Secret resolvers',
         description:
-            'Resolve secrets lazily at call time with env() and keychain() instead of hard-coding them.',
+            'Resolve secrets lazily at call time with env() and secretsFile() instead of hard-coding them.',
         kind: 'guide',
     },
 
@@ -427,14 +413,14 @@ export const pages: Page[] = [
         path: 'reference/stitch',
         title: 'stitch() & the builder',
         description:
-            'Signatures for stitch(), defineStitch(), preset(), graphql(), and the fluent builder.',
+            'Signatures for stitch(), graphql(), and the fluent builder.',
         kind: 'reference',
     },
     {
         path: 'reference/auth-strategies',
         title: 'Auth strategies',
         description:
-            'bearer, apiKey, basic, cookieSession, oauth2, and the env() and keychain() resolvers.',
+            'bearer, apiKey, basic, cookieSession, oauth2, and the env() and secretsFile() resolvers.',
         kind: 'reference',
     },
     {

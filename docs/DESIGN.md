@@ -62,7 +62,7 @@ const listWebsites = stitch({
 Everything except a target is optional. Spell the target one of two ways:
 
 -   **`url`** — the whole endpoint as one string (`url: 'https://api.example.com/users/{id}'`). The **atomic spelling**: reach for it when a stitch is exactly one endpoint with no base to share, so you don't pre-split into base + path for a composition that doesn't exist. Templated (`{param}`, including the host) and `?query`-aware just like `path`, and may be a function for lazy/env resolution.
--   **`baseUrl` + `path`** — a shareable base joined to a per-endpoint path. The **composition spelling**: a `preset` supplies `baseUrl` once and each stitch supplies its own `path` (§4).
+-   **`baseUrl` + `path`** — a shareable base joined to a per-endpoint path. The **composition spelling**: a shared fragment supplies `baseUrl` once and each stitch supplies its own `path` (§4).
 
 The two are mutually exclusive — when both appear, `url` wins. The smallest possible stitch is `stitch('https://…')` (a bare string is shorthand for `path`; an absolute one resolves as-is). A target that resolves to a relative URL (a `path` with no `baseUrl`) is a config error under the default transport.
 
@@ -105,12 +105,12 @@ The tension: stitches must stay **atomic** (no global config) _and_ let you DRY 
 First, the reusable fragments — plain values you define once and import:
 
 ```ts
-const base = preset({
+const base = {
     // a bundle of defaults
     baseUrl: env('API_BASE'),
     retry: { attempts: 3, on: [429, 503] },
     timeout: { total: '30s' },
-});
+};
 
 const session = cookieSession({
     // an auth strategy (§5)
@@ -132,18 +132,19 @@ const listWebsites = stitch({
 });
 ```
 
-### Variant B — bound factory `defineStitch(...)` (evolution of today's `prestitch`)
+### Variant B — a `seam` (a surface every stitch belongs to)
 
-Best when _every_ stitch in a service shares the same base + auth:
+Best when _every_ stitch in a service shares the same base + auth — and should also
+share **runtime** (one store, throttle bucket, sink) and a trusted principal boundary:
 
 ```ts
-const apiStitch = defineStitch(base, session); // a stitch() pre-bound to these
+const api = seam({ extends: [base, session] }); // members inherit config + share runtime
 
-const listWebsites = apiStitch({
+const listWebsites = api.stitch({
     path: '/api/websites',
     output: Website.array(),
 });
-const getWebsite = apiStitch({ path: '/api/websites/{id}', output: Website });
+const getWebsite = api.stitch({ path: '/api/websites/{id}', output: Website });
 ```
 
 ### Variant C — fluent builder **[supported]**
@@ -191,7 +192,7 @@ Inference is always overridable. (Progressive disclosure: it usually "just works
 
 **Explicit strategies [proposed]:** `bearer()`, `apiKey()`, `basic()`, `cookieSession()`, `oauth2()` — each a value you can name, share, and `extends`.
 
-**The boundary — the selling point.** The secret resolves at call time from `env()` / `keychain()` / a secret manager. The stitch **declaration** is committed; the secret is not. So:
+**The boundary — the selling point.** The secret resolves at call time from `env()` / `secretsFile()` / a secret manager. The stitch **declaration** is committed; the secret is not. So:
 
 ```
 Agent today:  GET /api/websites  →  401 (httpOnly cookie wall)  →  dead end.
@@ -334,7 +335,7 @@ await createUser({ body: { name: 'Ada' } });
 **5. Shared base via `extends`**
 
 ```ts
-const api = preset({ baseUrl: env('API_BASE'), retry: { attempts: 3 } });
+const api = { baseUrl: env('API_BASE'), retry: { attempts: 3 } };
 const listWebsites = stitch({
     extends: [api],
     path: '/api/websites',
@@ -342,12 +343,15 @@ const listWebsites = stitch({
 });
 ```
 
-**6. Bound factory (every stitch shares base + auth)**
+**6. A seam (every stitch shares base, auth, AND runtime)**
 
 ```ts
-const s = defineStitch(api, session);
-const listWebsites = s({ path: '/api/websites', output: Website.array() });
-const getWebsite = s({ path: '/api/websites/{id}', output: Website });
+const s = seam({ extends: [api, session] });
+const listWebsites = s.stitch({
+    path: '/api/websites',
+    output: Website.array(),
+});
+const getWebsite = s.stitch({ path: '/api/websites/{id}', output: Website });
 ```
 
 **7. Extend another stitch**
@@ -385,7 +389,7 @@ const listWebsites = stitch({
     auth: cookieSession({
         login: signIn,
         cookie: 'session_token',
-        secret: keychain('app'),
+        secret: secretsFile('app'),
         refreshOn: [401],
     }),
 });
@@ -496,9 +500,9 @@ interface StitchStore {
     incr(key: string, ttlMs: number): Promise<number>; // atomic — for rate windows
 }
 
-const api = defineStitch(
-    preset({ store: redisStore(redis) }), // default is an in-memory store
-);
+const api = seam({
+    store: redisStore(redis), // default is an in-memory store
+});
 ```
 
 -   **Throttle** reads/writes its rate counters through the store → a Redis-backed store gives _cross-process_ rate limiting with no change to the call site.
@@ -527,8 +531,8 @@ Next, to close the validated gaps (§12), in leverage order:
 
 ## 15. Open questions
 
--   ~~Composition syntax / call convention~~ — **resolved**: all three composition facades supported (extends / factory / builder); call = single-input-object + `.with()` + optional curried.
+-   ~~Composition syntax / call convention~~ — **resolved**: the composition facades supported (extends / fluent builder, plus `seam` for a whole shared surface); call = single-input-object + `.with()` + optional curried.
 -   **Validation lib** — move from Zod-locked to **Standard Schema** (Zod/Valibot/ArkType)? (Recommended; affects bundle size.)
--   **Secret resolvers** — which to ship first: `env()`, `keychain()`, file, cloud secret managers?
+-   **Secret resolvers** — which to ship first: `env()`, `secretsFile()`, cloud secret managers?
 -   **Query array format** — arrays currently serialize `qs`-style indexed (`ids[0]=1&ids[1]=2`), matching the pre-rebuild baseline. Should the format be configurable (`arrayFormat: 'indices' | 'brackets' | 'repeat'`), and which is the right default for the APIs we target? (Flagged for future review; behavior is fixed until then.)
 -   **Visual** — Mermaid-from-definition first; how important is the live interactive trace view for v1?

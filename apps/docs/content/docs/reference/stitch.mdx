@@ -1,9 +1,9 @@
 ---
 title: 'stitch() & the builder'
-description: 'Signatures for stitch(), defineStitch(), preset(), graphql(), and the fluent builder.'
+description: 'Signatures for stitch(), graphql(), and the fluent builder.'
 ---
 
-The authoring surface: the four exports that produce a stitch, plus the fluent
+The authoring surface: the exports that produce a stitch, plus the fluent
 builder they share. For what goes inside the config object, see
 [Reference → Config types](/docs/reference/config-types).
 
@@ -20,32 +20,9 @@ const user = stitch<{ id: string }>({
 });
 ```
 
-## defineStitch()
-
-`defineStitch(...fragments)` binds shared base fragments and returns a `stitch()`
-factory; each call deep-merges the bound fragments under the per-call config.
-
-```ts twoslash
-import { defineStitch } from 'stitchapi';
-
-const api = defineStitch({ path: 'https://api.example.com' });
-const user = api<{ id: string }>('/me');
-```
-
-## preset()
-
-`preset(cfg)` is an identity-tagged fragment — a named bundle of reusable
-defaults you pass through `extends`. It returns the same `Partial<StitchConfig>`.
-
-```ts twoslash
-import { preset } from 'stitchapi';
-
-const base = preset({ retry: { attempts: 3 } });
-```
-
 ## graphql()
 
-`graphql<T>(config)` is a stitch preset for GraphQL-over-HTTP: it POSTs
+`graphql<T>(config)` is a thin wrapper over `stitch()` for GraphQL-over-HTTP: it POSTs
 `{ query, variables }` and unwraps `data`. The config must carry a `query`.
 
 ```ts twoslash

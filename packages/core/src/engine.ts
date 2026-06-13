@@ -12,6 +12,7 @@ import {
     parseRetryAfter,
     withTimeout,
 } from './resilience';
+import { vaultView } from './store';
 import type {
     Adapter,
     AdapterRequest,
@@ -66,13 +67,19 @@ export function makeRuntime(
     throttle: Runtime['throttle'],
     trace: TraceSink,
     store: StitchStore,
+    opts?: { vault?: StitchStore; principal?: string },
 ): Runtime {
     const authCtx: AuthContext = {
         store,
+        // Secrets live in the vault, off `__config` and redacted from traces. Standalone stitches
+        // get a reserved namespace over their own store; a seam injects its shared vault.
+        vault: opts?.vault ?? vaultView(store),
         emit: () => {
             /* progress surfaces via yielded events, not authCtx */
         },
     };
+    // The principal is set only when a seam binds one — it is never sourced from StitchInput.
+    if (opts?.principal !== undefined) authCtx.principal = opts.principal;
     return {
         cfg,
         adapter: cfg.adapter ?? fetchAdapter(),
@@ -153,7 +160,7 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     if (cfg.adapter === undefined && !/^https?:\/\//i.test(url)) {
         const e = new Error(
             `stitch ${JSON.stringify(nameOf(cfg))}: request URL ${JSON.stringify(url)} is not absolute. ` +
-                'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared preset).',
+                'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared fragment).',
         );
         e.name = 'StitchConfigError';
         throw e;

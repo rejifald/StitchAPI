@@ -1,6 +1,9 @@
 // Multi-cookie jar: with `cookie: '*'` (or `jar: true`) cookieSession captures the FULL
 // Set-Cookie set from the login and replays every cookie on subsequent requests — not just
 // one named cookie. A login that sets two cookies should make both ride along next time.
+//
+// These standalone stitches share ONE session across all callers, so they pass `scope: 'app'`
+// explicitly — the fail-closed default `'principal'` would throw (no seam binds a principal).
 import { cookieSession, env, stitch } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
@@ -54,7 +57,12 @@ test('cookie: "*" captures and replays every cookie the login set', async () => 
     const data = stitch({
         baseUrl: server.url,
         path: '/data',
-        auth: cookieSession({ login: loginStitch(), cookie: '*', loginInput }),
+        auth: cookieSession({
+            login: loginStitch(),
+            cookie: '*',
+            loginInput,
+            scope: 'app',
+        }),
     });
 
     await expect(data()).resolves.toEqual({ ok: true });
@@ -86,6 +94,7 @@ test('jar: true is equivalent to cookie: "*"', async () => {
             cookie: 'session', // only seeds the store key in jar mode
             jar: true,
             loginInput,
+            scope: 'app',
         }),
     });
 
@@ -115,6 +124,7 @@ test('a single named cookie still replays only that one (regression)', async () 
             login: loginStitch(),
             cookie: 'sid',
             loginInput,
+            scope: 'app',
         }),
     });
 

@@ -6,15 +6,15 @@ Before writing or editing **any** file in this repository, call `EnterWorktree`
 first so the session works in a fresh git worktree branched from `main`. Do not
 edit the primary checkout directly.
 
-- `EnterWorktree` uses the `fresh` base ref (configured in
-  [.claude/settings.json](.claude/settings.json)), so every worktree branches
-  from `origin/main` — the repository's default branch.
-- Enter the worktree **once per session, before the first edit**. All edits and
-  the working branch live there.
-- `main` is the default target branch: open the resulting PR against `main`.
-- Exception: small edits to repo configuration (`.claude/`, `CLAUDE.md`, or
-  memory files) may be made in the primary checkout directly — bootstrapping the
-  worktree rule from inside a worktree isn't worth the friction.
+-   `EnterWorktree` uses the `fresh` base ref (configured in
+    [.claude/settings.json](.claude/settings.json)), so every worktree branches
+    from `origin/main` — the repository's default branch.
+-   Enter the worktree **once per session, before the first edit**. All edits and
+    the working branch live there.
+-   `main` is the default target branch: open the resulting PR against `main`.
+-   Exception: small edits to repo configuration (`.claude/`, `CLAUDE.md`, or
+    memory files) may be made in the primary checkout directly — bootstrapping the
+    worktree rule from inside a worktree isn't worth the friction.
 
 ### `node_modules` in a fresh worktree
 

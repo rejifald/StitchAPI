@@ -1,11 +1,4 @@
 {
     "title": "Authoring & composition",
-    "pages": [
-        "stitch",
-        "define-stitch",
-        "preset",
-        "extends",
-        "fluent-builder",
-        "with"
-    ]
+    "pages": ["stitch", "extends", "fluent-builder", "with"]
 }

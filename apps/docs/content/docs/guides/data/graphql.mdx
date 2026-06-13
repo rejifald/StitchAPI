@@ -25,7 +25,7 @@ const data = await getUser({ variables: { id: '1' } });
 
 ## Options
 
-`graphql()` is a preset over `stitch()`: it fixes `kind: 'graphql'`,
+`graphql()` is a thin wrapper over `stitch()`: it fixes `kind: 'graphql'`,
 `method: 'POST'`, and `unwrap: 'data'` for you. You supply the GraphQL document
 as `query`, plus a `baseUrl`/`path` pointing at the endpoint.
 

@@ -1,7 +1,6 @@
-// Pins docs/GAP-AUDIT.md §1.8: keychain() is plaintext JSON — rename to secretsFile() with a deprecated keychain alias
-// Import secretsFile (desired, not yet exported) and keychain (alias, already exported).
-// The test pins that secretsFile is exported — today this import resolves to `undefined`.
-import { basic, keychain, secretsFile, stitch } from '../../src';
+// Pins docs/GAP-AUDIT.md §1.8: keychain() was a plaintext-JSON spike — renamed to secretsFile()
+// (the deprecated `keychain` alias has since been removed entirely).
+import { basic, secretsFile, stitch } from '../../src';
 // TODO(fixer): remove cast once secretsFile is exported
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
@@ -102,28 +101,6 @@ test('secretsFile() falls back to env var when secrets file is absent', () => {
 
     const resolver = secretsFile('MY_FALLBACK');
     expect(resolver()).toBe('from-env');
-
-    rmSync(home, { recursive: true, force: true });
-});
-
-// ---------------------------------------------------------------------------
-// §1.8-D  keychain() is still exported and behaves identically (alias)
-// ---------------------------------------------------------------------------
-
-test('keychain() is still exported and reads from the same secrets file', () => {
-    // keychain is already exported today; this test verifies the alias is preserved.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    expect(keychain).toBeDefined();
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    expect(typeof keychain).toBe('function');
-
-    const home = makeTempHome({ MY_SECRET: 'from-file' });
-    process.env['HOME'] = home;
-    Reflect.deleteProperty(process.env, 'MY_SECRET');
-
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    const resolver = keychain('MY_SECRET');
-    expect(resolver()).toBe('from-file');
 
     rmSync(home, { recursive: true, force: true });
 });
