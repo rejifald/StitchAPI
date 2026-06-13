@@ -1,0 +1,18 @@
+{
+    "title": "Recipes",
+    "icon": "ChefHat",
+    "pages": [
+        "typed-json-round-trip",
+        "paginate-into-one-array",
+        "make-a-flaky-call-succeed",
+        "survive-a-flaky-dependency",
+        "idempotent-writes",
+        "catch-a-breaking-api-change",
+        "watch-a-call-as-it-happens",
+        "mirror-a-paginated-api",
+        "one-rate-limit-across-workers",
+        "auth-as-a-capability",
+        "expose-a-stitch-to-an-agent",
+        "one-stitch-every-surface"
+    ]
+}

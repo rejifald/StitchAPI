@@ -1,0 +1,61 @@
+---
+title: 'Call one stitch as a function, a CLI command, and an agent tool'
+description: 'One definition, four front doors — in-process, shell, HTTP, and MCP — with nothing about the stitch changing.'
+---
+
+## Task
+
+You have defined an API call once. You want to use it in app code, run it ad-hoc
+from the shell, and let an agent call it — without redefining it three times.
+
+## Example
+
+One way: define the stitch once with a `name`, then reach it through each
+surface.
+
+```ts twoslash
+// stitches.ts — define it once, export it by name.
+import { stitch } from 'stitchapi';
+
+export const getUser = stitch<{ id: number; name: string }>({
+    name: 'getUser',
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+// In app code: call it as a typed async function.
+const user = await getUser({ params: { id: 1 } });
+```
+
+From the shell, the CLI loads the module and runs it by name:
+
+```bash
+stitch run getUser --id 1
+```
+
+To an agent over MCP, the single `run_stitch` tool covers it:
+
+```json
+{
+    "name": "run_stitch",
+    "input": { "name": "getUser", "input": { "params": { "id": 1 } } }
+}
+```
+
+## How it works
+
+One definition, four surfaces. The [in-process function](/docs/surfaces/function)
+awaits or `.stream()`s it; the [CLI](/docs/surfaces/cli) (`stitch run`) loads the
+module and runs it by name; [MCP](/docs/surfaces/mcp) exposes it to agents through
+the single `run_stitch` tool; and it can be [served over HTTP](/docs/surfaces/http-serve).
+The `name` is what the CLI and MCP resolve — nothing else about the definition
+changes between front doors.
+
+## See also
+
+<Cards>
+    <Card title="In-process function" href="/docs/surfaces/function" />
+    <Card title="CLI" href="/docs/surfaces/cli" />
+    <Card title="MCP" href="/docs/surfaces/mcp" />
+    <Card title="HTTP serve" href="/docs/surfaces/http-serve" />
+</Cards>

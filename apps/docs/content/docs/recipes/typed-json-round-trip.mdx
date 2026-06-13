@@ -1,0 +1,55 @@
+---
+title: 'Send JSON and get a typed result back'
+description: 'POST a validated body and read a typed, runtime-validated result — input checked before the request, output checked after.'
+---
+
+## Task
+
+You are POSTing JSON to an API and want the result back as a typed value — and
+you would like bad input rejected before it leaves the process, not returned to
+you as a `400` from the server.
+
+## Example
+
+One way: validate the `body` going out and the response coming back, and type the
+result with the `stitch<T>` generic.
+
+```ts twoslash
+import { stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+const createUser = stitch<{ id: number; name: string }>({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    input: { body: toValidator(z.object({ name: z.string() })) },
+    output: toValidator(z.object({ id: z.number(), name: z.string() })),
+});
+
+// A bad body throws before the POST; a bad response throws after.
+const user = await createUser({ body: { name: 'Ada' } });
+```
+
+`user` is typed `{ id: number; name: string }`.
+
+## How it works
+
+`input.body` is checked **before** the request — wrong input fails fast with no
+network call. `output` is checked **after** the response returns. Either failure
+throws [`STITCH_VALIDATION`](/docs/errors/stitch-validation). The `stitch<T>`
+generic types the resolved value, and `toValidator()` adapts the Zod schema to
+the `Validator` the config expects — pass `toValidator(z.object({...}))`, not a
+raw `z.object({...})`. Any [Standard Schema](/docs/guides/validation/standard-schema)
+validator (Valibot, ArkType) goes through the same `toValidator()` call.
+
+## See also
+
+<Cards>
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card
+        title="Bring your own validator"
+        href="/docs/guides/validation/standard-schema"
+    />
+    <Card title="Body encoding" href="/docs/guides/data/body-encoding" />
+    <Card title="STITCH_VALIDATION" href="/docs/errors/stitch-validation" />
+</Cards>

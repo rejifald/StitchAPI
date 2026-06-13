@@ -1,0 +1,58 @@
+---
+title: 'Loop a cursor API into one array'
+description: 'Follow nextCursor across every page and aggregate the items — no manual while-loop, cursor bookkeeping, or concat.'
+---
+
+## Task
+
+An endpoint returns one page at a time behind a cursor. You want every item in a
+single array — without writing the `while` loop, the cursor bookkeeping, and the
+concat by hand.
+
+## Example
+
+One way: declare how to find the next page and which array to collect, and
+`await` once.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const allUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    paginate: {
+        next: (prevBody) => {
+            const cursor = (prevBody as { nextCursor?: string }).nextCursor;
+            return cursor ? { query: { cursor } } : undefined;
+        },
+        items: (value) => (value as { results: unknown[] }).results,
+        max: 20,
+    },
+});
+
+// One await follows every page and returns the aggregated items.
+const users = (await allUsers()) as unknown[];
+```
+
+## How it works
+
+`next(prevBody)` reads the cursor off the previous page's raw body and returns
+the [input](/docs/reference/config-types) for the next page, merged over the
+original call — set only what changes. Return `undefined` to stop. `items`
+selects the array to aggregate from each page (after [unwrap](/docs/guides/data/unwrap)).
+`max` caps the page count as a safety net (default `50`). Auth, retry, and
+throttle apply per page, not once for the whole run. Without an
+[`output` schema](/docs/guides/validation/validation) the aggregated result is
+typed `unknown[]`, hence the cast — add a schema to type the rows.
+
+## See also
+
+<Cards>
+    <Card title="Pagination" href="/docs/guides/data/pagination" />
+    <Card
+        title="Mirror a paginated API to NDJSON"
+        href="/docs/recipes/mirror-a-paginated-api"
+    />
+    <Card title="Unwrap" href="/docs/guides/data/unwrap" />
+    <Card title="Transform" href="/docs/guides/data/transform" />
+</Cards>

@@ -1,0 +1,107 @@
+---
+title: 'Recipes'
+description: 'Working examples of common tasks — each one the whole thing in a single block, with links down to the guides for depth.'
+---
+
+A recipe is a worked example of a common task — the whole thing in one block,
+runnable as a starting point and one way to get the job done, not the only way.
+Where a [guide](/docs/guides) explains one feature, a recipe shows several
+working together — then links down to the guides when you want the detail.
+
+Reach for a recipe when you know the task and want somewhere to start. Reach for
+a guide when you want to understand a feature on its own.
+
+## Start here
+
+<Cards>
+    <Card
+        title="Send JSON and get a typed result back"
+        href="/docs/recipes/typed-json-round-trip"
+        description="POST a validated body and read a typed, runtime-validated result."
+    />
+    <Card
+        title="Loop a cursor API into one array"
+        href="/docs/recipes/paginate-into-one-array"
+        description="Follow nextCursor across every page and aggregate the items — no manual while-loop."
+    />
+    <Card
+        title="Make a flaky call succeed on its own"
+        href="/docs/recipes/make-a-flaky-call-succeed"
+        description="Add retry with backoff so transient 429s and 5xxs recover without your code noticing."
+    />
+</Cards>
+
+## Stay resilient
+
+<Cards>
+    <Card
+        title="Keep a failing dependency from taking you down"
+        href="/docs/recipes/survive-a-flaky-dependency"
+        description="Compose timeout, retry, and a circuit breaker so a degraded upstream fails fast instead of hanging."
+    />
+    <Card
+        title="Retry a write without double-charging"
+        href="/docs/recipes/idempotent-writes"
+        description="Attach an idempotency key so a retried POST settles once, not twice."
+    />
+</Cards>
+
+## Validate &amp; observe
+
+<Cards>
+    <Card
+        title="Catch a breaking API change before your users do"
+        href="/docs/recipes/catch-a-breaking-api-change"
+        description="Wrap output with drift to flag dropped fields, type flips, and new keys against a committed snapshot."
+    />
+    <Card
+        title="Watch retries and throttling as they happen"
+        href="/docs/recipes/watch-a-call-as-it-happens"
+        description="Iterate a stitch's event stream instead of awaiting it, and observe every retry, pause, and drift."
+    />
+</Cards>
+
+## Run at scale
+
+<Cards>
+    <Card
+        title="Mirror a paginated API to NDJSON"
+        href="/docs/recipes/mirror-a-paginated-api"
+        description="Pull every page of a cursor-paginated, OAuth2-protected endpoint — with retry and throttle on each page."
+    />
+    <Card
+        title="Share one rate limit across every worker"
+        href="/docs/recipes/one-rate-limit-across-workers"
+        description="Point the throttle at a shared store so a whole fleet draws from a single rate budget."
+    />
+</Cards>
+
+## Authenticate
+
+<Cards>
+    <Card
+        title="Authenticate without the token touching your code"
+        href="/docs/recipes/auth-as-a-capability"
+        description="Declare auth on the stitch so callers get a capability, not a credential."
+    />
+</Cards>
+
+## Agents &amp; surfaces
+
+<Cards>
+    <Card
+        title="Let an agent call your API without handing it the key"
+        href="/docs/recipes/expose-a-stitch-to-an-agent"
+        description="Expose your stitches over MCP through one run_stitch tool — the agent never sees the credential."
+    />
+    <Card
+        title="Call one stitch as a function, a CLI command, and an agent tool"
+        href="/docs/recipes/one-stitch-every-surface"
+        description="One definition, four front doors — in-process, shell, HTTP, and MCP."
+    />
+</Cards>
+
+<Callout type="info">
+    These assume the runtime is installed and you can declare a stitch. New to
+    it? Start at the [Quickstart](/docs/getting-started/quickstart).
+</Callout>
