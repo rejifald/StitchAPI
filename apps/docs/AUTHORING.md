@@ -97,8 +97,10 @@ content predicate (for soft 200 walls). See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
 
 <Callout type="warn">
-    One-line micro-gotchas go inline like this. Anything systemic gets a catalog
-    page instead — link it under See also.
+    **Anti-pattern:** don't reach for X here — do Y instead. Tempting-but-wrong
+    uses and one-line micro-gotchas go inline like this, at the point of
+    temptation (rule 10). Anything systemic gets a catalog page instead — link it
+    under See also.
 </Callout>
 
 ## See also {/* (required) */}
@@ -241,6 +243,14 @@ description: Authentication failed, or a soft 200 login wall was hit and could n
    its result is consumed — show the forms as tabs and let the reader's pick
    persist. Never write "you can also…" and never pick one form for the reader
    while hiding the rest. See [Code variants — tabs](#code-variants--tabs).
+10. **Anti-patterns go inline, at the point of temptation.** Where a feature has
+    a tempting-but-wrong use — the shortcut a reader reaches for right before it
+    bites them — flag it with a `<Callout type="warn">` in the section that
+    introduces that use, never in a separate "best/bad practices" page. Lead with
+    **Anti-pattern** and write it as _don't X — do Y instead_, so the fix travels
+    with the warning. Keep it to the one decision in front of the reader; a
+    systemic failure mode is a catalog page in Errors & pitfalls (link it under
+    `See also`), not a restated list elsewhere (rule 6).
 
 ---
 
@@ -412,3 +422,6 @@ Errors & pitfalls is keyed to a registry of stable codes (`STITCH_VALIDATION`,
 -   [ ] Neutral names only; `api.example.com` for hosts.
 -   [ ] Reads correctly in isolation (imagine it as a lone `llms.mdx`).
 -   [ ] `See also` links neighbors, the Reference entry, and any catalog pages.
+-   [ ] Any tempting-but-wrong use is flagged with an inline **Anti-pattern**
+        `<Callout type="warn">` at the point of temptation, not a separate
+        section (rule 10) — omit only when the page has no such pitfall.

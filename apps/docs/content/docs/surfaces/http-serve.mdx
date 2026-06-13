@@ -40,10 +40,14 @@ validated result as JSON; send `Accept: text/event-stream` (or add `?stream=1`)
 to receive the live event stream as SSE instead.
 
 <Callout type="warn">
-    Serving a stitch over HTTP changes nothing about the capability boundary —
-    auth, validation, and resilience still run server-side, exactly as they do
-    in-process. The HTTP route exposes the same stitch definition, not a looser
-    one.
+    **Anti-pattern:** don't move the bind off the `127.0.0.1` loopback default
+    to a public interface so a remote caller can reach it directly — the front
+    door has no auth of its own, so a public bind turns the registry into an
+    open proxy that runs every stitch for anyone who can reach the port. Keep it
+    on loopback and put a fronting layer (a reverse proxy or gateway that
+    authenticates the caller) in front of it; the stitch still holds its own
+    credential and resolves it server-side, never handing it to the caller. See
+    [Capability, not credential](/docs/concepts/capability-not-credential).
 </Callout>
 
 ## Programmatic API

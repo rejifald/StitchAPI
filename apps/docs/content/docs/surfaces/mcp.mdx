@@ -48,6 +48,16 @@ the agent spends its context on the task, not on a tool catalog. The full design
 of the tool lives in the agents section; see
 [run_stitch & code mode](/docs/agents/run-stitch-tool).
 
+<Callout type="warn">
+    **Anti-pattern:** don't register one MCP tool per stitch or path — say, a
+    separate tool for each route under `api.example.com` — to make the agent's
+    calls "more explicit"; that re-sends every tool's name, description, and
+    input schema on each turn and floods the model's context. Expose the single
+    code-mode `run_stitch` tool (with `list_stitches` for discovery) and let the
+    agent select the stitch by name instead. See [run_stitch & code
+    mode](/docs/agents/run-stitch-tool).
+</Callout>
+
 ## Programmatic API
 
 The CLI is a thin wrapper. To run the MCP server in your own process, import
@@ -74,10 +84,9 @@ The capability boundary holds here: the agent calls `run_stitch` by name and
 never sees the token, cookie, or signing key the stitch holds — it invokes a
 capability, not a credential.
 
-<Callout type="warn">
-    `stitch mcp` writes JSON-RPC to stdout and its startup notice to stderr —
-    keep stdout clean and don't pipe anything else through it.
-</Callout>
+The transport writes JSON-RPC to stdout and its startup notice to stderr, so
+keep stdout clean — don't log to it or pipe anything else through it, or the
+framing breaks.
 
 ## See also
 

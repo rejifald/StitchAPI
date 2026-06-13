@@ -40,8 +40,11 @@ and [shared session](/docs/guides/state/shared-sessions) state persist across
 every call made through it.
 
 <Callout type="warn">
-    Because the runtime is shared, throttle and circuit state are shared too — a
-    bound stitch is not an isolated copy. See
+    **Anti-pattern:** don't reach for `.with()` to get an isolated copy with its
+    own throttle budget or circuit-breaker state — because the runtime is
+    shared, a bound stitch draws from the same buckets and the same breaker
+    counter as its parent. When you need separate state, declare a separate
+    stitch instead of binding one. See
     [throttle](/docs/guides/resilience/throttle).
 </Callout>
 

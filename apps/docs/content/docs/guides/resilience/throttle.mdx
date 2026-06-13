@@ -40,6 +40,15 @@ Giving those stitches a shared
 into a [distributed one](/docs/guides/state/distributed-throttle) that spans
 workers.
 
+<Callout type="warn">
+    **Anti-pattern:** don't rely on a host-scoped throttle to honor an
+    account-wide limit once you run more than one process — the budget lives in
+    memory and is process-local, so each of N workers keeps its own count and
+    together they hit `api.example.com` at up to N times the rate you declared;
+    pass a shared store so every worker draws from one budget instead. See
+    [Distributed throttle](/docs/guides/state/distributed-throttle).
+</Callout>
+
 <Callout type="info">
     A throttled wait surfaces as a `throttled` progress phase on the event
     stream — see [The event stream](/docs/concepts/event-stream).

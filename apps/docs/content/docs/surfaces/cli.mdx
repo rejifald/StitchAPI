@@ -58,6 +58,17 @@ percentiles). `--file` picks the log (default `~/.stitch/runs/proto.jsonl`),
 `--name` filters to one stitch, and `--json` emits the raw summary instead of
 the aligned table.
 
+<Callout type="warn">
+    **Anti-pattern:** don't lean on `stitch trace` and the default
+    `~/.stitch/runs/proto.jsonl` log as your production observability — that
+    file is process-local (the `proto` name is a clue: it's a prototyping
+    convenience), so its percentiles and ok/failed counts only ever cover the
+    runs from this one shell and never roll up across machines, CI jobs, or
+    workers. For durable, shared telemetry, fan the same event stream into the
+    observability stack you already run with OTLP export instead. See [OTLP
+    export](/docs/guides/observability/otlp).
+</Callout>
+
 The CLI runs the very same stitch definition as the in-process
 [function](/docs/surfaces/function) — one source of truth, just a different
 front door. Like the library, the CLI traces nothing by default; pass `--trace`

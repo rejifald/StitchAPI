@@ -45,6 +45,16 @@ host opens the circuit for every stitch that talks to it. The default key is the
 stitch/host key.
 
 <Callout type="warn">
+    **Anti-pattern:** don't lean on the default in-memory breaker across
+    multiple workers or instances — the counter is process-local, so each
+    replica tallies its own failures and `failureThreshold` trips per process,
+    letting a failing host take many times the hits you intended before every
+    circuit opens. Give the stitches a shared `key` plus a durable `store` so
+    one breaker spans the fleet. See [Pluggable
+    store](/docs/guides/state/pluggable-store).
+</Callout>
+
+<Callout type="warn">
     While the breaker is open, a call fast-fails instead of reaching the
     dependency — see [STITCH_CIRCUIT_OPEN](/docs/errors/stitch-circuit-open) for
     what callers see and how to handle it.

@@ -36,6 +36,13 @@ contents of the response's `data` object; override `unwrap` if you need a
 different field or the raw envelope.
 
 <Callout type="warn">
+    **Anti-pattern:** don't interpolate argument values straight into the
+    `query` string and mint a fresh stitch for each set of arguments; pass them
+    through the input's `variables` field at call time so one declared stitch
+    serves every call. See [Reference → stitch](/docs/reference/stitch).
+</Callout>
+
+<Callout type="info">
     A GraphQL endpoint can return HTTP `200` while reporting an `errors` array
     in the body. The stitch treats that as a failure and surfaces it — see
     [STITCH_GRAPHQL](/docs/errors/stitch-graphql).

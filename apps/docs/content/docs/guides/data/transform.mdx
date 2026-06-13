@@ -40,8 +40,12 @@ and return any reshaped value. See
 [Reference → Config types](/docs/reference/config-types) for every field.
 
 <Callout type="warn">
-    `transform` runs before validation, so its output is unchecked — a wrong
-    narrowing surfaces later as drift, not here.
+    **Anti-pattern:** don't reach for `transform` to pull the inner field out of
+    an envelope — a cast like reading `.results` off the body is an opaque
+    function whose output is unchecked, so a wrong narrowing slips past and only
+    surfaces later as drift. Name the path with `unwrap` instead, which is
+    declarative, round-trips as JSON, and feeds validation and drift directly.
+    See [unwrap](/docs/guides/data/unwrap).
 </Callout>
 
 ## See also

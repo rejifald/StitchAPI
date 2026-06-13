@@ -37,8 +37,12 @@ resolved at call time. See
 table.
 
 <Callout type="warn">
-    Passing a literal string bakes the secret into your source. Reach for a
-    resolver unless the token is a non-secret placeholder.
+    **Anti-pattern:** don't pass a literal token string — it bakes the secret
+    into your source and hands the credential straight to anyone who reads it.
+    Pass a resolver thunk instead, so the secret resolves at call time and the
+    stitch hands callers a capability, not the credential (a literal is fine
+    only for a non-secret placeholder). See [Capability, not
+    credential](/docs/concepts/capability-not-credential).
 </Callout>
 
 ## See also
