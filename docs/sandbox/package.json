@@ -22,7 +22,7 @@
     "devDependencies": {
         "@types/node": "^22.10.0",
         "@types/react": "^19.2.16",
-        "esbuild": "^0.28.0",
+        "esbuild": "^0.28.1",
         "react": "^19.2.7"
     },
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
