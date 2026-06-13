@@ -87,6 +87,18 @@ export interface IdempotencyOptions {
 // ---- Auth -----------------------------------------------------------------
 export interface AuthContext {
     store: StitchStore; // throttle/session state — in-memory by default, shareable when configured
+    /**
+     * Secret namespace for auth tokens/sessions: off `__config`, redacted from traces, read
+     * only by auth strategies (ADR 0002 §4). Defaults to a reserved prefix over `store`; a
+     * seam may back it with a hardened `secretStore`. Sessions are keyed by scope here.
+     */
+    vault: StitchStore;
+    /**
+     * The principal this call is bound to, threaded from `seam.as(principal)` — `undefined`
+     * when no seam binds one. Set by trusted code; NEVER readable from `StitchInput`, so a
+     * caller cannot name (and impersonate) another principal (ADR 0002 §2).
+     */
+    principal?: string;
     emit: (phase: ProgressPhase, detail?: string) => void;
     runLogin?: () => Promise<AdapterResponse>; // for cookieSession: invoke the login stitch
 }
@@ -277,4 +289,52 @@ export interface StitchStore {
     get(key: string): Promise<unknown>;
     set(key: string, value: unknown, ttlMs?: number): Promise<void>;
     incr(key: string, ttlMs: number): Promise<number>;
+    /**
+     * Release any resources (connections, timers) the store holds. Optional — the in-memory
+     * default clears its map. A seam's `close()` calls this as the last lifecycle step.
+     */
+    close?(): Promise<void>;
+}
+
+// ---- Seam (a primitive stitches belong to) --------------------------------
+/**
+ * Options for {@link Seam} — every {@link StitchConfig} key (shared by the seam's stitches as a
+ * fragment) plus an optional hardened `secretStore` backing the vault.
+ */
+export type SeamOptions = Partial<StitchConfig> & {
+    /**
+     * Backend for the vault (auth tokens/sessions). Defaults to a reserved, redacted namespace
+     * over the seam's `store`; supply a KMS/Vault-backed store here for a hardened vault. Split
+     * is by **visibility**, not backend — both store and vault may be distributed (ADR 0002 §4).
+     */
+    secretStore?: StitchStore;
+};
+
+/**
+ * A long-lived entity that owns a shared config fragment, shared runtime (`store` + `vault` +
+ * trace sink), a registry of the stitches it created, and a lifecycle. Its decisive job is the
+ * **trusted principal boundary**: `seam.as(req.user.id)` binds identity in the closure, so the
+ * caller can never name another principal. Create shared surfaces with `seam`; standalone,
+ * one-off endpoints stay on the low-level `stitch()` peer (ADR 0002).
+ */
+export interface Seam {
+    /** Create a stitch belonging to this seam — inherits the shared fragment and shares the runtime. */
+    stitch<T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
+    /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, unwrap `data`). */
+    graphql<T = unknown>(
+        config: Partial<StitchConfig> & { query: string },
+    ): Stitch<T>;
+    /**
+     * A principal-bound handle reusing the same shared runtime, but whose stitches carry
+     * `principal` in their AuthContext: separate sessions per principal, one shared throttle
+     * bucket. The principal lives in this closure, never in `StitchInput` (ADR 0002 §2–3).
+     */
+    as(principal: string): Seam;
+    /** Flush the shared trace sink (drain any buffered exporter). */
+    flush(): Promise<void>;
+    /** `flush()`, then close the shared store/vault and drop the registry. */
+    close(): Promise<void>;
+    /** The shared config fragment — redacted (no `store`/`vault`/`auth`/`adapter`). */
+    readonly __config: StitchConfig;
+    readonly __seam: true;
 }

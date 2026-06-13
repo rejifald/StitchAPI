@@ -23,12 +23,18 @@ import {
 import { deepMerge, readEnv } from './util';
 import { type Validator, toValidator } from './validator';
 
-type Fragment = Partial<StitchConfig> | Stitch | string;
+export type Fragment = Partial<StitchConfig> | Stitch | string;
 
 // ---- composition ----------------------------------------------------------
 function asConfig(f: Fragment): Partial<StitchConfig> {
     if (typeof f === 'string') return { path: f };
-    if (isStitch(f)) return f.__config;
+    // Compose from the FULL config (`__rawConfig`), not the redacted public `__config`, so a
+    // stitch used as a fragment still carries its store/auth/adapter into the merge.
+    if (isStitch(f))
+        return (
+            (f as Stitch & { __rawConfig?: StitchConfig }).__rawConfig ??
+            f.__config
+        );
     return f;
 }
 
@@ -88,7 +94,7 @@ function normalizeInput(
     return out;
 }
 
-function compose(config: Fragment): StitchConfig {
+export function compose(config: Fragment): StitchConfig {
     const layers = flatten([config]);
     let merged: Partial<StitchConfig> = {};
     const hookLayers: Hooks[] = [];
@@ -164,7 +170,7 @@ const noopTrace: TraceSink = {
 // Resolve the sink for one stitch. A stitch-local `trace` wins over the environment:
 // `false` forces it off, `'console'` streams to stderr, a TraceSink is used as-is, and
 // unset falls back to the env-derived sink (itself off unless STITCH_TRACE_* opts in).
-function resolveTrace(trace: StitchConfig['trace']): TraceSink {
+export function resolveTrace(trace: StitchConfig['trace']): TraceSink {
     if (trace === false) return noopTrace;
     if (trace === 'console') return consoleSink();
     if (trace) return trace;
@@ -216,18 +222,57 @@ function mergeInput(a: StitchInput = {}, b: StitchInput = {}): StitchInput {
     };
 }
 
-function makeStitch<T = unknown>(config: Fragment): Stitch<T> {
+/**
+ * Shared runtime a {@link seam} injects into its member stitches: one `store`, one `vault`, one
+ * trace sink, and one throttle bucket (a {@link chainThrottle} when a member tightens), plus the
+ * bound `principal` and a `register` callback for the seam's registry. Omitted entirely for a
+ * standalone `stitch()`, which builds its own runtime as before.
+ */
+export interface SharedRuntime {
+    store: StitchStore;
+    vault: StitchStore;
+    trace: TraceSink;
+    throttle: Runtime['throttle'];
+    principal?: string;
+    register?: (s: Stitch) => void;
+}
+
+// `__config` is the PUBLIC view; strip the live secret-bearing handles so the running store,
+// credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest).
+// The full config lives on `__rawConfig` for fragment composition (see `asConfig`).
+export function redactConfig(cfg: StitchConfig): StitchConfig {
+    const rest = { ...cfg };
+    delete rest.store;
+    delete rest.auth;
+    delete rest.adapter;
+    return rest;
+}
+
+// Stamp the stitch identity: redacted public `__config`, full `__rawConfig`, and the `__stitch` brand.
+function attachMeta(target: object, cfg: StitchConfig): void {
+    Object.defineProperty(target, '__config', { value: redactConfig(cfg) });
+    Object.defineProperty(target, '__rawConfig', { value: cfg });
+    Object.defineProperty(target, '__stitch', { value: true });
+}
+
+export function makeStitch<T = unknown>(
+    config: Fragment,
+    shared?: SharedRuntime,
+): Stitch<T> {
     const cfg = compose(config);
-    const store = cfg.store ?? memoryStore();
-    const throttle = cfg.store
-        ? createStoreThrottle(cfg.throttle, store)
-        : createThrottle(cfg.throttle);
-    const rt: Runtime = makeRuntime(
-        cfg,
-        throttle,
-        resolveTrace(cfg.trace),
-        store,
-    );
+    // A seam injects shared instances; a standalone stitch builds its own (unchanged behaviour:
+    // a store-backed throttle only when a `store` is configured, else the in-process limiter).
+    const store = shared?.store ?? cfg.store ?? memoryStore();
+    const throttle =
+        shared?.throttle ??
+        (cfg.store
+            ? createStoreThrottle(cfg.throttle, store)
+            : createThrottle(cfg.throttle));
+    const trace = shared?.trace ?? resolveTrace(cfg.trace);
+    const rtOpts: { vault?: StitchStore; principal?: string } = {};
+    if (shared?.vault) rtOpts.vault = shared.vault;
+    if (shared?.principal !== undefined) rtOpts.principal = shared.principal;
+    const rt: Runtime = makeRuntime(cfg, throttle, trace, store, rtOpts);
     const name = cfg.name ?? cfg.path ?? 'stitch';
 
     const streamFn = (input?: StitchInput) =>
@@ -259,13 +304,13 @@ function makeStitch<T = unknown>(config: Fragment): Stitch<T> {
             stitchFn.with(mergeInput(partial, more));
         bound.__raw = (input?: StitchInput) =>
             executeRaw(rt, mergeInput(partial, input));
-        Object.defineProperty(bound, '__config', { value: cfg });
-        Object.defineProperty(bound, '__stitch', { value: true });
+        attachMeta(bound, cfg);
         return bound;
     };
     stitchFn.__raw = (input?: StitchInput) => executeRaw(rt, input ?? {});
-    Object.defineProperty(stitchFn, '__config', { value: cfg });
-    Object.defineProperty(stitchFn, '__stitch', { value: true });
+    attachMeta(stitchFn, cfg);
+    // A seam records the stitches it created (registry/lifecycle); standalone stitches don't register.
+    shared?.register?.(stitchFn);
     return stitchFn;
 }
 
@@ -289,7 +334,14 @@ export const stitch: StitchFn = Object.assign(
 export const preset = (cfg: Partial<StitchConfig>): Partial<StitchConfig> =>
     cfg;
 
-/** defineStitch(): bind base fragments, return a stitch() factory (evolution of prestitch). */
+/**
+ * defineStitch(): bind base fragments, return a stitch() factory (evolution of prestitch).
+ *
+ * @deprecated Prefer {@link seam} for shared surfaces — a seam shares **runtime** (one store,
+ * vault, throttle bucket, sink) and a trusted principal boundary, not just config. `defineStitch`
+ * shares config only and is slated for removal (ADR 0002 §1). Use raw `stitch()` for standalone,
+ * one-off endpoints.
+ */
 export function defineStitch(...fragments: Fragment[]) {
     return <T = unknown>(config: string | Partial<StitchConfig>): Stitch<T> => {
         const c: Partial<StitchConfig> =

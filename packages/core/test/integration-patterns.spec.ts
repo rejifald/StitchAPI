@@ -127,6 +127,7 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
             auth: cookieSession({
                 login,
                 cookie: 'SID',
+                scope: 'app',
                 refreshOn: [403], // this integration uses 403, not 401
                 loginInput: () => ({
                     body: {
@@ -182,6 +183,7 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
             auth: cookieSession({
                 login,
                 cookie: 'session_id',
+                scope: 'app',
                 loginInput: () => ({
                     body: {
                         username: env('SCRAPE_USER')(),

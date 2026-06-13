@@ -1,4 +1,4 @@
-import { defineStitch, preset, stitch } from '../src';
+import { defineStitch, preset, seam, stitch } from '../src';
 import type { StitchEvent } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
@@ -56,6 +56,7 @@ test('three facades (extends / defineStitch / builder) are equivalent', async ()
         output: schema,
     });
     // (b) factory
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- intentionally exercising the legacy facade
     const viaFactory = defineStitch(base)({ path: '/items', output: schema });
     // (c) builder
     const viaBuilder = stitch
@@ -78,6 +79,30 @@ test('three facades (extends / defineStitch / builder) are equivalent', async ()
     expect(a).toEqual(b);
     expect(b).toEqual(c);
     expect(server.callCount('/items')).toBe(3);
+});
+
+// 1b) A seam member resolves to the SAME result as the config-`extends` facade — the seam shares
+// runtime on top, but its config inheritance is the same `flatten`/`compose` machinery.
+test('a seam member is equivalent to the extends facade', async () => {
+    server.route('GET', '/items', { body: { data: [{ id: 1, name: 'Ada' }] } });
+
+    const schema = asValidator(
+        z.array(z.object({ id: z.number(), name: z.string() })),
+    );
+    const base = preset({ baseUrl: server.url, unwrap: 'data' });
+
+    const viaExtends = stitch({
+        extends: [base],
+        path: '/items',
+        output: schema,
+    });
+    const viaSeam = seam(base).stitch({ path: '/items', output: schema });
+
+    const expected = [{ id: 1, name: 'Ada' }];
+    const [a, b] = await Promise.all([viaExtends(), viaSeam()]);
+    expect(a).toEqual(expected);
+    expect(b).toEqual(a);
+    expect(server.callCount('/items')).toBe(2);
 });
 
 // 2) Predefined query in the path merges with call-time query; input wins on conflict.
