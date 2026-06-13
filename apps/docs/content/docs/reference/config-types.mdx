@@ -14,6 +14,23 @@ import type { StitchConfig } from 'stitchapi';
 
 <AutoTypeTable path="../../packages/core/src/types.ts" name="StitchConfig" />
 
+### arrayFormat
+
+Controls how arrays are serialised in the query string. The default (`'indices'`) matches `qs` behaviour.
+
+| Value | Wire format |
+|---|---|
+| `'indices'` (default) | `ids%5B0%5D=1&ids%5B1%5D=2` |
+| `'brackets'` | `ids%5B%5D=1&ids%5B%5D=2` |
+| `'repeat'` | `ids=1&ids=2` |
+
+```ts
+// repeat — Laravel, Rails, and many PHP frameworks expect this
+const getUsers = stitch({ baseUrl, path: '/users', arrayFormat: 'repeat' });
+await getUsers({ query: { ids: [1, 2] } });
+// → GET /users?ids=1&ids=2
+```
+
 ## Option shapes
 
 The resilience, validation, and drift fields above are themselves typed shapes.

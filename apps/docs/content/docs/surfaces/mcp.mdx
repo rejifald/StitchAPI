@@ -48,6 +48,27 @@ the agent spends its context on the task, not on a tool catalog. The full design
 of the tool lives in the agents section; see
 [run_stitch & code mode](/docs/agents/run-stitch-tool).
 
+## Programmatic API
+
+The CLI is a thin wrapper. To run the MCP server in your own process, import
+`serveStdio` from the `stitchapi/mcp` subpath and hand it a registry of named
+stitches:
+
+```ts
+import { serveStdio } from 'stitchapi/mcp';
+import * as stitches from './stitches';
+
+// Reads newline-delimited JSON-RPC from stdin, writes responses to stdout.
+const { close } = serveStdio(stitches);
+
+// later
+close();
+```
+
+`serveStdio(registry, options?)` wires the `run_stitch` / `list_stitches` server
+to stdio and returns a handle whose `close()` detaches the transport. Pass
+`{ input, output }` to bind a different stream pair instead of stdio.
+
 The capability boundary holds here: the agent calls `run_stitch` by name and
 never sees the token, cookie, or signing key the stitch holds — it invokes a
 capability, not a credential.

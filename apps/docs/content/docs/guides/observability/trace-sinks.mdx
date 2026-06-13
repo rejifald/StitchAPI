@@ -11,9 +11,9 @@ yourself.
 
 ## Example
 
-Sinks are wired globally by environment variable — there is no per-stitch `trace`
-config field. With no flags set, a stitch already appends every event as JSONL to
-`~/.stitch/runs/proto.jsonl`; nothing to deploy.
+Sinks are wired globally by environment variable, with a per-stitch `trace` config
+field that overrides the environment. With no flags set, a stitch already appends
+every event as JSONL to `~/.stitch/runs/proto.jsonl`; nothing to deploy.
 
 ```bash
 # Pretty one-line-per-event stream to stderr, on top of the JSONL file.
@@ -24,6 +24,9 @@ STITCH_TRACE_FILE=./runs/today.jsonl node run.js
 
 # ALSO fan the same events to an OTLP collector.
 STITCH_EXPORT=otlp node run.js
+
+# Turn file tracing OFF: 0, false, or an empty value disable it (no file is written).
+STITCH_TRACE_FILE=0 node run.js
 ```
 
 To consume events as your own sink, iterate the stream — that's the public seam
@@ -45,14 +48,55 @@ for await (const event of search({ query: { q: 'mango' } }).stream()) {
 
 The built-in sink is controlled by three env vars: `STITCH_TRACE_CONSOLE=1`
 turns on the colored stderr stream (off unless set); `STITCH_TRACE_FILE=<path>`
-overrides the JSONL destination, which defaults to `~/.stitch/runs/proto.jsonl`;
-and `STITCH_EXPORT=otlp` adds OTLP as one more sink fed from the same events —
-see [OTLP export](/docs/guides/observability/otlp).
+overrides the JSONL destination, which defaults to `~/.stitch/runs/proto.jsonl`
+(or `0`/`false`/empty to disable file tracing); and `STITCH_EXPORT=otlp` adds OTLP
+as one more sink fed from the same events — see
+[OTLP export](/docs/guides/observability/otlp). The per-stitch `trace` config field
+overrides all of these: `trace: false` silences the built-in sinks, and a custom
+`TraceSink` replaces them.
 
 To build sinks in code instead, `createTrace({ console, file })` returns a sink
 that writes JSONL and/or the console stream, and `multiplex(a, b, ...)` fans one
 event stream out to several sinks at once. Both are exported from
 [`stitchapi`](/docs/reference/helpers).
+
+## Turning tracing off
+
+There are two off switches, both of which disable the built-in sinks:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+// ---cut---
+// Per-stitch: `trace: false` disables ALL built-in sinks for this stitch and wins
+// over every STITCH_TRACE_* env var. (A `TraceSink` value replaces them instead.)
+const quiet = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/health',
+    trace: false,
+});
+```
+
+Globally, set `STITCH_TRACE_FILE` to `0`, `false`, or an empty string to turn file
+tracing off — these are treated as the off switch, not as a path, so no file named
+`0` or `false` is ever written to the working directory.
+
+## Default secret redaction
+
+Before any event is written to the built-in JSONL (or console) sink, header values
+for a fixed denylist are replaced with the literal `[REDACTED]`, matched
+case-insensitively wherever headers appear in the event payload (the `start`
+event's input headers, response headers, and so on):
+
+- `authorization`
+- `proxy-authorization`
+- `cookie`
+- `set-cookie`
+- `x-api-key`
+
+So a call carrying `authorization: 'Bearer …'` traces as
+`"authorization":"[REDACTED]"` — the raw secret never reaches disk. Redaction
+happens at the sink boundary, so the live request still sends the real header; only
+the trace copy is scrubbed.
 
 A `TraceSink` is just `{ handle(event, ctx), flush?() }` — implement those two
 and you have a custom consumer you can pass to `multiplex`. The same shape backs
