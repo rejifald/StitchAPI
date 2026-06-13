@@ -294,7 +294,27 @@ export async function verifyStoreContract(
             async () => {
                 await store.set(k('iso-a'), 'a');
                 await store.set(k('iso-b'), 'b');
-                await store.incr(k('iso-n'), 5_000);
+                // Counters live under their own keys, never a shared one:
+                // iso-n's first incr lands at 1, an incr on a different
+                // key (iso-m) must not advance it, so iso-n's next incr is 2.
+                const isoN = await store.incr(k('iso-n'), 5_000);
+                if (isoN !== 1) {
+                    throw new Error(
+                        `expected iso-n to start at 1, got ${show(isoN)}`,
+                    );
+                }
+                const isoM = await store.incr(k('iso-m'), 5_000);
+                if (isoM !== 1) {
+                    throw new Error(
+                        `expected iso-m to start at 1, got ${show(isoM)}`,
+                    );
+                }
+                const isoNAgain = await store.incr(k('iso-n'), 5_000);
+                if (isoNAgain !== 2) {
+                    throw new Error(
+                        `incr on iso-m leaked into iso-n: expected 2, got ${show(isoNAgain)}`,
+                    );
+                }
                 expectDeepEqual(await store.get(k('iso-a')), 'a', 'iso-a');
                 expectDeepEqual(await store.get(k('iso-b')), 'b', 'iso-b');
             },
