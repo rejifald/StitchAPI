@@ -4,15 +4,19 @@
     "private": true,
     "description": "StitchAPI documentation site — Fumadocs (Next.js App Router). Content lands in follow-up PRs.",
     "scripts": {
-        "dev": "pnpm run build:core && next dev",
-        "build": "pnpm run build:core && next build",
+        "dev": "pnpm run build:core && pnpm run build:sandbox && next dev",
+        "build": "pnpm run build:core && pnpm run build:sandbox && next build",
         "start": "next start",
         "check:types": "pnpm run build:core && fumadocs-mdx && next typegen && tsc --noEmit",
         "check:lint": "eslint .",
         "gen:docs": "node scripts/generate-skeleton.mjs",
-        "build:core": "pnpm --filter stitchapi build"
+        "build:core": "pnpm --filter stitchapi build",
+        "build:sandbox": "node ../../docs/sandbox/runtime/build-sandbox-worker.mjs"
     },
     "dependencies": {
+        "@codemirror/lang-javascript": "^6.2.2",
+        "@stitchapi/sandbox": "workspace:*",
+        "@uiw/react-codemirror": "^4.23.0",
         "fumadocs-core": "^16.10.0",
         "fumadocs-mdx": "^15.0.12",
         "fumadocs-twoslash": "^3.2.0",
@@ -32,6 +36,7 @@
         "@types/node": "^25.9.1",
         "@types/react": "^19.2.16",
         "@types/react-dom": "^19.2.3",
+        "esbuild": "^0.28.0",
         "eslint": "^9.39.4",
         "eslint-config-next": "16.2.7",
         "postcss": "^8.5.15",

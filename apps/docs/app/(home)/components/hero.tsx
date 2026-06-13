@@ -49,6 +49,10 @@ export function Hero() {
                             Read the docs
                             <ArrowRight className="size-4" />
                         </PrimaryButton>
+                        <SecondaryButton href="/playground">
+                            <Terminal className="size-4 text-stitch" />
+                            Try the playground
+                        </SecondaryButton>
                         <SecondaryButton
                             href={`https://github.com/${gitConfig.user}/${gitConfig.repo}`}
                             external
