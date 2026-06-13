@@ -74,7 +74,23 @@ export function toValidator(schema: unknown): Validator | undefined {
         };
     }
 
-    throw new Error('Unsupported schema passed to toValidator()');
+    // Plain predicate: (value: unknown) => boolean
+    if (typeof schema === 'function') {
+        const predicate = schema as (v: unknown) => boolean;
+        return {
+            async validate(value) {
+                if (predicate(value)) return { ok: true, value };
+                return {
+                    ok: false,
+                    issues: [{ path: [], message: 'Predicate returned false' }],
+                };
+            },
+        };
+    }
+
+    throw new Error(
+        `Unsupported schema passed to toValidator(): received ${typeof schema}`,
+    );
 }
 
 interface ZodResult {

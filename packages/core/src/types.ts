@@ -219,6 +219,13 @@ export interface StitchConfig {
     circuit?: CircuitOptions;
     /** Inject a stable Idempotency-Key header on writes so safe retries don't duplicate. */
     idempotency?: IdempotencyOptions;
+    /**
+     * How arrays are serialised in the query string.
+     * - `'indices'` (default) — `ids%5B0%5D=1&ids%5B1%5D=2`
+     * - `'brackets'`          — `ids%5B%5D=1&ids%5B%5D=2`
+     * - `'repeat'`            — `ids=1&ids=2`
+     */
+    arrayFormat?: 'indices' | 'brackets' | 'repeat';
     /** Request/response/error/retry lifecycle hooks. */
     hooks?: Hooks;
     /** Fragments to deep-merge under this config — strings, partials, or other stitches. */
@@ -227,6 +234,12 @@ export interface StitchConfig {
     adapter?: Adapter;
     /** Pluggable state store for throttle + session. Default in-memory. */
     store?: StitchStore;
+    /**
+     * Trace sink override. `false` disables ALL built-in sinks for this stitch — it
+     * wins over `STITCH_TRACE_FILE`/`STITCH_TRACE_CONSOLE`/`STITCH_EXPORT`. A custom
+     * {@link TraceSink} replaces the env-derived sink entirely. Unset = env-derived default.
+     */
+    trace?: false | TraceSink;
 }
 
 export interface StitchResult<T> extends PromiseLike<T> {

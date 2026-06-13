@@ -20,7 +20,7 @@ import {
     type TraceSink,
     isStitch,
 } from './types';
-import { deepMerge } from './util';
+import { deepMerge, readEnv } from './util';
 import { type Validator, toValidator } from './validator';
 
 type Fragment = Partial<StitchConfig> | Stitch | string;
@@ -125,15 +125,47 @@ function compose(config: Fragment): StitchConfig {
 
 // ---- shared trace sink (zero-infra: console off in tests, JSONL file) ------
 // Always tees console/JSONL; STITCH_EXPORT=otlp ALSO fans the same events to an OTLP collector.
+//
+// `STITCH_TRACE_FILE` is an off switch as well as a path: '', '0', and 'false'
+// (trimmed, case-insensitive) mean "no file tracing" (returns `false`) — never a file
+// literally named '0'/'false' in cwd. Unset (`undefined`) keeps createTrace's $HOME
+// default; any other value is the JSONL destination.
+function fileFromEnv(value: string | undefined): string | false | undefined {
+    if (value === undefined) return undefined; // unset → createTrace's $HOME default
+    const trimmed = value.trim();
+    if (trimmed === '' || ['0', 'false'].includes(trimmed.toLowerCase()))
+        return false;
+    return value;
+}
+
 function getTrace(): TraceSink {
-    const file = process.env['STITCH_TRACE_FILE'];
+    const file = fileFromEnv(readEnv('STITCH_TRACE_FILE'));
     const base = createTrace({
-        console: process.env['STITCH_TRACE_CONSOLE'] === '1',
-        ...(file ? { file } : {}),
+        console: readEnv('STITCH_TRACE_CONSOLE') === '1',
+        ...(file !== undefined ? { file } : {}),
     });
-    if (!exportsFromEnv(process.env['STITCH_EXPORT']).includes('otlp'))
-        return base;
+    if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;
     return multiplex(base, otlpTrace());
+}
+
+// A sink that drops every event — `trace: false` swaps the env-derived sink for this,
+// so no built-in sink fires regardless of STITCH_TRACE_FILE/CONSOLE/EXPORT.
+const noopTrace: TraceSink = {
+    handle(): void {
+        /* tracing disabled: drop every event */
+    },
+    flush(): void {
+        /* nothing buffered */
+    },
+};
+
+// Resolve the sink for one stitch: a stitch-local `trace` override wins over the
+// environment — `false` disables all built-in sinks, a custom TraceSink replaces them,
+// and unset falls back to the env-derived default.
+function resolveTrace(trace: StitchConfig['trace']): TraceSink {
+    if (trace === false) return noopTrace;
+    if (trace) return trace;
+    return getTrace();
 }
 
 // ---- the streaming spine + await sugar ------------------------------------
@@ -187,7 +219,12 @@ function makeStitch<T = unknown>(config: Fragment): Stitch<T> {
     const throttle = cfg.store
         ? createStoreThrottle(cfg.throttle, store)
         : createThrottle(cfg.throttle);
-    const rt: Runtime = makeRuntime(cfg, throttle, getTrace(), store);
+    const rt: Runtime = makeRuntime(
+        cfg,
+        throttle,
+        resolveTrace(cfg.trace),
+        store,
+    );
     const name = cfg.name ?? cfg.path ?? 'stitch';
 
     const streamFn = (input?: StitchInput) =>

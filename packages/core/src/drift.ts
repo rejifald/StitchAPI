@@ -6,10 +6,7 @@
 // (For the spike the snapshot stores a representative body; a real impl would store
 // just the shape/schema. The first run records the baseline and reports nothing.)
 import type { DriftFinding, DriftOptions } from './types';
-import { matchAny } from './util';
-
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirnameOf, matchAny, nodeFs } from './util';
 
 type Shape = Map<string, string>;
 
@@ -92,15 +89,19 @@ export function classifyDrift(
 }
 
 export function loadSnapshot(file: string): unknown {
+    const fs = nodeFs();
+    if (!fs) return undefined; // browser: snapshot files are a no-op
     try {
-        if (!existsSync(file)) return undefined;
-        return JSON.parse(readFileSync(file, 'utf8'));
+        if (!fs.existsSync(file)) return undefined;
+        return JSON.parse(fs.readFileSync(file, 'utf8'));
     } catch {
         return undefined;
     }
 }
 
 export function saveSnapshot(file: string, value: unknown): void {
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, JSON.stringify(value, null, 2));
+    const fs = nodeFs();
+    if (!fs) return; // browser: snapshot files are a no-op
+    fs.mkdirSync(dirnameOf(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(value, null, 2));
 }

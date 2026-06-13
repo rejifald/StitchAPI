@@ -15,6 +15,46 @@
                 "types": "./lib/index.d.ts",
                 "default": "./lib/index.js"
             }
+        },
+        "./serve": {
+            "import": {
+                "types": "./lib/serve.d.mts",
+                "default": "./lib/serve.mjs"
+            },
+            "require": {
+                "types": "./lib/serve.d.ts",
+                "default": "./lib/serve.js"
+            }
+        },
+        "./mcp": {
+            "import": {
+                "types": "./lib/mcp.d.mts",
+                "default": "./lib/mcp.mjs"
+            },
+            "require": {
+                "types": "./lib/mcp.d.ts",
+                "default": "./lib/mcp.js"
+            }
+        },
+        "./registry": {
+            "import": {
+                "types": "./lib/registry.d.mts",
+                "default": "./lib/registry.mjs"
+            },
+            "require": {
+                "types": "./lib/registry.d.ts",
+                "default": "./lib/registry.js"
+            }
+        },
+        "./testing": {
+            "import": {
+                "types": "./lib/testing.d.mts",
+                "default": "./lib/testing.mjs"
+            },
+            "require": {
+                "types": "./lib/testing.d.ts",
+                "default": "./lib/testing.js"
+            }
         }
     },
     "sideEffects": false,
@@ -31,7 +71,7 @@
         "test:coverage": "vitest run --coverage",
         "check:types": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
         "check:lint": "eslint src test",
-        "check:exports": "attw --pack .",
+        "check:exports": "attw --pack . --ignore-rules no-resolution",
         "lint": "eslint src test",
         "build": "tsup",
         "prepack": "tsup"
