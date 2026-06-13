@@ -1,0 +1,52 @@
+---
+title: 'Watch retries and throttling as they happen'
+description: "Iterate a stitch's event stream instead of awaiting it, and observe every retry, pause, and drift in real time."
+---
+
+## Task
+
+A call is slow or flaky and you want to see why — the retry that fired, the
+throttle that paused, the field that drifted — not just the final value or a
+thrown error.
+
+## Example
+
+One way: iterate the stitch's event stream instead of awaiting it.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const search = stitch({ baseUrl: 'https://api.example.com', path: '/search' });
+
+// Await for just the value…
+const value = await search({ query: { q: 'mango' } });
+
+// …or iterate the stream for everything that happened on the way there.
+for await (const event of search({ query: { q: 'mango' } }).stream()) {
+    if (event.type === 'progress') console.log(event.phase, event.attempt);
+    if (event.type === 'drift')
+        console.log(event.finding.level, event.finding.path);
+    if (event.type === 'result') console.log(event.value);
+}
+```
+
+## How it works
+
+A stitch yields a typed event stream — `start → progress → drift → result →
+done` — and `await` simply consumes it for the final value. `.stream()` hands you
+the events instead, discriminated on `type`, so narrowing one field tells the
+compiler the shape of the rest. `progress` carries a `phase` (`auth`,
+`throttled`, `retry`, `pagination`, `circuit`) and an `attempt`; `drift` carries
+leveled `finding`s — including the `warn`/`info` ones that never throw; then
+exactly one terminal `result` or `error`, then `done`. This is the one source
+every cross-cutting feature reports through, and exactly what a
+[trace sink](/docs/guides/observability/trace-sinks) consumes.
+
+## See also
+
+<Cards>
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="In-process function" href="/docs/surfaces/function" />
+    <Card title="Trace sinks" href="/docs/guides/observability/trace-sinks" />
+    <Card title="Event types" href="/docs/reference/events" />
+</Cards>

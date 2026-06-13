@@ -1,0 +1,56 @@
+---
+title: 'Make a flaky call succeed on its own'
+description: 'Add retry with backoff so transient 429s and 5xxs recover without your code noticing.'
+---
+
+## Task
+
+An API you depend on returns the occasional `429` or `503` that clears on its
+own. You do not want every call site wrapped in a try/catch and a sleep.
+
+## Example
+
+One way: declare a retry policy on the stitch and let the caller just `await` the
+value.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    retry: {
+        attempts: 3,
+        on: [429, 503],
+        backoff: 'expo-jitter',
+        respectRetryAfter: true,
+    },
+});
+
+// A transient 429 or 503 is retried up to twice; the caller just gets the value.
+const user = await getUser({ params: { id: 1 } });
+```
+
+## How it works
+
+`attempts` is the **total** number of tries including the first, so `3` means up
+to two retries. `on` is the set of status codes that trigger a retry.
+`backoff: 'expo-jitter'` doubles the wait each attempt and spreads it randomly to
+avoid thundering herds. `respectRetryAfter` honors a `Retry-After` header when the
+server tells you when to come back. Each retry rides the
+[event stream](/docs/concepts/event-stream) as a `progress` event (phase
+`retry`), so you can [watch it happen](/docs/recipes/watch-a-call-as-it-happens).
+When the dependency is not just flaky but failing, compose retry with a
+[timeout and circuit breaker](/docs/recipes/survive-a-flaky-dependency).
+
+## See also
+
+<Cards>
+    <Card title="Retry &amp; backoff" href="/docs/guides/resilience/retry" />
+    <Card
+        title="Keep a failing dependency from taking you down"
+        href="/docs/recipes/survive-a-flaky-dependency"
+    />
+    <Card title="Timeout" href="/docs/guides/resilience/timeout" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>

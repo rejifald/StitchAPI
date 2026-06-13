@@ -1,0 +1,57 @@
+---
+title: 'Authenticate without the token touching your code'
+description: 'Declare auth on the stitch so callers get a capability, not a credential — the secret is read per call and never returned.'
+---
+
+## Task
+
+You want every call to an API authenticated, without the token ever living in
+your application code — where most clients would have you read it into a
+variable and thread it through every call, into your logs, your traces, and
+anything you hand to an agent.
+
+## Example
+
+One way: declare the auth on the stitch itself. Callers get a callable; the
+secret stays behind it.
+
+```ts twoslash
+import { bearer, env, stitch } from 'stitchapi';
+
+const getInvoice = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/invoices/{id}',
+    auth: bearer(env('API_TOKEN')),
+});
+
+// The caller invokes and gets data — no token in sight.
+const invoice = await getInvoice({ params: { id: 42 } });
+```
+
+## How it works
+
+`env('API_TOKEN')` is a resolver, not a value — nothing is read when you declare
+the stitch. The runtime invokes it on each request, attaches the token, and
+discards it; the caller receives data and never the secret. The declaration
+holds a _reference_ to where the secret lives, so it is safe to commit, diff, and
+share.
+
+Swap `bearer` for [`apiKey`](/docs/guides/auth/api-key),
+[`basic`](/docs/guides/auth/basic), or [`oauth2`](/docs/guides/auth/oauth2) — the
+boundary is the same, and the strategies with a session refresh themselves
+behind it. Because the token never crosses back to the caller, you can hand the
+stitch to an [agent](/docs/agents) and it can make the authenticated call
+without ever holding the credential.
+
+## See also
+
+<Cards>
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="Secret resolvers" href="/docs/guides/auth/secret-resolvers" />
+    <Card title="bearer" href="/docs/guides/auth/bearer" />
+    <Card title="oauth2" href="/docs/guides/auth/oauth2" />
+    <Card title="For agents" href="/docs/agents" />
+</Cards>
