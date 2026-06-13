@@ -10,9 +10,7 @@ import type {
     Stitch,
     StitchInput,
 } from './types';
-import { now } from './util';
-
-import { existsSync, readFileSync } from 'node:fs';
+import { nodeFs, now, readEnv } from './util';
 
 export type Secret = string | (() => string);
 const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
@@ -20,19 +18,28 @@ const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
 /** Resolve a secret from an environment variable at call time. */
 export function env(name: string): () => string {
     return () => {
-        const v = process.env[name];
+        const v = readEnv(name);
         if (v == null) throw new Error(`missing env var ${name}`);
         return v;
     };
 }
 
-/** Spike keychain: reads ~/.stitch/secrets.json, falls back to env. */
-export function keychain(name: string): () => string {
+/**
+ * Read a named secret from `~/.stitch/secrets.json` (plaintext JSON — keep
+ * the file private); falls back to the env var of the same name if the file
+ * is absent or does not contain the key; throws if neither is available.
+ *
+ * WARNING: the secrets file is unencrypted plaintext JSON. Restrict its
+ * permissions (`chmod 600 ~/.stitch/secrets.json`) and never commit it.
+ */
+export function secretsFile(name: string): () => string {
     return () => {
         try {
-            const file = `${process.env['HOME']}/.stitch/secrets.json`;
-            if (existsSync(file)) {
-                const obj = JSON.parse(readFileSync(file, 'utf8')) as Record<
+            // No node:fs (browser): skip the file, fall through to the env var.
+            const fs = nodeFs();
+            const file = `${readEnv('HOME')}/.stitch/secrets.json`;
+            if (fs?.existsSync(file)) {
+                const obj = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<
                     string,
                     unknown
                 >;
@@ -41,11 +48,16 @@ export function keychain(name: string): () => string {
         } catch {
             /* fall through */
         }
-        const v = process.env[name];
-        if (v == null) throw new Error(`missing keychain secret ${name}`);
+        const v = readEnv(name);
+        if (v == null) throw new Error(`missing secret ${name}`);
         return v;
     };
 }
+
+/**
+ * @deprecated Use {@link secretsFile} instead — same behaviour, clearer name.
+ */
+export const keychain = secretsFile;
 
 export function bearer(token: Secret): AuthStrategy {
     return {
@@ -103,6 +115,23 @@ interface CachedToken {
 }
 
 /**
+ * In-process single-flight: concurrent callers of the same key await ONE shared
+ * promise instead of each running `run` themselves (GAP-AUDIT §2.6). The entry
+ * is cleared on settle, so a rejected run never poisons later retries.
+ */
+function singleFlight<T>(): (key: string, run: () => Promise<T>) => Promise<T> {
+    const inFlight = new Map<string, Promise<T>>();
+    return (key, run) => {
+        let p = inFlight.get(key);
+        if (!p) {
+            p = run().finally(() => inFlight.delete(key));
+            inFlight.set(key, p);
+        }
+        return p;
+    };
+}
+
+/**
  * OAuth2 `client_credentials`: POST the token endpoint, cache the access token in the
  * StitchStore (TTL from `expires_in`), refresh it `refreshSkewMs` before expiry, and attach
  * it as `Authorization: Bearer …`. A SHARED store makes one token serve many stitches/workers
@@ -113,6 +142,7 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
     const skew = opts.refreshSkewMs ?? 30_000;
     const nsKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const adapter = opts.adapter ?? fetchAdapter();
+    const flight = singleFlight<string>();
 
     const isFresh = (t: CachedToken | undefined): boolean =>
         !!t && (t.expiresAt === 0 || now() < t.expiresAt - skew);
@@ -159,7 +189,10 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
 
     const tokenFor = async (ctx: AuthContext): Promise<string> => {
         const cached = (await ctx.store.get(nsKey)) as CachedToken | undefined;
-        return isFresh(cached) ? cached!.token : fetchToken(ctx);
+        // Cache miss/stale: coalesce concurrent callers into ONE in-flight fetch.
+        return isFresh(cached)
+            ? cached!.token
+            : flight(nsKey, () => fetchToken(ctx));
     };
 
     return {
@@ -171,7 +204,9 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
             return refreshOn.includes(res.status);
         },
         async refresh(ctx) {
-            await fetchToken(ctx); // force a fresh token, ignoring the cache
+            // Force a fresh token, ignoring the cache — but simultaneous 401s
+            // still share one fetch (an in-flight fetch IS the freshest token).
+            await flight(nsKey, () => fetchToken(ctx));
         },
     };
 }
@@ -202,6 +237,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
     const jarMode = opts.jar === true || opts.cookie === '*';
     const nsKey = (jarMode ? 'jar:' : 'cookie:') + (opts.key ?? opts.cookie);
+    const flight = singleFlight<unknown>();
 
     const doRefresh = async (ctx: AuthContext) => {
         ctx.emit('auth', 'login');
@@ -235,7 +271,8 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         async apply(req, ctx) {
             let stored = await ctx.store.get(nsKey);
             if (!stored) {
-                await doRefresh(ctx);
+                // Concurrent cold sessions share ONE login (GAP-AUDIT §2.6).
+                await flight(nsKey, () => doRefresh(ctx));
                 stored = await ctx.store.get(nsKey);
             }
             // Non-jar: a stored `name=value` string. Jar: a stored map → serialize all pairs.
@@ -252,7 +289,8 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
             return refreshOn.includes(res.status) || !!opts.refreshWhen?.(res);
         },
         async refresh(ctx) {
-            await doRefresh(ctx);
+            // Simultaneous 401-driven re-logins coalesce into one login call.
+            await flight(nsKey, () => doRefresh(ctx));
         },
     };
 }

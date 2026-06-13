@@ -1,0 +1,35 @@
+{
+    "name": "@stitchapi/sandbox",
+    "version": "0.0.0",
+    "private": true,
+    "description": "StitchAPI playground sandbox engine — CodeRunner contract, browser Web Worker runner, B1 browser stitch build, and the React playground shell. Consumed by @stitchapi/docs via transpilePackages.",
+    "exports": {
+        "./component/StitchPlayground": "./component/StitchPlayground.tsx",
+        "./contracts/dispatch": "./contracts/dispatch.ts",
+        "./runtime/browser-runner": "./runtime/browser-runner.ts"
+    },
+    "bin": {
+        "stitch-sandbox": "./dist/mcp.mjs"
+    },
+    "scripts": {
+        "build:mcp": "node runtime/build-sandbox-mcp.mjs",
+        "test:mcp": "pnpm run build:mcp && node mcp/smoke.mjs"
+    },
+    "dependencies": {
+        "stitchapi": "workspace:*",
+        "sucrase": "^3.35.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "@types/react": "^19.2.16",
+        "esbuild": "^0.28.0",
+        "react": "^19.2.7"
+    },
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "docs/sandbox"
+    }
+}

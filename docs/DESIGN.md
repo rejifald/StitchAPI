@@ -30,6 +30,11 @@ A stitch is a typed, declarative, composable unit: `input → validated output`,
 5. **One definition, many surfaces.** The same stitch is callable as an in-process function, a CLI command, an HTTP endpoint, and an MCP/agent tool.
 6. **The event stream is the spine.** Streaming output, observability, and drift detection all read the _same_ event stream a stitch emits.
 7. **Kind-agnostic core.** HTTP first, but the internal interface is built so GraphQL/shell/LLM slot in later without touching the core. **[v1: HTTP only, abstraction-ready]**
+8. **Browser-first.** **[decided]** If `fetch` runs there, a stitch runs there. The call path stays free of `node:*` imports and unguarded `process.env` reads; Node-only conveniences (file trace sink, keychain/secrets file, CLI/serve/MCP) sit behind platform seams or separate entry points and no-op explicitly — never crash — in the browser.
+9. **Pay only for what you import.** **[decided]** FE bundles pay per byte, so the import graph is part of the API: the core entry pulls the engine and nothing else; surfaces, adapters, stores, and sinks ship as subpath exports; tree-shakeability is enforced (`sideEffects: false` + a CI size budget), not assumed.
+10. **Contract, not dependency.** **[decided]** Redis is not the only KV store, `fetch` not the only transport, Zod not the only validator — core commits to no vendor. It ships contracts plus platform defaults (`fetchAdapter`, `memoryStore`, console/JSONL sinks); vendor-shaped code lives in separate packages with the vendor SDK as a peer dependency; every seam ships a conformance kit (`stitchapi/testing`) so third-party implementations prove compliance in their own CI; seam interfaces evolve additively within a major.
+11. **Declarative spelling.** **[decided]** Every capability has a JSON-serializable spelling; function-valued config (hooks, `transform`, predicates) is sugar, never the only way in. An agent cannot emit a closure — a stitch that round-trips as data is what agent authoring, the registry, spec export, and inference-from-example stand on.
+12. **No side effects by default.** **[decided]** A stitch's call is its only effect on the world. The state it keeps — throttle buckets, cookie jar, token cache, circuit-breaker counters — is in-memory and process-local, gone when the process exits; nothing is persisted or shared across workers, and no trace is written, unless you opt in. A `store` makes throttle distributed and sessions persistent/shared (§13); `trace: 'console'` / a `fileSink` turns observability on (§9). Persistence and sharing are deliberate, never silent — progressive disclosure applied to durability.
 
 ---
 
@@ -262,13 +267,13 @@ One shape generalizes **HTTP progress/pagination** _and_ (future) **LLM token st
 
 ## 9. Observability — zero-infra, opt-in depth
 
-> _console/JSONL by default, OTLP only when you want it. You never need infra to get insight._
+> _Off by default; one flag from console or JSONL, one more for OTLP. You never need infra to get insight — but you never pay for it unasked either (no side effects by default, §2)._
 
-Observability is a **consumer of the event stream**, not a separate system:
+Observability is a **consumer of the event stream**, not a separate system — and, like all state, it is **off until you opt in**:
 
--   **Default (zero infra):** events tee to the console (pretty) and a rolling JSONL file (`~/.stitch/runs/*.jsonl`). You instantly have per-vendor latency, error rate, retry counts, throttle waits, and drift flags.
--   **Local viewer (zero infra):** `stitch trace` / `stitch top` reads that JSONL → p99, error rate, drift timeline, in your terminal.
--   **Opt-in bridge:** `export: 'otlp'` (or `'langfuse'`) fans the _same_ events to Jaeger/Grafana/Langfuse when you have them, using OTel `http.*` semantic conventions.
+-   **Off by default (zero infra):** a stitch traces nothing. Turn it on per stitch with `trace: 'console'` (colored stderr) or `trace: fileSink('runs.jsonl')` (JSONL on disk), or globally with `STITCH_TRACE_CONSOLE=1` / `STITCH_TRACE_FILE=<path>`. Either way you instantly have per-vendor latency, error rate, retry counts, throttle waits, and drift flags.
+-   **Local viewer (zero infra):** `stitch run --trace` records the JSONL file (off without the flag — the CLI honors the same no-side-effects default), and `stitch trace` / `stitch top` reads it → p99, error rate, drift timeline, in your terminal.
+-   **Opt-in bridge:** `STITCH_EXPORT=otlp` fans the _same_ events to Jaeger/Grafana/Langfuse when you have them, using OTel `http.*` semantic conventions.
 
 ---
 
@@ -422,11 +427,12 @@ const listings = stitch({
 });
 ```
 
-**12. Observability (nothing to configure)**
+**12. Observability (off by default; opt in with `--trace`)**
 
 ```bash
-stitch run list-websites          # auto-logged to console + ~/.stitch/runs/*.jsonl
+stitch run list-websites --trace  # records ~/.stitch/runs/*.jsonl for `stitch trace`
 stitch trace --since 1h           # p99, error rate, drift timeline — no infra
+stitch run list-websites --trace=console          # stream events to stderr instead
 STITCH_EXPORT=otlp stitch serve   # opt-in: same events → Grafana/Jaeger/Langfuse
 ```
 

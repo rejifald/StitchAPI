@@ -1,0 +1,197 @@
+---
+title: 'Conformance kits'
+description: 'Prove a custom adapter, store, or trace sink implements its seam — from stitchapi/testing, in your own CI.'
+---
+
+Every pluggable seam in StitchAPI is a **contract, not a dependency**: the
+transport (`Adapter`), the state store (`StitchStore`), and the trace sink
+(`TraceSink`) each have a small documented surface, core ships only platform
+defaults for them (`fetchAdapter`, `memoryStore`, `createTrace`), and vendor
+implementations — a Redis store, an axios transport, a Datadog sink — live in
+their own packages.
+
+The `stitchapi/testing` subpath makes that contract enforceable. It ships one
+`verify*Contract` function per seam; any implementation that passes is a valid
+seam implementation, and third-party authors can prove it in their own CI
+without depending on StitchAPI internals.
+
+The kit is framework-agnostic and browser-safe: every verifier is a plain
+async function that **returns** a report (no vitest/jest imports, no `node:*`
+modules), so it runs inside any test runner — or a browser.
+
+## The report
+
+Each verifier resolves to a `ContractReport`:
+
+```ts
+interface ContractReport {
+    seam: string; // 'store' | 'adapter' | 'sink'
+    ok: boolean; // true when every rule passed
+    passed: string[]; // names of the rules that passed
+    violations: { rule: string; detail: string }[];
+}
+```
+
+Rules are checked independently — one violation never masks another — so a
+failing report lists every broken rule at once.
+
+### assertConformance
+
+`assertConformance(report)` throws one readable `Error` listing every
+violation (and is a no-op on a clean report). It is the one-liner for a test
+body:
+
+```ts
+import { assertConformance, verifyStoreContract } from 'stitchapi/testing';
+
+test('myStore implements the StitchStore contract', async () => {
+    assertConformance(await verifyStoreContract(() => myStore()));
+});
+```
+
+## verifyStoreContract
+
+`verifyStoreContract(makeStore, opts?)` verifies a [pluggable
+store](/docs/guides/state/pluggable-store) — the `get`/`set`/`incr` + TTL
+surface the engine uses for throttle counters and auth/session state:
+
+-   `set`/`get` round-trips a value; a missing key resolves to `undefined`;
+    a second `set` overwrites; writes are isolated by key.
+-   A `set` with `ttlMs` expires; a `set` without `ttlMs` does not.
+-   `incr` initializes a missing key to 1, increments an existing counter,
+    restarts at 1 once its TTL window lapses, and is atomic within a process:
+    20 concurrent calls must return 1..20 exactly.
+
+TTL rules use real timers with a small window (default 60ms). Pass
+`{ ttlMs }` to give a backend with coarser expiry more room. Keys are
+namespaced per run, so rerunning against a persistent backend never collides.
+
+## verifyAdapterContract
+
+`verifyAdapterContract(adapter, { baseUrl })` verifies a custom transport
+against a documented echo contract served at `baseUrl`:
+
+-   Status passthrough: 200, 404, and 500 all **resolve** — an adapter never
+    throws on a non-2xx status; only network and abort errors reject.
+-   Request delivery: method, headers, and the JSON-encoded body reach the
+    server intact.
+-   Response headers are readable using **lowercased** names (the
+    `AdapterResponse` case convention).
+-   A `text/plain` body round-trips as a string; an `application/json` body
+    round-trips as parsed data.
+-   A pre-aborted `AbortSignal` rejects, and an in-flight abort rejects
+    promptly instead of waiting out the response.
+
+### adapterContractFixture
+
+The echo contract itself ships as `adapterContractFixture` — a **pure**
+function (request in, response out, no server), so you can mount it on
+anything: `node:http`, hono, a service worker. The host lowercases request
+header names, hands over the raw body text, and honors the fixture's
+`delayMs` (the in-flight abort rule depends on it):
+
+```ts
+import { createServer } from 'node:http';
+import { adapterContractFixture } from 'stitchapi/testing';
+
+const server = createServer((req, res) => {
+    let raw = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => (raw += chunk));
+    req.on('end', () => {
+        const out = adapterContractFixture({
+            method: req.method ?? 'GET',
+            path: req.url ?? '/',
+            headers: Object.fromEntries(
+                Object.entries(req.headers).map(([k, v]) => [
+                    k.toLowerCase(),
+                    Array.isArray(v) ? v.join(', ') : (v ?? ''),
+                ]),
+            ),
+            ...(raw === '' ? {} : { body: raw }),
+        });
+        const respond = () => {
+            res.writeHead(out.status, out.headers);
+            res.end(out.body);
+        };
+        if (out.delayMs) setTimeout(respond, out.delayMs);
+        else respond();
+    });
+});
+```
+
+The routes are documented on the function's JSDoc (`/status/{code}`, `/echo`,
+`/text`, `/json`, `/slow`).
+
+## verifySinkContract
+
+`verifySinkContract(makeSink)` feeds one sink instance a canonical fixture
+sequence covering **all** `StitchEvent` variants — `start`, `progress`,
+`drift`, `delta`, `result`, `error`, `done` — and asserts `handle` accepts
+each without throwing, then exercises the optional `flush()` when present.
+
+<Callout>
+    The sequence includes `delta`, which the type declares ahead of engine
+    support — a conforming sink must already tolerate events it does not
+    recognize.
+</Callout>
+
+## Worked example: a community Redis store
+
+A third-party author publishing `@acme/stitch-redis-store` proves compliance
+in their own CI — no StitchAPI internals, just the kit:
+
+```ts
+import { redisStore } from '../src/redis-store';
+
+import { createClient } from 'redis';
+import { assertConformance, verifyStoreContract } from 'stitchapi/testing';
+import { test } from 'vitest';
+
+test('redisStore implements the StitchStore contract', async () => {
+    const client = createClient({ url: process.env.REDIS_URL });
+    await client.connect();
+    try {
+        assertConformance(
+            await verifyStoreContract(() => redisStore(client), {
+                // Give Redis expiry more room than the 60ms default.
+                ttlMs: 250,
+            }),
+        );
+    } finally {
+        await client.quit();
+    }
+});
+```
+
+If the store cuts a corner — a non-atomic `INCR`, a dropped TTL — the test
+fails with every broken rule named:
+
+```
+Error: StitchAPI store contract: 2 violation(s), 8 rule(s) passed
+  - set: a ttlMs entry expires: value survived its 250ms TTL: got "soon-gone"
+  - incr: 20 concurrent calls net exactly +20: sorted results of 20 concurrent incrs ...
+```
+
+Passing the kit is the compatibility claim: a store that passes can back
+[distributed throttle](/docs/guides/state/distributed-throttle) and shared
+sessions with no change at the call site.
+
+## See also
+
+<Cards>
+    <Card
+        title="Guide: pluggable store"
+        href="/docs/guides/state/pluggable-store"
+    />
+    <Card
+        title="Guide: distributed throttle"
+        href="/docs/guides/state/distributed-throttle"
+    />
+    <Card
+        title="Guide: trace sinks"
+        href="/docs/guides/observability/trace-sinks"
+    />
+    <Card title="Helpers" href="/docs/reference/helpers" />
+    <Card title="Events" href="/docs/reference/events" />
+</Cards>

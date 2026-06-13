@@ -6,6 +6,7 @@ import { classifyDrift, loadSnapshot, saveSnapshot } from './drift';
 import { fetchAdapter } from './http-adapter';
 import {
     CircuitOpenError,
+    TimeoutError,
     backoffDelay,
     createCircuit,
     parseRetryAfter,
@@ -37,7 +38,16 @@ import {
 } from './util';
 import type { Validator } from './validator';
 
-import { randomUUID } from 'node:crypto';
+// Browser-safe UUID for Idempotency-Key: crypto.randomUUID where available (Node ≥ 19,
+// secure browser contexts), else a Math.random v4 — uniqueness, not secrecy, is the need.
+function randomUUID(): string {
+    const c = globalThis.crypto as Crypto | undefined;
+    if (c?.randomUUID) return c.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+        const r = Math.floor(Math.random() * 16);
+        return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+}
 
 export interface Runtime {
     cfg: StitchConfig;
@@ -133,7 +143,10 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     }
     const path = expandPath(tpl, input.params ?? {});
     const query = { ...predefined, ...(input.query ?? {}) };
-    const url = appendQueryString(joinUrl(base, path), buildQuery(query));
+    const url = appendQueryString(
+        joinUrl(base, path),
+        buildQuery(query, cfg.arrayFormat),
+    );
     // A relative endpoint can't be fetched by the default transport — fail with a clear config
     // error here instead of a cryptic "Failed to parse URL" from fetch. A custom `adapter` may
     // legitimately resolve relative URLs, so this only guards the default transport.
@@ -259,23 +272,82 @@ async function validateOutput(
     return findings;
 }
 
+// `timeout.total` is a WALL-CLOCK budget for the whole logical call: every attempt,
+// backoff sleep, and throttle wait counts against one shared deadline (GAP-AUDIT §1.1).
+interface TotalBudget {
+    deadline: number; // epoch ms after which the call must fail with a timeout
+    totalMs: number; // configured total, kept for the error message
+}
+
+function totalBudget(cfg: StitchConfig, t0: number): TotalBudget | undefined {
+    const totalMs = parseDuration(cfg.timeout?.total);
+    return totalMs == null ? undefined : { deadline: t0 + totalMs, totalMs };
+}
+
+const budgetError = (b: TotalBudget): TimeoutError =>
+    new TimeoutError(`timed out after ${b.totalMs}ms`);
+
+// Sleep `ms`, but never past the budget's deadline — when the budget would run out
+// mid-wait, wait only the remainder and fail with the timeout error.
+async function sleepWithin(ms: number, budget?: TotalBudget): Promise<void> {
+    if (budget == null) return sleep(ms);
+    const remaining = budget.deadline - now();
+    if (remaining <= ms) {
+        if (remaining > 0) await sleep(remaining);
+        throw budgetError(budget);
+    }
+    return sleep(ms);
+}
+
+// Acquire a throttle slot, but never wait past the budget's deadline. The underlying
+// acquire has no abort path, so on timeout the still-pending grant is handed straight
+// back via release() to keep the limiter's accounting intact.
+async function acquireWithin(
+    throttle: Runtime['throttle'],
+    key: string,
+    budget?: TotalBudget,
+): Promise<{ waitedMs: number }> {
+    if (budget == null) return throttle.acquire(key);
+    const remaining = budget.deadline - now();
+    if (remaining <= 0) throw budgetError(budget);
+    const pending = throttle.acquire(key);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expiry = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+            void pending.then(
+                () => {
+                    throttle.release(key);
+                },
+                () => {
+                    /* a rejected acquire holds no slot */
+                },
+            );
+            reject(budgetError(budget));
+        }, remaining);
+    });
+    try {
+        return await Promise.race([pending, expiry]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 async function* attemptLoop(
     rt: Runtime,
     baseReq: AdapterRequest,
     state: { attempts: number },
+    budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, AdapterResponse> {
     const { cfg } = rt;
     const max = cfg.retry?.attempts ?? 1;
     const retryOn = cfg.retry?.on ?? [429, 502, 503, 504];
-    const perAttemptMs =
-        parseDuration(cfg.timeout?.perAttempt) ??
-        parseDuration(cfg.timeout?.total);
+    const perAttemptMs = parseDuration(cfg.timeout?.perAttempt);
     const key = hostKey(baseReq, cfg);
     let refreshed = false;
 
     for (let attempt = 1; attempt <= max; attempt++) {
         state.attempts = attempt;
-        const { waitedMs } = await rt.throttle.acquire(key);
+        const { waitedMs } = await acquireWithin(rt.throttle, key, budget);
         if (waitedMs > 0)
             yield {
                 type: 'progress',
@@ -290,11 +362,19 @@ async function* attemptLoop(
             await cfg.hooks?.onRequest?.({ name: nameOf(cfg), attempt, req });
             yield { type: 'progress', phase: 'request', attempt, at: now() };
 
+            // Clamp this attempt's abort to whatever is left of the total budget.
+            const attemptMs =
+                budget == null
+                    ? perAttemptMs
+                    : Math.min(
+                          perAttemptMs ?? Infinity,
+                          Math.max(0, budget.deadline - now()),
+                      );
             let res: AdapterResponse;
             try {
                 res = await withTimeout(
                     (signal) => rt.adapter({ ...req, signal }),
-                    perAttemptMs,
+                    attemptMs,
                 );
             } catch (err) {
                 await cfg.hooks?.onError?.({
@@ -315,7 +395,10 @@ async function* attemptLoop(
                         attempt,
                         error: err,
                     });
-                    await sleep(backoffDelay(attempt + 1, cfg.retry));
+                    await sleepWithin(
+                        backoffDelay(attempt + 1, cfg.retry),
+                        budget,
+                    );
                     continue;
                 }
                 throw err;
@@ -353,7 +436,10 @@ async function* attemptLoop(
                     at: now(),
                 };
                 await cfg.hooks?.onRetry?.({ name: nameOf(cfg), attempt, res });
-                await sleep(ra ?? backoffDelay(attempt + 1, cfg.retry));
+                await sleepWithin(
+                    ra ?? backoffDelay(attempt + 1, cfg.retry),
+                    budget,
+                );
                 continue;
             }
 
@@ -382,10 +468,11 @@ async function* attemptWithCircuit(
     rt: Runtime,
     baseReq: AdapterRequest,
     state: { attempts: number },
+    budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, AdapterResponse> {
     const { cfg } = rt;
     if (!cfg.circuit) {
-        return yield* attemptLoop(rt, baseReq, state);
+        return yield* attemptLoop(rt, baseReq, state, budget);
     }
     const circuit = createCircuit(cfg.circuit, rt.store, hostKey(baseReq, cfg));
     if ((await circuit.phase()) === 'open') {
@@ -399,7 +486,7 @@ async function* attemptWithCircuit(
         throw new CircuitOpenError(); // fast-fail: do NOT touch the network
     }
     try {
-        const res = yield* attemptLoop(rt, baseReq, state);
+        const res = yield* attemptLoop(rt, baseReq, state, budget);
         await circuit.onSuccess();
         return res;
     } catch (e) {
@@ -434,6 +521,7 @@ async function* paginated(
     input: StitchInput,
     state: { attempts: number },
     t0: number,
+    budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
     const name = nameOf(cfg);
@@ -458,13 +546,34 @@ async function* paginated(
         const req = buildRequest(cfg, pageInput);
         let res: AdapterResponse;
         try {
-            res = yield* attemptWithCircuit(rt, req, state);
+            res = yield* attemptWithCircuit(rt, req, state, budget);
         } catch (e) {
             yield errEvt(e, name, state.attempts);
             yield doneEvt(false, t0, state.attempts);
             return;
         }
         lastStatus = res.status;
+
+        // GraphQL: a 200 response carrying `errors` is a failure — same as the non-paginated path.
+        if (cfg.kind === 'graphql') {
+            const body = res.body as
+                | { errors?: { message?: string }[] }
+                | null
+                | undefined;
+            const errs = body?.errors;
+            if (errs?.length) {
+                yield {
+                    type: 'error',
+                    name,
+                    message: `GraphQL: ${errs.map((e) => e.message ?? 'error').join('; ')}`,
+                    status: res.status,
+                    attempts: state.attempts,
+                    at: now(),
+                };
+                yield doneEvt(false, t0, state.attempts);
+                return;
+            }
+        }
 
         let value: unknown = res.body;
         if (cfg.transform) value = await cfg.transform(value);
@@ -527,6 +636,7 @@ export async function* execute(
     const name = nameOf(cfg);
     const t0 = now();
     const state = { attempts: 0 };
+    const budget = totalBudget(cfg, t0);
 
     try {
         await validateInput(cfg, input);
@@ -537,7 +647,7 @@ export async function* execute(
     }
 
     if (cfg.paginate) {
-        yield* paginated(rt, input, state, t0);
+        yield* paginated(rt, input, state, t0, budget);
         return;
     }
 
@@ -560,7 +670,7 @@ export async function* execute(
 
     let res: AdapterResponse;
     try {
-        res = yield* attemptWithCircuit(rt, baseReq, state);
+        res = yield* attemptWithCircuit(rt, baseReq, state, budget);
     } catch (e) {
         yield errEvt(e, name, state.attempts);
         yield doneEvt(false, t0, state.attempts);
@@ -623,7 +733,7 @@ export async function executeRaw(
 ): Promise<AdapterResponse> {
     const baseReq = buildRequest(rt.cfg, input);
     const state = { attempts: 0 };
-    const gen = attemptLoop(rt, baseReq, state);
+    const gen = attemptLoop(rt, baseReq, state, totalBudget(rt.cfg, now()));
     let step = await gen.next();
     while (!step.done) step = await gen.next();
     return step.value;
