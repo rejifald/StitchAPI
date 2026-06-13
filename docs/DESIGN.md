@@ -132,18 +132,19 @@ const listWebsites = stitch({
 });
 ```
 
-### Variant B — bound factory `defineStitch(...)` (evolution of today's `prestitch`)
+### Variant B — a `seam` (a surface every stitch belongs to)
 
-Best when _every_ stitch in a service shares the same base + auth:
+Best when _every_ stitch in a service shares the same base + auth — and should also
+share **runtime** (one store, throttle bucket, sink) and a trusted principal boundary:
 
 ```ts
-const apiStitch = defineStitch(base, session); // a stitch() pre-bound to these
+const api = seam({ extends: [base, session] }); // members inherit config + share runtime
 
-const listWebsites = apiStitch({
+const listWebsites = api.stitch({
     path: '/api/websites',
     output: Website.array(),
 });
-const getWebsite = apiStitch({ path: '/api/websites/{id}', output: Website });
+const getWebsite = api.stitch({ path: '/api/websites/{id}', output: Website });
 ```
 
 ### Variant C — fluent builder **[supported]**
@@ -342,12 +343,15 @@ const listWebsites = stitch({
 });
 ```
 
-**6. Bound factory (every stitch shares base + auth)**
+**6. A seam (every stitch shares base, auth, AND runtime)**
 
 ```ts
-const s = defineStitch(api, session);
-const listWebsites = s({ path: '/api/websites', output: Website.array() });
-const getWebsite = s({ path: '/api/websites/{id}', output: Website });
+const s = seam({ extends: [api, session] });
+const listWebsites = s.stitch({
+    path: '/api/websites',
+    output: Website.array(),
+});
+const getWebsite = s.stitch({ path: '/api/websites/{id}', output: Website });
 ```
 
 **7. Extend another stitch**
@@ -496,9 +500,9 @@ interface StitchStore {
     incr(key: string, ttlMs: number): Promise<number>; // atomic — for rate windows
 }
 
-const api = defineStitch(
-    preset({ store: redisStore(redis) }), // default is an in-memory store
-);
+const api = seam({
+    store: redisStore(redis), // default is an in-memory store
+});
 ```
 
 -   **Throttle** reads/writes its rate counters through the store → a Redis-backed store gives _cross-process_ rate limiting with no change to the call site.

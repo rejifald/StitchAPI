@@ -69,7 +69,7 @@ Classification of the **develop** core exports ([`packages/core/src/index.ts`](.
 
 | Browser-safe → **Browser runner**                                | Node-only → **Server runner**                             |
 | ---------------------------------------------------------------- | --------------------------------------------------------- |
-| `stitch`, `defineStitch`, `preset`                               | `keychain` — OS keychain access                           |
+| `stitch`, `seam`, `preset`                                       | `keychain` — OS keychain access                           |
 | `drift`, `graphql`                                               | `env` — reads `process.env`                               |
 | `bearer`, `apiKey`, `basic`, `oauth2` (token held in memory)     | `cookieSession` — persistent cookie jar                   |
 | `fetchAdapter` (global `fetch`, shimmed to the simulator)        | `createTrace` / `multiplex` — JSONL trace files (fs)      |

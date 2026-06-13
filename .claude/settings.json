@@ -1,21 +1,21 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "worktree": {
-    "baseRef": "fresh"
-  },
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "EnterWorktree",
-        "hooks": [
-          {
-            "type": "command",
-            "statusMessage": "Installing workspace deps in worktree (pnpm install)…",
-            "timeout": 300,
-            "command": "wt=\"$(jq -r '.tool_response.path // .tool_response.worktreePath // .tool_response.cwd // .worktree_path // .cwd // empty' 2>/dev/null)\"; [ -n \"$wt\" ] || wt=\"$PWD\"; root=\"$(git -C \"$wt\" rev-parse --show-toplevel 2>/dev/null)\" || exit 0; case \"$root\" in */.claude/worktrees/*) : ;; *) exit 0 ;; esac; [ -f \"$root/pnpm-workspace.yaml\" ] || exit 0; [ -d \"$root/node_modules/.pnpm\" ] && exit 0; cd \"$root\" && pnpm install --frozen-lockfile --prefer-offline >/dev/null"
-          }
+    "$schema": "https://json.schemastore.org/claude-code-settings.json",
+    "worktree": {
+        "baseRef": "fresh"
+    },
+    "hooks": {
+        "PostToolUse": [
+            {
+                "matcher": "EnterWorktree",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "statusMessage": "Installing workspace deps in worktree (pnpm install)…",
+                        "timeout": 300,
+                        "command": "wt=\"$(jq -r '.tool_response.path // .tool_response.worktreePath // .tool_response.cwd // .worktree_path // .cwd // empty' 2>/dev/null)\"; [ -n \"$wt\" ] || wt=\"$PWD\"; root=\"$(git -C \"$wt\" rev-parse --show-toplevel 2>/dev/null)\" || exit 0; case \"$root\" in */.claude/worktrees/*) : ;; *) exit 0 ;; esac; [ -f \"$root/pnpm-workspace.yaml\" ] || exit 0; [ -d \"$root/node_modules/.pnpm\" ] && exit 0; cd \"$root\" && pnpm install --frozen-lockfile --prefer-offline >/dev/null"
+                    }
+                ]
+            }
         ]
-      }
-    ]
-  }
+    }
 }

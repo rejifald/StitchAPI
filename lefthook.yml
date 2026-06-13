@@ -19,11 +19,22 @@ pre-commit:
 
 pre-push:
     parallel: false
+    # Run the FULL CI sequence (verify.yml) locally, cheap → expensive, so a push never
+    # lands something CI rejects. Note `check:format` here is the whole-tree `prettier
+    # --check .` — unlike pre-commit's format job, which only rewrites the files in THIS
+    # commit, it catches any tracked file (in any extension) that drifted out of style,
+    # including ones an earlier commit landed unformatted.
     jobs:
+        - name: format
+          run: pnpm check:format
+        - name: lint
+          run: pnpm check:lint
         - name: typecheck
           run: pnpm check:types
         - name: test
           run: pnpm test
+        - name: exports
+          run: pnpm check:exports
         # Render gate — see verify.yml. `tsc` never renders a page, so building the
         # docs app is what actually exercises AutoTypeTable and MDX components.
         - name: build-docs
