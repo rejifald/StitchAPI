@@ -50,9 +50,11 @@ Auth, retry, and throttle apply per page, not once for the whole run: a
 and a [`retry`](/docs/guides/resilience/retry) recovers each page on its own.
 
 <Callout type="warn">
-    `next` reads the raw body; `items` reads the value after `unwrap`. Reach for
-    the cursor in `next` from where it actually lives in the response, not from
-    the unwrapped array.
+    **Anti-pattern:** don't read the next-page cursor in `next` from the
+    unwrapped array, expecting it where `items` looks — `next` receives the raw
+    body and `items` receives the value after `unwrap` runs, so read the cursor
+    in `next` from where it lives in the raw response instead. See
+    [unwrap](/docs/guides/data/unwrap).
 </Callout>
 
 ## See also

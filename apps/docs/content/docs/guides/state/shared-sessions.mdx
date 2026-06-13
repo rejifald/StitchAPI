@@ -57,6 +57,14 @@ what makes one login persist across restarts and serve every worker — see
 [`.with()`](/docs/guides/authoring/with) already reuses the same in-memory
 session across calls.
 
+<Callout type="warn">
+    **Anti-pattern:** don't rely on the default in-memory store to share a
+    session across workers — it's process-local, so every worker re-runs the
+    login and keeps its own isolated session; point `store` at a shared, durable
+    store so one captured login serves all of them. See [The pluggable
+    store](/docs/guides/state/pluggable-store).
+</Callout>
+
 This works the same for tokens:
 [`oauth2`](/docs/guides/auth/oauth2) caches its access token under `key`, so a
 shared key plus a shared store means one token serves many stitches and workers

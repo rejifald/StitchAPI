@@ -1,0 +1,55 @@
+---
+title: 'Keep a failing dependency from taking you down'
+description: 'Compose timeout, retry, and a circuit breaker so a degraded upstream fails fast instead of hanging every caller.'
+---
+
+## Task
+
+A downstream API starts timing out and erroring. Retrying alone just piles more
+load on something already struggling, and a hung request ties up a caller
+indefinitely. You want bounded calls, a few smart retries, and a breaker that
+stops hammering a dependency that is clearly down.
+
+## Example
+
+One way: layer `timeout`, `retry`, and `circuit` on a single stitch.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const orders = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    timeout: { total: '10s', perAttempt: '3s' },
+    retry: { attempts: 3, on: [429, 503], backoff: 'expo-jitter' },
+    circuit: { failureThreshold: 5, cooldownMs: 30_000 },
+});
+
+const result = await orders();
+```
+
+## How it works
+
+Three layers compose. [`timeout`](/docs/guides/resilience/timeout) bounds each
+attempt (`3s`) and the whole call (`10s`) with a real `AbortSignal`, so a hung
+request is actually cancelled, not leaked. [`retry`](/docs/guides/resilience/retry)
+recovers transient `429`/`503`s with jittered backoff inside that budget.
+[`circuit`](/docs/guides/resilience/circuit-breaker) watches the failures: after
+five consecutive it trips **open** and calls fast-fail for 30 seconds
+([`STITCH_CIRCUIT_OPEN`](/docs/errors/stitch-circuit-open)) instead of hammering
+a dead dependency, then lets a single trial call probe recovery. Together: a blip
+is retried, a hang is cut, and an outage stops being yours to absorb. All three
+report on the [event stream](/docs/concepts/event-stream) (phases `retry`,
+`circuit`).
+
+## See also
+
+<Cards>
+    <Card title="Timeout" href="/docs/guides/resilience/timeout" />
+    <Card title="Retry &amp; backoff" href="/docs/guides/resilience/retry" />
+    <Card
+        title="Circuit breaker"
+        href="/docs/guides/resilience/circuit-breaker"
+    />
+    <Card title="STITCH_CIRCUIT_OPEN" href="/docs/errors/stitch-circuit-open" />
+</Cards>

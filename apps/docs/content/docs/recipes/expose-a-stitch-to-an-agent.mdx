@@ -1,0 +1,68 @@
+---
+title: 'Let an agent call your API without handing it the key'
+description: 'Expose your stitches over MCP through one run_stitch tool — the agent invokes a capability and never sees the credential.'
+---
+
+## Task
+
+You want an LLM agent to call your APIs, but you cannot give it the API key — and
+you do not want to flood its context with one tool per endpoint.
+
+## Example
+
+One way: author named stitches that hold their own auth, then serve them over
+MCP.
+
+```ts twoslash
+// stitches.ts — author each stitch with its auth and a name.
+import { bearer, env, stitch } from 'stitchapi';
+
+export const getUser = stitch({
+    name: 'getUser',
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    auth: bearer(env('API_TOKEN')),
+});
+```
+
+Serve the module over MCP from the shell:
+
+```bash
+stitch mcp --module ./stitches.ts
+```
+
+The agent discovers names with `list_stitches`, then calls one through the single
+`run_stitch` tool:
+
+```json
+{
+    "name": "run_stitch",
+    "input": { "name": "getUser", "input": { "params": { "id": 1 } } }
+}
+```
+
+## How it works
+
+`run_stitch` covers **every** registered stitch with one tool — `name` selects
+it, `input` is its `{ params, query, body, headers }` — so the agent's tool list
+stays at two entries (`run_stitch` + `list_stitches`) no matter how many stitches
+you register, keeping its context flat. The auth runs inside the runtime: the
+agent names a [capability](/docs/concepts/capability-not-credential), the server
+holds the `bearer(env('API_TOKEN'))` secret, and the result returns without the
+token. To run the server in your own process, import `serveStdio` from the
+`stitchapi/mcp` subpath.
+
+## See also
+
+<Cards>
+    <Card title="MCP surface" href="/docs/surfaces/mcp" />
+    <Card
+        title="run_stitch &amp; code-mode"
+        href="/docs/agents/run-stitch-tool"
+    />
+    <Card title="For agents" href="/docs/agents" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+</Cards>

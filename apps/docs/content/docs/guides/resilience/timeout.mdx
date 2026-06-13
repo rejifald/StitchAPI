@@ -39,10 +39,16 @@ backoff waits, so a long enough `total` is what lets a slow attempt be retried a
 all.
 
 <Callout type="warn">
-    A breached deadline aborts the call and surfaces as a timeout error. See
-    [STITCH_TIMEOUT](/docs/errors/stitch-timeout) for how it reads and how to
-    fix it.
+    **Anti-pattern:** with retry enabled, don't rely on `perAttempt` alone to
+    bound how long the caller waits; it caps each individual try, not the call,
+    so several retries plus their backoff waits can block the caller far past
+    your intended deadline — set `total` to cap the whole call instead. See
+    [Retry](/docs/guides/resilience/retry).
 </Callout>
+
+A breached deadline aborts the call and surfaces as a timeout error. See
+[STITCH_TIMEOUT](/docs/errors/stitch-timeout) for how it reads and how to fix
+it.
 
 See [Reference → Config types](/docs/reference/config-types) for the full
 `TimeoutOptions` shape.

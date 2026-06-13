@@ -139,6 +139,17 @@ one source without the call site knowing. See
 and [Reference → Event types](/docs/reference/events) for the `StitchEvent`
 union a sink receives.
 
+<Callout type="warn">
+    **Anti-pattern:** don't assume a custom `TraceSink` inherits the built-in
+    `[REDACTED]` scrubbing and write the raw event payload straight to your
+    destination — its headers still carry the live secret (`authorization`,
+    `cookie`, `x-api-key`), so a `handle` that logs them verbatim leaks a
+    credential the call resolves but the caller never sees; scrub the same
+    header denylist inside your `handle` before you persist, or wrap the
+    built-in sink via `multiplex` so redaction runs first. See [Capability, not
+    credential](/docs/concepts/capability-not-credential).
+</Callout>
+
 <Callout type="info">
     The CLI honors the same default: `stitch run` traces nothing until you pass
     `--trace`, which records the JSONL file (at `~/.stitch/runs/proto.jsonl`, or

@@ -1,0 +1,59 @@
+---
+title: 'Share one rate limit across every worker'
+description: 'Point the throttle at a shared store so a whole fleet draws from a single rate budget instead of N× the limit.'
+---
+
+## Task
+
+You run several workers that all hit the same rate-limited API. Each process
+enforcing `"10/s"` on its own means the fleet does `10/s × workers` — and trips
+the limit. You want one budget the whole fleet shares.
+
+## Example
+
+One way: keep the `throttle` policy, but move its counters to a shared `store`.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import type { StitchStore } from 'stitchapi';
+
+// A Redis- or Postgres-backed store shared by every worker.
+declare const sharedStore: StitchStore;
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    throttle: { rate: '10/s', scope: 'host' },
+    store: sharedStore, // the budget now spans all workers using this store
+});
+
+const hits = await search({ query: { q: 'mango' } });
+```
+
+## How it works
+
+By default throttle counters live in the in-memory store, so each worker enforces
+the limit alone and the fleet runs at `10/s × workers`. Point `store` at one
+shared backend and the rate counter becomes a single fixed-window count every
+worker increments — one `10/s` budget across the fleet. `scope: 'host'` keys the
+budget by origin, so every stitch hitting the host pools into it; workers share
+only when they point at the same store and resolve to the same key. (Concurrency
+stays in-process; only the rate limit is distributed.) A
+[`StitchStore`](/docs/guides/state/pluggable-store) is three async methods —
+`get` / `set` / `incr` with TTL — backed by anything; the same store also gives
+you [shared auth sessions](/docs/guides/state/shared-sessions).
+
+## See also
+
+<Cards>
+    <Card
+        title="Distributed throttle"
+        href="/docs/guides/state/distributed-throttle"
+    />
+    <Card
+        title="The pluggable store"
+        href="/docs/guides/state/pluggable-store"
+    />
+    <Card title="Throttle" href="/docs/guides/resilience/throttle" />
+    <Card title="Shared sessions" href="/docs/guides/state/shared-sessions" />
+</Cards>

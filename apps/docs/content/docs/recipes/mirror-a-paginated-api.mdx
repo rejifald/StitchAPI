@@ -1,0 +1,97 @@
+---
+title: 'Mirror a paginated API to NDJSON'
+description: 'Pull every page of a cursor-paginated, OAuth2-protected endpoint — with retry and throttle on each page — and write the rows as newline-delimited JSON.'
+---
+
+## Task
+
+You want a local copy of every record behind a paginated API — one that happens
+to be OAuth2-protected, rate-limited, and prone to the odd `429` or `503`. By
+hand that means a token dance, a manual page loop, backoff code, and a rate
+limiter before you write a single row.
+
+## Example
+
+One way: declare all four concerns on a single stitch and `await` it once.
+
+```ts twoslash
+import { env, oauth2, stitch } from 'stitchapi';
+
+const mirror = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    auth: oauth2({
+        tokenUrl: 'https://api.example.com/oauth/token',
+        clientId: env('CLIENT_ID'),
+        clientSecret: env('CLIENT_SECRET'),
+        scope: 'users.read',
+    }),
+    retry: {
+        attempts: 4,
+        on: [429, 503],
+        backoff: 'expo-jitter',
+        respectRetryAfter: true,
+    },
+    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+    paginate: {
+        next: (prevBody) => {
+            const cursor = (prevBody as { nextCursor?: string }).nextCursor;
+            return cursor ? { query: { cursor } } : undefined;
+        },
+        items: (value) => (value as { results: unknown[] }).results,
+        max: 100,
+    },
+});
+
+// One await runs the whole paged loop — auth, retry, and throttle apply to
+// every page — and aggregates every row into a single array.
+const rows = (await mirror()) as unknown[];
+
+// Newline-delimited JSON: one row per line.
+const ndjson = rows.map((row) => JSON.stringify(row)).join('\n');
+```
+
+Write the rows to disk:
+
+```ts
+import { writeFile } from 'node:fs/promises';
+
+await writeFile('users.ndjson', ndjson);
+```
+
+## How it works
+
+The four concerns are independent keys on one declaration, so they compose
+without any glue. [`oauth2`](/docs/guides/auth/oauth2) fetches, caches, and
+refreshes the token behind the
+[capability boundary](/docs/concepts/capability-not-credential) — your code
+never sees it. [`paginate`](/docs/guides/data/pagination) reads `nextCursor`
+off each raw body and asks for the next page until `next` returns `undefined`,
+aggregating every page's `results` into the array you `await`.
+[`retry`](/docs/guides/resilience/retry) and
+[`throttle`](/docs/guides/resilience/throttle) apply **per page**, not once for
+the whole run: a `429` on page seven recovers on its own, and the loop stays
+under five requests a second the entire time. Without an
+[`output` schema](/docs/guides/validation/validation) the rows arrive as
+`unknown[]`, so the cast just tells TypeScript what you already know — add a
+schema and each row is typed and validated, and the cast goes away. Either way,
+serializing to NDJSON is one `.map()`.
+
+<Callout type="warn">
+    `next` reads the raw body; `items` reads the value after unwrap. Reach for
+    the cursor in `next` from where it actually lives in the response — see
+    [Pagination](/docs/guides/data/pagination).
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Pagination" href="/docs/guides/data/pagination" />
+    <Card title="oauth2" href="/docs/guides/auth/oauth2" />
+    <Card title="Retry & backoff" href="/docs/guides/resilience/retry" />
+    <Card title="Throttle" href="/docs/guides/resilience/throttle" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+</Cards>

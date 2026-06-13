@@ -1,0 +1,17 @@
+{
+    "name": "@stitchapi/completions-plugin",
+    "version": "0.0.0",
+    "private": true,
+    "description": "Webpack plugin that generates CodeMirror completions from a TypeScript interface at build time.",
+    "exports": {
+        ".": "./index.mjs"
+    },
+    "peerDependencies": {
+        "typescript": ">=5.0.0"
+    },
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "devDependencies": {
+        "typescript": "^6.0.3"
+    }
+}
