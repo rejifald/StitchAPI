@@ -18,11 +18,11 @@ import type { StitchConfig } from 'stitchapi';
 
 Controls how arrays are serialised in the query string. The default (`'indices'`) matches `qs` behaviour.
 
-| Value | Wire format |
-|---|---|
+| Value                 | Wire format                 |
+| --------------------- | --------------------------- |
 | `'indices'` (default) | `ids%5B0%5D=1&ids%5B1%5D=2` |
-| `'brackets'` | `ids%5B%5D=1&ids%5B%5D=2` |
-| `'repeat'` | `ids=1&ids=2` |
+| `'brackets'`          | `ids%5B%5D=1&ids%5B%5D=2`   |
+| `'repeat'`            | `ids=1&ids=2`               |
 
 ```ts
 // repeat — Laravel, Rails, and many PHP frameworks expect this
