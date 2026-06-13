@@ -26,7 +26,12 @@ const mirror = stitch({
         clientSecret: env('CLIENT_SECRET'),
         scope: 'users.read',
     }),
-    retry: { attempts: 4, on: [429, 503], backoff: 'expo-jitter', respectRetryAfter: true },
+    retry: {
+        attempts: 4,
+        on: [429, 503],
+        backoff: 'expo-jitter',
+        respectRetryAfter: true,
+    },
     throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
     paginate: {
         next: (prevBody) => {
