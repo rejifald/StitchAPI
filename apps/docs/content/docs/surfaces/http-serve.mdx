@@ -46,6 +46,28 @@ to receive the live event stream as SSE instead.
     one.
 </Callout>
 
+## Programmatic API
+
+The CLI is a thin wrapper. To embed the same server in your own process, import
+`serve` from the `stitchapi/serve` subpath and hand it a registry of named
+stitches:
+
+```ts
+import { me } from './stitches';
+
+import { serve } from 'stitchapi/serve';
+
+const handle = await serve({ me });
+console.log(`listening on ${handle.url}`);
+
+// later
+await handle.close();
+```
+
+`serve(registry, options?)` returns a handle with the bound `url`, `port`, the
+underlying `server`, and a `close()` method. It binds `127.0.0.1:8787` by
+default; pass `{ port: 0 }` to let the OS pick an ephemeral port.
+
 A served stitch is the same definition as the in-process
 [function surface](/docs/surfaces/function) and the
 [`stitch` CLI](/docs/surfaces/cli) — one source of truth, three ways to call it.

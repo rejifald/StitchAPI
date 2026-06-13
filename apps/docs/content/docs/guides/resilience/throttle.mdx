@@ -33,9 +33,12 @@ be set on its own.
 `scope` decides what shares the budget: `'stitch'` (the default) gives each
 stitch its own budget, while `'host'` pools the budget across every stitch
 hitting the same host — use it when one API publishes a single account-wide
-limit. Throttle state lives in the stitch store, so giving stitches a shared
-[store](/docs/guides/state/pluggable-store) turns a single-process budget into a
-[distributed one](/docs/guides/state/distributed-throttle) that spans workers.
+limit. Host-scoped pooling works in-process out of the box: separate stitches in
+the same process draw from one budget per host with no extra configuration.
+Giving those stitches a shared
+[store](/docs/guides/state/pluggable-store) extends that single-process budget
+into a [distributed one](/docs/guides/state/distributed-throttle) that spans
+workers.
 
 <Callout type="info">
     A throttled wait surfaces as a `throttled` progress phase on the event

@@ -18,6 +18,10 @@ _Authoring_ (the DX of declaring a stitch), _Data_ (the shape, correctness, and 
 payload), and _Reach_ (where it runs and what it plugs into) — above which sits the one
 **north-star** lens everything serves: **agent-nativeness**.
 
+Lenses say where a feature adds value. Three **gates** (end of this doc) say what it must not
+cost: **browser-first**, **bundle-frugal**, and **contract-not-dependency**. Every feature —
+existing or proposed — passes through all three before it ships.
+
 ---
 
 ## Family A — Runtime (how a call behaves in production)
@@ -39,8 +43,9 @@ payload), and _Reach_ (where it runs and what it plugs into) — above which sit
 -   The streaming event spine — `start → progress → drift → delta → result → done` / `error` —
     a typed async-iterable, not `Promise<bytes>` — [`src/types.ts`](../src/types.ts)
 -   Progress phases — `auth` / `request` / `throttled` / `retry` / `paginate`
--   Zero-infra trace sink — console (`STITCH_TRACE_CONSOLE=1`) or JSONL file
-    (`STITCH_TRACE_FILE`), pluggable via the `TraceSink` interface — [`src/trace.ts`](../src/trace.ts)
+-   Trace sink — **off by default**; opt in per stitch (`trace: 'console'` / `fileSink(path)` /
+    a custom `TraceSink`) or by env (`STITCH_TRACE_CONSOLE=1`, `STITCH_TRACE_FILE=<path>`) —
+    [`src/trace.ts`](../src/trace.ts)
 -   Timing baked into events — `waitedMs`, `attempts`, total `ms`, per-event `at`
 
 ### Security
@@ -65,6 +70,13 @@ payload), and _Reach_ (where it runs and what it plugs into) — above which sit
 > **On "performance":** as a standalone lens it's thin — most of what looks like performance
 > here is really politeness (throttle → reliability) or horizontal scale (shared store →
 > scalability). We fold it into **scale** rather than overselling a perf story.
+
+> **No side effects by default.** A stitch's call is its only effect on the world: throttle
+> buckets, the cookie jar, token caches, and the circuit-breaker counter all live in-memory and
+> process-local, and vanish with the process — and a stitch traces nothing until you ask. Both
+> are a single opt-in: attach a shared `store` and the same throttle goes distributed and the
+> same session is shared across workers; pass `trace: 'console'` / a `fileSink` and the event
+> stream lands somewhere. Persistence and sharing are a config choice, never a default you inherit.
 
 ---
 
@@ -153,5 +165,50 @@ Not a peer category; the thesis every other lens ladders into. An agent invoking
 -   **One uniform primitive** across HTTP/GraphQL/shell/LLM (← Protocol coverage)
 -   **Declarative, deterministic** configuration it can author and reason about (← Authoring)
 
+**The declarative-spelling rule.** Every capability must have a JSON-serializable spelling;
+function-valued config (hooks, `transform`, custom predicates) is sugar, never the only way.
+An agent can't emit a closure over MCP — a stitch that round-trips as data is what agent
+authoring, the registry, spec export, and inference-from-example all stand on. Brutal to
+retrofit, free to keep — so it's checked at design time, like the gates.
+
 When deciding whether a new feature belongs, the test isn't "which bucket" — it's "which lens
 does it strengthen, and does it ladder into the north star."
+
+---
+
+## ⊘ The three gates — every feature passes through these
+
+A lens is a reason to build; a gate is a cost ceiling. A feature that strengthens a lens but
+fails a gate gets reshaped (moved behind a seam or a subpath) until it passes.
+
+### Gate 1 — Browser-first (it runs on the FE)
+
+If `fetch` runs there, a stitch must too. The call path stays free of `node:*` imports and
+unguarded `process.env` reads; Node-only conveniences — the file trace sink, OTLP batching,
+`keychain()`/secrets file, CLI / serve / MCP — live behind platform seams or their own entry
+points and degrade to explicit no-ops in the browser, never crash. The check is mechanical:
+bundle for the browser, call a stitch, no shims required.
+
+### Gate 2 — Bundle-frugal (pay only for what you import)
+
+FE bundles pay per byte, so the import graph is part of the API contract. `import { stitch }`
+pulls the engine and nothing else; surfaces (serve, MCP, CLI, registry), adapters, stores, and
+trace sinks are reachable only through their own subpath exports; `sideEffects: false` holds
+and a CI size budget keeps it honest. A feature that bloats the core entry either earns its
+bytes or moves to a subpath.
+
+> The same idea at two altitudes: **context**-frugality for the agent (the north star),
+> **byte**-frugality for the FE bundle (this gate).
+
+### Gate 3 — Contract, not dependency (no commit to any service)
+
+Redis is not the only KV store; `fetch` is not the only transport; Zod is not the only
+validator. Core ships **contracts plus platform defaults only** — `fetchAdapter`,
+`memoryStore`, console/JSONL sinks — and never grows a vendor dependency. Anything
+vendor-shaped (a Redis store, a got adapter, a Datadog sink, a Vault secret resolver) is a
+separate package with the vendor SDK as a _peer_ dependency. What makes the seams real rather
+than aspirational: every seam (`Adapter`, `StitchStore`, `TraceSink`, `AuthStrategy`, secret
+resolvers, Standard Schema validation) ships a **conformance kit** (`stitchapi/testing`) so a
+third-party implementation proves compliance in its own CI, and seam interfaces evolve
+additively within a major. The check: core's runtime dependency count stays zero, and every
+official adapter passes the kit.

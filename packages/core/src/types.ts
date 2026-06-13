@@ -219,6 +219,13 @@ export interface StitchConfig {
     circuit?: CircuitOptions;
     /** Inject a stable Idempotency-Key header on writes so safe retries don't duplicate. */
     idempotency?: IdempotencyOptions;
+    /**
+     * How arrays are serialised in the query string.
+     * - `'indices'` (default) — `ids%5B0%5D=1&ids%5B1%5D=2`
+     * - `'brackets'`          — `ids%5B%5D=1&ids%5B%5D=2`
+     * - `'repeat'`            — `ids=1&ids=2`
+     */
+    arrayFormat?: 'indices' | 'brackets' | 'repeat';
     /** Request/response/error/retry lifecycle hooks. */
     hooks?: Hooks;
     /** Fragments to deep-merge under this config — strings, partials, or other stitches. */
@@ -227,6 +234,16 @@ export interface StitchConfig {
     adapter?: Adapter;
     /** Pluggable state store for throttle + session. Default in-memory. */
     store?: StitchStore;
+    /**
+     * Observability sink — **off by default**, because a stitch's only effect on
+     * the world is its call. Opt in with `'console'` (the colored stderr stream),
+     * a sink from `fileSink(path)` / `createTrace(...)` for JSONL on disk, or any
+     * custom {@link TraceSink}. `false` forces it off even when the `STITCH_TRACE_*`
+     * env vars are set. Unset falls back to the env-driven sink, which is itself
+     * silent unless `STITCH_TRACE_CONSOLE` / `STITCH_TRACE_FILE` / `STITCH_EXPORT`
+     * opt in.
+     */
+    trace?: TraceSink | 'console' | false;
 }
 
 export interface StitchResult<T> extends PromiseLike<T> {

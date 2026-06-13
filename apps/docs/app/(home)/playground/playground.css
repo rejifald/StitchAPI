@@ -1,0 +1,253 @@
+/* StitchAPI Playground — route + component styles.
+ *
+ * Themed with Fumadocs `--color-fd-*` tokens (NOT `--fd-*` — those don't exist
+ * here) and the brand `--stitch` accent, so it tracks light/dark automatically.
+ * The markup uses the BEM classes from docs/sandbox/component/StitchPlayground.tsx. */
+
+.stitch-playground-page {
+    padding: 2.5rem 1.5rem 4rem;
+}
+.stitch-playground-page__inner {
+    margin: 0 auto;
+    max-width: 56rem;
+}
+.stitch-playground-page__header {
+    margin-bottom: 1.5rem;
+}
+.stitch-playground-page__header h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--color-fd-foreground);
+}
+.stitch-playground-page__header p {
+    margin-top: 0.5rem;
+    max-width: 44rem;
+    line-height: 1.6;
+    color: var(--color-fd-muted-foreground);
+}
+.stitch-playground-page__header code {
+    font-size: 0.8em;
+    padding: 0.05rem 0.3rem;
+    border-radius: 0.3rem;
+    background: color-mix(in srgb, var(--stitch) 12%, transparent);
+    color: var(--color-fd-foreground);
+}
+
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+.stitch-playground {
+    border: 1px solid var(--color-fd-border);
+    border-radius: 0.75rem;
+    background: var(--color-fd-card, var(--color-fd-background));
+    overflow: hidden;
+}
+
+.stitch-playground__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--color-fd-border);
+    background: color-mix(in srgb, var(--stitch) 6%, transparent);
+}
+.stitch-playground__status {
+    font-family: var(--color-fd-font-mono, ui-monospace, monospace);
+    font-size: 0.8125rem;
+    color: var(--color-fd-muted-foreground);
+}
+.stitch-playground__actions {
+    display: flex;
+    gap: 0.5rem;
+}
+.stitch-playground__actions button {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    padding: 0.3rem 0.9rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--stitch-border);
+    background: var(--stitch);
+    color: #fff;
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        opacity 0.15s ease;
+}
+.stitch-playground__actions button:hover {
+    background: var(--stitch-strong);
+}
+.stitch-playground__actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+/* Reset / secondary action (the trailing button when Run/Stop is also shown). */
+.stitch-playground__actions button:last-child:not(:only-child) {
+    background: transparent;
+    color: var(--color-fd-muted-foreground);
+    border-color: var(--color-fd-border);
+}
+.stitch-playground__actions button:last-child:not(:only-child):hover {
+    color: var(--color-fd-foreground);
+    background: color-mix(in srgb, var(--color-fd-foreground) 6%, transparent);
+}
+
+/* ── Editor ─────────────────────────────────────────────────────────────── */
+.stitch-playground__editor {
+    display: block;
+    width: 100%;
+    border: 0;
+    padding: 1rem;
+    resize: vertical;
+    background: var(--color-fd-background);
+    color: var(--color-fd-foreground);
+    font-family: var(
+        --color-fd-font-mono,
+        ui-monospace,
+        SFMono-Regular,
+        monospace
+    );
+    font-size: 0.875rem;
+    line-height: 1.55;
+    tab-size: 2;
+}
+.stitch-playground__editor:focus {
+    outline: 2px solid color-mix(in srgb, var(--stitch) 55%, transparent);
+    outline-offset: -2px;
+}
+
+/* ── Output: a console ──────────────────────────────────────────────────── */
+.stitch-playground__output {
+    border-top: 1px solid var(--color-fd-border);
+    padding: 0.75rem 1rem;
+    min-height: 3rem;
+    max-height: 24rem;
+    overflow: auto;
+    /* A console surface — `secondary` sits a touch deeper than card/background. */
+    background: var(--color-fd-secondary);
+    font-family: var(
+        --color-fd-font-mono,
+        ui-monospace,
+        SFMono-Regular,
+        monospace
+    );
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    color: var(--color-fd-foreground);
+}
+.stitch-playground__output--deferred {
+    color: var(--color-fd-muted-foreground);
+}
+.stitch-playground__log {
+    padding: 0.02rem 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.stitch-playground__log[data-level='info'] {
+    color: var(--stitch-strong);
+}
+.stitch-playground__log[data-level='warn'] {
+    color: #b45309;
+}
+.dark .stitch-playground__log[data-level='warn'] {
+    color: #fbbf24;
+}
+.stitch-playground__log[data-level='error'] {
+    color: #dc2626;
+}
+.dark .stitch-playground__log[data-level='error'] {
+    color: #f87171;
+}
+.stitch-playground__error {
+    margin: 0.4rem 0 0;
+    padding-left: 0.6rem;
+    border-left: 2px solid #dc2626;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #dc2626;
+}
+.dark .stitch-playground__error {
+    color: #f87171;
+    border-left-color: #f87171;
+}
+.stitch-playground__value {
+    margin: 0.25rem 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.stitch-playground__notices {
+    margin-top: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.stitch-playground__notice {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.4rem;
+    border: 1px solid var(--stitch-border);
+    background: color-mix(in srgb, var(--stitch) 10%, transparent);
+    color: var(--color-fd-foreground);
+}
+.stitch-playground__dag {
+    margin-top: 0.75rem;
+}
+.stitch-playground__dag-streaming-badge {
+    display: inline-block;
+    margin-bottom: 0.25rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--stitch-strong);
+}
+.stitch-playground__mermaid {
+    margin: 0;
+    white-space: pre-wrap;
+    color: var(--color-fd-muted-foreground);
+}
+
+/* ── CodeMirror editor (renderEditor) ───────────────────────────────────── */
+.stitch-playground .cm-editor {
+    font-size: 0.875rem;
+}
+.stitch-playground .cm-editor.cm-focused {
+    outline: none;
+}
+.stitch-playground .cm-gutters {
+    border-right: 1px solid var(--color-fd-border);
+}
+
+/* ── Console output — highlighted JSON inline, not as code cards ─────────── */
+/* Strip the Fumadocs CodeBlock chrome so Shiki-highlighted objects flow as
+   console lines (no border/card/copy button), keeping only the token colors. */
+.stitch-playground__output figure {
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+.stitch-playground__output figure pre {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+}
+/* Hide the per-block copy button — a console flows, it doesn't card. */
+.stitch-playground__output figure > div:first-child {
+    display: none !important;
+}
+
+/* The returned value, set apart from the log stream. */
+.stitch-playground__result {
+    margin-top: 0.55rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--color-fd-border);
+}
+.stitch-playground__result-label {
+    display: block;
+    margin-bottom: 0.15rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--stitch-strong);
+}

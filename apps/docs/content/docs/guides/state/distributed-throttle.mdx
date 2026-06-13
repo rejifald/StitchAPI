@@ -4,8 +4,11 @@ description: 'Share one rate budget across workers by pointing the throttle at a
 ---
 
 By default a stitch keeps its throttle counters in the in-memory store, so the
-rate budget is per process — each worker gets its own. Point the throttle at a
-shared `store` and one budget spans every worker that uses it.
+rate budget is per process. With `scope: 'host'` every stitch in that process
+already pools into one budget per host (see [Throttle](/docs/guides/resilience/throttle));
+the in-memory store just keeps that pooling within a single process — each worker
+gets its own. Point the throttle at a shared `store` and one budget spans every
+worker that uses it.
 
 ## Example
 

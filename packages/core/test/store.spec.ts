@@ -167,7 +167,11 @@ describe('Pluggable store — throttle', () => {
         expect(w1 + w2).toBe(1); // 1/s shared → exactly one of two concurrent calls is paced
     });
 
-    test('default (separate) stores do NOT share the rate budget', async () => {
+    test('scope:"host" pools the rate budget in-process WITHOUT a shared store', async () => {
+        // throttle.mdx: "'host' pools the budget across every stitch hitting the same host."
+        // Host-scoped state lives in a module-level registry (resilience.ts), so two separate
+        // stitches with no shared store still draw from one 1/s budget — one of two concurrent
+        // calls is paced. (GAP-AUDIT §1.4; supersedes the old "separate stores never share".)
         server.route('GET', '/y', { body: { ok: true } });
         const s1 = stitch({
             baseUrl: server.url,
@@ -184,6 +188,30 @@ describe('Pluggable store — throttle', () => {
             wasThrottled(s1),
             wasThrottled(s2),
         ]);
-        expect(w1 + w2).toBe(0); // independent windows → neither waits
+        expect(w1 + w2).toBe(1); // pooled 1/s → exactly one of two concurrent calls is paced
+    });
+
+    test('scope:"stitch" (default) keeps separate budgets per instance', async () => {
+        // The default scope is per-stitch: each instance keeps its own closure-local budget,
+        // so two separate stitches (no shared store) on distinct names never pace each other.
+        server.route('GET', '/z', { body: { ok: true } });
+        const s1 = stitch({
+            name: 'z1',
+            baseUrl: server.url,
+            path: '/z',
+            throttle: { rate: '1/s' },
+        });
+        const s2 = stitch({
+            name: 'z2',
+            baseUrl: server.url,
+            path: '/z',
+            throttle: { rate: '1/s' },
+        });
+
+        const [w1, w2] = await Promise.all([
+            wasThrottled(s1),
+            wasThrottled(s2),
+        ]);
+        expect(w1 + w2).toBe(0); // independent per-stitch budgets → neither waits
     });
 });
