@@ -24,6 +24,11 @@ that wrapper with a declaration:
 -   **No spec, no codegen, no server.** A stitch needs a URL and an example
     response — so it works on the long tail of internal and undocumented APIs
     that never get a complete OpenAPI document.
+-   **Not just JSON.** `responseType` reads HTML, text, or binary, and a
+    `transform` reshapes whatever comes back — scrape a page into typed data or
+    run it through your own Markdown converter — before validation and drift see
+    it. The runtime stays converter-agnostic, so you pay no bytes for a format
+    you don't use.
 -   **Auth is a boundary.** Bearer, API key, cookie sessions, OAuth2 client
     credentials — the stitch owns the secret and its lifecycle, and the caller
     receives data, never the credential.

@@ -1,0 +1,63 @@
+---
+title: 'Turn an HTML page into Markdown'
+description: 'Pull a page as HTML with responseType, then reshape it with your own Markdown converter in a transform — keeping validation on the result.'
+---
+
+## Task
+
+You want a page's content as Markdown — to index it, feed it to a model, or
+store it — not the raw HTML and not JSON. The endpoint returns `text/html`, so a
+client that only speaks JSON hands you nothing useful.
+
+## Example
+
+One way: read the body as text with `responseType`, convert it in a `transform`,
+and validate the result. Stitch is converter-agnostic — bring the HTML→Markdown
+library you already trust (`turndown`, `node-html-markdown`, …); it never ships
+in the runtime, so you pay no bytes for a converter you didn't choose.
+
+```ts twoslash
+import { stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+// Your converter of choice, brought as a dependency. Stitch stays out of it.
+declare function htmlToMarkdown(html: string): string;
+
+const readArticle = stitch<string>({
+    baseUrl: 'https://example.com',
+    path: '/articles/{slug}',
+    responseType: 'text', // read the body as HTML, not JSON
+    transform: (body) => htmlToMarkdown(String(body)),
+    // The converter must return non-empty Markdown — validate that.
+    output: toValidator(z.string().min(1)),
+});
+
+const markdown = await readArticle({ params: { slug: 'hello-world' } });
+```
+
+## How it works
+
+[`responseType: 'text'`](/docs/guides/data/response-type) reads the response as a
+raw string instead of parsing JSON.
+[`transform`](/docs/guides/data/transform) then runs first in the response
+pipeline, handing the HTML string to your converter and returning Markdown.
+`toValidator` adapts the Zod schema to the `Validator` the config expects (the
+same step the [typed JSON round-trip](/docs/recipes/typed-json-round-trip) uses),
+and `output` then validates the result — here, that the converter produced a
+non-empty string. A converter that silently returns `''` on markup it didn't
+expect [fails loudly](/docs/errors/stitch-validation) instead of writing blanks
+downstream. Swap `z.string()` for a richer shape (a front-matter object,
+sections) and the same validation and [drift](/docs/guides/validation/drift)
+guarantees apply to a non-JSON source.
+
+## See also
+
+<Cards>
+    <Card title="responseType" href="/docs/guides/data/response-type" />
+    <Card title="transform" href="/docs/guides/data/transform" />
+    <Card
+        title="Scrape an HTML page into typed data"
+        href="/docs/recipes/scrape-html-into-typed-data"
+    />
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+</Cards>

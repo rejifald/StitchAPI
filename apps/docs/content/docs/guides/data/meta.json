@@ -1,4 +1,11 @@
 {
     "title": "Data shaping",
-    "pages": ["unwrap", "transform", "pagination", "body-encoding", "graphql"]
+    "pages": [
+        "unwrap",
+        "transform",
+        "response-type",
+        "pagination",
+        "body-encoding",
+        "graphql"
+    ]
 }

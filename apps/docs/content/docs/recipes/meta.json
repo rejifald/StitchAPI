@@ -5,6 +5,8 @@
         "typed-json-round-trip",
         "paginate-into-one-array",
         "make-a-flaky-call-succeed",
+        "read-html-as-markdown",
+        "scrape-html-into-typed-data",
         "survive-a-flaky-dependency",
         "idempotent-writes",
         "catch-a-breaking-api-change",

@@ -2,6 +2,7 @@ import { Section, SectionHeading } from './primitives';
 
 import {
     Activity,
+    FileText,
     GitCompareArrows,
     KeyRound,
     Radio,
@@ -52,6 +53,11 @@ const features = [
         title: 'Observable by default',
         body: 'gen_ai.* and mcp.* spans carry tokens, cost, and latency, turning the agent-native layer into your integration-health layer.',
     },
+    {
+        icon: FileText,
+        title: 'More than JSON',
+        body: 'responseType reads HTML, text, or binary; a transform reshapes whatever comes back — scrape a page to typed data or pipe it through your own Markdown converter — before validation and drift see it. The runtime stays converter-agnostic, so you pay no bytes for a format you don’t use.',
+    },
 ];
 
 export function Features() {
@@ -67,10 +73,15 @@ export function Features() {
             />
 
             <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-fd-border bg-fd-border sm:grid-cols-2 lg:grid-cols-2">
-                {features.map(({ icon: Icon, title, body }) => (
+                {features.map(({ icon: Icon, title, body }, index) => (
                     <div
                         key={title}
-                        className="flex flex-col gap-3 bg-fd-card p-6"
+                        className={`flex flex-col gap-3 bg-fd-card p-6${
+                            features.length % 2 === 1 &&
+                            index === features.length - 1
+                                ? ' sm:col-span-2'
+                                : ''
+                        }`}
                     >
                         <span className="inline-flex size-10 items-center justify-center rounded-xl bg-stitch-soft text-stitch">
                             <Icon className="size-5" />

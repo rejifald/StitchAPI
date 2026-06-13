@@ -1,0 +1,78 @@
+---
+title: 'Scrape an HTML page into typed data'
+description: 'Read a page as HTML, reshape it into a typed array with a transform, and wrap the output in drift so a markup change becomes a loud error instead of silent data loss.'
+---
+
+## Task
+
+The data you need is on an HTML page, not behind a JSON API. You can scrape it,
+but a scraper is brittle: when the site renames a class or moves a column, your
+selectors quietly return `undefined` and the bad data flows downstream
+unnoticed.
+
+## Example
+
+One way: read the body as text, scrape it in a `transform`, and wrap the
+`output` with `drift` against a committed baseline.
+
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+// Your scraper: HTML in, plain rows out. Use any parser; this one is regex.
+function scrapeRows(html: string): {
+    items: { title: string; score: number }[];
+} {
+    const rows = html.split(/<tr[^>]*>/i).slice(1);
+    const items = rows.flatMap((row) => {
+        const title = /<td class="title">([^<]+)<\/td>/i.exec(row)?.[1];
+        const score = /<td class="score">(\d+)<\/td>/i.exec(row)?.[1];
+        return title ? [{ title, score: Number(score) }] : [];
+    });
+    return { items };
+}
+
+const search = stitch<{ title: string; score: number }[]>({
+    baseUrl: 'https://example.com',
+    path: '/search',
+    responseType: 'text', // read the page as HTML
+    transform: (body) => scrapeRows(String(body)),
+    unwrap: 'items',
+    output: drift(z.array(z.object({ title: z.string(), score: z.number() })), {
+        critical: ['[].score'], // a dropped score must be loud, not silent
+        snapshotFile: 'search.contract.json',
+    }),
+});
+
+const items = await search({ query: { q: 'stitch' } });
+```
+
+## How it works
+
+[`responseType: 'text'`](/docs/guides/data/response-type) hands the raw HTML to
+[`transform`](/docs/guides/data/transform), which scrapes it into
+`{ items: [...] }`. [`unwrap`](/docs/guides/data/unwrap) selects the array, and
+[`drift`](/docs/guides/validation/drift) compares it against
+`search.contract.json` (check that file into the repo). The first call records
+the baseline; later calls flag changes by severity. Because `[].score` is
+`critical`, the day the site renames `class="score"` and the selector starts
+missing, the dropped field changes at level `error` and throws
+[`STITCH_DRIFT`](/docs/errors/stitch-drift) — the silent-scraper failure becomes
+a loud one. It is the same drift safety net from
+[Catch a breaking API change](/docs/recipes/catch-a-breaking-api-change), now
+guarding a scraped source instead of a JSON one.
+
+## See also
+
+<Cards>
+    <Card title="responseType" href="/docs/guides/data/response-type" />
+    <Card title="transform" href="/docs/guides/data/transform" />
+    <Card
+        title="Turn an HTML page into Markdown"
+        href="/docs/recipes/read-html-as-markdown"
+    />
+    <Card
+        title="Catch a breaking API change"
+        href="/docs/recipes/catch-a-breaking-api-change"
+    />
+</Cards>

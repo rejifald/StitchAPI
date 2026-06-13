@@ -1,0 +1,58 @@
+---
+title: 'responseType'
+description: 'Choose how a response body is read — JSON, text/HTML, or binary — when content-type auto-detection is not what you want.'
+---
+
+By default a stitch reads the body by its content-type: JSON when the
+content-type is json-ish, otherwise the raw text. `responseType` overrides that
+when you need a specific shape — pull an HTML page as text, force JSON on a
+server that mislabels it, or download raw bytes.
+
+## Example
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// Force the body to be read as text — e.g. an HTML page to scrape or convert.
+const page = stitch({
+    baseUrl: 'https://example.com',
+    path: '/articles/{slug}',
+    responseType: 'text',
+});
+
+const html = await page({ params: { slug: 'hello' } });
+```
+
+## Options
+
+`responseType?: 'json' | 'text' | 'arrayBuffer' | 'blob'`. Unset (the default)
+auto-detects: JSON when the content-type contains `application/json` or `+json`,
+otherwise the raw decoded text.
+
+-   **`'json'`** — parse as JSON regardless of content-type, for a server that
+    mislabels the body. An empty body becomes `undefined`.
+-   **`'text'`** — return the raw decoded string: HTML to scrape or convert, CSV,
+    plain text. Pair it with [`transform`](/docs/guides/data/transform) to
+    reshape the string before validation runs.
+-   **`'arrayBuffer'`** — the raw bytes as an `ArrayBuffer`, for binary downloads.
+-   **`'blob'`** — a `Blob` carrying the content-type, for binary you hand to a
+    file API.
+
+<Callout type="info">
+    `responseType` only decides how the bytes are read. Reshaping the value —
+    scraping HTML, converting to Markdown, flattening an envelope — is the job
+    of [`transform`](/docs/guides/data/transform), which runs next in the
+    pipeline.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="transform" href="/docs/guides/data/transform" />
+    <Card title="unwrap" href="/docs/guides/data/unwrap" />
+    <Card
+        title="Turn an HTML page into Markdown"
+        href="/docs/recipes/read-html-as-markdown"
+    />
+    <Card title="Reference: Config types" href="/docs/reference/config-types" />
+</Cards>
