@@ -1,19 +1,16 @@
 /**
- * generatePlaygroundCompletions — scans one or more packages for exported
- * *Config interfaces, cross-checks them against the package's public exports,
- * and writes a single PLAYGROUND_COMPLETIONS map for the editor.
+ * generatePlaygroundCompletions — scans packages for exported *Config
+ * interfaces and their matching instance interfaces, then writes two maps:
  *
- * Discovery rule (per package):
- *   1. Collect every exported `*Config` interface across src/**\/*.ts
- *   2. Derive the function name: `StitchConfig → stitch`, `SeamConfig → seam`
- *   3. Only include the interface if that function name appears in src/index.ts exports
+ *   PLAYGROUND_COMPLETIONS         — config keys inside primitive({…}) calls
+ *   PLAYGROUND_INSTANCE_COMPLETIONS — members on the value a primitive returns
  *
- * Adding a new primitive requires no changes here or in next.config — just
- * export `XConfig` + `x` from the package's index and it appears automatically.
+ * Discovery rules (per package):
+ *   Config  : every exported XConfig where x is in src/index.ts exports
+ *   Instance: exported X (same prefix, no Config suffix) alongside each XConfig
  *
- * @param {object} opts
- * @param {string[]} opts.packages  Absolute paths to package roots (must have src/index.ts).
- * @param {string}   opts.outputFile  Absolute path to write the generated .ts file.
+ * e.g. StitchConfig → stitch call-arg completions
+ *      Stitch        → .stream() / .with() / … on the returned instance
  */
 import { readdirSync, writeFileSync } from 'fs';
 import { createRequire } from 'module';
@@ -28,9 +25,8 @@ function findTsFiles(dir) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const full = join(dir, entry.name);
         if (entry.isDirectory()) {
-            if (entry.name !== 'node_modules' && !entry.name.startsWith('.')) {
+            if (entry.name !== 'node_modules' && !entry.name.startsWith('.'))
                 results.push(...findTsFiles(full));
-            }
         } else if (
             entry.isFile() &&
             entry.name.endsWith('.ts') &&
@@ -46,7 +42,6 @@ function findTsFiles(dir) {
 
 /* ── TypeScript helpers ───────────────────────────────────────────────────── */
 
-/** Returns the set of value names exported from an index.ts file. */
 function getExportedNames(ts, indexFile) {
     const program = ts.createProgram([indexFile], {
         noEmit: true,
@@ -57,25 +52,21 @@ function getExportedNames(ts, indexFile) {
 
     const names = new Set();
     ts.forEachChild(sf, (node) => {
-        // export { a, b } from '...'
         if (
             ts.isExportDeclaration(node) &&
             node.exportClause &&
             ts.isNamedExports(node.exportClause)
         ) {
-            for (const el of node.exportClause.elements) {
+            for (const el of node.exportClause.elements)
                 names.add(el.name.text);
-            }
         }
-        // export const / export function / export class
         const hasExport = node.modifiers?.some(
             (m) => m.kind === ts.SyntaxKind.ExportKeyword,
         );
         if (hasExport) {
             if (ts.isVariableStatement(node)) {
-                for (const decl of node.declarationList.declarations) {
-                    if (ts.isIdentifier(decl.name)) names.add(decl.name.text);
-                }
+                for (const d of node.declarationList.declarations)
+                    if (ts.isIdentifier(d.name)) names.add(d.name.text);
             } else if (
                 (ts.isFunctionDeclaration(node) ||
                     ts.isClassDeclaration(node)) &&
@@ -88,85 +79,132 @@ function getExportedNames(ts, indexFile) {
     return names;
 }
 
-/** `'StitchConfig' → 'stitch'`, `'SeamConfig' → 'seam'`. */
 function configToFunctionName(interfaceName) {
     const prefix = interfaceName.replace(/Config$/, '');
     return prefix.charAt(0).toLowerCase() + prefix.slice(1);
 }
 
-/** Extract Completion entries from a *Config interface node. */
-function extractEntries(ts, iface, sf) {
-    function jsDocSummary(node) {
-        const docs = node.jsDoc;
-        if (!docs?.length) return '';
-        const last = docs[docs.length - 1];
-        if (!last.comment) return '';
-        const text =
-            typeof last.comment === 'string'
-                ? last.comment
-                : last.comment.map((c) => c.text ?? '').join('');
-        return text.trim().replace(/\s*\n\s*/g, ' ');
-    }
+function jsDocSummary(node) {
+    const docs = node.jsDoc;
+    if (!docs?.length) return '';
+    const last = docs[docs.length - 1];
+    if (!last.comment) return '';
+    const text =
+        typeof last.comment === 'string'
+            ? last.comment
+            : last.comment.map((c) => c.text ?? '').join('');
+    return text.trim().replace(/\s*\n\s*/g, ' ');
+}
 
-    function typeText(member) {
-        if (!member.type) return 'unknown';
-        return member.type
-            .getText(sf)
-            .replace(/\s*\n\s*/g, ' ')
-            .replace(/\s{2,}/g, ' ')
-            .trim();
-    }
+function collapseWhitespace(s) {
+    return s
+        .replace(/\s*\n\s*/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
 
+/** Property signatures only — used for *Config interfaces (call-arg completions). */
+function extractConfigEntries(ts, iface, sf) {
     const entries = [];
     for (const member of iface.members) {
         if (!ts.isPropertySignature(member)) continue;
         entries.push({
+            type: 'property',
             label: member.name.getText(sf),
-            detail: typeText(member),
+            detail: member.type
+                ? collapseWhitespace(member.type.getText(sf))
+                : 'unknown',
             info: jsDocSummary(member),
         });
     }
     return entries;
 }
 
-/** Scan src/ of a package for exported *Config interfaces matched to exports. */
+/** Property + method signatures — used for instance interfaces (dot completions). */
+function extractInstanceEntries(ts, iface, sf) {
+    const entries = [];
+    for (const member of iface.members) {
+        if (ts.isCallSignatureDeclaration(member)) continue; // skip callable part
+
+        if (ts.isPropertySignature(member)) {
+            entries.push({
+                type: 'property',
+                label: member.name.getText(sf),
+                detail: member.type
+                    ? collapseWhitespace(member.type.getText(sf))
+                    : 'unknown',
+                info: jsDocSummary(member),
+            });
+        } else if (ts.isMethodSignature(member)) {
+            const params = member.parameters
+                .map((p) => collapseWhitespace(p.getText(sf)))
+                .join(', ');
+            const ret = member.type
+                ? collapseWhitespace(member.type.getText(sf))
+                : 'void';
+            entries.push({
+                type: 'method',
+                label: member.name.getText(sf),
+                detail: `(${params}) => ${ret}`,
+                info: jsDocSummary(member),
+            });
+        }
+    }
+    return entries;
+}
+
+/** Scan src/ of a package, return config + instance entries per primitive. */
 function scanPackage(ts, packageRoot) {
     const srcDir = resolve(packageRoot, 'src');
     const indexFile = resolve(srcDir, 'index.ts');
-
     const exportedNames = getExportedNames(ts, indexFile);
     const srcFiles = findTsFiles(srcDir);
 
-    // Build one program over all source files for efficient shared parsing.
     const program = ts.createProgram(srcFiles, {
         noEmit: true,
         skipLibCheck: true,
     });
 
-    const found = []; // [{ functionName, interfaceName, entries }]
-
+    // Collect all exported interfaces by name across all source files.
+    const exportedIfaces = new Map(); // name → { node, sf }
     for (const file of srcFiles) {
         const sf = program.getSourceFile(file);
         if (!sf) continue;
-
         ts.forEachChild(sf, (node) => {
             if (!ts.isInterfaceDeclaration(node)) return;
-            if (!node.name.text.endsWith('Config')) return;
-
-            const isExported = node.modifiers?.some(
+            const exported = node.modifiers?.some(
                 (m) => m.kind === ts.SyntaxKind.ExportKeyword,
             );
-            if (!isExported) return;
-
-            const fnName = configToFunctionName(node.name.text);
-            if (!exportedNames.has(fnName)) return;
-
-            found.push({
-                functionName: fnName,
-                interfaceName: node.name.text,
-                entries: extractEntries(ts, node, sf),
-            });
+            if (exported) exportedIfaces.set(node.name.text, { node, sf });
         });
+    }
+
+    const found = [];
+    for (const [ifaceName, { node, sf }] of exportedIfaces) {
+        if (!ifaceName.endsWith('Config')) continue;
+        const fnName = configToFunctionName(ifaceName);
+        if (!exportedNames.has(fnName)) continue;
+
+        // Instance interface: same prefix, no Config suffix (StitchConfig → Stitch)
+        const prefix = ifaceName.replace(/Config$/, '');
+        const instanceIface = exportedIfaces.get(prefix);
+
+        found.push({
+            functionName: fnName,
+            configEntries: extractConfigEntries(ts, node, sf),
+            instanceEntries: instanceIface
+                ? extractInstanceEntries(
+                      ts,
+                      instanceIface.node,
+                      instanceIface.sf,
+                  )
+                : [],
+        });
+
+        console.log(
+            `[completions-plugin] ${fnName}: ${found[found.length - 1].configEntries.length} config, ` +
+                `${found[found.length - 1].instanceEntries.length} instance completions`,
+        );
     }
 
     return found;
@@ -174,15 +212,24 @@ function scanPackage(ts, packageRoot) {
 
 /* ── emit ─────────────────────────────────────────────────────────────────── */
 
-function renderEntry({ label, detail, info }) {
+function renderEntry({ type, label, detail, info }) {
     return (
         `        {\n` +
         `            label: ${JSON.stringify(label)},\n` +
-        `            type: 'property' as const,\n` +
+        `            type: ${JSON.stringify(type)},\n` +
         `            detail: ${JSON.stringify(detail)},\n` +
         (info ? `            info: ${JSON.stringify(info)},\n` : '') +
         `        }`
     );
+}
+
+function renderBlock(map) {
+    return Object.entries(map)
+        .map(
+            ([key, entries]) =>
+                `    ${JSON.stringify(key)}: [\n${entries.map(renderEntry).join(',\n')},\n    ]`,
+        )
+        .join(',\n');
 }
 
 /* ── public API ───────────────────────────────────────────────────────────── */
@@ -190,28 +237,30 @@ function renderEntry({ label, detail, info }) {
 export async function generatePlaygroundCompletions({ packages, outputFile }) {
     const ts = req('typescript');
 
-    const allFound = packages.flatMap((pkgRoot) => {
-        const results = scanPackage(ts, pkgRoot);
-        for (const r of results) {
-            console.log(
-                `[completions-plugin] ${r.functionName}: ${r.entries.length} completions from ${r.interfaceName} (${pkgRoot})`,
-            );
-        }
-        return results;
-    });
+    const allFound = packages.flatMap((pkgRoot) => scanPackage(ts, pkgRoot));
 
-    const blocks = allFound.map(({ functionName, entries }) => {
-        const rendered = entries.map(renderEntry).join(',\n');
-        return `    ${JSON.stringify(functionName)}: [\n${rendered},\n    ]`;
-    });
+    const configMap = Object.fromEntries(
+        allFound.map((r) => [r.functionName, r.configEntries]),
+    );
+    const instanceMap = Object.fromEntries(
+        allFound
+            .filter((r) => r.instanceEntries.length > 0)
+            .map((r) => [r.functionName, r.instanceEntries]),
+    );
 
     const content = [
         `// @generated — do not edit by hand.`,
         `// Regenerate: pnpm --filter @stitchapi/docs run gen:completions`,
         `import type { Completion } from '@codemirror/autocomplete';`,
         ``,
+        `/** Config-key completions inside primitive({…}) call arguments. */`,
         `export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {`,
-        blocks.join(',\n'),
+        renderBlock(configMap),
+        `};`,
+        ``,
+        `/** Member completions on the value returned by a primitive call. */`,
+        `export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {`,
+        renderBlock(instanceMap),
         `};`,
         ``,
     ].join('\n');

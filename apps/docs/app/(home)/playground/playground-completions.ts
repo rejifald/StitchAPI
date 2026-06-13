@@ -1,4 +1,7 @@
-import { PLAYGROUND_COMPLETIONS } from './playground-completions.generated';
+import {
+    PLAYGROUND_COMPLETIONS,
+    PLAYGROUND_INSTANCE_COMPLETIONS,
+} from './playground-completions.generated';
 
 import {
     type CompletionContext,
@@ -19,13 +22,11 @@ function braceDepth(text: string): number {
 }
 
 /**
- * Completion source for all known playground primitives.
+ * Config-key completions inside primitive({…}) call arguments.
  *
  * For each entry in PLAYGROUND_COMPLETIONS (keyed by function name), checks
- * whether the cursor is inside a `fnName({…})` object literal and returns that
- * function's config-key completions. Adding a new primitive requires only a new
- * entry in the PlaygroundCompletionsPlugin config in next.config.mjs — no
- * changes here.
+ * whether the cursor is inside a `fnName({…})` object literal. Adding a new
+ * primitive only requires a new entry in PlaygroundCompletionsPlugin config.
  */
 export function playgroundCompletionSource(
     context: CompletionContext,
@@ -47,6 +48,47 @@ export function playgroundCompletionSource(
         if (idx === -1) continue;
         if (braceDepth(lookback.slice(idx + marker.length)) > 0) {
             return { from: word.from, options: completions, validFor: /^\w*$/ };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Dot-completion source for instance members on primitive return values.
+ *
+ * Fires when the cursor is after `identifier.` and that identifier was assigned
+ * from a known primitive call (e.g. `const getUser = stitch(...)`). Suggests
+ * the methods and properties of the returned instance (stream, with, …).
+ */
+export function instanceCompletionSource(
+    context: CompletionContext,
+): CompletionResult | null {
+    // Match `identifier.partialWord`
+    const match = context.matchBefore(/\w+\.\w*/);
+    if (!match) return null;
+
+    const dotIdx = match.text.indexOf('.');
+    const receiver = match.text.slice(0, dotIdx);
+
+    const docText = context.state.doc.sliceString(
+        0,
+        Math.min(context.pos, context.state.doc.length),
+    );
+
+    for (const [fnName, completions] of Object.entries(
+        PLAYGROUND_INSTANCE_COMPLETIONS,
+    )) {
+        // Heuristic: look for `const/let/var receiver = <anything>fnName(`
+        const pattern = new RegExp(
+            `(?:const|let|var)\\s+${receiver}\\s*=\\s*[\\s\\S]*?${fnName}\\s*[\\({]`,
+        );
+        if (pattern.test(docText)) {
+            return {
+                from: match.from + dotIdx + 1,
+                options: completions,
+                validFor: /^\w*$/,
+            };
         }
     }
 
