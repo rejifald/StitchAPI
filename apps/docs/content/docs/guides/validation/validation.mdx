@@ -39,6 +39,14 @@ the API would reject.
 (Pass a `drift()` spec here instead to report changes without throwing — see
 [Schema drift detection](/docs/guides/validation/drift).)
 
+<Callout type="warn">
+    **Anti-pattern:** don't reach for a strict `output` validator to catch
+    upstream API changes — an additive, non-breaking change to the response then
+    throws `STITCH_VALIDATION` and breaks the call. Pass a `drift()` spec to
+    `output` instead, so changes are reported without failing the request. See
+    [Schema drift detection](/docs/guides/validation/drift).
+</Callout>
+
 The config fields are typed as `Validator`, and a raw Zod, Valibot, or ArkType
 schema is not structurally a `Validator`. Adapt it with `toValidator()`, which
 coerces a Zod schema, any Standard Schema, or a predicate into a `Validator` —

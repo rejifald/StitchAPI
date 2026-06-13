@@ -40,6 +40,14 @@ returns `T` (the unwrapped value), not the envelope. See
 [Reference → Config types](/docs/reference/config-types) for the full config
 shape.
 
+<Callout type="warn">
+    **Anti-pattern:** don't reach for the dot-path to reshape, rename, or merge
+    fields — `unwrap` only _selects_ one already-nested slice, so anything
+    beyond picking an existing branch belongs in a reshape step that runs first.
+    Do the restructuring in `transform` instead, then point `unwrap` at the
+    slice it produces. See [transform](/docs/guides/data/transform).
+</Callout>
+
 ## See also
 
 <Cards>

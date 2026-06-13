@@ -54,6 +54,15 @@ contract change across calls and lets you triage it by severity.
 See [Reference → Config types](/docs/reference/config-types) for the full
 `DriftOptions` and `DriftFinding` tables.
 
+<Callout type="warn">
+    **Anti-pattern:** don't list every path under `critical` so any change
+    breaks the call — that collapses drift back into hard validation and throws
+    away the early warning. Reserve `critical` for the few paths that must not
+    move, leave the rest to `watch` and `info`, and read those findings off the
+    event stream so you can watch a field erode before it breaks. See [the event
+    stream](/docs/concepts/event-stream).
+</Callout>
+
 ## See also
 
 <Cards>

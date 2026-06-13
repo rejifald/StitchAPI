@@ -53,9 +53,11 @@ share one session. See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
 
 <Callout type="warn">
-    A soft 200 wall — a login page returned with status `200` — slips past
-    `refreshOn`. Catch it with `refreshWhen`; see
-    [STITCH_AUTH_WALL](/docs/errors/stitch-auth-wall).
+    **Anti-pattern:** don't lean on `refreshOn` status codes alone to catch an
+    expired session — a soft 200 wall, where the login page comes back with
+    status `200`, slips straight past it and your stitch reads the login HTML as
+    data; add a `refreshWhen` content predicate so the session re-logs in on
+    that body too. See [STITCH_AUTH_WALL](/docs/errors/stitch-auth-wall).
 </Callout>
 
 ## See also

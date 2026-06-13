@@ -46,6 +46,14 @@ all — across stitches and across workers, surviving restarts. See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
 
 <Callout type="warn">
+    **Anti-pattern:** don't rely on the default token cache across multiple
+    workers — it lives in memory, process-local, so every worker fetches and
+    refreshes its own token and hammers the token endpoint; give the stitches a
+    shared `key` and a durable `store` so one token serves them all. See
+    [Pluggable store](/docs/guides/state/pluggable-store).
+</Callout>
+
+<Callout type="warn">
     The token lives only in the store and the outgoing `Authorization` header —
     the caller, an agent included, never receives it. That is the capability
     boundary; see [Capability, not

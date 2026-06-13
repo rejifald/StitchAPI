@@ -49,6 +49,14 @@ Each retry surfaces as a `progress` event (phase `retry`) on the
 re-attempt. For the exhaustive field list and defaults, see
 [Reference → Config types](/docs/reference/config-types).
 
+<Callout type="warn">
+    **Anti-pattern:** don't add `retry` to a stitch that performs a
+    non-idempotent write — a POST that creates an order, for instance — because
+    a re-attempt after a timeout or `503` can silently apply the side effect
+    twice; pair retries with an idempotency key so the server collapses the
+    duplicate instead. See [Idempotency](/docs/guides/resilience/idempotency).
+</Callout>
+
 ## See also
 
 <Cards>

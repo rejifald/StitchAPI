@@ -36,6 +36,15 @@ const createOrder = stitch({
 A single `charge()` call generates one key and reuses it across every retry of
 that call, so a network blip that triggers a retry settles a single charge.
 
+<Callout type="warn">
+    **Anti-pattern:** don't lean on the default random key to dedupe two
+    separate submissions — a double-clicked "Pay" fires two distinct `charge()`
+    calls, each with a fresh key, so the server sees two writes and charges
+    twice; derive a stable `key` from something the duplicate submissions share
+    (an order reference, a request id) so both map to one key. See [Reference →
+    Config types](/docs/reference/config-types).
+</Callout>
+
 ## Options
 
 `header` is the header name the key rides on, default `'Idempotency-Key'`. Set

@@ -57,6 +57,17 @@ built from.
     batch and never breaks a stitch call.
 </Callout>
 
+<Callout type="warn">
+    **Anti-pattern:** don't assume OTLP export inherits the built-in sink's
+    `[REDACTED]` header scrubbing and flip it on for a stitch that carries its
+    secret in the URL query string — each span sets `url.full` to the full
+    resolved URL verbatim, so a token in the query ships to your collector in
+    the clear (the denylist only ever masks header values, and the span never
+    goes through it). Resolve the secret as a header-borne capability instead,
+    so it stays out of the URL the span exports. See [Capability, not
+    credential](/docs/concepts/capability-not-credential).
+</Callout>
+
 ## See also
 
 <Cards>
