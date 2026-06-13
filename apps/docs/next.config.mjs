@@ -1,4 +1,10 @@
+import { PlaygroundCompletionsPlugin } from '@stitchapi/completions-plugin';
 import { createMDX } from 'fumadocs-mdx/next';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(__dirname, '../..');
 
 const withMDX = createMDX();
 
@@ -8,6 +14,25 @@ const config = {
     // The playground consumes the in-repo sandbox engine (@stitchapi/sandbox), a
     // workspace package that ships raw TS/TSX source — Next must transpile it.
     transpilePackages: ['@stitchapi/sandbox'],
+    webpack(webpackConfig, { isServer }) {
+        // Guard with !isServer so codegen runs once per compilation cycle,
+        // not twice (webpack compiles server and client separately).
+        if (!isServer) {
+            webpackConfig.plugins.push(
+                new PlaygroundCompletionsPlugin({
+                    packages: [
+                        resolve(repoRoot, 'packages/core'),
+                        // Add adapter packages here as they land.
+                    ],
+                    outputFile: resolve(
+                        __dirname,
+                        'app/(home)/playground/playground-completions.generated.ts',
+                    ),
+                }),
+            );
+        }
+        return webpackConfig;
+    },
 };
 
 export default withMDX(config);
