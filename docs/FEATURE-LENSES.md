@@ -52,7 +52,7 @@ existing or proposed — passes through all three before it ships.
 
 -   Auth strategies — `bearer`, `apiKey`, `basic`, `cookieSession` (OAuth2 `client_credentials`
     in progress) — [`src/auth.ts`](../src/auth.ts)
--   Secret resolvers — `env()` and `keychain()`, resolved at **call time**
+-   Secret resolvers — `env()` and `secretsFile()`, resolved at **call time**
 -   The caller gets a capability, not a credential — the stitch holds the secret; an agent
     invoking it never sees the token
 -   Session handling — cookie capture + replay, TTL, refresh on `refreshOn` / `refreshWhen`,
@@ -94,7 +94,6 @@ existing or proposed — passes through all three before it ships.
 ### Composability & reuse
 
 -   `extends` — recursive layering of fragments (string · object · another stitch), deep-merged
--   `preset()` — a named bundle of reusable defaults
 -   `seam(options)` — a long-lived entity stitches belong to: shared fragment + runtime (store, vault, sink) + a trusted principal boundary
 -   `stitch.use(...)` — the same composition through the fluent builder
 -   Hook chaining — `onRequest` runs base→child, the rest unwind child→base

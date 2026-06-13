@@ -54,11 +54,6 @@ export function secretsFile(name: string): () => string {
     };
 }
 
-/**
- * @deprecated Use {@link secretsFile} instead — same behaviour, clearer name.
- */
-export const keychain = secretsFile;
-
 export function bearer(token: Secret): AuthStrategy {
     return {
         name: 'bearer',
@@ -93,7 +88,7 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
 export interface OAuth2Opts {
     /** The `client_credentials` token endpoint (POST, form-encoded). */
     tokenUrl: string;
-    /** OAuth2 client id; resolved at call time (env/keychain), never committed. */
+    /** OAuth2 client id; resolved at call time (env/secretsFile), never committed. */
     clientId: Secret;
     /** OAuth2 client secret; resolved at call time. */
     clientSecret: Secret;

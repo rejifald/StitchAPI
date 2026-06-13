@@ -1,4 +1,4 @@
-export { stitch, preset, drift, graphql } from './stitch';
+export { stitch, drift, graphql } from './stitch';
 export { seam } from './seam';
 export {
     bearer,
@@ -8,8 +8,6 @@ export {
     oauth2,
     env,
     secretsFile,
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    keychain,
 } from './auth';
 export { fetchAdapter } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';

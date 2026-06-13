@@ -41,8 +41,7 @@ Two exceptions: hooks **chain** instead of overwriting (every layer's
 last layer that sets one.
 
 <Callout type="info">
-    [`preset()`](/docs/guides/authoring/preset) is a convenience built on this:
-    a named fragment you drop into `extends`. The [fluent
+    A fragment is just a plain object you drop into `extends`. The [fluent
     builder](/docs/guides/authoring/fluent-builder)'s `.use(...)` takes the same
     fragments. For a whole shared surface — shared _runtime_ and a trusted
     principal boundary, not just config — reach for a `seam`.
@@ -51,7 +50,6 @@ last layer that sets one.
 ## See also
 
 <Cards>
-    <Card title="preset()" href="/docs/guides/authoring/preset" />
     <Card title="Fluent builder" href="/docs/guides/authoring/fluent-builder" />
     <Card title="stitch()" href="/docs/guides/authoring/stitch" />
     <Card title="Reference: config types" href="/docs/reference/config-types" />

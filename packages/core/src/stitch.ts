@@ -331,10 +331,6 @@ export const stitch: StitchFn = Object.assign(
     },
 );
 
-/** preset(): a named bundle of reusable defaults (just an identity-tagged fragment). */
-export const preset = (cfg: Partial<StitchConfig>): Partial<StitchConfig> =>
-    cfg;
-
 /** drift(): wrap an output schema with leveled drift options. */
 export function drift(schema: unknown, options: DriftOptions = {}): DriftSpec {
     return {

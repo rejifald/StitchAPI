@@ -18,7 +18,7 @@ import type { TraceSink } from 'stitchapi';
  *
  * Surface map (SANDBOX §3 table):
  *   Browser-safe (re-exported verbatim from core):
- *     stitch, seam, preset, drift, graphql,
+ *     stitch, seam, drift, graphql,
  *     bearer, apiKey, basic, oauth2,
  *     fetchAdapter, toValidator, memoryStore, multiplex, toOtlpJson, + all types
  *   Node-only, runs SHIMMED here (with a RunNotice):
@@ -34,7 +34,6 @@ import type { TraceSink } from 'stitchapi';
 export {
     stitch,
     seam,
-    preset,
     drift,
     graphql,
     bearer,

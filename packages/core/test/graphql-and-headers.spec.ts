@@ -1,6 +1,6 @@
 // Closes the last two gaps: a real `graphql` kind (proving the kind abstraction) and a
 // static `headers` config field.
-import { apiKey, env, graphql, preset, stitch } from '../src';
+import { apiKey, env, graphql, stitch } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -59,7 +59,7 @@ describe('GraphQL kind', () => {
 describe('Static default headers', () => {
     test('cfg.headers + fragment headers merge; input.headers overrides per key', async () => {
         server.route('GET', '/x', { body: { ok: true } });
-        const base = preset({ headers: { 'x-trace': 't1' } });
+        const base = { headers: { 'x-trace': 't1' } };
         const s = stitch({
             extends: [base],
             baseUrl: server.url,

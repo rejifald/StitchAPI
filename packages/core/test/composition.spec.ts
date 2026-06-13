@@ -1,4 +1,4 @@
-import { preset, seam, stitch } from '../src';
+import { seam, stitch } from '../src';
 import type { StitchEvent } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
@@ -47,7 +47,7 @@ test('two facades (extends / builder) are equivalent', async () => {
     const schema = asValidator(
         z.array(z.object({ id: z.number(), name: z.string() })),
     );
-    const base = preset({ baseUrl: server.url, unwrap: 'data' });
+    const base = { baseUrl: server.url, unwrap: 'data' };
 
     // (a) extends
     const viaExtends = stitch({
@@ -80,7 +80,7 @@ test('a seam member is equivalent to the extends facade', async () => {
     const schema = asValidator(
         z.array(z.object({ id: z.number(), name: z.string() })),
     );
-    const base = preset({ baseUrl: server.url, unwrap: 'data' });
+    const base = { baseUrl: server.url, unwrap: 'data' };
 
     const viaExtends = stitch({
         extends: [base],
@@ -119,7 +119,7 @@ test('deep-merge keeps base retry.attempts/on when child adds retry.baseMs', asy
         body: { ok: true },
     });
 
-    const retryPreset = preset({ retry: { attempts: 3, on: [503] } });
+    const retryPreset = { retry: { attempts: 3, on: [503] } };
     // Child only sets baseMs; if merge replaced the object wholesale, attempts/on would be lost
     // and the stitch would NOT retry the two 503s.
     const flaky = stitch({
@@ -143,7 +143,7 @@ test('hooks chain across fragments (onRequest base->child, onResponse child->bas
     server.route('GET', '/hooked', { body: { ok: true } });
 
     const order: string[] = [];
-    const baseFrag = preset({
+    const baseFrag = {
         baseUrl: server.url,
         hooks: {
             onRequest: () => {
@@ -153,7 +153,7 @@ test('hooks chain across fragments (onRequest base->child, onResponse child->bas
                 order.push('res:base');
             },
         },
-    });
+    };
     const childFrag = {
         path: '/hooked',
         hooks: {

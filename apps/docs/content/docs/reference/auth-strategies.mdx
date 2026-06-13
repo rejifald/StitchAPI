@@ -1,6 +1,6 @@
 ---
 title: 'Auth strategies'
-description: 'bearer, apiKey, basic, cookieSession, oauth2, and the env() and keychain() resolvers.'
+description: 'bearer, apiKey, basic, cookieSession, oauth2, and the env() and secretsFile() resolvers.'
 ---
 
 The signatures for every auth strategy and secret resolver. Each strategy holds
@@ -56,12 +56,13 @@ Resolves a secret from an environment variable at call time.
 import { env } from 'stitchapi';
 ```
 
-## keychain
+## secretsFile
 
-Resolves a secret from `~/.stitch/secrets.json`, falling back to the environment.
+Resolves a secret from `~/.stitch/secrets.json` (plaintext JSON — keep it
+private), falling back to the environment.
 
 ```ts twoslash
-import { keychain } from 'stitchapi';
+import { secretsFile } from 'stitchapi';
 ```
 
 ## See also

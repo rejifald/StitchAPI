@@ -160,7 +160,7 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     if (cfg.adapter === undefined && !/^https?:\/\//i.test(url)) {
         const e = new Error(
             `stitch ${JSON.stringify(nameOf(cfg))}: request URL ${JSON.stringify(url)} is not absolute. ` +
-                'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared preset).',
+                'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared fragment).',
         );
         e.name = 'StitchConfigError';
         throw e;

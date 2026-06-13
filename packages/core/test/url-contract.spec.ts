@@ -1,4 +1,4 @@
-import { preset, stitch } from '../src';
+import { stitch } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -62,10 +62,10 @@ test('url takes precedence over baseUrl + path', async () => {
 // Composition: the endpoint is one mutually-exclusive slot — the last writer wins it whole.
 test('a child url overrides an inherited baseUrl/path', async () => {
     server.route('GET', '/from-url', { body: { ok: true } });
-    const base = preset({
+    const base = {
         baseUrl: 'https://wrong.example.com',
         path: '/wrong',
-    });
+    };
     const s = stitch({ extends: [base], url: `${server.url}/from-url` });
 
     expect(s.__config.url).toBe(`${server.url}/from-url`);
@@ -76,7 +76,7 @@ test('a child url overrides an inherited baseUrl/path', async () => {
 
 test('a child baseUrl/path overrides an inherited url', async () => {
     server.route('GET', '/from-path', { body: { ok: true } });
-    const base = preset({ url: 'https://wrong.example.com/wrong' });
+    const base = { url: 'https://wrong.example.com/wrong' };
     const s = stitch({
         extends: [base],
         baseUrl: server.url,
