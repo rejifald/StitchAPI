@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 616" width="900" height="616" font-family="Inter, -apple-system, system-ui, sans-serif" role="img" aria-label="StitchAPI color palette">
+  <rect x="8" y="8" width="884" height="600" rx="20" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="32" y="46" font-size="26" font-weight="700" fill="#0c0c0c">StitchAPI · Color</text>
+  <text x="32" y="68" font-size="13" fill="#6b7280">Tokens shipped as --stitch* CSS vars in apps/docs/app/global.css</text>
+
+  <!-- Group A: Brand blue, light theme -->
+  <text x="32" y="100" font-size="14" font-weight="700" fill="#3b82f6">Brand blue · light theme</text>
+  <g>
+    <rect x="32"  y="112" width="150" height="56" rx="10" fill="#3b82f6" stroke="#0000001a"/>
+    <text x="32"  y="196" font-size="13" fill="#111827">--stitch</text>
+    <text x="32"  y="211" font-size="12" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#3B82F6</text>
+    <rect x="202" y="112" width="150" height="56" rx="10" fill="#2563eb" stroke="#0000001a"/>
+    <text x="202" y="196" font-size="13" fill="#111827">--stitch-strong</text>
+    <text x="202" y="211" font-size="12" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#2563EB</text>
+    <rect x="372" y="112" width="150" height="56" rx="10" fill="#eff6ff" stroke="#0000001a"/>
+    <text x="372" y="196" font-size="13" fill="#111827">--stitch-soft</text>
+    <text x="372" y="211" font-size="12" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#EFF6FF</text>
+    <rect x="542" y="112" width="150" height="56" rx="10" fill="#bfdbfe" stroke="#0000001a"/>
+    <text x="542" y="196" font-size="13" fill="#111827">--stitch-border</text>
+    <text x="542" y="211" font-size="12" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#BFDBFE</text>
+  </g>
+
+  <!-- Group B: Brand blue, dark theme -->
+  <text x="32" y="240" font-size="14" font-weight="700" fill="#3b82f6">Brand blue · dark theme</text>
+  <g>
+    <rect x="32"  y="252" width="150" height="56" rx="10" fill="#60a5fa" stroke="#0000001a"/>
+    <text x="32"  y="336" font-size="13" fill="#111827">--stitch</text>
+    <text x="32"  y="351" font-size="12" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#60A5FA</text>
+    <rect x="202" y="252" width="150" height="56" rx="10" fill="#93c5fd" stroke="#0000001a"/>
+    <text x="202" y="336" font-size="13" fill="#111827">--stitch-strong</text>
+    <text x="202" y="351" font-size="12" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#93C5FD</text>
+    <text x="372" y="285" font-size="12" fill="#9ca3af">soft &amp; border are alpha mixes of</text>
+    <text x="372" y="301" font-size="12" fill="#9ca3af">#1E3A8A / #60A5FA — see global.css</text>
+  </g>
+
+  <!-- Group C: Foundation -->
+  <text x="32" y="380" font-size="14" font-weight="700" fill="#3b82f6">Foundation</text>
+  <g>
+    <rect x="32"  y="392" width="150" height="56" rx="10" fill="#0c0c0c" stroke="#0000001a"/>
+    <text x="32"  y="476" font-size="13" fill="#111827">Ink</text>
+    <text x="32"  y="491" font-size="12" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#0C0C0C</text>
+    <rect x="202" y="392" width="150" height="56" rx="10" fill="#e6e6e6" stroke="#0000001a"/>
+    <text x="202" y="476" font-size="13" fill="#111827">Off-white</text>
+    <text x="202" y="491" font-size="12" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#E6E6E6</text>
+    <rect x="372" y="392" width="150" height="56" rx="10" fill="#ffffff" stroke="#0000001a"/>
+    <text x="372" y="476" font-size="13" fill="#111827">White</text>
+    <text x="372" y="491" font-size="12" fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#FFFFFF</text>
+  </g>
+
+  <!-- Group D: Code tokens -->
+  <text x="32" y="520" font-size="14" font-weight="700" fill="#3b82f6">Code tokens · syntax</text>
+  <g>
+    <rect x="32"  y="532" width="150" height="44" rx="10" fill="#c2882a" stroke="#0000001a"/>
+    <text x="32"  y="592" font-size="12" fill="#111827">string · light  <tspan fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#C2882A</tspan></text>
+    <rect x="202" y="532" width="150" height="44" rx="10" fill="#e0b252" stroke="#0000001a"/>
+    <text x="202" y="592" font-size="12" fill="#111827">string · dark  <tspan fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#E0B252</tspan></text>
+    <rect x="372" y="532" width="150" height="44" rx="10" fill="#2563eb" stroke="#0000001a"/>
+    <text x="372" y="592" font-size="12" fill="#111827">fn · light  <tspan fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#2563EB</tspan></text>
+    <rect x="542" y="532" width="150" height="44" rx="10" fill="#7aa2f7" stroke="#0000001a"/>
+    <text x="542" y="592" font-size="12" fill="#111827">fn · dark  <tspan fill="#6b7280" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">#7AA2F7</tspan></text>
+  </g>
+</svg>
