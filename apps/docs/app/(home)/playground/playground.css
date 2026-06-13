@@ -34,6 +34,52 @@
     color: var(--color-fd-foreground);
 }
 
+/* ── Example switcher (Complete ↔ Simple) ───────────────────────────────── */
+.stitch-playground-examples {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+    flex-wrap: wrap;
+}
+.stitch-playground-examples__tab {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    padding: 0.3rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-fd-border);
+    background: transparent;
+    color: var(--color-fd-muted-foreground);
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease,
+        border-color 0.15s ease;
+}
+.stitch-playground-examples__tab:hover {
+    color: var(--color-fd-foreground);
+    background: color-mix(in srgb, var(--color-fd-foreground) 6%, transparent);
+}
+.stitch-playground-examples__tab[data-active='true'] {
+    background: var(--stitch);
+    border-color: var(--stitch-border);
+    color: #fff;
+}
+.stitch-playground-examples__tab[data-active='true']:hover {
+    background: var(--stitch-strong);
+    color: #fff;
+}
+.stitch-playground-examples__hint {
+    margin-left: 0.35rem;
+    font-size: 0.78rem;
+    color: var(--color-fd-muted-foreground);
+}
+@media (max-width: 30rem) {
+    .stitch-playground-examples__hint {
+        display: none;
+    }
+}
+
 /* ── Shell ──────────────────────────────────────────────────────────────── */
 .stitch-playground {
     border: 1px solid var(--color-fd-border);
