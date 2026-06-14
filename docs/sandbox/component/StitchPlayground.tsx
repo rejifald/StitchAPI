@@ -196,7 +196,17 @@ export function StitchPlayground({
                 setView(buildRunView(res));
             }
         } finally {
-            if (!ac.signal.aborted) setRunning(false);
+            // Only the *current* run owns the button state. Keying off
+            // `abortRef.current === ac` (not `ac.signal.aborted`) distinguishes
+            // the two ways this run can end aborted: an explicit Stop leaves
+            // `abortRef.current` pointing at `ac`, so we flip `running` off and
+            // return the button to "Run" / re-enable Reset; a *superseding* run
+            // has already replaced `abortRef.current` with its own controller
+            // and set `running` true again, so we must leave it alone.
+            if (abortRef.current === ac) {
+                abortRef.current = null;
+                setRunning(false);
+            }
         }
     }, [code, runner, scope, knobs]);
 
