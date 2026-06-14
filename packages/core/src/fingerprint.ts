@@ -15,34 +15,25 @@
 // their own packages (`@stitchapi/fingerprint-*`) with the validator as a peer
 // dependency, each proving compliance via `verifyFingerprintContract`
 // (`stitchapi/testing`). No validator ever enters core's dependency graph.
+import { xxh128 } from './hash';
 import { type StandardSchemaV1, isStandardSchema } from './standard-schema';
 
 // ---------------------------------------------------------------------------
 // hash primitive — synchronous, browser-safe, non-crypto, no dependency
 // ---------------------------------------------------------------------------
 
-// FNV-1a over UTF-16 code units, 64-bit, rendered base36. Computed once at
-// stitch-definition time, never on the hot path, so a non-crypto hash is fine.
-// A COLLISION (two different contracts → same token) is the only unsafe failure,
-// because it would under-invalidate; 64 bits keeps that probability negligible
-// for any realistic number of distinct schemas. WebCrypto is async + Node `crypto`
-// is not browser-safe, so neither is usable here (browser-first gate). The token
-// is opaque: ADR 0003 may later swap this for the shared xxh128 key primitive — a
-// one-time, safe over-invalidation — without changing this contract.
-const FNV_OFFSET = 0xcbf29ce484222325n;
-const FNV_PRIME = 0x100000001b3n;
-const MASK64 = 0xffffffffffffffffn;
+// The fingerprint token rides the SAME 128-bit xxh128 the cache key uses — the swap this module's
+// FNV-1a placeholder always anticipated, now that ADR 0003's cache is wired. One well-tested
+// primitive: computed once at stitch-definition time, never on the hot path. A COLLISION (two
+// different contracts → same token) is the only unsafe failure — it would under-invalidate — and
+// 128 bits puts that past ~2^64 distinct schemas, unreachable. WebCrypto is async and Node `crypto`
+// is not browser-safe, so neither is usable here (browser-first gate). The token is opaque, so the
+// one-time change in its bytes from the old FNV form is a safe over-invalidation (no production
+// users; any cached values self-heal under TTL).
 
-/** Stable non-crypto hash of a string → a short opaque token. */
+/** Stable non-crypto hash of a string → an opaque 128-bit token (32-char hex). */
 export function hash(input: string): string {
-    let h = FNV_OFFSET;
-    for (let i = 0; i < input.length; i++) {
-        const c = input.charCodeAt(i);
-        h = ((h ^ BigInt(c & 0xff)) * FNV_PRIME) & MASK64;
-        h = ((h ^ BigInt((c >> 8) & 0xff)) * FNV_PRIME) & MASK64;
-    }
-    // Length-prefix adds a cheap extra discriminator against collisions.
-    return `${input.length.toString(36)}_${h.toString(36)}`;
+    return xxh128(input);
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +148,7 @@ export interface FingerprintInput {
      * caches but re-validates on every hit (network savings, but only sound for
      * pure validators — see {@link CachePolicy}).
      */
-    readonly onUnfingerprintable?: 'refuse' | 'revalidate';
+    readonly onUnfingerprintable?: 'refuse' | 'revalidate' | undefined;
 }
 
 export interface FingerprintResolution {

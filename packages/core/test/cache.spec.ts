@@ -5,9 +5,52 @@
 // `version` fast path, and the cacheable-method gate (GraphQL opt-in).
 import { graphql, memoryStore, seam, stitch } from '../src';
 import type { Adapter } from '../src';
+import { clearFingerprinters, registerFingerprinter } from '../src/fingerprint';
+import type { SchemaFingerprinter } from '../src/fingerprint';
+import type { StandardSchemaV1 } from '../src/standard-schema';
 
 const sleep = (ms: number): Promise<void> =>
     new Promise((resolve) => setTimeout(resolve, ms));
+
+// A minimal Standard Schema carrying an inspectable `__desc` (mirrors fingerprint.spec). It rides
+// through `toValidator`, which preserves it as the Validator's non-enumerable `source` so the cache
+// can fingerprint it; `~standard.validate` accepts the value unchanged.
+function fpSchema(
+    desc: unknown,
+    vendor = 'test',
+): StandardSchemaV1 & { __desc: unknown } {
+    return {
+        '~standard': {
+            version: 1,
+            vendor,
+            validate: (value: unknown) => ({ value }),
+        },
+        __desc: desc,
+    };
+}
+
+// Reference strategy: distinct `__desc` → distinct token; ABSTAINS (value null) on `{ opaque }`.
+const testFingerprinter: SchemaFingerprinter = {
+    vendor: 'test',
+    supports: '*',
+    fingerprint(schema) {
+        const desc = (schema as { __desc?: unknown }).__desc;
+        if (desc && typeof desc === 'object' && 'opaque' in desc)
+            return { value: null, strength: 'strong' };
+        return { value: JSON.stringify(desc), strength: 'strong' };
+    },
+};
+
+// Drain a stitch's event stream and collect the `cache`-phase trace details (hit/miss/bypass/…).
+async function cacheTrace(
+    run: AsyncIterable<{ type: string; phase?: string; detail?: string }>,
+): Promise<string[]> {
+    const details: string[] = [];
+    for await (const ev of run)
+        if (ev.type === 'progress' && ev.phase === 'cache' && ev.detail)
+            details.push(ev.detail);
+    return details;
+}
 
 // An adapter that counts origin calls and returns a JSON body. `body(callNo, req)` defaults to
 // `{ n: callNo }`, so a stable cached response still lets a test prove freshness by call count.
@@ -320,10 +363,12 @@ describe('cache — scope isolation', () => {
 });
 
 describe('cache — re-validate on hit vs version fast path', () => {
-    test('without a version, a hit is re-validated and a stale-shaped entry self-heals', async () => {
+    test('onUnfingerprintable:"revalidate" self-heals a stale-shaped hit', async () => {
         // First origin call returns a string `n`; later calls return a number. A loose writer
-        // caches the string; a strict reader (sharing the store + key) re-validates on hit, finds
-        // it stale, evicts, and refetches a conforming value.
+        // (accept-anything predicate) caches the string; a strict reader (number predicate) sharing
+        // the store + key re-validates on hit, finds it stale, evicts, and refetches a conforming
+        // value. Both outputs are predicates — un-fingerprintable — so with onUnfingerprintable:
+        // 'revalidate' both take policy 'revalidate' and share one (empty-fingerprint) bucket.
         const { adapter, calls } = counting({
             body: (n) => ({ n: n === 1 ? 'oops' : 7 }),
         });
@@ -334,9 +379,16 @@ describe('cache — re-validate on hit vs version fast path', () => {
             adapter,
             store,
             trace: false as const,
-            cache: { ttl: '60s', scope: 'app' as const },
+            cache: {
+                ttl: '60s',
+                scope: 'app' as const,
+                onUnfingerprintable: 'revalidate' as const,
+            },
         };
-        const writer = stitch(base);
+        const writer = stitch({
+            ...base,
+            output: (v: unknown): v is object => typeof v === 'object',
+        });
         const reader = stitch({
             ...base,
             output: (v: unknown): v is { n: number } =>
@@ -372,6 +424,121 @@ describe('cache — re-validate on hit vs version fast path', () => {
         // version set → no re-validation: the stale-shaped value is returned as-is, no refetch.
         expect(await reader()).toEqual({ n: 'oops' });
         expect(calls()).toBe(1);
+    });
+});
+
+describe('cache — schema fingerprint fold (ADR 0004)', () => {
+    afterEach(() => {
+        clearFingerprinters();
+    });
+
+    test('a no-output stitch caches fast — a hit is served without re-validation', async () => {
+        const { adapter, calls } = counting();
+        const s = stitch({
+            url: URL,
+            adapter,
+            trace: false,
+            cache: { ttl: '60s', scope: 'app' },
+        });
+        expect(await s()).toEqual({ n: 1 });
+        const trace = await cacheTrace(s.stream());
+        expect(trace).toContain('hit'); // policy 'fast' → plain 'hit', not 'hit (revalidated)'
+        expect(trace).not.toContain('hit (revalidated)');
+        expect(calls()).toBe(1);
+    });
+
+    test('a registered fingerprinter takes the fast path; a changed schema is a new generation → miss', async () => {
+        registerFingerprinter(testFingerprinter);
+        const { adapter, calls } = counting();
+        const store = memoryStore();
+        const base = {
+            url: URL,
+            name: 'fp',
+            adapter,
+            store,
+            trace: false as const,
+            cache: { ttl: '60s', scope: 'app' as const },
+        };
+        const v1 = stitch({ ...base, output: fpSchema('v1') });
+        expect(await v1()).toEqual({ n: 1 });
+        expect(await v1()).toEqual({ n: 1 }); // sound fingerprint → fast hit
+        expect(calls()).toBe(1);
+
+        // Ship a changed output schema (new __desc → new fingerprint token) → new bucket → miss.
+        const v2 = stitch({ ...base, output: fpSchema('v2') });
+        expect(await v2()).toEqual({ n: 2 });
+        expect(calls()).toBe(2);
+
+        // The old schema's entry lives in its own bucket — still a hit, not clobbered.
+        expect(await v1()).toEqual({ n: 1 });
+        expect(calls()).toBe(2);
+    });
+
+    test('an un-fingerprintable schema is refused by default (fail-closed) and surfaces why', async () => {
+        registerFingerprinter(testFingerprinter); // registered, but ABSTAINS on { opaque }
+        const { adapter, calls } = counting();
+        const s = stitch({
+            url: URL,
+            adapter,
+            trace: false,
+            cache: { ttl: '60s', scope: 'app' },
+            output: fpSchema({ opaque: true }),
+        });
+        const trace = await cacheTrace(s.stream());
+        expect(trace.some((d) => d.startsWith('bypass:'))).toBe(true);
+        expect(trace.join(' ')).toContain('abstained'); // the reason is not swallowed
+        await s();
+        expect(calls()).toBe(2); // never cached — each call is live
+    });
+
+    test('onUnfingerprintable:"revalidate" caches and re-validates the stored value on each hit', async () => {
+        registerFingerprinter(testFingerprinter);
+        const { adapter, calls } = counting();
+        const s = stitch({
+            url: URL,
+            adapter,
+            trace: false,
+            cache: {
+                ttl: '60s',
+                scope: 'app',
+                onUnfingerprintable: 'revalidate',
+            },
+            output: fpSchema({ opaque: true }), // abstains → policy 'revalidate'
+        });
+        expect(await s()).toEqual({ n: 1 });
+        const trace = await cacheTrace(s.stream());
+        expect(trace).toContain('hit (revalidated)'); // re-validated, then served
+        expect(calls()).toBe(1); // value re-validates fine → still cached
+    });
+
+    test('an opaque transform refuses to cache unless a transformVersion makes it sound', async () => {
+        const refused = counting();
+        const r = stitch({
+            url: URL,
+            name: 'tx',
+            adapter: refused.adapter,
+            trace: false,
+            cache: { ttl: '60s', scope: 'app' },
+            transform: (b) => b, // opaque closure, no transformVersion/trustTransform → refuse
+        });
+        const trace = await cacheTrace(r.stream());
+        expect(trace.some((d) => d.startsWith('bypass:'))).toBe(true);
+        expect(trace.join(' ')).toContain('transform'); // reason names the transform
+        await r();
+        expect(refused.calls()).toBe(2); // not cached
+
+        const versioned = counting();
+        const v = stitch({
+            url: URL,
+            name: 'txv',
+            adapter: versioned.adapter,
+            trace: false,
+            cache: { ttl: '60s', scope: 'app', transformVersion: '1' },
+            transform: (b) => b, // now sound (version named) → fast
+        });
+        await v();
+        await v();
+        expect(versioned.calls()).toBe(1); // second call is a hit
     });
 });
 

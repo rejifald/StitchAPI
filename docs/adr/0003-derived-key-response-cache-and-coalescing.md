@@ -1,6 +1,6 @@
 # ADR 0003 — Derived-key response cache & request coalescing
 
--   **Status:** Proposed (decisions firm; implementation pending — tracked in [`IDEAS.md`](../IDEAS.md))
+-   **Status:** Accepted & implemented — the derived-key cache, in-process coalescing, generation-based invalidation, and LRU bound ship behind the `stitchapi/cache` subpath, and the [ADR 0004](0004-standard-schema-fingerprint-for-cache-invalidation.md) schema fingerprint is now folded into the generation (decisions 2 & 8). The cross-process coalescing protocol (decision 6) remains deferred to its own grill.
 -   **Date:** 2026-06-14
 -   **Tags:** caching, performance, resilience, runtime, multi-tenant, agents
 
@@ -256,9 +256,13 @@ round-trips as JSON; functions are sugar).
     prefix; any change to it is itself a generation bump (mass self-healing miss, never a
     stale-key collision). Oversized / stream / `FormData` bodies skip hashing and fall to
     warn-and-pass-through (decision 3).
--   **Schema-fingerprinting (ADR 0004).** How to fingerprint a Standard Schema so an `output`
-    change invalidates cached values (decision 2): per-validator strategies behind a contract, a
-    manual `cache.version` fallback, and re-validate-on-hit when un-fingerprintable.
+-   **Schema-fingerprinting (ADR 0004).** ✅ _Resolved & wired._ A Standard Schema fingerprint folds
+    into the generation so an `output`/`unwrap`/versioned-`transform` change invalidates cached
+    values (decision 2): per-validator strategies behind a contract, a manual `cache.version`
+    fallback, refuse-to-cache by default when un-fingerprintable, and `onUnfingerprintable:
+'revalidate'` for opt-in re-validate-on-hit. `resolveFingerprint` is computed once per stitch in
+    `createCache`; its `policy` drives fast / revalidate / refuse and its `reason` rides the cache
+    trace.
 -   **Cross-process coalescing protocol (deferred — own grill).** The cluster mode of decision 6,
     saved for a dedicated session: the `incr` + lease lock and **leader election / re-election**;
     the **stranded-waiter signal** (cache-present ⇒ take it / lock-gone + cache-empty ⇒ re-elect)
