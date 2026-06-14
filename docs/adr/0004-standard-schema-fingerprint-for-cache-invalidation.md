@@ -1,6 +1,6 @@
 # ADR 0004 — Standard Schema fingerprint for cache invalidation
 
--   **Status:** Proposed (decisions firm; implementation pending — folds into [ADR 0003](0003-derived-key-response-cache-and-coalescing.md))
+-   **Status:** Accepted (contract + kit + vendor packages implemented; cache wiring folds into [ADR 0003](0003-derived-key-response-cache-and-coalescing.md) when its response cache lands)
 -   **Date:** 2026-06-14
 -   **Tags:** caching, validation, schema, standard-schema, contract-not-dependency, runtime
 
@@ -396,6 +396,40 @@ assertConformance(
 -   Empirically: do any target validators change introspection internals under
     **semver-minor** (not just major)? The conformance matrix will answer this per
     vendor; until it runs, treat minor-stability as unproven.
+
+## Implementation status
+
+Shipped on this branch (the cache wiring itself waits on ADR 0003's response
+cache; everything below is standalone and unit-/conformance-tested):
+
+-   **`stitchapi/fingerprint`** — the contract: `SchemaFingerprinter` /
+    `SchemaFingerprint`, the registry (`registerFingerprinter` /
+    `getFingerprinter`), the synchronous FNV-1a `hash`, and `resolveFingerprint`
+    (the ladder). Browser-safe, synchronous, no new core dependency.
+-   **`stitchapi/testing` → `verifyFingerprintContract`** — the conformance kit
+    (vendor agreement, sync result-shape, determinism + stability, sensitivity,
+    soundness-or-abstain, committed snapshots).
+-   **Five vendor packages**, each with the validator as a _peer_ dependency and
+    each proving compliance via the kit:
+    -   `@stitchapi/fingerprint-zod` — walks `_def` (Zod 3) and `_zod.def`
+        (Zod 4); abstains on `ZodEffects`/`.default`/custom checks.
+    -   `@stitchapi/fingerprint-valibot` — walks `.type`/`.entries`/`.pipe`;
+        abstains on transformation/`check`/`custom` actions, function
+        requirements, and injected defaults.
+    -   `@stitchapi/fingerprint-arktype` — hashes the canonical `t.json`;
+        abstains on `$ark.fn` morph/predicate refs (opaque _and_
+        non-deterministic) and on defaults.
+    -   `@stitchapi/fingerprint-effect` — walks the `.ast`; abstains on
+        `Transformation`/`Refinement`/`Suspend`/`Declaration`. Consumes
+        `Schema.standardSchemaV1(schema)` (a raw Effect schema carries no
+        `~standard`).
+    -   `@stitchapi/fingerprint-typebox` — canonical-hashes the JSON Schema;
+        abstains on `Type.Transform` (detected via symbol, recursively, since it
+        is invisible to `JSON.stringify`) and on opaque kinds. **Caveat:**
+        TypeBox 0.34 schemas have no `~standard`, so a TypeBox schema must be
+        surfaced as a Standard Schema (a thin wrapper today, or a future TypeBox
+        release) for the registry to dispatch to it; the package proves the
+        fingerprint logic.
 
 ## References
 

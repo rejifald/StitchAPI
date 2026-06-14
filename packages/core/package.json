@@ -55,6 +55,16 @@
                 "types": "./lib/testing.d.ts",
                 "default": "./lib/testing.js"
             }
+        },
+        "./fingerprint": {
+            "import": {
+                "types": "./lib/fingerprint.d.mts",
+                "default": "./lib/fingerprint.mjs"
+            },
+            "require": {
+                "types": "./lib/fingerprint.d.ts",
+                "default": "./lib/fingerprint.js"
+            }
         }
     },
     "sideEffects": false,

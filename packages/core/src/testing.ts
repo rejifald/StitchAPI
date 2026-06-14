@@ -17,6 +17,8 @@
  * runner — or a browser. Pair with {@link assertConformance} for a one-line
  * test body.
  */
+import type { SchemaFingerprint, SchemaFingerprinter } from './fingerprint';
+import { type StandardSchemaV1, isStandardSchema } from './standard-schema';
 import type {
     Adapter,
     AdapterRequest,
@@ -683,4 +685,259 @@ export function verifySinkContract(
         },
     ]);
     return runRules('sink', rules);
+}
+
+// ---------------------------------------------------------------------------
+// fingerprint contract (ADR 0004)
+// ---------------------------------------------------------------------------
+
+type SyncRule = [name: string, run: () => void];
+
+// Sync sibling of runRules — fingerprinting is synchronous (it derives the cache
+// generation), so its verifier is too. Same independent-rule semantics.
+function runRulesSync(seam: string, rules: SyncRule[]): ContractReport {
+    const passed: string[] = [];
+    const violations: { rule: string; detail: string }[] = [];
+    for (const [rule, run] of rules) {
+        try {
+            run();
+            passed.push(rule);
+        } catch (error) {
+            violations.push({ rule, detail: detailOf(error) });
+        }
+    }
+    return { seam, ok: violations.length === 0, passed, violations };
+}
+
+/** One labelled schema fixture; the thunk builds a fresh instance per call. */
+interface SchemaFixture {
+    readonly label: string;
+    readonly schema: () => unknown;
+}
+
+/** Fixtures a vendor package supplies to prove its fingerprint strategy. */
+export interface FingerprintFixtures {
+    /**
+     * Schemas that must each produce a STABLE, non-null fingerprint: building the
+     * schema twice (via the thunk) and fingerprinting both yields the same value.
+     * Covers determinism + construction-independence.
+     */
+    readonly stable: readonly SchemaFixture[];
+    /**
+     * Pairs of independently-built but structurally-IDENTICAL schemas (e.g. the
+     * same object with permuted key order) that must share a fingerprint.
+     */
+    readonly equivalent?: readonly {
+        readonly label: string;
+        readonly a: () => unknown;
+        readonly b: () => unknown;
+    }[];
+    /**
+     * Schemas that must all fingerprint to PAIRWISE-DISTINCT, non-null values —
+     * typically a base schema plus one mutation each (field added, type changed,
+     * constraint changed, …). Proves sensitivity to real semantic changes.
+     */
+    readonly distinct: readonly SchemaFixture[];
+    /**
+     * Schemas containing parts the strategy cannot soundly capture (opaque
+     * `.refine`/`.transform`/`.brand`, unrepresentable types). The strategy MUST
+     * ABSTAIN (`value === null`) rather than emit a possibly-colliding token.
+     */
+    readonly abstain?: readonly SchemaFixture[];
+    /**
+     * Optional committed snapshots (`label` → expected `value`) for schemas in
+     * `stable`/`distinct`. Re-run under a new validator minor version in CI, a
+     * drift means the introspection surface moved — the cross-version guard.
+     */
+    readonly snapshots?: Readonly<Record<string, string>>;
+}
+
+// Call fingerprint() and enforce the result-shape + sync rules; returns the result.
+function callFingerprint(
+    fingerprinter: SchemaFingerprinter,
+    schema: unknown,
+    label: string,
+): SchemaFingerprint {
+    // Treat the strategy's return as untrusted — we are validating a foreign
+    // implementation, so its static type can't be assumed to hold at runtime.
+    const result: unknown = fingerprinter.fingerprint(
+        schema as StandardSchemaV1,
+    );
+    if (
+        result != null &&
+        typeof (result as { then?: unknown }).then === 'function'
+    ) {
+        throw new Error(`${label}: fingerprint() must be synchronous`);
+    }
+    const r = result as
+        | { value?: unknown; strength?: unknown }
+        | null
+        | undefined;
+    if (
+        !r ||
+        (r.value !== null && typeof r.value !== 'string') ||
+        (r.strength !== 'strong' && r.strength !== 'weak')
+    ) {
+        throw new Error(
+            `${label}: expected { value: string|null, strength: 'strong'|'weak' }, got ${show(result)}`,
+        );
+    }
+    return r as SchemaFingerprint;
+}
+
+/**
+ * Verify a {@link SchemaFingerprinter} against the ADR 0004 contract:
+ * vendor agreement, a sync/serialisable result shape, determinism + stability
+ * (no false positives), sensitivity (no false negatives), soundness-or-abstain,
+ * and — when provided — committed cross-version snapshots.
+ *
+ * Synchronous, framework-agnostic and browser-safe, like the other verifiers.
+ * Pair with {@link assertConformance}:
+ *
+ * ```ts
+ * assertConformance(verifyFingerprintContract(zodFingerprinter, zodFixtures));
+ * ```
+ */
+export function verifyFingerprintContract(
+    fingerprinter: SchemaFingerprinter,
+    fixtures: FingerprintFixtures,
+): ContractReport {
+    const { stable, distinct, equivalent, abstain, snapshots } = fixtures;
+    const rules: SyncRule[] = [];
+
+    rules.push([
+        'vendor: strategy.vendor matches every fixture schema',
+        () => {
+            const bad: string[] = [];
+            const seen: SchemaFixture[] = [
+                ...stable,
+                ...distinct,
+                ...(abstain ?? []),
+                ...(equivalent ?? []).flatMap((e) => [
+                    { label: `${e.label}.a`, schema: e.a },
+                    { label: `${e.label}.b`, schema: e.b },
+                ]),
+            ];
+            for (const { label, schema } of seen) {
+                const s = schema();
+                if (!isStandardSchema(s))
+                    bad.push(`${label} (not a Standard Schema)`);
+                else if (s['~standard'].vendor !== fingerprinter.vendor)
+                    bad.push(`${label} (vendor '${s['~standard'].vendor}')`);
+            }
+            if (bad.length)
+                throw new Error(
+                    `expected vendor '${fingerprinter.vendor}': ${bad.join(', ')}`,
+                );
+        },
+    ]);
+
+    rules.push([
+        'stable: identical builds → identical non-null fingerprint',
+        () => {
+            const fails: string[] = [];
+            for (const { label, schema } of stable) {
+                const a = callFingerprint(fingerprinter, schema(), label);
+                const b = callFingerprint(fingerprinter, schema(), label);
+                if (a.value === null) fails.push(`${label} (abstained)`);
+                else if (a.value !== b.value)
+                    fails.push(`${label} (${a.value} != ${b.value})`);
+            }
+            if (fails.length) throw new Error(`unstable: ${fails.join('; ')}`);
+        },
+    ]);
+
+    if (equivalent?.length) {
+        rules.push([
+            'equivalent: structurally-identical schemas share a fingerprint',
+            () => {
+                const fails: string[] = [];
+                for (const { label, a, b } of equivalent) {
+                    const fa = callFingerprint(
+                        fingerprinter,
+                        a(),
+                        `${label}.a`,
+                    );
+                    const fb = callFingerprint(
+                        fingerprinter,
+                        b(),
+                        `${label}.b`,
+                    );
+                    if (fa.value === null || fb.value === null)
+                        fails.push(`${label} (abstained)`);
+                    else if (fa.value !== fb.value)
+                        fails.push(`${label} (${fa.value} != ${fb.value})`);
+                }
+                if (fails.length)
+                    throw new Error(`not equivalent: ${fails.join('; ')}`);
+            },
+        ]);
+    }
+
+    rules.push([
+        'distinct: semantically-different schemas → distinct fingerprints',
+        () => {
+            const byValue = new Map<string, string>();
+            const fails: string[] = [];
+            for (const { label, schema } of distinct) {
+                const f = callFingerprint(fingerprinter, schema(), label);
+                if (f.value === null) {
+                    fails.push(`${label} (abstained — cannot distinguish)`);
+                    continue;
+                }
+                const prev = byValue.get(f.value);
+                if (prev !== undefined)
+                    fails.push(`${label} collides with ${prev} (${f.value})`);
+                else byValue.set(f.value, label);
+            }
+            if (fails.length)
+                throw new Error(`collisions: ${fails.join('; ')}`);
+        },
+    ]);
+
+    if (abstain?.length) {
+        rules.push([
+            'abstain: opaque/unrepresentable schemas → null (soundness)',
+            () => {
+                const fails: string[] = [];
+                for (const { label, schema } of abstain) {
+                    const f = callFingerprint(fingerprinter, schema(), label);
+                    if (f.value !== null)
+                        fails.push(
+                            `${label} (returned ${f.value}, expected null)`,
+                        );
+                }
+                if (fails.length)
+                    throw new Error(`failed to abstain: ${fails.join('; ')}`);
+            },
+        ]);
+    }
+
+    if (snapshots && Object.keys(snapshots).length) {
+        rules.push([
+            'snapshots: fingerprints match committed cross-version snapshots',
+            () => {
+                const byLabel = new Map<string, () => unknown>();
+                for (const { label, schema } of [...stable, ...distinct])
+                    byLabel.set(label, schema);
+                const fails: string[] = [];
+                for (const [label, expected] of Object.entries(snapshots)) {
+                    const thunk = byLabel.get(label);
+                    if (!thunk) {
+                        fails.push(
+                            `${label} (no such stable/distinct fixture)`,
+                        );
+                        continue;
+                    }
+                    const f = callFingerprint(fingerprinter, thunk(), label);
+                    if (f.value !== expected)
+                        fails.push(`${label} (${f.value} != ${expected})`);
+                }
+                if (fails.length)
+                    throw new Error(`snapshot drift: ${fails.join('; ')}`);
+            },
+        ]);
+    }
+
+    return runRulesSync('fingerprint', rules);
 }
