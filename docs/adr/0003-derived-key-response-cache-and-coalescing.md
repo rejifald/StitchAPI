@@ -126,27 +126,30 @@ round-trips as JSON; functions are sugar).
     or anything that should never sit in a store as a value. Because caching is itself opt-in
     (decision 11), it only ever applies to a stitch a dev already chose to cache.
 
-6.  **Coalescing is full cross-process, lease-locked, ref-counted, and does not share
-    failures.** Concurrent identical in-flight requests collapse to one origin call:
+6.  **Coalescing collapses concurrent identical in-flight requests — two modes, store-aware
+    default.** True regardless of mode: a leader's **failure is not shared** with waiters (they
+    proceed independently), aborts are **ref-counted** (the shared in-flight is dropped only when
+    the _last_ waiter aborts — the bounded slice of the abandoned-request question ADR 0002
+    deferred, not general cancellation), `sensitive: true` **bypasses coalescing as well as
+    caching** (a one-time-token endpoint must hand each caller its own live response), and
+    coalescing applies only to the **cacheable method set** (GET/HEAD + opted-in GraphQL queries —
+    never collapse two writes).
 
-    -   **Cross-process** via a lock on the derived key built from the existing
-        `StitchStore.incr` + a **lease TTL** (no contract extension — the same primitive the
-        rate-limiter already uses). The leader runs the request; followers park.
-    -   **Failures are not shared, but retries are serialised.** The lock is mutual exclusion:
-        the leader holds it through its _entire_ resilience chain, so at any instant only one
-        process hits the origin. On success the leader writes the cache and every waiter gets a
-        hit; on failure (budget exhausted) it releases without a cache write and the next waiter
-        becomes leader and runs its _own_ chain. No simultaneous retry storm; no one flake
-        failing everyone.
-    -   **Aborts are ref-counted.** In-process, the shared in-flight Promise is dropped only when
-        the **last** waiter aborts; one caller's `AbortSignal` never kills the request out from
-        under the others. (This is the bounded re-entry of the abandoned-request question ADR
-        0002 deferred — scoped here to the shared-flight refcount, not general cancellation.)
-    -   **A Promise cannot cross processes**, so coalescing is two-tier: in-process waiters await
-        the shared Promise directly; cross-process waiters poll the cache/lock (with a
-        lease-bounded backoff) for either the leader's cached result or a lock release that hands
-        them the lead. The **lease TTL** guarantees a crashed leader cannot wedge waiters
-        forever.
+    -   **In-process (ships in v1).** A process-local map of in-flight Promises keyed by the
+        derived key; concurrent callers in one process await a single shared Promise. No store
+        interaction, no lease, instant. This is the dominant real case (one server, one agent)
+        and the only mode that makes sense without a shared store.
+    -   **Cross-process / cluster (deferred — own grill).** Collapses identical requests across
+        workers via a store lock (lease + `incr` election + poll). Its cost (lease sizing,
+        re-election, poll cadence, ordering invariants, conformance) is real and its marginal
+        benefit over the TTL cache is only the **cold concurrent window** before any worker has
+        cached. So the **protocol is deferred to a dedicated grill/ADR**; the open questions are
+        recorded under _Required follow-ups_.
+
+    **The default is store-aware.** With no shared store, in-process is the only option; once the
+    cluster protocol ships, a **shared store enables cross-process by default** — what a user
+    wiring up Redis expects — overridable with `coalesce: 'process' | 'cluster' | false`. Until
+    then, v1 defaults to in-process and reserves `'cluster'`.
 
 7.  **Lifecycle placement is _outermost_ — but _after_ input validation, not before.** The order
     is: **validate/normalise input → derive the key from the _resolved_ input → cache lookup**. A
@@ -154,8 +157,8 @@ round-trips as JSON; functions are sugar).
     network, no transform, no output-validation/drift (decision 2). On a miss the coalescing lock
     wraps the **full** resilience chain
     (`throttle → circuit → retry/auth/fetch → transform → output-validate`) and the **validated**
-    result is written to the cache **last**. Lookup is outermost over the _expensive_ chain; the
-    store write is the final step.
+    result is written to the cache **last**; concurrent callers await that one run (decision 6).
+    Lookup is outermost over the _expensive_ chain; the store write is the final step.
 
     Input validation is **not** skipped on a hit (it precedes the lookup), for two reasons — a
     cache hit does **not** by itself prove the input is valid, because the key is only a
@@ -226,9 +229,10 @@ round-trips as JSON; functions are sugar).
 -   **Zero-config correctness no UI cache can match.** The key is derived from the actual
     request, so it cannot drift from what it names — and it works in agents, CLIs, and servers
     where react-query/SWR have no host.
--   **Coalescing finally lands, safely.** The cross-principal hazard that killed it in ADR 0002
-    is closed by principal-keying; the herd-protection benefit (one origin call for N concurrent
-    callers, serialised retries) is now available without the leak.
+-   **Coalescing lands, safely.** The cross-principal hazard that killed it in ADR 0002 is closed
+    by principal-keying. v1 collapses concurrent identical calls **in-process** (herd protection
+    for the common single-process case); the cross-process tier that also serialises retries
+    across workers is deferred (decision 6).
 -   **Reuses existing machinery.** `StitchStore.get/set/incr`, principal-keying, the
     shared-store-makes-it-distributed pattern, and the trace event stream all carry over; net-new
     runtime dependency count stays **zero**.
@@ -237,14 +241,12 @@ round-trips as JSON; functions are sugar).
 
 -   **Drift is invisible on cache-hit paths** between writes (decision 2). `ttl` is the only
     bound; a tight TTL trades hit rate for freshness/drift-sensitivity.
--   **Cross-process coalescing is poll-based**, not push (the `StitchStore` contract has no
-    pub/sub). Waiters poll under a lease-bounded backoff — extra store reads and coarse-grained
-    wakeups in exchange for keeping the minimal contract.
--   **A waiter's latency can balloon** to `leader's full retry duration + its own` when the
-    leader fails slowly (decision 6). Bounded by per-attempt/total timeouts and the lock lease.
--   **Two scopes coexist**: the TTL cache is distributable; in-process coalescing is, by nature,
-    process-local (a Promise can't be shared cross-process — decision 6 bridges with a store
-    lock). This asymmetry must be documented, not hidden.
+-   **v1 coalescing is process-local.** A shared store makes the TTL cache distributed, but the
+    in-process coalescer is by nature per-process (a Promise can't cross processes). Across
+    workers the TTL cache still dampens duplication; full cross-process coalescing waits on the
+    deferred cluster mode (decision 6). Its known costs when it lands — poll-based waiting (no
+    pub/sub in the contract) and a waiter latency that can reach `leader's full retry + its own` —
+    are noted now so they aren't a surprise then.
 
 **Required follow-ups**
 
@@ -257,17 +259,21 @@ round-trips as JSON; functions are sugar).
 -   **Schema-fingerprinting (ADR 0004).** How to fingerprint a Standard Schema so an `output`
     change invalidates cached values (decision 2): per-validator strategies behind a contract, a
     manual `cache.version` fallback, and re-validate-on-hit when un-fingerprintable.
--   **Specify the cross-process lock protocol** over `get/set/incr`: lease TTL, poll/backoff
-    schedule, and the "leader finished _without_ caching → next waiter takes the lead" signal
-    (so a non-cacheable success doesn't strand waiters).
+-   **Cross-process coalescing protocol (deferred — own grill).** The cluster mode of decision 6,
+    saved for a dedicated session: the `incr` + lease lock and **leader election / re-election**;
+    the **stranded-waiter signal** (cache-present ⇒ take it / lock-gone + cache-empty ⇒ re-elect)
+    with the **write-cache-before-release** and **discover-once-then-poll-via-`get`** invariants;
+    **lease sizing** vs. a crashed leader (lease ≈ `timeout.total` + margin, no heartbeat,
+    leader-abort releases immediately); **poll cadence + latency floor**; **process-local abort**
+    at the cluster tier; and a **conformance addendum** (`incr` exactly-once under N concurrent
+    callers + lease-expiry frees the lock) so BYO stores prove coalescing-safety, not just
+    rate-limit `incr`.
 -   **GraphQL opt-in classification** — how a `kind: 'graphql'` stitch marks a query as
     cacheable (queries yes, mutations never), since intent can't be inferred from POST.
--   **Conformance kit addendum** — does `stitchapi/testing` need lock/lease + `incr`-as-lock
-    correctness checks so BYO stores prove coalescing-safety, not just rate-limit `incr`?
 -   **LRU eviction** in the cache layer / `memoryStore` interplay: where `maxEntries` is enforced
     and how it composes with a distributed backend that has its own eviction (decision 9).
 -   **`__config` redaction & traces** — cached values and lock keys must not leak via
     `Stitch.__config` or trace/hook payloads (extends ADR 0002 decision 4 / §6).
--   **Config shape** — settle `cache: { ttl, scope, vary?, methods?, maxEntries?, key? }` plus the
-    stitch-level `sensitive?`, confirm every field round-trips as JSON, and that `key` is sugar
-    over the derived default.
+-   **Config shape** — settle `cache: { ttl, scope, vary?, methods?, maxEntries?, coalesce?, key? }`
+    plus the stitch-level `sensitive?`, confirm every field round-trips as JSON, and that `key` is
+    sugar over the derived default.
