@@ -660,12 +660,32 @@ async function ensureCache(rt: Runtime): Promise<CacheController | null> {
             config,
             store: rt.store,
             stitchId: m.cacheStitchId(cfg),
+            // The RAW output schema (not the Validator wrapper) so the fingerprinter can read its
+            // `~standard.vendor`; transform/unwrap are already raw on the config (ADR 0004 fold).
+            output: outputSchemaSource(cfg),
+            transform: cfg.transform,
+            unwrap: cfg.unwrap,
             ...(rt.authCtx.principal !== undefined
                 ? { principal: rt.authCtx.principal }
                 : {}),
         }),
     );
     return rt.cacheInit;
+}
+
+// `normalizeOutput`/`drift()` wrap `output` through `toValidator`, which hides the original
+// `~standard`. The wrapper keeps a non-enumerable `source` back-reference to the raw schema; unwrap
+// it (and the `DriftSpec.schema` layer) so the fingerprinter sees the real Zod/Valibot/… instance.
+// Falls back to the wrapper itself when no source was recorded — that is simply un-fingerprintable
+// (a custom Validator/predicate), which the resolver handles by refusing or re-validating.
+function outputSchemaSource(cfg: StitchConfig): unknown {
+    const out = cfg.output;
+    if (!out) return undefined;
+    // Cast to a probe shape (not `DriftSpec`) so `__kind` stays `unknown` — a real comparison, not
+    // an always-true one against the `'drift'` literal.
+    const isDrift = (out as { __kind?: unknown }).__kind === 'drift';
+    const validator = isDrift ? (out as DriftSpec).schema : out;
+    return (validator as { source?: unknown }).source ?? validator;
 }
 
 // The resolved request the cache key is derived from. The principal it scopes by is sourced from
@@ -834,6 +854,15 @@ async function* runCached(
     }
     yield startEvt(name, baseReq, input);
 
+    // 'refuse' (ADR 0004): the output contract can't be soundly fingerprinted (no strategy for the
+    // vendor / a non-Standard-Schema validator / an opaque un-versioned transform) and the caller
+    // did not opt into re-validate-on-hit — fail closed, never store, and surface WHY for traces.
+    if (ctl.policy === 'refuse') {
+        yield cacheEvt(`bypass: ${ctl.reason}`);
+        yield* runFrom(rt, baseReq, name, state, t0, budget);
+        return;
+    }
+
     // A non-cacheable method (a mutation sharing a fragment) runs normally, uncached.
     if (!ctl.cacheableMethod(baseReq.method)) {
         yield* runFrom(rt, baseReq, name, state, t0, budget);
@@ -858,9 +887,11 @@ async function* runCached(
     const op = await ctl.open(key, d);
     const found = await op.get();
     if (found) {
-        // Re-validate on hit unless `cache.version` pins the schema (the safe default until
-        // schema fingerprinting, ADR 0004): still skips network/throttle/transform. A fatal
-        // mismatch means the stored value is stale-shaped → evict and fall through to a miss.
+        // policy 'revalidate' (ADR 0004): the schema couldn't be fingerprinted but the caller opted
+        // in, so re-validate the stored value against the current output before serving — a fatal
+        // mismatch means it is stale-shaped → evict and fall through to a miss. policy 'fast' skips
+        // this (the value is bound to a known fingerprint, or there is no output schema). Either way
+        // a hit still short-circuits network/throttle/transform.
         let stale = false;
         if (ctl.revalidateOnHit && cfg.output) {
             for (const finding of await validateOutput(cfg, found.value)) {
@@ -869,7 +900,7 @@ async function* runCached(
             }
         }
         if (!stale) {
-            yield cacheEvt('hit');
+            yield cacheEvt(ctl.revalidateOnHit ? 'hit (revalidated)' : 'hit');
             yield resultEvt(found.value, found.status, 0);
             yield doneEvt(true, t0, 0);
             return;

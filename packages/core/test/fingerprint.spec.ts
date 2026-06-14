@@ -70,10 +70,9 @@ describe('hash', () => {
         expect(hash('user|v1')).not.toBe(hash('user|v2'));
     });
 
-    it('returns a short non-empty token', () => {
+    it('returns an opaque 128-bit token (32-char hex)', () => {
         const h = hash('the quick brown fox');
-        expect(h.length).toBeGreaterThan(0);
-        expect(h).toMatch(/^[0-9a-z]+_[0-9a-z]+$/);
+        expect(h).toMatch(/^[0-9a-f]{32}$/);
     });
 });
 
