@@ -197,25 +197,49 @@ third-party **service names stay out of public artifacts** (neutral archetypes).
 
 ## 9. Status — what's built
 
--   **Runtime folded into `src/` and merged** (PR #5) — zero deps; full gate green (eslint,
-    prettier, `tsc`, `attw`, 42 tests / 10 suites, `tsup` ESM+CJS+DTS build).
--   **CLI surface shipped** — `stitch run` + `stitch trace` (`bin/stitch`, `src/cli.ts`,
-    `src/registry.ts`).
--   **In progress** — OAuth2 client_credentials.
--   Validated against synthetic scenarios **and** two real apps' integration patterns.
--   **Branch workflow:** integration branch `develop`; feature branches → PR → `develop` →
-    (eventually) `main`.
+The core library is **feature-complete** and published as `stitchapi` (`0.7.0`, zero runtime
+deps). Full gate green — eslint, prettier, `tsc`, `attw`, **211 tests / 29 suites**, `tsup`
+ESM+CJS+DTS build — and verified against synthetic scenarios **and** two real apps' integration
+patterns.
+
+-   **Primitive + composition** — `stitch()` (`extends` + fluent builder facades), `seam` with
+    principal-scoped auth (ADR 0002), `.with()` partial application, deep fragment composition +
+    hook chaining.
+-   **Engine** — RFC 6570 Level-4 templates, nested query encoding, transform/unwrap, pagination;
+    Zod **and** Standard Schema validation with leveled drift + snapshots.
+-   **End-to-end type inference** — `Stitch<T>` inferred from the `output` schema **and** call
+    arguments inferred from `config.input` (graphql-variables + extends/compose typing deferred).
+-   **Resilience** — retry (backoff modes, `Retry-After`), throttle (rate + concurrency, per-stitch
+    **and** in-process host pooling), per-attempt **and** total timeout, store-backed circuit breaker.
+-   **Auth-as-boundary** — bearer / apiKey / basic / cookieSession / **OAuth2 client_credentials**,
+    call-time secret resolution, single-flight token refresh.
+-   **Response cache** — derived-key cache + in-process request coalescing (ADR 0003 v1).
+-   **Observability** — console / JSONL / OTLP, secret redaction, **off by default**.
+-   **Four surfaces, one definition** — in-process function · CLI (`stitch run`/`trace`) · HTTP
+    serve (+SSE) · MCP stdio, over a shared registry. Subpath exports for `serve` / `mcp` /
+    `registry` / `testing` / `cache`.
+-   **State + testing** — `memoryStore` + pluggable store seam; store / adapter / sink **conformance
+    kit**.
+-   **Playground** — Node sandbox engine complete and green; **real-browser Phase-2 in progress**
+    (the load-bearing remainder for the Launch).
+-   **Branch workflow:** feature branches → PR → **`main`** (the `develop` integration branch was
+    retired).
 
 ---
 
 ## 10. Roadmap
 
-1. **Mechanical gaps** (each its own PR): OAuth2 _(in progress)_ → multi-cookie jar → binary/blob
-   responses → circuit breaker → idempotency keys → OTLP export.
-2. **Surfaces:** HTTP serve → MCP (a single code-mode `run_stitch` tool, not one-per-endpoint).
-3. **Docs:** rewrite `README.md` (still describes the old per-endpoint lib).
-4. **Kinds:** shell → LLM; `pipe()` composition of heterogeneous stitches.
-5. **Visual:** Mermaid-from-definition (git-friendly) → live trace overlay.
+The current target is **the Launch (v1.0)** — production-ready library **plus** the interactive
+playground + docs site as one public moment. See [`RELEASE.md`](RELEASE.md) for the live checklist.
+
+1. **The Launch (v1.0):** playground browser Phase-2 (CSP headers, real-Worker trace → DAG,
+   Playwright harness, sandbox tests in CI) · core **response streaming** (`responseType: 'stream'`,
+   emit `delta`) · release hygiene (CHANGELOG, runnable `examples/`, README).
+2. **v1.1:** agent-grade MCP (per-stitch schemas, structured results, drift-in-error, progress) ·
+   ADR 0004 Standard-Schema fingerprint folded into cache generation · `@stitchapi/redis-store` ·
+   published record/replay mock adapter · `stitch export --openapi` · pagination presets.
+3. **Kinds:** shell → LLM; `pipe()` composition of heterogeneous stitches.
+4. **Visual:** live trace overlay on the playground DAG → `stitch diagram` (Mermaid-from-definition).
 
 ---
 
