@@ -10,3 +10,11 @@ import type { Stitch } from '..';
 export declare function output<S extends Stitch<unknown>>(
     stitch: S,
 ): Awaited<ReturnType<S>>;
+
+// The Phase 2 analogue for INPUTS. `expectType<Stitch<…>>` is still useless (same recursive-`with`
+// reason), so assert on the call-ARGUMENT type instead. The constraint is a universal function, not
+// `Stitch<unknown>`: a stitch with a REQUIRED first argument (e.g. a non-optional `body` schema) is
+// not assignable to any `Stitch` whose call signature has an OPTIONAL first arg, so a `Stitch<…>`
+// bound would reject exactly the typed-input stitches we want to test.
+/** The stitch's (single) call-argument type — `TIn` for a required arg, `TIn | undefined` for an optional one. */
+export type CallArg<S extends (...args: never[]) => unknown> = Parameters<S>[0];

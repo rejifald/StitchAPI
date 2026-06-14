@@ -1,6 +1,12 @@
 // Shared vocabulary for the prototype. Leaf modules (resilience, trace, http-adapter,
 // auth, mock-server) and the engine all code against these types.
-import type { ResolveOutput, SchemaLike } from './infer';
+import type {
+    Args,
+    InputOf,
+    RelaxKeys,
+    ResolveOutput,
+    SchemaLike,
+} from './infer';
 import type { Validator } from './validator';
 
 export interface StitchInput {
@@ -268,10 +274,20 @@ export interface StitchConfig {
 export interface StitchResult<T> extends PromiseLike<T> {
     stream(): AsyncGenerator<StitchEvent<T>, void>;
 }
-export interface Stitch<T = unknown> {
-    (input?: StitchInput): StitchResult<T>;
-    stream(input?: StitchInput): AsyncGenerator<StitchEvent<T>, void>;
-    with(partial: StitchInput): Stitch<T>;
+/**
+ * The callable a stitch resolves to. `TOut` is the result type (inferred from `config.output`);
+ * `TIn` is the call-argument type (inferred from `config.input` — see {@link InputOf}). `TIn`
+ * defaults to the loose {@link StitchInput}, which has no required keys, so a stitch with no input
+ * schemas keeps its fully-optional argument and every pre-Phase-2 `Stitch<T>` usage is unchanged.
+ * No `extends StitchInput` bound on `TIn`: a `headers` schema can infer non-string values, which
+ * `Record<string, string>` would reject.
+ */
+export interface Stitch<TOut = unknown, TIn = StitchInput> {
+    (...args: Args<TIn>): StitchResult<TOut>;
+    stream(...args: Args<TIn>): AsyncGenerator<StitchEvent<TOut>, void>;
+    with<const P extends Partial<TIn>>(
+        partial: P,
+    ): Stitch<TOut, RelaxKeys<TIn, keyof P>>;
     readonly __config: StitchConfig;
     readonly __stitch: true;
 }
@@ -335,7 +351,7 @@ export interface Seam {
         C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
         config: C,
-    ): Stitch<ResolveOutput<TExplicit, C>>;
+    ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /** Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see {@link StitchFn}). */
     stitch<T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
     /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, unwrap `data`). */
@@ -348,7 +364,7 @@ export interface Seam {
         },
     >(
         config: C,
-    ): Stitch<ResolveOutput<TExplicit, C>>;
+    ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * A principal-bound handle reusing the same shared runtime, but whose stitches carry
      * `principal` in their AuthContext: separate sessions per principal, one shared throttle
