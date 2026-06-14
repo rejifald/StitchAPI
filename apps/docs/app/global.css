@@ -82,6 +82,15 @@ html > body[data-scroll-locked] {
     overflow: hidden;
     pointer-events: none;
     z-index: 0;
+    /* Ripple/glow color. Signal's brand blue is more saturated (lower
+       luminance) than the old logo blue, so on near-black it reads dimmer —
+       drive the backdrop off the brighter --brand-strong in dark to keep the
+       motif visible. */
+    --ripple-color: var(--stitch);
+}
+
+.dark .brand-backdrop {
+    --ripple-color: var(--brand-strong);
 }
 
 .brand-backdrop__glow {
@@ -92,7 +101,7 @@ html > body[data-scroll-locked] {
     transform: translateX(-50%);
     background: radial-gradient(
         50% 50% at 50% 50%,
-        color-mix(in srgb, var(--stitch) 36%, transparent),
+        color-mix(in srgb, var(--ripple-color) 36%, transparent),
         transparent 70%
     );
     filter: blur(44px);
@@ -107,7 +116,7 @@ html > body[data-scroll-locked] {
     position: absolute;
     width: min(82rem, 160%);
     aspect-ratio: 1 / 1;
-    color: var(--stitch);
+    color: var(--ripple-color);
     mask-image: radial-gradient(closest-side, #000 56%, transparent 100%);
     -webkit-mask-image: radial-gradient(
         closest-side,
