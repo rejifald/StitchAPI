@@ -55,6 +55,16 @@
                 "types": "./lib/testing.d.ts",
                 "default": "./lib/testing.js"
             }
+        },
+        "./cache": {
+            "import": {
+                "types": "./lib/cache.d.mts",
+                "default": "./lib/cache.mjs"
+            },
+            "require": {
+                "types": "./lib/cache.d.ts",
+                "default": "./lib/cache.js"
+            }
         }
     },
     "sideEffects": false,

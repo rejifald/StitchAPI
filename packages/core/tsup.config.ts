@@ -2,8 +2,10 @@ import { defineConfig } from 'tsup';
 
 // Two bundles from one source tree:
 //   lib/index.{js,mjs} (+ .d.ts) — the library (function surface), dual-format + types
-//   plus serve/mcp/registry/testing as their own subpath entry points (stitchapi/serve, etc.)
+//   plus serve/mcp/registry/testing/cache as their own subpath entry points (stitchapi/serve, …)
 //   lib/cli.js                   — the `stitch` bin (run/trace/serve/mcp), CJS, no types
+// `cache` is its own entry so `import { stitch }` never pulls the cache engine (ADR 0003 §11):
+// the engine reaches it via a lazy `import('./cache')`, which esm splitting keeps in its chunk.
 export default defineConfig([
     {
         entry: [
@@ -12,6 +14,7 @@ export default defineConfig([
             'src/mcp.ts',
             'src/registry.ts',
             'src/testing.ts',
+            'src/cache.ts',
         ],
         format: ['cjs', 'esm'],
         minify: true,

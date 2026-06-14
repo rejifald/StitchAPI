@@ -2,6 +2,10 @@
 // `execute` is an async generator (start → progress → drift → result → done); the await
 // path consumes it to the result. `executeRaw` runs the request once and returns the raw
 // response (used by cookieSession to read Set-Cookie from a login stitch).
+// Type-only: erased at compile time, so the cache engine is NOT statically bundled into core.
+// The real module is reached via a lazy `import('./cache')` only when a stitch has a `cache`
+// block (bundle-frugal gate — ADR 0003 decision 11).
+import type { CacheController, CacheHit, RequestDescriptor } from './cache';
 import { classifyDrift, loadSnapshot, saveSnapshot } from './drift';
 import { fetchAdapter } from './http-adapter';
 import {
@@ -60,6 +64,9 @@ export interface Runtime {
     trace: TraceSink;
     store: StitchStore;
     authCtx: AuthContext;
+    /** Lazily-initialised cache controller (ADR 0003). Memoised so all calls of one stitch share
+     *  a single coalescer + LRU; the `import('./cache')` fires once, only for a cached stitch. */
+    cacheInit?: Promise<CacheController>;
 }
 
 export function makeRuntime(
@@ -640,53 +647,99 @@ async function* paginated(
     yield doneEvt(true, t0, state.attempts);
 }
 
-export async function* execute(
-    rt: Runtime,
-    input: StitchInput = {},
-): AsyncGenerator<StitchEvent, void> {
+// ---- cache integration (ADR 0003) -----------------------------------------
+// The cache engine lives in its own subpath module; the engine reaches it only through a lazy
+// `import('./cache')`, memoised on the runtime, and only when a stitch carries a `cache` block
+// and is not `sensitive`. A cache-free stitch never loads a byte of it.
+async function ensureCache(rt: Runtime): Promise<CacheController | null> {
     const { cfg } = rt;
-    const name = nameOf(cfg);
-    const t0 = now();
-    const state = { attempts: 0 };
-    const budget = totalBudget(cfg, t0);
+    const config = cfg.cache;
+    if (!config || cfg.sensitive) return null;
+    rt.cacheInit ??= import('./cache').then((m) =>
+        m.createCache({
+            config,
+            store: rt.store,
+            stitchId: m.cacheStitchId(cfg),
+            ...(rt.authCtx.principal !== undefined
+                ? { principal: rt.authCtx.principal }
+                : {}),
+        }),
+    );
+    return rt.cacheInit;
+}
 
-    try {
-        await validateInput(cfg, input);
-    } catch (e) {
-        yield errEvt(e, name, 0);
-        yield doneEvt(false, t0, 0);
-        return;
-    }
-
-    if (cfg.paginate) {
-        yield* paginated(rt, input, state, t0, budget);
-        return;
-    }
-
-    let baseReq: AdapterRequest;
-    try {
-        baseReq = buildRequest(cfg, input);
-    } catch (e) {
-        yield errEvt(e, name, 0);
-        yield doneEvt(false, t0, 0);
-        return;
-    }
-    yield {
-        type: 'start',
-        name,
+// The resolved request the cache key is derived from. The principal it scopes by is sourced from
+// the trusted AuthContext at controller creation, never from StitchInput (ADR 0002 §2), so the
+// descriptor itself stays principal-free; folding + scope are the controller's job.
+function describe(
+    cfg: StitchConfig,
+    input: StitchInput,
+    baseReq: AdapterRequest,
+): RequestDescriptor {
+    const d: RequestDescriptor = {
         method: baseReq.method,
         url: baseReq.url,
-        input,
-        at: now(),
+        headers: baseReq.headers,
     };
+    if (cfg.kind === 'graphql')
+        d.graphql = {
+            query: cfg.query ?? '',
+            variables: input.variables ?? input.body ?? {},
+        };
+    else if (baseReq.body !== undefined) d.body = baseReq.body;
+    return d;
+}
 
+type RunOutcome =
+    | { ok: true; value: unknown; status: number; vary?: string }
+    | { ok: false };
+
+const startEvt = (
+    name: string,
+    baseReq: AdapterRequest,
+    input: StitchInput,
+): StitchEvent => ({
+    type: 'start',
+    name,
+    method: baseReq.method,
+    url: baseReq.url,
+    input,
+    at: now(),
+});
+
+const cacheEvt = (detail: string): StitchEvent => ({
+    type: 'progress',
+    phase: 'cache',
+    attempt: 0,
+    detail,
+    at: now(),
+});
+
+const resultEvt = (
+    value: unknown,
+    status: number,
+    attempts: number,
+): StitchEvent => ({ type: 'result', value, status, attempts, at: now() });
+
+// The resilience chain from the request onward (no `start` event — the caller emits it). Returns
+// the validated outcome so the cache layer can store/share it; on any failure it yields the
+// error/done events and returns `{ ok: false }`.
+async function* runFrom(
+    rt: Runtime,
+    baseReq: AdapterRequest,
+    name: string,
+    state: { attempts: number },
+    t0: number,
+    budget?: TotalBudget,
+): AsyncGenerator<StitchEvent, RunOutcome> {
+    const { cfg } = rt;
     let res: AdapterResponse;
     try {
         res = yield* attemptWithCircuit(rt, baseReq, state, budget);
     } catch (e) {
         yield errEvt(e, name, state.attempts);
         yield doneEvt(false, t0, state.attempts);
-        return;
+        return { ok: false };
     }
 
     // GraphQL: a 200 response carrying `errors` is a failure.
@@ -702,7 +755,7 @@ export async function* execute(
                 at: now(),
             };
             yield doneEvt(false, t0, state.attempts);
-            return;
+            return { ok: false };
         }
     }
 
@@ -726,17 +779,226 @@ export async function* execute(
             at: now(),
         };
         yield doneEvt(false, t0, state.attempts);
+        return { ok: false };
+    }
+
+    yield resultEvt(value, res.status, state.attempts);
+    yield doneEvt(true, t0, state.attempts);
+    const vary = res.headers['vary'];
+    return vary !== undefined
+        ? { ok: true, value, status: res.status, vary }
+        : { ok: true, value, status: res.status };
+}
+
+// A single uncached run: build the request, emit `start`, then run the chain.
+async function* runOnce(
+    rt: Runtime,
+    input: StitchInput,
+    name: string,
+    state: { attempts: number },
+    t0: number,
+    budget?: TotalBudget,
+): AsyncGenerator<StitchEvent, RunOutcome> {
+    let baseReq: AdapterRequest;
+    try {
+        baseReq = buildRequest(rt.cfg, input);
+    } catch (e) {
+        yield errEvt(e, name, 0);
+        yield doneEvt(false, t0, 0);
+        return { ok: false };
+    }
+    yield startEvt(name, baseReq, input);
+    return yield* runFrom(rt, baseReq, name, state, t0, budget);
+}
+
+// The cached path: lookup is OUTERMOST over the expensive chain; a hit short-circuits
+// throttle/circuit/network/transform/output-validation; a miss runs the full chain (collapsed by
+// in-process coalescing) and writes the validated result to the cache LAST (ADR 0003 §7).
+async function* runCached(
+    rt: Runtime,
+    ctl: CacheController,
+    input: StitchInput,
+    name: string,
+    state: { attempts: number },
+    t0: number,
+    budget?: TotalBudget,
+): AsyncGenerator<StitchEvent, void> {
+    const { cfg } = rt;
+    let baseReq: AdapterRequest;
+    try {
+        baseReq = buildRequest(cfg, input);
+    } catch (e) {
+        yield errEvt(e, name, 0);
+        yield doneEvt(false, t0, 0);
+        return;
+    }
+    yield startEvt(name, baseReq, input);
+
+    // A non-cacheable method (a mutation sharing a fragment) runs normally, uncached.
+    if (!ctl.cacheableMethod(baseReq.method)) {
+        yield* runFrom(rt, baseReq, name, state, t0, budget);
+        return;
+    }
+    // A non-storable response (binary read straight into the store) warns and passes through —
+    // configuring `cache` here is a no-op-with-warning, never a crash (ADR 0003 §3).
+    if (cfg.responseType === 'blob' || cfg.responseType === 'arrayBuffer') {
+        yield cacheEvt('bypass: non-storable responseType');
+        yield* runFrom(rt, baseReq, name, state, t0, budget);
         return;
     }
 
-    yield {
-        type: 'result',
-        value,
-        status: res.status,
-        attempts: state.attempts,
-        at: now(),
+    const d = describe(cfg, input, baseReq);
+    const key = ctl.key(d, input);
+    if (key === undefined) {
+        yield cacheEvt('bypass: unhashable request');
+        yield* runFrom(rt, baseReq, name, state, t0, budget);
+        return;
+    }
+
+    const op = await ctl.open(key, d);
+    const found = await op.get();
+    if (found) {
+        // Re-validate on hit unless `cache.version` pins the schema (the safe default until
+        // schema fingerprinting, ADR 0004): still skips network/throttle/transform. A fatal
+        // mismatch means the stored value is stale-shaped → evict and fall through to a miss.
+        let stale = false;
+        if (ctl.revalidateOnHit && cfg.output) {
+            for (const finding of await validateOutput(cfg, found.value)) {
+                yield { type: 'drift', finding, at: now() };
+                if (finding.level === 'error') stale = true;
+            }
+        }
+        if (!stale) {
+            yield cacheEvt('hit');
+            yield resultEvt(found.value, found.status, 0);
+            yield doneEvt(true, t0, 0);
+            return;
+        }
+        await op.delete();
+    }
+
+    yield cacheEvt('miss');
+    const store = async (out: RunOutcome): Promise<void> => {
+        if (out.ok) await op.set(out.value, out.status, out.vary);
     };
-    yield doneEvt(true, t0, state.attempts);
+
+    // Coalescing disabled: run the chain, write the cache last.
+    if (ctl.coalesce === false) {
+        await store(yield* runFrom(rt, baseReq, name, state, t0, budget));
+        return;
+    }
+
+    // In-process coalescing: the leader runs the chain; followers await its one shared result.
+    const claim = ctl.join(key);
+    if (claim.leader) {
+        let out: RunOutcome;
+        try {
+            out = yield* runFrom(rt, baseReq, name, state, t0, budget);
+        } catch (e) {
+            claim.fail(e);
+            throw e;
+        }
+        if (out.ok) {
+            await store(out);
+            claim.settle({ value: out.value, status: out.status });
+        } else {
+            // Failure is not shared — waiters re-run on their own.
+            claim.fail(new Error('cache: leader run failed'));
+        }
+        return;
+    }
+
+    let shared: CacheHit;
+    try {
+        shared = await claim.promise;
+    } catch {
+        // The leader failed (or did not cache): proceed independently, uncoalesced.
+        await store(yield* runFrom(rt, baseReq, name, state, t0, budget));
+        return;
+    }
+    yield cacheEvt('coalesced');
+    yield resultEvt(shared.value, shared.status, 0);
+    yield doneEvt(true, t0, 0);
+}
+
+export async function* execute(
+    rt: Runtime,
+    input: StitchInput = {},
+): AsyncGenerator<StitchEvent, void> {
+    const { cfg } = rt;
+    const name = nameOf(cfg);
+    const t0 = now();
+    const state = { attempts: 0 };
+    const budget = totalBudget(cfg, t0);
+
+    try {
+        await validateInput(cfg, input);
+    } catch (e) {
+        yield errEvt(e, name, 0);
+        yield doneEvt(false, t0, 0);
+        return;
+    }
+
+    if (cfg.paginate) {
+        yield* paginated(rt, input, state, t0, budget);
+        return;
+    }
+
+    // Cache lookup is OUTERMOST over the expensive chain but AFTER input validation, so a hit can
+    // never tunnel an invalid call past the boundary and the key mirrors the resolved request.
+    const ctl = await ensureCache(rt);
+    if (ctl) {
+        yield* runCached(rt, ctl, input, name, state, t0, budget);
+        return;
+    }
+
+    yield* runOnce(rt, input, name, state, t0, budget);
+}
+
+// ---- cache surfaces (lazy; no static cache import on the hot path) ---------
+/** Exact, single-entry eviction for the call `input` would make. A no-op for an uncached or
+ *  non-cacheable-method stitch. Backs `stitch.invalidate(input)` (ADR 0003 §8). */
+export async function cacheInvalidateExact(
+    rt: Runtime,
+    input: StitchInput = {},
+): Promise<void> {
+    const ctl = await ensureCache(rt);
+    if (!ctl) return;
+    let baseReq: AdapterRequest;
+    try {
+        baseReq = buildRequest(rt.cfg, input);
+    } catch {
+        return;
+    }
+    if (!ctl.cacheableMethod(baseReq.method)) return;
+    const d = describe(rt.cfg, input, baseReq);
+    const key = ctl.key(d, input);
+    if (key === undefined) return;
+    await (await ctl.open(key, d)).delete();
+}
+
+/** Bulk eviction of every entry this stitch produced (per-stitch generation bump). Backs
+ *  `stitch.cache.invalidate()` and `seam.invalidate(stitch)` (ADR 0003 §8). */
+export async function cacheInvalidateBulk(rt: Runtime): Promise<void> {
+    const ctl = await ensureCache(rt);
+    if (!ctl) return;
+    await ctl.invalidate();
+}
+
+/** The derived opaque key for `input`, for introspection. Backs `stitch.cache.key(input)`. */
+export async function cacheKeyOf(
+    rt: Runtime,
+    input: StitchInput = {},
+): Promise<string | undefined> {
+    const ctl = await ensureCache(rt);
+    if (!ctl) return undefined;
+    let baseReq: AdapterRequest;
+    try {
+        baseReq = buildRequest(rt.cfg, input);
+    } catch {
+        return undefined;
+    }
+    return ctl.key(describe(rt.cfg, input, baseReq), input);
 }
 
 export async function executeRaw(

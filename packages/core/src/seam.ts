@@ -113,6 +113,16 @@ function makeHandle(shared: SharedSeam, principal: string | undefined): Seam {
         graphql: (config: Partial<StitchConfig> & { query: string }) =>
             build(config, true),
         as: (p) => makeHandle(shared, p),
+        // Bulk cache invalidation over the seam's shared store (ADR 0003 §8). No argument bumps
+        // the cache-wide generation; a member `stitch` bumps just that stitch's generation. The
+        // cache engine is reached lazily — a seam with no cached members never loads it.
+        async invalidate(stitch?: Stitch) {
+            const m = await import('./cache');
+            await m.bumpCacheGeneration(
+                shared.store,
+                stitch ? m.cacheStitchId(stitch.__config) : undefined,
+            );
+        },
         async flush() {
             await shared.trace.flush?.();
         },
