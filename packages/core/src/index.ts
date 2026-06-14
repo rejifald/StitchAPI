@@ -16,6 +16,8 @@ export type {
     AxiosLikeConfig,
     AxiosLikeResponse,
 } from './axios-adapter';
+export { xhrAdapter } from './xhr-adapter';
+export type { XhrLike, XhrLikeCtor, XhrProgress } from './xhr-adapter';
 export { createTrace, consoleSink, fileSink, multiplex } from './trace';
 export { otlpTrace, otlpHttpExporter, toOtlpJson } from './otlp';
 export type {
