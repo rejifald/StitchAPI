@@ -1,7 +1,15 @@
 // The authoring surface: stitch() + the two composition facades (extends / fluent builder) +
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
-import { type Runtime, execute, executeRaw, makeRuntime } from './engine';
+import {
+    type Runtime,
+    cacheInvalidateBulk,
+    cacheInvalidateExact,
+    cacheKeyOf,
+    execute,
+    executeRaw,
+    makeRuntime,
+} from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
 import { otlpTrace } from './otlp';
 import { createThrottle } from './resilience';
@@ -257,6 +265,26 @@ function attachMeta(target: object, cfg: StitchConfig): void {
     Object.defineProperty(target, '__stitch', { value: true });
 }
 
+// Attach the cache surface (ADR 0003 §8). All three lazily reach the cache engine via the
+// runtime, so a cache-free stitch pays nothing and `import { stitch }` stays cache-free.
+// `resolve` folds in any `.with(...)` partial so a bound stitch invalidates the right entry.
+function attachCacheSurface(
+    target: object,
+    rt: Runtime,
+    resolve: (input?: StitchInput) => StitchInput,
+): void {
+    Object.defineProperty(target, 'invalidate', {
+        value: (input?: StitchInput) =>
+            cacheInvalidateExact(rt, resolve(input)),
+    });
+    Object.defineProperty(target, 'cache', {
+        value: {
+            invalidate: () => cacheInvalidateBulk(rt),
+            key: (input?: StitchInput) => cacheKeyOf(rt, resolve(input)),
+        },
+    });
+}
+
 export function makeStitch<T = unknown>(
     config: Fragment,
     shared?: SharedRuntime,
@@ -307,10 +335,12 @@ export function makeStitch<T = unknown>(
         bound.__raw = (input?: StitchInput) =>
             executeRaw(rt, mergeInput(partial, input));
         attachMeta(bound, cfg);
+        attachCacheSurface(bound, rt, (input) => mergeInput(partial, input));
         return bound;
     };
     stitchFn.__raw = (input?: StitchInput) => executeRaw(rt, input ?? {});
     attachMeta(stitchFn, cfg);
+    attachCacheSurface(stitchFn, rt, (input) => input ?? {});
     // A seam records the stitches it created (registry/lifecycle); standalone stitches don't register.
     shared?.register?.(stitchFn);
     return stitchFn;

@@ -125,3 +125,51 @@ export const signalCodeMirrorTheme = [
     editorChrome,
     syntaxHighlighting(signalHighlight),
 ];
+
+/* ── Console variant (readonly log view) ──────────────────────────────────
+   The console buffer is a mix of prose log lines and pretty-printed JSON, NOT a
+   valid program, so the JS parser flags prose as `invalid` and treats `//` in a
+   URL as a comment. This chrome + highlight is deliberately conservative: it
+   only colors the tokens that read well in JSON output (strings, numbers,
+   booleans, keys, punctuation) and leaves comments, invalid regions, and bare
+   identifiers as plain foreground — so prose stays calm and JSON stays legible.
+   Per-line log-level colors are layered on top via CodeMirror line decorations
+   (see ConsoleEditor.tsx + playground.css `.cm-log-*`). */
+const consoleChrome = EditorView.theme({
+    '&': {
+        color: 'var(--color-fd-foreground)',
+        backgroundColor: 'var(--color-fd-secondary)',
+    },
+    '.cm-content': { fontFamily: 'var(--font-mono)' },
+    '.cm-gutters': {
+        backgroundColor: 'var(--color-fd-secondary)',
+        color: 'var(--text-faint)',
+        border: 'none',
+    },
+    '.cm-activeLine': { backgroundColor: 'transparent' },
+    '.cm-activeLineGutter': {
+        backgroundColor: 'transparent',
+        color: 'var(--text-faint)',
+    },
+});
+
+const consoleHighlight = HighlightStyle.define([
+    {
+        tag: [t.string, t.special(t.string), t.regexp],
+        color: 'var(--syn-string)',
+    },
+    {
+        tag: [t.number, t.integer, t.float, t.bool, t.atom, t.null],
+        color: 'var(--syn-keyword)',
+    },
+    { tag: [t.propertyName], color: 'var(--syn-name)' },
+    {
+        tag: [t.punctuation, t.separator, t.bracket, t.squareBracket, t.brace],
+        color: 'var(--syn-punct)',
+    },
+]);
+
+export const signalConsoleTheme = [
+    consoleChrome,
+    syntaxHighlighting(consoleHighlight),
+];

@@ -91,6 +91,56 @@ export interface IdempotencyOptions {
     key?: (input: StitchInput) => string; // stable key per logical call (default: a random uuid)
 }
 
+// ---- Cache (ADR 0003) -----------------------------------------------------
+/**
+ * Transport-level response cache + in-process request coalescing (ADR 0003). The key is
+ * **derived** from the resolved request — no caller-authored keys — so it cannot drift from
+ * what it names. Off by default: no `cache` block ⇒ no caching and no hot-path cost. The engine
+ * ships behind its own `stitchapi/cache` subpath, so `import { stitch }` pulls none of it.
+ *
+ * Every field round-trips as JSON; `key` is **sugar** (a function override) that does not.
+ */
+export interface CacheConfig {
+    /** Time-to-live for a cached entry — `30_000`, `'30s'`, `'5m'`. Bounds staleness/drift. */
+    ttl: number | string;
+    /**
+     * Whose responses an entry may be served to. `'principal'` (default, **fail-closed**) folds
+     * the bound principal into the key so user A can never be served user B's cached response;
+     * `'app'` shares one entry across callers — correct only for public, unauthenticated data.
+     */
+    scope?: 'principal' | 'app';
+    /**
+     * Request headers whose values vary the response and so must be part of the key (e.g.
+     * `['accept-language']`). An explicit allowlist **overrides** the default of honouring the
+     * response's `Vary`. Volatile/secret headers (authorization, cookie, traceparent, …) are
+     * never keyed.
+     */
+    vary?: string[];
+    /**
+     * Cacheable HTTP methods. Default `['GET','HEAD']`. A GraphQL **query** opts in by listing
+     * its method (`['POST']`) — a POST's read-vs-mutate intent cannot be inferred, so it is
+     * explicit. Coalescing applies to exactly this set; mutations are never cached.
+     */
+    methods?: string[];
+    /** In-process LRU cap on live entries (the store stays dumb). Default 1000. */
+    maxEntries?: number;
+    /**
+     * Request coalescing mode. `'process'` (v1 default) collapses concurrent identical in-flight
+     * callers in one process onto a single shared run; `false` disables it. `'cluster'` is
+     * reserved for the deferred cross-process protocol and behaves as `'process'` in v1.
+     */
+    coalesce?: 'process' | 'cluster' | false;
+    /**
+     * Opaque schema/version tag folded into the key. Setting it is the explicit **no-revalidate**
+     * fast path (a promise the `output` schema is unchanged); leaving it unset uses the safe
+     * default — **re-validate on hit** (still skips network/throttle/transform) until schema
+     * fingerprinting (ADR 0004) lands.
+     */
+    version?: string | number;
+    /** Sugar: author the key seed from the input instead of deriving it from the request. */
+    key?: (input: StitchInput) => string;
+}
+
 // ---- Auth -----------------------------------------------------------------
 export interface AuthContext {
     store: StitchStore; // throttle/session state — in-memory by default, shareable when configured
@@ -138,7 +188,8 @@ export type ProgressPhase =
     | 'throttled'
     | 'retry'
     | 'paginate'
-    | 'circuit';
+    | 'circuit'
+    | 'cache';
 export type StitchEvent<T = unknown> =
     | {
           type: 'start';
@@ -245,6 +296,18 @@ export interface StitchConfig {
     /** Inject a stable Idempotency-Key header on writes so safe retries don't duplicate. */
     idempotency?: IdempotencyOptions;
     /**
+     * Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine
+     * is loaded lazily from the `stitchapi/cache` subpath only when this block is present.
+     */
+    cache?: CacheConfig;
+    /**
+     * Opt this stitch out of the cache **and** coalescing entirely — never stored, always a live
+     * call. The honest "do not persist this response" hatch for one-time tokens or compliance-
+     * bound data; the opaque key + principal scope already cover leak-protection, so the default
+     * `false` is not fail-open. Only meaningful alongside a `cache` block.
+     */
+    sensitive?: boolean;
+    /**
      * How arrays are serialised in the query string.
      * - `'indices'` (default) — `ids%5B0%5D=1&ids%5B1%5D=2`
      * - `'brackets'`          — `ids%5B%5D=1&ids%5B%5D=2`
@@ -288,6 +351,18 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
     with<const P extends Partial<TIn>>(
         partial: P,
     ): Stitch<TOut, RelaxKeys<TIn, keyof P>>;
+    /**
+     * Cache surface (ADR 0003). A no-op unless this stitch has a `cache` block.
+     * - `invalidate(input)` — **exact** eviction of the one entry that `input` would hit.
+     * - `cache.invalidate()` — **bulk** eviction of every entry this stitch produced (a
+     *   per-stitch generation bump; prior entries become unreachable and TTL out).
+     * - `cache.key(input)` — the derived opaque key, for introspection.
+     */
+    invalidate(input?: StitchInput): Promise<void>;
+    readonly cache: {
+        invalidate(): Promise<void>;
+        key(input?: StitchInput): Promise<string | undefined>;
+    };
     readonly __config: StitchConfig;
     readonly __stitch: true;
 }
@@ -371,6 +446,13 @@ export interface Seam {
      * bucket. The principal lives in this closure, never in `StitchInput` (ADR 0002 §2–3).
      */
     as(principal: string): Seam;
+    /**
+     * Bulk cache invalidation (ADR 0003) over the shared store this seam owns. With no argument
+     * it bumps the **cache-wide** generation (every member stitch's entries become unreachable);
+     * pass a member `stitch` to bump just that stitch's generation. A no-op for members without a
+     * `cache` block. Exact, single-entry eviction stays on `stitch.invalidate(input)`.
+     */
+    invalidate(stitch?: Stitch): Promise<void>;
     /** Flush the shared trace sink (drain any buffered exporter). */
     flush(): Promise<void>;
     /** `flush()`, then close the shared store/vault and drop the registry. */

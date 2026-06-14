@@ -213,6 +213,27 @@ export async function verifyStoreContract(
             },
         ],
         [
+            // The response cache (ADR 0003 §8) does exact invalidation and LRU eviction with
+            // `set(key, undefined)` — a delete that needs no contract extension. A conforming
+            // store must drop the key, so a later `get` resolves to undefined.
+            'set: set(key, undefined) deletes the entry',
+            async () => {
+                await store.set(k('del'), 'present');
+                expectDeepEqual(
+                    await store.get(k('del')),
+                    'present',
+                    'get before delete',
+                );
+                await store.set(k('del'), undefined);
+                const after = await store.get(k('del'));
+                if (after !== undefined) {
+                    throw new Error(
+                        `set(key, undefined) did not delete: got ${show(after)}`,
+                    );
+                }
+            },
+        ],
+        [
             'set: a ttlMs entry expires',
             async () => {
                 await store.set(k('ttl'), 'soon-gone', ttlMs);

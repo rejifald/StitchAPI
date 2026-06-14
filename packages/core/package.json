@@ -65,6 +65,16 @@
                 "types": "./lib/fingerprint.d.ts",
                 "default": "./lib/fingerprint.js"
             }
+        },
+        "./cache": {
+            "import": {
+                "types": "./lib/cache.d.mts",
+                "default": "./lib/cache.mjs"
+            },
+            "require": {
+                "types": "./lib/cache.d.ts",
+                "default": "./lib/cache.js"
+            }
         }
     },
     "sideEffects": false,
