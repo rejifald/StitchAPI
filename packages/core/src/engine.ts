@@ -190,6 +190,7 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
               }
             : input.body,
         ...(bodyType !== undefined ? { bodyType } : {}),
+        ...(cfg.multipart !== undefined ? { multipart: cfg.multipart } : {}),
         ...(cfg.responseType !== undefined
             ? { responseType: cfg.responseType }
             : {}),
