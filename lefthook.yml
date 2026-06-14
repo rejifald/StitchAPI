@@ -31,6 +31,10 @@ pre-push:
           run: pnpm check:lint
         - name: typecheck
           run: pnpm check:types
+        # Type-level tests (tsd) for the inferred public API — builds the package's d.ts and
+        # asserts `stitch({ output: schema })` resolves to the right `Stitch<T>`.
+        - name: typecheck-d
+          run: pnpm check:types-d
         - name: test
           run: pnpm test
         - name: exports

@@ -107,8 +107,11 @@ function makeHandle(shared: SharedSeam, principal: string | undefined): Seam {
     };
 
     return {
-        stitch: (config) => build(config),
-        graphql: (config) => build(config, true),
+        // `build` is generic at runtime; the inferring overloads come from the `Seam` interface,
+        // which the object literal is checked against (function return type).
+        stitch: (config: string | Partial<StitchConfig>) => build(config),
+        graphql: (config: Partial<StitchConfig> & { query: string }) =>
+            build(config, true),
         as: (p) => makeHandle(shared, p),
         async flush() {
             await shared.trace.flush?.();

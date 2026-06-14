@@ -74,8 +74,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: 'output',
             type: 'property',
-            detail: 'Validator | DriftSpec',
-            info: 'Response schema, or a  for leveled drift detection.',
+            detail: 'SchemaLike | DriftSpec',
+            info: 'Response schema, or a  for leveled drift detection. Accepts any (raw Zod / Standard Schema / Validator / predicate); the stitch infers its result type from it (see `InferOutput`), so a hand-written generic is rarely needed.',
         },
         {
             label: 'unwrap',
