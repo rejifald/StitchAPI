@@ -40,8 +40,8 @@ const resultOf = <T>(events: StitchEvent<T>[]) =>
             e.type === 'result',
     );
 
-// 1) Both composition facades resolve to the same canonical stitch and same result.
-test('two facades (extends / builder) are equivalent', async () => {
+// 1) The extends facade resolves to the correct canonical stitch and result.
+test('extends facade produces the correct result', async () => {
     server.route('GET', '/items', { body: { data: [{ id: 1, name: 'Ada' }] } });
 
     const schema = asValidator(
@@ -49,27 +49,17 @@ test('two facades (extends / builder) are equivalent', async () => {
     );
     const base = { baseUrl: server.url, unwrap: 'data' };
 
-    // (a) extends
     const viaExtends = stitch({
         extends: [base],
         path: '/items',
         output: schema,
     });
-    // (b) builder
-    const viaBuilder = stitch
-        .use(base)
-        .get('/items')
-        .returns(schema)
-        .unwrap('data');
 
     const expected = [{ id: 1, name: 'Ada' }];
-    const [a, b] = await Promise.all([viaExtends(), viaBuilder()]);
+    const result = await viaExtends();
 
-    expect(a).toEqual(expected);
-    expect(b).toEqual(expected);
-    // Both hit the SAME route; equivalence means identical observable result.
-    expect(a).toEqual(b);
-    expect(server.callCount('/items')).toBe(2);
+    expect(result).toEqual(expected);
+    expect(server.callCount('/items')).toBe(1);
 });
 
 // 1b) A seam member resolves to the SAME result as the config-`extends` facade — the seam shares

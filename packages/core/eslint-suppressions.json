@@ -50,7 +50,7 @@
   },
   "src/stitch.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
+      "count": 1
     }
   },
   "src/store.ts": {

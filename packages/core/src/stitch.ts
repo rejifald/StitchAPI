@@ -1,4 +1,4 @@
-// The authoring surface: stitch() + the two composition facades (extends / fluent builder) +
+// The authoring surface: stitch() + the extends composition facade +
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
 import {
@@ -369,19 +369,14 @@ export interface StitchFn {
      * match the inferring overload above, so the result is `Stitch<unknown>` — override with `<T>`.
      */
     <T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
-    use(...fragments: Fragment[]): Builder;
 }
 
 // The impl is the loose `<T>(config) => Stitch<T>`; the rich `InputOf<C>` lives only in the
 // `StitchFn` overloads it is checked against. TypeScript's overload-assignability is lenient enough
 // that no cast is needed here (the same reason `seam.ts`'s handle needs none).
-export const stitch: StitchFn = Object.assign(
-    <T = unknown>(config: string | Partial<StitchConfig>) =>
-        makeStitch<T>(config as Fragment),
-    {
-        use: (...fragments: Fragment[]) => makeBuilder({ extends: fragments }),
-    },
-);
+export const stitch: StitchFn = <T = unknown>(
+    config: string | Partial<StitchConfig>,
+) => makeStitch<T>(config);
 
 /**
  * drift(): wrap an output schema with leveled drift options. The wrapped contract type is
@@ -414,62 +409,4 @@ export function graphql<
         method: 'POST',
         unwrap: config.unwrap ?? 'data',
     });
-}
-
-// ---- fluent builder facade ------------------------------------------------
-export interface Builder {
-    (input?: StitchInput): StitchResult<unknown>;
-    use(...f: Fragment[]): Builder;
-    get(path: string): Builder;
-    post(path: string): Builder;
-    put(path: string): Builder;
-    delete(path: string): Builder;
-    returns(schema: unknown): Builder;
-    unwrap(key: string): Builder;
-    auth(a: StitchConfig['auth']): Builder;
-    retry(r: StitchConfig['retry']): Builder;
-    throttle(t: StitchConfig['throttle']): Builder;
-    timeout(t: StitchConfig['timeout']): Builder;
-    stream(input?: StitchInput): ReturnType<Stitch['stream']>;
-    with(partial: StitchInput): Stitch;
-}
-
-function makeBuilder(initial: Partial<StitchConfig>): Builder {
-    const acc: Partial<StitchConfig> = { ...initial };
-    let built: Stitch | null = null;
-    const ensure = () => (built ??= makeStitch(acc));
-    const invalidate = () => (built = null);
-
-    const fn = ((input?: StitchInput) => ensure()(input)) as Builder;
-    fn.use = (...f) => (
-        (acc.extends = [
-            ...((acc.extends as Fragment[]) ?? []),
-            ...f,
-        ] as NonNullable<StitchConfig['extends']>),
-        invalidate(),
-        fn
-    );
-    fn.get = (p) => ((acc.method = 'GET'), (acc.path = p), invalidate(), fn);
-    fn.post = (p) => ((acc.method = 'POST'), (acc.path = p), invalidate(), fn);
-    fn.put = (p) => ((acc.method = 'PUT'), (acc.path = p), invalidate(), fn);
-    fn.delete = (p) => (
-        (acc.method = 'DELETE'), (acc.path = p), invalidate(), fn
-    );
-    fn.returns = (schema) => (
-        (acc.output = schema as NonNullable<StitchConfig['output']>),
-        invalidate(),
-        fn
-    );
-    fn.unwrap = (key) => ((acc.unwrap = key), invalidate(), fn);
-    fn.auth = (a) => (a !== undefined && (acc.auth = a), invalidate(), fn);
-    fn.retry = (r) => (r !== undefined && (acc.retry = r), invalidate(), fn);
-    fn.throttle = (t) => (
-        t !== undefined && (acc.throttle = t), invalidate(), fn
-    );
-    fn.timeout = (t) => (
-        t !== undefined && (acc.timeout = t), invalidate(), fn
-    );
-    fn.stream = (input) => ensure().stream(input);
-    fn.with = (partial) => ensure().with(partial);
-    return fn;
 }
