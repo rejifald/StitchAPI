@@ -46,7 +46,7 @@ export function SectionHeading({
             )}
         >
             {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-fd-foreground sm:text-4xl">
+            <h2 className="mt-3 font-display text-3xl font-extrabold tracking-[-0.02em] text-fd-foreground sm:text-4xl">
                 {title}
             </h2>
             {lead ? (

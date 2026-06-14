@@ -1,5 +1,6 @@
 'use client';
 
+import { signalCodeMirrorTheme } from './codemirror-theme';
 import {
     instanceCompletionSource,
     playgroundCompletionSource,
@@ -13,22 +14,8 @@ import {
 } from '@codemirror/lang-javascript';
 import type { EditorRenderProps } from '@stitchapi/sandbox/component/StitchPlayground';
 import CodeMirror from '@uiw/react-codemirror';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { stitch } from 'stitchapi';
-
-/** Track the docs theme — Fumadocs toggles a `dark` class on <html>. */
-function useIsDark(): boolean {
-    const [dark, setDark] = useState(false);
-    useEffect(() => {
-        const el = document.documentElement;
-        const update = () => setDark(el.classList.contains('dark'));
-        update();
-        const obs = new MutationObserver(update);
-        obs.observe(el, { attributes: true, attributeFilter: ['class'] });
-        return () => obs.disconnect();
-    }, []);
-    return dark;
-}
 
 /**
  * Globals available inside every playground snippet.
@@ -59,8 +46,6 @@ export function CodeEditor({
     readOnly,
     height,
 }: EditorRenderProps) {
-    const dark = useIsDark();
-
     const extensions = useMemo(
         () => [
             javascript({ typescript: true, jsx: true }),
@@ -84,7 +69,7 @@ export function CodeEditor({
             className="stitch-playground__cm"
             value={value}
             height={`${height}px`}
-            theme={dark ? 'dark' : 'light'}
+            theme={signalCodeMirrorTheme}
             editable={!readOnly}
             readOnly={readOnly}
             extensions={extensions}

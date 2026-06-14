@@ -17,6 +17,8 @@
     "dependencies": {
         "@codemirror/autocomplete": "^6.20.3",
         "@codemirror/lang-javascript": "^6.2.2",
+        "@codemirror/language": "^6.12.3",
+        "@lezer/highlight": "^1.2.3",
         "@stitchapi/sandbox": "workspace:*",
         "@uiw/react-codemirror": "^4.23.0",
         "fumadocs-core": "^16.10.0",
