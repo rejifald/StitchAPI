@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 608" width="880" height="608" font-family="'Hanken Grotesk', system-ui, sans-serif" role="img" aria-label="StitchAPI Signal color palette">
+  <rect x="0.5" y="0.5" width="879" height="607" rx="20" fill="#ffffff" stroke="#e4e7ee"/>
+  <text x="32" y="46" font-size="24" font-weight="800" fill="#0c1019">StitchAPI · Signal — Color</text>
+  <text x="32" y="68" font-size="13" fill="#58616f">Semantic tokens — source of truth: apps/docs/app/tokens.css</text>
+  <text x="32" y="102" font-size="15" font-weight="700" fill="#2563eb">Light theme</text><rect x="32" y="116" width="196" height="56" rx="10" fill="#2563eb" stroke="#00000022"/>
+    <text x="34" y="190" font-size="13" font-weight="600" fill="#0c1019">--brand</text>
+    <text x="34" y="206" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#58616f">#2563EB</text><rect x="236" y="116" width="196" height="56" rx="10" fill="#1d4fd0" stroke="#00000022"/>
+    <text x="238" y="190" font-size="13" font-weight="600" fill="#0c1019">--brand-strong</text>
+    <text x="238" y="206" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#58616f">#1D4FD0</text><rect x="440" y="116" width="196" height="56" rx="10" fill="#b4690a" stroke="#00000022"/>
+    <text x="442" y="190" font-size="13" font-weight="600" fill="#0c1019">--accent</text>
+    <text x="442" y="206" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#58616f">#B4690A</text><rect x="644" y="116" width="196" height="56" rx="10" fill="#0c1019" stroke="#00000022"/>
+    <text x="646" y="190" font-size="13" font-weight="600" fill="#0c1019">--text</text>
+    <text x="646" y="206" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#58616f">#0C1019</text><rect x="32" y="222" width="196" height="56" rx="10" fill="#58616f" stroke="#00000022"/>
+    <text x="34" y="296" font-size="13" font-weight="600" fill="#0c1019">--text-muted</text>
+    <text x="34" y="312" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#58616f">#58616F</text><rect x="236" y="222" width="196" height="56" rx="10" fill="#ffffff" stroke="#00000022"/>
+    <text x="238" y="296" font-size="13" font-weight="600" fill="#0c1019">--surface</text>
+    <text x="238" y="312" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#58616f">#FFFFFF</text><rect x="440" y="222" width="196" height="56" rx="10" fill="#e4e7ee" stroke="#00000022"/>
+    <text x="442" y="296" font-size="13" font-weight="600" fill="#0c1019">--border</text>
+    <text x="442" y="312" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#58616f">#E4E7EE</text><rect x="644" y="222" width="196" height="56" rx="10" fill="#fbfbfd" stroke="#00000022"/>
+    <text x="646" y="296" font-size="13" font-weight="600" fill="#0c1019">--bg</text>
+    <text x="646" y="312" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#58616f">#FBFBFD</text>
+  <rect x="16" y="328" width="848" height="264" rx="14" fill="#0a0d13"/>
+  <text x="32" y="362" font-size="15" font-weight="700" fill="#4c8dff">Dark theme</text><rect x="32" y="376" width="196" height="56" rx="10" fill="#4c8dff" stroke="#ffffff2e"/>
+    <text x="34" y="450" font-size="13" font-weight="600" fill="#e9edf4">--brand</text>
+    <text x="34" y="466" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#98a2b3">#4C8DFF</text><rect x="236" y="376" width="196" height="56" rx="10" fill="#6ba1ff" stroke="#ffffff2e"/>
+    <text x="238" y="450" font-size="13" font-weight="600" fill="#e9edf4">--brand-strong</text>
+    <text x="238" y="466" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#98a2b3">#6BA1FF</text><rect x="440" y="376" width="196" height="56" rx="10" fill="#f6a823" stroke="#ffffff2e"/>
+    <text x="442" y="450" font-size="13" font-weight="600" fill="#e9edf4">--accent</text>
+    <text x="442" y="466" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#98a2b3">#F6A823</text><rect x="644" y="376" width="196" height="56" rx="10" fill="#e9edf4" stroke="#ffffff2e"/>
+    <text x="646" y="450" font-size="13" font-weight="600" fill="#e9edf4">--text</text>
+    <text x="646" y="466" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#98a2b3">#E9EDF4</text><rect x="32" y="482" width="196" height="56" rx="10" fill="#98a2b3" stroke="#ffffff2e"/>
+    <text x="34" y="556" font-size="13" font-weight="600" fill="#e9edf4">--text-muted</text>
+    <text x="34" y="572" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#98a2b3">#98A2B3</text><rect x="236" y="482" width="196" height="56" rx="10" fill="#0f141c" stroke="#ffffff2e"/>
+    <text x="238" y="556" font-size="13" font-weight="600" fill="#e9edf4">--surface</text>
+    <text x="238" y="572" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#98a2b3">#0F141C</text><rect x="440" y="482" width="196" height="56" rx="10" fill="#232b3a" stroke="#ffffff2e"/>
+    <text x="442" y="556" font-size="13" font-weight="600" fill="#e9edf4">--border</text>
+    <text x="442" y="572" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#98a2b3">#232B3A</text><rect x="644" y="482" width="196" height="56" rx="10" fill="#0a0d13" stroke="#ffffff2e"/>
+    <text x="646" y="556" font-size="13" font-weight="600" fill="#e9edf4">--bg</text>
+    <text x="646" y="572" font-size="12" font-family="'IBM Plex Mono', ui-monospace, monospace" fill="#98a2b3">#0A0D13</text>
+</svg>

@@ -3,9 +3,12 @@
 <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
 	 viewBox="0 0 1600 1200" style="enable-background:new 0 0 1600 1200;" xml:space="preserve">
 <style type="text/css">
+	/* Signal palette: brand-blue cloud, ink brackets + seam on a light tile.
+	   The seam stays ink (not amber) here — at favicon/app-icon scale the
+	   amber dash is too small to read; amber is reserved for the lockup. */
 	.st0{fill:url(#SVGID_1_);}
-	.st1{fill:#3C82F6;}
-	.st2{fill:#0C0C0C;}
+	.st1{fill:#2563EB;}
+	.st2{fill:#0C1019;}
 </style>
 <g>
 	
