@@ -20,7 +20,10 @@ import type {
 
 /**
  * Build a Mermaid `flowchart TD` string from a stitch trace.
- * Nodes are labelled with the entry id (and label when present).
+ * Nodes are labelled by HTTP method + request path (e.g. `GET /users/2`) so
+ * stitches that share a `name` (e.g. siblings derived via `extends`) stay
+ * distinct and readable; when the request/url is missing, the label falls back
+ * to the entry's `label` (name), then its `id`.
  * Edges are derived from `StitchTraceEntry.dependsOn`.
  *
  * Deterministic: entries are iterated in their array order; node ids are
@@ -40,11 +43,27 @@ export function traceToMermaid(trace: StitchTraceEntry[]): string {
     // Sanitise an id to a safe Mermaid node identifier.
     const safeid = (raw: string) => raw.replace(/[^A-Za-z0-9_]/g, '_');
 
+    // Reduce a request URL to its path (+ search). Full URLs are parsed; bare
+    // paths (e.g. "/users/2") are used as-is. NEVER throws.
+    const urlToPath = (url: string): string => {
+        try {
+            const u = new URL(url);
+            return u.pathname + u.search;
+        } catch {
+            return url;
+        }
+    };
+
     for (const entry of trace) {
         const nid = safeid(entry.id);
-        // Build a label: prefer entry.label, fall back to entry.id.
+        // Build a label: prefer "METHOD /path" from the request, falling back
+        // to entry.label (name), then entry.id when no usable url is present.
         // Annotate streaming entries with a ⟳ marker.
-        const baseLabel = entry.label ?? entry.id;
+        const url = entry.request?.url;
+        const baseLabel =
+            entry.request && url
+                ? `${entry.request.method} ${urlToPath(url)}`
+                : (entry.label ?? entry.id);
         const streamMarker = entry.stream ? ` ⟳${entry.stream.chunks}` : '';
         // Escape quotes inside the label so Mermaid doesn't choke.
         const escapedLabel = (baseLabel + streamMarker).replace(/"/g, "'");

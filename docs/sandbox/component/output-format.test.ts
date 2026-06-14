@@ -41,7 +41,7 @@ import assert from 'node:assert/strict';
     );
 }
 
-// Single node with no edges.
+// Single node with no edges. Label is method + path, NOT the name.
 {
     const trace: StitchTraceEntry[] = [
         {
@@ -53,9 +53,155 @@ import assert from 'node:assert/strict';
     ];
     const result = traceToMermaid(trace);
     assert.ok(result.includes('s1'), 'single node: id must appear');
-    assert.ok(result.includes('getUser'), 'single node: label must appear');
+    assert.ok(
+        result.includes('GET /users/1'),
+        'single node: label is method + path',
+    );
+    assert.ok(
+        !result.includes('getUser'),
+        'single node: name not used as label when a url is present',
+    );
     // No edges when there are no dependsOn.
     assert.ok(!result.includes('-->'), 'single node: no edges expected');
+}
+
+// Full-URL request → label is METHOD + pathname (host stripped).
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'u2',
+            label: 'demo-api',
+            request: {
+                method: 'GET',
+                url: 'https://demo.stitchapi.dev/users/2',
+            },
+            response: { status: 200, ok: true, durationMs: 70 },
+        },
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('u2["GET /users/2"]'),
+        'full url: node labelled GET /users/2',
+    );
+    assert.ok(
+        !result.includes('demo.stitchapi.dev'),
+        'full url: host stripped from label',
+    );
+}
+
+// Bare-path request url → used as-is (new URL() would throw, so we fall back).
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'u3',
+            label: 'demo-api',
+            request: { method: 'GET', url: '/users' },
+            response: { status: 200, ok: true, durationMs: 30 },
+        },
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('u3["GET /users"]'),
+        'bare path: node labelled GET /users',
+    );
+}
+
+// Sibling stitches sharing a name still get distinct labels via method + path.
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'getUserById',
+            label: 'demo-api',
+            request: {
+                method: 'GET',
+                url: 'https://demo.stitchapi.dev/users/1',
+            },
+        },
+        {
+            id: 'listUsers',
+            label: 'demo-api',
+            request: { method: 'GET', url: 'https://demo.stitchapi.dev/users' },
+        },
+        {
+            id: 'authMe',
+            label: 'demo-api',
+            request: {
+                method: 'GET',
+                url: 'https://demo.stitchapi.dev/auth/me',
+            },
+        },
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('GET /users/1') &&
+            result.includes('GET /users') &&
+            result.includes('GET /auth/me'),
+        'shared name: each node labelled by its own method + path',
+    );
+}
+
+// Path-with-query → search string is preserved in the label.
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'q1',
+            request: {
+                method: 'GET',
+                url: 'https://example.com/search?q=cat',
+            },
+        },
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('GET /search?q=cat'),
+        'query string: search preserved in path label',
+    );
+}
+
+// No request → label falls back to entry.label, then entry.id.
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'no-req',
+            label: 'composedStep',
+        } as StitchTraceEntry,
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('composedStep'),
+        'no request: falls back to entry.label',
+    );
+}
+
+// Stream marker + dependsOn edge survive the method+path labeling.
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'fetch-token',
+            label: 'auth',
+            request: { method: 'POST', url: 'https://example.com/token' },
+        },
+        {
+            id: 'chat',
+            label: 'chatStream',
+            request: { method: 'POST', url: 'https://example.com/chat' },
+            stream: { chunks: 9 },
+            dependsOn: ['fetch-token'],
+        },
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('POST /token'),
+        'stream+edge: parent labelled by method + path',
+    );
+    assert.ok(
+        result.includes('POST /chat ⟳9'),
+        'stream+edge: child labelled by method + path with stream marker',
+    );
+    assert.ok(
+        result.includes('fetch_token --> chat'),
+        'stream+edge: dependsOn edge still emitted',
+    );
 }
 
 // Two nodes with a dependsOn edge.
@@ -393,8 +539,8 @@ import assert from 'node:assert/strict';
         'A2 trace: mermaid includes new node id',
     );
     assert.ok(
-        v4.mermaid.includes('fetchUser'),
-        'A2 trace: mermaid includes node label',
+        v4.mermaid.includes('GET /users/1'),
+        'A2 trace: mermaid includes method + path node label',
     );
     // isStreaming should remain true (chunks already set it).
     assert.equal(

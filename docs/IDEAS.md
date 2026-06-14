@@ -134,3 +134,40 @@ cache signal); GraphQL query-vs-mutation opt-in classification; conformance-kit 
 `incr`-as-lock correctness; `__config`/trace redaction of cached values + lock keys (extends ADR
 0002 §6). Dropped: hierarchy, SWR/background refresh, mutation-driven cross-stitch invalidation
 (= app-level cache policy, out of scope — see ADR 0003 §12).
+
+---
+
+## Playground trace DAG — dependency / derivation edges
+
+-   **Status:** idea
+-   **Date:** 2026-06
+-   **Tags:** playground, visual, observability, DX, trace
+-   **Gates:** browser-first ✅ (renders client-side in the existing playground; mermaid is
+    lazy-loaded, off the SSR / initial-bundle path) · bundle-frugal — stays inside the
+    `docs/sandbox` playground surface, never pulled into the core `stitch()` import.
+
+**Problem / why** — The playground DAG now renders one node per executed `stitch()` call,
+labelled `METHOD /path` (shipped 2026-06: client-side Mermaid SVG + distinguishing labels). But
+the graph has **no edges** — every node is a disconnected box. The runtime trace
+(`runtime/trace-collector.ts`) emits per-call nodes with no composition graph, and a snippet's
+calls are often genuinely independent, so there is no honest _data-dependency_ edge to draw. The
+DAG therefore reads as a list, not a graph.
+
+**Sketch** — Render the **`extends` derivation tree** instead of (or alongside) the flat call
+list: `api → getUser`, `api → listNames`, `api → flaky`, … — the real structural relationship a
+config-object author expresses. Base stitches that are never called directly still appear as
+parent nodes. The flat `METHOD /path` labels stay on the leaf (call) nodes. True data-dependency
+edges (one call's output feeding another's input) remain a later layer, gated on the engine
+emitting a composition graph.
+
+**Backed by / builds on** — the just-shipped client-side Mermaid rendering + `traceToMermaid`
+(`component/output-format.ts`), the `StitchTraceEntry.dependsOn` field already consumed to draw
+edges, and `extends`/`flatten` composition metadata. Net-new is surfacing the derivation
+relationship (parent identity) into the trace / entry shape.
+
+**Open questions** — Where does the derivation graph come from — does `stitch()`/`seam` emit
+parent identity into the trace (the collector can't see `extends` today), or is it inferred
+statically from the snippet? Do base (never-called) stitches get nodes, and how are they de-duped
+across calls? Derivation tree vs. true data-dependency edges — show one, both, or a toggle?
+(Down-payment on the Studio "Mermaid-from-definition" line; see the `docs/sandbox` A2 trace
+follow-up noted in `RELEASE.md`.)
