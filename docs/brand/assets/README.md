@@ -22,14 +22,17 @@ token or mark change can be re-applied by hand):
 
 -   cloud arcs + the wordmark's "i"-dot → `--brand`
 -   `</>` brackets + wordmark letters → `--text` (ink)
--   dashed "stitch" seam → `--accent` (amber) — **except** the favicon/app-icon,
-    where the seam is `--text` (ink) for legibility at ≤32 px
+-   dashed "stitch" seam → `--accent` (amber)
 
 **Sources:**
 
 -   Lockup paths come from [`logo.svg`](../../../apps/docs/public/logo.svg); the
     icon mark is the cloud + brackets + seam subset of the same artwork on a
-    rounded light tile (`--surface` → a touch darker).
+    **rounded dark tile** (`--surface-2` → `--bg` gradient) so it reads boldly in
+    a browser tab against mostly-light favicons — cloud `--brand` (dark
+    `#4C8DFF`), brackets `--text` (`#E9EDF4`), seam `--accent` (`#F6A823`; the
+    dark tile gives it enough contrast to read even small). `apple-icon.png` is
+    the same mark full-bleed on `--bg` (iOS masks the corners itself).
 -   The banner backdrop is the **ripple motif**, generated with the exact
     algorithm in
     [`brand-backdrop.tsx`](<../../../apps/docs/app/(home)/components/brand-backdrop.tsx>)
@@ -37,8 +40,9 @@ token or mark change can be re-applied by hand):
     `--brand`, centred and scaled to fill the 1692×564 frame, on a `--bg` gradient
     with rounded corners.
 
-**Dimensions** (match the originals): `icon.png` 256², `apple-icon.png` 180²,
-banners 1692×564 — all with a transparent area outside the rounded corners.
+**Dimensions** (match the originals): `icon.png` 256² (transparent outside the
+rounded corners), `apple-icon.png` 180² (full-bleed, opaque — iOS masks the
+corners), banners 1692×564 (transparent outside the rounded corners).
 
 **Rasterize:** render each composed SVG with a headless Chromium at
 `--force-device-scale-factor=1`, `--default-background-color=00000000`, and
