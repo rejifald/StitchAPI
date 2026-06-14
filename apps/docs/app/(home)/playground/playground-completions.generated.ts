@@ -132,6 +132,18 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             info: "Inject a stable Idempotency-Key header on writes so safe retries don't duplicate.",
         },
         {
+            label: 'cache',
+            type: 'property',
+            detail: 'CacheConfig',
+            info: 'Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine is loaded lazily from the `stitchapi/cache` subpath only when this block is present.',
+        },
+        {
+            label: 'sensitive',
+            type: 'property',
+            detail: 'boolean',
+            info: 'Opt this stitch out of the cache **and** coalescing entirely — never stored, always a live call. The honest "do not persist this response" hatch for one-time tokens or compliance- bound data; the opaque key + principal scope already cover leak-protection, so the default `false` is not fail-open. Only meaningful alongside a `cache` block.',
+        },
+        {
             label: 'arrayFormat',
             type: 'property',
             detail: "'indices' | 'brackets' | 'repeat'",
@@ -176,12 +188,23 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: 'stream',
             type: 'method',
-            detail: '(input?: StitchInput) => AsyncGenerator<StitchEvent<T>, void>',
+            detail: '(...args: Args<TIn>) => AsyncGenerator<StitchEvent<TOut>, void>',
         },
         {
             label: 'with',
             type: 'method',
-            detail: '(partial: StitchInput) => Stitch<T>',
+            detail: '(partial: P) => Stitch<TOut, RelaxKeys<TIn, keyof P>>',
+        },
+        {
+            label: 'invalidate',
+            type: 'method',
+            detail: '(input?: StitchInput) => Promise<void>',
+            info: 'Cache surface (ADR 0003). A no-op unless this stitch has a `cache` block. - `invalidate(input)` — **exact** eviction of the one entry that `input` would hit. - `cache.invalidate()` — **bulk** eviction of every entry this stitch produced (a per-stitch generation bump; prior entries become unreachable and TTL out). - `cache.key(input)` — the derived opaque key, for introspection.',
+        },
+        {
+            label: 'cache',
+            type: 'property',
+            detail: '{ invalidate(): Promise<void>; key(input?: StitchInput): Promise<string | undefined>; }',
         },
         {
             label: '__config',
