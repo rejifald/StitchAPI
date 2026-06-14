@@ -15,6 +15,7 @@
  * library build (tsconfig `include` is `src/**\/*.ts`). Requires `react` (and later
  * `@codemirror/*`) once relocated into the docs app.
  */
+import type { SimKnobs } from '../contracts/sim';
 import {
     type RunView,
     applyEvent,
@@ -28,7 +29,7 @@ import {
     mockRunner,
 } from './runner';
 
-import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useRef, useState } from 'react';
 
 /**
  * Props passed to a custom editor (the EDITOR INTEGRATION POINT). A renderer
@@ -63,6 +64,18 @@ export interface StitchPlaygroundProps {
     runner?: CodeRunner;
     /** Globals exposed to the snippet (the browser `stitch` build goes here). */
     scope?: Record<string, unknown>;
+    /**
+     * Optional content for the start of the toolbar (e.g. the docs example
+     * switcher tabs). When present it replaces the standalone status label there,
+     * and the run status moves next to the Run/Reset actions.
+     */
+    tabs?: ReactNode;
+    /**
+     * Baseline simulator knobs applied to every request a run makes — the
+     * "Response knobs" panel. Forwarded to `runner.run` as `RunRequest.knobs`;
+     * an explicit `?__…` in the snippet still wins. Absent → unmodified responses.
+     */
+    knobs?: SimKnobs;
     /** Editor height in px. */
     height?: number;
     /** Read-only display (docs example you can't edit). */
@@ -74,15 +87,19 @@ export interface StitchPlaygroundProps {
      */
     renderEditor?: (props: EditorRenderProps) => ReactNode;
     /**
-     * Custom renderer for the resolved-value text (e.g. a syntax-highlighted
-     * code block). Defaults to a <pre>.
-     */
-    renderValue?: (text: string) => ReactNode;
-    /**
      * Custom renderer for a single console log line (e.g. highlight JSON output).
      * Receives the formatted line + its level. Defaults to the raw text.
      */
     renderLog?: (text: string, level: string) => ReactNode;
+    /**
+     * Optional panel rendered in the bottom-right slot, beside the editor and
+     * below the console (e.g. the docs "Server knobs"). When provided, the body
+     * becomes a three-pane grid; when omitted, the console spans the full right
+     * column. Titled by {@link asideLabel}.
+     */
+    aside?: ReactNode;
+    /** Title bar text for the {@link aside} pane. */
+    asideLabel?: string;
 }
 
 const DEFAULT_SNIPPET = `// Edit and run. Output appears below.
@@ -90,15 +107,51 @@ const user = await stitch('https://reqres.in/api/users/2');
 console.log(user);
 `;
 
+/* Inline icons keep this shell dependency-light (no icon package). Sized in CSS
+   via `.stitch-playground__actions svg`. */
+function PlayIcon() {
+    return (
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M8 5v14l11-7z" />
+        </svg>
+    );
+}
+function StopIcon() {
+    return (
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="1.5" />
+        </svg>
+    );
+}
+function ResetIcon() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+        </svg>
+    );
+}
+
 export function StitchPlayground({
     initialCode = DEFAULT_SNIPPET,
     runner = mockRunner,
     scope,
+    knobs,
+    tabs,
     height = 220,
     readOnly = false,
     renderEditor,
-    renderValue,
     renderLog,
+    aside,
+    asideLabel = 'Server knobs',
 }: StitchPlaygroundProps) {
     const [code, setCode] = useState(initialCode);
     const [result, setResult] = useState<RunResult | null>(null);
@@ -133,6 +186,7 @@ export function StitchPlayground({
             const res = await runner.run({
                 code,
                 scope,
+                knobs,
                 signal: ac.signal,
                 onEvent,
             });
@@ -144,17 +198,9 @@ export function StitchPlayground({
         } finally {
             if (!ac.signal.aborted) setRunning(false);
         }
-    }, [code, runner, scope]);
+    }, [code, runner, scope, knobs]);
 
     const stop = useCallback(() => abortRef.current?.abort(), []);
-
-    const status = useMemo(() => {
-        if (isDeferred) return 'engine deferred';
-        if (running) return 'running…';
-        if (result?.error) return `error · ${result.error.phase}`;
-        if (result) return `done · ${result.durationMs}ms`;
-        return 'ready';
-    }, [isDeferred, running, result]);
 
     // Reset view and result together when resetting the editor.
     const reset = useCallback(() => {
@@ -166,10 +212,21 @@ export function StitchPlayground({
     return (
         <div className="stitch-playground" data-runner={runner.id}>
             <div className="stitch-playground__toolbar">
-                <span className="stitch-playground__status">{status}</span>
+                {/* Tabs (e.g. the docs example switcher) sit at the start of the
+                    toolbar; the run controls sit at the end. */}
+                {tabs && (
+                    <div className="stitch-playground__toolbar-start">
+                        {tabs}
+                    </div>
+                )}
                 <div className="stitch-playground__actions">
                     {running ? (
-                        <button type="button" onClick={stop}>
+                        <button
+                            type="button"
+                            onClick={stop}
+                            className="stitch-playground__btn stitch-playground__btn--run"
+                        >
+                            <StopIcon />
                             Stop
                         </button>
                     ) : (
@@ -177,61 +234,102 @@ export function StitchPlayground({
                             type="button"
                             onClick={run}
                             disabled={isDeferred}
+                            className="stitch-playground__btn stitch-playground__btn--run"
                         >
+                            <PlayIcon />
                             Run
                         </button>
                     )}
-                    <button type="button" onClick={reset} disabled={running}>
+                    <button
+                        type="button"
+                        onClick={reset}
+                        disabled={running}
+                        className="stitch-playground__btn stitch-playground__btn--reset"
+                    >
+                        <ResetIcon />
                         Reset
                     </button>
                 </div>
             </div>
 
-            {/* EDITOR INTEGRATION POINT — `renderEditor` swaps in a real editor
-                (e.g. CodeMirror 6) while keeping the `code`/`setCode` controlled
-                contract; the default is a dependency-free <textarea>. */}
-            {renderEditor ? (
-                renderEditor({
-                    value: code,
-                    onChange: setCode,
-                    readOnly,
-                    height,
-                })
-            ) : (
-                <textarea
-                    className="stitch-playground__editor"
-                    style={{ height, width: '100%', fontFamily: 'monospace' }}
-                    value={code}
-                    spellCheck={false}
-                    readOnly={readOnly}
-                    onChange={(e) => setCode(e.target.value)}
-                    aria-label="StitchAPI playground editor"
-                />
-            )}
+            {/* Pane layout: Code (left, full height) · Console (right). When an
+                `aside` is supplied (the docs "Server knobs"), it takes the
+                bottom-right slot and the console shrinks to the top-right.
+                Stacks to one column on narrow viewports — see playground.css. */}
+            <div
+                className="stitch-playground__body"
+                data-has-aside={aside ? 'true' : undefined}
+            >
+                <section
+                    className="stitch-playground__pane stitch-playground__pane--editor"
+                    aria-label="Code"
+                >
+                    <div className="stitch-playground__pane-head">Code</div>
+                    {/* EDITOR INTEGRATION POINT — `renderEditor` swaps in a real
+                        editor (e.g. CodeMirror 6) while keeping the `code`/`setCode`
+                        controlled contract; the default is a dependency-free
+                        <textarea>. */}
+                    {renderEditor ? (
+                        renderEditor({
+                            value: code,
+                            onChange: setCode,
+                            readOnly,
+                            height,
+                        })
+                    ) : (
+                        <textarea
+                            className="stitch-playground__editor"
+                            style={{
+                                height,
+                                width: '100%',
+                                fontFamily: 'monospace',
+                            }}
+                            value={code}
+                            spellCheck={false}
+                            readOnly={readOnly}
+                            onChange={(e) => setCode(e.target.value)}
+                            aria-label="StitchAPI playground editor"
+                        />
+                    )}
+                </section>
 
-            <StitchOutput
-                view={view}
-                result={result}
-                deferred={isDeferred}
-                running={running}
-                renderValue={renderValue}
-                renderLog={renderLog}
-            />
+                <StitchOutput
+                    view={view}
+                    result={result}
+                    deferred={isDeferred}
+                    running={running}
+                    renderLog={renderLog}
+                />
+
+                {/* The aside owns its full chrome (header bar + body), so it can
+                    fold actions like "Clear" into its own header. */}
+                {aside && (
+                    <section
+                        className="stitch-playground__pane stitch-playground__pane--aside"
+                        aria-label={asideLabel}
+                    >
+                        {aside}
+                    </section>
+                )}
+            </div>
         </div>
     );
 }
 
 /**
- * Output panel — renders incrementally as RunEvents arrive via onEvent, and
- * reconciles with the final RunResult on resolve.
+ * Console pane — the log stream plus errors, shim notices, and the trace DAG.
+ * It does NOT render the snippet's return value: the playground is logs-first
+ * (snippets `console.log` what they want to show), so a returned value is not
+ * surfaced. Renders incrementally as RunEvents arrive via onEvent and reconciles
+ * with the final RunResult on resolve.
  *
  * Rendering strategy:
  *   · During a run: `view` is updated by `applyEvent` for every RunEvent the runner
  *     emits, so logs, streamed chunks, trace DAG, and notices appear immediately.
- *   · After a run: `view` is replaced by `buildRunView(result)` so value/error/
- *     durationMs always reflect the authoritative final state.
+ *   · After a run: `view` is replaced by `buildRunView(result)` so error/durationMs
+ *     always reflect the authoritative final state.
  *   · Runners that do not emit onEvent (e.g. mockRunner, DeferredRunner) never call
- *     the callback; the panel simply shows the final result after run() resolves.
+ *     the callback; the pane simply shows the final result after run() resolves.
  *
  * The `result` prop is still accepted for the `data-level` log attribute lookup
  * (log level is not part of RunView's flat string array, only the formatted text).
@@ -242,100 +340,105 @@ function StitchOutput({
     result,
     deferred,
     running,
-    renderValue,
     renderLog,
 }: {
     view: RunView | null;
     result: RunResult | null;
     deferred: boolean;
     running: boolean;
-    renderValue?: (text: string) => ReactNode;
     renderLog?: (text: string, level: string) => ReactNode;
 }) {
+    let body: ReactNode;
     if (deferred) {
-        return (
+        body = (
             <div className="stitch-playground__output stitch-playground__output--deferred">
                 ⏳ Execution engine not wired up yet. This shell is running
                 against the mock or deferred runner — see{' '}
                 <code>docs/playground/REQUIREMENTS.md</code>.
             </div>
         );
-    }
-    if (!view && !running)
-        return (
-            <div className="stitch-playground__output">
-                Run a snippet to see output.
+    } else if (!view && !running) {
+        body = (
+            <div className="stitch-playground__output stitch-playground__output--placeholder">
+                Run a snippet to see console output.
             </div>
         );
-    if (!view) return <div className="stitch-playground__output">running…</div>;
+    } else if (!view) {
+        body = (
+            <div className="stitch-playground__output stitch-playground__output--placeholder">
+                running…
+            </div>
+        );
+    } else {
+        body = (
+            <div className="stitch-playground__output">
+                {/* ── Logs ───────────────────────────────────────────── */}
+                {view.logs.map((line, i) => {
+                    const level = result?.logs[i]?.level ?? 'log';
+                    return (
+                        <div
+                            key={i}
+                            data-level={result?.logs[i]?.level}
+                            className="stitch-playground__log"
+                        >
+                            {renderLog ? renderLog(line, level) : line}
+                        </div>
+                    );
+                })}
+
+                {/* ── Error ──────────────────────────────────────────── */}
+                {view.errorText !== null && (
+                    <pre className="stitch-playground__error">
+                        {view.errorText}
+                    </pre>
+                )}
+
+                {/* ── Notices strip ──────────────────────────────────── */}
+                {view.notices.length > 0 && (
+                    <div className="stitch-playground__notices" role="note">
+                        {view.notices.map((n, i) => (
+                            <div key={i} className="stitch-playground__notice">
+                                ⚠ {n}
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* ── Mermaid DAG ────────────────────────────────────── */}
+                {/* Show the DAG as soon as any trace event has been folded in. */}
+                {view.mermaid && !view.mermaid.includes('_empty') && (
+                    <div className="stitch-playground__dag">
+                        {/* Streaming badge: shown when any chunk event arrived or any
+                            trace entry carries `.stream`. Active during and after the run. */}
+                        {view.isStreaming && (
+                            <span className="stitch-playground__dag-streaming-badge">
+                                streaming
+                            </span>
+                        )}
+                        {/* The Mermaid flowchart is rendered by the docs framework's
+                            <Mermaid> component (Fumadocs / MDX). We emit the raw graph
+                            string into a <pre data-mermaid> block; the framework's script
+                            picks it up and renders the SVG DAG. */}
+                        <pre
+                            className="stitch-playground__mermaid"
+                            data-mermaid="true"
+                        >
+                            {view.mermaid}
+                        </pre>
+                    </div>
+                )}
+            </div>
+        );
+    }
 
     return (
-        <div className="stitch-playground__output">
-            {/* ── Logs ─────────────────────────────────────────────────── */}
-            {view.logs.map((line, i) => {
-                const level = result?.logs[i]?.level ?? 'log';
-                return (
-                    <div
-                        key={i}
-                        data-level={result?.logs[i]?.level}
-                        className="stitch-playground__log"
-                    >
-                        {renderLog ? renderLog(line, level) : line}
-                    </div>
-                );
-            })}
-
-            {/* ── Error ────────────────────────────────────────────────── */}
-            {view.errorText !== null && (
-                <pre className="stitch-playground__error">{view.errorText}</pre>
-            )}
-
-            {/* ── Resolved value / streamed text ───────────────────────── */}
-            {view.errorText === null &&
-                view.valueText !== null &&
-                (renderValue ? (
-                    renderValue(view.valueText)
-                ) : (
-                    <pre className="stitch-playground__value">
-                        {view.valueText}
-                    </pre>
-                ))}
-
-            {/* ── Notices strip ────────────────────────────────────────── */}
-            {view.notices.length > 0 && (
-                <div className="stitch-playground__notices" role="note">
-                    {view.notices.map((n, i) => (
-                        <div key={i} className="stitch-playground__notice">
-                            ⚠ {n}
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {/* ── Mermaid DAG ──────────────────────────────────────────── */}
-            {/* Show the DAG as soon as any trace event has been folded in. */}
-            {view.mermaid && !view.mermaid.includes('_empty') && (
-                <div className="stitch-playground__dag">
-                    {/* Streaming badge: shown when any chunk event arrived or any
-                        trace entry carries `.stream`. Active during and after the run. */}
-                    {view.isStreaming && (
-                        <span className="stitch-playground__dag-streaming-badge">
-                            streaming
-                        </span>
-                    )}
-                    {/* The Mermaid flowchart is rendered by the docs framework's
-                        <Mermaid> component (Fumadocs / MDX). We emit the raw graph
-                        string into a <pre data-mermaid> block; the framework's script
-                        picks it up and renders the SVG DAG. */}
-                    <pre
-                        className="stitch-playground__mermaid"
-                        data-mermaid="true"
-                    >
-                        {view.mermaid}
-                    </pre>
-                </div>
-            )}
-        </div>
+        <section
+            className="stitch-playground__pane stitch-playground__pane--console"
+            aria-label="Console"
+        >
+            <div className="stitch-playground__pane-head">Console</div>
+            {body}
+        </section>
     );
 }
 

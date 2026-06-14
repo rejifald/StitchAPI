@@ -256,6 +256,9 @@ class BrowserWorkerRunner implements CodeRunner {
                 type: 'run',
                 js,
                 extraScopeNames: req.scope ? Object.keys(req.scope) : [],
+                // Baseline knobs from the "Response knobs" panel; the worker
+                // hands them to the sim fetch shim. Omitted → unmodified responses.
+                knobs: req.knobs,
             };
             try {
                 worker.postMessage(msg);

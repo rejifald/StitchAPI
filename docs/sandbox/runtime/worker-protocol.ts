@@ -21,6 +21,7 @@
  * `RunEvent` shapes mirror the frozen `runner.ts` union, carried by value.
  */
 import type { LogLevel, RunEvent } from '../component/runner';
+import type { SimKnobs } from '../contracts/sim';
 
 /* -------------------------------------------------------------------------- */
 /*  Main thread → Worker                                                       */
@@ -41,6 +42,13 @@ export interface RunMessage {
      * the wire.
      */
     extraScopeNames: string[];
+    /**
+     * Baseline simulator knobs to apply to every request this run makes (the
+     * playground's "Response knobs" panel — `RunRequest.knobs`). Pure data, so
+     * it rides the wire as-is; the worker hands it to the sim fetch shim before
+     * executing. Absent → responses are unmodified. URL-explicit knobs still win.
+     */
+    knobs?: SimKnobs;
 }
 
 /* -------------------------------------------------------------------------- */

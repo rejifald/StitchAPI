@@ -18,6 +18,7 @@
  */
 import { createFetchShim } from '../../../packages/sandbox-sim/src/adapters/node';
 import { allHandlers } from '../../../packages/sandbox-sim/src/handlers';
+import type { SimKnobs } from '../contracts/sim';
 import {
     type WorkerEnv,
     type WorkerGlobal,
@@ -27,9 +28,13 @@ import {
 import { parentPort } from 'node:worker_threads';
 import * as stitchBuild from 'stitchapi';
 
+// Baseline knobs for the current run, mutated by `env.applyKnobs`; the shim
+// reads it on every request. URL-explicit knobs still win (see dispatch).
+let currentKnobs: SimKnobs | undefined;
+
 // The sandbox-sim dispatch shim — the only `fetch` reachable from a snippet. No
 // real socket is opened; an unknown route returns the sandbox-404 (SEC-01..04).
-const simFetch = createFetchShim(allHandlers);
+const simFetch = createFetchShim(allHandlers, () => currentKnobs);
 
 // Route the bundled `stitch` core through the sim too (it calls the bare global
 // `fetch`), not just snippet-level `fetch(...)`. This is what guarantees the
@@ -46,6 +51,10 @@ const env: WorkerEnv = {
     crypto: (globalThis as { crypto?: unknown }).crypto,
     // The real `stitchapi` has no browser shim-notice buffer.
     drainNotices: () => [],
+    // Install the run's baseline knobs so `simFetch` applies them to every call.
+    applyKnobs: (knobs) => {
+        currentKnobs = knobs;
+    },
 };
 
 if (!parentPort) {

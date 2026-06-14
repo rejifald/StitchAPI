@@ -6,6 +6,7 @@
     "exports": {
         "./component/StitchPlayground": "./component/StitchPlayground.tsx",
         "./contracts/dispatch": "./contracts/dispatch.ts",
+        "./contracts/sim": "./contracts/sim.ts",
         "./runtime/browser-runner": "./runtime/browser-runner.ts"
     },
     "bin": {

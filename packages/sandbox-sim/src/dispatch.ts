@@ -126,13 +126,21 @@ async function* wrapBodyAsSse(body: unknown): AsyncIterable<Uint8Array> {
 /**
  * Dispatch a `SimRequest` through the handler list, apply knobs, return a
  * `SimResponse`. Never touches real network.
+ *
+ * `defaultKnobs` (optional) are baseline knobs applied to EVERY request — the
+ * playground's "Response knobs" panel sets these so a configured knob shapes
+ * the whole run without editing the snippet. URL knobs always win: an explicit
+ * `?__flaky=2` in the code overrides the panel's default for that one call.
  */
 export async function dispatch(
     handlers: SimHandler[],
     req: SimRequest,
+    defaultKnobs?: SimKnobs,
 ): Promise<SimResponse> {
-    // 1. Parse knobs and produce a clean request (no __ params in URL).
-    const { knobs, cleanUrl } = parseKnobs(req.url);
+    // 1. Parse knobs off the URL and produce a clean request (no __ params),
+    //    then layer them over the panel defaults — URL-explicit knobs win.
+    const { knobs: urlKnobs, cleanUrl } = parseKnobs(req.url);
+    const knobs: SimKnobs = { ...defaultKnobs, ...urlKnobs };
     const cleanReq: SimRequest = { ...req, url: cleanUrl };
 
     // 2. Find first matching handler.

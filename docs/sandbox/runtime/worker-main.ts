@@ -21,6 +21,7 @@
  */
 import { createFetchShim } from '../../../packages/sandbox-sim/src/adapters/browser';
 import { allHandlers } from '../../../packages/sandbox-sim/src/handlers';
+import type { SimKnobs } from '../contracts/sim';
 import { browserProcess } from './shims/process';
 import * as stitchBuild from './stitch-browser';
 import {
@@ -29,9 +30,14 @@ import {
     installWorkerEntry,
 } from './worker-entry';
 
+// Baseline knobs for the current run (the "Response knobs" panel). Mutated by
+// `env.applyKnobs` before each run; the shim reads it on every request so a
+// configured knob shapes the whole run. URL-explicit knobs still win (dispatch).
+let currentKnobs: SimKnobs | undefined;
+
 // The sandbox-sim dispatch shim — the only `fetch` reachable in this Worker. No
 // real socket is ever opened; an unknown route returns the sandbox-404 (SEC-01..04).
-const simFetch = createFetchShim(allHandlers);
+const simFetch = createFetchShim(allHandlers, () => currentKnobs);
 
 // Replace the Worker's GLOBAL `fetch` so the bundled `stitch` core routes through
 // the simulator too — not just snippet-level `fetch(...)`. Core resolves `fetch`
@@ -54,6 +60,10 @@ const env: WorkerEnv = {
     // Drain the B1 shim-notice buffer after each run → RunResult.notices (SEC-33).
     // The shims' RunNotice is structurally identical to the wire WireNotice.
     drainNotices: stitchBuild.drainNotices,
+    // Install the run's baseline knobs so `simFetch` applies them to every call.
+    applyKnobs: (knobs) => {
+        currentKnobs = knobs;
+    },
 };
 
 // `self` is the Worker global; the only WebWorker-touching line in the build.

@@ -13,18 +13,10 @@ export default function PlaygroundPage() {
     return (
         <main className="stitch-playground-page">
             <div className="stitch-playground-page__inner">
-                <header className="stitch-playground-page__header">
-                    <h1>Playground</h1>
-                    <p>
-                        A complete StitchAPI snippet, running in an isolated
-                        browser sandbox. Calls are served by a built-in fake API
-                        — no real network, nothing to install. It loads the full
-                        tour on purpose — keep what you need and delete the
-                        rest. Use <code>__status</code>, <code>__stream</code>,{' '}
-                        <code>__drift</code>, <code>__latencyMs</code>, or{' '}
-                        <code>__flaky</code> query knobs to shape the response.
-                    </p>
-                </header>
+                {/* The title/intro lived here; the context now lives in the
+                    snippet's own comments. Keep an accessible page heading
+                    (visually hidden) so the document still has an h1. */}
+                <h1 className="sr-only">Playground</h1>
                 <PlaygroundClient />
             </div>
         </main>

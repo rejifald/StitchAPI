@@ -5,79 +5,70 @@
  * The markup uses the BEM classes from docs/sandbox/component/StitchPlayground.tsx. */
 
 .stitch-playground-page {
-    padding: 2.5rem 1.5rem 4rem;
+    padding: 0.85rem 1.5rem 1.25rem;
 }
 .stitch-playground-page__inner {
-    margin: 0 auto;
-    max-width: 56rem;
-}
-.stitch-playground-page__header {
-    margin-bottom: 1.5rem;
-}
-.stitch-playground-page__header h1 {
-    font-size: 2rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    color: var(--color-fd-foreground);
-}
-.stitch-playground-page__header p {
-    margin-top: 0.5rem;
-    max-width: 44rem;
-    line-height: 1.6;
-    color: var(--color-fd-muted-foreground);
-}
-.stitch-playground-page__header code {
-    font-size: 0.8em;
-    padding: 0.05rem 0.3rem;
-    border-radius: 0.3rem;
-    background: color-mix(in srgb, var(--stitch) 12%, transparent);
-    color: var(--color-fd-foreground);
+    /* Full-width: span the available column instead of a centered 56rem block,
+       so the horizontal editor | console split gets real room. */
+    width: 100%;
+    margin: 0;
 }
 
-/* ── Example switcher (Complete ↔ Simple) ───────────────────────────────── */
+/* Full-height app layout (wide screens): the page fills the viewport below the
+   site header (banner + 3.5rem nav) and the sandbox shell flexes to fill it, so
+   the editor/console/knobs panes own the screen and scroll internally rather
+   than the page scrolling. The page title/intro is removed (it lives in the
+   snippet comments now), so the shell starts right under the toolbar. */
+@media (min-width: 52rem) {
+    .stitch-playground-page {
+        display: flex;
+        flex-direction: column;
+        box-sizing: border-box;
+        height: calc(100dvh - var(--fd-banner-height, 0px) - 3.5rem);
+    }
+    .stitch-playground-page__inner,
+    .stitch-playground {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+    }
+    .stitch-playground__body {
+        flex: 1;
+        min-height: 0;
+        height: auto;
+    }
+}
+
+/* ── Example tabs (Complete ↔ Simple) — segmented control in the toolbar ─── */
 .stitch-playground-examples {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    margin-bottom: 0.6rem;
-    flex-wrap: wrap;
+    gap: 0.2rem;
+    padding: 0.15rem;
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--color-fd-foreground) 6%, transparent);
 }
 .stitch-playground-examples__tab {
     font-size: 0.8125rem;
     font-weight: 600;
-    padding: 0.3rem 0.85rem;
-    border-radius: 999px;
-    border: 1px solid var(--color-fd-border);
+    padding: 0.3rem 0.75rem;
+    border: 0;
+    border-radius: 0.4rem;
     background: transparent;
     color: var(--color-fd-muted-foreground);
     cursor: pointer;
     transition:
-        background 0.15s ease,
         color 0.15s ease,
-        border-color 0.15s ease;
+        background 0.15s ease;
 }
 .stitch-playground-examples__tab:hover {
     color: var(--color-fd-foreground);
-    background: color-mix(in srgb, var(--color-fd-foreground) 6%, transparent);
 }
 .stitch-playground-examples__tab[data-active='true'] {
-    background: var(--stitch);
-    border-color: var(--stitch-border);
-    color: #fff;
-}
-.stitch-playground-examples__tab[data-active='true']:hover {
-    background: var(--stitch-strong);
-    color: #fff;
-}
-.stitch-playground-examples__hint {
-    margin-left: 0.35rem;
-    font-size: 0.78rem;
-    color: var(--color-fd-muted-foreground);
-}
-@media (max-width: 30rem) {
-    .stitch-playground-examples__hint {
-        display: none;
-    }
+    color: var(--color-fd-foreground);
+    background: var(--color-fd-background);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 /* ── Shell ──────────────────────────────────────────────────────────────── */
@@ -93,48 +84,166 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+    row-gap: 0.5rem;
+    flex-wrap: wrap;
     padding: 0.5rem 0.75rem;
     border-bottom: 1px solid var(--color-fd-border);
     background: color-mix(in srgb, var(--stitch) 6%, transparent);
 }
-.stitch-playground__status {
-    font-family: var(--color-fd-font-mono, ui-monospace, monospace);
-    font-size: 0.8125rem;
-    color: var(--color-fd-muted-foreground);
+.stitch-playground__toolbar-start {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+/* Very narrow: tabs on their own row, run controls right-aligned below. */
+@media (max-width: 30rem) {
+    .stitch-playground__toolbar-start,
+    .stitch-playground__actions {
+        flex: 1 1 100%;
+    }
+    .stitch-playground__actions {
+        justify-content: flex-end;
+    }
 }
 .stitch-playground__actions {
     display: flex;
     gap: 0.5rem;
 }
-.stitch-playground__actions button {
-    font-size: 0.8125rem;
+.stitch-playground__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.875rem;
     font-weight: 600;
-    padding: 0.3rem 0.9rem;
+    padding: 0.45rem 1rem;
     border-radius: 0.5rem;
-    border: 1px solid var(--stitch-border);
-    background: var(--stitch);
-    color: #fff;
+    border: 1px solid transparent;
     cursor: pointer;
     transition:
         background 0.15s ease,
+        color 0.15s ease,
+        border-color 0.15s ease,
         opacity 0.15s ease;
 }
-.stitch-playground__actions button:hover {
-    background: var(--stitch-strong);
+.stitch-playground__btn svg {
+    width: 1.05rem;
+    height: 1.05rem;
+    flex: none;
 }
-.stitch-playground__actions button:disabled {
+.stitch-playground__btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
-/* Reset / secondary action (the trailing button when Run/Stop is also shown). */
-.stitch-playground__actions button:last-child:not(:only-child) {
+/* Run / Stop — the primary action. */
+.stitch-playground__btn--run {
+    border-color: var(--stitch-border);
+    background: var(--stitch);
+    color: #fff;
+}
+.stitch-playground__btn--run:hover:not(:disabled) {
+    background: var(--stitch-strong);
+}
+/* Reset — secondary. */
+.stitch-playground__btn--reset {
     background: transparent;
     color: var(--color-fd-muted-foreground);
     border-color: var(--color-fd-border);
 }
-.stitch-playground__actions button:last-child:not(:only-child):hover {
+.stitch-playground__btn--reset:hover:not(:disabled) {
     color: var(--color-fd-foreground);
     background: color-mix(in srgb, var(--color-fd-foreground) 6%, transparent);
+}
+
+/* ── Body: pane layout ───────────────────────────────────────────────────
+   Code spans the full-height left column; the Console fills the right. When an
+   `aside` (Server knobs) is present, it takes the bottom-right slot and the
+   console shrinks to the top-right. Stacks to one column on narrow viewports. */
+.stitch-playground__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: 'editor console';
+    height: 30rem;
+}
+.stitch-playground__body[data-has-aside='true'] {
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+        'editor console'
+        'editor aside';
+}
+.stitch-playground__pane--editor {
+    grid-area: editor;
+}
+.stitch-playground__pane--console {
+    grid-area: console;
+}
+.stitch-playground__pane--aside {
+    grid-area: aside;
+}
+/* Each pane is a titled, internally-scrolling block. */
+.stitch-playground__pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+/* Dividers between the panes. */
+.stitch-playground__pane--console,
+.stitch-playground__pane--aside {
+    border-left: 1px solid var(--color-fd-border);
+}
+.stitch-playground__pane--aside {
+    border-top: 1px solid var(--color-fd-border);
+}
+
+/* Pane title bar (Code / Console / Server knobs). */
+.stitch-playground__pane-head {
+    flex: none;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-fd-muted-foreground);
+    background: color-mix(in srgb, var(--color-fd-foreground) 3%, transparent);
+    border-bottom: 1px solid var(--color-fd-border);
+}
+
+/* The editor fills the remaining height of its pane and scrolls internally. */
+.stitch-playground__pane--editor .stitch-playground__cm,
+.stitch-playground__pane--editor .stitch-playground__editor {
+    flex: 1;
+    min-height: 0;
+}
+.stitch-playground .cm-editor {
+    height: 100% !important;
+}
+
+/* Stack to a single column on narrow viewports: Code, Console, Server knobs. */
+@media (max-width: 52rem) {
+    .stitch-playground__body,
+    .stitch-playground__body[data-has-aside='true'] {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto;
+        grid-template-areas:
+            'editor'
+            'console'
+            'aside';
+        height: auto;
+    }
+    .stitch-playground__pane--console,
+    .stitch-playground__pane--aside {
+        border-left: 0;
+        border-top: 1px solid var(--color-fd-border);
+    }
+    .stitch-playground__pane--editor .stitch-playground__cm,
+    .stitch-playground__pane--editor .stitch-playground__editor {
+        height: 14rem;
+        flex: none;
+    }
+    .stitch-playground__pane--console .stitch-playground__output {
+        max-height: 18rem;
+    }
 }
 
 /* ── Editor ─────────────────────────────────────────────────────────────── */
@@ -161,12 +270,11 @@
     outline-offset: -2px;
 }
 
-/* ── Output: a console ──────────────────────────────────────────────────── */
+/* ── Output surface (Console + Result pane bodies) ──────────────────────── */
 .stitch-playground__output {
-    border-top: 1px solid var(--color-fd-border);
+    flex: 1;
+    min-height: 0;
     padding: 0.75rem 1rem;
-    min-height: 3rem;
-    max-height: 24rem;
     overflow: auto;
     /* A console surface — `secondary` sits a touch deeper than card/background. */
     background: var(--color-fd-secondary);
@@ -180,7 +288,8 @@
     line-height: 1.55;
     color: var(--color-fd-foreground);
 }
-.stitch-playground__output--deferred {
+.stitch-playground__output--deferred,
+.stitch-playground__output--placeholder {
     color: var(--color-fd-muted-foreground);
 }
 .stitch-playground__log {
@@ -214,11 +323,6 @@
 .dark .stitch-playground__error {
     color: #f87171;
     border-left-color: #f87171;
-}
-.stitch-playground__value {
-    margin: 0.25rem 0 0;
-    white-space: pre-wrap;
-    word-break: break-word;
 }
 .stitch-playground__notices {
     margin-top: 0.6rem;
@@ -282,18 +386,165 @@
     display: none !important;
 }
 
-/* The returned value, set apart from the log stream. */
-.stitch-playground__result {
-    margin-top: 0.55rem;
-    padding-top: 0.5rem;
-    border-top: 1px dashed var(--color-fd-border);
+/* ── Server-knobs builder — fills the aside pane: own header bar + control row */
+.stitch-knobs {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
 }
-.stitch-playground__result-label {
-    display: block;
-    margin-bottom: 0.15rem;
+/* Header bar — matches the Code/Console pane heads, with the active chips and
+   Clear folded in. */
+.stitch-knobs__head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.5rem;
+    padding: 0.2rem 0.4rem 0.2rem 0.75rem;
+    background: color-mix(in srgb, var(--color-fd-foreground) 3%, transparent);
+    border-bottom: 1px solid var(--color-fd-border);
+}
+.stitch-knobs__head-title {
+    flex: none;
     font-size: 0.7rem;
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--stitch-strong);
+    color: var(--color-fd-muted-foreground);
+}
+/* Active-knob chips — a quick glance at what the next run applies. */
+.stitch-knobs__chips {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+}
+.stitch-knobs__chip {
+    padding: 0.02rem 0.4rem;
+    border-radius: 0.3rem;
+    border: 1px solid var(--stitch-border);
+    background: color-mix(in srgb, var(--stitch) 14%, transparent);
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--color-fd-foreground);
+    white-space: nowrap;
+}
+.stitch-knobs__clear {
+    flex: none;
+    margin-left: auto;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.12rem 0.5rem;
+    border-radius: 0.3rem;
+    border: 1px solid var(--color-fd-border);
+    background: transparent;
+    color: var(--color-fd-muted-foreground);
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease,
+        opacity 0.15s ease;
+}
+.stitch-knobs__clear:hover:not(:disabled) {
+    color: var(--color-fd-foreground);
+    background: color-mix(in srgb, var(--color-fd-foreground) 6%, transparent);
+}
+.stitch-knobs__clear:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.stitch-knobs__body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 0.6rem 0.85rem 0.7rem;
+}
+.stitch-knobs__grid {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.4rem 0.75rem;
+}
+.stitch-knobs__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+.stitch-knobs__label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--color-fd-muted-foreground);
+    white-space: nowrap;
+}
+.stitch-knobs__input {
+    /* Shared box so the <select> matches the <input> heights exactly. */
+    box-sizing: border-box;
+    height: 1.9rem;
+    font-size: 0.8rem;
+    padding: 0.28rem 0.45rem;
+    border-radius: 0.4rem;
+    border: 1px solid var(--color-fd-border);
+    background: var(--color-fd-background);
+    color: var(--color-fd-foreground);
+}
+/* Numeric inputs are sized to their digits (Status / Flaky hold 3, Latency a
+   few more) rather than stretching the whole field. */
+.stitch-knobs__input--num {
+    width: 3rem;
+}
+.stitch-knobs__input--num-wide {
+    width: 4rem;
+}
+.stitch-knobs__input--select {
+    width: auto;
+}
+.stitch-knobs__input:focus {
+    outline: 2px solid color-mix(in srgb, var(--stitch) 45%, transparent);
+    outline-offset: -1px;
+    border-color: var(--stitch-border);
+}
+
+/* ── Drift: an on/off switch (the sandbox's drift is binary) ──────────────── */
+.stitch-knobs__field--switch {
+    padding-bottom: 0.3rem; /* lift the switch to line up with the inputs */
+}
+.stitch-knobs__switch {
+    /* The thumb is a flex item positioned by justify-content (flow layout) — a
+       data-on toggle of left↔right that isn't affected by transform resets. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex: none;
+    box-sizing: border-box;
+    width: 2.1rem;
+    height: 1.15rem;
+    padding: 0 0.13rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-fd-border);
+    background: color-mix(in srgb, var(--color-fd-foreground) 14%, transparent);
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease;
+}
+.stitch-knobs__switch[data-on='true'] {
+    justify-content: flex-end;
+    background: var(--stitch);
+    border-color: var(--stitch-border);
+}
+.stitch-knobs__switch:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--stitch) 45%, transparent);
+    outline-offset: 2px;
+}
+.stitch-knobs__switch-thumb {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
