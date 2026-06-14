@@ -244,6 +244,15 @@
     .stitch-playground__pane--console .stitch-playground__output {
         max-height: 18rem;
     }
+    /* Editor-console needs a definite height for the flex log editor to resolve
+       (the pane is auto-height when stacked). `flex: none` so this height wins
+       over the base `.stitch-playground__output { flex: 1 }` (whose flex-basis
+       0% would otherwise collapse it / let it grow to fit all output). */
+    .stitch-playground__pane--console .stitch-playground__output--editor {
+        flex: none;
+        height: 20rem;
+        max-height: none;
+    }
 }
 
 /* ── Editor ─────────────────────────────────────────────────────────────── */
@@ -386,6 +395,70 @@
     display: none !important;
 }
 
+/* ── Console as a readonly editor (renderLogs → ConsoleEditor) ───────────── */
+/* The log stream fills most of the pane and scrolls internally; the error /
+   notices / DAG sit in their own strip beneath it. */
+.stitch-playground__output--editor {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+}
+.stitch-playground__logs-editor {
+    flex: 1 1 auto;
+    min-height: 6rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.stitch-playground__logs-editor .stitch-console-editor,
+.stitch-playground__logs-editor .cm-editor {
+    flex: 1;
+    min-height: 0;
+}
+/* The extras strip keeps the existing block styles but is capped so the log
+   editor keeps the bulk of the pane. */
+.stitch-playground__output-extras {
+    flex: none;
+    max-height: 45%;
+    overflow: auto;
+    padding: 0.6rem 1rem 0.7rem;
+    border-top: 1px solid var(--color-fd-border);
+    background: var(--color-fd-secondary);
+}
+.stitch-playground__output-extras > :first-child {
+    margin-top: 0;
+}
+
+/* Per-line log-level colors, re-applied over the syntax tokens via CodeMirror
+   line decorations (cm-log-* classes from ConsoleEditor.tsx). The descendant
+   `*` + !important wins over the highlight spans so a whole warn/error line
+   reads in its level color; plain `log` lines keep their JSON highlight. */
+.stitch-console-editor .cm-line.cm-log-info,
+.stitch-console-editor .cm-line.cm-log-info * {
+    color: var(--stitch-strong) !important;
+}
+.stitch-console-editor .cm-line.cm-log-warn,
+.stitch-console-editor .cm-line.cm-log-warn * {
+    color: #b45309 !important;
+}
+.dark .stitch-console-editor .cm-line.cm-log-warn,
+.dark .stitch-console-editor .cm-line.cm-log-warn * {
+    color: #fbbf24 !important;
+}
+.stitch-console-editor .cm-line.cm-log-error,
+.stitch-console-editor .cm-line.cm-log-error * {
+    color: #dc2626 !important;
+}
+.dark .stitch-console-editor .cm-line.cm-log-error,
+.dark .stitch-console-editor .cm-line.cm-log-error * {
+    color: #f87171 !important;
+}
+.stitch-console-editor .cm-line.cm-log-debug,
+.stitch-console-editor .cm-line.cm-log-debug * {
+    color: var(--color-fd-muted-foreground) !important;
+}
+
 /* ── Server-knobs builder — fills the aside pane: own header bar + control row */
 .stitch-knobs {
     display: flex;
@@ -423,7 +496,11 @@
     gap: 0.25rem;
 }
 .stitch-knobs__chip {
-    padding: 0.02rem 0.4rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    /* tighter on the × side so the button hugs the label */
+    padding: 0.02rem 0.2rem 0.02rem 0.4rem;
     border-radius: 0.3rem;
     border: 1px solid var(--stitch-border);
     background: color-mix(in srgb, var(--stitch) 14%, transparent);
@@ -431,6 +508,34 @@
     font-weight: 600;
     color: var(--color-fd-foreground);
     white-space: nowrap;
+}
+/* Per-chip × — clears just that knob. */
+.stitch-knobs__chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 0.85rem;
+    height: 0.85rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--color-fd-muted-foreground);
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease;
+}
+.stitch-knobs__chip-remove:hover {
+    color: var(--color-fd-foreground);
+    background: color-mix(in srgb, var(--color-fd-foreground) 14%, transparent);
+}
+.stitch-knobs__chip-remove:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--stitch) 45%, transparent);
+    outline-offset: 1px;
 }
 .stitch-knobs__clear {
     flex: none;
@@ -510,8 +615,11 @@
 }
 
 /* ── Drift: an on/off switch (the sandbox's drift is binary) ──────────────── */
-.stitch-knobs__field--switch {
-    padding-bottom: 0.3rem; /* lift the switch to line up with the inputs */
+/* Center the short switch in a control slot the same height as the text inputs
+   (1.9rem) so its label lines up with the other fields' labels. The 0.375rem
+   block margin = (1.9rem − 1.15rem switch) / 2. */
+.stitch-knobs__field--switch .stitch-knobs__switch {
+    margin-block: 0.375rem;
 }
 .stitch-knobs__switch {
     /* The thumb is a flex item positioned by justify-content (flow layout) — a

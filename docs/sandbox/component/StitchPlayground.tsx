@@ -92,6 +92,14 @@ export interface StitchPlaygroundProps {
      */
     renderLog?: (text: string, level: string) => ReactNode;
     /**
+     * Custom renderer for the WHOLE log stream as one block (e.g. a readonly
+     * code editor with line numbers). Receives each formatted line plus the
+     * level of the entry it belongs to. Takes precedence over {@link renderLog}
+     * for the logs section; the error block, notices strip, and trace DAG stay
+     * as their own styled blocks beneath it. Absent → per-line {@link renderLog}.
+     */
+    renderLogs?: (entries: { text: string; level: string }[]) => ReactNode;
+    /**
      * Optional panel rendered in the bottom-right slot, beside the editor and
      * below the console (e.g. the docs "Server knobs"). When provided, the body
      * becomes a three-pane grid; when omitted, the console spans the full right
@@ -150,6 +158,7 @@ export function StitchPlayground({
     readOnly = false,
     renderEditor,
     renderLog,
+    renderLogs,
     aside,
     asideLabel = 'Server knobs',
 }: StitchPlaygroundProps) {
@@ -309,6 +318,7 @@ export function StitchPlayground({
                     deferred={isDeferred}
                     running={running}
                     renderLog={renderLog}
+                    renderLogs={renderLogs}
                 />
 
                 {/* The aside owns its full chrome (header bar + body), so it can
@@ -351,12 +361,14 @@ function StitchOutput({
     deferred,
     running,
     renderLog,
+    renderLogs,
 }: {
     view: RunView | null;
     result: RunResult | null;
     deferred: boolean;
     running: boolean;
     renderLog?: (text: string, level: string) => ReactNode;
+    renderLogs?: (entries: { text: string; level: string }[]) => ReactNode;
 }) {
     let body: ReactNode;
     if (deferred) {
@@ -380,22 +392,42 @@ function StitchOutput({
             </div>
         );
     } else {
-        body = (
-            <div className="stitch-playground__output">
-                {/* ── Logs ───────────────────────────────────────────── */}
-                {view.logs.map((line, i) => {
-                    const level = result?.logs[i]?.level ?? 'log';
-                    return (
-                        <div
-                            key={i}
-                            data-level={result?.logs[i]?.level}
-                            className="stitch-playground__log"
-                        >
-                            {renderLog ? renderLog(line, level) : line}
-                        </div>
-                    );
-                })}
+        // When `renderLogs` is supplied the whole log stream renders as one block
+        // (e.g. a readonly editor with line numbers); the error / notices / DAG
+        // then sit in their own scrollable strip beneath it. Otherwise the logs
+        // render per-line and everything flows in one scroll surface.
+        const useEditor = !!renderLogs && view.logs.length > 0;
 
+        const logsBlock = useEditor ? (
+            <div className="stitch-playground__logs-editor">
+                {renderLogs(
+                    view.logs.map((text, i) => ({
+                        text,
+                        level: result?.logs[i]?.level ?? 'log',
+                    })),
+                )}
+            </div>
+        ) : (
+            view.logs.map((line, i) => {
+                const level = result?.logs[i]?.level ?? 'log';
+                return (
+                    <div
+                        key={i}
+                        data-level={result?.logs[i]?.level}
+                        className="stitch-playground__log"
+                    >
+                        {renderLog ? renderLog(line, level) : line}
+                    </div>
+                );
+            })
+        );
+
+        const hasDag = !!view.mermaid && !view.mermaid.includes('_empty');
+        const hasExtras =
+            view.errorText !== null || view.notices.length > 0 || hasDag;
+
+        const extras = (
+            <>
                 {/* ── Error ──────────────────────────────────────────── */}
                 {view.errorText !== null && (
                     <pre className="stitch-playground__error">
@@ -416,7 +448,7 @@ function StitchOutput({
 
                 {/* ── Mermaid DAG ────────────────────────────────────── */}
                 {/* Show the DAG as soon as any trace event has been folded in. */}
-                {view.mermaid && !view.mermaid.includes('_empty') && (
+                {hasDag && (
                     <div className="stitch-playground__dag">
                         {/* Streaming badge: shown when any chunk event arrived or any
                             trace entry carries `.stream`. Active during and after the run. */}
@@ -437,6 +469,27 @@ function StitchOutput({
                         </pre>
                     </div>
                 )}
+            </>
+        );
+
+        body = (
+            <div
+                className={
+                    'stitch-playground__output' +
+                    (useEditor ? ' stitch-playground__output--editor' : '')
+                }
+            >
+                {logsBlock}
+                {/* In editor mode the extras get their own scrollable strip so the
+                    log editor keeps the bulk of the pane; otherwise they flow inline. */}
+                {hasExtras &&
+                    (useEditor ? (
+                        <div className="stitch-playground__output-extras">
+                            {extras}
+                        </div>
+                    ) : (
+                        extras
+                    ))}
             </div>
         );
     }

@@ -1,6 +1,7 @@
 'use client';
 
 import { CodeEditor } from './CodeEditor';
+import { ConsoleEditor } from './ConsoleEditor';
 import { KnobsBuilder } from './KnobsBuilder';
 import { PLAYGROUND_EXAMPLES } from './playground-examples';
 
@@ -11,31 +12,17 @@ import {
     type WorkerLike,
     makeBrowserWorkerRunner,
 } from '@stitchapi/sandbox/runtime/browser-runner';
-import { DynamicCodeBlock } from 'fumadocs-ui/components/dynamic-codeblock';
 import { useMemo, useState } from 'react';
 
 /** Same-origin module Worker emitted by `build:sandbox` into /public/sandbox. */
 const WORKER_URL = '/sandbox/sandbox-worker.mjs';
 
-/** True when a formatted log line is a pretty-printed object/array, so it can be
- *  highlighted as JSON; prose logs stay plain text. */
-function jsonLog(text: string): boolean {
-    const t = text.trim();
-    if (t[0] !== '{' && t[0] !== '[') return false;
-    try {
-        JSON.parse(t);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 /**
  * Client wrapper that wires the in-house sandbox engine into the UI shell, plus
- * a CodeMirror editor (`renderEditor`), Fumadocs `DynamicCodeBlock` highlighting
- * for JSON console lines (`renderLog`), and the interactive Server-knobs panel
- * (`aside`). The heavy lifting lives in the engine; the shell only knows the
- * `CodeRunner` contract + the render hooks.
+ * a CodeMirror editor (`renderEditor`), a readonly CodeMirror console with line
+ * numbers + per-level colors (`renderLogs` → {@link ConsoleEditor}), and the
+ * interactive Server-knobs panel (`aside`). The heavy lifting lives in the
+ * engine; the shell only knows the `CodeRunner` contract + the render hooks.
  */
 export function PlaygroundClient() {
     // Build the runner once, on the client. A fresh Worker per run is what gives
@@ -100,13 +87,7 @@ export function PlaygroundClient() {
             knobs={knobs}
             tabs={exampleTabs}
             renderEditor={(props) => <CodeEditor {...props} />}
-            renderLog={(text) =>
-                jsonLog(text) ? (
-                    <DynamicCodeBlock lang="json" code={text} />
-                ) : (
-                    text
-                )
-            }
+            renderLogs={(entries) => <ConsoleEditor lines={entries} />}
             asideLabel="Server knobs"
             aside={<KnobsBuilder onChange={setKnobs} />}
         />
