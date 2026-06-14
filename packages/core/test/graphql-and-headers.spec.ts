@@ -47,6 +47,24 @@ describe('GraphQL kind', () => {
         expect((call?.body as { query: string })?.query).toMatch(/thing/);
     });
 
+    test('.with({ variables }) carries GraphQL variables into the request', async () => {
+        server.route('POST', '/graphql', { body: { data: { ok: true } } });
+        const query = graphql({
+            baseUrl: server.url,
+            query: 'query($id: ID) { thing(id: $id) { name } }',
+        });
+
+        // Partial application must preserve EVERY StitchInput field. `variables` is the primary
+        // input for a GraphQL stitch; mergeInput() now folds it alongside params/query/headers/body.
+        const bound = query.with({ variables: { id: 7 } });
+        await bound();
+
+        const call = server.calls('/graphql')[0]!;
+        expect((call.body as { variables: unknown }).variables).toEqual({
+            id: 7,
+        });
+    });
+
     test('surfaces GraphQL errors (a 200 carrying `errors`) as a failure', async () => {
         server.route('POST', '/graphql', {
             body: { errors: [{ message: 'field "thing" not found' }] },

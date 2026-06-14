@@ -224,12 +224,19 @@ function tee<T>(
 }
 
 function mergeInput(a: StitchInput = {}, b: StitchInput = {}): StitchInput {
-    return {
+    const merged: StitchInput = {
         params: { ...(a.params ?? {}), ...(b.params ?? {}) },
         query: { ...(a.query ?? {}), ...(b.query ?? {}) },
         headers: { ...(a.headers ?? {}), ...(b.headers ?? {}) },
         body: b.body !== undefined ? b.body : a.body,
     };
+    // `variables` is a first-class StitchInput field (GraphQL's primary input). It was dropped
+    // here, so `.with({ variables })` silently lost them; merge it like the rest. Omit the key
+    // entirely when neither side sets it (exactOptionalPropertyTypes forbids `variables:
+    // undefined`).
+    if (a.variables ?? b.variables)
+        merged.variables = { ...(a.variables ?? {}), ...(b.variables ?? {}) };
+    return merged;
 }
 
 /**

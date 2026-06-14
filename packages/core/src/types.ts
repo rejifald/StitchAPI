@@ -420,16 +420,46 @@ export interface StitchStore {
 
 // ---- Seam (a primitive stitches belong to) --------------------------------
 /**
- * Options for {@link Seam} — every {@link StitchConfig} key (shared by the seam's stitches as a
- * fragment) plus an optional hardened `secretStore` backing the vault.
+ * The config a seam shares with every member as a fragment — {@link StitchConfig} minus the keys
+ * that are intrinsically **per-endpoint**: the address (`path` / `url` / `method` / `query`) and
+ * the request/response shape (`name` / `input` / `output` / `kind`). Everything cross-cutting —
+ * `baseUrl`, `headers`, `auth`, `retry`, `throttle`, `timeout`, `circuit`, `idempotency`,
+ * `paginate`, `unwrap`, `transform`, `arrayFormat`, `hooks`, `trace`, `store`, `cache`, `adapter`
+ * — belongs here, so the type itself answers "what belongs at the seam". Members set the endpoint
+ * keys.
  */
-export type SeamOptions = Partial<StitchConfig> & {
+export type SeamConfig = Omit<
+    StitchConfig,
+    'path' | 'url' | 'method' | 'query' | 'name' | 'input' | 'output' | 'kind'
+>;
+
+/**
+ * Options for {@link Seam} — the shared {@link SeamConfig} plus an optional hardened `secretStore`
+ * backing the vault.
+ */
+export type SeamOptions = SeamConfig & {
     /**
      * Backend for the vault (auth tokens/sessions). Defaults to a reserved, redacted namespace
      * over the seam's `store`; supply a KMS/Vault-backed store here for a hardened vault. Split
      * is by **visibility**, not backend — both store and vault may be distributed (ADR 0002 §4).
      */
     secretStore?: StitchStore;
+};
+
+/**
+ * A principal-bound seam handle — what `seam.as(id)` returns, and the object trusted code hands to
+ * the least-trusted caller (the agent). It creates member stitches and can re-bind the principal,
+ * but deliberately **lacks the shared-runtime levers** (`flush` / `close` / `invalidate`): tearing
+ * down, or invalidating the cache of, the runtime every other principal depends on is a *root-seam*
+ * authority, never a per-principal one. The boundary that prevents impersonation must not also be a
+ * teardown lever (ADR 0002 §2).
+ */
+export type PrincipalSeam = Omit<
+    Seam,
+    'as' | 'flush' | 'close' | 'invalidate'
+> & {
+    /** Re-bind to another principal — last binding wins. Still lifecycle-free. */
+    as(principal: string): PrincipalSeam;
 };
 
 /**
@@ -465,11 +495,13 @@ export interface Seam {
         config: C,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
-     * A principal-bound handle reusing the same shared runtime, but whose stitches carry
-     * `principal` in their AuthContext: separate sessions per principal, one shared throttle
-     * bucket. The principal lives in this closure, never in `StitchInput` (ADR 0002 §2–3).
+     * Derive a principal-bound {@link PrincipalSeam} reusing the same shared runtime, but whose
+     * stitches carry `principal` in their AuthContext: separate sessions per principal, one shared
+     * throttle bucket. The principal lives in the returned closure, never in `StitchInput`
+     * (ADR 0002 §2–3). The handle is **lifecycle-free** — only the root seam may `flush` / `close`
+     * / `invalidate` the shared runtime.
      */
-    as(principal: string): Seam;
+    as(principal: string): PrincipalSeam;
     /**
      * Bulk cache invalidation (ADR 0003) over the shared store this seam owns. With no argument
      * it bumps the **cache-wide** generation (every member stitch's entries become unreachable);
