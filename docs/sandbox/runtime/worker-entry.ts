@@ -36,7 +36,12 @@
  *   - A snippet throw/reject is reported as `error` on the result; the main
  *     thread classifies timeout/abort/internal — see worker-protocol.ts.
  */
-import type { LogEntry, LogLevel, RunEvent } from '../component/runner';
+import type {
+    LogEntry,
+    LogLevel,
+    RunEvent,
+    StitchTraceEntry,
+} from '../component/runner';
 import type { SimKnobs } from '../contracts/sim';
 import type {
     ProgressMessage,
@@ -259,23 +264,32 @@ export async function runSnippetInWorker(
         }
     }
 
-    // A1: wrap the host sink so a throwing onEvent/relay can never derail the
-    // snippet, and so a `log` emitted by the console capture and a chunk/trace/
-    // notice emitted by the env both funnel through ONE ordered relay.
-    const emit: ProgressSink | undefined = onProgress
-        ? (event: RunEvent): void => {
-              try {
-                  onProgress(event);
-              } catch {
-                  /* swallow — observation must never break the run */
-              }
-          }
-        : undefined;
+    // A2: accumulate every stitch trace entry the env emits, so the FINAL result
+    // carries the full DAG even when the host wants no progressive events.
+    const traceEntries: StitchTraceEntry[] = [];
+
+    // ONE ordered relay (A1 + A2). It (1) accumulates trace entries for the final
+    // result and (2) forwards every event to the host `onProgress` IF it asked
+    // for live updates. A throwing host callback can never derail the run. The
+    // relay is ALWAYS wired so trace collection doesn't depend on the host
+    // opting into progress — but it stays pure observation: with no producer (an
+    // env without `bindProgress`) `traceEntries` is empty and the result is
+    // byte-for-byte unchanged.
+    const emit: ProgressSink = (event: RunEvent): void => {
+        if (event.type === 'trace') traceEntries.push(event.entry);
+        if (onProgress) {
+            try {
+                onProgress(event);
+            } catch {
+                /* swallow — observation must never break the run */
+            }
+        }
+    };
 
     // Let the env wire its chunk/trace/notice producers to the progress relay
     // (optional + best-effort). Returns a teardown we run once the snippet ends.
     let unbindProgress: (() => void) | void = undefined;
-    if (emit && env.bindProgress) {
+    if (env.bindProgress) {
         try {
             unbindProgress = env.bindProgress(emit);
         } catch {
@@ -285,7 +299,7 @@ export async function runSnippetInWorker(
 
     const { console, logs } = makeCapturingConsole(
         () => Date.now() - t0,
-        emit ? (entry: LogEntry) => emit({ type: 'log', entry }) : undefined,
+        (entry: LogEntry) => emit({ type: 'log', entry }),
     );
 
     // Build the allow-listed scope (SEC-34). These are the ONLY names a snippet
@@ -350,6 +364,7 @@ export async function runSnippetInWorker(
             logs,
             notices: drainSafely(env),
             error: toWireError(buildErr),
+            trace: traceEntries.length ? traceEntries : undefined,
         };
     }
 
@@ -361,6 +376,7 @@ export async function runSnippetInWorker(
             logs,
             notices: drainSafely(env),
             value: safeClone(value),
+            trace: traceEntries.length ? traceEntries : undefined,
         };
     } catch (runErr) {
         teardownProgress(unbindProgress);
@@ -369,6 +385,7 @@ export async function runSnippetInWorker(
             logs,
             notices: drainSafely(env),
             error: toWireError(runErr),
+            trace: traceEntries.length ? traceEntries : undefined,
         };
     }
 }

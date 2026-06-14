@@ -18,7 +18,11 @@ export default defineConfig({
     testDir: './e2e',
     timeout: 30_000,
     expect: { timeout: 10_000 },
-    fullyParallel: true,
+    // One worker: the specs share a single Next dev/prod server that compiles
+    // routes on demand and runs the sandbox Worker — parallel browser workers
+    // overwhelm it (a real run can starve an on-demand compile past the timeout).
+    fullyParallel: false,
+    workers: 1,
     reporter: process.env.CI ? 'github' : 'list',
     use: {
         baseURL: 'http://localhost:3000',
