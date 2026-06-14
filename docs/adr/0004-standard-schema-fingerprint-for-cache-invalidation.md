@@ -132,8 +132,8 @@ whole design is between `S` and `X`:
 -   **A changed `X` is _not_ caught by re-validating on hit.** If only the
     `transform` changes (e.g. a clamp constant moves) but the schema is unchanged,
     the stale value still validates and is served. Re-validation gives **no**
-    protection here. This is the sharp edge that forces a stricter default for
-    transforms (Decision 4, rung 4).
+    protection here. This is the sharp edge that forces refuse-to-cache for an
+    un-versioned transform (Decision 4, rung 2).
 
 ### 3 — The fingerprint primitive
 
@@ -168,10 +168,15 @@ function stitchGeneration(cfg: StitchConfig): string {
           ? `x:${cfg.cache.transformVersion}`
           : 'x:OPAQUE';
 
-    if (fp?.value != null && xTag !== 'x:OPAQUE')
-        return h([vendor, fp.value, fp.strength, unwrap, xTag]); // rung 2 — sound
+    if (xTag === 'x:OPAQUE') return REFUSE; // un-versioned transform → don't cache
+    if (fp?.value != null)
+        return h([vendor, fp.value, fp.strength, unwrap, xTag]); // sound → fast
+    if (cfg.output == null) return h(['noschema', unwrap, xTag]); // nothing to go stale → fast
 
-    return DEGRADED; // rung 3/4 — policy decides re-validate vs refuse
+    // output present but un-fingerprintable → refuse (default) | revalidate (opt-in)
+    return cfg.cache?.onUnfingerprintable === 'revalidate'
+        ? REVALIDATE
+        : REFUSE;
 }
 ```
 
@@ -182,30 +187,43 @@ Resolved once per stitch, highest precedence first:
 1.  **Explicit `cache.version` → authoritative.** The user owns correctness; the
     fingerprint is `hash(version, unwrap)`. JSON-serialisable, satisfies the
     declarative-spelling gate, and is the always-available manual override. Fast
-    path (skip re-validate-on-hit).
-2.  **Sound structural fingerprint** — a compliant strategy is registered for the
-    vendor **and** reports full capture (`value !== null`), **and** the transform
-    is absent or versioned. Fold `hash(vendor, S, U, X)` into the generation.
-    Fast path.
-3.  **Schema un-fingerprintable** (no strategy, unknown vendor, converter throws,
-    or strategy abstains) **but transform sound** → **re-validate-on-hit**
-    (default). Catches schema changes by re-checking the stored value against the
-    current schema; the only cost is one validation pass on the hit. This is the
-    default ADR 0003 already named. `refuse-to-cache` is the strict opt-in.
-4.  **Un-versioned `transform` present** → re-validate-on-hit cannot see a
-    transform change (Decision 2), so the safe default **escalates to
-    refuse-to-cache**, unless the user supplies `cache.transformVersion` (→ rung 2)
-    or explicitly opts into `cache.trustTransform: true` (cache anyway, bounded
-    only by TTL).
+    path.
+2.  **Un-versioned `transform` present** → **refuse-to-cache.** Re-validation
+    cannot see a transform change (Decision 2 — a stale value still satisfies an
+    unchanged schema), so neither fast nor revalidate is sound. Lift it with
+    `cache.transformVersion` (→ a sound fingerprint) or `cache.trustTransform:
+true` (cache anyway, bounded only by TTL).
+3.  **Sound structural fingerprint** — a compliant strategy is registered for the
+    vendor and reports full capture (`value !== null`). Fold `hash(vendor, S, U, X)`
+    into the generation. Fast path.
+4.  **No output schema at all** → **fast.** Nothing was validated, so the stored
+    value is bound to no shape and there is nothing to go stale; `unwrap` and the
+    transform tag still fold into the generation.
+5.  **Output schema present but un-fingerprintable** (no strategy / unknown vendor,
+    non-Standard-Schema validator, or the strategy abstains) → **refuse-to-cache**
+    by default. Failing closed is unambiguously sound and a clear, actionable nudge
+    to register the vendor's fingerprint package. Opt into **re-validate-on-hit**
+    with `cache.onUnfingerprintable: 'revalidate'` — it catches schema changes that
+    _reject_ the stored value, but only soundly so for pure validators (it assumes
+    validation is idempotent; coercing/transforming schemas can break that), which
+    is why it is opt-in rather than the default.
 
 **Recommended defaults:**
 
-| Situation                                                     | Default behaviour                          |
-| ------------------------------------------------------------- | ------------------------------------------ |
-| Known vendor + serialisable pipeline (no/versioned transform) | auto-fingerprint, fast path                |
-| Unknown vendor / lossy schema / strategy abstains             | re-validate-on-hit (safe, slightly slower) |
-| Un-versioned `transform` present                              | refuse-to-cache (re-validate can't see it) |
-| Anything                                                      | `cache.version` overrides everything       |
+| Situation                                                     | Default behaviour                           |
+| ------------------------------------------------------------- | ------------------------------------------- |
+| Known vendor + serialisable pipeline (no/versioned transform) | auto-fingerprint, fast path                 |
+| No output schema (and no/sound transform)                     | fast — nothing to go stale                  |
+| Unknown/unregistered vendor, non-Standard-Schema, or abstains | **refuse-to-cache** (`onUnfingerprintable`) |
+| Un-versioned `transform` present                              | refuse-to-cache (re-validate can't see it)  |
+| Anything                                                      | `cache.version` overrides everything        |
+
+Why refuse (not re-validate) is the default for an un-fingerprintable schema:
+re-validate-on-hit is only sound when validation is idempotent, and it silently
+degrades performance (a validation pass per hit) while masking a missing vendor
+package. Refusing fails closed, keeps the invariant simple ("don't serve what you
+can't prove safe"), and surfaces a clear reason for the developer to act on. The
+network-saving re-validate behaviour stays one opt-in away.
 
 ### 5 — Strong vs weak, and "fail toward over-invalidation"
 
@@ -248,7 +266,8 @@ Therefore opaque logic is handled by **abstain-or-version**, never by hashing it
 -   If a strategy encounters an opaque `.refine`/`.transform`/`.brand`/predicate
     it cannot represent, it **abstains** (`value: null`) → conservative fallback.
 -   `config.transform` is opaque to core. Its provenance enters the fingerprint
-    only as `cache.transformVersion` (a user tag) or it forces rung 4.
+    only as `cache.transformVersion` (a user tag); otherwise it forces refuse
+    (Decision 4, rung 2).
 
 This is exactly how every prior-art system treats non-serialisable logic:
 GraphQL schema hashing excludes resolvers from the SDL ("the hash describes the
@@ -383,11 +402,19 @@ assertConformance(
 -   **Do not lean on StandardJSONSchemaV1 yet.** It is new (Dec 2025) with limited
     adoption; treat it as an optional fallback substrate, not the foundation.
 
+## Resolved decisions
+
+-   **Default for an unknown/unregistered vendor (or any un-fingerprintable output
+    schema): refuse-to-cache.** Decided 2026-06-14. Failing closed is unambiguously
+    sound (re-validate-on-hit assumes idempotent validation), and a missing
+    fingerprint package surfaces as a clear, actionable reason rather than a silent
+    perf tax. Re-validate-on-hit is retained as an explicit opt-in
+    (`cache.onUnfingerprintable: 'revalidate'`). A stitch with **no** output schema
+    still caches fast (no shape to go stale). Placement (bare-stitch vs subpath) does
+    not change the default — both fail closed.
+
 ## Open questions
 
--   Default for an **unknown/unregistered vendor**: re-validate-on-hit (chosen
-    here) vs refuse-to-cache — and should it differ for bare-stitch vs subpath
-    cache placement (ADR 0003)?
 -   Should core ship a **first-party Typebox strategy** in core's test fixtures
     (since Typebox _is_ JSON Schema and needs no converter), or keep even that in a
     vendor package for consistency?

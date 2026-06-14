@@ -117,12 +117,17 @@ export function clearFingerprinters(): void {
 
 /**
  * What the cache may do with a stitch given its fingerprint:
- * - `fast` — the stored value is bound to a known token; serve it without
- *   re-validating, and fold `generation` into the cache generation.
- * - `revalidate` — the schema can't be fingerprinted; cache, but re-validate the
- *   stored value against the current schema on every hit (catches schema changes).
- * - `refuse` — an un-versioned `transform` is present, which re-validation cannot
- *   detect; do not cache this stitch.
+ * - `fast` — the stored value is bound to a known token (or to nothing — no output
+ *   schema); serve it without re-validating, and fold `generation` into the cache
+ *   generation.
+ * - `revalidate` — opt-in (`onUnfingerprintable: 'revalidate'`): cache despite an
+ *   un-fingerprintable schema, but re-validate the stored value against the current
+ *   schema on every hit. Catches schema changes that REJECT the stored value;
+ *   assumes validation is idempotent (no coercion/transform inside the schema).
+ * - `refuse` — do not cache. The default when a schema can't be soundly
+ *   fingerprinted (unknown/unregistered vendor, non-Standard-Schema validator, or
+ *   the strategy abstained), and always when an un-versioned `transform` is present
+ *   (which re-validation cannot detect).
  */
 export type CachePolicy = 'fast' | 'revalidate' | 'refuse';
 
@@ -144,6 +149,15 @@ export interface FingerprintInput {
     readonly transformVersion?: string | number | undefined;
     /** Opt-in: cache despite an un-versioned `transform`, bounded only by TTL. */
     readonly trustTransform?: boolean | undefined;
+    /**
+     * Policy when an OUTPUT SCHEMA is present but can't be soundly fingerprinted
+     * (unknown/unregistered vendor, non-Standard-Schema validator, or the strategy
+     * abstained). `'refuse'` (the default) does not cache — fail closed, and a
+     * clear nudge to register the vendor's fingerprint package. `'revalidate'`
+     * caches but re-validates on every hit (network savings, but only sound for
+     * pure validators — see {@link CachePolicy}).
+     */
+    readonly onUnfingerprintable?: 'refuse' | 'revalidate';
 }
 
 export interface FingerprintResolution {
@@ -163,10 +177,13 @@ function vendorOf(schema: unknown): string | undefined {
  * (highest precedence first):
  *
  * 1. explicit `version` → authoritative fast path;
- * 2. a registered strategy returns a non-null token AND the transform is sound
- *    (absent / versioned / trusted) → fast path, token folded into `generation`;
- * 3. the schema can't be fingerprinted but the transform is sound → `revalidate`;
- * 4. an un-versioned `transform` is present → `refuse` (re-validation can't see it).
+ * 2. an un-versioned `transform` is present → `refuse` (re-validation can't see a
+ *    transform change, so neither fast nor revalidate is sound);
+ * 3. a registered strategy returns a non-null token → fast path, token folded
+ *    into `generation`;
+ * 4. no output schema at all → fast (nothing validated, so no shape to go stale);
+ * 5. an output schema is present but un-fingerprintable → `onUnfingerprintable`
+ *    (default `refuse`; opt into `revalidate`).
  */
 export function resolveFingerprint(
     input: FingerprintInput,
@@ -207,7 +224,7 @@ export function resolveFingerprint(
           )
         : undefined;
 
-    // rung 4 — un-versioned transform: re-validation can't detect a transform
+    // rung 2 — un-versioned transform: re-validation can't detect a transform
     // change (a stale value still satisfies an unchanged schema), so refuse.
     if (!xSound) {
         return {
@@ -217,7 +234,7 @@ export function resolveFingerprint(
         };
     }
 
-    // rung 2 — sound structural fingerprint → fast path.
+    // rung 3 — sound structural fingerprint → fast path.
     if (fp?.value != null) {
         return {
             generation: hash(
@@ -228,17 +245,29 @@ export function resolveFingerprint(
         };
     }
 
-    // rung 3 — schema not fingerprintable, transform sound → re-validate on hit.
+    // rung 4 — no output schema: the stored value is bound to no shape, so there
+    // is nothing to go stale. Cache fast; `unwrap`/transform tag still fold in.
+    if (input.output == null) {
+        return {
+            generation: hash(`noschema|u|${unwrap}|${xTag}`),
+            policy: 'fast',
+            reason: 'no output schema',
+        };
+    }
+
+    // rung 5 — an output schema is present but can't be soundly fingerprinted.
+    // Default to refusing (fail closed); a caller may opt into re-validate-on-hit.
+    const reason = vendor
+        ? fp
+            ? `fingerprint strategy for '${vendor}' abstained`
+            : `no fingerprinter registered for '${vendor}'`
+        : 'output is not a Standard Schema';
     return {
         generation: '',
-        policy: 'revalidate',
-        reason:
-            input.output == null
-                ? 'no output schema'
-                : vendor
-                  ? fp
-                      ? `fingerprint strategy for '${vendor}' abstained`
-                      : `no fingerprinter registered for '${vendor}'`
-                  : 'output is not a Standard Schema',
+        policy:
+            input.onUnfingerprintable === 'revalidate'
+                ? 'revalidate'
+                : 'refuse',
+        reason,
     };
 }

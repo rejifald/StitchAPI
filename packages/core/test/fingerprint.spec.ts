@@ -177,34 +177,44 @@ describe('resolveFingerprint — the fallback ladder', () => {
         expect(r.policy).toBe('fast');
     });
 
-    it('rung 3: unknown vendor → revalidate', () => {
+    it('rung 5: unknown/unregistered vendor → refuse by default', () => {
         clearFingerprinters();
         const r = resolveFingerprint({ output: userSchema() });
-        expect(r.policy).toBe('revalidate');
+        expect(r.policy).toBe('refuse');
         expect(r.reason).toContain('no fingerprinter registered');
     });
 
-    it('rung 3: strategy abstains → revalidate', () => {
+    it('rung 5: opt-in onUnfingerprintable:revalidate', () => {
+        clearFingerprinters();
+        const r = resolveFingerprint({
+            output: userSchema(),
+            onUnfingerprintable: 'revalidate',
+        });
+        expect(r.policy).toBe('revalidate');
+    });
+
+    it('rung 5: strategy abstains → refuse', () => {
         const r = resolveFingerprint({
             output: fakeSchema({ type: 'object', opaque: true }),
         });
-        expect(r.policy).toBe('revalidate');
+        expect(r.policy).toBe('refuse');
         expect(r.reason).toContain('abstained');
     });
 
-    it('rung 3: non-Standard-Schema output → revalidate', () => {
+    it('rung 5: non-Standard-Schema output → refuse', () => {
         const r = resolveFingerprint({ output: { not: 'a schema' } });
-        expect(r.policy).toBe('revalidate');
+        expect(r.policy).toBe('refuse');
         expect(r.reason).toBe('output is not a Standard Schema');
     });
 
-    it('rung 3: no output → revalidate', () => {
+    it('rung 4: no output → fast (no shape to go stale)', () => {
         const r = resolveFingerprint({});
-        expect(r.policy).toBe('revalidate');
+        expect(r.policy).toBe('fast');
         expect(r.reason).toBe('no output schema');
+        expect(r.generation).not.toBe('');
     });
 
-    it('rung 4: un-versioned transform → refuse', () => {
+    it('rung 2: un-versioned transform → refuse', () => {
         const r = resolveFingerprint({
             output: userSchema(),
             transform: (b) => b,
