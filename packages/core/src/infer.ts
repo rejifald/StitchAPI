@@ -21,7 +21,9 @@ export type SchemaLike =
  * Extract the validated RESULT type a schema produces, in priority order: a `drift()` wrapper,
  * any Standard Schema (`~standard.types.output` — Valibot, ArkType, Zod ≥3.24, Zod 4), a Zod
  * schema (its `_output` phantom, covering Zod < 3.24 which predates Standard Schema), a
- * hand-rolled {@link Validator}, and a user-defined type-guard predicate. Anything else → unknown.
+ * hand-rolled {@link Validator}, and a type-guard predicate (the guarded type). Anything else →
+ * unknown. Note a predicate TypeScript infers as a guard counts here: `(v) => v != null` is typed
+ * `(v) => v is {}`, so it yields `{}`; only a non-narrowing `(v) => boolean` falls through to unknown.
  */
 export type InferOutput<S> =
     S extends DriftSpec<infer D>

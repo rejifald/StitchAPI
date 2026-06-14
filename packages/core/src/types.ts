@@ -336,7 +336,8 @@ export interface Seam {
     >(
         config: C,
     ): Stitch<ResolveOutput<TExplicit, C>>;
-    stitch<T = unknown>(config: string): Stitch<T>;
+    /** Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see {@link StitchFn}). */
+    stitch<T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
     /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, unwrap `data`). */
     graphql<
         TExplicit = never,

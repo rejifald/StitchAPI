@@ -330,8 +330,12 @@ export interface StitchFn {
     >(
         config: C,
     ): Stitch<ResolveOutput<TExplicit, C>>;
-    /** Shorthand: a bare path string (no schema, so the result type is `unknown`). */
-    <T = unknown>(config: string): Stitch<T>;
+    /**
+     * Non-inferring fallback: a bare path string, or any argument whose static type is the union
+     * `string | Partial<StitchConfig>` (e.g. a wrapper that forwards either spelling). Neither can
+     * match the inferring overload above, so the result is `Stitch<unknown>` — override with `<T>`.
+     */
+    <T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
     use(...fragments: Fragment[]): Builder;
 }
 
