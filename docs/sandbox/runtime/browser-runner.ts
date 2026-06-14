@@ -289,12 +289,18 @@ class BrowserWorkerRunner implements CodeRunner {
 function mapResult(msg: ResultMessage, durationMs: number): RunResult {
     const logs = msg.logs.map(toLogEntry);
     const notices = msg.notices.map(toNotice);
+    // A2: the worker's structured stitch trace → RunResult.trace, so the output
+    // panel's Mermaid DAG renders from the real run. Already StitchTraceEntry[]
+    // (structured-cloneable), so it passes through verbatim.
+    const trace = msg.trace && msg.trace.length ? msg.trace : undefined;
     if (msg.error) {
-        // The snippet itself threw/rejected → reason:'throw' (SEC-39a).
+        // The snippet itself threw/rejected → reason:'throw' (SEC-39a). Partial
+        // trace (stitches that completed before the throw) is still surfaced.
         return {
             logs,
             durationMs,
             notices: notices.length ? notices : undefined,
+            trace,
             error: throwError(msg.error),
         };
     }
@@ -303,6 +309,7 @@ function mapResult(msg: ResultMessage, durationMs: number): RunResult {
         durationMs,
         value: msg.value,
         notices: notices.length ? notices : undefined,
+        trace,
     };
 }
 
