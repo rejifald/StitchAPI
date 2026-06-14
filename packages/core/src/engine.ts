@@ -95,9 +95,12 @@ const nameOf = (cfg: StitchConfig) => cfg.name ?? cfg.path ?? 'stitch';
 function joinUrl(base: string, path: string): string {
     if (/^https?:\/\//i.test(path)) return path;
     if (!base) return path;
-    return (
-        base.replace(/\/+$/, '') + (path.startsWith('/') ? path : '/' + path)
-    );
+    // Strip trailing slashes from base with a linear scan rather than a regex.
+    // `/\/+$/` backtracks polynomially on an all-slashes string (js/polynomial-redos);
+    // this loop is O(n) and behaviourally identical (drops the whole trailing run).
+    let end = base.length;
+    while (end > 0 && base[end - 1] === '/') end--;
+    return base.slice(0, end) + (path.startsWith('/') ? path : '/' + path);
 }
 
 // Inject a stable Idempotency-Key on writes. The key is computed once per logical call (here,
