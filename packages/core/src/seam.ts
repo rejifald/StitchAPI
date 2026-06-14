@@ -19,6 +19,7 @@ import {
     vaultView,
 } from './store';
 import type {
+    PrincipalSeam,
     Seam,
     SeamOptions,
     Stitch,
@@ -63,8 +64,11 @@ interface SharedSeam {
     stitches: Stitch[]; // registry of root-created stitches (lifecycle/introspection)
 }
 
-function makeHandle(shared: SharedSeam, principal: string | undefined): Seam {
-    const build = <T>(
+// The member-builder, closed over the seam's shared runtime and the bound `principal` (undefined
+// for the root). Shared by the root and every principal handle so a member is constructed the same
+// way regardless of which handle created it.
+function makeBuild(shared: SharedSeam, principal: string | undefined) {
+    return <T>(
         config: string | Partial<StitchConfig>,
         isGql = false,
     ): Stitch<T> => {
@@ -105,14 +109,42 @@ function makeHandle(shared: SharedSeam, principal: string | undefined): Seam {
             };
         return makeStitch<T>(cfg, runtime);
     };
+}
 
+// The shared fragment, redacted (no live store/vault/auth/adapter) — exfil-at-rest (§4/§6).
+function sharedConfig(shared: SharedSeam): StitchConfig {
+    return redactConfig(compose(shared.fragment));
+}
+
+// A principal-bound handle: creates members carrying the principal, can re-bind via `as`, but is
+// deliberately **lifecycle-free**. `flush` / `close` / `invalidate` act on the runtime EVERY
+// principal shares, so they belong to the root seam alone — handing them on a per-request handle
+// would let the least-trusted caller tear down (or cache-bust) the shared surface (ADR 0002 §2).
+function principalHandle(shared: SharedSeam, principal: string): PrincipalSeam {
+    const build = makeBuild(shared, principal);
     return {
-        // `build` is generic at runtime; the inferring overloads come from the `Seam` interface,
-        // which the object literal is checked against (function return type).
+        // `build` is generic at runtime; the inferring overloads come from the interface the
+        // object literal is checked against (the function return type).
         stitch: (config: string | Partial<StitchConfig>) => build(config),
         graphql: (config: Partial<StitchConfig> & { query: string }) =>
             build(config, true),
-        as: (p) => makeHandle(shared, p),
+        as: (p) => principalHandle(shared, p),
+        get __config() {
+            return sharedConfig(shared);
+        },
+        __seam: true,
+    };
+}
+
+// The root seam: the member-builder PLUS the shared-runtime levers (`invalidate` / `flush` /
+// `close`) over the runtime it owns.
+function rootHandle(shared: SharedSeam): Seam {
+    const build = makeBuild(shared, undefined);
+    return {
+        stitch: (config: string | Partial<StitchConfig>) => build(config),
+        graphql: (config: Partial<StitchConfig> & { query: string }) =>
+            build(config, true),
+        as: (p) => principalHandle(shared, p),
         // Bulk cache invalidation over the seam's shared store (ADR 0003 §8). No argument bumps
         // the cache-wide generation; a member `stitch` bumps just that stitch's generation. The
         // cache engine is reached lazily — a seam with no cached members never loads it.
@@ -133,9 +165,8 @@ function makeHandle(shared: SharedSeam, principal: string | undefined): Seam {
                 await shared.secretStore.close?.();
             shared.stitches.length = 0;
         },
-        // The shared fragment, redacted (no live store/vault/auth/adapter) — exfil-at-rest (§4/§6).
         get __config() {
-            return redactConfig(compose(shared.fragment));
+            return sharedConfig(shared);
         },
         __seam: true,
     };
@@ -163,5 +194,5 @@ export function seam(options: SeamOptions = {}): Seam {
         stitches: [],
         ...(secretStore ? { secretStore } : {}),
     };
-    return makeHandle(shared, undefined);
+    return rootHandle(shared);
 }
