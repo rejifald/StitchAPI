@@ -1,3 +1,5 @@
+import { buildSecurityHeaders } from './lib/security-headers.mjs';
+
 import { PlaygroundCompletionsPlugin } from '@stitchapi/completions-plugin';
 import { createMDX } from 'fumadocs-mdx/next';
 import { dirname, resolve } from 'path';
@@ -14,6 +16,13 @@ const config = {
     // The playground consumes the in-repo sandbox engine (@stitchapi/sandbox), a
     // workspace package that ships raw TS/TSX source — Next must transpile it.
     transpilePackages: ['@stitchapi/sandbox'],
+    // CSP backstop for the sandbox Worker (egress confinement + worker-confined
+    // eval). See lib/security-headers.mjs; proved by e2e/sandbox-egress.spec.ts.
+    async headers() {
+        return buildSecurityHeaders({
+            dev: process.env.NODE_ENV !== 'production',
+        });
+    },
     webpack(webpackConfig, { isServer }) {
         // Guard with !isServer so codegen runs once per compilation cycle,
         // not twice (webpack compiles server and client separately).
