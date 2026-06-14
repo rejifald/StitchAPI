@@ -48,14 +48,30 @@ function toSimKnobs(s: KnobsState): SimKnobs {
     return knobs;
 }
 
-/** Short header chips for the active knobs (in panel order). */
-function activeChips(knobs: SimKnobs): string[] {
-    const chips: string[] = [];
-    if (knobs.status !== undefined) chips.push(`status ${knobs.status}`);
-    if (knobs.latencyMs !== undefined) chips.push(`${knobs.latencyMs}ms`);
-    if (knobs.stream !== undefined) chips.push(knobs.stream);
-    if (knobs.flaky !== undefined) chips.push(`flaky ${knobs.flaky}`);
-    if (knobs.drift) chips.push('drift');
+/** A header chip for one active knob: the raw `state` field it maps to (so the
+ *  × can reset just that field) plus its display label. */
+interface ActiveChip {
+    field: keyof KnobsState;
+    label: string;
+}
+
+/** Header chips for the active knobs (in panel order). Each carries the raw
+ *  `state` field so a per-chip × can reset only that knob. Labels use a
+ *  `key: value` delimiter; the boolean drift knob has no value. */
+function activeChips(knobs: SimKnobs): ActiveChip[] {
+    const chips: ActiveChip[] = [];
+    if (knobs.status !== undefined)
+        chips.push({ field: 'status', label: `status: ${knobs.status}` });
+    if (knobs.latencyMs !== undefined)
+        chips.push({
+            field: 'latencyMs',
+            label: `latency: ${knobs.latencyMs}ms`,
+        });
+    if (knobs.stream !== undefined)
+        chips.push({ field: 'stream', label: `stream: ${knobs.stream}` });
+    if (knobs.flaky !== undefined)
+        chips.push({ field: 'flaky', label: `flaky: ${knobs.flaky}` });
+    if (knobs.drift) chips.push({ field: 'drift', label: 'drift' });
     return chips;
 }
 
@@ -75,6 +91,10 @@ export function KnobsBuilder({
         onChange(toSimKnobs(next));
     };
 
+    // Reset a single knob to its initial value and re-emit — backs each chip's ×.
+    const clearField = <K extends keyof KnobsState>(field: K) =>
+        update({ [field]: INITIAL[field] } as Partial<KnobsState>);
+
     const clear = () => {
         setState(INITIAL);
         onChange({});
@@ -92,8 +112,17 @@ export function KnobsBuilder({
                 {chips.length > 0 && (
                     <span className="stitch-knobs__chips">
                         {chips.map((c) => (
-                            <span key={c} className="stitch-knobs__chip">
-                                {c}
+                            <span key={c.field} className="stitch-knobs__chip">
+                                {c.label}
+                                <button
+                                    type="button"
+                                    className="stitch-knobs__chip-remove"
+                                    aria-label={`Clear ${c.label}`}
+                                    title={`Clear ${c.label}`}
+                                    onClick={() => clearField(c.field)}
+                                >
+                                    ×
+                                </button>
                             </span>
                         ))}
                     </span>
@@ -198,9 +227,11 @@ export function KnobsBuilder({
 
                     <div
                         className="stitch-knobs__field stitch-knobs__field--switch"
-                        title="Return a body that fails validation"
+                        title="Return a response body that fails schema validation"
                     >
-                        <span className="stitch-knobs__label">Drift</span>
+                        <span className="stitch-knobs__label">
+                            Schema drift
+                        </span>
                         <button
                             type="button"
                             role="switch"
