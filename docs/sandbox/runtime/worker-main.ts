@@ -24,6 +24,7 @@ import { allHandlers } from '../../../packages/sandbox-sim/src/handlers';
 import type { SimKnobs } from '../contracts/sim';
 import { browserProcess } from './shims/process';
 import * as stitchBuild from './stitch-browser';
+import { createTraceCollector } from './trace-collector';
 import {
     type WorkerEnv,
     type WorkerGlobal,
@@ -46,9 +47,20 @@ const simFetch = createFetchShim(allHandlers, () => currentKnobs);
 // "no real network" real: the sole reachable fetch IS the sim shim.
 (globalThis as { fetch?: unknown }).fetch = simFetch;
 
+// A2: wrap the build's `stitch` so each call a snippet makes surfaces as a
+// StitchTraceEntry, and expose the matching `bindProgress` hook so those entries
+// flow to the result/DAG. Other build exports pass through untouched.
+const traceCollector = createTraceCollector(
+    stitchBuild.stitch as unknown as (config: unknown) => unknown,
+);
+
 const env: WorkerEnv = {
-    // The whole B1 stitch build, exposed name-by-name into the snippet scope.
-    stitchBuild: stitchBuild as unknown as Record<string, unknown>,
+    // The whole B1 stitch build, exposed name-by-name into the snippet scope,
+    // with the traced `stitch` overriding the raw re-export.
+    stitchBuild: {
+        ...stitchBuild,
+        stitch: traceCollector.stitch,
+    } as unknown as Record<string, unknown>,
     // The snippet's `fetch` (cast: createFetchShim is precisely `fetch`-typed,
     // WorkerEnv.fetch is the loose (unknown, unknown) wire shape).
     fetch: simFetch as unknown as WorkerEnv['fetch'],
@@ -64,6 +76,8 @@ const env: WorkerEnv = {
     applyKnobs: (knobs) => {
         currentKnobs = knobs;
     },
+    // Bind the run's progress sink so traced `stitch` calls reach the DAG (A2).
+    bindProgress: traceCollector.bindProgress,
 };
 
 // `self` is the Worker global; the only WebWorker-touching line in the build.

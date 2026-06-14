@@ -1,6 +1,6 @@
 # ADR 0004 — Standard Schema fingerprint for cache invalidation
 
--   **Status:** Accepted (contract + kit + vendor packages implemented; cache wiring folds into [ADR 0003](0003-derived-key-response-cache-and-coalescing.md) when its response cache lands)
+-   **Status:** Accepted & implemented — the contract, conformance kit, and five vendor packages ship, and `resolveFingerprint` is now **folded into [ADR 0003](0003-derived-key-response-cache-and-coalescing.md)'s response cache**: it is resolved once per stitch and its `generation` folds into the cache generation namespace, its `policy` drives fast / re-validate-on-hit / refuse, and its `reason` is surfaced on the cache trace.
 -   **Date:** 2026-06-14
 -   **Tags:** caching, validation, schema, standard-schema, contract-not-dependency, runtime
 
@@ -426,13 +426,26 @@ assertConformance(
 
 ## Implementation status
 
-Shipped on this branch (the cache wiring itself waits on ADR 0003's response
-cache; everything below is standalone and unit-/conformance-tested):
+Shipped and **wired into the ADR 0003 response cache** (each piece unit- and
+conformance-tested):
 
 -   **`stitchapi/fingerprint`** — the contract: `SchemaFingerprinter` /
     `SchemaFingerprint`, the registry (`registerFingerprinter` /
-    `getFingerprinter`), the synchronous FNV-1a `hash`, and `resolveFingerprint`
-    (the ladder). Browser-safe, synchronous, no new core dependency.
+    `getFingerprinter`), the synchronous `hash`, and `resolveFingerprint`
+    (the ladder). Browser-safe, synchronous, no new core dependency. `hash` now
+    rides the **same 128-bit `xxh128`** the cache key uses (the shared `src/hash.ts`
+    primitive) — the swap this module always anticipated, a one-time safe
+    over-invalidation of the opaque token.
+-   **The fold (`stitchapi/cache`)** — `createCache` calls `resolveFingerprint`
+    once per stitch from its `output`/`transform`/`unwrap` + the `cache` options
+    (`version`, `transformVersion`, `trustTransform`, `onUnfingerprintable`). The
+    `generation` token folds into the cache namespace **alongside** the per-stitch
+    generation counter (so a schema/unwrap/versioned-transform change moves the
+    bucket while bulk-invalidate still bumps the counter); the `policy` selects
+    fast / re-validate-on-hit / refuse; the `reason` is surfaced on the cache
+    trace. The raw schema reaches the resolver because `toValidator` keeps a
+    non-enumerable `source` back-reference (the Validator wrapper otherwise hides
+    `~standard`).
 -   **`stitchapi/testing` → `verifyFingerprintContract`** — the conformance kit
     (vendor agreement, sync result-shape, determinism + stability, sensitivity,
     soundness-or-abstain, committed snapshots).

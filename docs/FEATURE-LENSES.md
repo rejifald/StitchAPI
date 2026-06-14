@@ -87,7 +87,6 @@ existing or proposed — passes through all three before it ships.
 -   `stitch(url | config)` → a typed, callable function — the core "declare an endpoint, get a
     function" move — [`src/stitch.ts`](../src/stitch.ts)
 -   One handle, two modes — `await theStitch()` **or** `theStitch().stream()`
--   Fluent builder — `.get/.post/.put/.delete/.returns/.unwrap/.auth/.retry/.throttle/.timeout`
 -   URL templates (full RFC 6570 — operators, explode `*`, prefix `:n`) and a `qs`-style query builder for nested objects/arrays, plus predefined query baked into the path
 -   `.with(partial)` partial application — reuses the same runtime so cookies/throttle persist
 
@@ -95,7 +94,6 @@ existing or proposed — passes through all three before it ships.
 
 -   `extends` — recursive layering of fragments (string · object · another stitch), deep-merged
 -   `seam(options)` — a long-lived entity stitches belong to: shared fragment + runtime (store, vault, sink) + a trusted principal boundary
--   `stitch.use(...)` — the same composition through the fluent builder
 -   Hook chaining — `onRequest` runs base→child, the rest unwind child→base
 
 ---

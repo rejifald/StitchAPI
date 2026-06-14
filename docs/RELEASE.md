@@ -56,9 +56,14 @@ The entire core library (`stitchapi`, currently `0.7.0`), verified against
         confined to the worker via a per-route policy on `/sandbox/*`. Lives in
         [`apps/docs/lib/security-headers.mjs`](../apps/docs/lib/security-headers.mjs);
         served headers verified, egress block proven in a real browser.
--   [ ] **Populate `RunResult.trace` from the real Worker** — emit
-        `StitchTraceEntry` chunks from `stitch-browser.ts` so the Mermaid DAG
-        renders from real runs, not test fixtures
+-   [x] **Populate `RunResult.trace` from the real Worker** — a traced `stitch`
+        ([`docs/sandbox/runtime/trace-collector.ts`](../docs/sandbox/runtime/trace-collector.ts))
+        injects a core trace sink per call and emits `StitchTraceEntry`s through
+        the worker progress relay → `ResultMessage.trace` → `RunResult.trace`, so
+        the Mermaid DAG renders from real runs. Proven end-to-end in a real
+        browser ([`e2e/sandbox-trace.spec.ts`](../apps/docs/e2e/sandbox-trace.spec.ts)) + unit ([`trace-collector.test.ts`](../docs/sandbox/runtime/trace-collector.test.ts)).
+        Follow-ups: dependency EDGES (`dependsOn`, needs the composition graph)
+        and `seam`-created stitches.
 -   [ ] **Playwright harness** ([`apps/docs/e2e/`](../apps/docs/e2e/)) — egress
         confinement + CSP enforcement (SEC-10..13) **proven** (4/4 green). Broaden
         to SEC-04 (non-HTTP egress), Worker isolation / no state-bleed (SEC-36/37),

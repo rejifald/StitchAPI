@@ -20,7 +20,7 @@
  * Like everything here, the payload is pure data / structured-cloneable — the
  * `RunEvent` shapes mirror the frozen `runner.ts` union, carried by value.
  */
-import type { LogLevel, RunEvent } from '../component/runner';
+import type { LogLevel, RunEvent, StitchTraceEntry } from '../component/runner';
 import type { SimKnobs } from '../contracts/sim';
 
 /* -------------------------------------------------------------------------- */
@@ -101,6 +101,14 @@ export interface ResultMessage {
      * the terminate), never reported through this field.
      */
     error?: WireError;
+    /**
+     * Structured trace of the `stitch()` calls made during the run, in
+     * completion order (A2). Assembled by the worker body from the env's trace
+     * producers (the B1 build's traced `stitch`); absent when the run made no
+     * observable stitch calls. The main thread maps it to `RunResult.trace` so
+     * the playground's Mermaid DAG renders from the REAL run, not a fixture.
+     */
+    trace?: StitchTraceEntry[];
 }
 
 /**

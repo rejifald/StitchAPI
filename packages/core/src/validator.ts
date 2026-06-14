@@ -14,6 +14,23 @@ export type ValidationResult<T> =
 
 export interface Validator<T = unknown> {
     validate(value: unknown): Promise<ValidationResult<T>>;
+    /**
+     * The raw schema this validator wraps (Zod / Valibot / ArkType / any Standard Schema /
+     * predicate), attached non-enumerably by {@link toValidator}. The response cache reads it to
+     * fingerprint the output contract (ADR 0004): the wrapper itself hides the original
+     * `~standard.vendor` the fingerprint strategy dispatches on. Non-enumerable, so it never lands
+     * in `__config`, JSON, or trace payloads.
+     */
+    readonly source?: unknown;
+}
+
+// Attach the raw schema to a wrapper non-enumerably, so the cache can fingerprint the output
+// contract (ADR 0004) without the schema leaking through enumerable copies into `__config`/traces.
+function withSource(validator: Validator, source: unknown): Validator {
+    return Object.defineProperty(validator, 'source', {
+        value: source,
+        enumerable: false,
+    });
 }
 
 /** Coerce a Zod schema | Standard Schema | Validator | undefined into a Validator. */
@@ -36,56 +53,67 @@ export function toValidator(schema: unknown): Validator | undefined {
     // Zod (v3): has safeParse
     const zodLike = schema as { safeParse?: (v: unknown) => ZodResult };
     if (typeof zodLike.safeParse === 'function') {
-        return {
-            async validate(value) {
-                const r = zodLike.safeParse!(value);
-                if (r.success) return { ok: true, value: r.data };
-                return {
-                    ok: false,
-                    issues: (r.error?.issues ?? []).map((i) => ({
-                        path: i.path ?? [],
-                        message: i.message,
-                    })),
-                };
+        return withSource(
+            {
+                async validate(value) {
+                    const r = zodLike.safeParse!(value);
+                    if (r.success) return { ok: true, value: r.data };
+                    return {
+                        ok: false,
+                        issues: (r.error?.issues ?? []).map((i) => ({
+                            path: i.path ?? [],
+                            message: i.message,
+                        })),
+                    };
+                },
             },
-        };
+            schema,
+        );
     }
 
     // Standard Schema
     if (isStandardSchema(schema)) {
-        return {
-            async validate(value) {
-                const r = await schema['~standard'].validate(value);
-                if ('issues' in r && r.issues) {
-                    return {
-                        ok: false,
-                        issues: r.issues.map((i) => ({
-                            path: (i.path ?? []).map((p) =>
-                                typeof p === 'object'
-                                    ? (p.key as string | number)
-                                    : (p as string | number),
-                            ),
-                            message: i.message,
-                        })),
-                    };
-                }
-                return { ok: true, value: (r as { value: unknown }).value };
+        return withSource(
+            {
+                async validate(value) {
+                    const r = await schema['~standard'].validate(value);
+                    if ('issues' in r && r.issues) {
+                        return {
+                            ok: false,
+                            issues: r.issues.map((i) => ({
+                                path: (i.path ?? []).map((p) =>
+                                    typeof p === 'object'
+                                        ? (p.key as string | number)
+                                        : (p as string | number),
+                                ),
+                                message: i.message,
+                            })),
+                        };
+                    }
+                    return { ok: true, value: (r as { value: unknown }).value };
+                },
             },
-        };
+            schema,
+        );
     }
 
     // Plain predicate: (value: unknown) => boolean
     if (typeof schema === 'function') {
         const predicate = schema as (v: unknown) => boolean;
-        return {
-            async validate(value) {
-                if (predicate(value)) return { ok: true, value };
-                return {
-                    ok: false,
-                    issues: [{ path: [], message: 'Predicate returned false' }],
-                };
+        return withSource(
+            {
+                async validate(value) {
+                    if (predicate(value)) return { ok: true, value };
+                    return {
+                        ok: false,
+                        issues: [
+                            { path: [], message: 'Predicate returned false' },
+                        ],
+                    };
+                },
             },
-        };
+            schema,
+        );
     }
 
     throw new Error(

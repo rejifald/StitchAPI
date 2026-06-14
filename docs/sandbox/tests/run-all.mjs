@@ -36,6 +36,8 @@ const SUITES = [
     'docs/sandbox/runtime/transpile.test.ts',
     // R1 — browser-worker runner harness (worker_threads proofs)
     'docs/sandbox/runtime/browser-runner.test.ts',
+    // A2 — trace-collector: real stitch events → DAG entries
+    'docs/sandbox/runtime/trace-collector.test.ts',
     // U1 — output-format helpers
     'docs/sandbox/component/output-format.test.ts',
     // T-α — integration over REAL sim + dispatch

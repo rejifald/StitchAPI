@@ -13,10 +13,10 @@ principle links to the surface that embodies it.
 ### Progressive disclosure
 
 Complexity is opt-in. A bare URL string is a working stitch; reach for more and
-the same call grows into a config object, and then — when you want a chainable,
-discoverable surface — into the fluent builder. Every capability (validation,
-auth, retries, observability) has a sane default and reveals its knobs only when
-you ask, so simple things stay one line and the depth is there when you need it.
+the same call grows into a config object with `extends` for composition. Every
+capability (validation, auth, retries, observability) has a sane default and
+reveals its knobs only when you ask, so simple things stay one line and the
+depth is there when you need it.
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -44,8 +44,7 @@ declaration _is_ the runtime; there is nothing to commit, diff, and regenerate.
 
 Cross-cutting concerns — `baseUrl`, auth, `unwrap`, retry, throttle, timeout —
 are named, shareable values you compose, not a central config object far from the
-call site. `extends` folds fragments into a stitch and the fluent builder's
-`.use(...)` pulls the same fragments into a chain. You share a plain fragment
+call site. `extends` folds fragments into a stitch. You share a plain fragment
 instead of re-typing config, and a stitch is itself a composable value others can
 extend. (For a whole shared surface — shared runtime plus a trusted principal
 boundary — a `seam` owns the fragment instead.)
@@ -140,9 +139,8 @@ exported as a spec.
 ## How it relates
 
 -   **Progressive disclosure** runs from the [stitch primitive](/docs/concepts/the-stitch)
-    through the [fluent builder](/docs/guides/authoring/fluent-builder) — the
-    string, the config object, and the chainable surface are three altitudes of
-    one call.
+    through the full config object — the string and the config object are two
+    altitudes of one call.
 -   **Atomic stitches** are the [stitch](/docs/concepts/the-stitch) itself: one
     endpoint, no spec, no codegen, no server.
 -   **Composition over configuration** is what [`extends`](/docs/guides/authoring/extends)
@@ -171,9 +169,7 @@ exported as a spec.
     [session is shared](/docs/guides/state/shared-sessions) across workers; opt
     into a sink and the event stream lands on the console or disk.
 -   **Declarative spelling** keeps every stitch agent-authorable: the
-    [config object](/docs/reference/config-types) is the canonical form, and
-    the [fluent builder](/docs/guides/authoring/fluent-builder) is sugar over
-    it.
+    [config object](/docs/reference/config-types) is the canonical form.
 
 ## See also
 
@@ -183,10 +179,6 @@ exported as a spec.
     <Card
         title="Capability, not credential"
         href="/docs/concepts/capability-not-credential"
-    />
-    <Card
-        title="The fluent builder"
-        href="/docs/guides/authoring/fluent-builder"
     />
     <Card title="extends" href="/docs/guides/authoring/extends" />
     <Card title="Leveled drift" href="/docs/guides/validation/drift" />

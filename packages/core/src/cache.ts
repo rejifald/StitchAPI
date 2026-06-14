@@ -7,115 +7,16 @@
 // hash is bundle weight). The key is a 128-bit SYNCHRONOUS non-cryptographic digest. It reuses
 // the `StitchStore` get/set/incr contract — no new vendor surface — exactly like throttle and
 // the circuit breaker, so a shared store makes the cache distributed for free.
+import { resolveFingerprint } from './fingerprint';
+import type { CachePolicy } from './fingerprint';
+import { xxh128 } from './hash';
 import type { CacheConfig, StitchInput, StitchStore } from './types';
 import { parseDuration } from './util';
 
-// ---------------------------------------------------------------------------
-// 128-bit synchronous non-cryptographic hash (xxHash family)
-// ---------------------------------------------------------------------------
-// v1 derives the digest from two XXH64 passes (seeds A and B) over the canonical request's
-// UTF-8 bytes — a well-specified, bit-stable xxHash member that needs only 64-bit integer math
-// (BigInt; JS has no native u64) and no async/WebCrypto. 128 bits puts a collision past ~2^64
-// entries — unreachable — so there is no verify-on-read (which would mean storing the plaintext
-// request beside the value, re-introducing the leak the opaque key avoids). The algorithm is
-// frozen behind KEY_VERSION: any change to it is a key-schema bump (mass self-healing miss).
-
-const MASK64 = (1n << 64n) - 1n;
-const P1 = 11400714785074694791n;
-const P2 = 14029467366897019727n;
-const P3 = 1609587929392839161n;
-const P4 = 9650029242287828579n;
-const P5 = 2870177450012600261n;
-const SEED_A = 0n;
-const SEED_B = 0x9e3779b185ebca87n; // a second, independent seed → the high 64 bits
-
-const mul = (a: bigint, b: bigint): bigint => (a * b) & MASK64;
-const rotl = (x: bigint, r: bigint): bigint =>
-    ((x << r) | (x >> (64n - r))) & MASK64;
-const xxhRound = (acc: bigint, input: bigint): bigint =>
-    mul(rotl((acc + mul(input, P2)) & MASK64, 31n), P1);
-const mergeRound = (acc: bigint, val: bigint): bigint =>
-    (mul(acc ^ xxhRound(0n, val), P1) + P4) & MASK64;
-
-// All reads are bounds-guaranteed by the callers' stripe arithmetic; `?? 0` keeps the indexed
-// access total without a non-null assertion (noUncheckedIndexedAccess).
-function read64LE(b: Uint8Array, i: number): bigint {
-    let v = 0n;
-    for (let j = 7; j >= 0; j--) v = (v << 8n) | BigInt(b[i + j] ?? 0);
-    return v;
-}
-function read32LE(b: Uint8Array, i: number): bigint {
-    return BigInt(
-        ((b[i] ?? 0) |
-            ((b[i + 1] ?? 0) << 8) |
-            ((b[i + 2] ?? 0) << 16) |
-            ((b[i + 3] ?? 0) << 24)) >>>
-            0,
-    );
-}
-
-function xxh64(b: Uint8Array, seed: bigint): bigint {
-    const len = b.length;
-    let h: bigint;
-    let p = 0;
-    if (len >= 32) {
-        let v1 = (seed + P1 + P2) & MASK64;
-        let v2 = (seed + P2) & MASK64;
-        let v3 = seed & MASK64;
-        let v4 = (seed - P1) & MASK64;
-        const limit = len - 32;
-        while (p <= limit) {
-            v1 = xxhRound(v1, read64LE(b, p));
-            p += 8;
-            v2 = xxhRound(v2, read64LE(b, p));
-            p += 8;
-            v3 = xxhRound(v3, read64LE(b, p));
-            p += 8;
-            v4 = xxhRound(v4, read64LE(b, p));
-            p += 8;
-        }
-        h =
-            (rotl(v1, 1n) + rotl(v2, 7n) + rotl(v3, 12n) + rotl(v4, 18n)) &
-            MASK64;
-        h = mergeRound(h, v1);
-        h = mergeRound(h, v2);
-        h = mergeRound(h, v3);
-        h = mergeRound(h, v4);
-    } else {
-        h = (seed + P5) & MASK64;
-    }
-    h = (h + BigInt(len)) & MASK64;
-    while (p + 8 <= len) {
-        h ^= xxhRound(0n, read64LE(b, p));
-        h = (mul(rotl(h, 27n), P1) + P4) & MASK64;
-        p += 8;
-    }
-    if (p + 4 <= len) {
-        h ^= mul(read32LE(b, p), P1);
-        h = (mul(rotl(h, 23n), P2) + P3) & MASK64;
-        p += 4;
-    }
-    while (p < len) {
-        h ^= mul(BigInt(b[p] ?? 0), P5);
-        h = mul(rotl(h, 11n), P1);
-        p += 1;
-    }
-    h ^= h >> 33n;
-    h = mul(h, P2);
-    h ^= h >> 29n;
-    h = mul(h, P3);
-    h ^= h >> 32n;
-    return h & MASK64;
-}
-
-const encoder = new TextEncoder();
-const toHex16 = (v: bigint): string => v.toString(16).padStart(16, '0');
-
-/** A 128-bit synchronous non-cryptographic digest of `input` as a 32-char hex string. */
-export function xxh128(input: string): string {
-    const bytes = encoder.encode(input);
-    return toHex16(xxh64(bytes, SEED_A)) + toHex16(xxh64(bytes, SEED_B));
-}
+// The 128-bit synchronous non-crypto key hash now lives in the shared `./hash` module so the cache
+// key (ADR 0003) and the schema fingerprint (ADR 0004) ride one well-tested primitive. Re-exported
+// here to keep the `stitchapi/cache` surface (and `cache-internals.spec`) importing it from `cache`.
+export { xxh128 } from './hash';
 
 // ---------------------------------------------------------------------------
 // canonicalisation
@@ -419,7 +320,15 @@ export interface CacheController {
     key(d: RequestDescriptor, input: StitchInput): string | undefined;
     /** Open a cache operation for `baseKey` (reads the live generation prefix once). */
     open(baseKey: string, d: RequestDescriptor): Promise<CacheOp>;
-    /** Should a hit be re-validated against the output schema? True unless `cache.version` pins it. */
+    /**
+     * The fingerprint-resolved caching policy (ADR 0004), computed once at controller creation:
+     * `'fast'` (serve a hit without re-validating), `'revalidate'` (cache, but re-validate the
+     * stored value on each hit), or `'refuse'` (do not cache — the engine passes through).
+     */
+    readonly policy: CachePolicy;
+    /** Why {@link policy} was chosen — surfaced as a trace `reason` (observability, not swallowed). */
+    readonly reason: string;
+    /** Should a hit be re-validated against the output schema? True exactly when policy is 'revalidate'. */
     readonly revalidateOnHit: boolean;
     /** Join (or start) the in-process coalesced run for `key`. */
     join(key: string): LeaderClaim<CacheHit> | FollowerClaim<CacheHit>;
@@ -434,6 +343,12 @@ export interface CacheControllerOptions {
     store: StitchStore;
     stitchId: string;
     principal?: string;
+    /** The stitch's raw `output` schema (un-wrapped from the Validator), for fingerprinting. */
+    output?: unknown;
+    /** The stitch's `transform` closure — opaque, so it forces a version/trust decision (ADR 0004). */
+    transform?: ((body: unknown) => unknown) | undefined;
+    /** The stitch's `unwrap` dot-path — serialisable, always folds soundly into the generation. */
+    unwrap?: string | undefined;
 }
 
 export function createCache(opts: CacheControllerOptions): CacheController {
@@ -449,7 +364,23 @@ export function createCache(opts: CacheControllerOptions): CacheController {
               .map((n) => n.toLowerCase())
               .filter((n) => !NEVER_VARY.has(n))
         : undefined;
-    const versionTag = config.version != null ? `u${config.version}:` : '';
+    // Fold the Standard Schema fingerprint (ADR 0004) ONCE, here at controller creation (which is
+    // once per stitch — `ensureCache` memoises it). It resolves three things from the stitch's
+    // output/transform/unwrap + cache options: the GENERATION token (a changed output schema /
+    // unwrap / versioned transform yields a new token → a new bucket → old entries unreachable),
+    // the POLICY (fast / revalidate / refuse), and a human-readable REASON for traces. The token is
+    // folded into the namespace ALONGSIDE the per-stitch generation counter (decision 8) — it does
+    // not replace it: bulk-invalidate bumps the counter, a schema change bumps this token.
+    const fp = resolveFingerprint({
+        output: opts.output,
+        transform: opts.transform,
+        unwrap: opts.unwrap,
+        version: config.version,
+        transformVersion: config.transformVersion,
+        trustTransform: config.trustTransform,
+        onUnfingerprintable: config.onUnfingerprintable,
+    });
+    const fpTag = `f${fp.generation}:`;
     // 'cluster' is reserved for the deferred cross-process protocol; v1 degrades it to process.
     const coalesce: 'process' | false =
         config.coalesce === false ? false : 'process';
@@ -492,7 +423,9 @@ export function createCache(opts: CacheControllerOptions): CacheController {
     };
 
     return {
-        revalidateOnHit: config.version == null,
+        policy: fp.policy,
+        reason: fp.reason,
+        revalidateOnHit: fp.policy === 'revalidate',
         coalesce,
 
         cacheableMethod(method) {
@@ -520,10 +453,13 @@ export function createCache(opts: CacheControllerOptions): CacheController {
 
         async open(baseKey, d) {
             const prefix = await genPrefix();
-            // The stored key is prefixed with the frozen key-schema version, so a derivation
-            // change is a mass self-healing miss, never a stale-key hit (ADR 0003 follow-up).
+            // The stored key is prefixed with the frozen key-schema version (a derivation change is
+            // a mass self-healing miss, never a stale-key hit — ADR 0003 follow-up) and the
+            // fingerprint generation token `fpTag` (an output-schema/unwrap/transform change moves
+            // the bucket — ADR 0004). For the 'revalidate' policy the token is empty and freshness
+            // comes from re-validation on the hit path instead.
             const valueKey = (suffix = ''): string =>
-                `${NS}${KEY_VERSION}:${prefix}${versionTag}${baseKey}${suffix}`;
+                `${NS}${KEY_VERSION}:${prefix}${fpTag}${baseKey}${suffix}`;
 
             const hitFrom = (
                 entry: StoredEntry,

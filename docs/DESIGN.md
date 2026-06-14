@@ -100,7 +100,7 @@ await adminHits({ query: { q: 'ada' } }); // → /search?role=admin&q=ada
 
 ## 4. Composition & inheritance · the reuse model
 
-The tension: stitches must stay **atomic** (no global config) _and_ let you DRY out `baseUrl` / `auth` / `retry` / etc. Resolution: **everything reusable is a named value, and a stitch composes values.** All three ergonomic variants below are **first-class and supported** — they're thin facades over one canonical resolved config, so you can pick whichever fits your code convention (or mix them in the same codebase). One engine, three authoring surfaces.
+The tension: stitches must stay **atomic** (no global config) _and_ let you DRY out `baseUrl` / `auth` / `retry` / etc. Resolution: **everything reusable is a named value, and a stitch composes values.** The ergonomic variants below are thin facades over one canonical resolved config. One engine, two authoring surfaces.
 
 First, the reusable fragments — plain values you define once and import:
 
@@ -145,16 +145,6 @@ const listWebsites = api.stitch({
     output: Website.array(),
 });
 const getWebsite = api.stitch({ path: '/api/websites/{id}', output: Website });
-```
-
-### Variant C — fluent builder **[supported]**
-
-```ts
-const listWebsites = stitch
-    .use(base, session)
-    .get('/api/websites')
-    .returns(Website.array())
-    .unwrap('data');
 ```
 
 ### Extending another stitch
@@ -531,7 +521,7 @@ Next, to close the validated gaps (§12), in leverage order:
 
 ## 15. Open questions
 
--   ~~Composition syntax / call convention~~ — **resolved**: the composition facades supported (extends / fluent builder, plus `seam` for a whole shared surface); call = single-input-object + `.with()` + optional curried.
+-   ~~Composition syntax / call convention~~ — **resolved**: the composition facades supported (extends + `seam` for a whole shared surface); call = single-input-object + `.with()` + optional curried.
 -   **Validation lib** — move from Zod-locked to **Standard Schema** (Zod/Valibot/ArkType)? (Recommended; affects bundle size.)
 -   **Secret resolvers** — which to ship first: `env()`, `secretsFile()`, cloud secret managers?
 -   **Query array format** — arrays currently serialize `qs`-style indexed (`ids[0]=1&ids[1]=2`), matching the pre-rebuild baseline. Should the format be configurable (`arrayFormat: 'indices' | 'brackets' | 'repeat'`), and which is the right default for the APIs we target? (Flagged for future review; behavior is fixed until then.)
