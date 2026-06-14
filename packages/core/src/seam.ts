@@ -19,6 +19,7 @@ import {
     vaultView,
 } from './store';
 import type {
+    PrincipalSeam,
     Seam,
     SeamOptions,
     Stitch,
@@ -63,8 +64,11 @@ interface SharedSeam {
     stitches: Stitch[]; // registry of root-created stitches (lifecycle/introspection)
 }
 
-function makeHandle(shared: SharedSeam, principal: string | undefined): Seam {
-    const build = <T>(
+// The member-builder, closed over the seam's shared runtime and the bound `principal` (undefined
+// for the root). Shared by the root and every principal handle so a member is constructed the same
+// way regardless of which handle created it.
+function makeBuild(shared: SharedSeam, principal: string | undefined) {
+    return <T>(
         config: string | Partial<StitchConfig>,
         isGql = false,
     ): Stitch<T> => {
@@ -105,11 +109,37 @@ function makeHandle(shared: SharedSeam, principal: string | undefined): Seam {
             };
         return makeStitch<T>(cfg, runtime);
     };
+}
 
+// The shared fragment, redacted (no live store/vault/auth/adapter) — exfil-at-rest (§4/§6).
+function sharedConfig(shared: SharedSeam): StitchConfig {
+    return redactConfig(compose(shared.fragment));
+}
+
+// A principal-bound handle: creates members carrying the principal, can re-bind via `as`, but is
+// deliberately **lifecycle-free**. `flush`/`close` act on the runtime EVERY principal shares, so
+// they belong to the root seam alone — handing them on a per-request handle would let the
+// least-trusted caller tear down the shared surface (ADR 0002 §2).
+function principalHandle(shared: SharedSeam, principal: string): PrincipalSeam {
+    const build = makeBuild(shared, principal);
     return {
         stitch: (config) => build(config),
         graphql: (config) => build(config, true),
-        as: (p) => makeHandle(shared, p),
+        as: (p) => principalHandle(shared, p),
+        get __config() {
+            return sharedConfig(shared);
+        },
+        __seam: true,
+    };
+}
+
+// The root seam: the member-builder PLUS the lifecycle (`flush`/`close`) over the shared runtime.
+function rootHandle(shared: SharedSeam): Seam {
+    const build = makeBuild(shared, undefined);
+    return {
+        stitch: (config) => build(config),
+        graphql: (config) => build(config, true),
+        as: (p) => principalHandle(shared, p),
         async flush() {
             await shared.trace.flush?.();
         },
@@ -120,19 +150,20 @@ function makeHandle(shared: SharedSeam, principal: string | undefined): Seam {
                 await shared.secretStore.close?.();
             shared.stitches.length = 0;
         },
-        // The shared fragment, redacted (no live store/vault/auth/adapter) — exfil-at-rest (§4/§6).
         get __config() {
-            return redactConfig(compose(shared.fragment));
+            return sharedConfig(shared);
         },
         __seam: true,
     };
 }
 
 /**
- * Create a seam — the primitive for any **shared surface** (a third-party API, an internal
- * service). Pass the shared defaults its stitches inherit (baseUrl, headers, throttle, retry,
- * auth, sink) and, optionally, a hardened `secretStore` for the vault. Members are created with
- * `.stitch()` / `.graphql()`; bind a principal with `.as(id)`; flush/close via the lifecycle.
+ * Create a seam — the home of your **shared runtime** (one `store`, one throttle budget, one trace
+ * sink, one auth `vault`) and the **trusted principal boundary**. Member stitches don't merely
+ * inherit the config you pass here (baseUrl, headers, auth, retry, throttle, sink); they *run
+ * inside* this runtime. Create members with `.stitch()` / `.graphql()`, derive a lifecycle-free
+ * per-principal handle with `.as(id)`, and `flush()` / `close()` the shared runtime from the root
+ * seam. Reach for `seam` for any shared surface; standalone one-off endpoints stay on `stitch()`.
  */
 export function seam(options: SeamOptions = {}): Seam {
     const { secretStore, ...rest } = options;
@@ -150,5 +181,5 @@ export function seam(options: SeamOptions = {}): Seam {
         stitches: [],
         ...(secretStore ? { secretStore } : {}),
     };
-    return makeHandle(shared, undefined);
+    return rootHandle(shared);
 }

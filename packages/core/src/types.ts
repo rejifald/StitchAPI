@@ -296,12 +296,25 @@ export interface StitchStore {
     close?(): Promise<void>;
 }
 
-// ---- Seam (a primitive stitches belong to) --------------------------------
+// ---- Seam (where shared runtime lives) ------------------------------------
 /**
- * Options for {@link Seam} — every {@link StitchConfig} key (shared by the seam's stitches as a
- * fragment) plus an optional hardened `secretStore` backing the vault.
+ * The config a seam shares with every member as a fragment. It is {@link StitchConfig} minus the
+ * keys that are intrinsically **per-endpoint** — the address (`path`, `url`, `method`, `query`)
+ * and the request/response shape (`name`, `input`, `output`, `kind`). Everything cross-cutting —
+ * `baseUrl`, `headers`, `auth`, `retry`, `throttle`, `timeout`, `circuit`, `idempotency`,
+ * `paginate`, `unwrap`, `transform`, `arrayFormat`, `hooks`, `trace`, `store`, `adapter` — belongs
+ * here, so the type itself answers "what belongs at the seam". Members supply the endpoint keys.
  */
-export type SeamOptions = Partial<StitchConfig> & {
+export type SeamConfig = Omit<
+    StitchConfig,
+    'path' | 'url' | 'method' | 'query' | 'name' | 'input' | 'output' | 'kind'
+>;
+
+/**
+ * Options for {@link Seam} — the shared {@link SeamConfig} plus an optional hardened `secretStore`
+ * backing the vault.
+ */
+export type SeamOptions = SeamConfig & {
     /**
      * Backend for the vault (auth tokens/sessions). Defaults to a reserved, redacted namespace
      * over the seam's `store`; supply a KMS/Vault-backed store here for a hardened vault. Split
@@ -311,11 +324,26 @@ export type SeamOptions = Partial<StitchConfig> & {
 };
 
 /**
- * A long-lived entity that owns a shared config fragment, shared runtime (`store` + `vault` +
- * trace sink), a registry of the stitches it created, and a lifecycle. Its decisive job is the
- * **trusted principal boundary**: `seam.as(req.user.id)` binds identity in the closure, so the
- * caller can never name another principal. Create shared surfaces with `seam`; standalone,
- * one-off endpoints stay on the low-level `stitch()` peer (ADR 0002).
+ * A principal-bound seam handle — what `seam.as(id)` returns, and the object trusted server code
+ * hands to the least-trusted caller (the agent). It creates member stitches and can re-bind the
+ * principal, but it deliberately **lacks the lifecycle** (`flush` / `close`): tearing down the
+ * shared runtime that every other principal depends on is a *root-seam* authority, never a
+ * per-principal one. The boundary that prevents impersonation must not also be a teardown lever
+ * (ADR 0002 §2).
+ */
+export type PrincipalSeam = Omit<Seam, 'as' | 'flush' | 'close'> & {
+    /** Re-bind to another principal — last binding wins. Still lifecycle-free. */
+    as(principal: string): PrincipalSeam;
+};
+
+/**
+ * Where your **shared runtime lives**: one `store`, one throttle budget, one trace sink, and one
+ * auth `vault`, shared by every member stitch — plus the **trusted identity boundary**
+ * (`seam.as(userId)` binds a principal in the closure, so a caller can never name another). A
+ * stitch doesn't merely share config with its seam; it *runs inside* the seam's runtime. The root
+ * seam also owns a registry of the stitches it created and the lifecycle (`flush` / `close`).
+ * Reach for `seam` for any shared surface; standalone, one-off endpoints stay on the low-level
+ * `stitch()` peer (ADR 0002).
  */
 export interface Seam {
     /** Create a stitch belonging to this seam — inherits the shared fragment and shares the runtime. */
@@ -325,14 +353,15 @@ export interface Seam {
         config: Partial<StitchConfig> & { query: string },
     ): Stitch<T>;
     /**
-     * A principal-bound handle reusing the same shared runtime, but whose stitches carry
-     * `principal` in their AuthContext: separate sessions per principal, one shared throttle
-     * bucket. The principal lives in this closure, never in `StitchInput` (ADR 0002 §2–3).
+     * Derive a principal-bound {@link PrincipalSeam} reusing the same shared runtime, but whose
+     * stitches carry `principal` in their AuthContext: separate sessions per principal, one shared
+     * throttle bucket. The principal lives in the returned closure, never in `StitchInput`
+     * (ADR 0002 §2–3). The handle is **lifecycle-free** — only the root seam may `flush` / `close`.
      */
-    as(principal: string): Seam;
-    /** Flush the shared trace sink (drain any buffered exporter). */
+    as(principal: string): PrincipalSeam;
+    /** Flush the shared trace sink (drain any buffered exporter). Root seam only. */
     flush(): Promise<void>;
-    /** `flush()`, then close the shared store/vault and drop the registry. */
+    /** `flush()`, then close the shared store/vault and drop the registry. Root seam only. */
     close(): Promise<void>;
     /** The shared config fragment — redacted (no `store`/`vault`/`auth`/`adapter`). */
     readonly __config: StitchConfig;

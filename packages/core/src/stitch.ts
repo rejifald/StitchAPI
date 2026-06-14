@@ -26,16 +26,19 @@ import { type Validator, toValidator } from './validator';
 
 export type Fragment = Partial<StitchConfig> | Stitch | string;
 
+// The FULL (unredacted) config of every stitch, kept in a module-private WeakMap rather than on
+// the object itself. The public `__config` is redacted (no store/auth/adapter — exfil-at-rest,
+// ADR 0002 §4/§6); composition still needs the live handles, but that need is internal, so it
+// lives here where no caller can reach it — closing the redaction perimeter structurally instead
+// of by the old `__rawConfig` naming convention.
+const rawConfigs = new WeakMap<object, StitchConfig>();
+
 // ---- composition ----------------------------------------------------------
 function asConfig(f: Fragment): Partial<StitchConfig> {
     if (typeof f === 'string') return { path: f };
-    // Compose from the FULL config (`__rawConfig`), not the redacted public `__config`, so a
-    // stitch used as a fragment still carries its store/auth/adapter into the merge.
-    if (isStitch(f))
-        return (
-            (f as Stitch & { __rawConfig?: StitchConfig }).__rawConfig ??
-            f.__config
-        );
+    // Compose from the FULL config, not the redacted public `__config`, so a stitch used as a
+    // fragment still carries its store/auth/adapter into the merge.
+    if (isStitch(f)) return rawConfigs.get(f) ?? f.__config;
     return f;
 }
 
@@ -215,12 +218,19 @@ function tee<T>(
 }
 
 function mergeInput(a: StitchInput = {}, b: StitchInput = {}): StitchInput {
-    return {
+    const merged: StitchInput = {
         params: { ...(a.params ?? {}), ...(b.params ?? {}) },
         query: { ...(a.query ?? {}), ...(b.query ?? {}) },
         headers: { ...(a.headers ?? {}), ...(b.headers ?? {}) },
         body: b.body !== undefined ? b.body : a.body,
     };
+    // `variables` is a first-class StitchInput field (GraphQL's primary input). It was dropped
+    // here, so `.with({ variables })` silently lost them; merge it like the rest. Omit the key
+    // entirely when neither side sets it (exactOptionalPropertyTypes forbids `variables:
+    // undefined`).
+    if (a.variables ?? b.variables)
+        merged.variables = { ...(a.variables ?? {}), ...(b.variables ?? {}) };
+    return merged;
 }
 
 /**
@@ -240,7 +250,7 @@ export interface SharedRuntime {
 
 // `__config` is the PUBLIC view; strip the live secret-bearing handles so the running store,
 // credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest).
-// The full config lives on `__rawConfig` for fragment composition (see `asConfig`).
+// The full config lives in the private `rawConfigs` WeakMap for fragment composition (see `asConfig`).
 export function redactConfig(cfg: StitchConfig): StitchConfig {
     const rest = { ...cfg };
     delete rest.store;
@@ -249,11 +259,12 @@ export function redactConfig(cfg: StitchConfig): StitchConfig {
     return rest;
 }
 
-// Stamp the stitch identity: redacted public `__config`, full `__rawConfig`, and the `__stitch` brand.
+// Stamp the stitch identity: the redacted public `__config` and the `__stitch` brand are visible
+// properties; the full config goes to the private `rawConfigs` WeakMap (off the object entirely).
 function attachMeta(target: object, cfg: StitchConfig): void {
     Object.defineProperty(target, '__config', { value: redactConfig(cfg) });
-    Object.defineProperty(target, '__rawConfig', { value: cfg });
     Object.defineProperty(target, '__stitch', { value: true });
+    rawConfigs.set(target, cfg);
 }
 
 export function makeStitch<T = unknown>(
