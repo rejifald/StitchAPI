@@ -1,5 +1,5 @@
 import { BrandBackdrop } from './brand-backdrop';
-import { GithubIcon, PrimaryButton, SecondaryButton } from './primitives';
+import { PrimaryButton } from './primitives';
 
 import { gitConfig } from '@/lib/shared';
 
@@ -11,7 +11,7 @@ export function Cta() {
         <section className="relative overflow-hidden border-b border-fd-border px-6 py-24 text-center">
             <BrandBackdrop variant="cta" />
             <div className="relative z-10 mx-auto max-w-2xl">
-                <h2 className="text-3xl font-extrabold tracking-tight text-fd-foreground sm:text-4xl">
+                <h2 className="font-display text-3xl font-extrabold tracking-[-0.02em] text-fd-foreground sm:text-4xl">
                     Replace fetch. Start with one endpoint.
                 </h2>
                 <p className="mx-auto mt-4 max-w-xl text-lg leading-relaxed text-fd-muted-foreground">
@@ -24,13 +24,6 @@ export function Cta() {
                         Start the quickstart
                         <ArrowRight className="size-4" />
                     </PrimaryButton>
-                    <SecondaryButton
-                        href={`https://github.com/${gitConfig.user}/${gitConfig.repo}`}
-                        external
-                    >
-                        <GithubIcon />
-                        View on GitHub
-                    </SecondaryButton>
                 </div>
             </div>
         </section>

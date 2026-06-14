@@ -2,9 +2,11 @@ import { cn } from '@/lib/cn';
 
 /**
  * StitchAPI logomark — cloud + `</>` + the dashed "stitch" seam.
- * Cloud arcs use the brand blue; the code/stitch use currentColor so the mark
- * reads correctly on light and dark surfaces alike. Paths and the viewBox are
- * taken straight from the official logomark artwork (tile background dropped).
+ * Uses the Signal palette: cloud arcs in the brand blue, the dashed "stitch"
+ * seam in the complementary amber accent, and the `</>` brackets in
+ * currentColor so they stay legible on light and dark surfaces alike. Paths
+ * and the viewBox are taken straight from the official logomark artwork (tile
+ * background dropped).
  */
 export function Logomark({ className }: { className?: string }) {
     return (
@@ -22,10 +24,13 @@ export function Logomark({ className }: { className?: string }) {
                 <path d="M785.69,637.78h-28.08c-10.96,0-19.7-9.68-18.12-20.94c1.08-7.65,7-13.9,14.59-15.34c0.17-0.03,0.33-0.06,0.5-0.08c0.45-0.07,0.86-0.29,1.18-0.61l4.9-4.9c0.64-0.64,0.26-1.75-0.64-1.83c-0.8-0.08-1.61-0.12-2.42-0.12c-13.92,0-25.27,11.21-25.51,25.07c-0.24,14.27,11.74,25.95,26.02,25.95h26.09c0.86,0,1.62-0.57,1.87-1.4l1.11-3.81C787.49,638.78,786.73,637.78,785.69,637.78z" />
                 <path d="M767.79,588.79l3.47-3.47c0.46-0.46,0.63-1.13,0.48-1.76c-0.16-0.69-0.29-1.4-0.38-2.12c-1.62-12.52,7.25-24.02,19.76-25.64c6.55-0.85,12.81,1.19,17.54,5.11c0.95,0.79,2.38,0.36,2.74-0.82l0.97-3.23c0.33-1.09-0.07-2.28-1-2.94c-6.51-4.59-14.84-6.64-23.4-4.89c-13.84,2.83-23.98,15.18-24.01,29.31c-0.01,3.53,0.58,6.88,1.66,9.98C765.93,589.22,767.1,589.48,767.79,588.79z" />
             </g>
-            {/* code brackets + dashed stitch (ink / currentColor) */}
+            {/* code brackets </> (ink / currentColor) */}
             <g fill="currentColor">
                 <path d="M827.87,590.84l14.04,14.04l-14.04,14.04c-0.96,0.96-0.96,2.52,0,3.49l2.95,2.95c0.96,0.96,2.52,0.96,3.49,0l18.8-18.8c0.92-0.92,0.92-2.42,0-3.35l-18.8-18.8c-0.96-0.96-2.52-0.96-3.49,0l-2.95,2.95C826.91,588.31,826.91,589.87,827.87,590.84z" />
                 <path d="M787.83,587.35l-2.95-2.95c-0.96-0.96-2.52-0.96-3.49,0l-18.8,18.8c-0.92,0.92-0.92,2.42,0,3.35l18.8,18.8c0.96,0.96,2.52,0.96,3.49,0l2.95-2.95c0.96-0.96,0.96-2.52,0-3.49l-14.04-14.04l14.04-14.04C788.79,589.87,788.79,588.31,787.83,587.35z" />
+            </g>
+            {/* dashed "stitch" seam — complementary amber accent */}
+            <g fill="var(--accent)">
                 <path d="M810.42,605.48h-3.45c-1.52,0-2.86,1-3.3,2.45l-4.6,15.28c-0.5,1.67,0.75,3.35,2.49,3.35H805c1.52,0,2.86-1,3.3-2.45l4.6-15.28C813.41,607.17,812.16,605.48,810.42,605.48z" />
                 <path d="M817.93,580.53h-3.45c-1.52,0-2.86,1-3.3,2.45l-4.6,15.28c-0.5,1.67,0.75,3.35,2.49,3.35h3.45c1.52,0,2.86-1,3.3-2.45l4.6-15.28C820.93,582.22,819.68,580.53,817.93,580.53z" />
                 <path d="M802.9,630.43h-3.45c-1.52,0-2.86,1-3.3,2.45l-4.6,15.28c-0.5,1.67,0.75,3.35,2.49,3.35h3.45c1.52,0,2.86-1,3.3-2.45l4.6-15.28C805.89,632.11,804.64,630.43,802.9,630.43z" />

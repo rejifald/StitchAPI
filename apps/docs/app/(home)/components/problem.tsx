@@ -59,7 +59,7 @@ export function Problem() {
                     >
                         <div className="flex items-start gap-3 px-6 py-4 sm:border-r sm:border-fd-border">
                             <span className="mt-2 size-1.5 shrink-0 rounded-full bg-fd-border" />
-                            <span className="text-sm text-fd-muted-foreground line-through decoration-fd-border decoration-1">
+                            <span className="text-sm text-fd-muted-foreground">
                                 {row.fetch}
                             </span>
                         </div>

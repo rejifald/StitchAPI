@@ -1,8 +1,6 @@
 import { BrandBackdrop } from './brand-backdrop';
 import { Code, CodePanel } from './code-panel';
-import { GithubIcon, PrimaryButton, SecondaryButton } from './primitives';
-
-import { gitConfig } from '@/lib/shared';
+import { PrimaryButton, SecondaryButton } from './primitives';
 
 import { ArrowRight, Bot, Code2, Server, Terminal } from 'lucide-react';
 
@@ -25,7 +23,7 @@ export function Hero() {
                         Agent-native API runtime
                     </span>
 
-                    <h1 className="mt-6 text-4xl font-extrabold leading-[1.08] tracking-tight text-fd-foreground sm:text-6xl">
+                    <h1 className="mt-6 font-display text-4xl font-black leading-[1.02] tracking-[-0.035em] text-fd-foreground sm:text-6xl">
                         A typed <span className="text-stitch">stitch</span>{' '}
                         replaces{' '}
                         <code className="rounded-lg bg-fd-muted px-2 py-0.5 align-middle font-mono text-[0.7em] text-fd-muted-foreground">
@@ -52,13 +50,6 @@ export function Hero() {
                         <SecondaryButton href="/playground">
                             <Terminal className="size-4 text-stitch" />
                             Try the playground
-                        </SecondaryButton>
-                        <SecondaryButton
-                            href={`https://github.com/${gitConfig.user}/${gitConfig.repo}`}
-                            external
-                        >
-                            <GithubIcon />
-                            View on GitHub
                         </SecondaryButton>
                     </div>
 

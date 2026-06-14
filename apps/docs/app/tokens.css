@@ -1,0 +1,152 @@
+/* ============================================================
+   StitchAPI — Design Tokens
+   Brand: Signal (electric blue + amber) — LOCKED
+   ------------------------------------------------------------
+   Adopted from the Claude Design "Brand & Color System" handoff
+   (claude.ai/design). The exploration landed on the *Signal*
+   direction; these are its finalized semantic + typographic
+   tokens, re-keyed onto Fumadocs' `:root` (light) / `.dark`
+   theming so the whole site tracks the active theme.
+
+   Reference tokens only via var(--*); never hard-code a hex in
+   product code. The family stacks below are mirrored into
+   Tailwind's @theme in global.css so the font-* utilities match.
+   ============================================================ */
+
+/* ---------- Theme-agnostic foundations ---------- */
+:root {
+    /* Type families — Schibsted Grotesk (display), Hanken Grotesk
+       (body), IBM Plex Mono (code). The bare --font-* vars are
+       supplied by next/font in layout.tsx. */
+    --font-display: var(--font-schibsted), 'Schibsted Grotesk', system-ui,
+        sans-serif;
+    --font-sans: var(--font-hanken), 'Hanken Grotesk', system-ui, sans-serif;
+    --font-mono: var(--font-ibm-plex-mono), 'IBM Plex Mono', ui-monospace,
+        'SF Mono', monospace;
+
+    /* Type scale — display & h2 are fluid (clamp). */
+    --fs-display: clamp(40px, 5.6vw, 68px);
+    --fs-h2: clamp(28px, 3.4vw, 42px);
+    --fs-h3: 21px;
+    --fs-lg: 19px;
+    --fs-body: 16px;
+    --fs-sm: 14px;
+    --fs-xs: 12.5px;
+
+    /* Weights */
+    --fw-regular: 400;
+    --fw-medium: 500;
+    --fw-semibold: 600;
+    --fw-bold: 700;
+    --fw-heavy: 800;
+    --fw-black: 900;
+
+    /* Tracking */
+    --ls-tight: -0.035em;
+    --ls-snug: -0.02em;
+    --ls-label: 0.14em;
+
+    /* Radii */
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 16px;
+    --r-xl: 22px;
+    --r-pill: 999px;
+
+    --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* ============================================================
+   SEMANTIC COLOR — LIGHT (default)
+   ============================================================ */
+:root {
+    /* Background & surfaces */
+    --bg: #fbfbfd; /* app background */
+    --surface: #ffffff; /* cards, panels */
+    --surface-2: #f6f7f9; /* raised / inset sections */
+    --surface-3: #f0f2f6; /* hover, controls */
+
+    /* Lines */
+    --border: #e4e7ee; /* component borders */
+    --hairline: #edeff4; /* faint dividers */
+
+    /* Text */
+    --text: #0c1019; /* primary copy */
+    --text-muted: #58616f; /* secondary copy */
+    --text-faint: #8b94a2; /* captions, meta, code comments */
+
+    /* Code surfaces */
+    --code-bg: #f7f8fa;
+    --code-border: #e9ecf2;
+
+    /* Brand — Signal (deeper blue holds contrast on light) */
+    --brand: #2563eb; /* primary fill / line / link */
+    --brand-strong: #1d4fd0; /* hover */
+    --brand-ink: #ffffff; /* text/glyph ON brand fill */
+
+    /* Accent — complementary amber (use sparingly) */
+    --accent: #b4690a;
+    --accent-ink: #ffffff; /* text ON accent fill */
+
+    /* Elevation */
+    --shadow-sm: 0 1px 2px rgba(16, 22, 40, 0.06);
+    --shadow-md: 0 12px 30px -14px rgba(16, 22, 40, 0.18);
+    --shadow-lg: 0 30px 70px -28px rgba(16, 22, 40, 0.26);
+    --on-brand-shadow: 0 10px 24px -10px;
+}
+
+/* ============================================================
+   SEMANTIC COLOR — DARK
+   `.dark` follows `:root` in source order so it wins on <html>.
+   ============================================================ */
+.dark {
+    --bg: #0a0d13;
+    --surface: #0f141c;
+    --surface-2: #151b26;
+    --surface-3: #1a2230;
+
+    --border: #232b3a;
+    --hairline: #19202c;
+
+    --text: #e9edf4;
+    --text-muted: #98a2b3;
+    --text-faint: #616b7c;
+
+    --code-bg: #0c1119;
+    --code-border: #1b2330;
+
+    /* Brand — Signal (brighter on dark surfaces) */
+    --brand: #4c8dff;
+    --brand-strong: #6ba1ff;
+    --brand-ink: #06101f;
+
+    --accent: #f6a823;
+    --accent-ink: #1a1305;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 10px 30px -12px rgba(0, 0, 0, 0.7);
+    --shadow-lg: 0 28px 70px -24px rgba(0, 0, 0, 0.85);
+    --on-brand-shadow: 0 8px 24px -8px;
+}
+
+/* ============================================================
+   DERIVED TINTS + SYNTAX — theme-agnostic.
+   These reference the theme-scoped brand/accent/text vars above,
+   so color-mix re-resolves per theme automatically.
+   ============================================================ */
+:root {
+    /* Soft fills, focus rings, hairline accents. */
+    --brand-soft: color-mix(in srgb, var(--brand) 14%, transparent);
+    --brand-softer: color-mix(in srgb, var(--brand) 7%, transparent);
+    --brand-line: color-mix(in srgb, var(--brand) 38%, transparent);
+    --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+    --accent-line: color-mix(in srgb, var(--accent) 42%, transparent);
+
+    /* Code-sample token roles. */
+    --syn-comment: var(--text-faint); /* comments (italic) */
+    --syn-keyword: var(--brand); /* keywords */
+    --syn-func: var(--accent); /* functions / types */
+    --syn-string: color-mix(in srgb, var(--accent) 80%, var(--text));
+    --syn-punct: var(--text-muted); /* punctuation */
+    --syn-name: var(--text); /* identifiers */
+}

@@ -7,11 +7,33 @@ import { Banner } from 'fumadocs-ui/components/banner';
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import { Construction } from 'lucide-react';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import {
+    Hanken_Grotesk,
+    IBM_Plex_Mono,
+    Schibsted_Grotesk,
+} from 'next/font/google';
 
-const inter = Inter({
+/* Signal type system — display / body / mono (Brand & Color System). */
+const fontDisplay = Schibsted_Grotesk({
     subsets: ['latin'],
+    weight: ['400', '500', '600', '700', '800', '900'],
+    variable: '--font-schibsted',
+    display: 'swap',
 });
+const fontSans = Hanken_Grotesk({
+    subsets: ['latin'],
+    weight: ['400', '500', '600', '700'],
+    variable: '--font-hanken',
+    display: 'swap',
+});
+const fontMono = IBM_Plex_Mono({
+    subsets: ['latin'],
+    weight: ['400', '500', '600', '700'],
+    variable: '--font-ibm-plex-mono',
+    display: 'swap',
+});
+
+const fontVariables = `${fontDisplay.variable} ${fontSans.variable} ${fontMono.variable}`;
 
 export const metadata: Metadata = {
     metadataBase: new URL(siteUrl),
@@ -19,7 +41,7 @@ export const metadata: Metadata = {
 
 export default function Layout({ children }: LayoutProps<'/'>) {
     return (
-        <html lang="en" className={inter.className} suppressHydrationWarning>
+        <html lang="en" className={fontVariables} suppressHydrationWarning>
             <body className="flex flex-col min-h-screen">
                 <RootProvider>
                     <Banner

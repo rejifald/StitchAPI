@@ -1,27 +1,69 @@
 @import 'tailwindcss';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
+@import './tokens.css';
 
-/* --- StitchAPI brand accent (logo blue), theme-aware ----------------------- */
+/* --- Design tokens → Tailwind theme --------------------------------------- *
+ * The Signal brand routes through the legacy `--stitch*` names so existing
+ * `text-stitch`, `bg-stitch`, `border-stitch-border` utilities keep working —
+ * they now resolve to the adopted brand tokens (see tokens.css). The amber
+ * `accent` and the three type families are exposed as utilities too.
+ * `inline` keeps the values theme-aware (they reference runtime vars).        */
 @theme inline {
     --color-stitch: var(--stitch);
     --color-stitch-strong: var(--stitch-strong);
     --color-stitch-soft: var(--stitch-soft);
     --color-stitch-border: var(--stitch-border);
+
+    /* Complementary amber accent — use sparingly. */
+    --color-accent: var(--accent);
+    --color-accent-ink: var(--accent-ink);
+    --color-accent-soft: var(--accent-soft);
+    --color-accent-line: var(--accent-line);
+
+    /* Type families (mirror the stacks in tokens.css; the bare --font-*
+       vars come from next/font in layout.tsx). */
+    --font-display: var(--font-schibsted), 'Schibsted Grotesk', system-ui,
+        sans-serif;
+    --font-sans: var(--font-hanken), 'Hanken Grotesk', system-ui, sans-serif;
+    --font-mono: var(--font-ibm-plex-mono), 'IBM Plex Mono', ui-monospace,
+        'SF Mono', monospace;
 }
 
+/* Brand alias: point the site's brand handles at the Signal tokens. These
+   reference theme-scoped vars, so one block covers light + dark. */
 :root {
-    --stitch: #3b82f6; /* brand blue, straight from the logo */
-    --stitch-strong: #2563eb;
-    --stitch-soft: #eff6ff;
-    --stitch-border: #bfdbfe;
+    --stitch: var(--brand);
+    --stitch-strong: var(--brand-strong);
+    --stitch-soft: var(--brand-soft);
+    --stitch-border: var(--brand-line);
 }
 
-.dark {
-    --stitch: #60a5fa; /* brighter on dark surfaces, matches the dark banner */
-    --stitch-strong: #93c5fd;
-    --stitch-soft: color-mix(in srgb, #1e3a8a 32%, transparent);
-    --stitch-border: color-mix(in srgb, #60a5fa 26%, transparent);
+/* Adopt the Signal neutral scaffold + brand across Fumadocs' semantic tokens.
+   Each value is a theme-aware design token, so this single block recolors both
+   light and dark (it follows the preset imports, so it wins on source order). */
+:root {
+    --color-fd-background: var(--bg);
+    --color-fd-foreground: var(--text);
+    --color-fd-muted: var(--surface-2);
+    --color-fd-muted-foreground: var(--text-muted);
+    --color-fd-popover: var(--surface);
+    --color-fd-popover-foreground: var(--text);
+    --color-fd-card: var(--surface);
+    --color-fd-card-foreground: var(--text);
+    --color-fd-border: var(--border);
+    --color-fd-primary: var(--brand);
+    --color-fd-primary-foreground: var(--brand-ink);
+    --color-fd-secondary: var(--surface-2);
+    --color-fd-secondary-foreground: var(--text);
+    --color-fd-accent: var(--surface-3);
+    --color-fd-accent-foreground: var(--text);
+    --color-fd-ring: var(--brand);
+    --color-fd-font-mono: var(--font-mono);
+}
+
+body {
+    font-family: var(--font-sans);
 }
 
 html {
@@ -130,31 +172,25 @@ html > body[data-scroll-locked] {
     }
 }
 
-/* --- Minimal token coloring for the static code panels -------------------- */
+/* --- Code-panel syntax: adopted Signal syntax tokens (theme-aware) --------- */
 .code-panel {
     tab-size: 4;
 }
 .tok-key {
-    color: var(--stitch);
+    color: var(--syn-keyword); /* keywords → brand */
 }
 .tok-str {
-    color: #c2882a;
-}
-.dark .tok-str {
-    color: #e0b252;
+    color: var(--syn-string); /* strings → accent/text mix */
 }
 .tok-fn {
-    color: #2563eb;
-}
-.dark .tok-fn {
-    color: #7aa2f7;
+    color: var(--syn-func); /* functions/types → accent */
 }
 .tok-com {
-    color: var(--color-fd-muted-foreground);
+    color: var(--syn-comment); /* comments → faint */
     font-style: italic;
 }
 .tok-punc {
-    color: var(--color-fd-muted-foreground);
+    color: var(--syn-punct); /* punctuation → muted */
 }
 
 /* --- Twoslash hover affordance: only underline the token under the cursor ----
