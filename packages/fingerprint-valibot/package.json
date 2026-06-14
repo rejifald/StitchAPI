@@ -1,0 +1,56 @@
+{
+    "name": "@stitchapi/fingerprint-valibot",
+    "version": "0.0.0",
+    "description": "Stable Standard Schema fingerprint strategy for Valibot — StitchAPI ADR 0004 cache invalidation.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/fingerprint-valibot"
+    },
+    "keywords": [
+        "stitchapi",
+        "valibot",
+        "fingerprint",
+        "cache",
+        "standard-schema"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "peerDependencies": {
+        "stitchapi": ">=0.7.0",
+        "valibot": "^1.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "stitchapi": "workspace:*",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "valibot": "^1.0.0",
+        "vitest": "^4.1.8"
+    }
+}

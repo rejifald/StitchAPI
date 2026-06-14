@@ -1,0 +1,23 @@
+# @stitchapi/fingerprint-valibot
+
+Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
+**Valibot**, for StitchAPI's response-cache invalidation (ADR 0004).
+
+It walks Valibot's plain-object representation — `.type`, `.entries`, and the
+`.pipe` action chain — into a canonical structural descriptor hashed into an
+opaque, synchronous token. The token changes iff the schema's validation/shape
+semantics change. It is an **allowlist**: it abstains (returns `value: null`, so
+the cache falls back to re-validate-on-hit) on anything it can't soundly capture —
+`transformation` actions, `check`/`custom`/`raw_*` actions, function-valued
+requirements, and injected defaults.
+
+`valibot` is a **peer dependency**.
+
+```ts
+import { valibotFingerprinter } from '@stitchapi/fingerprint-valibot';
+import { registerFingerprinter } from 'stitchapi/fingerprint';
+
+registerFingerprinter(valibotFingerprinter);
+```
+
+Compliance is proven against `verifyFingerprintContract` from `stitchapi/testing`.
