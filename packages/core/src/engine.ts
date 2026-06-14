@@ -226,7 +226,9 @@ async function validateInput(
     input: StitchInput,
 ): Promise<void> {
     for (const part of ['params', 'query', 'body', 'headers'] as const) {
-        const v = cfg.input?.[part];
+        // `input.*` is widened to SchemaLike for authoring ergonomics, but `compose` →
+        // `normalizeInput` has already coerced every present slot to a Validator by now.
+        const v = cfg.input?.[part] as Validator | undefined;
         if (!v) continue;
         const r = await v.validate((input as Record<string, unknown>)[part]);
         if (!r.ok) {

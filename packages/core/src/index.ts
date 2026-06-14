@@ -26,5 +26,7 @@ export type {
     OtlpOptions,
 } from './otlp';
 export { toValidator } from './validator';
+export type { Issue, ValidationResult, Validator } from './validator';
+export type { InferInput, InferOutput, SchemaLike } from './infer';
 export { memoryStore } from './store';
 export * from './types';

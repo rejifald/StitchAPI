@@ -1,7 +1,6 @@
 import { stitch } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
-import { asValidator } from './support/schema';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,9 +29,8 @@ test('await sugar returns the unwrapped, validated result', async () => {
         baseUrl: server.url,
         path: '/users',
         unwrap: 'data',
-        output: asValidator(
-            z.array(z.object({ id: z.number(), name: z.string() })),
-        ),
+        // raw Zod schema — inference removes the old `asValidator()` cast.
+        output: z.array(z.object({ id: z.number(), name: z.string() })),
     });
     await expect(users()).resolves.toEqual([{ id: 1, name: 'Ada' }]);
 });

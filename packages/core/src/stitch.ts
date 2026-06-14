@@ -2,6 +2,7 @@
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
 import { type Runtime, execute, executeRaw, makeRuntime } from './engine';
+import type { InferOutput, ResolveOutput } from './infer';
 import { otlpTrace } from './otlp';
 import { createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
@@ -317,9 +318,24 @@ export function makeStitch<T = unknown>(
 
 // ---- public API -----------------------------------------------------------
 export interface StitchFn {
-    <T = unknown>(
-        config: string | (Partial<StitchConfig> & { path?: string }),
-    ): Stitch<T>;
+    /**
+     * Build a stitch from a config object. The result type is inferred from `config.output`'s
+     * schema (Zod / Standard Schema / Validator / `drift()`), so no hand-written generic is
+     * needed. Supply one explicitly — `stitch<Foo>(config)` — only to override the inferred type;
+     * the explicit generic always wins.
+     */
+    <
+        TExplicit = never,
+        C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
+        config: C,
+    ): Stitch<ResolveOutput<TExplicit, C>>;
+    /**
+     * Non-inferring fallback: a bare path string, or any argument whose static type is the union
+     * `string | Partial<StitchConfig>` (e.g. a wrapper that forwards either spelling). Neither can
+     * match the inferring overload above, so the result is `Stitch<unknown>` — override with `<T>`.
+     */
+    <T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
     use(...fragments: Fragment[]): Builder;
 }
 
@@ -331,20 +347,32 @@ export const stitch: StitchFn = Object.assign(
     },
 );
 
-/** drift(): wrap an output schema with leveled drift options. */
-export function drift(schema: unknown, options: DriftOptions = {}): DriftSpec {
+/**
+ * drift(): wrap an output schema with leveled drift options. The wrapped contract type is
+ * inferred from the schema, so `stitch({ output: drift(userSchema) })` still resolves to
+ * `Stitch<User>`.
+ */
+export function drift<S>(
+    schema: S,
+    options: DriftOptions = {},
+): DriftSpec<InferOutput<S>> {
     return {
         __kind: 'drift',
-        schema: toValidator(schema) as Validator,
+        schema: toValidator(schema) as Validator<InferOutput<S>>,
         options,
     };
 }
 
 /** graphql(): a stitch preset for GraphQL-over-HTTP — POST { query, variables }, unwrap `data`. */
-export function graphql<T = unknown>(
-    config: Partial<StitchConfig> & { query: string },
-): Stitch<T> {
-    return makeStitch<T>({
+export function graphql<
+    TExplicit = never,
+    C extends Partial<StitchConfig> & {
+        query: string;
+    } = Partial<StitchConfig> & {
+        query: string;
+    },
+>(config: C): Stitch<ResolveOutput<TExplicit, C>> {
+    return makeStitch<ResolveOutput<TExplicit, C>>({
         ...config,
         kind: 'graphql',
         method: 'POST',

@@ -15,6 +15,7 @@
         "test": "pnpm -r test",
         "test:coverage": "pnpm -r test:coverage",
         "check:types": "pnpm -r check:types",
+        "check:types-d": "pnpm -r check:types-d",
         "check:lint": "pnpm -r check:lint",
         "check:exports": "pnpm -r check:exports",
         "check:format": "prettier --check .",

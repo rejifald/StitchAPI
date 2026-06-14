@@ -1,5 +1,6 @@
 // Shared vocabulary for the prototype. Leaf modules (resilience, trace, http-adapter,
 // auth, mock-server) and the engine all code against these types.
+import type { ResolveOutput, SchemaLike } from './infer';
 import type { Validator } from './validator';
 
 export interface StitchInput {
@@ -30,9 +31,9 @@ export interface DriftOptions {
     onNew?: DriftLevel; // level for brand-new fields (default 'info')
     snapshotFile?: string; // committed baseline (`<name>.contract.json`)
 }
-export interface DriftSpec {
+export interface DriftSpec<T = unknown> {
     __kind: 'drift';
-    schema: Validator;
+    schema: Validator<T>;
     options: DriftOptions;
 }
 
@@ -163,11 +164,13 @@ export type StitchEvent<T = unknown> =
     | { type: 'done'; ok: boolean; ms: number; attempts: number; at: number };
 
 // ---- Config & the Stitch callable ----------------------------------------
+// Each slot accepts any {@link SchemaLike} (raw Zod / Standard Schema / Validator / predicate) —
+// no `toValidator()` cast required; `normalizeInput` coerces them at compose time.
 export interface InputSchemas {
-    params?: Validator;
-    query?: Validator;
-    body?: Validator;
-    headers?: Validator;
+    params?: SchemaLike;
+    query?: SchemaLike;
+    body?: SchemaLike;
+    headers?: SchemaLike;
 }
 export interface StitchConfig {
     /** Label used in events and traces; defaults to `path` or `'stitch'`. */
@@ -198,8 +201,12 @@ export interface StitchConfig {
     query?: string;
     /** Schemas validating params, query, body, and headers before the request. */
     input?: InputSchemas;
-    /** Response schema, or a {@link DriftSpec} for leveled drift detection. */
-    output?: Validator | DriftSpec;
+    /**
+     * Response schema, or a {@link DriftSpec} for leveled drift detection. Accepts any
+     * {@link SchemaLike} (raw Zod / Standard Schema / Validator / predicate); the stitch infers
+     * its result type from it (see `InferOutput`), so a hand-written generic is rarely needed.
+     */
+    output?: SchemaLike | DriftSpec;
     /** Dot-path selecting the part of the response to return. */
     unwrap?: string;
     /** Reshape the raw body before unwrap and validation (e.g. scrape HTML to structured data). */
@@ -318,12 +325,30 @@ export type SeamOptions = Partial<StitchConfig> & {
  * one-off endpoints stay on the low-level `stitch()` peer (ADR 0002).
  */
 export interface Seam {
-    /** Create a stitch belonging to this seam — inherits the shared fragment and shares the runtime. */
+    /**
+     * Create a stitch belonging to this seam — inherits the shared fragment and shares the
+     * runtime. Like top-level `stitch`, the result type is inferred from `config.output`; pass an
+     * explicit generic (`api.stitch<Foo>(...)`) only to override the inferred type.
+     */
+    stitch<
+        TExplicit = never,
+        C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
+        config: C,
+    ): Stitch<ResolveOutput<TExplicit, C>>;
+    /** Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see {@link StitchFn}). */
     stitch<T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
     /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, unwrap `data`). */
-    graphql<T = unknown>(
-        config: Partial<StitchConfig> & { query: string },
-    ): Stitch<T>;
+    graphql<
+        TExplicit = never,
+        C extends Partial<StitchConfig> & {
+            query: string;
+        } = Partial<StitchConfig> & {
+            query: string;
+        },
+    >(
+        config: C,
+    ): Stitch<ResolveOutput<TExplicit, C>>;
     /**
      * A principal-bound handle reusing the same shared runtime, but whose stitches carry
      * `principal` in their AuthContext: separate sessions per principal, one shared throttle
