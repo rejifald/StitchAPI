@@ -65,8 +65,6 @@ stitch({ extends: [base, authStrategy], path: '/x' });
 // B) a seam — shares config AND runtime (one store, throttle, sink)
 const api = seam(base);
 api.stitch({ path: '/x', extends: [authStrategy] });
-// C) builder
-stitch.use(base, authStrategy).get('/x').returns(schema).unwrap('data');
 ```
 
 Merge: scalars replace, objects deep-merge, `hooks` CHAIN (onRequest base→child; onResponse/onError/onRetry child→base).
