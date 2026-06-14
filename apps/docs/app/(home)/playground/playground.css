@@ -347,23 +347,6 @@
     background: color-mix(in srgb, var(--stitch) 10%, transparent);
     color: var(--color-fd-foreground);
 }
-.stitch-playground__dag {
-    margin-top: 0.75rem;
-}
-.stitch-playground__dag-streaming-badge {
-    display: inline-block;
-    margin-bottom: 0.25rem;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--stitch-strong);
-}
-.stitch-playground__mermaid {
-    margin: 0;
-    white-space: pre-wrap;
-    color: var(--color-fd-muted-foreground);
-}
-
 /* ── CodeMirror editor (renderEditor) ───────────────────────────────────── */
 .stitch-playground .cm-editor {
     font-size: 0.875rem;

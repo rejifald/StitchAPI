@@ -95,8 +95,8 @@ export interface StitchPlaygroundProps {
      * Custom renderer for the WHOLE log stream as one block (e.g. a readonly
      * code editor with line numbers). Receives each formatted line plus the
      * level of the entry it belongs to. Takes precedence over {@link renderLog}
-     * for the logs section; the error block, notices strip, and trace DAG stay
-     * as their own styled blocks beneath it. Absent → per-line {@link renderLog}.
+     * for the logs section; the error block and notices strip stay as their own
+     * styled blocks beneath it. Absent → per-line {@link renderLog}.
      */
     renderLogs?: (entries: { text: string; level: string }[]) => ReactNode;
     /**
@@ -337,7 +337,7 @@ export function StitchPlayground({
 }
 
 /**
- * Console pane — the log stream plus errors, shim notices, and the trace DAG.
+ * Console pane — the log stream plus errors and shim notices.
  * It does NOT render the snippet's return value: the playground is logs-first
  * (snippets `console.log` what they want to show), so a returned value is not
  * surfaced. Renders incrementally as RunEvents arrive via onEvent and reconciles
@@ -345,7 +345,7 @@ export function StitchPlayground({
  *
  * Rendering strategy:
  *   · During a run: `view` is updated by `applyEvent` for every RunEvent the runner
- *     emits, so logs, streamed chunks, trace DAG, and notices appear immediately.
+ *     emits, so logs, streamed chunks, and notices appear immediately.
  *   · After a run: `view` is replaced by `buildRunView(result)` so error/durationMs
  *     always reflect the authoritative final state.
  *   · Runners that do not emit onEvent (e.g. mockRunner, DeferredRunner) never call
@@ -393,7 +393,7 @@ function StitchOutput({
         );
     } else {
         // When `renderLogs` is supplied the whole log stream renders as one block
-        // (e.g. a readonly editor with line numbers); the error / notices / DAG
+        // (e.g. a readonly editor with line numbers); the error / notices
         // then sit in their own scrollable strip beneath it. Otherwise the logs
         // render per-line and everything flows in one scroll surface.
         const useEditor = !!renderLogs && view.logs.length > 0;
@@ -422,9 +422,7 @@ function StitchOutput({
             })
         );
 
-        const hasDag = !!view.mermaid && !view.mermaid.includes('_empty');
-        const hasExtras =
-            view.errorText !== null || view.notices.length > 0 || hasDag;
+        const hasExtras = view.errorText !== null || view.notices.length > 0;
 
         const extras = (
             <>
@@ -443,30 +441,6 @@ function StitchOutput({
                                 ⚠ {n}
                             </div>
                         ))}
-                    </div>
-                )}
-
-                {/* ── Mermaid DAG ────────────────────────────────────── */}
-                {/* Show the DAG as soon as any trace event has been folded in. */}
-                {hasDag && (
-                    <div className="stitch-playground__dag">
-                        {/* Streaming badge: shown when any chunk event arrived or any
-                            trace entry carries `.stream`. Active during and after the run. */}
-                        {view.isStreaming && (
-                            <span className="stitch-playground__dag-streaming-badge">
-                                streaming
-                            </span>
-                        )}
-                        {/* The Mermaid flowchart is rendered by the docs framework's
-                            <Mermaid> component (Fumadocs / MDX). We emit the raw graph
-                            string into a <pre data-mermaid> block; the framework's script
-                            picks it up and renders the SVG DAG. */}
-                        <pre
-                            className="stitch-playground__mermaid"
-                            data-mermaid="true"
-                        >
-                            {view.mermaid}
-                        </pre>
                     </div>
                 )}
             </>
