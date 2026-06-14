@@ -8,6 +8,14 @@ eslint-suppressions.json
 .source
 next-env.d.ts
 
+# Generated code-completion maps (apps/docs, written by build:sandbox via
+# @stitchapi/completions-plugin). The generator serialises with JSON.stringify
+# (double quotes) and writes raw, so prettier-formatting it would flip every
+# string back on the next build and leave the tree perpetually dirty. The
+# `// @generated` header marks it machine-output; treat it like the other
+# generated artifacts and leave it as the generator emits it.
+**/*.generated.ts
+
 # Generated playground Worker bundle (apps/docs, built by build:sandbox)
 apps/docs/public/sandbox/
 
