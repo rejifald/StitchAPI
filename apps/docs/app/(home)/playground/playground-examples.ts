@@ -92,11 +92,11 @@ console.log(
   '4) recovered after ' + attempts + ' attempts, ' + recovered.length + ' users',
 );
 
-// Shape the response any way you like - try other routes and knobs:
-//   /users/9 (404), /status/500, /malformed (HTML), /limited (429),
-//   /drift?__drift=1, ?__latencyMs=800, ?__status=503
-// The returned value is shown in the Result panel below.
-return { user, names, me, recovered: recovered.length };
+// Tip: shape any call without touching the code - use the Server knobs
+// panel (status, latency, streaming, flaky failures, schema drift). They
+// apply to every call the next run makes. Or try other routes by hand:
+//   /users/9 (404), /status/500, /malformed (HTML), /limited (429)
+console.log('done:', { users: recovered.length });
 `;
 
 const SIMPLE_EXAMPLE = `// The simplest call: give stitch a URL, await typed data back.
@@ -105,7 +105,6 @@ const SIMPLE_EXAMPLE = `// The simplest call: give stitch a URL, await typed dat
 const getUser = stitch('https://demo.stitchapi.dev/users/2');
 const res = await getUser();
 console.log(res);
-return res.data;
 `;
 
 export const PLAYGROUND_EXAMPLES: PlaygroundExample[] = [

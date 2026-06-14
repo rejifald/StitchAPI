@@ -37,6 +37,7 @@
  *     thread classifies timeout/abort/internal — see worker-protocol.ts.
  */
 import type { LogEntry, LogLevel, RunEvent } from '../component/runner';
+import type { SimKnobs } from '../contracts/sim';
 import type {
     ProgressMessage,
     ResultMessage,
@@ -104,6 +105,14 @@ export interface WorkerEnv {
      * capturing console), so an env need only wire chunk/trace/notice here.
      */
     bindProgress?: (sink: ProgressSink) => (() => void) | void;
+    /**
+     * OPTIONAL: install the run's baseline simulator knobs (`RunMessage.knobs`,
+     * from the playground's "Response knobs" panel) so the env's `fetch` shim
+     * applies them to every request. Called ONCE at the start of each run with
+     * the message's knobs (or `undefined` to clear). A fresh Worker per run means
+     * there's nothing to reset afterwards. Envs without a knob-aware shim omit it.
+     */
+    applyKnobs?: (knobs: SimKnobs | undefined) => void;
 }
 
 /**
@@ -238,6 +247,17 @@ export async function runSnippetInWorker(
     onProgress?: ProgressSink,
 ): Promise<ResultMessage> {
     const t0 = Date.now();
+
+    // Install this run's baseline knobs into the env's fetch shim BEFORE any
+    // snippet code (and thus any `fetch`) runs. Best-effort: a shim-less env
+    // (or a throwing setter) must never derail the run.
+    if (env.applyKnobs) {
+        try {
+            env.applyKnobs(msg.knobs);
+        } catch {
+            /* swallow — knob install is a convenience, not correctness */
+        }
+    }
 
     // A1: wrap the host sink so a throwing onEvent/relay can never derail the
     // snippet, and so a `log` emitted by the console capture and a chunk/trace/

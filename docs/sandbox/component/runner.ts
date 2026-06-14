@@ -17,6 +17,7 @@
  * library build (tsconfig `include` is `src/**\/*.ts` only). It will be relocated
  * into the Fumadocs app when the docs site is scaffolded.
  */
+import type { SimKnobs } from '../contracts/sim';
 
 /* -------------------------------------------------------------------------- */
 /*  Output model — what a run produces                                        */
@@ -144,6 +145,15 @@ export interface RunRequest {
      * the final result. Snippet code never sees this — it's runner→host only.
      */
     onEvent?: (event: RunEvent) => void;
+    /**
+     * Baseline simulator knobs applied to EVERY request this run makes (added
+     * additively). The playground's "Response knobs" panel sets these so a
+     * configured knob (`__status`, `__flaky`, …) shapes the whole run without
+     * editing the snippet. An explicit `?__…` knob in the code still wins for
+     * that call. Snippet code never sees this; the browser runner carries it to
+     * the worker's fetch shim. Absent → responses are unmodified.
+     */
+    knobs?: SimKnobs;
 }
 
 /**

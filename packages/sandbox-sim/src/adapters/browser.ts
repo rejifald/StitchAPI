@@ -13,6 +13,7 @@
  */
 import type {
     SimHandler,
+    SimKnobs,
     SimRequest,
 } from '../../../../docs/sandbox/contracts/sim';
 import { dispatch } from '../dispatch';
@@ -122,16 +123,21 @@ function toResponse(
 /**
  * Creates a `fetch`-shaped function backed entirely by the sandbox-sim dispatch.
  * Inject this into the Worker scope in place of the real `fetch`.
+ *
+ * `getDefaultKnobs` (optional) is read on EVERY call, so the host can mutate the
+ * baseline knobs between runs (the playground's "Response knobs" panel) without
+ * rebuilding the shim. URL knobs still win — see `dispatch`.
  */
 export function createFetchShim(
     handlers: SimHandler[],
+    getDefaultKnobs?: () => SimKnobs | undefined,
 ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
     return async function sandboxFetch(
         input: RequestInfo | URL,
         init?: RequestInit,
     ): Promise<Response> {
         const simReq = await toSimRequest(input, init);
-        const simRes = await dispatch(handlers, simReq);
+        const simRes = await dispatch(handlers, simReq, getDefaultKnobs?.());
         return toResponse(simRes);
     };
 }

@@ -1,10 +1,12 @@
 'use client';
 
 import { CodeEditor } from './CodeEditor';
+import { KnobsBuilder } from './KnobsBuilder';
 import { PLAYGROUND_EXAMPLES } from './playground-examples';
 
 import { StitchPlayground } from '@stitchapi/sandbox/component/StitchPlayground';
 import { dispatchRunner } from '@stitchapi/sandbox/contracts/dispatch';
+import type { SimKnobs } from '@stitchapi/sandbox/contracts/sim';
 import {
     type WorkerLike,
     makeBrowserWorkerRunner,
@@ -30,9 +32,10 @@ function jsonLog(text: string): boolean {
 
 /**
  * Client wrapper that wires the in-house sandbox engine into the UI shell, plus
- * a CodeMirror editor (`renderEditor`) and a Fumadocs `DynamicCodeBlock` for the
- * highlighted result (`renderValue`). The heavy lifting lives in the engine;
- * the shell only knows the `CodeRunner` contract + the two render hooks.
+ * a CodeMirror editor (`renderEditor`), Fumadocs `DynamicCodeBlock` highlighting
+ * for JSON console lines (`renderLog`), and the interactive Server-knobs panel
+ * (`aside`). The heavy lifting lives in the engine; the shell only knows the
+ * `CodeRunner` contract + the render hooks.
  */
 export function PlaygroundClient() {
     // Build the runner once, on the client. A fresh Worker per run is what gives
@@ -60,54 +63,53 @@ export function PlaygroundClient() {
         PLAYGROUND_EXAMPLES.find((e) => e.id === exampleId) ??
         PLAYGROUND_EXAMPLES[0];
 
-    return (
-        <>
-            <div
-                className="stitch-playground-examples"
-                role="tablist"
-                aria-label="Example complexity"
-            >
-                {PLAYGROUND_EXAMPLES.map((ex) => (
-                    <button
-                        key={ex.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={ex.id === exampleId}
-                        data-active={ex.id === exampleId}
-                        className="stitch-playground-examples__tab"
-                        title={ex.description}
-                        onClick={() => setExampleId(ex.id)}
-                    >
-                        {ex.label}
-                    </button>
-                ))}
-                <span className="stitch-playground-examples__hint">
-                    {active.description}
-                </span>
-            </div>
+    // Baseline response knobs from the panel below. Persisted across example
+    // switches (it lives here, not under <StitchPlayground>'s remount key) and
+    // forwarded into every run, where the sim fetch shim applies them.
+    const [knobs, setKnobs] = useState<SimKnobs>({});
 
-            <StitchPlayground
-                key={active.id}
-                initialCode={active.code}
-                runner={runner}
-                renderEditor={(props) => <CodeEditor {...props} />}
-                renderValue={(text) => (
-                    <div className="stitch-playground__result">
-                        <span className="stitch-playground__result-label">
-                            returned
-                        </span>
-                        <DynamicCodeBlock lang="json" code={text} />
-                    </div>
-                )}
-                renderLog={(text) =>
-                    jsonLog(text) ? (
-                        <DynamicCodeBlock lang="json" code={text} />
-                    ) : (
-                        text
-                    )
-                }
-            />
-        </>
+    // Example switcher — rendered into the shell's toolbar (the `tabs` slot).
+    const exampleTabs = (
+        <div
+            className="stitch-playground-examples"
+            role="tablist"
+            aria-label="Example complexity"
+        >
+            {PLAYGROUND_EXAMPLES.map((ex) => (
+                <button
+                    key={ex.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={ex.id === exampleId}
+                    data-active={ex.id === exampleId}
+                    className="stitch-playground-examples__tab"
+                    title={ex.description}
+                    onClick={() => setExampleId(ex.id)}
+                >
+                    {ex.label}
+                </button>
+            ))}
+        </div>
+    );
+
+    return (
+        <StitchPlayground
+            key={active.id}
+            initialCode={active.code}
+            runner={runner}
+            knobs={knobs}
+            tabs={exampleTabs}
+            renderEditor={(props) => <CodeEditor {...props} />}
+            renderLog={(text) =>
+                jsonLog(text) ? (
+                    <DynamicCodeBlock lang="json" code={text} />
+                ) : (
+                    text
+                )
+            }
+            asideLabel="Server knobs"
+            aside={<KnobsBuilder onChange={setKnobs} />}
+        />
     );
 }
 
