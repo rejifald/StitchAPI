@@ -2,7 +2,7 @@
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
 import { type Runtime, execute, executeRaw, makeRuntime } from './engine';
-import type { InferOutput, ResolveOutput } from './infer';
+import type { InferOutput, InputOf, ResolveOutput } from './infer';
 import { otlpTrace } from './otlp';
 import { createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
@@ -320,16 +320,19 @@ export function makeStitch<T = unknown>(
 export interface StitchFn {
     /**
      * Build a stitch from a config object. The result type is inferred from `config.output`'s
-     * schema (Zod / Standard Schema / Validator / `drift()`), so no hand-written generic is
-     * needed. Supply one explicitly — `stitch<Foo>(config)` — only to override the inferred type;
-     * the explicit generic always wins.
+     * schema (Zod / Standard Schema / Validator / `drift()`) and the CALL-ARGUMENT type from the
+     * `config.input` schemas (see {@link InputOf}), so no hand-written generic is needed. Supply one
+     * explicitly — `stitch<Foo>(config)` — only to override the inferred result type; the explicit
+     * generic always wins. Note: passing the explicit generic stops TypeScript from inferring the
+     * config type, so the call argument falls back to the loose `StitchInput` in that form (a
+     * limitation of partial type-argument inference — never worse than pre-inference).
      */
     <
         TExplicit = never,
         C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
         config: C,
-    ): Stitch<ResolveOutput<TExplicit, C>>;
+    ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Non-inferring fallback: a bare path string, or any argument whose static type is the union
      * `string | Partial<StitchConfig>` (e.g. a wrapper that forwards either spelling). Neither can
@@ -339,6 +342,9 @@ export interface StitchFn {
     use(...fragments: Fragment[]): Builder;
 }
 
+// The impl is the loose `<T>(config) => Stitch<T>`; the rich `InputOf<C>` lives only in the
+// `StitchFn` overloads it is checked against. TypeScript's overload-assignability is lenient enough
+// that no cast is needed here (the same reason `seam.ts`'s handle needs none).
 export const stitch: StitchFn = Object.assign(
     <T = unknown>(config: string | Partial<StitchConfig>) =>
         makeStitch<T>(config as Fragment),
@@ -371,7 +377,7 @@ export function graphql<
     } = Partial<StitchConfig> & {
         query: string;
     },
->(config: C): Stitch<ResolveOutput<TExplicit, C>> {
+>(config: C): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     return makeStitch<ResolveOutput<TExplicit, C>>({
         ...config,
         kind: 'graphql',

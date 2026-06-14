@@ -1,0 +1,101 @@
+// Input-schema inference: a raw `input` schema (no cast) still validates and REJECTS bad input at
+// runtime exactly as before, while the call argument is now TYPED from those schemas. The typed
+// calls below (`{ body: { name, age } }`, the `.with(...)` bind) are compile-time assertions too —
+// tsconfig.test.json typechecks this file, so they fail the build if call-arg inference regresses.
+import { seam, stitch } from '../src';
+import { startMockServer } from './support/mock-server';
+import type { MockServer } from './support/mock-server';
+
+import { z } from 'zod';
+
+let server: MockServer;
+beforeAll(async () => {
+    server = await startMockServer();
+});
+afterAll(async () => {
+    await server.close();
+});
+beforeEach(() => {
+    server.reset();
+});
+
+const userSchema = z.object({ id: z.number(), name: z.string() });
+
+test('a typed call validates and resolves (raw input schema, no cast)', async () => {
+    server.route('POST', '/users', { body: { id: 1, name: 'Ada' } });
+    const createUser = stitch({
+        baseUrl: server.url,
+        path: '/users',
+        method: 'POST',
+        input: { body: z.object({ name: z.string(), age: z.number() }) },
+        output: userSchema,
+    });
+    // The argument type is inferred: `{ body: { name: string; age: number } }`. This call is itself
+    // a type assertion — it only compiles if input inference holds.
+    const user = await createUser({ body: { name: 'Ada', age: 30 } });
+    expect(user).toEqual({ id: 1, name: 'Ada' });
+    expect(server.calls('/users')[0]?.body).toEqual({ name: 'Ada', age: 30 });
+});
+
+test('bad input still rejects at runtime (validation unchanged)', async () => {
+    server.route('POST', '/users', { body: { id: 1, name: 'Ada' } });
+    const createUser = stitch({
+        baseUrl: server.url,
+        path: '/users',
+        method: 'POST',
+        input: { body: z.object({ name: z.string(), age: z.number() }) },
+        output: userSchema,
+    });
+    // The compiler would (correctly) reject a missing `age`; cast the argument past it to prove the
+    // RUNTIME validator still rejects too (the value is unchanged — only the static check is bypassed).
+    await expect(
+        createUser({ body: { name: 'Ada' } } as never),
+    ).rejects.toThrow(/invalid body/i);
+    expect(server.callCount('/users')).toBe(0); // never left the client
+});
+
+test('.with() binds part of the input and the bound stitch still validates', async () => {
+    server.route('POST', '/users', { body: { id: 2, name: 'Bo' } });
+    const createUser = stitch({
+        baseUrl: server.url,
+        path: '/users',
+        method: 'POST',
+        input: { body: z.object({ name: z.string(), age: z.number() }) },
+        output: userSchema,
+    });
+    // Binding `body` relaxes it to optional, so the bound stitch is callable with no argument.
+    const bound = createUser.with({ body: { name: 'Bo', age: 1 } });
+    const user = await bound();
+    expect(user).toEqual({ id: 2, name: 'Bo' });
+    expect(server.calls('/users')[0]?.body).toEqual({ name: 'Bo', age: 1 });
+});
+
+test('params + query schemas validate and the typed call expands them', async () => {
+    server.route('GET', '/users/1', { body: { id: 1, name: 'Ada' } });
+    const getUser = stitch({
+        baseUrl: server.url,
+        path: '/users/{id}',
+        input: {
+            params: z.object({ id: z.string() }),
+            query: z.object({ trace: z.string() }).optional(),
+        },
+        output: userSchema,
+    });
+    // params required, query optional — both inferred onto the call argument.
+    const user = await getUser({ params: { id: '1' }, query: { trace: 'on' } });
+    expect(user.name).toBe('Ada');
+    expect(server.calls('/users/1')[0]?.query).toEqual({ trace: 'on' });
+});
+
+test('seam members infer and validate input identically', async () => {
+    server.route('POST', '/users', { body: { id: 3, name: 'Cy' } });
+    const api = seam({ baseUrl: server.url });
+    const createUser = api.stitch({
+        path: '/users',
+        method: 'POST',
+        input: { body: z.object({ name: z.string() }) },
+        output: userSchema,
+    });
+    const user = await createUser({ body: { name: 'Cy' } });
+    expect(user.name).toBe('Cy');
+});

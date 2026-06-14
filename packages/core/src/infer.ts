@@ -3,7 +3,7 @@
 // (the actual coercion is `toValidator()` in validator.ts). This is what lets
 // `stitch({ output: userSchema })` resolve to `Stitch<User>` with no explicit generic and no cast.
 import type { StandardSchemaV1 } from './standard-schema';
-import type { DriftSpec } from './types';
+import type { DriftSpec, InputSchemas, StitchInput } from './types';
 import type { Validator } from './validator';
 
 /**
@@ -71,3 +71,88 @@ export type OutputOf<C> = C extends { output: infer O }
 export type ResolveOutput<TExplicit, C> = [TExplicit] extends [never]
     ? OutputOf<C>
     : TExplicit;
+
+// ---- Call-argument inference (Phase 2) ------------------------------------
+// Type the call argument from the `input` schemas the caller already declares, mirroring how
+// `OutputOf` reads `output`. Pure types: the runtime input path (`normalizeInput` → `validateInput`)
+// is unchanged — it reads input by field name regardless of its static type.
+
+/**
+ * Flatten an intersection of mapped types into a single object literal. Without this the call-arg
+ * type stays an `A & B & C` intersection: unreadable in errors and — crucially — NOT
+ * identity-comparable in tsd, so `Parameters<S>[0]` assertions couldn't bite. The trailing `& {}`
+ * forces eager evaluation.
+ */
+type Prettify<T> = { [K in keyof T]: T[K] } & {};
+
+/** The slots an `input` schema can validate (see {@link InputSchemas}): params, query, body, headers. */
+type SchemaSlots = keyof InputSchemas;
+/** {@link StitchInput} keys with no schema slot — `variables` (GraphQL). Carried through untyped. */
+type ExtraSlots = Exclude<keyof StitchInput, SchemaSlots>;
+/**
+ * The pre-coercion input type a declared slot accepts. `NonNullable` keeps it sound when `I` is the
+ * declared (optional-slot) {@link InputSchemas} type rather than the inline object literal the caller
+ * wrote — in the literal case the written key is already required and `NonNullable` is a no-op.
+ */
+type SlotInput<I, K extends keyof I> = InferInput<NonNullable<I[K]>>;
+
+/**
+ * Which declared slots are REQUIRED in the call argument: a slot is required iff its input type does
+ * not accept `undefined`. So a `.optional()` schema (input includes `undefined`), or an unrecognized
+ * schema that falls through to `unknown`, yields an OPTIONAL slot — the test fails open, never closed.
+ */
+type RequiredSchemaKeys<I> = {
+    [K in SchemaSlots]: K extends keyof I
+        ? undefined extends SlotInput<I, K>
+            ? never
+            : K
+        : never;
+}[SchemaSlots];
+
+/**
+ * The typed call argument for a config whose `input` is `I`: required schema slots, optional schema
+ * slots, and the untyped `variables` passthrough (always optional). {@link Prettify} collapses the
+ * required∩optional split into one flat object.
+ */
+type CallInput<I> = Prettify<
+    { [K in RequiredSchemaKeys<I> & keyof I]: SlotInput<I, K> } & {
+        [K in Exclude<SchemaSlots, RequiredSchemaKeys<I>> & keyof I]?: Exclude<
+            SlotInput<I, K>,
+            undefined
+        >;
+    } & { [K in ExtraSlots]?: StitchInput[K] }
+>;
+
+/**
+ * Map a config object's `input` slot to the typed call argument. No `input` key → the loose
+ * {@link StitchInput} (the historical default), so a stitch with no input schemas is unchanged and
+ * its argument stays fully optional. Like {@link OutputOf}, this reads only the top-level `input`
+ * key, not `extends` fragments.
+ */
+export type InputOf<C> = C extends { input: infer I }
+    ? CallInput<I>
+    : StitchInput;
+
+/** The required (non-optional) keys of `T`. (`Record<never, never>` is the empty object `{}` — the
+ * standard "is this key optional?" probe — spelled to avoid a bare `{}` type.) */
+type RequiredKeys<T> = {
+    [K in keyof T]-?: Record<never, never> extends Pick<T, K> ? never : K;
+}[keyof T];
+/** Whether `T` has any required key. Degenerate `unknown`/`any` → `false` (fails open to optional). */
+type HasRequired<T> = [RequiredKeys<T>] extends [never] ? false : true;
+/**
+ * The call/`stream` parameter list for an input type `TIn`: a single argument that is REQUIRED when
+ * `TIn` has a required key (e.g. a non-optional `body` schema) and OPTIONAL otherwise. So `ping()`
+ * (no input schemas → loose {@link StitchInput}, no required keys) stays legal, while `createUser()`
+ * (required body) is a compile error.
+ */
+export type Args<TIn> =
+    HasRequired<TIn> extends true ? [input: TIn] : [input?: TIn];
+/**
+ * Relax the top-level slots named by `K` to optional, leaving the rest of `T` unchanged — the
+ * type-level image of `.with()`'s shallow per-slot bind: after binding `body`, the returned stitch's
+ * call argument no longer requires it (but a still-unbound required slot stays required).
+ */
+export type RelaxKeys<T, K extends PropertyKey> = Prettify<
+    Omit<T, Extract<keyof T, K>> & Partial<Pick<T, Extract<keyof T, K>>>
+>;
