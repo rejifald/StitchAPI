@@ -93,3 +93,44 @@ write to (forgery is the whole risk); making `cookieSession.key`/`oauth2.key` pr
 TTL/eviction (per-principal in-memory grows unbounded); `__config` redaction; nested-seam
 teardown order + GC. Dropped along the way: request dedup, abandoned-request cancellation, a
 `strict` boolean, and ESLint-based enforcement (see ADR 0002 §7).
+
+---
+
+## response cache & request coalescing — derived keys
+
+-   **Status:** exploring → see [`adr/0003`](adr/0003-derived-key-response-cache-and-coalescing.md)
+-   **Date:** 2026-06
+-   **Tags:** caching, performance, resilience, multi-tenant, agents, runtime
+-   **Gates:** browser-first — sync browser-safe body hash, no `node:*`; uncacheable (stream)
+    calls warn-and-pass-through, never crash. · bundle-frugal — subpath export, off until a
+    `cache` block exists; reuses the `StitchStore` `get/set/incr` contract, grows no new backend.
+    · declarative — `cache: { ttl, scope, vary?, methods?, maxEntries? }` round-trips as JSON;
+    `key()` is sugar over the derived default.
+
+**Problem / why** — "two calls with the same key and variables should resolve to the same
+response," modelled on react-query — but react-query is a **UI-bound** cache above the transport
+(needs a retained `QueryClient` + reactive tree). A stitch runs where react-query cannot (agents,
+CLI, server), and — unlike react-query — it can **derive** the key from the request itself, so the
+caller never authors (and never mis-authors) one. This also revives the **request coalescing** ADR
+0002 §7 dropped for the cross-principal hazard, now safe because the principal folds into the key.
+
+**Sketch** — Opaque **derived** key (method + URL + canonicalised body/GraphQL variables + vary
+headers + principal), **exact-match only** (no hierarchy). Cache only **validated** responses;
+hits skip re-validation. **Principal-scoped, fail-closed**; `scope: 'app'` opts into sharing.
+**Coalescing** is full cross-process via an `incr`-based lease lock — retries serialised, failures
+not shared, aborts ref-counted. Placement is **outermost** (a hit short-circuits
+throttle/circuit/network). **Invalidation**: exact = `set(key, undefined)` delete; bulk =
+generation-counter bump (no enumeration). LRU/max-entries live in the **cache layer**. Works on a
+bare `stitch()`; the seam just provisions the shared store. Subpath export, off by default.
+
+**Backed by / builds on** — `StitchStore` `get/set/incr` + TTL, ADR 0002 principal-keying, the
+shared-store-makes-it-distributed pattern (throttle/circuit), the trace event stream, output
+validation + drift. Net-new runtime dependency count stays zero.
+
+**Open questions** — Freeze + version the key-derivation algorithm (shared store outlives a
+deploy); pick a sync browser-safe body hash + collision stance (oversized/stream bodies
+warn-and-skip); the cross-process lock protocol (lease TTL, poll backoff, leader-finished-without-
+cache signal); GraphQL query-vs-mutation opt-in classification; conformance-kit addendum for
+`incr`-as-lock correctness; `__config`/trace redaction of cached values + lock keys (extends ADR
+0002 §6). Dropped: hierarchy, SWR/background refresh, mutation-driven cross-stitch invalidation
+(= app-level cache policy, out of scope — see ADR 0003 §12).
