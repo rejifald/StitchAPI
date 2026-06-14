@@ -12,7 +12,9 @@
         "gen:docs": "node scripts/generate-skeleton.mjs",
         "gen:completions": "node scripts/gen-stitch-completions.mjs",
         "build:core": "pnpm --filter stitchapi build",
-        "build:sandbox": "node scripts/gen-stitch-completions.mjs && node ../../docs/sandbox/runtime/build-sandbox-worker.mjs"
+        "build:sandbox": "node scripts/gen-stitch-completions.mjs && node ../../docs/sandbox/runtime/build-sandbox-worker.mjs",
+        "test:e2e": "playwright test",
+        "test:e2e:install": "playwright install chromium"
     },
     "dependencies": {
         "@codemirror/autocomplete": "^6.20.3",
@@ -35,6 +37,7 @@
         "zod": "^4.4.3"
     },
     "devDependencies": {
+        "@playwright/test": "^1.49.1",
         "@stitchapi/completions-plugin": "workspace:*",
         "@tailwindcss/postcss": "^4.3.0",
         "@types/mdx": "^2.0.13",
