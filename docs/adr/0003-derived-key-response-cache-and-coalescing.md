@@ -47,25 +47,55 @@ round-trips as JSON; functions are sugar).
 ## Decision
 
 1.  **The key is _derived_, opaque, and flat — no hierarchy.** The cache key is a deterministic
-    hash the library computes from the **resolved** request: method + URL (path + canonicalised
-    query) + canonicalised body / GraphQL `variables` + the vary-relevant headers + the
-    principal (decision 5). The caller never authors it. Canonicalisation is mandatory so
-    semantically identical requests collide intentionally: query params are sorted, JSON body
-    keys are recursively sorted, GraphQL `variables` are canonicalised. A `cache.key(input)`
-    override exists as **sugar only** (declarative-spelling gate) — the derived key is the
-    default and the spec'd path.
+    128-bit hash the library computes from the **resolved** request — method + URL + body /
+    GraphQL `variables` + the vary-relevant headers + the principal (decision 5). The caller
+    never authors it; a `cache.key(input)` override exists as **sugar only** (declarative-spelling
+    gate). Canonicalisation is mandatory so semantically identical requests collide intentionally:
 
-    The key is an **opaque hash**, so invalidation is **exact-match only**. Structural /
-    hierarchical / prefix matching (react-query's `['users']` invalidating `['users', 1]`) is
-    **out** — a hash of `/users` has no relationship to a hash of `/users/1`, and faking one
-    means giving up derived keys. We give up hierarchy instead (see _Out of scope_).
+    -   **Objects**: keys sorted recursively; **arrays and query-param order are preserved** (both
+        are ordered — and we build the query string ourselves, so its order is ours to fix).
+    -   **`null` vs absent**: `null` is an explicit value and is kept; `undefined` is treated as
+        absent (and drops out under `JSON.stringify` for free).
+    -   **URL**: normalised through the platform `URL` only (lower-cased host, default port
+        dropped, dot-segments resolved) — no hand-rolled trailing-slash / percent-encoding
+        heuristics.
+    -   **GraphQL**: the query **document is opaque** (canonicalising it would pull in a GraphQL
+        parser, against the frugal gate) — only `variables` are canonicalised; persisted-query
+        users already send a hash.
+    -   **Principal**: canonicalised exactly as a body, so an object principal can't split a
+        user's cache; use opaque principal ids — the principal is part of every scoped key.
+
+    **The hash is 128-bit, non-cryptographic, and synchronous** (e.g. xxh128): sync because
+    WebCrypto's `digest` is async and a JS crypto hash is bundle weight (browser-first / frugal),
+    and 128-bit puts a collision past ~2⁶⁴ entries — unreachable, so **no verify-on-read** (which
+    would mean storing the plaintext canonical request beside the value, re-introducing the very
+    leak we avoid — see decision 5). The key is **opaque for observability hygiene** (no PII or
+    principal ids in logs, traces, or metric labels), **not a secret**: a hash of a low-entropy
+    request is enumeration-recoverable, and the stored **values are plaintext in the same store
+    anyway**, so genuine key-secrecy (an HMAC with a per-seam secret) is a **future opt-in** that
+    only earns its keep paired with value encryption.
+
+    Being an opaque hash, invalidation is **exact-match only**. Structural / hierarchical / prefix
+    matching (react-query's `['users']` invalidating `['users', 1]`) is **out** — a hash of
+    `/users` has no relationship to a hash of `/users/1`, and faking one means giving up derived
+    keys. We give up hierarchy instead (see _Out of scope_).
 
 2.  **Cache only _validated_ responses; never revalidate on a hit.** The stored value is the
     fully-resolved `T` — after `transform`/`unwrap` and **after output validation + drift**. A
     hit returns it directly: no re-validation, no drift pass on the hit path. A response that
     **fails validation or drifts is never cached**, so a stored entry is always a known-good
-    value. Accepted trade-off: drift is invisible on cache-hit paths between writes — `ttl`
-    bounds how long that blind window lasts (decision 2 of staleness is the TTL itself).
+    value. Accepted trade-off: drift is invisible on cache-hit paths between writes — the only
+    bound on staleness is the `ttl`.
+
+    Because we skip re-validation, a stored value is **bound to the output contract it was
+    validated against**. Ship a changed `output` schema and a hit would return an old-shape value
+    that violates the new one — silently, for the whole TTL. So an **output-schema fingerprint
+    must fold into the generation** (decision 8) so a schema change invalidates the bucket.
+    Fingerprinting a Standard Schema is its own hard problem (a schema is a closure graph; no
+    universal serialisation), split into its own concern (**ADR 0004**): per-validator strategies
+    behind a contract, a manual `cache.version` as the fail-closed fallback, and **re-validate on
+    hit** as the safe default for any stitch whose schema can't be fingerprinted (it forfeits this
+    decision's skip for that stitch only, trading speed for correctness).
 
 3.  **An uncacheable call warns; it never throws.** A streamed response (`.stream()`), a body
     that cannot be hashed (stream / `Blob` / `FormData` beyond an opt-in), or any other
@@ -88,6 +118,13 @@ round-trips as JSON; functions are sugar).
     auto-detection** of "this looks public": guessing publicness from a missing `Authorization`
     header is how leaks happen. The cost (per-principal entries for public data have a near-zero
     hit rate until `scope: 'app'` is set) is paid deliberately.
+
+    Orthogonally, **`sensitive: true` opts a stitch out of the cache entirely** — never stored,
+    always a live call. It is _not_ the key's leak-protection (the opaque hash + principal scope
+    already cover that, decision 1), so defaulting it to `false` is **not fail-open**; it is an
+    honest "do not persist this response at all" hatch for one-time tokens, compliance-bound data,
+    or anything that should never sit in a store as a value. Because caching is itself opt-in
+    (decision 11), it only ever applies to a stitch a dev already chose to cache.
 
 6.  **Coalescing is full cross-process, lease-locked, ref-counted, and does not share
     failures.** Concurrent identical in-flight requests collapse to one origin call:
@@ -211,13 +248,15 @@ round-trips as JSON; functions are sugar).
 
 **Required follow-ups**
 
--   **Freeze and version the key-derivation algorithm.** A shared/distributed store outlives a
-    deploy, so the canonicalisation must be a **versioned, frozen** contract with a key-schema
-    version prefix; any algorithm change is itself a generation bump (mass self-healing miss,
-    never a stale-key collision).
--   **Choose the body hash.** Sync and browser-safe (e.g. FNV-1a / a small xxhash), with a stated
-    collision stance; oversized / stream / `FormData` bodies skip hashing and fall to
+-   **Freeze and version the key-derivation algorithm.** The hash is settled (128-bit sync
+    xxh128, decision 1), but a shared/distributed store outlives a deploy, so the
+    **canonicalisation** must be a **versioned, frozen** contract with a key-schema version
+    prefix; any change to it is itself a generation bump (mass self-healing miss, never a
+    stale-key collision). Oversized / stream / `FormData` bodies skip hashing and fall to
     warn-and-pass-through (decision 3).
+-   **Schema-fingerprinting (ADR 0004).** How to fingerprint a Standard Schema so an `output`
+    change invalidates cached values (decision 2): per-validator strategies behind a contract, a
+    manual `cache.version` fallback, and re-validate-on-hit when un-fingerprintable.
 -   **Specify the cross-process lock protocol** over `get/set/incr`: lease TTL, poll/backoff
     schedule, and the "leader finished _without_ caching → next waiter takes the lead" signal
     (so a non-cacheable success doesn't strand waiters).
@@ -229,5 +268,6 @@ round-trips as JSON; functions are sugar).
     and how it composes with a distributed backend that has its own eviction (decision 9).
 -   **`__config` redaction & traces** — cached values and lock keys must not leak via
     `Stitch.__config` or trace/hook payloads (extends ADR 0002 decision 4 / §6).
--   **Config shape** — settle `cache: { ttl, scope, vary?, methods?, maxEntries?, key? }`, confirm
-    every field round-trips as JSON, and that `key` is sugar over the derived default.
+-   **Config shape** — settle `cache: { ttl, scope, vary?, methods?, maxEntries?, key? }` plus the
+    stitch-level `sensitive?`, confirm every field round-trips as JSON, and that `key` is sugar
+    over the derived default.
