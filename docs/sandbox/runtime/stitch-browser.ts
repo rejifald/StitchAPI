@@ -11,10 +11,11 @@ import type { TraceSink } from 'stitchapi';
  * the shims for the Node-only surfaces, per the spike's recommended shape
  * (B1-SPIKE §6 — a thin entry + bundler alias/define, NO fork of packages/core).
  *
- * How the Node-built-in entanglement is handled (B1-SPIKE §1-§4) is OUT of this
- * file: the bundler aliases `node:crypto`/`node:fs`/`node:path` to ./shims/* and
- * `define`s `process` to ./shims/process. See build-stitch-browser.mjs and
- * B1-README.md. This file only deals with the API SURFACE.
+ * `packages/core` is browser-isomorphic (GAP-AUDIT §1.5): no static `node:*` imports
+ * and no bare `process`, so this entry needs no node:* or process bundler shims — only
+ * the `stitchapi` alias that resolves core's source without a build (see
+ * build-stitch-browser.mjs and B1-README.md). This file deals only with the API
+ * SURFACE: re-export the browser-safe core exports, shim the Node-only ones.
  *
  * Surface map (SANDBOX §3 table):
  *   Browser-safe (re-exported verbatim from core):
@@ -75,11 +76,11 @@ export {
  *   - JSONL `file` writes are already no-ops via the `node:fs` alias, but a path
  *     does nothing — surface a notice (the trace is delivered via StitchTraceEntry,
  *     SANDBOX §5.7).
- *   - core defaults `console` to TRUE, and that branch calls `process.stderr.write`
- *     — which does NOT exist under the `process` define (a JSON literal can't carry
- *     a function). So we FORCE `console: false` in the browser. A snippet that wants
- *     console-style trace output uses `console.*` directly. (R1 must-know: do not
- *     re-enable core console trace in the browser — see B1-README.)
+ *   - core defaults `console` to TRUE; that branch probes `globalThis.process?.stderr`
+ *     and falls back to `console.error` when absent (a Worker has no `process`, so it
+ *     never crashes). To keep trace OUT of the captured `console.*` stream — it is
+ *     surfaced via StitchTraceEntry instead (SANDBOX §5.7) — we FORCE `console: false`
+ *     here. (R1 must-know: do not re-enable core console trace in the browser.)
  */
 export function createTrace(
     opts?: Parameters<typeof coreCreateTrace>[0],
@@ -91,7 +92,8 @@ export function createTrace(
                 'surfaced via StitchTraceEntry instead (SANDBOX §5.7).',
         );
     }
-    // Force console off: core's console path writes to process.stderr (absent here).
+    // Force console off: core's console path would otherwise `console.error` each line
+    // (no process.stderr in a Worker); trace is surfaced via StitchTraceEntry instead.
     return coreCreateTrace({ ...(opts ?? {}), console: false });
 }
 

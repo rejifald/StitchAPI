@@ -75,9 +75,10 @@ export interface WorkerEnv {
      */
     fetch: (input: unknown, init?: unknown) => Promise<unknown>;
     /**
-     * The B1 `process` shim: `{ env:{}, platform:'browser', versions:{} }`.
-     * Bound as the snippet's `process` so core's `process.env.*` reads resolve
-     * to safe defaults. MUST NOT carry `STITCH_TRACE_CONSOLE` or a `stderr`
+     * The browser `process` object: `{ env:{}, platform:'browser', versions:{} }`.
+     * Bound as the snippet's `process` so a snippet's `process.env.*` reads resolve
+     * to safe defaults. (Core needs none — it reads the guarded `globalThis.process`
+     * seam, GAP-AUDIT §1.5.) MUST NOT carry `STITCH_TRACE_CONSOLE` or a `stderr`
      * (B1 blocker #1/#4).
      */
     process: {
@@ -86,9 +87,10 @@ export interface WorkerEnv {
         versions: Record<string, string>;
     };
     /**
-     * Web Crypto (`crypto.randomUUID` / `getRandomValues`) — backs the B1
-     * `node:crypto` alias and the engine write hot path (B1 blocker #2). In a
-     * real Worker this is the platform `crypto`; in tests, a fake.
+     * Web Crypto (`crypto.randomUUID` / `getRandomValues`). Bound into the snippet
+     * scope (whose `globalThis` is shadowed below); core uses the real
+     * `globalThis.crypto` directly (engine write path / otlp span ids). In a real
+     * Worker this is the platform `crypto`; in tests, a fake.
      */
     crypto: unknown;
     /**
