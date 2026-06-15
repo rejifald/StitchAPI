@@ -21,10 +21,10 @@ const user = graphql({
 });
 
 try {
-    await user({ body: { variables: { id: '42' } } });
+    await user({ variables: { id: '42' } });
 } catch (err) {
     // err.name === 'StitchError'
-    // err.message === 'GraphQL: Variable "$id" of required type "ID!" was not provided.'
+    // err.message === 'GraphQL: Not authorized to view user 42.'
     console.error(err);
 }
 ```

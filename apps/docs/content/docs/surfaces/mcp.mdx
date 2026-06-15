@@ -23,7 +23,10 @@ input. The tool call looks like this:
 ```json
 {
     "name": "run_stitch",
-    "input": { "params": { "id": "42" }, "query": { "expand": "owner" } }
+    "input": {
+        "name": "getUser",
+        "input": { "params": { "id": "42" }, "query": { "expand": "owner" } }
+    }
 }
 ```
 
