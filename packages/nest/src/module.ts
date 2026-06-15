@@ -3,7 +3,7 @@
 // registers injectable stitches and, optionally, a per-upstream feature seam built over
 // that shared infrastructure. `SeamRegistry` owns the shutdown lifecycle.
 import { borrowStore, loggerSink } from './bridges';
-import type { StitchDef, StitchHost } from './define-stitch';
+import type { AnyStitchDef, StitchHost } from './define-stitch';
 import { STITCH_SEAM, STITCH_STORE, STITCH_TRACE } from './tokens';
 
 import {
@@ -47,7 +47,9 @@ export interface StitchModuleAsyncOptions {
 
 /** forFeature options — a feature's injectable stitches and, optionally, its own upstream seam. */
 export interface StitchFeatureOptions {
-    stitches: StitchDef[];
+    // Any-input element: a feature registry is heterogeneous, so it must admit templated-path defs
+    // whose call argument *requires* `params` (see `AnyStitchDef`). Per-def inference is unaffected.
+    stitches: AnyStitchDef[];
     /** This feature's own seam (its `baseUrl`/`auth`/…), built over the shared store + trace.
      *  Omit to attach the stitches to the root/default seam. */
     seam?: SeamConfig;
@@ -165,7 +167,9 @@ export class StitchModule {
         };
     }
 
-    static forFeature(opts: StitchFeatureOptions | StitchDef[]): DynamicModule {
+    static forFeature(
+        opts: StitchFeatureOptions | AnyStitchDef[],
+    ): DynamicModule {
         const norm: StitchFeatureOptions = Array.isArray(opts)
             ? { stitches: opts }
             : opts;
