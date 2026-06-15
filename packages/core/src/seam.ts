@@ -91,8 +91,11 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
         };
         if (isGql) {
             cfg.kind = graphqlSurface;
-            cfg.method = 'POST';
             cfg.unwrap = own.unwrap ?? 'data';
+            // Default the endpoint to `/graphql` when the member gives neither `url` nor `path`
+            // (method/body shaping is the surface's).
+            if (own.url === undefined && own.path === undefined)
+                cfg.path = '/graphql';
         }
 
         const runtime: SharedRuntime = {

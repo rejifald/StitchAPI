@@ -17,6 +17,7 @@ import {
     withTimeout,
 } from './resilience';
 import { vaultView } from './store';
+import type { SurfaceOutcome } from './surface';
 import type {
     Adapter,
     AdapterRequest,
@@ -137,14 +138,12 @@ const resolveStr = (v: string | (() => string) | undefined): string =>
     typeof v === 'function' ? v() : (v ?? '');
 
 function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
-    const isGql = cfg.kind?.id === 'graphql';
     // Endpoint resolution: when `url` is set it IS the whole endpoint (no base), but still
-    // templated + query-split like a path. Otherwise join `baseUrl` + `path`.
+    // templated + query-split like a path. Otherwise join `baseUrl` + `path`. (Surface-specific
+    // shaping — graphql's body/method/`/graphql` default — is applied below / by its helper.)
     const usingUrl = cfg.url !== undefined;
     const base = usingUrl ? '' : resolveStr(cfg.baseUrl);
-    const raw = usingUrl
-        ? resolveStr(cfg.url)
-        : (cfg.path ?? (isGql ? '/graphql' : ''));
+    const raw = usingUrl ? resolveStr(cfg.url) : (cfg.path ?? '');
     // Split off a literal `?predefined=query` (brace-aware, so a `{?x}` template operator
     // isn't mistaken for it); the template part is expanded, the rest are query defaults.
     const qIdx = topLevelQueryIndex(raw);
@@ -175,26 +174,25 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
         e.name = 'StitchConfigError';
         throw e;
     }
-    const method = (cfg.method ?? (isGql ? 'POST' : 'GET')).toUpperCase();
+    const method = (cfg.method ?? 'GET').toUpperCase();
     const headers = { ...(cfg.headers ?? {}), ...(input.headers ?? {}) };
-    applyIdempotency(cfg, input, method, headers);
-    const bodyType = isGql ? 'json' : cfg.bodyType;
-    return {
+    let req: AdapterRequest = {
         url,
         method,
         headers,
-        body: isGql
-            ? {
-                  query: cfg.query,
-                  variables: input.variables ?? input.body ?? {},
-              }
-            : input.body,
-        ...(bodyType !== undefined ? { bodyType } : {}),
+        body: input.body,
+        ...(cfg.bodyType !== undefined ? { bodyType: cfg.bodyType } : {}),
         ...(cfg.multipart !== undefined ? { multipart: cfg.multipart } : {}),
         ...(cfg.responseType !== undefined
             ? { responseType: cfg.responseType }
             : {}),
     };
+    // The surface shapes the request (graphql packs { query, variables } + forces POST, …);
+    // absent, the http identity above stands.
+    if (cfg.kind?.buildRequest) req = cfg.kind.buildRequest(cfg, input, req);
+    // Idempotency runs AFTER surface shaping so a surface that forces a write still gets a key.
+    applyIdempotency(cfg, input, req.method, req.headers);
+    return req;
 }
 
 const cloneReq = (r: AdapterRequest): AdapterRequest => ({
@@ -574,28 +572,16 @@ async function* paginated(
         }
         lastStatus = res.status;
 
-        // GraphQL: a 200 response carrying `errors` is a failure — same as the non-paginated path.
-        if (cfg.kind?.id === 'graphql') {
-            const body = res.body as
-                | { errors?: { message?: string }[] }
-                | null
-                | undefined;
-            const errs = body?.errors;
-            if (errs?.length) {
-                yield {
-                    type: 'error',
-                    name,
-                    message: `GraphQL: ${errs.map((e) => e.message ?? 'error').join('; ')}`,
-                    status: res.status,
-                    attempts: state.attempts,
-                    at: now(),
-                };
-                yield doneEvt(false, t0, state.attempts);
-                return;
-            }
+        // The surface interprets each page (graphql's "200-with-`errors`" failure) — same as the
+        // non-paginated path.
+        const outcome = interpretResponse(cfg, res);
+        if (!outcome.ok) {
+            yield surfaceErrEvt(outcome, name, state.attempts);
+            yield doneEvt(false, t0, state.attempts);
+            return;
         }
 
-        let value: unknown = res.body;
+        let value: unknown = outcome.value;
         if (cfg.transform) value = await cfg.transform(value);
         if (cfg.unwrap) value = getPath(value, cfg.unwrap);
         const items = pg.items
@@ -692,22 +678,15 @@ function outputSchemaSource(cfg: StitchConfig): unknown {
 // The resolved request the cache key is derived from. The principal it scopes by is sourced from
 // the trusted AuthContext at controller creation, never from StitchInput (ADR 0002 §2), so the
 // descriptor itself stays principal-free; folding + scope are the controller's job.
-function describe(
-    cfg: StitchConfig,
-    input: StitchInput,
-    baseReq: AdapterRequest,
-): RequestDescriptor {
+function describe(baseReq: AdapterRequest): RequestDescriptor {
     const d: RequestDescriptor = {
         method: baseReq.method,
         url: baseReq.url,
         headers: baseReq.headers,
     };
-    if (cfg.kind?.id === 'graphql')
-        d.graphql = {
-            query: cfg.query ?? '',
-            variables: input.variables ?? input.body ?? {},
-        };
-    else if (baseReq.body !== undefined) d.body = baseReq.body;
+    // The surface has already shaped the body (graphql's { query, variables } IS baseReq.body),
+    // so the cache keys on the resolved request uniformly — no surface-specific branch.
+    if (baseReq.body !== undefined) d.body = baseReq.body;
     return d;
 }
 
@@ -742,6 +721,34 @@ const resultEvt = (
     attempts: number,
 ): StitchEvent => ({ type: 'result', value, status, attempts, at: now() });
 
+// Interpret a buffered response into a result value via the surface's `interpret` hook (graphql's
+// "200-with-`errors`" failure lives there). No surface / no hook → the body is the value.
+function interpretResponse(
+    cfg: StitchConfig,
+    res: AdapterResponse,
+): SurfaceOutcome {
+    return cfg.kind?.interpret
+        ? cfg.kind.interpret(res, cfg)
+        : { ok: true, value: res.body };
+}
+
+// Build the `error` event for a surface that interpreted the response as a failure.
+function surfaceErrEvt(
+    outcome: Extract<SurfaceOutcome, { ok: false }>,
+    name: string,
+    attempts: number,
+): StitchEvent {
+    const evt: Extract<StitchEvent, { type: 'error' }> = {
+        type: 'error',
+        name,
+        message: outcome.message,
+        attempts,
+        at: now(),
+    };
+    if (outcome.status !== undefined) evt.status = outcome.status;
+    return evt;
+}
+
 // The resilience chain from the request onward (no `start` event — the caller emits it). Returns
 // the validated outcome so the cache layer can store/share it; on any failure it yields the
 // error/done events and returns `{ ok: false }`.
@@ -763,25 +770,15 @@ async function* runFrom(
         return { ok: false };
     }
 
-    // GraphQL: a 200 response carrying `errors` is a failure.
-    if (cfg.kind?.id === 'graphql') {
-        const errs = (res.body as { errors?: { message?: string }[] })?.errors;
-        if (errs?.length) {
-            yield {
-                type: 'error',
-                name,
-                message: `GraphQL: ${errs.map((e) => e.message ?? 'error').join('; ')}`,
-                status: res.status,
-                attempts: state.attempts,
-                at: now(),
-            };
-            yield doneEvt(false, t0, state.attempts);
-            return { ok: false };
-        }
+    // The surface interprets the response (graphql's "200-with-`errors`-is-a-failure" lives in
+    // its interpret hook); with no hook the body is the value. Then transform → unwrap → validate.
+    const outcome = interpretResponse(cfg, res);
+    if (!outcome.ok) {
+        yield surfaceErrEvt(outcome, name, state.attempts);
+        yield doneEvt(false, t0, state.attempts);
+        return { ok: false };
     }
-
-    // transform (e.g. scrape HTML -> structured), then unwrap, then validate/drift the result.
-    let value: unknown = res.body;
+    let value: unknown = outcome.value;
     if (cfg.transform) value = await cfg.transform(value);
     if (cfg.unwrap) value = getPath(value, cfg.unwrap);
     const findings = await validateOutput(cfg, value);
@@ -877,7 +874,7 @@ async function* runCached(
         return;
     }
 
-    const d = describe(cfg, input, baseReq);
+    const d = describe(baseReq);
     const key = ctl.key(d, input);
     if (key === undefined) {
         yield cacheEvt('bypass: unhashable request');
@@ -1003,7 +1000,7 @@ export async function cacheInvalidateExact(
         return;
     }
     if (!ctl.cacheableMethod(baseReq.method)) return;
-    const d = describe(rt.cfg, input, baseReq);
+    const d = describe(baseReq);
     const key = ctl.key(d, input);
     if (key === undefined) return;
     await (await ctl.open(key, d)).delete();
@@ -1030,7 +1027,7 @@ export async function cacheKeyOf(
     } catch {
         return undefined;
     }
-    return ctl.key(describe(rt.cfg, input, baseReq), input);
+    return ctl.key(describe(baseReq), input);
 }
 
 export async function executeRaw(

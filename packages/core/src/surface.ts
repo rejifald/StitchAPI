@@ -61,6 +61,33 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
 /** The default surface: a plain JSON-over-HTTP call. Selected whenever `kind` is omitted. */
 export const httpSurface: Surface = { id: 'http' };
 
-/** GraphQL-over-HTTP. Its behaviour is wired into the surface hooks in Stage 4; for now the
- *  engine keys its built-in handling on this id and the `graphql(...)` helper sets the shape. */
-export const graphqlSurface: Surface = { id: 'graphql' };
+/**
+ * GraphQL-over-HTTP. Its behaviour lives entirely in these hooks (ADR 0005 Stage 4): `buildRequest`
+ * packs `{ query, variables }` as JSON and forces POST; `interpret` treats a 200 carrying `errors`
+ * as a failure. The `data` unwrap is a plain config key the `graphql(...)` helper / `seam.graphql()`
+ * set (the engine applies it after `interpret`), as is the `/graphql` default path.
+ */
+export const graphqlSurface: Surface = {
+    id: 'graphql',
+    buildRequest: (cfg, input, base) => ({
+        ...base,
+        method: (cfg.method ?? 'POST').toUpperCase(),
+        bodyType: 'json',
+        body: {
+            query: cfg.query ?? '',
+            variables: input.variables ?? input.body ?? {},
+        },
+    }),
+    interpret: (res) => {
+        const errs = (
+            res.body as { errors?: { message?: string }[] } | null | undefined
+        )?.errors;
+        if (errs?.length)
+            return {
+                ok: false,
+                message: `GraphQL: ${errs.map((e) => e.message ?? 'error').join('; ')}`,
+                status: res.status,
+            };
+        return { ok: true, value: res.body };
+    },
+};
