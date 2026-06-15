@@ -86,6 +86,91 @@ test('a seam member is equivalent to the extends facade', async () => {
     expect(server.callCount('/items')).toBe(2);
 });
 
+// 1c) #76 — an `input` schema contributed PURELY by an `extends` fragment is merged and VALIDATED
+// at runtime (the static call-arg type now reflects this too — see test-d/extends-inference). The
+// fragment declares `headers`; the child declares `body`; both are validated and sent. This call is
+// itself a compile-time assertion (tsconfig.test.json typechecks this file), so it only compiles if
+// the merged call-arg type surfaces the fragment's `headers` slot.
+test('extends fragment contributes an input schema that is merged + validated', async () => {
+    server.route('POST', '/orders', { body: { ok: true } });
+
+    const tenantFragment = {
+        input: { headers: z.object({ 'x-tenant': z.string() }) },
+    };
+    const createOrder = stitch({
+        baseUrl: server.url,
+        path: '/orders',
+        method: 'POST',
+        extends: [tenantFragment],
+        input: { body: z.object({ sku: z.string() }) },
+    });
+
+    await expect(
+        createOrder({ headers: { 'x-tenant': 'acme' }, body: { sku: 'A1' } }),
+    ).resolves.toEqual({ ok: true });
+
+    const call = server.calls('/orders')[0];
+    expect(call?.headers['x-tenant']).toBe('acme');
+    expect(call?.body).toEqual({ sku: 'A1' });
+});
+
+// 1d) The merged input is actually VALIDATED: a bad value for the slot a FRAGMENT contributed is
+// rejected before the request leaves the client (the value is unchanged; only the static check is
+// bypassed with `as never` to reach the runtime path).
+test('a fragment-contributed input schema still rejects bad input at runtime', async () => {
+    server.route('POST', '/orders', { body: { ok: true } });
+
+    const tenantFragment = {
+        input: { headers: z.object({ 'x-tenant': z.string() }) },
+    };
+    const createOrder = stitch({
+        baseUrl: server.url,
+        path: '/orders',
+        method: 'POST',
+        extends: [tenantFragment],
+        input: { body: z.object({ sku: z.string() }) },
+    });
+
+    // `x-tenant` must be a string — a number fails the fragment's headers schema.
+    await expect(
+        createOrder({
+            headers: { 'x-tenant': 123 },
+            body: { sku: 'A1' },
+        } as never),
+    ).rejects.toThrow(/invalid headers/i);
+    expect(server.callCount('/orders')).toBe(0); // never left the client
+});
+
+// 1e) LAST-WINS per slot across fragments: two fragments both declare a `body` schema; the later one
+// validates. The earlier schema's constraint no longer applies (the static type agrees — the last
+// writer wins the whole slot).
+test('last fragment wins a slot both fragments declare (body schema)', async () => {
+    server.route('POST', '/orders', { body: { ok: true } });
+
+    const looseBody = { input: { body: z.object({ a: z.string() }) } };
+    const strictBody = {
+        input: { body: z.object({ sku: z.string(), qty: z.number() }) },
+    };
+    const createOrder = stitch({
+        baseUrl: server.url,
+        path: '/orders',
+        method: 'POST',
+        extends: [looseBody, strictBody],
+    });
+
+    // The SECOND fragment's schema is in force: `{ sku, qty }` passes; `{ a }` (the first
+    // fragment's shape) would fail it. The valid call needs NO cast — last-wins gave the call arg
+    // the strict `{ sku, qty }` shape, so this line is itself a compile-time merge assertion.
+    await expect(createOrder({ body: { sku: 'A1', qty: 2 } })).resolves.toEqual(
+        { ok: true },
+    );
+    await expect(createOrder({ body: { a: 'x' } } as never)).rejects.toThrow(
+        /invalid body/i,
+    );
+
+    expect(server.callCount('/orders')).toBe(1); // only the valid call left the client
+});
+
 // 2) Predefined query in the path merges with call-time query; input wins on conflict.
 test('predefined query merges with call-time query (input wins on conflict)', async () => {
     server.route('GET', '/items', { body: { ok: true } });
