@@ -138,17 +138,43 @@ export function createThrottle(opts?: ThrottleOptions): {
     return { acquire, release };
 }
 
+// The Error to reject with when a linked signal is already aborted — its own `reason` when that is
+// an Error (the default AbortError, or a caller-supplied one), else a generic abort Error.
+function abortError(signal: AbortSignal): Error {
+    const reason: unknown = signal.reason;
+    return reason instanceof Error
+        ? reason
+        : new Error('the operation was aborted');
+}
+
 /**
- * Run `fn` with an AbortSignal that aborts after `ms`. On timeout, reject with
- * TimeoutError and ensure the signal is aborted. If `ms` is undefined, just run
- * `fn` with a non-aborting signal.
+ * Run `fn` with an AbortSignal that aborts after `ms`. On timeout, reject with TimeoutError and
+ * ensure the signal is aborted. If `ms` is undefined, just run `fn` with a non-aborting signal.
+ * An optional `linkSignal` (a caller's `AbortSignal`, e.g. on a `download` — ADR 0005 Decision 8)
+ * is mirrored onto this attempt: aborting it cancels the call. The listener is cleaned up when `fn`
+ * settles; an already-aborted `linkSignal` rejects before `fn` runs.
  */
 export function withTimeout<T>(
     fn: (signal: AbortSignal) => Promise<T>,
     ms?: number,
+    linkSignal?: AbortSignal,
 ): Promise<T> {
     const controller = new AbortController();
-    if (ms == null) return fn(controller.signal);
+    let unlink: (() => void) | undefined;
+    if (linkSignal) {
+        if (linkSignal.aborted) return Promise.reject(abortError(linkSignal));
+        const onAbort = () => {
+            controller.abort(linkSignal.reason);
+        };
+        linkSignal.addEventListener('abort', onAbort, { once: true });
+        unlink = () => {
+            linkSignal.removeEventListener('abort', onAbort);
+        };
+    }
+    if (ms == null) {
+        const out = fn(controller.signal);
+        return unlink ? out.finally(unlink) : out;
+    }
     return new Promise<T>((resolve, reject) => {
         const timer = setTimeout(() => {
             controller.abort();
@@ -157,10 +183,12 @@ export function withTimeout<T>(
         fn(controller.signal).then(
             (value) => {
                 clearTimeout(timer);
+                unlink?.();
                 resolve(value);
             },
             (err) => {
                 clearTimeout(timer);
+                unlink?.();
                 reject(err);
             },
         );

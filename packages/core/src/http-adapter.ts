@@ -57,6 +57,7 @@ export function fetchAdapter(): Adapter {
                 status: response.status,
                 headers: resHeaders,
                 body: response.body,
+                url: response.url,
             };
         }
 
@@ -69,6 +70,7 @@ export function fetchAdapter(): Adapter {
                 status: response.status,
                 headers: resHeaders,
                 body: decodeResponseBody(req.responseType, contentType, bytes),
+                url: response.url,
             };
         }
 
@@ -98,7 +100,12 @@ export function fetchAdapter(): Adapter {
             }
         }
 
-        return { status: response.status, headers: resHeaders, body: parsed };
+        return {
+            status: response.status,
+            headers: resHeaders,
+            body: parsed,
+            url: response.url,
+        };
     };
 }
 
