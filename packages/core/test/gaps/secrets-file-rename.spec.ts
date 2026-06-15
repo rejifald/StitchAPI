@@ -1,7 +1,6 @@
 // Pins docs/GAP-AUDIT.md §1.8: keychain() was a plaintext-JSON spike — renamed to secretsFile()
 // (the deprecated `keychain` alias has since been removed entirely).
 import { basic, secretsFile, stitch } from '../../src';
-// TODO(fixer): remove cast once secretsFile is exported
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 
@@ -55,9 +54,7 @@ afterEach(() => {
 // §1.8-A  secretsFile() is exported
 // ---------------------------------------------------------------------------
 
-// RED: secretsFile is not yet exported from src/index.ts — import is `undefined`.
 test('secretsFile is exported from the package (not undefined)', () => {
-    // This is the pinning assertion: it fails today because `secretsFile` is not exported.
     expect(secretsFile).toBeDefined();
     expect(typeof secretsFile).toBe('function');
 });
@@ -67,11 +64,6 @@ test('secretsFile is exported from the package (not undefined)', () => {
 // ---------------------------------------------------------------------------
 
 test('secretsFile() reads a value from ~/.stitch/secrets.json via HOME', () => {
-    // Guard: if secretsFile is not yet exported, skip rather than crash
-    if (typeof secretsFile !== 'function') {
-        // This path should not be reached once the fix lands
-        return;
-    }
     const home = makeTempHome({ MY_SECRET: 'from-file' });
     process.env['HOME'] = home;
     Reflect.deleteProperty(process.env, 'MY_SECRET');
@@ -87,9 +79,6 @@ test('secretsFile() reads a value from ~/.stitch/secrets.json via HOME', () => {
 // ---------------------------------------------------------------------------
 
 test('secretsFile() falls back to env var when secrets file is absent', () => {
-    if (typeof secretsFile !== 'function') {
-        return;
-    }
     // Point HOME somewhere without a .stitch/secrets.json
     const home = join(
         tmpdir(),

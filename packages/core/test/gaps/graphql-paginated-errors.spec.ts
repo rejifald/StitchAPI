@@ -1,6 +1,6 @@
 // Pins docs/GAP-AUDIT.md §1.6: GraphQL errors[] must fail the call on the paginated path too
 import { graphql } from '../../src';
-import type { StitchConfig, StitchInput } from '../../src/types';
+import type { StitchInput } from '../../src/types';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 
@@ -29,9 +29,8 @@ beforeEach(() => {
  * must REJECT with a GraphQL-error shaped message — the same way the
  * non-paginated path does (see test/graphql-and-headers.spec.ts:50-56).
  *
- * Today the paginated path in engine.ts never inspects per-page bodies for
- * `errors`, so it silently accumulates items and resolves — this test pins
- * that the desired behaviour is a rejection.
+ * The per-page `errors[]` check lives in engine.ts `paginated()`, mirroring
+ * the non-paginated path.
  */
 test('paginated GraphQL rejects when a page body carries errors[]', async () => {
     // Page 1: valid response with a cursor signalling a next page.
@@ -54,7 +53,6 @@ test('paginated GraphQL rejects when a page body carries errors[]', async () => 
         ],
     });
 
-    // TODO(fixer): remove cast once paginate is accepted by graphql() overload
     const paginateConfig = {
         paginate: {
             next: (body: unknown): StitchInput | undefined => {
@@ -73,7 +71,7 @@ test('paginated GraphQL rejects when a page body carries errors[]', async () => 
                 return { variables: { after: pi.endCursor } };
             },
         },
-    } as Partial<StitchConfig>;
+    };
 
     const query = graphql({
         baseUrl: server.url,
@@ -81,7 +79,6 @@ test('paginated GraphQL rejects when a page body carries errors[]', async () => 
         ...paginateConfig,
     });
 
-    // DESIRED: the call rejects, matching the GraphQL-error message from page 2.
-    // TODAY:   the call resolves (silently ignoring the error on page 2).
+    // The call rejects, matching the GraphQL-error message from page 2.
     await expect(query()).rejects.toThrow(/boom/);
 });
