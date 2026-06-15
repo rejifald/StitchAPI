@@ -6,6 +6,7 @@
 // output pipes straight into jq and friends. No app boot required.
 import { toMermaid } from './diagram';
 import { serveStdio } from './mcp';
+import { toOpenApi } from './openapi';
 import {
     type StitchRegistry,
     loadStitches,
@@ -394,6 +395,7 @@ usage:
   stitch serve [--module <path>] [--port <n>] [--host <h>]   HTTP: POST /stitch/:name
   stitch mcp [--module <path>]                               MCP over stdio (run_stitch)
   stitch diagram [--module <path>] [--name <name>]           Mermaid flowchart of the stitches
+  stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>]   emit an OpenAPI 3.1 spec
 
 run:
   --module, -m <path>   stitches module to load (default: ./stitches.{ts,js,…})
@@ -412,6 +414,13 @@ diagram:
   Emits a Mermaid flowchart of each stitch's configured pipeline (throttle, request,
   retry, surface, pagination, validation, transform, unwrap, cache). Auth is redacted
   from a stitch's public config, so it is not shown.
+
+export:
+  --openapi             emit an OpenAPI 3.1 document (JSON) to stdout
+  --title <t>           info.title    (default: "StitchAPI export")
+  --api-version <v>     info.version  (default: "0.0.0")
+  Structural for now: paths, methods, and URL-template parameters. Field-level JSON
+  Schema and security schemes are not emitted yet; thunk-endpoint stitches are skipped.
 `;
 
 async function runCommand(args: string[], io: CliIO): Promise<number> {
@@ -614,6 +623,45 @@ async function diagramCommand(args: string[], io: CliIO): Promise<number> {
     return 0;
 }
 
+// stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>] — emit an OpenAPI
+// 3.1 document (JSON) for the registry to stdout. The emit half of "reversible" (DESIGN.md
+// Principle 11): a stitch declaration becomes a spec. Structural for now — see src/openapi.ts.
+async function exportCommand(args: string[], io: CliIO): Promise<number> {
+    let modulePath: string | undefined;
+    let title: string | undefined;
+    let apiVersion: string | undefined;
+    let openapi = false;
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === '--module' || a === '-m') modulePath = args[++i];
+        else if (a === '--title') title = args[++i];
+        else if (a === '--api-version') apiVersion = args[++i];
+        else if (a === '--openapi') openapi = true;
+    }
+    if (!openapi) {
+        io.writeErr(
+            'usage: stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>]\n',
+        );
+        return 2;
+    }
+
+    let registry: StitchRegistry;
+    try {
+        registry = await io.load(resolveModulePath(modulePath, io.cwd));
+    } catch (e) {
+        io.writeErr(`${(e as Error).message}\n`);
+        return 1;
+    }
+
+    const { document, warnings } = toOpenApi(registry, {
+        ...(title !== undefined ? { title } : {}),
+        ...(apiVersion !== undefined ? { version: apiVersion } : {}),
+    });
+    for (const w of warnings) io.writeErr(`warning: ${w}\n`);
+    io.write(`${JSON.stringify(document, null, 2)}\n`);
+    return 0;
+}
+
 // Entry point. Returns the process exit code; the bin shim calls process.exit.
 export async function main(
     argv: string[],
@@ -632,6 +680,8 @@ export async function main(
             return mcpCommand(rest, io);
         case 'diagram':
             return diagramCommand(rest, io);
+        case 'export':
+            return exportCommand(rest, io);
         case undefined:
         case '-h':
         case '--help':
