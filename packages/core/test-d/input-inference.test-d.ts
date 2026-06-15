@@ -92,7 +92,9 @@ const gqlTyped = api.graphql({
 expectType<{ region: string }>(
     null as unknown as CallArg<typeof gqlTyped>['params'],
 );
-// GraphQL `variables` stay an untyped passthrough (typing them is deferred — see follow-up issue).
+// A graphql stitch with NO `input.variables` schema keeps `variables` as a loose untyped
+// passthrough. (Issue #75 makes a DECLARED `input.variables` schema type them — covered in
+// graphql-variables.test-d.ts; this case pins the schema-less behaviour stays unchanged.)
 const gqlLoose = api.graphql({ query: 'query { ok }', output: userSchema });
 expectAssignable<CallArg<typeof gqlLoose>>({ variables: { region: 'eu' } });
 

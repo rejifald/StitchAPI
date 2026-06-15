@@ -328,6 +328,10 @@ export interface InputSchemas {
     query?: SchemaLike;
     body?: SchemaLike;
     headers?: SchemaLike;
+    // GraphQL variables (the `graphql` surface's primary input). Declaring a schema here types the
+    // call arg's `variables` (see `CallInput`) and validates them at runtime alongside the other
+    // slots; left undeclared, `variables` stays the loose untyped passthrough it has always been.
+    variables?: SchemaLike;
 }
 export interface StitchConfig {
     /** Label used in events and traces; defaults to `path` or `'stitch'`. */
@@ -370,7 +374,7 @@ export interface StitchConfig {
     headers?: Record<string, string>;
     /** GraphQL query string (`kind: 'graphql'`). */
     query?: string;
-    /** Schemas validating params, query, body, and headers before the request. */
+    /** Schemas validating params, query, body, headers, and (GraphQL) variables before the request. */
     input?: InputSchemas;
     /**
      * Response schema, or a {@link DriftSpec} for leveled drift detection. Accepts any

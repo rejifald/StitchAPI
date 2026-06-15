@@ -85,9 +85,9 @@ export type ResolveOutput<TExplicit, C> = [TExplicit] extends [never]
  */
 type Prettify<T> = { [K in keyof T]: T[K] } & {};
 
-/** The slots an `input` schema can validate (see {@link InputSchemas}): params, query, body, headers. */
+/** The slots an `input` schema can validate (see {@link InputSchemas}): params, query, body, headers, variables. */
 type SchemaSlots = keyof InputSchemas;
-/** {@link StitchInput} keys with no schema slot — `variables` (GraphQL). Carried through untyped. */
+/** {@link StitchInput} keys with no schema slot — the runtime-only `signal` / `onProgress` controls. Carried through untyped. */
 type ExtraSlots = Exclude<keyof StitchInput, SchemaSlots>;
 /**
  * The pre-coercion input type a declared slot accepts. `NonNullable` keeps it sound when `I` is the
@@ -111,8 +111,16 @@ type RequiredSchemaKeys<I> = {
 
 /**
  * The typed call argument for a config whose `input` is `I`: required schema slots, optional schema
- * slots, and the untyped `variables` passthrough (always optional). {@link Prettify} collapses the
- * required∩optional split into one flat object.
+ * slots, the runtime-only `signal`/`onProgress` passthrough, and — when no `variables` schema is
+ * declared — the untyped `variables` passthrough. {@link Prettify} collapses the required∩optional
+ * split into one flat object.
+ *
+ * The trailing conditional restores backward compatibility: `variables` is now an {@link InputSchemas}
+ * slot, so it falls OUT of {@link ExtraSlots}. A graphql config that declares a `variables` schema
+ * types it through the slot machinery above; one that declares NONE (`I` has no `variables` key) would
+ * otherwise lose the optional `variables?` it used to carry — so re-add it here as the loose
+ * passthrough. The `I extends { variables: unknown }` probe is true only when a `variables` key was
+ * actually written, so the two branches never overlap (no typed-vs-loose clash on the same key).
  */
 type CallInput<I> = Prettify<
     { [K in RequiredSchemaKeys<I> & keyof I]: SlotInput<I, K> } & {
@@ -120,7 +128,11 @@ type CallInput<I> = Prettify<
             SlotInput<I, K>,
             undefined
         >;
-    } & { [K in ExtraSlots]?: StitchInput[K] }
+    } & { [K in ExtraSlots]?: StitchInput[K] } & (I extends {
+            variables: unknown;
+        }
+            ? Record<never, never>
+            : { variables?: Record<string, unknown> })
 >;
 
 /**
