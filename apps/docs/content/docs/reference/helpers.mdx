@@ -1,6 +1,6 @@
 ---
 title: 'Helpers'
-description: 'fetchAdapter, consoleSink, fileSink, createTrace, multiplex, the OTLP exporters, memoryStore, and toValidator.'
+description: 'fetchAdapter, axiosAdapter, xhrAdapter, consoleSink, fileSink, createTrace, multiplex, the OTLP exporters, memoryStore, and toValidator.'
 ---
 
 The exported helper functions you wire into a stitch: the default transport, the
@@ -20,6 +20,43 @@ propagate, leaving the engine to decide what a status means.
 import { fetchAdapter } from 'stitchapi';
 
 const adapter = fetchAdapter();
+```
+
+### axiosAdapter
+
+Route a stitch through a caller-supplied axios instance instead of `fetch`. The
+runtime stays zero-dependency, so you pass _your_ axios (or an `axios.create()`)
+rather than an import inside StitchAPI; body encoding, headers, and parsing match
+`fetchAdapter`, so swapping transports never changes behavior. It is
+**buffered-only** — it throws on a `stream`/`sse` surface; use `fetchAdapter` to
+stream.
+
+```ts twoslash
+import { type AxiosLike, axiosAdapter, stitch } from 'stitchapi';
+
+// Your real axios instance is structurally an AxiosLike — no axios import needed here.
+declare const axios: AxiosLike;
+
+const getUser = stitch({
+    url: 'https://api.example.com/users/{id}',
+    adapter: axiosAdapter(axios),
+});
+```
+
+### xhrAdapter
+
+An `XMLHttpRequest`-backed transport whose reason to exist is **upload progress**
+(`fetch` cannot report bytes sent). Browser-only by default; pass a constructor to
+inject a polyfill or a fake. Buffered-only, like `axiosAdapter`.
+
+```ts twoslash
+import { stitch, xhrAdapter } from 'stitchapi';
+
+const upload = stitch({
+    method: 'POST',
+    url: 'https://api.example.com/files',
+    adapter: xhrAdapter(), // defaults to globalThis.XMLHttpRequest
+});
 ```
 
 ## Tracing & OTLP
