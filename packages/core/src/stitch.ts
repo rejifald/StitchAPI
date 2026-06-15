@@ -243,6 +243,13 @@ function mergeInput(a: StitchInput = {}, b: StitchInput = {}): StitchInput {
     // undefined`).
     if (a.variables ?? b.variables)
         merged.variables = { ...(a.variables ?? {}), ...(b.variables ?? {}) };
+    // Per-call execution controls (signal/onProgress, ADR 0005): the call argument wins over a
+    // bound value, so a `.with(...)`-bound download still honours a signal passed at call time.
+    // Omit the key when neither side sets it (exactOptionalPropertyTypes).
+    const signal = b.signal ?? a.signal;
+    if (signal) merged.signal = signal;
+    const onProgress = b.onProgress ?? a.onProgress;
+    if (onProgress) merged.onProgress = onProgress;
     return merged;
 }
 

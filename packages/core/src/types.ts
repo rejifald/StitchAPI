@@ -16,6 +16,18 @@ export interface StitchInput {
     body?: unknown;
     headers?: Record<string, string>;
     variables?: Record<string, unknown>; // GraphQL variables (kind: 'graphql')
+    /**
+     * Per-call cancellation (ADR 0005 Decision 8). The engine threads it onto the request and
+     * links it with the per-attempt timeout, so aborting it cancels the in-flight call. Runtime-
+     * only — never serialised, never on `__config`.
+     */
+    signal?: AbortSignal;
+    /**
+     * Per-call byte-progress callback (ADR 0005 Decision 9), threaded onto the request — fires as
+     * the request body is sent (`'upload'`, needs `xhrAdapter`) / the response arrives
+     * (`'download'`). The `download` surface's natural progress channel. Runtime-only.
+     */
+    onProgress?: (progress: AdapterProgress) => void;
 }
 
 // ---- Drift ----------------------------------------------------------------
@@ -98,6 +110,12 @@ export interface AdapterResponse {
     headers: Record<string, string>;
     // Parsed JSON when possible, else text — OR a `ReadableStream<Uint8Array>` when `stream` was set.
     body: unknown;
+    /**
+     * The final response URL (after redirects), when the transport exposes it (`fetchAdapter` sets
+     * it from `response.url`). The `download` surface uses it for the filename fallback (ADR 0005
+     * Decision 8); other readers may ignore it.
+     */
+    url?: string;
 }
 export type Adapter = (req: AdapterRequest) => Promise<AdapterResponse>;
 

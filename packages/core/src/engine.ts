@@ -187,6 +187,11 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
             ? { responseType: cfg.responseType }
             : {}),
     };
+    // Per-call execution controls (ADR 0005 Decisions 8-9): cancellation + byte progress, threaded
+    // BEFORE the surface shapes the request so a surface that spreads `base` (e.g. `download`)
+    // keeps them. Runtime-only — they never came from `__config`.
+    if (input.signal) req.signal = input.signal;
+    if (input.onProgress) req.onProgress = input.onProgress;
     // The surface shapes the request (graphql packs { query, variables } + forces POST, …);
     // absent, the http identity above stands.
     if (cfg.kind?.buildRequest) req = cfg.kind.buildRequest(cfg, input, req);
@@ -393,6 +398,7 @@ async function* attemptLoop(
                 res = await withTimeout(
                     (signal) => rt.adapter({ ...req, signal }),
                     attemptMs,
+                    req.signal, // link a caller's AbortSignal (e.g. a download's) to this attempt
                 );
             } catch (err) {
                 await cfg.hooks?.onError?.({
@@ -867,8 +873,12 @@ async function* runCached(
         return;
     }
     // A non-storable response (binary read straight into the store) warns and passes through —
-    // configuring `cache` here is a no-op-with-warning, never a crash (ADR 0003 §3).
-    if (cfg.responseType === 'blob' || cfg.responseType === 'arrayBuffer') {
+    // configuring `cache` here is a no-op-with-warning, never a crash (ADR 0003 §3). Read the
+    // RESOLVED request's responseType so a surface that forces blob (`download`) is caught too.
+    if (
+        baseReq.responseType === 'blob' ||
+        baseReq.responseType === 'arrayBuffer'
+    ) {
         yield cacheEvt('bypass: non-storable responseType');
         yield* runFrom(rt, baseReq, name, state, t0, budget);
         return;
