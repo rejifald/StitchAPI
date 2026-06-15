@@ -1,7 +1,13 @@
 # Proposal — finish "runs anywhere `fetch` does" (GAP-AUDIT §1.5)
 
-**Status:** proposal · **Scope:** `packages/core` · **Target branch:** `main`
+**Status:** implemented in [#102](https://github.com/rejifald/StitchAPI/pull/102) · **Scope:** `packages/core` · **Target branch:** `main`
 **Closes:** GAP-AUDIT.md §1.5 ("Runs anywhere fetch does" vs a Node-coupled hot path)
+
+> [!NOTE]
+>
+> This document is the design record; the change list (§4) and CI-guard design
+> (§5) were implemented as written in #102. It is kept in present/future-tense form
+> as the rationale that motivated the change.
 
 ---
 
