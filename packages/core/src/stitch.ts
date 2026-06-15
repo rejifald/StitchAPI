@@ -399,6 +399,11 @@ export interface StitchFn {
      * generic always wins. Note: passing the explicit generic stops TypeScript from inferring the
      * config type, so the call argument falls back to the loose `StitchInput` in that form (a
      * limitation of partial type-argument inference — never worse than pre-inference).
+     *
+     * `const C` captures string-literal `path` / `url` (and other literals) instead of widening them to
+     * `string`, so {@link InputOf} can read the RFC 6570 path-template vars off the literal and require
+     * the matching `params` (Phase 2c). Schema *values* (Zod/Standard Schema) are reference types and so
+     * are unaffected by the `const` modifier.
      */
     <
         TExplicit = never,

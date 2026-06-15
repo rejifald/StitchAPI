@@ -288,25 +288,158 @@ type CallInput<I> = Prettify<
             : { variables?: Record<string, unknown> })
 >;
 
+// ---- Path-template variables (Phase 2c) -----------------------------------
+// A templated endpoint contributes required input that the `input` schemas don't name: the engine
+// expands the path against `input.params` (`expandPath(tpl, input.params ?? {})`, engine.ts), so a
+// `{id}` slot needs `params.id` at call time even with no `input.params` schema. These types read
+// the variable NAMES off a string-literal `path`/`url` and fold them into the `params` slot, mirroring
+// the runtime grammar (`expandPath` in util.ts) at the type level. Pure types — zero runtime: the
+// engine already does the expansion. A non-literal endpoint (a `${base}/…` template-literal type, or a
+// thunk `url`) has no literal to walk, so it yields `never` and adds nothing — fail open, never closed.
+
+/** RFC 6570 expression operators (`{+id}`, `{?q}`, …) — the leading char `expandPath` strips. */
+type TplOp = '+' | '#' | '.' | '/' | ';' | '?' | '&';
+/** Drop a leading {@link TplOp} from one `{…}` expression body, matching `expandPath`'s operator slice. */
+type StripOp<S extends string> = S extends `${TplOp}${infer R}` ? R : S;
 /**
- * Map a config object's `input` slot to the typed call argument, now reading the merged `input`
- * schemas across `extends` fragments. No `extends` → the historical, byte-identical top-level read
- * (`C extends { input } ? CallInput : StitchInput`), so a fragment-free stitch is unchanged and pays
- * no extra type work. With `extends`, the slots are key-unioned across all fragments + the config
- * (last-wins per slot), so a `headers` schema contributed only by a base fragment, or a `body` the
- * child adds on top, both surface in the call argument; if no layer declares any `input`, the loose
- * {@link StitchInput} stands (fully-optional argument). The result terminates in `CallInput<…>` /
- * `StitchInput` exactly as before, so the parallel path-vars work can wrap this slot shape.
+ * Drop a varspec's modifier — prefix (`id:2`) or explode (`id*`) — leaving the bare name. Mirrors the
+ * runtime varspec regex `([^:*]*)(?::(\d+)|(\*))?`: the name is everything up to the first `:` or `*`.
+ * The `:` case is tested first so `id:2` stops at the colon rather than the (absent) star.
+ */
+type StripMod<S extends string> = S extends `${infer N}:${string}`
+    ? N
+    : S extends `${infer N}*`
+      ? N
+      : S;
+/** Split one expression body on commas (`{?q,sort}` → `q | sort`), stripping each varspec's modifier. */
+type SplitVars<S extends string> = S extends `${infer H},${infer T}`
+    ? StripMod<H> | SplitVars<T>
+    : StripMod<S>;
+/**
+ * Every variable name in a template literal: walk each `{…}` expression, strip its operator, split its
+ * comma-separated varspecs, strip each modifier → a union of names. A string with no `{` (a plain path,
+ * or a literal `?page=1` query — which lives outside any brace) yields `never`. Recursion is bounded by
+ * the number of `{…}` groups, well within TS's instantiation budget for realistic endpoints.
+ */
+type PathVars<S extends string> = S extends `${string}{${infer E}}${infer Rest}`
+    ? SplitVars<StripOp<E>> | PathVars<Rest>
+    : never;
+/**
+ * The path-template variables a config declares: from a string-literal `path`, else a string-literal
+ * `url` (host included — `url` is templated too). The `infer P extends string` guard matches a literal
+ * only — a thunk `url` (`() => string`) and a widened `string` both fail the constraint and fall through
+ * to `never`, so a non-literal endpoint adds no params (fail open). `path` wins when both are literals,
+ * matching the engine's `usingUrl ? url : path` precedence is irrelevant here (a config rarely sets both,
+ * and either spelling's vars are equally required); reading `path` first is the simple, stable choice.
+ *
+ * Path vars are read off the TOP-LEVEL `path`/`url` only, NOT off `extends` fragments. The engine
+ * expands the final composed `path`, and a base fragment's `path` is a real (if unusual) contributor —
+ * but folding fragment templates is out of scope for this pass (accepted minor limitation, #114 + #76):
+ * the overwhelmingly common case is the templated endpoint written on the leaf config, and reading the
+ * top level keeps the extractor simple and the no-fragment path byte-identical to A's standalone work.
+ */
+type PathVarsOf<C> = C extends { path: infer P extends string }
+    ? PathVars<P>
+    : C extends { url: infer U extends string }
+      ? PathVars<U>
+      : never;
+
+/**
+ * The `params` shape a config's `input.params` schema declares — now read across `extends` fragments
+ * (the merged `params` slot), or the empty object when none declares one. Read off the MERGED `input`
+ * (via {@link MergeInputSlots} over {@link Layers}) so a `params` schema a base fragment contributes
+ * still wins its keys over the path-only fold; with no fragment `params` this collapses to the
+ * top-level read. The loose {@link StitchInput} fallback is never consulted here — its
+ * `params?: Record<string, unknown>` index signature would otherwise make EVERY name look
+ * schema-provided and swallow the path-only fold. With no `params` schema anywhere this is
+ * `Record<never, never>` (the empty object, spelled to avoid a bare `{}`), so the path vars alone shape
+ * `params`. `NonNullable` unwraps the optional slot; a non-object inferred shape intersects harmlessly.
+ */
+type SchemaParams<C> = MergedInput<C> extends { params: infer P }
+    ? NonNullable<InferInput<P>>
+    : Record<never, never>;
+/**
+ * The folded `params` slot: the schema-declared shape ({@link SchemaParams}) intersected with the
+ * path-only var names typed `string | number` (what `expandPath` ultimately stringifies). Path-only
+ * keys are `Exclude`d of the schema's keys, so a key the schema already names KEEPS its schema type —
+ * schema wins. Placed as a REQUIRED property, so `HasRequired`/`Args` make the call argument required —
+ * the correctness win. {@link Prettify} flattens the intersection for clean errors and tsd identity.
+ */
+type PathParams<C> = Prettify<
+    SchemaParams<C> &
+        Record<Exclude<PathVarsOf<C>, keyof SchemaParams<C>>, string | number>
+>;
+
+// ---- A+B integration: fold path vars (#114) over the extends-merged base (#76) -------------------
+// `InputOf` now layers the two Phase-2c/2d features. The base call-arg body is computed exactly as B
+// (#76) does — read the merged `input` across `extends` fragments when `extends` is a concrete tuple,
+// else the historical top-level read — and A's (#114) path-var fold WRAPS that body, folding the RFC
+// 6570 vars into its `params` slot. The fold keeps A's two documented strategies, picked by base kind
+// (which is forced by `exactOptionalPropertyTypes` + the surface-helper boundary assignment described
+// below), so the standalone A and B type tests both still pass byte-for-byte.
+
+/**
+ * The merged `input` schemas for `C`: B's (#76) extends-fold when `extends` is a concrete tuple,
+ * otherwise the top-level `input` (or `Record<never, never>` when there is none). Factored out so the
+ * path-var helpers ({@link SchemaParams}) and the `CallInput` base below read the SAME merged slot set,
+ * and a `params` schema contributed by a base fragment is honoured by the path-var fold too.
+ */
+type MergedInput<C> = [C] extends [
+    { extends: readonly [unknown, ...unknown[]] },
+]
+    ? HasInput<Layers<C>> extends true
+        ? MergeInputSlots<Layers<C>>
+        : Record<never, never>
+    : C extends { input: infer I }
+      ? I
+      : Record<never, never>;
+
+/**
+ * Fold A's path-template vars into a DEFERRED `CallInput<…>` base by INTERSECTION (`Base & { params }`).
+ * Used for both input-bearing arms (top-level `input` and extends-merged `input`), where the base is a
+ * deferred mapped type for a generic `C`. Intersecting leaves the base structurally untouched — its
+ * `query?` / `body?` modifiers stay exactly as `CallInput` emitted them; an `Omit<…>`-re-wrap would,
+ * under `exactOptionalPropertyTypes`, widen those optional slots to `T | undefined` and break the
+ * surface-helper boundary assignment (`Stitch<TOut, StitchInput>` → declared `Stitch<TOut, InputOf<C>>`,
+ * where the call arg sits contravariantly). No path vars (`PathVarsOf<C>` is `never`, tuple-wrapped to
+ * stop distribution) → the base is returned byte-for-byte, so a non-templated stitch is exactly B.
+ */
+type FoldPathParams<C, Base> = [PathVarsOf<C>] extends [never]
+    ? Base
+    : Base & { params: PathParams<C> };
+
+/**
+ * Map a config object's `input` slot to the typed call argument — reading the merged `input` schemas
+ * across `extends` fragments (#76) — then fold in any RFC 6570 path-template vars from a string-literal
+ * `path`/`url` (#114). Two features, one slot shape:
+ *
+ * - **Input-bearing** (top-level `input`, or any `extends` layer declaring `input`): the base is a
+ *   deferred `CallInput<…>`; {@link FoldPathParams} adds `params` by intersection. A `params` schema
+ *   key (top-level or fragment-supplied) keeps its schema type; path-only keys are added required.
+ * - **No `input` anywhere** (`Base = StitchInput`, a CONCRETE interface): with path vars, build `params`
+ *   purely from them via `Omit<StitchInput, 'params'> & { params }`. `Omit` over a concrete type resolves
+ *   immediately (no deferral → no boundary break) and DROPS `StitchInput`'s loose
+ *   `params?: Record<string, unknown>`, so the slot is exactly `{ id: string | number }` rather than that
+ *   intersected with the catch-all index signature. With no path vars, the loose {@link StitchInput}
+ *   stands (fully-optional argument), byte-identical to before.
+ *
+ * No `extends`, no `input`, no template → the historical loose `StitchInput`, so an un-annotated stitch
+ * is unchanged and pays no extra type work. Path vars are read off the top-level `path`/`url` only (see
+ * {@link PathVarsOf}); a fragment-supplied template is the one accepted minor gap of this integration.
  */
 export type InputOf<C> = [C] extends [
     { extends: readonly [unknown, ...unknown[]] },
 ]
     ? HasInput<Layers<C>> extends true
-        ? CallInput<MergeInputSlots<Layers<C>>>
-        : StitchInput
+        ? FoldPathParams<C, CallInput<MergeInputSlots<Layers<C>>>>
+        : [PathVarsOf<C>] extends [never]
+          ? StitchInput
+          : Prettify<Omit<StitchInput, 'params'> & { params: PathParams<C> }>
     : C extends { input: infer I }
-      ? CallInput<I>
-      : StitchInput;
+      ? FoldPathParams<C, CallInput<I>>
+      : [PathVarsOf<C>] extends [never]
+        ? StitchInput
+        : Prettify<Omit<StitchInput, 'params'> & { params: PathParams<C> }>;
 
 /** The required (non-optional) keys of `T`. (`Record<never, never>` is the empty object `{}` — the
  * standard "is this key optional?" probe — spelled to avoid a bare `{}` type.) */

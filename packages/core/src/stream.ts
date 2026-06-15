@@ -79,7 +79,6 @@ export interface StreamSeamApi {
     readonly seam: Seam;
 }
 
-// Standalone stream stitch: the call argument is inferred from `config.input`, the result fixed to
 // the collected chunk array (a streaming await resolves to all of its `delta` chunks — Stage 5). The
 // `as` retypes the loose `makeStitch` result to the declared `InputOf<C>`: now that `InputOf` reads
 // `extends`-fragment schemas (#76) it is no longer a clean supertype of `StitchInput` under an
