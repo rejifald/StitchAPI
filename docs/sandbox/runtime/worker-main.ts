@@ -64,10 +64,12 @@ const env: WorkerEnv = {
     // The snippet's `fetch` (cast: createFetchShim is precisely `fetch`-typed,
     // WorkerEnv.fetch is the loose (unknown, unknown) wire shape).
     fetch: simFetch as unknown as WorkerEnv['fetch'],
-    // B1 `process` shim: { env:{}, platform:'browser', versions:{} } — core's
-    // `process.env.*` reads resolve to safe defaults.
+    // `process` for the snippet scope (Workers have none) — bound as the snippet's
+    // `process` so its `process.env.*` reads resolve to `{}`. Core needs no shim: it
+    // reads the guarded `globalThis.process?.env` seam, absent here → safe defaults.
     process: browserProcess,
-    // Real Worker WebCrypto — backs the B1 `node:crypto` alias + engine write path.
+    // Web Crypto for the snippet scope (its `globalThis` is shadowed in worker-entry).
+    // Core uses the real `globalThis.crypto` directly (engine write path / otlp ids).
     crypto: (globalThis as { crypto?: unknown }).crypto,
     // Drain the B1 shim-notice buffer after each run → RunResult.notices (SEC-33).
     // The shims' RunNotice is structurally identical to the wire WireNotice.
