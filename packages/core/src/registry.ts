@@ -8,7 +8,17 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export type StitchRegistry = Record<string, Stitch>;
+/**
+ * A bag of stitches keyed by name, holding stitches of **any** call-argument shape. The element is
+ * `Stitch<unknown, never>` — `never` in the contravariant `TIn` slot makes every concrete stitch
+ * (including a templated-path stitch whose call argument now *requires* `params`, Phase 2c, or one with
+ * a required `body`) assignable into the registry. A plain `Stitch` (= `Stitch<unknown, StitchInput>`)
+ * would reject those, since a required-input call signature is narrower than the loose one. The surfaces
+ * over a registry (CLI `run`, HTTP `serve`, MCP) build the input dynamically at call time, so the
+ * static argument type is intentionally erased here; {@link selectStitch} re-widens to an invokable
+ * `Stitch` at the one dynamic-dispatch boundary.
+ */
+export type StitchRegistry = Record<string, Stitch<unknown, never>>;
 
 // Module names probed (in order) when no explicit module path is given.
 export const DEFAULT_MODULES = [
@@ -54,10 +64,14 @@ export function collectStitches(mod: unknown): StitchRegistry {
 // Resolve a stitch by name: exact export-key match first, then a stitch whose
 // configured `name` matches. Throws a helpful, listing error when absent.
 export function selectStitch(registry: StitchRegistry, name: string): Stitch {
-    const direct = registry[name];
+    // Re-widen the input-erased registry element (`Stitch<unknown, never>`) to an invokable `Stitch`:
+    // the surfaces call it with a `StitchInput` built at runtime from CLI flags / the request body /
+    // the MCP argument, and the engine reads that input by field name regardless of its static type.
+    // This is the single dynamic-dispatch boundary the registry's type erasure is designed around.
+    const direct = registry[name] as Stitch | undefined;
     if (direct) return direct;
     for (const s of Object.values(registry))
-        if (s.__config.name === name) return s;
+        if (s.__config.name === name) return s as Stitch;
 
     const available = Object.keys(registry).sort();
     const err = new Error(

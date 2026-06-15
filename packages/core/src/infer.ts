@@ -135,15 +135,112 @@ type CallInput<I> = Prettify<
             : { variables?: Record<string, unknown> })
 >;
 
+// ---- Path-template variables (Phase 2c) -----------------------------------
+// A templated endpoint contributes required input that the `input` schemas don't name: the engine
+// expands the path against `input.params` (`expandPath(tpl, input.params ?? {})`, engine.ts), so a
+// `{id}` slot needs `params.id` at call time even with no `input.params` schema. These types read
+// the variable NAMES off a string-literal `path`/`url` and fold them into the `params` slot, mirroring
+// the runtime grammar (`expandPath` in util.ts) at the type level. Pure types — zero runtime: the
+// engine already does the expansion. A non-literal endpoint (a `${base}/…` template-literal type, or a
+// thunk `url`) has no literal to walk, so it yields `never` and adds nothing — fail open, never closed.
+
+/** RFC 6570 expression operators (`{+id}`, `{?q}`, …) — the leading char `expandPath` strips. */
+type TplOp = '+' | '#' | '.' | '/' | ';' | '?' | '&';
+/** Drop a leading {@link TplOp} from one `{…}` expression body, matching `expandPath`'s operator slice. */
+type StripOp<S extends string> = S extends `${TplOp}${infer R}` ? R : S;
 /**
- * Map a config object's `input` slot to the typed call argument. No `input` key → the loose
- * {@link StitchInput} (the historical default), so a stitch with no input schemas is unchanged and
- * its argument stays fully optional. Like {@link OutputOf}, this reads only the top-level `input`
- * key, not `extends` fragments.
+ * Drop a varspec's modifier — prefix (`id:2`) or explode (`id*`) — leaving the bare name. Mirrors the
+ * runtime varspec regex `([^:*]*)(?::(\d+)|(\*))?`: the name is everything up to the first `:` or `*`.
+ * The `:` case is tested first so `id:2` stops at the colon rather than the (absent) star.
+ */
+type StripMod<S extends string> = S extends `${infer N}:${string}`
+    ? N
+    : S extends `${infer N}*`
+      ? N
+      : S;
+/** Split one expression body on commas (`{?q,sort}` → `q | sort`), stripping each varspec's modifier. */
+type SplitVars<S extends string> = S extends `${infer H},${infer T}`
+    ? StripMod<H> | SplitVars<T>
+    : StripMod<S>;
+/**
+ * Every variable name in a template literal: walk each `{…}` expression, strip its operator, split its
+ * comma-separated varspecs, strip each modifier → a union of names. A string with no `{` (a plain path,
+ * or a literal `?page=1` query — which lives outside any brace) yields `never`. Recursion is bounded by
+ * the number of `{…}` groups, well within TS's instantiation budget for realistic endpoints.
+ */
+type PathVars<S extends string> = S extends `${string}{${infer E}}${infer Rest}`
+    ? SplitVars<StripOp<E>> | PathVars<Rest>
+    : never;
+/**
+ * The path-template variables a config declares: from a string-literal `path`, else a string-literal
+ * `url` (host included — `url` is templated too). The `infer P extends string` guard matches a literal
+ * only — a thunk `url` (`() => string`) and a widened `string` both fail the constraint and fall through
+ * to `never`, so a non-literal endpoint adds no params (fail open). `path` wins when both are literals,
+ * matching the engine's `usingUrl ? url : path` precedence is irrelevant here (a config rarely sets both,
+ * and either spelling's vars are equally required); reading `path` first is the simple, stable choice.
+ */
+type PathVarsOf<C> = C extends { path: infer P extends string }
+    ? PathVars<P>
+    : C extends { url: infer U extends string }
+      ? PathVars<U>
+      : never;
+
+/**
+ * The `params` shape a config's `input.params` schema declares, or the empty object when it declares
+ * none. Read straight off `C['input']['params']` via {@link InferInput} (NOT off the computed `Base`):
+ * the loose {@link StitchInput} fallback carries `params?: Record<string, unknown>`, whose index
+ * signature would otherwise make EVERY name look schema-provided and swallow the path-only fold. With no
+ * `input.params` schema this is `Record<never, never>` (the empty object, spelled to avoid a bare `{}`),
+ * so the path vars alone shape `params`. `NonNullable` unwraps the optional slot; a non-object inferred
+ * shape (degenerate) intersects harmlessly with the path-only keys.
+ */
+type SchemaParams<C> = C extends { input: { params: infer P } }
+    ? NonNullable<InferInput<P>>
+    : Record<never, never>;
+/**
+ * The folded `params` slot: the schema-declared shape ({@link SchemaParams}) intersected with the
+ * path-only var names typed `string | number` (what `expandPath` ultimately stringifies). Path-only
+ * keys are `Exclude`d of the schema's keys, so a key the schema already names KEEPS its schema type —
+ * schema wins. Placed as a REQUIRED property, so `HasRequired`/`Args` make the call argument required —
+ * the correctness win. {@link Prettify} flattens the intersection for clean errors and tsd identity.
+ */
+type PathParams<C> = Prettify<
+    SchemaParams<C> &
+        Record<Exclude<PathVarsOf<C>, keyof SchemaParams<C>>, string | number>
+>;
+
+/**
+ * Map a config object's `input` slot to the typed call argument, then fold in any RFC 6570
+ * path-template vars (from a string-literal `path`/`url`). No `input` key → the loose
+ * {@link StitchInput} (the historical default), so a stitch with no input schemas and no template stays
+ * fully optional. Like {@link OutputOf}, this reads only the top-level `input`/`path`/`url`, not
+ * `extends` fragments. No path vars in a branch (`PathVarsOf<C>` is `never`, tuple-wrapped to stop
+ * distribution) → the base is returned byte-for-byte, so a non-templated stitch is exactly Phase 2.
+ *
+ * The two `input` branches fold path vars DIFFERENTLY on purpose — both must keep the result assignable
+ * to {@link StitchInput}, because every surface helper assigns the engine's loose
+ * `Stitch<TOut, StitchInput>` to its declared `Stitch<TOut, InputOf<C>>` and the call argument sits
+ * contravariantly in that signature (so `InputOf<C>` must flow *back* into `StitchInput`):
+ *
+ * - **With an `input` schema** (`Base = CallInput<I>`, a deferred mapped type for a generic `C`): fold by
+ *   INTERSECTION (`CallInput<I> & { params }`). The base is left structurally untouched — its `query?` /
+ *   `body?` modifiers stay exactly as Phase 2 emitted them; an `Omit<…>`-re-wrap would, under
+ *   `exactOptionalPropertyTypes`, widen those optional slots to `T | undefined` and break that boundary
+ *   assignment. Intersecting only narrows/adds `params`: a `params` schema key keeps its schema type,
+ *   path-only keys are added required.
+ * - **Without an `input` schema** (`Base = StitchInput`, a CONCRETE interface): build `params` purely from
+ *   the path vars via `Omit<StitchInput, 'params'> & { params }`. `Omit` over a concrete type resolves
+ *   immediately (no deferral → no boundary break) and DROPS `StitchInput`'s loose
+ *   `params?: Record<string, unknown>`, so the slot is exactly `{ id: string | number }` rather than that
+ *   intersected with the catch-all index signature.
  */
 export type InputOf<C> = C extends { input: infer I }
-    ? CallInput<I>
-    : StitchInput;
+    ? [PathVarsOf<C>] extends [never]
+        ? CallInput<I>
+        : CallInput<I> & { params: PathParams<C> }
+    : [PathVarsOf<C>] extends [never]
+      ? StitchInput
+      : Prettify<Omit<StitchInput, 'params'> & { params: PathParams<C> }>;
 
 /** The required (non-optional) keys of `T`. (`Record<never, never>` is the empty object `{}` — the
  * standard "is this key optional?" probe — spelled to avoid a bare `{}` type.) */

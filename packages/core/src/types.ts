@@ -579,7 +579,7 @@ export interface Seam {
      */
     stitch<
         TExplicit = never,
-        C extends Partial<StitchConfig> = Partial<StitchConfig>,
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
         config: C,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
@@ -588,7 +588,7 @@ export interface Seam {
     /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, unwrap `data`). */
     graphql<
         TExplicit = never,
-        C extends Partial<StitchConfig> & {
+        const C extends Partial<StitchConfig> & {
             query: string;
         } = Partial<StitchConfig> & {
             query: string;

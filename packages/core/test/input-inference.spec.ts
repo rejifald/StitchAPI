@@ -87,6 +87,26 @@ test('params + query schemas validate and the typed call expands them', async ()
     expect(server.calls('/users/1')[0]?.query).toEqual({ trace: 'on' });
 });
 
+test('an RFC 6570 path var with NO input schema requires params (Phase 2c)', async () => {
+    server.route('GET', '/users/7', { body: { id: 7, name: 'Bo' } });
+    // No `input.params` schema: the `{id}` template alone makes `params` a required call argument,
+    // typed `string | number`. This call is itself a compile-time assertion (tsconfig.test.json
+    // typechecks this file) — it only compiles because the path var is folded into the argument.
+    const getUser = stitch({
+        baseUrl: server.url,
+        path: '/users/{id}',
+        output: userSchema,
+    });
+    const user = await getUser({ params: { id: 7 } });
+    expect(user).toEqual({ id: 7, name: 'Bo' });
+    expect(server.callCount('/users/7')).toBe(1);
+
+    // `.with({ params })` relaxes the slot: the pre-bound stitch takes no further argument.
+    const bound = getUser.with({ params: { id: 7 } });
+    const same = await bound();
+    expect(same.name).toBe('Bo');
+});
+
 test('seam members infer and validate input identically', async () => {
     server.route('POST', '/users', { body: { id: 3, name: 'Cy' } });
     const api = seam({ baseUrl: server.url });

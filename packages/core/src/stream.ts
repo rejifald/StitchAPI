@@ -71,7 +71,9 @@ export const streamSurface: Surface<StitchInput, unknown[]> = {
 /** stream members bound to a seam. `stitch(config)` creates a stream member of `seam`; `seam` is
  *  the underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
 export interface StreamSeamApi {
-    readonly stitch: <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    readonly stitch: <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ) => Stitch<unknown[], InputOf<C>>;
     readonly seam: Seam;
@@ -79,14 +81,18 @@ export interface StreamSeamApi {
 
 // Standalone stream stitch: the call argument is inferred from `config.input`, the result fixed to
 // the collected chunk array (a streaming await resolves to all of its `delta` chunks — Stage 5).
-const streamStitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+const streamStitch = <
+    const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+>(
     config: C,
 ): Stitch<unknown[], InputOf<C>> =>
     makeStitch<unknown[]>({ ...config, kind: streamSurface });
 
 // Bind stream members to a seam through the seam's surface-agnostic `stitch({ kind })` (Decision 3).
 function bindSeam(s: Seam): StreamSeamApi {
-    const stitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    const stitch = <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ): Stitch<unknown[], InputOf<C>> =>
         s.stitch<unknown[]>({ ...config, kind: streamSurface });

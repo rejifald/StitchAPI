@@ -32,8 +32,10 @@ function coerce(raw: string): unknown {
 
 // Template parameter names (`/users/{id}` → ["id"]) so a bare `--id` routes to params,
 // matching the engine's RFC 6570 expansion — operator prefixes (`{+id}`, `{?q,sort}`) and
-// `*`/`:n` modifiers are stripped to the bare names.
-export function paramNamesOf(stitch: Stitch): string[] {
+// `*`/`:n` modifiers are stripped to the bare names. Accepts an any-input `Stitch<unknown, never>`
+// (it only reads `__config`), so a templated-path stitch — whose call argument now requires `params`
+// (Phase 2c) — is still a valid argument.
+export function paramNamesOf(stitch: Stitch<unknown, never>): string[] {
     const { path, url } = stitch.__config;
     const tpl = (path ?? '') + ' ' + (typeof url === 'string' ? url : '');
     const names: string[] = [];

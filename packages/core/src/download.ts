@@ -87,7 +87,9 @@ export const downloadSurface: Surface<StitchInput, DownloadResult> = {
 /** download members bound to a seam. `stitch(config)` creates a download member of `seam`; `seam`
  *  is the underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
 export interface DownloadSeamApi {
-    readonly stitch: <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    readonly stitch: <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ) => Stitch<DownloadResult, InputOf<C>>;
     readonly seam: Seam;
@@ -96,7 +98,7 @@ export interface DownloadSeamApi {
 // Standalone download stitch: the call argument is inferred from `config.input`, the result fixed
 // to `{ blob, filename }`.
 const downloadStitch = <
-    C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    const C extends Partial<StitchConfig> = Partial<StitchConfig>,
 >(
     config: C,
 ): Stitch<DownloadResult, InputOf<C>> =>
@@ -104,7 +106,9 @@ const downloadStitch = <
 
 // Bind download members to a seam through the seam's surface-agnostic `stitch({ kind })`.
 function bindSeam(s: Seam): DownloadSeamApi {
-    const stitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    const stitch = <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ): Stitch<DownloadResult, InputOf<C>> =>
         s.stitch<DownloadResult>({ ...config, kind: downloadSurface });
