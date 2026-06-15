@@ -100,7 +100,7 @@ The entire core library (`stitchapi`, currently `0.7.0`), verified against
         drift-in-error payloads, progress notifications
 -   [ ] ADR 0004 Standard-Schema fingerprint (PR #81) → fold into cache generation
         for zero-revalidation (cache is already sound via the v1 fallback ladder)
--   [ ] `@stitchapi/redis-store` — makes "two workers share one login + rate
+-   [ ] `@stitchapi/redis` — makes "two workers share one login + rate
         budget" demonstrable out of the box
 -   [ ] Published record/replay mock adapter
 -   [ ] `stitch export --openapi`

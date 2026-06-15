@@ -236,7 +236,7 @@ playground + docs site as one public moment. See [`RELEASE.md`](RELEASE.md) for 
    Playwright harness, sandbox tests in CI) · core **response streaming** (`responseType: 'stream'`,
    emit `delta`) · release hygiene (CHANGELOG, runnable `examples/`, README).
 2. **v1.1:** agent-grade MCP (per-stitch schemas, structured results, drift-in-error, progress) ·
-   ADR 0004 Standard-Schema fingerprint folded into cache generation · `@stitchapi/redis-store` ·
+   ADR 0004 Standard-Schema fingerprint folded into cache generation · `@stitchapi/redis` ·
    published record/replay mock adapter · `stitch export --openapi` · pagination presets.
 3. **Kinds:** shell → LLM; `pipe()` composition of heterogeneous stitches.
 4. **Visual:** live trace overlay on the playground DAG → `stitch diagram` (Mermaid-from-definition).
