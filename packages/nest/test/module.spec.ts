@@ -120,6 +120,44 @@ describe('StitchModule.forFeature', () => {
         expect(providers).toHaveLength(1);
         expect(providers[0]?.inject).toEqual([STITCH_SEAM]);
     });
+
+    // Regression (path-vars fallout, #114): a templated-path def's call argument now *requires*
+    // `params`, so its `StitchDef` has a narrower (contravariant) input than the loose default.
+    // The feature registry must still admit it — `stitches` is bound to the any-input
+    // `AnyStitchDef`, mirroring core's `StitchRegistry`. This wouldn't compile before the fix.
+    it('accepts a templated-path stitch (required params) in a feature registry', async () => {
+        const calls: string[] = [];
+        const GetUser = defineStitch('GET_USER', (h) =>
+            h.stitch({ path: '/users/{id}' }),
+        );
+        const mixed = [
+            GetUser,
+            defineStitch('LIST', (h) => h.stitch({ path: '/users' })),
+        ];
+        const providers = StitchModule.forFeature({
+            seam: {
+                baseUrl: 'https://feat.test',
+                adapter: recordingAdapter(calls),
+            },
+            stitches: mixed,
+        }).providers as FProv[];
+
+        const userProv = providers.find((p) => p.provide === GetUser.token);
+        const seamProv = providers.find(
+            (p) => p.provide !== GetUser.token && p.provide !== mixed[1]!.token,
+        );
+        const reg = new SeamRegistry();
+        const featSeam = seamProv!.useFactory!(
+            memoryStore(),
+            false,
+            reg,
+        ) as Seam;
+        const getUser = userProv!.useFactory!(featSeam) as ReturnType<
+            typeof GetUser.build
+        >;
+        await getUser({ params: { id: 42 } });
+        expect(calls).toEqual(['GET https://feat.test/users/42']);
+    });
 });
 
 describe('bridges', () => {

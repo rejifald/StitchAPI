@@ -9,6 +9,7 @@ export {
     defineStitch,
     InjectStitch,
     type StitchDef,
+    type AnyStitchDef,
     type StitchHost,
     type Injected,
 } from './define-stitch';

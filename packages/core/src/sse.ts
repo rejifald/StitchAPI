@@ -113,7 +113,9 @@ export const sseSurface: Surface<StitchInput, SseEvent[]> = {
 /** sse members bound to a seam. `stitch(config)` creates an sse member of `seam`; `seam` is the
  *  underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
 export interface SseSeamApi {
-    readonly stitch: <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    readonly stitch: <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ) => Stitch<SseEvent[], InputOf<C>>;
     readonly seam: Seam;
@@ -121,7 +123,9 @@ export interface SseSeamApi {
 
 // Standalone sse stitch: the call argument is inferred from `config.input`, the result fixed to the
 // collected event array (a streaming await resolves to all of its `delta` chunks — Stage 5).
-const sseStitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+const sseStitch = <
+    const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+>(
     config: C,
 ): Stitch<SseEvent[], InputOf<C>> =>
     makeStitch<SseEvent[]>({ ...config, kind: sseSurface });
@@ -129,7 +133,9 @@ const sseStitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
 // Bind sse members to a seam through the seam's surface-agnostic `stitch({ kind })` (Decision 3) —
 // no per-surface seam method; one shared runtime / principal boundary.
 function bindSeam(s: Seam): SseSeamApi {
-    const stitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    const stitch = <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ): Stitch<SseEvent[], InputOf<C>> =>
         s.stitch<SseEvent[]>({ ...config, kind: sseSurface });
