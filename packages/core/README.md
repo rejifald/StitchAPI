@@ -74,9 +74,9 @@ There are plenty of ways to get a typed API client — spec-based generators, ha
 
 -   **Auth is a boundary, not a header you remember to set.** A stitch owns its credential and its lifecycle — bearer, API keys, cookie sessions with automatic login and re-login on expiry, OAuth2 client credentials. Callers get a **capability, not the credential**: they invoke the stitch and receive data without ever touching the secret. That matters double when the caller is an AI agent.
 
--   **Agents are first-class callers.** Typed clients were designed for humans writing app code. A stitch is also designed to be invoked by an agent: one definition is callable as an in-process function and as a CLI command (`stitch run`) today, with HTTP and MCP surfaces on the roadmap — returning structured, schema-validated, traceable results instead of opaque bytes.
+-   **Agents are first-class callers.** Typed clients were designed for humans writing app code. A stitch is also designed to be invoked by an agent: one definition is callable as an in-process function, a CLI command (`stitch run`), an HTTP endpoint (`stitch serve`), and an MCP tool server (`stitch mcp`) — returning structured, schema-validated, traceable results instead of opaque bytes.
 
--   **Observability with zero infrastructure.** Every call emits a typed event stream, traced to the console and a local JSONL log by default (`stitch trace` to inspect) — no collector, no dashboard, nothing to deploy. Exporters become opt-in when you do have infrastructure.
+-   **Observability with zero infrastructure.** Every call emits a typed event stream, but tracing is **off by default** — a stitch's only effect is its call, writing and printing nothing until you opt in (per stitch with `trace: 'console'` / `fileSink(path)` / a `TraceSink`, or globally with `STITCH_TRACE_CONSOLE=1` / `STITCH_TRACE_FILE=<path>` / `STITCH_EXPORT=otlp`). Then it's the console and a local JSONL log (`stitch trace` to inspect) — no collector, no dashboard, nothing to deploy.
 
 -   **A library, not a platform.** Zero runtime dependencies, embeds in your project, nothing to operate. Workflow platforms (Windmill, n8n, …) solve integration with a server and a visual builder; StitchAPI keeps it a code primitive — stitches compose in plain TypeScript.
 
@@ -102,8 +102,8 @@ For the full competitive landscape and positioning, see the [Overview](docs/OVER
 -   **Data shaping** - `unwrap` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, and `json` / `form` / `multipart` request bodies.
 -   **Any request style** - `http` is the default; `graphql`, `sse`, `stream`, and `download` are peer **surfaces**, each a subpath import (`stitchapi/sse`, …) on the same engine — so `import { stitch }` bundles `http` alone.
 -   **Pluggable state store** - throttle counters and sessions/tokens live behind a 3-method store; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
--   **Zero-infra observability** - every event is appended to a local JSONL trace by default; `stitch trace` summarizes runs, retries, drift, and latency percentiles.
--   **CLI surface** - the definition your code imports is also runnable from the shell: `stitch run <name>` streams JSONL events (HTTP and MCP surfaces are on the roadmap).
+-   **Zero-infra observability** - tracing is **off by default** (a stitch's only effect is its call); opt in per stitch with `trace: 'console'` / `fileSink(path)` / a `TraceSink`, or globally with `STITCH_TRACE_CONSOLE=1` / `STITCH_TRACE_FILE=<path>` / `STITCH_EXPORT=otlp`. `stitch trace` then summarizes runs, retries, drift, and latency percentiles.
+-   **CLI, HTTP & MCP surfaces** - the definition your code imports is also runnable from the shell (`stitch run <name>` streams JSONL events), served over HTTP (`stitch serve`), or exposed to agents over MCP (`stitch mcp`) — the same stitch behind every front door.
 -   **Typed URLs** - full [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates (`{id}`, `{+path}`, `{?q,sort}`, explode `*`, prefix `:n`), and a `qs`-style query builder that serializes nested objects (`a[b]=c`) and arrays — both dependency-free.
 -   **Pluggable transport** - `fetch` by default; drop in the shipped `axiosAdapter`, or any `Adapter` function, to route requests through axios or another HTTP client.
 -   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable.
@@ -601,17 +601,23 @@ Pair it with `drift` and a renamed HTML selector that silently drops a field bec
 
 ## Zero-infra observability
 
-Observability is a consumer of the event stream, not a separate system. Every event of every call is appended as JSONL to `~/.stitch/runs/proto.jsonl` by default — no collector, no dashboard, nothing to deploy:
+Observability is a consumer of the event stream, not a separate system — and it's **off by default**: a stitch's only effect is its call, writing and printing nothing until you opt in. Turn tracing on per stitch with the `trace` field (`'console'` for a colored stderr stream, `fileSink(path)` for JSONL on disk, or any `TraceSink`), or globally with the `STITCH_TRACE_*` / `STITCH_EXPORT` env vars — no collector, no dashboard, nothing to deploy:
 
 ```bash
-# choose where the JSONL goes (default: ~/.stitch/runs/proto.jsonl)
+# append JSONL to a path (off unless set; fileSink() defaults to ~/.stitch/runs/proto.jsonl)
 STITCH_TRACE_FILE=./run.jsonl node app.js
 
 # opt into a live, colored, one-line-per-event view on stderr
 STITCH_TRACE_CONSOLE=1 node app.js
+
+# ALSO fan the same events to an OTLP collector
+STITCH_EXPORT=otlp node app.js
+
+# capture full bodies (the JSONL truncates request/response bodies to 2048 chars by default)
+STITCH_TRACE_MAX_BODY=full node app.js
 ```
 
-That is per-call latency, status, attempts, throttle waits, and drift findings — recorded for free, inspectable with [`stitch trace`](#the-stitch-cli) or plain `jq`. Drift rides the same events, so a leveled drift signal shows up in the trace with no extra wiring. Need a custom sink? Consume `.stream()` yourself — the built-in trace is just one consumer of the same events. (OTLP export is on the roadmap.)
+That is per-call latency, status, attempts, throttle waits, and drift findings — recorded for free once you opt in, inspectable with [`stitch trace`](#the-stitch-cli) or plain `jq`. Drift rides the same events, so a leveled drift signal shows up in the trace with no extra wiring. The built-in JSONL and console sinks are safe by default — scrubbing happens at the sink boundary, so the live request is never touched, only the trace copy. Header values on a secret denylist (`authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`; widen it with `redactHeaders`) become `[REDACTED]`; credentials in the resolved URL are scrubbed (userinfo removed, secret query values like `api_key`/`access_token` replaced with `REDACTED`); and request bodies and response values are truncated to 2048 characters, with anything larger replaced by a `{ truncated, bytes, preview }` marker. Opt into full, untruncated capture with `STITCH_TRACE_MAX_BODY=full` (or `fileSink(path, { maxBodyBytes: false })`). Need a custom sink? Consume `.stream()` yourself — the built-in trace is just one consumer of the same events.
 
 ## The stitch CLI
 
@@ -642,7 +648,7 @@ total: 12 run(s), 11 ok, 1 failed
 
 A stitch is a **per-call primitive**, not a workflow or iPaaS engine. Job queues, inbound webhooks, multi-step orchestration and rollback, business/DB idempotency, and app-level cache policy stay your app's job — absorbing them is exactly how a small library becomes the heavy platform it is positioned against.
 
-Next up, in order: multi-cookie jar, binary/blob responses, circuit breaker, idempotency keys, and OTLP export; then the HTTP and MCP surfaces of the same definition; then shell → LLM kinds with `pipe()` composition. The full roadmap and scope rationale live in the [Overview](docs/OVERVIEW.md).
+Next up: shell → LLM kinds with `pipe()` composition, so a stitch's output can feed a model or shell call in the same declarative chain. The features once staged here have all shipped — the multi-cookie jar, circuit breaker, idempotency keys, and binary/blob responses; OTLP export; and the HTTP (`stitch serve`) and MCP (`stitch mcp`) surfaces of the same definition. The full roadmap and scope rationale live in the [Overview](docs/OVERVIEW.md).
 
 ## License
 

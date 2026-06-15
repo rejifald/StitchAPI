@@ -163,11 +163,24 @@ function fileFromEnv(value: string | undefined): string | false {
     return value;
 }
 
+// `STITCH_TRACE_MAX_BODY` tunes JSONL body/result truncation: unset → the built-in
+// default cap; `full` → full capture (no truncation); a non-negative integer → that
+// character cap (`0` keeps only the marker). Anything else falls back to the default.
+function maxBodyFromEnv(value: string | undefined): number | false | undefined {
+    if (value === undefined) return undefined;
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === 'full') return false;
+    const n = Number(trimmed);
+    return Number.isInteger(n) && n >= 0 ? n : undefined;
+}
+
 function getTrace(): TraceSink {
     const file = fileFromEnv(readEnv('STITCH_TRACE_FILE'));
+    const maxBodyBytes = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
     const base = createTrace({
         console: readEnv('STITCH_TRACE_CONSOLE') === '1',
         file,
+        ...(maxBodyBytes !== undefined ? { maxBodyBytes } : {}),
     });
     if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;
     return multiplex(base, otlpTrace());

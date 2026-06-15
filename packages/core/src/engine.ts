@@ -259,42 +259,52 @@ async function validateInput(
     }
 }
 
+// Schema validation + drift leveling for ONE value, without the snapshot step. Shared by the
+// buffered `output` check below and the per-`delta` streaming check (ADR 0005 Addendum): a schema
+// failure on a `watch` (but not `critical`) path is a warning, otherwise an error. A bare validator
+// `output` (no DriftSpec) has empty watch/critical, so every failure is an error.
+async function validateSchema(
+    cfg: StitchConfig,
+    value: unknown,
+): Promise<DriftFinding[]> {
+    const out = cfg.output;
+    if (!out) return [];
+    // Probe cast keeps `__kind` `unknown`, so this is a real comparison — not an always-true
+    // check against the `'drift'` literal (the idiom used by `outputSchemaSource`).
+    const isDrift = (out as { __kind?: unknown }).__kind === 'drift';
+    const validator: Validator = isDrift
+        ? (out as DriftSpec).schema
+        : (out as Validator);
+    const opts = isDrift ? (out as DriftSpec).options : {};
+    const r = await validator.validate(value);
+    if (r.ok) return [];
+    const findings: DriftFinding[] = [];
+    for (const iss of r.issues) {
+        const path = iss.path.join('.');
+        const level =
+            matchAny(opts.watch, path) && !matchAny(opts.critical, path)
+                ? 'warn'
+                : 'error';
+        findings.push({ level, path, change: 'invalid', detail: iss.message });
+    }
+    return findings;
+}
+
 async function validateOutput(
     cfg: StitchConfig,
     body: unknown,
 ): Promise<DriftFinding[]> {
     const out = cfg.output;
     if (!out) return [];
-    const findings: DriftFinding[] = [];
-    const isDrift = (out as DriftSpec).__kind === 'drift';
-    const validator: Validator | undefined = isDrift
-        ? (out as DriftSpec).schema
-        : (out as Validator);
-    const opts = isDrift ? (out as DriftSpec).options : {};
-
-    if (validator) {
-        const r = await validator.validate(body);
-        if (!r.ok) {
-            for (const iss of r.issues) {
-                const path = iss.path.join('.');
-                const level =
-                    matchAny(opts.watch, path) && !matchAny(opts.critical, path)
-                        ? 'warn'
-                        : 'error';
-                findings.push({
-                    level,
-                    path,
-                    change: 'invalid',
-                    detail: iss.message,
-                });
-            }
+    // Schema + leveling first, then the snapshot baseline (whole-body only — see validateSchema).
+    const findings: DriftFinding[] = await validateSchema(cfg, body);
+    if ((out as { __kind?: unknown }).__kind === 'drift') {
+        const opts = (out as DriftSpec).options;
+        if (opts.snapshotFile) {
+            const snap = loadSnapshot(opts.snapshotFile);
+            if (snap === undefined) saveSnapshot(opts.snapshotFile, body);
+            else findings.push(...classifyDrift(body, snap, opts));
         }
-    }
-
-    if (isDrift && opts.snapshotFile) {
-        const snap = loadSnapshot(opts.snapshotFile);
-        if (snap === undefined) saveSnapshot(opts.snapshotFile, body);
-        else findings.push(...classifyDrift(body, snap, opts));
     }
     return findings;
 }
@@ -829,8 +839,9 @@ async function* runFrom(
 // so a long-lived connection can never pin a seam's concurrency budget (Decision 12). The await/
 // `consume` path resolves to the COLLECTED array of every emitted chunk — the terminal `result`
 // mirrors the delta spine (Stage 5 sub-decision); `.stream()` yields the chunks incrementally and
-// buffers nothing. transform/unwrap/output validation are buffered-response concepts and are not
-// applied to the delta path.
+// buffers nothing. transform/unwrap reshape a whole buffered body and are NOT applied here; the
+// `output` contract, by contrast, validates each chunk before its `delta` is emitted (per-`delta`,
+// via the surface's `contractValue` hook — ADR 0005 Addendum), snapshot-drift omitted.
 async function* runStreaming(
     rt: Runtime,
     input: StitchInput,
@@ -904,10 +915,36 @@ async function* runStreaming(
     }
 
     // Decode the live body into `delta` chunks; collect them so the await path resolves to the
-    // whole sequence (Stage 5 sub-decision).
+    // whole sequence (Stage 5 sub-decision). With an `output` contract set, validate each chunk
+    // BEFORE its `delta` is emitted (ADR 0005 Addendum): a `critical`/schema failure fails the
+    // stream — the bad value is never delivered or collected — while a `watch` finding warns and
+    // the delta still flows. `contractValue` picks the part to validate (sse → the event `data`),
+    // defaulting to the whole chunk; matches the buffered path's drift→error handling in `runFrom`.
     const chunks: unknown[] = [];
     try {
         for await (const chunk of streamHook(res, cfg)) {
+            if (cfg.output) {
+                const target = cfg.kind?.contractValue
+                    ? cfg.kind.contractValue(chunk)
+                    : chunk;
+                let fatal = false;
+                for (const finding of await validateSchema(cfg, target)) {
+                    yield { type: 'drift', finding, at: now() };
+                    if (finding.level === 'error') fatal = true;
+                }
+                if (fatal) {
+                    yield {
+                        type: 'error',
+                        name,
+                        message: 'contract violation (drift)',
+                        status: res.status,
+                        attempts: 1,
+                        at: now(),
+                    };
+                    yield doneEvt(false, t0, 1);
+                    return;
+                }
+            }
             chunks.push(chunk);
             yield { type: 'delta', chunk, at: now() };
         }

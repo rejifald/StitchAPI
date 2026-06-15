@@ -54,6 +54,14 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
         res: AdapterResponse,
         cfg: StitchConfig,
     ) => AsyncIterable<unknown>;
+    /**
+     * Map an emitted `delta` to the value the `output` contract validates (per-`delta`
+     * validation — ADR 0005 Addendum). Omitted ⇒ the delta itself. Affects ONLY what is
+     * validated, never what is emitted or collected: the `delta` event and the result array
+     * still carry the full value. `sse` returns the event's `data` payload, so a contract
+     * describes the payload rather than the `{ event, data, id, retry }` envelope.
+     */
+    readonly contractValue?: (chunk: unknown) => unknown;
     /** Phantom carrier so `stitch<S>` can recover a surface's call-argument type. Never read. */
     readonly __input?: (input: TInput) => void;
 }

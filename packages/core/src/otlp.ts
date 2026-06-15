@@ -3,7 +3,7 @@
 // SpanExporter. The default exporter POSTs OTLP/JSON to a collector; tests inject a stub
 // exporter (no running collector). It is a normal TraceSink, so it tees alongside console/JSONL.
 import type { StitchEvent, TraceSink } from './types';
-import { readEnv } from './util';
+import { readEnv, scrubUrl } from './util';
 
 export type SpanAttributes = Record<string, string | number | boolean>;
 
@@ -98,9 +98,11 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
             const name = ctx.name;
             switch (event.type) {
                 case 'start': {
+                    // url.full is OTLP's only secret-bearing attribute (it never exports
+                    // headers/bodies): scrub userinfo + secret query values before export.
                     const attributes: SpanAttributes = {
                         'http.request.method': event.method,
-                        'url.full': event.url,
+                        'url.full': scrubUrl(event.url),
                     };
                     const host = serverAddress(event.url);
                     if (host) attributes['server.address'] = host;
