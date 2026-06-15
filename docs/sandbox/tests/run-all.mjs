@@ -45,7 +45,9 @@ const SUITES = [
 ];
 
 // ---------------------------------------------------------------------------
-// Run each suite: spawn npx tsx <file>, capture exit code + combined output.
+// Run each suite: spawn `node --import tsx <file>`, capture exit + combined output.
+// tsx is a pinned devDependency (workspace root), so this never reaches the network —
+// `npx tsx` would try to *download* tsx when it isn't hoisted to a runnable bin.
 // ---------------------------------------------------------------------------
 
 let passed = 0;
@@ -58,7 +60,7 @@ for (const relPath of SUITES) {
     const absPath = resolve(root, relPath);
     process.stdout.write(`  running ${relPath} … `);
 
-    const result = spawnSync('npx', ['-y', 'tsx', absPath], {
+    const result = spawnSync('node', ['--import', 'tsx', absPath], {
         encoding: 'utf8',
         cwd: root,
         // Give each suite up to 30 s — browser-runner.test.ts uses real threads
