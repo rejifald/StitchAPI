@@ -185,7 +185,7 @@ describe('Decision 12 — streaming is concurrency-exempt but rate-charged', () 
         const t = createStoreThrottle({ concurrency: 1, rate: '100/s' }, store);
         await t.acquire('svc', { rateOnly: true });
         await t.acquire('svc', { rateOnly: true });
-        // The fixed-window counter records BOTH opens (Decision 12: charge the rate gate at open).
+        // The per-window rate counter records BOTH opens (Decision 12: charge the rate gate at open).
         const windowStart = Math.floor(now() / 1000) * 1000;
         expect(await store.get(`rl:svc:${windowStart}`)).toBe(2);
     });

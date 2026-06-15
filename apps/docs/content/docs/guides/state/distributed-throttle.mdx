@@ -16,7 +16,7 @@ worker that uses it.
 import { stitch } from 'stitchapi';
 import type { StitchStore } from 'stitchapi';
 
-// A Redis- or Postgres-backed store, shared across workers — see The pluggable store.
+// A shared store — e.g. @stitchapi/redis's redisStore() — see The pluggable store.
 declare const sharedStore: StitchStore;
 
 const search = stitch({
@@ -32,9 +32,19 @@ const search = stitch({
 `throttle` sets the limits — `rate` (e.g. `'10/s'`), `concurrency`, and
 `scope` — while `store` decides where the counters live. The default in-memory
 store is single-process, so each worker enforces `10/s` on its own and the fleet
-runs at `10/s × workers`. A shared store holds the rate counter as a fixed-window
-count every worker increments, so the whole fleet shares one `10/s` budget.
-(Concurrency stays in-process; only the rate limit is distributed.)
+runs at `10/s × workers`. A shared store holds the rate counter every worker
+increments, so the whole fleet shares one `10/s` budget — and grants are
+**even-spaced** (about one every 100ms, i.e. `window / limit`), the same pacing
+the in-process limiter uses, so attaching a store doesn't turn a smooth limit into
+boundary bursts. (Concurrency stays in-process; only the rate limit is distributed.)
+
+<Callout type="info">
+    Even-spacing holds for load up to the limit. Under _sustained_ overload —
+    more than the budget, for longer than one window — distributed pacing is
+    approximate at the window edges: a per-window counter can't carry a
+    continuous backlog across processes the way the single-process limiter does.
+    The budget itself still holds.
+</Callout>
 
 `scope` decides what shares a budget: `'stitch'` (the default) gives each stitch
 its own counter keyed by name, while `'host'` keys by origin so every stitch

@@ -88,9 +88,18 @@ export interface Throttle {
 }
 
 /**
- * Store-backed throttle. Rate is enforced as a fixed-window counter held in the store, so a
- * SHARED store paces calls across processes; concurrency stays in-process (a distributed
- * semaphore needs leases — out of scope here).
+ * Store-backed throttle. Rate is paced by EVEN-SPACED grants over an atomic per-window counter in
+ * the store: the Nth grant in a window is scheduled at `windowStart + (N-1)·(perMs/count)` — the
+ * same cadence as the in-process limiter ({@link createThrottle}), so attaching a store no longer
+ * silently switches pacing to bursty fixed-window (the spacing even carries across the window
+ * boundary). A SHARED store paces calls across the whole fleet; concurrency stays in-process (a
+ * distributed semaphore needs leases — out of scope here).
+ *
+ * The counter is per-window, so under SUSTAINED overload (offered load above the limit across
+ * multiple windows) pacing is approximate at window edges: backlog scheduled on one window's
+ * counter can overlap the next window's fresh counter. Exact continuous GCRA across processes would
+ * need an atomic read-compute-write of a timestamp (a Lua cell or a new atomic store primitive) — a
+ * `StitchStore` contract extension, deliberately deferred.
  */
 export function createStoreThrottle(
     opts: ThrottleOptions | undefined,
@@ -137,20 +146,22 @@ export function createStoreThrottle(
             if (blocked) waitedMs = now() - blockStart;
         }
         if (rate) {
-            // At most rate.count grants per rate.perMs window. If we land over the limit,
-            // wait for the next window boundary and re-check.
-            for (;;) {
-                const windowStart = Math.floor(now() / rate.perMs) * rate.perMs;
-                const count = await store.incr(
-                    `rl:${key}:${windowStart}`,
-                    rate.perMs + 100,
-                );
-                if (count <= rate.count) break;
-                const waitMs = windowStart + rate.perMs - now();
-                if (waitMs > 0) {
-                    await sleep(waitMs);
-                    waitedMs += waitMs;
-                }
+            // Even-spaced pacing over the shared counter (mirrors createThrottle's `spacing`):
+            // the atomic incr hands each caller a unique slot N in the window, and slot N is
+            // scheduled at windowStart + (N-1)·spacing. Slot count+1 lands exactly at the next
+            // windowStart, so grants stay one `spacing` apart across the boundary — no fixed-window
+            // burst. No re-check loop: each caller owns a distinct, non-colliding slot.
+            const spacing = rate.perMs / rate.count; // ms between grants
+            const windowStart = Math.floor(now() / rate.perMs) * rate.perMs;
+            const n = await store.incr(
+                `rl:${key}:${windowStart}`,
+                rate.perMs + 100,
+            );
+            const grantAt = windowStart + (n - 1) * spacing;
+            const wait = grantAt - now();
+            if (wait > 0) {
+                await sleep(wait);
+                waitedMs += wait;
             }
         }
         return { waitedMs };

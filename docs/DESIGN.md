@@ -491,7 +491,7 @@ interface StitchStore {
 }
 
 const api = seam({
-    store: redisStore(redis), // default is an in-memory store
+    store: redisStore(fromIoredis(redis)), // default is an in-memory store
 });
 ```
 
