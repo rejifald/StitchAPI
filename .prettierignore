@@ -21,3 +21,10 @@ apps/docs/public/sandbox/
 
 # Generated sandbox MCP bundles (@stitchapi/sandbox, built by build:mcp)
 docs/sandbox/dist/
+
+# Local Claude Code git worktrees. CI checks out clean and never sees these, but
+# `prettier --check .` (the pre-push format gate) would otherwise descend into
+# every nested worktree copy — unformatted files and half-removed ones alike —
+# and fail. The tracked `.claude/launch.json` / `.claude/settings.json` stay in
+# scope. See lefthook.yml's pre-push `format` job.
+.claude/worktrees/
