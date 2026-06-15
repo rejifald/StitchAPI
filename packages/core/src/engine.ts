@@ -243,9 +243,17 @@ async function validateInput(
     cfg: StitchConfig,
     input: StitchInput,
 ): Promise<void> {
-    for (const part of ['params', 'query', 'body', 'headers'] as const) {
+    for (const part of [
+        'params',
+        'query',
+        'body',
+        'headers',
+        'variables',
+    ] as const) {
         // `input.*` is widened to SchemaLike for authoring ergonomics, but `compose` →
         // `normalizeInput` has already coerced every present slot to a Validator by now.
+        // `variables` (the graphql surface's primary input) validates here too; the validated
+        // value still flows untouched into the `{ query, variables }` body the surface packs.
         const v = cfg.input?.[part] as Validator | undefined;
         if (!v) continue;
         const r = await v.validate((input as Record<string, unknown>)[part]);

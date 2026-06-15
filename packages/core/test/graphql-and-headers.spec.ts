@@ -10,6 +10,7 @@ import type { MockServer } from './support/mock-server';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { z } from 'zod';
 
 process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
@@ -75,6 +76,61 @@ describe('GraphQL kind', () => {
         });
         const query = graphql({ baseUrl: server.url, query: '{ thing }' });
         await expect(query()).rejects.toThrow(/thing.*not found/);
+    });
+});
+
+// Issue #75: `input.variables` is now a validated slot (it used to be an untyped passthrough).
+// The compile-time half is graphql-variables.test-d.ts; this is the runtime half.
+describe('GraphQL input.variables validation', () => {
+    test('rejects bad variables BEFORE hitting the wire', async () => {
+        server.route('POST', '/graphql', { body: { data: { ok: true } } });
+        const query = graphql({
+            baseUrl: server.url,
+            query: 'query($id: ID!) { thing(id: $id) { name } }',
+            input: { variables: z.object({ id: z.string() }) },
+        });
+
+        // `id` must be a string — a number fails the variables schema.
+        await expect(
+            query({ variables: { id: 1 as unknown as string } }),
+        ).rejects.toThrow(/invalid variables/);
+        // validation runs before the request, so the server never saw the call.
+        expect(server.calls('/graphql')).toHaveLength(0);
+    });
+
+    test('accepts good variables and packs them into { query, variables }', async () => {
+        server.route('POST', '/graphql', {
+            body: { data: { thing: { name: 'Ada' } } },
+        });
+        const query = graphql({
+            baseUrl: server.url,
+            query: 'query($id: ID!) { thing(id: $id) { name } }',
+            input: { variables: z.object({ id: z.string() }) },
+        });
+
+        const out = await query({ variables: { id: 'abc' } });
+        expect(out).toEqual({ thing: { name: 'Ada' } });
+        const call = server.calls('/graphql')[0]!;
+        expect((call.body as { variables: unknown }).variables).toEqual({
+            id: 'abc',
+        });
+    });
+
+    test('a graphql call with NO variables schema still works (untyped passthrough)', async () => {
+        server.route('POST', '/graphql', { body: { data: { ok: true } } });
+        const query = graphql({
+            baseUrl: server.url,
+            query: 'query($id: ID) { thing(id: $id) { name } }',
+        });
+
+        // No `input.variables` → no validation; any variables flow straight through.
+        const out = await query({ variables: { id: 42, extra: 'anything' } });
+        expect(out).toEqual({ ok: true });
+        const call = server.calls('/graphql')[0]!;
+        expect((call.body as { variables: unknown }).variables).toEqual({
+            id: 42,
+            extra: 'anything',
+        });
     });
 });
 
