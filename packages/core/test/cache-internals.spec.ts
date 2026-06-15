@@ -139,12 +139,14 @@ describe('deriveCacheKey canonicalisation', () => {
         );
     });
 
-    test('GraphQL document is opaque; variables are canonicalised', () => {
+    test('GraphQL body { query, variables } is canonicalised (document opaque)', () => {
+        // The graphql surface packs { query, variables } into the request body, so the cache keys
+        // on it uniformly (no separate graphql descriptor) — still order-independent in variables.
         const v1 = deriveCacheKey(
             {
                 method: 'POST',
                 url: 'https://x.test/graphql',
-                graphql: { query: 'query Q { me }', variables: { a: 1, b: 2 } },
+                body: { query: 'query Q { me }', variables: { a: 1, b: 2 } },
             },
             undefined,
         );
@@ -152,7 +154,7 @@ describe('deriveCacheKey canonicalisation', () => {
             {
                 method: 'POST',
                 url: 'https://x.test/graphql',
-                graphql: { query: 'query Q { me }', variables: { b: 2, a: 1 } },
+                body: { query: 'query Q { me }', variables: { b: 2, a: 1 } },
             },
             undefined,
         );
@@ -160,7 +162,7 @@ describe('deriveCacheKey canonicalisation', () => {
             {
                 method: 'POST',
                 url: 'https://x.test/graphql',
-                graphql: {
+                body: {
                     query: 'query OTHER { me }',
                     variables: { a: 1, b: 2 },
                 },

@@ -420,10 +420,13 @@ export function graphql<
         query: string;
     },
 >(config: C): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
+    // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the
+    // convenience without clobbering an explicit endpoint). Method/body shaping is the surface's.
+    const endpointless = config.url === undefined && config.path === undefined;
     return makeStitch<ResolveOutput<TExplicit, C>>({
         ...config,
+        ...(endpointless ? { path: '/graphql' } : {}),
         kind: graphqlSurface,
-        method: 'POST',
         unwrap: config.unwrap ?? 'data',
     });
 }

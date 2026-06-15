@@ -113,7 +113,6 @@ export interface RequestDescriptor {
     method: string;
     url: string;
     body?: unknown;
-    graphql?: { query: string; variables: unknown };
     headers?: Record<string, string>;
     principal?: string;
 }
@@ -131,12 +130,9 @@ function canonicalRequest(
         m: d.method.toUpperCase(),
         u: normalizeUrl(d.url),
     };
-    if (d.graphql) {
-        parts['q'] = d.graphql.query; // document opaque; no GraphQL parser pulled in
-        parts['gv'] = d.graphql.variables; // variables canonicalised by stable()
-    } else if (d.body !== undefined) {
-        parts['b'] = d.body;
-    }
+    // The body is the resolved request payload (for graphql, the { query, variables } the surface
+    // packed) — keyed uniformly; canonicalised by stable().
+    if (d.body !== undefined) parts['b'] = d.body;
     if (varyNames?.length) {
         const h = varyHeaderObject(d.headers, varyNames);
         if (Object.keys(h).length) parts['h'] = h;
