@@ -58,6 +58,16 @@ export interface MultipartOptions {
     /** Nesting strategy for nested objects/arrays in a multipart body. Default `'bracket'`. */
     nesting?: MultipartNesting;
 }
+/**
+ * Byte-transfer progress for a single request (ADR 0005 Decision 9). Reported through
+ * {@link AdapterRequest.onProgress}, tagged by direction: `'upload'` as the request body is
+ * sent, `'download'` as the response body arrives. `total` is the content length when known.
+ */
+export interface AdapterProgress {
+    phase: 'upload' | 'download';
+    loaded: number;
+    total?: number;
+}
 export interface AdapterRequest {
     url: string;
     method: string;
@@ -67,12 +77,26 @@ export interface AdapterRequest {
     /** Multipart serialisation options (nesting); only read when `bodyType: 'multipart'`. */
     multipart?: MultipartOptions;
     responseType?: ResponseType;
+    /**
+     * Ask the transport NOT to buffer/parse the response — hand back the live body instead
+     * (ADR 0005 Decision 9 / Q1). When set, {@link AdapterResponse.body} is a
+     * `ReadableStream<Uint8Array>`. Only `fetch` honours it; buffered-only adapters (axios, xhr)
+     * reject the request.
+     */
+    stream?: boolean;
+    /**
+     * Byte-progress callback (ADR 0005 Decision 9). Fires with `phase: 'download'` as the
+     * response is read, and `phase: 'upload'` as the request body is sent (upload progress needs
+     * `xhrAdapter` — `fetch` cannot report it). Orthogonal to {@link AdapterRequest.stream}.
+     */
+    onProgress?: (progress: AdapterProgress) => void;
     signal?: AbortSignal;
 }
 export interface AdapterResponse {
     status: number;
     headers: Record<string, string>;
-    body: unknown; // parsed JSON when possible, else text
+    // Parsed JSON when possible, else text — OR a `ReadableStream<Uint8Array>` when `stream` was set.
+    body: unknown;
 }
 export type Adapter = (req: AdapterRequest) => Promise<AdapterResponse>;
 

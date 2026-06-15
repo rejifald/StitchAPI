@@ -1,5 +1,6 @@
 import type {
     Adapter,
+    AdapterProgress,
     AdapterRequest,
     AdapterResponse,
     MultipartNesting,
@@ -49,6 +50,28 @@ export function fetchAdapter(): Adapter {
             }
         }
 
+        // Streaming surfaces (sse/stream) ask for the live body: hand back the ReadableStream
+        // unparsed (ADR 0005 Q1 — `body` carries the stream when `req.stream` is set).
+        if (req.stream) {
+            return {
+                status: response.status,
+                headers: resHeaders,
+                body: response.body,
+            };
+        }
+
+        // Download progress: read the body in chunks, reporting bytes as they arrive, then
+        // decode the assembled bytes exactly as the buffered path would (ADR 0005 Decision 9).
+        if (req.onProgress) {
+            const bytes = await readWithProgress(response, req.onProgress);
+            const contentType = resHeaders['content-type'] ?? '';
+            return {
+                status: response.status,
+                headers: resHeaders,
+                body: decodeResponseBody(req.responseType, contentType, bytes),
+            };
+        }
+
         // Read the body. An explicit responseType wins (arrayBuffer/blob for binary
         // downloads, text/json to force a shape); otherwise auto-detect by content-type.
         let parsed: unknown;
@@ -77,6 +100,47 @@ export function fetchAdapter(): Adapter {
 
         return { status: response.status, headers: resHeaders, body: parsed };
     };
+}
+
+// Read a response body to completion, reporting download progress per chunk (ADR 0005
+// Decision 9). Returns the full bytes so the caller decodes them per responseType — the same
+// `decodeResponseBody` the buffered path uses, so a progress read parses identically.
+async function readWithProgress(
+    response: Response,
+    onProgress: (p: AdapterProgress) => void,
+): Promise<ArrayBuffer> {
+    const lenHeader = response.headers.get('content-length');
+    const parsedLen = lenHeader != null ? Number(lenHeader) : NaN;
+    const total = Number.isFinite(parsedLen) ? parsedLen : undefined;
+    const reader = response.body?.getReader();
+    if (!reader) {
+        onProgress(
+            total !== undefined
+                ? { phase: 'download', loaded: 0, total }
+                : { phase: 'download', loaded: 0 },
+        );
+        return new ArrayBuffer(0);
+    }
+    const chunks: Uint8Array[] = [];
+    let loaded = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.byteLength;
+        onProgress(
+            total !== undefined
+                ? { phase: 'download', loaded, total }
+                : { phase: 'download', loaded },
+        );
+    }
+    const out = new Uint8Array(loaded);
+    let offset = 0;
+    for (const c of chunks) {
+        out.set(c, offset);
+        offset += c.byteLength;
+    }
+    return out.buffer;
 }
 
 const hasHeader = (headers: Record<string, string>, name: string): boolean =>

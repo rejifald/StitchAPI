@@ -44,6 +44,14 @@ export function axiosAdapter(
     return async function axiosAdapterRequest(
         req: AdapterRequest,
     ): Promise<AdapterResponse> {
+        // Buffered-only transport (ADR 0005 Decision 9): a streaming surface must use
+        // fetchAdapter. Fail loudly rather than silently buffering a stream. `onProgress` is
+        // simply ignored (not wired) — axios stays the zero-config buffered option.
+        if (req.stream) {
+            throw new Error(
+                'axiosAdapter does not support streaming responses; use fetchAdapter for `stream`.',
+            );
+        }
         const headers: Record<string, string> = {
             ...defaults.headers,
             ...req.headers,
