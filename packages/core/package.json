@@ -75,6 +75,56 @@
                 "types": "./lib/cache.d.ts",
                 "default": "./lib/cache.js"
             }
+        },
+        "./graphql": {
+            "import": {
+                "types": "./lib/graphql.d.mts",
+                "default": "./lib/graphql.mjs"
+            },
+            "require": {
+                "types": "./lib/graphql.d.ts",
+                "default": "./lib/graphql.js"
+            }
+        },
+        "./sse": {
+            "import": {
+                "types": "./lib/sse.d.mts",
+                "default": "./lib/sse.mjs"
+            },
+            "require": {
+                "types": "./lib/sse.d.ts",
+                "default": "./lib/sse.js"
+            }
+        },
+        "./stream": {
+            "import": {
+                "types": "./lib/stream.d.mts",
+                "default": "./lib/stream.mjs"
+            },
+            "require": {
+                "types": "./lib/stream.d.ts",
+                "default": "./lib/stream.js"
+            }
+        },
+        "./download": {
+            "import": {
+                "types": "./lib/download.d.mts",
+                "default": "./lib/download.mjs"
+            },
+            "require": {
+                "types": "./lib/download.d.ts",
+                "default": "./lib/download.js"
+            }
+        },
+        "./xhr": {
+            "import": {
+                "types": "./lib/xhr-adapter.d.mts",
+                "default": "./lib/xhr-adapter.mjs"
+            },
+            "require": {
+                "types": "./lib/xhr-adapter.d.ts",
+                "default": "./lib/xhr-adapter.js"
+            }
         }
     },
     "sideEffects": false,

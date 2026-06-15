@@ -46,7 +46,7 @@ The name StitchAPI combines the words “stitch” and “API,” reflecting its
 -   [Pluggable state store](#pluggable-state-store)
 -   [Request body encoding](#request-body-encoding)
 -   [HTTP transport (adapters)](#http-transport-adapters)
--   [GraphQL](#graphql)
+-   [Surfaces: any request style](#surfaces-any-request-style)
 -   [Pagination](#pagination)
 -   [Transform](#transform)
 -   [Zero-infra observability](#zero-infra-observability)
@@ -99,7 +99,8 @@ For the full competitive landscape and positioning, see the [Overview](docs/OVER
 -   **Leveled drift detection** - live responses are diffed against a committed contract snapshot; changes surface as `error` / `warn` / `info` findings instead of a silent `undefined`.
 -   **Declared resilience** - retry with backoff and `Retry-After`, proactive throttle (rate + concurrency, per stitch or per host), and total / per-attempt timeouts with real aborts.
 -   **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `secretsFile()` and never reach the caller.
--   **Data shaping** - `unwrap` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, `json` / `form` / `multipart` request bodies, and a `graphql()` helper.
+-   **Data shaping** - `unwrap` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, and `json` / `form` / `multipart` request bodies.
+-   **Any request style** - `http` is the default; `graphql`, `sse`, `stream`, and `download` are peer **surfaces**, each a subpath import (`stitchapi/sse`, …) on the same engine — so `import { stitch }` bundles `http` alone.
 -   **Pluggable state store** - throttle counters and sessions/tokens live behind a 3-method store; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
 -   **Zero-infra observability** - every event is appended to a local JSONL trace by default; `stitch trace` summarizes runs, retries, drift, and latency percentiles.
 -   **CLI surface** - the definition your code imports is also runnable from the shell: `stitch run <name>` streams JSONL events (HTTP and MCP surfaces are on the roadmap).
@@ -484,9 +485,25 @@ const echo: Adapter = async (req) => ({
 });
 ```
 
-## GraphQL
+## Surfaces: any request style
 
-`graphql()` is a stitch preset for GraphQL-over-HTTP: it POSTs `{ query, variables }` and unwraps `data`. A `200` carrying `errors[]` is treated as a failure — it will not silently pass:
+A **surface** is the request _style_ a stitch speaks. `http` is the default — the plain JSON-over-HTTP call every example above uses. GraphQL, Server-Sent Events, a raw byte stream, and a file download are **peer surfaces**: each shapes and interprets its own request, but they all ride the same engine — `auth`, `retry`, `throttle`, `timeout`, validation, and the event stream compose with every one.
+
+Every non-`http` surface ships as its own **subpath import**, so `import { stitch }` from the root pulls in only the `http` engine; a surface's code loads only when you import it.
+
+| Surface    | Import               | Shapes                                     | `await` resolves to            |
+| ---------- | -------------------- | ------------------------------------------ | ------------------------------ |
+| `http`     | `stitch` (default)   | a JSON-over-HTTP call                      | the validated body             |
+| `graphql`  | `stitchapi/graphql`  | POST `{ query, variables }`, unwrap `data` | the `data` payload             |
+| `sse`      | `stitchapi/sse`      | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
+| `stream`   | `stitchapi/stream`   | a raw `ReadableStream` reader              | every decoded chunk, collected |
+| `download` | `stitchapi/download` | a buffered binary GET                      | `{ blob, filename }`           |
+
+(Distinct from the four _invocation_ surfaces — function, CLI, HTTP, MCP — which are how you _call_ a stitch. A request surface is how a stitch shapes its _request_.)
+
+### GraphQL
+
+`graphql()` POSTs `{ query, variables }` and unwraps `data`. A `200` carrying `errors[]` is a failure — it will not silently pass:
 
 ```ts
 import { graphql } from 'stitchapi';
@@ -499,7 +516,52 @@ const getThing = graphql({
 const thing = await getThing({ variables: { id: 1 } });
 ```
 
-Because it is just a stitch underneath, `auth`, `retry`, `throttle`, and `output` / `drift` all compose with it.
+### Streaming: `sse` and `stream`
+
+A streaming surface decodes a live response body into `delta` events. `await` collects every chunk into an array; `.stream()` yields them as they arrive and buffers nothing — for an unbounded stream, prefer `.stream()`. `sse` parses the `text/event-stream` wire format over `fetch` + Web Streams (never `EventSource`), yielding one `{ event?, data, id?, retry? }` per event:
+
+```ts
+import { sse } from 'stitchapi/sse';
+
+const ticks = sse({ url: 'https://api.example.com/ticks' });
+
+for await (const ev of ticks.stream()) {
+    if (ev.type === 'delta') handle(ev.chunk); // a parsed SSE event
+}
+```
+
+`stream` is the raw sibling — `decode: 'bytes'` (default), `'lines'`, or `'ndjson'`:
+
+```ts
+import { stream } from 'stitchapi/stream';
+
+const logs = stream({
+    url: 'https://api.example.com/logs',
+    stream: { decode: 'ndjson' },
+});
+
+for await (const ev of logs.stream()) {
+    if (ev.type === 'delta') console.log(ev.chunk); // one parsed JSON value per line
+}
+```
+
+Opening a stream charges the rate limiter once but never holds a concurrency slot, so a long-lived connection can't pin a seam's budget.
+
+### Download
+
+`download` fetches a file: GET + a buffered `Blob`, with byte progress, a `Content-Disposition` filename, and a per-call `AbortSignal`. It never writes to disk — saving the `Blob` is your call:
+
+```ts
+import { download } from 'stitchapi/download';
+
+const getReport = download({ url: 'https://api.example.com/report.pdf' });
+
+const { blob, filename } = await getReport({
+    onProgress: (p) => console.log(p.loaded, '/', p.total),
+});
+```
+
+Because every surface is just a stitch underneath, `auth`, `retry`, `throttle`, and `output` / `drift` compose with all of them.
 
 ## Pagination
 

@@ -87,3 +87,42 @@ describe('tsup.config.ts entry points', () => {
         expect(tsupText).toContain(entry);
     });
 });
+
+// ---------------------------------------------------------------------------
+// ADR 0005 Decision 10 — every non-http surface + the xhr adapter is a subpath
+// export, built by tsup, so `import { stitch }` bundles http alone while each
+// surface is reached only when used.
+// ---------------------------------------------------------------------------
+
+describe('surface + adapter subpath exports (ADR 0005 Decision 10)', () => {
+    const exports = readJson('package.json')['exports'] as Record<
+        string,
+        {
+            import?: { types?: string; default?: string };
+            require?: { types?: string; default?: string };
+        }
+    >;
+    const tsupText = readText('tsup.config.ts');
+
+    // subpath → its `src` entry (the `xhr` subpath maps to `xhr-adapter`, not its own name)
+    const SURFACES = [
+        ['./graphql', 'src/graphql.ts'],
+        ['./sse', 'src/sse.ts'],
+        ['./stream', 'src/stream.ts'],
+        ['./download', 'src/download.ts'],
+        ['./xhr', 'src/xhr-adapter.ts'],
+    ] as const;
+
+    test.each(SURFACES)(
+        'exports["%s"] maps to its lib/ artifact and tsup builds the entry',
+        (subpath, entry) => {
+            const base = entry.replace(/^src\//, '').replace(/\.ts$/, '');
+            const e = exports[subpath];
+            expect(e?.import?.types).toBe(`./lib/${base}.d.mts`);
+            expect(e?.import?.default).toBe(`./lib/${base}.mjs`);
+            expect(e?.require?.types).toBe(`./lib/${base}.d.ts`);
+            expect(e?.require?.default).toBe(`./lib/${base}.js`);
+            expect(tsupText).toContain(entry);
+        },
+    );
+});
