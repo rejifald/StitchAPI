@@ -45,6 +45,35 @@ Give two stitches the same `key` plus a shared `store` and one token serves them
 all — across stitches and across workers, surviving restarts. See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
 
+## Client authentication
+
+By default the client authenticates with `client_secret_post`: `client_id` and
+`client_secret` ride in the form body. Some providers require
+`client_secret_basic` instead — the credentials as an HTTP Basic header, with
+only `grant_type` in the body. Set `clientAuth: 'basic'` for those:
+
+```ts twoslash
+import { env, oauth2, stitch } from 'stitchapi';
+
+const messages = stitch({
+    baseUrl: 'https://sms.example.com',
+    path: '/messages',
+    auth: oauth2({
+        tokenUrl: 'https://sms.example.com/oauth/token',
+        clientId: env('CLIENT_ID'),
+        clientSecret: env('CLIENT_SECRET'),
+        clientAuth: 'basic',
+    }),
+});
+```
+
+The Basic header is Base64 of `id:secret`, encoded without Node's `Buffer` so it
+works in a browser bundle too. For provider-specific extras on the token request,
+`audience` sets the OAuth2 `audience` field, `params` merges arbitrary fields into
+the token-request body (e.g. `resource`, or a custom `grant_type`), and `headers`
+adds headers to it. The client credentials are always applied last, so `params`
+can never shadow them.
+
 <Callout type="warn">
     **Anti-pattern:** don't rely on the default token cache across multiple
     workers — it lives in memory, process-local, so every worker fetches and
