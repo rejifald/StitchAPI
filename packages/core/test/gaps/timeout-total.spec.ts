@@ -88,3 +88,81 @@ test('timeout.total is enforced alongside timeout.perAttempt across retries', as
     // total: 400 must bound the whole call — not 5 × perAttempt + backoffs.
     expect(elapsed).toBeLessThan(1500);
 }, 10000);
+
+// ── C. total caps a throttle/rate wait, not just request + backoff ──────────
+// `throttle.rate` paces successive acquires for a key: the first call is granted
+// immediately and arms the limiter's next-grant clock, so the next call must wait
+// ~1000ms for its rate slot. That wait is part of the call and must count against
+// `total` — a 300ms budget has to cut a call stuck behind the limiter short rather
+// than let it block for the full rate spacing (acquireWithin, engine.ts).
+test('timeout.total caps a throttle (rate) wait', async () => {
+    server.route('GET', '/rate-limited', { body: { ok: true } }); // instant 200
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/rate-limited',
+        throttle: { rate: '1/s' }, // 1000ms minimum spacing between grants
+        timeout: { total: 300 },
+    });
+
+    // First call grants immediately (reserving the next grant ~1s out); the runtime
+    // — and its limiter state — is reused by the second call.
+    await call();
+    // Second call is stuck behind the ~1000ms rate spacing; the 300ms budget must
+    // abort the throttle wait and surface a timeout.
+    const { err, elapsed } = await rejectionOf(call());
+
+    expect(err).toBeDefined();
+    expect(err?.message ?? '').toMatch(/timed?\s?out|timeout/i);
+    expect(elapsed).toBeLessThan(900); // budget (300) ≪ rate spacing (1000)
+}, 10000);
+
+// ── D. total spans a paginated call, capping the page loop ──────────────────
+// Pagination follows pages until `next` returns undefined; each page is a full
+// request, and every page's time (here a 150ms server delay) draws down one shared
+// budget. With `next` always advancing, only `total` can stop the loop — a 400ms
+// budget must cut it to a few pages instead of grinding through `max` (50) pages.
+test('timeout.total bounds a paginated call across pages', async () => {
+    server.route('GET', '/feed', {
+        delayMs: 150, // each page costs ~150ms
+        body: (i: number) => ({ items: [i], cursor: i + 1 }),
+    });
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/feed',
+        paginate: {
+            items: (v) => (v as { items: unknown[] }).items,
+            next: (body) => ({
+                query: { cursor: String((body as { cursor: number }).cursor) },
+            }),
+            max: 50,
+        },
+        timeout: { total: 400 },
+    });
+
+    const { err, elapsed } = await rejectionOf(call());
+
+    expect(err).toBeDefined();
+    expect(err?.message ?? '').toMatch(/timed?\s?out|timeout/i);
+    // 50 pages × 150ms ≈ 7.5s unbounded; the 400ms total must stop it far sooner.
+    expect(elapsed).toBeLessThan(2000);
+}, 10000);
+
+// ── E. total bounds executeRaw (the raw login path) ─────────────────────────
+// `executeRaw` (exposed as `stitch.__raw`, used by cookieSession to read Set-Cookie
+// from a login stitch) drives the same attempt loop and must honour `total` too —
+// otherwise a hung login would block the whole session setup. A glacial endpoint
+// under a 300ms total must reject promptly, not hang for the server's 5s.
+test('timeout.total bounds executeRaw', async () => {
+    server.route('GET', '/raw-glacial', { delayMs: 5000, body: { ok: true } });
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/raw-glacial',
+        timeout: { total: 300 },
+    }) as unknown as { __raw: (input?: unknown) => Promise<unknown> };
+
+    const { err, elapsed } = await rejectionOf(call.__raw());
+
+    expect(err).toBeDefined();
+    expect(err?.message ?? '').toMatch(/timed?\s?out|timeout/i);
+    expect(elapsed).toBeLessThan(2000); // the 300ms budget, not the 5s server delay
+}, 10000);
