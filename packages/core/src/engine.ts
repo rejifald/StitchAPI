@@ -19,6 +19,7 @@ import {
 import { vaultView } from './store';
 import type { SurfaceOutcome } from './surface';
 import type {
+    AcquireOptions,
     Adapter,
     AdapterRequest,
     AdapterResponse,
@@ -59,7 +60,10 @@ export interface Runtime {
     cfg: StitchConfig;
     adapter: Adapter;
     throttle: {
-        acquire(key: string): Promise<{ waitedMs: number }>;
+        acquire(
+            key: string,
+            opts?: AcquireOptions,
+        ): Promise<{ waitedMs: number }>;
         release(key: string): void;
     };
     trace: TraceSink;
@@ -324,22 +328,26 @@ async function acquireWithin(
     throttle: Runtime['throttle'],
     key: string,
     budget?: TotalBudget,
+    opts?: AcquireOptions,
 ): Promise<{ waitedMs: number }> {
-    if (budget == null) return throttle.acquire(key);
+    if (budget == null) return throttle.acquire(key, opts);
     const remaining = budget.deadline - now();
     if (remaining <= 0) throw budgetError(budget);
-    const pending = throttle.acquire(key);
+    const pending = throttle.acquire(key, opts);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expiry = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
-            void pending.then(
-                () => {
-                    throttle.release(key);
-                },
-                () => {
-                    /* a rejected acquire holds no slot */
-                },
-            );
+            // A rate-only acquire (streaming, Decision 12) holds no concurrency slot, so there is
+            // nothing to hand back on timeout; only a slot-taking acquire is released here.
+            if (!opts?.rateOnly)
+                void pending.then(
+                    () => {
+                        throttle.release(key);
+                    },
+                    () => {
+                        /* a rejected acquire holds no slot */
+                    },
+                );
             reject(budgetError(budget));
         }, remaining);
     });
@@ -808,6 +816,105 @@ async function* runFrom(
         : { ok: true, value, status: res.status };
 }
 
+// Streaming surfaces (sse/stream): open the LIVE body and decode it into `delta` chunks via the
+// surface's `stream` hook (ADR 0005 Decisions 4-5). Deliberately lean — no retry/circuit/cache:
+// Decision 12 puts broken-stream retry out of scope, and streaming bypasses the cache. It charges
+// the rate gate ONCE at open but takes NO concurrency slot (a rate-only acquire, never released),
+// so a long-lived connection can never pin a seam's concurrency budget (Decision 12). The await/
+// `consume` path resolves to the COLLECTED array of every emitted chunk — the terminal `result`
+// mirrors the delta spine (Stage 5 sub-decision); `.stream()` yields the chunks incrementally and
+// buffers nothing. transform/unwrap/output validation are buffered-response concepts and are not
+// applied to the delta path.
+async function* runStreaming(
+    rt: Runtime,
+    input: StitchInput,
+    name: string,
+    state: { attempts: number },
+    t0: number,
+    budget?: TotalBudget,
+): AsyncGenerator<StitchEvent, void> {
+    const { cfg } = rt;
+    const streamHook = cfg.kind?.stream;
+    if (!streamHook) return; // unreachable: only entered for a streaming surface
+
+    let baseReq: AdapterRequest;
+    try {
+        baseReq = buildRequest(cfg, input);
+    } catch (e) {
+        yield errEvt(e, name, 0);
+        yield doneEvt(false, t0, 0);
+        return;
+    }
+    // Ask the transport for the live body — un-buffered, un-parsed (ADR 0005 Q1).
+    baseReq = { ...baseReq, stream: true };
+    yield startEvt(name, baseReq, input);
+    state.attempts = 1;
+
+    // Charge the rate limiter once at open, but take NO concurrency slot (Decision 12). A rate
+    // wait still surfaces as a `throttled` event.
+    let waitedMs: number;
+    try {
+        ({ waitedMs } = await acquireWithin(
+            rt.throttle,
+            hostKey(baseReq, cfg),
+            budget,
+            { rateOnly: true },
+        ));
+    } catch (e) {
+        yield errEvt(e, name, 1);
+        yield doneEvt(false, t0, 1);
+        return;
+    }
+    if (waitedMs > 0)
+        yield {
+            type: 'progress',
+            phase: 'throttled',
+            attempt: 1,
+            waitedMs,
+            at: now(),
+        };
+
+    let res: AdapterResponse;
+    try {
+        const req = cloneReq(baseReq);
+        if (cfg.auth) await cfg.auth.apply(req, rt.authCtx);
+        await cfg.hooks?.onRequest?.({ name, attempt: 1, req });
+        yield { type: 'progress', phase: 'request', attempt: 1, at: now() };
+        res = await rt.adapter(req);
+        await cfg.hooks?.onResponse?.({ name, attempt: 1, res });
+    } catch (e) {
+        await cfg.hooks?.onError?.({ name, attempt: 1, error: e });
+        yield errEvt(e, name, 1);
+        yield doneEvt(false, t0, 1);
+        return;
+    }
+
+    if (res.status >= 400) {
+        const e = new Error(`HTTP ${res.status}`) as Error & { status: number };
+        e.status = res.status;
+        yield errEvt(e, name, 1);
+        yield doneEvt(false, t0, 1);
+        return;
+    }
+
+    // Decode the live body into `delta` chunks; collect them so the await path resolves to the
+    // whole sequence (Stage 5 sub-decision).
+    const chunks: unknown[] = [];
+    try {
+        for await (const chunk of streamHook(res, cfg)) {
+            chunks.push(chunk);
+            yield { type: 'delta', chunk, at: now() };
+        }
+    } catch (e) {
+        yield errEvt(e, name, 1);
+        yield doneEvt(false, t0, 1);
+        return;
+    }
+
+    yield resultEvt(chunks, res.status, 1);
+    yield doneEvt(true, t0, 1);
+}
+
 // A single uncached run: build the request, emit `start`, then run the chain.
 async function* runOnce(
     rt: Runtime,
@@ -965,6 +1072,14 @@ export async function* execute(
     } catch (e) {
         yield errEvt(e, name, 0);
         yield doneEvt(false, t0, 0);
+        return;
+    }
+
+    // Streaming surfaces (sse/stream) take a dedicated path: open the live body and emit `delta`
+    // chunks (Decisions 4-5). Streaming bypasses pagination and the cache, and is exempt from the
+    // concurrency bucket (Decision 12). Checked before both so neither can wrap a live stream.
+    if (cfg.kind?.stream) {
+        yield* runStreaming(rt, input, name, state, t0, budget);
         return;
     }
 

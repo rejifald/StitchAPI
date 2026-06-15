@@ -60,6 +60,17 @@ export interface MultipartOptions {
     nesting?: MultipartNesting;
 }
 /**
+ * How the `stream` surface decodes each chunk of a live response body (ADR 0005 Decision 5).
+ * - `'bytes'` (default) — raw `Uint8Array` chunks, lossless, no encoding assumed.
+ * - `'lines'` — UTF-8, split on `\n`; each `delta` chunk is a `string`.
+ * - `'ndjson'` — `'lines'` + `JSON.parse` per non-blank line; each chunk a parsed value.
+ */
+export type StreamDecode = 'bytes' | 'lines' | 'ndjson';
+export interface StreamOptions {
+    /** Decoder for a `stream` surface body. Default `'bytes'` (total + lossless). */
+    decode?: StreamDecode;
+}
+/**
  * Byte-transfer progress for a single request (ADR 0005 Decision 9). Reported through
  * {@link AdapterRequest.onProgress}, tagged by direction: `'upload'` as the request body is
  * sent, `'download'` as the response body arrives. `total` is the content length when known.
@@ -114,6 +125,14 @@ export interface ThrottleOptions {
     rate?: string; // "2/s"
     concurrency?: number;
     scope?: 'stitch' | 'host';
+}
+/**
+ * Options for one throttle `acquire`. `rateOnly` charges the rate limiter but takes NO concurrency
+ * slot — for streaming surfaces (`sse`/`stream`), whose long-lived connection must not pin a slot
+ * (ADR 0005 Decision 12). A rate-only acquire is NOT paired with a `release` (nothing was held).
+ */
+export interface AcquireOptions {
+    rateOnly?: boolean;
 }
 export interface TimeoutOptions {
     total?: number | string;
@@ -310,6 +329,11 @@ export interface StitchConfig {
      * field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`.
      */
     multipart?: MultipartOptions;
+    /**
+     * Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body
+     * (`'bytes'` default / `'lines'` / `'ndjson'`). Only meaningful for the `stream` surface.
+     */
+    stream?: StreamOptions;
     /** How to read the response body. Default: auto by content-type. */
     responseType?: ResponseType;
     /**

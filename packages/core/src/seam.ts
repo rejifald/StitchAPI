@@ -47,7 +47,10 @@ function seamBucket(
     if (opts?.scope === 'host') return inner; // the host key already pools across the seam
     const key = `seam:${seamId}`;
     return {
-        acquire: () => inner.acquire(key),
+        // Re-key every acquire onto the one seam-stable key, forwarding the acquire options (e.g.
+        // `rateOnly` for streaming members — ADR 0005 Decision 12) so the bucket charges rate
+        // without taking a concurrency slot for a stream.
+        acquire: (_key, opts) => inner.acquire(key, opts),
         release: () => {
             inner.release(key);
         },

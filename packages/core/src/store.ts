@@ -1,7 +1,7 @@
 // The default in-memory state store + a store-backed throttle. Swapping the store for a
 // Redis/Postgres adapter makes throttle distributed and sessions persistent/shared across
 // workers, with no change to the call site (DESIGN.md §13).
-import type { StitchStore, ThrottleOptions } from './types';
+import type { AcquireOptions, StitchStore, ThrottleOptions } from './types';
 import { now, parseRate, sleep } from './util';
 
 /** Default store: in-memory, single process, with TTL + atomic incr. */
@@ -66,10 +66,13 @@ export function vaultView(store: StitchStore, prefix = 'vault:'): StitchStore {
  */
 export function chainThrottle(throttles: Throttle[]): Throttle {
     return {
-        async acquire(key) {
+        async acquire(key, opts) {
             let waitedMs = 0;
+            // Thread the acquire options (e.g. `rateOnly` for streaming) to EVERY gate, so a
+            // streaming member skips the concurrency slot on both the seam bucket and its own
+            // local throttle while still charging each rate gate (ADR 0005 Decision 12).
             for (const t of throttles)
-                waitedMs += (await t.acquire(key)).waitedMs;
+                waitedMs += (await t.acquire(key, opts)).waitedMs;
             return { waitedMs };
         },
         release(key) {
@@ -80,7 +83,7 @@ export function chainThrottle(throttles: Throttle[]): Throttle {
 }
 
 export interface Throttle {
-    acquire(key: string): Promise<{ waitedMs: number }>;
+    acquire(key: string, opts?: AcquireOptions): Promise<{ waitedMs: number }>;
     release(key: string): void;
 }
 
@@ -118,13 +121,21 @@ export function createStoreThrottle(
         return new Promise<void>((resolve) => s.waiters.push(resolve));
     };
 
-    async function acquire(key: string): Promise<{ waitedMs: number }> {
-        // Only a real concurrency block counts as "waited" — not incidental store or
-        // scheduling time — so waitedMs (and the 'throttled' event) is deterministic.
-        const blocked = limit != null && stateFor(key).inFlight >= limit;
-        const blockStart = now();
-        await takeSlot(key);
-        let waitedMs = blocked ? now() - blockStart : 0;
+    async function acquire(
+        key: string,
+        acqOpts?: AcquireOptions,
+    ): Promise<{ waitedMs: number }> {
+        let waitedMs = 0;
+        // A rate-only acquire (a streaming surface — ADR 0005 Decision 12) takes no concurrency
+        // slot (and so is never released); it still charges the rate window below.
+        if (!acqOpts?.rateOnly) {
+            // Only a real concurrency block counts as "waited" — not incidental store or
+            // scheduling time — so waitedMs (and the 'throttled' event) is deterministic.
+            const blocked = limit != null && stateFor(key).inFlight >= limit;
+            const blockStart = now();
+            await takeSlot(key);
+            if (blocked) waitedMs = now() - blockStart;
+        }
         if (rate) {
             // At most rate.count grants per rate.perMs window. If we land over the limit,
             // wait for the next window boundary and re-check.

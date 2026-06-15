@@ -2,6 +2,7 @@
 // throttle (rate + concurrency, per key), and a timeout wrapper. Dependency-free;
 // pacing/cancellation go through the shared `sleep`/`now` helpers from `./util`.
 import type {
+    AcquireOptions,
     CircuitOptions,
     RetryOptions,
     StitchStore,
@@ -66,7 +67,7 @@ const hostStates = new Map<string, KeyState>();
  * keeps state closure-local to this limiter.
  */
 export function createThrottle(opts?: ThrottleOptions): {
-    acquire(key: string): Promise<{ waitedMs: number }>;
+    acquire(key: string, opts?: AcquireOptions): Promise<{ waitedMs: number }>;
     release(key: string): void;
 } {
     const limit = opts?.concurrency;
@@ -95,14 +96,23 @@ export function createThrottle(opts?: ThrottleOptions): {
         return new Promise<void>((resolve) => s.waiters.push(resolve));
     };
 
-    async function acquire(key: string): Promise<{ waitedMs: number }> {
+    async function acquire(
+        key: string,
+        acqOpts?: AcquireOptions,
+    ): Promise<{ waitedMs: number }> {
         const s = stateFor(key);
-        // Only a real concurrency block counts as "waited" — not incidental scheduling
-        // jitter — so waitedMs (and the 'throttled' event) is deterministic.
-        const blocked = limit != null && s.inFlight >= limit;
-        const blockStart = now();
-        await takeSlot(s); // gate entry on concurrency first
-        let waitedMs = blocked ? now() - blockStart : 0;
+        let waitedMs = 0;
+        // A rate-only acquire (a streaming surface — ADR 0005 Decision 12) skips the concurrency
+        // slot entirely: it never takes (or, lacking a paired release, holds) one. It still paces
+        // on the rate budget below, so opening a stream is counted against the rate limiter.
+        if (!acqOpts?.rateOnly) {
+            // Only a real concurrency block counts as "waited" — not incidental scheduling
+            // jitter — so waitedMs (and the 'throttled' event) is deterministic.
+            const blocked = limit != null && s.inFlight >= limit;
+            const blockStart = now();
+            await takeSlot(s); // gate entry on concurrency first
+            if (blocked) waitedMs = now() - blockStart;
+        }
         if (spacing > 0) {
             // Then pace within the held slot: reserve the next grant time and wait for it.
             const at = Math.max(now(), s.nextGrantAt);
