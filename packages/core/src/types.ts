@@ -46,12 +46,26 @@ export interface DriftSpec<T = unknown> {
 // ---- Adapter (HTTP kind) --------------------------------------------------
 /** How to read the response body. Default (unset) = auto: JSON when the content-type is json-ish, else text. */
 export type ResponseType = 'json' | 'text' | 'arrayBuffer' | 'blob';
+/**
+ * How a multipart body serialises nested objects/arrays into field names (ADR 0005 Decision 6).
+ * - `'bracket'` (default) — `parent[child][0]` keys (PHP/Rails convention; broadest compatibility).
+ * - `'dot'` — `parent.child.0` keys.
+ * - `'json'` — non-file data is one JSON part; each file leaf is hoisted to its own path-keyed part.
+ * - `'none'` — top-level keys only (legacy; a nested object stringifies to `[object Object]`).
+ */
+export type MultipartNesting = 'bracket' | 'dot' | 'json' | 'none';
+export interface MultipartOptions {
+    /** Nesting strategy for nested objects/arrays in a multipart body. Default `'bracket'`. */
+    nesting?: MultipartNesting;
+}
 export interface AdapterRequest {
     url: string;
     method: string;
     headers: Record<string, string>;
     body?: unknown;
     bodyType?: 'json' | 'form' | 'multipart';
+    /** Multipart serialisation options (nesting); only read when `bodyType: 'multipart'`. */
+    multipart?: MultipartOptions;
     responseType?: ResponseType;
     signal?: AbortSignal;
 }
@@ -262,6 +276,11 @@ export interface StitchConfig {
     method?: string;
     /** Request body encoding. Default `'json'`. */
     bodyType?: 'json' | 'form' | 'multipart';
+    /**
+     * Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become
+     * field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`.
+     */
+    multipart?: MultipartOptions;
     /** How to read the response body. Default: auto by content-type. */
     responseType?: ResponseType;
     /**
