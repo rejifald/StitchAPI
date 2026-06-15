@@ -130,11 +130,16 @@ function sharedConfig(shared: SharedSeam): StitchConfig {
 function principalHandle(shared: SharedSeam, principal: string): PrincipalSeam {
     const build = makeBuild(shared, principal);
     return {
-        // `build` is generic at runtime; the inferring overloads come from the interface the
-        // object literal is checked against (the function return type).
+        // `build` is generic at runtime; the inferring overloads come from the interface the object
+        // literal is checked against (the function return type). `stitch` satisfies its loose
+        // fallback overload (`stitch<T>(config: string | Partial<StitchConfig>)`) as-is. `graphql`
+        // has ONLY the single inferring `InputOf<C>` overload, and after #76 widened `InputOf` (it
+        // now reads `extends`-fragment schemas) the loose `build` body is no longer a clean supertype
+        // of that return under an unresolved `C` — so `graphql` needs the `as`. Sound — runtime is
+        // identical; only the static call-arg richness is restored.
         stitch: (config: string | Partial<StitchConfig>) => build(config),
-        graphql: (config: Partial<StitchConfig> & { query: string }) =>
-            build(config, true),
+        graphql: ((config: Partial<StitchConfig> & { query: string }) =>
+            build(config, true)) as PrincipalSeam['graphql'],
         as: (p) => principalHandle(shared, p),
         get __config() {
             return sharedConfig(shared);
@@ -148,9 +153,12 @@ function principalHandle(shared: SharedSeam, principal: string): PrincipalSeam {
 function rootHandle(shared: SharedSeam): Seam {
     const build = makeBuild(shared, undefined);
     return {
+        // See `principalHandle`: only `graphql` (single inferring overload) needs the `as` to
+        // restore its rich `InputOf<C>` return after #76 widened `InputOf`; `stitch` satisfies its
+        // loose fallback overload as-is.
         stitch: (config: string | Partial<StitchConfig>) => build(config),
-        graphql: (config: Partial<StitchConfig> & { query: string }) =>
-            build(config, true),
+        graphql: ((config: Partial<StitchConfig> & { query: string }) =>
+            build(config, true)) as Seam['graphql'],
         as: (p) => principalHandle(shared, p),
         // Bulk cache invalidation over the seam's shared store (ADR 0003 §8). No argument bumps
         // the cache-wide generation; a member `stitch` bumps just that stitch's generation. The

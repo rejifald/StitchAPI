@@ -454,10 +454,15 @@ export function graphql<
     // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the
     // convenience without clobbering an explicit endpoint). Method/body shaping is the surface's.
     const endpointless = config.url === undefined && config.path === undefined;
+    // The `as` retypes the loose `makeStitch` result (`Stitch<…, StitchInput>`) to the declared
+    // `InputOf<C>` call-arg type. Now that `InputOf` reads `extends`-fragment schemas (#76) it is no
+    // longer a clean supertype of `StitchInput` under an unresolved `C`, so this body needs the same
+    // retype the inferring `stitch`/`seam` overloads get for free. Sound: the runtime stitch is
+    // byte-identical; only the static call-arg richness is restored.
     return makeStitch<ResolveOutput<TExplicit, C>>({
         ...config,
         ...(endpointless ? { path: '/graphql' } : {}),
         kind: graphqlSurface,
         unwrap: config.unwrap ?? 'data',
-    });
+    }) as unknown as Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
 }
