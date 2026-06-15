@@ -131,3 +131,43 @@ describe('stitch export --openapi (CLI)', () => {
         expect(err).toMatch(/--openapi/);
     });
 });
+
+describe('toOpenApi with a toJsonSchema converter', () => {
+    test('emits converted request and response body schemas (BYO converter)', () => {
+        const seen: { slot: string; hasSource: boolean }[] = [];
+        const { document } = toOpenApi(sampleRegistry(), {
+            toJsonSchema: (source, info) => {
+                seen.push({ slot: info.slot, hasSource: source !== undefined });
+                return { type: 'object', 'x-slot': info.slot };
+            },
+        });
+
+        // getUser has an output schema → its 200 body is converted.
+        const getOp = document.paths['/users/{id}']?.['get'];
+        expect(
+            getOp?.responses['200']?.content?.['application/json']?.schema,
+        ).toEqual({ type: 'object', 'x-slot': 'response' });
+
+        // createUser has a request-body schema → its requestBody is converted.
+        const postOp = document.paths['/users']?.['post'];
+        expect(
+            postOp?.requestBody?.content['application/json']?.schema,
+        ).toEqual({ type: 'object', 'x-slot': 'body' });
+
+        // The converter received real source schemas, not undefined.
+        expect(seen.some((s) => s.slot === 'response' && s.hasSource)).toBe(
+            true,
+        );
+        expect(seen.some((s) => s.slot === 'body' && s.hasSource)).toBe(true);
+    });
+
+    test('falls back to {} when the converter returns undefined', () => {
+        const { document } = toOpenApi(sampleRegistry(), {
+            toJsonSchema: () => undefined,
+        });
+        const getOp = document.paths['/users/{id}']?.['get'];
+        expect(
+            getOp?.responses['200']?.content?.['application/json']?.schema,
+        ).toEqual({});
+    });
+});

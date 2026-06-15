@@ -13,6 +13,7 @@
 // enumerable here. A stitch whose endpoint is a thunk (resolved at call time) cannot be exported
 // statically; it is reported as a warning, never dropped silently.
 import type { StitchRegistry } from './registry';
+import { isStandardSchema } from './standard-schema';
 import type { StitchConfig } from './types';
 
 export interface OpenApiInfo {
@@ -23,10 +24,10 @@ export interface OpenApiParameter {
     name: string;
     in: 'path' | 'query' | 'header';
     required: boolean;
-    schema: Record<string, never>;
+    schema: Record<string, unknown>;
 }
 export interface OpenApiMediaType {
-    schema: Record<string, never>;
+    schema: Record<string, unknown>;
 }
 export interface OpenApiResponse {
     description: string;
@@ -48,14 +49,57 @@ export interface OpenApiDocument {
 export interface OpenApiExportOptions {
     title?: string;
     version?: string;
+    /**
+     * Bring-your-own Standard Schema → JSON Schema converter (the contract-not-dependency gate:
+     * core stays zero-dep, the way `axiosAdapter` takes your axios). When provided, request and
+     * response BODY schemas are emitted from the stitch's `input.body` / `output` schemas instead
+     * of `{}`. It receives the raw schema (a `Validator`'s `.source`) plus the slot and the
+     * detected Standard Schema `vendor`; return a JSON Schema object, or `undefined` to fall back
+     * to `{}`. Per-parameter schemas and a CLI flag for this are follow-ups.
+     */
+    toJsonSchema?: (
+        source: unknown,
+        info: { slot: 'body' | 'response'; vendor?: string },
+    ) => Record<string, unknown> | undefined;
 }
 export interface OpenApiExportResult {
     document: OpenApiDocument;
     warnings: string[];
 }
 
-// An empty schema (`{}` = "any") — the structural placeholder until a JSON-Schema converter lands.
-const EMPTY_SCHEMA: Record<string, never> = {};
+// An empty schema (`{}` = "any") — the fallback when no converter is supplied or a slot has no
+// recoverable source schema.
+const EMPTY_SCHEMA: Record<string, unknown> = {};
+
+// A Validator carries its raw schema on a non-enumerable `.source` (validator.ts); pull it out so a
+// converter can turn it into JSON Schema. Anything else (a DriftSpec, a sourceless validator) → none.
+function sourceOf(slot: unknown): unknown {
+    return slot && typeof slot === 'object' && 'source' in slot
+        ? (slot as { source?: unknown }).source
+        : undefined;
+}
+
+// A body/response schema: the converted JSON Schema when a converter and a recoverable source exist,
+// else `{}`. The Standard Schema vendor (when detectable) is passed through so a converter can
+// dispatch (e.g. only handle `zod`).
+function bodySchema(
+    slot: unknown,
+    where: 'body' | 'response',
+    convert: OpenApiExportOptions['toJsonSchema'],
+): Record<string, unknown> {
+    if (!convert) return EMPTY_SCHEMA;
+    const source = sourceOf(slot);
+    if (source === undefined) return EMPTY_SCHEMA;
+    const vendor = isStandardSchema(source)
+        ? source['~standard'].vendor
+        : undefined;
+    return (
+        convert(source, {
+            slot: where,
+            ...(vendor !== undefined ? { vendor } : {}),
+        }) ?? EMPTY_SCHEMA
+    );
+}
 
 const BODY_CONTENT_TYPE: Record<
     NonNullable<StitchConfig['bodyType']>,
@@ -141,6 +185,7 @@ function buildOperation(
     cfg: StitchConfig,
     operationId: string,
     parameters: OpenApiParameter[],
+    convert: OpenApiExportOptions['toJsonSchema'],
 ): OpenApiOperation {
     const op: OpenApiOperation = {
         operationId,
@@ -150,7 +195,13 @@ function buildOperation(
                       '200': {
                           description: 'OK',
                           content: {
-                              'application/json': { schema: EMPTY_SCHEMA },
+                              'application/json': {
+                                  schema: bodySchema(
+                                      cfg.output,
+                                      'response',
+                                      convert,
+                                  ),
+                              },
                           },
                       },
                   }
@@ -164,7 +215,11 @@ function buildOperation(
     if (cfg.input?.body != null || isGraphql) {
         const contentType = BODY_CONTENT_TYPE[cfg.bodyType ?? 'json'];
         op.requestBody = {
-            content: { [contentType]: { schema: EMPTY_SCHEMA } },
+            content: {
+                [contentType]: {
+                    schema: bodySchema(cfg.input?.body, 'body', convert),
+                },
+            },
         };
     }
     return op;
@@ -208,7 +263,7 @@ export function toOpenApi(
             );
             continue;
         }
-        item[method] = buildOperation(cfg, key, parameters);
+        item[method] = buildOperation(cfg, key, parameters, opts.toJsonSchema);
     }
 
     const document: OpenApiDocument = {
