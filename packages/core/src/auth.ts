@@ -133,6 +133,15 @@ export interface OAuth2Opts {
     refreshSkewMs?: number;
     /** Store namespace — give two stitches the same `key` + a shared `store` to share one token. Default: `tokenUrl`. */
     key?: string;
+    /**
+     * Token tenancy (ADR 0002 §3). Default **`'app'`**: one token serves every caller — the right
+     * model for `client_credentials`, which authenticates the *application*, not a user. Set
+     * `'principal'` to fold the seam-bound principal into the token's cache key (and **throw if no
+     * principal is bound**, mirroring {@link CookieSessionOpts.scope}); each tenant then caches its
+     * own token and one tenant's 401/refresh never disturbs another's in-flight calls. Pair it with
+     * per-tenant `clientId`/`clientSecret`/`scope` for full multi-tenant separation.
+     */
+    tenancy?: 'principal' | 'app';
     /** Test seam / custom transport for the token request (default `fetchAdapter()`). */
     adapter?: Adapter;
 }
@@ -168,17 +177,41 @@ function singleFlight<T>(): (key: string, run: () => Promise<T>) => Promise<T> {
 export function oauth2(opts: OAuth2Opts): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
     const skew = opts.refreshSkewMs ?? 30_000;
-    const nsKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
+    const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
+    const tenancy = opts.tenancy ?? 'app';
     const adapter = opts.adapter ?? fetchAdapter();
     const clientAuth = opts.clientAuth ?? 'post';
     const flight = singleFlight<string>();
+
+    // The vault key for THIS call. Default 'app' shares one token across all callers (correct for
+    // client_credentials — the token authenticates the application, not a user). 'principal' folds
+    // the seam-bound principal in (fail-closed if none, mirroring cookieSession's scope), so each
+    // tenant caches its own token and one tenant's 401/refresh never disturbs another's.
+    const keyFor = (ctx: AuthContext): string => {
+        if (tenancy === 'app') return baseKey;
+        const principal = ctx.principal;
+        if (principal == null || principal === '') {
+            const e = new Error(
+                "oauth2 with tenancy 'principal' requires a bound principal: create the stitch " +
+                    'through a seam and call `seam.as(principalId)`, or use the default ' +
+                    "tenancy 'app' to share one token across all callers.",
+            );
+            e.name = 'StitchAuthError';
+            throw e;
+        }
+        // U+0000 can't appear in a principal id or key, so it's a collision-free separator.
+        return `${baseKey}\u0000${principal}`;
+    };
 
     const isFresh = (t: CachedToken | undefined): boolean =>
         !!t && (t.expiresAt === 0 || now() < t.expiresAt - skew);
 
     // Fetch a new token from the endpoint and cache it (with TTL = expires_in). Always hits
     // the network; callers gate on `isFresh` to reuse the cached token instead.
-    const fetchToken = async (ctx: AuthContext): Promise<string> => {
+    const fetchToken = async (
+        ctx: AuthContext,
+        nsKey: string,
+    ): Promise<string> => {
         ctx.emit('auth', 'token');
         const body: Record<string, string> = {
             grant_type: 'client_credentials',
@@ -238,11 +271,12 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
     };
 
     const tokenFor = async (ctx: AuthContext): Promise<string> => {
+        const nsKey = keyFor(ctx);
         const cached = (await ctx.vault.get(nsKey)) as CachedToken | undefined;
         // Cache miss/stale: coalesce concurrent callers into ONE in-flight fetch.
         return isFresh(cached)
             ? cached!.token
-            : flight(nsKey, () => fetchToken(ctx));
+            : flight(nsKey, () => fetchToken(ctx, nsKey));
     };
 
     return {
@@ -256,7 +290,8 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
         async refresh(ctx) {
             // Force a fresh token, ignoring the cache — but simultaneous 401s
             // still share one fetch (an in-flight fetch IS the freshest token).
-            await flight(nsKey, () => fetchToken(ctx));
+            const nsKey = keyFor(ctx);
+            await flight(nsKey, () => fetchToken(ctx, nsKey));
         },
     };
 }
