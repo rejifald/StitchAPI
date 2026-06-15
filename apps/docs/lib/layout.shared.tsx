@@ -12,6 +12,10 @@ export function baseOptions(): BaseLayoutProps {
         },
         links: [
             {
+                text: 'Docs',
+                url: '/docs',
+            },
+            {
                 text: 'Playground',
                 url: '/playground',
             },
