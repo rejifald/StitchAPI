@@ -1,0 +1,60 @@
+{
+    "name": "@stitchapi/nest",
+    "version": "0.0.0",
+    "description": "First-class NestJS integration for StitchAPI — StitchModule.forRoot/forFeature, injectable stitches, Logger + ConfigService bridges (ADR 0006).",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/nest"
+    },
+    "keywords": [
+        "stitchapi",
+        "nestjs",
+        "nest",
+        "dependency-injection",
+        "module",
+        "adapter",
+        "api-client"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "peerDependencies": {
+        "@nestjs/common": "^10.0.0 || ^11.0.0",
+        "stitchapi": ">=0.7.0"
+    },
+    "devDependencies": {
+        "@nestjs/common": "^11.0.0",
+        "@types/node": "^22.10.0",
+        "reflect-metadata": "^0.2.2",
+        "rxjs": "^7.8.1",
+        "stitchapi": "workspace:*",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}
