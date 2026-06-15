@@ -15,7 +15,7 @@ import { stitch } from 'stitchapi';
 import type { StitchStore } from 'stitchapi';
 
 // A StitchStore is just three async methods + TTL — back it with anything.
-const redisStore: StitchStore = {
+const sharedStore: StitchStore = {
     async get(key) {
         /* read from your shared backend */
         return undefined;
@@ -32,9 +32,15 @@ const redisStore: StitchStore = {
 const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    store: redisStore,
+    store: sharedStore,
 });
 ```
+
+<Callout type="info">
+    Don't hand-roll one unless you need to — **`@stitchapi/redis`** is the
+    first-party store: `redisStore(fromIoredis(client))` (or `fromNodeRedis`),
+    proven against the `verifyStoreContract` conformance kit.
+</Callout>
 
 ## Options
 
@@ -42,7 +48,7 @@ A store is the `StitchStore` contract — three async methods: `get(key)` return
 the value or `undefined`, `set(key, value, ttlMs?)` writes with an optional
 expiry, and `incr(key, ttlMs)` is an atomic counter scoped to a TTL window. The
 runtime holds two kinds of state behind this interface: throttle counters (the
-fixed-window rate counter) and auth session/token state (captured cookies and
+even-spaced rate counter) and auth session/token state (captured cookies and
 refreshed tokens).
 
 The default is `memoryStore()` — single process, in-memory. It works until you

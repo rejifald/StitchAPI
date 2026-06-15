@@ -128,7 +128,7 @@ DESIGN §7/§14.7 promise CI replay of committed sample payloads; no such comman
 
 ### 2.11 First-party persistent store; align throttle semantics
 
-The store seam is fully built and tested, but only `memoryStore` ships — `@stitchapi/redis-store` would make success criterion #4 (two workers share one login and one rate budget) demonstrable out of the box. Undocumented today: pacing behavior silently changes from even-spacing to fixed-window (boundary bursts) the moment a store is attached.
+The store seam is fully built and tested, but only `memoryStore` ships — `@stitchapi/redis` would make success criterion #4 (two workers share one login and one rate budget) demonstrable out of the box. Undocumented today: pacing behavior silently changes from even-spacing to fixed-window (boundary bursts) the moment a store is attached.
 **Build:** a Redis adapter with atomic INCR+EXPIRE, sliding-window alignment with the in-memory limiter, and a doc note on the pacing change (distributed concurrency staying in-process is already documented).
 **Evidence:** `packages/core/src/store.ts:8,47-48,86-101`, `packages/core/src/stitch.ts:187-189`, `apps/docs/content/docs/guides/state/pluggable-store.mdx`.
 

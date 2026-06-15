@@ -3,6 +3,9 @@
 // in-memory store keeps them independent.
 import { cookieSession, env, memoryStore, stitch } from '../src';
 import type { Stitch } from '../src';
+import { createThrottle } from '../src/resilience';
+import { createStoreThrottle } from '../src/store';
+import type { Throttle } from '../src/store';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -217,5 +220,39 @@ describe('Pluggable store — throttle', () => {
             wasThrottled(s2),
         ]);
         expect(w1 + w2).toBe(0); // independent per-stitch budgets → neither waits
+    });
+
+    test('a store-backed throttle even-spaces overflow grants, like the in-process limiter', async () => {
+        // GAP-AUDIT §2.11: attaching a store must NOT switch pacing to bursty fixed-window.
+        // Fire MORE calls than the window holds; the overflow grants land at/after the next
+        // window boundary, so they are in the future regardless of where in the window the burst
+        // begins — making the even spacing observable without aligning to the clock.
+        const rate = '5/s'; // count 5, spacing = 200ms
+        const grantTimes = async (
+            t: Throttle,
+            key: string,
+        ): Promise<number[]> => {
+            const start = Date.now();
+            const ats = await Promise.all(
+                Array.from({ length: 8 }, async () => {
+                    await t.acquire(key);
+                    return Date.now() - start;
+                }),
+            );
+            return ats.sort((a, b) => a - b);
+        };
+
+        const [inProcess, storeBacked] = await Promise.all([
+            grantTimes(createThrottle({ rate }), 'k'),
+            grantTimes(createStoreThrottle({ rate }, memoryStore()), 'k'),
+        ]);
+
+        // Even-spacing: consecutive overflow grants are ~200ms apart in BOTH limiters. The old
+        // store throttle bunched every overflow grant at the window boundary (gap ≈ 0).
+        for (const ats of [inProcess, storeBacked]) {
+            const n = ats.length;
+            expect((ats[n - 1] ?? 0) - (ats[n - 2] ?? 0)).toBeGreaterThan(120);
+            expect((ats[n - 2] ?? 0) - (ats[n - 3] ?? 0)).toBeGreaterThan(120);
+        }
     });
 });
