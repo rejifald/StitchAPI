@@ -1,5 +1,7 @@
-// Pins docs/GAP-AUDIT.md §2.3: Tracing needs an off switch and default secret redaction
-import { stitch } from '../../src';
+// Pins docs/GAP-AUDIT.md §2.3: safe-by-default tracing — an off switch (config +
+// env), default header redaction, body/result truncation with opt-in full capture,
+// and URL credential-scrubbing in the JSONL `start` record.
+import { fileSink, stitch } from '../../src';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 
@@ -122,4 +124,109 @@ test('JSONL trace redacts authorization and x-api-key header values by default',
     expect(jsonl).not.toContain('supersecret123');
     expect(jsonl).not.toContain('sk-redact-me');
     expect(jsonl).toContain('[REDACTED]');
+});
+
+// Read the JSONL trace back as parsed records (skipping blank/partial lines).
+function readRecords(file: string): Record<string, unknown>[] {
+    return readFileSync(file, 'utf8')
+        .split('\n')
+        .filter((l) => l.trim() !== '')
+        .map((l) => JSON.parse(l) as Record<string, unknown>);
+}
+
+// A body whose JSON encoding comfortably exceeds the 2048-char default cap.
+const BIG = 'x'.repeat(5000);
+
+// (d) Default truncation: a request body / response value larger than the cap is
+// replaced with a compact `{ truncated, bytes, preview }` marker — the multi-KB
+// payload never lands on disk in full.
+test('JSONL truncates request body and response value past the default cap', async () => {
+    const traceFile = join(tmpdir(), `stitch-trace-trunc-${process.pid}.jsonl`);
+    rmSync(traceFile, { force: true });
+    cleanupPaths.push(traceFile);
+    process.env['STITCH_TRACE_FILE'] = traceFile;
+
+    server.route('POST', '/big', { body: { blob: BIG } });
+    const call = stitch({
+        name: 'big',
+        method: 'POST',
+        baseUrl: server.url,
+        path: '/big',
+    });
+    await expect(call({ body: { blob: BIG } })).resolves.toEqual({ blob: BIG });
+
+    const records = readRecords(traceFile);
+    const start = records.find((r) => r['type'] === 'start')!;
+    const result = records.find((r) => r['type'] === 'result')!;
+
+    const reqBody = (start['input'] as { body: Record<string, unknown> }).body;
+    expect(reqBody['truncated']).toBe(true);
+    expect(reqBody['bytes']).toBeGreaterThanOrEqual(2048);
+    expect((reqBody['preview'] as string).length).toBeLessThanOrEqual(2048);
+
+    const value = result['value'] as Record<string, unknown>;
+    expect(value['truncated']).toBe(true);
+    expect(value['blob']).toBeUndefined(); // the original shape is gone
+
+    // The full 5000-char payload is nowhere on disk — only a ≤2048-char preview.
+    expect(readFileSync(traceFile, 'utf8')).not.toContain(BIG);
+});
+
+// (e) Opt-in full capture (env): STITCH_TRACE_MAX_BODY=full disables truncation,
+// restoring the pre-1.0 behaviour of persisting the whole body.
+test('STITCH_TRACE_MAX_BODY=full captures the whole body (no truncation)', async () => {
+    const traceFile = join(tmpdir(), `stitch-trace-full-${process.pid}.jsonl`);
+    rmSync(traceFile, { force: true });
+    cleanupPaths.push(traceFile);
+    process.env['STITCH_TRACE_FILE'] = traceFile;
+    process.env['STITCH_TRACE_MAX_BODY'] = 'full';
+
+    server.route('GET', '/full', { body: { blob: BIG } });
+    const call = stitch({ name: 'full', baseUrl: server.url, path: '/full' });
+    await expect(call()).resolves.toEqual({ blob: BIG });
+
+    const result = readRecords(traceFile).find((r) => r['type'] === 'result')!;
+    expect((result['value'] as { blob: string }).blob).toBe(BIG);
+});
+
+// (f) Opt-in full capture (code): fileSink(path, { maxBodyBytes: false }) is the
+// in-code equivalent of the env switch.
+test('fileSink({ maxBodyBytes: false }) captures the whole body', async () => {
+    const traceFile = join(tmpdir(), `stitch-trace-cap-${process.pid}.jsonl`);
+    rmSync(traceFile, { force: true });
+    cleanupPaths.push(traceFile);
+
+    server.route('GET', '/cap', { body: { blob: BIG } });
+    const call = stitch({
+        name: 'cap',
+        baseUrl: server.url,
+        path: '/cap',
+        trace: fileSink(traceFile, { maxBodyBytes: false }),
+    });
+    await expect(call()).resolves.toEqual({ blob: BIG });
+
+    const result = readRecords(traceFile).find((r) => r['type'] === 'result')!;
+    expect((result['value'] as { blob: string }).blob).toBe(BIG);
+});
+
+// (g) URL credential-scrub: a secret-bearing query param is REDACTED in the
+// `start` record's resolved URL, while benign params survive.
+test('JSONL start.url redacts secret query params, keeps benign ones', async () => {
+    const traceFile = join(tmpdir(), `stitch-trace-url-${process.pid}.jsonl`);
+    rmSync(traceFile, { force: true });
+    cleanupPaths.push(traceFile);
+    process.env['STITCH_TRACE_FILE'] = traceFile;
+
+    server.route('GET', '/scrub', { body: { ok: true } });
+    const call = stitch({ name: 'scrub', baseUrl: server.url, path: '/scrub' });
+    await expect(
+        call({ query: { api_key: 'sk-url-leak', page: '2' } }),
+    ).resolves.toEqual({ ok: true });
+
+    const start = readRecords(traceFile).find((r) => r['type'] === 'start')!;
+    const url = start['url'] as string;
+    expect(url).not.toContain('sk-url-leak');
+    expect(url).toContain('api_key=REDACTED');
+    expect(url).toContain('page=2');
+    expect(readFileSync(traceFile, 'utf8')).not.toContain('sk-url-leak');
 });

@@ -15,6 +15,19 @@ import { nodeFs, now, readEnv } from './util';
 export type Secret = string | (() => string);
 const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
 
+/**
+ * Base64-encode a UTF-8 string without Node's `Buffer`, so HTTP Basic credentials work in a
+ * browser bundle too (the browser-first gate — `Buffer` is absent there). The bytes match
+ * `Buffer.from(s, 'utf8').toString('base64')` exactly, non-ASCII included: `TextEncoder` emits
+ * the same UTF-8 bytes, mapped 1:1 to a binary string for `btoa` (a DOM/Node global).
+ */
+function base64(s: string): string {
+    const bytes = new TextEncoder().encode(s);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
+}
+
 /** Resolve a secret from an environment variable at call time. */
 export function env(name: string): () => string {
     return () => {
@@ -73,24 +86,11 @@ export function apiKey(opts: { header?: string; value: Secret }): AuthStrategy {
     };
 }
 
-// Base64 of a UTF-8 string — isomorphic (browser-first: no node:* / no Buffer).
-// `btoa` is a global in browsers, Web Workers, and Node ≥ 16; TextEncoder (already
-// used across core) bridges UTF-8 → the binary string btoa expects, so credentials
-// with non-ASCII bytes encode identically to the old `Buffer.from(s).toString('base64')`.
-function toBase64Utf8(s: string): string {
-    const bytes = new TextEncoder().encode(s);
-    let binary = '';
-    for (const b of bytes) binary += String.fromCharCode(b);
-    return btoa(binary);
-}
-
 export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
     return {
         name: 'basic',
         apply(req) {
-            const token = toBase64Utf8(
-                `${resolve(opts.user)}:${resolve(opts.pass)}`,
-            );
+            const token = base64(`${resolve(opts.user)}:${resolve(opts.pass)}`);
             req.headers['authorization'] = `Basic ${token}`;
         },
     };
@@ -105,6 +105,28 @@ export interface OAuth2Opts {
     clientSecret: Secret;
     /** Optional space-delimited scopes. */
     scope?: string;
+    /**
+     * How the client authenticates to the token endpoint (RFC 6749 §2.3.1). Default `'post'`
+     * (`client_secret_post`) puts `client_id`/`client_secret` in the form body. `'basic'`
+     * (`client_secret_basic`) sends them as an HTTP Basic `Authorization` header and keeps only
+     * `grant_type` (plus `scope`/`audience`/`params`) in the body — what providers like Kyivstar
+     * SMS require. The header is Base64 of `id:secret`, encoded browser-safe (no `Buffer`).
+     */
+    clientAuth?: 'post' | 'basic';
+    /** OAuth2 `audience` (Auth0 / RFC 8693); added to the token-request body when set. */
+    audience?: string;
+    /**
+     * Extra fields merged into the token-request form body — an escape hatch for provider-specific
+     * params (`resource`, a custom `grant_type`, …). Merged over the built-ins, so it can override
+     * `grant_type`/`scope`/`audience`; the client credentials are always applied last and can never
+     * be overridden here.
+     */
+    params?: Record<string, string>;
+    /**
+     * Extra headers on the token request (e.g. a provider-required header). Keys are lower-cased;
+     * cannot override the `Authorization` header that `clientAuth: 'basic'` sets.
+     */
+    headers?: Record<string, string>;
     /** Statuses that mean the token was rejected and should force a refresh. Default [401]. */
     refreshOn?: number[];
     /** Refresh this many ms BEFORE the token's expiry, so it is never used mid-flight. Default 30_000. */
@@ -148,6 +170,7 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
     const skew = opts.refreshSkewMs ?? 30_000;
     const nsKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const adapter = opts.adapter ?? fetchAdapter();
+    const clientAuth = opts.clientAuth ?? 'post';
     const flight = singleFlight<string>();
 
     const isFresh = (t: CachedToken | undefined): boolean =>
@@ -159,15 +182,34 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
         ctx.emit('auth', 'token');
         const body: Record<string, string> = {
             grant_type: 'client_credentials',
-            client_id: resolve(opts.clientId),
-            client_secret: resolve(opts.clientSecret),
         };
         if (opts.scope) body['scope'] = opts.scope;
+        if (opts.audience) body['audience'] = opts.audience;
+        // Escape-hatch params first, so they can set grant_type/resource/etc. — but BEFORE the
+        // credentials below, which are applied last and can never be shadowed by `params`.
+        if (opts.params) Object.assign(body, opts.params);
+
+        const headers: Record<string, string> = { accept: 'application/json' };
+        for (const [k, v] of Object.entries(opts.headers ?? {}))
+            headers[k.toLowerCase()] = v;
+
+        if (clientAuth === 'basic') {
+            // client_secret_basic: credentials ride in an HTTP Basic header (set last, so a
+            // caller-supplied header can't clobber it) and stay OUT of the body.
+            const creds = base64(
+                `${resolve(opts.clientId)}:${resolve(opts.clientSecret)}`,
+            );
+            headers['authorization'] = `Basic ${creds}`;
+        } else {
+            // client_secret_post: credentials in the form body, applied last so `params` can't shadow them.
+            body['client_id'] = resolve(opts.clientId);
+            body['client_secret'] = resolve(opts.clientSecret);
+        }
 
         const res = await adapter({
             url: opts.tokenUrl,
             method: 'POST',
-            headers: { accept: 'application/json' },
+            headers,
             body,
             bodyType: 'form',
         });

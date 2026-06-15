@@ -392,3 +392,74 @@ export function dirnameOf(path: string): string {
     if (i < 0) return '.';
     return i === 0 ? path.slice(0, 1) : path.slice(0, i);
 }
+
+// Query keys whose values are secrets when they ride in a URL: redacted before a
+// URL reaches a trace sink (OTLP `url.full`, the JSONL `start.url`). A key matches
+// if (case-insensitively) it is one of these names …
+const SECRET_QUERY_KEYS = new Set([
+    'key',
+    'sig',
+    'auth',
+    'pwd',
+    'code',
+    'sas',
+    'access_key',
+]);
+// … or if it CONTAINS one of these stems — so `access_token`, `refresh_token`,
+// `client_secret`, `x-amz-signature`, and `apikey` are all caught without listing
+// every vendor spelling. Over-matching a benign param is the safe direction here.
+const SECRET_QUERY_STEMS = [
+    'token',
+    'secret',
+    'password',
+    'passwd',
+    'signature',
+    'credential',
+    'apikey',
+    'api_key',
+];
+const URL_REDACTED = 'REDACTED';
+
+/**
+ * True when a query-param name (or any key in the same family — a `start` event's
+ * `input.query`) carries a secret value: matched case-insensitively against the
+ * secret key set above, or by containing one of the secret stems.
+ */
+export function isSecretQueryKey(key: string): boolean {
+    const k = key.toLowerCase();
+    return (
+        SECRET_QUERY_KEYS.has(k) ||
+        SECRET_QUERY_STEMS.some((s) => k.includes(s))
+    );
+}
+
+/**
+ * Strip credentials from a URL before it reaches a trace sink: removes userinfo
+ * (`https://user:pass@host` → `https://host`) and replaces the values of
+ * secret-bearing query params (`api_key`, `access_token`, `signature`, …) with
+ * `REDACTED`, while keeping benign params (`page`, `sort`) intact for observability.
+ * Returns the original string unchanged when there is nothing to scrub (so a clean
+ * URL is never reformatted) or when it is not an absolute URL we can parse.
+ */
+export function scrubUrl(url: string): string {
+    let u: URL;
+    try {
+        u = new URL(url);
+    } catch {
+        return url; // relative/opaque/malformed — no structured parts to scrub
+    }
+    const hadUserinfo = u.username !== '' || u.password !== '';
+    u.username = '';
+    u.password = '';
+    const secretKeys = [...new Set(u.searchParams.keys())].filter(
+        isSecretQueryKey,
+    );
+    for (const key of secretKeys) {
+        // Preserve a repeated key's arity (e.g. `?k=a&k=b` → two REDACTED values).
+        const count = u.searchParams.getAll(key).length;
+        u.searchParams.delete(key);
+        for (let i = 0; i < count; i++)
+            u.searchParams.append(key, URL_REDACTED);
+    }
+    return hadUserinfo || secretKeys.length > 0 ? u.toString() : url;
+}
