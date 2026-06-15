@@ -4,6 +4,7 @@
 import { otlpTrace, stitch } from '../src';
 import type { OtelSpan, SpanExporter, StitchEvent } from '../src';
 import { exportsFromEnv, multiplex } from '../src/trace';
+import { scrubUrl } from '../src/util';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -142,4 +143,66 @@ test('STITCH_EXPORT parses to a list and multiplex fans out to every sink', () =
     );
     expect(seenA).toEqual(['done']);
     expect(seenB).toEqual(['done']);
+});
+
+// url.full is OTLP's only secret-bearing attribute (it never exports headers or
+// bodies), so it must be scrubbed before a span leaves for a collector.
+test('url.full strips userinfo and redacts secret query params before export', () => {
+    const { exporter, spans } = stubExporter();
+    const sink = otlpTrace({ exporter });
+    const name = 'fetchThing';
+    const events: StitchEvent[] = [
+        {
+            type: 'start',
+            name,
+            method: 'GET',
+            url: 'https://user:pass@api.example.com/data?access_token=sk-otlp-leak&page=2',
+            input: {},
+            at: 1000,
+        },
+        { type: 'result', value: {}, status: 200, attempts: 1, at: 1050 },
+        { type: 'done', ok: true, ms: 50, attempts: 1, at: 1050 },
+    ];
+    for (const ev of events) sink.handle(ev, { name });
+
+    const full = String(spans[0]!.attributes['url.full']);
+    expect(full).not.toContain('sk-otlp-leak');
+    expect(full).not.toContain('user:pass');
+    expect(full).toContain('access_token=REDACTED');
+    expect(full).toContain('page=2'); // benign params survive
+    expect(spans[0]!.attributes['server.address']).toBe('api.example.com');
+});
+
+test('scrubUrl: clean URLs pass through, credentials are redacted', () => {
+    // Nothing to scrub → returned byte-for-byte (a clean URL is never reformatted).
+    expect(scrubUrl('http://api.example.com/x')).toBe(
+        'http://api.example.com/x',
+    );
+    expect(scrubUrl('https://api.example.com/x?page=2&sort=name')).toBe(
+        'https://api.example.com/x?page=2&sort=name',
+    );
+
+    // Userinfo is stripped.
+    expect(scrubUrl('https://u:p@h.example.com/x')).toBe(
+        'https://h.example.com/x',
+    );
+
+    // Secret keys — exact-match and substring-stem — are redacted; benign survive.
+    for (const key of [
+        'api_key',
+        'access_token',
+        'X-Amz-Signature',
+        'sig',
+        'password',
+    ]) {
+        const out = scrubUrl(`https://h.example.com/x?${key}=shh&page=2`);
+        expect(out).not.toContain('shh');
+        expect(out).toContain(`${key}=REDACTED`);
+        expect(out).toContain('page=2');
+    }
+
+    // Non-absolute / unparseable strings are returned unchanged.
+    expect(scrubUrl('/relative/path?token=abc')).toBe(
+        '/relative/path?token=abc',
+    );
 });
