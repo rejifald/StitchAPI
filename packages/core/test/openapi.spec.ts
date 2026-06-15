@@ -130,6 +130,53 @@ describe('stitch export --openapi (CLI)', () => {
         expect(code).toBe(2);
         expect(err).toMatch(/--openapi/);
     });
+
+    test('--schema-module wires a converter for body schemas', async () => {
+        const registry: StitchRegistry = {
+            createUser: stitch({
+                method: 'POST',
+                url: 'https://api.example.com/users',
+                input: { body: z.object({ name: z.string() }) },
+            }),
+        };
+        let out = '';
+        const code = await main(
+            ['export', '--openapi', '--module', 'x', '--schema-module', 'c'],
+            {
+                cwd: '/',
+                load: async () => registry,
+                loadModule: async () => ({
+                    default: (_source: unknown, info: { slot: string }) => ({
+                        type: 'object',
+                        'x-slot': info.slot,
+                    }),
+                }),
+                write: (s) => {
+                    out += s;
+                },
+                writeErr: () => undefined,
+            },
+        );
+        expect(code).toBe(0);
+        const doc = JSON.parse(out) as {
+            paths: Record<
+                string,
+                Record<
+                    string,
+                    {
+                        requestBody?: {
+                            content: Record<string, { schema: unknown }>;
+                        };
+                    }
+                >
+            >;
+        };
+        expect(
+            doc.paths['/users']?.['post']?.requestBody?.content[
+                'application/json'
+            ]?.schema,
+        ).toEqual({ type: 'object', 'x-slot': 'body' });
+    });
 });
 
 describe('toOpenApi with a toJsonSchema converter', () => {

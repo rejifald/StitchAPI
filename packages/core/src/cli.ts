@@ -6,7 +6,7 @@
 // output pipes straight into jq and friends. No app boot required.
 import { toMermaid } from './diagram';
 import { serveStdio } from './mcp';
-import { toOpenApi } from './openapi';
+import { type OpenApiExportOptions, toOpenApi } from './openapi';
 import {
     type StitchRegistry,
     loadStitches,
@@ -17,6 +17,7 @@ import { serve } from './serve';
 import type { Stitch, StitchEvent, StitchInput } from './types';
 
 import { existsSync, readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 // ---- arg → input mapping --------------------------------------------------
 
@@ -374,6 +375,7 @@ export interface CliIO {
     write: (s: string) => void; // stdout, raw
     writeErr: (s: string) => void; // stderr, raw
     load: (path: string) => Promise<StitchRegistry>;
+    loadModule: (path: string) => Promise<unknown>; // generic import (export --schema-module)
 }
 
 function defaultIO(): CliIO {
@@ -384,6 +386,7 @@ function defaultIO(): CliIO {
         write: (s) => process.stdout.write(s),
         writeErr: (s) => process.stderr.write(s),
         load: loadStitches,
+        loadModule: (path) => import(pathToFileURL(path).href),
     };
 }
 
@@ -416,11 +419,14 @@ diagram:
   from a stitch's public config, so it is not shown.
 
 export:
-  --openapi             emit an OpenAPI 3.1 document (JSON) to stdout
-  --title <t>           info.title    (default: "StitchAPI export")
-  --api-version <v>     info.version  (default: "0.0.0")
-  Structural for now: paths, methods, and URL-template parameters. Field-level JSON
-  Schema and security schemes are not emitted yet; thunk-endpoint stitches are skipped.
+  --openapi               emit an OpenAPI 3.1 document (JSON) to stdout
+  --title <t>             info.title    (default: "StitchAPI export")
+  --api-version <v>       info.version  (default: "0.0.0")
+  --schema-module <path>  a module exporting a toJsonSchema(source, info) converter
+                          (default or named) to fill request/response body schemas
+  Emits paths, methods, and URL-template parameters; body schemas are real JSON Schema
+  when --schema-module is given, else {}. Security schemes are not emitted yet; thunk-
+  endpoint stitches are skipped.
 `;
 
 async function runCommand(args: string[], io: CliIO): Promise<number> {
@@ -630,12 +636,14 @@ async function exportCommand(args: string[], io: CliIO): Promise<number> {
     let modulePath: string | undefined;
     let title: string | undefined;
     let apiVersion: string | undefined;
+    let schemaModule: string | undefined;
     let openapi = false;
     for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === '--module' || a === '-m') modulePath = args[++i];
         else if (a === '--title') title = args[++i];
         else if (a === '--api-version') apiVersion = args[++i];
+        else if (a === '--schema-module') schemaModule = args[++i];
         else if (a === '--openapi') openapi = true;
     }
     if (!openapi) {
@@ -653,9 +661,33 @@ async function exportCommand(args: string[], io: CliIO): Promise<number> {
         return 1;
     }
 
+    // Optional bring-your-own Standard Schema → JSON Schema converter (its default export or a
+    // named `toJsonSchema`), so body schemas come out as real JSON Schema instead of `{}`.
+    let toJsonSchema: OpenApiExportOptions['toJsonSchema'];
+    if (schemaModule !== undefined) {
+        let mod: unknown;
+        try {
+            mod = await io.loadModule(resolveModulePath(schemaModule, io.cwd));
+        } catch (e) {
+            io.writeErr(`${(e as Error).message}\n`);
+            return 1;
+        }
+        const candidate =
+            (mod as { default?: unknown }).default ??
+            (mod as { toJsonSchema?: unknown }).toJsonSchema;
+        if (typeof candidate !== 'function') {
+            io.writeErr(
+                `--schema-module "${schemaModule}" must export a converter function (its default export or a named \`toJsonSchema\`)\n`,
+            );
+            return 2;
+        }
+        toJsonSchema = candidate as OpenApiExportOptions['toJsonSchema'];
+    }
+
     const { document, warnings } = toOpenApi(registry, {
         ...(title !== undefined ? { title } : {}),
         ...(apiVersion !== undefined ? { version: apiVersion } : {}),
+        ...(toJsonSchema !== undefined ? { toJsonSchema } : {}),
     });
     for (const w of warnings) io.writeErr(`warning: ${w}\n`);
     io.write(`${JSON.stringify(document, null, 2)}\n`);
