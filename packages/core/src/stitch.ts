@@ -96,7 +96,13 @@ function normalizeInput(
 ): InputSchemas | undefined {
     if (!input) return undefined;
     const out: InputSchemas = {};
-    for (const k of ['params', 'query', 'body', 'headers'] as const) {
+    for (const k of [
+        'params',
+        'query',
+        'body',
+        'headers',
+        'variables',
+    ] as const) {
         const schema = input[k];
         if (!schema) continue;
         const v = toValidator(schema);
