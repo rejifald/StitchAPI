@@ -4,6 +4,15 @@
 pre-commit:
     parallel: false
     jobs:
+        # Regenerate the playground autocomplete maps when the core source that
+        # feeds the generator changes, then stage the result so the committed
+        # *.generated.ts never drifts from the types it mirrors. The generator
+        # reads packages/core/src directly (no build step), so this stays cheap.
+        # Keep this glob in sync with the `packages` list in
+        # apps/docs/scripts/gen-stitch-completions.mjs.
+        - name: completions
+          glob: 'packages/core/src/**/*.ts'
+          run: pnpm --filter @stitchapi/docs run gen:completions && git add "apps/docs/app/(home)/playground/playground-completions.generated.ts"
         - name: format
           # Keep in sync with CI's `prettier --check .` (verify.yml) — cover every
           # extension Prettier handles here so committed files are never left unformatted
