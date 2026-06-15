@@ -4,14 +4,15 @@
     "private": true,
     "description": "StitchAPI documentation site — Fumadocs (Next.js App Router). Content lands in follow-up PRs.",
     "scripts": {
-        "dev": "pnpm run build:core && pnpm run build:sandbox && next dev",
-        "build": "pnpm run build:core && pnpm run build:sandbox && next build",
+        "dev": "pnpm run build:typed-deps && pnpm run build:sandbox && next dev",
+        "build": "pnpm run build:typed-deps && pnpm run build:sandbox && next build",
         "start": "next start",
-        "check:types": "pnpm run build:core && fumadocs-mdx && next typegen && tsc --noEmit",
+        "check:types": "pnpm run build:typed-deps && fumadocs-mdx && next typegen && tsc --noEmit",
         "check:lint": "eslint .",
         "gen:docs": "node scripts/generate-skeleton.mjs",
         "gen:completions": "node scripts/gen-stitch-completions.mjs",
         "build:core": "pnpm --filter stitchapi build",
+        "build:typed-deps": "pnpm --filter stitchapi --filter @stitchapi/nest build",
         "build:sandbox": "node scripts/gen-stitch-completions.mjs && node ../../docs/sandbox/runtime/build-sandbox-worker.mjs",
         "test:e2e": "playwright test",
         "test:e2e:install": "playwright install chromium"
@@ -37,8 +38,13 @@
         "zod": "^4.4.3"
     },
     "devDependencies": {
+        "@nestjs/common": "^11.0.0",
+        "@nestjs/config": "^4.0.0",
+        "@nestjs/core": "^11.0.0",
         "@playwright/test": "^1.49.1",
         "@stitchapi/completions-plugin": "workspace:*",
+        "@stitchapi/nest": "workspace:*",
+        "reflect-metadata": "^0.2.2",
         "@tailwindcss/postcss": "^4.3.0",
         "@types/mdx": "^2.0.13",
         "@types/node": "^25.9.1",

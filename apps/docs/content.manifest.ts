@@ -68,6 +68,7 @@ export const sections: Section[] = [
     { path: 'guides/observability', title: 'Observability' },
     { path: 'guides/state', title: 'State & stores' },
     { path: 'surfaces', title: 'Surfaces', icon: 'Layers' },
+    { path: 'integrations', title: 'Integrations', icon: 'Plug' },
     { path: 'agents', title: 'For agents', icon: 'Bot' },
     { path: 'reference', title: 'Reference', icon: 'Code' },
     { path: 'errors', title: 'Errors & pitfalls', icon: 'TriangleAlert' },
@@ -375,6 +376,15 @@ export const pages: Page[] = [
         title: 'MCP',
         description:
             'Expose a single code-mode run_stitch tool to agents instead of one tool per endpoint.',
+        kind: 'guide',
+    },
+
+    // ── Integrations ────────────────────────────────────────────────────────
+    {
+        path: 'integrations/nestjs',
+        title: 'NestJS',
+        description:
+            'Wire stitches into a NestJS app with StitchModule — injectable stitches, a Logger trace bridge, ConfigService-backed secrets, and request-scoped multi-tenancy.',
         kind: 'guide',
     },
 
