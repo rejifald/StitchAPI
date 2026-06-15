@@ -71,25 +71,41 @@ export const streamSurface: Surface<StitchInput, unknown[]> = {
 /** stream members bound to a seam. `stitch(config)` creates a stream member of `seam`; `seam` is
  *  the underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
 export interface StreamSeamApi {
-    readonly stitch: <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    readonly stitch: <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ) => Stitch<unknown[], InputOf<C>>;
     readonly seam: Seam;
 }
 
 // Standalone stream stitch: the call argument is inferred from `config.input`, the result fixed to
-// the collected chunk array (a streaming await resolves to all of its `delta` chunks — Stage 5).
-const streamStitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+// the collected chunk array (a streaming await resolves to all of its `delta` chunks — Stage 5). The
+// `as` retypes the loose `makeStitch` result to the declared `InputOf<C>`: now that `InputOf` reads
+// `extends`-fragment schemas (#76) it is no longer a clean supertype of `StitchInput` under an
+// unresolved `C`, so this loose body needs the same retype `stitch()`/`seam` get from their
+// inferring overloads. Sound — the runtime stitch is byte-identical (the type tests cover it).
+const streamStitch = <
+    const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+>(
     config: C,
 ): Stitch<unknown[], InputOf<C>> =>
-    makeStitch<unknown[]>({ ...config, kind: streamSurface });
+    makeStitch<unknown[]>({
+        ...config,
+        kind: streamSurface,
+    }) as unknown as Stitch<unknown[], InputOf<C>>;
 
 // Bind stream members to a seam through the seam's surface-agnostic `stitch({ kind })` (Decision 3).
 function bindSeam(s: Seam): StreamSeamApi {
-    const stitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    const stitch = <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ): Stitch<unknown[], InputOf<C>> =>
-        s.stitch<unknown[]>({ ...config, kind: streamSurface });
+        s.stitch<unknown[]>({
+            ...config,
+            kind: streamSurface,
+        }) as unknown as Stitch<unknown[], InputOf<C>>;
     return { stitch, seam: s };
 }
 

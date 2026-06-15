@@ -110,26 +110,42 @@ export const sseSurface: Surface<StitchInput, SseEvent[]> = {
 /** sse members bound to a seam. `stitch(config)` creates an sse member of `seam`; `seam` is the
  *  underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
 export interface SseSeamApi {
-    readonly stitch: <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    readonly stitch: <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ) => Stitch<SseEvent[], InputOf<C>>;
     readonly seam: Seam;
 }
 
 // Standalone sse stitch: the call argument is inferred from `config.input`, the result fixed to the
-// collected event array (a streaming await resolves to all of its `delta` chunks — Stage 5).
-const sseStitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+// collected event array (a streaming await resolves to all of its `delta` chunks — Stage 5). The
+// `as` retypes the loose `makeStitch` result to the declared `InputOf<C>`: now that `InputOf` reads
+// `extends`-fragment schemas (#76) it is no longer a clean supertype of `StitchInput` under an
+// unresolved `C`, so this loose body needs the same retype `stitch()`/`seam` get from their
+// inferring overloads. Sound — the runtime stitch is byte-identical (the type tests cover it).
+const sseStitch = <
+    const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+>(
     config: C,
 ): Stitch<SseEvent[], InputOf<C>> =>
-    makeStitch<SseEvent[]>({ ...config, kind: sseSurface });
+    makeStitch<SseEvent[]>({
+        ...config,
+        kind: sseSurface,
+    }) as unknown as Stitch<SseEvent[], InputOf<C>>;
 
 // Bind sse members to a seam through the seam's surface-agnostic `stitch({ kind })` (Decision 3) —
 // no per-surface seam method; one shared runtime / principal boundary.
 function bindSeam(s: Seam): SseSeamApi {
-    const stitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    const stitch = <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ): Stitch<SseEvent[], InputOf<C>> =>
-        s.stitch<SseEvent[]>({ ...config, kind: sseSurface });
+        s.stitch<SseEvent[]>({
+            ...config,
+            kind: sseSurface,
+        }) as unknown as Stitch<SseEvent[], InputOf<C>>;
     return { stitch, seam: s };
 }
 

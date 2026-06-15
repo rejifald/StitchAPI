@@ -87,27 +87,42 @@ export const downloadSurface: Surface<StitchInput, DownloadResult> = {
 /** download members bound to a seam. `stitch(config)` creates a download member of `seam`; `seam`
  *  is the underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
 export interface DownloadSeamApi {
-    readonly stitch: <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    readonly stitch: <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ) => Stitch<DownloadResult, InputOf<C>>;
     readonly seam: Seam;
 }
 
 // Standalone download stitch: the call argument is inferred from `config.input`, the result fixed
-// to `{ blob, filename }`.
+// to `{ blob, filename }`. The `as` retypes the loose `makeStitch` result (`Stitch<…, StitchInput>`)
+// to the declared `InputOf<C>` call-arg type: now that `InputOf` reads `extends`-fragment schemas
+// (#76) it is no longer a clean supertype of `StitchInput` under an unresolved `C`, so this loose
+// body needs the same retype `stitch()`/`seam` get for free from their inferring overloads. Sound —
+// the runtime stitch is byte-identical; only the static call-arg richness is restored (the type
+// tests check every concrete config).
 const downloadStitch = <
-    C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    const C extends Partial<StitchConfig> = Partial<StitchConfig>,
 >(
     config: C,
 ): Stitch<DownloadResult, InputOf<C>> =>
-    makeStitch<DownloadResult>({ ...config, kind: downloadSurface });
+    makeStitch<DownloadResult>({
+        ...config,
+        kind: downloadSurface,
+    }) as unknown as Stitch<DownloadResult, InputOf<C>>;
 
 // Bind download members to a seam through the seam's surface-agnostic `stitch({ kind })`.
 function bindSeam(s: Seam): DownloadSeamApi {
-    const stitch = <C extends Partial<StitchConfig> = Partial<StitchConfig>>(
+    const stitch = <
+        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
+    >(
         config: C,
     ): Stitch<DownloadResult, InputOf<C>> =>
-        s.stitch<DownloadResult>({ ...config, kind: downloadSurface });
+        s.stitch<DownloadResult>({
+            ...config,
+            kind: downloadSurface,
+        }) as unknown as Stitch<DownloadResult, InputOf<C>>;
     return { stitch, seam: s };
 }
 
