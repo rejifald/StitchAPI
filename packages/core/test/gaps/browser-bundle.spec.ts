@@ -1,4 +1,5 @@
 // Pins docs/GAP-AUDIT.md §1.5: The core entry must bundle for the browser — no node:* imports or unguarded process.env on the call path
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
@@ -76,4 +77,61 @@ describe('browser bundle (GAP-AUDIT §1.5)', () => {
         expect(outcome.output).not.toMatch(NODE_SPECIFIER);
         expect(outcome.output.length).toBeGreaterThan(0);
     }, 15_000);
+});
+
+// ---------------------------------------------------------------------------
+// ADR 0005 Stage 5 — streaming surfaces hold the browser-first + bundle-frugal gates
+// ---------------------------------------------------------------------------
+
+describe('streaming surfaces are browser-first (ADR 0005 Decisions 4-5)', () => {
+    // Each surface subpath must bundle for the browser on fetch + Web Streams alone — no node:*
+    // dep transitively, and never `EventSource` (Decision 4 rejects it: GET-only, no headers,
+    // Node-absent).
+    test.each(['src/sse.ts', 'src/stream.ts'])(
+        '%s bundles for "browser" with no node:* specifiers and no EventSource',
+        async (entry) => {
+            const { build } = loadEsbuild();
+            const outcome = await build({
+                entryPoints: [join(ROOT, entry)],
+                bundle: true,
+                platform: 'browser',
+                format: 'esm',
+                write: false,
+                logLevel: 'silent',
+            }).then(
+                (result) => ({
+                    errorTexts: result.errors.map((e) => e.text),
+                    output: result.outputFiles?.[0]?.text ?? '',
+                }),
+                (error: unknown) => {
+                    const failed = error as { errors?: EsbuildMessage[] };
+                    return {
+                        errorTexts: (
+                            failed.errors ?? [{ text: String(error) }]
+                        ).map((e) => e.text),
+                        output: '',
+                    };
+                },
+            );
+
+            expect(outcome.errorTexts).toEqual([]);
+            expect(outcome.output).not.toMatch(NODE_SPECIFIER);
+            expect(outcome.output).not.toMatch(/\bEventSource\b/);
+            expect(outcome.output.length).toBeGreaterThan(0);
+        },
+        15_000,
+    );
+});
+
+describe('streaming surfaces are bundle-frugal (ADR 0005 Decision 10)', () => {
+    // `import { stitch }` must pull in NO streaming code: the root entry and the engine reach a
+    // streaming surface only through `cfg.kind.stream` at runtime, never a static import of the
+    // surface modules or the shared line reader. (The parser/decoders live behind the subpaths.)
+    test.each(['src/index.ts', 'src/engine.ts'])(
+        '%s does not statically import a streaming surface module',
+        (rel) => {
+            const src = readFileSync(join(ROOT, rel), 'utf8');
+            expect(src).not.toMatch(/['"]\.\/(sse|stream|line-reader)['"]/);
+        },
+    );
 });

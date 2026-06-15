@@ -107,6 +107,12 @@ A surface literally named `stream`, reached only by a caller who has opted out o
 
 What the two surfaces _do_ share is the lower-level mechanics that turn a `ReadableStream<Uint8Array>` into UTF-8 lines across chunk boundaries (a single internal `lineReader` helper). `sse`'s frame parser and `stream`'s `'lines'` / `'ndjson'` decoders both sit on top of that one helper. They reuse the **plumbing**, not the **decoder** — which keeps SSE semantics correct without duplicating the byte-handling.
 
+### Q4 — What does the `await` path resolve to for a streaming surface? (Stage 5)
+
+**Resolved:** _the collected array of every `delta` chunk._
+
+A streaming run ends, like every run, `… → result → done`, and `await stitch()` (via `consume()`) returns the terminal `result.value`. For a streaming surface that value is the **ordered collection of everything emitted as a `delta`**: `await` means "give me the whole stream", `.stream()` means "give me it incrementally". The alternatives both lose. Resolving to `undefined` makes streaming the lone surface whose `await` returns no data, forcing `.stream()` even for a bounded stream. Resolving to the **last chunk** silently discards data — catastrophic for `sse`, where every event matters. The array is the only choice that is lossless and consistent with the event spine, and it reads like `Array.fromAsync(stream)`. The trade-off (documented at the call site): `await` buffers the whole stream in memory, so it is for **bounded** streams; an unbounded / long-lived stream is consumed incrementally via `.stream()`, which yields each `delta` as it arrives and buffers nothing. transform / unwrap / `output` validation are buffered-response concepts and are **not** applied to the delta path.
+
 ## Consequences
 
 **Positive**
