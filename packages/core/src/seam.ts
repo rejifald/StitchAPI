@@ -18,6 +18,7 @@ import {
     memoryStore,
     vaultView,
 } from './store';
+import { graphqlSurface } from './surface';
 import type {
     PrincipalSeam,
     Seam,
@@ -89,7 +90,7 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
             extends: [shared.fragment, ...(own.extends ?? [])],
         };
         if (isGql) {
-            cfg.kind = 'graphql';
+            cfg.kind = graphqlSurface;
             cfg.method = 'POST';
             cfg.unwrap = own.unwrap ?? 'data';
         }

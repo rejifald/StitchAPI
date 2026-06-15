@@ -1,5 +1,8 @@
-export { stitch, drift, graphql } from './stitch';
+export { stitch, drift } from './stitch';
+export { graphql } from './graphql';
 export { seam } from './seam';
+export { httpSurface, graphqlSurface } from './surface';
+export type { Surface, SurfaceOutcome } from './surface';
 export {
     bearer,
     apiKey,
