@@ -1,0 +1,147 @@
+---
+title: 'Request surfaces'
+description: 'http, graphql, sse, stream, and download — the request styles a stitch can speak, each a subpath import riding one engine.'
+---
+
+A **surface** is the request _style_ a stitch speaks. `http` is the default — a
+plain JSON-over-HTTP call, what most of these docs use. GraphQL, Server-Sent
+Events, a raw byte stream, and a file download are **peer surfaces**: each shapes
+and interprets its own request, but they all ride the same engine, so `auth`,
+`retry`, `throttle`, `timeout`, validation, and the [event
+stream](/docs/concepts/event-stream) compose with every one.
+
+> A request surface is how a stitch shapes its _request_. Don't confuse it with
+> the four [invocation surfaces](/docs/surfaces/function) — function, CLI, HTTP,
+> MCP — which are how you _call_ a stitch. The two are orthogonal: any request
+> surface is reachable through any invocation surface.
+
+Every non-`http` surface ships as its own **subpath import**, so
+`import { stitch }` from the root pulls in only the `http` engine — a surface's
+code (and its parser/decoder) loads only when you import it.
+
+| Surface    | Import               | Shapes                                     | `await` resolves to            |
+| ---------- | -------------------- | ------------------------------------------ | ------------------------------ |
+| `http`     | `stitch` (default)   | a JSON-over-HTTP call                      | the validated body             |
+| `graphql`  | `stitchapi/graphql`  | POST `{ query, variables }`, unwrap `data` | the `data` payload             |
+| `sse`      | `stitchapi/sse`      | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
+| `stream`   | `stitchapi/stream`   | a raw `ReadableStream` reader              | every decoded chunk, collected |
+| `download` | `stitchapi/download` | a buffered binary GET                      | `{ blob, filename }`           |
+
+## http — the default
+
+`stitch(...)` with no `kind` is the `http` surface: send the request, parse JSON
+when the response is JSON-ish, validate, return. Nothing to import.
+
+```ts
+import { stitch } from 'stitchapi';
+
+const getUser = stitch('https://api.example.com/users/{id}');
+```
+
+## graphql
+
+`graphql()` POSTs `{ query, variables }` and unwraps `data`; a `200` carrying
+`errors[]` is treated as a failure, never silently passed.
+
+```ts
+import { graphql } from 'stitchapi/graphql';
+
+const getThing = graphql({
+    baseUrl: 'https://api.example.com',
+    query: 'query ($id: ID) { thing(id: $id) { name } }',
+});
+
+const thing = await getThing({ variables: { id: 1 } });
+```
+
+## sse
+
+`sse` parses the `text/event-stream` wire format over `fetch` + Web Streams —
+never `EventSource`, so it keeps your `auth`, headers, and retries. Each event
+becomes a `delta` chunk; `await` collects them, `.stream()` yields them live.
+
+```ts
+import { sse } from 'stitchapi/sse';
+
+const ticks = sse({ url: 'https://api.example.com/ticks' });
+
+for await (const ev of ticks.stream()) {
+    if (ev.type === 'delta') handle(ev.chunk); // a parsed SseEvent
+}
+```
+
+`data` is JSON-parsed when it parses, else kept as the raw string:
+
+<AutoTypeTable path="../../packages/core/src/sse.ts" name="SseEvent" />
+
+## stream
+
+`stream` is the raw streaming sibling — it hands back the response body decoded
+per `stream.decode`: `'bytes'` (the default, lossless `Uint8Array` chunks),
+`'lines'` (UTF-8 lines), or `'ndjson'` (a parsed value per line).
+
+```ts
+import { stream } from 'stitchapi/stream';
+
+const logs = stream({
+    url: 'https://api.example.com/logs',
+    stream: { decode: 'ndjson' },
+});
+
+for await (const ev of logs.stream()) {
+    if (ev.type === 'delta') console.log(ev.chunk); // one parsed JSON value per line
+}
+```
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="StreamOptions" />
+
+Streaming members open on the same auth/retry/throttle spine, with one twist:
+opening a stream **charges the rate limiter once** but **never holds a
+concurrency slot**, so a long-lived connection can't pin a [seam](/docs/concepts/the-stitch)'s
+concurrency budget.
+
+## download
+
+`download` fetches a file: a `GET` buffered into a `Blob`, with byte progress,
+a `Content-Disposition` filename (with a URL-last-segment fallback), and a
+per-call `AbortSignal`. It **never writes to disk** — saving the `Blob` is your
+call, which keeps it browser-first.
+
+```ts
+import { download } from 'stitchapi/download';
+
+const getReport = download({ url: 'https://api.example.com/report.pdf' });
+
+const { blob, filename } = await getReport({
+    signal: controller.signal,
+    onProgress: (p) => console.log(p.loaded, '/', p.total),
+});
+```
+
+<AutoTypeTable
+    path="../../packages/core/src/download.ts"
+    name="DownloadResult"
+/>
+
+## Both spellings, one engine
+
+Every surface has two co-existing spellings. The monomorphic helper above
+(`sse(...)`, `download(...)`, …) is pre-bound to its surface and gives
+surface-specific types. The generic form passes the surface as `kind` on the
+core `stitch`, so a `seam` can mint members of any surface without forking:
+
+```ts
+import { seam, stitch } from 'stitchapi';
+import { downloadSurface } from 'stitchapi/download';
+
+const file = stitch({ kind: downloadSurface, url: 'https://x/report.pdf' });
+
+const api = seam({ baseUrl: 'https://api.example.com' });
+const member = api.stitch({ kind: downloadSurface, path: '/report.pdf' });
+```
+
+Either way the surface is named in `__config` by a stable string `id`
+(`'sse'`, `'download'`, …), so a stitch's declaration still round-trips to JSON
+for MCP, the playground, and `llms.txt` — the behaviour hooks stay a runtime
+detail. An `id` a consumer doesn't recognise degrades to "an http-shaped call of
+unknown style", never a crash.

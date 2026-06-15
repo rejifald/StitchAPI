@@ -5,6 +5,7 @@
         "stitch",
         "auth-strategies",
         "config-types",
+        "surfaces",
         "helpers",
         "conformance-kits",
         "events"
