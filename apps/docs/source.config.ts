@@ -34,7 +34,14 @@ export default defineConfig({
             ...rehypeCodeDefaultOptions,
             transformers: [
                 ...(rehypeCodeDefaultOptions.transformers ?? []),
-                transformerTwoslash(),
+                // NestJS examples use legacy class/parameter decorators (@Module,
+                // @Injectable, @Inject); enable them so those ```ts twoslash``` blocks
+                // type-check against the real @stitchapi/nest + @nestjs/* types.
+                transformerTwoslash({
+                    twoslashOptions: {
+                        compilerOptions: { experimentalDecorators: true },
+                    },
+                }),
             ],
         },
     },

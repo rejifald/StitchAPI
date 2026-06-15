@@ -24,7 +24,7 @@ options from an injected factory, which is how `ConfigService` reaches the base
 URL, secrets, and store. `trace: 'logger'` sends the event stream to the Nest
 `Logger`:
 
-```ts
+```ts twoslash
 // app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -50,7 +50,7 @@ export class AppModule {}
 Declare a stitch with `defineStitch`, register it per feature with `forFeature`,
 and inject it as a typed dependency:
 
-```ts
+```ts twoslash
 // users.module.ts
 import { Injectable, Module } from '@nestjs/common';
 import {
@@ -119,7 +119,7 @@ For multi-tenancy, bind a principal per request with `seam.as(...)`. The princip
 scopes sessions and cache over the one shared store, so each tenant gets its own
 login while the connection pool stays shared:
 
-```ts
+```ts twoslash
 import { Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { STITCH_SEAM } from '@stitchapi/nest';
