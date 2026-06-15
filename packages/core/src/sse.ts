@@ -96,7 +96,9 @@ async function* parseEventStream(
 
 /**
  * The SSE surface. Its `stream` hook marks it streaming (Decision 12): the engine opens the live
- * body, feeds it here, and emits each parsed {@link SseEvent} as a `delta` chunk.
+ * body, feeds it here, and emits each parsed {@link SseEvent} as a `delta` chunk. Its
+ * `contractValue` hook points per-`delta` `output` validation at each event's `data` payload (ADR
+ * 0005 Addendum) — the contract describes the payload, not the `{ event, data, id, retry }` envelope.
  */
 export const sseSurface: Surface<StitchInput, SseEvent[]> = {
     id: 'sse',
@@ -105,6 +107,7 @@ export const sseSurface: Surface<StitchInput, SseEvent[]> = {
         if (body instanceof ReadableStream)
             yield* parseEventStream(body as ReadableStream<Uint8Array>);
     },
+    contractValue: (chunk) => (chunk as SseEvent).data,
 };
 
 /** sse members bound to a seam. `stitch(config)` creates an sse member of `seam`; `seam` is the
