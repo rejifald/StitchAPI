@@ -3,16 +3,21 @@
 // Plus Decision 12: a streaming member is exempt from the seam concurrency bucket but still
 // charges the rate gate at open. Streams are driven by a fake adapter over Web Streams, so chunk
 // boundaries are fully controlled (no socket).
+import { drift } from '../src';
 import { createThrottle } from '../src/resilience';
 import { chainThrottle, createStoreThrottle, memoryStore } from '../src/store';
 import { stream, streamSurface } from '../src/stream';
 import { now } from '../src/util';
+import { asValidator } from './support/schema';
 import {
     collectEvents,
     gatedStream,
     streamAdapter,
     streamOf,
+    streamThenError,
 } from './support/streams';
+
+import { z } from 'zod';
 
 const td = new TextDecoder();
 
@@ -116,6 +121,131 @@ describe('stream event spine (Decisions 5, 12)', () => {
         });
 
         await expect(s()).rejects.toThrow(/503/);
+    });
+
+    test('an empty stream resolves to [] with no delta events', async () => {
+        const s = stream({
+            url: 'https://x.test/empty',
+            stream: { decode: 'lines' },
+            adapter: streamAdapter(streamOf([])),
+        });
+
+        const ev = await collectEvents(s.stream());
+        expect(ev.types).toEqual(['start', 'progress', 'result', 'done']);
+        expect(ev.deltas).toEqual([]);
+        expect(ev.result).toEqual([]);
+        expect(ev.done?.ok).toBe(true);
+    });
+
+    test('a mid-stream error ends with error+done, keeping the deltas seen so far', async () => {
+        const s = stream({
+            url: 'https://x.test/broken',
+            stream: { decode: 'lines' },
+            adapter: streamAdapter(streamThenError(['one\n', 'two\n'])),
+        });
+
+        const ev = await collectEvents(s.stream());
+        expect(ev.deltas).toEqual(['one', 'two']);
+        expect(ev.types).toContain('error');
+        expect(ev.done?.ok).toBe(false);
+    });
+});
+
+describe('per-`delta` validation against `output` (ADR 0005 Addendum)', () => {
+    test('all records pass: every delta flows, no drift, result is the collection', async () => {
+        const s = stream({
+            url: 'https://x.test/v',
+            stream: { decode: 'ndjson' },
+            output: asValidator(z.object({ n: z.number() })),
+            adapter: streamAdapter(streamOf(['{"n":1}\n', '{"n":2}\n'])),
+        });
+
+        const ev = await collectEvents(s.stream());
+        expect(ev.types).toEqual([
+            'start',
+            'progress',
+            'delta',
+            'delta',
+            'result',
+            'done',
+        ]);
+        expect(ev.deltas).toEqual([{ n: 1 }, { n: 2 }]);
+        expect(ev.result).toEqual([{ n: 1 }, { n: 2 }]);
+        expect(ev.drifts).toEqual([]);
+        expect(ev.done?.ok).toBe(true);
+    });
+
+    test('an error-level violation fails the stream before that delta is emitted', async () => {
+        const s = stream({
+            url: 'https://x.test/v',
+            stream: { decode: 'ndjson' },
+            // a bare validator (no DriftSpec) → every failure is error-level (no `watch`).
+            output: asValidator(z.object({ n: z.number() })),
+            adapter: streamAdapter(
+                streamOf(['{"n":1}\n', '{"bad":true}\n', '{"n":3}\n']),
+            ),
+        });
+
+        const ev = await collectEvents(s.stream());
+        // record 1 delivered; record 2 fails → drift(error)+error+done(false); record 3 never read.
+        expect(ev.deltas).toEqual([{ n: 1 }]);
+        expect(ev.types).toEqual([
+            'start',
+            'progress',
+            'delta',
+            'drift',
+            'error',
+            'done',
+        ]);
+        expect(ev.drifts[0]?.level).toBe('error');
+        expect(ev.error?.message).toMatch(/contract violation/);
+        expect(ev.result).toBeUndefined();
+        expect(ev.done?.ok).toBe(false);
+    });
+
+    test('await rejects when a record violates the contract', async () => {
+        const s = stream({
+            url: 'https://x.test/v',
+            stream: { decode: 'ndjson' },
+            output: asValidator(z.object({ n: z.number() })),
+            adapter: streamAdapter(streamOf(['{"bad":1}\n'])),
+        });
+
+        await expect(s()).rejects.toThrow(/contract violation/);
+    });
+
+    test('a `watch`-path failure warns but the delta still flows and the stream completes', async () => {
+        const s = stream({
+            url: 'https://x.test/v',
+            stream: { decode: 'ndjson' },
+            // `watch` (not `critical`) → a failure on `n` is a warning, not fatal.
+            output: drift(z.object({ n: z.number() }), { watch: ['n'] }),
+            adapter: streamAdapter(
+                streamOf(['{"n":1}\n', '{"bad":true}\n', '{"n":3}\n']),
+            ),
+        });
+
+        const ev = await collectEvents(s.stream());
+        // every record is delivered; the middle one also surfaces ONE warn-level drift finding.
+        expect(ev.deltas).toEqual([{ n: 1 }, { bad: true }, { n: 3 }]);
+        expect(ev.result).toEqual([{ n: 1 }, { bad: true }, { n: 3 }]);
+        expect(ev.drifts).toHaveLength(1);
+        expect(ev.drifts[0]?.level).toBe('warn');
+        expect(ev.drifts[0]?.path).toBe('n');
+        expect(ev.done?.ok).toBe(true);
+    });
+
+    test('no `output` → no validation, no drift (the delta path is untouched)', async () => {
+        const s = stream({
+            url: 'https://x.test/v',
+            stream: { decode: 'ndjson' },
+            adapter: streamAdapter(streamOf(['{"anything":1}\n'])),
+        });
+
+        const ev = await collectEvents(s.stream());
+        expect(ev.drifts).toEqual([]);
+        expect(ev.deltas).toEqual([{ anything: 1 }]);
+        expect(ev.done?.ok).toBe(true);
     });
 });
 
