@@ -7,6 +7,7 @@ import type {
     ResolveOutput,
     SchemaLike,
 } from './infer';
+import type { Surface } from './surface';
 import type { Validator } from './validator';
 
 export interface StitchInput {
@@ -294,8 +295,12 @@ export interface InputSchemas {
 export interface StitchConfig {
     /** Label used in events and traces; defaults to `path` or `'stitch'`. */
     name?: string;
-    /** Request kind. `'http'` (default) or `'graphql'` for a POST `{ query, variables }`. */
-    kind?: 'http' | 'graphql';
+    /**
+     * Request style — a {@link Surface} plugin (ADR 0005 Decisions 1-2). Omitted = the built-in
+     * `http` surface. The public `__config` exposes only the surface's `id` string (so a stitch's
+     * declaration round-trips as JSON — Decision 11); the live object stays on `__rawConfig`.
+     */
+    kind?: Surface;
     /** HTTP method; defaults to `GET`. */
     method?: string;
     /** Request body encoding. Default `'json'`. */
@@ -438,6 +443,14 @@ export function isStitch(x: unknown): x is Stitch {
     return (
         typeof x === 'function' &&
         (x as { __stitch?: boolean }).__stitch === true
+    );
+}
+
+export function isSeam(x: unknown): x is Seam {
+    return (
+        typeof x === 'object' &&
+        x !== null &&
+        (x as { __seam?: boolean }).__seam === true
     );
 }
 

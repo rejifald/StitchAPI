@@ -137,7 +137,7 @@ const resolveStr = (v: string | (() => string) | undefined): string =>
     typeof v === 'function' ? v() : (v ?? '');
 
 function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
-    const isGql = cfg.kind === 'graphql';
+    const isGql = cfg.kind?.id === 'graphql';
     // Endpoint resolution: when `url` is set it IS the whole endpoint (no base), but still
     // templated + query-split like a path. Otherwise join `baseUrl` + `path`.
     const usingUrl = cfg.url !== undefined;
@@ -575,7 +575,7 @@ async function* paginated(
         lastStatus = res.status;
 
         // GraphQL: a 200 response carrying `errors` is a failure — same as the non-paginated path.
-        if (cfg.kind === 'graphql') {
+        if (cfg.kind?.id === 'graphql') {
             const body = res.body as
                 | { errors?: { message?: string }[] }
                 | null
@@ -702,7 +702,7 @@ function describe(
         url: baseReq.url,
         headers: baseReq.headers,
     };
-    if (cfg.kind === 'graphql')
+    if (cfg.kind?.id === 'graphql')
         d.graphql = {
             query: cfg.query ?? '',
             variables: input.variables ?? input.body ?? {},
@@ -764,7 +764,7 @@ async function* runFrom(
     }
 
     // GraphQL: a 200 response carrying `errors` is a failure.
-    if (cfg.kind === 'graphql') {
+    if (cfg.kind?.id === 'graphql') {
         const errs = (res.body as { errors?: { message?: string }[] })?.errors;
         if (errs?.length) {
             yield {

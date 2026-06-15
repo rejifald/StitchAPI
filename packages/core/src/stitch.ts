@@ -14,6 +14,7 @@ import type { InferOutput, InputOf, ResolveOutput } from './infer';
 import { otlpTrace } from './otlp';
 import { createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
+import { graphqlSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
 import {
     type DriftOptions,
@@ -109,14 +110,19 @@ export function compose(config: Fragment): StitchConfig {
     let merged: Partial<StitchConfig> = {};
     const hookLayers: Hooks[] = [];
     let store: StitchStore | undefined;
+    let kind: StitchConfig['kind'];
     for (const layer of layers) {
         if (layer.hooks) hookLayers.push(layer.hooks);
         if (layer.store) store = layer.store;
-        // hooks/store are accumulated above; strip them so deepMerge only folds the rest
+        // The surface is an atomic value (last-writer-wins), never deep-merged — merging two
+        // Surface objects would corrupt their hooks/identity (ADR 0005 Decision 2).
+        if (layer.kind) kind = layer.kind;
+        // hooks/store/kind are accumulated above; strip them so deepMerge only folds the rest
         // (exactOptionalPropertyTypes forbids spreading them back in as `undefined`).
         const rest = { ...layer };
         delete rest.hooks;
         delete rest.store;
+        delete rest.kind;
         merged = deepMerge(merged, rest);
         // Endpoint slot: `url` and `baseUrl`/`path` are two spellings of the same target, and
         // deepMerge keeps them as separate keys. Reconcile so the last fragment to write either
@@ -132,6 +138,7 @@ export function compose(config: Fragment): StitchConfig {
     const hooks = chainHooks(hookLayers);
     if (hooks) merged.hooks = hooks;
     if (store) merged.store = store;
+    if (kind) merged.kind = kind;
     const output = normalizeOutput(merged.output);
     if (output !== undefined) merged.output = output;
     const input = normalizeInput(merged.input);
@@ -262,6 +269,9 @@ export function redactConfig(cfg: StitchConfig): StitchConfig {
     delete rest.store;
     delete rest.auth;
     delete rest.adapter;
+    // Normalise the surface to its id string so __config round-trips as JSON (ADR 0005
+    // Decision 11): never expose the live Surface (its hooks don't serialise), only its identity.
+    if (rest.kind) (rest as { kind?: unknown }).kind = rest.kind.id;
     return rest;
 }
 
@@ -412,7 +422,7 @@ export function graphql<
 >(config: C): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     return makeStitch<ResolveOutput<TExplicit, C>>({
         ...config,
-        kind: 'graphql',
+        kind: graphqlSurface,
         method: 'POST',
         unwrap: config.unwrap ?? 'data',
     });
