@@ -6,6 +6,7 @@ import type {
     Adapter,
     AdapterRequest,
     AdapterResponse,
+    DriftFinding,
     StitchEvent,
 } from '../../src/types';
 
@@ -54,6 +55,27 @@ export function gatedStream(
     });
 }
 
+/**
+ * A `ReadableStream` that emits each of `chunks`, then ERRORS instead of closing — for asserting a
+ * mid-stream transport failure surfaces as an `error` event with the deltas seen so far preserved.
+ */
+export function streamThenError(
+    chunks: (string | Uint8Array)[],
+    error: Error = new Error('stream broke mid-flight'),
+): ReadableStream<Uint8Array> {
+    let i = 0;
+    return new ReadableStream<Uint8Array>({
+        pull(controller) {
+            if (i < chunks.length) {
+                const c = chunks[i++] as string | Uint8Array;
+                controller.enqueue(typeof c === 'string' ? enc.encode(c) : c);
+                return;
+            }
+            controller.error(error);
+        },
+    });
+}
+
 /** An adapter that requires a streaming request and returns `body` as the live response body. */
 export function streamAdapter(
     body: ReadableStream<Uint8Array>,
@@ -73,27 +95,31 @@ export function streamAdapter(
 export interface CollectedEvents<T> {
     types: string[];
     deltas: unknown[];
+    drifts: DriftFinding[];
     result: T | undefined;
     error: { message: string; status: number | undefined } | undefined;
     done: { ok: boolean } | undefined;
 }
 
-/** Drain a stitch event generator into its parts: every delta chunk, the terminal result/error/done. */
+/** Drain a stitch event generator into its parts: every delta chunk, every drift finding, the
+ *  terminal result/error/done. */
 export async function collectEvents<T>(
     gen: AsyncGenerator<StitchEvent<T>, void>,
 ): Promise<CollectedEvents<T>> {
     const types: string[] = [];
     const deltas: unknown[] = [];
+    const drifts: DriftFinding[] = [];
     let result: T | undefined;
     let error: { message: string; status: number | undefined } | undefined;
     let done: { ok: boolean } | undefined;
     for await (const ev of gen) {
         types.push(ev.type);
         if (ev.type === 'delta') deltas.push(ev.chunk);
+        else if (ev.type === 'drift') drifts.push(ev.finding);
         else if (ev.type === 'result') result = ev.value;
         else if (ev.type === 'error')
             error = { message: ev.message, status: ev.status };
         else if (ev.type === 'done') done = { ok: ev.ok };
     }
-    return { types, deltas, result, error, done };
+    return { types, deltas, drifts, result, error, done };
 }

@@ -20,6 +20,14 @@ export interface RouteBehavior {
     setCookies?: { name: string; value: string }[];
     retryAfter?: number;
     headers?: Record<string, string>;
+    /**
+     * Stream the body as a real chunked HTTP response (no `content-length`) instead of one buffered
+     * send — for the `sse`/`stream` surfaces. Each chunk is written separately, with an optional
+     * `chunkDelayMs` pause *before* each, so a test can observe cross-chunk boundaries over a real
+     * socket, abort mid-stream, or break early. Set `headers['content-type']` (e.g.
+     * `'text/event-stream'`); the loop stops as soon as the client goes away.
+     */
+    stream?: { chunks: (string | Uint8Array)[]; chunkDelayMs?: number };
 }
 
 export interface MockServer {
@@ -33,6 +41,9 @@ export interface MockServer {
 
 const at = (arr: unknown[], i: number): unknown =>
     arr[Math.min(i, arr.length - 1)];
+
+const sleep = (ms: number): Promise<void> =>
+    new Promise((r) => setTimeout(r, ms));
 
 const parseCookies = (header: string | undefined): Record<string, string> => {
     const out: Record<string, string> = {};
@@ -105,20 +116,14 @@ export function startMockServer(): Promise<MockServer> {
 
         const rk = key(method, path);
         const behavior = routes.get(rk);
-        const send = (
-            status: number,
-            payload: unknown,
+        const buildHeaders = (
+            contentType: string,
             extra?: RouteBehavior,
-        ): void => {
-            // A Buffer/Uint8Array body is sent as raw bytes (octet-stream by default);
-            // anything else is JSON-encoded. Lets routes serve binary downloads.
-            const isBytes =
-                Buffer.isBuffer(payload) || payload instanceof Uint8Array;
+        ): Record<string, string | string[]> => {
             const out: Record<string, string | string[]> = {
-                'content-type': isBytes
-                    ? 'application/octet-stream'
-                    : 'application/json',
+                'content-type': contentType,
             };
+            // A route's own `headers` win — including `content-type` (e.g. text/event-stream).
             if (extra?.headers) Object.assign(out, extra.headers);
             if (extra?.setCookie)
                 out['Set-Cookie'] =
@@ -130,8 +135,56 @@ export function startMockServer(): Promise<MockServer> {
                 );
             if (extra?.retryAfter !== undefined)
                 out['Retry-After'] = String(extra.retryAfter);
-            res.writeHead(status, out);
+            return out;
+        };
+        const send = (
+            status: number,
+            payload: unknown,
+            extra?: RouteBehavior,
+        ): void => {
+            // A Buffer/Uint8Array body is sent as raw bytes (octet-stream by default);
+            // anything else is JSON-encoded. Lets routes serve binary downloads.
+            const isBytes =
+                Buffer.isBuffer(payload) || payload instanceof Uint8Array;
+            res.writeHead(
+                status,
+                buildHeaders(
+                    isBytes ? 'application/octet-stream' : 'application/json',
+                    extra,
+                ),
+            );
             res.end(isBytes ? Buffer.from(payload) : JSON.stringify(payload));
+        };
+        // Write the body as a real chunked response: one `res.write` per chunk (an optional pause
+        // before each), then `res.end`. Bails the moment the client disconnects (abort / early
+        // break) so a half-read stream can't wedge the server's `close()`.
+        const streamResponse = async (
+            status: number,
+            extra: RouteBehavior,
+        ): Promise<void> => {
+            const spec = extra.stream!;
+            // Swallow a client-abort reset (ECONNRESET) so a mid-stream abort/early-break doesn't
+            // crash the handler. The loop guards on the response's own runtime flags rather than a
+            // closure-set boolean (a flag mutated only inside the handler reads as a constant to the
+            // type-aware lint rule): `destroyed` flips on a client disconnect, `writableEnded` once
+            // we've ended — either means there is no point writing more.
+            res.on('error', () => {
+                /* client went away mid-write */
+            });
+            res.writeHead(
+                status,
+                buildHeaders('application/octet-stream', extra),
+            );
+            for (const chunk of spec.chunks) {
+                if (spec.chunkDelayMs) await sleep(spec.chunkDelayMs);
+                if (res.writableEnded || res.destroyed) break;
+                res.write(
+                    typeof chunk === 'string'
+                        ? Buffer.from(chunk, 'utf8')
+                        : Buffer.from(chunk),
+                );
+            }
+            if (!res.writableEnded && !res.destroyed) res.end();
         };
 
         if (!behavior) {
@@ -166,6 +219,13 @@ export function startMockServer(): Promise<MockServer> {
         const status = behavior.statuses
             ? (at(behavior.statuses, idx) as number)
             : 200;
+
+        // A streaming route writes a real chunked response (auth/counter checks above still apply).
+        if (behavior.stream) {
+            await streamResponse(status, behavior);
+            return;
+        }
+
         let body: unknown = {};
         if (typeof behavior.body === 'function') {
             body = (behavior.body as (i: number, r: ReqInfo) => unknown)(
@@ -218,11 +278,14 @@ export function startMockServer(): Promise<MockServer> {
                     log.length = 0;
                 },
                 close: () =>
-                    new Promise<void>((res) =>
+                    new Promise<void>((res) => {
+                        // Force-drop any still-open connection (a half-read stream from an early
+                        // break) so close() can't hang waiting on it (Node ≥ 18.2).
+                        server.closeAllConnections();
                         server.close(() => {
                             res();
-                        }),
-                    ),
+                        });
+                    }),
             });
         });
     });

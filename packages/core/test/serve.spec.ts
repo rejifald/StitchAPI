@@ -2,9 +2,11 @@
 import { stitch } from '../src';
 import { serve } from '../src/serve';
 import type { ServeHandle } from '../src/serve';
+import { sse } from '../src/sse';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 import { asValidator } from './support/schema';
+import { streamOf } from './support/streams';
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -131,4 +133,49 @@ test('an upstream failure surfaces as a non-2xx JSON error', async () => {
     });
     expect(res.status).toBeGreaterThanOrEqual(400);
     await expect(res.json()).resolves.toHaveProperty('error');
+});
+
+describe('serve forwards a streaming surface as `event: delta` SSE frames', () => {
+    let streamHandle: ServeHandle;
+    beforeAll(async () => {
+        // An sse() stitch whose adapter streams two token frames. serve forwards EVERY engine
+        // event as SSE, so each `delta` rides out as its own `event: delta` frame for free.
+        const tokens = sse({
+            url: 'https://x.test/llm',
+            adapter: (req) => {
+                if (!req.stream)
+                    throw new Error('expected a streaming request');
+                return Promise.resolve({
+                    status: 200,
+                    headers: {},
+                    body: streamOf([
+                        'data: {"tok":"he"}\n\n',
+                        'data: {"tok":"llo"}\n\n',
+                    ]),
+                });
+            },
+        });
+        streamHandle = await serve({ tokens }, { port: 0 });
+    });
+    afterAll(async () => {
+        await streamHandle.close();
+    });
+
+    test('each delta chunk arrives as a separate event: delta frame, then done', async () => {
+        const res = await fetch(`${streamHandle.url}/stitch/tokens`, {
+            method: 'POST',
+            headers: { accept: 'text/event-stream' },
+            body: '{}',
+        });
+        expect(res.headers.get('content-type')).toContain('text/event-stream');
+
+        const frames = parseSse(await res.text());
+        const deltas = frames.filter((f) => f.event === 'delta');
+        expect(deltas.map((f) => f.data?.['chunk'])).toEqual([
+            { data: { tok: 'he' } },
+            { data: { tok: 'llo' } },
+        ]);
+        expect(frames[0]?.event).toBe('start');
+        expect(frames.at(-1)?.event).toBe('done');
+    });
 });
