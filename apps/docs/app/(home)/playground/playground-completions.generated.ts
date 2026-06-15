@@ -14,8 +14,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "kind",
             type: "property",
-            detail: "'http' | 'graphql'",
-            info: "Request kind. `'http'` (default) or `'graphql'` for a POST `{ query, variables }`.",
+            detail: "Surface",
+            info: "Request style — a  plugin (ADR 0005 Decisions 1-2). Omitted = the built-in `http` surface. The public `__config` exposes only the surface's `id` string (so a stitch's declaration round-trips as JSON — Decision 11); the live object stays on `__rawConfig`.",
         },
         {
             label: "method",
@@ -28,6 +28,18 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             type: "property",
             detail: "'json' | 'form' | 'multipart'",
             info: "Request body encoding. Default `'json'`.",
+        },
+        {
+            label: "multipart",
+            type: "property",
+            detail: "MultipartOptions",
+            info: "Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`.",
+        },
+        {
+            label: "stream",
+            type: "property",
+            detail: "StreamOptions",
+            info: "Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body (`'bytes'` default / `'lines'` / `'ndjson'`). Only meaningful for the `stream` surface.",
         },
         {
             label: "responseType",
