@@ -57,7 +57,8 @@ There is precedent for "host integration as a thin, framework-free adapter over 
         static forRoot(options: StitchModuleOptions = {}): DynamicModule {
             const { isGlobal, store, trace, ...defaults } = options;
             const sharedStore = store ? borrowStore(store) : memoryStore(); // app owns a store it passes
-            const sharedTrace = trace === 'logger' ? loggerSink(new Logger('Stitch')) : trace; // off (Q2)
+            const sharedTrace =
+                trace === 'logger' ? loggerSink(new Logger('Stitch')) : trace; // off (Q2)
             return {
                 module: StitchModule,
                 global: isGlobal ?? true,
@@ -68,12 +69,25 @@ There is precedent for "host integration as a thin, framework-free adapter over 
                     {
                         provide: STITCH_SEAM,
                         useFactory: (reg: SeamRegistry): Seam =>
-                            reg.track(seam({ ...defaults, store: sharedStore, ...(sharedTrace ? { trace: sharedTrace } : {}) })),
+                            reg.track(
+                                seam({
+                                    ...defaults,
+                                    store: sharedStore,
+                                    ...(sharedTrace
+                                        ? { trace: sharedTrace }
+                                        : {}),
+                                }),
+                            ),
                         inject: [SeamRegistry],
                     },
                     StitchLifecycle,
                 ],
-                exports: [STITCH_SEAM, STITCH_STORE, STITCH_TRACE, SeamRegistry],
+                exports: [
+                    STITCH_SEAM,
+                    STITCH_STORE,
+                    STITCH_TRACE,
+                    SeamRegistry,
+                ],
             };
         }
 
@@ -161,7 +175,10 @@ There is precedent for "host integration as a thin, framework-free adapter over 
 
     @Injectable()
     export class UsersService {
-        constructor(@InjectStitch(GetUser) private readonly getUser: Injected<typeof GetUser>) {}
+        constructor(
+            @InjectStitch(GetUser)
+            private readonly getUser: Injected<typeof GetUser>,
+        ) {}
         find(id: string) {
             return this.getUser({ params: { id } }); // PromiseLike<User>; .stream() for events
         }
@@ -174,7 +191,10 @@ There is precedent for "host integration as a thin, framework-free adapter over 
     @Module({
         imports: [
             StitchModule.forFeature({
-                seam: { baseUrl: 'https://api.stripe.com', auth: bearer(env('STRIPE_KEY')) },
+                seam: {
+                    baseUrl: 'https://api.stripe.com',
+                    auth: bearer(env('STRIPE_KEY')),
+                },
                 stitches: [CreateCharge, GetCustomer],
             }),
         ],
