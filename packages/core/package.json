@@ -7,6 +7,10 @@
     "types": "lib/index.d.ts",
     "exports": {
         ".": {
+            "browser": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
             "import": {
                 "types": "./lib/index.d.mts",
                 "default": "./lib/index.mjs"
@@ -47,6 +51,10 @@
             }
         },
         "./testing": {
+            "browser": {
+                "types": "./lib/testing.d.mts",
+                "default": "./lib/testing.mjs"
+            },
             "import": {
                 "types": "./lib/testing.d.mts",
                 "default": "./lib/testing.mjs"
@@ -57,6 +65,10 @@
             }
         },
         "./fingerprint": {
+            "browser": {
+                "types": "./lib/fingerprint.d.mts",
+                "default": "./lib/fingerprint.mjs"
+            },
             "import": {
                 "types": "./lib/fingerprint.d.mts",
                 "default": "./lib/fingerprint.mjs"
@@ -67,6 +79,10 @@
             }
         },
         "./cache": {
+            "browser": {
+                "types": "./lib/cache.d.mts",
+                "default": "./lib/cache.mjs"
+            },
             "import": {
                 "types": "./lib/cache.d.mts",
                 "default": "./lib/cache.mjs"
@@ -77,6 +93,10 @@
             }
         },
         "./graphql": {
+            "browser": {
+                "types": "./lib/graphql.d.mts",
+                "default": "./lib/graphql.mjs"
+            },
             "import": {
                 "types": "./lib/graphql.d.mts",
                 "default": "./lib/graphql.mjs"
@@ -87,6 +107,10 @@
             }
         },
         "./sse": {
+            "browser": {
+                "types": "./lib/sse.d.mts",
+                "default": "./lib/sse.mjs"
+            },
             "import": {
                 "types": "./lib/sse.d.mts",
                 "default": "./lib/sse.mjs"
@@ -97,6 +121,10 @@
             }
         },
         "./stream": {
+            "browser": {
+                "types": "./lib/stream.d.mts",
+                "default": "./lib/stream.mjs"
+            },
             "import": {
                 "types": "./lib/stream.d.mts",
                 "default": "./lib/stream.mjs"
@@ -107,6 +135,10 @@
             }
         },
         "./download": {
+            "browser": {
+                "types": "./lib/download.d.mts",
+                "default": "./lib/download.mjs"
+            },
             "import": {
                 "types": "./lib/download.d.mts",
                 "default": "./lib/download.mjs"
@@ -117,6 +149,10 @@
             }
         },
         "./xhr": {
+            "browser": {
+                "types": "./lib/xhr-adapter.d.mts",
+                "default": "./lib/xhr-adapter.mjs"
+            },
             "import": {
                 "types": "./lib/xhr-adapter.d.mts",
                 "default": "./lib/xhr-adapter.mjs"
