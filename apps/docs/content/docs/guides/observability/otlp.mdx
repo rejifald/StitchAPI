@@ -48,6 +48,12 @@ OTLP/JSON to `${endpoint}/v1/traces`. `toOtlpJson(spans)` serializes collected
 spans to the OTLP/JSON `ResourceSpans` shape a collector accepts, if you ship
 them some other way.
 
+A span carries method, `url.full`, `server.address`, status, and timings — never
+request headers or bodies. `url.full` is the only attribute that can hold a
+secret, so it is scrubbed before export: userinfo is stripped and the values of
+secret-bearing query params (`api_key`, `access_token`, `signature`, …) become
+`REDACTED`.
+
 See [Reference → Helpers](/docs/reference/helpers) for the helper signatures and
 [Reference → Events](/docs/reference/events) for the event types each span is
 built from.
@@ -58,14 +64,12 @@ built from.
 </Callout>
 
 <Callout type="warn">
-    **Anti-pattern:** don't assume OTLP export inherits the built-in sink's
-    `[REDACTED]` header scrubbing and flip it on for a stitch that carries its
-    secret in the URL query string — each span sets `url.full` to the full
-    resolved URL verbatim, so a token in the query ships to your collector in
-    the clear (the denylist only ever masks header values, and the span never
-    goes through it). Resolve the secret as a header-borne capability instead,
-    so it stays out of the URL the span exports. See [Capability, not
-    credential](/docs/concepts/capability-not-credential).
+    **Defense in depth, not a guarantee:** `url.full` is scrubbed before export
+    — userinfo stripped, secret-bearing query values masked — but that is a
+    best-effort denylist, so an unusually named param can still slip through.
+    Resolve a secret as a header-borne capability so it never enters the URL the
+    span exports in the first place (headers are never exported at all). See
+    [Capability, not credential](/docs/concepts/capability-not-credential).
 </Callout>
 
 ## See also
