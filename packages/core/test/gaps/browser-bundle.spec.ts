@@ -1,7 +1,12 @@
-// Pins docs/GAP-AUDIT.md §1.5: The core entry must bundle for the browser — no node:* imports or unguarded process.env on the call path
+// Pins docs/GAP-AUDIT.md §1.5: the core entry and every browser-legit subpath must bundle for
+// the browser — no node:* imports, no `Buffer`, no unguarded process.env on the call path — and
+// the bundle must actually RUN where only fetch exists. Server-tier subpaths (serve/mcp/registry)
+// must stay server-only: they must NOT bundle for the browser.
+import { webcrypto } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { createContext, runInContext } from 'node:vm';
 
 const ROOT = join(import.meta.dirname, '../..');
 
@@ -34,48 +39,168 @@ function loadEsbuild(): { build: EsbuildBuild } {
     }
 }
 
+// Bundle one entry for platform "browser". Never throws — esbuild's rejection is
+// folded into `errorTexts` so a test can assert on success OR on failure.
+async function bundleForBrowser(
+    entry: string,
+    format: 'esm' | 'cjs' = 'esm',
+): Promise<{ errorTexts: string[]; output: string }> {
+    const { build } = loadEsbuild();
+    return build({
+        entryPoints: [join(ROOT, entry)],
+        bundle: true,
+        platform: 'browser',
+        format,
+        write: false,
+        logLevel: 'silent',
+    }).then(
+        (result) => ({
+            errorTexts: result.errors.map((e) => e.text),
+            output: result.outputFiles?.[0]?.text ?? '',
+        }),
+        (error: unknown) => {
+            const failed = error as { errors?: EsbuildMessage[] };
+            return {
+                errorTexts: (failed.errors ?? [{ text: String(error) }]).map(
+                    (e) => e.text,
+                ),
+                output: '',
+            };
+        },
+    );
+}
+
 // ---------------------------------------------------------------------------
 // browser bundle contract
 // ---------------------------------------------------------------------------
 
 const NODE_SPECIFIER = /from\s*["']node:|require\(["']node:/;
+const BUFFER = /\bBuffer\b/;
+
+// The published surface that MUST run in the browser: the root barrel plus every
+// browser-usable subpath export (ADR 0005 Decision 10). `xhr` is browser-native.
+const BROWSER_LEGIT = [
+    'src/index.ts',
+    'src/graphql.ts',
+    'src/sse.ts',
+    'src/stream.ts',
+    'src/download.ts',
+    'src/cache.ts',
+    'src/fingerprint.ts',
+    'src/xhr-adapter.ts',
+    'src/testing.ts',
+];
+
+// Server-tier subpaths: genuinely Node-coupled (node:http / stdio / node:fs) and
+// deliberately NOT browser-safe. They must stay that way — and must never leak into
+// the root graph (which would flip the BROWSER_LEGIT pins above).
+const SERVER_TIER = ['src/serve.ts', 'src/mcp.ts', 'src/registry.ts'];
 
 describe('browser bundle (GAP-AUDIT §1.5)', () => {
-    test('src/index.ts bundles for platform "browser" without node:* specifiers', async () => {
-        const { build } = loadEsbuild();
+    test.each(BROWSER_LEGIT)(
+        '%s bundles for "browser" with no node:* specifiers and no Buffer',
+        async (entry) => {
+            const { errorTexts, output } = await bundleForBrowser(entry);
 
-        // Collect bundle errors instead of letting esbuild's rejection
-        // crash the test — the assertion below is the pin.
-        const outcome = await build({
-            entryPoints: [join(ROOT, 'src/index.ts')],
-            bundle: true,
-            platform: 'browser',
-            format: 'esm',
-            write: false,
-            logLevel: 'silent',
-        }).then(
-            (result) => ({
-                errorTexts: result.errors.map((e) => e.text),
-                output: result.outputFiles?.[0]?.text ?? '',
-            }),
-            (error: unknown) => {
-                const failed = error as { errors?: EsbuildMessage[] };
-                return {
-                    errorTexts: (
-                        failed.errors ?? [{ text: String(error) }]
-                    ).map((e) => e.text),
-                    output: '',
-                };
+            // Pin 1: the browser-platform bundle must succeed (no unshimmed node:* import).
+            expect(errorTexts).toEqual([]);
+            // Pin 2: no node: module specifier in the emitted bundle. The narrow regex
+            // ignores the getBuiltinModule("node:fs") string literal, which is browser-safe.
+            expect(output).not.toMatch(NODE_SPECIFIER);
+            // Pin 3: no `Buffer` — a Node global, undefined in browsers/Workers/edge.
+            expect(output).not.toMatch(BUFFER);
+            expect(output.length).toBeGreaterThan(0);
+        },
+        15_000,
+    );
+
+    test.each(SERVER_TIER)(
+        '%s stays server-tier: does NOT bundle for "browser"',
+        async (entry) => {
+            const { errorTexts } = await bundleForBrowser(entry);
+
+            // These reach node:http / stdio / node:fs; a browser build must fail to
+            // resolve them. If this flips, a server-only surface became browser-reachable
+            // (or a node import leaked into a module the root graph also pulls).
+            expect(errorTexts.length).toBeGreaterThan(0);
+            expect(errorTexts.join('\n')).toMatch(/node:/);
+        },
+        15_000,
+    );
+
+    // The mechanical "assert no shims" guard: bundle the root for the browser and run it in
+    // a vm context that has ONLY real browser primitives — no process, no Buffer, no require —
+    // then execute a stitch with basic() auth (the §1.5 regression site, which used Buffer).
+    test('the browser bundle executes a stitch with zero Node globals', async () => {
+        const { output } = await bundleForBrowser('src/index.ts', 'cjs');
+        expect(output.length).toBeGreaterThan(0);
+
+        let captured:
+            | { url: string; headers: Record<string, string> }
+            | undefined;
+        const moduleObj: { exports: Record<string, unknown> } = { exports: {} };
+        const sandbox: Record<string, unknown> = {
+            module: moduleObj,
+            exports: moduleObj.exports,
+            // Real browser / Web Worker globals only — no Node shims:
+            crypto: webcrypto,
+            TextEncoder,
+            TextDecoder,
+            URL,
+            URLSearchParams,
+            btoa,
+            atob,
+            Response,
+            Headers,
+            Request,
+            Blob,
+            AbortController,
+            ReadableStream,
+            setTimeout,
+            clearTimeout,
+            queueMicrotask,
+            console,
+            fetch: async (
+                url: string,
+                init?: { headers?: Record<string, string> },
+            ) => {
+                captured = { url, headers: init?.headers ?? {} };
+                return new Response(JSON.stringify({ ok: true }), {
+                    status: 200,
+                    headers: { 'content-type': 'application/json' },
+                });
             },
-        );
+        };
 
-        // Pin 1: the browser-platform bundle must succeed. Today this
-        // reports "Could not resolve node:crypto / node:fs / ..." errors.
-        expect(outcome.errorTexts).toEqual([]);
+        // "assert no shims": none of the Node-only globals were injected into the scope.
+        for (const banned of [
+            'process',
+            'Buffer',
+            'require',
+            'global',
+            '__dirname',
+            '__filename',
+        ]) {
+            expect(banned in sandbox).toBe(false);
+        }
 
-        // Pin 2: the emitted bundle must not reference any node: module.
-        expect(outcome.output).not.toMatch(NODE_SPECIFIER);
-        expect(outcome.output.length).toBeGreaterThan(0);
+        createContext(sandbox);
+        runInContext(output, sandbox);
+        const { stitch, basic } = moduleObj.exports as {
+            stitch: (cfg: unknown) => () => Promise<unknown>;
+            basic: (o: { user: string; pass: string }) => unknown;
+        };
+
+        const call = stitch({
+            url: 'https://api.test/x',
+            method: 'GET',
+            auth: basic({ user: 'u', pass: 'p' }),
+        });
+        const out = await call();
+
+        // It ran Node-free: returned the parsed body and set a correct Basic header.
+        expect(out).toEqual({ ok: true });
+        expect(captured?.headers['authorization']).toBe(`Basic ${btoa('u:p')}`);
     }, 15_000);
 });
 
@@ -90,34 +215,12 @@ describe('streaming surfaces are browser-first (ADR 0005 Decisions 4-5)', () => 
     test.each(['src/sse.ts', 'src/stream.ts'])(
         '%s bundles for "browser" with no node:* specifiers and no EventSource',
         async (entry) => {
-            const { build } = loadEsbuild();
-            const outcome = await build({
-                entryPoints: [join(ROOT, entry)],
-                bundle: true,
-                platform: 'browser',
-                format: 'esm',
-                write: false,
-                logLevel: 'silent',
-            }).then(
-                (result) => ({
-                    errorTexts: result.errors.map((e) => e.text),
-                    output: result.outputFiles?.[0]?.text ?? '',
-                }),
-                (error: unknown) => {
-                    const failed = error as { errors?: EsbuildMessage[] };
-                    return {
-                        errorTexts: (
-                            failed.errors ?? [{ text: String(error) }]
-                        ).map((e) => e.text),
-                        output: '',
-                    };
-                },
-            );
+            const { errorTexts, output } = await bundleForBrowser(entry);
 
-            expect(outcome.errorTexts).toEqual([]);
-            expect(outcome.output).not.toMatch(NODE_SPECIFIER);
-            expect(outcome.output).not.toMatch(/\bEventSource\b/);
-            expect(outcome.output.length).toBeGreaterThan(0);
+            expect(errorTexts).toEqual([]);
+            expect(output).not.toMatch(NODE_SPECIFIER);
+            expect(output).not.toMatch(/\bEventSource\b/);
+            expect(output.length).toBeGreaterThan(0);
         },
         15_000,
     );

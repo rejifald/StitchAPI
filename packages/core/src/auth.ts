@@ -73,13 +73,24 @@ export function apiKey(opts: { header?: string; value: Secret }): AuthStrategy {
     };
 }
 
+// Base64 of a UTF-8 string — isomorphic (browser-first: no node:* / no Buffer).
+// `btoa` is a global in browsers, Web Workers, and Node ≥ 16; TextEncoder (already
+// used across core) bridges UTF-8 → the binary string btoa expects, so credentials
+// with non-ASCII bytes encode identically to the old `Buffer.from(s).toString('base64')`.
+function toBase64Utf8(s: string): string {
+    const bytes = new TextEncoder().encode(s);
+    let binary = '';
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary);
+}
+
 export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
     return {
         name: 'basic',
         apply(req) {
-            const token = Buffer.from(
+            const token = toBase64Utf8(
                 `${resolve(opts.user)}:${resolve(opts.pass)}`,
-            ).toString('base64');
+            );
             req.headers['authorization'] = `Basic ${token}`;
         },
     };
