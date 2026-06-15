@@ -1,0 +1,159 @@
+---
+title: NestJS
+description: Wire stitches into a NestJS app with StitchModule — injectable stitches, a Logger trace bridge, ConfigService-backed secrets, and request-scoped multi-tenancy.
+---
+
+Use `@stitchapi/nest` when you want your stitches available through NestJS
+dependency injection — configured once, injected into services as typed
+dependencies, with the framework's `Logger` and `ConfigService` wired in and
+shutdown handled for you. It is a thin peer-dependency package that adds no
+capability of its own: it wires StitchAPI's shared-runtime primitive (one store,
+one trace sink, a trusted principal boundary) into Nest's DI graph, so core stays
+untouched.
+
+## Example
+
+Install the package alongside core:
+
+```package-install
+@stitchapi/nest stitchapi
+```
+
+Configure the shared client once in your root module. `forRootAsync` resolves its
+options from an injected factory, which is how `ConfigService` reaches the base
+URL, secrets, and store. `trace: 'logger'` sends the event stream to the Nest
+`Logger`:
+
+```ts
+// app.module.ts
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { StitchModule, fromConfig } from '@stitchapi/nest';
+import { bearer } from 'stitchapi';
+
+@Module({
+    imports: [
+        StitchModule.forRootAsync({
+            imports: [ConfigModule],
+            inject: [ConfigService],
+            useFactory: (config: ConfigService) => ({
+                baseUrl: config.getOrThrow('API_BASE_URL'),
+                auth: bearer(fromConfig(config)('API_TOKEN')),
+                trace: 'logger',
+            }),
+        }),
+    ],
+})
+export class AppModule {}
+```
+
+Declare a stitch with `defineStitch`, register it per feature with `forFeature`,
+and inject it as a typed dependency:
+
+```ts
+// users.module.ts
+import { Injectable, Module } from '@nestjs/common';
+import {
+    InjectStitch,
+    type Injected,
+    StitchModule,
+    defineStitch,
+} from '@stitchapi/nest';
+import { z } from 'zod';
+
+export const GetUser = defineStitch('GET_USER', (api) =>
+    api.stitch({
+        path: '/users/{id}',
+        output: z.object({ id: z.number(), name: z.string() }),
+    }),
+);
+
+@Module({ imports: [StitchModule.forFeature({ stitches: [GetUser] })] })
+export class UsersModule {}
+
+@Injectable()
+export class UsersService {
+    constructor(
+        @InjectStitch(GetUser)
+        private readonly getUser: Injected<typeof GetUser>,
+    ) {}
+
+    find(id: string) {
+        return this.getUser({ params: { id } });
+    }
+}
+```
+
+`Injected<typeof GetUser>` keeps the injection-site type tied to the definition,
+so the injected `getUser` is the same typed callable a stitch always is — awaited
+for the validated result, or `.stream()`-ed for the
+[event stream](/docs/concepts/event-stream).
+
+<Callout type="info">
+    Call `app.enableShutdownHooks()` in `main.ts`. Without it Nest never fires
+    its shutdown hook, so the shared trace sink is not flushed and the store is
+    not closed on exit.
+</Callout>
+
+## Options
+
+`forRoot({ store, trace, ...defaults })` configures the app-wide infrastructure —
+one store, one trace sink — plus the shared config (`baseUrl`, `auth`, `retry`,
+`throttle`, …) every stitch inherits; `forRootAsync` resolves the same options
+from an injected factory. `forFeature({ stitches, seam })` registers injectable
+stitches and, optionally, a per-upstream seam built over the shared store and
+trace — omit `seam` to attach the stitches to the default one.
+
+Two bridges connect the framework, and neither changes core:
+
+-   **`trace: 'logger'`** forwards a stitch's
+    [event stream](/docs/concepts/event-stream) to the Nest `Logger`. It logs
+    method, URL, and status only, and strips the query string; tracing is
+    otherwise [off by default](/docs/guides/observability/trace-sinks).
+-   **`fromConfig(config)('KEY')`** is a `ConfigService`-backed
+    [secret resolver](/docs/guides/auth/secret-resolvers) — the `ConfigService`
+    twin of `env()`. It resolves synchronously at call time, so the credential
+    never lands on the config or in a trace.
+
+For multi-tenancy, bind a principal per request with `seam.as(...)`. The principal
+scopes sessions and cache over the one shared store, so each tenant gets its own
+login while the connection pool stays shared:
+
+```ts
+import { Scope } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
+import { STITCH_SEAM } from '@stitchapi/nest';
+import type { Seam } from 'stitchapi';
+
+const TenantSeam = {
+    provide: 'TENANT_SEAM',
+    scope: Scope.REQUEST,
+    useFactory: (root: Seam, req: { user?: { tenantId?: string } }) =>
+        root.as(req.user?.tenantId ?? 'anonymous'),
+    inject: [STITCH_SEAM, REQUEST],
+};
+```
+
+<Callout type="warn">
+    **Anti-pattern:** don't swap the store per request to isolate tenants — bind
+    the principal with `seam.as(tenantId)` instead. Multi-tenancy is
+    principal-scoped over one shared store (per-tenant sessions and cache keys,
+    a single connection pool); a per-request store throws all of that away.
+    Outside an HTTP request — a queue worker or a scheduled job — there is no
+    request to read, so bind the principal explicitly from the job's own data.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="Trace sinks" href="/docs/guides/observability/trace-sinks" />
+    <Card title="Secret resolvers" href="/docs/guides/auth/secret-resolvers" />
+    <Card
+        title="The pluggable store"
+        href="/docs/guides/state/pluggable-store"
+    />
+</Cards>
