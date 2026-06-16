@@ -194,7 +194,7 @@ describe('verifyAdapterContract', () => {
 // ---------------------------------------------------------------------------
 
 describe('verifySinkContract', () => {
-    test('a recording TraceSink passes and receives all 7 event variants', async () => {
+    test('a recording TraceSink passes and receives all 8 event variants', async () => {
         const events: StitchEvent[] = [];
         let flushed = false;
         const makeSink = (): TraceSink => ({
@@ -213,6 +213,7 @@ describe('verifySinkContract', () => {
         expect(events.map((e) => e.type)).toEqual([
             'start',
             'progress',
+            'info',
             'drift',
             'delta',
             'result',

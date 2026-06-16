@@ -1,6 +1,6 @@
 ---
 title: 'Auth strategies'
-description: 'bearer, apiKey, basic, cookieSession, oauth2, and the env() and secretsFile() resolvers.'
+description: 'bearer, inferBearer, apiKey, basic, cookieSession, oauth2, and the env() and secretsFile() resolvers.'
 ---
 
 The signatures for every auth strategy and secret resolver. Each strategy holds
@@ -14,6 +14,17 @@ Attaches `Authorization: Bearer <token>`.
 ```ts twoslash
 import { bearer } from 'stitchapi';
 ```
+
+## inferBearer
+
+An opt-in, self-announcing bearer that reads its token from the environment — an
+explicit `env` name first, then a host heuristic (`api.github.com` →
+`GITHUB_TOKEN`/`GITHUB_API_KEY`) — attaches it as `Authorization: Bearer …`, and
+emits an `info` event naming the variable it used (never the token). A no-op
+(that says so) with no process environment. See
+[Bearer → Inferred bearer](/docs/guides/auth/bearer).
+
+<AutoTypeTable path="../../packages/core/src/auth.ts" name="InferBearerOpts" />
 
 ## apiKey
 

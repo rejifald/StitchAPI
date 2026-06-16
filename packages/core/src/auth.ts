@@ -10,7 +10,7 @@ import type {
     Stitch,
     StitchInput,
 } from './types';
-import { nodeFs, now, readEnv } from './util';
+import { hasEnv, nodeFs, now, readEnv } from './util';
 
 export type Secret = string | (() => string);
 const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
@@ -72,6 +72,84 @@ export function bearer(token: Secret): AuthStrategy {
         name: 'bearer',
         apply(req) {
             req.headers['authorization'] = `Bearer ${resolve(token)}`;
+        },
+    };
+}
+
+// The request host's main label (sans a leading `api.`/`www.`), upper-cased and identifier-safe.
+function hostEnvKey(host: string): string {
+    const label = host.replace(/^(?:api|www)\./i, '').split('.')[0] ?? '';
+    return label.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+}
+
+// The request URL's hostname, or undefined if it can't be parsed (defensive — by `apply` time the
+// engine has already resolved an absolute URL).
+function hostOf(url: string): string | undefined {
+    try {
+        return new URL(url).hostname;
+    } catch {
+        return undefined;
+    }
+}
+
+export interface InferBearerOpts {
+    /** Explicit env var to read the token from, tried BEFORE the host heuristic. */
+    env?: string;
+    /**
+     * Map a request host to candidate env-var names, tried in order. Default: the host's main
+     * label (sans a leading `api.`/`www.`) upper-cased as `<LABEL>_TOKEN` then `<LABEL>_API_KEY`
+     * (`api.github.com` → `GITHUB_TOKEN`, `GITHUB_API_KEY`). Return `[]` to skip the heuristic.
+     */
+    fromHost?: (host: string) => string[];
+}
+
+/**
+ * An OPT-IN, self-announcing bearer strategy: read a token from the environment — an explicit
+ * `env` name first, then a host→env-var heuristic — and attach it as `Authorization: Bearer …`.
+ * Every application emits an `info` StitchEvent naming the variable it used (never the token), so
+ * the inference is visible in the trace. Browser-guarded: with no process environment it is a
+ * no-op (and announces that). For local/dev and agent runs where the right `*_TOKEN` already sits
+ * in the environment; in production, name the credential explicitly with {@link bearer}.
+ */
+export function inferBearer(opts: InferBearerOpts = {}): AuthStrategy {
+    const fromHost =
+        opts.fromHost ??
+        ((host: string): string[] => {
+            const key = hostEnvKey(host);
+            return key ? [`${key}_TOKEN`, `${key}_API_KEY`] : [];
+        });
+    return {
+        name: 'inferBearer',
+        apply(req, ctx) {
+            // Browser: no environment to infer from — do nothing, but say so (never silent).
+            if (!hasEnv()) {
+                ctx.emit(
+                    'auth',
+                    'no environment (browser): bearer not inferred',
+                );
+                return;
+            }
+            const host = hostOf(req.url);
+            const names = [
+                ...(opts.env ? [opts.env] : []),
+                ...(host ? fromHost(host) : []),
+            ];
+            for (const name of names) {
+                const value = readEnv(name);
+                if (value != null && value !== '') {
+                    req.headers['authorization'] = `Bearer ${value}`;
+                    ctx.emit(
+                        'auth',
+                        `bearer from ${name}${host ? ` (host ${host})` : ''}`,
+                    );
+                    return;
+                }
+            }
+            // Nothing matched: announce the miss (and what was tried) so it isn't a silent no-op.
+            ctx.emit(
+                'auth',
+                `no token env var set for ${host ?? 'this request'} (tried ${names.join(', ') || 'none'})`,
+            );
         },
     };
 }
