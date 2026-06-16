@@ -10,7 +10,14 @@ import type {
     Stitch,
     StitchInput,
 } from './types';
-import { nodeFs, now, readEnv } from './util';
+import {
+    appendQueryString,
+    buildQuery,
+    nodeFs,
+    now,
+    readEnv,
+    registerSecretQueryKey,
+} from './util';
 
 export type Secret = string | (() => string);
 const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
@@ -156,7 +163,46 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
     };
 }
 
-export function apiKey(opts: { header?: string; value: Secret }): AuthStrategy {
+/**
+ * API-key auth, in a request **header** (the default) or a **query param**. The key is a
+ * {@link Secret} resolved at call time — the caller (an agent) never sees it.
+ *
+ * - `in: 'header'` (default): writes `header` (default `'x-api-key'`, lower-cased) — byte-for-byte
+ *   the original behaviour, so existing stitches are unaffected.
+ * - `in: 'query'`: appends `name=<resolved>` (default `'api_key'`) to the request URL,
+ *   URL-encoded. The strategy runs in the attempt loop on the fully-built `req` (after
+ *   templating/query-building), so it safely appends onto whatever query the URL already carries.
+ *
+ * SECURITY: a key in the URL leaks wherever URLs go — server access logs, proxies, the browser
+ * history, a `Referer` header. Prefer `in: 'header'` when the API accepts it. The key stays out of
+ * StitchAPI's own traces two ways: the strategy mutates only the request the transport sends (the
+ * `start` event carries the pre-auth URL, so the key never lands there), and the configured query
+ * `name` is registered with the URL-credential scrubber, so if it does surface in a sink (an OTLP
+ * `url.full`, the structured `input.query`) it is REDACTED, like `api_key`/`access_token`/… are.
+ */
+export function apiKey(
+    opts:
+        | { in?: 'header'; header?: string; value: Secret }
+        | { in: 'query'; name?: string; value: Secret },
+): AuthStrategy {
+    if (opts.in === 'query') {
+        const name = opts.name ?? 'api_key';
+        // Teach the trace scrubber this param name carries a secret, so the key never reaches a
+        // sink in the clear — even when `name` is a vendor spelling the built-in stems don't catch.
+        registerSecretQueryKey(name);
+        return {
+            name: 'apiKey',
+            apply(req) {
+                // Resolve at call time (env()/thunk read per call), encode via the same query
+                // builder the engine uses, and append onto the existing query — `appendQueryString`
+                // switches the leading `?` to `&` and preserves any trailing `#fragment`.
+                req.url = appendQueryString(
+                    req.url,
+                    buildQuery({ [name]: resolve(opts.value) }),
+                );
+            },
+        };
+    }
     const header = (opts.header ?? 'x-api-key').toLowerCase();
     return {
         name: 'apiKey',

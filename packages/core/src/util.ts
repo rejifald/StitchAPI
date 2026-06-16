@@ -420,15 +420,35 @@ const SECRET_QUERY_STEMS = [
 ];
 const URL_REDACTED = 'REDACTED';
 
+// Caller-registered query-param names that carry a secret value — the escape hatch for a
+// credential whose param name the built-in set/stems don't catch. `apiKey({ in: 'query', name })`
+// registers its configured `name` here at construction, so a key placed in the URL is redacted in
+// every trace sink (the JSONL/console `start.url` via `scrubUrl`, the OTLP `url.full`, and the
+// structured `input.query` via `redactSecretQuery`) without listing every vendor spelling. The
+// default `api_key` already matches a stem; this covers an arbitrary configured name too.
+// Lower-cased on insert so the membership test in `isSecretQueryKey` stays case-insensitive.
+const REGISTERED_SECRET_QUERY_KEYS = new Set<string>();
+
+/**
+ * Register an additional query-param name whose value is a secret, so the trace URL/query
+ * scrubbers redact it. Additive and process-wide (mirroring the built-in denylist): names can be
+ * widened but never un-redacted. Idempotent — registering the same name twice is a no-op.
+ */
+export function registerSecretQueryKey(name: string): void {
+    REGISTERED_SECRET_QUERY_KEYS.add(name.toLowerCase());
+}
+
 /**
  * True when a query-param name (or any key in the same family — a `start` event's
  * `input.query`) carries a secret value: matched case-insensitively against the
- * secret key set above, or by containing one of the secret stems.
+ * secret key set above, by containing one of the secret stems, or because a caller
+ * registered it via {@link registerSecretQueryKey} (e.g. `apiKey({ in: 'query', name })`).
  */
 export function isSecretQueryKey(key: string): boolean {
     const k = key.toLowerCase();
     return (
         SECRET_QUERY_KEYS.has(k) ||
+        REGISTERED_SECRET_QUERY_KEYS.has(k) ||
         SECRET_QUERY_STEMS.some((s) => k.includes(s))
     );
 }
