@@ -157,6 +157,10 @@ function format(name: string, event: StitchEvent): string | null {
                 `  · ${name} ${event.phase}#${event.attempt}${waited}`,
             );
         }
+        case 'info': {
+            const detail = event.detail != null ? `: ${event.detail}` : '';
+            return paint(DIM, `  ℹ ${name} ${event.topic}${detail}`);
+        }
         case 'drift': {
             const f = event.finding;
             const detail = f.detail != null ? ` (${f.detail})` : '';
@@ -176,6 +180,165 @@ function format(name: string, event: StitchEvent): string | null {
         default:
             return null; // 'delta' and any future events: file-only, no console line
     }
+}
+
+// The log levels {@link loggerSink} maps events onto. A strict subset of the methods
+// every host logger (pino/winston/console) exposes — DriftLevel ('error'|'warn'|'info')
+// is a subset too, so a drift finding's own level is a valid LogLevel as-is.
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+/** The minimal logger `loggerSink` needs — pino, winston, console, and most host loggers satisfy it. */
+export interface LoggerLike {
+    error(message: string): void;
+    warn(message: string): void;
+    info(message: string): void;
+    debug(message: string): void;
+}
+
+export interface LoggerSinkOptions {
+    /**
+     * Override the default event-type → level mapping. By default: result→info, error→error,
+     * start/progress/info/done→debug, drift→the finding's own level, and `delta` is never logged
+     * (it carries response-body data). Set a type to a level to override; `drift` is special-
+     * cased to the finding level unless you override it here.
+     */
+    levels?: Partial<Record<StitchEvent['type'], LogLevel>>;
+    /**
+     * Resolve the level per event INSTANCE — a strict superset of {@link levels} (which keys only on
+     * the event *type*). Return a {@link LogLevel} to log at it, `null` to DROP the event, or
+     * `undefined` to defer to {@link levels} / the defaults. Lets a host express conditional rules the
+     * per-type map can't — e.g. a `retry`/`circuit` `progress` at `warn` but a routine throttle at
+     * `debug`, or dropping the happy-path lifecycle. Takes precedence over {@link levels}. `delta` is
+     * dropped before this runs, so it is never called for one.
+     */
+    level?: (
+        event: StitchEvent,
+        ctx: { name: string },
+    ) => LogLevel | null | undefined;
+    /**
+     * Override the payload-free one-liner. Return the message to log, or `null` to skip the event.
+     * The default formatter emits metadata only — name, method, scrubbed URL, status, attempt counts,
+     * drift path/level, timing — never `event.input`, `event.value`, or a `delta` chunk. SECURITY: if
+     * you supply your own, YOU take on that guarantee — a custom sink receives the **raw** event, so
+     * log only metadata, never a header/body/chunk value or `JSON.stringify(event)`. `delta` is
+     * dropped before this runs.
+     */
+    format?: (event: StitchEvent, ctx: { name: string }) => string | null;
+}
+
+// The DEFAULT event-type → level mapping (drift is resolved per-finding at call time, and
+// 'delta' is absent because it is never logged — a streamed chunk is raw response data).
+const DEFAULT_LEVELS: Record<
+    Exclude<StitchEvent['type'], 'drift' | 'delta'>,
+    LogLevel
+> = {
+    start: 'debug',
+    progress: 'debug',
+    info: 'debug',
+    result: 'info',
+    error: 'error',
+    done: 'debug',
+};
+
+// Render one StitchEvent as a PLAIN (no ANSI) metadata-only one-liner — the same
+// name/method/scrubbed-url/status/attempts/timing fields `format` paints, minus colour and
+// glyphs. NEVER includes the response body / result value / delta chunk, so it is safe to log
+// verbatim even though a custom sink receives the un-redacted event. `null` ⇒ don't log.
+function summary(name: string, event: StitchEvent): string | null {
+    switch (event.type) {
+        case 'start':
+            return `${name} ${event.method} ${scrubUrl(event.url)}`;
+        case 'progress': {
+            const waited =
+                event.waitedMs != null ? ` waited ${event.waitedMs}ms` : '';
+            return `${name} ${event.phase}#${event.attempt}${waited}`;
+        }
+        case 'info': {
+            const detail = event.detail != null ? `: ${event.detail}` : '';
+            return `${name} ${event.topic}${detail}`;
+        }
+        case 'drift': {
+            const f = event.finding;
+            const detail = f.detail != null ? ` (${f.detail})` : '';
+            return `${name} drift[${f.level}] ${f.path} ${f.change}${detail}`;
+        }
+        case 'result':
+            return `${name} ${event.status} ok (${event.attempts} attempt(s))`;
+        case 'error': {
+            const status = event.status != null ? ` ${event.status}` : '';
+            return `${name} ${event.message}${status}`;
+        }
+        case 'done':
+            return `${name} done in ${event.ms}ms`;
+        default:
+            return null; // 'delta': raw response data — never logged.
+    }
+}
+
+/**
+ * A {@link TraceSink} that bridges the stitch event stream to any host logger — pino, winston,
+ * the `console`, anything that is a {@link LoggerLike} — mapping each {@link StitchEvent} to a
+ * log level. The logger-agnostic core twin of `@stitchapi/nest`'s NestJS-specific `loggerSink`.
+ *
+ * Default level map: `result` → `info`, `error` → `error`, `start`/`progress`/`info`/`done` →
+ * `debug`, and `drift` → the finding's own `level` ('error'|'warn'|'info'). A `delta` event is
+ * **never** logged — a streamed chunk is raw response data. Override any per-type level via
+ * {@link LoggerSinkOptions.levels} (e.g. `{ result: 'debug' }`); `drift` still follows the finding
+ * level unless you pin it there too. For conditional rules the per-type map can't express, pass a
+ * {@link LoggerSinkOptions.level} resolver (per-instance; `null` drops the event); for a different
+ * house style, pass a {@link LoggerSinkOptions.format} formatter (it then owns the payload-free
+ * guarantee). `@stitchapi/nest`'s Nest-flavored `loggerSink` is built by delegating here with both.
+ *
+ * SECURITY: a custom sink receives the **raw** event (core only redacts inside its own built-in
+ * sinks), so a `start` event's `input.headers` still holds `authorization` / `cookie` and a
+ * `delta`'s `chunk` is raw response data. This sink therefore logs **only metadata** — name,
+ * method, scrubbed URL, status, attempt counts, drift path/level, timing — never `event.input`,
+ * `event.value`, a `delta` chunk, or `JSON.stringify(event)`, and it strips the URL query (it can
+ * carry `?api_key=…`). That keeps it payload-free on a secret-bearing seam regardless of core's
+ * trace redaction.
+ *
+ * @example
+ * ```ts
+ * import { stitch } from 'stitchapi';
+ * import { loggerSink } from 'stitchapi';
+ * import pino from 'pino';
+ *
+ * const api = stitch({ baseUrl: '…', path: '/users', trace: loggerSink(pino()) });
+ * ```
+ */
+export function loggerSink(
+    logger: LoggerLike,
+    opts?: LoggerSinkOptions,
+): TraceSink {
+    const overrides = opts?.levels;
+    const resolveLevel = opts?.level;
+    const format = opts?.format;
+    return {
+        handle(event: StitchEvent, ctx: { name: string }): void {
+            // A streamed chunk is raw response data — never logged, regardless of any option.
+            if (event.type === 'delta') return;
+            // Per-instance resolver wins (null ⇒ drop, undefined ⇒ defer); else per-type
+            // override; else drift follows its finding level, everything else its default.
+            // DriftLevel ⊂ LogLevel, so the finding level needs no map.
+            let level = resolveLevel?.(event, ctx);
+            if (level === null) return; // resolver dropped it
+            // `undefined` ⇒ no resolver, or it deferred: fall back to the per-type override,
+            // drift's finding level, or the default. (`level` is non-null here, so `??=` only
+            // fires on undefined.)
+            level ??=
+                overrides?.[event.type] ??
+                (event.type === 'drift'
+                    ? event.finding.level
+                    : DEFAULT_LEVELS[event.type]);
+            // Default formatter is payload-free; a `format` override owns that guarantee itself.
+            const message = format
+                ? format(event, ctx)
+                : summary(ctx.name, event);
+            if (message == null) return;
+            logger[level](message);
+        },
+        // Logging is synchronous; nothing is buffered to drain.
+    };
 }
 
 // Resolve the JSONL path once: `false` disables (null), `undefined` => default under $HOME.

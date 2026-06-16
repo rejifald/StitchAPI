@@ -3,13 +3,17 @@ title: 'Errors & pitfalls'
 description: 'How StitchAPI errors work, the code-to-docs contract, and an index of every coded failure.'
 ---
 
-When a stitch can't produce a result, it fails with a `StitchError` — an
-`Error` with `name: 'StitchError'`, a human-readable `message`, and an optional
-`.status` carrying the upstream HTTP status. Await a stitch and that error is
-what `catch` receives:
+When a stitch can't produce a result, it fails with a `StitchError` — an `Error`
+subclass exported from `stitchapi`, carrying a human-readable `message`, an
+optional `.status` (the upstream HTTP status), and `.attempts` (how many tries
+the runtime made before giving up). When the failure came from an HTTP response it
+also carries `.body` (the parsed error payload — an API's `{ error: "…" }`) and
+`.url` (the final request URL, after redirects); both are `undefined` for
+transport/internal errors. Await a stitch and that error is what `catch` receives —
+narrow it with `instanceof`:
 
 ```ts twoslash
-import { stitch } from 'stitchapi';
+import { StitchError, stitch } from 'stitchapi';
 
 const me = stitch({
     baseUrl: 'https://api.example.com',
@@ -19,17 +23,48 @@ const me = stitch({
 try {
     await me();
 } catch (e) {
-    if (e instanceof Error && e.name === 'StitchError') {
-        const status = (e as Error & { status?: number }).status;
-        console.error(e.message, status);
+    if (e instanceof StitchError) {
+        // .body is the parsed error payload; .url is the final request URL.
+        console.error(e.message, e.status, e.attempts, e.body, e.url);
     }
 }
 ```
+
+<Callout type="info">
+    `.body` carries the upstream error payload only to the awaited / `.safe()`
+    caller — it rides a non-enumerable channel and is **never** written to a trace
+    sink, so an `{ error: "…" }` payload can't leak into a JSONL/console log. If a
+    non-2xx is actually expected control flow (a `404` you fall back from), see
+    [`acceptStatus`](/docs/guides/resilience/accept-status) — it returns the body
+    as a normal result instead of throwing.
+</Callout>
 
 If you read the [event stream](/docs/concepts/event-stream) instead of awaiting,
 the same failure arrives as an `error` event carrying
 `{ name, message, status?, attempts, at }` — `attempts` is how many tries the
 runtime made before giving up, `at` is when it gave up.
+
+## Handle failure without throwing
+
+`await` and `.unwrap()` throw on failure. When you'd rather branch than wrap the
+call in `try`/`catch`, `.safe()` consumes the call and never throws — it resolves
+to a discriminated `{ ok, data, error }`, where `error` is the same `StitchError`,
+or `null` on success:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const me = stitch({ baseUrl: 'https://api.example.com', path: '/me' });
+
+const { data, error } = await me.safe();
+if (error) console.error(error.status, error.attempts);
+else console.log(data); // the validated result; error is null here
+```
+
+`.unwrap()` is the explicit throwing twin of `.safe()` — the value, or a thrown
+`StitchError`, exactly like awaiting the bare call. See
+[the event stream](/docs/concepts/event-stream) for the iterate-instead-of-await
+view of the same outcomes.
 
 ## The code-to-docs contract
 
@@ -73,6 +108,10 @@ resolves.
     <Card title="STITCH_GRAPHQL" href="/docs/errors/stitch-graphql">
         A GraphQL-over-HTTP response came back `200` but carried an `errors`
         array.
+    </Card>
+    <Card title="RateLimitError" href="/docs/errors/rate-limit">
+        A delegate-backoff stitch surfaced a rate-limit response for an outer
+        gate to back off on, instead of retrying it.
     </Card>
 </Cards>
 

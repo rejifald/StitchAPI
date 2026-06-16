@@ -192,11 +192,21 @@ const user = await getUser({ params: { id: 1 } }); // typed { id: number; name: 
 
 ## The event stream
 
-A stitch does not return `Promise<bytes>`. It yields a typed event stream — `await` is sugar that consumes the stream and returns the final, unwrapped, validated `result` (or throws a `StitchError` carrying `.status`):
+A stitch does not return `Promise<bytes>`. It yields a typed event stream — `await` is sugar that consumes the stream and returns the final, unwrapped, validated `result` (or throws a `StitchError` carrying `.status`, plus `.body` (the parsed error payload) and `.url` (the final request URL) when the failure came from a response):
 
 ```ts
 const users = await getUsers(); // sugar: consume the stream → the result value
 ```
+
+Prefer to handle failure inline rather than with `try`/`catch`? `.safe()` never throws — it resolves to a `{ ok, data, error }` result you destructure (discriminate on `error`):
+
+```ts
+const { data, error } = await getUsers.safe();
+if (error) return; // error: StitchError (.status, .attempts, .body, .url); data is null
+use(data); // narrowed: data is the validated result, error is null
+```
+
+`.unwrap()` is the explicit throwing twin — it returns the value or throws a `StitchError`, exactly like awaiting the bare call. Both also have a result-object form (`getUsers(input).safe()`).
 
 Consume the stream directly to see progress, throttle waits, retries, and drift as they happen — it is the same spine that powers observability:
 
@@ -472,6 +482,22 @@ const getUser = stitch({
     adapter: axiosAdapter(axios), // body encoding, headers, and parsing match fetchAdapter
 });
 ```
+
+### Per-stitch dispatcher (proxy, custom CA, interface binding)
+
+`fetchAdapter` takes options so you can thread a per-stitch undici **dispatcher** (an `Agent`) into the request — for a proxy, a custom CA, or binding to a specific network interface — without StitchAPI ever importing undici (the runtime stays zero-dependency, so you bring your own `Agent`). It rides through as Node's non-standard `dispatcher` fetch init option:
+
+```ts
+import { fetchAdapter, stitch } from 'stitchapi';
+import { Agent } from 'undici';
+
+const getUser = stitch({
+    path: 'https://api.example.com/users/{id}',
+    adapter: fetchAdapter({ dispatcher: new Agent({ connect: { ca } }) }),
+});
+```
+
+With no options, `fetchAdapter()` behaves exactly as before (no `dispatcher` key is set). An optional `fetch` override (`fetchAdapter({ fetch })`) swaps the global `fetch` for testing or custom runtimes. The `axiosAdapter` equivalent is axios's own `httpAgent` / `httpsAgent`, passed through its `defaults` — `axiosAdapter(axios, { httpsAgent })`.
 
 Body encoding (`json` / `form` / `multipart`), response parsing, and `set-cookie` handling are shared across transports, so swapping adapters doesn't change behavior. Any function matching the `Adapter` shape works — wrap `got`, a test double, or your own client the same way:
 

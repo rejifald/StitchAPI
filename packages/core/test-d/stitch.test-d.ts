@@ -36,3 +36,11 @@ expectType<User>(output(stitch({ output: userSchema, unwrap: 'data' })));
 // 8) a non-schema `output` is rejected at compile time.
 expectError(stitch({ output: 123 }));
 expectError(stitch({ output: 'not-a-schema' }));
+
+// 9) the call result is a thenable that also types `.catch` and `.finally` (#133): both compile
+//    without a cast, and `.catch`'s recovery value widens the resolved type. `then` keeps its
+//    inherited `PromiseLike` return; catch/finally resolve to a real `Promise`.
+const u = stitch({ path: '/u', output: userSchema });
+expectType<PromiseLike<User>>(u().then((x) => x));
+expectType<Promise<User | null>>(u().catch(() => null));
+expectType<Promise<User>>(u().finally(() => undefined));

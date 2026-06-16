@@ -4,6 +4,7 @@ export {
     type StitchModuleOptions,
     type StitchModuleAsyncOptions,
     type StitchFeatureOptions,
+    type StitchScopedFeatureOptions,
 } from './module';
 export {
     defineStitch,
@@ -18,5 +19,15 @@ export {
     fromConfig,
     borrowStore,
     type ConfigServiceLike,
+    type LoggerLike,
+    type NestLoggerSinkOptions,
 } from './bridges';
 export { STITCH_SEAM, STITCH_STORE, STITCH_TRACE } from './tokens';
+export {
+    StitchExceptionFilter,
+    toHttpException,
+    isStitchError,
+    type StitchError,
+    type ToHttpExceptionOptions,
+} from './exception-filter';
+export { stitchSse, type MessageEventLike, type StitchSseOptions } from './sse';

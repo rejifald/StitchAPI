@@ -1,0 +1,152 @@
+---
+title: 'Migration notes'
+description: 'Three spec-correct behaviors — lowercase header names, %20 query spaces, and template-narrowed stitch types — that differ from a naive baseline and surprise migrators.'
+---
+
+When you port an existing integration onto a stitch, most things just work. A
+few do not _look_ like they work, because StitchAPI emits bytes (and infers
+types) that are correct by the relevant spec but differ from the baseline a
+hand-rolled wrapper or a `URLSearchParams` snapshot produced. The mismatch is in
+your fixture, not the call — so you chase a phantom failure.
+
+This page collects the three that bite during a migration: lowercase header
+names, `%20` for spaces in the query string, and the precise type a
+template-narrowed stitch infers. Each section is the same shape — what you'd
+expect, what a stitch emits, why it's conformant, and the one-line adjustment to
+your fixture or field type.
+
+The running example is a generic catalog provider at `api.example.com` — a media
+server exposing items behind an API key.
+
+## Header names go on the wire lowercase
+
+You configure `apiKey({ header: 'X-Catalog-Token', ... })` and your fixture
+asserts the request carried a header literally named `X-Catalog-Token`.
+
+A stitch lowercases the header name: it sends `x-catalog-token`. The default
+`x-api-key` is already lowercase; a custom name is lowercased too. The same holds
+for the headers on an `oauth2` token request.
+
+```ts twoslash
+import { apiKey, env, stitch } from 'stitchapi';
+
+const getItem = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/items/{id}',
+    auth: apiKey({ header: 'X-Catalog-Token', value: env('CATALOG_TOKEN') }),
+});
+// On the wire, the request header is `x-catalog-token`, not `X-Catalog-Token`.
+```
+
+**Why it's conformant.** HTTP header field names are case-insensitive
+([RFC 9110 §5.1](https://datatracker.ietf.org/doc/html/rfc9110#section-5.1)), so
+a server compares them case-insensitively and accepts `x-catalog-token`
+everywhere it would accept `X-Catalog-Token`. Lowercase is also the canonical
+on-the-wire form in HTTP/2 and HTTP/3, where field names are required to be
+lowercase. Emitting lowercase is the deliberate, portable choice.
+
+**The adjustment.** A fixture that does a case-sensitive string compare on the
+header name is the thing to fix — assert against the lowercase name, or compare
+case-insensitively. If you key a header map, lowercase the key before you look it
+up. Don't try to force the original casing back; there's no option to, by design.
+
+## Spaces in the query string are `%20`, not `+`
+
+You search for `the matrix` and your snapshot — captured from
+`new URLSearchParams({ q: 'the matrix' }).toString()` or an
+`application/x-www-form-urlencoded` baseline — records `q=the+matrix`.
+
+A stitch encodes query values with `encodeURIComponent`, so a space becomes
+`%20`: it sends `q=the%20matrix`.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const search = stitch('https://api.example.com/items');
+
+await search({ query: { q: 'the matrix' } });
+// → GET https://api.example.com/items?q=the%20matrix
+//   (a URLSearchParams baseline would have written `q=the+matrix`)
+```
+
+**Why it's conformant.** `+`-for-space is specific to the
+`application/x-www-form-urlencoded` serialization; it is **not** a generic URI
+rule. In a generic URI query a literal `+` is a valid character, and `%20` is the
+percent-encoding of a space under
+[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986#section-2.1). Every
+conformant server decodes **both** `%20` and `+` back to a single space in the
+query component, so the two forms are interchangeable on the receiving end —
+`encodeURIComponent` simply picks the unambiguous one.
+
+**The adjustment.** Re-record the byte-for-byte snapshot against the `%20` form,
+or normalize before comparing — decode the query (or replace `+` with `%20`) so
+the assertion compares decoded values rather than encoded bytes. The request the
+server receives is unchanged.
+
+## A template-narrowed stitch won't drop into a uniform `Stitch` field
+
+`stitch()` reads the [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570)
+path-template variables off a string-literal `path`/`url` and **requires the
+matching `params` at the call site**. That is the feature — `getItem()` won't
+typecheck without `params.id`:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getItem = stitch({ path: '/items/{id}' });
+//    ^?
+await getItem({ params: { id: 1 } }); // `params.id` is required and type-checked
+```
+
+The cost shows up when you collect heterogeneous stitches in one container — a
+`Map<string, Stitch>`, a class field typed `Stitch`, a registry. The narrowed
+type carries its specific `params` shape, and that shape is **not assignable** to
+the loose, uniform `Stitch`:
+
+```ts twoslash
+// @errors: 2345
+import { type Stitch, stitch } from 'stitchapi';
+
+const getItem = stitch({ path: '/items/{id}' });
+
+const registry = new Map<string, Stitch>();
+registry.set('item', getItem); // the narrowed params shape rejects the uniform field
+```
+
+**Why it's conformant.** This is ordinary TypeScript: the second type parameter
+of `Stitch<TOut, TIn>` defaults to the loose call input, and a stitch with a
+required `params` slot narrows `TIn` to a more specific shape. A more specific
+type is not assignable to the default one — the narrowing that makes the call
+site safe is exactly what the uniform field rejects.
+
+**The adjustment.** Pick the trade-off you want:
+
+```ts twoslash
+import { type Stitch, stitch } from 'stitchapi';
+
+// Heterogeneous collection — opt back into the loose, uniform type with `as Stitch`.
+// You give up call-site param checking for the entries stored this way.
+const registry = new Map<string, Stitch>();
+registry.set('item', stitch({ path: '/items/{id}' }) as Stitch);
+
+// Single field you want to keep precise — annotate it with the narrowed type
+// and you keep the required-params check (path vars stringify to `string | number`).
+class Catalog {
+    getItem: Stitch<unknown, { params: { id: string | number } }> = stitch({
+        path: '/items/{id}',
+    });
+}
+```
+
+Use `as Stitch` when you deliberately want a uniform collection of mixed
+stitches; annotate the field with the precise type when the stitch is singular
+and you want to keep the call-site guarantee.
+
+## See also
+
+<Cards>
+    <Card title="apiKey" href="/docs/guides/auth/api-key" />
+    <Card title="URL shaping" href="/docs/guides/data/url-shaping" />
+    <Card title="stitch()" href="/docs/guides/authoring/stitch" />
+    <Card title="Quickstart" href="/docs/getting-started/quickstart" />
+</Cards>

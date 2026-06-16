@@ -92,7 +92,12 @@ expectType<StitchInput | undefined>(null as unknown as CallArg<typeof plain>);
 expectAssignable<CallArg<typeof plain>>(undefined);
 
 // 10) other input slots keep their own shape/required-ness alongside a folded `params`. A required `body`
-//     schema stays required; `params` is added required from the path var.
+//     schema stays required; `params` is added required from the path var. Since a declared sibling slot
+//     (`body`) now leaves `params` with its loose `Record<string, unknown>` passthrough (issue #134), the
+//     folded slot is that passthrough INTERSECTED with the path-only `{ id }` — the required modifier from
+//     the fold wins (still required), and the path-only key keeps `string | number`; extra loose keys are
+//     tolerated. A no-input templated stitch (case 1) stays byte-clean `{ id }` — only a declared sibling
+//     brings the index-signature tail.
 const withBody = stitch({
     path: '/u/{id}',
     input: { body: z.object({ name: z.string() }) },
@@ -100,11 +105,15 @@ const withBody = stitch({
 expectType<{ name: string }>(
     null as unknown as NonNullable<CallArg<typeof withBody>>['body'],
 );
-expectType<{ id: string | number }>(
+expectType<Record<string, unknown> & { id: string | number }>(
     null as unknown as NonNullable<CallArg<typeof withBody>>['params'],
 );
 expectError(withBody({ body: { name: 'Ada' } })); // params still required
 expectError(withBody({ params: { id: 1 } })); // body still required
+expectAssignable<CallArg<typeof withBody>>({
+    body: { name: 'Ada' },
+    params: { id: 1, extra: 'tolerated' }, // path-only params carry the loose index-signature tail
+});
 
 // 11) seam members (root, principal-bound, and graphql) fold path vars identically.
 const api = seam({ baseUrl: 'https://x' });

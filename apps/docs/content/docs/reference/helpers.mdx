@@ -1,6 +1,6 @@
 ---
 title: 'Helpers'
-description: 'fetchAdapter, axiosAdapter, xhrAdapter, consoleSink, fileSink, createTrace, multiplex, the OTLP exporters, memoryStore, and toValidator.'
+description: 'fetchAdapter, axiosAdapter, xhrAdapter, consoleSink, fileSink, createTrace, multiplex, loggerSink, the OTLP exporters, memoryStore, and toValidator.'
 ---
 
 The exported helper functions you wire into a stitch: the default transport, the
@@ -21,6 +21,30 @@ import { fetchAdapter } from 'stitchapi';
 
 const adapter = fetchAdapter();
 ```
+
+It accepts an optional `FetchAdapterOptions` to thread a **per-stitch undici
+dispatcher** — an `Agent` for a proxy, a custom CA, or interface binding —
+straight through as Node's non-standard `dispatcher` fetch init option. The
+runtime stays zero-dependency, so StitchAPI never imports undici; you bring your
+own `Agent`. An optional `fetch` override swaps the global `fetch` for testing or
+custom runtimes. With no options, behavior is identical to `fetchAdapter()` (no
+`dispatcher` is set).
+
+```ts twoslash
+import { fetchAdapter, stitch } from 'stitchapi';
+
+// Your real `new Agent(...)` from undici is structurally an unknown dispatcher here —
+// no undici import inside StitchAPI or this snippet.
+declare const agent: unknown;
+
+const getUser = stitch({
+    url: 'https://api.example.com/users/{id}',
+    adapter: fetchAdapter({ dispatcher: agent }),
+});
+```
+
+The `axiosAdapter` equivalent is axios's own `httpAgent` / `httpsAgent`, passed
+through its `defaults` (`axiosAdapter(axios, { httpsAgent })`) — see below.
 
 ### axiosAdapter
 
@@ -117,6 +141,24 @@ OTLP — flushing each in turn.
 import { createTrace, multiplex, otlpTrace } from 'stitchapi';
 
 const sink = multiplex(createTrace(), otlpTrace());
+```
+
+### loggerSink
+
+Bridge the event stream to any host logger — pino, winston, the `console`,
+anything with `error` / `warn` / `info` / `debug` methods (`LoggerLike`). It is
+**payload-free** (logs only metadata — name, method, scrubbed URL, status, attempt
+counts, drift path/level, timing — never the body, result value, or a `delta`
+chunk) and maps each event to a level: `result` → `info`, `error` → `error`,
+`drift` → the finding's level, `start`/`progress`/`info`/`done` → `debug`, and
+`delta` is never logged. Override per type with `levels`. The logger-agnostic core
+twin of `@stitchapi/nest`'s `loggerSink`.
+
+```ts twoslash
+import { loggerSink } from 'stitchapi';
+
+// `console` satisfies LoggerLike; pass `pino()` or a winston logger just the same.
+const sink = loggerSink(console, { levels: { result: 'debug' } });
 ```
 
 ### otlpTrace

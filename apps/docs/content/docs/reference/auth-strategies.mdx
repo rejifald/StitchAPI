@@ -1,6 +1,6 @@
 ---
 title: 'Auth strategies'
-description: 'bearer, apiKey, basic, cookieSession, oauth2, and the env() and secretsFile() resolvers.'
+description: 'bearer, apiKey, basic, cookieSession, oauth2, and the env(), optionalEnv(), secretsFile(), and secretFrom() resolvers.'
 ---
 
 The signatures for every auth strategy and secret resolver. Each strategy holds
@@ -17,7 +17,9 @@ import { bearer } from 'stitchapi';
 
 ## apiKey
 
-Sends a secret in a header (`x-api-key` by default).
+Sends a secret in a header (`x-api-key` by default), or — with `in: 'query'` — as
+a URL query parameter (`api_key` by default), resolved and URL-encoded at call
+time.
 
 ```ts twoslash
 import { apiKey } from 'stitchapi';
@@ -50,10 +52,25 @@ before expiry, and attaches it as `Authorization: Bearer …`.
 
 ## env
 
-Resolves a secret from an environment variable at call time.
+Resolves a **required** secret from an environment variable at call time. It
+needs a non-empty value: an unset variable _and_ a set-but-empty one (`MY_TOKEN=`)
+both throw, so a blank credential is never silently sent. For the
+may-or-may-not-be-set case use [`optionalEnv`](#optionalenv).
 
 ```ts twoslash
 import { env } from 'stitchapi';
+```
+
+## optionalEnv
+
+Like `env`, but optional: resolves the variable's value, or _absent_ when it is
+unset or empty — it never throws. Pass it to `bearer` to attach the credential
+only when present (`bearer(optionalEnv('GITHUB_TOKEN'))`); a missing variable
+just sends the request unauthenticated. See
+[the Bearer guide](/docs/guides/auth/bearer).
+
+```ts twoslash
+import { optionalEnv } from 'stitchapi';
 ```
 
 ## secretsFile
@@ -63,6 +80,24 @@ private), falling back to the environment.
 
 ```ts twoslash
 import { secretsFile } from 'stitchapi';
+```
+
+## secretFrom
+
+Resolves a **required** secret from an arbitrary injected `source` at call time —
+for DI'd apps that supply config without touching `process.env` (a
+`ConfigService`, a secrets-manager client, a validated config object). The source
+is either an object with a `get(name)` method or a plain `(name) => value`
+function; a missing or empty value throws, mirroring [`env`](#env). Compose it
+with any strategy exactly like `env()`.
+
+```ts twoslash
+import { bearer, secretFrom } from 'stitchapi';
+
+// Any object with a `get(name)` method — e.g. a NestJS ConfigService.
+declare const configService: { get(name: string): string | undefined };
+
+const auth = bearer(secretFrom(configService, 'GITHUB_TOKEN'));
 ```
 
 ## See also

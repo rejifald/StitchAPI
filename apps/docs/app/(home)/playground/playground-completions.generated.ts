@@ -51,19 +51,19 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "url",
             type: "property",
             detail: "string | (() => string)",
-            info: "Full request endpoint as one string — the atomic spelling, when a stitch is exactly one endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware like `path`; may be a thunk for lazy/env resolution. Mutually exclusive with `baseUrl`/`path`: when both are set `url` wins, and across composed fragments the last fragment to write either spelling wins the whole slot.",
+            info: "Full request endpoint as one string — the atomic spelling, when a stitch is exactly one endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware like `path`; may be a thunk for lazy/env resolution. ⚠️ `url` is the COMPLETE endpoint and is **not** joined to `baseUrl` — setting `url` makes `baseUrl` ignored. To address an endpoint *relative to* a shared `baseUrl` (e.g. a seam/fragment origin), use `path`, not a relative `url`: `url: '/users'` resolves to the un-fetchable `/users`, whereas `path: '/users'` resolves to `${baseUrl}/users`. Mutually exclusive with `baseUrl`/`path`: when both are set `url` wins, and across composed fragments the last fragment to write either spelling wins the whole slot.",
         },
         {
             label: "baseUrl",
             type: "property",
             detail: "string | (() => string)",
-            info: "Origin for the request, as a string or a thunk resolved at call time. Ignored when `url` is set.",
+            info: "Origin that `path` is appended to, as a string or a thunk resolved at call time. Ignored when `url` is set (which carries its own origin).",
         },
         {
             label: "path",
             type: "property",
             detail: "string",
-            info: "Path appended to `baseUrl`; may include `{param}` slots and a `?query` string. Ignored when `url` is set.",
+            info: "Path appended to `baseUrl` — use THIS (not a relative `url`) for an endpoint relative to a shared `baseUrl`; may include `{param}` slots and a `?query` string. Ignored when `url` is set.",
         },
         {
             label: "headers",
@@ -120,6 +120,12 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             info: "Retry-and-backoff policy.",
         },
         {
+            label: "acceptStatus",
+            type: "property",
+            detail: "number[] | ((status: number) => boolean)",
+            info: "Statuses that are a NORMAL result rather than an error — a number list or a predicate. An accepted non-2xx flows through interpret → transform → unwrap → validate exactly like a 2xx (the response body becomes the result), instead of throwing a . Use this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a `catch`. `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts are exhausted, then accepted (returned) on the final attempt. Orthogonal to `rateLimit.delegate`, which surfaces a  on rate-limit statuses earlier.",
+        },
+        {
             label: "throttle",
             type: "property",
             detail: "ThrottleOptions",
@@ -136,6 +142,12 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             type: "property",
             detail: "CircuitOptions",
             info: "Circuit breaker that fast-fails a repeatedly failing dependency.",
+        },
+        {
+            label: "rateLimit",
+            type: "property",
+            detail: "{ /** Surface rate-limit outcomes instead of retrying/throttling them. Default `false`. */ delegate?: boolean; /** Statuses treated as a rate-limit signal. Default `[429]`. */ on?: number[]; }",
+            info: "Delegate backoff to the host (issue #145). When `delegate: true`, a rate-limit response (status in `on`, default `[429]`) is **not** retried internally and the built-in `throttle` is **bypassed** for the call — instead the outcome surfaces as a (carrying `status`, the `retryAfterMs` parsed from `Retry-After`, and the raw `response`) on the awaited path, and as an `error` event with `retryAfterMs` on `.stream()`. Use this when an OUTER gate/circuit owns the backoff (its own `Retry-After` hook, a DB-persisted budget) and StitchAPI's internal retry+throttle would double-count against it. ⚠️ In delegate mode the `throttle` config becomes **inert** for this stitch (the host owns the gate). A `circuit` block, if also set, still applies — the host may layer both. Non-rate-limit failures (5xx, etc.) behave exactly as today unless their status is listed in `on`. Validation, templating, transform/unwrap, and drift on the success path are unchanged.",
         },
         {
             label: "idempotency",
@@ -201,6 +213,18 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
             label: "stream",
             type: "method",
             detail: "(...args: Args<TIn>) => AsyncGenerator<StitchEvent<TOut>, void>",
+        },
+        {
+            label: "safe",
+            type: "method",
+            detail: "(...args: Args<TIn>) => Promise<SafeResult<TOut>>",
+            info: "Call without throwing: resolves to a `SafeResult` — `{ ok, data, error }`. The eager shortcut for `stitch(...).safe()`, mirroring `.stream()`.",
+        },
+        {
+            label: "unwrap",
+            type: "method",
+            detail: "(...args: Args<TIn>) => Promise<TOut>",
+            info: "Call and unwrap to the value, throwing a `StitchError` on failure. The named twin of `.safe()` (and an explicit spelling of the throwing bare call).",
         },
         {
             label: "with",

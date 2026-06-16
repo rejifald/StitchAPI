@@ -2,6 +2,7 @@
 // resolved at call time — the caller (an agent) never sees it. `cookieSession` performs
 // a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
 import { fetchAdapter } from './http-adapter';
+import { parseRetryAfter } from './resilience';
 import type {
     Adapter,
     AdapterResponse,
@@ -10,10 +11,33 @@ import type {
     Stitch,
     StitchInput,
 } from './types';
-import { nodeFs, now, readEnv } from './util';
+import {
+    appendQueryString,
+    buildQuery,
+    nodeFs,
+    now,
+    readEnv,
+    registerSecretQueryKey,
+} from './util';
 
 export type Secret = string | (() => string);
 const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
+
+/**
+ * A resolver that may yield no value: `bearer` attaches the header only when it resolves to a
+ * value, and otherwise skips it (announcing the miss) instead of failing. Produced by
+ * {@link optionalEnv}, and branded so `bearer` can tell it apart from a required {@link Secret} —
+ * which also keeps it, at the type level, out of the strategies that demand a credential
+ * (`apiKey`, `basic`, `oauth2`).
+ */
+export interface OptionalSecret {
+    (): string | undefined;
+    readonly __optional: true;
+    /** Human-readable source (e.g. `env var GITHUB_TOKEN`), used in the announced `info` event. */
+    readonly label: string;
+}
+const isOptional = (s: Secret | OptionalSecret): s is OptionalSecret =>
+    typeof s === 'function' && '__optional' in s;
 
 /**
  * Base64-encode a UTF-8 string without Node's `Buffer`, so HTTP Basic credentials work in a
@@ -28,13 +52,61 @@ function base64(s: string): string {
     return btoa(bin);
 }
 
-/** Resolve a secret from an environment variable at call time. */
+/**
+ * Resolve a REQUIRED secret from an environment variable at call time. An exported-but-empty var
+ * (`MY_TOKEN=`) counts as missing and throws — mirroring {@link optionalEnv}, which treats `''` as
+ * absent — so a blank credential can never silently ride along. For the may-or-may-not-be-set case,
+ * use {@link optionalEnv}.
+ */
 export function env(name: string): () => string {
     return () => {
         const v = readEnv(name);
-        if (v == null) throw new Error(`missing env var ${name}`);
+        if (v == null || v === '') throw new Error(`missing env var ${name}`);
         return v;
     };
+}
+
+/** A source `secretFrom` pulls a named value from: an object with a `get(name)` method
+ *  (e.g. a NestJS ConfigService or a secrets-manager client) or a plain `(name) => value` fn. */
+export type SecretSource =
+    | { get(name: string): string | undefined }
+    | ((name: string) => string | undefined);
+
+/**
+ * Resolve a REQUIRED secret from an arbitrary injected `source` at call time — for DI'd apps that
+ * supply config WITHOUT touching `process.env` (a ConfigService, a secrets-manager client, a
+ * validated config object). Throws if the source yields no value (unset or empty), mirroring
+ * {@link env}. Compose with `bearer`/`apiKey`/`basic`/`oauth2` exactly like `env()`:
+ * `bearer(secretFrom(configService, 'GITHUB_TOKEN'))`.
+ */
+export function secretFrom(source: SecretSource, name: string): () => string {
+    return () => {
+        const v =
+            typeof source === 'function' ? source(name) : source.get(name);
+        if (v == null || v === '') throw new Error(`missing secret ${name}`);
+        return v;
+    };
+}
+
+/**
+ * Like {@link env}, but OPTIONAL: resolves the variable's value, or *absent* (`undefined`) when it
+ * is unset or empty — it never throws. Pass it to {@link bearer} to attach the credential only when
+ * present, otherwise send the request unauthenticated (announced in the trace):
+ * `bearer(optionalEnv('GITHUB_TOKEN'))`. For local/dev runs, notebooks, and agent loops where a
+ * token may or may not be exported; when the call must be authenticated, use the throwing
+ * `bearer(env('GITHUB_TOKEN'))`. In a browser bundle (no process environment) it resolves absent,
+ * so `bearer` simply attaches nothing.
+ */
+export function optionalEnv(name: string): OptionalSecret {
+    // An exported-but-empty var (`MY_TOKEN=`) counts as absent — never send `Bearer ` with no token.
+    const read = (): string | undefined => {
+        const v = readEnv(name);
+        return v == null || v === '' ? undefined : v;
+    };
+    return Object.assign(read, {
+        __optional: true as const,
+        label: `env var ${name}`,
+    });
 }
 
 /**
@@ -67,17 +139,73 @@ export function secretsFile(name: string): () => string {
     };
 }
 
-export function bearer(token: Secret): AuthStrategy {
+export function bearer(token: Secret | OptionalSecret): AuthStrategy {
     return {
         name: 'bearer',
         scheme: { type: 'http', scheme: 'bearer' },
-        apply(req) {
+        apply(req, ctx) {
+            // An optional secret (e.g. optionalEnv): attach the header only when it resolves to a
+            // value; otherwise skip it and announce the miss — never a silent no-op. A required
+            // Secret keeps the original behavior exactly (resolve, attach; env() throws if unset).
+            if (isOptional(token)) {
+                const value = token();
+                if (value == null || value === '') {
+                    ctx.emit(
+                        'auth',
+                        `no token: ${token.label} not set; request sent unauthenticated`,
+                    );
+                    return;
+                }
+                ctx.emit('auth', `bearer from ${token.label}`);
+                req.headers['authorization'] = `Bearer ${value}`;
+                return;
+            }
             req.headers['authorization'] = `Bearer ${resolve(token)}`;
         },
     };
 }
 
-export function apiKey(opts: { header?: string; value: Secret }): AuthStrategy {
+/**
+ * API-key auth, in a request **header** (the default) or a **query param**. The key is a
+ * {@link Secret} resolved at call time — the caller (an agent) never sees it.
+ *
+ * - `in: 'header'` (default): writes `header` (default `'x-api-key'`, lower-cased) — byte-for-byte
+ *   the original behaviour, so existing stitches are unaffected.
+ * - `in: 'query'`: appends `name=<resolved>` (default `'api_key'`) to the request URL,
+ *   URL-encoded. The strategy runs in the attempt loop on the fully-built `req` (after
+ *   templating/query-building), so it safely appends onto whatever query the URL already carries.
+ *
+ * SECURITY: a key in the URL leaks wherever URLs go — server access logs, proxies, the browser
+ * history, a `Referer` header. Prefer `in: 'header'` when the API accepts it. The key stays out of
+ * StitchAPI's own traces two ways: the strategy mutates only the request the transport sends (the
+ * `start` event carries the pre-auth URL, so the key never lands there), and the configured query
+ * `name` is registered with the URL-credential scrubber, so if it does surface in a sink (an OTLP
+ * `url.full`, the structured `input.query`) it is REDACTED, like `api_key`/`access_token`/… are.
+ */
+export function apiKey(
+    opts:
+        | { in?: 'header'; header?: string; value: Secret }
+        | { in: 'query'; name?: string; value: Secret },
+): AuthStrategy {
+    if (opts.in === 'query') {
+        const name = opts.name ?? 'api_key';
+        // Teach the trace scrubber this param name carries a secret, so the key never reaches a
+        // sink in the clear — even when `name` is a vendor spelling the built-in stems don't catch.
+        registerSecretQueryKey(name);
+        return {
+            name: 'apiKey',
+            scheme: { type: 'apiKey', in: 'query', name },
+            apply(req) {
+                // Resolve at call time (env()/thunk read per call), encode via the same query
+                // builder the engine uses, and append onto the existing query — `appendQueryString`
+                // switches the leading `?` to `&` and preserves any trailing `#fragment`.
+                req.url = appendQueryString(
+                    req.url,
+                    buildQuery({ [name]: resolve(opts.value) }),
+                );
+            },
+        };
+    }
     const headerName = opts.header ?? 'X-API-Key';
     const header = headerName.toLowerCase();
     return {
@@ -310,6 +438,38 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
     };
 }
 
+/**
+ * Why an `apply`/`refresh` login attempt failed, categorised so the HOST can drive its OWN
+ * durable state machine (wrong-creds vs rate-limited vs network) — StitchAPI keeps doing the
+ * mechanical cookie capture/replay, but it can't model a host's external recovery loop, so it
+ * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOpts.onAuthFailure}.
+ */
+export interface AuthFailureInfo {
+    /** `'apply'` = cold session had no stored cookie; `'refresh'` = a 401-style wall was hit. */
+    phase: 'apply' | 'refresh';
+    /** The login response status when the login responded at all (absent when it threw). */
+    status?: number;
+    /** `Retry-After` parsed to ms when the login was rate-limited (status 429). */
+    retryAfterMs?: number;
+    /** The thrown value when the login stitch itself threw (network/transport failure). */
+    error?: unknown;
+    /**
+     * - `'unauthenticated'` — login responded with a `refreshOn` status (e.g. 401) and set no cookie (bad/expired creds);
+     * - `'rate-limited'` — login responded `429` (back off, then retry; see `retryAfterMs`);
+     * - `'network'` — the login stitch threw before any response (DNS/connection/transport);
+     * - `'unknown'` — login responded but captured no cookie for some other reason.
+     */
+    category: 'unauthenticated' | 'rate-limited' | 'network' | 'unknown';
+}
+
+/** Outcome of a single (re)login attempt, surfaced via {@link CookieSessionOpts.onRefresh}. */
+export interface RefreshResult {
+    /** A cookie (named, or any jar entry) was captured from the login response. */
+    ok: boolean;
+    /** The login response status when the login responded (absent when it threw). */
+    status?: number;
+}
+
 export interface CookieSessionOpts {
     /** The login stitch — its raw response (the Set-Cookie headers) seeds the session. */
     login: Stitch;
@@ -342,6 +502,21 @@ export interface CookieSessionOpts {
      * which never has a principal). Sessions always live in the {@link AuthContext.vault}.
      */
     scope?: 'principal' | 'app';
+    /**
+     * Host-owned hook fired once per ACTUAL login attempt that failed to capture a cookie — NOT
+     * per coalesced waiter (it runs inside the single-flight-guarded `doRefresh`). The host maps the
+     * categorised {@link AuthFailureInfo} to its own status (active/backoff/failed/unauthenticated)
+     * and owns the external recovery loop that StitchAPI's per-call single-flight can't model. A
+     * throwing hook never crashes the call (it is caught and announced on the `auth` trace topic).
+     */
+    onAuthFailure?: (info: AuthFailureInfo) => void | Promise<void>;
+    /**
+     * Host-owned hook fired once after EVERY (re)login attempt — success or failure — with its
+     * {@link RefreshResult}, so the host can persist durable session state and clear/extend its
+     * cooldown. Like {@link onAuthFailure}, it runs once per actual attempt (inside the
+     * single-flight-guarded `doRefresh`), and a throw is caught so it can't crash the call.
+     */
+    onRefresh?: (result: RefreshResult) => void | Promise<void>;
 }
 
 export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
@@ -373,31 +548,135 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         return { key: `${baseKey}\u0000${principal}`, principal };
     };
 
+    // Run a host hook without ever letting it crash the call (the host owns its own recovery loop;
+    // its bookkeeping must not take the stitch down). A throw — sync or rejected promise — is
+    // swallowed and announced on the `auth` trace topic. Returns a promise the caller awaits so a
+    // slow async hook still completes before the login attempt is considered done.
+    const runHook = async (
+        ctx: AuthContext,
+        name: 'onAuthFailure' | 'onRefresh',
+        invoke: () => void | Promise<void>,
+    ): Promise<void> => {
+        try {
+            await invoke();
+        } catch (err) {
+            ctx.emit(
+                'auth',
+                `${name} hook threw: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    };
+
+    // Categorise a login response that captured no cookie, given its status + headers. A 429 means
+    // rate-limited (back off per `Retry-After`); a `refreshOn` status (e.g. 401) means the creds were
+    // rejected; anything else — including a soft 200 wall that set no cookie — is `unknown`.
+    const classify = (
+        phase: 'apply' | 'refresh',
+        status: number,
+        headers: Record<string, string>,
+    ): AuthFailureInfo => {
+        if (status === 429) {
+            // Omit `retryAfterMs` entirely when the header is absent/unparseable —
+            // `exactOptionalPropertyTypes` forbids setting an optional prop to `undefined`.
+            const retryAfterMs = parseRetryAfter(headers['retry-after']);
+            return {
+                phase,
+                status,
+                category: 'rate-limited',
+                ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+            };
+        }
+        if (refreshOn.includes(status))
+            return { phase, status, category: 'unauthenticated' };
+        return { phase, status, category: 'unknown' };
+    };
+
+    // Announce one login attempt's outcome to the host. `onRefresh` fires for EVERY attempt; on a
+    // failure (no cookie captured) `onAuthFailure` fires too with the categorised `info`.
+    const report = async (
+        ctx: AuthContext,
+        ok: boolean,
+        status: number | undefined,
+        failure?: AuthFailureInfo,
+    ): Promise<void> => {
+        // Bind into locals so the optional hooks narrow to defined — no non-null assertion needed.
+        const onRefresh = opts.onRefresh;
+        if (onRefresh)
+            await runHook(ctx, 'onRefresh', () =>
+                // `status` only appears on the result object when the login actually responded.
+                onRefresh(status === undefined ? { ok } : { ok, status }),
+            );
+        const onAuthFailure = opts.onAuthFailure;
+        if (!ok && failure && onAuthFailure)
+            await runHook(ctx, 'onAuthFailure', () => onAuthFailure(failure));
+    };
+
+    // ONE actual login attempt (single-flight-guarded by the callers below, so the hooks fire once
+    // per real attempt, never per coalesced waiter). `__raw` RESOLVES only for a 2xx login and
+    // THROWS otherwise — an error with a numeric `status` (+ a `response` for its headers) is a
+    // response-derived failure (401/429/…); an error without a `status` is a transport failure. Each
+    // path fires `onRefresh` always and `onAuthFailure` on failure, then re-throws so callers see the
+    // original error exactly as before these hooks existed.
     const doRefresh = async (
         ctx: AuthContext,
         key: string,
         principal: string | undefined,
+        phase: 'apply' | 'refresh',
     ) => {
         ctx.emit('auth', 'login');
         // `__raw` runs the login once and returns its raw AdapterResponse (headers and all).
         // It is intentionally not on the public Stitch type, so reach it through a cast.
-        const res = await (
-            opts.login as unknown as {
-                __raw: (input?: StitchInput) => Promise<AdapterResponse>;
-            }
-        ).__raw(opts.loginInput?.(principal));
+        let res: AdapterResponse;
+        try {
+            res = await (
+                opts.login as unknown as {
+                    __raw: (input?: StitchInput) => Promise<AdapterResponse>;
+                }
+            ).__raw(opts.loginInput?.(principal));
+        } catch (error) {
+            // A failed login: an HTTP error carries a numeric `status` (+ the `response` for its
+            // headers); a transport error carries neither → `network`.
+            const e = error as {
+                status?: number;
+                response?: AdapterResponse;
+            };
+            const status = typeof e.status === 'number' ? e.status : undefined;
+            const failure: AuthFailureInfo =
+                status === undefined
+                    ? { phase, category: 'network', error }
+                    : classify(phase, status, e.response?.headers ?? {});
+            await report(ctx, false, status, failure);
+            // Re-throw so the caller sees the original error exactly as before these hooks existed.
+            throw error;
+        }
+
+        const status = res.status;
         const setCookie =
             res.headers['set-cookie'] ?? res.headers['Set-Cookie'];
+        let captured = false;
         if (jarMode) {
             // Capture the full jar: every name=value pair the login set.
             const jar = parseCookieJar(setCookie);
-            if (Object.keys(jar).length > 0)
+            if (Object.keys(jar).length > 0) {
                 await ctx.vault.set(key, jar, opts.ttlMs);
+                captured = true;
+            }
         } else {
             const value = parseCookie(setCookie, opts.cookie);
-            if (value != null)
+            if (value != null) {
                 await ctx.vault.set(key, `${opts.cookie}=${value}`, opts.ttlMs);
+                captured = true;
+            }
         }
+
+        // A 2xx login that set no cookie is a soft wall (a login page served with 200) — report it as
+        // a failure so the host still hears about it, classified by its (2xx) status → `unknown`.
+        await report(
+            ctx,
+            captured,
+            status,
+            captured ? undefined : classify(phase, status, res.headers),
+        );
     };
 
     return {
@@ -420,7 +699,9 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
             if (!stored) {
                 // Concurrent cold sessions for the SAME principal share ONE login (the principal
                 // is in the key, so different users never coalesce — GAP-AUDIT §2.6 + ADR §3).
-                await flight(key, () => doRefresh(ctx, key, principal));
+                await flight(key, () =>
+                    doRefresh(ctx, key, principal, 'apply'),
+                );
                 stored = await ctx.vault.get(key);
             }
             // Non-jar: a stored `name=value` string. Jar: a stored map → serialize all pairs.
@@ -439,7 +720,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         async refresh(ctx) {
             const { key, principal } = sessionFor(ctx);
             // Simultaneous 401-driven re-logins for the same principal coalesce into one login.
-            await flight(key, () => doRefresh(ctx, key, principal));
+            await flight(key, () => doRefresh(ctx, key, principal, 'refresh'));
         },
     };
 }

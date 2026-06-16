@@ -45,6 +45,40 @@ table.
     credential](/docs/concepts/capability-not-credential).
 </Callout>
 
+## Optional credentials with `optionalEnv`
+
+When you're scripting against an API whose token already sits in your
+environment — a local dev run, a notebook, an agent loop — wrap the variable in
+`optionalEnv('NAME')` and hand it to `bearer`. It resolves the variable's value,
+or _absent_ when the variable is unset. Unlike `bearer(env('NAME'))`, which
+**throws** on a missing variable, `bearer(optionalEnv('NAME'))` attaches the
+header only when the token is present — otherwise the request goes out with no
+credential.
+
+```ts twoslash
+import { bearer, optionalEnv, stitch } from 'stitchapi';
+
+// Attaches `Authorization: Bearer $GITHUB_TOKEN` when that var is set;
+// otherwise sends the request with no credential.
+const repos = stitch({
+    url: 'https://api.github.com/user/repos',
+    auth: bearer(optionalEnv('GITHUB_TOKEN')),
+});
+```
+
+The outcome **announces itself**: `bearer` emits an `info` event naming the
+variable it read — or noting that it was unset — but never the token itself, so
+the decision is visible in the [trace](/docs/guides/observability/trace-sinks).
+In a browser bundle there is no process environment, so the variable resolves
+absent and nothing is attached.
+
+<Callout type="warn">
+    **Optional, not required.** If the variable is unset,
+    `bearer(optionalEnv(…))` sends **no** credential rather than failing — the
+    request goes out unauthenticated. When the call must be authenticated, use
+    `bearer(env('GITHUB_TOKEN'))`, which throws on a missing variable.
+</Callout>
+
 ## See also
 
 <Cards>

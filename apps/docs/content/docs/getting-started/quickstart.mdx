@@ -48,6 +48,11 @@ await getUser({ params: { id: 1 }, query: { expand: 'roles' } });
 // → GET https://api.example.com/users/1?expand=roles
 ```
 
+A templated path makes its `params` **required** at the call site — that's the
+type narrowing at work. It also means the inferred type is more specific than a
+bare `Stitch`, which matters if you store mixed stitches in one collection; see
+[Migration notes](/docs/getting-started/migration-notes).
+
 ## Type the result
 
 Pass a type argument to `stitch<T>()` and the awaited value is typed as `T`,
@@ -94,5 +99,9 @@ in depth.
     <Card title="stitch()" href="/docs/guides/authoring/stitch" />
     <Card title="Validation" href="/docs/guides/validation/validation" />
     <Card title="Call from a function" href="/docs/surfaces/function" />
+    <Card
+        title="Migration notes"
+        href="/docs/getting-started/migration-notes"
+    />
     <Card title="For agents" href="/docs/agents" />
 </Cards>

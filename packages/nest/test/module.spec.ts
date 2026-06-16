@@ -3,6 +3,7 @@
 // adapter, asserting wire-level effects — the same style as core's tests.
 import {
     type ConfigServiceLike,
+    type LoggerLike,
     STITCH_SEAM,
     STITCH_STORE,
     STITCH_TRACE,
@@ -14,7 +15,8 @@ import {
     loggerSink,
 } from '../src';
 
-import { Logger } from '@nestjs/common';
+import { Scope } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
 import type { Adapter, Seam, StitchStore } from 'stitchapi';
 import { memoryStore } from 'stitchapi';
 import { describe, expect, it } from 'vitest';
@@ -25,6 +27,7 @@ type FProv = {
     useFactory?: (...args: any[]) => unknown;
     useValue?: unknown;
     inject?: unknown[];
+    scope?: unknown;
 };
 
 const recordingAdapter = (sink: string[]): Adapter => {
@@ -160,6 +163,106 @@ describe('StitchModule.forFeature', () => {
     });
 });
 
+describe('StitchModule.forFeatureScoped', () => {
+    it('wires a request-scoped principal seam + request-scoped stitches over shared infra', async () => {
+        const calls: string[] = [];
+        const TENANT = Symbol('tenant');
+        const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
+        const mod = StitchModule.forFeatureScoped({
+            seam: {
+                baseUrl: 'https://feat.test',
+                adapter: recordingAdapter(calls),
+            },
+            stitches: [GetThing],
+            seamToken: TENANT,
+            principal: (req: { tenantId: string }) => req.tenantId,
+        });
+        const providers = mod.providers as FProv[];
+
+        const principalProv = providers.find((p) => p.provide === TENANT)!;
+        const stitchProv = providers.find((p) => p.provide === GetThing.token)!;
+        const baseProv = providers.find(
+            (p) => p.provide !== TENANT && p.provide !== GetThing.token,
+        )!;
+
+        // principal + stitch are REQUEST-scoped; principal injects the base seam + REQUEST
+        expect(principalProv.scope).toBe(Scope.REQUEST);
+        expect(stitchProv.scope).toBe(Scope.REQUEST);
+        expect(principalProv.inject).toEqual([baseProv.provide, REQUEST]);
+        expect(stitchProv.inject).toEqual([TENANT]);
+
+        // resolve the chain against the mock adapter, like the forFeature tests
+        const reg = new SeamRegistry();
+        const baseSeam = baseProv.useFactory!(
+            memoryStore(),
+            false,
+            reg,
+        ) as Seam;
+        const principalSeam = principalProv.useFactory!(baseSeam, {
+            tenantId: 't1',
+        }) as Seam;
+        const stitch = stitchProv.useFactory!(principalSeam) as ReturnType<
+            typeof GetThing.build
+        >;
+        await stitch();
+        expect(calls).toEqual(['GET https://feat.test/thing']);
+    });
+
+    it('binds scoped stitches to the root seam when no feature seam is given', () => {
+        const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
+        const providers = StitchModule.forFeatureScoped({
+            stitches: [GetThing],
+            principal: () => 't1',
+        }).providers as FProv[];
+        const principalProv = providers.find(
+            (p) => p.provide !== GetThing.token,
+        )!;
+        // no base feature-seam provider; the principal handle derives from STITCH_SEAM
+        expect(principalProv.inject).toEqual([STITCH_SEAM, REQUEST]);
+    });
+});
+
+describe('defineStitch token', () => {
+    it('generates a unique Symbol token when none is given', () => {
+        const A = defineStitch((h) => h.stitch({ path: '/a' }));
+        const B = defineStitch((h) => h.stitch({ path: '/b' }));
+        expect(typeof A.token).toBe('symbol');
+        expect(A.token).not.toBe(B.token);
+    });
+
+    it('still accepts an explicit (token, build) form', () => {
+        const A = defineStitch('GET_A', (h) => h.stitch({ path: '/a' }));
+        expect(A.token).toBe('GET_A');
+    });
+
+    it('an auto-tokened def wires through forFeature', async () => {
+        const calls: string[] = [];
+        const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
+        const providers = StitchModule.forFeature({
+            seam: {
+                baseUrl: 'https://feat.test',
+                adapter: recordingAdapter(calls),
+            },
+            stitches: [GetThing],
+        }).providers as FProv[];
+        const stitchProv = providers.find((p) => p.provide === GetThing.token);
+        const seamProv = providers.find((p) => p.provide !== GetThing.token);
+        expect(stitchProv).toBeDefined();
+
+        const reg = new SeamRegistry();
+        const featSeam = seamProv!.useFactory!(
+            memoryStore(),
+            false,
+            reg,
+        ) as Seam;
+        const stitch = stitchProv!.useFactory!(featSeam) as ReturnType<
+            typeof GetThing.build
+        >;
+        await stitch();
+        expect(calls).toEqual(['GET https://feat.test/thing']);
+    });
+});
+
 describe('bridges', () => {
     it('borrowStore delegates get/set/incr but omits close', async () => {
         const calls: string[] = [];
@@ -187,26 +290,92 @@ describe('bridges', () => {
         expect(calls).toEqual(['get', 'set', 'incr']); // close is never delegated
     });
 
-    it('loggerSink logs lifecycle lines and redacts the URL query', () => {
-        const logs: string[] = [];
-        const errs: string[] = [];
-        const fake = {
-            log: (m: string) => logs.push(m),
-            error: (m: string) => errs.push(m),
-            warn: () => {},
-            debug: () => {},
-        } as unknown as Logger;
-        const sink = loggerSink(fake);
+    // A LoggerLike that records messages per level.
+    const recordingLogger = () => {
+        const rec = {
+            log: [] as string[],
+            warn: [] as string[],
+            error: [] as string[],
+            debug: [] as string[],
+            verbose: [] as string[],
+        };
+        const logger: LoggerLike = {
+            log: (m) => rec.log.push(m),
+            warn: (m) => rec.warn.push(m),
+            error: (m) => rec.error.push(m),
+            debug: (m) => rec.debug.push(m),
+            verbose: (m) => rec.verbose.push(m),
+        };
+        return { rec, logger };
+    };
+
+    it('loggerSink maps each event to the right level, payload-free, query redacted', () => {
+        const { rec, logger } = recordingLogger();
+        const sink = loggerSink(logger);
+        const ctx = { name: 'x' };
+
         sink.handle(
             {
                 type: 'start',
                 name: 'x',
                 method: 'GET',
                 url: 'https://h/p?token=secret',
-                input: {},
+                input: { headers: { authorization: 'Bearer s3cret' } },
                 at: 0,
             },
-            { name: 'x' },
+            ctx,
+        );
+        sink.handle(
+            {
+                type: 'progress',
+                phase: 'retry',
+                attempt: 2,
+                waitedMs: 100,
+                at: 0,
+            },
+            ctx,
+        );
+        sink.handle(
+            { type: 'progress', phase: 'throttled', attempt: 1, at: 0 },
+            ctx,
+        );
+        sink.handle(
+            {
+                type: 'drift',
+                finding: { level: 'error', path: 'a.b', change: 'missing' },
+                at: 0,
+            },
+            ctx,
+        );
+        sink.handle(
+            {
+                type: 'drift',
+                finding: { level: 'warn', path: 'a.c', change: 'type-changed' },
+                at: 0,
+            },
+            ctx,
+        );
+        sink.handle(
+            {
+                type: 'drift',
+                finding: { level: 'info', path: 'a.d', change: 'new' },
+                at: 0,
+            },
+            ctx,
+        );
+        sink.handle(
+            {
+                type: 'result',
+                value: { secretField: 'nope' },
+                status: 200,
+                attempts: 1,
+                at: 0,
+            },
+            ctx,
+        );
+        sink.handle(
+            { type: 'done', ok: true, ms: 12, attempts: 1, at: 0 },
+            ctx,
         );
         sink.handle(
             {
@@ -214,14 +383,110 @@ describe('bridges', () => {
                 name: 'x',
                 message: 'boom',
                 status: 500,
-                attempts: 1,
+                attempts: 3,
                 at: 0,
             },
+            ctx,
+        );
+        sink.handle({ type: 'delta', chunk: { secret: 'data' }, at: 0 }, ctx);
+
+        // start → debug, query stripped
+        expect(rec.debug.some((l) => l.includes('GET https://h/p?…'))).toBe(
+            true,
+        );
+        // retry → warn (surfaced); routine throttle → debug
+        expect(
+            rec.warn.some(
+                (l) => l.includes('retry#2') && l.includes('waited 100ms'),
+            ),
+        ).toBe(true);
+        expect(rec.debug.some((l) => l.includes('throttled#1'))).toBe(true);
+        // drift routed by finding.level
+        expect(rec.error.some((l) => l.includes('a.b'))).toBe(true);
+        expect(rec.warn.some((l) => l.includes('a.c'))).toBe(true);
+        expect(rec.debug.some((l) => l.includes('a.d'))).toBe(true);
+        // lifecycle: result → verbose, done → debug
+        expect(rec.verbose.some((l) => l.includes('200'))).toBe(true);
+        expect(rec.debug.some((l) => l.includes('done ok in 12ms'))).toBe(true);
+        // error always at error level, with status + attempts
+        expect(
+            rec.error.some((l) => l.includes('boom') && l.includes('500')),
+        ).toBe(true);
+        // nothing at info level (start is no longer noisy); delta dropped entirely
+        expect(rec.log).toEqual([]);
+        // payload-free: no header/body/chunk values leak through any level
+        const all = [
+            ...rec.log,
+            ...rec.warn,
+            ...rec.error,
+            ...rec.debug,
+            ...rec.verbose,
+        ].join('\n');
+        expect(all).not.toContain('secret');
+        expect(all).not.toContain('s3cret');
+        expect(all).not.toContain('nope');
+    });
+
+    it('loggerSink lifecycle:false drops start/result/done but keeps retry/drift/error', () => {
+        const { rec, logger } = recordingLogger();
+        const sink = loggerSink(logger, { lifecycle: false });
+        const ctx = { name: 'x' };
+        sink.handle(
+            {
+                type: 'start',
+                name: 'x',
+                method: 'GET',
+                url: 'https://h/p',
+                input: {},
+                at: 0,
+            },
+            ctx,
+        );
+        sink.handle(
+            { type: 'result', value: 1, status: 200, attempts: 1, at: 0 },
+            ctx,
+        );
+        sink.handle({ type: 'done', ok: true, ms: 1, attempts: 1, at: 0 }, ctx);
+        sink.handle(
+            { type: 'progress', phase: 'retry', attempt: 2, at: 0 },
+            ctx,
+        );
+        sink.handle(
+            { type: 'error', name: 'x', message: 'boom', attempts: 1, at: 0 },
+            ctx,
+        );
+        expect(rec.debug).toEqual([]); // start + done suppressed
+        expect(rec.verbose).toEqual([]); // result suppressed
+        expect(rec.warn.some((l) => l.includes('retry#2'))).toBe(true); // retry kept
+        expect(rec.error.some((l) => l.includes('boom'))).toBe(true); // error kept
+    });
+
+    it('loggerSink tolerates a logger without debug/verbose (guarded)', () => {
+        const warn: string[] = [];
+        const partial: LoggerLike = {
+            log: () => {},
+            warn: (m) => warn.push(m),
+            error: () => {},
+        };
+        const sink = loggerSink(partial);
+        expect(() =>
+            sink.handle(
+                {
+                    type: 'start',
+                    name: 'x',
+                    method: 'GET',
+                    url: 'https://h',
+                    input: {},
+                    at: 0,
+                },
+                { name: 'x' },
+            ),
+        ).not.toThrow(); // start → debug, absent → no-op
+        sink.handle(
+            { type: 'progress', phase: 'retry', attempt: 2, at: 0 },
             { name: 'x' },
         );
-        expect(logs[0]).toContain('GET https://h/p?…');
-        expect(logs[0]).not.toContain('secret');
-        expect(errs[0]).toContain('boom');
+        expect(warn.length).toBe(1);
     });
 
     it('fromConfig resolves a synchronous secret thunk from a ConfigService-like', () => {
@@ -231,5 +496,53 @@ describe('bridges', () => {
             },
         };
         expect(fromConfig(config)('API_TOKEN')()).toBe('val:API_TOKEN');
+    });
+
+    it('fromConfig propagates ConfigService.getOrThrow on a missing key', () => {
+        const config: ConfigServiceLike = {
+            getOrThrow<T = string>(key: string): T {
+                throw new Error(`Configuration key "${key}" does not exist`);
+            },
+        };
+        // The Nest getOrThrow error still surfaces through the core secretFrom delegation.
+        expect(() => fromConfig(config)('API_TOKEN')()).toThrow(
+            'Configuration key "API_TOKEN" does not exist',
+        );
+    });
+
+    it('fromConfig rejects an empty value (delegates to core secretFrom)', () => {
+        const config: ConfigServiceLike = {
+            // Present but blank — Nest's getOrThrow does NOT throw on '' (only on undefined).
+            getOrThrow<T = string>(_key: string): T {
+                return '' as T;
+            },
+        };
+        // secretFrom rejects '' like env() does, so a blank credential never rides along.
+        expect(() => fromConfig(config)('API_TOKEN')()).toThrow(
+            'missing secret',
+        );
+    });
+
+    it('loggerSink drops an info (strategy announcement) event', () => {
+        const { rec, logger } = recordingLogger();
+        const sink = loggerSink(logger);
+        // The delegated core sink would log an `info` event at debug, but Nest's level
+        // resolver returns null for it — preserving the prior switch, which dropped it.
+        sink.handle(
+            {
+                type: 'info',
+                topic: 'auth',
+                detail: 'no token; sending unauthenticated',
+                at: 0,
+            },
+            { name: 'x' },
+        );
+        expect([
+            ...rec.log,
+            ...rec.warn,
+            ...rec.error,
+            ...rec.debug,
+            ...rec.verbose,
+        ]).toEqual([]);
     });
 });

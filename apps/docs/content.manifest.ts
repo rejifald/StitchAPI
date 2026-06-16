@@ -110,6 +110,13 @@ export const pages: Page[] = [
             'Declare your first stitch from one endpoint and call it as a typed function in five minutes.',
         kind: 'tutorial',
     },
+    {
+        path: 'getting-started/migration-notes',
+        title: 'Migration notes',
+        description:
+            'Three spec-correct behaviors — lowercase header names, %20 query spaces, and template-narrowed stitch types — that differ from a naive baseline and surprise migrators.',
+        kind: 'guide',
+    },
 
     // ── Concepts ────────────────────────────────────────────────────────────
     {
@@ -242,6 +249,13 @@ export const pages: Page[] = [
         title: 'Circuit breaker',
         description:
             'Stop hammering a failing dependency by opening a circuit after repeated failures.',
+        kind: 'guide',
+    },
+    {
+        path: 'guides/resilience/delegate-backoff',
+        title: 'Delegate backoff',
+        description:
+            'Surface rate-limit outcomes as a RateLimitError so an outer gate owns the backoff, instead of retrying and throttling them internally.',
         kind: 'guide',
     },
     {
@@ -511,5 +525,13 @@ export const pages: Page[] = [
             'A GraphQL 200 response carried an errors array and failed the call.',
         kind: 'error',
         code: 'STITCH_GRAPHQL',
+    },
+    {
+        path: 'errors/rate-limit',
+        title: 'RateLimitError',
+        description:
+            'A delegate-backoff stitch surfaced a rate-limit response for an outer gate to back off on, instead of retrying it.',
+        kind: 'error',
+        code: 'RateLimitError',
     },
 ];

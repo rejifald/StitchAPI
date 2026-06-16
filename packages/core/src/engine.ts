@@ -10,6 +10,7 @@ import { classifyDrift, loadSnapshot, saveSnapshot } from './drift';
 import { fetchAdapter } from './http-adapter';
 import {
     CircuitOpenError,
+    RateLimitError,
     TimeoutError,
     backoffDelay,
     createCircuit,
@@ -102,6 +103,23 @@ export function makeRuntime(
     };
 }
 
+// A per-call view of the shared `authCtx` whose `emit` collects `info` events into `sink`. The
+// Runtime (and its `authCtx`) is shared across a stitch's concurrent calls, so the buffer must be
+// per-call: spread a fresh ctx (sharing store/vault/principal) with a private emit, run the
+// strategy, then yield whatever it announced. `apply`/`refresh` are plain async fns and can't yield.
+function emitInto(authCtx: AuthContext, sink: StitchEvent[]): AuthContext {
+    return {
+        ...authCtx,
+        emit: (topic, detail) =>
+            sink.push({
+                type: 'info',
+                topic,
+                ...(detail !== undefined ? { detail } : {}),
+                at: now(),
+            }),
+    };
+}
+
 const nameOf = (cfg: StitchConfig) => cfg.name ?? cfg.path ?? 'stitch';
 
 function joinUrl(base: string, path: string): string {
@@ -171,9 +189,16 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     // error here instead of a cryptic "Failed to parse URL" from fetch. A custom `adapter` may
     // legitimately resolve relative URLs, so this only guards the default transport.
     if (cfg.adapter === undefined && !/^https?:\/\//i.test(url)) {
+        // A relative `url` set alongside a `baseUrl` is the common footgun: `url` is the whole
+        // endpoint and ignores `baseUrl`, so the base is never joined — they almost certainly
+        // meant `path`. Point straight at that instead of the generic guidance.
+        const hint =
+            cfg.url !== undefined && cfg.baseUrl !== undefined
+                ? 'A relative `url` does NOT join `baseUrl` — `url` is the whole endpoint, so `baseUrl` is ignored. Pass the relative endpoint as `path` instead.'
+                : 'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared fragment).';
         const e = new Error(
             `stitch ${JSON.stringify(nameOf(cfg))}: request URL ${JSON.stringify(url)} is not absolute. ` +
-                'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared fragment).',
+                hint,
         );
         e.name = 'StitchConfigError';
         throw e;
@@ -219,6 +244,13 @@ const hostKey = (req: AdapterRequest, cfg: StitchConfig): string => {
     return nameOf(cfg);
 };
 
+// A non-enumerable back-reference from an `error` event to the live error instance it was built
+// from. Used ONLY for a RateLimitError so the awaited path can re-throw the REAL instance — keeping
+// its `response` and class identity — rather than a flattened StitchError. Non-enumerable means it
+// never reaches a trace sink (which serialises via Object.entries / JSON.stringify, both of which
+// skip it), so the full `response` can't leak into a JSONL/console log. See `drain` in stitch.ts.
+export const ERROR_SOURCE = Symbol('stitch.errorSource');
+
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const e = err as { message?: string; status?: number };
     const evt: Extract<StitchEvent, { type: 'error' }> = {
@@ -229,6 +261,24 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
         at: now(),
     };
     if (e.status !== undefined) evt.status = e.status;
+    // Delegate-backoff signal: stamp the structured `retryAfterMs` onto the event (so `.stream()`
+    // consumers get it) and pin the live RateLimitError so the awaited path re-throws it intact.
+    if (err instanceof RateLimitError) {
+        if (err.retryAfterMs !== undefined) evt.retryAfterMs = err.retryAfterMs;
+        Object.defineProperty(evt, ERROR_SOURCE, {
+            value: err,
+            enumerable: false,
+        });
+    } else if ((err as { response?: AdapterResponse }).response !== undefined) {
+        // HTTP failure (issue #155): the thrown error carries the full `.response` (body + url).
+        // Pin it on the SAME non-enumerable channel so `drain`/`asStitchError` can populate
+        // `StitchError.body`/`.url`. Non-enumerable ⇒ the body never serialises into a trace sink
+        // (privacy preserved); the enumerable `status`/`message` are all a sink sees.
+        Object.defineProperty(evt, ERROR_SOURCE, {
+            value: err,
+            enumerable: false,
+        });
+    }
     return evt;
 }
 const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
@@ -310,8 +360,19 @@ async function validateOutput(
         const opts = (out as DriftSpec).options;
         if (opts.snapshotFile) {
             const snap = loadSnapshot(opts.snapshotFile);
-            if (snap === undefined) saveSnapshot(opts.snapshotFile, body);
-            else findings.push(...classifyDrift(body, snap, opts));
+            if (snap === undefined) {
+                // No committed baseline. By default record one (the spike's first-run behaviour);
+                // in `readonly` mode (deployed/prod) never write — surface a `no-baseline` finding
+                // so a drift-guarded call can't write a baseline as a side effect.
+                if (opts.readonly)
+                    findings.push({
+                        level: opts.onMissing ?? 'warn',
+                        path: '',
+                        change: 'no-baseline',
+                        detail: `no committed snapshot at ${opts.snapshotFile}; generate the baseline before enabling readonly drift`,
+                    });
+                else saveSnapshot(opts.snapshotFile, body);
+            } else findings.push(...classifyDrift(body, snap, opts));
         }
     }
     return findings;
@@ -381,6 +442,51 @@ async function acquireWithin(
     }
 }
 
+// Normalize `acceptStatus` (a number list, a predicate, or unset) into a single predicate. Unset →
+// accept nothing (every `>= 400` still throws). Shared by the buffered/paginated `attemptLoop` and
+// the streaming path so both honour the same per-stitch policy.
+function acceptsStatus(
+    accept: number[] | ((status: number) => boolean) | undefined,
+): (status: number) => boolean {
+    if (accept === undefined) return () => false;
+    if (typeof accept === 'function') return accept;
+    return (status) => accept.includes(status);
+}
+
+// Materialize a streaming-path error body for StitchError.body. A streaming adapter hands back the
+// live `ReadableStream` unparsed (so it can be decoded into deltas); on the error branch the stream
+// is never decoded, so read it to text and best-effort JSON-parse it — the same shape the buffered
+// path produces. A non-stream body (an adapter that already buffered) passes through unchanged; a
+// read failure degrades to `undefined` rather than throwing over the original HTTP error.
+async function drainErrorBody(body: unknown): Promise<unknown> {
+    if (
+        body == null ||
+        typeof (body as ReadableStream<Uint8Array>).getReader !== 'function'
+    ) {
+        return body; // already buffered/parsed (or empty) — nothing to drain.
+    }
+    try {
+        const reader = (body as ReadableStream<Uint8Array>).getReader();
+        const dec = new TextDecoder();
+        let text = '';
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            // After `done` is false, `value` is a Uint8Array (never undefined).
+            text += dec.decode(value, { stream: true });
+        }
+        text += dec.decode();
+        if (text === '') return undefined;
+        try {
+            return JSON.parse(text);
+        } catch {
+            return text; // not JSON — keep the raw text payload.
+        }
+    } catch {
+        return undefined; // body already consumed / errored — don't mask the HTTP error.
+    }
+}
+
 async function* attemptLoop(
     rt: Runtime,
     baseReq: AdapterRequest,
@@ -393,21 +499,40 @@ async function* attemptLoop(
     const perAttemptMs = parseDuration(cfg.timeout?.perAttempt);
     const key = hostKey(baseReq, cfg);
     let refreshed = false;
+    // Delegate-backoff mode (issue #145): the host owns the gate. We bypass the internal throttle
+    // for the call (no acquire/release, so `throttle` is inert and no `throttled` event fires) and,
+    // on a response whose status is in `rlOn` (default [429]), surface a RateLimitError instead of
+    // retrying. Everything else — auth, the success path, non-rate-limit failures — is unchanged.
+    const delegate = cfg.rateLimit?.delegate === true;
+    const rlOn = cfg.rateLimit?.on ?? [429];
+    // acceptStatus (issue #155): statuses the caller declares NORMAL — an accepted non-2xx returns
+    // `res` like a 2xx (flowing through interpret → transform → unwrap → validate) instead of
+    // throwing. Checked at the `>= 400` site, i.e. AFTER the retry-on-status path, so `retry.on`
+    // still wins while attempts remain (retried, then accepted on the final attempt).
+    const accepts = acceptsStatus(cfg.acceptStatus);
 
     for (let attempt = 1; attempt <= max; attempt++) {
         state.attempts = attempt;
-        const { waitedMs } = await acquireWithin(rt.throttle, key, budget);
-        if (waitedMs > 0)
-            yield {
-                type: 'progress',
-                phase: 'throttled',
-                attempt,
-                waitedMs,
-                at: now(),
-            };
+        // Skip the throttle entirely in delegate mode — the outer gate paces the call, so acquiring
+        // here would double-count against it (the bug this mode fixes).
+        if (!delegate) {
+            const { waitedMs } = await acquireWithin(rt.throttle, key, budget);
+            if (waitedMs > 0)
+                yield {
+                    type: 'progress',
+                    phase: 'throttled',
+                    attempt,
+                    waitedMs,
+                    at: now(),
+                };
+        }
         try {
             const req = cloneReq(baseReq);
-            if (cfg.auth) await cfg.auth.apply(req, rt.authCtx);
+            if (cfg.auth) {
+                const infos: StitchEvent[] = [];
+                await cfg.auth.apply(req, emitInto(rt.authCtx, infos));
+                yield* infos;
+            }
             await cfg.hooks?.onRequest?.({ name: nameOf(cfg), attempt, req });
             yield { type: 'progress', phase: 'request', attempt, at: now() };
 
@@ -469,9 +594,23 @@ async function* attemptLoop(
                     detail: 'refresh',
                     at: now(),
                 };
-                await cfg.auth.refresh(rt.authCtx);
+                const infos: StitchEvent[] = [];
+                await cfg.auth.refresh(emitInto(rt.authCtx, infos));
+                yield* infos;
                 attempt--; // redo this attempt with fresh auth, don't count it
                 continue;
+            }
+
+            // Delegate-backoff: a rate-limit status is NOT retried — surface it so the host's outer
+            // gate owns the backoff. Checked BEFORE the internal retry-on-status path so it wins even
+            // when the same status is also in `retry.on` (the common `429` overlap). `Retry-After` is
+            // parsed with the same helper the internal retry uses, so the host gets an identical hint.
+            if (delegate && rlOn.includes(res.status)) {
+                throw new RateLimitError({
+                    status: res.status,
+                    retryAfterMs: parseRetryAfter(res.headers['retry-after']),
+                    response: res,
+                });
             }
 
             if (retryOn.includes(res.status) && attempt < max) {
@@ -493,7 +632,7 @@ async function* attemptLoop(
                 continue;
             }
 
-            if (res.status >= 400) {
+            if (res.status >= 400 && !accepts(res.status)) {
                 const e = new Error(`HTTP ${res.status}`) as Error & {
                     status: number;
                     response: AdapterResponse;
@@ -502,9 +641,11 @@ async function* attemptLoop(
                 e.response = res;
                 throw e;
             }
+            // A 2xx, or an accepted non-2xx: return it so it flows through the success pipeline.
             return res;
         } finally {
-            rt.throttle.release(key);
+            // No release in delegate mode — we never acquired a slot (the host owns the gate).
+            if (!delegate) rt.throttle.release(key);
         }
     }
     throw new Error('retry attempts exhausted');
@@ -914,9 +1055,24 @@ async function* runStreaming(
         return;
     }
 
-    if (res.status >= 400) {
-        const e = new Error(`HTTP ${res.status}`) as Error & { status: number };
+    // acceptStatus (issue #155): an accepted non-2xx streams its live body like a 2xx instead of
+    // failing — same per-stitch policy the buffered/paginated `attemptLoop` honours.
+    if (res.status >= 400 && !acceptsStatus(cfg.acceptStatus)(res.status)) {
+        // The error response carries the parsed payload, not a live stream — drain the unread body
+        // (a small `{ error: "…" }`, not a real stream the caller wants) so StitchError.body is the
+        // PARSED payload, matching the buffered path. Pin it (with `.url`) via ERROR_SOURCE.
+        const errored: AdapterResponse = {
+            status: res.status,
+            headers: res.headers,
+            body: await drainErrorBody(res.body),
+            ...(res.url !== undefined ? { url: res.url } : {}),
+        };
+        const e = new Error(`HTTP ${res.status}`) as Error & {
+            status: number;
+            response: AdapterResponse;
+        };
         e.status = res.status;
+        e.response = errored; // carries body + url for StitchError.body/.url (pinned via ERROR_SOURCE)
         yield errEvt(e, name, 1);
         yield doneEvt(false, t0, 1);
         return;

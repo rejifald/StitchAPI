@@ -2,6 +2,7 @@
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
 import {
+    ERROR_SOURCE,
     type Runtime,
     cacheInvalidateBulk,
     cacheInvalidateExact,
@@ -12,7 +13,7 @@ import {
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
 import { otlpTrace } from './otlp';
-import { createThrottle } from './resilience';
+import { RateLimitError, createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
@@ -22,9 +23,11 @@ import {
     type HookContext,
     type Hooks,
     type InputSchemas,
+    type SafeResult,
     type SecurityScheme,
     type Stitch,
     type StitchConfig,
+    StitchError,
     type StitchEvent,
     type StitchInput,
     type StitchResult,
@@ -215,25 +218,100 @@ export function resolveTrace(trace: StitchConfig['trace']): TraceSink {
 }
 
 // ---- the streaming spine + await sugar ------------------------------------
-async function consume<T>(
-    gen: AsyncGenerator<{ type: string } & Record<string, unknown>>,
-): Promise<T> {
-    let result: T | undefined;
-    let failure: { message?: string; status?: number } | undefined;
+// Drain the event stream to its terminal: the `result` value, or the `error` event rebuilt as a
+// typed StitchError (status + attempts preserved). Shared by the throwing and safe consumers.
+//
+// The non-enumerable ERROR_SOURCE key (engine.ts) pins the live error behind the event without
+// leaking its payload into a trace sink. Two kinds ride it:
+//   • a delegate-backoff RateLimitError (issue #145): re-surface THAT instance unchanged, so the
+//     caller keeps the real class identity plus `retryAfterMs`/`response`.
+//   • a plain HTTP error carrying `.response` (issue #155): flatten into a StitchError, lifting the
+//     response `body`/`url` onto the error so a result-shaped caller can read the API's error
+//     payload (`{ error: "…" }`) it would otherwise never see.
+async function drain<T>(
+    gen: AsyncGenerator<StitchEvent<T>, void>,
+): Promise<{ value: T } | { error: Error }> {
+    let value: T | undefined;
+    let error: Error | undefined;
     for await (const ev of gen) {
-        if (ev.type === 'result') result = ev['value'] as T;
-        else if (ev.type === 'error')
-            failure = ev as { message?: string; status?: number };
+        if (ev.type === 'result') value = ev.value;
+        else if (ev.type === 'error') {
+            const source = (ev as { [ERROR_SOURCE]?: Error })[ERROR_SOURCE];
+            const res =
+                source === undefined
+                    ? undefined
+                    : (
+                          source as {
+                              response?: { body?: unknown; url?: string };
+                          }
+                      ).response;
+            // A pinned HTTP error (has `.response`, but is neither a StitchError nor a
+            // RateLimitError): rebuild as a StitchError carrying the response `body`/`url`. A
+            // RateLimitError keeps its class identity (re-surfaced unchanged) so the delegate-backoff
+            // caller still gets `retryAfterMs`/`response`.
+            if (
+                res !== undefined &&
+                !(source instanceof StitchError) &&
+                !(source instanceof RateLimitError)
+            ) {
+                error = new StitchError(ev.message, {
+                    status: ev.status,
+                    attempts: ev.attempts,
+                    body: res.body,
+                    url: res.url,
+                    cause: source,
+                });
+            } else {
+                error =
+                    source ??
+                    new StitchError(ev.message, {
+                        status: ev.status,
+                        attempts: ev.attempts,
+                    });
+            }
+        }
     }
-    if (failure) {
-        const e = new Error(failure.message ?? 'stitch failed') as Error & {
-            status?: number;
-        };
-        e.name = 'StitchError';
-        if (failure.status !== undefined) e.status = failure.status;
-        throw e;
+    return error ? { error } : { value: value as T };
+}
+
+// Throwing consumer: `await stitch(...)` / `stitch.unwrap(...)`. Rejects with the StitchError.
+async function consume<T>(
+    gen: AsyncGenerator<StitchEvent<T>, void>,
+): Promise<T> {
+    const out = await drain(gen);
+    if ('error' in out) throw out.error;
+    return out.value;
+}
+
+// Coerce any thrown value to a StitchError — a real StitchError passes through unchanged; anything
+// else is wrapped with its message and original `cause`. A numeric `status` on the source (e.g. a
+// delegate-backoff RateLimitError) is carried onto the wrapper so `.safe()` callers still see it.
+// Shared by the safe consumers.
+function asStitchError(e: unknown): StitchError {
+    if (e instanceof StitchError) return e;
+    const status = (e as { status?: unknown }).status;
+    return new StitchError(e instanceof Error ? e.message : String(e), {
+        ...(typeof status === 'number' ? { status } : {}),
+        cause: e,
+    });
+}
+
+// Safe consumer: `stitch.safe(...)` / `stitch(...).safe()`. Never throws — an `error` event or an
+// unexpected throw both come back as `{ ok: false, data: null, error }`. `SafeResult.error` is
+// always a StitchError by contract, so a non-StitchError terminal (e.g. a delegate-backoff
+// RateLimitError, which the throwing path re-throws verbatim) is coerced via `asStitchError`,
+// preserving the original as `.cause` and its `status`.
+async function consumeSafe<T>(
+    gen: AsyncGenerator<StitchEvent<T>, void>,
+): Promise<SafeResult<T>> {
+    try {
+        const out = await drain(gen);
+        return 'error' in out
+            ? { ok: false, data: null, error: asStitchError(out.error) }
+            : { ok: true, data: out.value, error: null };
+    } catch (e) {
+        return { ok: false, data: null, error: asStitchError(e) };
     }
-    return result as T;
 }
 
 function tee<T>(
@@ -362,10 +440,31 @@ export function makeStitch<T = unknown>(
 
     const result = (input?: StitchInput): StitchResult<T> => {
         const make = () => streamFn(input);
+        // Consume the stream at most ONCE and share that promise across then/catch/finally —
+        // attaching more than one terminal handler must not re-run the call (the old code called
+        // make() independently per handler, so then+catch ran the stitch twice). `stream()` stays a
+        // separate, un-memoised consumption path (its own generator each time).
+        let consumed: Promise<T> | undefined;
+        const run = () => (consumed ??= consume<T>(make()));
         return {
-            then: (onF, onR) => consume<T>(make() as never).then(onF, onR),
-            catch: (onR: (e: unknown) => unknown) =>
-                consume<T>(make() as never).catch(onR),
+            then: (onF, onR) => run().then(onF, onR),
+            catch: (onR: (e: unknown) => unknown) => run().catch(onR),
+            finally: (onF: (() => void) | null) => run().finally(onF),
+            // `safe()` shares that same single run — converting its resolve/reject into the
+            // SafeResult shape — so it never re-executes the call and never throws.
+            safe: (): Promise<SafeResult<T>> =>
+                run().then(
+                    (data): SafeResult<T> => ({
+                        ok: true,
+                        data,
+                        error: null,
+                    }),
+                    (e: unknown): SafeResult<T> => ({
+                        ok: false,
+                        data: null,
+                        error: asStitchError(e),
+                    }),
+                ),
             stream: () => make(),
         } as StitchResult<T>;
     };
@@ -374,6 +473,8 @@ export function makeStitch<T = unknown>(
         __raw: (input?: StitchInput) => Promise<unknown>;
     };
     stitchFn.stream = streamFn;
+    stitchFn.safe = (input?: StitchInput) => consumeSafe<T>(streamFn(input));
+    stitchFn.unwrap = (input?: StitchInput) => consume<T>(streamFn(input));
     stitchFn.with = (partial: StitchInput) => {
         // bind partial input; the bound stitch reuses the same runtime (cookies/throttle persist)
         const bound = ((input?: StitchInput) =>
@@ -382,6 +483,10 @@ export function makeStitch<T = unknown>(
         };
         bound.stream = (input?: StitchInput) =>
             streamFn(mergeInput(partial, input));
+        bound.safe = (input?: StitchInput) =>
+            consumeSafe<T>(streamFn(mergeInput(partial, input)));
+        bound.unwrap = (input?: StitchInput) =>
+            consume<T>(streamFn(mergeInput(partial, input)));
         bound.with = (more: StitchInput) =>
             stitchFn.with(mergeInput(partial, more));
         bound.__raw = (input?: StitchInput) =>

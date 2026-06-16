@@ -4,6 +4,7 @@ import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 import { asValidator } from './support/schema';
 
+import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -247,4 +248,101 @@ test('standard schema (non-Zod): valid resolves, invalid rejects with error/inva
     expect(invalid?.change).toBe('invalid');
     expect(invalid?.path).toBe('id');
     expect(events.some((e) => e.type === 'result')).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// 7. readonly drift — a missing snapshot in `readonly` mode surfaces a
+//    `no-baseline` finding (warn by default, non-fatal) and NEVER writes the
+//    baseline as a call side effect (#132).
+// ---------------------------------------------------------------------------
+test('readonly: missing snapshot emits warn/no-baseline and writes nothing', async () => {
+    const snapshotFile = freshSnapshot(); // path that does not exist yet
+    try {
+        const schema = z.object({ id: z.number() }).passthrough();
+        server.route('GET', '/ro', { body: { id: 1, name: 'Ada' } });
+        const s = stitch({
+            baseUrl: server.url,
+            path: '/ro',
+            output: drift(schema, { readonly: true, snapshotFile }),
+        });
+
+        const events = await collect(s.stream());
+        const finding = driftFindings(events).find(
+            (f) => f.change === 'no-baseline',
+        );
+        expect(finding).toBeDefined();
+        expect(finding?.level).toBe('warn'); // onMissing default
+        expect(finding?.change).toBe('no-baseline');
+        expect(finding?.detail).toContain(snapshotFile);
+
+        // warn is non-fatal: a `result` still flows and the await resolves.
+        expect(events.some((e) => e.type === 'result')).toBe(true);
+        await expect(s()).resolves.toEqual({ id: 1, name: 'Ada' });
+
+        // The baseline must NOT have been written — readonly is detect-but-don't-write.
+        expect(existsSync(snapshotFile)).toBe(false);
+    } finally {
+        rmSync(snapshotFile, { force: true });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// 8. readonly drift with onMissing:'error' — the `no-baseline` finding is an
+//    error, so the await rejects (contract violation) and still writes nothing.
+// ---------------------------------------------------------------------------
+test('readonly onMissing:error: missing snapshot rejects and writes nothing', async () => {
+    const snapshotFile = freshSnapshot();
+    try {
+        const schema = z.object({ id: z.number() }).passthrough();
+        server.route('GET', '/ro-err', { body: { id: 1 } });
+        const s = stitch({
+            baseUrl: server.url,
+            path: '/ro-err',
+            output: drift(schema, {
+                readonly: true,
+                onMissing: 'error',
+                snapshotFile,
+            }),
+        });
+
+        const events = await collect(s.stream());
+        const finding = driftFindings(events).find(
+            (f) => f.change === 'no-baseline',
+        );
+        expect(finding).toBeDefined();
+        expect(finding?.level).toBe('error');
+        // error breaks the contract: no `result`, and the await rejects.
+        expect(events.some((e) => e.type === 'result')).toBe(false);
+        await expect(s()).rejects.toThrow();
+
+        expect(existsSync(snapshotFile)).toBe(false);
+    } finally {
+        rmSync(snapshotFile, { force: true });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// 9. Default (no readonly) still WRITES the baseline on first run — preserving
+//    today's behaviour: the snapshot file is created and no finding is emitted.
+// ---------------------------------------------------------------------------
+test('default (no readonly): first run writes the baseline, no finding', async () => {
+    const snapshotFile = freshSnapshot();
+    try {
+        const schema = z.object({ id: z.number() }).passthrough();
+        server.route('GET', '/baseline', { body: { id: 1 } });
+        const s = stitch({
+            baseUrl: server.url,
+            path: '/baseline',
+            output: drift(schema, { snapshotFile }),
+        });
+
+        const events = await collect(s.stream());
+        // First run records the baseline silently: no drift findings.
+        expect(driftFindings(events)).toHaveLength(0);
+        expect(events.some((e) => e.type === 'result')).toBe(true);
+        // …and the baseline file was created.
+        expect(existsSync(snapshotFile)).toBe(true);
+    } finally {
+        rmSync(snapshotFile, { force: true });
+    }
 });

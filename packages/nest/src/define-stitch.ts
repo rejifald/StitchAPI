@@ -27,14 +27,35 @@ export interface StitchDef<TOut = unknown, TIn = StitchInput> {
 export type AnyStitchDef = StitchDef<unknown, never>;
 
 /**
- * Declare an injectable stitch: an injection token plus a builder that receives the
- * seam (root or principal-bound) the registering module hands it. Prefer a `Symbol`
- * token to avoid string collisions across feature modules.
+ * Declare an injectable stitch: a builder that receives the seam (root or
+ * principal-bound) the registering module hands it. The injection **token is
+ * optional** — omit it and a unique `Symbol` is generated, since you reference the
+ * stitch by its definition object everywhere anyway (`forFeature({ stitches: [GetUser] })`,
+ * `@InjectStitch(GetUser)`, `overrideProvider(GetUser.token)`). Pass an explicit
+ * `InjectionToken` first only when you need a stable, well-known token (e.g. to
+ * override it from a module that does not import the def).
+ *
+ * ```ts
+ * export const GetUser = defineStitch((s) => s.stitch({ path: '/users/{id}' }));
+ * export const GetUser = defineStitch('GET_USER', (s) => s.stitch({ path: '/users/{id}' }));
+ * ```
  */
+export function defineStitch<TOut = unknown, TIn = StitchInput>(
+    build: (host: StitchHost) => Stitch<TOut, TIn>,
+): StitchDef<TOut, TIn>;
 export function defineStitch<TOut = unknown, TIn = StitchInput>(
     token: InjectionToken,
     build: (host: StitchHost) => Stitch<TOut, TIn>,
+): StitchDef<TOut, TIn>;
+export function defineStitch<TOut = unknown, TIn = StitchInput>(
+    a: InjectionToken | ((host: StitchHost) => Stitch<TOut, TIn>),
+    b?: (host: StitchHost) => Stitch<TOut, TIn>,
 ): StitchDef<TOut, TIn> {
+    // Disambiguate on whether a second arg was passed — NOT `typeof a`, because an
+    // InjectionToken can itself be a function (a class token), which would misread as
+    // the builder. Two args → (token, build); one arg → (build) with a generated token.
+    const build = (b ?? a) as (host: StitchHost) => Stitch<TOut, TIn>;
+    const token: InjectionToken = b ? (a as InjectionToken) : Symbol('stitch');
     return { token, build };
 }
 

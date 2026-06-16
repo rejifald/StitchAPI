@@ -37,6 +37,7 @@ export type DriftChange =
     | 'type-changed'
     | 'nullable'
     | 'new'
+    | 'no-baseline'
     | 'invalid';
 export interface DriftFinding {
     level: DriftLevel;
@@ -45,10 +46,60 @@ export interface DriftFinding {
     detail?: string;
 }
 export interface DriftOptions {
-    critical?: string[]; // paths whose change is an error
-    watch?: string[]; // paths whose change is a warning
+    /**
+     * Dotted paths whose disappearance or type change is escalated from the default
+     * `warn` to an `error`. The path grammar mirrors the response-shape walk: nested
+     * keys join with `.`, and an **array element** is addressed with `[]` — so
+     * `items[].id` matches the `id` of every element of the `items` array. A pattern
+     * matches by exact path, by a single-segment `*` wildcard, or as a prefix (`data`
+     * matches `data[].id` and everything beneath it). See `matchPath` for the full grammar.
+     *
+     * @example
+     * ```ts
+     * drift(userSchema, {
+     *     critical: [
+     *         'id', // top-level `id` going missing / changing type → error
+     *         'items[].sku', // the `sku` of ANY element of `items` → error
+     *         'meta.*', // any direct child of `meta` (single-segment wildcard)
+     *     ],
+     * });
+     * ```
+     */
+    critical?: string[];
+    /** Paths (same grammar as {@link DriftOptions.critical}, e.g. `items[].field`) whose change is leveled to a `warn`. */
+    watch?: string[];
     onNew?: DriftLevel; // level for brand-new fields (default 'info')
-    snapshotFile?: string; // committed baseline (`<name>.contract.json`)
+    /**
+     * Detect-but-never-write (default `false`). When `true`, a missing snapshot is NOT written;
+     * instead it surfaces a `no-baseline` finding (at {@link DriftOptions.onMissing}). Use in
+     * deployed/prod contexts so a drift-guarded call can never write a baseline as a side effect
+     * (the default first-run behaviour writes one).
+     */
+    readonly?: boolean;
+    /**
+     * Level for the `no-baseline` finding emitted in {@link DriftOptions.readonly} mode when the
+     * snapshot is absent. Default `'warn'`.
+     */
+    onMissing?: DriftLevel;
+    /**
+     * Committed baseline (`<name>.contract.json`). The path is resolved relative to
+     * `process.cwd()` — **not** the declaring module — so running a package's tests/app from a
+     * different working directory writes/reads the snapshot in the wrong place. Prefer an absolute
+     * or caller-relative path; anchor it to the module that declares the stitch with
+     * `fileURLToPath(new URL(...))`:
+     *
+     * @example
+     * ```ts
+     * import { fileURLToPath } from 'node:url';
+     *
+     * drift(userSchema, {
+     *     snapshotFile: fileURLToPath(
+     *         new URL('./users.contract.json', import.meta.url),
+     *     ),
+     * });
+     * ```
+     */
+    snapshotFile?: string;
 }
 export interface DriftSpec<T = unknown> {
     __kind: 'drift';
@@ -256,7 +307,13 @@ export interface AuthContext {
      * caller cannot name (and impersonate) another principal (ADR 0002 §2).
      */
     principal?: string;
-    emit: (phase: ProgressPhase, detail?: string) => void;
+    /**
+     * Announce an `info` StitchEvent onto the run's event stream — a strategy reporting a
+     * decision it made (e.g. which env var a `bearer` token resolved from via `optionalEnv`, or
+     * that `oauth2` fetched a token). NEVER carries the secret itself. The engine buffers these
+     * during `apply`/`refresh` and yields them; outside a run it is a no-op.
+     */
+    emit: (topic: string, detail?: string) => void;
     runLogin?: () => Promise<AdapterResponse>; // for cookieSession: invoke the login stitch
 }
 /**
@@ -337,6 +394,8 @@ export type StitchEvent<T = unknown> =
           waitedMs?: number;
           at: number;
       }
+    // A strategy-level announcement (auth decisions, inference). Non-progress; carries no secret.
+    | { type: 'info'; topic: string; detail?: string; at: number }
     | { type: 'drift'; finding: DriftFinding; at: number }
     | { type: 'delta'; chunk: unknown; at: number }
     | { type: 'result'; value: T; status: number; attempts: number; at: number }
@@ -345,6 +404,11 @@ export type StitchEvent<T = unknown> =
           name: string;
           message: string;
           status?: number;
+          // Set only on a delegate-backoff rate-limit outcome (`rateLimit.delegate`): the ms parsed
+          // from `Retry-After` (delta-seconds OR HTTP-date), so a `.stream()` consumer gets the same
+          // structured backoff hint the awaited path gets off the thrown RateLimitError. Additive and
+          // optional — every other `error` event omits it (issue #145).
+          retryAfterMs?: number;
           attempts: number;
           at: number;
       }
@@ -391,14 +455,19 @@ export interface StitchConfig {
     /**
      * Full request endpoint as one string — the atomic spelling, when a stitch is exactly one
      * endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware
-     * like `path`; may be a thunk for lazy/env resolution. Mutually exclusive with
-     * `baseUrl`/`path`: when both are set `url` wins, and across composed fragments the last
-     * fragment to write either spelling wins the whole slot.
+     * like `path`; may be a thunk for lazy/env resolution.
+     *
+     * ⚠️ `url` is the COMPLETE endpoint and is **not** joined to `baseUrl` — setting `url` makes
+     * `baseUrl` ignored. To address an endpoint *relative to* a shared `baseUrl` (e.g. a
+     * seam/fragment origin), use `path`, not a relative `url`: `url: '/users'` resolves to the
+     * un-fetchable `/users`, whereas `path: '/users'` resolves to `${baseUrl}/users`. Mutually
+     * exclusive with `baseUrl`/`path`: when both are set `url` wins, and across composed
+     * fragments the last fragment to write either spelling wins the whole slot.
      */
     url?: string | (() => string);
-    /** Origin for the request, as a string or a thunk resolved at call time. Ignored when `url` is set. */
+    /** Origin that `path` is appended to, as a string or a thunk resolved at call time. Ignored when `url` is set (which carries its own origin). */
     baseUrl?: string | (() => string);
-    /** Path appended to `baseUrl`; may include `{param}` slots and a `?query` string. Ignored when `url` is set. */
+    /** Path appended to `baseUrl` — use THIS (not a relative `url`) for an endpoint relative to a shared `baseUrl`; may include `{param}` slots and a `?query` string. Ignored when `url` is set. */
     path?: string;
     /** Static default headers merged into every request. */
     headers?: Record<string, string>;
@@ -435,12 +504,44 @@ export interface StitchConfig {
     auth?: AuthStrategy;
     /** Retry-and-backoff policy. */
     retry?: RetryOptions;
+    /**
+     * Statuses that are a NORMAL result rather than an error — a number list or a predicate.
+     * An accepted non-2xx flows through interpret → transform → unwrap → validate exactly like a
+     * 2xx (the response body becomes the result), instead of throwing a {@link StitchError}. Use
+     * this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall
+     * back to a broader call) so the happy path no longer runs through a `catch`.
+     *
+     * `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts
+     * are exhausted, then accepted (returned) on the final attempt. Orthogonal to
+     * `rateLimit.delegate`, which surfaces a {@link RateLimitError} on rate-limit statuses earlier.
+     */
+    acceptStatus?: number[] | ((status: number) => boolean);
     /** Rate and concurrency limits. */
     throttle?: ThrottleOptions;
     /** Total and per-attempt timeouts. */
     timeout?: TimeoutOptions;
     /** Circuit breaker that fast-fails a repeatedly failing dependency. */
     circuit?: CircuitOptions;
+    /**
+     * Delegate backoff to the host (issue #145). When `delegate: true`, a rate-limit response
+     * (status in `on`, default `[429]`) is **not** retried internally and the built-in `throttle`
+     * is **bypassed** for the call — instead the outcome surfaces as a {@link RateLimitError}
+     * (carrying `status`, the `retryAfterMs` parsed from `Retry-After`, and the raw `response`) on
+     * the awaited path, and as an `error` event with `retryAfterMs` on `.stream()`. Use this when an
+     * OUTER gate/circuit owns the backoff (its own `Retry-After` hook, a DB-persisted budget) and
+     * StitchAPI's internal retry+throttle would double-count against it.
+     *
+     * ⚠️ In delegate mode the `throttle` config becomes **inert** for this stitch (the host owns the
+     * gate). A `circuit` block, if also set, still applies — the host may layer both. Non-rate-limit
+     * failures (5xx, etc.) behave exactly as today unless their status is listed in `on`. Validation,
+     * templating, transform/unwrap, and drift on the success path are unchanged.
+     */
+    rateLimit?: {
+        /** Surface rate-limit outcomes instead of retrying/throttling them. Default `false`. */
+        delegate?: boolean;
+        /** Statuses treated as a rate-limit signal. Default `[429]`. */
+        on?: number[];
+    };
     /** Inject a stable Idempotency-Key header on writes so safe retries don't duplicate. */
     idempotency?: IdempotencyOptions;
     /**
@@ -482,8 +583,66 @@ export interface StitchConfig {
     trace?: TraceSink | 'console' | false;
 }
 
+/**
+ * The error a failed stitch raises: a non-2xx response (after retries), a contract/validation
+ * breach, a timeout, or an open circuit. It is what `await stitch(...)` and {@link Stitch.unwrap}
+ * throw, and what rides in `error` on the {@link SafeResult} from {@link Stitch.safe}.
+ */
+export class StitchError extends Error {
+    /** HTTP status when the failure came from a response; `undefined` for transport/internal errors. */
+    readonly status: number | undefined;
+    /** Attempts made before giving up (1 = no retry). */
+    readonly attempts: number;
+    /**
+     * The parsed response body of the failing response (an API's `{ error: "..." }` payload),
+     * when the failure came from an HTTP response; `undefined` for transport/internal errors. Only
+     * populated on the awaited / `.safe()` path — it is carried over the non-enumerable error
+     * channel and so never serialises into a trace sink.
+     */
+    readonly body?: unknown;
+    /** The final request URL (after redirects) of the failing response, when the transport exposes it. */
+    readonly url?: string;
+    constructor(
+        message: string,
+        opts: {
+            status?: number | undefined;
+            attempts?: number | undefined;
+            body?: unknown;
+            url?: string | undefined;
+            cause?: unknown;
+        } = {},
+    ) {
+        super(
+            message,
+            opts.cause !== undefined ? { cause: opts.cause } : undefined,
+        );
+        this.name = 'StitchError';
+        this.status = opts.status;
+        this.attempts = opts.attempts ?? 0;
+        if (opts.body !== undefined) this.body = opts.body;
+        if (opts.url !== undefined) this.url = opts.url;
+    }
+}
+
+/**
+ * The outcome of a never-throwing call ({@link Stitch.safe}). A discriminated union: check `error`
+ * (or `ok`) — when `error` is `null` the call succeeded and `data` is the result; otherwise `error`
+ * is the {@link StitchError} and `data` is `null`.
+ */
+export type SafeResult<T> =
+    | { ok: true; data: T; error: null }
+    | { ok: false; data: null; error: StitchError };
+
 export interface StitchResult<T> extends PromiseLike<T> {
     stream(): AsyncGenerator<StitchEvent<T>, void>;
+    /** Consume the call without throwing — resolves to `{ ok, data, error }` (see {@link SafeResult}); shares the one run with `then`/`catch`/`finally`. */
+    safe(): Promise<SafeResult<T>>;
+    /** Attach a rejection handler (like `Promise.catch`); the stitch runs once, shared with `then`/`finally`/`safe`. */
+    catch<R = never>(
+        onrejected?: ((reason: unknown) => R | PromiseLike<R>) | null,
+    ): Promise<T | R>;
+    /** Run a callback when the call settles (like `Promise.finally`); shared with `then`/`catch`/`safe`. */
+    finally(onfinally?: (() => void) | null): Promise<T>;
 }
 /**
  * The callable a stitch resolves to. `TOut` is the result type (inferred from `config.output`);
@@ -496,6 +655,16 @@ export interface StitchResult<T> extends PromiseLike<T> {
 export interface Stitch<TOut = unknown, TIn = StitchInput> {
     (...args: Args<TIn>): StitchResult<TOut>;
     stream(...args: Args<TIn>): AsyncGenerator<StitchEvent<TOut>, void>;
+    /**
+     * Call without throwing: resolves to a `SafeResult` — `{ ok, data, error }`. The eager
+     * shortcut for `stitch(...).safe()`, mirroring `.stream()`.
+     */
+    safe(...args: Args<TIn>): Promise<SafeResult<TOut>>;
+    /**
+     * Call and unwrap to the value, throwing a `StitchError` on failure. The named twin
+     * of `.safe()` (and an explicit spelling of the throwing bare call).
+     */
+    unwrap(...args: Args<TIn>): Promise<TOut>;
     with<const P extends Partial<TIn>>(
         partial: P,
     ): Stitch<TOut, RelaxKeys<TIn, keyof P>>;

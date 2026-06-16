@@ -12,7 +12,7 @@ surfaced the failure instead. The thrown error carries the GraphQL message(s),
 prefixed `GraphQL:` and joined with `; ` when there is more than one:
 
 ```ts twoslash
-import { graphql } from 'stitchapi';
+import { StitchError, graphql } from 'stitchapi';
 
 const user = graphql({
     baseUrl: 'https://api.example.com',
@@ -23,9 +23,10 @@ const user = graphql({
 try {
     await user({ variables: { id: '42' } });
 } catch (err) {
-    // err.name === 'StitchError'
-    // err.message === 'GraphQL: Not authorized to view user 42.'
-    console.error(err);
+    if (err instanceof StitchError) {
+        // err.message === 'GraphQL: Not authorized to view user 42.'
+        console.error(err.message);
+    }
 }
 ```
 

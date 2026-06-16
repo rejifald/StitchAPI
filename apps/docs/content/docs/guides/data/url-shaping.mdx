@@ -8,6 +8,37 @@ A stitch builds its URL from an
 `params` and `query` you pass at call time. Simple `{id}` interpolation is the
 common case; the full operator set is there when you need it.
 
+## Absolute `url` vs relative `path`
+
+How you spell the endpoint decides whether a shared
+[`baseUrl`](/docs/reference/config-types) applies:
+
+-   **`path`** is _relative_ and is **joined onto `baseUrl`** — the origin a stitch
+    inherits from a seam or a shared fragment. Reach for it whenever many stitches
+    share one host.
+-   **`url`** is the _complete_ endpoint (host included). It is templated and
+    query-aware just like `path`, but it **ignores `baseUrl`** — setting `url`
+    means "this stitch addresses itself." Reach for it for a one-off endpoint.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// `path` is relative → it joins `baseUrl` (typically shared via a seam or fragment).
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+await getUser({ params: { id: 1 } });
+// → GET https://api.example.com/users/1
+```
+
+> [!WARNING]
+>
+> A relative `url` is **not** joined to `baseUrl`. `url: '/users/{id}'` overrides
+> the base and resolves to the bare `/users/{id}`, which isn't fetchable — it
+> fails at call time with a `StitchConfigError` ("request URL … is not absolute").
+> When you mean "relative to `baseUrl`", use `path`, not `url`.
+
 ## Path templates
 
 ```ts twoslash
@@ -48,6 +79,14 @@ Array encoding is configurable with
 [`arrayFormat`](/docs/reference/config-types) — `indices` (the default shown
 above), `brackets`, or `repeat`.
 
+> [!NOTE]
+>
+> Values are percent-encoded with `encodeURIComponent`, so a space in a query
+> value goes on the wire as `%20`, not `+` like `URLSearchParams`. Both decode to
+> a space server-side; see
+> [Migration notes](/docs/getting-started/migration-notes) if a byte-for-byte
+> fixture trips on it.
+
 ## Query defaults in the path
 
 Query keys can be baked into the path string; call-time `query` merges over them,
@@ -68,4 +107,8 @@ await findUsers({ query: { type: 'user' } });
     <Card title="stitch()" href="/docs/guides/authoring/stitch" />
     <Card title="Body encoding" href="/docs/guides/data/body-encoding" />
     <Card title="Reference: config types" href="/docs/reference/config-types" />
+    <Card
+        title="Migration notes"
+        href="/docs/getting-started/migration-notes"
+    />
 </Cards>

@@ -28,14 +28,43 @@ the capability boundary.
 [`env('API_KEY')`](/docs/guides/auth/secret-resolvers) so the secret is read at
 call time and never committed.
 
-`header` overrides the header name (default `x-api-key`, lowercased): pass
-`apiKey({ header: 'X-My-Key', value: env('API_KEY') })` to send the key under a
-custom header.
+`in` chooses where the key goes: `'header'` (the default) or `'query'`.
+
+`header` overrides the header name (default `x-api-key`, lowercased) when
+`in: 'header'`: pass `apiKey({ header: 'X-My-Key', value: env('API_KEY') })` to
+send the key under a custom header. The name goes on the wire **lowercased**
+(`x-my-key`) — case-insensitive per HTTP, but worth knowing if a fixture asserts
+the original casing. See [Migration notes](/docs/getting-started/migration-notes).
+
+## In a query parameter
+
+Some APIs (often older REST endpoints) expect the key in the query string rather
+than a header. Set `in: 'query'`; the key is appended to the request URL at call
+time, URL-encoded, onto whatever query the endpoint already carries:
+
+```ts twoslash
+import { apiKey, env, stitch } from 'stitchapi';
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search?type=full', // an existing query is preserved
+    auth: apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') }),
+});
+```
+
+Every call appends `&api_key=<resolved>` to the URL. `name` is the parameter name
+(default `api_key`).
 
 <Callout type="warn">
-    `apiKey` only sets a header — it does not add a query parameter. For an API
-    that wants the key in the query string, set it through the request `query`
-    input instead.
+    A key in the URL is exposed wherever URLs travel — server access logs,
+    proxies, browser history, a `Referer` header. Prefer `in: 'header'` when the
+    API accepts it. StitchAPI keeps the key out of its own traces two ways: the
+    strategy attaches it only to the request the transport sends (the `start`
+    event's URL is the pre-auth URL, so the key never lands there), and the
+    configured query `name` is registered with the URL-credential scrubber — so
+    if it does appear in a sink (an OTLP `url.full`, the structured
+    `input.query`) it is redacted to `REDACTED`, exactly like
+    `api_key`/`access_token`. None of that protects the upstream server's logs.
 </Callout>
 
 See [Reference → Auth strategies](/docs/reference/auth-strategies) for every
@@ -53,5 +82,9 @@ field.
     <Card
         title="Reference: Auth strategies"
         href="/docs/reference/auth-strategies"
+    />
+    <Card
+        title="Migration notes"
+        href="/docs/getting-started/migration-notes"
     />
 </Cards>
