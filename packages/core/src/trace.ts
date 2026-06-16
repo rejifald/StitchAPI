@@ -157,6 +157,10 @@ function format(name: string, event: StitchEvent): string | null {
                 `  · ${name} ${event.phase}#${event.attempt}${waited}`,
             );
         }
+        case 'info': {
+            const detail = event.detail != null ? `: ${event.detail}` : '';
+            return paint(DIM, `  ℹ ${name} ${event.topic}${detail}`);
+        }
         case 'drift': {
             const f = event.finding;
             const detail = f.detail != null ? ` (${f.detail})` : '';

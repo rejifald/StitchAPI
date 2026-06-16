@@ -102,6 +102,23 @@ export function makeRuntime(
     };
 }
 
+// A per-call view of the shared `authCtx` whose `emit` collects `info` events into `sink`. The
+// Runtime (and its `authCtx`) is shared across a stitch's concurrent calls, so the buffer must be
+// per-call: spread a fresh ctx (sharing store/vault/principal) with a private emit, run the
+// strategy, then yield whatever it announced. `apply`/`refresh` are plain async fns and can't yield.
+function emitInto(authCtx: AuthContext, sink: StitchEvent[]): AuthContext {
+    return {
+        ...authCtx,
+        emit: (topic, detail) =>
+            sink.push({
+                type: 'info',
+                topic,
+                ...(detail !== undefined ? { detail } : {}),
+                at: now(),
+            }),
+    };
+}
+
 const nameOf = (cfg: StitchConfig) => cfg.name ?? cfg.path ?? 'stitch';
 
 function joinUrl(base: string, path: string): string {
@@ -414,7 +431,11 @@ async function* attemptLoop(
             };
         try {
             const req = cloneReq(baseReq);
-            if (cfg.auth) await cfg.auth.apply(req, rt.authCtx);
+            if (cfg.auth) {
+                const infos: StitchEvent[] = [];
+                await cfg.auth.apply(req, emitInto(rt.authCtx, infos));
+                yield* infos;
+            }
             await cfg.hooks?.onRequest?.({ name: nameOf(cfg), attempt, req });
             yield { type: 'progress', phase: 'request', attempt, at: now() };
 
@@ -476,7 +497,9 @@ async function* attemptLoop(
                     detail: 'refresh',
                     at: now(),
                 };
-                await cfg.auth.refresh(rt.authCtx);
+                const infos: StitchEvent[] = [];
+                await cfg.auth.refresh(emitInto(rt.authCtx, infos));
+                yield* infos;
                 attempt--; // redo this attempt with fresh auth, don't count it
                 continue;
             }

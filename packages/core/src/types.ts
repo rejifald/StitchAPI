@@ -276,7 +276,13 @@ export interface AuthContext {
      * caller cannot name (and impersonate) another principal (ADR 0002 §2).
      */
     principal?: string;
-    emit: (phase: ProgressPhase, detail?: string) => void;
+    /**
+     * Announce an `info` StitchEvent onto the run's event stream — a strategy reporting a
+     * decision it made (e.g. which env var a `bearer` token resolved from via `optionalEnv`, or
+     * that `oauth2` fetched a token). NEVER carries the secret itself. The engine buffers these
+     * during `apply`/`refresh` and yields them; outside a run it is a no-op.
+     */
+    emit: (topic: string, detail?: string) => void;
     runLogin?: () => Promise<AdapterResponse>; // for cookieSession: invoke the login stitch
 }
 export interface AuthStrategy {
@@ -327,6 +333,8 @@ export type StitchEvent<T = unknown> =
           waitedMs?: number;
           at: number;
       }
+    // A strategy-level announcement (auth decisions, inference). Non-progress; carries no secret.
+    | { type: 'info'; topic: string; detail?: string; at: number }
     | { type: 'drift'; finding: DriftFinding; at: number }
     | { type: 'delta'; chunk: unknown; at: number }
     | { type: 'result'; value: T; status: number; attempts: number; at: number }

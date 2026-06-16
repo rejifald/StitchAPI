@@ -626,9 +626,8 @@ export async function verifyAdapterContract(
 
 const SINK_AT = 1_700_000_000_000;
 
-// Canonical sequence covering EVERY StitchEvent variant — including 'delta',
-// which the type declares ahead of engine support; a conforming sink must
-// already tolerate it.
+// Canonical sequence covering EVERY StitchEvent variant — including 'delta'
+// and 'info', which a conforming sink must tolerate even if it ignores them.
 const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
     {
         type: 'start',
@@ -647,6 +646,12 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
         at: SINK_AT + 1,
     },
     {
+        type: 'info',
+        topic: 'auth',
+        detail: 'bearer from EXAMPLE_TOKEN',
+        at: SINK_AT + 2,
+    },
+    {
         type: 'drift',
         finding: {
             level: 'warn',
@@ -654,15 +659,15 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
             change: 'type-changed',
             detail: 'string -> number',
         },
-        at: SINK_AT + 2,
+        at: SINK_AT + 3,
     },
-    { type: 'delta', chunk: { partial: true }, at: SINK_AT + 3 },
+    { type: 'delta', chunk: { partial: true }, at: SINK_AT + 4 },
     {
         type: 'result',
         value: { users: [] },
         status: 200,
         attempts: 1,
-        at: SINK_AT + 4,
+        at: SINK_AT + 5,
     },
     {
         type: 'error',
@@ -670,9 +675,9 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
         message: 'upstream 503',
         status: 503,
         attempts: 2,
-        at: SINK_AT + 5,
+        at: SINK_AT + 6,
     },
-    { type: 'done', ok: true, ms: 34, attempts: 1, at: SINK_AT + 6 },
+    { type: 'done', ok: true, ms: 34, attempts: 1, at: SINK_AT + 7 },
 ];
 
 /**

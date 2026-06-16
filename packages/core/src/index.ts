@@ -10,6 +10,7 @@ export {
     cookieSession,
     oauth2,
     env,
+    optionalEnv,
     secretsFile,
 } from './auth';
 export { fetchAdapter } from './http-adapter';

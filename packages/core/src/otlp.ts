@@ -135,6 +135,19 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     });
                     break;
                 }
+                case 'info': {
+                    top(name)?.events.push({
+                        name: `info:${event.topic}`,
+                        timeUnixMs: event.at,
+                        attributes: {
+                            'stitch.info.topic': event.topic,
+                            ...(event.detail
+                                ? { 'stitch.info.detail': event.detail }
+                                : {}),
+                        },
+                    });
+                    break;
+                }
                 case 'drift': {
                     top(name)?.events.push({
                         name: 'drift',

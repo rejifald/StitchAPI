@@ -16,6 +16,22 @@ export type Secret = string | (() => string);
 const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
 
 /**
+ * A resolver that may yield no value: `bearer` attaches the header only when it resolves to a
+ * value, and otherwise skips it (announcing the miss) instead of failing. Produced by
+ * {@link optionalEnv}, and branded so `bearer` can tell it apart from a required {@link Secret} —
+ * which also keeps it, at the type level, out of the strategies that demand a credential
+ * (`apiKey`, `basic`, `oauth2`).
+ */
+export interface OptionalSecret {
+    (): string | undefined;
+    readonly __optional: true;
+    /** Human-readable source (e.g. `env var GITHUB_TOKEN`), used in the announced `info` event. */
+    readonly label: string;
+}
+const isOptional = (s: Secret | OptionalSecret): s is OptionalSecret =>
+    typeof s === 'function' && '__optional' in s;
+
+/**
  * Base64-encode a UTF-8 string without Node's `Buffer`, so HTTP Basic credentials work in a
  * browser bundle too (the browser-first gate — `Buffer` is absent there). The bytes match
  * `Buffer.from(s, 'utf8').toString('base64')` exactly, non-ASCII included: `TextEncoder` emits
@@ -35,6 +51,27 @@ export function env(name: string): () => string {
         if (v == null) throw new Error(`missing env var ${name}`);
         return v;
     };
+}
+
+/**
+ * Like {@link env}, but OPTIONAL: resolves the variable's value, or *absent* (`undefined`) when it
+ * is unset or empty — it never throws. Pass it to {@link bearer} to attach the credential only when
+ * present, otherwise send the request unauthenticated (announced in the trace):
+ * `bearer(optionalEnv('GITHUB_TOKEN'))`. For local/dev runs, notebooks, and agent loops where a
+ * token may or may not be exported; when the call must be authenticated, use the throwing
+ * `bearer(env('GITHUB_TOKEN'))`. In a browser bundle (no process environment) it resolves absent,
+ * so `bearer` simply attaches nothing.
+ */
+export function optionalEnv(name: string): OptionalSecret {
+    // An exported-but-empty var (`MY_TOKEN=`) counts as absent — never send `Bearer ` with no token.
+    const read = (): string | undefined => {
+        const v = readEnv(name);
+        return v == null || v === '' ? undefined : v;
+    };
+    return Object.assign(read, {
+        __optional: true as const,
+        label: `env var ${name}`,
+    });
 }
 
 /**
@@ -67,10 +104,26 @@ export function secretsFile(name: string): () => string {
     };
 }
 
-export function bearer(token: Secret): AuthStrategy {
+export function bearer(token: Secret | OptionalSecret): AuthStrategy {
     return {
         name: 'bearer',
-        apply(req) {
+        apply(req, ctx) {
+            // An optional secret (e.g. optionalEnv): attach the header only when it resolves to a
+            // value; otherwise skip it and announce the miss — never a silent no-op. A required
+            // Secret keeps the original behavior exactly (resolve, attach; env() throws if unset).
+            if (isOptional(token)) {
+                const value = token();
+                if (value == null || value === '') {
+                    ctx.emit(
+                        'auth',
+                        `no token: ${token.label} not set; request sent unauthenticated`,
+                    );
+                    return;
+                }
+                ctx.emit('auth', `bearer from ${token.label}`);
+                req.headers['authorization'] = `Bearer ${value}`;
+                return;
+            }
             req.headers['authorization'] = `Bearer ${resolve(token)}`;
         },
     };
