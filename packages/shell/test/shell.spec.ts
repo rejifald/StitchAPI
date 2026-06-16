@@ -89,3 +89,11 @@ test('the resilience chain wraps the subprocess — a per-attempt timeout aborts
         slow({ body: ['-e', 'setTimeout(() => {}, 5000)'] }),
     ).rejects.toBeTruthy();
 });
+
+test('a spawn failure (missing binary) rejects as a transport error — NOT a 500 exit response', async () => {
+    // ENOENT carries a STRING `code`, so `runCommand` rejects (transport error) rather than
+    // resolving to a status-500 "response" the way a non-zero EXIT (numeric code) does — the
+    // resilience chain then sees a real transport failure (retryable/abortable), not a result.
+    const missing = shell({ command: '/no/such/binary-xyz-stitchapi' });
+    await expect(missing({ body: [] })).rejects.toThrow(/ENOENT/);
+});

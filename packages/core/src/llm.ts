@@ -4,10 +4,12 @@
 // mappings shipped as PLAIN CONFIG (no SDK dependency, the contract-not-dependency gate). BYO any
 // other provider by implementing the contract.
 //
-// `llm` carries NO `execute` hook: an LLM call IS http, so bearer/apiKey `auth`, `retry`,
-// `throttle`, and the `sse`/`stream` surfaces (token streaming) all apply for free — `llm` proves
-// the surface model from the buffered-HTTP side. Bundle-frugal: reached only through the `llm`
-// subpath; `import { stitch }` pulls in none of it.
+// `llm` carries NO `execute` hook: an LLM call IS http, so bearer/apiKey `auth`, `retry`, and
+// `throttle` all apply for free, and `llm` proves the surface model from the buffered-HTTP side.
+// (Token streaming is a follow-up: it needs a `stream` hook ON this surface, since `kind` is a
+// single slot the buffered llm surface already fills — the `sse`/`stream` surfaces don't compose
+// onto it yet.) Bundle-frugal: reached only through the `llm` subpath; `import { stitch }` pulls in
+// none of it.
 import { makeStitch } from './stitch';
 import type { Surface, SurfaceOutcome } from './surface';
 import type { Stitch, StitchConfig, StitchInput } from './types';
@@ -166,17 +168,29 @@ export const anthropic: LlmProvider = {
     endpoint: 'https://api.anthropic.com/v1/messages',
     headers: { 'anthropic-version': '2023-06-01' },
     defaultModel: 'claude-opus-4-8',
-    buildBody: (req) => ({
-        model: req.model,
-        max_tokens: req.maxTokens ?? 1024,
-        messages: req.messages
-            .filter((m) => m.role !== 'system')
-            .map((m) => ({ role: m.role, content: m.content })),
-        ...(req.system !== undefined ? { system: req.system } : {}),
-        ...(req.temperature !== undefined
-            ? { temperature: req.temperature }
-            : {}),
-    }),
+    buildBody: (req) => {
+        // Anthropic's `system` is a TOP-LEVEL param, not a message. Fold any system-role
+        // messages into it (after an explicit `req.system`) so a system prompt passed as a
+        // message — the natural shape for callers coming from the chat SDKs — is relocated to
+        // where the API wants it rather than silently dropped.
+        const system = [
+            ...(req.system !== undefined ? [req.system] : []),
+            ...req.messages
+                .filter((m) => m.role === 'system')
+                .map((m) => m.content),
+        ].join('\n\n');
+        return {
+            model: req.model,
+            max_tokens: req.maxTokens ?? 1024,
+            messages: req.messages
+                .filter((m) => m.role !== 'system')
+                .map((m) => ({ role: m.role, content: m.content })),
+            ...(system !== '' ? { system } : {}),
+            ...(req.temperature !== undefined
+                ? { temperature: req.temperature }
+                : {}),
+        };
+    },
     parse: (body) => {
         const b = body as {
             content?: { text?: string }[];

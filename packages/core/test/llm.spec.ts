@@ -106,6 +106,34 @@ test('llm requires a model (none on config, call, or provider default) — fail 
     await expect(chat({ body: { messages: [] } })).rejects.toThrow(/model/);
 });
 
+test('anthropic folds a system-role MESSAGE into the top-level `system` (never dropped)', async () => {
+    const { adapter, calls } = captureAdapter({ content: [{ text: 'ok' }] });
+    const chat = llm({
+        provider: anthropic,
+        model: 'claude-opus-4-8',
+        adapter,
+    });
+
+    await chat({
+        body: {
+            system: 'first',
+            messages: [
+                { role: 'system', content: 'second' },
+                { role: 'user', content: 'hi' },
+            ],
+        },
+    });
+
+    const body = calls[0]!.body as {
+        system?: string;
+        messages: { role: string; content: string }[];
+    };
+    // The explicit `system` AND the system-role message both survive — concatenated into the
+    // top-level param (Anthropic's shape), in order — rather than the message being silently lost.
+    expect(body.system).toBe('first\n\nsecond');
+    expect(body.messages).toEqual([{ role: 'user', content: 'hi' }]);
+});
+
 test('llm honours an explicit endpoint over the provider default', async () => {
     const { adapter, calls } = captureAdapter({ content: [{ text: 'x' }] });
     const chat = llm({
