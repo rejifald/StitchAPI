@@ -457,6 +457,12 @@ function StitchOutput({
                 {/* Show the DAG as soon as any trace event has been folded in. */}
                 {hasDag && (
                     <div className="stitch-playground__dag">
+                        {/* Section header, styled like the Console / Server-knobs
+                            pane heads (same .stitch-playground__pane-head: uppercased,
+                            muted, subtle bar). */}
+                        <div className="stitch-playground__pane-head">
+                            Call graph
+                        </div>
                         {/* Streaming badge: shown when any chunk event arrived or any
                             trace entry carries `.stream`. Active during and after the run. */}
                         {view.isStreaming && (
