@@ -264,16 +264,22 @@ type RequiredSchemaKeys<I> = {
 
 /**
  * The typed call argument for a config whose `input` is `I`: required schema slots, optional schema
- * slots, the runtime-only `signal`/`onProgress` passthrough, and — when no `variables` schema is
- * declared — the untyped `variables` passthrough. {@link Prettify} collapses the required∩optional
- * split into one flat object.
+ * slots, the runtime-only `signal`/`onProgress` passthrough, and — when no `variables`/`params`/`query`
+ * schema is declared — the untyped loose passthroughs for those slots. {@link Prettify} collapses the
+ * required∩optional split into one flat object.
  *
- * The trailing conditional restores backward compatibility: `variables` is now an {@link InputSchemas}
- * slot, so it falls OUT of {@link ExtraSlots}. A graphql config that declares a `variables` schema
- * types it through the slot machinery above; one that declares NONE (`I` has no `variables` key) would
- * otherwise lose the optional `variables?` it used to carry — so re-add it here as the loose
- * passthrough. The `I extends { variables: unknown }` probe is true only when a `variables` key was
- * actually written, so the two branches never overlap (no typed-vs-loose clash on the same key).
+ * The trailing conditionals restore backward compatibility. The mapped slots above gate on `& keyof I`,
+ * so a slot only appears when `input` actually declares it — which means declaring ONE slot (say
+ * `input: { body }`) would otherwise DROP the `params`/`query` slots from the call argument entirely,
+ * making `query: {…}`/`params: {…}` a compile error even though the runtime reads input by field name
+ * regardless (issue #134). `variables` is now an {@link InputSchemas} slot too, so it likewise falls OUT
+ * of {@link ExtraSlots} and would lose its loose passthrough. So re-add all three as loose optional
+ * passthroughs here, mirroring one another: a config that declares the schema types it through the slot
+ * machinery above; one that declares NONE keeps the loose runtime slot it has always carried. Each
+ * `I extends { X: unknown }` probe is true only when that key was actually written, yielding
+ * `Record<never, never>` (empty) so the typed and loose branches never overlap on the same key. The
+ * passthrough value types match {@link StitchInput} exactly (`Record<string, unknown>`) so the result
+ * stays assignable to `StitchInput` at the surface-helper boundary (see {@link InputOf}).
  */
 type CallInput<I> = Prettify<
     { [K in RequiredSchemaKeys<I> & keyof I]: SlotInput<I, K> } & {
@@ -285,7 +291,13 @@ type CallInput<I> = Prettify<
             variables: unknown;
         }
             ? Record<never, never>
-            : { variables?: Record<string, unknown> })
+            : { variables?: Record<string, unknown> }) &
+        (I extends { params: unknown }
+            ? Record<never, never>
+            : { params?: Record<string, unknown> }) &
+        (I extends { query: unknown }
+            ? Record<never, never>
+            : { query?: Record<string, unknown> })
 >;
 
 // ---- Path-template variables (Phase 2c) -----------------------------------
