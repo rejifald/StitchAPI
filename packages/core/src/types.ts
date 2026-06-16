@@ -45,8 +45,28 @@ export interface DriftFinding {
     detail?: string;
 }
 export interface DriftOptions {
-    critical?: string[]; // paths whose change is an error
-    watch?: string[]; // paths whose change is a warning
+    /**
+     * Dotted paths whose disappearance or type change is escalated from the default
+     * `warn` to an `error`. The path grammar mirrors the response-shape walk: nested
+     * keys join with `.`, and an **array element** is addressed with `[]` — so
+     * `items[].id` matches the `id` of every element of the `items` array. A pattern
+     * matches by exact path, by a single-segment `*` wildcard, or as a prefix (`data`
+     * matches `data[].id` and everything beneath it). See `matchPath` for the full grammar.
+     *
+     * @example
+     * ```ts
+     * drift(userSchema, {
+     *     critical: [
+     *         'id', // top-level `id` going missing / changing type → error
+     *         'items[].sku', // the `sku` of ANY element of `items` → error
+     *         'meta.*', // any direct child of `meta` (single-segment wildcard)
+     *     ],
+     * });
+     * ```
+     */
+    critical?: string[];
+    /** Paths (same grammar as {@link DriftOptions.critical}, e.g. `items[].field`) whose change is leveled to a `warn`. */
+    watch?: string[];
     onNew?: DriftLevel; // level for brand-new fields (default 'info')
     snapshotFile?: string; // committed baseline (`<name>.contract.json`)
 }
@@ -361,14 +381,19 @@ export interface StitchConfig {
     /**
      * Full request endpoint as one string — the atomic spelling, when a stitch is exactly one
      * endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware
-     * like `path`; may be a thunk for lazy/env resolution. Mutually exclusive with
-     * `baseUrl`/`path`: when both are set `url` wins, and across composed fragments the last
-     * fragment to write either spelling wins the whole slot.
+     * like `path`; may be a thunk for lazy/env resolution.
+     *
+     * ⚠️ `url` is the COMPLETE endpoint and is **not** joined to `baseUrl` — setting `url` makes
+     * `baseUrl` ignored. To address an endpoint *relative to* a shared `baseUrl` (e.g. a
+     * seam/fragment origin), use `path`, not a relative `url`: `url: '/users'` resolves to the
+     * un-fetchable `/users`, whereas `path: '/users'` resolves to `${baseUrl}/users`. Mutually
+     * exclusive with `baseUrl`/`path`: when both are set `url` wins, and across composed
+     * fragments the last fragment to write either spelling wins the whole slot.
      */
     url?: string | (() => string);
-    /** Origin for the request, as a string or a thunk resolved at call time. Ignored when `url` is set. */
+    /** Origin that `path` is appended to, as a string or a thunk resolved at call time. Ignored when `url` is set (which carries its own origin). */
     baseUrl?: string | (() => string);
-    /** Path appended to `baseUrl`; may include `{param}` slots and a `?query` string. Ignored when `url` is set. */
+    /** Path appended to `baseUrl` — use THIS (not a relative `url`) for an endpoint relative to a shared `baseUrl`; may include `{param}` slots and a `?query` string. Ignored when `url` is set. */
     path?: string;
     /** Static default headers merged into every request. */
     headers?: Record<string, string>;

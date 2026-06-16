@@ -171,9 +171,16 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
     // error here instead of a cryptic "Failed to parse URL" from fetch. A custom `adapter` may
     // legitimately resolve relative URLs, so this only guards the default transport.
     if (cfg.adapter === undefined && !/^https?:\/\//i.test(url)) {
+        // A relative `url` set alongside a `baseUrl` is the common footgun: `url` is the whole
+        // endpoint and ignores `baseUrl`, so the base is never joined — they almost certainly
+        // meant `path`. Point straight at that instead of the generic guidance.
+        const hint =
+            cfg.url !== undefined && cfg.baseUrl !== undefined
+                ? 'A relative `url` does NOT join `baseUrl` — `url` is the whole endpoint, so `baseUrl` is ignored. Pass the relative endpoint as `path` instead.'
+                : 'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared fragment).';
         const e = new Error(
             `stitch ${JSON.stringify(nameOf(cfg))}: request URL ${JSON.stringify(url)} is not absolute. ` +
-                'Set `url` to a full endpoint, or give a relative `path` a `baseUrl` (e.g. from a shared fragment).',
+                hint,
         );
         e.name = 'StitchConfigError';
         throw e;
