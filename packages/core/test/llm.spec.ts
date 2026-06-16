@@ -1,0 +1,120 @@
+// stitchapi/llm — the contract-first llm preset (ADR 0008 Stage B). A capturing adapter (no
+// network) proves each first-party provider maps the normalised request onto its wire body and
+// lifts the normalised result back out; `llm` is plain HTTP (no execute hook), so it rides the
+// ordinary engine path.
+import type { Adapter, AdapterRequest } from '../src';
+import { anthropic, llm, openai } from '../src/llm';
+import type { LlmProvider } from '../src/llm';
+
+function captureAdapter(response: unknown): {
+    adapter: Adapter;
+    calls: AdapterRequest[];
+} {
+    const calls: AdapterRequest[] = [];
+    return {
+        calls,
+        adapter: async (req) => {
+            calls.push(req);
+            return { status: 200, headers: {}, body: response };
+        },
+    };
+}
+
+test('anthropic: builds the Messages API body (system out of messages) and parses the result', async () => {
+    const { adapter, calls } = captureAdapter({
+        content: [{ text: 'hello' }],
+        model: 'claude-opus-4-8',
+        usage: { input_tokens: 5, output_tokens: 2 },
+        stop_reason: 'end_turn',
+    });
+    const chat = llm({
+        provider: anthropic,
+        model: 'claude-opus-4-8',
+        maxTokens: 256,
+        adapter,
+    });
+
+    const out = await chat({
+        body: {
+            system: 'be brief',
+            messages: [{ role: 'user', content: 'hi' }],
+        },
+    });
+
+    const body = calls[0]!.body as {
+        model: string;
+        max_tokens: number;
+        system?: string;
+        messages: unknown[];
+    };
+    expect(body.model).toBe('claude-opus-4-8');
+    expect(body.max_tokens).toBe(256);
+    expect(body.system).toBe('be brief'); // top-level param, NOT a message
+    expect(body.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    expect(calls[0]!.headers['anthropic-version']).toBe('2023-06-01');
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.url).toBe('https://api.anthropic.com/v1/messages'); // default endpoint
+
+    expect(out).toMatchObject({
+        text: 'hello',
+        model: 'claude-opus-4-8',
+        usage: { inputTokens: 5, outputTokens: 2 },
+        finishReason: 'end_turn',
+    });
+});
+
+test('openai: builds the Chat Completions body (system prepended) and parses the result', async () => {
+    const { adapter, calls } = captureAdapter({
+        choices: [{ message: { content: 'hey' }, finish_reason: 'stop' }],
+        model: 'gpt-4o',
+        usage: { prompt_tokens: 7, completion_tokens: 3 },
+    });
+    const chat = llm({ provider: openai, adapter }); // no model → provider default
+
+    const out = await chat({
+        body: {
+            system: 'be brief',
+            messages: [{ role: 'user', content: 'hi' }],
+        },
+    });
+
+    const body = calls[0]!.body as { model: string; messages: unknown[] };
+    expect(body.model).toBe('gpt-4o'); // provider.defaultModel
+    expect(body.messages).toEqual([
+        { role: 'system', content: 'be brief' }, // prepended as a message
+        { role: 'user', content: 'hi' },
+    ]);
+    expect(calls[0]!.url).toBe('https://api.openai.com/v1/chat/completions');
+
+    expect(out).toMatchObject({
+        text: 'hey',
+        usage: { inputTokens: 7, outputTokens: 3 },
+        finishReason: 'stop',
+    });
+});
+
+test('llm requires a model (none on config, call, or provider default) — fail closed', async () => {
+    const { adapter } = captureAdapter({});
+    const bare: LlmProvider = {
+        id: 'bare',
+        endpoint: 'https://example.test/v1',
+        buildBody: anthropic.buildBody,
+        parse: anthropic.parse,
+    };
+    const chat = llm({ provider: bare, adapter });
+
+    await expect(chat({ body: { messages: [] } })).rejects.toThrow(/model/);
+});
+
+test('llm honours an explicit endpoint over the provider default', async () => {
+    const { adapter, calls } = captureAdapter({ content: [{ text: 'x' }] });
+    const chat = llm({
+        provider: anthropic,
+        model: 'claude-opus-4-8',
+        url: 'https://gateway.internal/llm',
+        adapter,
+    });
+
+    await chat({ body: { messages: [{ role: 'user', content: 'hi' }] } });
+    expect(calls[0]!.url).toBe('https://gateway.internal/llm');
+});
