@@ -353,10 +353,16 @@ export function makeStitch<T = unknown>(
 
     const result = (input?: StitchInput): StitchResult<T> => {
         const make = () => streamFn(input);
+        // Consume the stream at most ONCE and share that promise across then/catch/finally —
+        // attaching more than one terminal handler must not re-run the call (the old code called
+        // make() independently per handler, so then+catch ran the stitch twice). `stream()` stays a
+        // separate, un-memoised consumption path (its own generator each time).
+        let consumed: Promise<T> | undefined;
+        const run = () => (consumed ??= consume<T>(make() as never));
         return {
-            then: (onF, onR) => consume<T>(make() as never).then(onF, onR),
-            catch: (onR: (e: unknown) => unknown) =>
-                consume<T>(make() as never).catch(onR),
+            then: (onF, onR) => run().then(onF, onR),
+            catch: (onR: (e: unknown) => unknown) => run().catch(onR),
+            finally: (onF: (() => void) | null) => run().finally(onF),
             stream: () => make(),
         } as StitchResult<T>;
     };

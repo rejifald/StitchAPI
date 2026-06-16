@@ -518,6 +518,12 @@ export interface StitchConfig {
 
 export interface StitchResult<T> extends PromiseLike<T> {
     stream(): AsyncGenerator<StitchEvent<T>, void>;
+    /** Attach a rejection handler (like `Promise.catch`); the stitch runs once, shared with `then`/`finally`. */
+    catch<R = never>(
+        onrejected?: ((reason: unknown) => R | PromiseLike<R>) | null,
+    ): Promise<T | R>;
+    /** Run a callback when the call settles (like `Promise.finally`); shared with `then`/`catch`. */
+    finally(onfinally?: (() => void) | null): Promise<T>;
 }
 /**
  * The callable a stitch resolves to. `TOut` is the result type (inferred from `config.output`);
