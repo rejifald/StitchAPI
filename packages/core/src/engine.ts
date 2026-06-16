@@ -27,6 +27,7 @@ import type {
     AuthContext,
     DriftFinding,
     DriftSpec,
+    RunContext,
     StitchConfig,
     StitchEvent,
     StitchInput,
@@ -39,6 +40,7 @@ import {
     expandPath,
     getPath,
     matchAny,
+    newRunContext,
     now,
     parseDuration,
     sleep,
@@ -712,6 +714,7 @@ async function* paginated(
     input: StitchInput,
     state: { attempts: number },
     t0: number,
+    run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
@@ -724,14 +727,7 @@ async function* paginated(
     let lastStatus = 200;
 
     const first = buildRequest(cfg, pageInput);
-    yield {
-        type: 'start',
-        name,
-        method: first.method,
-        url: first.url,
-        input,
-        at: now(),
-    };
+    yield startEvt(name, first, input, run);
 
     for (;;) {
         const req = buildRequest(cfg, pageInput);
@@ -871,6 +867,7 @@ const startEvt = (
     name: string,
     baseReq: AdapterRequest,
     input: StitchInput,
+    run: RunContext,
 ): StitchEvent => ({
     type: 'start',
     name,
@@ -878,6 +875,9 @@ const startEvt = (
     url: baseReq.url,
     input,
     at: now(),
+    runId: run.runId,
+    traceId: run.traceId,
+    ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
 });
 
 const cacheEvt = (detail: string): StitchEvent => ({
@@ -997,6 +997,7 @@ async function* runStreaming(
     name: string,
     state: { attempts: number },
     t0: number,
+    run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
@@ -1013,7 +1014,7 @@ async function* runStreaming(
     }
     // Ask the transport for the live body — un-buffered, un-parsed (ADR 0005 Q1).
     baseReq = { ...baseReq, stream: true };
-    yield startEvt(name, baseReq, input);
+    yield startEvt(name, baseReq, input, run);
     state.attempts = 1;
 
     // Charge the rate limiter once at open, but take NO concurrency slot (Decision 12). A rate
@@ -1129,6 +1130,7 @@ async function* runOnce(
     name: string,
     state: { attempts: number },
     t0: number,
+    run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, RunOutcome> {
     let baseReq: AdapterRequest;
@@ -1139,7 +1141,7 @@ async function* runOnce(
         yield doneEvt(false, t0, 0);
         return { ok: false };
     }
-    yield startEvt(name, baseReq, input);
+    yield startEvt(name, baseReq, input, run);
     return yield* runFrom(rt, baseReq, name, state, t0, budget);
 }
 
@@ -1153,6 +1155,7 @@ async function* runCached(
     name: string,
     state: { attempts: number },
     t0: number,
+    run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
@@ -1164,7 +1167,7 @@ async function* runCached(
         yield doneEvt(false, t0, 0);
         return;
     }
-    yield startEvt(name, baseReq, input);
+    yield startEvt(name, baseReq, input, run);
 
     // 'refuse' (ADR 0004): the output contract can't be soundly fingerprinted (no strategy for the
     // vendor / a non-Standard-Schema validator / an opaque un-versioned transform) and the caller
@@ -1271,6 +1274,11 @@ async function* runCached(
 export async function* execute(
     rt: Runtime,
     input: StitchInput = {},
+    // Run identity (ADR 0007). Defaults to a fresh root run; the caller supplies one to make
+    // this a CHILD run — `newRunContext(parent)` inherits the parent's `traceId` and sets
+    // `parentId` (a `cookieSession` login, a `pipe()` step). Stamped on the `start` event and
+    // carried onto the trace-sink ctx by `tee` (stitch.ts).
+    run: RunContext = newRunContext(),
 ): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
     const name = nameOf(cfg);
@@ -1290,12 +1298,12 @@ export async function* execute(
     // chunks (Decisions 4-5). Streaming bypasses pagination and the cache, and is exempt from the
     // concurrency bucket (Decision 12). Checked before both so neither can wrap a live stream.
     if (cfg.kind?.stream) {
-        yield* runStreaming(rt, input, name, state, t0, budget);
+        yield* runStreaming(rt, input, name, state, t0, run, budget);
         return;
     }
 
     if (cfg.paginate) {
-        yield* paginated(rt, input, state, t0, budget);
+        yield* paginated(rt, input, state, t0, run, budget);
         return;
     }
 
@@ -1303,11 +1311,11 @@ export async function* execute(
     // never tunnel an invalid call past the boundary and the key mirrors the resolved request.
     const ctl = await ensureCache(rt);
     if (ctl) {
-        yield* runCached(rt, ctl, input, name, state, t0, budget);
+        yield* runCached(rt, ctl, input, name, state, t0, run, budget);
         return;
     }
 
-    yield* runOnce(rt, input, name, state, t0, budget);
+    yield* runOnce(rt, input, name, state, t0, run, budget);
 }
 
 // ---- cache surfaces (lazy; no static cache import on the hot path) ---------

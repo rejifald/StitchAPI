@@ -385,6 +385,12 @@ export type StitchEvent<T = unknown> =
           url: string;
           input: StitchInput;
           at: number;
+          // Run identity (ADR 0007) — also delivered on the {@link TraceContext} ctx. Stamped
+          // here too so a non-sink `.stream()` consumer can read a run's identity off its first
+          // event. Optional: a `start` event built by hand (tests) may omit them.
+          runId?: string;
+          traceId?: string;
+          parentId?: string;
       }
     | {
           type: 'progress';
@@ -699,9 +705,38 @@ export function isSeam(x: unknown): x is Seam {
     );
 }
 
+// ---- Run identity (ADR 0007) ----------------------------------------------
+/**
+ * OTLP-aligned identity for one logical call ({@link Stitch} run) and its place in a run
+ * tree. `runId` is the OTel **spanId**; `traceId` is shared across a whole tree; `parentId`
+ * (the OTel **parentSpanId**) is set when one run spawns another — a `cookieSession` login,
+ * a `pipe()` step. Minted by the engine (`newRunContext`), never supplied by a caller.
+ */
+export interface RunContext {
+    /** 32-hex trace id, shared across every run in a tree. */
+    traceId: string;
+    /** 16-hex id for this run (the OTel spanId). */
+    runId: string;
+    /** The spawning run's `runId` (OTel parentSpanId); absent for a root run. */
+    parentId?: string;
+}
+
+/**
+ * The per-run metadata a {@link TraceSink} receives alongside every event: the stitch
+ * `name` plus the run identity (ADR 0007). The id fields are present for every
+ * engine-driven run, but **optional** so a sink fed events by hand (tests, custom
+ * pipelines) can still pass just `{ name }`; a sink reading only `ctx.name` is unchanged.
+ */
+export interface TraceContext {
+    name: string;
+    runId?: string;
+    traceId?: string;
+    parentId?: string;
+}
+
 // A trace sink consumes every event a stitch emits.
 export interface TraceSink {
-    handle(event: StitchEvent, ctx: { name: string }): void;
+    handle(event: StitchEvent, ctx: TraceContext): void;
     flush?(): void | Promise<void>;
 }
 

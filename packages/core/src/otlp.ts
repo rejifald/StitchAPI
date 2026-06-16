@@ -2,8 +2,8 @@
 // logical call, using OTel HTTP semantic-convention attributes, and hands finished spans to a
 // SpanExporter. The default exporter POSTs OTLP/JSON to a collector; tests inject a stub
 // exporter (no running collector). It is a normal TraceSink, so it tees alongside console/JSONL.
-import type { StitchEvent, TraceSink } from './types';
-import { readEnv, scrubUrl } from './util';
+import type { StitchEvent, TraceContext, TraceSink } from './types';
+import { hex, readEnv, scrubUrl } from './util';
 
 export type SpanAttributes = Record<string, string | number | boolean>;
 
@@ -18,6 +18,7 @@ export interface OtelSpan {
     kind: 'CLIENT';
     traceId: string; // 32 hex chars
     spanId: string; // 16 hex chars
+    parentSpanId?: string; // 16 hex chars — the spawning run's spanId (ADR 0007), absent for a root
     startUnixMs: number;
     endUnixMs: number;
     attributes: SpanAttributes;
@@ -36,18 +37,6 @@ export interface OtlpOptions {
     headers?: Record<string, string>; // extra headers for the OTLP POST (e.g. auth)
 }
 
-// Browser-safe random hex ids: crypto.getRandomValues where available, else Math.random
-// (ids only need to be unique-ish, not secret).
-function hex(bytes: number): string {
-    const buf = new Uint8Array(bytes);
-    const c = globalThis.crypto as Crypto | undefined;
-    if (c?.getRandomValues) c.getRandomValues(buf);
-    else
-        for (let i = 0; i < buf.length; i++)
-            buf[i] = Math.floor(Math.random() * 256);
-    return Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
 function serverAddress(url: string): string | undefined {
     try {
         return new URL(url).hostname;
@@ -61,7 +50,9 @@ function serverAddress(url: string): string | undefined {
  * span, exported on `done`. Attributes follow the OTel HTTP semantic conventions
  * (`http.request.method`, `url.full`, `server.address`, `http.response.status_code`,
  * `error.type`); a future LLM-kind stitch would map to the gen_ai.* conventions the same way.
- * Spans are correlated per stitch name (sequential calls keep 0–1 open; a stack tolerates nesting).
+ * Spans are correlated by the run id on the {@link TraceContext} ctx (ADR 0007) — a real
+ * `traceId`/`spanId`/`parentSpanId` tree — falling back to the stitch name (a tolerant stack) only
+ * when a sink is fed events by hand without ids (e.g. synthetic test events).
  */
 export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
     const exporter =
@@ -94,8 +85,11 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
     };
 
     return {
-        handle(event: StitchEvent, ctx: { name: string }): void {
+        handle(event: StitchEvent, ctx: TraceContext): void {
             const name = ctx.name;
+            // Correlate by run id (ADR 0007) — each run is unique, so no name-stack is needed;
+            // fall back to the name when a sink is fed events by hand without ids.
+            const key = ctx.runId ?? name;
             switch (event.type) {
                 case 'start': {
                     // url.full is OTLP's only secret-bearing attribute (it never exports
@@ -106,11 +100,16 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     };
                     const host = serverAddress(event.url);
                     if (host) attributes['server.address'] = host;
-                    push(name, {
+                    push(key, {
                         name: `${event.method} ${name}`,
                         kind: 'CLIENT',
-                        traceId: hex(16),
-                        spanId: hex(8),
+                        // Read the engine-minted ids off the ctx (real trace tree); fall back to
+                        // freshly-minted ids for a hand-fed sink with no run identity.
+                        traceId: ctx.traceId ?? hex(16),
+                        spanId: ctx.runId ?? hex(8),
+                        ...(ctx.parentId !== undefined
+                            ? { parentSpanId: ctx.parentId }
+                            : {}),
                         startUnixMs: event.at,
                         endUnixMs: event.at,
                         attributes,
@@ -120,7 +119,7 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     break;
                 }
                 case 'progress': {
-                    top(name)?.events.push({
+                    top(key)?.events.push({
                         name: event.phase,
                         timeUnixMs: event.at,
                         attributes: {
@@ -136,7 +135,7 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     break;
                 }
                 case 'info': {
-                    top(name)?.events.push({
+                    top(key)?.events.push({
                         name: `info:${event.topic}`,
                         timeUnixMs: event.at,
                         attributes: {
@@ -149,7 +148,7 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     break;
                 }
                 case 'drift': {
-                    top(name)?.events.push({
+                    top(key)?.events.push({
                         name: 'drift',
                         timeUnixMs: event.at,
                         attributes: {
@@ -161,7 +160,7 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     break;
                 }
                 case 'result': {
-                    const span = top(name);
+                    const span = top(key);
                     if (span) {
                         span.attributes['http.response.status_code'] =
                             event.status;
@@ -171,7 +170,7 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     break;
                 }
                 case 'error': {
-                    const span = top(name);
+                    const span = top(key);
                     if (span) {
                         if (event.status != null)
                             span.attributes['http.response.status_code'] =
@@ -185,7 +184,7 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     break;
                 }
                 case 'done': {
-                    const span = open.get(name)?.pop();
+                    const span = open.get(key)?.pop();
                     if (span) {
                         span.endUnixMs = event.at;
                         emit(span);
@@ -234,6 +233,9 @@ export function toOtlpJson(spans: OtelSpan[]): unknown {
                         spans: spans.map((s) => ({
                             traceId: s.traceId,
                             spanId: s.spanId,
+                            ...(s.parentSpanId
+                                ? { parentSpanId: s.parentSpanId }
+                                : {}),
                             name: s.name,
                             kind: SPAN_KIND_CLIENT,
                             startTimeUnixNano: toNano(s.startUnixMs),

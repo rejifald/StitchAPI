@@ -1,6 +1,6 @@
 // Zero-infra observability sink: append every StitchEvent as a JSONL record and,
 // optionally, print a compact colored one-line-per-event summary to stderr. No deps.
-import type { DriftLevel, StitchEvent, TraceSink } from './types';
+import type { DriftLevel, StitchEvent, TraceContext, TraceSink } from './types';
 import { dirnameOf, isSecretQueryKey, nodeFs, readEnv, scrubUrl } from './util';
 
 export interface TraceOptions {
@@ -213,7 +213,7 @@ export interface LoggerSinkOptions {
      */
     level?: (
         event: StitchEvent,
-        ctx: { name: string },
+        ctx: TraceContext,
     ) => LogLevel | null | undefined;
     /**
      * Override the payload-free one-liner. Return the message to log, or `null` to skip the event.
@@ -223,7 +223,7 @@ export interface LoggerSinkOptions {
      * log only metadata, never a header/body/chunk value or `JSON.stringify(event)`. `delta` is
      * dropped before this runs.
      */
-    format?: (event: StitchEvent, ctx: { name: string }) => string | null;
+    format?: (event: StitchEvent, ctx: TraceContext) => string | null;
 }
 
 // The DEFAULT event-type → level mapping (drift is resolved per-finding at call time, and
@@ -314,7 +314,7 @@ export function loggerSink(
     const resolveLevel = opts?.level;
     const format = opts?.format;
     return {
-        handle(event: StitchEvent, ctx: { name: string }): void {
+        handle(event: StitchEvent, ctx: TraceContext): void {
             // A streamed chunk is raw response data — never logged, regardless of any option.
             if (event.type === 'delta') return;
             // Per-instance resolver wins (null ⇒ drop, undefined ⇒ defer); else per-type
@@ -379,7 +379,7 @@ export function createTrace(
 
     return {
         path,
-        handle(event: StitchEvent, ctx: { name: string }): void {
+        handle(event: StitchEvent, ctx: TraceContext): void {
             if (fs && path) {
                 if (!dirReady) {
                     fs.mkdirSync(dirnameOf(path), { recursive: true });

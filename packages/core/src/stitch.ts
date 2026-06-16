@@ -23,6 +23,7 @@ import {
     type HookContext,
     type Hooks,
     type InputSchemas,
+    type RunContext,
     type SafeResult,
     type SecurityScheme,
     type Stitch,
@@ -35,7 +36,7 @@ import {
     type TraceSink,
     isStitch,
 } from './types';
-import { deepMerge, readEnv } from './util';
+import { deepMerge, newRunContext, readEnv } from './util';
 import { type Validator, toValidator } from './validator';
 
 export type Fragment = Partial<StitchConfig> | Stitch | string;
@@ -318,10 +319,20 @@ function tee<T>(
     gen: AsyncGenerator<StitchEvent<T>, void>,
     trace: TraceSink,
     name: string,
+    run: RunContext,
 ): AsyncGenerator<StitchEvent<T>, void> {
+    // Run identity (ADR 0007) is per-run-constant, so build the ctx once and hand it to the
+    // sink with every event — the OTLP sink and the playground DAG collector read it to build
+    // the span tree; a sink that reads only `ctx.name` is unaffected.
+    const ctx = {
+        name,
+        runId: run.runId,
+        traceId: run.traceId,
+        ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
+    };
     async function* wrapped() {
         for await (const ev of gen) {
-            trace.handle(ev, { name });
+            trace.handle(ev, ctx);
             yield ev;
         }
     }
@@ -435,8 +446,17 @@ export function makeStitch<T = unknown>(
     const rt: Runtime = makeRuntime(cfg, throttle, trace, store, rtOpts);
     const name = cfg.name ?? cfg.path ?? 'stitch';
 
-    const streamFn = (input?: StitchInput) =>
-        tee<T>(execute(rt, input ?? {}) as never, rt.trace, name);
+    // One run per consumption (ADR 0007): mint the identity here so `tee`'s sink ctx and the
+    // engine's `start` event share it. Each `.stream()` / awaited call is its own run.
+    const streamFn = (input?: StitchInput) => {
+        const run = newRunContext();
+        return tee<T>(
+            execute(rt, input ?? {}, run) as never,
+            rt.trace,
+            name,
+            run,
+        );
+    };
 
     const result = (input?: StitchInput): StitchResult<T> => {
         const make = () => streamFn(input);
