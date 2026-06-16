@@ -203,6 +203,18 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
             detail: "(...args: Args<TIn>) => AsyncGenerator<StitchEvent<TOut>, void>",
         },
         {
+            label: "safe",
+            type: "method",
+            detail: "(...args: Args<TIn>) => Promise<SafeResult<TOut>>",
+            info: "Call without throwing: resolves to a `SafeResult` — `{ ok, data, error }`. The eager shortcut for `stitch(...).safe()`, mirroring `.stream()`.",
+        },
+        {
+            label: "unwrap",
+            type: "method",
+            detail: "(...args: Args<TIn>) => Promise<TOut>",
+            info: "Call and unwrap to the value, throwing a `StitchError` on failure. The named twin of `.safe()` (and an explicit spelling of the throwing bare call).",
+        },
+        {
             label: "with",
             type: "method",
             detail: "(partial: P) => Stitch<TOut, RelaxKeys<TIn, keyof P>>",

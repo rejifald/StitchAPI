@@ -40,6 +40,32 @@ throttle, retry, pagination) and `drift` findings, then exactly one terminal
 `result` or `error`, then `done`. The union is discriminated on `type`, so
 narrowing one field tells the compiler the shape of the rest.
 
+## Awaiting without the throw
+
+Awaiting collapses the stream to its terminal — the `result` value, or a thrown
+[`StitchError`](/docs/errors) when the terminal is an `error`. When you'd rather
+branch on failure than wrap the call in `try`/`catch`, `.safe()` consumes the
+same stream and never throws: it resolves to a discriminated `{ ok, data, error }`
+where `error` is the `StitchError`, or `null` on success.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const search = stitch({ baseUrl: 'https://api.example.com', path: '/search' });
+
+const { data, error } = await search({ query: { q: 'mango' } }).safe();
+if (error) {
+    console.error(error.status, error.attempts); // a StitchError
+} else {
+    console.log(data); // the validated result; error is null here
+}
+```
+
+`.unwrap()` is the explicit throwing twin — the value, or a thrown `StitchError`,
+exactly what awaiting the bare call does. Each also has an eager form on the
+stitch itself (`search.safe(input)` / `search.unwrap(input)`) that mirrors
+`search.stream(input)`.
+
 ## How it relates
 
 The stream is what every cross-cutting feature reports through:

@@ -198,6 +198,16 @@ A stitch does not return `Promise<bytes>`. It yields a typed event stream — `a
 const users = await getUsers(); // sugar: consume the stream → the result value
 ```
 
+Prefer to handle failure inline rather than with `try`/`catch`? `.safe()` never throws — it resolves to a `{ ok, data, error }` result you destructure (discriminate on `error`):
+
+```ts
+const { data, error } = await getUsers.safe();
+if (error) return; // error: StitchError (.status, .attempts); data is null
+use(data); // narrowed: data is the validated result, error is null
+```
+
+`.unwrap()` is the explicit throwing twin — it returns the value or throws a `StitchError`, exactly like awaiting the bare call. Both also have a result-object form (`getUsers(input).safe()`).
+
 Consume the stream directly to see progress, throttle waits, retries, and drift as they happen — it is the same spine that powers observability:
 
 ```ts
