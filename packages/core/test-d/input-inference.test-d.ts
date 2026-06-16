@@ -101,3 +101,60 @@ expectAssignable<CallArg<typeof gqlLoose>>({ variables: { region: 'eu' } });
 // 7) a non-schema `input` slot value is rejected at compile time.
 expectError(stitch({ input: { body: 123 } }));
 expectError(stitch({ input: { params: 'nope' } }));
+
+// 8) declaring ONE slot must NOT close `params`/`query`: they pass through loosely beside the typed
+//    slot, mirroring `variables`/`signal`/`onProgress` (issue #134 — the runtime reads input by field
+//    name regardless). A body-only, NON-templated stitch still accepts a call arg with `params`/`query`.
+const bodyOnly = stitch({
+    input: { body: z.object({ name: z.string() }) },
+    output: userSchema,
+});
+expectType<{ name: string }>(
+    null as unknown as CallArg<typeof bodyOnly>['body'], // body still required + schema-typed
+);
+expectAssignable<CallArg<typeof bodyOnly>>({
+    body: { name: 'Ada' },
+    params: { id: 1 }, // loose params passthrough — no longer "Object literal may only specify…"
+    query: { page: 2 }, // loose query passthrough
+});
+expectError(bodyOnly({ params: { id: 1 } })); // body still required → arg without body is an error
+
+// 9) a DECLARED `query` schema keeps `query` typed BY THE SCHEMA, not widened to Record<string, unknown>
+//    (the loose passthrough only applies when the slot is UNdeclared). Same for a declared `params`.
+const queryTyped = stitch({
+    input: { query: z.object({ page: z.number() }) },
+});
+expectType<{ page: number }>(
+    null as unknown as CallArg<typeof queryTyped>['query'],
+);
+expectError(queryTyped({ query: { page: 'one' } })); // page must be a number — schema still bites
+const paramsTyped = stitch({
+    input: { params: z.object({ id: z.string() }) },
+});
+expectType<{ id: string }>(
+    null as unknown as CallArg<typeof paramsTyped>['params'],
+);
+expectError(paramsTyped({ params: { id: 1 } })); // id must be a string — schema still bites
+
+// 10) a path-template `params` stays REQUIRED even though the loose `params?` passthrough is now in
+//     CallInput: FoldPathParams intersects a REQUIRED `params` over the base, and the required modifier
+//     wins. The folded slot is the loose passthrough INTERSECTED with the path-only `{ id }` (so extra
+//     keys are tolerated), but `params` is still required — a body-only stitch on `/users/{id}` must pass
+//     it. (path-vars.test-d.ts covers the broader path-template matrix; this pins the #134 interaction.)
+const templated = stitch({
+    path: '/users/{id}',
+    input: { body: z.object({ name: z.string() }) },
+});
+expectType<Record<string, unknown> & { id: string | number }>(
+    null as unknown as NonNullable<CallArg<typeof templated>>['params'],
+);
+expectError(templated({ body: { name: 'Ada' } })); // params still required by the path var
+expectAssignable<CallArg<typeof templated>>({
+    body: { name: 'Ada' },
+    params: { id: 1, extra: 'tolerated' }, // path-only params keep the loose index-signature tail
+});
+
+// 11) a no-input, non-templated stitch is unchanged: still the loose, fully-optional StitchInput.
+const bare = stitch({ path: '/ping' });
+expectType<StitchInput | undefined>(null as unknown as CallArg<typeof bare>);
+expectAssignable<CallArg<typeof bare>>(undefined);
