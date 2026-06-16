@@ -310,7 +310,7 @@ describe('stitch drift generate (CLI)', () => {
     };
     const snapDir = () => mkdtempSync(join(tmpdir(), 'stitch-drift-'));
 
-    test('runs a drift-guarded stitch and writes its baseline (the post-unwrap body)', async () => {
+    test('runs a drift-guarded stitch and writes its baseline (the post-unwrap shape)', async () => {
         server.route('GET', '/widgets/7', {
             body: { data: { id: 7, name: 'Cog' } },
         });
@@ -329,8 +329,11 @@ describe('stitch drift generate (CLI)', () => {
 
         expect(code).toBe(0);
         expect(out).toContain(`wrote ${file}`);
-        // The baseline is the engine's post-unwrap body — exactly what a live run compares against.
-        expect(loadSnapshot(file)).toEqual({ id: 7, name: 'Cog' });
+        // The baseline is the engine's post-unwrap SHAPE (payload-free) — what a live run compares against.
+        expect(loadSnapshot(file)).toEqual({
+            version: 1,
+            shape: { id: 'number', name: 'string' },
+        });
         expect(server.callCount('/widgets/7')).toBe(1);
     });
 
@@ -387,7 +390,7 @@ describe('stitch drift generate (CLI)', () => {
         const { code } = await runGenerate({ a, b }, ['--name', 'b']);
 
         expect(code).toBe(0);
-        expect(loadSnapshot(fileB)).toEqual({ id: 2 });
+        expect(loadSnapshot(fileB)).toEqual({ version: 1, shape: { id: 'number' } });
         expect(loadSnapshot(fileA)).toBeUndefined(); // a was left untouched
         expect(server.callCount('/a')).toBe(0);
         expect(server.callCount('/b')).toBe(1);
@@ -419,7 +422,10 @@ describe('stitch drift generate (CLI)', () => {
         const force = await runGenerate({ getU }, ['--force']);
         expect(force.code).toBe(0);
         expect(force.out).toContain(`wrote ${file}`);
-        expect(loadSnapshot(file)).toEqual({ id: 9, role: 'admin' });
+        expect(loadSnapshot(file)).toEqual({
+            version: 1,
+            shape: { id: 'number', role: 'string' },
+        });
         expect(server.callCount('/u')).toBe(1);
     });
 

@@ -82,6 +82,14 @@ function redact(value: unknown, denylist: Set<string>): unknown {
     return value;
 }
 
+// JSON replacer making trace serialisation total over BigInt — a value type `JSON.stringify`
+// throws on. Mirrors the cache key encoder (cache.ts): a bigint becomes its decimal string with
+// an `n` suffix, so a traced payload that carries one (e.g. a parsed byte size) never crashes the
+// side-effect-only sink. Tracing must never break the call it observes.
+function bigintSafe(_key: string, value: unknown): unknown {
+    return typeof value === 'bigint' ? `${value.toString()}n` : value;
+}
+
 // Replace a request body / response value with a compact marker once its JSON
 // encoding exceeds `max` characters; `false` disables truncation (full capture).
 // The preview is the JSON prefix of the ALREADY-REDACTED value, so header secrets
@@ -89,7 +97,7 @@ function redact(value: unknown, denylist: Set<string>): unknown {
 function capBody(value: unknown, max: number | false): unknown {
     if (max === false || value === undefined || value === null) return value;
     try {
-        const json = JSON.stringify(value);
+        const json = JSON.stringify(value, bigintSafe);
         if (json.length <= max) return value;
         return {
             truncated: true,
@@ -413,7 +421,7 @@ export function createTrace(
                 }
                 fs.appendFileSync(
                     path,
-                    `${JSON.stringify(prepareRecord(ctx.name, event, denylist, maxBody))}\n`,
+                    `${JSON.stringify(prepareRecord(ctx.name, event, denylist, maxBody), bigintSafe)}\n`,
                 );
             }
             if (toConsole) {
