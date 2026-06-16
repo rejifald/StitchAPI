@@ -8,6 +8,7 @@
         "survive-a-flaky-dependency",
         "idempotent-writes",
         "catch-a-breaking-api-change",
+        "catch-a-selector-rename",
         "watch-a-call-as-it-happens",
         "mirror-a-paginated-api",
         "one-rate-limit-across-workers",
