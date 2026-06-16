@@ -134,3 +134,40 @@ cache signal); GraphQL query-vs-mutation opt-in classification; conformance-kit 
 `incr`-as-lock correctness; `__config`/trace redaction of cached values + lock keys (extends ADR
 0002 §6). Dropped: hierarchy, SWR/background refresh, mutation-driven cross-stitch invalidation
 (= app-level cache policy, out of scope — see ADR 0003 §12).
+
+---
+
+## Playground trace DAG — `extends` derivation overlay
+
+-   **Status:** idea
+-   **Date:** 2026-06
+-   **Tags:** playground, visual, observability, DX, trace
+-   **Gates:** browser-first ✅ (renders client-side in the existing playground; mermaid is
+    lazy-loaded, off the SSR / initial-bundle path) · bundle-frugal — stays inside the
+    `docs/sandbox` playground surface, never pulled into the core `stitch()` import.
+
+**Problem / why** — The playground DAG now renders one node per executed `stitch()` call
+(labelled `METHOD /path`, or `$ command` for a `shell` surface), **with real edges**: ADR 0007's
+run-identity span tree means a child run carries its parent's id, so the collector draws true
+**runtime-causality** edges — a `cookieSession` login → the call that triggered it, a `pipe()`
+`stepA → stepB → stepC` chain — plus per-iteration annotations (`↻` retries, `⊞` pages). What the
+DAG still **cannot** show is the **static `extends` derivation** — _which fragment a stitch was
+composed from_. That is a different axis the runtime collector can't see (ADR 0007 Q4 scoped it
+out), so siblings derived from one base still appear as independent call nodes.
+
+**Sketch** — A derivation **overlay**: render the `extends` tree alongside (or as a toggle on) the
+runtime-causality DAG — `api → getUser`, `api → listNames`, `api → flaky`, … — the structural
+relationship a config-object author expresses. Base stitches never called directly still appear as
+parent nodes; the `METHOD /path` labels stay on the leaf (call) nodes. A distinct edge style keeps
+derivation edges visually separate from the runtime-causality edges this PR already draws.
+
+**Backed by / builds on** — the shipped client-side Mermaid rendering + `traceToMermaid`
+(`component/output-format.ts`) and the now-real `StitchTraceEntry.dependsOn` causality edges. Net-new
+is surfacing the **static** derivation relationship (which fragment, via `extends`/`flatten`), which
+the runtime trace deliberately does not carry.
+
+**Open questions** — Where does the derivation graph come from — does `stitch()`/`seam` emit parent
+identity statically, or is it inferred from the snippet AST? Do base (never-called) stitches get
+nodes, and how are they de-duped across calls? Overlay vs. toggle vs. a separate panel relative to
+the runtime-causality edges? (Down-payment on the Studio "Mermaid-from-definition" line; see the
+`docs/sandbox` A2 trace follow-up noted in `RELEASE.md`.)

@@ -29,7 +29,14 @@ import {
     mockRunner,
 } from './runner';
 
-import { type ReactNode, useCallback, useRef, useState } from 'react';
+import {
+    type ReactNode,
+    useCallback,
+    useEffect,
+    useId,
+    useRef,
+    useState,
+} from 'react';
 
 /**
  * Props passed to a custom editor (the EDITOR INTEGRATION POINT). A renderer
@@ -95,8 +102,8 @@ export interface StitchPlaygroundProps {
      * Custom renderer for the WHOLE log stream as one block (e.g. a readonly
      * code editor with line numbers). Receives each formatted line plus the
      * level of the entry it belongs to. Takes precedence over {@link renderLog}
-     * for the logs section; the error block and notices strip stay as their own
-     * styled blocks beneath it. Absent → per-line {@link renderLog}.
+     * for the logs section; the error block, notices strip, and trace DAG stay
+     * as their own styled blocks beneath it. Absent → per-line {@link renderLog}.
      */
     renderLogs?: (entries: { text: string; level: string }[]) => ReactNode;
     /**
@@ -337,7 +344,7 @@ export function StitchPlayground({
 }
 
 /**
- * Console pane — the log stream plus errors and shim notices.
+ * Console pane — the log stream plus errors, shim notices, and the trace DAG.
  * It does NOT render the snippet's return value: the playground is logs-first
  * (snippets `console.log` what they want to show), so a returned value is not
  * surfaced. Renders incrementally as RunEvents arrive via onEvent and reconciles
@@ -345,7 +352,7 @@ export function StitchPlayground({
  *
  * Rendering strategy:
  *   · During a run: `view` is updated by `applyEvent` for every RunEvent the runner
- *     emits, so logs, streamed chunks, and notices appear immediately.
+ *     emits, so logs, streamed chunks, trace DAG, and notices appear immediately.
  *   · After a run: `view` is replaced by `buildRunView(result)` so error/durationMs
  *     always reflect the authoritative final state.
  *   · Runners that do not emit onEvent (e.g. mockRunner, DeferredRunner) never call
@@ -393,7 +400,7 @@ function StitchOutput({
         );
     } else {
         // When `renderLogs` is supplied the whole log stream renders as one block
-        // (e.g. a readonly editor with line numbers); the error / notices
+        // (e.g. a readonly editor with line numbers); the error / notices / DAG
         // then sit in their own scrollable strip beneath it. Otherwise the logs
         // render per-line and everything flows in one scroll surface.
         const useEditor = !!renderLogs && view.logs.length > 0;
@@ -422,7 +429,9 @@ function StitchOutput({
             })
         );
 
-        const hasExtras = view.errorText !== null || view.notices.length > 0;
+        const hasDag = !!view.mermaid && !view.mermaid.includes('_empty');
+        const hasExtras =
+            view.errorText !== null || view.notices.length > 0 || hasDag;
 
         const extras = (
             <>
@@ -441,6 +450,31 @@ function StitchOutput({
                                 ⚠ {n}
                             </div>
                         ))}
+                    </div>
+                )}
+
+                {/* ── Mermaid DAG ────────────────────────────────────── */}
+                {/* Show the DAG as soon as any trace event has been folded in. */}
+                {hasDag && (
+                    <div className="stitch-playground__dag">
+                        {/* Section header, styled like the Console / Server-knobs
+                            pane heads (same .stitch-playground__pane-head: uppercased,
+                            muted, subtle bar). */}
+                        <div className="stitch-playground__pane-head">
+                            Call graph
+                        </div>
+                        {/* Streaming badge: shown when any chunk event arrived or any
+                            trace entry carries `.stream`. Active during and after the run. */}
+                        {view.isStreaming && (
+                            <span className="stitch-playground__dag-streaming-badge">
+                                streaming
+                            </span>
+                        )}
+                        {/* The Mermaid flowchart is rendered to an inline SVG on the
+                            client by <MermaidDiagram> (mermaid is loaded lazily inside
+                            its effect so nothing touches `document` during SSR). On a
+                            parse/render failure it falls back to the raw graph string. */}
+                        <MermaidDiagram chart={view.mermaid} />
                     </div>
                 )}
             </>
@@ -476,6 +510,102 @@ function StitchOutput({
             <div className="stitch-playground__pane-head">Console</div>
             {body}
         </section>
+    );
+}
+
+/**
+ * Renders a Mermaid `flowchart TD` string to an inline SVG, entirely on the
+ * client. `mermaid` reaches for `document`/`window`, so it is NEVER imported at
+ * module scope — it is loaded lazily with `await import('mermaid')` *inside* the
+ * effect, which only runs in the browser. That keeps the component SSR-safe (the
+ * server render emits the empty container) and keeps mermaid out of the initial
+ * bundle until a DAG actually needs drawing.
+ *
+ * Robustness contract:
+ *   · Each render gets a DOM-id-safe, unique `renderId` (a stripped `useId()`
+ *     plus a per-render counter) so mermaid's injected temp element never
+ *     collides across re-renders.
+ *   · A `cancelled` flag guards the async result so an unmounted / superseded
+ *     effect can't write a stale SVG into the live container.
+ *   · On any failure we `console.warn`, best-effort remove mermaid's orphaned
+ *     temp node, and fall back to the raw graph string in a styled
+ *     `.stitch-playground__mermaid` <pre> written INTO the same container — so
+ *     the DAG panel can never break a run's output, and a later valid graph
+ *     recovers (the container stays mounted, so the effect's ref is stable).
+ */
+function MermaidDiagram({ chart }: { chart: string }) {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    // useId() is stable across renders and unique per instance, but contains
+    // characters (':') that aren't valid in a DOM id — strip them. The counter
+    // makes each successive render's id unique so mermaid's temp element never
+    // collides with a previous (possibly still-unwinding) render.
+    const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
+    const renderCount = useRef(0);
+
+    useEffect(() => {
+        let cancelled = false;
+        const el = containerRef.current;
+        if (!el) return;
+
+        const n = (renderCount.current += 1);
+        const renderId = `mmd-${uid}-${n}`;
+
+        // Drop to the raw graph string in a styled <pre>, IN PLACE — the
+        // container stays mounted, so a subsequent valid `chart` re-runs the
+        // effect and overwrites this with the SVG (a transient parse failure is
+        // not sticky). `textContent` keeps the untrusted graph string inert.
+        const showFallback = () => {
+            const pre = document.createElement('pre');
+            pre.className = 'stitch-playground__mermaid';
+            pre.textContent = chart;
+            el.replaceChildren(pre);
+        };
+
+        (async () => {
+            // Lazy, browser-only import — keeps mermaid out of SSR and the
+            // initial bundle.
+            const mermaid = (await import('mermaid')).default;
+            try {
+                const isDark =
+                    typeof document !== 'undefined' &&
+                    document.documentElement.classList.contains('dark');
+                mermaid.initialize({
+                    startOnLoad: false,
+                    theme: isDark ? 'dark' : 'default',
+                    securityLevel: 'strict',
+                });
+                const { svg, bindFunctions } = await mermaid.render(
+                    renderId,
+                    chart,
+                );
+                // Bail if the effect was torn down / superseded while awaiting.
+                if (cancelled || containerRef.current !== el) return;
+                el.innerHTML = svg;
+                bindFunctions?.(el);
+            } catch (err) {
+                console.warn('[StitchPlayground] mermaid render failed', err);
+                // mermaid can leave an orphan temp node carrying the render id
+                // when it throws mid-render — best-effort cleanup.
+                document.getElementById(renderId)?.remove();
+                if (cancelled || containerRef.current !== el) return;
+                showFallback();
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [chart, uid]);
+
+    // The container is ALWAYS mounted so the effect's ref stays stable across
+    // re-renders; mermaid writes the SVG (or the fallback <pre>) into it.
+    return (
+        <div
+            ref={containerRef}
+            className="stitch-playground__mermaid-svg"
+            role="img"
+            aria-label="Call graph of the run"
+        />
     );
 }
 
