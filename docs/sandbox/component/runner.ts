@@ -55,6 +55,13 @@ export interface StitchTraceEntry {
      * distinctly. `chunks` is the number of stream chunks observed.
      */
     stream?: { chunks: number };
+    /**
+     * Retry attempts made (ADR 0007), present only when more than one — a DAG node annotation
+     * (per-attempt detail lives in the OTLP waterfall, not as extra DAG nodes).
+     */
+    attempts?: number;
+    /** Pages fetched for a paginated call (ADR 0007), present only when paginated — a DAG annotation. */
+    pages?: number;
 }
 
 export interface RunError {

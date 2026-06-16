@@ -14,20 +14,21 @@
  * the run's progress sink — the SAME channel the worker body already relays to
  * the host and accumulates into the final result.
  *
- * Correlation: a stitch instance's calls are tracked in a FIFO of open entries
- * (`start` opens, `done` closes-and-emits). Sequential snippet code — the common
- * case — is exact; concurrent calls on one instance degrade gracefully (entries
- * still emit; timing may attribute to a sibling) and NEVER throw.
+ * Correlation: each call is keyed by its run id (ADR 0007), which core stamps on every event's
+ * ctx, so `start` opens an entry and `done` closes-and-emits it by that id. Concurrent calls and
+ * interleaved CHILD runs (a cookieSession login firing mid-call) attribute exactly — no FIFO
+ * guesswork — and the handler never throws.
  *
- * Scope (A2): nodes render from real runs. Dependency EDGES (`dependsOn`) need
- * the composition graph core doesn't emit, and `seam`-created stitches aren't
- * wrapped yet — both are tracked as follow-ups in RELEASE.md.
+ * Scope: nodes render from real runs, and runtime-causality EDGES (`dependsOn`) now populate from
+ * the `parentId` core stamps on a child run's ctx (ADR 0007) — a cookieSession login (or, later, a
+ * `pipe()` step) draws a parent → child edge. The STATIC `extends` composition graph is a separate
+ * axis core deliberately does not emit (ADR 0007 Q4, out of scope).
  */
 import type { StitchTraceEntry } from '../component/runner';
 import type { ProgressSink } from './worker-entry';
 
 import { multiplex } from 'stitchapi';
-import type { StitchEvent, TraceSink } from 'stitchapi';
+import type { StitchEvent, TraceContext, TraceSink } from 'stitchapi';
 
 /** Header names whose presence we surface as redacted in the trace entry. */
 const SECRET_HEADERS = new Set([
@@ -41,6 +42,8 @@ const SECRET_HEADERS = new Set([
 /** Mutable state for one in-flight stitch call (between `start` and `done`). */
 interface OpenEntry {
     id: string;
+    /** The spawning run's id (ADR 0007), when this run is a child — a cookieSession login, a pipe step. */
+    parentId?: string;
     label: string;
     method: string;
     url: string;
@@ -48,6 +51,10 @@ interface OpenEntry {
     status?: number;
     error?: { name: string; message: string };
     chunks: number;
+    /** Count of `request` progress events — i.e. attempts (ADR 0007); >1 means a retry happened. */
+    attempts: number;
+    /** Count of `paginate` progress events — i.e. pages fetched (ADR 0007). */
+    pages: number;
 }
 
 export interface TraceCollector {
@@ -95,6 +102,13 @@ function finalize(
         entry.response = { status: e.status, ok, durationMs };
     if (e.error) entry.error = e.error;
     if (e.chunks > 0) entry.stream = { chunks: e.chunks };
+    // Runtime causality (ADR 0007): a child run depends on the parent that spawned it, so the
+    // DAG draws a parent → child edge (e.g. cookieSession login → the call that triggered it).
+    if (e.parentId) entry.dependsOn = [e.parentId];
+    // Per-iteration counts as node annotations (ADR 0007) — only when noteworthy (a retry / a
+    // paginated run); the per-attempt/page detail lives in the OTLP waterfall, not as DAG nodes.
+    if (e.attempts > 1) entry.attempts = e.attempts;
+    if (e.pages > 0) entry.pages = e.pages;
     return entry;
 }
 
@@ -110,16 +124,25 @@ export function createTraceCollector(
     let activeSink: ProgressSink | undefined;
     let counter = 0;
 
-    // One DAG sink per stitch INSTANCE, so each instance's calls correlate in
-    // their own FIFO. All instances emit to the single run-scoped `activeSink`.
+    // One DAG sink per stitch INSTANCE, all emitting to the single run-scoped `activeSink`. Calls
+    // correlate by their run id (ADR 0007) — core stamps it on every event's ctx — so concurrent
+    // calls and interleaved CHILD runs (a cookieSession login firing mid-call) attribute exactly,
+    // and a child's `parentId` becomes a `dependsOn` edge. The `counter` is a defensive fallback id
+    // for the engine-impossible case of a run arriving with no id.
     const makeDagSink = (): TraceSink => {
-        const open: OpenEntry[] = [];
+        const open = new Map<string, OpenEntry>();
+        const find = (ctx: TraceContext): OpenEntry | undefined =>
+            ctx.runId ? open.get(ctx.runId) : undefined;
         return {
-            handle(event: StitchEvent, ctx: { name: string }): void {
+            handle(event: StitchEvent, ctx: TraceContext): void {
                 switch (event.type) {
-                    case 'start':
-                        open.push({
-                            id: `stitch-${(counter += 1)}`,
+                    case 'start': {
+                        const id = ctx.runId ?? `stitch-${(counter += 1)}`;
+                        open.set(id, {
+                            id,
+                            ...(ctx.parentId !== undefined
+                                ? { parentId: ctx.parentId }
+                                : {}),
                             label: ctx.name,
                             method: event.method,
                             url: event.url,
@@ -127,41 +150,62 @@ export function createTraceCollector(
                                 event.input?.headers,
                             ),
                             chunks: 0,
+                            attempts: 0,
+                            pages: 0,
                         });
                         break;
-                    case 'result':
-                        if (open[0]) open[0].status = event.status;
+                    }
+                    case 'result': {
+                        const e = find(ctx);
+                        if (e) e.status = event.status;
                         break;
-                    case 'error':
-                        if (open[0]) {
-                            open[0].error = {
+                    }
+                    case 'error': {
+                        const e = find(ctx);
+                        if (e) {
+                            e.error = {
                                 name: event.name,
                                 message: event.message,
                             };
                             if (event.status !== undefined)
-                                open[0].status = event.status;
+                                e.status = event.status;
                         }
                         break;
-                    case 'delta':
-                        if (open[0]) {
-                            open[0].chunks += 1;
+                    }
+                    case 'delta': {
+                        const e = find(ctx);
+                        if (e) {
+                            e.chunks += 1;
                             activeSink?.({
                                 type: 'chunk',
-                                traceId: open[0].id,
+                                traceId: e.id,
                                 text: chunkText(event.chunk),
                             });
                         }
                         break;
+                    }
                     case 'done': {
-                        const e = open.shift();
-                        if (e)
+                        const e = find(ctx);
+                        if (e && ctx.runId) {
+                            open.delete(ctx.runId);
                             activeSink?.({
                                 type: 'trace',
                                 entry: finalize(e, event.ok, event.ms),
                             });
+                        }
                         break;
                     }
-                    // 'progress' / 'drift' carry no DAG-node data — ignored.
+                    case 'progress': {
+                        // Count attempts (`request` per try) + pages (`paginate` per page) for the
+                        // node-annotation counts (ADR 0007); the rich per-iteration timing is OTLP's.
+                        const e = find(ctx);
+                        if (e) {
+                            if (event.phase === 'request') e.attempts += 1;
+                            else if (event.phase === 'paginate') e.pages += 1;
+                        }
+                        break;
+                    }
+                    // 'drift' / 'info' carry no DAG-node data — ignored.
                 }
             },
         };

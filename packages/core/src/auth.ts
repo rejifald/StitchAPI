@@ -8,6 +8,7 @@ import type {
     AdapterResponse,
     AuthContext,
     AuthStrategy,
+    RunContext,
     Stitch,
     StitchInput,
 } from './types';
@@ -624,15 +625,25 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         phase: 'apply' | 'refresh',
     ) => {
         ctx.emit('auth', 'login');
-        // `__raw` runs the login once and returns its raw AdapterResponse (headers and all).
-        // It is intentionally not on the public Stitch type, so reach it through a cast.
+        // `__raw` runs the login once and returns its raw AdapterResponse (headers and all);
+        // `__rawTraced` does the same but TEES the login's events as a CHILD run (ADR 0007) of the
+        // call that triggered it. Neither is on the public Stitch type, so reach them through a cast.
+        const login = opts.login as unknown as {
+            __raw: (input?: StitchInput) => Promise<AdapterResponse>;
+            __rawTraced?: (
+                input: StitchInput | undefined,
+                parent: RunContext,
+            ) => Promise<AdapterResponse>;
+        };
+        const loginInput = opts.loginInput?.(principal);
         let res: AdapterResponse;
         try {
-            res = await (
-                opts.login as unknown as {
-                    __raw: (input?: StitchInput) => Promise<AdapterResponse>;
-                }
-            ).__raw(opts.loginInput?.(principal));
+            // Trace the login as a child of the caller's run when one is bound and the login
+            // supports it; otherwise the original silent raw call (back-compat / standalone).
+            res =
+                ctx.run && login.__rawTraced
+                    ? await login.__rawTraced(loginInput, ctx.run)
+                    : await login.__raw(loginInput);
         } catch (error) {
             // A failed login: an HTTP error carries a numeric `status` (+ the `response` for its
             // headers); a transport error carries neither → `network`.

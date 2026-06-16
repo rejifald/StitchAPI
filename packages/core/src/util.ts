@@ -1,6 +1,40 @@
 // Small dependency-free helpers shared across the prototype.
+import type { RunContext } from './types';
 
 export const now = (): number => Date.now();
+
+// ---- run identity (ADR 0007) ----------------------------------------------
+// Browser-safe random hex ids for the OTLP-aligned span tree: crypto.getRandomValues
+// where available, else Math.random (ids need to be unique-ish, not secret). 16 bytes
+// → a 32-hex traceId, 8 bytes → a 16-hex spanId/runId. The lone minter, shared by the
+// engine (run identity) and the OTLP sink (its fallback when fed events by hand).
+export function hex(bytes: number): string {
+    const buf = new Uint8Array(bytes);
+    const c = globalThis.crypto as Crypto | undefined;
+    if (c?.getRandomValues) c.getRandomValues(buf);
+    else
+        for (let i = 0; i < buf.length; i++)
+            buf[i] = Math.floor(Math.random() * 256);
+    return Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Mint a {@link RunContext} for one logical call (ADR 0007). A root run gets a fresh
+ * 32-hex `traceId` and a 16-hex `runId`; a child run (a `cookieSession` login, a `pipe()`
+ * step) passes its caller's context to **inherit** the `traceId` and set `parentId` to the
+ * caller's `runId`, so runs form one OTLP span tree. Ids are engine-minted, never supplied
+ * by a caller (a caller-named id would spoof correlation — ADR 0002 §2 reasoning).
+ */
+export function newRunContext(parent?: {
+    traceId: string;
+    runId: string;
+}): RunContext {
+    return {
+        traceId: parent?.traceId ?? hex(16),
+        runId: hex(8),
+        ...(parent ? { parentId: parent.runId } : {}),
+    };
+}
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {

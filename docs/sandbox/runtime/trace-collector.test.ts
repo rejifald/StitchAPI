@@ -36,15 +36,23 @@ function fakeCore(opts: {
     events: () => any[];
     value?: unknown;
     onConfig?: (config: any) => void;
+    runId?: string;
 }): (config: unknown) => unknown {
     return (config: any) => {
         opts.onConfig?.(config);
         const sink = config.trace as {
-            handle: (e: any, ctx: { name: string }) => void;
+            handle: (e: any, ctx: any) => void;
         };
         const name = config.name ?? config.path ?? 'stitch';
         return (_input?: unknown) => {
-            for (const ev of opts.events()) sink.handle(ev, { name });
+            // Mimic the real engine `tee` (ADR 0007): one run identity per call, on the ctx of
+            // EVERY event. The collector keys entries by `ctx.runId`.
+            const ctx = {
+                name,
+                runId: opts.runId ?? 'run-1',
+                traceId: 'trace-1',
+            };
+            for (const ev of opts.events()) sink.handle(ev, ctx);
             return Promise.resolve(opts.value ?? { ok: true });
         };
     };
@@ -93,7 +101,7 @@ async function runTests(): Promise<void> {
             ?.entry;
         assert(
             '1 entry has id, label, request method/url',
-            entry?.id === 'stitch-1' &&
+            entry?.id === 'run-1' &&
                 entry?.label === 'getUser' &&
                 entry?.request.method === 'GET' &&
                 entry?.request.url === 'https://demo/users/2',
@@ -212,7 +220,7 @@ async function runTests(): Promise<void> {
         >[];
         assert(
             '4 chunks carry the entry id + ordered text',
-            chunks[0]?.traceId === 'stitch-1' &&
+            chunks[0]?.traceId === 'run-1' &&
                 chunks[0]?.text === 'Hel' &&
                 chunks[1]?.text === 'lo',
             chunks,
@@ -364,6 +372,135 @@ async function runTests(): Promise<void> {
             '8 value still returned with the sink unbound',
             !!value && (value as { id: number }).id === 2,
             value,
+        );
+    }
+
+    /* 9 — a CHILD run (parentId) becomes a dependsOn edge, even interleaved --- */
+    {
+        // The cookieSession login case: a child run's events arrive on the SAME sink, NESTED
+        // inside the parent's (start parent → start/result/done child → result/done parent). The
+        // run-id keying must attribute each event to the right entry (a FIFO would not) and turn
+        // the child's parentId into a `dependsOn` edge (ADR 0007).
+        const events: RunEvent[] = [];
+        let dag!: { handle: (e: any, ctx: any) => void };
+        const collector = createTraceCollector(
+            fakeCore({ events: () => [], onConfig: (c) => (dag = c.trace) }),
+        );
+        collector.bindProgress((e) => events.push(e));
+        collector.stitch({ name: 'parent' }); // realize the dag sink via onConfig
+        const parent = { name: 'parent', runId: 'p1', traceId: 't1' };
+        const child = {
+            name: 'login',
+            runId: 'c1',
+            traceId: 't1',
+            parentId: 'p1',
+        };
+        dag.handle(startEv({ name: 'parent' }), parent);
+        dag.handle(startEv({ name: 'login' }), child); // child opens mid-parent
+        dag.handle(
+            { type: 'result', value: {}, status: 200, attempts: 1, at: 1 },
+            child,
+        );
+        dag.handle(
+            { type: 'done', ok: true, ms: 2, attempts: 1, at: 2 },
+            child,
+        );
+        dag.handle(
+            { type: 'result', value: {}, status: 200, attempts: 1, at: 3 },
+            parent,
+        );
+        dag.handle(
+            { type: 'done', ok: true, ms: 4, attempts: 1, at: 4 },
+            parent,
+        );
+
+        const entries = events
+            .filter((e) => e.type === 'trace')
+            .map((e) => (e as Extract<RunEvent, { type: 'trace' }>).entry);
+        const childEntry = entries.find((en) => en.id === 'c1');
+        const parentEntry = entries.find((en) => en.id === 'p1');
+        assert(
+            '9 child run draws a dependsOn edge to its parent',
+            JSON.stringify(childEntry?.dependsOn) === JSON.stringify(['p1']),
+            childEntry,
+        );
+        assert(
+            '9 parent run has no dependsOn',
+            !!parentEntry && parentEntry.dependsOn === undefined,
+            parentEntry,
+        );
+        assert(
+            '9 interleaved runs attributed by id, not order',
+            childEntry?.label === 'login' && parentEntry?.label === 'parent',
+            entries,
+        );
+    }
+
+    /* 10 — retry / paginate progress events annotate the entry with counts ---- */
+    {
+        const events: RunEvent[] = [];
+        const collector = createTraceCollector(
+            fakeCore({
+                events: () => [
+                    startEv(),
+                    { type: 'progress', phase: 'request', attempt: 1, at: 0 },
+                    { type: 'progress', phase: 'retry', attempt: 1, at: 1 },
+                    { type: 'progress', phase: 'request', attempt: 2, at: 2 },
+                    {
+                        type: 'result',
+                        value: {},
+                        status: 200,
+                        attempts: 2,
+                        at: 3,
+                    },
+                    { type: 'done', ok: true, ms: 3, attempts: 2, at: 3 },
+                ],
+            }),
+        );
+        collector.bindProgress((e) => events.push(e));
+        await (collector.stitch({ name: 'x' }) as () => Promise<unknown>)();
+        const entry = (
+            events.find((e) => e.type === 'trace') as
+                | Extract<RunEvent, { type: 'trace' }>
+                | undefined
+        )?.entry;
+        assert(
+            '10 a retried run is annotated with its attempt count',
+            entry?.attempts === 2 && entry?.pages === undefined,
+            entry,
+        );
+    }
+
+    /* 11 — a single-attempt run carries no attempts/pages annotation --------- */
+    {
+        const events: RunEvent[] = [];
+        const collector = createTraceCollector(
+            fakeCore({
+                events: () => [
+                    startEv(),
+                    { type: 'progress', phase: 'request', attempt: 1, at: 0 },
+                    {
+                        type: 'result',
+                        value: {},
+                        status: 200,
+                        attempts: 1,
+                        at: 1,
+                    },
+                    { type: 'done', ok: true, ms: 1, attempts: 1, at: 1 },
+                ],
+            }),
+        );
+        collector.bindProgress((e) => events.push(e));
+        await (collector.stitch({ name: 'x' }) as () => Promise<unknown>)();
+        const entry = (
+            events.find((e) => e.type === 'trace') as
+                | Extract<RunEvent, { type: 'trace' }>
+                | undefined
+        )?.entry;
+        assert(
+            '11 a single clean attempt gets no count annotation',
+            entry?.attempts === undefined && entry?.pages === undefined,
+            entry,
         );
     }
 
