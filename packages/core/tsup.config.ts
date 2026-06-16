@@ -24,6 +24,9 @@ export default defineConfig([
             'src/sse.ts',
             'src/stream.ts',
             'src/download.ts',
+            // non-HTTP surfaces + composition (ADR 0008) → stitchapi/llm, stitchapi/pipe
+            'src/llm.ts',
+            'src/pipe.ts',
             // the browser-only xhr adapter (upload progress) → stitchapi/xhr
             'src/xhr-adapter.ts',
         ],

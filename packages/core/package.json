@@ -148,6 +148,34 @@
                 "default": "./lib/download.js"
             }
         },
+        "./llm": {
+            "browser": {
+                "types": "./lib/llm.d.mts",
+                "default": "./lib/llm.mjs"
+            },
+            "import": {
+                "types": "./lib/llm.d.mts",
+                "default": "./lib/llm.mjs"
+            },
+            "require": {
+                "types": "./lib/llm.d.ts",
+                "default": "./lib/llm.js"
+            }
+        },
+        "./pipe": {
+            "browser": {
+                "types": "./lib/pipe.d.mts",
+                "default": "./lib/pipe.mjs"
+            },
+            "import": {
+                "types": "./lib/pipe.d.mts",
+                "default": "./lib/pipe.mjs"
+            },
+            "require": {
+                "types": "./lib/pipe.d.ts",
+                "default": "./lib/pipe.js"
+            }
+        },
         "./xhr": {
             "browser": {
                 "types": "./lib/xhr-adapter.d.mts",
