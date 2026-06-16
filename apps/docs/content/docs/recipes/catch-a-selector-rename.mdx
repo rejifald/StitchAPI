@@ -1,0 +1,134 @@
+---
+title: 'Catch a silent selector rename in scraped HTML'
+description: 'Scrape an HTML page into a structured object with transform, then drift the structured shape so a markup or selector rename becomes a loud contract error instead of a silently missing field.'
+---
+
+## Task
+
+You scrape a page that has no API — a catalog provider returns HTML, and you
+parse it into a structured object with a selector. The danger is silent: the
+provider renames a CSS class or moves a cell, your selector quietly stops
+matching, and the field comes back `undefined`. Nothing throws; downstream code
+keeps running on corrupted data until someone notices a ranking is wrong. You
+want that markup rename to surface the moment it happens, as a loud error on the
+**structured** shape — not the raw HTML.
+
+## Example
+
+The response pipeline is `transform → unwrap → validation`, so `transform`
+reshapes the HTML into a structured object **before** drift ever runs — drift
+then compares the _parsed_ value, not the raw markup. List the path that must
+not move under `critical`.
+
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+// A trivial hand-rolled scraper: the `score` selector keys off `td.score` —
+// exactly the class a markup rename silently breaks.
+function scrape(html: unknown): { items: Record<string, unknown>[] } {
+    const text = String(html);
+    const rows = text.split(/<tr[^>]*class="row1"[^>]*>/i).slice(1);
+    const items = rows.map((row) => {
+        const item: Record<string, unknown> = {};
+        const title = /<td[^>]*class="title"[^>]*>([^<]+)<\/td>/i.exec(row);
+        const score = /<td[^>]*class="score"[^>]*>\s*(\d+)\s*<\/td>/i.exec(
+            row,
+        )?.[1];
+        if (title) item['title'] = title[1]!.trim();
+        if (score !== undefined) item['score'] = Number(score); // omitted when the selector misses
+        return item;
+    });
+    return { items };
+}
+
+const catalog = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/catalog',
+    transform: scrape, // HTML string -> { items: [...] }
+    unwrap: 'items',
+    output: drift(
+        z.array(z.object({ title: z.string(), score: z.number().optional() })),
+        {
+            // `[].score` is a path on the STRUCTURED shape, not the raw HTML.
+            critical: ['[].score'],
+            snapshotFile: 'catalog.contract.json',
+        },
+    ),
+});
+
+const items = await catalog();
+```
+
+## How it works
+
+The first call records the baseline into `catalog.contract.json` (check it into
+the repo) from the **transformed** shape — `[{ title, score }]`, not the HTML
+body. Every call after parses the page and compares that structured value
+against the snapshot.
+
+When the provider renames the score cell's class (`score` → `rank`), the
+selector stops matching and `scrape` drops `score` from each item. Because
+`[].score` is `critical`, drift emits an `error`-level finding —
+`{ level: 'error', change: 'missing', path: '[].score' }` — which breaks the
+contract and throws [`STITCH_DRIFT`](/docs/errors/stitch-drift). The path is the
+proof: `[].score` exists only on the parsed object, so a finding on it can only
+come from drift inspecting the `transform` output, not the raw markup. The
+silent `undefined` is now a loud, immediate failure.
+
+`warn` and `info` findings (a non-critical field changing, a new field
+appearing) don't throw — they ride the
+[event stream](/docs/concepts/event-stream) as `drift` events, so you can
+[watch a field erode](/docs/recipes/watch-a-call-as-it-happens) before it
+breaks. Reserve `critical` for the few paths whose loss corrupts your data.
+
+## Ship it read-only in production
+
+The first call with no committed snapshot **writes** one and reports nothing — a
+convenience while you develop the contract, but a footgun in a deployed run,
+where the first request would silently persist a baseline and "pass" instead of
+detecting drift. Generate the baseline once, commit `catalog.contract.json`,
+then ship with `readonly: true` so drift _detects but never writes_:
+
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+declare function scrape(html: unknown): { items: Record<string, unknown>[] };
+// ---cut---
+const catalog = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/catalog',
+    transform: scrape,
+    unwrap: 'items',
+    output: drift(
+        z.array(z.object({ title: z.string(), score: z.number().optional() })),
+        {
+            critical: ['[].score'],
+            readonly: true, // detect-but-never-write
+            onMissing: 'error', // a missing baseline fails CI, not slips past
+            snapshotFile: 'catalog.contract.json',
+        },
+    ),
+});
+```
+
+<Callout type="warn">
+    **Anti-pattern:** don't drift the raw HTML body and skip `transform`.
+    Snapshotting the markup makes every cosmetic edit — a reordered attribute, a
+    whitespace change — look like drift, burying the one rename that matters.
+    Parse to the structured shape first, then drift the few `critical` fields
+    you actually depend on.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="transform" href="/docs/guides/data/transform" />
+    <Card title="Leveled drift" href="/docs/guides/validation/drift" />
+    <Card
+        title="Catch a breaking API change before your users do"
+        href="/docs/recipes/catch-a-breaking-api-change"
+    />
+    <Card title="STITCH_DRIFT" href="/docs/errors/stitch-drift" />
+</Cards>
