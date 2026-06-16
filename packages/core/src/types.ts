@@ -316,8 +316,38 @@ export interface AuthContext {
     emit: (topic: string, detail?: string) => void;
     runLogin?: () => Promise<AdapterResponse>; // for cookieSession: invoke the login stitch
 }
+/**
+ * A non-secret, declarative description of an auth strategy's wire shape — the OpenAPI 3.1
+ * "Security Scheme Object", minus any credential material. A built-in strategy exposes one via
+ * {@link AuthStrategy.scheme}; redaction then projects it onto the public `__config` as
+ * `authScheme` (the live, secret-bearing `auth` is stripped), so a stitch's auth round-trips as
+ * JSON (the contract gate) and `stitch export --openapi` can emit `components.securitySchemes`. It
+ * NEVER carries a token, key value, or password — only the scheme's type and the parameter
+ * names/URLs that are public in any OpenAPI document.
+ */
+export type SecurityScheme =
+    | { type: 'http'; scheme: 'bearer' | 'basic'; bearerFormat?: string }
+    | { type: 'apiKey'; in: 'header' | 'query' | 'cookie'; name: string }
+    | {
+          type: 'oauth2';
+          flows: {
+              clientCredentials?: {
+                  tokenUrl: string;
+                  scopes: Record<string, string>;
+                  refreshUrl?: string;
+              };
+          };
+      };
 export interface AuthStrategy {
     name?: string;
+    /**
+     * A non-secret {@link SecurityScheme} describing this strategy's wire shape. Redaction surfaces
+     * it onto the public `__config.authScheme` (the live strategy itself is stripped) so the auth
+     * round-trips as JSON and feeds `stitch export --openapi`. Built-ins set it; omit it in a
+     * custom strategy whose scheme cannot be described, and the exporter simply leaves it
+     * unannotated.
+     */
+    scheme?: SecurityScheme;
     apply: (req: AdapterRequest, ctx: AuthContext) => void | Promise<void>;
     shouldRefresh?: (res: AdapterResponse) => boolean;
     refresh?: (ctx: AuthContext) => void | Promise<void>;

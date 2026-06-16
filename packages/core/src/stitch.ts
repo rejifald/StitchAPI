@@ -24,6 +24,7 @@ import {
     type Hooks,
     type InputSchemas,
     type SafeResult,
+    type SecurityScheme,
     type Stitch,
     type StitchConfig,
     StitchError,
@@ -370,6 +371,14 @@ export interface SharedRuntime {
 // The full config lives on `__rawConfig` for fragment composition (see `asConfig`).
 export function redactConfig(cfg: StitchConfig): StitchConfig {
     const rest = { ...cfg };
+    // Project the auth's NON-SECRET scheme onto the public config (always derived from the live
+    // `auth`, never trusted from an externally-set `authScheme`) BEFORE stripping the live,
+    // secret-bearing strategy. Like `kind`→id below, this is the public identity of a redacted
+    // capability: a stitch's auth round-trips as JSON (the contract gate) and feeds
+    // `export --openapi`'s `securitySchemes`, while the credential itself stays unreachable.
+    delete (rest as { authScheme?: unknown }).authScheme;
+    if (cfg.auth?.scheme)
+        (rest as { authScheme?: SecurityScheme }).authScheme = cfg.auth.scheme;
     delete rest.store;
     delete rest.auth;
     delete rest.adapter;

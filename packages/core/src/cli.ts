@@ -7,6 +7,7 @@
 import { toMermaid } from './diagram';
 import { loadSnapshot, saveSnapshot } from './drift';
 import { serveStdio } from './mcp';
+import { type OpenApiExportOptions, toOpenApi } from './openapi';
 import {
     type StitchRegistry,
     loadStitches,
@@ -23,6 +24,7 @@ import type {
 } from './types';
 
 import { existsSync, readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 // ---- arg → input mapping --------------------------------------------------
 
@@ -380,6 +382,7 @@ export interface CliIO {
     write: (s: string) => void; // stdout, raw
     writeErr: (s: string) => void; // stderr, raw
     load: (path: string) => Promise<StitchRegistry>;
+    loadModule: (path: string) => Promise<unknown>; // generic import (export --schema-module)
 }
 
 function defaultIO(): CliIO {
@@ -390,6 +393,7 @@ function defaultIO(): CliIO {
         write: (s) => process.stdout.write(s),
         writeErr: (s) => process.stderr.write(s),
         load: loadStitches,
+        loadModule: (path) => import(pathToFileURL(path).href),
     };
 }
 
@@ -401,6 +405,7 @@ usage:
   stitch serve [--module <path>] [--port <n>] [--host <h>]   HTTP: POST /stitch/:name
   stitch mcp [--module <path>]                               MCP over stdio (run_stitch)
   stitch diagram [--module <path>] [--name <name>]           Mermaid flowchart of the stitches
+  stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>]   emit an OpenAPI 3.1 spec
   stitch drift generate [--module <path>] [--name <name>] [--force] [--flags…]   write drift snapshot baseline(s)
 
 run:
@@ -420,6 +425,17 @@ diagram:
   Emits a Mermaid flowchart of each stitch's configured pipeline (throttle, request,
   retry, surface, pagination, validation, transform, unwrap, cache). Auth is redacted
   from a stitch's public config, so it is not shown.
+
+export:
+  --openapi               emit an OpenAPI 3.1 document (JSON) to stdout
+  --title <t>             info.title    (default: "StitchAPI export")
+  --api-version <v>       info.version  (default: "0.0.0")
+  --schema-module <path>  a module exporting a toJsonSchema(source, info) converter
+                          (default or named) to fill request/response + parameter schemas
+  Emits paths, methods, and URL-template parameters. Body and per-parameter schemas are real
+  JSON Schema when --schema-module is given, else {}. Security schemes come from each stitch's
+  auth (bearer/basic/apiKey/oauth2; the credential is never emitted). Thunk-endpoint stitches
+  are skipped with a warning.
 
 drift generate:
   --name <name>    baseline only this stitch (by export name or configured name)
@@ -788,6 +804,71 @@ async function driftCommand(args: string[], io: CliIO): Promise<number> {
     return exit;
 }
 
+// stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>] — emit an OpenAPI
+// 3.1 document (JSON) for the registry to stdout. The emit half of "reversible" (DESIGN.md
+// Principle 11): a stitch declaration becomes a spec. Structural for now — see src/openapi.ts.
+async function exportCommand(args: string[], io: CliIO): Promise<number> {
+    let modulePath: string | undefined;
+    let title: string | undefined;
+    let apiVersion: string | undefined;
+    let schemaModule: string | undefined;
+    let openapi = false;
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === '--module' || a === '-m') modulePath = args[++i];
+        else if (a === '--title') title = args[++i];
+        else if (a === '--api-version') apiVersion = args[++i];
+        else if (a === '--schema-module') schemaModule = args[++i];
+        else if (a === '--openapi') openapi = true;
+    }
+    if (!openapi) {
+        io.writeErr(
+            'usage: stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>]\n',
+        );
+        return 2;
+    }
+
+    let registry: StitchRegistry;
+    try {
+        registry = await io.load(resolveModulePath(modulePath, io.cwd));
+    } catch (e) {
+        io.writeErr(`${(e as Error).message}\n`);
+        return 1;
+    }
+
+    // Optional bring-your-own Standard Schema → JSON Schema converter (its default export or a
+    // named `toJsonSchema`), so body schemas come out as real JSON Schema instead of `{}`.
+    let toJsonSchema: OpenApiExportOptions['toJsonSchema'];
+    if (schemaModule !== undefined) {
+        let mod: unknown;
+        try {
+            mod = await io.loadModule(resolveModulePath(schemaModule, io.cwd));
+        } catch (e) {
+            io.writeErr(`${(e as Error).message}\n`);
+            return 1;
+        }
+        const candidate =
+            (mod as { default?: unknown }).default ??
+            (mod as { toJsonSchema?: unknown }).toJsonSchema;
+        if (typeof candidate !== 'function') {
+            io.writeErr(
+                `--schema-module "${schemaModule}" must export a converter function (its default export or a named \`toJsonSchema\`)\n`,
+            );
+            return 2;
+        }
+        toJsonSchema = candidate as OpenApiExportOptions['toJsonSchema'];
+    }
+
+    const { document, warnings } = toOpenApi(registry, {
+        ...(title !== undefined ? { title } : {}),
+        ...(apiVersion !== undefined ? { version: apiVersion } : {}),
+        ...(toJsonSchema !== undefined ? { toJsonSchema } : {}),
+    });
+    for (const w of warnings) io.writeErr(`warning: ${w}\n`);
+    io.write(`${JSON.stringify(document, null, 2)}\n`);
+    return 0;
+}
+
 // Entry point. Returns the process exit code; the bin shim calls process.exit.
 export async function main(
     argv: string[],
@@ -806,6 +887,8 @@ export async function main(
             return mcpCommand(rest, io);
         case 'diagram':
             return diagramCommand(rest, io);
+        case 'export':
+            return exportCommand(rest, io);
         case 'drift':
             return driftCommand(rest, io);
         case undefined:

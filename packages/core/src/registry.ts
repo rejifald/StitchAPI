@@ -118,3 +118,20 @@ export async function loadStitches(
     const mod = await importer(pathToFileURL(abs).href);
     return collectStitches(mod);
 }
+
+// The OpenAPI emitter rides the registry subpath — exporting a bag of stitches to a spec is a
+// registry operation (the emit half of "reversible"). `toOpenApi` is pure; pass a `toJsonSchema`
+// converter (e.g. wrapping `zod-to-json-schema`) to fill request/response body schemas.
+export { toOpenApi } from './openapi';
+export type {
+    OpenApiComponents,
+    OpenApiDocument,
+    OpenApiExportOptions,
+    OpenApiExportResult,
+    OpenApiInfo,
+    OpenApiMediaType,
+    OpenApiOperation,
+    OpenApiParameter,
+    OpenApiResponse,
+    OpenApiSecurityRequirement,
+} from './openapi';

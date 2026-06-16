@@ -181,6 +181,22 @@ test('__config is redacted (no store/auth/adapter) yet the auth still applies', 
     await expect(p()).resolves.toEqual({ ok: true });
 });
 
+test('redaction surfaces the auth SCHEME (non-secret) while stripping the credential', () => {
+    const api = seam({
+        baseUrl: 'https://api.example.com',
+        auth: bearer('TOK'),
+    });
+    // The live, secret-bearing strategy is gone from the public config …
+    expect(api.__config.auth).toBeUndefined();
+    // … but its non-secret scheme is projected onto __config (the `authScheme` that feeds
+    // `export --openapi`), so a stitch's auth round-trips as JSON without exposing the credential.
+    expect((api.__config as { authScheme?: unknown }).authScheme).toEqual({
+        type: 'http',
+        scheme: 'bearer',
+    });
+    expect(JSON.stringify(api.__config)).not.toContain('TOK');
+});
+
 test('close() flushes the sink and closes the shared store', async () => {
     server.route('GET', '/p', { body: { ok: true } });
     let closed = false;
