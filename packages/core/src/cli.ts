@@ -4,6 +4,7 @@
 // Flags map onto a stitch's single input object ({ params, query, body, headers });
 // every event the stitch emits is written to stdout as one line of JSON, so the
 // output pipes straight into jq and friends. No app boot required.
+import { toMermaid } from './diagram';
 import { serveStdio } from './mcp';
 import {
     type StitchRegistry,
@@ -392,6 +393,7 @@ usage:
   stitch trace [--file <path>] [--since 1h] [--name <x>] [--json]
   stitch serve [--module <path>] [--port <n>] [--host <h>]   HTTP: POST /stitch/:name
   stitch mcp [--module <path>]                               MCP over stdio (run_stitch)
+  stitch diagram [--module <path>] [--name <name>]           Mermaid flowchart of the stitches
 
 run:
   --module, -m <path>   stitches module to load (default: ./stitches.{ts,js,…})
@@ -404,6 +406,12 @@ run:
 
 Every event the stitch emits is printed as one line of JSON on stdout. Tracing is off
 by default (no side effects) — opt in with --trace or the STITCH_TRACE_* env vars.
+
+diagram:
+  --name <name>   diagram only this stitch (by export name or configured name)
+  Emits a Mermaid flowchart of each stitch's configured pipeline (throttle, request,
+  retry, surface, pagination, validation, transform, unwrap, cache). Auth is redacted
+  from a stitch's public config, so it is not shown.
 `;
 
 async function runCommand(args: string[], io: CliIO): Promise<number> {
@@ -579,6 +587,33 @@ async function mcpCommand(args: string[], io: CliIO): Promise<number> {
     return 0;
 }
 
+// stitch diagram [--module <path>] [--name <name>] — render a Mermaid flowchart of each stitch's
+// configured pipeline (from its definition, not a run) to stdout. See src/diagram.ts.
+async function diagramCommand(args: string[], io: CliIO): Promise<number> {
+    let modulePath: string | undefined;
+    let name: string | undefined;
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === '--module' || a === '-m') modulePath = args[++i];
+        else if (a === '--name') name = args[++i];
+    }
+
+    let registry: StitchRegistry;
+    try {
+        registry = await io.load(resolveModulePath(modulePath, io.cwd));
+    } catch (e) {
+        io.writeErr(`${(e as Error).message}\n`);
+        return 1;
+    }
+
+    const { diagram, warnings } = toMermaid(registry, {
+        ...(name !== undefined ? { name } : {}),
+    });
+    for (const w of warnings) io.writeErr(`warning: ${w}\n`);
+    io.write(diagram);
+    return 0;
+}
+
 // Entry point. Returns the process exit code; the bin shim calls process.exit.
 export async function main(
     argv: string[],
@@ -595,6 +630,8 @@ export async function main(
             return serveCommand(rest, io);
         case 'mcp':
             return mcpCommand(rest, io);
+        case 'diagram':
+            return diagramCommand(rest, io);
         case undefined:
         case '-h':
         case '--help':
