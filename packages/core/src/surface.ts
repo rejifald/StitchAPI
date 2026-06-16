@@ -9,6 +9,7 @@
 // Stage 5 the streaming `stream` hook). Until then the engine keys its built-in graphql handling
 // on `kind.id`.
 import type {
+    Adapter,
     AdapterRequest,
     AdapterResponse,
     StitchConfig,
@@ -62,6 +63,17 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      * describes the payload rather than the `{ event, data, id, retry }` envelope.
      */
     readonly contractValue?: (chunk: unknown) => unknown;
+    /**
+     * Replace the transport (ADR 0008): when present, the engine calls this INSTEAD of the HTTP
+     * adapter, at the same site inside the resilience chain — so `retry` / `throttle` / `circuit` /
+     * per-attempt `timeout` + `signal` / `trace` / `auth` / `hooks` all wrap it unchanged. A
+     * non-HTTP surface (`shell`, a custom transport) shapes its request in {@link Surface.buildRequest}
+     * (e.g. packing argv into `req.body`, the `graphql` precedent), runs it here, and returns an
+     * {@link AdapterResponse} that {@link Surface.interpret} maps to a value. It is the surface's own
+     * transport, bound to its identity — distinct from `StitchConfig.adapter` (the user's BYO HTTP
+     * client); a surface with `execute` ignores `adapter`. Omitted = an ordinary HTTP surface.
+     */
+    readonly execute?: Adapter;
     /** Phantom carrier so `stitch<S>` can recover a surface's call-argument type. Never read. */
     readonly __input?: (input: TInput) => void;
 }

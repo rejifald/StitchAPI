@@ -85,6 +85,8 @@ const BROWSER_LEGIT = [
     'src/sse.ts',
     'src/stream.ts',
     'src/download.ts',
+    'src/llm.ts',
+    'src/pipe.ts',
     'src/cache.ts',
     'src/fingerprint.ts',
     'src/xhr-adapter.ts',

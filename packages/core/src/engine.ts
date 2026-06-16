@@ -195,9 +195,15 @@ function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
         buildQuery(query, cfg.arrayFormat),
     );
     // A relative endpoint can't be fetched by the default transport — fail with a clear config
-    // error here instead of a cryptic "Failed to parse URL" from fetch. A custom `adapter` may
-    // legitimately resolve relative URLs, so this only guards the default transport.
-    if (cfg.adapter === undefined && !/^https?:\/\//i.test(url)) {
+    // error here instead of a cryptic "Failed to parse URL" from fetch. A custom `adapter` OR a
+    // surface that replaces the transport (`cfg.kind.execute`, ADR 0008 — e.g. `shell`, whose
+    // "url" is a `shell:` pseudo-endpoint) may legitimately use a non-http URL, so this only
+    // guards the default HTTP transport.
+    if (
+        cfg.adapter === undefined &&
+        cfg.kind?.execute === undefined &&
+        !/^https?:\/\//i.test(url)
+    ) {
         // A relative `url` set alongside a `baseUrl` is the common footgun: `url` is the whole
         // endpoint and ignores `baseUrl`, so the base is never joined — they almost certainly
         // meant `path`. Point straight at that instead of the generic guidance.
@@ -554,10 +560,14 @@ async function* attemptLoop(
                           perAttemptMs ?? Infinity,
                           Math.max(0, budget.deadline - now()),
                       );
+            // A surface may REPLACE the transport (ADR 0008): `cfg.kind.execute` runs here instead
+            // of the HTTP adapter, still inside the resilience chain (retry/throttle/circuit/
+            // timeout/trace/auth all wrap it). Absent, the ordinary HTTP adapter runs.
+            const transport = cfg.kind?.execute ?? rt.adapter;
             let res: AdapterResponse;
             try {
                 res = await withTimeout(
-                    (signal) => rt.adapter({ ...req, signal }),
+                    (signal) => transport({ ...req, signal }),
                     attemptMs,
                     req.signal, // link a caller's AbortSignal (e.g. a download's) to this attempt
                 );
@@ -1057,7 +1067,9 @@ async function* runStreaming(
         if (cfg.auth) await cfg.auth.apply(req, rt.authCtx);
         await cfg.hooks?.onRequest?.({ name, attempt: 1, req });
         yield { type: 'progress', phase: 'request', attempt: 1, at: now() };
-        res = await rt.adapter(req);
+        // A surface that replaces the transport (ADR 0008) runs here too, so a future non-HTTP
+        // streaming surface gets the same treatment as the buffered path.
+        res = await (cfg.kind?.execute ?? rt.adapter)(req);
         await cfg.hooks?.onResponse?.({ name, attempt: 1, res });
     } catch (e) {
         await cfg.hooks?.onError?.({ name, attempt: 1, error: e });

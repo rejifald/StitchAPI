@@ -1,6 +1,6 @@
 {
     "name": "stitchapi",
-    "version": "0.7.0",
+    "version": "0.8.0",
     "description": "StitchAPI is a tool designed to seamlessly integrate (“stitch”) any JSON-based API into your project, simplifying the process of connecting and working with various APIs.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
@@ -146,6 +146,34 @@
             "require": {
                 "types": "./lib/download.d.ts",
                 "default": "./lib/download.js"
+            }
+        },
+        "./llm": {
+            "browser": {
+                "types": "./lib/llm.d.mts",
+                "default": "./lib/llm.mjs"
+            },
+            "import": {
+                "types": "./lib/llm.d.mts",
+                "default": "./lib/llm.mjs"
+            },
+            "require": {
+                "types": "./lib/llm.d.ts",
+                "default": "./lib/llm.js"
+            }
+        },
+        "./pipe": {
+            "browser": {
+                "types": "./lib/pipe.d.mts",
+                "default": "./lib/pipe.mjs"
+            },
+            "import": {
+                "types": "./lib/pipe.d.mts",
+                "default": "./lib/pipe.mjs"
+            },
+            "require": {
+                "types": "./lib/pipe.d.ts",
+                "default": "./lib/pipe.js"
             }
         },
         "./xhr": {
