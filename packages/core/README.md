@@ -93,7 +93,7 @@ For the full competitive landscape and positioning, see the [Overview](docs/OVER
 
 ## Features
 
--   **One primitive** - `stitch(url | config)` returns a typed, callable function; share fragments via `extends`, with `.with()` partial application on top. For a whole shared surface (shared store, throttle, sink + a trusted principal boundary), a `seam` owns the fragment.
+-   **One primitive, scoped to a surface** - `stitch(url | config)` returns a typed, callable function. One endpoint is a bare `stitch`; **a service with more than one endpoint is a `seam`** — declare the shared base, auth, and throttle budget once, add each endpoint with `.stitch()`, and members share config _and_ runtime (one store, throttle bucket, sink) behind a trusted principal boundary. Lighter, runtime-free sharing — a config fragment, or deriving one stitch from another — is `extends`, with `.with()` partial application on top.
 -   **Event-stream core** - every call yields a typed stream (`start → progress → drift → result → done`); `await` is sugar that consumes it and returns the final validated value.
 -   **Bring-your-own validation** - validate `params` / `query` / `body` / `headers` and the response with [Zod](https://zod.dev) or any [Standard Schema](https://standardschema.dev) library (Valibot, ArkType, …); TypeScript types are inferred from the schemas.
 -   **Leveled drift detection** - live responses are diffed against a committed contract snapshot; changes surface as `error` / `warn` / `info` findings instead of a silent `undefined`.
@@ -190,6 +190,8 @@ const getUser = stitch({
 const user = await getUser({ params: { id: 1 } }); // typed { id: number; name: string }
 ```
 
+One endpoint is one `stitch`. The moment a service has more than one — sharing a base URL, auth, and a rate budget — model the whole surface as a [seam](#composition--reuse) and add each endpoint as a member; reach for a bare `stitch` only for a genuinely standalone call.
+
 ## The event stream
 
 A stitch does not return `Promise<bytes>`. It yields a typed event stream — `await` is sugar that consumes the stream and returns the final, unwrapped, validated `result` (or throws a `StitchError` carrying `.status`, plus `.body` (the parsed error payload) and `.url` (the final request URL) when the failure came from a response):
@@ -233,30 +235,45 @@ for await (const ev of getUsers.stream()) {
 
 Everything reusable is a named value, and a stitch composes values — **no global config is ever required**.
 
-```ts
-import { seam, stitch } from 'stitchapi';
-import { z } from 'zod';
+**A service with more than one endpoint is a `seam` — this is the default, not the advanced case.** Declare the shared base, auth, retry, and throttle budget once; each endpoint is a member created with `.stitch()`. Members inherit that config _and_ share one runtime — a single throttle bucket, store, and trace sink — behind a trusted principal boundary, so the whole surface obeys one rate budget and one session instead of each endpoint re-solving them:
 
-// A reusable fragment is just a plain object.
-const api = {
-    baseUrl: 'https://api.example.com',
-    retry: { attempts: 3, on: [429, 503] },
-    timeout: { total: '30s' },
-};
+```ts
+import { seam } from 'stitchapi';
+import { z } from 'zod';
 
 const Website = z.object({ id: z.number(), host: z.string() });
 
-// A — extends: [...] (left→right precedence; own fields win last)
-const listWebsites = stitch({
-    extends: [api],
+const api = seam({
+    baseUrl: 'https://api.example.com',
+    retry: { attempts: 3, on: [429, 503] },
+    timeout: { total: '30s' },
+});
+
+const listWebsites = api.stitch({
     path: '/websites',
     output: Website.array(),
     unwrap: 'data',
 });
+const getWebsite = api.stitch({ path: '/websites/{id}', output: Website });
+```
 
-// B — a seam, when a whole surface shares config AND runtime (one store, throttle, sink)
-const surface = seam(api);
-const getWebsite = surface.stitch({ path: '/websites/{id}', output: Website });
+Reach for `extends` for the lighter cases — sharing a plain config fragment, or deriving one stitch from another — where you want config reuse without a shared runtime. A fragment is just an object; `extends: [...]` merges left→right, with own fields winning last:
+
+```ts
+import { stitch } from 'stitchapi';
+
+// A plain fragment — config to merge, no runtime of its own.
+const base = {
+    baseUrl: 'https://api.example.com',
+    retry: { attempts: 3, on: [429, 503] },
+};
+
+const listWebsites = stitch({
+    extends: [base],
+    path: '/websites',
+    output: Website.array(),
+    unwrap: 'data',
+});
 ```
 
 A stitch is itself a composable value — extend one and override only the diff:
