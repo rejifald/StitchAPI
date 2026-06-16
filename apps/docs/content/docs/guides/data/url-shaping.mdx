@@ -79,6 +79,14 @@ Array encoding is configurable with
 [`arrayFormat`](/docs/reference/config-types) — `indices` (the default shown
 above), `brackets`, or `repeat`.
 
+> [!NOTE]
+>
+> Values are percent-encoded with `encodeURIComponent`, so a space in a query
+> value goes on the wire as `%20`, not `+` like `URLSearchParams`. Both decode to
+> a space server-side; see
+> [Migration notes](/docs/getting-started/migration-notes) if a byte-for-byte
+> fixture trips on it.
+
 ## Query defaults in the path
 
 Query keys can be baked into the path string; call-time `query` merges over them,
@@ -99,4 +107,8 @@ await findUsers({ query: { type: 'user' } });
     <Card title="stitch()" href="/docs/guides/authoring/stitch" />
     <Card title="Body encoding" href="/docs/guides/data/body-encoding" />
     <Card title="Reference: config types" href="/docs/reference/config-types" />
+    <Card
+        title="Migration notes"
+        href="/docs/getting-started/migration-notes"
+    />
 </Cards>
