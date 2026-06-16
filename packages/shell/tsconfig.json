@@ -1,0 +1,40 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        // DOM is needed because the `stitchapi` source we typecheck through (the `paths` alias
+        // below) is isomorphic and references DOM types (Crypto, Blob, …). The shell source itself
+        // is Node-only. Mirrors @stitchapi/nest.
+        "lib": ["ES2022", "DOM"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "exactOptionalPropertyTypes": true,
+        "noImplicitOverride": true,
+        "noPropertyAccessFromIndexSignature": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "verbatimModuleSyntax": true,
+        "isolatedModules": true,
+
+        "types": ["node", "vitest/globals"],
+
+        // Resolve the workspace package to its SOURCE so typecheck + tests don't
+        // depend on `stitchapi` being built first (mirrors @stitchapi/nest).
+        "baseUrl": ".",
+        "paths": {
+            "stitchapi": ["../core/src/index.ts"]
+        }
+    },
+    "include": [
+        "src/**/*.ts",
+        "test/**/*.ts",
+        "tsup.config.ts",
+        "vitest.config.ts"
+    ]
+}
