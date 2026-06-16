@@ -138,6 +138,12 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             info: "Circuit breaker that fast-fails a repeatedly failing dependency.",
         },
         {
+            label: "rateLimit",
+            type: "property",
+            detail: "{ /** Surface rate-limit outcomes instead of retrying/throttling them. Default `false`. */ delegate?: boolean; /** Statuses treated as a rate-limit signal. Default `[429]`. */ on?: number[]; }",
+            info: "Delegate backoff to the host (issue #145). When `delegate: true`, a rate-limit response (status in `on`, default `[429]`) is **not** retried internally and the built-in `throttle` is **bypassed** for the call — instead the outcome surfaces as a (carrying `status`, the `retryAfterMs` parsed from `Retry-After`, and the raw `response`) on the awaited path, and as an `error` event with `retryAfterMs` on `.stream()`. Use this when an OUTER gate/circuit owns the backoff (its own `Retry-After` hook, a DB-persisted budget) and StitchAPI's internal retry+throttle would double-count against it. ⚠️ In delegate mode the `throttle` config becomes **inert** for this stitch (the host owns the gate). A `circuit` block, if also set, still applies — the host may layer both. Non-rate-limit failures (5xx, etc.) behave exactly as today unless their status is listed in `on`. Validation, templating, transform/unwrap, and drift on the success path are unchanged.",
+        },
+        {
             label: "idempotency",
             type: "property",
             detail: "IdempotencyOptions",

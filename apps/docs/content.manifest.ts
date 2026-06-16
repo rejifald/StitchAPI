@@ -245,6 +245,13 @@ export const pages: Page[] = [
         kind: 'guide',
     },
     {
+        path: 'guides/resilience/delegate-backoff',
+        title: 'Delegate backoff',
+        description:
+            'Surface rate-limit outcomes as a RateLimitError so an outer gate owns the backoff, instead of retrying and throttling them internally.',
+        kind: 'guide',
+    },
+    {
         path: 'guides/resilience/idempotency',
         title: 'Idempotency keys',
         description:
@@ -511,5 +518,13 @@ export const pages: Page[] = [
             'A GraphQL 200 response carried an errors array and failed the call.',
         kind: 'error',
         code: 'STITCH_GRAPHQL',
+    },
+    {
+        path: 'errors/rate-limit',
+        title: 'RateLimitError',
+        description:
+            'A delegate-backoff stitch surfaced a rate-limit response for an outer gate to back off on, instead of retrying it.',
+        kind: 'error',
+        code: 'RateLimitError',
     },
 ];
