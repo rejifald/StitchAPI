@@ -5,13 +5,14 @@ First-class [NestJS](https://nestjs.com) integration for
 [ADR 0006](../../docs/adr/0006-nestjs-integration.md).
 
 It is a **thin** package: `StitchModule` wires StitchAPI's `seam` into Nest's DI
-graph, plus two bridge helpers and a `Logger` sink. It adds **no capability** — every
-piece sits on an existing core extension point, so `stitchapi` stays a peer dependency
-and core is untouched (contract-not-dependency).
+graph, plus bridge helpers (a `Logger` sink, `ConfigService` secrets), an exception
+filter, and an SSE bridge. It adds **no capability** — every piece sits on an existing
+core extension point, so `stitchapi` stays a peer dependency and core is untouched
+(contract-not-dependency).
 
 ```sh
 pnpm add @stitchapi/nest stitchapi
-# peers you already have in a Nest app: @nestjs/common, reflect-metadata
+# peers you already have in a Nest app: @nestjs/common, @nestjs/core, rxjs, reflect-metadata
 ```
 
 > [!IMPORTANT]
@@ -49,13 +50,15 @@ export class AppModule {}
 
 ## Injectable stitches — `forFeature` + `defineStitch`
 
-Declare stitches with `defineStitch(token, build)`; register them per feature module.
-A feature module may also own its **own upstream seam** (its `baseUrl`/`auth`), built
-over the shared store + trace — omit `seam` to attach the stitches to the default seam.
+Declare stitches with `defineStitch(build)` — the injection **token is optional** (a
+unique `Symbol` is generated; pass `defineStitch(token, build)` only when you need a
+stable, well-known token). Register them per feature module, which may also own its
+**own upstream seam** (its `baseUrl`/`auth`), built over the shared store + trace — omit
+`seam` to attach the stitches to the default seam.
 
 ```ts
 // users.stitches.ts
-export const GetUser = defineStitch('GET_USER', (s) =>
+export const GetUser = defineStitch((s) =>
     s.stitch({ name: 'getUser', path: '/users/{id}', output: UserSchema }),
 );
 
@@ -85,32 +88,78 @@ export class UsersService {
 }
 ```
 
-## Multi-tenant — `seam.as(principal)` in request scope
+## Multi-tenant — `forFeatureScoped` (principal in request scope)
 
 Multi-tenancy is **principal-scoped over the shared store** (separate sessions/tokens
-per tenant, one connection pool) — never a per-request store. Bind the principal from
-the request:
+per tenant, one connection pool) — never a per-request store. `forFeatureScoped` wires
+the request-scoped `seam.as(principal)` handle and the request-scoped stitches for you:
 
 ```ts
-{
-    provide: TENANT_SEAM,
-    scope: Scope.REQUEST,
-    useFactory: (root: Seam, req) => root.as(req.user?.tenantId ?? 'anonymous'),
-    inject: [STITCH_SEAM, REQUEST],
-}
+@Module({
+    imports: [
+        StitchModule.forFeatureScoped({
+            seam: {
+                baseUrl: 'https://api.example.com',
+                auth: bearer(env('TOKEN')),
+            },
+            stitches: [GetUser],
+            principal: (req) => req.user?.tenantId ?? 'anonymous',
+        }),
+    ],
+})
+export class UsersModule {}
 ```
 
-Outside HTTP (BullMQ, `@Cron`, microservices) there is no `REQUEST`: inject the seam and
-bind explicitly — `seam.as(job.data.tenantId)`.
+Each request resolves `GetUser` from `seam.as(tenantId)`. Note a request-scoped provider
+makes its consumers request-scoped too (a per-request instantiation cost).
+
+Outside HTTP (BullMQ, `@Cron`, microservices) there is no `REQUEST`: inject the singleton
+seam and bind explicitly — `seam.as(job.data.tenantId)`.
 
 ## Bridges
 
--   **`loggerSink(logger?)`** — a `TraceSink` that forwards the event stream to a Nest
-    `Logger`. It logs only name/method/url/status and strips the URL query: a custom sink
-    receives **un-redacted** events, so never log `event.input`/headers raw.
+-   **`loggerSink(logger?, { lifecycle? })`** — a `TraceSink` that forwards the event
+    stream to a Nest `Logger`, by level: `error` → `error`; `drift` → `error`/`warn`/`debug`
+    by the finding's level; a `retry`/`circuit` `progress` → `warn`; `start`/`result`/`done`
+    → `debug`/`verbose` (the happy path, hidden at Nest's default level — `lifecycle: false`
+    drops them). It logs **only metadata** and strips the URL query, so it is safe on a
+    secret-bearing seam: a custom sink receives **un-redacted** events, so never log
+    `event.input`/headers or a `delta` chunk raw.
 -   **`fromConfig(config)(key)`** — a `ConfigService`-backed secret thunk (core's `env()`
     twin). Synchronous, so it cannot fetch a rotating secret per call — use
     `oauth2`/`cookieSession` for that.
+
+## Errors → HTTP — `StitchExceptionFilter`
+
+A failed stitch throws a `StitchError` (a branded `Error` carrying the upstream `status`).
+Register `StitchExceptionFilter` globally to turn it into an `HttpException` — **`502 Bad
+Gateway` by default** (every upstream failure is a gateway error; it never leaks an
+upstream's `401`/`404` to your client), so controllers calling stitches need no try/catch:
+
+```ts
+// main.ts — needs the HTTP adapter, like any BaseExceptionFilter subclass:
+app.useGlobalFilters(new StitchExceptionFilter(app.getHttpAdapter()));
+// configure the status (e.g. propagate the upstream status instead of 502):
+//   new StitchExceptionFilter(app.getHttpAdapter(), { status: (e) => e.status ?? 502 })
+// …or as a provider: { provide: APP_FILTER, useClass: StitchExceptionFilter }
+```
+
+`status` takes a fixed number or a `(err) => number` function. Outside a filter, use
+`toHttpException(err, { status })` / `isStitchError(err)` directly.
+
+## Streaming → SSE — `stitchSse`
+
+Return a stitch's `stream()` from a Nest `@Sse()` endpoint: `delta` chunks become messages,
+an `error` event errors the stream, and a client disconnect aborts the upstream generator.
+
+```ts
+@Sse('chat')
+chat(@Query('q') q: string) {
+    return stitchSse(this.complete.stream({ body: { prompt: q } }), {
+        data: (c: any) => c.text, // map a delta chunk → message data
+    });
+}
+```
 
 ## Testing
 

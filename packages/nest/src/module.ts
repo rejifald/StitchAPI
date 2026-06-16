@@ -15,7 +15,9 @@ import {
     Module,
     type OnApplicationShutdown,
     type Provider,
+    Scope,
 } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
 import {
     type Seam,
     type SeamConfig,
@@ -55,6 +57,14 @@ export interface StitchFeatureOptions {
     seam?: SeamConfig;
     /** Token to expose the feature seam under, for `.as(principal)` multi-tenant. */
     seamToken?: InjectionToken;
+}
+
+/** forFeatureScoped options — {@link StitchFeatureOptions} plus a `principal` derived
+ *  from the request, so each tenant gets its own session/token over the shared store. */
+export interface StitchScopedFeatureOptions extends StitchFeatureOptions {
+    // Derive the principal id (e.g. a tenant) from the incoming request. `any` because the
+    // request type is platform-specific (express/fastify) — the caller narrows it.
+    principal: (req: any) => string;
 }
 
 interface Infra {
@@ -198,6 +208,63 @@ export class StitchModule {
                 provide: d.token,
                 useFactory: (host: StitchHost) => d.build(host),
                 inject: [token],
+            });
+            exported.push(d.token);
+        }
+        return { module: StitchModule, providers, exports: exported };
+    }
+
+    /**
+     * Like {@link forFeature}, but **request-scoped per principal**: each request gets a
+     * `seam.as(principal(req))` handle — a separate session/token over the *shared* store
+     * and throttle (never a per-request store; ADR 0006 Decision 5) — and the stitches are
+     * built from it. Packages the request-scoped wiring the README otherwise hand-rolls.
+     *
+     * Caveats inherent to request scope (not this helper): a request-scoped provider makes
+     * its consumers request-scoped too (per-request instantiation cost); and `REQUEST` only
+     * exists at the HTTP edge — in a BullMQ processor / `@Cron` / microservice, inject the
+     * singleton seam and bind explicitly instead: `seam.as(job.data.tenantId)`.
+     */
+    static forFeatureScoped(opts: StitchScopedFeatureOptions): DynamicModule {
+        const cfg = opts.seam;
+        // The singleton base seam each per-request handle derives from: a feature seam over
+        // shared infra (if `seam` given) or the root/default seam.
+        const baseToken: InjectionToken = cfg
+            ? Symbol('stitch-scoped-base-seam')
+            : STITCH_SEAM;
+        const principalToken: InjectionToken =
+            opts.seamToken ?? Symbol('stitch-principal-seam');
+        const providers: Provider[] = [];
+        const exported: InjectionToken[] = [principalToken];
+
+        if (cfg) {
+            providers.push({
+                provide: baseToken,
+                useFactory: (
+                    store: StitchStore,
+                    trace: TraceSink | 'console' | false,
+                    reg: SeamRegistry,
+                ): Seam => reg.track(seam({ ...cfg, store, trace })),
+                inject: [STITCH_STORE, STITCH_TRACE, SeamRegistry],
+            });
+        }
+
+        // The per-request principal handle. `seam.as()` is lifecycle-free (it shares the
+        // base seam's runtime), so it is intentionally NOT tracked in SeamRegistry.
+        providers.push({
+            provide: principalToken,
+            scope: Scope.REQUEST,
+            useFactory: (base: Seam, req: any): StitchHost =>
+                base.as(opts.principal(req)),
+            inject: [baseToken, REQUEST],
+        });
+
+        for (const d of opts.stitches) {
+            providers.push({
+                provide: d.token,
+                scope: Scope.REQUEST,
+                useFactory: (host: StitchHost) => d.build(host),
+                inject: [principalToken],
             });
             exported.push(d.token);
         }

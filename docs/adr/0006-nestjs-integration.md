@@ -370,3 +370,15 @@ Both resolved 2026-06-15 (the recommended option chosen for each); folded into t
 -   **B. Single global seam only** (the brief's literal `forRoot({ store, trace, preset })`). Simplest, but a real backend integrates multiple upstreams with different `baseUrl`/`auth`; one seam cannot model that. Rejected in favour of the infra-vs-surface split (Decision 2), which keeps the single-upstream case a one-liner (the default seam) while supporting many.
 -   **C. Per-stitch, no seam** (plain `stitch()` + a shared config fragment via `extends`). Avoids the seam abstraction, but each stitch then builds its _own_ store/throttle/trace runtime — losing the shared throttle bucket, the shared vault, the principal boundary, and a single lifecycle. The seam exists precisely for a long-lived shared surface; a server is the canonical case. Rejected.
 -   **D. Fold Nest support into core** (a `stitchapi/nest` subpath). Violates [ADR 0001](./0001-package-naming-and-distribution.md) Decisions 4 & 6 (a framework peer dep does not belong in lean core; subpaths are for dependency-free in-package code) and would put `@nestjs/*` in core's dependency graph. Rejected.
+
+## Addendum (2026-06-16) — boilerplate-reduction follow-ups delivered
+
+Layered on the original decisions to cut per-consumer boilerplate. All additive, **no core change**:
+
+-   **`defineStitch` token is now optional** — `defineStitch(build)` generates a unique `Symbol`; the `(token, build)` form still works. You reference the def object everywhere anyway (`forFeature({ stitches: [GetUser] })`, `@InjectStitch(GetUser)`, `overrideProvider(GetUser.token)`), so the hand-picked token was ceremony.
+-   **`loggerSink` mapping refined** — lifecycle events (`start`/`result`/`done`) moved off the happy-path info level to `debug`/`verbose` (opt out with `{ lifecycle: false }`), `drift` routed by `finding.level`, and `retry`/`circuit` progress surfaced at `warn`. Still payload-free (metadata only), so it stays safe on a secret-bearing seam.
+-   **Exception mapping delivered** (was Decision 10 non-goal) — `StitchExceptionFilter` plus `toHttpException()` / `isStitchError()` map a `StitchError` to an `HttpException`. Status is **`502 Bad Gateway` by default** (never leaks an upstream's status to the client); configurable via `status: number | (err) => number` (propagate, fix, or remap).
+-   **SSE bridge delivered** (was Decision 10 non-goal) — `stitchSse()` adapts `stitch.stream()` to an `Observable<MessageEvent>` for `@Sse()`. Adds `rxjs` as a peer (always present in a Nest app).
+-   **Multi-tenant wiring packaged** — `StitchModule.forFeatureScoped({ stitches, principal })` replaces the hand-rolled request-scoped `TENANT_SEAM` recipe (Decision 5). Adds `@nestjs/core` as a peer (for `REQUEST`; always present in a Nest app).
+
+Peer-dependency policy unchanged in spirit: peer-depend on what a Nest app **always** has (`@nestjs/common`, now `@nestjs/core` + `rxjs`); keep **optional** deps structural (`@nestjs/config` → `ConfigServiceLike`). Still non-goals: the Terminus health indicator and the Nest-GraphQL disambiguation note.
