@@ -44,11 +44,38 @@ function base64(s: string): string {
     return btoa(bin);
 }
 
-/** Resolve a secret from an environment variable at call time. */
+/**
+ * Resolve a REQUIRED secret from an environment variable at call time. An exported-but-empty var
+ * (`MY_TOKEN=`) counts as missing and throws — mirroring {@link optionalEnv}, which treats `''` as
+ * absent — so a blank credential can never silently ride along. For the may-or-may-not-be-set case,
+ * use {@link optionalEnv}.
+ */
 export function env(name: string): () => string {
     return () => {
         const v = readEnv(name);
-        if (v == null) throw new Error(`missing env var ${name}`);
+        if (v == null || v === '') throw new Error(`missing env var ${name}`);
+        return v;
+    };
+}
+
+/** A source `secretFrom` pulls a named value from: an object with a `get(name)` method
+ *  (e.g. a NestJS ConfigService or a secrets-manager client) or a plain `(name) => value` fn. */
+export type SecretSource =
+    | { get(name: string): string | undefined }
+    | ((name: string) => string | undefined);
+
+/**
+ * Resolve a REQUIRED secret from an arbitrary injected `source` at call time — for DI'd apps that
+ * supply config WITHOUT touching `process.env` (a ConfigService, a secrets-manager client, a
+ * validated config object). Throws if the source yields no value (unset or empty), mirroring
+ * {@link env}. Compose with `bearer`/`apiKey`/`basic`/`oauth2` exactly like `env()`:
+ * `bearer(secretFrom(configService, 'GITHUB_TOKEN'))`.
+ */
+export function secretFrom(source: SecretSource, name: string): () => string {
+    return () => {
+        const v =
+            typeof source === 'function' ? source(name) : source.get(name);
+        if (v == null || v === '') throw new Error(`missing secret ${name}`);
         return v;
     };
 }
