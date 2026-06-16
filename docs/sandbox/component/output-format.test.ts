@@ -204,6 +204,124 @@ import assert from 'node:assert/strict';
     );
 }
 
+// Retry attempts (ADR 0007) → node annotated with ↻N (collector sets it only > 1).
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'flaky',
+            label: 'demo-api',
+            request: { method: 'GET', url: 'https://example.com/users' },
+            response: { status: 200, ok: true, durationMs: 120 },
+            attempts: 3,
+        },
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('GET /users ↻3'),
+        'attempts: node annotated with ↻3 retry marker',
+    );
+}
+
+// Paginate pages (ADR 0007) → node annotated with ⊞N.
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'list',
+            label: 'demo-api',
+            request: { method: 'GET', url: 'https://example.com/users' },
+            response: { status: 200, ok: true, durationMs: 200 },
+            pages: 4,
+        },
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('GET /users ⊞4'),
+        'pages: node annotated with ⊞4 page marker',
+    );
+}
+
+// Stream + attempts + pages coexist on one node, in a stable order (⟳ ↻ ⊞).
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'busy',
+            label: 'demo-api',
+            request: { method: 'GET', url: 'https://example.com/feed' },
+            stream: { chunks: 9 },
+            attempts: 2,
+            pages: 3,
+        },
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('GET /feed ⟳9 ↻2 ⊞3'),
+        'annotations: stream + attempts + pages render together',
+    );
+}
+
+// Shell surface (ADR 0008): a `shell:<command>` url labels as `$ <command>`,
+// NOT a fake `GET command` HTTP path (`new URL('shell:git').pathname` is 'git').
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'git-status',
+            label: 'git',
+            request: { method: 'GET', url: 'shell:git' },
+            response: { status: 200, ok: true, durationMs: 12 },
+        },
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('git_status["$ git"]'),
+        'shell: node labelled `$ git`',
+    );
+    assert.ok(
+        !result.includes('GET git'),
+        'shell: NOT mislabelled as an HTTP path',
+    );
+}
+
+// pipe() chain (ADR 0007 + 0008): each step is a child run of the previous, so
+// the trace carries dependsOn = [prev] and the DAG draws stepA --> stepB --> stepC.
+{
+    const trace: StitchTraceEntry[] = [
+        {
+            id: 'step-a',
+            label: 'fetchUser',
+            request: { method: 'GET', url: 'https://example.com/users/1' },
+        },
+        {
+            id: 'step-b',
+            label: 'enrich',
+            request: { method: 'POST', url: 'https://example.com/enrich' },
+            dependsOn: ['step-a'],
+        },
+        {
+            id: 'step-c',
+            label: 'summarise',
+            request: {
+                method: 'POST',
+                url: 'https://api.anthropic.com/v1/messages',
+            },
+            dependsOn: ['step-b'],
+        },
+    ];
+    const result = traceToMermaid(trace);
+    assert.ok(
+        result.includes('step_a --> step_b'),
+        'pipe: first chain edge drawn',
+    );
+    assert.ok(
+        result.includes('step_b --> step_c'),
+        'pipe: second chain edge drawn',
+    );
+    // The llm step is HTTP, so it keeps the METHOD /path label.
+    assert.ok(
+        result.includes('POST /v1/messages'),
+        'pipe: llm step labelled by its provider endpoint path',
+    );
+}
+
 // Two nodes with a dependsOn edge.
 {
     const trace: StitchTraceEntry[] = [

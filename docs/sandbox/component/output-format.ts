@@ -20,11 +20,19 @@ import type {
 
 /**
  * Build a Mermaid `flowchart TD` string from a stitch trace.
+ *
  * Nodes are labelled by HTTP method + request path (e.g. `GET /users/2`) so
  * stitches that share a `name` (e.g. siblings derived via `extends`) stay
- * distinct and readable; when the request/url is missing, the label falls back
- * to the entry's `label` (name), then its `id`.
- * Edges are derived from `StitchTraceEntry.dependsOn`.
+ * distinct and readable. A non-HTTP `shell` surface (ADR 0008) is labelled
+ * `$ <command>` instead; when no request/url is present the label falls back to
+ * the entry's `label` (name), then its `id`. Per-iteration counts are appended
+ * as node annotations (ADR 0007 Decision 6): `⟳` streamed chunks, `↻` retry
+ * attempts, `⊞` paginate pages.
+ *
+ * Edges are derived from `StitchTraceEntry.dependsOn`, which now carries REAL
+ * runtime causality — the run-identity span tree of ADR 0007 (a `cookieSession`
+ * login, or a `pipe()` step→step chain draws parent → child) — not the old
+ * synthetic FIFO heuristic.
  *
  * Deterministic: entries are iterated in their array order; node ids are
  * sanitised to safe Mermaid identifiers (replacing non-alphanumeric chars
@@ -54,19 +62,41 @@ export function traceToMermaid(trace: StitchTraceEntry[]): string {
         }
     };
 
+    // The readable label fragment for a request. Most surfaces are HTTP, so it's
+    // `METHOD /path` (the `llm` surface included — it POSTs to a provider
+    // endpoint). A `shell` surface (ADR 0008) has a `shell:<command>` pseudo-url
+    // and no HTTP method that means anything, so render it `$ <command>` —
+    // otherwise `new URL('shell:git').pathname` would mislabel a subprocess as
+    // `GET git`.
+    const requestLabel = (req: { method: string; url: string }): string =>
+        req.url.startsWith('shell:')
+            ? `$ ${req.url.slice('shell:'.length)}`
+            : `${req.method} ${urlToPath(req.url)}`;
+
     for (const entry of trace) {
         const nid = safeid(entry.id);
-        // Build a label: prefer "METHOD /path" from the request, falling back
-        // to entry.label (name), then entry.id when no usable url is present.
-        // Annotate streaming entries with a ⟳ marker.
-        const url = entry.request?.url;
+        // Build a label: prefer the request's "METHOD /path" (or "$ command"),
+        // falling back to entry.label (name), then entry.id when no usable url
+        // is present (a composed step that made no HTTP / shell call).
+        const req = entry.request;
         const baseLabel =
-            entry.request && url
-                ? `${entry.request.method} ${urlToPath(url)}`
-                : (entry.label ?? entry.id);
+            req && req.url ? requestLabel(req) : (entry.label ?? entry.id);
+        // Node annotations (ADR 0007 Decision 6): per-iteration counts ride the
+        // label exactly as the stream-chunk count does — the detailed
+        // per-attempt / per-page waterfall lives in the OTLP export, not here.
+        //   ⟳N  N streamed response chunks
+        //   ↻N  N attempts — the call was retried (present only when > 1)
+        //   ⊞N  N pages fetched by `paginate`
         const streamMarker = entry.stream ? ` ⟳${entry.stream.chunks}` : '';
+        const attemptsMarker = entry.attempts ? ` ↻${entry.attempts}` : '';
+        const pagesMarker = entry.pages ? ` ⊞${entry.pages}` : '';
         // Escape quotes inside the label so Mermaid doesn't choke.
-        const escapedLabel = (baseLabel + streamMarker).replace(/"/g, "'");
+        const escapedLabel = (
+            baseLabel +
+            streamMarker +
+            attemptsMarker +
+            pagesMarker
+        ).replace(/"/g, "'");
         lines.push(`  ${nid}["${escapedLabel}"]`);
     }
 
