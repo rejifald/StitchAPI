@@ -382,3 +382,17 @@ Layered on the original decisions to cut per-consumer boilerplate. All additive,
 -   **Multi-tenant wiring packaged** — `StitchModule.forFeatureScoped({ stitches, principal })` replaces the hand-rolled request-scoped `TENANT_SEAM` recipe (Decision 5). Adds `@nestjs/core` as a peer (for `REQUEST`; always present in a Nest app).
 
 Peer-dependency policy unchanged in spirit: peer-depend on what a Nest app **always** has (`@nestjs/common`, now `@nestjs/core` + `rxjs`); keep **optional** deps structural (`@nestjs/config` → `ConfigServiceLike`). Still non-goals: the Terminus health indicator and the Nest-GraphQL disambiguation note.
+
+## Addendum (2026-06-16) — bridges delegate to core's `secretFrom` / `loggerSink` (the one sanctioned core change)
+
+Core has since grown two generic primitives that the original ADRs hand-rolled inside this package: `secretFrom(source, name)` — a `SecretSource`-backed secret thunk ([`auth.ts`](../../packages/core/src/auth.ts)) — and a logger-agnostic `loggerSink(logger, opts)` ([`trace.ts`](../../packages/core/src/trace.ts)). The two bridge helpers now **delegate** to them instead of reimplementing the logic, killing the duplication:
+
+-   **`fromConfig` → `secretFrom`.** `fromConfig(config)(key)` is now `secretFrom((name) => String(config.getOrThrow(name)), key)`. A missing key still throws (`ConfigService.getOrThrow`'s own error propagates); empty values are now rejected too — matching `env()` / `secretFrom()`, so a blank credential never silently rides along. That empty-string rejection is the **one** behavior the delegation tightens (previously a present-but-empty config value returned `''`); it is strictly safer and untested before. Public type (`ConfigServiceLike`) and signature unchanged.
+-   **`loggerSink` → core `loggerSink`.** Nest's sink is _richer_ than core's twin — Nest's `Logger` has `verbose` (core's `LoggerLike` has only `info`/`debug`), it has a `{ lifecycle }` toggle, it routes `retry`/`circuit` progress to `warn` (a per-_instance_ rule core's per-_type_ `levels` map can't express), it pins info-`drift` to `debug`, and its one-liners carry glyphs + attempt counts. To let it delegate **without changing a single logged byte**, core's `loggerSink` gained two **generic** optional hooks (no NestJS concept leaks in):
+
+    -   `level?: (event, ctx) => LogLevel | null` — resolve the level per event instance (`null` drops it, `undefined` defers); a strict superset of `levels`.
+    -   `format?: (event, ctx) => string | null` — supply the metadata-only line (the host then owns the payload-free guarantee; the default formatter stays payload-free for everyone else).
+
+    Nest passes a verbose-routing `LoggerLike` adapter (core `info` → Nest `verbose`), its level rules, and its glyph formatter. Levels, messages, and the payload-free / never-log-`delta` guarantees stay byte-identical to the hand-rolled switch this replaced.
+
+This is the **deliberate exception** to the original "no core change" / "this ADR modifies no core code" stance (Context line, Decision _No core change_, and the boilerplate addendum above): the core additions are generic, additive, off-by-default, and covered by core tests, so the **contract-not-dependency** gate stays green — `@stitchapi/nest` still adds no capability, forks nothing, and peer-depends on `stitchapi`. The trade taken: a small, generic widening of core's `loggerSink` surface in exchange for deleting the duplicated dispatch / formatting / secret-resolution logic from the bridge package.
