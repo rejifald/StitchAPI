@@ -124,6 +124,7 @@ export async function loadStitches(
 // converter (e.g. wrapping `zod-to-json-schema`) to fill request/response body schemas.
 export { toOpenApi } from './openapi';
 export type {
+    OpenApiComponents,
     OpenApiDocument,
     OpenApiExportOptions,
     OpenApiExportResult,
@@ -132,4 +133,5 @@ export type {
     OpenApiOperation,
     OpenApiParameter,
     OpenApiResponse,
+    OpenApiSecurityRequirement,
 } from './openapi';

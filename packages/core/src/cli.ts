@@ -423,10 +423,11 @@ export:
   --title <t>             info.title    (default: "StitchAPI export")
   --api-version <v>       info.version  (default: "0.0.0")
   --schema-module <path>  a module exporting a toJsonSchema(source, info) converter
-                          (default or named) to fill request/response body schemas
-  Emits paths, methods, and URL-template parameters; body schemas are real JSON Schema
-  when --schema-module is given, else {}. Security schemes are not emitted yet; thunk-
-  endpoint stitches are skipped.
+                          (default or named) to fill request/response + parameter schemas
+  Emits paths, methods, and URL-template parameters. Body and per-parameter schemas are real
+  JSON Schema when --schema-module is given, else {}. Security schemes come from each stitch's
+  auth (bearer/basic/apiKey/oauth2; the credential is never emitted). Thunk-endpoint stitches
+  are skipped with a warning.
 `;
 
 async function runCommand(args: string[], io: CliIO): Promise<number> {

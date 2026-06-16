@@ -4,17 +4,20 @@
 //
 // STRUCTURAL by design. It emits paths, methods, operationIds, and the path/query parameters
 // parsed from the RFC 6570 URL template, plus the PRESENCE of a request body and a response (as
-// empty `{}` schemas). It deliberately does NOT emit field-level JSON Schema: after `compose()`
-// the input/output schemas are opaque Standard Schema `Validator`s, so turning them into JSON
-// Schema needs a per-validator converter — deferred to a future `stitchapi/jsonschema` contract
-// (mirroring the fingerprint packages). `securitySchemes` are deferred with the separate decision
-// to surface a non-sensitive auth kind on `__config` (today `auth` is stripped). Query/header
-// parameters declared via an `input` SCHEMA (rather than the URL template) are likewise not
-// enumerable here. A stitch whose endpoint is a thunk (resolved at call time) cannot be exported
-// statically; it is reported as a warning, never dropped silently.
+// empty `{}` schemas). Field-level JSON Schema for bodies AND per-parameter schemas are filled
+// only when a bring-your-own `toJsonSchema` converter is supplied — after `compose()` the
+// input/output schemas are opaque Standard Schema `Validator`s, so turning them into JSON Schema
+// needs a per-validator converter (the contract-not-dependency gate; core stays zero-dep). Without
+// one, bodies and parameters stay `{}`. `components.securitySchemes` + per-operation `security` are
+// emitted from each stitch's non-secret `authScheme` — the {@link SecurityScheme} that redaction
+// projects onto `__config` from the live `auth` (the credential itself is stripped; a strategy with
+// no declarable scheme, e.g. a jar-mode `cookieSession`, is simply left unannotated). Query/header
+// parameters declared via an `input` SCHEMA (rather than the URL template) are still not enumerated.
+// A stitch whose endpoint is a thunk (resolved at call time) cannot be exported statically; it is
+// reported as a warning, never dropped silently.
 import type { StitchRegistry } from './registry';
 import { isStandardSchema } from './standard-schema';
-import type { StitchConfig } from './types';
+import type { SecurityScheme, StitchConfig } from './types';
 
 export interface OpenApiInfo {
     title: string;
@@ -33,18 +36,25 @@ export interface OpenApiResponse {
     description: string;
     content?: Record<string, OpenApiMediaType>;
 }
+// A Security Requirement Object: the scheme name → the scopes it needs (`[]` for non-oauth2).
+export type OpenApiSecurityRequirement = Record<string, string[]>;
 export interface OpenApiOperation {
     operationId: string;
     summary?: string;
     parameters?: OpenApiParameter[];
     requestBody?: { content: Record<string, OpenApiMediaType> };
     responses: Record<string, OpenApiResponse>;
+    security?: OpenApiSecurityRequirement[];
+}
+export interface OpenApiComponents {
+    securitySchemes?: Record<string, SecurityScheme>;
 }
 export interface OpenApiDocument {
     openapi: '3.1.0';
     info: OpenApiInfo;
     servers?: { url: string }[];
     paths: Record<string, Record<string, OpenApiOperation>>;
+    components?: OpenApiComponents;
 }
 export interface OpenApiExportOptions {
     title?: string;
@@ -52,14 +62,19 @@ export interface OpenApiExportOptions {
     /**
      * Bring-your-own Standard Schema → JSON Schema converter (the contract-not-dependency gate:
      * core stays zero-dep, the way `axiosAdapter` takes your axios). When provided, request and
-     * response BODY schemas are emitted from the stitch's `input.body` / `output` schemas instead
-     * of `{}`. It receives the raw schema (a `Validator`'s `.source`) plus the slot and the
-     * detected Standard Schema `vendor`; return a JSON Schema object, or `undefined` to fall back
-     * to `{}`. Per-parameter schemas and a CLI flag for this are follow-ups.
+     * response BODY schemas come from the stitch's `input.body` / `output` schemas, and the
+     * `params` / `query` object schemas are converted then DECOMPOSED into a JSON Schema per
+     * URL-template parameter (instead of `{}`). It receives the raw schema (a `Validator`'s
+     * `.source`) plus the slot and the detected Standard Schema `vendor`; return a JSON Schema
+     * object, or `undefined` to fall back to `{}`. For `params` / `query` the converter is called
+     * once on the whole object schema; its `properties[name]` becomes each parameter's schema.
      */
     toJsonSchema?: (
         source: unknown,
-        info: { slot: 'body' | 'response'; vendor?: string },
+        info: {
+            slot: 'body' | 'response' | 'params' | 'query';
+            vendor?: string;
+        },
     ) => Record<string, unknown> | undefined;
 }
 export interface OpenApiExportResult {
@@ -99,6 +114,62 @@ function bodySchema(
             ...(vendor !== undefined ? { vendor } : {}),
         }) ?? EMPTY_SCHEMA
     );
+}
+
+// Convert a `params`/`query` INPUT object schema ONCE, then expose its `properties` map + the set
+// of `required` names so each URL-template parameter can be handed its own JSON Schema (OpenAPI
+// models a schema per parameter, not one object). No converter, no recoverable source, or a
+// non-object/propertyless result → empty (parameters keep `{}`).
+function decomposeParamObject(
+    slot: unknown,
+    where: 'params' | 'query',
+    convert: OpenApiExportOptions['toJsonSchema'],
+): { properties: Record<string, unknown>; required: Set<string> } {
+    const empty = { properties: {}, required: new Set<string>() };
+    if (!convert) return empty;
+    const source = sourceOf(slot);
+    if (source === undefined) return empty;
+    const vendor = isStandardSchema(source)
+        ? source['~standard'].vendor
+        : undefined;
+    const converted = convert(source, {
+        slot: where,
+        ...(vendor !== undefined ? { vendor } : {}),
+    });
+    if (!converted || typeof converted !== 'object') return empty;
+    const props = (converted as { properties?: unknown }).properties;
+    const req = (converted as { required?: unknown }).required;
+    return {
+        properties:
+            props && typeof props === 'object'
+                ? (props as Record<string, unknown>)
+                : {},
+        required: new Set(
+            Array.isArray(req)
+                ? req.filter((x): x is string => typeof x === 'string')
+                : [],
+        ),
+    };
+}
+
+// Fill each URL-template parameter's `schema` (and refine a query param's `required`) from the
+// decomposed `input.params` / `input.query` object schemas. Path params stay required. Mutates in
+// place; a no-op without a converter, so parameters keep their `{}` default.
+function fillParamSchemas(
+    parameters: OpenApiParameter[],
+    cfg: StitchConfig,
+    convert: OpenApiExportOptions['toJsonSchema'],
+): void {
+    if (!convert || !parameters.length) return;
+    const path = decomposeParamObject(cfg.input?.params, 'params', convert);
+    const query = decomposeParamObject(cfg.input?.query, 'query', convert);
+    for (const p of parameters) {
+        const from = p.in === 'query' ? query : path;
+        const schema = from.properties[p.name];
+        if (schema && typeof schema === 'object')
+            p.schema = schema as Record<string, unknown>;
+        if (p.in === 'query' && from.required.has(p.name)) p.required = true;
+    }
 }
 
 const BODY_CONTENT_TYPE: Record<
@@ -187,6 +258,7 @@ function buildOperation(
     parameters: OpenApiParameter[],
     convert: OpenApiExportOptions['toJsonSchema'],
 ): OpenApiOperation {
+    fillParamSchemas(parameters, cfg, convert);
     const op: OpenApiOperation = {
         operationId,
         responses:
@@ -225,6 +297,23 @@ function buildOperation(
     return op;
 }
 
+// A friendly base name for a scheme's `components.securitySchemes` key. Distinct schemes that
+// collide on a base name get a numeric suffix at registration time (`registerScheme`).
+function securityKeyBase(s: SecurityScheme): string {
+    if (s.type === 'http')
+        return s.scheme === 'basic' ? 'basicAuth' : 'bearerAuth';
+    if (s.type === 'apiKey') return 'apiKeyAuth';
+    return 'oauth2';
+}
+
+// The scopes a Security Requirement lists for a scheme: the oauth2 client-credentials scopes, or
+// `[]` for http/apiKey (which take no scopes).
+function scopesOf(s: SecurityScheme): string[] {
+    return s.type === 'oauth2'
+        ? Object.keys(s.flows.clientCredentials?.scopes ?? {})
+        : [];
+}
+
 /**
  * Build an OpenAPI 3.1 document from a {@link StitchRegistry}. Pure and deterministic (no clock,
  * no I/O), so it round-trips and tests cleanly. Returns the document plus warnings for anything it
@@ -238,6 +327,23 @@ export function toOpenApi(
     const warnings: string[] = [];
     const paths: OpenApiDocument['paths'] = {};
     const servers = new Set<string>();
+
+    // `components.securitySchemes`, deduped: identical schemes (by structural signature) share one
+    // entry; distinct schemes that want the same friendly name get a numeric suffix. Returns the
+    // component key to reference from an operation's `security`.
+    const securitySchemes: Record<string, SecurityScheme> = {};
+    const keyBySignature = new Map<string, string>();
+    const registerScheme = (s: SecurityScheme): string => {
+        const sig = JSON.stringify(s);
+        const seen = keyBySignature.get(sig);
+        if (seen !== undefined) return seen;
+        const base = securityKeyBase(s);
+        let key = base;
+        for (let n = 2; key in securitySchemes; n++) key = `${base}${n}`;
+        securitySchemes[key] = s;
+        keyBySignature.set(sig, key);
+        return key;
+    };
 
     for (const [key, stitch] of Object.entries(registry)) {
         const cfg = stitch.__config;
@@ -263,7 +369,15 @@ export function toOpenApi(
             );
             continue;
         }
-        item[method] = buildOperation(cfg, key, parameters, opts.toJsonSchema);
+        const op = buildOperation(cfg, key, parameters, opts.toJsonSchema);
+        // `authScheme` is the non-secret SecurityScheme redaction projects onto `__config` from the
+        // live `auth` (which is itself stripped). Present → register it + reference it per-operation.
+        const authScheme = (cfg as { authScheme?: SecurityScheme }).authScheme;
+        if (authScheme) {
+            const schemeKey = registerScheme(authScheme);
+            op.security = [{ [schemeKey]: scopesOf(authScheme) }];
+        }
+        item[method] = op;
     }
 
     const document: OpenApiDocument = {
@@ -281,5 +395,7 @@ export function toOpenApi(
         warnings.push(
             `${serverList.length} distinct servers across stitches; OpenAPI applies \`servers\` document-wide, so per-path origins are ambiguous`,
         );
+    if (Object.keys(securitySchemes).length)
+        document.components = { securitySchemes };
     return { document, warnings };
 }

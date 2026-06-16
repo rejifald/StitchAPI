@@ -1,6 +1,6 @@
 ---
 title: 'CLI'
-description: 'Run and trace stitches from the shell with stitch run and stitch trace.'
+description: 'Run, trace, diagram, and export stitches from the shell — no app boot.'
 ---
 
 Reach for the `stitch` CLI when you want to run a stitch and read its trace from
@@ -82,6 +82,65 @@ there.
     A `.ts` module loads only when the host has a TypeScript loader registered
     (run under `tsx`); otherwise point `--module` at compiled JS.
 </Callout>
+
+## Diagram
+
+**`stitch diagram [--module <path>] [--name <name>]`** prints a
+[Mermaid](https://mermaid.js.org) flowchart of each stitch's configured pipeline
+— throttle, request, retry, the request [surface](/docs/reference/surfaces),
+pagination, validation, transform, unwrap, and cache — read straight from the
+definition, with no run. Pass `--name` to diagram a single stitch by export name
+or configured `name`. Auth is redacted from a stitch's public config, so the
+credential never appears in the diagram.
+
+```bash
+stitch diagram --name getUser   # paste the Mermaid into any renderer
+```
+
+## Export
+
+**`stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>] [--schema-module <path>]`**
+emits an [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0) document (JSON) for
+the whole module to stdout — the emit half of "reversible": a stitch declaration
+becomes a spec.
+
+```bash
+stitch export --openapi --title 'My API' --api-version 1.0.0 > openapi.json
+```
+
+It is **structural** by default — paths, methods, `operationId`s, and the
+path/query parameters parsed from each
+[URL template](/docs/guides/data/url-shaping), plus the presence of a request
+body and response. Three things make it richer:
+
+-   **Body and per-parameter schemas.** Pass `--schema-module <path>` at a module
+    that exports a `toJsonSchema(source, info)` converter (its default export or a
+    named `toJsonSchema`). Core stays zero-dependency — you bring the converter
+    (e.g. one wrapping `zod-to-json-schema`), the way an adapter brings your
+    `axios`. Without it, bodies and parameters stay `{}`.
+-   **Security schemes.** Each stitch's `auth` contributes a
+    `components.securitySchemes` entry and a per-operation `security` requirement —
+    `bearer`/`basic` become HTTP schemes, `apiKey` its declared header, `oauth2`
+    its token endpoint and scopes. Only the **scheme** is emitted; the credential
+    is never read or written.
+-   **Warnings, not silent drops.** A stitch whose endpoint is a thunk (resolved
+    at call time) can't be exported statically, so it is reported on stderr as a
+    `warning:` and skipped — never dropped silently.
+
+`toOpenApi` is also exported from `stitchapi/registry` for in-process use — pass
+your own `toJsonSchema` converter to fill body and parameter schemas:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { toOpenApi } from 'stitchapi/registry';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+const { document, warnings } = toOpenApi({ getUser });
+```
 
 ## See also
 

@@ -70,6 +70,7 @@ export function secretsFile(name: string): () => string {
 export function bearer(token: Secret): AuthStrategy {
     return {
         name: 'bearer',
+        scheme: { type: 'http', scheme: 'bearer' },
         apply(req) {
             req.headers['authorization'] = `Bearer ${resolve(token)}`;
         },
@@ -77,9 +78,11 @@ export function bearer(token: Secret): AuthStrategy {
 }
 
 export function apiKey(opts: { header?: string; value: Secret }): AuthStrategy {
-    const header = (opts.header ?? 'x-api-key').toLowerCase();
+    const headerName = opts.header ?? 'X-API-Key';
+    const header = headerName.toLowerCase();
     return {
         name: 'apiKey',
+        scheme: { type: 'apiKey', in: 'header', name: headerName },
         apply(req) {
             req.headers[header] = resolve(opts.value);
         },
@@ -89,6 +92,7 @@ export function apiKey(opts: { header?: string; value: Secret }): AuthStrategy {
 export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
     return {
         name: 'basic',
+        scheme: { type: 'http', scheme: 'basic' },
         apply(req) {
             const token = base64(`${resolve(opts.user)}:${resolve(opts.pass)}`);
             req.headers['authorization'] = `Basic ${token}`;
@@ -279,8 +283,18 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
             : flight(nsKey, () => fetchToken(ctx, nsKey));
     };
 
+    // Non-secret scheme for `export --openapi`: the token endpoint + declared scopes are public
+    // (any OpenAPI document carries them); the client id/secret never leave the vault.
+    const scopes: Record<string, string> = {};
+    if (opts.scope)
+        for (const s of opts.scope.split(/\s+/).filter(Boolean)) scopes[s] = '';
+
     return {
         name: 'oauth2',
+        scheme: {
+            type: 'oauth2',
+            flows: { clientCredentials: { tokenUrl: opts.tokenUrl, scopes } },
+        },
         async apply(req, ctx) {
             req.headers['authorization'] = `Bearer ${await tokenFor(ctx)}`;
         },
@@ -388,6 +402,18 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
 
     return {
         name: 'cookieSession',
+        // A session cookie is conventionally modelled as an apiKey-in-cookie scheme (the login
+        // flow that fills it is out of band). Only the non-jar mode names a single cookie; jar
+        // mode replays the whole Set-Cookie set, so it has no single scheme to declare.
+        ...(jarMode
+            ? {}
+            : {
+                  scheme: {
+                      type: 'apiKey',
+                      in: 'cookie',
+                      name: opts.cookie,
+                  } as const,
+              }),
         async apply(req, ctx) {
             const { key, principal } = sessionFor(ctx);
             let stored = await ctx.vault.get(key);
