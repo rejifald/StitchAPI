@@ -22,6 +22,30 @@ import { fetchAdapter } from 'stitchapi';
 const adapter = fetchAdapter();
 ```
 
+It accepts an optional `FetchAdapterOptions` to thread a **per-stitch undici
+dispatcher** — an `Agent` for a proxy, a custom CA, or interface binding —
+straight through as Node's non-standard `dispatcher` fetch init option. The
+runtime stays zero-dependency, so StitchAPI never imports undici; you bring your
+own `Agent`. An optional `fetch` override swaps the global `fetch` for testing or
+custom runtimes. With no options, behavior is identical to `fetchAdapter()` (no
+`dispatcher` is set).
+
+```ts twoslash
+import { fetchAdapter, stitch } from 'stitchapi';
+
+// Your real `new Agent(...)` from undici is structurally an unknown dispatcher here —
+// no undici import inside StitchAPI or this snippet.
+declare const agent: unknown;
+
+const getUser = stitch({
+    url: 'https://api.example.com/users/{id}',
+    adapter: fetchAdapter({ dispatcher: agent }),
+});
+```
+
+The `axiosAdapter` equivalent is axios's own `httpAgent` / `httpsAgent`, passed
+through its `defaults` (`axiosAdapter(axios, { httpsAgent })`) — see below.
+
 ### axiosAdapter
 
 Route a stitch through a caller-supplied axios instance instead of `fetch`. The

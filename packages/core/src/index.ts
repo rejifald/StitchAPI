@@ -16,6 +16,7 @@ export {
 } from './auth';
 export type { SecretSource } from './auth';
 export { fetchAdapter } from './http-adapter';
+export type { FetchAdapterOptions } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';
 export type {
     AxiosLike,
