@@ -1,0 +1,71 @@
+---
+title: 'URL shaping'
+description: 'RFC 6570 path templates and qs-style nested query serialization — how params and query become the URL.'
+---
+
+A stitch builds its URL from an
+[RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI template plus the
+`params` and `query` you pass at call time. Simple `{id}` interpolation is the
+common case; the full operator set is there when you need it.
+
+## Path templates
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch('https://api.example.com/users/{id}');
+
+await getUser({ params: { id: 1 }, query: { expand: 'roles' } });
+// → GET https://api.example.com/users/1?expand=roles
+```
+
+Template variables are filled from `params`; `params`, `query`, `headers`, and
+`body` all travel in one input object. The RFC 6570 operators:
+
+| Operator | Template     | Role                                        |
+| -------- | ------------ | ------------------------------------------- |
+| simple   | `{id}`       | percent-encoded interpolation (the default) |
+| reserved | `{+path}`    | keep reserved chars (`/`, `?`) unencoded    |
+| path     | `{/id}`      | prefix the value with `/`                   |
+| query    | `{?id,sort}` | append `?id=…&sort=…`                       |
+| explode  | `{list*}`    | one `key=value` pair per array/object entry |
+| prefix   | `{id:1}`     | take only the first _n_ characters          |
+
+## Query serialization
+
+The query builder serializes nested objects and arrays `qs`-style:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const search = stitch('https://api.example.com/users');
+
+await search({ query: { filter: { type: 'admin' }, ids: [1, 2] } });
+// → /users?filter[type]=admin&ids[0]=1&ids[1]=2
+```
+
+Array encoding is configurable with
+[`arrayFormat`](/docs/reference/config-types) — `indices` (the default shown
+above), `brackets`, or `repeat`.
+
+## Query defaults in the path
+
+Query keys can be baked into the path string; call-time `query` merges over them,
+so a stitch can carry sensible defaults that each call selectively overrides:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const findUsers = stitch('https://api.example.com/users?sort=name&type=admin');
+
+await findUsers({ query: { type: 'user' } });
+// → /users?sort=name&type=user
+```
+
+## See also
+
+<Cards>
+    <Card title="stitch()" href="/docs/guides/authoring/stitch" />
+    <Card title="Body encoding" href="/docs/guides/data/body-encoding" />
+    <Card title="Reference: config types" href="/docs/reference/config-types" />
+</Cards>

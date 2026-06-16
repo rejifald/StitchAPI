@@ -1,0 +1,101 @@
+---
+title: 'Hooks'
+description: 'Observe a call as it runs — onRequest, onResponse, onError, onRetry — and where each fires relative to auth, retry, throttle, and timeout.'
+---
+
+Hooks are observation points on a stitch's lifecycle: small callbacks that run as a
+call progresses, for logging, metrics, or tracing. They never change what a stitch
+returns — a call's only result is its response — so reach for a hook when you want
+to _watch_ a call, and for [`transform`](/docs/guides/data/transform) when you want
+to _reshape_ its output.
+
+## Example
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    url: 'https://api.example.com/users/{id}',
+    hooks: {
+        onRequest: ({ name, attempt, req }) => {
+            console.log(`→ ${name} #${attempt}: ${req?.method} ${req?.url}`);
+        },
+        onResponse: ({ res }) => {
+            console.log(`← ${res?.status}`);
+        },
+        onRetry: ({ attempt, error, res }) => {
+            console.log(`retrying after #${attempt}`, error ?? res?.status);
+        },
+    },
+});
+```
+
+## The four hooks
+
+Each hook receives a `HookContext` — `{ name, attempt, req?, res?, error? }` — with
+the fields relevant to its moment populated:
+
+| Hook         | Fires when                                  | Populated        |
+| ------------ | ------------------------------------------- | ---------------- |
+| `onRequest`  | just before the request goes out            | `req`            |
+| `onResponse` | a response came back (any status)           | `res`            |
+| `onError`    | the transport threw (network/abort/timeout) | `error`          |
+| `onRetry`    | the engine decided to retry, before backoff | `error` or `res` |
+
+## Firing order
+
+Hooks interleave with the engine's per-attempt pipeline. Within a single attempt, in
+order:
+
+1. **throttle** — wait for a concurrency / rate slot
+2. **`auth.apply`** — credentials are stamped onto the request
+3. **`onRequest`** — the request is fully shaped (auth headers included)
+4. **the network call** (bounded by `timeout.perAttempt`)
+5. on a thrown transport error → **`onError`**, then if another attempt remains →
+   **`onRetry`** → backoff → next attempt
+6. on a response → **`onResponse`**
+7. **`auth.shouldRefresh` / `auth.refresh`** — a token wall (e.g. a 401) refreshes
+   auth and replays the attempt
+8. on a retryable status → **`onRetry`** → backoff → next attempt
+
+So `onRequest` always sees the post-auth request, and `onRetry` fires with `error`
+populated on a network failure or `res` populated on a retryable status.
+
+<Callout type="info">
+    Hooks run on **every attempt**, not once per call: a stitch that retries
+    twice fires `onRequest` three times. Use `attempt` to tell them apart.
+</Callout>
+
+## Order across composed layers
+
+When stitches compose via [`extends`](/docs/guides/authoring/extends), hooks
+**chain** rather than overwrite — every layer's hook runs. They unwind like
+middleware:
+
+-   `onRequest` runs **base → child** (outermost layer first)
+-   `onResponse`, `onError`, `onRetry` run **child → base** (innermost layer first)
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const base = stitch({
+    baseUrl: 'https://api.example.com',
+    hooks: { onRequest: () => console.log('base onRequest') },
+});
+
+const getUser = stitch({
+    extends: [base],
+    path: '/users/{id}',
+    hooks: { onRequest: () => console.log('child onRequest') },
+});
+// Calling getUser logs "base onRequest" then "child onRequest".
+```
+
+## See also
+
+<Cards>
+    <Card title="extends" href="/docs/guides/authoring/extends" />
+    <Card title="Guide: retry" href="/docs/guides/resilience/retry" />
+    <Card title="Guide: transform" href="/docs/guides/data/transform" />
+    <Card title="Reference: config types" href="/docs/reference/config-types" />
+</Cards>

@@ -14,6 +14,7 @@
     },
     "scripts": {
         "build:mcp": "node runtime/build-sandbox-mcp.mjs",
+        "test:smoke": "node tests/run-all.mjs",
         "test:mcp": "pnpm run build:mcp && node mcp/smoke.mjs"
     },
     "dependencies": {

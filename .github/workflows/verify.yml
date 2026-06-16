@@ -41,3 +41,39 @@ jobs:
             # generator throw all pass type-check and only fail at build. Building the
             # docs app runs generateStaticParams over every page and surfaces those.
             - run: pnpm --filter @stitchapi/docs build
+
+    # The sandbox simulator + playground smoke suites (docs/sandbox/tests/run-all.mjs) import
+    # the BUILT `stitchapi`, so they are build-dependent integration tests — they run in their
+    # own job that builds core first, not in the src-only `pnpm test` gate above. This is where
+    # the five @stitchapi/sandbox-sim suites (plus the six docs/sandbox suites) land in CI.
+    sandbox:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm --filter stitchapi build
+            - run: pnpm --filter @stitchapi/sandbox test:smoke
+
+    # Browser-sandbox security model (§2.13): the Playwright harness proves the real CSP +
+    # Worker egress blocking and that a real RunResult.trace reaches the playground DAG. It
+    # builds the docs app and drives a headless Chromium, so it runs as its own job rather
+    # than inside the `verify` gate. Make it a required check once it has settled in CI.
+    e2e:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm --filter @stitchapi/docs test:e2e:install
+            - run: pnpm --filter @stitchapi/docs test:e2e
