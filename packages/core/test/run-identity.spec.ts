@@ -3,7 +3,13 @@
 // The OTLP sink reads them to build a real span tree (shared traceId, parentSpanId) instead of
 // minting per-start and guessing by name; a child run inherits the parent's traceId and points
 // parentId at the parent's runId. Ids are engine-minted, never caller-supplied (ADR 0002 §2).
-import { multiplex, otlpTrace, stitch, toOtlpJson } from '../src';
+import {
+    cookieSession,
+    multiplex,
+    otlpTrace,
+    stitch,
+    toOtlpJson,
+} from '../src';
 import type {
     OtelSpan,
     SpanExporter,
@@ -213,4 +219,49 @@ test('a hand-fed OTLP sink (no ctx ids) still mints a valid span — back-compat
     expect(spans[0]!.traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(spans[0]!.spanId).toMatch(/^[0-9a-f]{16}$/);
     expect(spans[0]!.parentSpanId).toBeUndefined();
+});
+
+test('cookieSession runs its login as a traced CHILD of the call that triggered it', async () => {
+    server.route('POST', '/login', {
+        setCookie: { name: 'sid', value: 'GOOD' },
+        body: { ok: true },
+    });
+    server.route('GET', '/me', {
+        requireCookie: { name: 'sid' },
+        body: { user: 'ada' },
+    });
+    // login + member share ONE sink (as seam members would), so the capturing sink sees both runs.
+    const { sink, seen } = capturingSink();
+    const signIn = stitch({
+        name: 'login',
+        method: 'POST',
+        baseUrl: server.url,
+        path: '/login',
+        trace: sink,
+    });
+    const me = stitch({
+        name: 'me',
+        baseUrl: server.url,
+        path: '/me',
+        trace: sink,
+        auth: cookieSession({ login: signIn, cookie: 'sid', scope: 'app' }),
+    });
+
+    await expect(me()).resolves.toEqual({ user: 'ada' });
+
+    const meStart = seen.find(
+        (s) => s.ctx.name === 'me' && s.ev.type === 'start',
+    )!;
+    const loginStart = seen.find(
+        (s) => s.ctx.name === 'login' && s.ev.type === 'start',
+    );
+    // The login is no longer an invisible side-call: it is a child run under the `me` call.
+    expect(loginStart).toBeDefined();
+    expect(loginStart!.ctx.parentId).toBe(meStart.ctx.runId); // parent = the triggering run
+    expect(loginStart!.ctx.traceId).toBe(meStart.ctx.traceId); // one trace tree
+    expect(loginStart!.ctx.runId).not.toBe(meStart.ctx.runId); // its own span
+    // …and the child run opens AND closes (start → done), so its span is complete.
+    expect(
+        seen.some((s) => s.ctx.name === 'login' && s.ev.type === 'done'),
+    ).toBe(true);
 });

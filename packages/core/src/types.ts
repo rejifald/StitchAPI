@@ -308,6 +308,12 @@ export interface AuthContext {
      */
     principal?: string;
     /**
+     * The current run (ADR 0007), threaded per-call by the engine. A strategy that spawns a
+     * sub-call — `cookieSession`'s login — runs it as a CHILD of this run so it appears in the
+     * trace/span tree under the call that triggered it. `undefined` outside a traced run.
+     */
+    run?: RunContext;
+    /**
      * Announce an `info` StitchEvent onto the run's event stream — a strategy reporting a
      * decision it made (e.g. which env var a `bearer` token resolved from via `optionalEnv`, or
      * that `oauth2` fetched a token). NEVER carries the secret itself. The engine buffers these

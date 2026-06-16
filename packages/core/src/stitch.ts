@@ -9,6 +9,7 @@ import {
     cacheKeyOf,
     execute,
     executeRaw,
+    executeRawTraced,
     makeRuntime,
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
@@ -491,6 +492,10 @@ export function makeStitch<T = unknown>(
 
     const stitchFn = result as unknown as Stitch<T> & {
         __raw: (input?: StitchInput) => Promise<unknown>;
+        __rawTraced: (
+            input: StitchInput | undefined,
+            parent: RunContext,
+        ) => Promise<unknown>;
     };
     stitchFn.stream = streamFn;
     stitchFn.safe = (input?: StitchInput) => consumeSafe<T>(streamFn(input));
@@ -500,6 +505,10 @@ export function makeStitch<T = unknown>(
         const bound = ((input?: StitchInput) =>
             result(mergeInput(partial, input))) as unknown as Stitch<T> & {
             __raw: (input?: StitchInput) => Promise<unknown>;
+            __rawTraced: (
+                input: StitchInput | undefined,
+                parent: RunContext,
+            ) => Promise<unknown>;
         };
         bound.stream = (input?: StitchInput) =>
             streamFn(mergeInput(partial, input));
@@ -511,11 +520,22 @@ export function makeStitch<T = unknown>(
             stitchFn.with(mergeInput(partial, more));
         bound.__raw = (input?: StitchInput) =>
             executeRaw(rt, mergeInput(partial, input));
+        bound.__rawTraced = (input, parent) =>
+            executeRawTraced(
+                rt,
+                mergeInput(partial, input),
+                rt.trace,
+                newRunContext(parent),
+            );
         attachMeta(bound, cfg);
         attachCacheSurface(bound, rt, (input) => mergeInput(partial, input));
         return bound;
     };
     stitchFn.__raw = (input?: StitchInput) => executeRaw(rt, input ?? {});
+    // Traced login child-run (ADR 0007): cookieSession reaches this to run its login under the
+    // caller's run. `newRunContext(parent)` inherits the parent's traceId + sets parentId.
+    stitchFn.__rawTraced = (input, parent) =>
+        executeRawTraced(rt, input ?? {}, rt.trace, newRunContext(parent));
     attachMeta(stitchFn, cfg);
     attachCacheSurface(stitchFn, rt, (input) => input ?? {});
     // A seam records the stitches it created (registry/lifecycle); standalone stitches don't register.

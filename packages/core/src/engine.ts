@@ -109,9 +109,16 @@ export function makeRuntime(
 // Runtime (and its `authCtx`) is shared across a stitch's concurrent calls, so the buffer must be
 // per-call: spread a fresh ctx (sharing store/vault/principal) with a private emit, run the
 // strategy, then yield whatever it announced. `apply`/`refresh` are plain async fns and can't yield.
-function emitInto(authCtx: AuthContext, sink: StitchEvent[]): AuthContext {
+function emitInto(
+    authCtx: AuthContext,
+    sink: StitchEvent[],
+    run: RunContext,
+): AuthContext {
     return {
         ...authCtx,
+        // The current run (ADR 0007) so a strategy that spawns a sub-call — `cookieSession`'s
+        // login — can run it as a CHILD of this run (parentId = run.runId).
+        run,
         emit: (topic, detail) =>
             sink.push({
                 type: 'info',
@@ -493,6 +500,7 @@ async function* attemptLoop(
     rt: Runtime,
     baseReq: AdapterRequest,
     state: { attempts: number },
+    run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, AdapterResponse> {
     const { cfg } = rt;
@@ -532,7 +540,7 @@ async function* attemptLoop(
             const req = cloneReq(baseReq);
             if (cfg.auth) {
                 const infos: StitchEvent[] = [];
-                await cfg.auth.apply(req, emitInto(rt.authCtx, infos));
+                await cfg.auth.apply(req, emitInto(rt.authCtx, infos, run));
                 yield* infos;
             }
             await cfg.hooks?.onRequest?.({ name: nameOf(cfg), attempt, req });
@@ -597,7 +605,7 @@ async function* attemptLoop(
                     at: now(),
                 };
                 const infos: StitchEvent[] = [];
-                await cfg.auth.refresh(emitInto(rt.authCtx, infos));
+                await cfg.auth.refresh(emitInto(rt.authCtx, infos, run));
                 yield* infos;
                 attempt--; // redo this attempt with fresh auth, don't count it
                 continue;
@@ -661,11 +669,12 @@ async function* attemptWithCircuit(
     rt: Runtime,
     baseReq: AdapterRequest,
     state: { attempts: number },
+    run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, AdapterResponse> {
     const { cfg } = rt;
     if (!cfg.circuit) {
-        return yield* attemptLoop(rt, baseReq, state, budget);
+        return yield* attemptLoop(rt, baseReq, state, run, budget);
     }
     const circuit = createCircuit(cfg.circuit, rt.store, hostKey(baseReq, cfg));
     if ((await circuit.phase()) === 'open') {
@@ -679,7 +688,7 @@ async function* attemptWithCircuit(
         throw new CircuitOpenError(); // fast-fail: do NOT touch the network
     }
     try {
-        const res = yield* attemptLoop(rt, baseReq, state, budget);
+        const res = yield* attemptLoop(rt, baseReq, state, run, budget);
         await circuit.onSuccess();
         return res;
     } catch (e) {
@@ -733,7 +742,7 @@ async function* paginated(
         const req = buildRequest(cfg, pageInput);
         let res: AdapterResponse;
         try {
-            res = yield* attemptWithCircuit(rt, req, state, budget);
+            res = yield* attemptWithCircuit(rt, req, state, run, budget);
         } catch (e) {
             yield errEvt(e, name, state.attempts);
             yield doneEvt(false, t0, state.attempts);
@@ -931,12 +940,13 @@ async function* runFrom(
     name: string,
     state: { attempts: number },
     t0: number,
+    run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, RunOutcome> {
     const { cfg } = rt;
     let res: AdapterResponse;
     try {
-        res = yield* attemptWithCircuit(rt, baseReq, state, budget);
+        res = yield* attemptWithCircuit(rt, baseReq, state, run, budget);
     } catch (e) {
         yield errEvt(e, name, state.attempts);
         yield doneEvt(false, t0, state.attempts);
@@ -1142,7 +1152,7 @@ async function* runOnce(
         return { ok: false };
     }
     yield startEvt(name, baseReq, input, run);
-    return yield* runFrom(rt, baseReq, name, state, t0, budget);
+    return yield* runFrom(rt, baseReq, name, state, t0, run, budget);
 }
 
 // The cached path: lookup is OUTERMOST over the expensive chain; a hit short-circuits
@@ -1174,13 +1184,13 @@ async function* runCached(
     // did not opt into re-validate-on-hit — fail closed, never store, and surface WHY for traces.
     if (ctl.policy === 'refuse') {
         yield cacheEvt(`bypass: ${ctl.reason}`);
-        yield* runFrom(rt, baseReq, name, state, t0, budget);
+        yield* runFrom(rt, baseReq, name, state, t0, run, budget);
         return;
     }
 
     // A non-cacheable method (a mutation sharing a fragment) runs normally, uncached.
     if (!ctl.cacheableMethod(baseReq.method)) {
-        yield* runFrom(rt, baseReq, name, state, t0, budget);
+        yield* runFrom(rt, baseReq, name, state, t0, run, budget);
         return;
     }
     // A non-storable response (binary read straight into the store) warns and passes through —
@@ -1191,7 +1201,7 @@ async function* runCached(
         baseReq.responseType === 'arrayBuffer'
     ) {
         yield cacheEvt('bypass: non-storable responseType');
-        yield* runFrom(rt, baseReq, name, state, t0, budget);
+        yield* runFrom(rt, baseReq, name, state, t0, run, budget);
         return;
     }
 
@@ -1199,7 +1209,7 @@ async function* runCached(
     const key = ctl.key(d, input);
     if (key === undefined) {
         yield cacheEvt('bypass: unhashable request');
-        yield* runFrom(rt, baseReq, name, state, t0, budget);
+        yield* runFrom(rt, baseReq, name, state, t0, run, budget);
         return;
     }
 
@@ -1234,7 +1244,7 @@ async function* runCached(
 
     // Coalescing disabled: run the chain, write the cache last.
     if (ctl.coalesce === false) {
-        await store(yield* runFrom(rt, baseReq, name, state, t0, budget));
+        await store(yield* runFrom(rt, baseReq, name, state, t0, run, budget));
         return;
     }
 
@@ -1243,7 +1253,7 @@ async function* runCached(
     if (claim.leader) {
         let out: RunOutcome;
         try {
-            out = yield* runFrom(rt, baseReq, name, state, t0, budget);
+            out = yield* runFrom(rt, baseReq, name, state, t0, run, budget);
         } catch (e) {
             claim.fail(e);
             throw e;
@@ -1263,7 +1273,7 @@ async function* runCached(
         shared = await claim.promise;
     } catch {
         // The leader failed (or did not cache): proceed independently, uncoalesced.
-        await store(yield* runFrom(rt, baseReq, name, state, t0, budget));
+        await store(yield* runFrom(rt, baseReq, name, state, t0, run, budget));
         return;
     }
     yield cacheEvt('coalesced');
@@ -1370,8 +1380,58 @@ export async function executeRaw(
 ): Promise<AdapterResponse> {
     const baseReq = buildRequest(rt.cfg, input);
     const state = { attempts: 0 };
-    const gen = attemptLoop(rt, baseReq, state, totalBudget(rt.cfg, now()));
+    const gen = attemptLoop(
+        rt,
+        baseReq,
+        state,
+        newRunContext(),
+        totalBudget(rt.cfg, now()),
+    );
     let step = await gen.next();
     while (!step.done) step = await gen.next();
     return step.value;
+}
+
+/**
+ * Like {@link executeRaw}, but TEES the run's events to `sink` as a CHILD run (ADR 0007) and
+ * returns the raw response. `cookieSession` uses it to run its login as a traced child of the call
+ * that triggered it (`run.parentId` = the caller's runId), so the login is no longer an invisible
+ * side-call. The login's `result` carries only its **status** — never the (sensitive) login body —
+ * and any `throttled`/`retry`/`info` events from the login's own attempts are teed through.
+ */
+export async function executeRawTraced(
+    rt: Runtime,
+    input: StitchInput,
+    sink: TraceSink,
+    run: RunContext,
+): Promise<AdapterResponse> {
+    const { cfg } = rt;
+    const name = nameOf(cfg);
+    const t0 = now();
+    const state = { attempts: 0 };
+    const ctx = {
+        name,
+        runId: run.runId,
+        traceId: run.traceId,
+        ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
+    };
+    const baseReq = buildRequest(cfg, input);
+    sink.handle(startEvt(name, baseReq, input, run), ctx);
+    try {
+        const gen = attemptLoop(rt, baseReq, state, run, totalBudget(cfg, t0));
+        let step = await gen.next();
+        while (!step.done) {
+            sink.handle(step.value, ctx);
+            step = await gen.next();
+        }
+        const res = step.value;
+        // Status only — a login response body is sensitive; the span needs only its outcome.
+        sink.handle(resultEvt(undefined, res.status, state.attempts), ctx);
+        sink.handle(doneEvt(true, t0, state.attempts), ctx);
+        return res;
+    } catch (e) {
+        sink.handle(errEvt(e, name, state.attempts), ctx);
+        sink.handle(doneEvt(false, t0, state.attempts), ctx);
+        throw e;
+    }
 }
