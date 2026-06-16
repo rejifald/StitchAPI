@@ -2,6 +2,7 @@
 // resolved at call time — the caller (an agent) never sees it. `cookieSession` performs
 // a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
 import { fetchAdapter } from './http-adapter';
+import { parseRetryAfter } from './resilience';
 import type {
     Adapter,
     AdapterResponse,
@@ -376,6 +377,38 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
     };
 }
 
+/**
+ * Why an `apply`/`refresh` login attempt failed, categorised so the HOST can drive its OWN
+ * durable state machine (wrong-creds vs rate-limited vs network) — StitchAPI keeps doing the
+ * mechanical cookie capture/replay, but it can't model a host's external recovery loop, so it
+ * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOpts.onAuthFailure}.
+ */
+export interface AuthFailureInfo {
+    /** `'apply'` = cold session had no stored cookie; `'refresh'` = a 401-style wall was hit. */
+    phase: 'apply' | 'refresh';
+    /** The login response status when the login responded at all (absent when it threw). */
+    status?: number;
+    /** `Retry-After` parsed to ms when the login was rate-limited (status 429). */
+    retryAfterMs?: number;
+    /** The thrown value when the login stitch itself threw (network/transport failure). */
+    error?: unknown;
+    /**
+     * - `'unauthenticated'` — login responded with a `refreshOn` status (e.g. 401) and set no cookie (bad/expired creds);
+     * - `'rate-limited'` — login responded `429` (back off, then retry; see `retryAfterMs`);
+     * - `'network'` — the login stitch threw before any response (DNS/connection/transport);
+     * - `'unknown'` — login responded but captured no cookie for some other reason.
+     */
+    category: 'unauthenticated' | 'rate-limited' | 'network' | 'unknown';
+}
+
+/** Outcome of a single (re)login attempt, surfaced via {@link CookieSessionOpts.onRefresh}. */
+export interface RefreshResult {
+    /** A cookie (named, or any jar entry) was captured from the login response. */
+    ok: boolean;
+    /** The login response status when the login responded (absent when it threw). */
+    status?: number;
+}
+
 export interface CookieSessionOpts {
     /** The login stitch — its raw response (the Set-Cookie headers) seeds the session. */
     login: Stitch;
@@ -408,6 +441,21 @@ export interface CookieSessionOpts {
      * which never has a principal). Sessions always live in the {@link AuthContext.vault}.
      */
     scope?: 'principal' | 'app';
+    /**
+     * Host-owned hook fired once per ACTUAL login attempt that failed to capture a cookie — NOT
+     * per coalesced waiter (it runs inside the single-flight-guarded `doRefresh`). The host maps the
+     * categorised {@link AuthFailureInfo} to its own status (active/backoff/failed/unauthenticated)
+     * and owns the external recovery loop that StitchAPI's per-call single-flight can't model. A
+     * throwing hook never crashes the call (it is caught and announced on the `auth` trace topic).
+     */
+    onAuthFailure?: (info: AuthFailureInfo) => void | Promise<void>;
+    /**
+     * Host-owned hook fired once after EVERY (re)login attempt — success or failure — with its
+     * {@link RefreshResult}, so the host can persist durable session state and clear/extend its
+     * cooldown. Like {@link onAuthFailure}, it runs once per actual attempt (inside the
+     * single-flight-guarded `doRefresh`), and a throw is caught so it can't crash the call.
+     */
+    onRefresh?: (result: RefreshResult) => void | Promise<void>;
 }
 
 export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
@@ -439,31 +487,135 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         return { key: `${baseKey}\u0000${principal}`, principal };
     };
 
+    // Run a host hook without ever letting it crash the call (the host owns its own recovery loop;
+    // its bookkeeping must not take the stitch down). A throw — sync or rejected promise — is
+    // swallowed and announced on the `auth` trace topic. Returns a promise the caller awaits so a
+    // slow async hook still completes before the login attempt is considered done.
+    const runHook = async (
+        ctx: AuthContext,
+        name: 'onAuthFailure' | 'onRefresh',
+        invoke: () => void | Promise<void>,
+    ): Promise<void> => {
+        try {
+            await invoke();
+        } catch (err) {
+            ctx.emit(
+                'auth',
+                `${name} hook threw: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    };
+
+    // Categorise a login response that captured no cookie, given its status + headers. A 429 means
+    // rate-limited (back off per `Retry-After`); a `refreshOn` status (e.g. 401) means the creds were
+    // rejected; anything else — including a soft 200 wall that set no cookie — is `unknown`.
+    const classify = (
+        phase: 'apply' | 'refresh',
+        status: number,
+        headers: Record<string, string>,
+    ): AuthFailureInfo => {
+        if (status === 429) {
+            // Omit `retryAfterMs` entirely when the header is absent/unparseable —
+            // `exactOptionalPropertyTypes` forbids setting an optional prop to `undefined`.
+            const retryAfterMs = parseRetryAfter(headers['retry-after']);
+            return {
+                phase,
+                status,
+                category: 'rate-limited',
+                ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+            };
+        }
+        if (refreshOn.includes(status))
+            return { phase, status, category: 'unauthenticated' };
+        return { phase, status, category: 'unknown' };
+    };
+
+    // Announce one login attempt's outcome to the host. `onRefresh` fires for EVERY attempt; on a
+    // failure (no cookie captured) `onAuthFailure` fires too with the categorised `info`.
+    const report = async (
+        ctx: AuthContext,
+        ok: boolean,
+        status: number | undefined,
+        failure?: AuthFailureInfo,
+    ): Promise<void> => {
+        // Bind into locals so the optional hooks narrow to defined — no non-null assertion needed.
+        const onRefresh = opts.onRefresh;
+        if (onRefresh)
+            await runHook(ctx, 'onRefresh', () =>
+                // `status` only appears on the result object when the login actually responded.
+                onRefresh(status === undefined ? { ok } : { ok, status }),
+            );
+        const onAuthFailure = opts.onAuthFailure;
+        if (!ok && failure && onAuthFailure)
+            await runHook(ctx, 'onAuthFailure', () => onAuthFailure(failure));
+    };
+
+    // ONE actual login attempt (single-flight-guarded by the callers below, so the hooks fire once
+    // per real attempt, never per coalesced waiter). `__raw` RESOLVES only for a 2xx login and
+    // THROWS otherwise — an error with a numeric `status` (+ a `response` for its headers) is a
+    // response-derived failure (401/429/…); an error without a `status` is a transport failure. Each
+    // path fires `onRefresh` always and `onAuthFailure` on failure, then re-throws so callers see the
+    // original error exactly as before these hooks existed.
     const doRefresh = async (
         ctx: AuthContext,
         key: string,
         principal: string | undefined,
+        phase: 'apply' | 'refresh',
     ) => {
         ctx.emit('auth', 'login');
         // `__raw` runs the login once and returns its raw AdapterResponse (headers and all).
         // It is intentionally not on the public Stitch type, so reach it through a cast.
-        const res = await (
-            opts.login as unknown as {
-                __raw: (input?: StitchInput) => Promise<AdapterResponse>;
-            }
-        ).__raw(opts.loginInput?.(principal));
+        let res: AdapterResponse;
+        try {
+            res = await (
+                opts.login as unknown as {
+                    __raw: (input?: StitchInput) => Promise<AdapterResponse>;
+                }
+            ).__raw(opts.loginInput?.(principal));
+        } catch (error) {
+            // A failed login: an HTTP error carries a numeric `status` (+ the `response` for its
+            // headers); a transport error carries neither → `network`.
+            const e = error as {
+                status?: number;
+                response?: AdapterResponse;
+            };
+            const status = typeof e.status === 'number' ? e.status : undefined;
+            const failure: AuthFailureInfo =
+                status === undefined
+                    ? { phase, category: 'network', error }
+                    : classify(phase, status, e.response?.headers ?? {});
+            await report(ctx, false, status, failure);
+            // Re-throw so the caller sees the original error exactly as before these hooks existed.
+            throw error;
+        }
+
+        const status = res.status;
         const setCookie =
             res.headers['set-cookie'] ?? res.headers['Set-Cookie'];
+        let captured = false;
         if (jarMode) {
             // Capture the full jar: every name=value pair the login set.
             const jar = parseCookieJar(setCookie);
-            if (Object.keys(jar).length > 0)
+            if (Object.keys(jar).length > 0) {
                 await ctx.vault.set(key, jar, opts.ttlMs);
+                captured = true;
+            }
         } else {
             const value = parseCookie(setCookie, opts.cookie);
-            if (value != null)
+            if (value != null) {
                 await ctx.vault.set(key, `${opts.cookie}=${value}`, opts.ttlMs);
+                captured = true;
+            }
         }
+
+        // A 2xx login that set no cookie is a soft wall (a login page served with 200) — report it as
+        // a failure so the host still hears about it, classified by its (2xx) status → `unknown`.
+        await report(
+            ctx,
+            captured,
+            status,
+            captured ? undefined : classify(phase, status, res.headers),
+        );
     };
 
     return {
@@ -474,7 +626,9 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
             if (!stored) {
                 // Concurrent cold sessions for the SAME principal share ONE login (the principal
                 // is in the key, so different users never coalesce — GAP-AUDIT §2.6 + ADR §3).
-                await flight(key, () => doRefresh(ctx, key, principal));
+                await flight(key, () =>
+                    doRefresh(ctx, key, principal, 'apply'),
+                );
                 stored = await ctx.vault.get(key);
             }
             // Non-jar: a stored `name=value` string. Jar: a stored map → serialize all pairs.
@@ -493,7 +647,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         async refresh(ctx) {
             const { key, principal } = sessionFor(ctx);
             // Simultaneous 401-driven re-logins for the same principal coalesce into one login.
-            await flight(key, () => doRefresh(ctx, key, principal));
+            await flight(key, () => doRefresh(ctx, key, principal, 'refresh'));
         },
     };
 }
