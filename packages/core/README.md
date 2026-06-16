@@ -192,7 +192,7 @@ const user = await getUser({ params: { id: 1 } }); // typed { id: number; name: 
 
 ## The event stream
 
-A stitch does not return `Promise<bytes>`. It yields a typed event stream — `await` is sugar that consumes the stream and returns the final, unwrapped, validated `result` (or throws a `StitchError` carrying `.status`):
+A stitch does not return `Promise<bytes>`. It yields a typed event stream — `await` is sugar that consumes the stream and returns the final, unwrapped, validated `result` (or throws a `StitchError` carrying `.status`, plus `.body` (the parsed error payload) and `.url` (the final request URL) when the failure came from a response):
 
 ```ts
 const users = await getUsers(); // sugar: consume the stream → the result value
@@ -202,7 +202,7 @@ Prefer to handle failure inline rather than with `try`/`catch`? `.safe()` never 
 
 ```ts
 const { data, error } = await getUsers.safe();
-if (error) return; // error: StitchError (.status, .attempts); data is null
+if (error) return; // error: StitchError (.status, .attempts, .body, .url); data is null
 use(data); // narrowed: data is the validated result, error is null
 ```
 

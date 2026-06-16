@@ -474,6 +474,18 @@ export interface StitchConfig {
     auth?: AuthStrategy;
     /** Retry-and-backoff policy. */
     retry?: RetryOptions;
+    /**
+     * Statuses that are a NORMAL result rather than an error — a number list or a predicate.
+     * An accepted non-2xx flows through interpret → transform → unwrap → validate exactly like a
+     * 2xx (the response body becomes the result), instead of throwing a {@link StitchError}. Use
+     * this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall
+     * back to a broader call) so the happy path no longer runs through a `catch`.
+     *
+     * `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts
+     * are exhausted, then accepted (returned) on the final attempt. Orthogonal to
+     * `rateLimit.delegate`, which surfaces a {@link RateLimitError} on rate-limit statuses earlier.
+     */
+    acceptStatus?: number[] | ((status: number) => boolean);
     /** Rate and concurrency limits. */
     throttle?: ThrottleOptions;
     /** Total and per-attempt timeouts. */
@@ -551,11 +563,22 @@ export class StitchError extends Error {
     readonly status: number | undefined;
     /** Attempts made before giving up (1 = no retry). */
     readonly attempts: number;
+    /**
+     * The parsed response body of the failing response (an API's `{ error: "..." }` payload),
+     * when the failure came from an HTTP response; `undefined` for transport/internal errors. Only
+     * populated on the awaited / `.safe()` path — it is carried over the non-enumerable error
+     * channel and so never serialises into a trace sink.
+     */
+    readonly body?: unknown;
+    /** The final request URL (after redirects) of the failing response, when the transport exposes it. */
+    readonly url?: string;
     constructor(
         message: string,
         opts: {
             status?: number | undefined;
             attempts?: number | undefined;
+            body?: unknown;
+            url?: string | undefined;
             cause?: unknown;
         } = {},
     ) {
@@ -566,6 +589,8 @@ export class StitchError extends Error {
         this.name = 'StitchError';
         this.status = opts.status;
         this.attempts = opts.attempts ?? 0;
+        if (opts.body !== undefined) this.body = opts.body;
+        if (opts.url !== undefined) this.url = opts.url;
     }
 }
 

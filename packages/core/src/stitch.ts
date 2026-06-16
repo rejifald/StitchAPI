@@ -13,7 +13,7 @@ import {
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
 import { otlpTrace } from './otlp';
-import { createThrottle } from './resilience';
+import { RateLimitError, createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
@@ -219,9 +219,14 @@ export function resolveTrace(trace: StitchConfig['trace']): TraceSink {
 // ---- the streaming spine + await sugar ------------------------------------
 // Drain the event stream to its terminal: the `result` value, or the `error` event rebuilt as a
 // typed StitchError (status + attempts preserved). Shared by the throwing and safe consumers.
-// Exception: a delegate-backoff rate-limit (issue #145) pins its live RateLimitError on the event
-// via the non-enumerable ERROR_SOURCE key — re-surface THAT instance unchanged, so the caller keeps
-// the real class identity plus `retryAfterMs`/`response`, instead of a flattened StitchError.
+//
+// The non-enumerable ERROR_SOURCE key (engine.ts) pins the live error behind the event without
+// leaking its payload into a trace sink. Two kinds ride it:
+//   • a delegate-backoff RateLimitError (issue #145): re-surface THAT instance unchanged, so the
+//     caller keeps the real class identity plus `retryAfterMs`/`response`.
+//   • a plain HTTP error carrying `.response` (issue #155): flatten into a StitchError, lifting the
+//     response `body`/`url` onto the error so a result-shaped caller can read the API's error
+//     payload (`{ error: "…" }`) it would otherwise never see.
 async function drain<T>(
     gen: AsyncGenerator<StitchEvent<T>, void>,
 ): Promise<{ value: T } | { error: Error }> {
@@ -231,12 +236,38 @@ async function drain<T>(
         if (ev.type === 'result') value = ev.value;
         else if (ev.type === 'error') {
             const source = (ev as { [ERROR_SOURCE]?: Error })[ERROR_SOURCE];
-            error =
-                source ??
-                new StitchError(ev.message, {
+            const res =
+                source === undefined
+                    ? undefined
+                    : (
+                          source as {
+                              response?: { body?: unknown; url?: string };
+                          }
+                      ).response;
+            // A pinned HTTP error (has `.response`, but is neither a StitchError nor a
+            // RateLimitError): rebuild as a StitchError carrying the response `body`/`url`. A
+            // RateLimitError keeps its class identity (re-surfaced unchanged) so the delegate-backoff
+            // caller still gets `retryAfterMs`/`response`.
+            if (
+                res !== undefined &&
+                !(source instanceof StitchError) &&
+                !(source instanceof RateLimitError)
+            ) {
+                error = new StitchError(ev.message, {
                     status: ev.status,
                     attempts: ev.attempts,
+                    body: res.body,
+                    url: res.url,
+                    cause: source,
                 });
+            } else {
+                error =
+                    source ??
+                    new StitchError(ev.message, {
+                        status: ev.status,
+                        attempts: ev.attempts,
+                    });
+            }
         }
     }
     return error ? { error } : { value: value as T };
