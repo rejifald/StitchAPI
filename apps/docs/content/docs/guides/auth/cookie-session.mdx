@@ -52,6 +52,88 @@ served with a `200`. Give two stitches the same `key` plus a shared `store` to
 share one session. See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
 
+## Durable state and an external recovery loop
+
+`cookieSession` does the mechanical capture-and-replay, refreshing on the wall —
+but it can't model a host that owns **durable, categorised** auth state and its
+own recovery loop (mark a session `backoff` after a rate-limit, `failed` after
+bad creds, and retry on its own schedule). Two optional host-owned hooks hand
+that decision back to you. They fire **once per actual login attempt** — inside
+the single-flight refresh, never once per coalesced caller — and a throwing hook
+never crashes the call.
+
+-   `onRefresh({ ok, status })` runs after **every** (re)login attempt with its
+    outcome (`ok` = a cookie was captured), so you can persist session state and
+    clear or extend a cooldown.
+-   `onAuthFailure(info)` runs when an attempt captured no cookie, with a
+    `category` you map to your own status:
+    `'unauthenticated'` (a `refreshOn` status, e.g. `401` — bad/expired creds),
+    `'rate-limited'` (`429`, with `retryAfterMs` parsed from `Retry-After`),
+    `'network'` (the login threw before any response — with the thrown `error`),
+    or `'unknown'`. `info.phase` is `'apply'` for a cold session or `'refresh'`
+    for a wall that was hit mid-stream.
+
+```ts twoslash
+import { cookieSession, env, stitch } from 'stitchapi';
+import type { AuthFailureInfo, RefreshResult } from 'stitchapi';
+
+// Your own durable store — a row in a database, a Redis hash, anything.
+declare const sessionState: {
+    markActive(): Promise<void>;
+    markFailed(reason: string): Promise<void>;
+    backoffUntil(at: number): Promise<void>;
+};
+
+const login = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/login',
+    bodyType: 'form',
+});
+
+const me = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/me',
+    auth: cookieSession({
+        login,
+        cookie: '*',
+        loginInput: () => ({
+            body: { user: env('USER')(), pass: env('PASS')() },
+        }),
+        // Persist the outcome of every attempt.
+        onRefresh: async ({ ok }: RefreshResult) => {
+            if (ok) await sessionState.markActive();
+        },
+        // Categorise a failure and drive your own recovery loop.
+        onAuthFailure: async (info: AuthFailureInfo) => {
+            switch (info.category) {
+                case 'rate-limited':
+                    // Back off until the server says we may retry.
+                    await sessionState.backoffUntil(
+                        Date.now() + (info.retryAfterMs ?? 60_000),
+                    );
+                    break;
+                case 'unauthenticated':
+                    // Bad/expired creds — stop hammering; surface for re-auth.
+                    await sessionState.markFailed('credentials rejected');
+                    break;
+                case 'network':
+                    // Transport failure — your loop decides whether to retry.
+                    await sessionState.backoffUntil(Date.now() + 30_000);
+                    break;
+                default:
+                    await sessionState.markFailed('unknown auth failure');
+            }
+        },
+    }),
+});
+```
+
+The hooks are purely additive: omit them and `cookieSession` behaves exactly as
+before. They observe and record — they never change _whether_ the stitch logs in
+or retries (that stays governed by `refreshOn`/`refreshWhen`). Your external loop
+reads the durable state and decides when to call the stitch again.
+
 <Callout type="warn">
     **Anti-pattern:** don't lean on `refreshOn` status codes alone to catch an
     expired session — a soft 200 wall, where the login page comes back with
