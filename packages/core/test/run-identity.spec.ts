@@ -265,3 +265,58 @@ test('cookieSession runs its login as a traced CHILD of the call that triggered 
         seen.some((s) => s.ctx.name === 'login' && s.ev.type === 'done'),
     ).toBe(true);
 });
+
+test('OTLP: a retried call emits flat per-attempt child spans parented to the run', async () => {
+    server.route('GET', '/flaky', { statuses: [503, 200], body: { ok: true } });
+    const { exporter, spans } = stubExporter();
+    const flaky = stitch({
+        name: 'flaky',
+        baseUrl: server.url,
+        path: '/flaky',
+        retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 1 },
+        trace: otlpTrace({ exporter }),
+    });
+
+    await flaky();
+
+    const run = spans.find((s) => s.parentSpanId === undefined)!;
+    const attempts = spans.filter((s) => s.name.startsWith('attempt '));
+    expect(attempts).toHaveLength(2); // 503, then 200
+    // Flat children of the run span — same trace, parented to the run, not nested in each other.
+    expect(
+        attempts.every(
+            (a) => a.parentSpanId === run.spanId && a.traceId === run.traceId,
+        ),
+    ).toBe(true);
+    // The first attempt failed and was retried; the second is the run's successful outcome.
+    expect(attempts[0]!.status.code).toBe('ERROR');
+    expect(attempts[1]!.status.code).toBe('OK');
+});
+
+test('OTLP: a paginated call emits flat per-page child spans parented to the run', async () => {
+    server.route('GET', '/list', { body: [1, 2] });
+    const { exporter, spans } = stubExporter();
+    const list = stitch({
+        name: 'list',
+        baseUrl: server.url,
+        path: '/list',
+        paginate: {
+            next: (_body, page) =>
+                page < 3 ? { query: { page: page + 1 } } : undefined,
+        },
+        trace: otlpTrace({ exporter }),
+    });
+
+    await list();
+
+    const run = spans.find((s) => s.parentSpanId === undefined)!;
+    const pages = spans.filter((s) => s.name.startsWith('page '));
+    expect(pages).toHaveLength(3);
+    expect(
+        pages.every(
+            (p) => p.parentSpanId === run.spanId && p.traceId === run.traceId,
+        ),
+    ).toBe(true);
+    // A non-paginated path would have produced `attempt` children — a paginated one shows pages.
+    expect(spans.some((s) => s.name.startsWith('attempt '))).toBe(false);
+});

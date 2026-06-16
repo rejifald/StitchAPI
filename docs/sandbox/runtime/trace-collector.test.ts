@@ -436,6 +436,74 @@ async function runTests(): Promise<void> {
         );
     }
 
+    /* 10 — retry / paginate progress events annotate the entry with counts ---- */
+    {
+        const events: RunEvent[] = [];
+        const collector = createTraceCollector(
+            fakeCore({
+                events: () => [
+                    startEv(),
+                    { type: 'progress', phase: 'request', attempt: 1, at: 0 },
+                    { type: 'progress', phase: 'retry', attempt: 1, at: 1 },
+                    { type: 'progress', phase: 'request', attempt: 2, at: 2 },
+                    {
+                        type: 'result',
+                        value: {},
+                        status: 200,
+                        attempts: 2,
+                        at: 3,
+                    },
+                    { type: 'done', ok: true, ms: 3, attempts: 2, at: 3 },
+                ],
+            }),
+        );
+        collector.bindProgress((e) => events.push(e));
+        await (collector.stitch({ name: 'x' }) as () => Promise<unknown>)();
+        const entry = (
+            events.find((e) => e.type === 'trace') as
+                | Extract<RunEvent, { type: 'trace' }>
+                | undefined
+        )?.entry;
+        assert(
+            '10 a retried run is annotated with its attempt count',
+            entry?.attempts === 2 && entry?.pages === undefined,
+            entry,
+        );
+    }
+
+    /* 11 — a single-attempt run carries no attempts/pages annotation --------- */
+    {
+        const events: RunEvent[] = [];
+        const collector = createTraceCollector(
+            fakeCore({
+                events: () => [
+                    startEv(),
+                    { type: 'progress', phase: 'request', attempt: 1, at: 0 },
+                    {
+                        type: 'result',
+                        value: {},
+                        status: 200,
+                        attempts: 1,
+                        at: 1,
+                    },
+                    { type: 'done', ok: true, ms: 1, attempts: 1, at: 1 },
+                ],
+            }),
+        );
+        collector.bindProgress((e) => events.push(e));
+        await (collector.stitch({ name: 'x' }) as () => Promise<unknown>)();
+        const entry = (
+            events.find((e) => e.type === 'trace') as
+                | Extract<RunEvent, { type: 'trace' }>
+                | undefined
+        )?.entry;
+        assert(
+            '11 a single clean attempt gets no count annotation',
+            entry?.attempts === undefined && entry?.pages === undefined,
+            entry,
+        );
+    }
+
     console.log(`\n${passed} passed, ${failed} failed\n`);
     if (failed === 0) {
         console.log('A2 OK');

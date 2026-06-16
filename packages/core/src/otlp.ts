@@ -45,6 +45,84 @@ function serverAddress(url: string): string | undefined {
     }
 }
 
+// Build the FLAT per-iteration CHILD spans of a finished run span (ADR 0007, piece 3) — what makes
+// the OTLP waterfall show "how each retry/page performed". Derived from the run's own span events
+// (the engine's `request`/`paginate`/`retry` progress markers): a paginated run yields one `page N`
+// child per completed page; a non-paginated run that retried yields one `attempt N` child per
+// request (the non-final ones marked ERROR with the retry reason). A single clean request yields
+// none — the run span IS the one operation. Children are flat (same traceId, parentSpanId = the run
+// span), per the review's "flat, context-appropriate" choice: a paginated run shows pages, and a
+// per-page retry stays a span event on the run, not a nested span.
+function buildChildSpans(run: OtelSpan): OtelSpan[] {
+    const child = (
+        name: string,
+        startUnixMs: number,
+        endUnixMs: number,
+        attributes: SpanAttributes,
+        status: OtelSpan['status'],
+    ): OtelSpan => ({
+        name,
+        kind: 'CLIENT',
+        traceId: run.traceId,
+        spanId: hex(8),
+        parentSpanId: run.spanId,
+        startUnixMs,
+        endUnixMs,
+        attributes,
+        status,
+        events: [],
+    });
+
+    const pages = run.events.filter((e) => e.name === 'paginate');
+    if (pages.length > 0) {
+        let prev = run.startUnixMs;
+        return pages.map((p, i) => {
+            const span = child(
+                `page ${i + 1}`,
+                prev,
+                p.timeUnixMs,
+                { 'stitch.page': i + 1 },
+                { code: 'OK' }, // a page that emitted a paginate marker completed
+            );
+            prev = p.timeUnixMs;
+            return span;
+        });
+    }
+
+    const reqs = run.events.filter((e) => e.name === 'request');
+    if (reqs.length > 1) {
+        return reqs.map((r, i) => {
+            const next = reqs[i + 1];
+            const attempt = Number(r.attributes?.['stitch.attempt'] ?? i + 1);
+            // A non-final attempt was followed by another request → it failed and was retried;
+            // carry the retry reason. The final attempt's outcome IS the run's.
+            const retry = run.events.find(
+                (e) =>
+                    e.name === 'retry' &&
+                    e.timeUnixMs >= r.timeUnixMs &&
+                    (next === undefined || e.timeUnixMs <= next.timeUnixMs),
+            );
+            const detail = retry?.attributes?.['stitch.detail'];
+            const status: OtelSpan['status'] = next
+                ? {
+                      code: 'ERROR',
+                      ...(detail !== undefined
+                          ? { message: String(detail) }
+                          : {}),
+                  }
+                : run.status;
+            return child(
+                `attempt ${attempt}`,
+                r.timeUnixMs,
+                next ? next.timeUnixMs : run.endUnixMs,
+                { 'stitch.attempt': attempt },
+                status,
+            );
+        });
+    }
+    return [];
+}
+
 /**
  * A TraceSink that turns each stitch call's events (start → … → done) into a single OTel CLIENT
  * span, exported on `done`. Attributes follow the OTel HTTP semantic conventions
@@ -72,9 +150,9 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
         return stack?.[stack.length - 1];
     };
 
-    const emit = (span: OtelSpan): void => {
+    const emit = (spans: OtelSpan[]): void => {
         try {
-            const r = exporter.export([span]) as unknown;
+            const r = exporter.export(spans) as unknown;
             if (r instanceof Promise)
                 r.catch(() => {
                     /* swallow: an export failure must never break the stream */
@@ -187,7 +265,9 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     const span = open.get(key)?.pop();
                     if (span) {
                         span.endUnixMs = event.at;
-                        emit(span);
+                        // Export the run span PLUS its flat per-iteration child spans (attempts /
+                        // pages) so the operator's waterfall shows how each performed (ADR 0007).
+                        emit([span, ...buildChildSpans(span)]);
                     }
                     break;
                 }

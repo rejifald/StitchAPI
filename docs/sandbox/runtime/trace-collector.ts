@@ -51,6 +51,10 @@ interface OpenEntry {
     status?: number;
     error?: { name: string; message: string };
     chunks: number;
+    /** Count of `request` progress events — i.e. attempts (ADR 0007); >1 means a retry happened. */
+    attempts: number;
+    /** Count of `paginate` progress events — i.e. pages fetched (ADR 0007). */
+    pages: number;
 }
 
 export interface TraceCollector {
@@ -101,6 +105,10 @@ function finalize(
     // Runtime causality (ADR 0007): a child run depends on the parent that spawned it, so the
     // DAG draws a parent → child edge (e.g. cookieSession login → the call that triggered it).
     if (e.parentId) entry.dependsOn = [e.parentId];
+    // Per-iteration counts as node annotations (ADR 0007) — only when noteworthy (a retry / a
+    // paginated run); the per-attempt/page detail lives in the OTLP waterfall, not as DAG nodes.
+    if (e.attempts > 1) entry.attempts = e.attempts;
+    if (e.pages > 0) entry.pages = e.pages;
     return entry;
 }
 
@@ -142,6 +150,8 @@ export function createTraceCollector(
                                 event.input?.headers,
                             ),
                             chunks: 0,
+                            attempts: 0,
+                            pages: 0,
                         });
                         break;
                     }
@@ -185,7 +195,17 @@ export function createTraceCollector(
                         }
                         break;
                     }
-                    // 'progress' / 'drift' / 'info' carry no DAG-node data — ignored.
+                    case 'progress': {
+                        // Count attempts (`request` per try) + pages (`paginate` per page) for the
+                        // node-annotation counts (ADR 0007); the rich per-iteration timing is OTLP's.
+                        const e = find(ctx);
+                        if (e) {
+                            if (event.phase === 'request') e.attempts += 1;
+                            else if (event.phase === 'paginate') e.pages += 1;
+                        }
+                        break;
+                    }
+                    // 'drift' / 'info' carry no DAG-node data — ignored.
                 }
             },
         };
