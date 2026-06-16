@@ -97,6 +97,56 @@ single-purpose sinks, `createTrace({ console, file })` returns one that does
 both, and `multiplex(a, b, ...)` fans one event stream out to several sinks at
 once. All are exported from [`stitchapi`](/docs/reference/helpers).
 
+## Logging to a host logger
+
+Already running pino, winston, or just `console`? `loggerSink(logger)` bridges the
+event stream straight onto it — no JSONL file, no OTLP collector. It is
+**logger-agnostic** (anything with `error` / `warn` / `info` / `debug` methods
+satisfies the `LoggerLike` shape) and **payload-free**: it logs only metadata —
+name, method, scrubbed URL, status, attempt counts, drift path/level, timing —
+never `event.input`, `event.value`, or a streamed `delta` chunk.
+
+```ts twoslash
+import { loggerSink, stitch } from 'stitchapi';
+
+// `console` already satisfies LoggerLike; swap in `pino()` / a winston logger / a
+// Nest `Logger` and nothing else changes.
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    trace: loggerSink(console),
+});
+```
+
+Each `StitchEvent` maps to a level:
+
+| Event                                  | Level                                                   |
+| -------------------------------------- | ------------------------------------------------------- |
+| `result`                               | `info`                                                  |
+| `error`                                | `error`                                                 |
+| `drift`                                | the finding's own level (`error` / `warn` / `info`)     |
+| `start` / `progress` / `info` / `done` | `debug`                                                 |
+| `delta`                                | _never logged_ — a streamed chunk is raw response data. |
+
+Override any per-type level with `levels` — for example, demote the happy-path
+`result` to `debug` so production logs stay quiet until something drifts or errors:
+
+```ts twoslash
+import { loggerSink, stitch } from 'stitchapi';
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    trace: loggerSink(console, { levels: { result: 'debug' } }),
+});
+```
+
+<Callout type="info">
+    This is the generic core counterpart to `@stitchapi/nest`'s NestJS-specific
+    `loggerSink`, which forwards the same payload-free metadata to a Nest
+    `Logger` — see [NestJS integration](/docs/integrations/nestjs).
+</Callout>
+
 ## Turning tracing off
 
 There are two off switches, both of which disable the built-in sinks:
