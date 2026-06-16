@@ -37,6 +37,7 @@ export type DriftChange =
     | 'type-changed'
     | 'nullable'
     | 'new'
+    | 'no-baseline'
     | 'invalid';
 export interface DriftFinding {
     level: DriftLevel;
@@ -68,7 +69,37 @@ export interface DriftOptions {
     /** Paths (same grammar as {@link DriftOptions.critical}, e.g. `items[].field`) whose change is leveled to a `warn`. */
     watch?: string[];
     onNew?: DriftLevel; // level for brand-new fields (default 'info')
-    snapshotFile?: string; // committed baseline (`<name>.contract.json`)
+    /**
+     * Detect-but-never-write (default `false`). When `true`, a missing snapshot is NOT written;
+     * instead it surfaces a `no-baseline` finding (at {@link DriftOptions.onMissing}). Use in
+     * deployed/prod contexts so a drift-guarded call can never write a baseline as a side effect
+     * (the default first-run behaviour writes one).
+     */
+    readonly?: boolean;
+    /**
+     * Level for the `no-baseline` finding emitted in {@link DriftOptions.readonly} mode when the
+     * snapshot is absent. Default `'warn'`.
+     */
+    onMissing?: DriftLevel;
+    /**
+     * Committed baseline (`<name>.contract.json`). The path is resolved relative to
+     * `process.cwd()` — **not** the declaring module — so running a package's tests/app from a
+     * different working directory writes/reads the snapshot in the wrong place. Prefer an absolute
+     * or caller-relative path; anchor it to the module that declares the stitch with
+     * `fileURLToPath(new URL(...))`:
+     *
+     * @example
+     * ```ts
+     * import { fileURLToPath } from 'node:url';
+     *
+     * drift(userSchema, {
+     *     snapshotFile: fileURLToPath(
+     *         new URL('./users.contract.json', import.meta.url),
+     *     ),
+     * });
+     * ```
+     */
+    snapshotFile?: string;
 }
 export interface DriftSpec<T = unknown> {
     __kind: 'drift';

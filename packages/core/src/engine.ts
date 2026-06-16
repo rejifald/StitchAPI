@@ -334,8 +334,19 @@ async function validateOutput(
         const opts = (out as DriftSpec).options;
         if (opts.snapshotFile) {
             const snap = loadSnapshot(opts.snapshotFile);
-            if (snap === undefined) saveSnapshot(opts.snapshotFile, body);
-            else findings.push(...classifyDrift(body, snap, opts));
+            if (snap === undefined) {
+                // No committed baseline. By default record one (the spike's first-run behaviour);
+                // in `readonly` mode (deployed/prod) never write — surface a `no-baseline` finding
+                // so a drift-guarded call can't write a baseline as a side effect.
+                if (opts.readonly)
+                    findings.push({
+                        level: opts.onMissing ?? 'warn',
+                        path: '',
+                        change: 'no-baseline',
+                        detail: `no committed snapshot at ${opts.snapshotFile}; generate the baseline before enabling readonly drift`,
+                    });
+                else saveSnapshot(opts.snapshotFile, body);
+            } else findings.push(...classifyDrift(body, snap, opts));
         }
     }
     return findings;
