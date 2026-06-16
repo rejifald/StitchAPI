@@ -32,7 +32,9 @@ call time and never committed.
 
 `header` overrides the header name (default `x-api-key`, lowercased) when
 `in: 'header'`: pass `apiKey({ header: 'X-My-Key', value: env('API_KEY') })` to
-send the key under a custom header.
+send the key under a custom header. The name goes on the wire **lowercased**
+(`x-my-key`) — case-insensitive per HTTP, but worth knowing if a fixture asserts
+the original casing. See [Migration notes](/docs/getting-started/migration-notes).
 
 ## In a query parameter
 
@@ -80,5 +82,9 @@ field.
     <Card
         title="Reference: Auth strategies"
         href="/docs/reference/auth-strategies"
+    />
+    <Card
+        title="Migration notes"
+        href="/docs/getting-started/migration-notes"
     />
 </Cards>

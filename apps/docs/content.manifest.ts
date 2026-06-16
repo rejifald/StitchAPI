@@ -110,6 +110,13 @@ export const pages: Page[] = [
             'Declare your first stitch from one endpoint and call it as a typed function in five minutes.',
         kind: 'tutorial',
     },
+    {
+        path: 'getting-started/migration-notes',
+        title: 'Migration notes',
+        description:
+            'Three spec-correct behaviors — lowercase header names, %20 query spaces, and template-narrowed stitch types — that differ from a naive baseline and surprise migrators.',
+        kind: 'guide',
+    },
 
     // ── Concepts ────────────────────────────────────────────────────────────
     {
