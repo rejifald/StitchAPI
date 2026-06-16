@@ -6,8 +6,11 @@ description: 'How StitchAPI errors work, the code-to-docs contract, and an index
 When a stitch can't produce a result, it fails with a `StitchError` — an `Error`
 subclass exported from `stitchapi`, carrying a human-readable `message`, an
 optional `.status` (the upstream HTTP status), and `.attempts` (how many tries
-the runtime made before giving up). Await a stitch and that error is what `catch`
-receives — narrow it with `instanceof`:
+the runtime made before giving up). When the failure came from an HTTP response it
+also carries `.body` (the parsed error payload — an API's `{ error: "…" }`) and
+`.url` (the final request URL, after redirects); both are `undefined` for
+transport/internal errors. Await a stitch and that error is what `catch` receives —
+narrow it with `instanceof`:
 
 ```ts twoslash
 import { StitchError, stitch } from 'stitchapi';
@@ -21,10 +24,20 @@ try {
     await me();
 } catch (e) {
     if (e instanceof StitchError) {
-        console.error(e.message, e.status, e.attempts);
+        // .body is the parsed error payload; .url is the final request URL.
+        console.error(e.message, e.status, e.attempts, e.body, e.url);
     }
 }
 ```
+
+<Callout type="info">
+    `.body` carries the upstream error payload only to the awaited / `.safe()`
+    caller — it rides a non-enumerable channel and is **never** written to a trace
+    sink, so an `{ error: "…" }` payload can't leak into a JSONL/console log. If a
+    non-2xx is actually expected control flow (a `404` you fall back from), see
+    [`acceptStatus`](/docs/guides/resilience/accept-status) — it returns the body
+    as a normal result instead of throwing.
+</Callout>
 
 If you read the [event stream](/docs/concepts/event-stream) instead of awaiting,
 the same failure arrives as an `error` event carrying

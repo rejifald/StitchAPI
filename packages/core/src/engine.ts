@@ -269,6 +269,15 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
             value: err,
             enumerable: false,
         });
+    } else if ((err as { response?: AdapterResponse }).response !== undefined) {
+        // HTTP failure (issue #155): the thrown error carries the full `.response` (body + url).
+        // Pin it on the SAME non-enumerable channel so `drain`/`asStitchError` can populate
+        // `StitchError.body`/`.url`. Non-enumerable ⇒ the body never serialises into a trace sink
+        // (privacy preserved); the enumerable `status`/`message` are all a sink sees.
+        Object.defineProperty(evt, ERROR_SOURCE, {
+            value: err,
+            enumerable: false,
+        });
     }
     return evt;
 }
@@ -433,6 +442,51 @@ async function acquireWithin(
     }
 }
 
+// Normalize `acceptStatus` (a number list, a predicate, or unset) into a single predicate. Unset →
+// accept nothing (every `>= 400` still throws). Shared by the buffered/paginated `attemptLoop` and
+// the streaming path so both honour the same per-stitch policy.
+function acceptsStatus(
+    accept: number[] | ((status: number) => boolean) | undefined,
+): (status: number) => boolean {
+    if (accept === undefined) return () => false;
+    if (typeof accept === 'function') return accept;
+    return (status) => accept.includes(status);
+}
+
+// Materialize a streaming-path error body for StitchError.body. A streaming adapter hands back the
+// live `ReadableStream` unparsed (so it can be decoded into deltas); on the error branch the stream
+// is never decoded, so read it to text and best-effort JSON-parse it — the same shape the buffered
+// path produces. A non-stream body (an adapter that already buffered) passes through unchanged; a
+// read failure degrades to `undefined` rather than throwing over the original HTTP error.
+async function drainErrorBody(body: unknown): Promise<unknown> {
+    if (
+        body == null ||
+        typeof (body as ReadableStream<Uint8Array>).getReader !== 'function'
+    ) {
+        return body; // already buffered/parsed (or empty) — nothing to drain.
+    }
+    try {
+        const reader = (body as ReadableStream<Uint8Array>).getReader();
+        const dec = new TextDecoder();
+        let text = '';
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            // After `done` is false, `value` is a Uint8Array (never undefined).
+            text += dec.decode(value, { stream: true });
+        }
+        text += dec.decode();
+        if (text === '') return undefined;
+        try {
+            return JSON.parse(text);
+        } catch {
+            return text; // not JSON — keep the raw text payload.
+        }
+    } catch {
+        return undefined; // body already consumed / errored — don't mask the HTTP error.
+    }
+}
+
 async function* attemptLoop(
     rt: Runtime,
     baseReq: AdapterRequest,
@@ -451,6 +505,11 @@ async function* attemptLoop(
     // retrying. Everything else — auth, the success path, non-rate-limit failures — is unchanged.
     const delegate = cfg.rateLimit?.delegate === true;
     const rlOn = cfg.rateLimit?.on ?? [429];
+    // acceptStatus (issue #155): statuses the caller declares NORMAL — an accepted non-2xx returns
+    // `res` like a 2xx (flowing through interpret → transform → unwrap → validate) instead of
+    // throwing. Checked at the `>= 400` site, i.e. AFTER the retry-on-status path, so `retry.on`
+    // still wins while attempts remain (retried, then accepted on the final attempt).
+    const accepts = acceptsStatus(cfg.acceptStatus);
 
     for (let attempt = 1; attempt <= max; attempt++) {
         state.attempts = attempt;
@@ -573,7 +632,7 @@ async function* attemptLoop(
                 continue;
             }
 
-            if (res.status >= 400) {
+            if (res.status >= 400 && !accepts(res.status)) {
                 const e = new Error(`HTTP ${res.status}`) as Error & {
                     status: number;
                     response: AdapterResponse;
@@ -582,6 +641,7 @@ async function* attemptLoop(
                 e.response = res;
                 throw e;
             }
+            // A 2xx, or an accepted non-2xx: return it so it flows through the success pipeline.
             return res;
         } finally {
             // No release in delegate mode — we never acquired a slot (the host owns the gate).
@@ -995,9 +1055,24 @@ async function* runStreaming(
         return;
     }
 
-    if (res.status >= 400) {
-        const e = new Error(`HTTP ${res.status}`) as Error & { status: number };
+    // acceptStatus (issue #155): an accepted non-2xx streams its live body like a 2xx instead of
+    // failing — same per-stitch policy the buffered/paginated `attemptLoop` honours.
+    if (res.status >= 400 && !acceptsStatus(cfg.acceptStatus)(res.status)) {
+        // The error response carries the parsed payload, not a live stream — drain the unread body
+        // (a small `{ error: "…" }`, not a real stream the caller wants) so StitchError.body is the
+        // PARSED payload, matching the buffered path. Pin it (with `.url`) via ERROR_SOURCE.
+        const errored: AdapterResponse = {
+            status: res.status,
+            headers: res.headers,
+            body: await drainErrorBody(res.body),
+            ...(res.url !== undefined ? { url: res.url } : {}),
+        };
+        const e = new Error(`HTTP ${res.status}`) as Error & {
+            status: number;
+            response: AdapterResponse;
+        };
         e.status = res.status;
+        e.response = errored; // carries body + url for StitchError.body/.url (pinned via ERROR_SOURCE)
         yield errEvt(e, name, 1);
         yield doneEvt(false, t0, 1);
         return;

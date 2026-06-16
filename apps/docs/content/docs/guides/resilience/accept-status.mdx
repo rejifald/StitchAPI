@@ -1,0 +1,86 @@
+---
+title: 'Accept status'
+description: 'Declare statuses that are a normal result, not an error — an accepted non-2xx flows through transform/unwrap/validate instead of throwing.'
+---
+
+By default every `status >= 400` is a failure: the stitch throws a
+[`StitchError`](/docs/errors), so a `404` you _expected_ — a resource that's gone,
+where you fall back to a broader call — has to be handled in a `catch`. That turns
+ordinary control flow into exception handling.
+
+`acceptStatus` lets you declare which non-2xx statuses are a **normal result**. An
+accepted status no longer throws: its response body becomes the result and flows
+through the same pipeline a `2xx` does — `interpret` → `transform` → `unwrap` →
+`output` validation — so the happy path stays on the happy path.
+
+## Example
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const lookup = stitch<{ id: string } | { missing: true }>({
+    baseUrl: 'https://api.example.com',
+    path: '/items/{id}',
+    acceptStatus: [404], // a 404 is "not found", not a thrown error
+    transform: (body) =>
+        // Reshape the 404 payload into a sentinel your code can branch on.
+        body && typeof body === 'object' && 'id' in body
+            ? body
+            : { missing: true },
+});
+
+const item = await lookup({ params: { id: 'abc' } });
+if ('missing' in item) {
+    // fall back to a broader call — no try/catch needed
+}
+```
+
+A `404` here **resolves** with the response body instead of rejecting. Everything
+else (`401`, `500`, …) still throws a `StitchError` exactly as before — `acceptStatus`
+is additive, never a blanket "ignore failures".
+
+## A list or a predicate
+
+`acceptStatus` is either a number list or a predicate `(status) => boolean`. Use a
+predicate to accept a range:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const probe = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/probe',
+    // accept every 4xx as a result; a 5xx still throws
+    acceptStatus: (status) => status >= 400 && status < 500,
+});
+```
+
+## Interaction with retry
+
+`retry.on` **wins while attempts remain**. A status listed in _both_
+[`retry.on`](/docs/guides/resilience/retry) and `acceptStatus` is retried until
+attempts are exhausted, then **accepted** (returned) on the final attempt — so you
+can retry a flaky `503` a few times and still treat a persistent one as a result
+rather than an error:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const call = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/maybe',
+    retry: { attempts: 3, on: [503] }, // retry a 503 up to 3 times…
+    acceptStatus: [503], // …then accept it on the final attempt
+});
+```
+
+`acceptStatus` is orthogonal to
+[`rateLimit.delegate`](/docs/guides/resilience/delegate-backoff), which surfaces a
+`RateLimitError` on rate-limit statuses earlier and is unaffected by this option.
+
+## When you still want the error body
+
+If a non-2xx is a _genuine_ failure but you need the API's error payload — its
+`{ error: "…" }` body — don't reach for `acceptStatus`. Let it throw and read
+[`StitchError.body`](/docs/errors) (and `.url`), which carry the parsed payload and
+final request URL on the awaited / `.safe()` path.
