@@ -447,17 +447,13 @@ export function makeStitch<T = unknown>(
     const rt: Runtime = makeRuntime(cfg, throttle, trace, store, rtOpts);
     const name = cfg.name ?? cfg.path ?? 'stitch';
 
-    // One run per consumption (ADR 0007): mint the identity here so `tee`'s sink ctx and the
-    // engine's `start` event share it. Each `.stream()` / awaited call is its own run.
-    const streamFn = (input?: StitchInput) => {
-        const run = newRunContext();
-        return tee<T>(
-            execute(rt, input ?? {}, run) as never,
-            rt.trace,
-            name,
-            run,
-        );
-    };
+    // One traced run for `input` under a given run identity (ADR 0007). `streamFn` mints a fresh
+    // ROOT run per consumption; `pipe()` (stitchapi/pipe) supplies a CHILD run via `__runWith`, so a
+    // step joins the pipe's chain (its events tee with parentId set).
+    const streamWith = (input: StitchInput, run: RunContext) =>
+        tee<T>(execute(rt, input, run) as never, rt.trace, name, run);
+    const streamFn = (input?: StitchInput) =>
+        streamWith(input ?? {}, newRunContext());
 
     const result = (input?: StitchInput): StitchResult<T> => {
         const make = () => streamFn(input);
@@ -496,6 +492,10 @@ export function makeStitch<T = unknown>(
             input: StitchInput | undefined,
             parent: RunContext,
         ) => Promise<unknown>;
+        __runWith: (
+            input: StitchInput | undefined,
+            run: RunContext,
+        ) => Promise<unknown>;
     };
     stitchFn.stream = streamFn;
     stitchFn.safe = (input?: StitchInput) => consumeSafe<T>(streamFn(input));
@@ -508,6 +508,10 @@ export function makeStitch<T = unknown>(
             __rawTraced: (
                 input: StitchInput | undefined,
                 parent: RunContext,
+            ) => Promise<unknown>;
+            __runWith: (
+                input: StitchInput | undefined,
+                run: RunContext,
             ) => Promise<unknown>;
         };
         bound.stream = (input?: StitchInput) =>
@@ -527,6 +531,8 @@ export function makeStitch<T = unknown>(
                 rt.trace,
                 newRunContext(parent),
             );
+        bound.__runWith = (input, run) =>
+            consume<T>(streamWith(mergeInput(partial, input), run));
         attachMeta(bound, cfg);
         attachCacheSurface(bound, rt, (input) => mergeInput(partial, input));
         return bound;
@@ -536,6 +542,10 @@ export function makeStitch<T = unknown>(
     // caller's run. `newRunContext(parent)` inherits the parent's traceId + sets parentId.
     stitchFn.__rawTraced = (input, parent) =>
         executeRawTraced(rt, input ?? {}, rt.trace, newRunContext(parent));
+    // Run this stitch under a supplied run identity (ADR 0007) and resolve to its value — `pipe()`
+    // mints a chain of run contexts and threads each step's here, so a step is a child of the prior.
+    stitchFn.__runWith = (input, run) =>
+        consume<T>(streamWith(input ?? {}, run));
     attachMeta(stitchFn, cfg);
     attachCacheSurface(stitchFn, rt, (input) => input ?? {});
     // A seam records the stitches it created (registry/lifecycle); standalone stitches don't register.
