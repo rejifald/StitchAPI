@@ -45,6 +45,59 @@ This is the opposite end from plain
 malformed response hard, here and now, while drift watches for the _silent_
 contract change across calls and lets you triage it by severity.
 
+## Read-only drift in production
+
+The first call with no committed snapshot **writes** one and reports nothing — a
+convenience while you develop the contract. In a deployed/prod context that is a
+footgun: the first request silently persists a baseline (possibly to a read-only
+path) and "passes" instead of detecting drift. Set `readonly: true` to make
+drift _detect-but-never-write_ — a missing snapshot surfaces a `no-baseline`
+finding instead of being written as a call side effect:
+
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: drift(z.object({ id: z.number(), email: z.string() }), {
+        readonly: true,
+        // Surface a missing baseline as an error, not the default warn.
+        onMissing: 'error',
+        snapshotFile: 'users.contract.json',
+    }),
+});
+```
+
+Generate the baseline once (run the stitch without `readonly`, or commit a
+recorded response), check the `<name>.contract.json` into the repo, then ship
+with `readonly: true`. `onMissing` levels the `no-baseline` finding (default
+`'warn'`); `'error'` fails the call so a missing baseline can't slip past CI.
+
+## `snapshotFile` is resolved from `process.cwd()`
+
+A relative `snapshotFile` resolves against the **current working directory**, not
+the module that declares the stitch — so running a package's tests or app from a
+different directory writes/reads the snapshot in the wrong place. Pass an
+absolute or caller-relative path. The portable spelling anchors the file to the
+declaring module with `fileURLToPath(new URL(...))`:
+
+```ts
+import { fileURLToPath } from 'node:url';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: drift(userSchema, {
+        readonly: true,
+        snapshotFile: fileURLToPath(
+            new URL('./users.contract.json', import.meta.url),
+        ),
+    }),
+});
+```
+
 <Callout type="info">
     Findings arrive as `drift` events on [the event
     stream](/docs/concepts/event-stream) — subscribe to inspect `warn` and
