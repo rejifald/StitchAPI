@@ -24,7 +24,14 @@ export type {
 } from './axios-adapter';
 export { xhrAdapter } from './xhr-adapter';
 export type { XhrLike, XhrLikeCtor, XhrProgress } from './xhr-adapter';
-export { createTrace, consoleSink, fileSink, multiplex } from './trace';
+export {
+    createTrace,
+    consoleSink,
+    fileSink,
+    multiplex,
+    loggerSink,
+} from './trace';
+export type { LoggerLike, LoggerSinkOptions, LogLevel } from './trace';
 export { otlpTrace, otlpHttpExporter, toOtlpJson } from './otlp';
 export type {
     SpanExporter,
