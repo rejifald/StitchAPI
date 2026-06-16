@@ -7,9 +7,30 @@ import type {
     ResponseType,
 } from './types';
 
+/** Options for {@link fetchAdapter}: thread a per-stitch undici dispatcher and/or
+ *  override the global `fetch` — without StitchAPI ever importing undici (zero deps). */
+export interface FetchAdapterOptions {
+    /** An undici Dispatcher/Agent (proxy, custom CA, interface binding). Passed straight
+     *  to Node's `fetch` as the non-standard `dispatcher` init option. Typed `unknown` to
+     *  avoid a hard undici dependency — the runtime stays zero-deps; you bring your own Agent. */
+    dispatcher?: unknown;
+    /** Override the global `fetch` (testing / custom runtimes). Defaults to `globalThis.fetch`. */
+    fetch?: typeof fetch;
+}
+
+// The standard `RequestInit` has no `dispatcher` field (it's an undici extension Node's
+// `fetch` honors), so the init is typed locally as RequestInit widened with the extra key —
+// no `any`, in the spirit of the `as BlobPart` narrowings below. The intersection stays
+// assignable to RequestInit, so the call site needs no cast.
+type FetchInitWithDispatcher = RequestInit & { dispatcher?: unknown };
+
 // Returns an Adapter backed by Node's global `fetch`. Never throws on non-2xx —
 // only network/abort errors propagate; the engine decides what to do with the response.
-export function fetchAdapter(): Adapter {
+// Pass `opts.dispatcher` to route the request through an undici Agent (proxy, custom CA,
+// interface binding); pass `opts.fetch` to swap in a different fetch (testing / runtimes).
+export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
+    // Resolve the fetch implementation once (override wins; else the global).
+    const fetchImpl = opts?.fetch ?? fetch;
     return async function fetchAdapterRequest(
         req: AdapterRequest,
     ): Promise<AdapterResponse> {
@@ -24,13 +45,21 @@ export function fetchAdapter(): Adapter {
             headers['content-type'] = contentType;
         }
 
-        // Send the request. Network/abort errors propagate to the caller.
-        const response = await fetch(req.url, {
+        // Build the init as a typed local so the non-standard `dispatcher` key can be added
+        // when supplied; with no dispatcher the key is omitted entirely (identical to before).
+        const init: FetchInitWithDispatcher = {
             method,
             headers,
             ...(body !== undefined ? { body } : {}),
             ...(req.signal ? { signal: req.signal } : {}),
-        });
+            ...(opts?.dispatcher !== undefined
+                ? { dispatcher: opts.dispatcher }
+                : {}),
+        };
+
+        // Send the request. Network/abort errors propagate to the caller. The local init type
+        // (with the undici-only `dispatcher`) widens cleanly to the RequestInit fetch expects.
+        const response = await fetchImpl(req.url, init);
 
         // Collect response headers with lowercased keys; join multiple set-cookie with ', '.
         const resHeaders: Record<string, string> = {};
