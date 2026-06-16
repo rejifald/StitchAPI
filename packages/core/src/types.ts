@@ -516,13 +516,52 @@ export interface StitchConfig {
     trace?: TraceSink | 'console' | false;
 }
 
+/**
+ * The error a failed stitch raises: a non-2xx response (after retries), a contract/validation
+ * breach, a timeout, or an open circuit. It is what `await stitch(...)` and {@link Stitch.unwrap}
+ * throw, and what rides in `error` on the {@link SafeResult} from {@link Stitch.safe}.
+ */
+export class StitchError extends Error {
+    /** HTTP status when the failure came from a response; `undefined` for transport/internal errors. */
+    readonly status: number | undefined;
+    /** Attempts made before giving up (1 = no retry). */
+    readonly attempts: number;
+    constructor(
+        message: string,
+        opts: {
+            status?: number | undefined;
+            attempts?: number | undefined;
+            cause?: unknown;
+        } = {},
+    ) {
+        super(
+            message,
+            opts.cause !== undefined ? { cause: opts.cause } : undefined,
+        );
+        this.name = 'StitchError';
+        this.status = opts.status;
+        this.attempts = opts.attempts ?? 0;
+    }
+}
+
+/**
+ * The outcome of a never-throwing call ({@link Stitch.safe}). A discriminated union: check `error`
+ * (or `ok`) — when `error` is `null` the call succeeded and `data` is the result; otherwise `error`
+ * is the {@link StitchError} and `data` is `null`.
+ */
+export type SafeResult<T> =
+    | { ok: true; data: T; error: null }
+    | { ok: false; data: null; error: StitchError };
+
 export interface StitchResult<T> extends PromiseLike<T> {
     stream(): AsyncGenerator<StitchEvent<T>, void>;
-    /** Attach a rejection handler (like `Promise.catch`); the stitch runs once, shared with `then`/`finally`. */
+    /** Consume the call without throwing — resolves to `{ ok, data, error }` (see {@link SafeResult}); shares the one run with `then`/`catch`/`finally`. */
+    safe(): Promise<SafeResult<T>>;
+    /** Attach a rejection handler (like `Promise.catch`); the stitch runs once, shared with `then`/`finally`/`safe`. */
     catch<R = never>(
         onrejected?: ((reason: unknown) => R | PromiseLike<R>) | null,
     ): Promise<T | R>;
-    /** Run a callback when the call settles (like `Promise.finally`); shared with `then`/`catch`. */
+    /** Run a callback when the call settles (like `Promise.finally`); shared with `then`/`catch`/`safe`. */
     finally(onfinally?: (() => void) | null): Promise<T>;
 }
 /**
@@ -536,6 +575,16 @@ export interface StitchResult<T> extends PromiseLike<T> {
 export interface Stitch<TOut = unknown, TIn = StitchInput> {
     (...args: Args<TIn>): StitchResult<TOut>;
     stream(...args: Args<TIn>): AsyncGenerator<StitchEvent<TOut>, void>;
+    /**
+     * Call without throwing: resolves to a `SafeResult` — `{ ok, data, error }`. The eager
+     * shortcut for `stitch(...).safe()`, mirroring `.stream()`.
+     */
+    safe(...args: Args<TIn>): Promise<SafeResult<TOut>>;
+    /**
+     * Call and unwrap to the value, throwing a `StitchError` on failure. The named twin
+     * of `.safe()` (and an explicit spelling of the throwing bare call).
+     */
+    unwrap(...args: Args<TIn>): Promise<TOut>;
     with<const P extends Partial<TIn>>(
         partial: P,
     ): Stitch<TOut, RelaxKeys<TIn, keyof P>>;
