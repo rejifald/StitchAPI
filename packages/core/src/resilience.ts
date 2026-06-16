@@ -3,6 +3,7 @@
 // pacing/cancellation go through the shared `sleep`/`now` helpers from `./util`.
 import type {
     AcquireOptions,
+    AdapterResponse,
     CircuitOptions,
     RetryOptions,
     StitchStore,
@@ -201,6 +202,34 @@ export class CircuitOpenError extends Error {
     constructor(message = 'circuit open') {
         super(message);
         this.name = 'CircuitOpenError';
+    }
+}
+
+/**
+ * Thrown (and surfaced as an `error` event) when a stitch runs in **delegate-backoff** mode
+ * (`rateLimit.delegate`) and the response carries a rate-limit status (default `429`). Instead of
+ * retrying internally or pacing on the built-in throttle, the engine surfaces the outcome so an
+ * OUTER gate/circuit — owned by the host — decides the backoff (issue #145). Carries the structured
+ * signal that gate needs: the `status`, the `retryAfterMs` parsed from `Retry-After` (delta-seconds
+ * OR HTTP-date; `undefined` when the header is absent/unparseable), and the raw `response` so the
+ * host can read other rate headers (`X-RateLimit-*`, etc.). The full `response` rides on the live
+ * instance only — never the serialized `error` event — so it cannot leak into a trace sink.
+ */
+export class RateLimitError extends Error {
+    readonly status: number;
+    readonly retryAfterMs: number | undefined;
+    readonly response: AdapterResponse;
+    constructor(opts: {
+        status: number;
+        retryAfterMs?: number | undefined;
+        response: AdapterResponse;
+        message?: string;
+    }) {
+        super(opts.message ?? `rate limited (HTTP ${opts.status})`);
+        this.name = 'RateLimitError';
+        this.status = opts.status;
+        this.retryAfterMs = opts.retryAfterMs;
+        this.response = opts.response;
     }
 }
 

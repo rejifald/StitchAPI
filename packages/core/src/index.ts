@@ -45,4 +45,7 @@ export { toValidator } from './validator';
 export type { Issue, ValidationResult, Validator } from './validator';
 export type { InferInput, InferOutput, SchemaLike } from './infer';
 export { memoryStore } from './store';
+// The delegate-backoff error (issue #145): thrown on the awaited path and surfaced as an `error`
+// event when `rateLimit.delegate` is on, so a host's outer gate owns the rate-limit backoff.
+export { RateLimitError } from './resilience';
 export * from './types';

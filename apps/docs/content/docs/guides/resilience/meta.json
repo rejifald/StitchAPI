@@ -1,4 +1,11 @@
 {
     "title": "Resilience",
-    "pages": ["retry", "throttle", "timeout", "circuit-breaker", "idempotency"]
+    "pages": [
+        "retry",
+        "throttle",
+        "timeout",
+        "circuit-breaker",
+        "delegate-backoff",
+        "idempotency"
+    ]
 }

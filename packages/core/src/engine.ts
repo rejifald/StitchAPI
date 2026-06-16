@@ -10,6 +10,7 @@ import { classifyDrift, loadSnapshot, saveSnapshot } from './drift';
 import { fetchAdapter } from './http-adapter';
 import {
     CircuitOpenError,
+    RateLimitError,
     TimeoutError,
     backoffDelay,
     createCircuit,
@@ -243,6 +244,13 @@ const hostKey = (req: AdapterRequest, cfg: StitchConfig): string => {
     return nameOf(cfg);
 };
 
+// A non-enumerable back-reference from an `error` event to the live error instance it was built
+// from. Used ONLY for a RateLimitError so the awaited path can re-throw the REAL instance — keeping
+// its `response` and class identity — rather than a flattened StitchError. Non-enumerable means it
+// never reaches a trace sink (which serialises via Object.entries / JSON.stringify, both of which
+// skip it), so the full `response` can't leak into a JSONL/console log. See `drain` in stitch.ts.
+export const ERROR_SOURCE = Symbol('stitch.errorSource');
+
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const e = err as { message?: string; status?: number };
     const evt: Extract<StitchEvent, { type: 'error' }> = {
@@ -253,6 +261,15 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
         at: now(),
     };
     if (e.status !== undefined) evt.status = e.status;
+    // Delegate-backoff signal: stamp the structured `retryAfterMs` onto the event (so `.stream()`
+    // consumers get it) and pin the live RateLimitError so the awaited path re-throws it intact.
+    if (err instanceof RateLimitError) {
+        if (err.retryAfterMs !== undefined) evt.retryAfterMs = err.retryAfterMs;
+        Object.defineProperty(evt, ERROR_SOURCE, {
+            value: err,
+            enumerable: false,
+        });
+    }
     return evt;
 }
 const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
@@ -428,18 +445,28 @@ async function* attemptLoop(
     const perAttemptMs = parseDuration(cfg.timeout?.perAttempt);
     const key = hostKey(baseReq, cfg);
     let refreshed = false;
+    // Delegate-backoff mode (issue #145): the host owns the gate. We bypass the internal throttle
+    // for the call (no acquire/release, so `throttle` is inert and no `throttled` event fires) and,
+    // on a response whose status is in `rlOn` (default [429]), surface a RateLimitError instead of
+    // retrying. Everything else — auth, the success path, non-rate-limit failures — is unchanged.
+    const delegate = cfg.rateLimit?.delegate === true;
+    const rlOn = cfg.rateLimit?.on ?? [429];
 
     for (let attempt = 1; attempt <= max; attempt++) {
         state.attempts = attempt;
-        const { waitedMs } = await acquireWithin(rt.throttle, key, budget);
-        if (waitedMs > 0)
-            yield {
-                type: 'progress',
-                phase: 'throttled',
-                attempt,
-                waitedMs,
-                at: now(),
-            };
+        // Skip the throttle entirely in delegate mode — the outer gate paces the call, so acquiring
+        // here would double-count against it (the bug this mode fixes).
+        if (!delegate) {
+            const { waitedMs } = await acquireWithin(rt.throttle, key, budget);
+            if (waitedMs > 0)
+                yield {
+                    type: 'progress',
+                    phase: 'throttled',
+                    attempt,
+                    waitedMs,
+                    at: now(),
+                };
+        }
         try {
             const req = cloneReq(baseReq);
             if (cfg.auth) {
@@ -515,6 +542,18 @@ async function* attemptLoop(
                 continue;
             }
 
+            // Delegate-backoff: a rate-limit status is NOT retried — surface it so the host's outer
+            // gate owns the backoff. Checked BEFORE the internal retry-on-status path so it wins even
+            // when the same status is also in `retry.on` (the common `429` overlap). `Retry-After` is
+            // parsed with the same helper the internal retry uses, so the host gets an identical hint.
+            if (delegate && rlOn.includes(res.status)) {
+                throw new RateLimitError({
+                    status: res.status,
+                    retryAfterMs: parseRetryAfter(res.headers['retry-after']),
+                    response: res,
+                });
+            }
+
             if (retryOn.includes(res.status) && attempt < max) {
                 const ra = cfg.retry?.respectRetryAfter
                     ? parseRetryAfter(res.headers['retry-after'])
@@ -545,7 +584,8 @@ async function* attemptLoop(
             }
             return res;
         } finally {
-            rt.throttle.release(key);
+            // No release in delegate mode — we never acquired a slot (the host owns the gate).
+            if (!delegate) rt.throttle.release(key);
         }
     }
     throw new Error('retry attempts exhausted');
