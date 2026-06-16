@@ -8,12 +8,11 @@ export {
     apiKey,
     basic,
     cookieSession,
-    inferBearer,
     oauth2,
     env,
+    optionalEnv,
     secretsFile,
 } from './auth';
-export type { InferBearerOpts } from './auth';
 export { fetchAdapter } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';
 export type {

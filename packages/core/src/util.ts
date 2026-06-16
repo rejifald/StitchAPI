@@ -371,11 +371,6 @@ export function readEnv(name: string): string | undefined {
     return (globalThis as PlatformGlobals).process?.env?.[name];
 }
 
-/** Whether a process environment exists to read at all — false in a browser bundle. */
-export function hasEnv(): boolean {
-    return !!(globalThis as PlatformGlobals).process?.env;
-}
-
 /** The slice of node:fs the file-based features use (trace JSONL, drift snapshots, secrets). */
 export interface NodeFs {
     existsSync(path: string): boolean;

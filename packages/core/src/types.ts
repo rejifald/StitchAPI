@@ -258,9 +258,9 @@ export interface AuthContext {
     principal?: string;
     /**
      * Announce an `info` StitchEvent onto the run's event stream — a strategy reporting a
-     * decision it made (e.g. which env var `inferBearer` read a token from, or that `oauth2`
-     * fetched a token). NEVER carries the secret itself. The engine buffers these during
-     * `apply`/`refresh` and yields them; outside a run it is a no-op.
+     * decision it made (e.g. which env var a `bearer` token resolved from via `optionalEnv`, or
+     * that `oauth2` fetched a token). NEVER carries the secret itself. The engine buffers these
+     * during `apply`/`refresh` and yields them; outside a run it is a no-op.
      */
     emit: (topic: string, detail?: string) => void;
     runLogin?: () => Promise<AdapterResponse>; // for cookieSession: invoke the login stitch

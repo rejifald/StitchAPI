@@ -10,10 +10,26 @@ import type {
     Stitch,
     StitchInput,
 } from './types';
-import { hasEnv, nodeFs, now, readEnv } from './util';
+import { nodeFs, now, readEnv } from './util';
 
 export type Secret = string | (() => string);
 const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
+
+/**
+ * A resolver that may yield no value: `bearer` attaches the header only when it resolves to a
+ * value, and otherwise skips it (announcing the miss) instead of failing. Produced by
+ * {@link optionalEnv}, and branded so `bearer` can tell it apart from a required {@link Secret} —
+ * which also keeps it, at the type level, out of the strategies that demand a credential
+ * (`apiKey`, `basic`, `oauth2`).
+ */
+export interface OptionalSecret {
+    (): string | undefined;
+    readonly __optional: true;
+    /** Human-readable source (e.g. `env var GITHUB_TOKEN`), used in the announced `info` event. */
+    readonly label: string;
+}
+const isOptional = (s: Secret | OptionalSecret): s is OptionalSecret =>
+    typeof s === 'function' && '__optional' in s;
 
 /**
  * Base64-encode a UTF-8 string without Node's `Buffer`, so HTTP Basic credentials work in a
@@ -35,6 +51,27 @@ export function env(name: string): () => string {
         if (v == null) throw new Error(`missing env var ${name}`);
         return v;
     };
+}
+
+/**
+ * Like {@link env}, but OPTIONAL: resolves the variable's value, or *absent* (`undefined`) when it
+ * is unset or empty — it never throws. Pass it to {@link bearer} to attach the credential only when
+ * present, otherwise send the request unauthenticated (announced in the trace):
+ * `bearer(optionalEnv('GITHUB_TOKEN'))`. For local/dev runs, notebooks, and agent loops where a
+ * token may or may not be exported; when the call must be authenticated, use the throwing
+ * `bearer(env('GITHUB_TOKEN'))`. In a browser bundle (no process environment) it resolves absent,
+ * so `bearer` simply attaches nothing.
+ */
+export function optionalEnv(name: string): OptionalSecret {
+    // An exported-but-empty var (`MY_TOKEN=`) counts as absent — never send `Bearer ` with no token.
+    const read = (): string | undefined => {
+        const v = readEnv(name);
+        return v == null || v === '' ? undefined : v;
+    };
+    return Object.assign(read, {
+        __optional: true as const,
+        label: `env var ${name}`,
+    });
 }
 
 /**
@@ -67,89 +104,27 @@ export function secretsFile(name: string): () => string {
     };
 }
 
-export function bearer(token: Secret): AuthStrategy {
+export function bearer(token: Secret | OptionalSecret): AuthStrategy {
     return {
         name: 'bearer',
-        apply(req) {
-            req.headers['authorization'] = `Bearer ${resolve(token)}`;
-        },
-    };
-}
-
-// The request host's main label (sans a leading `api.`/`www.`), upper-cased and identifier-safe.
-function hostEnvKey(host: string): string {
-    const label = host.replace(/^(?:api|www)\./i, '').split('.')[0] ?? '';
-    return label.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-}
-
-// The request URL's hostname, or undefined if it can't be parsed (defensive — by `apply` time the
-// engine has already resolved an absolute URL).
-function hostOf(url: string): string | undefined {
-    try {
-        return new URL(url).hostname;
-    } catch {
-        return undefined;
-    }
-}
-
-export interface InferBearerOpts {
-    /** Explicit env var to read the token from, tried BEFORE the host heuristic. */
-    env?: string;
-    /**
-     * Map a request host to candidate env-var names, tried in order. Default: the host's main
-     * label (sans a leading `api.`/`www.`) upper-cased as `<LABEL>_TOKEN` then `<LABEL>_API_KEY`
-     * (`api.github.com` → `GITHUB_TOKEN`, `GITHUB_API_KEY`). Return `[]` to skip the heuristic.
-     */
-    fromHost?: (host: string) => string[];
-}
-
-/**
- * An OPT-IN, self-announcing bearer strategy: read a token from the environment — an explicit
- * `env` name first, then a host→env-var heuristic — and attach it as `Authorization: Bearer …`.
- * Every application emits an `info` StitchEvent naming the variable it used (never the token), so
- * the inference is visible in the trace. Browser-guarded: with no process environment it is a
- * no-op (and announces that). For local/dev and agent runs where the right `*_TOKEN` already sits
- * in the environment; in production, name the credential explicitly with {@link bearer}.
- */
-export function inferBearer(opts: InferBearerOpts = {}): AuthStrategy {
-    const fromHost =
-        opts.fromHost ??
-        ((host: string): string[] => {
-            const key = hostEnvKey(host);
-            return key ? [`${key}_TOKEN`, `${key}_API_KEY`] : [];
-        });
-    return {
-        name: 'inferBearer',
         apply(req, ctx) {
-            // Browser: no environment to infer from — do nothing, but say so (never silent).
-            if (!hasEnv()) {
-                ctx.emit(
-                    'auth',
-                    'no environment (browser): bearer not inferred',
-                );
-                return;
-            }
-            const host = hostOf(req.url);
-            const names = [
-                ...(opts.env ? [opts.env] : []),
-                ...(host ? fromHost(host) : []),
-            ];
-            for (const name of names) {
-                const value = readEnv(name);
-                if (value != null && value !== '') {
-                    req.headers['authorization'] = `Bearer ${value}`;
+            // An optional secret (e.g. optionalEnv): attach the header only when it resolves to a
+            // value; otherwise skip it and announce the miss — never a silent no-op. A required
+            // Secret keeps the original behavior exactly (resolve, attach; env() throws if unset).
+            if (isOptional(token)) {
+                const value = token();
+                if (value == null || value === '') {
                     ctx.emit(
                         'auth',
-                        `bearer from ${name}${host ? ` (host ${host})` : ''}`,
+                        `no token: ${token.label} not set; request sent unauthenticated`,
                     );
                     return;
                 }
+                ctx.emit('auth', `bearer from ${token.label}`);
+                req.headers['authorization'] = `Bearer ${value}`;
+                return;
             }
-            // Nothing matched: announce the miss (and what was tried) so it isn't a silent no-op.
-            ctx.emit(
-                'auth',
-                `no token env var set for ${host ?? 'this request'} (tried ${names.join(', ') || 'none'})`,
-            );
+            req.headers['authorization'] = `Bearer ${resolve(token)}`;
         },
     };
 }

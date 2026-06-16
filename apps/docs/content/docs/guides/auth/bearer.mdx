@@ -45,41 +45,38 @@ table.
     credential](/docs/concepts/capability-not-credential).
 </Callout>
 
-## Inferred bearer
+## Optional credentials with `optionalEnv`
 
 When you're scripting against an API whose token already sits in your
-environment — a local dev run, a notebook, an agent loop — `inferBearer()` finds
-it for you. It reads an explicit env var first, then falls back to a host
-heuristic: the request host's main label, as `<LABEL>_TOKEN` then
-`<LABEL>_API_KEY` (`api.github.com` → `GITHUB_TOKEN`, then `GITHUB_API_KEY`).
+environment — a local dev run, a notebook, an agent loop — wrap the variable in
+`optionalEnv('NAME')` and hand it to `bearer`. It resolves the variable's value,
+or _absent_ when the variable is unset. Unlike `bearer(env('NAME'))`, which
+**throws** on a missing variable, `bearer(optionalEnv('NAME'))` attaches the
+header only when the token is present — otherwise the request goes out with no
+credential.
 
 ```ts twoslash
-import { inferBearer, stitch } from 'stitchapi';
+import { bearer, optionalEnv, stitch } from 'stitchapi';
 
-// Reads GITHUB_TOKEN / GITHUB_API_KEY from the environment, by host.
+// Attaches `Authorization: Bearer $GITHUB_TOKEN` when that var is set;
+// otherwise sends the request with no credential.
 const repos = stitch({
     url: 'https://api.github.com/user/repos',
-    auth: inferBearer(),
-});
-
-// …or name the variable explicitly (it is tried before the heuristic).
-const me = stitch({
-    url: 'https://api.example.com/me',
-    auth: inferBearer({ env: 'API_TOKEN' }),
+    auth: bearer(optionalEnv('GITHUB_TOKEN')),
 });
 ```
 
-Because the lookup is implicit, every application **announces itself**: it emits
-an `info` event naming the variable it used (never the token), so the inference
-is visible in the [trace](/docs/guides/observability/trace-sinks). With no
-process environment — a browser bundle — it is a no-op and says so.
+The outcome **announces itself**: `bearer` emits an `info` event naming the
+variable it read — or noting that it was unset — but never the token itself, so
+the decision is visible in the [trace](/docs/guides/observability/trace-sinks).
+In a browser bundle there is no process environment, so the variable resolves
+absent and nothing is attached.
 
 <Callout type="warn">
-    **Inference is a convenience, not a contract.** It picks a variable by host,
-    so a renamed host or an unset variable just sends no credential (the `info`
-    event notes the miss). For anything you depend on — production, CI — name the
-    credential explicitly with `bearer(env('API_TOKEN'))` or
-    `inferBearer({ env: 'API_TOKEN' })`.
+    **Optional, not required.** If the variable is unset,
+    `bearer(optionalEnv(…))` sends **no** credential rather than failing — the
+    request goes out unauthenticated. When the call must be authenticated, use
+    `bearer(env('GITHUB_TOKEN'))`, which throws on a missing variable.
 </Callout>
 
 ## See also

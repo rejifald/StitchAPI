@@ -1,6 +1,6 @@
 ---
 title: 'Auth strategies'
-description: 'bearer, inferBearer, apiKey, basic, cookieSession, oauth2, and the env() and secretsFile() resolvers.'
+description: 'bearer, apiKey, basic, cookieSession, oauth2, and the env(), optionalEnv(), and secretsFile() resolvers.'
 ---
 
 The signatures for every auth strategy and secret resolver. Each strategy holds
@@ -14,17 +14,6 @@ Attaches `Authorization: Bearer <token>`.
 ```ts twoslash
 import { bearer } from 'stitchapi';
 ```
-
-## inferBearer
-
-An opt-in, self-announcing bearer that reads its token from the environment — an
-explicit `env` name first, then a host heuristic (`api.github.com` →
-`GITHUB_TOKEN`/`GITHUB_API_KEY`) — attaches it as `Authorization: Bearer …`, and
-emits an `info` event naming the variable it used (never the token). A no-op
-(that says so) with no process environment. See
-[Bearer → Inferred bearer](/docs/guides/auth/bearer).
-
-<AutoTypeTable path="../../packages/core/src/auth.ts" name="InferBearerOpts" />
 
 ## apiKey
 
@@ -65,6 +54,18 @@ Resolves a secret from an environment variable at call time.
 
 ```ts twoslash
 import { env } from 'stitchapi';
+```
+
+## optionalEnv
+
+Like `env`, but optional: resolves the variable's value, or _absent_ when it is
+unset or empty — it never throws. Pass it to `bearer` to attach the credential
+only when present (`bearer(optionalEnv('GITHUB_TOKEN'))`); a missing variable
+just sends the request unauthenticated. See
+[the Bearer guide](/docs/guides/auth/bearer).
+
+```ts twoslash
+import { optionalEnv } from 'stitchapi';
 ```
 
 ## secretsFile
