@@ -70,10 +70,39 @@ const getUser = stitch({
 });
 ```
 
-Generate the baseline once (run the stitch without `readonly`, or commit a
-recorded response), check the `<name>.contract.json` into the repo, then ship
-with `readonly: true`. `onMissing` levels the `no-baseline` finding (default
+[Generate the baseline](#generate-baselines-deliberately) once with `stitch
+drift generate`, check the `<name>.contract.json` into the repo, then ship with
+`readonly: true`. `onMissing` levels the `no-baseline` finding (default
 `'warn'`); `'error'` fails the call so a missing baseline can't slip past CI.
+
+## Generate baselines deliberately
+
+Letting the first call write the baseline is convenient early on, but it couples
+the contract to whatever the first response happened to be — and under
+`readonly: true` it never writes at all. Produce baselines on purpose in dev/CI
+with `stitch drift generate`:
+
+```bash
+# Baseline every drift-guarded stitch in the module
+stitch drift generate --module ./stitches.ts
+
+# Just one, by export name or configured name
+stitch drift generate --name getUser
+
+# A parameterized stitch — request inputs map exactly like `stitch run`
+stitch drift generate --name getUser --id 7
+```
+
+It loads the module, runs each stitch whose `output` is a
+`drift({ …, snapshotFile })` once against the live API, and writes its
+`<name>.contract.json` — the **same** post-transform/unwrap body a live run
+compares against, so a generated baseline never diverges from what drift
+detection sees. Each path written is printed to stdout.
+
+Existing snapshots are kept (the stitch is skipped) unless you pass `--force`:
+baseline a newly added stitch without re-fetching the rest, and refresh a
+deliberately changed contract with `--force` when the API moves. A failed run
+never overwrites a committed baseline.
 
 ## `snapshotFile` is resolved from `process.cwd()`
 
