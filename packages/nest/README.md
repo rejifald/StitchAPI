@@ -6,9 +6,10 @@ First-class [NestJS](https://nestjs.com) integration for
 
 It is a **thin** package: `StitchModule` wires StitchAPI's `seam` into Nest's DI
 graph, plus bridge helpers (a `Logger` sink, `ConfigService` secrets), an exception
-filter, and an SSE bridge. It adds **no capability** — every piece sits on an existing
-core extension point, so `stitchapi` stays a peer dependency and core is untouched
-(contract-not-dependency).
+filter, and an SSE bridge. It adds **no capability** — every piece sits on a core
+extension point, and the `Logger` sink and `ConfigService` bridge **delegate** to core's
+`loggerSink` / `secretFrom` rather than reimplement them. So `stitchapi` stays a peer
+dependency and the package forks nothing (contract-not-dependency).
 
 ```sh
 pnpm add @stitchapi/nest stitchapi

@@ -497,4 +497,52 @@ describe('bridges', () => {
         };
         expect(fromConfig(config)('API_TOKEN')()).toBe('val:API_TOKEN');
     });
+
+    it('fromConfig propagates ConfigService.getOrThrow on a missing key', () => {
+        const config: ConfigServiceLike = {
+            getOrThrow<T = string>(key: string): T {
+                throw new Error(`Configuration key "${key}" does not exist`);
+            },
+        };
+        // The Nest getOrThrow error still surfaces through the core secretFrom delegation.
+        expect(() => fromConfig(config)('API_TOKEN')()).toThrow(
+            'Configuration key "API_TOKEN" does not exist',
+        );
+    });
+
+    it('fromConfig rejects an empty value (delegates to core secretFrom)', () => {
+        const config: ConfigServiceLike = {
+            // Present but blank — Nest's getOrThrow does NOT throw on '' (only on undefined).
+            getOrThrow<T = string>(_key: string): T {
+                return '' as T;
+            },
+        };
+        // secretFrom rejects '' like env() does, so a blank credential never rides along.
+        expect(() => fromConfig(config)('API_TOKEN')()).toThrow(
+            'missing secret',
+        );
+    });
+
+    it('loggerSink drops an info (strategy announcement) event', () => {
+        const { rec, logger } = recordingLogger();
+        const sink = loggerSink(logger);
+        // The delegated core sink would log an `info` event at debug, but Nest's level
+        // resolver returns null for it — preserving the prior switch, which dropped it.
+        sink.handle(
+            {
+                type: 'info',
+                topic: 'auth',
+                detail: 'no token; sending unauthenticated',
+                at: 0,
+            },
+            { name: 'x' },
+        );
+        expect([
+            ...rec.log,
+            ...rec.warn,
+            ...rec.error,
+            ...rec.debug,
+            ...rec.verbose,
+        ]).toEqual([]);
+    });
 });
