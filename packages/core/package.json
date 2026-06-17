@@ -279,7 +279,7 @@
         "@types/node": "^22.10.0",
         "@vitest/coverage-v8": "^4.1.8",
         "@vitest/eslint-plugin": "^1.6.20",
-        "esbuild": "^0.27.7",
+        "esbuild": "^0.28.1",
         "eslint": "^9.39.4",
         "eslint-config-prettier": "^10.1.8",
         "jiti": "^2.7.0",
