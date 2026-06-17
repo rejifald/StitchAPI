@@ -13,6 +13,13 @@ pre-commit:
         - name: completions
           glob: 'packages/core/src/**/*.ts'
           run: pnpm --filter @stitchapi/docs run gen:completions && git add "apps/docs/app/(home)/playground/playground-completions.generated.ts"
+        # Catch a partial edit to the advertised bundle size before it lands. No
+        # build here, so this runs the consensus check (every quote must agree);
+        # CI's `size` job does the authoritative measured check. Keep this glob in
+        # sync with the FILES list in scripts/check-size-docs.mjs.
+        - name: size-docs
+          glob: '{README.md,packages/core/README.md,apps/docs/**/installation.mdx,apps/docs/**/principles.mdx,apps/docs/**/metrics.tsx,packages/core/scripts/bundle-size.mjs}'
+          run: pnpm check:size-docs
         - name: format
           # Keep in sync with CI's `prettier --check .` (verify.yml) — cover every
           # extension Prettier handles here so committed files are never left unformatted

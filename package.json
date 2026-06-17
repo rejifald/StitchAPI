@@ -19,6 +19,7 @@
         "check:lint": "pnpm -r check:lint",
         "check:exports": "pnpm -r check:exports",
         "check:size": "pnpm -r check:size",
+        "check:size-docs": "node scripts/check-size-docs.mjs",
         "check:format": "prettier --check .",
         "check:release": "node scripts/check-release.mjs",
         "format": "prettier --write .",

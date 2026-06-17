@@ -141,4 +141,8 @@ if (failed) {
     process.exit(1);
 }
 
-console.log('✓ Core entry within budget.\n');
+// Keep --json output pure (it is consumed by scripts/check-size-docs.mjs);
+// the human-readable confirmation is only for the table view.
+if (!process.argv.includes('--json')) {
+    console.log('✓ Core entry within budget.\n');
+}
