@@ -8,6 +8,16 @@ on:
         branches: [main, develop]
     push:
         branches: [main, develop]
+    # Re-verify the *merged* result in the queue. A `pull_request` run only tests
+    # the PR against the base as it was when CI last ran; if another PR changes an
+    # interacting file before this one lands (e.g. the root pnpm.overrides), the PR
+    # can be green yet break main. `merge_group` runs these jobs against the actual
+    # merge candidate, so `verify` re-runs its frozen install + docs build against the
+    # post-merge base. This trigger is inert until the `main` branch protection enables
+    # the GitHub merge queue (or, at minimum, "Require branches to be up to date before
+    # merging") with `verify` as a required check — that setting is what actually blocks
+    # the stale-base merge that broke the deploy.
+    merge_group:
 
 # Default-deny; this gate only reads the repo.
 permissions:
@@ -29,6 +39,14 @@ jobs:
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
+            # Lockfile-integrity gate (step 1, so drift fails this job in ~20s). A frozen
+            # install fails when pnpm-lock.yaml has drifted from any workspace manifest OR
+            # from the root pnpm.overrides — the case that broke the Vercel deploy: a
+            # security override (esbuild@<0.28.1 → >=0.28.1) rewrote a manifest spec the
+            # lockfile never recorded. This install is implicitly `--frozen` in every
+            # CI/deploy environment, and on merge_group it runs against the post-merge
+            # base — the angle a per-PR run misses. (size/sandbox/e2e repeat it as their
+            # own step 1; this is the fast, stable one to make a required check.)
             - run: pnpm install --frozen-lockfile
             # Cheap → expensive: a fast failure surfaces first.
             - run: pnpm check:format
@@ -83,6 +101,25 @@ jobs:
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter stitchapi build
             - run: pnpm --filter @stitchapi/sandbox test:smoke
+
+    # `stitch mcp` over a real subprocess (packages/core/test/mcp-e2e.spec.ts): spawns the built
+    # `bin/stitch mcp` and drives a full agent conversation (initialize → tools/list → run_stitch)
+    # over stdio JSON-RPC against a hermetic local server. The bin requires lib/cli.js and the temp
+    # stitch module imports lib/index.mjs, so it is build-dependent — its own job that builds core
+    # first, like `size`/`sandbox`. In the src-only `pnpm test` gate (no lib/) the suite self-skips.
+    mcp-e2e:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm --filter stitchapi build
+            - run: pnpm --filter stitchapi test:mcp-e2e
 
     # Browser-sandbox security model (§2.13): the Playwright harness proves the real CSP +
     # Worker egress blocking and that a real RunResult.trace reaches the playground DAG. It
