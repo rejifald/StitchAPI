@@ -62,7 +62,10 @@ function base64(s: string): string {
 export function env(name: string): () => string {
     return () => {
         const v = readEnv(name);
-        if (v == null || v === '') throw new Error(`missing env var ${name}`);
+        if (v == null || v === '')
+            throw new Error(
+                `missing env var ${name}. Fix: set it in the environment, or use optionalEnv()/secretFrom() if it's optional.`,
+            );
         return v;
     };
 }
@@ -84,7 +87,10 @@ export function secretFrom(source: SecretSource, name: string): () => string {
     return () => {
         const v =
             typeof source === 'function' ? source(name) : source.get(name);
-        if (v == null || v === '') throw new Error(`missing secret ${name}`);
+        if (v == null || v === '')
+            throw new Error(
+                `missing secret ${name}. Fix: set it in the environment, or use optionalEnv()/secretFrom() if it's optional.`,
+            );
         return v;
     };
 }
@@ -380,14 +386,18 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
             bodyType: 'form',
         });
         if (res.status >= 400)
-            throw new Error(`oauth2 token request failed: HTTP ${res.status}`);
+            throw new Error(
+                `oauth2 token request failed: HTTP ${res.status}. Fix: check tokenUrl, clientId/clientSecret, and scope.`,
+            );
 
         const payload = (res.body ?? {}) as {
             access_token?: string;
             expires_in?: number;
         };
         if (!payload.access_token)
-            throw new Error('oauth2 token response missing access_token');
+            throw new Error(
+                'oauth2 token response missing access_token. Fix: check tokenUrl, clientId/clientSecret, and scope.',
+            );
 
         const ttlMs =
             typeof payload.expires_in === 'number'

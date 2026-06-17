@@ -5,8 +5,9 @@ description: 'Drive stitches from a sandbox with one context-frugal tool instead
 
 Drive stitches from an agent sandbox with a single `run_stitch` tool — pass
 `{ name, input }` and it covers every stitch you register, so the model's tool
-list (and its context) stays tiny no matter how many stitches there are. A
-companion `list_stitches` tool discovers the available names.
+list (and its context) stays tiny no matter how many stitches there are. Two
+companion tools round out the surface: `list_stitches` discovers the available
+names, and `describe_stitch` returns one stitch's shape before it runs.
 
 ## Example
 
@@ -31,16 +32,80 @@ Here the inner `input` is the stitch input — `{ params?, query?, body?,
 headers? }` — and the stitch runs against `api.example.com` behind the
 capability boundary. The agent never sees the credential.
 
+## describe_stitch
+
+Before running a name, an agent can ask for its shape. `describe_stitch` takes
+`{ name }` and returns one text result — a JSON description built from the
+stitch's public `__config`: its endpoint and surface, which input slots it
+takes, whether the output is validated and where it unwraps, the auth **scheme**
+(never the token), which policies are on, the pipeline of steps a call runs
+through, and a Mermaid `diagram`.
+
+```json
+{ "name": "describe_stitch", "input": { "name": "getWidget" } }
+```
+
+returns one text result whose body is JSON like:
+
+```json
+{
+    "name": "getWidget",
+    "endpoint": "GET https://api.example.com/widgets/{id}",
+    "surface": "http",
+    "input": {
+        "params": true,
+        "query": false,
+        "body": false,
+        "headers": false
+    },
+    "output": { "validated": true, "unwrap": "data" },
+    "auth": "bearer",
+    "policies": {
+        "retry": true,
+        "throttle": false,
+        "cache": false,
+        "timeout": true
+    },
+    "pipeline": [
+        "call",
+        "GET /widgets/{id}",
+        "retry",
+        "validate",
+        "unwrap: data",
+        "result"
+    ],
+    "diagram": "flowchart TD\n  subgraph ..."
+}
+```
+
+The `auth` field is the **scheme only** (read from `__config.authScheme`) — the
+credential never crosses the boundary. The `diagram` reuses
+`toMermaid(registry, { name })`, the same call graph `stitch diagram` renders. An
+unknown name is an error result, not a throw:
+
+```json
+{
+    "content": [
+        {
+            "type": "text",
+            "text": "unknown stitch \"x\". Available: getWidget, ping"
+        }
+    ],
+    "isError": true
+}
+```
+
 ## Options
 
-Two tools make up the whole surface. `run_stitch` takes `{ name, input }`,
+Three tools make up the whole surface. `run_stitch` takes `{ name, input }`,
 where `input` is the stitch input `{ params?, query?, body?, headers? }`;
-`list_stitches` takes no arguments and returns the names, methods, and paths.
+`list_stitches` takes no arguments and returns the names, methods, and paths;
+`describe_stitch` takes `{ name }` and returns the JSON shape above.
 
 This is **code-mode**: one tool for every stitch, rather than one MCP tool per
 endpoint. One-tool-per-endpoint floods the model's context — every registered
 stitch adds another schema the model must carry — while `run_stitch` keeps the
-tool list at a constant two no matter how many stitches you register.
+tool list at a constant three no matter how many stitches you register.
 
 The agent calls `run_stitch` and never touches the credential: it names a
 capability, the server holds the secret. That is
@@ -54,14 +119,17 @@ to the agent boundary.
 </Callout>
 
 If you author the stitch that backs a name like `getUser`, it is an ordinary
-stitch from `stitchapi`:
+stitch from `stitchapi`. Adding an `output` schema (raw Zod here, the visible
+default) is what makes `describe_stitch` report `validated: true`:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
+import { z } from 'zod';
 
 const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/:id',
+    output: z.object({ id: z.number(), name: z.string() }),
 });
 ```
 

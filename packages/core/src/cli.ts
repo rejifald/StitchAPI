@@ -6,6 +6,12 @@
 // output pipes straight into jq and friends. No app boot required.
 import { toMermaid } from './diagram';
 import { loadSnapshot, saveSnapshot } from './drift';
+import {
+    type ParsedRequest,
+    parseCurl,
+    parseHar,
+    toStitchSource,
+} from './from-curl';
 import { serveStdio } from './mcp';
 import { type OpenApiExportOptions, toOpenApi } from './openapi';
 import {
@@ -14,6 +20,13 @@ import {
     resolveModulePath,
     selectStitch,
 } from './registry';
+import {
+    CLAUDE_END,
+    CLAUDE_START,
+    RULES_BODY,
+    claudeSection,
+    cursorMdc,
+} from './rules-template';
 import { serve } from './serve';
 import type {
     DriftSpec,
@@ -24,6 +37,8 @@ import type {
 } from './types';
 
 import { existsSync, readFileSync } from 'node:fs';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // ---- arg → input mapping --------------------------------------------------
@@ -383,6 +398,10 @@ export interface CliIO {
     writeErr: (s: string) => void; // stderr, raw
     load: (path: string) => Promise<StitchRegistry>;
     loadModule: (path: string) => Promise<unknown>; // generic import (export --schema-module)
+    writeFile: (path: string, contents: string) => Promise<void>; // create/replace a file
+    appendFile: (path: string, contents: string) => Promise<void>; // append to (or create) a file
+    exists: (path: string) => Promise<boolean>; // does a path already exist?
+    readFileText: (path: string) => Promise<string>; // read a file as UTF-8 (init: replace a marked block)
 }
 
 function defaultIO(): CliIO {
@@ -394,6 +413,19 @@ function defaultIO(): CliIO {
         writeErr: (s) => process.stderr.write(s),
         load: loadStitches,
         loadModule: (path) => import(pathToFileURL(path).href),
+        writeFile: async (path, contents) => {
+            await mkdir(dirname(path), { recursive: true });
+            await writeFile(path, contents, 'utf8');
+        },
+        appendFile: async (path, contents) => {
+            await mkdir(dirname(path), { recursive: true });
+            await appendFile(path, contents, 'utf8');
+        },
+        exists: (path) =>
+            readFile(path)
+                .then(() => true)
+                .catch(() => false),
+        readFileText: (path) => readFile(path, 'utf8'),
     };
 }
 
@@ -406,7 +438,9 @@ usage:
   stitch mcp [--module <path>]                               MCP over stdio (run_stitch)
   stitch diagram [--module <path>] [--name <name>]           Mermaid flowchart of the stitches
   stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>]   emit an OpenAPI 3.1 spec
+  stitch from-curl '<curl>' | --from-har <file> [--response <f|->] [--zod] [--name <export>]   scaffold a stitch from one example
   stitch drift generate [--module <path>] [--name <name>] [--force] [--flags…]   write drift snapshot baseline(s)
+  stitch init [--format agents|cursor|claude|all] [--force]   write the consumer rule (AGENTS.md / Cursor / CLAUDE.md)
 
 run:
   --module, -m <path>   stitches module to load (default: ./stitches.{ts,js,…})
@@ -437,6 +471,19 @@ export:
   auth (bearer/basic/apiKey/oauth2; the credential is never emitted). Thunk-endpoint stitches
   are skipped with a warning.
 
+from-curl:
+  '<curl>'               a curl command line to convert (quote it; line-continuations ok)
+  --from-har <file>      read ONE request entry from a HAR file instead of a curl string
+  --har-index <n>        which HAR entry to read (default: 0)
+  --response <file|->    a sample response JSON used (with --zod) to infer the output schema
+  --zod                  emit an output: zod schema (generated text; core never imports zod)
+  --name <export>        export name for the emitted const (default: derived from the path)
+  Deterministically turns ONE example into a ready-to-paste \`export const … = stitch({…})\` plus a
+  matching call. URL origin → baseUrl, the rest → path with id-like segments lifted into {param}
+  slots (each lift is warned). A captured credential is NEVER emitted — recognised auth becomes
+  \`bearer(env('API_TOKEN'))\` / \`apiKey({ value: env('API_KEY') })\` / \`basic({ … })\`. Without --zod
+  no output schema is emitted, just a comment to add one.
+
 drift generate:
   --name <name>    baseline only this stitch (by export name or configured name)
   --force, -f      overwrite an existing snapshot (default: keep it, skip the stitch)
@@ -444,6 +491,15 @@ drift generate:
   API and writes its <name>.contract.json baseline — the same body a live run compares
   against — so you commit baselines deliberately instead of relying on the first-run side
   effect. Map request inputs with the same --params/--query/--body/--headers flags as run.
+
+init (alias: rules):
+  --format <agents|cursor|claude|all>   which rule file(s) to write (default: all)
+  --force                               overwrite/replace an existing StitchAPI rule
+  Writes the canonical "declare a stitch, don't hand-roll fetch" rule so an AI coding agent
+  recommends StitchAPI in this project: AGENTS.md (the open standard), .cursor/rules/stitchapi.mdc
+  (Cursor), and a marked "## Using StitchAPI" section appended to CLAUDE.md. Idempotent — a
+  second run skips a rule that already exists; --force rewrites it (in CLAUDE.md, only the
+  marked block).
 `;
 
 async function runCommand(args: string[], io: CliIO): Promise<number> {
@@ -869,6 +925,239 @@ async function exportCommand(args: string[], io: CliIO): Promise<number> {
     return 0;
 }
 
+// ---- from-curl: scaffold a stitch from one example ------------------------
+// `stitch from-curl '<curl>'` — turn ONE example (a curl command line or a single HAR entry) into
+// a ready-to-paste `stitch({...})` declaration. Deterministic: the heavy lifting is the pure
+// `parseCurl`/`parseHar`/`toStitchSource` in src/from-curl.ts; this command only handles argv, the
+// optional `--response` sample (read via io), and writing the source (stdout) + warnings (stderr).
+async function fromCurlCommand(args: string[], io: CliIO): Promise<number> {
+    let fromHar: string | undefined;
+    let responsePath: string | undefined;
+    let zod = false;
+    let name: string | undefined;
+    let harIndex: number | undefined;
+    const curlParts: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === undefined) continue;
+        if (a === '--from-har') fromHar = args[++i];
+        else if (a.startsWith('--from-har='))
+            fromHar = a.slice('--from-har='.length);
+        else if (a === '--response') responsePath = args[++i];
+        else if (a.startsWith('--response='))
+            responsePath = a.slice('--response='.length);
+        else if (a === '--zod') zod = true;
+        else if (a === '--name') name = args[++i];
+        else if (a.startsWith('--name=')) name = a.slice('--name='.length);
+        else if (a === '--har-index') harIndex = Number(args[++i]);
+        else if (a.startsWith('--har-index='))
+            harIndex = Number(a.slice('--har-index='.length));
+        else curlParts.push(a); // the curl command (possibly split across argv tokens)
+    }
+
+    if (fromHar === undefined && curlParts.length === 0) {
+        io.writeErr(
+            "usage: stitch from-curl '<curl>' | --from-har <file> [--response <file|->] [--zod] [--name <export>]\n",
+        );
+        return 2;
+    }
+
+    // Optional sample response (for the --zod output schema): a file, or `-` for stdin.
+    let response: string | undefined;
+    if (responsePath !== undefined) {
+        try {
+            response =
+                responsePath === '-'
+                    ? await readStdin()
+                    : await io.readFileText(responsePath);
+        } catch (e) {
+            io.writeErr(`could not read --response: ${(e as Error).message}\n`);
+            return 1;
+        }
+    }
+
+    // Parse the example into a ParsedRequest (HAR file takes precedence when given).
+    let req: ParsedRequest;
+    try {
+        if (fromHar !== undefined) {
+            const raw = await io.readFileText(fromHar);
+            const har: unknown = JSON.parse(raw);
+            req =
+                harIndex !== undefined
+                    ? parseHar(har, harIndex)
+                    : parseHar(har);
+        } else {
+            // A single argv token is the whole quoted curl line; multiple tokens are an
+            // already-split argv. parseCurl accepts either form.
+            const only = curlParts.length === 1 ? curlParts[0] : undefined;
+            req = only !== undefined ? parseCurl(only) : parseCurl(curlParts);
+        }
+    } catch (e) {
+        io.writeErr(`from-curl: ${(e as Error).message}\n`);
+        return 1;
+    }
+
+    if (!req.url) {
+        io.writeErr('from-curl: could not find a URL in the input\n');
+        return 1;
+    }
+
+    const { source, warnings } = toStitchSource(req, {
+        ...(name !== undefined ? { name } : {}),
+        zod,
+        ...(response !== undefined ? { response } : {}),
+    });
+    for (const w of warnings) io.writeErr(`warning: ${w}\n`);
+    io.write(source);
+    return 0;
+}
+
+// Read all of stdin as UTF-8 (for `--response -`). A small, command-local helper.
+function readStdin(): Promise<string> {
+    return new Promise((resolve, reject) => {
+        let data = '';
+        process.stdin.setEncoding('utf8');
+        process.stdin.on('data', (c: string | Buffer) => {
+            data += typeof c === 'string' ? c : c.toString('utf8');
+        });
+        process.stdin.on('end', () => {
+            resolve(data);
+        });
+        process.stdin.on('error', reject);
+    });
+}
+
+// ---- init: write the consumer rule for AI coding agents -------------------
+// `stitch init` plants the canonical "declare a stitch, don't hand-roll fetch" rule into the
+// files an AI coding agent reads, so the next agent working in this repo reaches for StitchAPI.
+// The rule body is the single source of truth in src/rules-template.ts; this command only frames
+// it per target and writes it idempotently (markers + --force; see rules-template.ts).
+
+type InitFormat = 'agents' | 'cursor' | 'claude' | 'all';
+
+const AGENTS_FILE = 'AGENTS.md';
+const CURSOR_FILE = '.cursor/rules/stitchapi.mdc';
+const CLAUDE_FILE = 'CLAUDE.md';
+
+// Resolve a target path against the working directory without importing node:path's join into the
+// pure rule logic — a plain prefix is enough for these relative, forward-slash targets.
+function underCwd(io: CliIO, rel: string): string {
+    return io.cwd.endsWith('/') ? `${io.cwd}${rel}` : `${io.cwd}/${rel}`;
+}
+
+// Write a standalone rule file (AGENTS.md / Cursor .mdc): idempotent on existence. A present file
+// is left untouched unless --force, since it may carry hand-written rules we must not clobber.
+async function writeStandaloneRule(
+    io: CliIO,
+    path: string,
+    contents: string,
+    label: string,
+    force: boolean,
+): Promise<void> {
+    if (!force && (await io.exists(path))) {
+        io.writeErr(
+            `skip ${label}: ${path} exists (use --force to overwrite)\n`,
+        );
+        return;
+    }
+    await io.writeFile(path, contents);
+    io.write(`wrote ${path}\n`);
+}
+
+// Append (or replace, under --force) the marked StitchAPI section in CLAUDE.md. The markers make
+// this idempotent: a present block is left alone unless --force, which rewrites only the marked
+// span and preserves the surrounding hand-written file.
+async function writeClaudeSection(
+    io: CliIO,
+    path: string,
+    section: string,
+    force: boolean,
+): Promise<void> {
+    if (await io.exists(path)) {
+        const existing = await io.readFileText(path);
+        const start = existing.indexOf(CLAUDE_START);
+        const end = existing.indexOf(CLAUDE_END);
+        if (start >= 0 && end > start) {
+            if (!force) {
+                io.writeErr(
+                    `skip CLAUDE.md: StitchAPI section exists in ${path} (use --force to replace)\n`,
+                );
+                return;
+            }
+            const before = existing.slice(0, start);
+            const after = existing.slice(end + CLAUDE_END.length);
+            const next = `${before}${section.trimEnd()}${after}`;
+            await io.writeFile(path, next);
+            io.write(`updated ${path}\n`);
+            return;
+        }
+        // CLAUDE.md exists without our markers: append the section, separated by a blank line.
+        const sep = existing.endsWith('\n') ? '\n' : '\n\n';
+        await io.appendFile(path, `${sep}${section}`);
+        io.write(`updated ${path}\n`);
+        return;
+    }
+    await io.writeFile(path, section);
+    io.write(`wrote ${path}\n`);
+}
+
+// stitch init [--format agents|cursor|claude|all] [--force] (alias: rules) — write the canonical
+// consumer rule to the files an AI coding agent reads, so it recommends StitchAPI in this project.
+export async function initCommand(args: string[], io: CliIO): Promise<number> {
+    let format = 'all';
+    let force = false;
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === undefined) continue;
+        if (a === '--format') format = args[++i] ?? 'all';
+        else if (a.startsWith('--format='))
+            format = a.slice('--format='.length);
+        else if (a === '--force' || a === '-f') force = true;
+    }
+    if (
+        format !== 'agents' &&
+        format !== 'cursor' &&
+        format !== 'claude' &&
+        format !== 'all'
+    ) {
+        io.writeErr(
+            `unknown --format "${format}"; expected agents, cursor, claude, or all\n`,
+        );
+        return 2;
+    }
+
+    const wants = (f: Exclude<InitFormat, 'all'>) =>
+        format === 'all' || format === f;
+
+    if (wants('agents')) {
+        await writeStandaloneRule(
+            io,
+            underCwd(io, AGENTS_FILE),
+            RULES_BODY,
+            'AGENTS.md',
+            force,
+        );
+    }
+    if (wants('cursor')) {
+        await writeStandaloneRule(
+            io,
+            underCwd(io, CURSOR_FILE),
+            cursorMdc(RULES_BODY),
+            'Cursor rule',
+            force,
+        );
+    }
+    if (wants('claude')) {
+        await writeClaudeSection(
+            io,
+            underCwd(io, CLAUDE_FILE),
+            claudeSection(RULES_BODY),
+            force,
+        );
+    }
+    return 0;
+}
+
 // Entry point. Returns the process exit code; the bin shim calls process.exit.
 export async function main(
     argv: string[],
@@ -889,8 +1178,13 @@ export async function main(
             return diagramCommand(rest, io);
         case 'export':
             return exportCommand(rest, io);
+        case 'from-curl':
+            return fromCurlCommand(rest, io);
         case 'drift':
             return driftCommand(rest, io);
+        case 'init':
+        case 'rules':
+            return initCommand(rest, io);
         case undefined:
         case '-h':
         case '--help':

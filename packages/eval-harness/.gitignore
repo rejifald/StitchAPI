@@ -1,0 +1,5 @@
+# Transient produced modules written by score/run.ts (transpiled + imported via tsx).
+.eval-tmp/
+# Generated report artifacts (eval:report --out/--md).
+*.report.json
+*.report.md

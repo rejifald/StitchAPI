@@ -219,6 +219,25 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
 
+  packages/eval-harness:
+    dependencies:
+      '@stitchapi/sandbox-sim':
+        specifier: workspace:*
+        version: link:../sandbox-sim
+      stitchapi:
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.21
+      tsx:
+        specifier: ^4.22.4
+        version: 4.22.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/fingerprint-arktype:
     devDependencies:
       '@types/node':

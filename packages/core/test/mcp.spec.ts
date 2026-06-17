@@ -1,5 +1,5 @@
 // Set the trace file before importing ../src so the JSONL sink is captured/quiet.
-import { stitch } from '../src';
+import { bearer, stitch } from '../src';
 import { createMcpServer, serveStdio } from '../src/mcp';
 import type { JsonRpcMessage } from '../src/mcp';
 import { startMockServer } from './support/mock-server';
@@ -40,6 +40,10 @@ beforeEach(() => {
         baseUrl: api.url,
         path: '/widgets/{id}',
         unwrap: 'data',
+        auth: bearer('s3cr3t-token'),
+        retry: { attempts: 3 },
+        timeout: { perAttempt: 1000 },
+        input: { params: asValidator(z.object({ id: z.number() })) },
         output: asValidator(z.object({ id: z.number() })),
     });
     const ping = stitch({ baseUrl: api.url, path: '/ping' });
@@ -68,12 +72,13 @@ test('initialize advertises tools capability and server info', async () => {
     expect(result.serverInfo.name).toBe('stitchapi');
 });
 
-test('tools/list returns the single code-mode tool (+ discovery)', async () => {
+test('tools/list returns the single code-mode tool (+ discovery + describe)', async () => {
     const res = await server.handle(req('tools/list'));
     const result = res?.result as ToolListResult;
     const names = result.tools.map((t) => t.name);
     expect(names).toContain('run_stitch');
     expect(names).toContain('list_stitches');
+    expect(names).toContain('describe_stitch');
     // run_stitch is { name, input } — not one tool per endpoint
     const runStitch = result.tools.find((t) => t.name === 'run_stitch')!;
     expect(runStitch.inputSchema).toMatchObject({
@@ -117,6 +122,63 @@ test('tools/call list_stitches enumerates name/method/path', async () => {
     }[];
     expect(list.map((s) => s.name)).toEqual(['getWidget', 'ping']);
     expect(list[0]).toMatchObject({ method: 'GET', path: '/widgets/{id}' });
+});
+
+test('tools/call describe_stitch teaches a stitch shape without running it', async () => {
+    const res = await server.handle(
+        req('tools/call', {
+            name: 'describe_stitch',
+            arguments: { name: 'getWidget' },
+        }),
+    );
+    const result = res?.result as ToolCallResult;
+    expect(result.isError).toBeFalsy();
+    const shape = JSON.parse(result.content[0]!.text) as {
+        name: string;
+        endpoint: string;
+        surface: string;
+        input: { params: boolean; query: boolean; body: boolean };
+        output: { validated: boolean; unwrap: string | null };
+        auth: string | null;
+        policies: Record<string, boolean>;
+        pipeline: string[];
+        diagram: string;
+    };
+    // endpoint + per-slot input presence (params declared, the rest not)
+    expect(shape.endpoint).toContain('GET ');
+    expect(shape.endpoint).toContain('/widgets/{id}');
+    expect(shape.surface).toBe('http');
+    expect(shape.input).toMatchObject({
+        params: true,
+        query: false,
+        body: false,
+    });
+    expect(shape.output).toMatchObject({ validated: true, unwrap: 'data' });
+    // a Mermaid flowchart string is included for the diagram view
+    expect(shape.diagram).toContain('flowchart');
+    // policies reflect the configured retry/timeout (no throttle/cache)
+    expect(shape.policies).toMatchObject({
+        retry: true,
+        timeout: true,
+        throttle: false,
+        cache: false,
+    });
+    // the NON-secret auth scheme tag is reported, never the credential
+    expect(shape.auth).toBe('bearer');
+    expect(result.content[0]!.text).not.toContain('s3cr3t-token');
+    expect(result.content[0]!.text).not.toContain('Bearer');
+});
+
+test('tools/call describe_stitch on an unknown stitch is a tool error, not a crash', async () => {
+    const res = await server.handle(
+        req('tools/call', {
+            name: 'describe_stitch',
+            arguments: { name: 'nope' },
+        }),
+    );
+    const result = res?.result as ToolCallResult;
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain('unknown stitch "nope"');
 });
 
 test('an unknown tool is a tool error', async () => {

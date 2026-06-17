@@ -117,7 +117,7 @@ export function toValidator(schema: unknown): Validator | undefined {
     }
 
     throw new Error(
-        `Unsupported schema passed to toValidator(): received ${typeof schema}`,
+        `Unsupported schema passed to toValidator(): received ${typeof schema}. Fix: pass a Standard Schema, a Zod-style {parse}, a {validate} object, or a (value)=>boolean predicate.`,
     );
 }
 

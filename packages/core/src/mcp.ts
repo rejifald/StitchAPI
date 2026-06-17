@@ -7,14 +7,15 @@
 // transport (newline-delimited JSON), with no SDK — consistent with the library's
 // zero-dependency stance. `handle()` is transport-agnostic, so the same core can back a
 // Streamable HTTP transport too (see the `serve` surface for the HTTP pattern).
+import { toMermaid } from './diagram';
 import { type StitchRegistry, selectStitch } from './registry';
-import type { Stitch } from './types';
+import type { SecurityScheme, Stitch, StitchConfig } from './types';
 
 import type { Readable, Writable } from 'node:stream';
 
 const PROTOCOL_VERSION = '2025-06-18';
 const SERVER_NAME = 'stitchapi';
-const SERVER_VERSION = '0.7.0';
+const SERVER_VERSION = '1.0.0-rc.1';
 
 export interface JsonRpcMessage {
     jsonrpc: '2.0';
@@ -35,7 +36,8 @@ const RUN_STITCH_TOOL = {
     description:
         'Run a named stitch and return its validated result. Code-mode: this one ' +
         'tool covers every registered endpoint — pass { name, input } where input is ' +
-        '{ params?, query?, body?, headers? }. Use list_stitches to discover names.',
+        '{ params?, query?, body?, headers? }. Use list_stitches to discover names and ' +
+        "describe_stitch to learn a stitch's shape, schema, and diagram before running it.",
     inputSchema: {
         type: 'object',
         properties: {
@@ -67,6 +69,22 @@ const LIST_STITCHES_TOOL = {
     },
 } as const;
 
+const DESCRIBE_STITCH_TOOL = {
+    name: 'describe_stitch',
+    description:
+        "Describe a named stitch's shape WITHOUT running it: its endpoint, surface, per-slot " +
+        'input presence, output (validated/unwrap), auth scheme (never the credential), the ' +
+        'configured policies (retry/throttle/cache/timeout), the request pipeline in engine ' +
+        'order, and a Mermaid flowchart. Call this to learn a stitch before run_stitch.',
+    inputSchema: {
+        type: 'object',
+        properties: {
+            name: { type: 'string', description: 'The stitch to describe.' },
+        },
+        required: ['name'],
+    },
+} as const;
+
 function textResult(value: unknown): ToolResult {
     const text =
         typeof value === 'string' ? value : JSON.stringify(value, null, 2);
@@ -74,6 +92,54 @@ function textResult(value: unknown): ToolResult {
 }
 function errorResult(message: string): ToolResult {
     return { content: [{ type: 'text', text: message }], isError: true };
+}
+
+// A compact "METHOD endpoint" label built from the redacted __config (mirrors diagram.ts's
+// endpointLabel; kept local so mcp.ts pulls only `toMermaid`).
+function endpointOf(cfg: StitchConfig): string {
+    const method = (cfg.method ?? 'GET').toUpperCase();
+    let where: string;
+    if (typeof cfg.url === 'string') where = cfg.url;
+    else if (typeof cfg.url === 'function') where = '(dynamic url)';
+    else {
+        const base =
+            typeof cfg.baseUrl === 'string'
+                ? cfg.baseUrl
+                : cfg.baseUrl
+                  ? '(dynamic)'
+                  : '';
+        where = base + (cfg.path ?? '');
+    }
+    return `${method} ${where || '(no endpoint)'}`;
+}
+
+// The scheme TAG of a stitch's auth — never the credential. `authScheme` is the non-secret
+// SecurityScheme redaction projects onto __config (the live `auth` is stripped); read it via an
+// unknown cast (it is not a declared StitchConfig field). `http` reports its scheme (bearer/basic),
+// other types report their `type`. No auth → null.
+function authTagOf(cfg: StitchConfig): string | null {
+    const scheme = (cfg as { authScheme?: SecurityScheme }).authScheme;
+    if (!scheme) return null;
+    return scheme.type === 'http' ? scheme.scheme : scheme.type;
+}
+
+// The configured pipeline stages, in engine order, as a teaching list (mirrors diagram.ts's
+// engine order). `call`/`result` bookend; the middle stages appear only when configured.
+function pipelineOf(cfg: StitchConfig): string[] {
+    const kindRaw: unknown = cfg.kind; // __config.kind is the surface id string
+    const kind = typeof kindRaw === 'string' ? kindRaw : 'http';
+    const stages: string[] = ['call'];
+    if (cfg.throttle) stages.push('throttle');
+    stages.push(endpointOf(cfg));
+    if (cfg.retry) stages.push('retry');
+    if (kind !== 'http') stages.push(`${kind} interpret`);
+    if (cfg.paginate) stages.push('paginate');
+    if (cfg.output) stages.push('validate');
+    if (cfg.transform) stages.push('transform');
+    if (cfg.unwrap) stages.push(`unwrap: ${cfg.unwrap}`);
+    if (cfg.cache) stages.push('cache');
+    stages.push('result');
+    return stages;
 }
 
 function pickProtocol(params: unknown): string {
@@ -105,7 +171,10 @@ export function createMcpServer(
     async function callRunStitch(args: unknown): Promise<ToolResult> {
         const a = (args ?? {}) as { name?: unknown; input?: unknown };
         if (typeof a.name !== 'string')
-            return errorResult('run_stitch requires a string "name"');
+            return errorResult(
+                'run_stitch requires a string "name". ' +
+                    'Call list_stitches to see the available names.',
+            );
         let stitch: Stitch;
         try {
             stitch = selectStitch(registry, a.name);
@@ -134,10 +203,57 @@ export function createMcpServer(
         return textResult(list);
     }
 
+    // Teach the agent a stitch's SHAPE — endpoint, surface, per-slot input, output, auth scheme,
+    // policies, pipeline, diagram — purely from the redacted `__config` (never the live auth/store)
+    // plus `toMermaid`. No request is made; the credential stays unreachable.
+    function callDescribeStitch(args: unknown): ToolResult {
+        const a = (args ?? {}) as { name?: unknown };
+        if (typeof a.name !== 'string')
+            return errorResult(
+                'describe_stitch requires a string "name". ' +
+                    'Call list_stitches to see the available names.',
+            );
+        let stitch: Stitch;
+        try {
+            stitch = selectStitch(registry, a.name);
+        } catch (e) {
+            return errorResult((e as Error).message);
+        }
+        const cfg = stitch.__config;
+        const kindRaw: unknown = cfg.kind; // __config.kind is the surface id string
+        const inputSlots = cfg.input ?? {};
+        return textResult({
+            name: a.name,
+            endpoint: endpointOf(cfg),
+            surface: typeof kindRaw === 'string' ? kindRaw : 'http',
+            input: {
+                params: inputSlots.params !== undefined,
+                query: inputSlots.query !== undefined,
+                body: inputSlots.body !== undefined,
+                headers: inputSlots.headers !== undefined,
+            },
+            output: {
+                validated: cfg.output !== undefined,
+                unwrap: cfg.unwrap ?? null,
+            },
+            auth: authTagOf(cfg),
+            policies: {
+                retry: cfg.retry !== undefined,
+                throttle: cfg.throttle !== undefined,
+                cache: cfg.cache !== undefined,
+                timeout: cfg.timeout !== undefined,
+            },
+            pipeline: pipelineOf(cfg),
+            diagram: toMermaid(registry, { name: a.name }).diagram,
+        });
+    }
+
     async function callTool(params: unknown): Promise<ToolResult> {
         const p = (params ?? {}) as { name?: unknown; arguments?: unknown };
         if (p.name === 'run_stitch') return callRunStitch(p.arguments);
         if (p.name === 'list_stitches') return callListStitches();
+        if (p.name === 'describe_stitch')
+            return callDescribeStitch(p.arguments);
         return errorResult(`unknown tool: ${String(p.name)}`);
     }
 
@@ -166,7 +282,11 @@ export function createMcpServer(
                     return reply({});
                 case 'tools/list':
                     return reply({
-                        tools: [RUN_STITCH_TOOL, LIST_STITCHES_TOOL],
+                        tools: [
+                            RUN_STITCH_TOOL,
+                            LIST_STITCHES_TOOL,
+                            DESCRIBE_STITCH_TOOL,
+                        ],
                     });
                 case 'tools/call':
                     return reply(await callTool(params));

@@ -88,6 +88,22 @@ const SANDBOX_CATALOGUE = {
                 '__drift',
             ],
         },
+        // GraphQL surface (Wave 4)
+        {
+            method: 'POST',
+            path: '/graphql',
+            description:
+                'GraphQL endpoint: { query, variables? }; a user(id) selection returns { data: { user } }, an unknown field returns { errors: [...] } (HTTP 200)',
+            knobs: ['__status', '__latencyMs', '__flaky'],
+        },
+        // Cursor pagination (Wave 4)
+        {
+            method: 'GET',
+            path: '/paged/users',
+            description:
+                'Cursor-paged users (2 pages of 2). No cursor → page 1 + nextCursor "p2"; ?cursor=p2 → last page + nextCursor null. Opt-in ?firstHit429=1 returns 429 once per cursor',
+            knobs: ['__status', '__latencyMs', '__stream', '__flaky'],
+        },
     ],
     knobs: [
         {
