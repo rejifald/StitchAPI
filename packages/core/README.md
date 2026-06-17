@@ -2,9 +2,9 @@
 
 ---
 
-> [!WARNING]
+> [!NOTE]
 >
-> **StitchAPI is under heavy development.** APIs, packages, and docs are changing fast and may break without notice — not yet recommended for production. Feedback is very welcome.
+> **StitchAPI is production-ready (v1.0).** The core runtime is feature-complete, zero-dependency, and covered by a green test gate. Feedback is very welcome.
 
 StitchAPI is an agent-native integration runtime built around one primitive: a **stitch** — a typed, declarative, composable unit that turns a single endpoint into a resilient, validated, observable function. You declare it once; your code calls it, the CLI runs it, and an AI agent can invoke it without ever touching a credential.
 
@@ -691,7 +691,7 @@ total: 12 run(s), 11 ok, 1 failed
 
 A stitch is a **per-call primitive**, not a workflow or iPaaS engine. Job queues, inbound webhooks, multi-step orchestration and rollback, business/DB idempotency, and app-level cache policy stay your app's job — absorbing them is exactly how a small library becomes the heavy platform it is positioned against.
 
-Next up: shell → LLM kinds with `pipe()` composition, so a stitch's output can feed a model or shell call in the same declarative chain. The features once staged here have all shipped — the multi-cookie jar, circuit breaker, idempotency keys, and binary/blob responses; OTLP export; and the HTTP (`stitch serve`) and MCP (`stitch mcp`) surfaces of the same definition. The full roadmap and scope rationale live in the [Overview](docs/OVERVIEW.md).
+The features once staged here have all shipped — the multi-cookie jar, circuit breaker, idempotency keys, and binary/blob responses; OTLP export; the HTTP (`stitch serve`) and MCP (`stitch mcp`) surfaces of the same definition; and the non-HTTP `shell` and `llm` kinds with `pipe()` composition (ADR 0008), so a stitch's output can feed a model or shell call in the same declarative chain, traced end to end. The full roadmap and scope rationale live in the [Overview](docs/OVERVIEW.md).
 
 ## License
 

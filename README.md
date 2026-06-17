@@ -9,9 +9,9 @@
   The agent-native runtime where a typed, declarative <strong>stitch</strong> replaces <code>fetch</code> — for humans and agents alike.
 </p>
 
-> [!WARNING]
+> [!NOTE]
 >
-> **StitchAPI is under heavy development.** APIs, packages, and docs are changing fast and may break without notice — not yet recommended for production. Feedback is very welcome.
+> **StitchAPI is production-ready (v1.0).** The core runtime is feature-complete, zero-dependency, and covered by a green test gate. Feedback is very welcome.
 
 ---
 

@@ -97,11 +97,13 @@ round-trips as JSON; functions are sugar).
     hit** as the safe default for any stitch whose schema can't be fingerprinted (it forfeits this
     decision's skip for that stitch only, trading speed for correctness).
 
-3.  **An uncacheable call warns; it never throws.** A streamed response (`.stream()`), a body
+3.  **An uncacheable call degrades; it never throws.** A streamed response (`.stream()`), a body
     that cannot be hashed (stream / `Blob` / `FormData` beyond an opt-in), or any other
-    un-storable case **passes through uncached and emits a `warning` event**. Configuring
-    `cache` on a streaming stitch is a no-op-with-warning, not a crash — consistent with the
-    browser-first "degrade, never crash" rule.
+    un-storable case **passes through uncached and emits a `progress` event** with
+    `phase: 'cache'` and a `bypass: …` detail (the engine has no `warning` event type — the
+    `StitchEvent` union is `start | progress | info | drift | delta | result | error | done`).
+    Configuring `cache` on a streaming stitch is a no-op-with-bypass, not a crash — consistent
+    with the browser-first "degrade, never crash" rule.
 
 4.  **Headers: honour the server's `Vary` by default; an explicit allowlist overrides.** Because
     we derive the key we own the content-negotiation hazard react-query sidesteps — two calls

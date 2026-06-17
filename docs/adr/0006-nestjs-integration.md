@@ -1,6 +1,6 @@
 # ADR 0006 — NestJS integration (`@stitchapi/nest`)
 
--   **Status:** Proposed (firm — Q1–Q2 resolved 2026-06-15; see _Resolved questions_). Net-new: not in [`GAP-AUDIT.md`](../GAP-AUDIT.md). Builds only on existing core extension points; **this ADR modifies no core code.**
+-   **Status:** Accepted (Q1–Q2 resolved 2026-06-15; `@stitchapi/nest` implemented in PR [#103](https://github.com/rejifald/StitchAPI/pull/103) — see _Resolved questions_). Net-new: not in [`GAP-AUDIT.md`](../GAP-AUDIT.md). Builds only on existing core extension points.
 -   **Date:** 2026-06-15
 -   **Tags:** integration, nestjs, adapter, packaging, dependency-injection, multi-tenant, peer-dependency, contract-not-dependency
 

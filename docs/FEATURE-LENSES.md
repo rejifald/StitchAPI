@@ -50,8 +50,8 @@ existing or proposed — passes through all three before it ships.
 
 ### Security
 
--   Auth strategies — `bearer`, `apiKey`, `basic`, `cookieSession` (OAuth2 `client_credentials`
-    in progress) — [`src/auth.ts`](../src/auth.ts)
+-   Auth strategies — `bearer`, `apiKey`, `basic`, `cookieSession`, and OAuth2
+    `client_credentials` — [`src/auth.ts`](../src/auth.ts)
 -   Secret resolvers — `env()` and `secretsFile()`, resolved at **call time**
 -   The caller gets a capability, not a credential — the stitch holds the secret; an agent
     invoking it never sees the token

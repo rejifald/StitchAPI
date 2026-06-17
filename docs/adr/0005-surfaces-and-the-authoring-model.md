@@ -1,6 +1,6 @@
 # ADR 0005 — Surfaces & the authoring model
 
--   **Status:** Proposed (decisions firm; implemented in stages — see _Staged rollout_). Supersedes the closed `kind: 'http' | 'graphql'` union in [`packages/core/src/types.ts`](../../packages/core/src/types.ts).
+-   **Status:** Accepted (implemented across all staged PRs [#89](https://github.com/rejifald/StitchAPI/pull/89) / [#93](https://github.com/rejifald/StitchAPI/pull/93) / [#96](https://github.com/rejifald/StitchAPI/pull/96) / [#97](https://github.com/rejifald/StitchAPI/pull/97) / [#98](https://github.com/rejifald/StitchAPI/pull/98) / [#99](https://github.com/rejifald/StitchAPI/pull/99) / [#100](https://github.com/rejifald/StitchAPI/pull/100) / [#101](https://github.com/rejifald/StitchAPI/pull/101) — see _Staged rollout_). Supersedes the closed `kind: 'http' | 'graphql'` union in [`packages/core/src/types.ts`](../../packages/core/src/types.ts).
 -   **Date:** 2026-06-14
 -   **Tags:** authoring-surface, surfaces, streaming, multipart, packaging, browser-first, runtime
 
