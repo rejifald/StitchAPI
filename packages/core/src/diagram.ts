@@ -6,7 +6,7 @@
 // yet emit). Auth is intentionally absent: it is redacted from `__config` (ADR 0002), so a stitch
 // cannot leak which credential it holds — not even its scheme — through this view.
 import type { StitchRegistry } from './registry';
-import type { StitchConfig } from './types';
+import type { RedactedStitchConfig } from './types';
 
 export interface MermaidExportResult {
     diagram: string;
@@ -14,7 +14,7 @@ export interface MermaidExportResult {
 }
 
 // A compact "METHOD endpoint" label for the request node.
-function endpointLabel(cfg: StitchConfig): string {
+function endpointLabel(cfg: RedactedStitchConfig): string {
     const method = (cfg.method ?? 'GET').toUpperCase();
     let where: string;
     if (typeof cfg.url === 'string') where = cfg.url;
@@ -33,9 +33,8 @@ function endpointLabel(cfg: StitchConfig): string {
 
 // The configured pipeline stages, in engine order. `call`/`result` always bookend; the middle
 // stages appear only when configured. Auth is redacted from __config, so it never appears.
-function stagesFor(cfg: StitchConfig): string[] {
-    const kindRaw: unknown = cfg.kind; // __config.kind is the surface id string
-    const kind = typeof kindRaw === 'string' ? kindRaw : 'http';
+function stagesFor(cfg: RedactedStitchConfig): string[] {
+    const kind = cfg.kind ?? 'http'; // __config.kind is the surface id string
     const stages: string[] = ['call'];
     if (cfg.throttle) stages.push('throttle');
     stages.push(endpointLabel(cfg));

@@ -660,6 +660,29 @@ export interface StitchConfig {
 }
 
 /**
+ * The PUBLIC, redacted projection of a {@link StitchConfig} that a stitch exposes as `__config`
+ * (and a seam as its shared `__config`). {@link redactConfig} produces it: the live, secret-bearing
+ * handles are stripped (`auth`, `store`, `adapter`), the surface is normalised to its `id` string
+ * (`kind`), and the auth's non-secret {@link SecurityScheme} is projected onto `authScheme`. It
+ * therefore round-trips as JSON (ADR 0005 Decision 11 — the contract gate) and is what `mcp` /
+ * `diagram` / `stitch export --openapi` read.
+ *
+ * This is the HONEST runtime shape: `__config.auth` / `.store` / `.adapter` are always absent, and
+ * `__config.kind` is the surface's `id` string — never a live {@link Surface}. (The full,
+ * secret-bearing config lives on the non-enumerable `__rawConfig`, used only for fragment
+ * composition.)
+ */
+export type RedactedStitchConfig = Omit<
+    StitchConfig,
+    'auth' | 'store' | 'adapter' | 'kind'
+> & {
+    /** The surface's `id` string (never the live {@link Surface}); absent for the default `http`. */
+    kind?: string;
+    /** Non-secret auth scheme projected from the (stripped) live `auth`; feeds `export --openapi`. */
+    authScheme?: SecurityScheme;
+};
+
+/**
  * The error a failed stitch raises: a non-2xx response (after retries), a contract/validation
  * breach, a timeout, or an open circuit. It is what `await stitch(...)` and {@link Stitch.unwrap}
  * throw, and what rides in `error` on the {@link SafeResult} from {@link Stitch.safe}.
@@ -756,7 +779,7 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
         invalidate(): Promise<void>;
         key(input?: StitchInput): Promise<string | undefined>;
     };
-    readonly __config: StitchConfig;
+    readonly __config: RedactedStitchConfig;
     readonly __stitch: true;
 }
 
@@ -920,6 +943,6 @@ export interface Seam {
     /** `flush()`, then close the shared store/vault and drop the registry. */
     close(): Promise<void>;
     /** The shared config fragment — redacted (no `store`/`vault`/`auth`/`adapter`). */
-    readonly __config: StitchConfig;
+    readonly __config: RedactedStitchConfig;
     readonly __seam: true;
 }

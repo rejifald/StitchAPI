@@ -21,6 +21,7 @@ import {
 import { graphqlSurface } from './surface';
 import type {
     PrincipalSeam,
+    RedactedStitchConfig,
     Seam,
     SeamOptions,
     Stitch,
@@ -119,7 +120,7 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
 }
 
 // The shared fragment, redacted (no live store/vault/auth/adapter) — exfil-at-rest (§4/§6).
-function sharedConfig(shared: SharedSeam): StitchConfig {
+function sharedConfig(shared: SharedSeam): RedactedStitchConfig {
     return redactConfig(compose(shared.fragment));
 }
 
