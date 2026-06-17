@@ -185,18 +185,21 @@ function collectHits(clean: string): string[] {
 
     // 1. Named imports from a stitch module — only count the surfaces actually
     //    listed in the import clause, and only when the module is a stitch one.
+    //    The clause prefix (an optional `type` and/or default-import `name,`) is
+    //    matched as one `[^{}'"]*` run rather than chained `\s*`/optional groups:
+    //    every quantifier here is bounded by a disjoint literal/class, so no two
+    //    can match the same character and the match stays linear (no ReDoS).
     const importRe =
-        /import\s*(?:type\s*)?(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g;
+        /import\b(?:[^{}'"]*)\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g;
     for (let m = importRe.exec(clean); m; m = importRe.exec(clean)) {
         const clause = m[1];
         const module = m[2];
         if (!STITCH_MODULES.has(module)) continue;
         for (const part of clause.split(',')) {
-            // handle `keychain as kc` — the imported (original) name is what matters
-            const original = part
-                .trim()
-                .split(/\s+as\s+/)[0]
-                ?.trim();
+            // handle `keychain as kc` — the imported (original) name is what matters.
+            // Split on a single `\s+` and take the first token (the original name);
+            // `/\s+as\s+/` would backtrack quadratically on a run of spaces with no `as`.
+            const original = part.trim().split(/\s+/)[0];
             if (original && isNodeOnly(original)) hits.add(original);
         }
     }

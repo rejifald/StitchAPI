@@ -27,11 +27,20 @@ export interface DownloadResult {
     filename?: string;
 }
 
-// Parse a filename from a `Content-Disposition` header. RFC 5987 `filename*` (percent-encoded, with
-// a charset) is preferred over a plain `filename` (quoted or a bare token).
+// The `filename*` extended-value pattern (RFC 8187): the charset and language are bounded to their
+// RFC token classes — `mime-charsetc` and the language-tag alphabet — rather than a permissive
+// `[^']*`. Both classes exclude `*`, `=`, and whitespace, so the run can't span arbitrary header
+// text and stop only on a far-away quote. That matters because the regex is searched (unanchored)
+// against an attacker-controlled header: a permissive run would scan to the end and fail at every
+// `filename*=` start, which is the O(n²) polynomial-ReDoS trap. The bounded classes keep it linear.
+const FILENAME_STAR =
+    /filename\*\s*=\s*[A-Za-z0-9!#$%&+\-^_`{}~]*'[A-Za-z0-9-]*'([^;]+)/i;
+
+// Parse a filename from a `Content-Disposition` header. RFC 5987/8187 `filename*` (percent-encoded,
+// with a charset) is preferred over a plain `filename` (quoted or a bare token).
 function filenameFromDisposition(cd: string | undefined): string | undefined {
     if (cd === undefined) return undefined;
-    const ext = /filename\*\s*=\s*[^']*'[^']*'([^;]+)/i.exec(cd)?.[1]?.trim();
+    const ext = FILENAME_STAR.exec(cd)?.[1]?.trim();
     if (ext !== undefined && ext !== '') {
         try {
             return decodeURIComponent(ext);
