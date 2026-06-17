@@ -201,12 +201,21 @@ export interface PostMessageChannel {
      * Fire-and-forget send (no reply awaited): post `{ type, payload }` and resolve immediately. A
      * buffered surface (id `'postmessage'`); result `void`. The call argument is inferred from
      * `opts.input`.
+     *
+     * Like every stitch the call returns a LAZY result — it posts only when the result is driven
+     * (`await` / `.then` / `.catch` / `.finally`). For fire-and-forget, drive it explicitly:
+     * `void send(input).catch(() => {})`. A bare `send(input)` whose result is never awaited sends
+     * NOTHING.
      */
     emit<const C extends EmitOptions>(opts: C): Stitch<void, InputOf<C>>;
     /**
      * Subscribe to inbound events of `opts.type`. A STREAMING surface (id `'postmessage-event'`):
-     * `await` resolves to the collected payload array, `.stream()` yields live deltas. `opts.output`
-     * validates each payload (per-`delta`, ADR 0005 Addendum).
+     * `.stream()` yields live deltas; `await` collects until the stream ends (so prefer `.stream()`
+     * for an ongoing subscription). `opts.output` validates each payload (per-`delta`, ADR 0005
+     * Addendum) — but note a violation TERMINATES the stream with a `drift` error (the sse/stream
+     * contract: a bad value is loud, not silently dropped). For a discrete event bus where one
+     * malformed message should NOT end the subscription, omit `output` and validate each payload in
+     * the consumer — drop the bad one, keep listening (an `onInvalid: 'drop'` mode is future work).
      */
     events<const C extends EventsOptions>(
         opts: C,

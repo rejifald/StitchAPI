@@ -63,6 +63,13 @@ A responder DROPS a payload that fails its `input` schema rather than replying w
 
 Every verb is an ordinary stitch run, so each gets a run-identity span ([ADR 0007](./0007-composition-causality-and-run-identity.md)) and the full `start → request → (delta…) → result → done` event spine for free: a `request`'s `start`/`result`, an `events` subscription's per-payload `delta`s, a drift finding when a payload violates `output`. A `postMessage` exchange becomes visible in the same trace/DAG as an HTTP call — the message bus stops being a blind spot.
 
+## Consumer notes (two sharp edges, by design)
+
+Surfaced by the first real adoption (strimko's template-preview channel) — documented here so they are not a surprise:
+
+-   **A stitch is a lazy result — drive it.** Every verb returns a stitch whose call yields a _cold_ `StitchResult`: the run (and thus the `postMessage`) happens only when the result is driven — `await` / `.then` / `.catch` / `.finally`. For `request`/`events` you naturally `await`/`.stream()`, so this is invisible; for fire-and-forget **`emit`** you must drive it explicitly — `void send(input).catch(() => {})` — or nothing is posted. The strimko host uses exactly this idiom for `template/update`.
+-   **`events` validation terminates the stream.** `output` on `events` validates each payload per-`delta`, and a violation ends the subscription with a `drift` error — the same loud-not-silent contract as `sse`/`stream`. That is right for a coherent stream but surprising for a _discrete_ event bus, where one malformed message should not kill the channel. There, omit `output` and validate each payload in the consumer (drop the bad one, keep listening) — the pattern the strimko `template/content-height` and `template/update` subscriptions use. A built-in `onInvalid: 'drop'` mode for `events` is noted as future work.
+
 ## Packaging
 
 -   New file `packages/core/src/postmessage.ts`; a `stitchapi/postmessage` subpath entry in `tsup.config.ts` and a `./postmessage` export block in `package.json` (browser/import/require), mirroring `./sse` exactly.
