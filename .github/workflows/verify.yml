@@ -8,6 +8,16 @@ on:
         branches: [main, develop]
     push:
         branches: [main, develop]
+    # Re-verify the *merged* result in the queue. A `pull_request` run only tests
+    # the PR against the base as it was when CI last ran; if another PR changes an
+    # interacting file before this one lands (e.g. the root pnpm.overrides), the PR
+    # can be green yet break main. `merge_group` runs these jobs against the actual
+    # merge candidate, so the lockfile gate below sees the post-merge base. This trigger
+    # is inert until the `main` branch protection enables the GitHub merge queue (or, at
+    # minimum, "Require branches to be up to date before merging") with `lockfile` +
+    # `verify` as required checks — that setting is what actually blocks the stale-base
+    # merge that broke the deploy.
+    merge_group:
 
 # Default-deny; this gate only reads the repo.
 permissions:
@@ -19,6 +29,26 @@ concurrency:
     cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+    # Lockfile-integrity gate. `pnpm install --frozen-lockfile` fails when pnpm-lock.yaml
+    # has drifted from any workspace manifest OR from the root pnpm.overrides — including
+    # the case that broke the Vercel deploy: a security override (esbuild@<0.28.1 →
+    # >=0.28.1) rewrites a manifest spec the lockfile never recorded, so the install that
+    # is implicitly `--frozen` in every CI/deploy environment refuses to run. This is its
+    # own fast job (no build, scripts skipped) so the failure surfaces in ~10s with an
+    # unambiguous name, and it runs on merge_group so the lockfile is checked against the
+    # post-merge base — the angle the per-PR run misses. Make it a required check.
+    lockfile:
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile --ignore-scripts
+
     verify:
         runs-on: ubuntu-latest
         timeout-minutes: 10
