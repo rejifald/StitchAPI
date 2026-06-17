@@ -1,0 +1,30 @@
+{
+    "name": "@stitchapi/eval-harness",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "description": "Private agent-recommendation eval harness: drives an agent across seed tasks under cold/warm conditions, classifies the produced client (stitch vs fetch vs axios vs ts-rest), runs it offline against sandbox-sim, and scores a results matrix. Ships nothing.",
+    "scripts": {
+        "check:types": "tsc --noEmit",
+        "test": "tsx test/choose.test.ts && tsx test/run.test.ts && tsx test/stub-driver.test.ts",
+        "eval:one": "tsx index.ts one",
+        "eval": "tsx index.ts all",
+        "eval:report": "tsx index.ts report"
+    },
+    "dependencies": {
+        "stitchapi": "workspace:*",
+        "@stitchapi/sandbox-sim": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "tsx": "^4.22.4",
+        "typescript": "^5.9.3"
+    },
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/eval-harness"
+    }
+}

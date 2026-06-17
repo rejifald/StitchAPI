@@ -12,6 +12,8 @@ import { registerHandler, resetHandlers } from '../index';
 import { authResilienceHandlers } from './auth-resilience';
 // Import all handler arrays
 import { errorsStatusHandlers } from './errors-status';
+import { graphqlHandlers } from './graphql';
+import { paginationHandlers } from './pagination';
 import { sandboxIndexHandlers } from './sandbox-index';
 import { streamingLlmHandlers } from './streaming-llm';
 
@@ -23,6 +25,8 @@ export const allHandlers: SimHandler[] = [
     ...errorsStatusHandlers,
     ...streamingLlmHandlers,
     ...authResilienceHandlers,
+    ...graphqlHandlers,
+    ...paginationHandlers,
     ...sandboxIndexHandlers,
 ];
 

@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+        "strict": true,
+        "types": ["node"]
+    },
+    "include": ["**/*.ts"],
+    "comment": "Mirrors packages/sandbox-sim/tsconfig.json (strict, ES2022, Bundler resolution). This package is Node-only (shells out, reads fs, runs under tsx) so it bundles @types/node and type-checks its test files in the same pass — unlike sandbox-sim, whose shipped source must type-check dependency-free."
+}
