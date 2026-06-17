@@ -9,7 +9,7 @@
 //
 // Bundle-frugal (Decision 10): reached only through the `stream` subpath; `import { stitch }` pulls
 // in none of it.
-import type { InputOf } from './infer';
+import type { InputOf, OutputOf } from './infer';
 import { lineReader } from './line-reader';
 import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
@@ -23,6 +23,34 @@ import {
     type StitchInput,
     isSeam,
 } from './types';
+
+// ---- delta element type inference (#115) — PURELY compile-time ------------------------------------
+// The `stream` surface has NO `contractValue` (engine.ts `runStreaming`): the element the caller sees
+// is whatever the DECODER produced, so the static element type is decoder-dependent — `output` refines
+// only the structured (`'ndjson'`) decoder, never the raw `'bytes'`/`'lines'` ones (which `output`
+// can't reshape). Reading `config.stream.decode` literally fixes the branch.
+
+/** The literal `stream.decode` mode a config declares, defaulting to `'bytes'` (the runtime default). */
+type StreamDecodeOf<C> = C extends { stream: { decode: infer D } }
+    ? D
+    : 'bytes';
+
+/**
+ * The decoded delta element type for a config `C`:
+ *   - `'lines'`  → `string` (UTF-8 lines; `output` is ignored — it can't reshape a raw line).
+ *   - `'ndjson'` → `OutputOf<C>` (the structured per-record value; `unknown` when no `output`).
+ *   - `'bytes'` (default) + any unrecognised `decode` → `Uint8Array` (raw chunks; `output` ignored).
+ *
+ * NOTE: `output` deliberately refines ONLY `'ndjson'`. `stream({ output: S })` with NO `decode` stays
+ * `Uint8Array[]` — `decode` defaults to `'bytes'`, which `output` can't reshape. That is intended, not
+ * a bug. A future `'json'` decoder (issue #111) would add another `OutputOf<C>` branch here.
+ */
+type StreamElement<C> =
+    StreamDecodeOf<C> extends 'lines'
+        ? string
+        : StreamDecodeOf<C> extends 'ndjson'
+          ? OutputOf<C>
+          : Uint8Array; // 'bytes' default + any unknown decode
 
 // Decode the live body into `delta` items per `cfg.stream.decode` (default `'bytes'`).
 async function* decodeStream(
@@ -75,25 +103,27 @@ export interface StreamSeamApi {
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
         config: C,
-    ) => Stitch<unknown[], InputOf<C>>;
+    ) => Stitch<StreamElement<C>[], InputOf<C>>;
     readonly seam: Seam;
 }
 
 // Standalone stream stitch: the call argument is inferred from `config.input`, the result fixed to
 // the collected chunk array (a streaming await resolves to all of its `delta` chunks — Stage 5). The
-// `as` retypes the loose `makeStitch` result to the declared `InputOf<C>`: now that `InputOf` reads
-// `extends`-fragment schemas (#76) it is no longer a clean supertype of `StitchInput` under an
-// unresolved `C`, so this loose body needs the same retype `stitch()`/`seam` get from their
-// inferring overloads. Sound — the runtime stitch is byte-identical (the type tests cover it).
+// element type is decoder-dependent via `StreamElement<C>` (#115): `Uint8Array`/`string` for the raw
+// `'bytes'`/`'lines'` decoders, `OutputOf<C>` for `'ndjson'`. The `as` retypes the loose `makeStitch`
+// result to the declared `InputOf<C>`/`StreamElement<C>[]`: now that `InputOf` reads `extends`-fragment
+// schemas (#76) it is no longer a clean supertype of `StitchInput` under an unresolved `C`, so this
+// loose body needs the same retype `stitch()`/`seam` get from their inferring overloads. Sound — the
+// runtime stitch is byte-identical (the type tests cover it).
 const streamStitch = <
     const C extends Partial<StitchConfig> = Partial<StitchConfig>,
 >(
     config: C,
-): Stitch<unknown[], InputOf<C>> =>
+): Stitch<StreamElement<C>[], InputOf<C>> =>
     makeStitch<unknown[]>({
         ...config,
         kind: streamSurface,
-    }) as unknown as Stitch<unknown[], InputOf<C>>;
+    }) as unknown as Stitch<StreamElement<C>[], InputOf<C>>;
 
 // Bind stream members to a seam through the seam's surface-agnostic `stitch({ kind })` (Decision 3).
 function bindSeam(s: Seam): StreamSeamApi {
@@ -101,11 +131,11 @@ function bindSeam(s: Seam): StreamSeamApi {
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
         config: C,
-    ): Stitch<unknown[], InputOf<C>> =>
+    ): Stitch<StreamElement<C>[], InputOf<C>> =>
         s.stitch<unknown[]>({
             ...config,
             kind: streamSurface,
-        }) as unknown as Stitch<unknown[], InputOf<C>>;
+        }) as unknown as Stitch<StreamElement<C>[], InputOf<C>>;
     return { stitch, seam: s };
 }
 
