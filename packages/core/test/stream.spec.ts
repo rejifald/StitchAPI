@@ -45,7 +45,7 @@ describe('stream decoders (Decision 5)', () => {
 
         const chunks = await s();
         expect(chunks.every((c) => c instanceof Uint8Array)).toBe(true);
-        const joined = chunks.map((c) => td.decode(c as Uint8Array)).join('');
+        const joined = chunks.map((c) => td.decode(c)).join('');
         expect(joined).toBe('abcd');
     });
 

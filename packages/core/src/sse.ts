@@ -6,7 +6,7 @@
 //
 // Bundle-frugal (Decision 10): this module — and the frame parser — is reached only through the
 // `sse` subpath, never from the root entry; `import { stitch }` pulls in no SSE code.
-import type { InputOf } from './infer';
+import type { InputOf, OutputOf } from './infer';
 import { lineReader } from './line-reader';
 import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
@@ -25,10 +25,16 @@ import {
  * One Server-Sent Event. `data` is JSON-parsed when it parses, else the raw string. `event` (the
  * type), `id` (last-event id), and `retry` (reconnect ms) are present only when the event carried
  * them. An event is only produced when at least one `data:` field was seen (the SSE spec).
+ *
+ * The `data` payload type `T` defaults to `unknown` (issue #115): the runtime parser never knows the
+ * shape, so every internal use (`parseEventStream`, `contractValue`) and every existing import stays
+ * `SseEvent<unknown>` — byte-identical to the old non-generic `SseEvent`. Only the public `sse(...)`
+ * helper refines `T` from the config's `output` schema, since `output` validates each event's `.data`
+ * (the `sse` surface's `contractValue` points per-`delta` validation at `.data`).
  */
-export interface SseEvent {
+export interface SseEvent<T = unknown> {
     event?: string;
-    data: unknown;
+    data: T;
     id?: string;
     retry?: number;
 }
@@ -117,13 +123,15 @@ export interface SseSeamApi {
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
         config: C,
-    ) => Stitch<SseEvent[], InputOf<C>>;
+    ) => Stitch<SseEvent<OutputOf<C>>[], InputOf<C>>;
     readonly seam: Seam;
 }
 
 // Standalone sse stitch: the call argument is inferred from `config.input`, the result fixed to the
-// collected event array (a streaming await resolves to all of its `delta` chunks — Stage 5). The
-// `as` retypes the loose `makeStitch` result to the declared `InputOf<C>`: now that `InputOf` reads
+// collected event array (a streaming await resolves to all of its `delta` chunks — Stage 5). Each
+// event's `.data` is typed from `config.output` via `OutputOf<C>` (#115) — `unknown` when no `output`,
+// keeping `SseEvent<unknown>[]` identical to the old `SseEvent[]`. The `as` retypes the loose
+// `makeStitch` result to the declared `InputOf<C>`/`SseEvent<OutputOf<C>>[]`: now that `InputOf` reads
 // `extends`-fragment schemas (#76) it is no longer a clean supertype of `StitchInput` under an
 // unresolved `C`, so this loose body needs the same retype `stitch()`/`seam` get from their
 // inferring overloads. Sound — the runtime stitch is byte-identical (the type tests cover it).
@@ -131,11 +139,11 @@ const sseStitch = <
     const C extends Partial<StitchConfig> = Partial<StitchConfig>,
 >(
     config: C,
-): Stitch<SseEvent[], InputOf<C>> =>
+): Stitch<SseEvent<OutputOf<C>>[], InputOf<C>> =>
     makeStitch<SseEvent[]>({
         ...config,
         kind: sseSurface,
-    }) as unknown as Stitch<SseEvent[], InputOf<C>>;
+    }) as unknown as Stitch<SseEvent<OutputOf<C>>[], InputOf<C>>;
 
 // Bind sse members to a seam through the seam's surface-agnostic `stitch({ kind })` (Decision 3) —
 // no per-surface seam method; one shared runtime / principal boundary.
@@ -144,11 +152,11 @@ function bindSeam(s: Seam): SseSeamApi {
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
         config: C,
-    ): Stitch<SseEvent[], InputOf<C>> =>
+    ): Stitch<SseEvent<OutputOf<C>>[], InputOf<C>> =>
         s.stitch<SseEvent[]>({
             ...config,
             kind: sseSurface,
-        }) as unknown as Stitch<SseEvent[], InputOf<C>>;
+        }) as unknown as Stitch<SseEvent<OutputOf<C>>[], InputOf<C>>;
     return { stitch, seam: s };
 }
 
