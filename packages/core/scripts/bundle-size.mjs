@@ -31,16 +31,24 @@ const libDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'lib');
 const KB = 1024;
 
 // Each scenario is a real import a consumer writes. `budget` is the min+gzip ceiling.
+//
+// Budgets raised for 1.0.0-rc.1 (21.5→22.0 / 17.5→17.75 KB): the engine gained
+// resource-safety code that lives on the core path and cannot move to a subpath —
+// the caller's AbortSignal now interrupts retry/reconnect backoff and throttle waits
+// (instead of sleeping out the full delay), the in-memory store opportunistically
+// sweeps expired keys, and the throttle reclaims idle per-key/host state. The growth
+// (~0.3 KB gzip) buys leak-freedom under long uptime and prompt cancellation; the
+// headroom (~0.4 / ~0.3 KB) is deliberately kept tight so the gate stays meaningful.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 21.5 * KB,
+        budget: 22.0 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 17.5 * KB,
+        budget: 17.75 * KB,
     },
 ];
 
