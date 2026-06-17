@@ -60,8 +60,10 @@ running it.
 An agent does not need a spec to add an API. Hand it a single example — a `curl`
 command, a HAR entry, or a snippet from a vendor's docs — and it emits a stitch
 declaration: the URL, the input shape, and an `output` schema inferred from the
-one response it saw. The declaration is committable code the agent (or you) can
-review.
+one response it saw. For the common `curl`/HAR case there is also a deterministic
+shortcut — `stitch from-curl '<curl>'` prints the same declaration with no model
+in the loop (id-like path segments lifted, credentials replaced with `env()`).
+Either way the declaration is committable code the agent (or you) can review.
 
 <Cards>
     <Card

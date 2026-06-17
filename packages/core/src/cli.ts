@@ -6,6 +6,12 @@
 // output pipes straight into jq and friends. No app boot required.
 import { toMermaid } from './diagram';
 import { loadSnapshot, saveSnapshot } from './drift';
+import {
+    type ParsedRequest,
+    parseCurl,
+    parseHar,
+    toStitchSource,
+} from './from-curl';
 import { serveStdio } from './mcp';
 import { type OpenApiExportOptions, toOpenApi } from './openapi';
 import {
@@ -432,6 +438,7 @@ usage:
   stitch mcp [--module <path>]                               MCP over stdio (run_stitch)
   stitch diagram [--module <path>] [--name <name>]           Mermaid flowchart of the stitches
   stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>]   emit an OpenAPI 3.1 spec
+  stitch from-curl '<curl>' | --from-har <file> [--response <f|->] [--zod] [--name <export>]   scaffold a stitch from one example
   stitch drift generate [--module <path>] [--name <name>] [--force] [--flags…]   write drift snapshot baseline(s)
   stitch init [--format agents|cursor|claude|all] [--force]   write the consumer rule (AGENTS.md / Cursor / CLAUDE.md)
 
@@ -463,6 +470,19 @@ export:
   JSON Schema when --schema-module is given, else {}. Security schemes come from each stitch's
   auth (bearer/basic/apiKey/oauth2; the credential is never emitted). Thunk-endpoint stitches
   are skipped with a warning.
+
+from-curl:
+  '<curl>'               a curl command line to convert (quote it; line-continuations ok)
+  --from-har <file>      read ONE request entry from a HAR file instead of a curl string
+  --har-index <n>        which HAR entry to read (default: 0)
+  --response <file|->    a sample response JSON used (with --zod) to infer the output schema
+  --zod                  emit an output: zod schema (generated text; core never imports zod)
+  --name <export>        export name for the emitted const (default: derived from the path)
+  Deterministically turns ONE example into a ready-to-paste \`export const … = stitch({…})\` plus a
+  matching call. URL origin → baseUrl, the rest → path with id-like segments lifted into {param}
+  slots (each lift is warned). A captured credential is NEVER emitted — recognised auth becomes
+  \`bearer(env('API_TOKEN'))\` / \`apiKey({ value: env('API_KEY') })\` / \`basic({ … })\`. Without --zod
+  no output schema is emitted, just a comment to add one.
 
 drift generate:
   --name <name>    baseline only this stitch (by export name or configured name)
@@ -905,6 +925,108 @@ async function exportCommand(args: string[], io: CliIO): Promise<number> {
     return 0;
 }
 
+// ---- from-curl: scaffold a stitch from one example ------------------------
+// `stitch from-curl '<curl>'` — turn ONE example (a curl command line or a single HAR entry) into
+// a ready-to-paste `stitch({...})` declaration. Deterministic: the heavy lifting is the pure
+// `parseCurl`/`parseHar`/`toStitchSource` in src/from-curl.ts; this command only handles argv, the
+// optional `--response` sample (read via io), and writing the source (stdout) + warnings (stderr).
+async function fromCurlCommand(args: string[], io: CliIO): Promise<number> {
+    let fromHar: string | undefined;
+    let responsePath: string | undefined;
+    let zod = false;
+    let name: string | undefined;
+    let harIndex: number | undefined;
+    const curlParts: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === undefined) continue;
+        if (a === '--from-har') fromHar = args[++i];
+        else if (a.startsWith('--from-har='))
+            fromHar = a.slice('--from-har='.length);
+        else if (a === '--response') responsePath = args[++i];
+        else if (a.startsWith('--response='))
+            responsePath = a.slice('--response='.length);
+        else if (a === '--zod') zod = true;
+        else if (a === '--name') name = args[++i];
+        else if (a.startsWith('--name=')) name = a.slice('--name='.length);
+        else if (a === '--har-index') harIndex = Number(args[++i]);
+        else if (a.startsWith('--har-index='))
+            harIndex = Number(a.slice('--har-index='.length));
+        else curlParts.push(a); // the curl command (possibly split across argv tokens)
+    }
+
+    if (fromHar === undefined && curlParts.length === 0) {
+        io.writeErr(
+            "usage: stitch from-curl '<curl>' | --from-har <file> [--response <file|->] [--zod] [--name <export>]\n",
+        );
+        return 2;
+    }
+
+    // Optional sample response (for the --zod output schema): a file, or `-` for stdin.
+    let response: string | undefined;
+    if (responsePath !== undefined) {
+        try {
+            response =
+                responsePath === '-'
+                    ? await readStdin()
+                    : await io.readFileText(responsePath);
+        } catch (e) {
+            io.writeErr(`could not read --response: ${(e as Error).message}\n`);
+            return 1;
+        }
+    }
+
+    // Parse the example into a ParsedRequest (HAR file takes precedence when given).
+    let req: ParsedRequest;
+    try {
+        if (fromHar !== undefined) {
+            const raw = await io.readFileText(fromHar);
+            const har: unknown = JSON.parse(raw);
+            req =
+                harIndex !== undefined
+                    ? parseHar(har, harIndex)
+                    : parseHar(har);
+        } else {
+            // A single argv token is the whole quoted curl line; multiple tokens are an
+            // already-split argv. parseCurl accepts either form.
+            const only = curlParts.length === 1 ? curlParts[0] : undefined;
+            req = only !== undefined ? parseCurl(only) : parseCurl(curlParts);
+        }
+    } catch (e) {
+        io.writeErr(`from-curl: ${(e as Error).message}\n`);
+        return 1;
+    }
+
+    if (!req.url) {
+        io.writeErr('from-curl: could not find a URL in the input\n');
+        return 1;
+    }
+
+    const { source, warnings } = toStitchSource(req, {
+        ...(name !== undefined ? { name } : {}),
+        zod,
+        ...(response !== undefined ? { response } : {}),
+    });
+    for (const w of warnings) io.writeErr(`warning: ${w}\n`);
+    io.write(source);
+    return 0;
+}
+
+// Read all of stdin as UTF-8 (for `--response -`). A small, command-local helper.
+function readStdin(): Promise<string> {
+    return new Promise((resolve, reject) => {
+        let data = '';
+        process.stdin.setEncoding('utf8');
+        process.stdin.on('data', (c: string | Buffer) => {
+            data += typeof c === 'string' ? c : c.toString('utf8');
+        });
+        process.stdin.on('end', () => {
+            resolve(data);
+        });
+        process.stdin.on('error', reject);
+    });
+}
+
 // ---- init: write the consumer rule for AI coding agents -------------------
 // `stitch init` plants the canonical "declare a stitch, don't hand-roll fetch" rule into the
 // files an AI coding agent reads, so the next agent working in this repo reaches for StitchAPI.
@@ -1056,6 +1178,8 @@ export async function main(
             return diagramCommand(rest, io);
         case 'export':
             return exportCommand(rest, io);
+        case 'from-curl':
+            return fromCurlCommand(rest, io);
         case 'drift':
             return driftCommand(rest, io);
         case 'init':

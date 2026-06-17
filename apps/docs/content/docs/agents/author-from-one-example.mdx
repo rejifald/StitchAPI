@@ -3,21 +3,65 @@ title: 'Author from one example'
 description: 'Have an agent emit a stitch declaration from a single curl, HAR, or doc snippet.'
 ---
 
-An agent can write a complete stitch from one example — a `curl`, a HAR entry, a
-doc snippet — because a stitch is declarative and atomic: it needs only a URL and
-one example, never an OpenAPI spec and never codegen. The agent reads the
-example, maps its parts onto the authoring surface, and emits a `stitch({...})`
-declaration — the same surface a human writes by hand.
+A complete stitch can come from one example — a `curl`, a HAR entry, a doc
+snippet — because a stitch is declarative and atomic: it needs only a URL and one
+example, never an OpenAPI spec and never codegen. There are two ways to get there:
+run the deterministic `stitch from-curl` command, or hand-author the same
+`stitch({...})` declaration. Both land on the identical authoring surface a human
+writes by hand.
 
-## Example
+## Deterministic: `stitch from-curl`
 
-Give the agent a single `curl`:
+Hand the CLI a single `curl` and it prints the matching declaration — no model,
+no guessing:
+
+```bash
+stitch from-curl 'curl https://api.example.com/users/1'
+```
+
+It writes the stitch (and a matching example call) to stdout:
+
+```ts
+import { stitch } from 'stitchapi';
+
+export const getUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{userId}',
+});
+
+// add an output schema to validate + type the response (rerun with --zod)
+await getUsers({ params: { userId: 1 } });
+```
+
+The origin becomes `baseUrl`, the rest becomes `path`, and id-like segments
+(`/users/1`) are lifted into `{param}` slots — each lift is announced on stderr so
+you can revert a false positive. A recognised credential is **never** emitted: an
+`Authorization: Bearer …` header becomes `auth: bearer(env('API_TOKEN'))`, an
+`x-api-key` header becomes `auth: apiKey({ value: env('API_KEY') })`, and the
+captured token stays in your shell, out of committed code. Read a single HAR entry
+instead with `--from-har request.har`.
+
+By default `from-curl` emits **no output schema** — just a comment to add one,
+since one example cannot prove the full response shape. Pass `--zod` with a
+`--response sample.json` to infer a starter `output:` schema (generated text; core
+never imports a validator):
+
+```bash
+stitch from-curl 'curl https://api.example.com/users/1' \
+  --zod --response sample.json
+```
+
+## Hand-author the same surface
+
+The CLI is a starting point, not a requirement — the output is the ordinary
+authoring surface, so you (or an agent) can write or extend it directly. Given the
+same one `curl`:
 
 ```bash
 curl https://api.example.com/users/1
 ```
 
-It emits the stitch that example describes:
+the equivalent hand-authored stitch, with an `output` schema added:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -41,22 +85,31 @@ validator-agnostic, so any [Standard Schema](/docs/guides/validation/standard-sc
 validator (Valibot, ArkType, …) or a plain `(value) => boolean` predicate works
 in the same slot.
 
-## Options
+## How each part maps
 
-The agent maps each part of the one example onto a config field:
+The same mapping rules drive both `stitch from-curl` and a hand-authored stitch:
 
 -   **URL → `baseUrl` + `path`.** The origin becomes `baseUrl`; the rest becomes
-    `path`, with concrete segments lifted into `{param}` slots (so `/users/1`
-    becomes `/users/{id}`, called with `{ params: { id: 1 } }`).
--   **Headers → `auth` / `headers`.** An `Authorization: Bearer …` or
-    `x-api-key` header becomes an `auth` strategy resolved at call time; other
-    headers become static `headers`.
--   **An example response → an `output` schema.** When the example carries a
-    response body, the agent can add an `output` schema — turning one move into
-    TypeScript types, runtime validation, and drift detection.
+    `path`, with id-like segments lifted into `{param}` slots (so `/users/1`
+    becomes `/users/{userId}`, called with `{ params: { userId: 1 } }`). `from-curl`
+    is conservative — it lifts only pure digits, UUIDs, long hex, or url-encoded
+    segments, and warns on each one so you can revert it.
+-   **Headers → `auth` / `headers`.** An `Authorization: Bearer …` or `x-api-key`
+    header becomes an `auth` strategy resolved at call time — the captured
+    credential is replaced with an `env('NAME')` placeholder and never written into
+    the source. Other headers become static `headers` (transport noise like
+    `host`, `cookie`, and `content-length` is dropped).
+-   **A request body → `bodyType` + an example.** A JSON `-d` payload becomes
+    `bodyType: 'json'`, a form one (`k=v&…` or `--data-urlencode`) becomes
+    `bodyType: 'form'`, and a body implies `POST` unless `-G` folds the data into
+    the query.
+-   **An example response → an `output` schema.** `from-curl` emits none by
+    default (one example cannot prove the shape); add one with `--zod --response`,
+    or hand-write it — turning one move into TypeScript types, runtime validation,
+    and drift detection.
 
 This works because a stitch is atomic, not spec-first — no OpenAPI document, no
-codegen step. And what the agent emits is the normal authoring surface: a plain
+codegen step. What `from-curl` writes is the normal authoring surface: a plain
 `stitch({...})` declaration, identical to a hand-written one, that you can read,
 review, and extend.
 
