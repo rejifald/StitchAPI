@@ -2,6 +2,7 @@ import { Cta, Footer } from './components/cta';
 import { Differentiator } from './components/differentiator';
 import { Features } from './components/features';
 import { Hero } from './components/hero';
+import { Metrics } from './components/metrics';
 import { Problem } from './components/problem';
 import { Surfaces } from './components/surfaces';
 
@@ -37,6 +38,7 @@ export default function HomePage() {
     return (
         <main className="flex flex-1 flex-col">
             <Hero />
+            <Metrics />
             <Problem />
             <Surfaces />
             <Features />
