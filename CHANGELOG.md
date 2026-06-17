@@ -46,8 +46,10 @@ dist-tag — `latest` stays on `0.7.0` until `1.0.0` is promoted. See
 
 ### Changed
 
--   Documentation reconciled with the shipped reality (READMEs flipped to a
-    production-ready / v1.0 framing; ADRs 0002 / 0005 / 0006 / 0007 promoted from
+-   Documentation reconciled with the shipped reality (READMEs and the docs
+    banner flipped to an honest release-candidate (`1.0.0-rc.1`) framing —
+    feature-complete and in real use, candid that stable 1.0 isn't stamped yet;
+    ADRs 0002 / 0005 / 0006 / 0007 promoted from
     _Proposed_ to _Accepted_; OVERVIEW and RELEASE counts and status refreshed).
 
 ### Notes
