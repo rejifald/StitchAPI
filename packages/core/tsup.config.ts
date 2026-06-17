@@ -24,6 +24,8 @@ export default defineConfig([
             'src/sse.ts',
             'src/stream.ts',
             'src/download.ts',
+            // the postMessage surface (ADR 0009) → stitchapi/postmessage
+            'src/postmessage.ts',
             // non-HTTP surfaces + composition (ADR 0008) → stitchapi/llm, stitchapi/pipe
             'src/llm.ts',
             'src/pipe.ts',
