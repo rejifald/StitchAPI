@@ -164,13 +164,6 @@ export const pages: Page[] = [
         kind: 'guide',
     },
     {
-        path: 'guides/authoring/fluent-builder',
-        title: 'The fluent builder',
-        description:
-            'Build a stitch step by step with .get/.post/.returns/.auth/.retry/.throttle/.timeout.',
-        kind: 'guide',
-    },
-    {
         path: 'guides/authoring/with',
         title: '.with() partial application',
         description:
@@ -435,9 +428,8 @@ export const pages: Page[] = [
     // ── Reference ───────────────────────────────────────────────────────────
     {
         path: 'reference/stitch',
-        title: 'stitch() & the builder',
-        description:
-            'Signatures for stitch(), graphql(), and the fluent builder.',
+        title: 'stitch()',
+        description: 'Signatures for stitch() and graphql().',
         kind: 'reference',
     },
     {

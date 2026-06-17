@@ -107,7 +107,7 @@ For the full competitive landscape and positioning, see the [Overview](docs/OVER
 -   **CLI, HTTP & MCP surfaces** - the definition your code imports is also runnable from the shell (`stitch run <name>` streams JSONL events), served over HTTP (`stitch serve`), or exposed to agents over MCP (`stitch mcp`) — the same stitch behind every front door.
 -   **Typed URLs** - full [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates (`{id}`, `{+path}`, `{?q,sort}`, explode `*`, prefix `:n`), and a `qs`-style query builder that serializes nested objects (`a[b]=c`) and arrays — both dependency-free.
 -   **Pluggable transport** - `fetch` by default; drop in the shipped `axiosAdapter`, or any `Adapter` function, to route requests through axios or another HTTP client.
--   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~21 kB min+gzip**; a typical `import { stitch }` trims to **~17 kB** — and with no transitive tree, that is the entire cost.
+-   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~22 kB min+gzip**; a typical `import { stitch }` trims to **~17 kB** — and with no transitive tree, that is the entire cost.
 
 ## Documentation
 
@@ -147,7 +147,7 @@ const { stitch } = require("stitchapi");
 
 The runtime ships with zero dependencies. Schema validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator ([Valibot](https://valibot.dev), [ArkType](https://arktype.io), …); none of them is bundled. The examples below use Zod for familiarity.
 
-**Bundle size.** The whole `stitchapi` entry is **~21 kB minified + gzipped** (~58 kB raw, ~19 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~17 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
+**Bundle size.** The whole `stitchapi` entry is **~22 kB minified + gzipped** (~61 kB raw, ~19 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~17 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
 
 ## Quick start
 
@@ -533,17 +533,20 @@ const echo: Adapter = async (req) => ({
 
 ## Surfaces: any request style
 
-A **surface** is the request _style_ a stitch speaks. `http` is the default — the plain JSON-over-HTTP call every example above uses. GraphQL, Server-Sent Events, a raw byte stream, and a file download are **peer surfaces**: each shapes and interprets its own request, but they all ride the same engine — `auth`, `retry`, `throttle`, `timeout`, validation, and the event stream compose with every one.
+A **surface** is the request _style_ a stitch speaks. `http` is the default — the plain JSON-over-HTTP call every example above uses. GraphQL, Server-Sent Events, a raw byte stream, a file download, an LLM chat-completion, a local shell command, and a typed `postMessage` channel are **peer surfaces**: each shapes and interprets its own request, but they all ride the same engine — `auth`, `retry`, `throttle`, `timeout`, validation, and the event stream compose with every one.
 
 Every non-`http` surface ships as its own **subpath import**, so `import { stitch }` from the root pulls in only the `http` engine; a surface's code loads only when you import it.
 
-| Surface    | Import               | Shapes                                     | `await` resolves to            |
-| ---------- | -------------------- | ------------------------------------------ | ------------------------------ |
-| `http`     | `stitch` (default)   | a JSON-over-HTTP call                      | the validated body             |
-| `graphql`  | `stitchapi/graphql`  | POST `{ query, variables }`, unwrap `data` | the `data` payload             |
-| `sse`      | `stitchapi/sse`      | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
-| `stream`   | `stitchapi/stream`   | a raw `ReadableStream` reader              | every decoded chunk, collected |
-| `download` | `stitchapi/download` | a buffered binary GET                      | `{ blob, filename }`           |
+| Surface       | Import                        | Shapes                                     | `await` resolves to            |
+| ------------- | ----------------------------- | ------------------------------------------ | ------------------------------ |
+| `http`        | `stitch` (default)            | a JSON-over-HTTP call                      | the validated body             |
+| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, unwrap `data` | the `data` payload             |
+| `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
+| `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader              | every decoded chunk, collected |
+| `download`    | `stitchapi/download`          | a buffered binary GET                      | `{ blob, filename }`           |
+| `llm`         | `stitchapi/llm`               | a chat-completion via a provider contract  | the normalised `{ text, … }`   |
+| `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin              | the command's stdout           |
+| `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call  | the typed RPC response         |
 
 (Distinct from the four _invocation_ surfaces — function, CLI, HTTP, MCP — which are how you _call_ a stitch. A request surface is how a stitch shapes its _request_.)
 
@@ -605,6 +608,51 @@ const getReport = download({ url: 'https://api.example.com/report.pdf' });
 const { blob, filename } = await getReport({
     onProgress: (p) => console.log(p.loaded, '/', p.total),
 });
+```
+
+### LLM and shell
+
+Two non-HTTP surfaces speak the same engine. `llm` is a chat-completion over a provider _contract_ — the first-party `anthropic` and `openai` mappings are plain config, no SDK dependency, and the credential is the stitch's own `auth`:
+
+```ts
+import { apiKey, env } from 'stitchapi';
+import { anthropic, llm } from 'stitchapi/llm';
+
+const chat = llm({
+    provider: anthropic,
+    model: 'claude-opus-4-8',
+    auth: apiKey({ name: 'x-api-key', value: env('ANTHROPIC_API_KEY') }),
+});
+
+const { text } = await chat({
+    body: { messages: [{ role: 'user', content: 'hi' }] },
+});
+```
+
+`shell` ships as the separate `@stitchapi/shell` peer package. It runs a _static_ command (bound at construction, never from call input) and resolves to its stdout; the call passes the argument vector as the `body`, and the subprocess env is fail-closed (empty unless you name what's needed):
+
+```ts
+import { shell } from '@stitchapi/shell';
+
+const git = shell({ command: 'git', env: { PATH: process.env.PATH! } });
+
+const status = await git({ body: ['status', '--porcelain'] }); // stdout string
+```
+
+### postMessage
+
+`postmessage` is a typed iframe ↔ parent RPC + event surface (ADR 0009). Build a channel over a `Window` (or `MessagePort`) — `allowedOrigins` is the security gate, and a wildcard `targetOrigin` is forbidden — then `request()` returns a stitch whose `auth` / `retry` / `timeout` / `output` validation compose like any other surface:
+
+```ts
+import { windowChannel } from 'stitchapi/postmessage';
+
+const channel = windowChannel({
+    target: iframe.contentWindow!,
+    targetOrigin: 'https://app.example.com',
+});
+
+const getUser = channel.request({ type: 'getUser' });
+const user = await getUser({ body: { id: 7 } });
 ```
 
 Because every surface is just a stitch underneath, `auth`, `retry`, `throttle`, and `output` / `drift` compose with all of them.

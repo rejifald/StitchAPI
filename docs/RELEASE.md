@@ -94,12 +94,13 @@ The entire core library (`stitchapi`, currently `1.0.0-rc.1`), verified against
         and `serve.ts` forwards each `delta` over SSE. The `xhr` and `axios`
         adapters **reject** streaming by design (neither exposes an incremental
         body). **57 streaming tests green.**
--   Follow-ups (all non-blocking; see the v1.1 list below): unframed
-    `decode: 'json'` ([#111](https://github.com/rejifald/StitchAPI/issues/111)),
-    compile-time typed `delta` arrays
-    ([#115](https://github.com/rejifald/StitchAPI/issues/115)), and SSE
-    reconnection / `Last-Event-ID`
-    ([#71](https://github.com/rejifald/StitchAPI/issues/71)).
+-   [x] **Streaming follow-ups — all shipped in `1.0.0-rc.1`.** Unframed
+        structural `decode: 'json'`
+        ([#179](https://github.com/rejifald/StitchAPI/pull/179)), the streamed
+        `delta` element type inferred at compile time from `output`
+        ([#178](https://github.com/rejifald/StitchAPI/pull/178)), and resumable
+        SSE — `Last-Event-ID` reconnect with server-`retry` backoff
+        ([#180](https://github.com/rejifald/StitchAPI/pull/180)) — all landed.
 
 ### C. Release hygiene 🟡 (~1 day, parallel to A/B)
 
@@ -128,12 +129,6 @@ The entire core library (`stitchapi`, currently `1.0.0-rc.1`), verified against
 -   [ ] Published record/replay mock adapter
 -   [ ] Pagination presets (`cursor()` / `offset()` / `linkHeader()`) + async
         iterators
--   [ ] Streaming polish (all non-blocking, deferred from §B): unframed
-        `decode: 'json'` ([#111](https://github.com/rejifald/StitchAPI/issues/111)),
-        compile-time typed `delta` arrays
-        ([#115](https://github.com/rejifald/StitchAPI/issues/115)), SSE
-        reconnection / `Last-Event-ID`
-        ([#71](https://github.com/rejifald/StitchAPI/issues/71))
 
 **Already shipped (was listed here):**
 
@@ -143,11 +138,18 @@ The entire core library (`stitchapi`, currently `1.0.0-rc.1`), verified against
         a Redis-backed `StitchStore` (`get`/`set`/`incr`/`close`) with
         `fromIoredis` + `fromNodeRedis` driver adapters, passing
         `verifyStoreContract` against a hermetic in-repo Redis engine. Makes "two
-        workers share one login + rate budget" work out of the box. Not yet
-        published to npm (version `0.0.0`).
+        workers share one login + rate budget" work out of the box. Versioned
+        `1.0.0-rc.1` with `publishConfig.access: public` — ships in this RC's
+        lockstep npm publish.
 -   [x] **`stitch export --openapi`** — `toOpenApi` + the `export` CLI subcommand
         ship in core (paths/methods, RFC 6570 path & query params, body/response
         presence, plus real body schemas via a BYO `toJsonSchema` converter).
+-   [x] **Streaming polish** (was deferred from §B) — unframed structural
+        `decode: 'json'` ([#179](https://github.com/rejifald/StitchAPI/pull/179)),
+        the streamed `delta` element type inferred from `output`
+        ([#178](https://github.com/rejifald/StitchAPI/pull/178)), and resumable
+        SSE with `Last-Event-ID` reconnect + server-`retry` backoff
+        ([#180](https://github.com/rejifald/StitchAPI/pull/180)).
 
 ---
 

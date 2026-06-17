@@ -13,7 +13,7 @@ The thing every project reaches for is `fetch`, and `fetch` hands back opaque by
 
 **Atomic, not spec-first.** A stitch describes exactly one call, and it needs nothing more than a URL to exist. There is no OpenAPI document to obtain first, no codegen step, no generated artifact to commit and regenerate when the API changes. Spec-based generators can't emit anything until a complete, accurate spec exists — which most internal services and long-tail vendors never have. Working one call at a time means you can wrap the API in front of you today, and because every stitch carries its own schema, the contract accretes from the calls you actually make rather than from a document someone has to maintain.
 
-**One primitive, three facades.** There is exactly one thing — the stitch — reached through three authoring surfaces that all resolve to the same engine. The string form is the smallest possible declaration; the config form is the same declaration with more fields; the fluent builder is the same fields set one call at a time. None is a different kind of object: each compiles to one canonical config and produces the same callable.
+**One primitive, two facades.** There is exactly one thing — the stitch — reached through two authoring surfaces that all resolve to the same engine. The string form is the smallest possible declaration; the config form is the same declaration with more fields. Neither is a different kind of object: each compiles to one canonical config and produces the same callable.
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -25,7 +25,7 @@ const a = stitch('https://api.example.com/users');
 const b = stitch({ baseUrl: 'https://api.example.com', path: '/users' });
 ```
 
-The point of three facades is reach, not variety. A single shape can't be both the one-liner a quick call wants and the structured object a fully-specified integration needs, so the surface flexes while the primitive underneath stays singular. That singularity is what keeps the mental model small: learn the stitch once, and every facade is just a different door into it.
+The point of two facades is reach, not variety. A single shape can't be both the one-liner a quick call wants and the structured object a fully-specified integration needs, so the surface flexes while the primitive underneath stays singular. That singularity is what keeps the mental model small: learn the stitch once, and every facade is just a different door into it.
 
 ## How it relates
 
