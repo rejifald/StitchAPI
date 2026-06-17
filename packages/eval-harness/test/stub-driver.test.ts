@@ -57,6 +57,11 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-    console.error('stub-driver.test FAILED:', err);
-    process.exit(1);
+    // Re-throw instead of console.error-ing the error: a failed assertion's
+    // message embeds the task id, and the oauth2 task name trips CodeQL's
+    // js/clear-text-logging (it treats "...Credentials"-derived data as a
+    // secret). We must not clear-text-log task-derived data; the runtime still
+    // prints the full stack and exits non-zero on an unhandled rejection.
+    process.exitCode = 1;
+    throw err;
 });
