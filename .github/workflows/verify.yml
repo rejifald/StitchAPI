@@ -102,6 +102,25 @@ jobs:
             - run: pnpm --filter stitchapi build
             - run: pnpm --filter @stitchapi/sandbox test:smoke
 
+    # `stitch mcp` over a real subprocess (packages/core/test/mcp-e2e.spec.ts): spawns the built
+    # `bin/stitch mcp` and drives a full agent conversation (initialize → tools/list → run_stitch)
+    # over stdio JSON-RPC against a hermetic local server. The bin requires lib/cli.js and the temp
+    # stitch module imports lib/index.mjs, so it is build-dependent — its own job that builds core
+    # first, like `size`/`sandbox`. In the src-only `pnpm test` gate (no lib/) the suite self-skips.
+    mcp-e2e:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm --filter stitchapi build
+            - run: pnpm --filter stitchapi test:mcp-e2e
+
     # Browser-sandbox security model (§2.13): the Playwright harness proves the real CSP +
     # Worker egress blocking and that a real RunResult.trace reaches the playground DAG. It
     # builds the docs app and drives a headless Chromium, so it runs as its own job rather
