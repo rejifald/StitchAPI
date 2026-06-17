@@ -42,6 +42,24 @@ jobs:
             # docs app runs generateStaticParams over every page and surfaces those.
             - run: pnpm --filter @stitchapi/docs build
 
+    # Bundle-size budget gate (packages/core/scripts/bundle-size.mjs): the core entry
+    # has a min+gzip ceiling, so a change that bloats `import { stitch }` fails here
+    # unless the budget is deliberately raised in the same PR. It measures the BUILT
+    # lib/, so it builds core first and runs as its own job.
+    size:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm --filter stitchapi build
+            - run: pnpm --filter stitchapi check:size
+
     # The docs/sandbox playground smoke suites (docs/sandbox/tests/run-all.mjs) import the BUILT
     # `stitchapi`, so they are build-dependent integration tests — they run in their own job that
     # builds core first, not in the src-only `pnpm test` gate above.

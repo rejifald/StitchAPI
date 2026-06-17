@@ -221,6 +221,8 @@
         "check:types-d": "tsup --silent && tsd",
         "check:lint": "eslint src test",
         "check:exports": "attw --pack . --ignore-rules no-resolution",
+        "check:size": "node scripts/bundle-size.mjs",
+        "size": "tsup --silent && node scripts/bundle-size.mjs",
         "lint": "eslint src test",
         "build": "tsup",
         "prepack": "tsup"
@@ -276,6 +278,7 @@
         "@types/node": "^22.10.0",
         "@vitest/coverage-v8": "^4.1.8",
         "@vitest/eslint-plugin": "^1.6.20",
+        "esbuild": "^0.27.7",
         "eslint": "^9.39.4",
         "eslint-config-prettier": "^10.1.8",
         "jiti": "^2.7.0",

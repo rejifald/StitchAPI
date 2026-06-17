@@ -9,6 +9,11 @@
   The agent-native runtime where a typed, declarative <strong>stitch</strong> replaces <code>fetch</code> — for humans and agents alike.
 </p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
+  <img alt="npm bundle size (minified + gzipped)" src="https://img.shields.io/bundlephobia/minzip/stitchapi" />
+</p>
+
 > [!NOTE]
 >
 > **StitchAPI is production-ready (v1.0).** The core runtime is feature-complete, zero-dependency, and covered by a green test gate. Feedback is very welcome.
@@ -36,5 +41,10 @@ pnpm check:format        # prettier across the repo
 ```
 
 Scope work to one package with a filter, e.g. `pnpm --filter stitchapi test`.
+
+`pnpm --filter stitchapi size` checks the core entry against its bundle-size
+budget (`packages/core/scripts/bundle-size.mjs`) — the same gate CI enforces, so
+a change that grows the bundle past its ceiling fails unless the budget is
+raised deliberately in the same PR.
 
 The published library's own README is in [`packages/core/README.md`](packages/core/README.md).

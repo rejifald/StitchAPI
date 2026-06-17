@@ -18,6 +18,7 @@
         "check:types-d": "pnpm -r check:types-d",
         "check:lint": "pnpm -r check:lint",
         "check:exports": "pnpm -r check:exports",
+        "check:size": "pnpm -r check:size",
         "check:format": "prettier --check .",
         "format": "prettier --write .",
         "prepare": "lefthook install"
