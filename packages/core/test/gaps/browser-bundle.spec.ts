@@ -85,6 +85,7 @@ const BROWSER_LEGIT = [
     'src/sse.ts',
     'src/stream.ts',
     'src/download.ts',
+    'src/postmessage.ts',
     'src/llm.ts',
     'src/pipe.ts',
     'src/cache.ts',
@@ -214,7 +215,9 @@ describe('streaming surfaces are browser-first (ADR 0005 Decisions 4-5)', () => 
     // Each surface subpath must bundle for the browser on fetch + Web Streams alone — no node:*
     // dep transitively, and never `EventSource` (Decision 4 rejects it: GET-only, no headers,
     // Node-absent).
-    test.each(['src/sse.ts', 'src/stream.ts'])(
+    // postmessage carries a streaming surface (its `events` verb), so it joins this matrix: it must
+    // bundle on Web Streams + postMessage alone — no node:*, and never EventSource (ADR 0009).
+    test.each(['src/sse.ts', 'src/stream.ts', 'src/postmessage.ts'])(
         '%s bundles for "browser" with no node:* specifiers and no EventSource',
         async (entry) => {
             const { errorTexts, output } = await bundleForBrowser(entry);

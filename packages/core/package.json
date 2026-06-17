@@ -148,6 +148,20 @@
                 "default": "./lib/download.js"
             }
         },
+        "./postmessage": {
+            "browser": {
+                "types": "./lib/postmessage.d.mts",
+                "default": "./lib/postmessage.mjs"
+            },
+            "import": {
+                "types": "./lib/postmessage.d.mts",
+                "default": "./lib/postmessage.mjs"
+            },
+            "require": {
+                "types": "./lib/postmessage.d.ts",
+                "default": "./lib/postmessage.js"
+            }
+        },
         "./llm": {
             "browser": {
                 "types": "./lib/llm.d.mts",
