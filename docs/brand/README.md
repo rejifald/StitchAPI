@@ -206,7 +206,8 @@ with the brand-blue radial glow, not as a standalone graphic.
 Precise, calm, engineer-to-engineer. Lowercase `stitch` for the primitive,
 `StitchAPI` for the product. Favor concrete verbs ("a typed stitch **replaces**
 `fetch`") over adjectives. Confident about the idea, honest about maturity (the
-docs carry an "under heavy development" banner — keep that candor).
+docs carry a "release candidate" banner — keep that candor: feature-complete and
+in real use, but pin exact versions until stable 1.0).
 
 ---
 
