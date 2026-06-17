@@ -145,6 +145,38 @@ export interface StreamOptions {
     maxBufferBytes?: number;
 }
 /**
+ * Tuning for resumable SSE reconnection (issue #71). When enabled, the engine reopens a dropped
+ * `text/event-stream` body and replays the last seen `id:` as the `Last-Event-ID` request header so
+ * the stream continues from where it broke. Plain data only — no functions — so it round-trips as
+ * JSON (the contract-not-dependency gate). Only meaningful for the `sse` surface.
+ */
+export interface ReconnectOptions {
+    /**
+     * Total reconnect attempts after the first connection drops, before the stream gives up and
+     * ends/errors exactly as today. Default 3.
+     */
+    maxAttempts?: number;
+    /**
+     * Fallback reconnect backoff (ms) when the server has NOT sent a `retry:` field on the dropped
+     * connection. When omitted, the stitch's `retry` (`RetryOptions` — `backoff`/`baseMs`/`maxMs`)
+     * supplies the delay. A server-sent `retry:` on the connection always wins over both.
+     */
+    backoffMs?: number;
+}
+/**
+ * Resumable SSE (issue #71) — how the `sse` surface recovers from a dropped stream. **Off by
+ * default**: with no `sse.reconnect` block the engine opens the body exactly once (today's
+ * behaviour, byte-identical). When enabled the engine tracks the last `id:` seen and replays it as
+ * `Last-Event-ID` on each reconnect, honours a server-sent `retry:` as the backoff (falling back to
+ * `reconnect.backoffMs` / the stitch's `retry` policy), and caps reconnects at `maxAttempts`.
+ *
+ * `true` = enabled with sane defaults; the object form tunes the cap / fallback backoff. Plain JSON
+ * (the contract gate). Only the `sse` surface acts on this; other surfaces ignore it.
+ */
+export interface SseOptions {
+    reconnect?: boolean | ReconnectOptions;
+}
+/**
  * Byte-transfer progress for a single request (ADR 0005 Decision 9). Reported through
  * {@link AdapterRequest.onProgress}, tagged by direction: `'upload'` as the request body is
  * sent, `'download'` as the response body arrives. `total` is the content length when known.
@@ -391,6 +423,11 @@ export type ProgressPhase =
     | 'request'
     | 'throttled'
     | 'retry'
+    // A resumable-SSE reconnect (issue #71): emitted before the engine waits the backoff and
+    // reopens a dropped `text/event-stream` body with the last `id:` replayed as `Last-Event-ID`.
+    // Reuses the `progress` event (its `attempt` is the reconnect count, `waitedMs` the backoff)
+    // rather than minting a new StitchEvent type — same shape as the `retry` phase.
+    | 'reconnect'
     | 'paginate'
     | 'circuit'
     | 'cache';
@@ -476,6 +513,15 @@ export interface StitchConfig {
      * the `stream` surface.
      */
     stream?: StreamOptions;
+    /**
+     * Resumable-SSE options (issue #71) — sibling to {@link StitchConfig.stream}, but for the `sse`
+     * surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once
+     * (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as
+     * `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoffMs` / the `retry`
+     * policy), capped at `maxAttempts`. Plain JSON (the contract gate). Only the `sse` surface
+     * reads it.
+     */
+    sse?: SseOptions;
     /** How to read the response body. Default: auto by content-type. */
     responseType?: ResponseType;
     /**

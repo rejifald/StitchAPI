@@ -18,7 +18,7 @@ import {
     withTimeout,
 } from './resilience';
 import { vaultView } from './store';
-import type { SurfaceOutcome } from './surface';
+import type { Surface, SurfaceOutcome } from './surface';
 import type {
     AcquireOptions,
     Adapter,
@@ -1002,15 +1002,21 @@ async function* runFrom(
 }
 
 // Streaming surfaces (sse/stream): open the LIVE body and decode it into `delta` chunks via the
-// surface's `stream` hook (ADR 0005 Decisions 4-5). Deliberately lean — no retry/circuit/cache:
-// Decision 12 puts broken-stream retry out of scope, and streaming bypasses the cache. It charges
-// the rate gate ONCE at open but takes NO concurrency slot (a rate-only acquire, never released),
-// so a long-lived connection can never pin a seam's concurrency budget (Decision 12). The await/
-// `consume` path resolves to the COLLECTED array of every emitted chunk — the terminal `result`
-// mirrors the delta spine (Stage 5 sub-decision); `.stream()` yields the chunks incrementally and
-// buffers nothing. transform/unwrap reshape a whole buffered body and are NOT applied here; the
-// `output` contract, by contrast, validates each chunk before its `delta` is emitted (per-`delta`,
-// via the surface's `contractValue` hook — ADR 0005 Addendum), snapshot-drift omitted.
+// surface's `stream` hook (ADR 0005 Decisions 4-5). Still lean — no circuit/cache (streaming bypasses
+// the cache), but resumable when the surface opts in: a surface that exposes the resume hooks
+// (`resumeToken`/`applyResume`) AND a stitch that set `sse.reconnect` (off by default — issue #71)
+// reconnect a dropped body, replaying the last resume token (sse → `Last-Event-ID`) and honouring a
+// server-sent backoff (sse → the `retry:` field), capped at `maxAttempts`. The engine stays
+// surface-agnostic: it never branches on `kind.id === 'sse'`; it reads the resume token / server
+// backoff through the surface's generic hooks and the reconnect policy through one config accessor.
+// It charges the rate gate at every open (each reconnect is a fresh request) but takes NO concurrency
+// slot (a rate-only acquire, never released), so a long-lived connection can never pin a seam's
+// concurrency budget (Decision 12). The await/`consume` path resolves to the COLLECTED array of
+// every emitted chunk ACROSS reconnects — the terminal `result` mirrors the whole delta spine (Stage
+// 5 sub-decision); `.stream()` yields the chunks incrementally and buffers nothing. transform/unwrap
+// reshape a whole buffered body and are NOT applied here; the `output` contract, by contrast,
+// validates each chunk before its `delta` is emitted (per-`delta`, via the surface's `contractValue`
+// hook — ADR 0005 Addendum) and keeps firing across reconnects, snapshot-drift omitted.
 async function* runStreaming(
     rt: Runtime,
     input: StitchInput,
@@ -1021,8 +1027,16 @@ async function* runStreaming(
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
-    const streamHook = cfg.kind?.stream;
-    if (!streamHook) return; // unreachable: only entered for a streaming surface
+    const surface = cfg.kind;
+    if (!surface?.stream) return; // unreachable: only entered for a streaming surface
+    // Bind the surface's hooks as non-optional locals up front: TS reverts the `surface` narrowing
+    // inside the open closure below (a nested async generator), so capturing the hooks here — past
+    // the guard, where `surface.stream` is present — keeps the closure free of re-narrowing noise.
+    // The resume hooks (issue #71) stay optional; the surface is resumable only when both are set.
+    const streamHook: NonNullable<Surface['stream']> = surface.stream;
+    const resumeToken = surface.resumeToken;
+    const resumeRetryMs = surface.resumeRetryMs;
+    const applyResume = surface.applyResume;
 
     let baseReq: AdapterRequest;
     try {
@@ -1037,112 +1051,222 @@ async function* runStreaming(
     yield startEvt(name, baseReq, input, run);
     state.attempts = 1;
 
-    // Charge the rate limiter once at open, but take NO concurrency slot (Decision 12). A rate
-    // wait still surfaces as a `throttled` event.
-    let waitedMs: number;
-    try {
-        ({ waitedMs } = await acquireWithin(
-            rt.throttle,
-            hostKey(baseReq, cfg),
-            budget,
-            { rateOnly: true },
-        ));
-    } catch (e) {
-        yield errEvt(e, name, 1);
-        yield doneEvt(false, t0, 1);
-        return;
+    // Resumability is a GENERIC decision the engine makes from surface capability + config — never
+    // by sniffing `kind.id === 'sse'`. A surface is resumable when it can both read a resume token
+    // off a delta and inject it into the next request; the stitch enables it with `sse.reconnect`
+    // (off by default — issue #71). `resolveReconnect` is the lone touch point for the `sse` config
+    // slot, so no SSE-ism leaks into the loop below.
+    const policy = resolveReconnect(cfg);
+    const resumable = policy.enabled && !!resumeToken && !!applyResume;
+
+    // State carried ACROSS reconnects: the await/`.stream()` result is the whole delta spine, and a
+    // reconnect inherits the prior connection's last resume token (sse → the `Last-Event-ID` to
+    // replay). `lastRetryMs` holds the latest server-suggested backoff (sse → the `retry:` field);
+    // it persists too, so a server `retry:` seen on an earlier connection still paces a later
+    // reconnect until the server sends a new one.
+    const chunks: unknown[] = [];
+    let lastToken: string | undefined;
+    let lastRetryMs: number | undefined;
+    let lastStatus = 200; // status of the most recent successful open (for the terminal `result`)
+    let lastError: unknown; // the live error from the most recent drop, surfaced if reconnects run out
+    let attempt = 0; // open count: 1 = first connection, 2+ = a reconnect
+
+    // Open the live body and decode it into `delta` chunks. Returns how the connection ENDED so the
+    // reconnect loop can decide what to do: `'closed'` (the body ran out — for a resumable surface a
+    // normal SSE close the server may want us back from), `'error'` (the body threw mid-stream — a
+    // reconnectable drop), or `'fail'` (a terminal failure that already emitted its `error`+`done`,
+    // stop). It emits the per-open spine (throttle/request progress, deltas, drift) inline via `yield*`.
+    async function* openAndDecode(): AsyncGenerator<
+        StitchEvent,
+        'closed' | 'error' | 'fail'
+    > {
+        attempt++;
+        state.attempts = attempt;
+
+        // Charge the rate limiter at EVERY open — a reconnect is a fresh request, so it counts
+        // against the rate budget like any other (Decision 12) — but still take NO concurrency slot.
+        let waited: number;
+        try {
+            ({ waitedMs: waited } = await acquireWithin(
+                rt.throttle,
+                hostKey(baseReq, cfg),
+                budget,
+                { rateOnly: true },
+            ));
+        } catch (e) {
+            yield errEvt(e, name, attempt);
+            yield doneEvt(false, t0, attempt);
+            return 'fail';
+        }
+        if (waited > 0)
+            yield {
+                type: 'progress',
+                phase: 'throttled',
+                attempt,
+                waitedMs: waited,
+                at: now(),
+            };
+
+        let res: AdapterResponse;
+        try {
+            // Rebuild the per-open request from `baseReq` each time; on a reconnect, inject the
+            // resume token (sse → set `Last-Event-ID`) BEFORE auth so it rides the reopened request.
+            const req = cloneReq(baseReq);
+            if (attempt > 1 && lastToken !== undefined)
+                applyResume?.(req, lastToken);
+            if (cfg.auth) await cfg.auth.apply(req, rt.authCtx);
+            await cfg.hooks?.onRequest?.({ name, attempt, req });
+            yield { type: 'progress', phase: 'request', attempt, at: now() };
+            // A surface that replaces the transport (ADR 0008) runs here too, so a future non-HTTP
+            // streaming surface gets the same treatment as the buffered path.
+            res = await (cfg.kind?.execute ?? rt.adapter)(req);
+            await cfg.hooks?.onResponse?.({ name, attempt, res });
+        } catch (e) {
+            await cfg.hooks?.onError?.({ name, attempt, error: e });
+            // A failure to even OPEN is a reconnectable drop too (the connection broke): record the
+            // live error and hand it back as `'error'` so the loop applies the backoff/cap rather
+            // than treating it as terminal (and surfaces THIS error if reconnects run out).
+            lastError = e;
+            return 'error';
+        }
+
+        // acceptStatus (issue #155): an accepted non-2xx streams its live body like a 2xx instead of
+        // failing — same per-stitch policy the buffered/paginated `attemptLoop` honours. A rejected
+        // status is TERMINAL (not reconnected): the server actively refused, replaying it would loop.
+        if (res.status >= 400 && !acceptsStatus(cfg.acceptStatus)(res.status)) {
+            // The error response carries the parsed payload, not a live stream — drain the unread
+            // body (a small `{ error: "…" }`, not a real stream the caller wants) so
+            // StitchError.body is the PARSED payload, matching the buffered path. Pin it (with
+            // `.url`) via ERROR_SOURCE.
+            const errored: AdapterResponse = {
+                status: res.status,
+                headers: res.headers,
+                body: await drainErrorBody(res.body),
+                ...(res.url !== undefined ? { url: res.url } : {}),
+            };
+            const e = new Error(`HTTP ${res.status}`) as Error & {
+                status: number;
+                response: AdapterResponse;
+            };
+            e.status = res.status;
+            e.response = errored; // body + url for StitchError.body/.url (pinned via ERROR_SOURCE)
+            yield errEvt(e, name, attempt);
+            yield doneEvt(false, t0, attempt);
+            return 'fail';
+        }
+        lastStatus = res.status;
+
+        // Decode the live body into `delta` chunks; collect them so the await path resolves to the
+        // whole sequence ACROSS reconnects (Stage 5 sub-decision). With an `output` contract set,
+        // validate each chunk BEFORE its `delta` is emitted (ADR 0005 Addendum) — and on every
+        // reconnect too: a `critical`/schema failure fails the stream (the bad value is never
+        // delivered or collected) while a `watch` finding warns and the delta still flows.
+        // `contractValue` picks the part to validate (sse → the event `data`), default the whole
+        // chunk; matches the buffered path's drift→error handling in `runFrom`.
+        try {
+            for await (const chunk of streamHook(res, cfg)) {
+                // Track the resume token / server backoff off each delta (sse → `id` / `retry`) so a
+                // later drop resumes from here. Unchanged when the surface isn't resumable (no hook).
+                const tok = resumeToken?.(chunk);
+                if (tok !== undefined) lastToken = tok;
+                const ret = resumeRetryMs?.(chunk);
+                if (ret !== undefined) lastRetryMs = ret;
+
+                if (cfg.output) {
+                    const target = cfg.kind?.contractValue
+                        ? cfg.kind.contractValue(chunk)
+                        : chunk;
+                    let fatal = false;
+                    for (const finding of await validateSchema(cfg, target)) {
+                        yield { type: 'drift', finding, at: now() };
+                        if (finding.level === 'error') fatal = true;
+                    }
+                    if (fatal) {
+                        yield {
+                            type: 'error',
+                            name,
+                            message: 'contract violation (drift)',
+                            status: res.status,
+                            attempts: attempt,
+                            at: now(),
+                        };
+                        yield doneEvt(false, t0, attempt);
+                        return 'fail';
+                    }
+                }
+                chunks.push(chunk);
+                yield { type: 'delta', chunk, at: now() };
+            }
+        } catch (e) {
+            lastError = e; // the body threw mid-stream — a reconnectable drop; keep the live error
+            return 'error';
+        }
+        // The body ran out. A clean close — for a resumable surface this is the SSE "reconnect"
+        // signal; for a non-resumable one (or reconnect off) the loop's `!resumable` guard finalizes.
+        return 'closed';
     }
-    if (waitedMs > 0)
+
+    // The reconnect loop. The first open is mandatory; each subsequent open is gated on a drop
+    // (`'closed'`/`'error'`) AND remaining attempts. On a drop we emit a `reconnect` progress event
+    // (reusing the `progress` spine — Decision: no new StitchEvent type), wait the backoff (the
+    // server `retry:` seen this run, else `reconnect.backoffMs`, else the `retry` policy), then loop
+    // — `openAndDecode` reapplies auth + injects the resume token on the reopened request.
+    for (;;) {
+        const ended = yield* openAndDecode();
+        if (ended === 'fail') return; // terminal failure already emitted error + done
+        // A drop (`'closed'` or `'error'`). Reconnect only when resumable AND attempts remain;
+        // otherwise behave exactly as today — a clean close finalizes, a mid-stream error surfaces
+        // as error + done.
+        if (!resumable || attempt > policy.maxAttempts) {
+            if (ended === 'error') {
+                // Surface the REAL drop error (its message/status/`.response`), matching today's
+                // mid-stream-error behaviour, rather than a synthetic placeholder.
+                yield errEvt(lastError, name, attempt);
+                yield doneEvt(false, t0, attempt);
+                return;
+            }
+            break; // exhausted reconnects after a clean close → finalize with what we collected
+        }
+
+        // Backoff: a server-sent `retry:` (seen on any connection this run) wins; else the explicit
+        // `reconnect.backoffMs`; else the stitch's `retry` backoff math. `attempt` is now the count
+        // of opens DONE, so `attempt + 1` is the upcoming reconnect for the expo curve.
+        const backoff =
+            lastRetryMs ??
+            policy.backoffMs ??
+            backoffDelay(attempt + 1, cfg.retry);
         yield {
             type: 'progress',
-            phase: 'throttled',
-            attempt: 1,
-            waitedMs,
+            phase: 'reconnect',
+            attempt,
+            waitedMs: backoff,
             at: now(),
         };
-
-    let res: AdapterResponse;
-    try {
-        const req = cloneReq(baseReq);
-        if (cfg.auth) await cfg.auth.apply(req, rt.authCtx);
-        await cfg.hooks?.onRequest?.({ name, attempt: 1, req });
-        yield { type: 'progress', phase: 'request', attempt: 1, at: now() };
-        // A surface that replaces the transport (ADR 0008) runs here too, so a future non-HTTP
-        // streaming surface gets the same treatment as the buffered path.
-        res = await (cfg.kind?.execute ?? rt.adapter)(req);
-        await cfg.hooks?.onResponse?.({ name, attempt: 1, res });
-    } catch (e) {
-        await cfg.hooks?.onError?.({ name, attempt: 1, error: e });
-        yield errEvt(e, name, 1);
-        yield doneEvt(false, t0, 1);
-        return;
+        await sleepWithin(backoff, budget);
     }
 
-    // acceptStatus (issue #155): an accepted non-2xx streams its live body like a 2xx instead of
-    // failing — same per-stitch policy the buffered/paginated `attemptLoop` honours.
-    if (res.status >= 400 && !acceptsStatus(cfg.acceptStatus)(res.status)) {
-        // The error response carries the parsed payload, not a live stream — drain the unread body
-        // (a small `{ error: "…" }`, not a real stream the caller wants) so StitchError.body is the
-        // PARSED payload, matching the buffered path. Pin it (with `.url`) via ERROR_SOURCE.
-        const errored: AdapterResponse = {
-            status: res.status,
-            headers: res.headers,
-            body: await drainErrorBody(res.body),
-            ...(res.url !== undefined ? { url: res.url } : {}),
-        };
-        const e = new Error(`HTTP ${res.status}`) as Error & {
-            status: number;
-            response: AdapterResponse;
-        };
-        e.status = res.status;
-        e.response = errored; // carries body + url for StitchError.body/.url (pinned via ERROR_SOURCE)
-        yield errEvt(e, name, 1);
-        yield doneEvt(false, t0, 1);
-        return;
-    }
+    yield resultEvt(chunks, lastStatus, attempt);
+    yield doneEvt(true, t0, attempt);
+}
 
-    // Decode the live body into `delta` chunks; collect them so the await path resolves to the
-    // whole sequence (Stage 5 sub-decision). With an `output` contract set, validate each chunk
-    // BEFORE its `delta` is emitted (ADR 0005 Addendum): a `critical`/schema failure fails the
-    // stream — the bad value is never delivered or collected — while a `watch` finding warns and
-    // the delta still flows. `contractValue` picks the part to validate (sse → the event `data`),
-    // defaulting to the whole chunk; matches the buffered path's drift→error handling in `runFrom`.
-    const chunks: unknown[] = [];
-    try {
-        for await (const chunk of streamHook(res, cfg)) {
-            if (cfg.output) {
-                const target = cfg.kind?.contractValue
-                    ? cfg.kind.contractValue(chunk)
-                    : chunk;
-                let fatal = false;
-                for (const finding of await validateSchema(cfg, target)) {
-                    yield { type: 'drift', finding, at: now() };
-                    if (finding.level === 'error') fatal = true;
-                }
-                if (fatal) {
-                    yield {
-                        type: 'error',
-                        name,
-                        message: 'contract violation (drift)',
-                        status: res.status,
-                        attempts: 1,
-                        at: now(),
-                    };
-                    yield doneEvt(false, t0, 1);
-                    return;
-                }
-            }
-            chunks.push(chunk);
-            yield { type: 'delta', chunk, at: now() };
-        }
-    } catch (e) {
-        yield errEvt(e, name, 1);
-        yield doneEvt(false, t0, 1);
-        return;
-    }
-
-    yield resultEvt(chunks, res.status, 1);
-    yield doneEvt(true, t0, 1);
+// Resolve the resumable-SSE reconnect policy from config (issue #71) — the ONE place the engine
+// reads the `sse` config slot, keeping `runStreaming` free of SSE-isms. `sse.reconnect` is off by
+// default; `true` enables it with sane defaults; the object form tunes the cap / fallback backoff.
+// `backoffMs` stays `undefined` when unset so the caller can fall back to the `retry` policy.
+function resolveReconnect(cfg: StitchConfig): {
+    enabled: boolean;
+    maxAttempts: number;
+    backoffMs: number | undefined;
+} {
+    const r = cfg.sse?.reconnect;
+    if (!r) return { enabled: false, maxAttempts: 0, backoffMs: undefined };
+    if (r === true)
+        return { enabled: true, maxAttempts: 3, backoffMs: undefined };
+    return {
+        enabled: true,
+        maxAttempts: r.maxAttempts ?? 3,
+        backoffMs: r.backoffMs,
+    };
 }
 
 // A single uncached run: build the request, emit `start`, then run the chain.

@@ -64,6 +64,27 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      */
     readonly contractValue?: (chunk: unknown) => unknown;
     /**
+     * Read the resume token off an emitted `delta` chunk (issue #71). Its presence — together with
+     * {@link Surface.applyResume} — marks a streaming surface as **resumable**: the engine tracks the
+     * latest token across `delta`s and, when the body drops and the stitch opted into `reconnect`,
+     * replays it via {@link Surface.applyResume} on the reopened request. `sse` returns the event's
+     * `id` (the SSE last-event id). Omitted ⇒ the surface cannot resume (the engine never reconnects).
+     */
+    readonly resumeToken?: (chunk: unknown) => string | undefined;
+    /**
+     * Read the server-suggested reconnect backoff (ms) off an emitted `delta` chunk (issue #71). The
+     * engine tracks the latest value and uses it as the reconnect delay, falling back to the
+     * stitch's `reconnect.backoffMs` / `retry` policy when no value was seen on the dropped
+     * connection. `sse` returns the event's `retry` field. Omitted ⇒ always use the fallback backoff.
+     */
+    readonly resumeRetryMs?: (chunk: unknown) => number | undefined;
+    /**
+     * Inject a resume token into the NEXT request before it is reopened (issue #71) — mutates `req`
+     * in place. `sse` sets the `Last-Event-ID` header. Paired with {@link Surface.resumeToken}; both
+     * must be present for the engine to treat the surface as resumable.
+     */
+    readonly applyResume?: (req: AdapterRequest, token: string) => void;
+    /**
      * Replace the transport (ADR 0008): when present, the engine calls this INSTEAD of the HTTP
      * adapter, at the same site inside the resilience chain — so `retry` / `throttle` / `circuit` /
      * per-attempt `timeout` + `signal` / `trace` / `auth` / `hooks` all wrap it unchanged. A
