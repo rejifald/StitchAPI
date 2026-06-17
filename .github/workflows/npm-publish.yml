@@ -1,5 +1,5 @@
 # Publishes the package to npm when a GitHub release is created. Publishing is
-# gated on the full verify suite passing first. See ~/Development/handbook
+# gated on the verify suite and the browser e2e gate passing first. See ~/Development/handbook
 # conventions/global/ci-canonical.md §13.
 name: Publish
 
@@ -39,8 +39,26 @@ jobs:
                   token: ${{ secrets.CODECOV_TOKEN }}
                   files: ./packages/core/coverage/lcov.info
 
+    # Pre-publish browser gate: the Playwright harness (real Chromium) proves the
+    # sandbox CSP + Worker egress blocking and that a RunResult.trace reaches the
+    # playground DAG. A release waits on it so we never publish a broken browser
+    # sandbox. Mirrors the `e2e` job in verify.yml.
+    e2e:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm --filter @stitchapi/docs test:e2e:install
+            - run: pnpm --filter @stitchapi/docs test:e2e
+
     publish-npm:
-        needs: verify
+        needs: [verify, e2e]
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
