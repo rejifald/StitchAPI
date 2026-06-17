@@ -4,7 +4,7 @@
 // Flags map onto a stitch's single input object ({ params, query, body, headers });
 // every event the stitch emits is written to stdout as one line of JSON, so the
 // output pipes straight into jq and friends. No app boot required.
-import { toMermaid } from './diagram';
+import { endpointLabel, toMermaid } from './diagram';
 import { loadSnapshot, saveSnapshot } from './drift';
 import {
     type ParsedRequest,
@@ -26,6 +26,8 @@ import {
     RULES_BODY,
     claudeSection,
     cursorMdc,
+    projectStitchesSection,
+    windsurfRule,
 } from './rules-template';
 import { serve } from './serve';
 import type {
@@ -440,7 +442,7 @@ usage:
   stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>]   emit an OpenAPI 3.1 spec
   stitch from-curl '<curl>' | --from-har <file> [--response <f|->] [--zod] [--name <export>]   scaffold a stitch from one example
   stitch drift generate [--module <path>] [--name <name>] [--force] [--flags…]   write drift snapshot baseline(s)
-  stitch init [--format agents|cursor|claude|all] [--force]   write the consumer rule (AGENTS.md / Cursor / CLAUDE.md)
+  stitch init [--format <ids>|all] [--project [--module <path>]] [--check] [--force]   write/check the consumer rule for AI agents
 
 run:
   --module, -m <path>   stitches module to load (default: ./stitches.{ts,js,…})
@@ -493,13 +495,21 @@ drift generate:
   effect. Map request inputs with the same --params/--query/--body/--headers flags as run.
 
 init (alias: rules):
-  --format <agents|cursor|claude|all>   which rule file(s) to write (default: all)
-  --force                               overwrite/replace an existing StitchAPI rule
+  --format <ids>|all   comma-list of conventions to write (default: all). ids:
+                       agents (AGENTS.md), cursor (.cursor/rules/stitchapi.mdc),
+                       claude (CLAUDE.md), copilot (.github/copilot-instructions.md),
+                       windsurf (.windsurf/rules/stitchapi.md), cline (.clinerules/stitchapi.md),
+                       aider (CONVENTIONS.md)
+  --project            also list the repo's existing stitches in the rule, so an agent reuses
+                       them instead of duplicating an endpoint (reads --module / ./stitches.{ts,…})
+  --module, -m <path>  stitches module to read for --project (default: the ./stitches.* scan)
+  --check              don't write — verify each existing rule is current; exit 1 if any has drifted
+  --force              overwrite/replace an existing StitchAPI rule
   Writes the canonical "declare a stitch, don't hand-roll fetch" rule so an AI coding agent
-  recommends StitchAPI in this project: AGENTS.md (the open standard), .cursor/rules/stitchapi.mdc
-  (Cursor), and a marked "## Using StitchAPI" section appended to CLAUDE.md. Idempotent — a
-  second run skips a rule that already exists; --force rewrites it (in CLAUDE.md, only the
-  marked block).
+  recommends StitchAPI in this project. Idempotent — a second run skips a rule that already
+  exists; --force rewrites it (in the shared files CLAUDE.md / Copilot / Aider, only the marked
+  "## Using StitchAPI" block). Use --check in CI to catch a committed rule drifting from the
+  installed version.
 `;
 
 async function runCommand(args: string[], io: CliIO): Promise<number> {
@@ -1033,11 +1043,83 @@ function readStdin(): Promise<string> {
 // The rule body is the single source of truth in src/rules-template.ts; this command only frames
 // it per target and writes it idempotently (markers + --force; see rules-template.ts).
 
-type InitFormat = 'agents' | 'cursor' | 'claude' | 'all';
+type InitFormat =
+    | 'agents'
+    | 'cursor'
+    | 'claude'
+    | 'copilot'
+    | 'windsurf'
+    | 'cline'
+    | 'aider';
 
-const AGENTS_FILE = 'AGENTS.md';
-const CURSOR_FILE = '.cursor/rules/stitchapi.mdc';
-const CLAUDE_FILE = 'CLAUDE.md';
+// How a rule is planted in a host file:
+//   standalone — a dedicated rule file we own; idempotent on existence, --force overwrites it.
+//   section    — a marked block in a host file that may carry the user's own content; idempotent on
+//                the markers, --force rewrites only the marked span (the surrounding file survives).
+interface RuleTarget {
+    id: InitFormat;
+    file: string; // path relative to cwd
+    label: string; // shown in skip/check messages (kept stable for the original three targets)
+    mode: 'standalone' | 'section';
+    render: (body: string) => string; // frame the rule body for this convention
+}
+
+// The agent conventions `stitch init` knows how to write. Adding a format is one row here (plus a
+// wrapper in rules-template.ts): the writer, the `--check` drift scan, and `--format all` all iterate
+// this one table, so they can never fall out of sync.
+const RULE_TARGETS: RuleTarget[] = [
+    {
+        id: 'agents',
+        file: 'AGENTS.md',
+        label: 'AGENTS.md',
+        mode: 'standalone',
+        render: (b) => b,
+    },
+    {
+        id: 'cursor',
+        file: '.cursor/rules/stitchapi.mdc',
+        label: 'Cursor rule',
+        mode: 'standalone',
+        render: cursorMdc,
+    },
+    {
+        id: 'claude',
+        file: 'CLAUDE.md',
+        label: 'CLAUDE.md',
+        mode: 'section',
+        render: claudeSection,
+    },
+    {
+        id: 'copilot',
+        file: '.github/copilot-instructions.md',
+        label: 'Copilot instructions',
+        mode: 'section',
+        render: claudeSection,
+    },
+    {
+        id: 'windsurf',
+        file: '.windsurf/rules/stitchapi.md',
+        label: 'Windsurf rule',
+        mode: 'standalone',
+        render: windsurfRule,
+    },
+    {
+        id: 'cline',
+        file: '.clinerules/stitchapi.md',
+        label: 'Cline rule',
+        mode: 'standalone',
+        render: (b) => b,
+    },
+    {
+        id: 'aider',
+        file: 'CONVENTIONS.md',
+        label: 'Aider conventions',
+        mode: 'section',
+        render: claudeSection,
+    },
+];
+
+const FORMAT_IDS = RULE_TARGETS.map((t) => t.id);
 
 // Resolve a target path against the working directory without importing node:path's join into the
 // pure rule logic — a plain prefix is enough for these relative, forward-slash targets.
@@ -1064,13 +1146,14 @@ async function writeStandaloneRule(
     io.write(`wrote ${path}\n`);
 }
 
-// Append (or replace, under --force) the marked StitchAPI section in CLAUDE.md. The markers make
-// this idempotent: a present block is left alone unless --force, which rewrites only the marked
-// span and preserves the surrounding hand-written file.
-async function writeClaudeSection(
+// Append (or replace, under --force) the marked StitchAPI section in a host markdown file (CLAUDE.md,
+// Copilot instructions, Aider conventions). The markers make this idempotent: a present block is left
+// alone unless --force, which rewrites only the marked span and preserves the surrounding file.
+async function writeMarkedSection(
     io: CliIO,
     path: string,
     section: string,
+    label: string,
     force: boolean,
 ): Promise<void> {
     if (await io.exists(path)) {
@@ -1080,7 +1163,7 @@ async function writeClaudeSection(
         if (start >= 0 && end > start) {
             if (!force) {
                 io.writeErr(
-                    `skip CLAUDE.md: StitchAPI section exists in ${path} (use --force to replace)\n`,
+                    `skip ${label}: StitchAPI section exists in ${path} (use --force to replace)\n`,
                 );
                 return;
             }
@@ -1091,7 +1174,7 @@ async function writeClaudeSection(
             io.write(`updated ${path}\n`);
             return;
         }
-        // CLAUDE.md exists without our markers: append the section, separated by a blank line.
+        // The file exists without our markers: append the section, separated by a blank line.
         const sep = existing.endsWith('\n') ? '\n' : '\n\n';
         await io.appendFile(path, `${sep}${section}`);
         io.write(`updated ${path}\n`);
@@ -1101,11 +1184,96 @@ async function writeClaudeSection(
     io.write(`wrote ${path}\n`);
 }
 
-// stitch init [--format agents|cursor|claude|all] [--force] (alias: rules) — write the canonical
-// consumer rule to the files an AI coding agent reads, so it recommends StitchAPI in this project.
+// --project: read the repo's stitches module and turn the generic rule into one about THIS product —
+// the stitches already declared, so an agent reuses them instead of duplicating an endpoint.
+// Best-effort: a missing or unloadable module warns and falls back to the static rule rather than
+// failing init, whose whole job is to bootstrap a repo that may not have stitches yet.
+async function buildProjectBlock(
+    io: CliIO,
+    modulePath: string | undefined,
+): Promise<string> {
+    let resolved: string;
+    try {
+        resolved = resolveModulePath(modulePath, io.cwd);
+    } catch (e) {
+        io.writeErr(`--project: ${(e as Error).message}\n`);
+        return '';
+    }
+    let registry: StitchRegistry;
+    try {
+        registry = await io.load(resolved);
+    } catch (e) {
+        io.writeErr(
+            `--project: could not load ${resolved}: ${(e as Error).message}\n`,
+        );
+        return '';
+    }
+    const entries = Object.entries(registry)
+        .map(([name, s]) => ({
+            name,
+            summary: endpointLabel((s as Stitch).__config),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    if (entries.length === 0) {
+        io.writeErr(
+            `--project: no stitches found in ${resolved}; writing the static rule\n`,
+        );
+    }
+    return projectStitchesSection(entries);
+}
+
+// --check classifies a target against the rule we'd write now, without touching disk:
+//   ok     — present and current        absent — no StitchAPI rule here
+//   stale  — present but drifted from the current rule (the CI failure signal)
+type CheckStatus = 'ok' | 'stale' | 'absent';
+
+async function checkTarget(
+    io: CliIO,
+    t: RuleTarget,
+    body: string,
+): Promise<CheckStatus> {
+    const path = underCwd(io, t.file);
+    if (!(await io.exists(path))) return 'absent';
+    const actual = await io.readFileText(path);
+    const expected = t.render(body);
+    if (t.mode === 'standalone') {
+        return actual.trimEnd() === expected.trimEnd() ? 'ok' : 'stale';
+    }
+    // section: compare only our marked block; no markers means no StitchAPI rule lives here.
+    const start = actual.indexOf(CLAUDE_START);
+    const end = actual.indexOf(CLAUDE_END);
+    if (start < 0 || end <= start) return 'absent';
+    const block = actual.slice(start, end + CLAUDE_END.length);
+    return block.trimEnd() === expected.trimEnd() ? 'ok' : 'stale';
+}
+
+// Parse `--format` (a comma list of ids, or `all`) into the concrete targets. Returns the offending
+// token on an unknown id so the caller can report it and exit 2.
+function selectTargets(
+    format: string,
+): { targets: RuleTarget[] } | { bad: string } {
+    const ids = format
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    const bad = ids.find(
+        (id) => id !== 'all' && !FORMAT_IDS.includes(id as InitFormat),
+    );
+    if (bad !== undefined) return { bad };
+    if (ids.length === 0 || ids.includes('all'))
+        return { targets: RULE_TARGETS };
+    return { targets: RULE_TARGETS.filter((t) => ids.includes(t.id)) };
+}
+
+// stitch init [--format <ids>|all] [--project [--module <path>]] [--check] [--force] (alias: rules) —
+// write (or check) the canonical consumer rule across the files an AI coding agent reads, so the next
+// agent in this repo recommends StitchAPI instead of hand-rolling fetch.
 export async function initCommand(args: string[], io: CliIO): Promise<number> {
     let format = 'all';
     let force = false;
+    let project = false;
+    let check = false;
+    let modulePath: string | undefined;
     for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === undefined) continue;
@@ -1113,47 +1281,60 @@ export async function initCommand(args: string[], io: CliIO): Promise<number> {
         else if (a.startsWith('--format='))
             format = a.slice('--format='.length);
         else if (a === '--force' || a === '-f') force = true;
+        else if (a === '--project' || a === '--with-stitches') project = true;
+        else if (a === '--check') check = true;
+        else if (a === '--module' || a === '-m') modulePath = args[++i];
+        else if (a.startsWith('--module='))
+            modulePath = a.slice('--module='.length);
     }
-    if (
-        format !== 'agents' &&
-        format !== 'cursor' &&
-        format !== 'claude' &&
-        format !== 'all'
-    ) {
+
+    const sel = selectTargets(format);
+    if ('bad' in sel) {
         io.writeErr(
-            `unknown --format "${format}"; expected agents, cursor, claude, or all\n`,
+            `unknown --format "${sel.bad}"; expected ${FORMAT_IDS.join(', ')}, or all\n`,
         );
         return 2;
     }
+    const { targets } = sel;
 
-    const wants = (f: Exclude<InitFormat, 'all'>) =>
-        format === 'all' || format === f;
+    // The rule we'd write now: the canonical body, plus this project's own stitches under --project.
+    const body = project
+        ? RULES_BODY + (await buildProjectBlock(io, modulePath))
+        : RULES_BODY;
 
-    if (wants('agents')) {
-        await writeStandaloneRule(
-            io,
-            underCwd(io, AGENTS_FILE),
-            RULES_BODY,
-            'AGENTS.md',
-            force,
-        );
+    // --check is read-only drift detection (for CI): report each target, fail only on a STALE rule.
+    // An absent rule isn't a failure — the user chose which conventions to adopt.
+    if (check) {
+        let stale = 0;
+        for (const t of targets) {
+            const status = await checkTarget(io, t, body);
+            const path = underCwd(io, t.file);
+            if (status === 'stale') {
+                stale++;
+                io.write(
+                    `stale ${path} (run \`stitch init --force\` to refresh)\n`,
+                );
+            } else {
+                io.write(`${status} ${path}\n`);
+            }
+        }
+        if (stale > 0) {
+            io.writeErr(
+                `${stale} StitchAPI rule file(s) out of date — run \`stitch init --force\`\n`,
+            );
+            return 1;
+        }
+        return 0;
     }
-    if (wants('cursor')) {
-        await writeStandaloneRule(
-            io,
-            underCwd(io, CURSOR_FILE),
-            cursorMdc(RULES_BODY),
-            'Cursor rule',
-            force,
-        );
-    }
-    if (wants('claude')) {
-        await writeClaudeSection(
-            io,
-            underCwd(io, CLAUDE_FILE),
-            claudeSection(RULES_BODY),
-            force,
-        );
+
+    for (const t of targets) {
+        const path = underCwd(io, t.file);
+        const contents = t.render(body);
+        if (t.mode === 'standalone') {
+            await writeStandaloneRule(io, path, contents, t.label, force);
+        } else {
+            await writeMarkedSection(io, path, contents, t.label, force);
+        }
     }
     return 0;
 }

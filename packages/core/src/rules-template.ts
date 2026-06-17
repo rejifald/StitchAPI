@@ -1,9 +1,10 @@
 // The canonical "how to call an external API in this project" rule, emitted by
-// `stitch init` into the rule files an AI coding agent reads (AGENTS.md, Cursor
-// `.mdc`, CLAUDE.md). It is the single source of truth: the docs page mirrors
-// this exact text, so the rule a human reads and the rule an agent ingests never
-// drift. Pure strings — no Node imports — so the same constant is reusable from
-// the CLI, a test, or a docs build.
+// `stitch init` into the rule files an AI coding agent reads — AGENTS.md, a Cursor
+// `.mdc`, a CLAUDE.md section, GitHub Copilot instructions, a Windsurf rule, a
+// Cline rule, and Aider conventions. It is the single source of truth: the docs
+// page mirrors this exact text, so the rule a human reads and the rule an agent
+// ingests never drift. Pure strings — no Node imports — so the same constant is
+// reusable from the CLI, a test, or a docs build.
 
 // The rule body, format-agnostic. The per-target wrappers below frame it for
 // Cursor (`.mdc` frontmatter) or CLAUDE.md (a marked, idempotent section); the
@@ -59,14 +60,51 @@ ${body}`;
 }
 
 // Frame the rule body as a marked "Using StitchAPI" section for append into a
-// host file (CLAUDE.md). The markers delimit the block so an append is
-// idempotent and a `--force` rewrite touches only this span. The body's own
-// `# Using StitchAPI in this project` heading is demoted to an `##` section
-// heading so it nests under the host file's top-level title.
+// host markdown file that may already hold the user's own content — CLAUDE.md,
+// `.github/copilot-instructions.md`, or Aider's `CONVENTIONS.md`. The markers
+// delimit the block so an append is idempotent and a `--force` rewrite touches
+// only this span. The body's own `# Using StitchAPI in this project` heading is
+// demoted to an `##` section heading so it nests under the host file's title.
 export function claudeSection(body: string): string {
     const section = body.replace(
         /^# Using StitchAPI in this project\n/,
         '## Using StitchAPI\n',
     );
     return `${CLAUDE_START}\n\n${section}\n${CLAUDE_END}\n`;
+}
+
+// Frame the rule body as a Windsurf workspace rule (`.windsurf/rules/*.md`).
+// Windsurf reads YAML frontmatter with an activation `trigger`; `glob` pulls the
+// rule in whenever a matching file is in context (here, the stitches module),
+// mirroring how the Cursor `.mdc` is scoped — an agent-requestable rule, not one
+// stapled to every prompt.
+export function windsurfRule(body: string): string {
+    return `---
+trigger: glob
+globs: stitches.ts,**/stitches.ts
+description: How to call external APIs in this project — declare a typed StitchAPI stitch instead of hand-rolling fetch/axios.
+---
+${body}`;
+}
+
+// A project-aware "what's already declared" block, appended after the canonical
+// rule when `stitch init --project` reads the repo's stitches module. It turns
+// the generic rule into one about *this* product: an agent sees the stitches that
+// already exist and reuses them instead of declaring a duplicate endpoint. Pure
+// strings; the caller (the CLI) supplies each stitch's name + a "METHOD endpoint"
+// summary. Empty in, empty out — a project with no stitches adds nothing.
+export function projectStitchesSection(
+    entries: { name: string; summary: string }[],
+): string {
+    if (entries.length === 0) return '';
+    const lines = entries
+        .map((e) => `-   \`${e.name}\` — ${e.summary}`)
+        .join('\n');
+    return `
+## Stitches already declared in this project
+
+Reuse these before declaring a new one — call them, compose them under a \`seam(...)\`, or extend an existing one. Add a new stitch only for an endpoint not already listed here.
+
+${lines}
+`;
 }
