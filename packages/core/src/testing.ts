@@ -26,6 +26,7 @@ import type {
     StitchStore,
     TraceSink,
 } from './types';
+import { stripTrailingSlashes } from './util';
 
 /**
  * The outcome of one `verify*Contract` run.
@@ -478,7 +479,7 @@ export async function verifyAdapterContract(
     adapter: Adapter,
     opts: { baseUrl: string },
 ): Promise<ContractReport> {
-    const base = opts.baseUrl.replace(/\/+$/, '');
+    const base = stripTrailingSlashes(opts.baseUrl);
     const request = (
         method: string,
         path: string,

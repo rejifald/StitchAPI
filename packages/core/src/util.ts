@@ -74,6 +74,17 @@ export function parseRate(r: string): { count: number; perMs: number } {
     return { count: parseInt(m[1] ?? '', 10), perMs: per };
 }
 
+/**
+ * Strip any trailing `/` from a base URL. Done by hand rather than with `replace(/\/+$/, '')`:
+ * the anchored `\/+$` backtracks quadratically on a string of many slashes that doesn't end the
+ * match (a polynomial-ReDoS trap), whereas this single backward scan is linear.
+ */
+export function stripTrailingSlashes(s: string): string {
+    let end = s.length;
+    while (end > 0 && s.charCodeAt(end - 1) === 47 /* '/' */) end--;
+    return end === s.length ? s : s.slice(0, end);
+}
+
 export const isObj = (x: unknown): x is Record<string, unknown> =>
     !!x && typeof x === 'object' && !Array.isArray(x);
 

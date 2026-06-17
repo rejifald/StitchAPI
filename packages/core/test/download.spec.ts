@@ -129,6 +129,14 @@ describe('filename parsing (Decision 8)', () => {
         ).toBe('real.txt');
     });
 
+    // The `filename*` pattern is linear (no `\s*`/`[^']*` overlap that would let a crafted
+    // header backtrack quadratically), and still tolerates whitespace around the `=`.
+    test('filename* tolerates whitespace around the "="', async () => {
+        expect(
+            await filenameFor("attachment; filename* = UTF-8''spaced.txt"),
+        ).toBe('spaced.txt');
+    });
+
     test('falls back to the URL last path segment when no Content-Disposition', async () => {
         expect(
             await filenameFor(undefined, 'https://h.test/a/b/file.zip'),

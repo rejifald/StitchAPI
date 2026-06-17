@@ -28,10 +28,13 @@ export interface DownloadResult {
 }
 
 // Parse a filename from a `Content-Disposition` header. RFC 5987 `filename*` (percent-encoded, with
-// a charset) is preferred over a plain `filename` (quoted or a bare token).
+// a charset) is preferred over a plain `filename` (quoted or a bare token). The header is
+// attacker-controlled (any server we download from sets it), so the patterns must be linear: the
+// `\s*` runs sit next to disjoint literals/classes — no two adjacent quantifiers can both match the
+// same character, which is what would make a crafted header backtrack quadratically.
 function filenameFromDisposition(cd: string | undefined): string | undefined {
     if (cd === undefined) return undefined;
-    const ext = /filename\*\s*=\s*[^']*'[^']*'([^;]+)/i.exec(cd)?.[1]?.trim();
+    const ext = /filename\*\s*=[^']*'[^']*'([^;]+)/i.exec(cd)?.[1]?.trim();
     if (ext !== undefined && ext !== '') {
         try {
             return decodeURIComponent(ext);

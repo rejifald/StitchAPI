@@ -3,7 +3,7 @@
 // SpanExporter. The default exporter POSTs OTLP/JSON to a collector; tests inject a stub
 // exporter (no running collector). It is a normal TraceSink, so it tees alongside console/JSONL.
 import type { StitchEvent, TraceContext, TraceSink } from './types';
-import { hex, readEnv, scrubUrl } from './util';
+import { hex, readEnv, scrubUrl, stripTrailingSlashes } from './util';
 
 export type SpanAttributes = Record<string, string | number | boolean>;
 
@@ -354,7 +354,7 @@ export function otlpHttpExporter(
         opts.endpoint ??
         readEnv('OTEL_EXPORTER_OTLP_ENDPOINT') ??
         'http://localhost:4318';
-    const url = base.replace(/\/+$/, '') + '/v1/traces';
+    const url = stripTrailingSlashes(base) + '/v1/traces';
     return {
         async export(spans: OtelSpan[]): Promise<void> {
             try {
