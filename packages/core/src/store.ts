@@ -9,6 +9,19 @@ export function memoryStore(): StitchStore {
     const data = new Map<string, { value: unknown; expires: number }>();
     const live = (e?: { expires: number }) =>
         !!e && (e.expires === 0 || e.expires > now());
+    // Opportunistic, bounded sweep of expired entries. The store evicts a key lazily on a `get`/
+    // `incr` of THAT key, so a throttle that mints a new per-window `rl:` key each window would
+    // otherwise accumulate dead keys forever (no key is ever read again). On a write we scan up to
+    // `SWEEP_BUDGET` entries and drop any that have expired — never touching a live key, so
+    // observable behaviour is unchanged; it just keeps the Map from growing without bound.
+    const SWEEP_BUDGET = 64;
+    const sweepExpired = (): void => {
+        let scanned = 0;
+        for (const [k, e] of data) {
+            if (scanned++ >= SWEEP_BUDGET) break;
+            if (!live(e)) data.delete(k);
+        }
+    };
     return {
         async get(key) {
             const e = data.get(key);
@@ -23,11 +36,13 @@ export function memoryStore(): StitchStore {
                 data.delete(key);
                 return;
             }
+            sweepExpired();
             data.set(key, { value, expires: ttlMs ? now() + ttlMs : 0 });
         },
         async incr(key, ttlMs) {
             const e = data.get(key);
             const n = (live(e) ? (e!.value as number) : 0) + 1;
+            sweepExpired();
             data.set(key, {
                 value: n,
                 expires: live(e) ? e!.expires : now() + ttlMs,
@@ -109,7 +124,11 @@ export function createStoreThrottle(
     const rate = opts?.rate ? parseRate(opts.rate) : undefined;
     const local = new Map<
         string,
-        { inFlight: number; waiters: (() => void)[] }
+        {
+            inFlight: number;
+            waiters: (() => void)[];
+            lastWindow?: number; // windowStart of the last `rl:` key this throttle minted
+        }
     >();
 
     const stateFor = (key: string) => {
@@ -153,6 +172,14 @@ export function createStoreThrottle(
             // burst. No re-check loop: each caller owns a distinct, non-colliding slot.
             const spacing = rate.perMs / rate.count; // ms between grants
             const windowStart = Math.floor(now() / rate.perMs) * rate.perMs;
+            // Track the window we minted a key for; when it rolls over, DELETE the previous
+            // window's `rl:` key eagerly instead of waiting for its TTL to expire (the store's
+            // own sweep is opportunistic). Without this, a long-lived rate-limited seam leaves a
+            // dead key per window in the backend until something else happens to evict it.
+            const s = stateFor(key);
+            if (s.lastWindow !== undefined && s.lastWindow < windowStart)
+                await store.set(`rl:${key}:${s.lastWindow}`, undefined);
+            s.lastWindow = windowStart;
             const n = await store.incr(
                 `rl:${key}:${windowStart}`,
                 rate.perMs + 100,
@@ -174,7 +201,26 @@ export function createStoreThrottle(
         const next = s.waiters.shift();
         if (next) next();
         else if (s.inFlight > 0) s.inFlight--;
+        // Drop a fully-idle key's state so the `local` Map doesn't accumulate one entry per
+        // ever-seen key. Keep it only while it still carries window bookkeeping (`lastWindow`),
+        // which a rate-paced key needs to clean up its `rl:` key on the next rollover.
+        if (
+            s.inFlight === 0 &&
+            s.waiters.length === 0 &&
+            s.lastWindow === undefined
+        )
+            local.delete(key);
     }
 
-    return { acquire, release };
+    const api = { acquire, release };
+    // Non-enumerable test probe: the live per-key local-state Map, so the resource-leak suite can
+    // assert a concurrency-only key's entry is dropped after its last release. Not public.
+    Object.defineProperty(api, THROTTLE_LOCAL, {
+        value: local,
+        enumerable: false,
+    });
+    return api;
 }
+
+/** Internal: keys the non-enumerable per-key local-state Map probe for the resource-leak suite. */
+export const THROTTLE_LOCAL = Symbol('stitch.storeThrottle.local');

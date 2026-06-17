@@ -409,52 +409,84 @@ const budgetError = (b: TotalBudget): TimeoutError =>
     new TimeoutError(`timed out after ${b.totalMs}ms`);
 
 // Sleep `ms`, but never past the budget's deadline — when the budget would run out
-// mid-wait, wait only the remainder and fail with the timeout error.
-async function sleepWithin(ms: number, budget?: TotalBudget): Promise<void> {
-    if (budget == null) return sleep(ms);
+// mid-wait, wait only the remainder and fail with the timeout error. The caller's
+// `signal` (if any) is threaded into `sleep` so an abort interrupts a retry/reconnect
+// backoff PROMPTLY (clearing the timer) instead of sleeping out the full delay.
+async function sleepWithin(
+    ms: number,
+    budget?: TotalBudget,
+    signal?: AbortSignal,
+): Promise<void> {
+    if (budget == null) return sleep(ms, signal);
     const remaining = budget.deadline - now();
     if (remaining <= ms) {
-        if (remaining > 0) await sleep(remaining);
+        if (remaining > 0) await sleep(remaining, signal);
         throw budgetError(budget);
     }
-    return sleep(ms);
+    return sleep(ms, signal);
 }
 
-// Acquire a throttle slot, but never wait past the budget's deadline. The underlying
-// acquire has no abort path, so on timeout the still-pending grant is handed straight
-// back via release() to keep the limiter's accounting intact.
+// Acquire a throttle slot, but never wait past the budget's deadline — and bail PROMPTLY if the
+// caller's `signal` aborts mid-wait (a throttle acquire can sleep for the rate spacing). The
+// underlying acquire has no abort path, so on either interrupt the still-pending grant is handed
+// straight back via release() to keep the limiter's accounting intact.
 async function acquireWithin(
     throttle: Runtime['throttle'],
     key: string,
     budget?: TotalBudget,
     opts?: AcquireOptions,
+    signal?: AbortSignal,
 ): Promise<{ waitedMs: number }> {
-    if (budget == null) return throttle.acquire(key, opts);
-    const remaining = budget.deadline - now();
-    if (remaining <= 0) throw budgetError(budget);
+    if (signal?.aborted) throw abortReason(signal);
+    if (budget == null && signal === undefined)
+        return throttle.acquire(key, opts);
+    if (budget && budget.deadline - now() <= 0) throw budgetError(budget);
     const pending = throttle.acquire(key, opts);
+    // Hand a still-pending grant back to the limiter when we abandon the wait. A rate-only acquire
+    // (streaming, Decision 12) holds no concurrency slot, so there is nothing to return.
+    const handBack = (): void => {
+        if (!opts?.rateOnly)
+            void pending.then(
+                () => {
+                    throttle.release(key);
+                },
+                () => {
+                    /* a rejected acquire holds no slot */
+                },
+            );
+    };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const expiry = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-            // A rate-only acquire (streaming, Decision 12) holds no concurrency slot, so there is
-            // nothing to hand back on timeout; only a slot-taking acquire is released here.
-            if (!opts?.rateOnly)
-                void pending.then(
-                    () => {
-                        throttle.release(key);
-                    },
-                    () => {
-                        /* a rejected acquire holds no slot */
-                    },
-                );
-            reject(budgetError(budget));
-        }, remaining);
+    let onAbort: (() => void) | undefined;
+    const interrupt = new Promise<never>((_, reject) => {
+        if (budget) {
+            timer = setTimeout(() => {
+                handBack();
+                reject(budgetError(budget));
+            }, budget.deadline - now());
+        }
+        if (signal) {
+            onAbort = () => {
+                handBack();
+                reject(abortReason(signal));
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+        }
     });
     try {
-        return await Promise.race([pending, expiry]);
+        return await Promise.race([pending, interrupt]);
     } finally {
         clearTimeout(timer);
+        if (onAbort) signal?.removeEventListener('abort', onAbort);
     }
+}
+
+// The Error to reject with when a caller's signal is already/just aborted — its own `reason` when
+// that is an Error (the default AbortError, or a caller-supplied one), else a generic abort Error.
+function abortReason(signal: AbortSignal): Error {
+    const reason: unknown = signal.reason;
+    return reason instanceof Error
+        ? reason
+        : new Error('the operation was aborted');
 }
 
 // Normalize `acceptStatus` (a number list, a predicate, or unset) into a single predicate. Unset →
@@ -532,7 +564,13 @@ async function* attemptLoop(
         // Skip the throttle entirely in delegate mode — the outer gate paces the call, so acquiring
         // here would double-count against it (the bug this mode fixes).
         if (!delegate) {
-            const { waitedMs } = await acquireWithin(rt.throttle, key, budget);
+            const { waitedMs } = await acquireWithin(
+                rt.throttle,
+                key,
+                budget,
+                undefined,
+                baseReq.signal,
+            );
             if (waitedMs > 0)
                 yield {
                     type: 'progress',
@@ -593,6 +631,7 @@ async function* attemptLoop(
                     await sleepWithin(
                         backoffDelay(attempt + 1, cfg.retry),
                         budget,
+                        baseReq.signal,
                     );
                     continue;
                 }
@@ -648,6 +687,7 @@ async function* attemptLoop(
                 await sleepWithin(
                     ra ?? backoffDelay(attempt + 1, cfg.retry),
                     budget,
+                    baseReq.signal,
                 );
                 continue;
             }
@@ -1092,6 +1132,7 @@ async function* runStreaming(
                 hostKey(baseReq, cfg),
                 budget,
                 { rateOnly: true },
+                baseReq.signal,
             ));
         } catch (e) {
             yield errEvt(e, name, attempt);
@@ -1194,6 +1235,12 @@ async function* runStreaming(
                         return 'fail';
                     }
                 }
+                // MEMORY NOTE: every chunk is accumulated so the awaited/`.stream()` result can
+                // mirror the whole delta spine across reconnects (Stage 5 sub-decision). This means
+                // `chunks` grows for the life of the connection — an UNBOUNDED/infinite stream grows
+                // memory without limit. A consumer of an unbounded stream should read the `delta`
+                // events incrementally (via `.stream()`) and MUST NOT rely on the accumulated final
+                // result; awaiting such a stitch to completion is intentionally not memory-bounded.
                 chunks.push(chunk);
                 yield { type: 'delta', chunk, at: now() };
             }
@@ -1242,7 +1289,7 @@ async function* runStreaming(
             waitedMs: backoff,
             at: now(),
         };
-        await sleepWithin(backoff, budget);
+        await sleepWithin(backoff, budget, baseReq.signal);
     }
 
     yield resultEvt(chunks, lastStatus, attempt);

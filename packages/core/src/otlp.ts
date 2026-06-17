@@ -162,7 +162,7 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
         }
     };
 
-    return {
+    const sink: TraceSink = {
         handle(event: StitchEvent, ctx: TraceContext): void {
             const name = ctx.name;
             // Correlate by run id (ADR 0007) — each run is unique, so no name-stack is needed;
@@ -262,7 +262,11 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     break;
                 }
                 case 'done': {
-                    const span = open.get(key)?.pop();
+                    const stack = open.get(key);
+                    const span = stack?.pop();
+                    // Drop the Map entry once its stack empties so `open` doesn't grow one entry
+                    // per unique run/span key over long uptime (each run id is seen once).
+                    if (stack?.length === 0) open.delete(key);
                     if (span) {
                         span.endUnixMs = event.at;
                         // Export the run span PLUS its flat per-iteration child spans (attempts /
@@ -277,7 +281,18 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
             /* spans are exported eagerly on 'done'; nothing is buffered */
         },
     };
+    // Non-enumerable test probe for the internal `open` span map: lets the resource-leak suite
+    // assert the map drains to empty after a completed run without exposing it on the public
+    // TraceSink type (non-enumerable → never serialized into a trace, never part of the contract).
+    Object.defineProperty(sink, OPEN_SPANS, {
+        value: open,
+        enumerable: false,
+    });
+    return sink;
 }
+
+/** Internal: keys the non-enumerable `open` map probe used by the resource-leak test suite. */
+export const OPEN_SPANS = Symbol('stitch.otlp.openSpans');
 
 const OTLP_STATUS = { UNSET: 0, OK: 1, ERROR: 2 } as const;
 const SPAN_KIND_CLIENT = 3;
