@@ -127,11 +127,22 @@ export interface MultipartOptions {
  * - `'bytes'` (default) — raw `Uint8Array` chunks, lossless, no encoding assumed.
  * - `'lines'` — UTF-8, split on `\n`; each `delta` chunk is a `string`.
  * - `'ndjson'` — `'lines'` + `JSON.parse` per non-blank line; each chunk a parsed value.
+ * - `'json'` — a STRUCTURAL streaming-JSON decoder (issue #111): emits each complete JSON value
+ *   (and each top-level array element) as its own `delta`, tolerant of pretty-printed records with
+ *   internal newlines and of concatenated values with no separator. Distinct from `'ndjson'`
+ *   (newline-FRAMED): `'json'` is unframed and follows JSON structure (nesting/strings/escapes).
  */
-export type StreamDecode = 'bytes' | 'lines' | 'ndjson';
+export type StreamDecode = 'bytes' | 'lines' | 'ndjson' | 'json';
 export interface StreamOptions {
     /** Decoder for a `stream` surface body. Default `'bytes'` (total + lossless). */
     decode?: StreamDecode;
+    /**
+     * Max bytes the `'json'` decoder will buffer for a single in-progress value before throwing
+     * (the engine turns the throw into an `error` event). Guards against a malformed / never-closing
+     * value growing without limit. Default ~8 MB (see `json-stream.ts`). Only meaningful for
+     * `decode: 'json'`.
+     */
+    maxBufferBytes?: number;
 }
 /**
  * Byte-transfer progress for a single request (ADR 0005 Decision 9). Reported through
@@ -459,7 +470,10 @@ export interface StitchConfig {
     multipart?: MultipartOptions;
     /**
      * Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body
-     * (`'bytes'` default / `'lines'` / `'ndjson'`). Only meaningful for the `stream` surface.
+     * (`'bytes'` default / `'lines'` / `'ndjson'` / `'json'`). `'json'` is the structural,
+     * unframed streaming-JSON decoder (issue #111): one `delta` per complete value / top-level
+     * array element, tolerant of internal newlines and concatenated values. Only meaningful for
+     * the `stream` surface.
      */
     stream?: StreamOptions;
     /** How to read the response body. Default: auto by content-type. */

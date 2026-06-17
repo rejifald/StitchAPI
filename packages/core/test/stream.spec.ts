@@ -1,5 +1,6 @@
 // The `stream` surface (ADR 0005 Decision 5): raw response streaming with a configurable
-// decoder (`bytes` default / `lines` / `ndjson`), emitting one `delta` chunk per decoded item.
+// decoder (`bytes` default / `lines` / `ndjson` / `json`), emitting one `delta` chunk per decoded
+// item. The structural `json` tokenizer itself is unit-tested in json-stream.spec.ts.
 // Plus Decision 12: a streaming member is exempt from the seam concurrency bucket but still
 // charges the rate gate at open. Streams are driven by a fake adapter over Web Streams, so chunk
 // boundaries are fully controlled (no socket).
@@ -70,6 +71,41 @@ describe('stream decoders (Decision 5)', () => {
         });
 
         expect(await s()).toEqual([{ a: 1 }, { b: 2 }]);
+    });
+
+    test('decode "json": a top-level array emits one delta per element', async () => {
+        const s = stream({
+            url: 'https://x.test/j',
+            stream: { decode: 'json' },
+            // the array body is split across chunks, including mid-element
+            adapter: streamAdapter(streamOf(['[{"a":1},{"a', '":2},{"a":3}]'])),
+        });
+
+        expect(await s()).toEqual([{ a: 1 }, { a: 2 }, { a: 3 }]);
+    });
+
+    test('decode "json": concatenated values + pretty-printed records (ndjson would break)', async () => {
+        const s = stream({
+            url: 'https://x.test/j',
+            stream: { decode: 'json' },
+            // pretty-printed objects with INTERNAL newlines, concatenated with no separator —
+            // the exact shape ndjson's \n-split mangles. Chunked at awkward offsets.
+            adapter: streamAdapter(
+                streamOf(['{\n  "a": 1\n}{\n  "b', '": [1,\n2]\n}']),
+            ),
+        });
+
+        expect(await s()).toEqual([{ a: 1 }, { b: [1, 2] }]);
+    });
+
+    test('decode "json": a }/]/" inside a string is not structure (one delta)', async () => {
+        const s = stream({
+            url: 'https://x.test/j',
+            stream: { decode: 'json' },
+            adapter: streamAdapter(streamOf(['{"s":"a}b]c\\"d"}'])),
+        });
+
+        expect(await s()).toEqual([{ s: 'a}b]c"d' }]);
     });
 });
 
@@ -147,6 +183,23 @@ describe('stream event spine (Decisions 5, 12)', () => {
         const ev = await collectEvents(s.stream());
         expect(ev.deltas).toEqual(['one', 'two']);
         expect(ev.types).toContain('error');
+        expect(ev.done?.ok).toBe(false);
+    });
+
+    test('decode "json": a never-closing value past maxBufferBytes surfaces an error event', async () => {
+        const s = stream({
+            url: 'https://x.test/overflow',
+            stream: { decode: 'json', maxBufferBytes: 64 },
+            // an open object whose single string value never closes — the in-progress slice grows
+            // without bound (nothing can be emitted/compacted), so the cap trips.
+            adapter: streamAdapter(
+                streamOf(['{"s":"', 'a'.repeat(50), 'a'.repeat(50)]),
+            ),
+        });
+
+        const ev = await collectEvents(s.stream());
+        expect(ev.types).toContain('error');
+        expect(ev.error?.message).toMatch(/maxBufferBytes/);
         expect(ev.done?.ok).toBe(false);
     });
 });
@@ -246,6 +299,32 @@ describe('per-`delta` validation against `output` (ADR 0005 Addendum)', () => {
         expect(ev.drifts).toEqual([]);
         expect(ev.deltas).toEqual([{ anything: 1 }]);
         expect(ev.done?.ok).toBe(true);
+    });
+
+    test('decode "json": `output` validates each emitted value; a bad one fails the stream', async () => {
+        const s = stream({
+            url: 'https://x.test/vj',
+            stream: { decode: 'json' },
+            output: asValidator(z.object({ n: z.number() })),
+            // a top-level array whose second element violates the schema
+            adapter: streamAdapter(
+                streamOf(['[{"n":1},{"bad":true},{"n":3}]']),
+            ),
+        });
+
+        const ev = await collectEvents(s.stream());
+        // element 1 delivered; element 2 fails → drift(error)+error+done(false); element 3 unseen.
+        expect(ev.deltas).toEqual([{ n: 1 }]);
+        expect(ev.types).toEqual([
+            'start',
+            'progress',
+            'delta',
+            'drift',
+            'error',
+            'done',
+        ]);
+        expect(ev.error?.message).toMatch(/contract violation/);
+        expect(ev.done?.ok).toBe(false);
     });
 });
 
