@@ -9,7 +9,7 @@
 // Streamable HTTP transport too (see the `serve` surface for the HTTP pattern).
 import { toMermaid } from './diagram';
 import { type StitchRegistry, selectStitch } from './registry';
-import type { SecurityScheme, Stitch, StitchConfig } from './types';
+import type { RedactedStitchConfig, Stitch, StitchInput } from './types';
 
 import type { Readable, Writable } from 'node:stream';
 
@@ -36,8 +36,9 @@ const RUN_STITCH_TOOL = {
     description:
         'Run a named stitch and return its validated result. Code-mode: this one ' +
         'tool covers every registered endpoint — pass { name, input } where input is ' +
-        '{ params?, query?, body?, headers? }. Use list_stitches to discover names and ' +
-        "describe_stitch to learn a stitch's shape, schema, and diagram before running it.",
+        '{ params?, query?, body? } (and headers? only for a stitch that declares a headers ' +
+        'schema). Use list_stitches to discover names and describe_stitch to learn a ' +
+        "stitch's shape, schema, and diagram before running it.",
     inputSchema: {
         type: 'object',
         properties: {
@@ -96,7 +97,7 @@ function errorResult(message: string): ToolResult {
 
 // A compact "METHOD endpoint" label built from the redacted __config (mirrors diagram.ts's
 // endpointLabel; kept local so mcp.ts pulls only `toMermaid`).
-function endpointOf(cfg: StitchConfig): string {
+function endpointOf(cfg: RedactedStitchConfig): string {
     const method = (cfg.method ?? 'GET').toUpperCase();
     let where: string;
     if (typeof cfg.url === 'string') where = cfg.url;
@@ -114,20 +115,18 @@ function endpointOf(cfg: StitchConfig): string {
 }
 
 // The scheme TAG of a stitch's auth — never the credential. `authScheme` is the non-secret
-// SecurityScheme redaction projects onto __config (the live `auth` is stripped); read it via an
-// unknown cast (it is not a declared StitchConfig field). `http` reports its scheme (bearer/basic),
-// other types report their `type`. No auth → null.
-function authTagOf(cfg: StitchConfig): string | null {
-    const scheme = (cfg as { authScheme?: SecurityScheme }).authScheme;
+// SecurityScheme redaction projects onto the redacted `__config` (the live `auth` is stripped).
+// `http` reports its scheme (bearer/basic), other types report their `type`. No auth → null.
+function authTagOf(cfg: RedactedStitchConfig): string | null {
+    const scheme = cfg.authScheme;
     if (!scheme) return null;
     return scheme.type === 'http' ? scheme.scheme : scheme.type;
 }
 
 // The configured pipeline stages, in engine order, as a teaching list (mirrors diagram.ts's
 // engine order). `call`/`result` bookend; the middle stages appear only when configured.
-function pipelineOf(cfg: StitchConfig): string[] {
-    const kindRaw: unknown = cfg.kind; // __config.kind is the surface id string
-    const kind = typeof kindRaw === 'string' ? kindRaw : 'http';
+function pipelineOf(cfg: RedactedStitchConfig): string[] {
+    const kind = cfg.kind ?? 'http'; // __config.kind is the surface id string
     const stages: string[] = ['call'];
     if (cfg.throttle) stages.push('throttle');
     stages.push(endpointOf(cfg));
@@ -140,6 +139,18 @@ function pipelineOf(cfg: StitchConfig): string[] {
     if (cfg.cache) stages.push('cache');
     stages.push('result');
     return stages;
+}
+
+// Defense in depth: an MCP client is an untrusted agent, so `run_stitch` forwards only the input a
+// stitch is built to accept. It NEVER lets an agent inject arbitrary request `headers` (a Cookie /
+// Authorization override, a forged content-type, request smuggling) unless the stitch explicitly
+// declares an `input.headers` schema — where those headers are validated like any other slot. The
+// credential already stays server-side; this closes the one input slot that reaches the transport.
+function sanitizeAgentInput(stitch: Stitch, input: unknown): StitchInput {
+    if (!input || typeof input !== 'object') return {};
+    const obj = { ...(input as StitchInput) };
+    if (stitch.__config.input?.headers === undefined) delete obj.headers;
+    return obj;
 }
 
 function pickProtocol(params: unknown): string {
@@ -182,7 +193,7 @@ export function createMcpServer(
             return errorResult((e as Error).message);
         }
         try {
-            const value = await stitch(a.input ?? {});
+            const value = await stitch(sanitizeAgentInput(stitch, a.input));
             return textResult(value);
         } catch (e) {
             return errorResult((e as Error).message);
@@ -220,12 +231,11 @@ export function createMcpServer(
             return errorResult((e as Error).message);
         }
         const cfg = stitch.__config;
-        const kindRaw: unknown = cfg.kind; // __config.kind is the surface id string
         const inputSlots = cfg.input ?? {};
         return textResult({
             name: a.name,
             endpoint: endpointOf(cfg),
-            surface: typeof kindRaw === 'string' ? kindRaw : 'http',
+            surface: cfg.kind ?? 'http', // __config.kind is the surface id string
             input: {
                 params: inputSlots.params !== undefined,
                 query: inputSlots.query !== undefined,

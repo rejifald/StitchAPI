@@ -101,6 +101,27 @@ test('Accept: text/event-stream returns the live event stream as SSE', async () 
     });
 });
 
+test('SSE start frame scrubs credential headers the caller echoed (serve is unauthenticated)', async () => {
+    api.route('GET', '/ping', { body: { ok: true } });
+    const res = await fetch(`${base}/stitch/ping`, {
+        method: 'POST',
+        headers: { accept: 'text/event-stream' },
+        body: JSON.stringify({
+            headers: { authorization: 'Bearer SECRET', 'x-keep': 'ok' },
+        }),
+    });
+    const text = await res.text();
+    const start = parseSse(text).find((f) => f.event === 'start');
+    const echoed = (
+        start?.data?.['input'] as
+            | { headers?: Record<string, string> }
+            | undefined
+    )?.headers;
+    expect(echoed?.['authorization']).toBe('[REDACTED]'); // credential scrubbed before it leaves
+    expect(echoed?.['x-keep']).toBe('ok'); // non-secret header preserved
+    expect(text).not.toContain('Bearer SECRET'); // the secret never rides the wire
+});
+
 test('an unknown stitch is a 404 with a listing message', async () => {
     const res = await fetch(`${base}/stitch/nope`, {
         method: 'POST',
