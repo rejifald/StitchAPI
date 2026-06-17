@@ -11,11 +11,19 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
-The work-in-progress toward the **v1.0 Launch** (the library plus the interactive
-playground and docs site as one public moment). See [`docs/RELEASE.md`](docs/RELEASE.md)
-for the live checklist.
+Nothing yet — the next change lands here.
 
-### Added
+## [1.0.0-rc.1] — 2026-06-17
+
+The first **v1.0 release candidate** — the library, the interactive playground, and
+the docs site as one public moment. It bundles the whole post-`0.7.0` cycle (the
+former in-development `0.8.0` work plus the playground and docs reconciliation) into
+the first published `1.0` line, and ships the `@stitchapi/*` companions (`nest`,
+`redis`, `shell`, `fingerprint-*`) for the first time. Published under the `rc`
+dist-tag — `latest` stays on `0.7.0` until `1.0.0` is promoted. See
+[`docs/RELEASE.md`](docs/RELEASE.md) for the checklist.
+
+### Added — playground & release hygiene
 
 -   Playground: the trace DAG is back, rendered as a Mermaid SVG wired to real
     ADR 0007/0008 causality (dependency edges from `dependsOn`/`parentId`, retry and
@@ -24,6 +32,10 @@ for the live checklist.
     `output` schema, run against an injected mock adapter).
 -   `@stitchapi/sandbox-sim` now has a `test` script, so `pnpm -r test` covers its
     simulator suites.
+-   Release guardrails (`pnpm check:release`): version lockstep across the publishable
+    packages, prerelease-aware peer-range checks, scoped `publishConfig.access`,
+    dist-tag safety (a prerelease never lands on `latest`), and a CHANGELOG entry —
+    enforced in the verify + publish workflows and each package's `prepublishOnly`.
 
 ### Changed
 
@@ -37,13 +49,10 @@ for the live checklist.
     (#111), compile-time typed `delta` arrays (#115), and SSE reconnection /
     `Last-Event-ID` (#71).
 
-## [0.8.0] — 2026-06-16
+### Added — library (the former in-development `0.8.0`)
 
-The release that completed the **non-HTTP surfaces**, **composition causality**,
-and the OpenAPI export, on top of the surfaces and authoring model that landed
-earlier in the cycle.
-
-### Added
+The non-HTTP surfaces, composition causality, and the OpenAPI export, on top of the
+surfaces and authoring model that landed earlier in the cycle:
 
 -   **Non-HTTP surfaces (ADR 0008):** `llm` and `shell` as symmetric kinds, plus the
     `pipe()` primitive to compose heterogeneous stitches into one chain. A shell
@@ -86,7 +95,7 @@ earlier in the cycle.
 -   **Logger-agnostic `loggerSink(logger, opts?)`** with per-instance `level` and
     `format` hooks. (#143)
 
-### Changed
+### Changed — library
 
 -   `StitchResult` exposes `.catch` / `.finally` and runs exactly once. (#141)
 -   The call argument accepts `params` / `query` when a sibling slot is declared. (#142)
@@ -122,5 +131,5 @@ causality push:
 -   **Playground:** the browser Worker runner, handler registration, incremental
     streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v0.8.0...HEAD
-[0.8.0]: https://github.com/rejifald/StitchAPI/releases/tag/v0.8.0
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.1...HEAD
+[1.0.0-rc.1]: https://github.com/rejifald/StitchAPI/compare/v0.7.0...v1.0.0-rc.1

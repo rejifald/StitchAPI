@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/fingerprint-typebox",
-    "version": "0.0.0",
+    "version": "1.0.0-rc.1",
     "description": "Stable Standard Schema fingerprint strategy for TypeBox — StitchAPI ADR 0004 cache invalidation.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
@@ -21,10 +21,15 @@
     "files": [
         "lib"
     ],
+    "publishConfig": {
+        "access": "public"
+    },
     "scripts": {
         "build": "tsup",
         "test": "vitest run",
-        "check:types": "tsc --noEmit"
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
     },
     "repository": {
         "type": "git",
@@ -43,7 +48,7 @@
     "homepage": "https://stitchapi.dev",
     "peerDependencies": {
         "@sinclair/typebox": "^0.34.0",
-        "stitchapi": ">=0.7.0"
+        "stitchapi": "^1.0.0-rc.1"
     },
     "devDependencies": {
         "@sinclair/typebox": "^0.34.0",

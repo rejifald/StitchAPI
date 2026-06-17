@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/shell",
-    "version": "0.0.0",
+    "version": "1.0.0-rc.1",
     "description": "Run a static local command as a StitchAPI surface — Node-only, injection-proof by construction (static binary + argv array + no shell). ADR 0008.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
@@ -21,10 +21,15 @@
     "files": [
         "lib"
     ],
+    "publishConfig": {
+        "access": "public"
+    },
     "scripts": {
         "build": "tsup",
         "test": "vitest run",
-        "check:types": "tsc --noEmit"
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
     },
     "repository": {
         "type": "git",
@@ -44,7 +49,7 @@
     "license": "Apache-2.0",
     "homepage": "https://stitchapi.dev",
     "peerDependencies": {
-        "stitchapi": ">=0.8.0"
+        "stitchapi": "^1.0.0-rc.1"
     },
     "devDependencies": {
         "@types/node": "^22.10.0",
