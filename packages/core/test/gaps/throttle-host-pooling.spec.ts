@@ -53,9 +53,13 @@ describe('GAP-AUDIT §1.4 — throttle scope:"host" pools across instances', () 
         expect(hits).toHaveLength(2);
         hits.sort((x, y) => x - y);
         const gap = (hits[1] ?? 0) - (hits[0] ?? 0);
-        // Pooled 2/s budget → second request paced ~500ms after the first
-        // (>= 400ms with timer slack). Today each instance keeps its own
-        // closure-local throttle map, so both fire ~0ms apart — RED.
-        expect(gap).toBeGreaterThanOrEqual(400);
+        // Pooled 2/s budget → second request paced ~500ms after the first. The
+        // lower bound is deliberately LOOSE (>= 250, not ~500): this is a real
+        // wall-clock measurement and a loaded CI runner can shave the observed
+        // gap well below the nominal 500ms pacing (seen at 380ms). 250ms still
+        // sits an order of magnitude above the ~0ms a BROKEN pool produces (each
+        // instance firing from its own closure-local throttle map), so the test
+        // keeps its meaning — it only passes when the budget is actually pooled.
+        expect(gap).toBeGreaterThanOrEqual(250);
     });
 });
