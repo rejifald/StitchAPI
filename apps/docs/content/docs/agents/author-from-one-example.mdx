@@ -21,11 +21,13 @@ It emits the stitch that example describes:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
+import { z } from 'zod';
 
 const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     method: 'GET',
+    output: z.object({ id: z.number(), name: z.string() }),
 });
 
 await getUser({ params: { id: 1 } });
@@ -33,6 +35,11 @@ await getUser({ params: { id: 1 } });
 
 That declaration is the whole integration — no spec to ingest, no generated code
 to commit.
+
+The `output` here is raw Zod, shown as the default — but core is
+validator-agnostic, so any [Standard Schema](/docs/guides/validation/standard-schema)
+validator (Valibot, ArkType, …) or a plain `(value) => boolean` predicate works
+in the same slot.
 
 ## Options
 

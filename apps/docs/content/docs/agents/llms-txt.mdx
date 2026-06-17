@@ -31,8 +31,10 @@ stitch it documents is the same one-source-of-truth definition the runtime uses.
 The site emits three machine-readable outputs automatically; you never
 hand-author them.
 
-`/llms.txt` is the curated index — one line per page, title plus description — so
-an agent maps the docs structure before pulling anything.
+`/llms.txt` opens with a curated StitchAPI header — the one-line premise, the
+signals an agent needs, and a runnable quickstart — and then the curated index,
+one line per page, title plus description, so an agent grasps what StitchAPI is
+before it maps the docs structure or pulls anything.
 
 A page's `llms.mdx` variant is the same page as clean Markdown, with rendered
 chrome stripped. Because guides are fine-grained — one page per feature — an

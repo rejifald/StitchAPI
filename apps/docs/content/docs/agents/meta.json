@@ -1,5 +1,10 @@
 {
     "title": "For agents",
     "icon": "Bot",
-    "pages": ["run-stitch-tool", "author-from-one-example", "llms-txt"]
+    "pages": [
+        "run-stitch-tool",
+        "author-from-one-example",
+        "adopt-in-your-project",
+        "llms-txt"
+    ]
 }

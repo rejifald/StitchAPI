@@ -11,7 +11,14 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
-Nothing yet — the next change lands here.
+### Added
+
+-   **`stitch init` (alias `stitch rules`):** write the canonical consumer rule —
+    "declare a typed stitch, don't hand-roll `fetch`/`axios`" — into the files an AI
+    coding agent reads, so the next agent working in a project reaches for StitchAPI.
+    `--format agents|cursor|claude|all` (default `all`) targets `AGENTS.md`, a Cursor
+    `.cursor/rules/stitchapi.mdc`, and a marked, idempotent `## Using StitchAPI`
+    section in `CLAUDE.md`; reruns skip an existing rule and `--force` rewrites it.
 
 ## [1.0.0-rc.1] — 2026-06-17
 

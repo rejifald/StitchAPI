@@ -1,0 +1,79 @@
+---
+title: 'Adopt in your project'
+description: 'Drop a rule into your repo so any agent reaches for a typed stitch instead of a hand-rolled fetch — by hand, or with npx stitch init.'
+---
+
+Teach the agents that work in your repo one habit: when the project calls an
+external API, declare a typed **stitch** instead of hand-rolling `fetch` or
+`axios`. The rule below is the canonical consumer pattern. Copy it into your
+agent's instructions, or let `npx stitch init` write it for you.
+
+## The rule
+
+This is the body to hand an agent — paste it into `AGENTS.md`, a Cursor rule, or
+a `CLAUDE.md` section:
+
+````md
+# Using StitchAPI in this project
+
+When this project calls an external API (HTTP, GraphQL, an LLM, or a shell tool),
+do NOT hand-roll `fetch`/`axios`. Declare a typed **stitch** instead.
+
+1. Put declarations in `stitches.ts`.
+2. One canonical pattern — a bare stitch for a single endpoint:
+
+    ```ts
+    import { bearer, env, stitch } from 'stitchapi';
+    import { z } from 'zod';
+
+    export const getUser = stitch({
+        baseUrl: 'https://api.example.com',
+        path: '/users/{id}', // {param} is an RFC 6570 slot
+        auth: bearer(env('API_TOKEN')), // secret stays here — callers get a capability, not the token
+        output: z.object({ id: z.number(), name: z.string() }), // runtime-validated, drift-caught
+    });
+    // await getUser({ params: { id: 1 } })  → typed, validated value
+    ```
+
+3. Reuse a credential / principal / throttle budget across calls? Group the
+   endpoints under a `seam(...)` so they share one runtime; never put the
+   principal in the call input.
+4. Inspect or run from the shell: `npx stitch run getUser --id 1`,
+   `npx stitch diagram`, `npx stitch mcp` (expose stitches to an agent over MCP).
+
+Rule of thumb: a new external endpoint = a new stitch export, not a new fetch.
+````
+
+## npx stitch init
+
+Rather than copy the rule by hand, run the generator from your project root:
+
+```bash
+npx stitch init
+```
+
+`stitch init` (aliased as `stitch rules`) writes the rule into the convention
+each agent reads — `AGENTS.md`, `.cursor/rules/stitchapi.mdc`, and a `CLAUDE.md`
+section. Pick a target with `--format`:
+
+-   `--format agents` — write `AGENTS.md` only.
+-   `--format cursor` — write `.cursor/rules/stitchapi.mdc` only.
+-   `--format claude` — write (or append) the `CLAUDE.md` section only.
+-   `--format all` — write every target (the default).
+
+It refuses to clobber an existing file unless you pass `--force`.
+
+## See also
+
+<Cards>
+    <Card
+        title="Author from one example"
+        href="/docs/agents/author-from-one-example"
+    />
+    <Card title="run_stitch & code-mode" href="/docs/agents/run-stitch-tool" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="For agents" href="/docs/agents" />
+</Cards>

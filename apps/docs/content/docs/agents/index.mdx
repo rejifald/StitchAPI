@@ -17,25 +17,36 @@ them, it authors them, and it reasons over them.
 An agent drives stitches from a sandbox through a single **code-mode** tool,
 `run_stitch`, rather than a generated tool per endpoint. The agent writes a small
 TypeScript snippet that imports `stitchapi`, calls the stitch, and returns
-the result — and `list_stitches` tells it what is available to call.
+the result — `list_stitches` tells it what is available to call, and
+`describe_stitch` tells it the shape of one before running it.
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
+import { z } from 'zod';
 
-const getUser = stitch('https://api.example.com/users/{id}');
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+});
 
 // The agent writes this in the sandbox; run_stitch executes it.
 const user = await getUser({ params: { id: 7 } });
 ```
 
-One tool keeps the context budget flat as the catalog grows, and the credential
-stays behind the boundary — the agent sees the user, never the token.
+The `output` schema (raw Zod here, the visible default) means the agent gets a
+validated, typed value back, not a guess. One tool keeps the context budget flat
+as the catalog grows, and the credential stays behind the boundary — the agent
+sees the user, never the token. Three tools make up the code-mode surface:
+`run_stitch` to execute, `list_stitches` to discover names, and
+`describe_stitch` to understand a stitch's shape, schema, and diagram before
+running it.
 
 <Cards>
     <Card
         title="run_stitch & code-mode"
         href="/docs/agents/run-stitch-tool"
-        description="The single tool an agent calls, plus list_stitches for discovery."
+        description="The tool an agent calls, plus list_stitches and describe_stitch."
     />
     <Card
         title="MCP surface"
@@ -57,6 +68,21 @@ review.
         title="Author from one example"
         href="/docs/agents/author-from-one-example"
         description="Turn one curl, HAR, or doc snippet into a stitch declaration."
+    />
+</Cards>
+
+## Adopt in your project
+
+Drop a short rule into your repo and any agent working in it reaches for a typed
+**stitch** instead of a hand-rolled `fetch`/`axios` whenever it adds an external
+API. Hand-copy the rule, or run `npx stitch init` to write it as `AGENTS.md`, a
+Cursor rule, or a `CLAUDE.md` section.
+
+<Cards>
+    <Card
+        title="Adopt in your project"
+        href="/docs/agents/adopt-in-your-project"
+        description="The consumer rule agents follow, plus npx stitch init."
     />
 </Cards>
 

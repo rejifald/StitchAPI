@@ -221,7 +221,7 @@ export function resolveFingerprint(
         return {
             generation: '',
             policy: 'refuse',
-            reason: 'opaque transform without cache.transformVersion or trustTransform',
+            reason: 'opaque transform without cache.transformVersion or trustTransform. Fix: set cache.transformVersion when you change the transform, or cache.trustTransform: true to opt out.',
         };
     }
 
@@ -250,9 +250,9 @@ export function resolveFingerprint(
     // Default to refusing (fail closed); a caller may opt into re-validate-on-hit.
     const reason = vendor
         ? fp
-            ? `fingerprint strategy for '${vendor}' abstained`
-            : `no fingerprinter registered for '${vendor}'`
-        : 'output is not a Standard Schema';
+            ? `fingerprint strategy for '${vendor}' abstained. Fix: set cache.version, or onUnfingerprintable: 'revalidate'.`
+            : `no fingerprinter registered for '${vendor}'. Fix: install @stitchapi/fingerprint-${vendor}, set cache.version, or onUnfingerprintable: 'revalidate'.`
+        : "output is not a Standard Schema, so a stale value can't be detected. Fix: set cache.version, pass onUnfingerprintable: 'revalidate', or use a blessed validator with a fingerprint-* vendor pkg.";
     return {
         generation: '',
         policy:

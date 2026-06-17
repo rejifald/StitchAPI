@@ -1,5 +1,6 @@
 {
     "title": "Documentation",
+    "description": "The agent-native runtime where a typed, declarative stitch replaces fetch — declare an endpoint once; humans, the CLI, and agents call it without touching a credential.",
     "pages": [
         "getting-started",
         "recipes",

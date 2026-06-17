@@ -690,6 +690,8 @@ total: 12 run(s), 11 ok, 1 failed
 
 `--name <stitch>` filters to one stitch, `--file <path>` reads another log, `--json` emits the summary as JSON.
 
+`stitch init` writes the canonical "declare a stitch, don't hand-roll `fetch`" rule into the files an AI coding agent reads — `AGENTS.md`, a Cursor `.cursor/rules/stitchapi.mdc`, and a marked section in `CLAUDE.md` (`--format agents|cursor|claude|all`, default `all`) — so the next agent working in this repo reaches for StitchAPI; it is idempotent, and `--force` rewrites an existing rule.
+
 ## Scope & roadmap
 
 A stitch is a **per-call primitive**, not a workflow or iPaaS engine. Job queues, inbound webhooks, multi-step orchestration and rollback, business/DB idempotency, and app-level cache policy stay your app's job — absorbing them is exactly how a small library becomes the heavy platform it is positioned against.

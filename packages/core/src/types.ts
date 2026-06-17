@@ -491,6 +491,10 @@ export interface StitchConfig {
      * Response schema, or a {@link DriftSpec} for leveled drift detection. Accepts any
      * {@link SchemaLike} (raw Zod / Standard Schema / Validator / predicate); the stitch infers
      * its result type from it (see `InferOutput`), so a hand-written generic is rarely needed.
+     * No `toValidator()` cast is needed — raw Zod is the visible default, but any Standard Schema
+     * validator or a `(value) => boolean` predicate works in the same slot.
+     *
+     * @example output: z.object({ id: z.number(), name: z.string() })
      */
     output?: SchemaLike | DriftSpec;
     /** Dot-path selecting the part of the response to return. */

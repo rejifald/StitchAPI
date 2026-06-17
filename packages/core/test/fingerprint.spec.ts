@@ -203,7 +203,7 @@ describe('resolveFingerprint — the fallback ladder', () => {
     it('rung 5: non-Standard-Schema output → refuse', () => {
         const r = resolveFingerprint({ output: { not: 'a schema' } });
         expect(r.policy).toBe('refuse');
-        expect(r.reason).toBe('output is not a Standard Schema');
+        expect(r.reason).toContain('output is not a Standard Schema');
     });
 
     it('rung 4: no output → fast (no shape to go stale)', () => {
