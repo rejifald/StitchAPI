@@ -4,12 +4,16 @@
 //   - `'bytes'`  (default) — raw `Uint8Array` chunks, lossless, no encoding assumed (Q2).
 //   - `'lines'`  — UTF-8 lines (split on `\n`).
 //   - `'ndjson'` — `'lines'` + `JSON.parse` per non-blank line.
+//   - `'json'`   — STRUCTURAL streaming-JSON (issue #111): one delta per complete value / top-level
+//                  array element, tolerant of internal newlines + concatenated values (`json-stream`).
 // The `'lines'`/`'ndjson'` decoders share the byte→line plumbing with `sse` (the `lineReader`), but
 // `sse` layers its own event-stream frame parser on top — they share plumbing, not a decoder (Q3).
+// `'json'` does NOT use the line plumbing at all — it scans JSON structure directly.
 //
 // Bundle-frugal (Decision 10): reached only through the `stream` subpath; `import { stitch }` pulls
 // in none of it.
 import type { InputOf, OutputOf } from './infer';
+import { jsonStream } from './json-stream';
 import { lineReader } from './line-reader';
 import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
@@ -39,16 +43,18 @@ type StreamDecodeOf<C> = C extends { stream: { decode: infer D } }
  * The decoded delta element type for a config `C`:
  *   - `'lines'`  → `string` (UTF-8 lines; `output` is ignored — it can't reshape a raw line).
  *   - `'ndjson'` → `OutputOf<C>` (the structured per-record value; `unknown` when no `output`).
+ *   - `'json'`   → `OutputOf<C>` (issue #111) — structural streaming-JSON values are structured,
+ *     exactly like `'ndjson'`, so `output` refines each emitted value too.
  *   - `'bytes'` (default) + any unrecognised `decode` → `Uint8Array` (raw chunks; `output` ignored).
  *
- * NOTE: `output` deliberately refines ONLY `'ndjson'`. `stream({ output: S })` with NO `decode` stays
- * `Uint8Array[]` — `decode` defaults to `'bytes'`, which `output` can't reshape. That is intended, not
- * a bug. A future `'json'` decoder (issue #111) would add another `OutputOf<C>` branch here.
+ * NOTE: `output` deliberately refines ONLY the structured decoders (`'ndjson'`/`'json'`).
+ * `stream({ output: S })` with NO `decode` stays `Uint8Array[]` — `decode` defaults to `'bytes'`,
+ * which `output` can't reshape. That is intended, not a bug.
  */
 type StreamElement<C> =
     StreamDecodeOf<C> extends 'lines'
         ? string
-        : StreamDecodeOf<C> extends 'ndjson'
+        : StreamDecodeOf<C> extends 'ndjson' | 'json'
           ? OutputOf<C>
           : Uint8Array; // 'bytes' default + any unknown decode
 
@@ -72,6 +78,13 @@ async function* decodeStream(
             const parsed: unknown = JSON.parse(line);
             yield parsed;
         }
+        return;
+    }
+    if (decode === 'json') {
+        // Structural, unframed streaming-JSON (issue #111): one delta per complete value / top-level
+        // array element. `maxBufferBytes` (if set) bounds a single in-progress value; a throw on
+        // overflow / mid-value EOF becomes an `error` event in the engine.
+        yield* jsonStream(stream, cfg.stream?.maxBufferBytes);
         return;
     }
     // 'bytes' (default): hand back raw chunks exactly as they arrive on the wire.

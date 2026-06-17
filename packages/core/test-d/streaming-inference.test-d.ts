@@ -51,6 +51,19 @@ expectType<Item[]>(output(ndjson));
 const ndjsonBare = stream({ path: '/s', stream: { decode: 'ndjson' } });
 expectType<unknown[]>(output(ndjsonBare));
 
+// 5b) `decode: 'json'` + `output` → the inferred value array (the structural JSON decoder takes
+//     `output`, exactly like `'ndjson'` — issue #111).
+const json = stream({
+    path: '/s',
+    stream: { decode: 'json' },
+    output: itemSchema,
+});
+expectType<Item[]>(output(json));
+
+// 5c) `decode: 'json'` with NO `output` → `unknown[]`.
+const jsonBare = stream({ path: '/s', stream: { decode: 'json' } });
+expectType<unknown[]>(output(jsonBare));
+
 // 6) `decode: 'lines'` → `string[]` (raw lines; `output`, if any, is IGNORED).
 const lines = stream({ path: '/s', stream: { decode: 'lines' } });
 expectType<string[]>(output(lines));
