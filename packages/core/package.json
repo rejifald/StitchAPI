@@ -217,6 +217,7 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
+        "test:mcp-e2e": "vitest run test/mcp-e2e.spec.ts",
         "check:types": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
         "check:types-d": "tsup --silent && tsd",
         "check:lint": "eslint src test",
