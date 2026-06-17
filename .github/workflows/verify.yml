@@ -36,6 +36,9 @@ jobs:
             - run: pnpm check:types
             - run: pnpm test
             - run: pnpm check:exports
+            # Release coherence: version lockstep + prerelease-aware peer ranges +
+            # scoped publishConfig.access, so a bad bump fails the PR, not the publish.
+            - run: pnpm check:release
             # Render gate: `tsc` type-checks the docs but never renders a page, so a
             # broken AutoTypeTable path/name, an unregistered MDX component, or a
             # generator throw all pass type-check and only fail at build. Building the

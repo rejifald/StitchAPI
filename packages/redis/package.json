@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/redis",
-    "version": "0.0.0",
+    "version": "1.0.0-rc.1",
     "description": "Redis-backed StitchStore for StitchAPI — distributed throttle + shared sessions/tokens. Bring your own ioredis or node-redis client.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
@@ -21,10 +21,15 @@
     "files": [
         "lib"
     ],
+    "publishConfig": {
+        "access": "public"
+    },
     "scripts": {
         "build": "tsup",
         "test": "vitest run",
-        "check:types": "tsc --noEmit"
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
     },
     "repository": {
         "type": "git",
@@ -45,7 +50,7 @@
     "license": "Apache-2.0",
     "homepage": "https://stitchapi.dev",
     "peerDependencies": {
-        "stitchapi": ">=0.7.0",
+        "stitchapi": "^1.0.0-rc.1",
         "ioredis": "^5.0.0",
         "redis": "^4.0.0 || ^5.0.0"
     },

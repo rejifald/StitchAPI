@@ -199,10 +199,10 @@ third-party **service names stay out of public artifacts** (neutral archetypes).
 
 ## 9. Status — what's built
 
-The core library is **feature-complete** and published as `stitchapi` (`0.8.0`, zero runtime
-deps). Full gate green — eslint, prettier, `tsc`, `attw`, **557 tests / 70 suites**, `tsup`
-ESM+CJS+DTS build — and verified against synthetic scenarios **and** two real apps' integration
-patterns.
+The core library is **feature-complete** and packaged as `stitchapi` (`1.0.0-rc.1` — the first
+v1.0 release candidate, zero runtime deps). Full gate green — eslint, prettier, `tsc`, `attw`,
+**581 tests / 71 suites**, `tsup` ESM+CJS+DTS build — and verified against synthetic scenarios
+**and** two real apps' integration patterns.
 
 -   **Primitive + composition** — `stitch()` (`extends` + fluent builder facades), `seam` with
     principal-scoped auth (ADR 0002), `.with()` partial application, deep fragment composition +

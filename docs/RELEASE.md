@@ -4,15 +4,19 @@
 > [`OVERVIEW.md`](OVERVIEW.md) §9 (status) and §10 (roadmap). Update the
 > checkboxes as items land; this file is the single source of truth for "what's
 > left."
+>
+> For the standing, repeatable publish runbook (how to cut _any_ release), see
+> [`RELEASING.md`](RELEASING.md).
 
 ## The bar
 
 **One public moment:** ship `stitchapi` **v1.0** as a production-ready library
 **and** launch the interactive playground + docs site together. The library is
-the product and is already feature-complete — core response streaming has landed
-(the engine emits live `delta`s with per-chunk validation). The only load-bearing
-remainder is the playground's real-browser **proof**: extending the Playwright
-harness to cover the security behaviors that already pass in Node unit tests.
+the product and is feature-complete — core response streaming has landed (the
+engine emits live `delta`s with per-chunk validation), and the playground's
+real-browser security **proof** is green (#168). The first publish is
+**`1.0.0-rc.1`** under the npm `rc` dist-tag — `latest` stays on `0.7.0` until the
+RC soak promotes it to `1.0.0`.
 
 Decision: the playground is **not** decoupled into a later release — it ships
 with v1.0. (Bar chosen 2026-06-14.)
@@ -23,8 +27,8 @@ Legend: `[x]` done · `[ ]` outstanding · 🔴 critical path · 🟡 parallel.
 
 ## ✅ Done — ships as-is (no code work)
 
-The entire core library (`stitchapi`, currently `0.8.0`), verified against
-`src/` + `test/` (70 spec files / 557 tests green):
+The entire core library (`stitchapi`, currently `1.0.0-rc.1`), verified against
+`src/` + `test/` (71 spec files / 581 tests green):
 
 -   [x] Authoring — `stitch()`, `seam()`, `graphql()`, fluent builder, `.with()`,
         `extends` composition + hook chaining
@@ -66,15 +70,12 @@ The entire core library (`stitchapi`, currently `0.8.0`), verified against
         browser ([`e2e/sandbox-trace.spec.ts`](../apps/docs/e2e/sandbox-trace.spec.ts)) + unit ([`trace-collector.test.ts`](../docs/sandbox/runtime/trace-collector.test.ts)).
         Follow-ups: dependency EDGES (`dependsOn`, needs the composition graph)
         and `seam`-created stitches.
--   [ ] **Playwright harness — test-hardening follow-up, not a code gap.** The
-        security _behavior_ is already implemented in the Worker bundle and proven
-        in Node unit tests: non-HTTP egress shims (SEC-04), fresh-worker isolation
-        / no state-bleed (SEC-36/37), and preemptive timeout/kill (SEC-20..22) all
-        hold today. Egress confinement + CSP enforcement (SEC-10..13) is already
-        **proven in a real browser** (4/4 green in [`apps/docs/e2e/`](../apps/docs/e2e/)).
-        What's outstanding is extending that same real-browser **proof** to the
-        three behaviors above (~3 specs). The code exists; this is Playwright
-        coverage catching up to it.
+-   [x] **Playwright harness — landed (#168).** The remaining security _behaviors_
+        now have real-browser (Chromium) proof: non-HTTP egress shims (SEC-04),
+        fresh-worker isolation / no state-bleed (SEC-36/37), and preemptive
+        timeout/kill (SEC-20..22), on top of the egress confinement + CSP
+        enforcement (SEC-10..13) that was already green. **11/11 e2e specs green**
+        in [`apps/docs/e2e/`](../apps/docs/e2e/).
 -   [x] **Wire sandbox-sim suites into CI** — `packages/sandbox-sim` now has a
         `test` script (the five `*.test.ts` `tsx` scripts), so `pnpm -r test`
         covers them; the `@stitchapi/sandbox` smoke job in
@@ -161,7 +162,7 @@ Launch is **go** when, in a real browser via the Playwright harness:
 
 ## Sequencing
 
-The browser security **proof** (Section A) is the only remaining unknown — extend
-the Playwright harness to cover the SEC-04 / SEC-36/37 / SEC-20..22 behaviors that
-already pass in Node unit tests. Core streaming (former Section B) and hygiene
-(Section C) are done.
+All gate items are green: the browser security **proof** (Section A) landed in #168
+(11/11 e2e specs), and core streaming (former Section B) and hygiene (Section C) are
+done. What remains is mechanical — tag `v1.0.0-rc.1` and publish the workspace under
+the `rc` dist-tag, guarded by `pnpm check:release`.

@@ -33,6 +33,7 @@ jobs:
             - run: pnpm check:types
             - run: pnpm test:coverage
             - run: pnpm check:exports
+            - run: pnpm check:release
             - name: Upload coverage to Codecov
               uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
               with:
@@ -52,7 +53,21 @@ jobs:
                   registry-url: https://registry.npmjs.org/
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
-            - run: pnpm --filter stitchapi build
-            - run: pnpm --filter stitchapi publish --no-git-checks
+            # Build every publishable package up front, so a build failure aborts
+            # before anything reaches npm (no partial release).
+            - run: pnpm --filter "./packages/*" build
+            # Derive the dist-tag from the version and refuse an unsafe release:
+            # version lockstep, prerelease-aware peer ranges, scoped access, a
+            # prerelease never landing on `latest`, a CHANGELOG entry, and the
+            # release tag matching the package version.
+            - name: Validate release & derive dist-tag
+              id: release
+              run: |
+                  TAG="$(node scripts/check-release.mjs --print-tag)"
+                  echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+                  node scripts/check-release.mjs --changelog --tag "$TAG" --release-tag "${{ github.event.release.tag_name }}"
+            # Publish core + every companion under the derived tag. pnpm skips
+            # private packages and any version already on the registry.
+            - run: pnpm -r publish --tag "${{ steps.release.outputs.tag }}" --no-git-checks
               env:
                   NODE_AUTH_TOKEN: ${{ secrets.npm_token }}
