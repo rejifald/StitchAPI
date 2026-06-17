@@ -4,10 +4,12 @@
     "private": true,
     "description": "Isomorphic fake-API simulator for the StitchAPI playground — handlers and adapters for testing snippet execution across browser and server tiers.",
     "scripts": {
-        "check:types": "tsc --noEmit"
+        "check:types": "tsc --noEmit",
+        "test": "tsx src/dispatch.test.ts && tsx src/handlers/streaming-llm.test.ts && tsx src/handlers/registration.test.ts && tsx src/handlers/auth-resilience.test.ts && tsx src/handlers/errors-status.test.ts"
     },
     "devDependencies": {
         "@types/node": "^22.10.0",
+        "tsx": "^4.22.4",
         "typescript": "^5.9.3"
     },
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",

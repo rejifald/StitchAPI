@@ -42,10 +42,13 @@ jobs:
             # docs app runs generateStaticParams over every page and surfaces those.
             - run: pnpm --filter @stitchapi/docs build
 
-    # The sandbox simulator + playground smoke suites (docs/sandbox/tests/run-all.mjs) import
-    # the BUILT `stitchapi`, so they are build-dependent integration tests — they run in their
-    # own job that builds core first, not in the src-only `pnpm test` gate above. This is where
-    # the five @stitchapi/sandbox-sim suites (plus the six docs/sandbox suites) land in CI.
+    # The docs/sandbox playground smoke suites (docs/sandbox/tests/run-all.mjs) import the BUILT
+    # `stitchapi`, so they are build-dependent integration tests — they run in their own job that
+    # builds core first, not in the src-only `pnpm test` gate above.
+    #
+    # The five @stitchapi/sandbox-sim suites, by contrast, import source directly (not the build),
+    # so they ride the `pnpm test` (`pnpm -r test`) gate in the `verify` job above via that
+    # package's own `test` script — no separate job needed.
     sandbox:
         runs-on: ubuntu-latest
         timeout-minutes: 10

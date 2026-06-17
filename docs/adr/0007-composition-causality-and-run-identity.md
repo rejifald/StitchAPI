@@ -1,6 +1,6 @@
 # ADR 0007 — Composition causality: an OTLP span tree for the event stream
 
--   **Status:** Proposed (decisions resolved in the 2026-06-16 review of PR [#163](https://github.com/rejifald/StitchAPI/pull/163); implementation pending)
+-   **Status:** Accepted (decisions resolved in the 2026-06-16 review of PR [#163](https://github.com/rejifald/StitchAPI/pull/163); implemented in PR [#163](https://github.com/rejifald/StitchAPI/pull/163))
 -   **Date:** 2026-06-16
 -   **Tags:** observability, tracing, otlp, playground, composition, causality, browser-first
 

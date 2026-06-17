@@ -14,8 +14,9 @@ primitive — a _stitch_ — replaces `fetch`** for both humans and agents.
 
 A **stitch** is a typed, declarative, composable unit: `input → validated output`, wrapped with
 auth, retries, throttling, timeouts, lifecycle hooks, and observability. The primitive is
-**kind-agnostic** — HTTP today; GraphQL, shell, and LLM as symmetric kinds later — and stitches
-compose into bigger stitches.
+**kind-agnostic** — HTTP and GraphQL over the wire, plus shell and LLM as symmetric non-HTTP
+surfaces (ADR 0008) — and stitches compose into bigger stitches, including across kinds via
+`pipe()`.
 
 Two market quadrants are empty, and StitchAPI targets both:
 
@@ -141,7 +142,8 @@ The v1 runtime (in `src/`, **zero runtime dependencies**):
     committed contract snapshot.
 -   **Resilience** — retry (backoff, `Retry-After`), throttle (rate + concurrency), timeout (abort).
 -   **Auth-as-boundary** — bearer / apiKey / basic / cookieSession (auto-login, refresh-on-status,
-    content-aware refresh); **OAuth2 client_credentials** in progress.
+    content-aware refresh) and **OAuth2 client_credentials** (token endpoint, cached access token,
+    single-flight refresh).
 -   **Pluggable state store** — in-memory default; a shared store makes throttle **distributed** and
     sessions **persistent/shared across workers** (the two "critical" gaps closed by one seam).
 -   **Body encoding** (json/form/multipart), **GraphQL kind**, **static headers**, **transform**
@@ -165,7 +167,7 @@ A stitch is a **per-call primitive**, so coverage splits three ways:
     `Retry-After`, throttle, timeout, form/multipart, validation + leveled drift, HTML-scrape
     transform, GraphQL, static headers, pagination, **distributed throttle + shared sessions** (via
     the store).
--   **Planned additions** — OAuth2 client*credentials *(in progress)\_, multi-cookie jar, binary/blob
+-   **Also shipped since this audit** — OAuth2 client_credentials, multi-cookie jar, binary/blob
     responses, circuit breaker, idempotency keys, OTLP export.
 -   **Out of scope** — job queues, inbound webhooks, business/DB idempotency, multi-step
     rollback/compensation, app-level cache policy, broad fan-out orchestration. **A stitch is not a
@@ -197,8 +199,8 @@ third-party **service names stay out of public artifacts** (neutral archetypes).
 
 ## 9. Status — what's built
 
-The core library is **feature-complete** and published as `stitchapi` (`0.7.0`, zero runtime
-deps). Full gate green — eslint, prettier, `tsc`, `attw`, **211 tests / 29 suites**, `tsup`
+The core library is **feature-complete** and published as `stitchapi` (`0.8.0`, zero runtime
+deps). Full gate green — eslint, prettier, `tsc`, `attw`, **557 tests / 70 suites**, `tsup`
 ESM+CJS+DTS build — and verified against synthetic scenarios **and** two real apps' integration
 patterns.
 
@@ -208,20 +210,30 @@ patterns.
 -   **Engine** — RFC 6570 Level-4 templates, nested query encoding, transform/unwrap, pagination;
     Zod **and** Standard Schema validation with leveled drift + snapshots.
 -   **End-to-end type inference** — `Stitch<T>` inferred from the `output` schema **and** call
-    arguments inferred from `config.input` (graphql-variables + extends/compose typing deferred).
+    arguments inferred from `config.input`, including graphql `variables`, path literals, and
+    `extends`/compose typing (all now supported).
 -   **Resilience** — retry (backoff modes, `Retry-After`), throttle (rate + concurrency, per-stitch
     **and** in-process host pooling), per-attempt **and** total timeout, store-backed circuit breaker.
 -   **Auth-as-boundary** — bearer / apiKey / basic / cookieSession / **OAuth2 client_credentials**,
     call-time secret resolution, single-flight token refresh.
 -   **Response cache** — derived-key cache + in-process request coalescing (ADR 0003 v1).
+-   **Response streaming** — the fetch adapter exposes the live `ReadableStream`; the engine emits
+    a `delta` per chunk with per-delta `output` validation; `sse()` / `stream()` surfaces frame and
+    decode; `stitch serve` forwards deltas over SSE. (The `xhr` / `axios` adapters reject streaming
+    by design.)
+-   **Non-HTTP surfaces** — `llm` and `shell` as symmetric kinds, plus `pipe()` to compose
+    heterogeneous stitches with one causal trace across the chain (ADR 0008).
+-   **Composition causality** — a run-identity OTLP span tree (`runId` / `traceId` / `parentId`):
+    retries and pages are child spans with their own latency/outcome (ADR 0007).
 -   **Observability** — console / JSONL / OTLP, secret redaction, **off by default**.
--   **Four surfaces, one definition** — in-process function · CLI (`stitch run`/`trace`) · HTTP
-    serve (+SSE) · MCP stdio, over a shared registry. Subpath exports for `serve` / `mcp` /
+-   **Four surfaces, one definition** — in-process function · CLI (`stitch run`/`trace`/`export`/`diagram`) ·
+    HTTP serve (+SSE) · MCP stdio, over a shared registry. Subpath exports for `serve` / `mcp` /
     `registry` / `testing` / `cache`.
--   **State + testing** — `memoryStore` + pluggable store seam; store / adapter / sink **conformance
-    kit**.
--   **Playground** — Node sandbox engine complete and green; **real-browser Phase-2 in progress**
-    (the load-bearing remainder for the Launch).
+-   **State + testing** — `memoryStore` + pluggable store seam (+ a Redis-backed store in
+    `@stitchapi/redis`); store / adapter / sink **conformance kit**.
+-   **Playground** — Node sandbox engine complete and green; the real-browser runner and
+    real-run-trace → Mermaid DAG have shipped. The remaining Launch item is the **real-browser
+    Playwright proof** of the worker's security behaviors (already covered by Node unit tests).
 -   **Branch workflow:** feature branches → PR → **`main`** (the `develop` integration branch was
     retired).
 
@@ -232,14 +244,19 @@ patterns.
 The current target is **the Launch (v1.0)** — production-ready library **plus** the interactive
 playground + docs site as one public moment. See [`RELEASE.md`](RELEASE.md) for the live checklist.
 
-1. **The Launch (v1.0):** playground browser Phase-2 (CSP headers, real-Worker trace → DAG,
-   Playwright harness, sandbox tests in CI) · core **response streaming** (`responseType: 'stream'`,
-   emit `delta`) · release hygiene (CHANGELOG, runnable `examples/`, README).
+1. **The Launch (v1.0):** the last item is the playground's real-browser **Playwright proof** of
+   the worker security behaviors (already green in Node unit tests). Core response streaming,
+   the real-Worker trace → Mermaid DAG, the sandbox CI wiring, and release hygiene (CHANGELOG,
+   runnable `examples/`, READMEs) have all landed.
 2. **v1.1:** agent-grade MCP (per-stitch schemas, structured results, drift-in-error, progress) ·
-   ADR 0004 Standard-Schema fingerprint folded into cache generation · `@stitchapi/redis` ·
-   published record/replay mock adapter · `stitch export --openapi` · pagination presets.
-3. **Kinds:** shell → LLM; `pipe()` composition of heterogeneous stitches.
-4. **Visual:** live trace overlay on the playground DAG → `stitch diagram` (Mermaid-from-definition).
+   published record/replay mock adapter · pagination presets · streaming polish (unframed
+   `decode: 'json'`, typed `delta` arrays, SSE reconnection).
+3. **Visual:** live trace overlay on the playground DAG (the `stitch diagram` Mermaid-from-definition
+   exporter has shipped).
+
+**Shipped since this roadmap was written:** non-HTTP `shell` / `llm` kinds + `pipe()` composition
+(ADR 0008) · composition causality / run-identity span tree (ADR 0007) · ADR 0004 Standard-Schema
+fingerprint folded into cache generation · `@stitchapi/redis` · `stitch export --openapi`.
 
 ---
 

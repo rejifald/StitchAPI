@@ -1,6 +1,6 @@
 # ADR 0002 — The `seam` primitive & principal-scoped auth
 
--   **Status:** Proposed (decisions firm; implementation pending — tracked in [`IDEAS.md`](../IDEAS.md))
+-   **Status:** Accepted (implemented in PR [#66](https://github.com/rejifald/StitchAPI/pull/66); `defineStitch` removed in favor of `seam`)
 -   **Date:** 2026-06-13
 -   **Tags:** authoring-surface, auth, security, multi-tenant, runtime, agents
 

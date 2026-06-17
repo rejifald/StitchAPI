@@ -9,8 +9,10 @@
 
 **One public moment:** ship `stitchapi` **v1.0** as a production-ready library
 **and** launch the interactive playground + docs site together. The library is
-the product and is already feature-complete; the playground's real-browser
-wiring and core response-streaming are the load-bearing remainder.
+the product and is already feature-complete — core response streaming has landed
+(the engine emits live `delta`s with per-chunk validation). The only load-bearing
+remainder is the playground's real-browser **proof**: extending the Playwright
+harness to cover the security behaviors that already pass in Node unit tests.
 
 Decision: the playground is **not** decoupled into a later release — it ships
 with v1.0. (Bar chosen 2026-06-14.)
@@ -21,8 +23,8 @@ Legend: `[x]` done · `[ ]` outstanding · 🔴 critical path · 🟡 parallel.
 
 ## ✅ Done — ships as-is (no code work)
 
-The entire core library (`stitchapi`, currently `0.7.0`), verified against
-`src/` + `test/` (29 spec files / 211 tests green):
+The entire core library (`stitchapi`, currently `0.8.0`), verified against
+`src/` + `test/` (70 spec files / 557 tests green):
 
 -   [x] Authoring — `stitch()`, `seam()`, `graphql()`, fluent builder, `.with()`,
         `extends` composition + hook chaining
@@ -64,33 +66,55 @@ The entire core library (`stitchapi`, currently `0.7.0`), verified against
         browser ([`e2e/sandbox-trace.spec.ts`](../apps/docs/e2e/sandbox-trace.spec.ts)) + unit ([`trace-collector.test.ts`](../docs/sandbox/runtime/trace-collector.test.ts)).
         Follow-ups: dependency EDGES (`dependsOn`, needs the composition graph)
         and `seam`-created stitches.
--   [ ] **Playwright harness** ([`apps/docs/e2e/`](../apps/docs/e2e/)) — egress
-        confinement + CSP enforcement (SEC-10..13) **proven** (4/4 green). Broaden
-        to SEC-04 (non-HTTP egress), Worker isolation / no state-bleed (SEC-36/37),
-        and preemptive timeout/kill (SEC-20..22).
--   [ ] **Wire sandbox-sim suites into CI** — add `test` scripts so `pnpm -r test`
-        covers them (today only a manual runner)
+-   [ ] **Playwright harness — test-hardening follow-up, not a code gap.** The
+        security _behavior_ is already implemented in the Worker bundle and proven
+        in Node unit tests: non-HTTP egress shims (SEC-04), fresh-worker isolation
+        / no state-bleed (SEC-36/37), and preemptive timeout/kill (SEC-20..22) all
+        hold today. Egress confinement + CSP enforcement (SEC-10..13) is already
+        **proven in a real browser** (4/4 green in [`apps/docs/e2e/`](../apps/docs/e2e/)).
+        What's outstanding is extending that same real-browser **proof** to the
+        three behaviors above (~3 specs). The code exists; this is Playwright
+        coverage catching up to it.
+-   [x] **Wire sandbox-sim suites into CI** — `packages/sandbox-sim` now has a
+        `test` script (the five `*.test.ts` `tsx` scripts), so `pnpm -r test`
+        covers them; the `@stitchapi/sandbox` smoke job in
+        [`verify.yml`](../.github/workflows/verify.yml) continues to gate the
+        browser/server runner separately.
 
-### B. Core response streaming 🔴 (gates the live-token-stream demo)
+### B. Core response streaming ✅ — shipped
 
--   [ ] **`responseType: 'stream'` + emit `delta` for real** in
-        [`packages/core/src/http-adapter.ts`](../packages/core/src/http-adapter.ts)
-        — both adapters buffer fully today; `serve.ts` forwards deltas for free
-        once the engine emits them
--   [ ] _Scope lever:_ if streaming slips, the playground can launch showing
-        complete responses and live streaming becomes a fast-follow. Decoupling it
-        de-risks the date.
+-   [x] **Live `delta` stream, end to end.** The fetch adapter hands back the live
+        `ReadableStream` unbuffered when a stream is requested
+        ([`packages/core/src/http-adapter.ts`](../packages/core/src/http-adapter.ts));
+        the engine's `runStreaming` path emits a `delta` event per chunk and runs
+        per-delta `output` validation via the surface's `contractValue` hook; the
+        `sse()` and `stream()` surfaces ([`sse.ts`](../packages/core/src/sse.ts) +
+        [`stream.ts`](../packages/core/src/stream.ts)) frame and decode the body;
+        and `serve.ts` forwards each `delta` over SSE. The `xhr` and `axios`
+        adapters **reject** streaming by design (neither exposes an incremental
+        body). **57 streaming tests green.**
+-   Follow-ups (all non-blocking; see the v1.1 list below): unframed
+    `decode: 'json'` ([#111](https://github.com/rejifald/StitchAPI/issues/111)),
+    compile-time typed `delta` arrays
+    ([#115](https://github.com/rejifald/StitchAPI/issues/115)), and SSE
+    reconnection / `Last-Event-ID`
+    ([#71](https://github.com/rejifald/StitchAPI/issues/71)).
 
 ### C. Release hygiene 🟡 (~1 day, parallel to A/B)
 
 -   [x] Rewrite [`OVERVIEW.md`](OVERVIEW.md) §9–10 (was stale: `develop` branch,
         "OAuth2 in progress", "42 tests")
--   [ ] Add a `CHANGELOG.md` (none exists)
--   [ ] Flip [`README.md`](../README.md) off "not recommended for production"
--   [ ] Commit a runnable `examples/` demo (git-tracked `examples/` is empty)
--   [ ] Doc reconciliations: `delta` becomes a live event (drop the
-        "reserved" framing); reconcile the cache bypass-event taxonomy
-        (impl emits `progress`, ADR 0003 §3 says `warning`)
+-   [x] Add a `CHANGELOG.md` (Keep-a-Changelog, reconstructed from git + the ADRs)
+-   [x] Flip [`README.md`](../README.md) and [`packages/core/README.md`](../packages/core/README.md)
+        off "not recommended for production" → v1.0 / production-ready framing
+-   [x] Commit a runnable `examples/` demo (git-tracked `examples/` was empty) —
+        a deterministic, offline typed `stitch` with an `output` schema, run
+        against an injected mock adapter ([`examples/`](../examples/))
+-   [x] Doc reconciliations: `delta` is a live event (the "reserved" framing is
+        gone); the cache bypass-event taxonomy now matches the impl — an
+        uncacheable call emits a `progress` event with `phase: 'cache'` and a
+        `bypass: …` detail (ADR 0003 §3 corrected: `warning` was never a member
+        of the `StitchEvent` union)
 
 ---
 
@@ -98,14 +122,29 @@ The entire core library (`stitchapi`, currently `0.7.0`), verified against
 
 -   [ ] Agent-grade MCP — per-stitch JSON Schemas, structured results,
         drift-in-error payloads, progress notifications
--   [ ] ADR 0004 Standard-Schema fingerprint (PR #81) → fold into cache generation
-        for zero-revalidation (cache is already sound via the v1 fallback ladder)
--   [ ] `@stitchapi/redis` — makes "two workers share one login + rate
-        budget" demonstrable out of the box
 -   [ ] Published record/replay mock adapter
--   [ ] `stitch export --openapi`
 -   [ ] Pagination presets (`cursor()` / `offset()` / `linkHeader()`) + async
         iterators
+-   [ ] Streaming polish (all non-blocking, deferred from §B): unframed
+        `decode: 'json'` ([#111](https://github.com/rejifald/StitchAPI/issues/111)),
+        compile-time typed `delta` arrays
+        ([#115](https://github.com/rejifald/StitchAPI/issues/115)), SSE
+        reconnection / `Last-Event-ID`
+        ([#71](https://github.com/rejifald/StitchAPI/issues/71))
+
+**Already shipped (was listed here):**
+
+-   [x] **ADR 0004 Standard-Schema fingerprint** (PR #81) — **folded into cache
+        generation** (PR #85), so a sound vendor fingerprint skips revalidation.
+-   [x] **`@stitchapi/redis`** — the package exists ([`packages/redis/`](../packages/redis/)):
+        a Redis-backed `StitchStore` (`get`/`set`/`incr`/`close`) with
+        `fromIoredis` + `fromNodeRedis` driver adapters, passing
+        `verifyStoreContract` against a hermetic in-repo Redis engine. Makes "two
+        workers share one login + rate budget" work out of the box. Not yet
+        published to npm (version `0.0.0`).
+-   [x] **`stitch export --openapi`** — `toOpenApi` + the `export` CLI subcommand
+        ship in core (paths/methods, RFC 6570 path & query params, body/response
+        presence, plus real body schemas via a BYO `toJsonSchema` converter).
 
 ---
 
@@ -117,10 +156,12 @@ Launch is **go** when, in a real browser via the Playwright harness:
 2. An attempted **external-origin fetch from inside the sandbox is blocked**
    (egress confinement holds with the shim _and_ the CSP backstop).
 3. The Mermaid DAG renders from a **real** run's trace.
-4. (If streaming is in-scope) tokens render incrementally from an SSE stitch.
+4. Tokens render incrementally from an SSE stitch (streaming has shipped in core;
+   this is the playground wiring proof).
 
 ## Sequencing
 
-Start **A1–A3** (browser security spike) first — it is the load-bearing unknown;
-if Worker isolation / CSP doesn't hold in a real browser it reshapes everything.
-Run **C** (hygiene) and **B** (streaming) in parallel; both are well-understood.
+The browser security **proof** (Section A) is the only remaining unknown — extend
+the Playwright harness to cover the SEC-04 / SEC-36/37 / SEC-20..22 behaviors that
+already pass in Node unit tests. Core streaming (former Section B) and hygiene
+(Section C) are done.
