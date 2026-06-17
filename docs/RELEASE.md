@@ -107,7 +107,9 @@ The entire core library (`stitchapi`, currently `1.0.0-rc.1`), verified against
         "OAuth2 in progress", "42 tests")
 -   [x] Add a `CHANGELOG.md` (Keep-a-Changelog, reconstructed from git + the ADRs)
 -   [x] Flip [`README.md`](../README.md) and [`packages/core/README.md`](../packages/core/README.md)
-        off "not recommended for production" → v1.0 / production-ready framing
+        off "not recommended for production" → an honest release-candidate
+        (`1.0.0-rc.1`) framing (feature-complete and in real use; not yet
+        stamped stable 1.0)
 -   [x] Commit a runnable `examples/` demo (git-tracked `examples/` was empty) —
         a deterministic, offline typed `stitch` with an `output` schema, run
         against an injected mock adapter ([`examples/`](../examples/))

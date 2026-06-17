@@ -54,12 +54,13 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                         />
                         <span>
                             <span className="font-semibold text-stitch-strong">
-                                Under heavy development
+                                Release candidate — 1.0.0-rc.1
                             </span>
                             <span className="hidden text-fd-muted-foreground sm:inline">
                                 {' '}
-                                — APIs, packages, and docs are changing fast and
-                                may break without notice.
+                                · feature-complete and in real use; APIs are
+                                stabilizing ahead of stable 1.0 — pin exact
+                                versions.
                             </span>
                         </span>
                     </Banner>
