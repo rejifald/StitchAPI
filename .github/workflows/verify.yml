@@ -80,6 +80,9 @@ jobs:
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter stitchapi build
             - run: pnpm --filter stitchapi check:size
+            # Advertised bundle sizes (READMEs, docs, homepage) must match the
+            # measured figure above — fails if any quote has drifted.
+            - run: pnpm check:size-docs
 
     # The docs/sandbox playground smoke suites (docs/sandbox/tests/run-all.mjs) import the BUILT
     # `stitchapi`, so they are build-dependent integration tests — they run in their own job that
