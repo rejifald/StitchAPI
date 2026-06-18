@@ -181,6 +181,102 @@ html > body[data-scroll-locked] {
     }
 }
 
+/* --- Hero tagline "drum" reels: cycle through inputs / qualities ----------
+   A reel holds on each item, then slides to the next with the brand ease
+   (--ease) so it reads as a calm detent, not a slot machine. The track stacks
+   N items + a duplicate of the first; the loop ends on that duplicate so the
+   reset to 0% is seamless. Step height and the item/window heights are all
+   1.5em, so they stay locked together. The keyframe is chosen by item count
+   (data-count) — add a `reel-spin-N` keyframe to support a new length. */
+.reel__window {
+    display: inline-block;
+    height: 1.5em;
+    overflow: hidden;
+    vertical-align: bottom;
+}
+.reel__track {
+    display: flex;
+    flex-direction: column;
+    will-change: transform;
+}
+.reel__track[data-count='4'] {
+    animation: reel-spin-4 9s var(--ease) infinite;
+}
+.reel__track[data-count='6'] {
+    animation: reel-spin-6 13.5s var(--ease) infinite;
+}
+.reel__item {
+    display: flex;
+    flex: none;
+    align-items: center;
+    /* The window is as wide as the widest item; centering each word keeps the
+       spacing around a short word (e.g. "typed") symmetric instead of leaving
+       a lopsided gap before the following word. */
+    justify-content: center;
+    height: 1.5em;
+    white-space: nowrap;
+}
+
+@keyframes reel-spin-4 {
+    0%,
+    18% {
+        transform: translateY(0);
+    }
+    25%,
+    43% {
+        transform: translateY(-1.5em);
+    }
+    50%,
+    68% {
+        transform: translateY(-3em);
+    }
+    75%,
+    93% {
+        transform: translateY(-4.5em);
+    }
+    100% {
+        transform: translateY(-6em);
+    }
+}
+
+@keyframes reel-spin-6 {
+    0%,
+    12% {
+        transform: translateY(0);
+    }
+    16.67%,
+    28.67% {
+        transform: translateY(-1.5em);
+    }
+    33.33%,
+    45.33% {
+        transform: translateY(-3em);
+    }
+    50%,
+    62% {
+        transform: translateY(-4.5em);
+    }
+    66.67%,
+    78.67% {
+        transform: translateY(-6em);
+    }
+    83.33%,
+    95.33% {
+        transform: translateY(-7.5em);
+    }
+    100% {
+        transform: translateY(-9em);
+    }
+}
+
+/* Belt-and-suspenders: the component also hides the animated line under
+   reduced motion (motion-reduce:hidden) and reveals a static sentence. */
+@media (prefers-reduced-motion: reduce) {
+    .reel__track {
+        animation: none;
+    }
+}
+
 /* --- Code-panel syntax: adopted Signal syntax tokens (theme-aware) --------- */
 .code-panel {
     tab-size: 4;

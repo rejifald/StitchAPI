@@ -350,6 +350,30 @@
 .stitch-playground__dag {
     margin-top: 0.75rem;
 }
+/* Render the "Call graph" label as a flush, full-width bar identical to the
+   Console / Server-knobs pane heads — not an inset box floating on the extras
+   strip. The head reuses .stitch-playground__pane-head (tint bg + bottom
+   border); the only thing setting it apart was the surrounding strip padding,
+   so cancel that horizontal padding with negative margins to reach both pane
+   edges, and draw a top border so it frames as a section divider. The 1rem
+   matches the horizontal padding of both hosts (.output-extras / .output). */
+.stitch-playground__dag .stitch-playground__pane-head {
+    margin-left: -1rem;
+    margin-right: -1rem;
+    margin-bottom: 0.6rem;
+    border-top: 1px solid var(--color-fd-border);
+}
+/* Common success case — the Call graph is the only extra, so it's the strip's
+   first child (its top margin is already zeroed by the rule below). Seat the
+   bar flush against the strip's top edge by cancelling the strip's top padding,
+   and drop the now-redundant top border (the strip already draws one) so it
+   sits exactly like the Console head atop its pane. */
+.stitch-playground__output-extras
+    > .stitch-playground__dag:first-child
+    .stitch-playground__pane-head {
+    margin-top: -0.6rem;
+    border-top: 0;
+}
 .stitch-playground__dag-streaming-badge {
     display: inline-block;
     margin-bottom: 0.25rem;
