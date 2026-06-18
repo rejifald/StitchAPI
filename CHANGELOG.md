@@ -13,6 +13,13 @@ npm release are grouped under the in-development version that introduced them.
 
 _Nothing yet._
 
+## [1.0.0-rc.2] — 2026-06-18
+
+A pipeline release — **no library changes**. `1.0.0-rc.1` was bootstrapped with a
+hand-run publish; `rc.2` is the first version published automatically through the
+**OIDC trusted-publishing** workflow, so every tarball now carries a signed npm
+**build-provenance** attestation. The library code is identical to `rc.1`.
+
 ## [1.0.0-rc.1] — 2026-06-18
 
 The first **v1.0 release candidate** — the library, the interactive playground, and
@@ -166,5 +173,6 @@ causality push:
 -   **Playground:** the browser Worker runner, handler registration, incremental
     streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.2...HEAD
+[1.0.0-rc.2]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/rejifald/StitchAPI/compare/v0.7.0...v1.0.0-rc.1
