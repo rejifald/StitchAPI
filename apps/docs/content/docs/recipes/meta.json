@@ -3,6 +3,7 @@
     "icon": "ChefHat",
     "pages": [
         "typed-json-round-trip",
+        "define-an-entity-once",
         "paginate-into-one-array",
         "make-a-flaky-call-succeed",
         "survive-a-flaky-dependency",

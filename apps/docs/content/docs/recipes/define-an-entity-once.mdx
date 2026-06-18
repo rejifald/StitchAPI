@@ -1,0 +1,108 @@
+---
+title: 'Define an entity once, derive every request shape'
+description: 'Declare a resource schema once and derive the create body, update body, and query filter with your validator’s own .omit()/.partial()/.pick() — no StitchAPI-specific schema layer.'
+---
+
+## Task
+
+You have a resource — a `User` — with the usual CRUD endpoints. You want to
+describe its shape **once** and derive the create body (no server-assigned
+fields), the update body (every field optional), and a query filter from that
+one definition — without retyping fields and without learning a
+StitchAPI-specific schema type.
+
+## Example
+
+Your validator already does this. Define the entity with your schema library,
+then derive the request shapes with its own composition methods and hand each
+one to a stitch through [`toValidator()`](/docs/guides/validation/validation).
+
+```ts twoslash
+import { stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+// Define the entity once — one source for the runtime schema and the TS type.
+const User = z.object({
+    id: z.number(),
+    name: z.string(),
+    email: z.string(),
+    createdAt: z.string(),
+});
+type User = z.infer<typeof User>;
+
+// Derive request shapes with the validator's own methods — not a StitchAPI layer.
+const NewUser = User.omit({ id: true, createdAt: true }); // drop server-assigned fields
+const UserPatch = NewUser.partial(); // every field optional
+const UserFilter = User.pick({ email: true }).partial(); // optional ?email= filter
+
+const baseUrl = 'https://api.example.com';
+
+const listUsers = stitch<User[]>({
+    method: 'GET',
+    baseUrl,
+    path: '/users',
+    input: { query: toValidator(UserFilter) },
+    output: toValidator(z.array(User)),
+});
+
+const createUser = stitch<User>({
+    method: 'POST',
+    baseUrl,
+    path: '/users',
+    input: { body: toValidator(NewUser) },
+    output: toValidator(User),
+});
+
+const updateUser = stitch<User>({
+    method: 'PATCH',
+    baseUrl,
+    path: '/users/{id}',
+    input: { body: toValidator(UserPatch) },
+    output: toValidator(User),
+});
+```
+
+`NewUser`, `UserPatch`, and `UserFilter` all trace back to the one `User`
+schema — rename a field there and every derived shape, every stitch, and the
+`User` type move with it.
+
+## How it works
+
+`.omit()`, `.partial()`, and `.pick()` are **your validator's** methods, not
+StitchAPI's. The runtime never sees them — it only ever calls `validate()`
+through the [`Validator`](/docs/reference/config-types) that `toValidator()`
+produces, so each derived schema is just another schema as far as a stitch is
+concerned. One `z.object({...})` definition then feeds three things at once: the
+runtime validation on every slot (`query`, `body`, `output`), and — via
+`z.infer` — the `User` TS type the `stitch<T>` generic uses.
+
+This is **not** StitchAPI-specific. Valibot, ArkType, and Effect Schema each
+ship their own composition (`v.partial`, `.pick`, `.omit`, `.and`); the recipe
+is identical, only the method names change. Any
+[Standard Schema](/docs/guides/validation/standard-schema) validator goes
+through the same `toValidator()` call.
+
+<Callout type="info">
+    **Why there's no `pattern` primitive.** StitchAPI deliberately does *not*
+    ship its own schema type with `.partial()`/`.pick()`/`.omit()` — that would
+    re-implement a validator inside a validator-agnostic core. The schema
+    library you already use owns composition; StitchAPI consumes the result. The
+    full reasoning is recorded in [ADR
+    0011](https://github.com/rejifald/StitchAPI/blob/main/docs/adr/0011-no-pattern-primitive-schema-reuse-is-the-validators-job.md)
+    — schema reuse is the validator's job.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+    <Card
+        title="Bring your own validator"
+        href="/docs/guides/validation/standard-schema"
+    />
+    <Card
+        title="Send JSON and get a typed result back"
+        href="/docs/recipes/typed-json-round-trip"
+    />
+    <Card title="Config types" href="/docs/reference/config-types" />
+</Cards>
