@@ -25,8 +25,9 @@
 
 ## One-liner (seed)
 
-A typed `stitch` replaces `fetch` — resilient, validated, observable — and you adopt it one
-endpoint at a time.
+**API stitching:** turn any API into a typed, resilient function — declare an endpoint once,
+call it like a local function, and adopt it one endpoint at a time. Keep the `fetch`/axios you
+already have; a stitch sits _above_ it (a pluggable adapter), it does not replace it.
 
 ---
 
@@ -69,16 +70,24 @@ Each line names the objection it answers and the shipped fact that keeps it hone
 
 ## Objection → answer (seeds)
 
-| They say                              | Seed answer                                                                                                              |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| "An LLM can just write `fetch`."      | The value is the runtime _under_ the call — retries, auth-as-boundary, pagination, drift — not the call itself.          |
-| "Is this another typed client?"       | Those need a spec and stop at types. Stitch is spec-less and agent-native: resilience + validation + observability/call. |
-| "Is this an iPaaS / workflow engine?" | No. It's a library and a per-call primitive; composition is code, never a visual builder.                                |
+| They say                              | Seed answer                                                                                                                                                          |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "An LLM can just write `fetch`."      | The value is the runtime _under_ the call — retries, auth-as-boundary, pagination, drift — not the call itself.                                                      |
+| "Is this another typed client?"       | Those need a spec and stop at types. Stitch is spec-less and agent-native: resilience + validation + observability folded into the call.                             |
+| "Isn't this just tRPC?"               | tRPC needs you to own _both_ ends and share types across them. Stitch is for the APIs you _don't_ own — no shared server, no codegen; you bring the validator.       |
+| "Do I still need React Query / SWR?"  | Yes — and they compose. A stitch is the dependable callable (the `queryFn`); your query layer owns view state. Stitch owns the call, not your cache-in-UI.           |
+| "Is this a fetch replacement?"        | No. Not an HTTP client and not a fetch competitor — `fetch`/axios are the substrate underneath (BYO adapter). A stitch turns an endpoint into a function _above_ it. |
+| "Is this an iPaaS / workflow engine?" | No. It's a library and a per-call primitive; composition is code, never a visual builder.                                                                            |
 
 ---
 
 ## Words we avoid
 
+-   **"Replaces `fetch`," "a better `fetch`," "HTTP client / HTTP library."** StitchAPI is
+    _not_ an HTTP library and not a `fetch` competitor — `fetch`/axios are the substrate it sits
+    above (BYO adapter). Position it as **API stitching**: turning an endpoint into a function.
+    Say "keep your `fetch`," never "replace it." (This is the 2026-06 positioning pivot — the
+    old "a typed stitch replaces `fetch`" line is retired.)
 -   **Vendor names** in public lines — neutral archetypes only (OVERVIEW §8).
 -   **"Platform," "framework," "orchestrator"** — we're a _library_ and a _primitive_; the
     scope-creep-into-iPaaS risk is real (OVERVIEW §11). Hold the line.

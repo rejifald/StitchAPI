@@ -35,7 +35,8 @@ const getUser = stitch({
 ### Atomic stitches
 
 A stitch is one endpoint at a time and nothing else — self-contained, with no
-spec to author, no client to generate, and no server to run. It needs only a URL
+spec to author, no client to generate, no config file to load, and no server to
+run. It needs only a URL
 and (optionally) an example response, which is why it reaches the spec-less long
 tail of internal and undocumented APIs that codegen never covers. The
 declaration _is_ the runtime; there is nothing to commit, diff, and regenerate.
@@ -44,7 +45,10 @@ declaration _is_ the runtime; there is nothing to commit, diff, and regenerate.
 
 Cross-cutting concerns — `baseUrl`, auth, `unwrap`, retry, throttle, timeout —
 are named, shareable values you compose, not a central config object far from the
-call site. `extends` folds fragments into a stitch. You share a plain fragment
+call site — and nothing is inherited implicitly: no config file, no ambient
+defaults, no global a stitch silently reads, so everything that shapes a call was
+composed into it explicitly and you can read one stitch and know exactly what it
+does. `extends` folds fragments into a stitch. You share a plain fragment
 instead of re-typing config, and a stitch is itself a composable value others can
 extend. (For a whole shared surface — shared runtime plus a trusted principal
 boundary — a `seam` owns the fragment instead.)
@@ -103,7 +107,7 @@ package practices with your bundle.
 
 Concretely, the whole `stitch` entry is **~22 kB minified + gzipped**
 (≈61 kB raw), and because every surface beyond `http` is a separate subpath
-import, a typical `import { stitch }` tree-shakes to **~17 kB**. With zero
+import, a typical `import { stitch }` tree-shakes to **~18 kB**. With zero
 runtime dependencies, that figure is the entire cost — not the tip of a
 transitive tree.
 

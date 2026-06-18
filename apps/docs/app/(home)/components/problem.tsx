@@ -4,28 +4,28 @@ import { ArrowRight } from 'lucide-react';
 
 const rows: { fetch: string; stitch: string }[] = [
     {
-        fetch: 'Opaque bytes — the whole body lands in context',
-        stitch: 'Frugal, model-ready results: field-select, summarize, or return a handle',
+        fetch: 'Opaque bytes you parse and hope are the right shape',
+        stitch: 'Schema-validated, typed results — drift caught on every call',
     },
     {
-        fetch: 'No output contract',
-        stitch: 'Schema-validated results, with a re-prompt on mismatch',
+        fetch: 'A throw on the first failure, then it is on you',
+        stitch: 'Retries with backoff + jitter, honoring Retry-After',
     },
     {
-        fetch: 'One failure, then it gives up',
-        stitch: 'Retries with backoff + jitter, Retry-After, idempotency',
+        fetch: 'One coarse timeout, if you remember it',
+        stitch: 'Layered total / per-attempt / chunk timeouts with real aborts',
     },
     {
-        fetch: 'One coarse timeout',
-        stitch: 'Layered total / step / chunk timeouts + AbortSignal',
+        fetch: 'No rate control — you meet the 429s in production',
+        stitch: 'Proactive throttle: rate + concurrency caps, shared per host',
     },
     {
-        fetch: 'A raw byte stream',
-        stitch: 'SSE framing, delta concatenation, progress tokens, resumability',
+        fetch: 'A raw byte stream you frame and paginate yourself',
+        stitch: 'SSE framing, delta concatenation, auto-pagination, resumability',
     },
     {
-        fetch: 'Zero traces',
-        stitch: 'gen_ai.* / mcp.* spans: tokens, cost, latency',
+        fetch: 'Zero visibility into what the call did',
+        stitch: 'A typed event stream + opt-in traces: latency, retries, drift',
     },
 ];
 
@@ -33,21 +33,21 @@ export function Problem() {
     return (
         <Section id="why" className="border-b border-fd-border bg-fd-muted/30">
             <SectionHeading
-                eyebrow="Why fetch is the wrong primitive"
-                title="fetch was built for a browser, not a model reasoning over results"
-                lead="A stitch returns an async iterable of typed events instead of Promise<bytes> — one shape that generalizes HTTP progress and pagination today, and LLM token streaming tomorrow."
+                eyebrow="What you'd otherwise hand-roll"
+                title="fetch hands you bytes. Everything that makes it reliable, you write yourself."
+                lead="A stitch folds it into the call — validation, retries, timeouts, throttling, drift, and traces — declared once and uniform across every endpoint, so you stop re-solving them per integration."
             />
 
             <div className="mt-12 overflow-hidden rounded-2xl border border-fd-border bg-fd-card">
                 <div className="grid grid-cols-1 sm:grid-cols-2">
                     <div className="border-b border-fd-border px-6 py-3 sm:border-r sm:border-b-0">
                         <span className="font-mono text-sm font-semibold text-fd-muted-foreground">
-                            fetch gives the agent…
+                            Around raw fetch, you hand-roll…
                         </span>
                     </div>
                     <div className="hidden px-6 py-3 sm:block">
                         <span className="text-sm font-semibold text-stitch">
-                            …a stitch gives what the agent needs
+                            …a stitch declares it once
                         </span>
                     </div>
                 </div>

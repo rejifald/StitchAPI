@@ -10,7 +10,7 @@
 > them — when a token or the mark changes, update it here in the same PR so it
 > can't drift.
 
-StitchAPI is an agent-native runtime where a typed **stitch** replaces `fetch`.
+StitchAPI turns any API into a typed, resilient function — _API stitching_.
 The brand carries the same idea: a precise, engineered mark — a cloud crossed by
 `</>` with a dashed **"stitch" seam** — over a calm, code-forward surface. The
 _Signal_ direction pairs an electric **brand blue** with a complementary

@@ -5,12 +5,12 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/media/baner_dark.png" />
-    <img alt="StitchAPI — a typed stitch replaces fetch" src="docs/media/baner_light.png" width="100%" />
+    <img alt="StitchAPI — turn any API into a typed, resilient function" src="docs/media/baner_light.png" width="100%" />
   </picture>
 </p>
 
 <p align="center">
-  The agent-native runtime where a typed, declarative <strong>stitch</strong> replaces <code>fetch</code> — for humans and agents alike.
+  <strong>API stitching:</strong> turn any API into a typed, resilient <strong>function</strong>. Declare an endpoint once — its types, auth, and resilience — and call it like a local function. No server, no codegen, no config files. The same definition answers to your code, the CLI, and an AI agent alike.
 </p>
 
 <p align="center">
@@ -31,7 +31,7 @@
 <!-- METRICS:BADGES:END -->
 
 <p align="center">
-  <strong>Zero runtime dependencies · ~22&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~17&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+  <strong>Zero runtime dependencies · ~22&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~18&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
 > [!NOTE]
