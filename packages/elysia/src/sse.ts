@@ -1,0 +1,131 @@
+// `streamStitchSse`: stream a stitch's `.stream()` output to the client as Server-Sent Events
+// (mirrors @stitchapi/hono's sse.ts, adapted to Elysia's Web-standard return model). A streaming/SSE
+// stitch's `.stream()` is an `AsyncIterable<StitchEvent>`; this forwards each `delta` chunk as one
+// SSE message, ends the stream cleanly on `done`, and turns an `error` event into a final
+// `event: error` message. When the client disconnects the `ReadableStream` is cancelled — the helper
+// calls the iterator's `return()` so the upstream stitch stream is torn down rather than left running.
+//
+// Web-standard: returns a plain `Response` whose body is a `ReadableStream` — no `node:*`, so it runs
+// under Bun, Node, Deno and the edge alike. Return it straight from an Elysia handler.
+import type { StitchEvent } from 'stitchapi';
+
+/** Anything `streamStitchSse` can drive: a stitch `.stream()` generator, or any event iterable. */
+export type StitchEventSource<T> =
+    | AsyncIterable<StitchEvent<T>>
+    | AsyncGenerator<StitchEvent<T>, void>;
+
+export interface StreamStitchSseOptions {
+    /**
+     * Map a `delta` chunk to the SSE message `data` string. The default JSON-stringifies the chunk
+     * (a string chunk is sent verbatim). Pull text out of a structured chunk with, e.g.,
+     * `data: (c) => c.choices[0].delta.content ?? ''`.
+     */
+    data?: (chunk: unknown) => string;
+    /**
+     * The SSE `event:` field for each delta message (default none). Set it to label the stream's
+     * messages on the client (`event: 'token'`).
+     */
+    event?: string;
+    /**
+     * Called once if the underlying stream errors (a stitch `error` event, or a throw). After it
+     * runs, an `error`-typed SSE message carrying the error text is written and the stream closes.
+     */
+    onError?: (err: unknown) => void;
+}
+
+function defaultData(chunk: unknown): string {
+    return typeof chunk === 'string' ? chunk : JSON.stringify(chunk);
+}
+
+// One SSE frame string. A multi-line payload is split so every line gets its own `data:` prefix
+// (the SSE spec joins them with `\n`); the frame ends on a blank line.
+function frame(data: string, event?: string): string {
+    const lines: string[] = [];
+    if (event !== undefined) lines.push(`event: ${event}`);
+    for (const line of data.split('\n')) lines.push(`data: ${line}`);
+    return `${lines.join('\n')}\n\n`;
+}
+
+/**
+ * Stream a stitch's events to the client as SSE. Returns a Web-standard {@link Response} with a
+ * `text/event-stream` body, so an Elysia handler is one line:
+ *
+ * ```ts
+ * import { sseSurface } from 'stitchapi/sse';
+ *
+ * app.get('/chat', ({ stitch, query }) => {
+ *   const completion = stitch.stitch({ kind: sseSurface, path: '/v1/messages' });
+ *   return streamStitchSse(completion.stream({ body: { prompt: query.q } }), {
+ *     data: (chunk: any) => chunk.data,
+ *   });
+ * });
+ * ```
+ *
+ * Each `delta` becomes a `data:` message; a terminal `error` event (or a throw) becomes a final
+ * `event: error` message and ends the stream; every control event (`start`/`progress`/`result`/
+ * `done`/…) is consumed but not forwarded. On client disconnect the stream is cancelled and the
+ * upstream iterator is `return()`-ed so the stitch stream is aborted.
+ */
+export function streamStitchSse<T>(
+    source: StitchEventSource<T>,
+    options: StreamStitchSseOptions = {},
+): Response {
+    const toData = options.data ?? defaultData;
+    const enc = new TextEncoder();
+    const iterator = source[Symbol.asyncIterator]();
+
+    const body = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+            try {
+                while (true) {
+                    const { value: event, done } = await iterator.next();
+                    if (done) {
+                        controller.close();
+                        return;
+                    }
+                    if (event.type === 'delta') {
+                        controller.enqueue(
+                            enc.encode(frame(toData(event.chunk), options.event)),
+                        );
+                        return; // one frame per pull → precise back-pressure
+                    }
+                    if (event.type === 'error') {
+                        options.onError?.(new Error(event.message));
+                        controller.enqueue(
+                            enc.encode(frame(event.message, 'error')),
+                        );
+                        controller.close();
+                        await iterator.return?.(undefined);
+                        return;
+                    }
+                    // start / progress / info / drift / result / done are control signals: skipped,
+                    // loop on to the next event without emitting a frame.
+                }
+            } catch (err) {
+                options.onError?.(err);
+                controller.enqueue(
+                    enc.encode(
+                        frame(
+                            err instanceof Error ? err.message : String(err),
+                            'error',
+                        ),
+                    ),
+                );
+                controller.close();
+                await iterator.return?.(undefined);
+            }
+        },
+        // Client disconnect: tear down the upstream stitch stream.
+        async cancel() {
+            await iterator.return?.(undefined);
+        },
+    });
+
+    return new Response(body, {
+        headers: {
+            'content-type': 'text/event-stream',
+            'cache-control': 'no-cache, no-transform',
+            connection: 'keep-alive',
+        },
+    });
+}

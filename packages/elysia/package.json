@@ -1,0 +1,68 @@
+{
+    "name": "@stitchapi/elysia",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
+    "description": "Elysia plugin for StitchAPI — put a request-scoped seam on the context, stream a stitch's SSE output, and map Stitch errors to HTTP. Web-standard (Fetch-only, no node:*).",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/elysia"
+    },
+    "keywords": [
+        "stitchapi",
+        "elysia",
+        "plugin",
+        "bun",
+        "sse",
+        "seam",
+        "principal",
+        "fetch"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "peerDependencies": {
+        "stitchapi": "^1.0.0-rc.1",
+        "elysia": "^1.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "elysia": "^1.0.0",
+        "stitchapi": "workspace:*",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}
