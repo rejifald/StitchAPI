@@ -103,12 +103,30 @@ importers:
       '@stitchapi/completions-plugin':
         specifier: workspace:*
         version: link:../../packages/completions-plugin
+      '@stitchapi/fastify':
+        specifier: workspace:*
+        version: link:../../packages/fastify
+      '@stitchapi/hono':
+        specifier: workspace:*
+        version: link:../../packages/hono
       '@stitchapi/nest':
         specifier: workspace:*
         version: link:../../packages/nest
+      '@stitchapi/pino':
+        specifier: workspace:*
+        version: link:../../packages/pino
+      '@stitchapi/query-core':
+        specifier: workspace:*
+        version: link:../../packages/query-core
+      '@stitchapi/react':
+        specifier: workspace:*
+        version: link:../../packages/react
       '@tailwindcss/postcss':
         specifier: ^4.3.0
         version: 4.3.0
+      '@tanstack/react-query':
+        specifier: ^5.0.0
+        version: 5.101.0(react@19.2.7)
       '@types/mdx':
         specifier: ^2.0.13
         version: 2.0.14
@@ -130,6 +148,15 @@ importers:
       eslint-config-next:
         specifier: 16.2.7
         version: 16.2.7(eslint@9.39.4(jiti@2.7.0))(typescript@6.0.3)
+      fastify:
+        specifier: ^5.0.0
+        version: 5.8.5
+      hono:
+        specifier: ^4.0.0
+        version: 4.12.26
+      pino:
+        specifier: ^9.0.0
+        version: 9.14.0
       postcss:
         specifier: ^8.5.15
         version: 8.5.15
@@ -5034,15 +5061,8 @@ packages:
   pino-abstract-transport@2.0.0:
     resolution: {integrity: sha512-F63x5tizV6WCh4R6RHyi2Ml+M70DNRXt/+HANowMflpgGFMAym/VKm6G7ZOQRjqN7XbGxK1Lg9t6ZrtzOaivMw==}
 
-  pino-abstract-transport@3.0.0:
-    resolution: {integrity: sha512-wlfUczU+n7Hy/Ha5j9a/gZNy7We5+cXp8YL+X+PG8S0KXxw7n/JXA3c46Y0zQznIJ83URJiwy7Lh56WLokNuxg==}
-
   pino-std-serializers@7.1.0:
     resolution: {integrity: sha512-BndPH67/JxGExRgiX1dX0w1FvZck5Wa4aal9198SrRhZjH3GxKQUKIBnYJTdj2HDN3UQAS06HlfcSbQj2OHmaw==}
-
-  pino@10.3.1:
-    resolution: {integrity: sha512-r34yH/GlQpKZbU1BvFFqOjhISRo1MNx1tWYsYvmj6KIRHSPMT2+yHOEb1SG6NMvRoHRF0a07kCOox/9yakl1vg==}
-    hasBin: true
 
   pino@9.14.0:
     resolution: {integrity: sha512-8OEwKp5juEvb/MjpIc4hjqfgCNysrS94RIOMXYvpYCdm/jglrKEiAYmiumbmGhCvs+IcInsphYDFwqrjr7398w==}
@@ -5214,9 +5234,6 @@ packages:
   real-require@0.2.0:
     resolution: {integrity: sha512-57frrGM/OCTLqLOAh0mhVA9VBMHd+9U7Zb2THMGdBUoZVOtGbJzjxsYGDJ3A9AYYCP4hn6y1TVbaOfzWtm5GFg==}
     engines: {node: '>= 12.13.0'}
-
-  real-require@1.0.0:
-    resolution: {integrity: sha512-P4nbQYQfePJxRSmY+v/KINxVucm4NF3p3s7pJveMTtom52FR4YGltUQLB8idDXwDDWW+eYrWDFbuzUnjoWHF7g==}
 
   recma-build-jsx@1.0.0:
     resolution: {integrity: sha512-8GtdyqaBcDfva+GUKDr3nev3VpKAhup1+RvkMvUxURHpW7QyIvk9F5wz7Vzo06CEMSilw6uArgRqhpiUcWp8ew==}
@@ -5638,10 +5655,6 @@ packages:
 
   thread-stream@3.2.0:
     resolution: {integrity: sha512-zLBvqpwr4Esa0kRjcrzGU6zL25lePWaCLMx0RQFrmteozIfeNdaMLpG5U7PeHzvlFkAWaRKA9/KVW4F60iB+qw==}
-
-  thread-stream@4.2.0:
-    resolution: {integrity: sha512-e2zZ96wSChazBsbENf/Pcm/4swHt2cEKQ92rhUjkL9GCKiTDJIaTBenjE/m9DXi0QBmTMDkFDdOomUy20A1tDQ==}
-    engines: {node: '>=20'}
 
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
@@ -9321,7 +9334,7 @@ snapshots:
       fast-json-stringify: 6.4.0
       find-my-way: 9.6.0
       light-my-request: 6.6.0
-      pino: 10.3.1
+      pino: 9.14.0
       process-warning: 5.0.0
       rfdc: 1.4.1
       secure-json-parse: 4.1.0
@@ -11062,25 +11075,7 @@ snapshots:
     dependencies:
       split2: 4.2.0
 
-  pino-abstract-transport@3.0.0:
-    dependencies:
-      split2: 4.2.0
-
   pino-std-serializers@7.1.0: {}
-
-  pino@10.3.1:
-    dependencies:
-      '@pinojs/redact': 0.4.0
-      atomic-sleep: 1.0.0
-      on-exit-leak-free: 2.1.2
-      pino-abstract-transport: 3.0.0
-      pino-std-serializers: 7.1.0
-      process-warning: 5.0.0
-      quick-format-unescaped: 4.0.4
-      real-require: 0.2.0
-      safe-stable-stringify: 2.5.0
-      sonic-boom: 4.2.1
-      thread-stream: 4.2.0
 
   pino@9.14.0:
     dependencies:
@@ -11235,8 +11230,6 @@ snapshots:
   readdirp@5.0.0: {}
 
   real-require@0.2.0: {}
-
-  real-require@1.0.0: {}
 
   recma-build-jsx@1.0.0:
     dependencies:
@@ -11829,10 +11822,6 @@ snapshots:
   thread-stream@3.2.0:
     dependencies:
       real-require: 0.2.0
-
-  thread-stream@4.2.0:
-    dependencies:
-      real-require: 1.0.0
 
   tinybench@2.9.0: {}
 

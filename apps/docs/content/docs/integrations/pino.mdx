@@ -1,0 +1,99 @@
+---
+title: Pino
+description: Forward a stitch's event stream to a Pino logger with pinoSink — structured, leveled logs at every call site, metadata-only and safe on a secret-bearing seam.
+---
+
+Use `@stitchapi/pino` when your app already logs with [Pino](https://getpino.io)
+and you want a stitch's [event stream](/docs/concepts/event-stream) to land there
+as structured records. It is a [`TraceSink`](/docs/guides/observability/trace-sinks):
+attach it to a seam (or a single stitch) and every call emits one Pino record per
+event, at the right level, with **no change to the call site**. It is a thin
+peer-dependency package that adds no capability of its own — it maps StitchAPI's
+existing trace events onto the logger you already run.
+
+## Example
+
+Install the package alongside core and your Pino:
+
+```package-install
+@stitchapi/pino pino
+```
+
+`pinoSink(logger)` returns a `TraceSink`. Pass it as the seam's `trace` and the
+shared client now logs every call through Pino:
+
+```ts twoslash
+import { pinoSink } from '@stitchapi/pino';
+import { pino } from 'pino';
+import { seam } from 'stitchapi';
+
+const api = seam({
+    baseUrl: 'https://api.example.com',
+    trace: pinoSink(pino()),
+});
+```
+
+The same sink works on a single stitch — `stitch({ trace: pinoSink(pino()) })` —
+so you can opt one endpoint into Pino logging without a seam. Every call now emits
+structured records in Pino's native shape (a metadata object plus a short message):
+
+```jsonc
+{ "level": 20, "stitch": "getUser", "method": "GET", "url": "https://api.example.com/users", "msg": "→ getUser GET https://api.example.com/users" }
+{ "level": 30, "stitch": "getUser", "status": 200, "attempts": 1, "msg": "← getUser 200 (1 attempt(s))" }
+```
+
+## Event → level mapping
+
+The sink maps each event to a Pino level — the same logic `@stitchapi/nest`'s
+`Logger` bridge uses — and logs in Pino's **structured** form
+(`logger.info({ stitch, … }, msg)`) so log queries can pivot on the fields:
+
+| Event      | Pino level                                                                              |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `error`    | `error`                                                                                 |
+| `drift`    | `error` / `warn` / `debug` — follows the finding's own `level`                          |
+| `progress` | `warn` for a `retry` / `circuit` phase (upstream flaky / breaker tripped), else `debug` |
+| `start`    | `debug` — gated by `lifecycle`                                                          |
+| `result`   | `info` — gated by `lifecycle`                                                           |
+| `done`     | `debug` — gated by `lifecycle`                                                          |
+| `delta`    | **dropped** — a streamed chunk is raw response data, never logged                       |
+
+`start` / `done` sit at `debug`, so a production Pino level (`info`) hides them by
+default. Set `lifecycle: false` to drop the happy path entirely and log only
+retries, drift findings, and errors:
+
+```ts twoslash
+import { pinoSink } from '@stitchapi/pino';
+import { pino } from 'pino';
+
+// ---cut---
+const sink = pinoSink(pino(), { lifecycle: false });
+```
+
+## Bring your own logger
+
+The package **imports no logger**. It runs on a small structural
+`PinoLoggerLike` surface (`{ error, warn, info, debug, trace }`, plus an optional
+`child`), so a real `pino()` instance, a `logger.child({ requestId })`, and a
+plain test double are all interchangeable — the same "contract, not dependency"
+stance core takes everywhere. `pino` is the single peer dependency (v8 or v9).
+
+<Callout type="warn">
+    **Metadata only, by design.** A custom `TraceSink` receives the **raw**
+    event — core only redacts inside its own built-in sinks. So `pinoSink` logs
+    only the stitch name, method, **redacted URL** (the query string is stripped
+    — it can carry `?api_key=…`), status, attempt counts, drift
+    path/level/change, progress phase, and timing. It never logs `event.input`
+    (headers like `authorization` stay raw on the event), the response body, or
+    a `delta` chunk. That keeps it safe on a secret-bearing seam regardless of
+    core's trace redaction.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Trace sinks" href="/docs/guides/observability/trace-sinks" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="Fastify" href="/docs/integrations/fastify" />
+    <Card title="NestJS" href="/docs/integrations/nestjs" />
+</Cards>

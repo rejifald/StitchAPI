@@ -1,0 +1,159 @@
+---
+title: React
+description: Tearing-free useStitch and useStitchStream hooks built on useSyncExternalStore, over the framework-agnostic @stitchapi/query-core store — plus an optional TanStack Query adapter.
+---
+
+Use `@stitchapi/react` when you call stitches from React components and want the
+call's lifecycle — pending / success / error, cancellation, refetch, and
+**streaming re-renders** — managed for you. `useStitch` is the request/response
+hook; `useStitchStream` re-renders as each `delta` chunk arrives, which is the
+differentiator over plain request/response query libraries.
+
+The hooks are a thin layer over [`@stitchapi/query-core`](#the-shared-store-stitchapiquery-core),
+the framework-agnostic store that owns the reactive lifecycle. React reads it
+through `useSyncExternalStore`, so updates are tearing-free.
+
+## Example
+
+Install the hooks, the store, core, and your React:
+
+```package-install
+@stitchapi/react @stitchapi/query-core stitchapi react
+```
+
+`stitchapi` and `react` are peer dependencies; `@tanstack/react-query` is an
+**optional** peer, needed only for the `queryOptions` adapter below.
+
+## `useStitch` — request / response
+
+Declare a stitch once, then drive it from a component (or a custom hook). The
+result carries the validated `data`, the `error`, the boolean status flags, and
+imperative `refetch` / `cancel` handles:
+
+```ts twoslash
+import { useStitch } from '@stitchapi/react';
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    output: z.array(z.object({ id: z.number(), name: z.string() })),
+});
+
+// A custom hook wrapping useStitch — re-renders on the query's transitions.
+function useUsers(q: string) {
+    const { data, isPending, isError, refetch } = useStitch(listUsers, {
+        query: { q },
+    });
+    return { data, isPending, isError, refetch };
+}
+```
+
+The query is re-created (and re-fetched) when a structural key of `input` changes;
+pass `options.deps` to control that explicitly. An inline stitch is safe — its
+function identity does not trigger a re-create — and the in-flight run is aborted
+on unmount.
+
+## `useStitchStream` — live deltas
+
+For a streaming stitch (an [`sse`](/docs/reference/surfaces) or `stream` surface),
+`useStitchStream` re-renders as each chunk arrives. `chunks` is the running list,
+`data` is the accumulated array (`mode: 'append'`, default) or the latest chunk
+(`mode: 'replace'`), and `status` is `'streaming'` until the terminal `result`,
+then `'success'`:
+
+```ts twoslash
+import { useStitchStream } from '@stitchapi/react';
+import { sse } from 'stitchapi/sse';
+
+const chat = sse({ url: 'https://api.example.com/chat' });
+
+// Re-renders as each `delta` chunk streams in — the streaming differentiator.
+function useChat(prompt: string) {
+    const { chunks, isStreaming } = useStitchStream(chat, {
+        body: { prompt },
+    });
+    return { chunks, isStreaming };
+}
+```
+
+Both hooks return the same shape — `data`, `error`, `status`, `chunks`, the
+`isPending` / `isError` / `isSuccess` / `isStreaming` flags, plus `refetch` and
+`cancel`.
+
+## The shared store: `@stitchapi/query-core`
+
+The hooks hold almost no logic. All of it — running the call under an
+`AbortController`, publishing status transitions, folding `delta` chunks into
+state, `cancel()` by aborting, `refetch()` by re-running — lives in
+`@stitchapi/query-core`'s `createStitchQuery`, a `subscribe` / `getSnapshot`
+handle with **no framework imports** and **no `node:*`**, so it is browser- and
+edge-safe.
+
+```ts twoslash
+import { createStitchQuery } from '@stitchapi/query-core';
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    output: z.array(z.object({ id: z.number(), name: z.string() })),
+});
+
+const query = createStitchQuery(listUsers, { query: { q: 'ada' } });
+const unsubscribe = query.subscribe(() => {
+    const snapshot = query.getSnapshot();
+    if (snapshot.isSuccess) console.log(snapshot.data);
+});
+```
+
+That `subscribe` / `getSnapshot` shape is exactly what `useSyncExternalStore`
+(and the equivalent external-store primitives in **Vue**, **Svelte**, and
+**Solid**) consume directly. Because the whole reactive lifecycle lives in the
+store and not the binding, those bindings are the same few lines against their own
+primitive — which is why `@stitchapi/react` is small and Vue/Svelte/Solid bindings
+are cheap follow-ons rather than rewrites.
+
+## Optional: TanStack Query
+
+Already on [TanStack Query](/docs/integrations/tanstack-query)?
+`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
+pass straight to `useQuery` — it imports nothing from `@tanstack/react-query`, so
+it works even if you never install it:
+
+```ts twoslash
+import { queryOptions } from '@stitchapi/react';
+import { useQuery } from '@tanstack/react-query';
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    output: z.array(z.object({ id: z.number(), name: z.string() })),
+});
+
+function useUsers(q: string) {
+    return useQuery(queryOptions(listUsers, { query: { q } }));
+}
+```
+
+<Callout type="info">
+    Reach for `queryOptions` when TanStack Query already owns your view state
+    and you want a stitch as the `queryFn`; reach for `useStitch` /
+    `useStitchStream` when you want StitchAPI to own the lifecycle directly —
+    especially for streaming, which `useQuery` does not model. See the [TanStack
+    Query guide](/docs/integrations/tanstack-query) for how the two layers
+    split.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="TanStack Query" href="/docs/integrations/tanstack-query" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+</Cards>
