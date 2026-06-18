@@ -8,6 +8,7 @@
 // stream as SSE; otherwise the final validated result is returned as JSON. Reuses the
 // engine through `stitch.stream()` — no framework, no new dependencies.
 import { type StitchRegistry, selectStitch } from './registry';
+import { redactEventForTransport } from './trace';
 import type { StitchEvent, StitchInput } from './types';
 
 import {
@@ -66,8 +67,14 @@ async function streamSse(
         connection: 'keep-alive',
     });
     try {
+        // `serve` is unauthenticated (loopback by default; DESIGN.md §10) and the SSE consumer is
+        // remote, so scrub credential-bearing metadata a `start` frame would otherwise echo —
+        // URL credentials and `authorization`/`cookie` headers — before it leaves the process. The
+        // streamed `delta`/`result` payload is preserved (it is what the caller asked for).
         for await (const ev of stream)
-            res.write(`event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`);
+            res.write(
+                `event: ${ev.type}\ndata: ${JSON.stringify(redactEventForTransport(ev))}\n\n`,
+            );
     } catch (e) {
         res.write(
             `event: error\ndata: ${JSON.stringify({ message: (e as Error).message })}\n\n`,

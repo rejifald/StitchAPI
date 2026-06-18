@@ -54,9 +54,27 @@ jobs:
             - run: pnpm check:types
             - run: pnpm test
             - run: pnpm check:exports
+            # attw on every COMPANION too (core is covered by check:exports above). Uses core's
+            # installed @arethetypeswrong/cli binary — no companion devDep / lockfile change.
+            - run: pnpm check:exports:companions
+            # Docs internal-link integrity: every /docs/... link in the .mdx content must resolve
+            # to a real page (catches a dead link like the removed fluent-builder page or a section
+            # with no index). Static scan — no build needed.
+            - run: pnpm check:docs-links
             # Release coherence: version lockstep + prerelease-aware peer ranges +
-            # scoped publishConfig.access, so a bad bump fails the PR, not the publish.
+            # scoped publishConfig.access, LICENSE/README presence, so a bad bump fails
+            # the PR, not the publish.
             - run: pnpm check:release
+            # README metrics drift guard: the generated badge block (code health, coverage,
+            # license + StandWithUkraine) must match the committed snapshot. Tool-free — it
+            # renders from scripts/readme-metrics.snapshot.json and compares, so it stays in
+            # this fast job. Refresh the numbers with `pnpm metrics` (runs fallow + coverage).
+            - run: pnpm check:readme
+            # Playground autocomplete is generated from core `src/`; regenerate and fail if the
+            # committed artifact drifted (a new *Config field shipped without a regen). Mirrors the
+            # lefthook pre-commit `completions` job, enforced in CI.
+            - run: pnpm --filter @stitchapi/docs gen:completions
+            - run: git diff --exit-code "apps/docs/app/(home)/playground/playground-completions.generated.ts"
             # Render gate: `tsc` type-checks the docs but never renders a page, so a
             # broken AutoTypeTable path/name, an unregistered MDX component, or a
             # generator throw all pass type-check and only fail at build. Building the
@@ -83,6 +101,22 @@ jobs:
             # Advertised bundle sizes (READMEs, docs, homepage) must match the
             # measured figure above — fails if any quote has drifted.
             - run: pnpm check:size-docs
+
+    # Coverage gate: core declares coverage thresholds (packages/core/vitest.config.ts), so a drop
+    # below them fails here. Runs core's instrumented suite (`test:coverage`) in its own job rather
+    # than slowing the fast `pnpm test` gate above; uses the in-repo `@vitest/coverage-v8` devDep.
+    coverage:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm --filter stitchapi test:coverage
 
     # The docs/sandbox playground smoke suites (docs/sandbox/tests/run-all.mjs) import the BUILT
     # `stitchapi`, so they are build-dependent integration tests — they run in their own job that

@@ -11,16 +11,16 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
-### Added
+_Nothing yet._
 
--   **`stitch init` (alias `stitch rules`):** write the canonical consumer rule —
-    "declare a typed stitch, don't hand-roll `fetch`/`axios`" — into the files an AI
-    coding agent reads, so the next agent working in a project reaches for StitchAPI.
-    `--format agents|cursor|claude|all` (default `all`) targets `AGENTS.md`, a Cursor
-    `.cursor/rules/stitchapi.mdc`, and a marked, idempotent `## Using StitchAPI`
-    section in `CLAUDE.md`; reruns skip an existing rule and `--force` rewrites it.
+## [1.0.0-rc.2] — 2026-06-18
 
-## [1.0.0-rc.1] — 2026-06-17
+A pipeline release — **no library changes**. `1.0.0-rc.1` was bootstrapped with a
+hand-run publish; `rc.2` is the first version published automatically through the
+**OIDC trusted-publishing** workflow, so every tarball now carries a signed npm
+**build-provenance** attestation. The library code is identical to `rc.1`.
+
+## [1.0.0-rc.1] — 2026-06-18
 
 The first **v1.0 release candidate** — the library, the interactive playground, and
 the docs site as one public moment. It bundles the whole post-`0.7.0` cycle (the
@@ -29,6 +29,40 @@ the first published `1.0` line, and ships the `@stitchapi/*` companions (`nest`,
 `redis`, `shell`, `fingerprint-*`) for the first time. Published under the `rc`
 dist-tag — `latest` stays on `0.7.0` until `1.0.0` is promoted. See
 [`docs/RELEASE.md`](docs/RELEASE.md) for the checklist.
+
+### Added — agent adoption, streaming completion & release tooling
+
+-   **Agent-recommendation surfaces:** a `describe_stitch` MCP teaching tool,
+    teaching-grade validation errors, an npm discovery signal, zod-default docs, an
+    `llms.txt`, and **`stitch init`** (alias `stitch rules`) — which writes the
+    canonical consumer rule ("declare a typed stitch, don't hand-roll `fetch`/`axios`")
+    into the files an AI coding agent reads (`--format agents|cursor|claude|all`,
+    default `all`: `AGENTS.md`, a Cursor `.cursor/rules/stitchapi.mdc`, and a marked,
+    idempotent `## Using StitchAPI` section in `CLAUDE.md`; `--force` rewrites). (#175)
+-   **Resumable SSE:** an `sse()` stitch reconnects on `Last-Event-ID`, honoring the
+    server's `retry:` backoff hint. (#180)
+-   **Structural streaming-JSON decoder (`decode: 'json'`):** decode an unframed JSON
+    stream into typed `delta`s without SSE framing. (#179)
+-   **Compile-time typed `delta`:** the streamed `delta` element type is inferred from
+    the `output` schema. (#178, #115)
+-   **Bundle-size budget gate:** a tree-shaken min+gzip budget enforced in CI
+    (`pnpm size` / `check:size`), with the zero-deps/size numbers advertised across the
+    READMEs and docs. (#170, #176)
+
+### Security
+
+-   Eliminated 6 polynomial-ReDoS ("super-linear runtime") code-scanning alerts by
+    rewriting the affected parsers to linear-time matching. (#177)
+
+### CI / release hardening
+
+-   The npm publish workflow now waits on the real-browser Playwright e2e suite (sandbox
+    CSP + Worker egress + trace→DAG) before publishing. (#171)
+-   Unbroke the frozen-lockfile install (an `esbuild` override floor drifted the
+    lockfile) and added a lockfile-drift gate. (#172)
+-   A hermetic MCP-subprocess e2e exercises `run_stitch` round-trips over stdio. (#174)
+-   `check:release` now also asserts every publishable package ships a `LICENSE` and a
+    `README.md`.
 
 ### Added — playground & release hygiene
 
@@ -50,13 +84,12 @@ dist-tag — `latest` stays on `0.7.0` until `1.0.0` is promoted. See
     banner flipped to an honest release-candidate (`1.0.0-rc.1`) framing —
     feature-complete and in real use, candid that stable 1.0 isn't stamped yet;
     ADRs 0002 / 0005 / 0006 / 0007 promoted from
-    _Proposed_ to _Accepted_; OVERVIEW and RELEASE counts and status refreshed).
+    _Proposed_ to _Accepted_; OVERVIEW and RELEASE counts and status refreshed). (#173)
 
 ### Notes
 
--   Streaming follow-ups remain deferred and non-blocking: unframed `decode: 'json'`
-    (#111), compile-time typed `delta` arrays (#115), and SSE reconnection /
-    `Last-Event-ID` (#71).
+-   Deferred to v1.1 (non-blocking): pagination presets (`cursor()` / `offset()` /
+    `linkHeader()`) with async iterators, and a published record/replay mock adapter.
 
 ### Added — library (the former in-development `0.8.0`)
 
@@ -140,5 +173,6 @@ causality push:
 -   **Playground:** the browser Worker runner, handler registration, incremental
     streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.2...HEAD
+[1.0.0-rc.2]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/rejifald/StitchAPI/compare/v0.7.0...v1.0.0-rc.1

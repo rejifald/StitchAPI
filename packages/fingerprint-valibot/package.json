@@ -1,6 +1,7 @@
 {
     "name": "@stitchapi/fingerprint-valibot",
-    "version": "1.0.0-rc.1",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
     "description": "Stable Standard Schema fingerprint strategy for Valibot — StitchAPI ADR 0004 cache invalidation.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
@@ -46,6 +47,9 @@
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",
     "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
     "peerDependencies": {
         "stitchapi": "^1.0.0-rc.1",
         "valibot": "^1.0.0"

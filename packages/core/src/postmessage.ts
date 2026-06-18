@@ -385,6 +385,13 @@ function makeChannel(
     transport: MessageTransport,
     allowedOrigins: string[],
 ): PostMessageChannel {
+    // In-flight `request` correlations, keyed by minted id. An entry is removed when the reply
+    // arrives, or when the engine's per-attempt `timeout` / caller `signal` aborts the request
+    // (see `onAbort` in `request` below). There is DELIBERATELY no built-in default timeout — a
+    // default could break a legitimately long-running responder — so a request whose reply NEVER
+    // comes (a peer that silently drops it) leaks one `pending` entry until the channel closes.
+    // A postMessage stitch should therefore set `timeout` (or pass a `signal`) to bound this map;
+    // without one, the entry is only reclaimed by `close()`.
     const pending = new Map<string, Pending>();
     const responders = new Map<string, Responder>();
     const eventSubs = new Set<EventSub>();

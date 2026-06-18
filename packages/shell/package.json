@@ -1,6 +1,7 @@
 {
     "name": "@stitchapi/shell",
-    "version": "1.0.0-rc.1",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
     "description": "Run a static local command as a StitchAPI surface — Node-only, injection-proof by construction (static binary + argv array + no shell). ADR 0008.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
@@ -48,6 +49,9 @@
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",
     "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
     "peerDependencies": {
         "stitchapi": "^1.0.0-rc.1"
     },

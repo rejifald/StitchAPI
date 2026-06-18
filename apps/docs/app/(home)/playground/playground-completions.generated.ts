@@ -39,7 +39,13 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "stream",
             type: "property",
             detail: "StreamOptions",
-            info: "Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body (`'bytes'` default / `'lines'` / `'ndjson'`). Only meaningful for the `stream` surface.",
+            info: "Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body (`'bytes'` default / `'lines'` / `'ndjson'` / `'json'`). `'json'` is the structural, unframed streaming-JSON decoder (issue #111): one `delta` per complete value / top-level array element, tolerant of internal newlines and concatenated values. Only meaningful for the `stream` surface.",
+        },
+        {
+            label: "sse",
+            type: "property",
+            detail: "SseOptions",
+            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoffMs` / the `retry` policy), capped at `maxAttempts`. Plain JSON (the contract gate). Only the `sse` surface reads it.",
         },
         {
             label: "responseType",
@@ -245,7 +251,7 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "__config",
             type: "property",
-            detail: "StitchConfig",
+            detail: "RedactedStitchConfig",
         },
         {
             label: "__stitch",

@@ -34,7 +34,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // core README also cites raw and brotli sizes) so the check ignores them.
 const FILES = [
     { rel: 'README.md', allow: [] },
-    { rel: 'packages/core/README.md', allow: [58, 19] },
+    { rel: 'packages/core/README.md', allow: [61, 19] },
     {
         rel: 'apps/docs/content/docs/getting-started/installation.mdx',
         allow: [],

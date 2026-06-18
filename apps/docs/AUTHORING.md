@@ -307,6 +307,12 @@ and a shared `tabGroup`. Consecutive tagged fences merge into one tabbed block,
 and every one still type-checks (rule 1):
 
 ````md
+```ts twoslash tab="String form" tabGroup="definition-style"
+import { stitch } from 'stitchapi';
+
+const getUser = stitch('https://api.example.com/users/{id}');
+```
+
 ```ts twoslash tab="Config object" tabGroup="definition-style"
 import { stitch } from 'stitchapi';
 import { z } from 'zod';
@@ -316,19 +322,10 @@ const getUser = stitch({
     output: z.object({ id: z.number(), name: z.string() }),
 });
 ```
-
-```ts twoslash tab="Fluent builder" tabGroup="definition-style"
-import { stitch } from 'stitchapi';
-import { z } from 'zod';
-
-const getUser = stitch
-    .get('https://api.example.com/users/{id}')
-    .returns(z.object({ id: z.number(), name: z.string() }));
-```
 ````
 
 `tabGroup` is the **persistence key**: the same id on every page means a reader
-who picks "Fluent builder" once sees it everywhere. Drop `tabGroup` and the tabs
+who picks "Config object" once sees it everywhere. Drop `tabGroup` and the tabs
 still render, but the choice won't stick.
 
 ### Code + prose per variant → `<Tabs>`
@@ -365,7 +362,7 @@ lands on, so make it the recommended form.
 | `tabGroup`         | Use when                                | Labels — first is the default                           |
 | ------------------ | --------------------------------------- | ------------------------------------------------------- |
 | `package-manager`  | install / `npx` commands                | npm · pnpm · yarn · bun — _generated, don't hand-write_ |
-| `definition-style` | a stitch is declared ≥2 equivalent ways | `Config object` · `Fluent builder`                      |
+| `definition-style` | a stitch is declared ≥2 equivalent ways | `String form` · `Config object`                         |
 | `module`           | imports differ by module system         | `ESM` · `CommonJS`                                      |
 | `consumption`      | how a stitch's result is consumed       | `await` · `Stream` · `.then()`                          |
 | `runtime`          | the same operation in code vs the shell | `Programmatic` · `CLI`                                  |

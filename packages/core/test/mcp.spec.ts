@@ -101,6 +101,36 @@ test('tools/call run_stitch maps input and returns the validated result', async 
     expect(api.callCount('/widgets/7')).toBe(1);
 });
 
+test('run_stitch drops an agent-injected header when the stitch declares no input.headers schema', async () => {
+    let seen: Record<string, string> = {};
+    const op = stitch({
+        url: 'https://x.test/op',
+        adapter: (request) => {
+            seen = request.headers;
+            return Promise.resolve({
+                status: 200,
+                headers: {},
+                body: { ok: true },
+            });
+        },
+    });
+    const mcp = createMcpServer({ op });
+    const res = await mcp.handle(
+        req('tools/call', {
+            name: 'run_stitch',
+            arguments: {
+                name: 'op',
+                input: { headers: { authorization: 'Bearer INJECTED' } },
+            },
+        }),
+    );
+    expect((res?.result as ToolCallResult).isError).toBeFalsy();
+    // Header injection is blocked: the agent-supplied `authorization` never reached the transport,
+    // because the stitch declares no `input.headers` schema, so that slot is not forwarded.
+    expect(seen['authorization']).toBeUndefined();
+    expect(JSON.stringify(seen)).not.toContain('INJECTED');
+});
+
 test('tools/call run_stitch on an unknown stitch is a tool error, not a crash', async () => {
     const res = await server.handle(
         req('tools/call', { name: 'run_stitch', arguments: { name: 'nope' } }),

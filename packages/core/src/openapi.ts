@@ -17,7 +17,11 @@
 // reported as a warning, never dropped silently.
 import type { StitchRegistry } from './registry';
 import { isStandardSchema } from './standard-schema';
-import type { SecurityScheme, StitchConfig } from './types';
+import type {
+    RedactedStitchConfig,
+    SecurityScheme,
+    StitchConfig,
+} from './types';
 
 export interface OpenApiInfo {
     title: string;
@@ -157,7 +161,7 @@ function decomposeParamObject(
 // place; a no-op without a converter, so parameters keep their `{}` default.
 function fillParamSchemas(
     parameters: OpenApiParameter[],
-    cfg: StitchConfig,
+    cfg: RedactedStitchConfig,
     convert: OpenApiExportOptions['toJsonSchema'],
 ): void {
     if (!convert || !parameters.length) return;
@@ -188,7 +192,7 @@ const BODY_CONTENT_TYPE: Record<
 // `null` = nothing to export; `{ thunk: true }` = endpoint resolved at call time (unexportable).
 type ResolvedEndpoint = { value: string } | { thunk: true } | null;
 
-function endpointOf(cfg: StitchConfig): ResolvedEndpoint {
+function endpointOf(cfg: RedactedStitchConfig): ResolvedEndpoint {
     if (typeof cfg.url === 'function' || typeof cfg.baseUrl === 'function')
         return { thunk: true };
     if (typeof cfg.url === 'string') return { value: cfg.url };
@@ -253,7 +257,7 @@ function parsePath(rawPath: string): {
 }
 
 function buildOperation(
-    cfg: StitchConfig,
+    cfg: RedactedStitchConfig,
     operationId: string,
     parameters: OpenApiParameter[],
     convert: OpenApiExportOptions['toJsonSchema'],
@@ -282,8 +286,7 @@ function buildOperation(
     if (cfg.name) op.summary = cfg.name;
     if (parameters.length) op.parameters = parameters;
     // `__config.kind` is the surface id string (graphql posts a `{ query, variables }` body).
-    const kindRaw: unknown = cfg.kind;
-    const isGraphql = kindRaw === 'graphql';
+    const isGraphql = cfg.kind === 'graphql';
     if (cfg.input?.body != null || isGraphql) {
         const contentType = BODY_CONTENT_TYPE[cfg.bodyType ?? 'json'];
         op.requestBody = {
@@ -372,7 +375,7 @@ export function toOpenApi(
         const op = buildOperation(cfg, key, parameters, opts.toJsonSchema);
         // `authScheme` is the non-secret SecurityScheme redaction projects onto `__config` from the
         // live `auth` (which is itself stripped). Present → register it + reference it per-operation.
-        const authScheme = (cfg as { authScheme?: SecurityScheme }).authScheme;
+        const authScheme = cfg.authScheme;
         if (authScheme) {
             const schemeKey = registerScheme(authScheme);
             op.security = [{ [schemeKey]: scopesOf(authScheme) }];

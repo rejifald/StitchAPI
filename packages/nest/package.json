@@ -1,6 +1,7 @@
 {
     "name": "@stitchapi/nest",
-    "version": "1.0.0-rc.1",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
     "description": "First-class NestJS integration for StitchAPI — StitchModule.forRoot/forFeature/forFeatureScoped, injectable stitches, Logger + ConfigService bridges, an exception filter and an SSE bridge (ADR 0006).",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
@@ -48,6 +49,9 @@
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",
     "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
     "peerDependencies": {
         "@nestjs/common": "^10.0.0 || ^11.0.0",
         "@nestjs/core": "^10.0.0 || ^11.0.0",

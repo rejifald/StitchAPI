@@ -19,6 +19,10 @@
 //   4. dist-tag safety — a prerelease must never land on the `latest` tag.
 //   5. CHANGELOG entry — CHANGELOG.md has a heading for the version (--changelog mode).
 //   6. release-tag match — a provided git tag equals v<version> (--release-tag mode).
+//   7. LICENSE + README presence — every publishable package ships a LICENSE (Apache-2.0
+//      §4 requires the license to accompany each distribution; npm auto-includes a
+//      top-level LICENSE regardless of the `files` field) and a README.md (so the npm
+//      page is not blank).
 //
 // Flags:
 //   --changelog            require a CHANGELOG.md entry (publish-time)
@@ -195,6 +199,34 @@ if (opts.releaseTag && canonical) {
     } else {
         fail(`release tag ${opts.releaseTag} != package version ${canonical}`);
     }
+}
+
+// 7. LICENSE + README presence -------------------------------------------------
+// A scoped @stitchapi/* tarball that declares Apache-2.0 but omits the license text
+// is non-compliant (Apache-2.0 §4(a)) and shows a blank npm page. npm always ships a
+// top-level LICENSE/README regardless of the `files` whitelist, so the only failure
+// mode is the file simply not existing in the package dir.
+let assetChecks = 0;
+for (const { path, json } of pkgs) {
+    const dir = dirname(path);
+    for (const asset of ['LICENSE', 'README.md']) {
+        assetChecks++;
+        if (!existsSync(join(dir, asset))) {
+            fail(
+                `${json.name}: missing ${asset} in ${dir.replace(ROOT + '/', '')} (npm always ships ${asset}; required for a clean, license-compliant publish)`,
+            );
+        }
+    }
+}
+if (
+    assetChecks &&
+    !failures.some(
+        (f) => f.includes('missing LICENSE') || f.includes('missing README'),
+    )
+) {
+    pass(
+        `LICENSE + README: present in all ${pkgs.length} publishable packages`,
+    );
 }
 
 // ---- report ------------------------------------------------------------------

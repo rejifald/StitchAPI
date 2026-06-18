@@ -24,9 +24,9 @@ import {
     type HookContext,
     type Hooks,
     type InputSchemas,
+    type RedactedStitchConfig,
     type RunContext,
     type SafeResult,
-    type SecurityScheme,
     type Stitch,
     type StitchConfig,
     StitchError,
@@ -50,7 +50,10 @@ function asConfig(f: Fragment): Partial<StitchConfig> {
     if (isStitch(f))
         return (
             (f as Stitch & { __rawConfig?: StitchConfig }).__rawConfig ??
-            f.__config
+            // Defensive: `attachMeta` always stamps `__rawConfig`, so this redacted-config fallback
+            // never runs; cast through `unknown` because the redacted `kind` is a string id, not a
+            // live `Surface`.
+            (f.__config as unknown as Partial<StitchConfig>)
         );
     return f;
 }
@@ -381,23 +384,31 @@ export interface SharedRuntime {
 // `__config` is the PUBLIC view; strip the live secret-bearing handles so the running store,
 // credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest).
 // The full config lives on `__rawConfig` for fragment composition (see `asConfig`).
-export function redactConfig(cfg: StitchConfig): StitchConfig {
-    const rest = { ...cfg };
-    // Project the auth's NON-SECRET scheme onto the public config (always derived from the live
-    // `auth`, never trusted from an externally-set `authScheme`) BEFORE stripping the live,
-    // secret-bearing strategy. Like `kind`→id below, this is the public identity of a redacted
-    // capability: a stitch's auth round-trips as JSON (the contract gate) and feeds
+export function redactConfig(cfg: StitchConfig): RedactedStitchConfig {
+    // Split off the live `Surface` so the spread carries no `kind: Surface`; the rest still holds
+    // the live store/auth/adapter handles, stripped next.
+    const { kind, ...spread } = cfg;
+    const redacted = spread as RedactedStitchConfig & {
+        store?: unknown;
+        auth?: unknown;
+        adapter?: unknown;
+    };
+    // Strip the live, secret-bearing handles so the running store, credential, and transport cannot
+    // be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest). The full config lives on the
+    // non-enumerable `__rawConfig` for fragment composition (see `asConfig`).
+    delete redacted.store;
+    delete redacted.auth;
+    delete redacted.adapter;
+    // Project the auth's NON-SECRET scheme onto the public config — always re-derived from the live
+    // `auth`, never trusted from an externally-set `authScheme`. This is the public identity of a
+    // redacted capability: the auth round-trips as JSON (the contract gate) and feeds
     // `export --openapi`'s `securitySchemes`, while the credential itself stays unreachable.
-    delete (rest as { authScheme?: unknown }).authScheme;
-    if (cfg.auth?.scheme)
-        (rest as { authScheme?: SecurityScheme }).authScheme = cfg.auth.scheme;
-    delete rest.store;
-    delete rest.auth;
-    delete rest.adapter;
-    // Normalise the surface to its id string so __config round-trips as JSON (ADR 0005
-    // Decision 11): never expose the live Surface (its hooks don't serialise), only its identity.
-    if (rest.kind) (rest as { kind?: unknown }).kind = rest.kind.id;
-    return rest;
+    delete redacted.authScheme;
+    if (cfg.auth?.scheme) redacted.authScheme = cfg.auth.scheme;
+    // Normalise the surface to its id string so __config round-trips as JSON (ADR 0005 Decision 11):
+    // never expose the live Surface (its hooks don't serialise), only its identity.
+    if (kind) redacted.kind = kind.id;
+    return redacted;
 }
 
 // Stamp the stitch identity: redacted public `__config`, full `__rawConfig`, and the `__stitch` brand.

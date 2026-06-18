@@ -134,10 +134,31 @@ export function createThrottle(opts?: ThrottleOptions): {
         if (next)
             next(); // hand the held slot directly to the FIFO-next waiter
         else if (s.inFlight > 0) s.inFlight--;
+        // Drop a fully-idle key's state so the per-key Map (or the shared `hostStates` registry)
+        // doesn't accumulate one entry per ever-seen key over long uptime. Only when nothing is
+        // in flight, no one is queued, AND no future rate grant is still reserved — deleting a key
+        // whose `nextGrantAt` is in the future would reset its pacing and let the next acquire
+        // burst, so a still-pacing key is kept until its reservation lapses.
+        if (
+            s.inFlight === 0 &&
+            s.waiters.length === 0 &&
+            s.nextGrantAt <= now()
+        )
+            states.delete(key);
     }
 
-    return { acquire, release };
+    const api = { acquire, release };
+    // Non-enumerable test probe: the live per-key state Map, so the resource-leak suite can assert
+    // an idle key's entry is dropped after its last release. Not on the public return type.
+    Object.defineProperty(api, THROTTLE_STATES, {
+        value: states,
+        enumerable: false,
+    });
+    return api;
 }
+
+/** Internal: keys the non-enumerable per-key state Map probe used by the resource-leak suite. */
+export const THROTTLE_STATES = Symbol('stitch.throttle.states');
 
 // The Error to reject with when a linked signal is already aborted — its own `reason` when that is
 // an Error (the default AbortError, or a caller-supplied one), else a generic abort Error.
