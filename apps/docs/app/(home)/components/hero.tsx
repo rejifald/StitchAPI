@@ -41,7 +41,11 @@ const HERO_QUALITIES = [
 
 export function Hero() {
     return (
-        <section className="relative overflow-hidden border-b border-fd-border px-6 pt-20 pb-20 sm:pt-28 sm:pb-28">
+        /* Vertical rhythm scales with the viewport height (clamped vh) rather
+           than fixed breakpoints, so the hero stays compact on short laptops
+           (no dead space up top, code panel not cropped) and breathes on tall
+           displays — without being tuned to any one screen size. */
+        <section className="relative overflow-hidden border-b border-fd-border px-6 pt-[clamp(2rem,6vh,6rem)] pb-[clamp(2.5rem,7vh,7rem)]">
             <BrandBackdrop variant="hero" />
 
             <div className="relative z-10 mx-auto w-full max-w-6xl">
@@ -78,7 +82,7 @@ export function Hero() {
                     </span>
                 </h1>
 
-                <div className="mt-12 grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
+                <div className="mt-[clamp(1.25rem,4vh,3rem)] grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
                     <div>
                         <p className="max-w-xl text-lg leading-relaxed text-fd-muted-foreground">
                             Declare one endpoint — or one example — and call it
