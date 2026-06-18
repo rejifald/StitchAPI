@@ -15,14 +15,15 @@ import {
 } from '../../../packages/core/src/registry';
 import { createFetchShim } from '../../../packages/sandbox-sim/src/adapters/node';
 import { allHandlers } from '../../../packages/sandbox-sim/src/handlers';
-import { sandboxRegistry } from './sandbox-stitches';
 import { runSandboxStdio } from './server';
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // Sim-back ALL fetch in this process so run_stitch hits the fake API, not the net.
-// (Stitches resolve `fetch` at call time, so setting it before any call suffices.)
+// The default fetch adapter binds `globalThis.fetch` when a stitch is CONSTRUCTED,
+// so this must run before the default registry is built — hence the dynamic
+// import of `./sandbox-stitches` inside main(), below.
 (globalThis as { fetch?: unknown }).fetch = createFetchShim(allHandlers);
 
 function flag(argv: string[], ...names: string[]): string | undefined {
@@ -33,6 +34,9 @@ function flag(argv: string[], ...names: string[]): string | undefined {
 }
 
 async function main(): Promise<void> {
+    // Imported dynamically so the default registry's stitches are constructed
+    // AFTER the sim shim above (the default adapter captures fetch at build time).
+    const { sandboxRegistry } = await import('./sandbox-stitches');
     let registry: StitchRegistry = sandboxRegistry;
 
     const modulePath = flag(process.argv.slice(2), '--module', '-m');

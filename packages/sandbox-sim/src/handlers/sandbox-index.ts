@@ -34,6 +34,20 @@ const SANDBOX_CATALOGUE = {
             knobs: ['__status', '__latencyMs', '__stream', '__flaky'],
         },
         {
+            method: 'POST',
+            path: '/users',
+            description:
+                'Create a user — echoes the posted body plus a deterministic assigned id (201)',
+            knobs: ['__status', '__latencyMs', '__flaky'],
+        },
+        {
+            method: 'GET',
+            path: '/users/:id/orders',
+            description:
+                "A user's orders (fixed fixture; ids 1-3 have orders, others 404)",
+            knobs: ['__status', '__latencyMs', '__stream', '__flaky'],
+        },
+        {
             method: 'GET',
             path: '/status/:code',
             description: 'Echo any HTTP status code (100-599) with a JSON body',
@@ -58,6 +72,13 @@ const SANDBOX_CATALOGUE = {
             path: '/v1/chat/completions',
             description:
                 'OpenAI-style SSE token streaming or JSON completion; supports tool-call variant when body.tools is set',
+            knobs: ['__status', '__latencyMs', '__flaky'],
+        },
+        {
+            method: 'GET',
+            path: '/events',
+            description:
+                'Server-Sent-Events stream of demo order-lifecycle events, terminated by [DONE]',
             knobs: ['__status', '__latencyMs', '__flaky'],
         },
         // Auth / capability (S4)

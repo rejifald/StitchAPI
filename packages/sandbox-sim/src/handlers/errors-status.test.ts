@@ -105,6 +105,61 @@ async function main() {
     }
 
     // ------------------------------------------------------------------
+    // 3b. POST /users  — create (echoes body + an assigned id, 201)
+    // ------------------------------------------------------------------
+    {
+        const req: SimRequest = {
+            method: 'POST',
+            url: new URL('https://demo.stitchapi.dev/users'),
+            headers: new Headers(),
+            body: {
+                name: 'Dave Lister',
+                email: 'dave@demo.stitchapi.dev',
+                role: 'member',
+            },
+        };
+        const res = await dispatch(req);
+
+        assert.equal(res.status, 201, 'POST /users should return 201');
+        const body = res.body as { data: Record<string, unknown> };
+        assert.equal(body.data.id, 4, 'created user gets the next id (4)');
+        assert.equal(
+            body.data.name,
+            'Dave Lister',
+            'created user echoes the posted body',
+        );
+        assert.equal(body.data.role, 'member');
+    }
+
+    // ------------------------------------------------------------------
+    // 3c. GET /users/:id/orders  — a user's orders
+    // ------------------------------------------------------------------
+    {
+        const req = makeReq('GET', 'https://demo.stitchapi.dev/users/1/orders');
+        const res = await dispatch(req);
+
+        assert.equal(res.status, 200, '/users/1/orders should return 200');
+        const body = res.body as { data: Array<Record<string, unknown>> };
+        assert.ok(
+            Array.isArray(body.data),
+            '/users/1/orders body.data should be an array',
+        );
+        assert.equal(body.data.length, 2, 'user 1 has two orders');
+        assert.equal(body.data[0].status, 'paid');
+        assert.ok(typeof body.data[0].total === 'number');
+    }
+
+    // /users/:id/orders — unknown user 404s
+    {
+        const req = makeReq(
+            'GET',
+            'https://demo.stitchapi.dev/users/999/orders',
+        );
+        const res = await dispatch(req);
+        assert.equal(res.status, 404, '/users/999/orders should return 404');
+    }
+
+    // ------------------------------------------------------------------
     // 4. GET /status/:code — various codes
     // ------------------------------------------------------------------
     for (const code of [200, 400, 401, 403, 404, 429, 500, 503]) {
@@ -154,16 +209,6 @@ async function main() {
     // ------------------------------------------------------------------
     // 6. Non-matching requests should NOT be claimed
     // ------------------------------------------------------------------
-    {
-        const postUsers = makeReq('POST', 'https://demo.stitchapi.dev/users');
-        const claimed = errorsStatusHandlers.some((h) => h.match(postUsers));
-        assert.equal(
-            claimed,
-            false,
-            'POST /users should not be matched by any S2 handler',
-        );
-    }
-
     {
         const unknown = makeReq(
             'GET',
