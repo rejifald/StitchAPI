@@ -99,7 +99,9 @@ Flags: `--print-tag` (print the derived dist-tag and exit), `--changelog`,
         `rc`/`beta`/`alpha` (drop `--prerelease` for a stable one):
         `gh release create vX.Y.Z --title vX.Y.Z --notes "See CHANGELOG.md" --prerelease`.
         This fires [`npm-publish.yml`](../.github/workflows/npm-publish.yml), which
-        re-runs the verify gate and then `pnpm -r publish --tag <derived>`.
+        re-runs the verify + e2e gates and then publishes every package over OIDC
+        (`pnpm pack` → `npm publish <tarball> --provenance`). New packages must be
+        bootstrapped first — see _Bootstrapping a new package's first publish_ below.
 11. [ ] Confirm on npm: `npm view stitchapi dist-tags` and
         `npm view stitchapi@<derived-tag> version`.
 
@@ -114,17 +116,39 @@ build instead of cutting a new one:
 npm dist-tag add stitchapi@1.0.0 latest
 ```
 
-## CI & secrets
+## CI & authentication (OIDC trusted publishing)
 
 -   `npm-publish.yml` triggers on `release: created`, runs the full verify gate
     (`check:format` → `lint` → `types` → `test:coverage` → `exports` →
-    `check:release`), then publishes. Node version comes from
+    `check:release`) + the browser e2e gate, then publishes. Node version comes from
     [`.nvmrc`](../.nvmrc).
--   Requires the repo secret **`npm_token`** — an npm automation token with publish
-    rights to `stitchapi` and the `@stitchapi` scope (exposed to the job as
-    `NODE_AUTH_TOKEN`). The first publish of each scoped package needs
-    `publishConfig.access: public`, which is set on every companion and enforced by
-    the guardrail.
+-   **No npm token.** The publish job authenticates with **OIDC trusted publishing**:
+    it requests an `id-token: write` permission, mints a short-lived token, and npm
+    exchanges it for publish rights — nothing to store, rotate, or leak. It then runs
+    `pnpm pack` (which rewrites the `workspace:` protocol and builds via `prepack`) and
+    `npm publish <tarball> --provenance`, so every release also carries a signed
+    build-provenance attestation. `publishConfig.access: public` (set on every
+    companion) makes the scoped publishes public.
+-   **Each package needs a Trusted Publisher** configured once on npmjs.com: the
+    package's _Settings → Trusted Publisher_ → GitHub Actions, repo `rejifald/StitchAPI`,
+    workflow `npm-publish.yml`. Without it that package's publish step fails to
+    authenticate.
+
+## Bootstrapping a new package's first publish
+
+OIDC can only publish a package that **already exists** on npm (a Trusted Publisher is
+attached to an existing package — there is no way to OIDC-publish a brand-new name). A
+new package's **first** version is therefore published once outside the workflow, after
+which it rides `npm-publish.yml` for every release:
+
+1. [ ] `npm login` — completes **interactive 2FA**. This works even under the strict
+       "require two-factor authentication and disallow tokens" package/org policy,
+       because interactive 2FA is not a token.
+2. [ ] Build, then publish locally — `pnpm -r publish --tag <derived>` bootstraps the
+       whole set at once (enter the OTP when prompted), or per package from its dir:
+       `pnpm pack` then `npm publish <tarball> --tag <derived>`.
+3. [ ] On npmjs.com, add the **Trusted Publisher** to each now-existing package.
+4. [ ] Subsequent releases publish automatically over OIDC — no further local steps.
 
 ## Rollback
 
