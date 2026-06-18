@@ -11,7 +11,26 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added — a published testing story
+
+-   **Mocking kit on `stitchapi/testing`:** helpers for testing your own stitches
+    and the code that calls them, alongside the existing vendor conformance kit.
+    `mockAdapter(routes)` injects a fake transport — status sequences (retry),
+    abortable latency (timeouts), function responders (pagination), streaming
+    bodies, and a request spy (`calls`/`callCount`/`lastRequest`) — so the real
+    runtime runs against canned responses with no global-`fetch` monkeypatching.
+    `stubStitch` / `failStitch` stand in for a real stitch when unit-testing
+    calling code (a conformant `Stitch` with a call spy; pairs with a Nest
+    `overrideProvider`). `streamOf` / `sseStream` / `streamThenError` /
+    `gatedStream` / `streamAdapter` build streaming bodies, and
+    `collectStitchEvents` drains a `.stream()` into its parts. Browser-safe.
+    (GAP-AUDIT §2.9)
+-   **Injectable `Clock` (ADR 0010):** a stitch/seam `clock` makes retry backoff,
+    throttle pacing, the per-attempt timeout, and circuit cooldown deterministic.
+    Defaults to `systemClock` (no behaviour change); inject `manualClock()` from
+    `stitchapi/testing` and drive time with `advance(ms)` — no real waiting, no
+    fake-timer library. `Clock` + `systemClock` are exported from the main entry.
+    (`timeout.total` and event timestamps stay on wall-clock.)
 
 ## [1.0.0-rc.2] — 2026-06-18
 

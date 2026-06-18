@@ -122,8 +122,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "retry",
             type: "property",
-            detail: "RetryOptions",
-            info: "Retry-and-backoff policy.",
+            detail: "number | RetryOptions",
+            info: "Retry-and-backoff policy. A bare number is shorthand for the attempt count — `retry: 3` ≡ `retry: { attempts: 3 }`.",
         },
         {
             label: "acceptStatus",
@@ -140,8 +140,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "timeout",
             type: "property",
-            detail: "TimeoutOptions",
-            info: "Total and per-attempt timeouts.",
+            detail: "number | string | TimeoutOptions",
+            info: "Total and per-attempt timeouts. A bare number (ms) or duration string is shorthand for the total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`.",
         },
         {
             label: "circuit",
@@ -164,8 +164,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "cache",
             type: "property",
-            detail: "CacheConfig",
-            info: "Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine is loaded lazily from the `stitchapi/cache` subpath only when this block is present.",
+            detail: "number | string | CacheConfig",
+            info: "Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine is loaded lazily from the `stitchapi/cache` subpath only when this block is present. A bare number (ms) or duration string is shorthand for the TTL — `cache: '1m'` ≡ `cache: { ttl: '1m' }` (still subject to the fingerprint / `version` rules before an entry is actually stored).",
         },
         {
             label: "sensitive",
@@ -196,6 +196,12 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             type: "property",
             detail: "Adapter",
             info: "Test seam / custom transport.",
+        },
+        {
+            label: "clock",
+            type: "property",
+            detail: "Clock",
+            info: "Injectable time (ADR 0010). Defaults to the system clock; inject a `manualClock()` (from `stitchapi/testing`) to drive retry backoff, throttle pacing, the per-attempt timeout, and circuit cooldown deterministically in tests. Live object — stripped from `__config`.",
         },
         {
             label: "store",

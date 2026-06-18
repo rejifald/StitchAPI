@@ -19,12 +19,14 @@ import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
 import {
+    type Clock,
     type DriftOptions,
     type DriftSpec,
     type HookContext,
     type Hooks,
     type InputSchemas,
     type RedactedStitchConfig,
+    type ResolvedStitchConfig,
     type RunContext,
     type SafeResult,
     type Stitch,
@@ -37,7 +39,7 @@ import {
     type TraceSink,
     isStitch,
 } from './types';
-import { deepMerge, newRunContext, readEnv } from './util';
+import { deepMerge, newRunContext, readEnv, systemClock } from './util';
 import { type Validator, toValidator } from './validator';
 
 export type Fragment = Partial<StitchConfig> | Stitch | string;
@@ -120,7 +122,18 @@ function normalizeInput(
     return out;
 }
 
-export function compose(config: Fragment): StitchConfig {
+// Expand the scalar shorthands (`retry: 3`, `timeout: '5s'`, `cache: '1m'`) to their object form
+// IN PLACE, before the deep-merge, so a literal in one layer folds cleanly into an object in
+// another and the resolved config the engine reads is always the normalised shape.
+function expandShorthand(cfg: Partial<StitchConfig>): void {
+    if (typeof cfg.retry === 'number') cfg.retry = { attempts: cfg.retry };
+    if (typeof cfg.timeout === 'number' || typeof cfg.timeout === 'string')
+        cfg.timeout = { total: cfg.timeout };
+    if (typeof cfg.cache === 'number' || typeof cfg.cache === 'string')
+        cfg.cache = { ttl: cfg.cache };
+}
+
+export function compose(config: Fragment): ResolvedStitchConfig {
     const layers = flatten([config]);
     let merged: Partial<StitchConfig> = {};
     const hookLayers: Hooks[] = [];
@@ -138,6 +151,7 @@ export function compose(config: Fragment): StitchConfig {
         delete rest.hooks;
         delete rest.store;
         delete rest.kind;
+        expandShorthand(rest);
         merged = deepMerge(merged, rest);
         // Endpoint slot: `url` and `baseUrl`/`path` are two spellings of the same target, and
         // deepMerge keeps them as separate keys. Reconcile so the last fragment to write either
@@ -158,7 +172,8 @@ export function compose(config: Fragment): StitchConfig {
     if (output !== undefined) merged.output = output;
     const input = normalizeInput(merged.input);
     if (input !== undefined) merged.input = input;
-    return merged;
+    // `expandShorthand` ran on every layer, so retry/timeout/cache are now their object form.
+    return merged as ResolvedStitchConfig;
 }
 
 // ---- the trace sink — off by default (a stitch's only effect is its call) ------
@@ -377,6 +392,7 @@ export interface SharedRuntime {
     vault: StitchStore;
     trace: TraceSink;
     throttle: Runtime['throttle'];
+    clock?: Clock;
     principal?: string;
     register?: (s: Stitch) => void;
 }
@@ -384,7 +400,7 @@ export interface SharedRuntime {
 // `__config` is the PUBLIC view; strip the live secret-bearing handles so the running store,
 // credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest).
 // The full config lives on `__rawConfig` for fragment composition (see `asConfig`).
-export function redactConfig(cfg: StitchConfig): RedactedStitchConfig {
+export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     // Split off the live `Surface` so the spread carries no `kind: Surface`; the rest still holds
     // the live store/auth/adapter handles, stripped next.
     const { kind, ...spread } = cfg;
@@ -392,6 +408,7 @@ export function redactConfig(cfg: StitchConfig): RedactedStitchConfig {
         store?: unknown;
         auth?: unknown;
         adapter?: unknown;
+        clock?: unknown;
     };
     // Strip the live, secret-bearing handles so the running store, credential, and transport cannot
     // be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest). The full config lives on the
@@ -399,6 +416,7 @@ export function redactConfig(cfg: StitchConfig): RedactedStitchConfig {
     delete redacted.store;
     delete redacted.auth;
     delete redacted.adapter;
+    delete redacted.clock;
     // Project the auth's NON-SECRET scheme onto the public config — always re-derived from the live
     // `auth`, never trusted from an externally-set `authScheme`. This is the public identity of a
     // redacted capability: the auth round-trips as JSON (the contract gate) and feeds
@@ -412,7 +430,7 @@ export function redactConfig(cfg: StitchConfig): RedactedStitchConfig {
 }
 
 // Stamp the stitch identity: redacted public `__config`, full `__rawConfig`, and the `__stitch` brand.
-function attachMeta(target: object, cfg: StitchConfig): void {
+function attachMeta(target: object, cfg: ResolvedStitchConfig): void {
     Object.defineProperty(target, '__config', { value: redactConfig(cfg) });
     Object.defineProperty(target, '__rawConfig', { value: cfg });
     Object.defineProperty(target, '__stitch', { value: true });
@@ -446,13 +464,16 @@ export function makeStitch<T = unknown>(
     // A seam injects shared instances; a standalone stitch builds its own (unchanged behaviour:
     // a store-backed throttle only when a `store` is configured, else the in-process limiter).
     const store = shared?.store ?? cfg.store ?? memoryStore();
+    const clock = shared?.clock ?? cfg.clock ?? systemClock;
     const throttle =
         shared?.throttle ??
         (cfg.store
-            ? createStoreThrottle(cfg.throttle, store)
-            : createThrottle(cfg.throttle));
+            ? createStoreThrottle(cfg.throttle, store, clock)
+            : createThrottle(cfg.throttle, clock));
     const trace = shared?.trace ?? resolveTrace(cfg.trace);
-    const rtOpts: { vault?: StitchStore; principal?: string } = {};
+    const rtOpts: { vault?: StitchStore; principal?: string; clock?: Clock } = {
+        clock,
+    };
     if (shared?.vault) rtOpts.vault = shared.vault;
     if (shared?.principal !== undefined) rtOpts.principal = shared.principal;
     const rt: Runtime = makeRuntime(cfg, throttle, trace, store, rtOpts);

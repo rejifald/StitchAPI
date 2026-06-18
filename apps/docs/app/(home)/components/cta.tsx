@@ -12,7 +12,7 @@ export function Cta() {
             <BrandBackdrop variant="cta" />
             <div className="relative z-10 mx-auto max-w-2xl">
                 <h2 className="font-display text-3xl font-extrabold tracking-[-0.02em] text-fd-foreground sm:text-4xl">
-                    Replace fetch. Start with one endpoint.
+                    Stitch your first API. Start with one endpoint.
                 </h2>
                 <p className="mx-auto mt-4 max-w-xl text-lg leading-relaxed text-fd-muted-foreground">
                     Declare your first stitch and call it as a typed function in
@@ -38,7 +38,7 @@ export function Footer() {
                     <span className="font-semibold text-fd-foreground">
                         StitchAPI
                     </span>{' '}
-                    — a typed stitch replaces fetch.
+                    — turn any API into a typed, resilient function.
                 </span>
                 <div className="flex items-center gap-5">
                     <Link
