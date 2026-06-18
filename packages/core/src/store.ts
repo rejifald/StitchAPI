@@ -1,8 +1,13 @@
 // The default in-memory state store + a store-backed throttle. Swapping the store for a
 // Redis/Postgres adapter makes throttle distributed and sessions persistent/shared across
 // workers, with no change to the call site (DESIGN.md §13).
-import type { AcquireOptions, StitchStore, ThrottleOptions } from './types';
-import { now, parseRate, sleep } from './util';
+import type {
+    AcquireOptions,
+    Clock,
+    StitchStore,
+    ThrottleOptions,
+} from './types';
+import { now, parseRate, systemClock } from './util';
 
 /** Default store: in-memory, single process, with TTL + atomic incr. */
 export function memoryStore(): StitchStore {
@@ -119,6 +124,7 @@ export interface Throttle {
 export function createStoreThrottle(
     opts: ThrottleOptions | undefined,
     store: StitchStore,
+    clock: Clock = systemClock,
 ): Throttle {
     const limit = opts?.concurrency;
     const rate = opts?.rate ? parseRate(opts.rate) : undefined;
@@ -160,9 +166,9 @@ export function createStoreThrottle(
             // Only a real concurrency block counts as "waited" — not incidental store or
             // scheduling time — so waitedMs (and the 'throttled' event) is deterministic.
             const blocked = limit != null && stateFor(key).inFlight >= limit;
-            const blockStart = now();
+            const blockStart = clock.now();
             await takeSlot(key);
-            if (blocked) waitedMs = now() - blockStart;
+            if (blocked) waitedMs = clock.now() - blockStart;
         }
         if (rate) {
             // Even-spaced pacing over the shared counter (mirrors createThrottle's `spacing`):
@@ -171,7 +177,8 @@ export function createStoreThrottle(
             // windowStart, so grants stay one `spacing` apart across the boundary — no fixed-window
             // burst. No re-check loop: each caller owns a distinct, non-colliding slot.
             const spacing = rate.perMs / rate.count; // ms between grants
-            const windowStart = Math.floor(now() / rate.perMs) * rate.perMs;
+            const windowStart =
+                Math.floor(clock.now() / rate.perMs) * rate.perMs;
             // Track the window we minted a key for; when it rolls over, DELETE the previous
             // window's `rl:` key eagerly instead of waiting for its TTL to expire (the store's
             // own sweep is opportunistic). Without this, a long-lived rate-limited seam leaves a
@@ -185,9 +192,9 @@ export function createStoreThrottle(
                 rate.perMs + 100,
             );
             const grantAt = windowStart + (n - 1) * spacing;
-            const wait = grantAt - now();
+            const wait = grantAt - clock.now();
             if (wait > 0) {
-                await sleep(wait);
+                await clock.sleep(wait);
                 waitedMs += wait;
             }
         }
