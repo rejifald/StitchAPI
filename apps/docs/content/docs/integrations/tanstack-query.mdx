@@ -1,0 +1,168 @@
+---
+title: 'TanStack Query'
+description: 'A stitch is the queryFn. StitchAPI owns the call’s resilience; TanStack Query (or SWR) owns view state — they compose, they do not compete.'
+---
+
+TanStack Query is not an alternative to StitchAPI — it sits one layer up, and the
+two fit together cleanly. A stitch is a typed, resilient **function**; TanStack
+Query is the thing that calls functions from your components and manages the
+result as view state. So the join is the obvious one:
+
+<Callout type="info">
+    **A stitch _is_ the `queryFn`.** Pass the stitch straight to `useQuery`. The
+    stitch owns the _call_ — auth, retries, throttling, validation, drift. The
+    query owns the _view_ — caching, subscriptions, background refetch,
+    invalidation. Neither reaches into the other's job.
+</Callout>
+
+## A stitch is the queryFn
+
+Declare the endpoint once as a stitch, then hand it to `useQuery`. Awaiting a
+stitch returns the validated value and **throws a `StitchError` on failure** —
+which is exactly the contract `queryFn` wants, so there is no glue code.
+
+```ts
+// stitches.ts — your declarations live here
+import { bearer, env, seam } from 'stitchapi';
+import { z } from 'zod';
+
+const api = seam({
+    baseUrl: 'https://api.example.com',
+    auth: bearer(env('API_TOKEN')),
+    retry: { attempts: 3, on: [429, 503] },
+});
+
+export const getUser = api.stitch({
+    path: '/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+});
+```
+
+```tsx
+// useUser.ts — the React layer
+import { getUser } from './stitches';
+
+import { useQuery } from '@tanstack/react-query';
+
+export function useUser(id: number) {
+    return useQuery({
+        queryKey: ['user', id],
+        // The stitch is the queryFn. It throws StitchError → the query sees `error`.
+        queryFn: () => getUser({ params: { id } }),
+    });
+}
+```
+
+That is the whole integration. `data` is the validated `{ id, name }`; `error`
+is the `StitchError` (with `.status`, `.attempts`, `.body`, `.url`) when the call
+fails after the stitch has exhausted its own retries.
+
+## Two layers, cleanly split
+
+The reason they compose rather than overlap is that they cache and retry at
+different altitudes:
+
+| Concern              | The stitch (StitchAPI)                               | The query (TanStack Query)                           |
+| -------------------- | ---------------------------------------------------- | ---------------------------------------------------- |
+| **Unit**             | one call to one endpoint                             | one piece of UI state, keyed                         |
+| **Retries**          | transport-level: status-aware backoff, `Retry-After` | re-invokes the whole `queryFn`                       |
+| **Caching**          | derived-key response cache + in-flight coalescing    | view cache: stale-while-revalidate, GC, persistence  |
+| **Validation/types** | runtime-validated, drift-caught on every call        | passes the value through untouched                   |
+| **Invalidation**     | not its job                                          | `queryClient.invalidateQueries`, mutations           |
+| **Lifecycle**        | none — it is a function                              | subscriptions, refetch on focus/reconnect, `enabled` |
+
+## Let the stitch throw — don't use `.safe()` here
+
+TanStack Query discriminates success from failure by whether `queryFn` **throws**.
+So inside a query, use the bare awaitable (or `.unwrap()`), _not_ `.safe()` —
+`.safe()` resolves to `{ ok, data, error }` and never throws, which would make
+every query look successful with `data` shaped like an error envelope.
+
+```tsx
+// ✅ throws on failure → React Query populates `error`
+queryFn: () => getUser({ params: { id } });
+
+// ❌ never throws → the query always looks "successful"
+queryFn: () => getUser.safe({ params: { id } });
+```
+
+Reach for `.safe()` outside React Query — in a loader, a server action, or any
+place you'd rather branch on `error` than catch.
+
+## Pick one retry owner
+
+Both layers can retry, and you usually want exactly one of them to. The stitch's
+retry is the smarter one — it is status-aware (`on: [429, 503]`), honors
+`Retry-After`, and backs off with jitter. So let the stitch own retries and turn
+the query's generic retry off:
+
+```tsx
+useQuery({
+    queryKey: ['user', id],
+    queryFn: () => getUser({ params: { id } }),
+    retry: false, // the stitch already retried; don't multiply the attempts
+});
+```
+
+Set it once on the `QueryClient` default if you want it project-wide. (If you
+prefer the query to own retries instead, drop `retry` from the stitch — just
+don't run both unaware of each other.)
+
+## Mutations
+
+A writing stitch is a `mutationFn` the same way:
+
+```tsx
+import { createUser } from './stitches';
+
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
+export function useCreateUser() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (body: { name: string }) => createUser({ body }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['user'] }),
+    });
+}
+```
+
+## Streaming surfaces stay out of `useQuery`
+
+`useQuery` is request/response. For a streaming stitch — `sse`, `stream`, or an
+`llm` completion — consume `.stream()` directly (e.g. in an effect or a store)
+rather than through a query; the event stream is its own subscription model and
+does not map onto a single cached value.
+
+```tsx
+import { sse } from 'stitchapi/sse';
+
+const ticks = sse({ url: 'https://api.example.com/ticks' });
+
+// in an effect, not a query:
+for await (const ev of ticks.stream()) {
+    if (ev.type === 'delta') push(ev.chunk);
+}
+```
+
+## Do I still need TanStack Query?
+
+Yes — they solve different problems. The stitch makes a single call dependable;
+TanStack Query manages many calls' state across your UI (subscriptions, caching,
+background refetch, invalidation). StitchAPI's own cache is function-level
+(derived-key responses + coalescing), not a view cache, so it does not replace
+the query layer. Use a stitch as the `queryFn` and let each layer do its job.
+
+The same shape works with **SWR** (`useSWR(key, () => getUser({ params: { id } }))`)
+and **RTK Query** (a stitch is the `queryFn` in a `fetchBaseQuery` replacement).
+
+## See also
+
+<Cards>
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="NestJS" href="/docs/integrations/nestjs" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+</Cards>

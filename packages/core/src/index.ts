@@ -45,6 +45,9 @@ export { toValidator } from './validator';
 export type { Issue, ValidationResult, Validator } from './validator';
 export type { InferInput, InferOutput, SchemaLike } from './infer';
 export { memoryStore } from './store';
+// The default Clock (ADR 0010) — wall-clock + global timers. Inject a custom `Clock` (or a
+// `manualClock()` from `stitchapi/testing`) via a stitch/seam `clock` to control time.
+export { systemClock } from './util';
 // The delegate-backoff error (issue #145): thrown on the awaited path and surfaced as an `error`
 // event when `rateLimit.delegate` is on, so a host's outer gate owns the rate-limit backoff.
 export { RateLimitError } from './resilience';

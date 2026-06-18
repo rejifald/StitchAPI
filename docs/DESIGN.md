@@ -8,7 +8,7 @@
 
 ## 1. What StitchAPI is
 
-StitchAPI is **an agent-native runtime whose core primitive — a _stitch_ — replaces `fetch`** for both humans and agents.
+StitchAPI **turns any API into a typed, resilient function** — _API stitching_. Its core primitive, a _stitch_, takes one endpoint and hands back a callable; `fetch`/axios are pluggable adapters underneath, not something it replaces. It is agent-native by the same move: the callable a human imports is the one an agent invokes.
 
 A stitch is a typed, declarative, composable unit: `input → validated output`, wrapped with auth, retries, throttling, timeouts, lifecycle hooks, and observability. The primitive is **kind-agnostic** — today an HTTP call, later a GraphQL query, a shell script, or an LLM call, all treated as symmetric building blocks that compose into bigger stitches.
 
