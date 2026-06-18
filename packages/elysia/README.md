@@ -53,7 +53,8 @@ const app = new Elysia().use(stitch({ seam: api }));
 new Elysia().use(
     stitch({
         seam: api,
-        principal: ({ request }) => request.headers.get('x-tenant') ?? undefined,
+        principal: ({ request }) =>
+            request.headers.get('x-tenant') ?? undefined,
     }),
 );
 ```
@@ -103,12 +104,12 @@ Set `errorHandler: false` to register none and wire your own with
 
 ## API
 
-| Export                 | Kind     | Purpose                                            |
-| ---------------------- | -------- | -------------------------------------------------- |
-| `stitch`               | function | The plugin — `.use(stitch({ seam, principal? }))`  |
-| `streamStitchSse`      | function | Stream a stitch's `.stream()` as an SSE `Response`  |
-| `stitchOnError`        | function | An `.onError`-compatible StitchError → HTTP mapper |
-| `stitchErrorResponse`  | function | Map a StitchError to a `Response` (one-off)        |
-| `isStitchError`        | function | Narrow an unknown error to a `StitchError`         |
+| Export                | Kind     | Purpose                                            |
+| --------------------- | -------- | -------------------------------------------------- |
+| `stitch`              | function | The plugin — `.use(stitch({ seam, principal? }))`  |
+| `streamStitchSse`     | function | Stream a stitch's `.stream()` as an SSE `Response` |
+| `stitchOnError`       | function | An `.onError`-compatible StitchError → HTTP mapper |
+| `stitchErrorResponse` | function | Map a StitchError to a `Response` (one-off)        |
+| `isStitchError`       | function | Narrow an unknown error to a `StitchError`         |
 
 `stitchapi` and `elysia` are **peer dependencies** — bring your own.

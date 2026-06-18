@@ -37,8 +37,4 @@ export {
     type StitchErrorOptions,
 } from './error';
 
-export type {
-    PrincipalContext,
-    StitchContext,
-    StitchEnvLike,
-} from './context';
+export type { PrincipalContext, StitchContext, StitchEnvLike } from './context';

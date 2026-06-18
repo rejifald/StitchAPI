@@ -88,13 +88,13 @@ export function stitch(options: StitchPluginOptions): StitchPlugin {
     // another identity. `seam.as()` is lifecycle-free (shares the root runtime), so the per-request
     // handle needs no teardown — it is dropped when the request ends. `as: 'global'` so the derived
     // `stitch` (and the error handler below) escape this plugin's scope into the app that `.use()`s it.
-    const base = new Elysia({ name: '@stitchapi/elysia', seed: options }).derive(
-        { as: 'global' },
-        ({ request }): StitchContext => {
-            const id = principal?.({ request });
-            return { stitch: id !== undefined ? seam.as(id) : seam };
-        },
-    );
+    const base = new Elysia({
+        name: '@stitchapi/elysia',
+        seed: options,
+    }).derive({ as: 'global' }, ({ request }): StitchContext => {
+        const id = principal?.({ request });
+        return { stitch: id !== undefined ? seam.as(id) : seam };
+    });
 
     // Map StitchErrors to HTTP responses (unless the app opted out). `.onError` returning `undefined`
     // for a non-Stitch error leaves Elysia's default handling in charge. Both branches expose the

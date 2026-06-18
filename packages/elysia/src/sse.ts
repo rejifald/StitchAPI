@@ -85,7 +85,9 @@ export function streamStitchSse<T>(
                     }
                     if (event.type === 'delta') {
                         controller.enqueue(
-                            enc.encode(frame(toData(event.chunk), options.event)),
+                            enc.encode(
+                                frame(toData(event.chunk), options.event),
+                            ),
                         );
                         return; // one frame per pull → precise back-pressure
                     }

@@ -105,7 +105,9 @@ describe('stitch() plugin puts a seam on the context', () => {
         const app = new Elysia()
             .use(stitch({ seam: api, principal: () => 'svc' }))
             // `as` exists (re-bind), but the principal is not surfaced as data on the handle.
-            .get('/x', ({ stitch }) => ({ hasAs: typeof stitch.as === 'function' }));
+            .get('/x', ({ stitch }) => ({
+                hasAs: typeof stitch.as === 'function',
+            }));
 
         const res = await app.handle(GET('/x'));
         expect(await res.json()).toEqual({ hasAs: true });
@@ -116,17 +118,19 @@ describe('stitch() plugin puts a seam on the context', () => {
 describe('streamStitchSse bridges a stitch stream to an SSE body', () => {
     test('each delta becomes a data: message in the SSE response body', async () => {
         const api = seam({ baseUrl: 'https://api.test' });
-        const app = new Elysia().use(stitch({ seam: api })).get('/events', ({ stitch }) => {
-            const events = stitch.stitch({
-                kind: sseSurface,
-                path: '/events',
-                adapter: sseAdapter(['data: one\n\n', 'data: two\n\n']),
+        const app = new Elysia()
+            .use(stitch({ seam: api }))
+            .get('/events', ({ stitch }) => {
+                const events = stitch.stitch({
+                    kind: sseSurface,
+                    path: '/events',
+                    adapter: sseAdapter(['data: one\n\n', 'data: two\n\n']),
+                });
+                return streamStitchSse(events.stream(), {
+                    // The sse surface parses each frame to `{ data: 'one' }`; pull the text back out.
+                    data: (chunk) => (chunk as { data: string }).data,
+                });
             });
-            return streamStitchSse(events.stream(), {
-                // The sse surface parses each frame to `{ data: 'one' }`; pull the text back out.
-                data: (chunk) => (chunk as { data: string }).data,
-            });
-        });
 
         const res = await app.handle(GET('/events'));
         expect(res.status).toBe(200);
@@ -139,15 +143,17 @@ describe('streamStitchSse bridges a stitch stream to an SSE body', () => {
 
     test('a mid-stream / upstream error ends with an event: error frame', async () => {
         const api = seam({ baseUrl: 'https://api.test' });
-        const app = new Elysia().use(stitch({ seam: api })).get('/events', ({ stitch }) => {
-            const events = stitch.stitch({
-                kind: sseSurface,
-                path: '/events',
-                // A >=400 open fails before any delta → the stream yields an `error` event.
-                adapter: sseAdapter(['data: nope\n\n'], 500),
+        const app = new Elysia()
+            .use(stitch({ seam: api }))
+            .get('/events', ({ stitch }) => {
+                const events = stitch.stitch({
+                    kind: sseSurface,
+                    path: '/events',
+                    // A >=400 open fails before any delta → the stream yields an `error` event.
+                    adapter: sseAdapter(['data: nope\n\n'], 500),
+                });
+                return streamStitchSse(events.stream());
             });
-            return streamStitchSse(events.stream());
-        });
 
         const res = await app.handle(GET('/events'));
         const body = await res.text();
@@ -160,12 +166,14 @@ describe('stitchOnError / stitchErrorResponse map a StitchError to HTTP', () => 
     test('a thrown StitchError becomes a 502 by default via the plugin onError', async () => {
         const api = seam({ baseUrl: 'https://api.test' });
         // The upstream 404 is thrown as a StitchError; the handler does NOT catch it.
-        const app = new Elysia().use(stitch({ seam: api })).get('/boom', ({ stitch }) =>
-            stitch.stitch({
-                path: '/missing',
-                adapter: jsonAdapter(404, { error: 'not found' }),
-            })(),
-        );
+        const app = new Elysia()
+            .use(stitch({ seam: api }))
+            .get('/boom', ({ stitch }) =>
+                stitch.stitch({
+                    path: '/missing',
+                    adapter: jsonAdapter(404, { error: 'not found' }),
+                })(),
+            );
 
         const res = await app.handle(GET('/boom'));
         // 502 by default — the upstream 404 is NOT leaked to the client.
