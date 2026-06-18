@@ -19,6 +19,7 @@ import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
 import {
+    type Clock,
     type DriftOptions,
     type DriftSpec,
     type HookContext,
@@ -37,7 +38,7 @@ import {
     type TraceSink,
     isStitch,
 } from './types';
-import { deepMerge, newRunContext, readEnv } from './util';
+import { deepMerge, newRunContext, readEnv, systemClock } from './util';
 import { type Validator, toValidator } from './validator';
 
 export type Fragment = Partial<StitchConfig> | Stitch | string;
@@ -377,6 +378,7 @@ export interface SharedRuntime {
     vault: StitchStore;
     trace: TraceSink;
     throttle: Runtime['throttle'];
+    clock?: Clock;
     principal?: string;
     register?: (s: Stitch) => void;
 }
@@ -392,6 +394,7 @@ export function redactConfig(cfg: StitchConfig): RedactedStitchConfig {
         store?: unknown;
         auth?: unknown;
         adapter?: unknown;
+        clock?: unknown;
     };
     // Strip the live, secret-bearing handles so the running store, credential, and transport cannot
     // be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest). The full config lives on the
@@ -399,6 +402,7 @@ export function redactConfig(cfg: StitchConfig): RedactedStitchConfig {
     delete redacted.store;
     delete redacted.auth;
     delete redacted.adapter;
+    delete redacted.clock;
     // Project the auth's NON-SECRET scheme onto the public config — always re-derived from the live
     // `auth`, never trusted from an externally-set `authScheme`. This is the public identity of a
     // redacted capability: the auth round-trips as JSON (the contract gate) and feeds
@@ -446,13 +450,16 @@ export function makeStitch<T = unknown>(
     // A seam injects shared instances; a standalone stitch builds its own (unchanged behaviour:
     // a store-backed throttle only when a `store` is configured, else the in-process limiter).
     const store = shared?.store ?? cfg.store ?? memoryStore();
+    const clock = shared?.clock ?? cfg.clock ?? systemClock;
     const throttle =
         shared?.throttle ??
         (cfg.store
-            ? createStoreThrottle(cfg.throttle, store)
-            : createThrottle(cfg.throttle));
+            ? createStoreThrottle(cfg.throttle, store, clock)
+            : createThrottle(cfg.throttle, clock));
     const trace = shared?.trace ?? resolveTrace(cfg.trace);
-    const rtOpts: { vault?: StitchStore; principal?: string } = {};
+    const rtOpts: { vault?: StitchStore; principal?: string; clock?: Clock } = {
+        clock,
+    };
     if (shared?.vault) rtOpts.vault = shared.vault;
     if (shared?.principal !== undefined) rtOpts.principal = shared.principal;
     const rt: Runtime = makeRuntime(cfg, throttle, trace, store, rtOpts);

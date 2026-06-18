@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <strong>Zero runtime dependencies · ~22&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~17&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+  <strong>Zero runtime dependencies · ~22&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~18&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
 > [!NOTE]

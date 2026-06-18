@@ -25,6 +25,12 @@ npm release are grouped under the in-development version that introduced them.
     `gatedStream` / `streamAdapter` build streaming bodies, and
     `collectStitchEvents` drains a `.stream()` into its parts. Browser-safe.
     (GAP-AUDIT §2.9)
+-   **Injectable `Clock` (ADR 0010):** a stitch/seam `clock` makes retry backoff,
+    throttle pacing, the per-attempt timeout, and circuit cooldown deterministic.
+    Defaults to `systemClock` (no behaviour change); inject `manualClock()` from
+    `stitchapi/testing` and drive time with `advance(ms)` — no real waiting, no
+    fake-timer library. `Clock` + `systemClock` are exported from the main entry.
+    (`timeout.total` and event timestamps stay on wall-clock.)
 
 ## [1.0.0-rc.1] — 2026-06-18
 

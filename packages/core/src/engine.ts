@@ -25,6 +25,7 @@ import type {
     AdapterRequest,
     AdapterResponse,
     AuthContext,
+    Clock,
     DriftFinding,
     DriftSpec,
     RunContext,
@@ -43,7 +44,7 @@ import {
     newRunContext,
     now,
     parseDuration,
-    sleep,
+    systemClock,
     topLevelQueryIndex,
 } from './util';
 import type { Validator } from './validator';
@@ -71,6 +72,7 @@ export interface Runtime {
     };
     trace: TraceSink;
     store: StitchStore;
+    clock: Clock;
     authCtx: AuthContext;
     /** Lazily-initialised cache controller (ADR 0003). Memoised so all calls of one stitch share
      *  a single coalescer + LRU; the `import('./cache')` fires once, only for a cached stitch. */
@@ -82,7 +84,7 @@ export function makeRuntime(
     throttle: Runtime['throttle'],
     trace: TraceSink,
     store: StitchStore,
-    opts?: { vault?: StitchStore; principal?: string },
+    opts?: { vault?: StitchStore; principal?: string; clock?: Clock },
 ): Runtime {
     const authCtx: AuthContext = {
         store,
@@ -101,6 +103,7 @@ export function makeRuntime(
         throttle,
         trace,
         store,
+        clock: opts?.clock ?? systemClock,
         authCtx,
     };
 }
@@ -416,14 +419,16 @@ async function sleepWithin(
     ms: number,
     budget?: TotalBudget,
     signal?: AbortSignal,
+    clock: Clock = systemClock,
 ): Promise<void> {
-    if (budget == null) return sleep(ms, signal);
+    if (budget == null) return clock.sleep(ms, signal);
+    // `timeout.total` stays on wall-clock — its deadline is not driven by the injected clock.
     const remaining = budget.deadline - now();
     if (remaining <= ms) {
-        if (remaining > 0) await sleep(remaining, signal);
+        if (remaining > 0) await clock.sleep(remaining, signal);
         throw budgetError(budget);
     }
-    return sleep(ms, signal);
+    return clock.sleep(ms, signal);
 }
 
 // Acquire a throttle slot, but never wait past the budget's deadline — and bail PROMPTLY if the
@@ -608,6 +613,7 @@ async function* attemptLoop(
                     (signal) => transport({ ...req, signal }),
                     attemptMs,
                     req.signal, // link a caller's AbortSignal (e.g. a download's) to this attempt
+                    rt.clock,
                 );
             } catch (err) {
                 await cfg.hooks?.onError?.({
@@ -632,6 +638,7 @@ async function* attemptLoop(
                         backoffDelay(attempt + 1, cfg.retry),
                         budget,
                         baseReq.signal,
+                        rt.clock,
                     );
                     continue;
                 }
@@ -667,14 +674,17 @@ async function* attemptLoop(
             if (delegate && rlOn.includes(res.status)) {
                 throw new RateLimitError({
                     status: res.status,
-                    retryAfterMs: parseRetryAfter(res.headers['retry-after']),
+                    retryAfterMs: parseRetryAfter(
+                        res.headers['retry-after'],
+                        rt.clock,
+                    ),
                     response: res,
                 });
             }
 
             if (retryOn.includes(res.status) && attempt < max) {
                 const ra = cfg.retry?.respectRetryAfter
-                    ? parseRetryAfter(res.headers['retry-after'])
+                    ? parseRetryAfter(res.headers['retry-after'], rt.clock)
                     : undefined;
                 yield {
                     type: 'progress',
@@ -688,6 +698,7 @@ async function* attemptLoop(
                     ra ?? backoffDelay(attempt + 1, cfg.retry),
                     budget,
                     baseReq.signal,
+                    rt.clock,
                 );
                 continue;
             }
@@ -726,7 +737,12 @@ async function* attemptWithCircuit(
     if (!cfg.circuit) {
         return yield* attemptLoop(rt, baseReq, state, run, budget);
     }
-    const circuit = createCircuit(cfg.circuit, rt.store, hostKey(baseReq, cfg));
+    const circuit = createCircuit(
+        cfg.circuit,
+        rt.store,
+        hostKey(baseReq, cfg),
+        rt.clock,
+    );
     if ((await circuit.phase()) === 'open') {
         yield {
             type: 'progress',
@@ -1289,7 +1305,7 @@ async function* runStreaming(
             waitedMs: backoff,
             at: now(),
         };
-        await sleepWithin(backoff, budget, baseReq.signal);
+        await sleepWithin(backoff, budget, baseReq.signal, rt.clock);
     }
 
     yield resultEvt(chunks, lastStatus, attempt);

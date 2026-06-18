@@ -1,5 +1,5 @@
 // Small dependency-free helpers shared across the prototype.
-import type { RunContext } from './types';
+import type { Clock, RunContext } from './types';
 
 export const now = (): number => Date.now();
 
@@ -53,6 +53,19 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
         );
     });
 }
+
+/**
+ * The default {@link Clock}: wall-clock time and the platform's global timers. The behaviour the
+ * engine has always had — injecting a different `Clock` (e.g. `manualClock()`) is opt-in.
+ */
+export const systemClock: Clock = {
+    now: () => Date.now(),
+    sleep: (ms, signal) => sleep(ms, signal),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (handle) => {
+        clearTimeout(handle as ReturnType<typeof setTimeout>);
+    },
+};
 
 /** "30s" | "500ms" | "2m" | 1500 -> milliseconds. */
 export function parseDuration(
