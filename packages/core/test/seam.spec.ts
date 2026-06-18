@@ -167,15 +167,22 @@ test('__config is redacted (no store/auth/adapter) yet the auth still applies', 
         store: memoryStore(),
     });
 
-    // Public surface leaks no live secret-bearing handles (exfil-at-rest, ADR §4/§6) …
+    // Public surface leaks no live secret-bearing handles (exfil-at-rest, ADR §4/§6) — the
+    // redacted public type omits them entirely, so reading them needs a cast (and they are also
+    // absent at runtime).
     expect(api.__config.baseUrl).toBe(server.url);
     expect(api.__seam).toBe(true);
-    expect(api.__config.auth).toBeUndefined();
-    expect(api.__config.store).toBeUndefined();
-    expect(api.__config.adapter).toBeUndefined();
+    const live = api.__config as {
+        auth?: unknown;
+        store?: unknown;
+        adapter?: unknown;
+    };
+    expect(live.auth).toBeUndefined();
+    expect(live.store).toBeUndefined();
+    expect(live.adapter).toBeUndefined();
 
     const p = api.stitch('/p');
-    expect(p.__config.auth).toBeUndefined(); // member is redacted too …
+    expect((p.__config as { auth?: unknown }).auth).toBeUndefined(); // member is redacted too …
     expect(p.__config.headers).toEqual({ a: 'b' }); // (non-secret config still inherited)
     // … and yet the credential flows through the shared runtime: the request carries the Bearer.
     await expect(p()).resolves.toEqual({ ok: true });
@@ -187,7 +194,7 @@ test('redaction surfaces the auth SCHEME (non-secret) while stripping the creden
         auth: bearer('TOK'),
     });
     // The live, secret-bearing strategy is gone from the public config …
-    expect(api.__config.auth).toBeUndefined();
+    expect((api.__config as { auth?: unknown }).auth).toBeUndefined();
     // … but its non-secret scheme is projected onto __config (the `authScheme` that feeds
     // `export --openapi`), so a stitch's auth round-trips as JSON without exposing the credential.
     expect((api.__config as { authScheme?: unknown }).authScheme).toEqual({

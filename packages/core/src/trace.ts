@@ -25,7 +25,7 @@ export interface TraceOptions {
 // Header names whose values are secrets: redacted before any event leaves for a
 // built-in sink (JSONL/console). Matched case-insensitively wherever headers appear
 // in an event payload (start input.headers, result/response headers, etc.).
-const SECRET_HEADERS = [
+export const SECRET_HEADERS = [
     'authorization',
     'proxy-authorization',
     'cookie',
@@ -33,6 +33,32 @@ const SECRET_HEADERS = [
     'x-api-key',
 ];
 const REDACTED = '[REDACTED]';
+
+// Redact an event for delivery over an UNTRUSTED transport — the `stitch serve` SSE stream, which
+// is unauthenticated and may be fronted. Unlike the built-in sinks this PRESERVES the payload
+// (`delta`/`result` — a streaming consumer asked for it); it only scrubs the credential-bearing
+// metadata a `start` frame echoes back: URL credentials/secret query slots (via `scrubUrl`) and any
+// denylisted header value in `input.headers` (`authorization` / `cookie` / …). Every other event
+// type passes through untouched.
+export function redactEventForTransport(event: StitchEvent): StitchEvent {
+    if (event.type !== 'start') return event;
+    const headers = event.input.headers;
+    const safeHeaders = headers
+        ? Object.fromEntries(
+              Object.entries(headers).map(([k, v]) => [
+                  k,
+                  SECRET_HEADERS.includes(k.toLowerCase()) ? REDACTED : v,
+              ]),
+          )
+        : undefined;
+    return {
+        ...event,
+        url: scrubUrl(event.url),
+        input: safeHeaders
+            ? { ...event.input, headers: safeHeaders }
+            : event.input,
+    };
+}
 
 // Default body/result truncation cap: large enough to keep a small JSON response or
 // error body fully readable, small enough to bound on-disk growth and limit how much

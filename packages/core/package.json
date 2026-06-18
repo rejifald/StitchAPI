@@ -1,6 +1,7 @@
 {
     "name": "stitchapi",
     "version": "1.0.0-rc.1",
+    "type": "commonjs",
     "description": "Agent-native runtime: a typed, declarative stitch turns one HTTP/GraphQL/LLM/shell endpoint into a resilient, validated function — callable from code, the CLI, or an AI agent over MCP. Agents get a capability, never your credentials. Zero deps.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
@@ -268,6 +269,9 @@
         "url": "https://github.com/rejifald/StitchAPI/issues"
     },
     "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
     "devDependencies": {
         "@arethetypeswrong/cli": "^0.18.3",
         "@eslint/js": "^9.39.4",

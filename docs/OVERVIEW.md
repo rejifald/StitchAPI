@@ -220,7 +220,9 @@ v1.0 release candidate, zero runtime deps). Full gate green — eslint, prettier
 -   **Response streaming** — the fetch adapter exposes the live `ReadableStream`; the engine emits
     a `delta` per chunk with per-delta `output` validation; `sse()` / `stream()` surfaces frame and
     decode; `stitch serve` forwards deltas over SSE. (The `xhr` / `axios` adapters reject streaming
-    by design.)
+    by design.) Includes unframed structural `decode: 'json'`, the streamed `delta` element type
+    inferred from `output`, and resumable SSE (`Last-Event-ID` reconnect with server-`retry`
+    backoff).
 -   **Non-HTTP surfaces** — `llm` and `shell` as symmetric kinds, plus `pipe()` to compose
     heterogeneous stitches with one causal trace across the chain (ADR 0008).
 -   **Composition causality** — a run-identity OTLP span tree (`runId` / `traceId` / `parentId`):
@@ -249,14 +251,14 @@ playground + docs site as one public moment. See [`RELEASE.md`](RELEASE.md) for 
    the real-Worker trace → Mermaid DAG, the sandbox CI wiring, and release hygiene (CHANGELOG,
    runnable `examples/`, READMEs) have all landed.
 2. **v1.1:** agent-grade MCP (per-stitch schemas, structured results, drift-in-error, progress) ·
-   published record/replay mock adapter · pagination presets · streaming polish (unframed
-   `decode: 'json'`, typed `delta` arrays, SSE reconnection).
+   published record/replay mock adapter · pagination presets.
 3. **Visual:** live trace overlay on the playground DAG (the `stitch diagram` Mermaid-from-definition
    exporter has shipped).
 
 **Shipped since this roadmap was written:** non-HTTP `shell` / `llm` kinds + `pipe()` composition
 (ADR 0008) · composition causality / run-identity span tree (ADR 0007) · ADR 0004 Standard-Schema
-fingerprint folded into cache generation · `@stitchapi/redis` · `stitch export --openapi`.
+fingerprint folded into cache generation · `@stitchapi/redis` · `stitch export --openapi` ·
+streaming polish (unframed `decode: 'json'`, typed `delta` arrays, resumable SSE / `Last-Event-ID`).
 
 ---
 

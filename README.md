@@ -12,11 +12,11 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
   <img alt="npm bundle size (minified + gzipped)" src="https://img.shields.io/bundlephobia/minzip/stitchapi" />
-  <img alt="Bundle: ~21 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~21%20kB-2563EB" />
+  <img alt="Bundle: ~22 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~22%20kB-2563EB" />
 </p>
 
 <p align="center">
-  <strong>Zero runtime dependencies · ~21&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~17&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+  <strong>Zero runtime dependencies · ~22&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~17&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
 > [!NOTE]
