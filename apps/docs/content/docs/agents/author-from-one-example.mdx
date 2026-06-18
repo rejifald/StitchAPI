@@ -64,9 +64,11 @@ curl https://api.example.com/users/1
 the equivalent hand-authored stitch, with an `output` schema added:
 
 ```ts twoslash
+// [!code fold:start]
 import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
+// [!code fold:end]
 const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',

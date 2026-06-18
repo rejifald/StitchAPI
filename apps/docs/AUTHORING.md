@@ -361,6 +361,45 @@ the runtime.
 -   One-time pipeline wiring (the `fumadocs-twoslash` transformer in
     `source.config.ts`) is a tooling task, separate from writing pages.
 
+## Folding setup code
+
+Every example is a complete, compiling program (rule 1), so it carries scaffolding
+the reader didn't come for — imports, a validation schema, a type declaration.
+Wrap that scaffolding in a fold so the block opens on the focal code, with a
+**Show full example** toggle to reveal the rest:
+
+<!-- prettier-ignore -->
+````md
+```ts twoslash
+// [!code fold:start]
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+// [!code fold:end]
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+});
+```
+````
+
+-   **`// [!code fold:start]` … `// [!code fold:end]`** are whole-line markers; the
+    lines between them collapse and the markers themselves never render. Put `:end`
+    after the trailing blank line so the collapsed view opens cleanly on the code.
+-   **The folded code stays real.** It's still type-checked by Twoslash and still in
+    the page source — this hides it, it doesn't cut it (contrast Twoslash's
+    `// ---cut---`, which deletes setup from the output with no way back).
+-   **This is not a tab (rule 9).** Tabs are for _equivalent variants_ the reader
+    chooses between (`pnpm`/`npm`, `String form`/`Config object`). A fold is one
+    example at two zoom levels, so it stays out of the tab system: no `tabGroup`, no
+    persisted bar. Fold _inside_ a tab freely — it's a property of one block.
+-   **Fold the boilerplate, not the lesson.** Collapse imports, schema setup, and
+    type plumbing. Never fold the line the page is actually teaching.
+
+The pipeline wiring (`transformerFold` in `source.config.ts` + the `pre` override
+in `components/mdx.tsx`) is a one-time tooling task, separate from writing pages.
+
 ## Code variants — tabs
 
 If a snippet has an equivalent alternative, show the alternatives as **tabs**
