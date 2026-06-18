@@ -1,8 +1,8 @@
 {
-    "name": "@stitchapi/redis",
+    "name": "@stitchapi/vue",
     "version": "1.0.0-rc.2",
     "type": "commonjs",
-    "description": "Redis-backed StitchStore for StitchAPI — distributed throttle + shared sessions/tokens. Bring your own ioredis, node-redis, or Upstash (edge HTTP Redis) client.",
+    "description": "Vue 3 bindings for StitchAPI — reactive useStitch/useStitchStream composables over @stitchapi/query-core, plus an optional TanStack Query queryOptions helper. Streaming-first: re-render as `delta` chunks arrive.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
     "types": "lib/index.d.ts",
@@ -35,20 +35,17 @@
     "repository": {
         "type": "git",
         "url": "git+https://github.com/rejifald/StitchAPI.git",
-        "directory": "packages/redis"
+        "directory": "packages/vue"
     },
     "keywords": [
         "stitchapi",
-        "redis",
-        "ioredis",
-        "node-redis",
-        "upstash",
-        "edge",
-        "serverless",
-        "store",
-        "rate-limit",
-        "distributed-rate-limiting",
-        "session"
+        "vue",
+        "vue3",
+        "composables",
+        "reactivity",
+        "streaming",
+        "query",
+        "tanstack-query"
     ],
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",
@@ -57,24 +54,17 @@
         "node": ">=18.18.0"
     },
     "peerDependencies": {
+        "@stitchapi/query-core": "^1.0.0-rc.1",
         "stitchapi": "^1.0.0-rc.1",
-        "ioredis": "^5.0.0",
-        "redis": "^4.0.0 || ^5.0.0"
-    },
-    "peerDependenciesMeta": {
-        "ioredis": {
-            "optional": true
-        },
-        "redis": {
-            "optional": true
-        }
+        "vue": "^3.4.0"
     },
     "devDependencies": {
+        "@stitchapi/query-core": "workspace:*",
         "@types/node": "^22.10.0",
-        "ioredis": "^5.4.1",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",
-        "vitest": "^4.1.8"
+        "vitest": "^4.1.8",
+        "vue": "^3.4.0"
     }
 }
