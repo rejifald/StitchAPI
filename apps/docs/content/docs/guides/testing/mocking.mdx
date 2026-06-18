@@ -290,6 +290,41 @@ ev.done?.ok; // false
 a `start → result → done` spine), so it works against a stub too — handy for
 asserting that your code consumed the stream it was given.
 
+## Controlling time — `manualClock`
+
+Retry backoff, throttle pacing, and the per-attempt timeout are time-driven, so
+testing them used to mean real waiting. Inject a `manualClock()` as `clock` and
+drive that time by hand with `advance(ms)` — no real delay, no fake-timer library:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { manualClock, mockAdapter } from 'stitchapi/testing';
+
+const clock = manualClock();
+const api = mockAdapter({
+    match: '/flaky',
+    respond: [{ status: 503 }, { body: { ok: true } }],
+});
+const call = stitch({
+    baseUrl: 'https://api.test',
+    path: '/flaky',
+    adapter: api,
+    retry: { attempts: 2, on: [503], baseMs: 10_000 },
+    clock,
+});
+
+const p = call.safe();
+await clock.advance(0); // run the first attempt (503)
+await clock.advance(10_000); // fire the backoff → the retry succeeds
+await p; // { ok: true } — with zero real waiting
+```
+
+`advance(ms)` fires every backoff/pacing/timeout due at or before the new time, in
+order, and `pending()` reports the timers still waiting. The default is the real
+`systemClock` (exported from the main entry), so this changes nothing until you
+inject a clock; you can also supply your own object implementing `Clock`. Note that
+`timeout.total` and event timestamps stay on wall-clock.
+
 ## See also
 
 <Cards>

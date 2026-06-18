@@ -20,6 +20,7 @@ import {
 } from './store';
 import { graphqlSurface } from './surface';
 import type {
+    Clock,
     PrincipalSeam,
     RedactedStitchConfig,
     Seam,
@@ -30,6 +31,7 @@ import type {
     ThrottleOptions,
     TraceSink,
 } from './types';
+import { systemClock } from './util';
 
 // Per-seam id so the shared bucket's store-counter key never collides across seams sharing a store.
 let seamCounter = 0;
@@ -43,8 +45,9 @@ function seamBucket(
     opts: ThrottleOptions | undefined,
     store: StitchStore,
     seamId: string,
+    clock: Clock,
 ): Throttle {
-    const inner = createStoreThrottle(opts, store);
+    const inner = createStoreThrottle(opts, store, clock);
     if (opts?.scope === 'host') return inner; // the host key already pools across the seam
     const key = `seam:${seamId}`;
     return {
@@ -66,6 +69,7 @@ interface SharedSeam {
     vault: StitchStore;
     trace: TraceSink;
     throttle: Throttle;
+    clock: Clock;
     stitches: Stitch[]; // registry of root-created stitches (lifecycle/introspection)
 }
 
@@ -83,7 +87,7 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
         // keys it per-stitch, so it limits just this stitch ON TOP OF the shared budget — it can
         // add a stricter gate but never replace or escape the seam's.
         const local = own.throttle
-            ? createStoreThrottle(own.throttle, shared.store)
+            ? createStoreThrottle(own.throttle, shared.store, shared.clock)
             : undefined;
         const throttle = local
             ? chainThrottle([shared.throttle, local])
@@ -107,6 +111,7 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
             vault: shared.vault,
             trace: shared.trace,
             throttle,
+            clock: shared.clock,
         };
         if (principal !== undefined) runtime.principal = principal;
         // Only the root seam accrues a registry; per-principal handles are ephemeral (one per
@@ -198,15 +203,17 @@ export function seam(options: SeamOptions = {}): Seam {
     const { secretStore, ...rest } = options;
     const fragment = rest as Partial<StitchConfig>;
     const store = fragment.store ?? memoryStore();
+    const clock = fragment.clock ?? systemClock;
     const vault = vaultView(secretStore ?? store);
     const trace = resolveTrace(fragment.trace);
     const seamId = `s${(seamCounter += 1)}`;
     const shared: SharedSeam = {
         fragment,
         store,
+        clock,
         vault,
         trace,
-        throttle: seamBucket(fragment.throttle, store, seamId),
+        throttle: seamBucket(fragment.throttle, store, seamId, clock),
         stitches: [],
         ...(secretStore ? { secretStore } : {}),
     };

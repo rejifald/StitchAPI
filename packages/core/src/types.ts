@@ -474,6 +474,27 @@ export type StitchEvent<T = unknown> =
       }
     | { type: 'done'; ok: boolean; ms: number; attempts: number; at: number };
 
+// ---- Clock (injectable time, ADR 0010) ------------------------------------
+/** An opaque timer handle returned by {@link Clock.setTimer}. */
+export type TimerHandle = unknown;
+/**
+ * The seam for time. The engine reads the clock for retry backoff, throttle pacing, the per-attempt
+ * timeout, circuit cooldown, and `Retry-After` HTTP-dates — so a test can drive them deterministically
+ * with no real waiting. Defaults to the system clock (wall-clock + global timers); inject a
+ * `manualClock()` (from `stitchapi/testing`) to control time by hand. NOTE: `timeout.total` and the
+ * `at`/`ms` fields on events stay on wall-clock and are not driven by the clock.
+ */
+export interface Clock {
+    /** Current time in epoch ms. */
+    now(): number;
+    /** Resolve after `ms`; reject promptly if `signal` aborts. */
+    sleep(ms: number, signal?: AbortSignal): Promise<void>;
+    /** Run `fn` after `ms`; returns a handle for {@link Clock.clearTimer}. */
+    setTimer(fn: () => void, ms: number): TimerHandle;
+    /** Cancel a pending timer from {@link Clock.setTimer}. */
+    clearTimer(handle: TimerHandle): void;
+}
+
 // ---- Config & the Stitch callable ----------------------------------------
 // Each slot accepts any {@link SchemaLike} (raw Zod / Standard Schema / Validator / predicate) —
 // no `toValidator()` cast required; `normalizeInput` coerces them at compose time.
@@ -654,6 +675,12 @@ export interface StitchConfig {
     extends?: (Partial<StitchConfig> | Stitch | string)[];
     /** Test seam / custom transport. */
     adapter?: Adapter;
+    /**
+     * Injectable time (ADR 0010). Defaults to the system clock; inject a `manualClock()` (from
+     * `stitchapi/testing`) to drive retry backoff, throttle pacing, the per-attempt timeout, and
+     * circuit cooldown deterministically in tests. Live object — stripped from `__config`.
+     */
+    clock?: Clock;
     /** Pluggable state store for throttle + session. Default in-memory. */
     store?: StitchStore;
     /**
@@ -698,7 +725,7 @@ export type ResolvedStitchConfig = Omit<
  */
 export type RedactedStitchConfig = Omit<
     ResolvedStitchConfig,
-    'auth' | 'store' | 'adapter' | 'kind'
+    'auth' | 'store' | 'adapter' | 'clock' | 'kind'
 > & {
     /** The surface's `id` string (never the live {@link Surface}); absent for the default `http`. */
     kind?: string;

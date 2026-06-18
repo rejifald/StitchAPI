@@ -198,6 +198,12 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             info: "Test seam / custom transport.",
         },
         {
+            label: "clock",
+            type: "property",
+            detail: "Clock",
+            info: "Injectable time (ADR 0010). Defaults to the system clock; inject a `manualClock()` (from `stitchapi/testing`) to drive retry backoff, throttle pacing, the per-attempt timeout, and circuit cooldown deterministically in tests. Live object — stripped from `__config`.",
+        },
+        {
             label: "store",
             type: "property",
             detail: "StitchStore",

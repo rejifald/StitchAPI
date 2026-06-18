@@ -1008,3 +1008,6 @@ export {
     type StubSpy,
     type StubStitchOptions,
 } from './test-stub';
+// A manual Clock (ADR 0010): inject it as `clock` to drive retry/throttle/timeout/circuit timing by
+// hand — `advance(ms)` instead of real waiting. The system clock is `systemClock` (main entry).
+export { manualClock, type ManualClock } from './test-clock';
