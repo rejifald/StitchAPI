@@ -51,7 +51,7 @@ export function Hero() {
             <div className="relative z-10 mx-auto w-full max-w-6xl">
                 <span className="inline-flex items-center gap-2 rounded-full border border-stitch-border bg-stitch-soft px-3 py-1 text-xs font-medium text-stitch-strong">
                     <span className="size-1.5 rounded-full bg-stitch" />
-                    Agent-native
+                    Agent-native runtime
                 </span>
 
                 {/* Full-width headline. Each reel line is far wider than a grid
@@ -85,13 +85,14 @@ export function Hero() {
                 <div className="mt-[clamp(1.25rem,4vh,3rem)] grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
                     <div>
                         <p className="max-w-xl text-lg leading-relaxed text-fd-muted-foreground">
-                            Declare one endpoint — or one example — and call it
-                            like a local function, with types, validation,
-                            retries, and drift folded into the call. The same
-                            definition runs from the CLI, an HTTP route, or as
-                            an MCP tool — and humans and agents alike get a{' '}
+                            Declare an external API once; call it like a
+                            function, the network out of sight. That same
+                            definition is a tool an AI agent can call — and it
+                            inherits the whole runtime: retries, streaming, and
+                            responses trimmed to the fields that matter, so they
+                            spend far fewer tokens — never the credential, only{' '}
                             <span className="font-medium text-fd-foreground">
-                                capability, not a credential
+                                the capability
                             </span>
                             .
                         </p>
@@ -123,7 +124,7 @@ export function Hero() {
                     <CodePanel filename="users.ts">
                         <Code>{`// Declare once — types, validation, resilience.
 const getUser = stitch({
-  path: 'https://api.example.com/users/{id}',
+  path: 'https://demo.stitchapi.dev/users/{id}',
   output: User, // validator of your choice
   retry: 3,
   timeout: '5s',
