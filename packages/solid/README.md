@@ -18,8 +18,8 @@ pnpm add @stitchapi/solid @stitchapi/query-core stitchapi solid-js
 
 ```tsx
 import { createStitch } from '@stitchapi/solid';
-import { stitch } from 'stitchapi';
 import { Show } from 'solid-js';
+import { stitch } from 'stitchapi';
 
 const getUser = stitch({
     baseUrl: 'https://api.example.com',
@@ -32,7 +32,10 @@ function Profile(props: { id: string }) {
 
     return (
         <Show when={!user.state.isPending} fallback={<Spinner />}>
-            <Show when={!user.state.isError} fallback={<Retry onClick={user.refetch} />}>
+            <Show
+                when={!user.state.isError}
+                fallback={<Retry onClick={user.refetch} />}
+            >
                 <h1>{user.state.data?.name}</h1>
             </Show>
         </Show>
@@ -46,16 +49,20 @@ function Profile(props: { id: string }) {
 
 ```tsx
 import { createStitchStream } from '@stitchapi/solid';
-import { sse } from 'stitchapi';
 import { For } from 'solid-js';
+import { sse } from 'stitchapi';
 
 const chat = sse({ url: 'https://api.example.com/chat' });
 
 function Chat(props: { prompt: string }) {
-    const c = createStitchStream(chat, () => ({ body: { prompt: props.prompt } }));
+    const c = createStitchStream(chat, () => ({
+        body: { prompt: props.prompt },
+    }));
     return (
         <div>
-            <For each={c.state.chunks as string[]}>{(chunk) => <span>{chunk}</span>}</For>
+            <For each={c.state.chunks as string[]}>
+                {(chunk) => <span>{chunk}</span>}
+            </For>
             <Show when={c.state.isStreaming}>
                 <Cursor />
             </Show>
@@ -95,7 +102,9 @@ interface StitchStore<T> {
 import { queryOptions } from '@stitchapi/solid';
 import { createQuery } from '@tanstack/solid-query';
 
-const query = createQuery(() => queryOptions(getUser, { params: { id: id() } }));
+const query = createQuery(() =>
+    queryOptions(getUser, { params: { id: id() } }),
+);
 ```
 
 ## License
