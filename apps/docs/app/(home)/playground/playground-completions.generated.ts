@@ -122,8 +122,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "retry",
             type: "property",
-            detail: "RetryOptions",
-            info: "Retry-and-backoff policy.",
+            detail: "number | RetryOptions",
+            info: "Retry-and-backoff policy. A bare number is shorthand for the attempt count — `retry: 3` ≡ `retry: { attempts: 3 }`.",
         },
         {
             label: "acceptStatus",
@@ -140,8 +140,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "timeout",
             type: "property",
-            detail: "TimeoutOptions",
-            info: "Total and per-attempt timeouts.",
+            detail: "number | string | TimeoutOptions",
+            info: "Total and per-attempt timeouts. A bare number (ms) or duration string is shorthand for the total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`.",
         },
         {
             label: "circuit",
@@ -164,8 +164,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "cache",
             type: "property",
-            detail: "CacheConfig",
-            info: "Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine is loaded lazily from the `stitchapi/cache` subpath only when this block is present.",
+            detail: "number | string | CacheConfig",
+            info: "Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine is loaded lazily from the `stitchapi/cache` subpath only when this block is present. A bare number (ms) or duration string is shorthand for the TTL — `cache: '1m'` ≡ `cache: { ttl: '1m' }` (still subject to the fingerprint / `version` rules before an entry is actually stored).",
         },
         {
             label: "sensitive",

@@ -2,7 +2,7 @@
     "name": "stitchapi",
     "version": "1.0.0-rc.1",
     "type": "commonjs",
-    "description": "Agent-native runtime: a typed, declarative stitch turns one HTTP/GraphQL/LLM/shell endpoint into a resilient, validated function — callable from code, the CLI, or an AI agent over MCP. Agents get a capability, never your credentials. Zero deps.",
+    "description": "Turn any API into a typed, resilient function. A declarative stitch takes one endpoint — HTTP, GraphQL, SSE, LLM, even a shell command — and hands back a callable with auth, retries, validation, and drift built in. No server, no codegen, no config files. Callable from code, the CLI, or an AI agent over MCP — agents get a capability, not your credentials. Zero deps.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
     "types": "lib/index.d.ts",
@@ -238,6 +238,8 @@
     "keywords": [
         "stitch",
         "stitchapi",
+        "api-stitching",
+        "resilience",
         "agent-native",
         "ai-agent",
         "ai",

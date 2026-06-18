@@ -20,8 +20,8 @@ export function Differentiator() {
         <Section id="why-stitchapi" className="border-b border-fd-border">
             <SectionHeading
                 eyebrow="Two empty quadrants"
-                title="A per-call primitive — not a workflow engine or an iPaaS platform"
-                lead="The stitch is the boundary, and nothing more. Orchestration, queues, and business state stay your app’s job — that restraint is the point."
+                title="Built for the two quadrants nobody else covers"
+                lead="tRPC-grade ergonomics for the APIs you don’t own — declared once, called like a local function. These are the two gaps every other approach leaves open."
                 align="center"
             />
 

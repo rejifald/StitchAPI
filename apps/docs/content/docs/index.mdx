@@ -1,12 +1,14 @@
 ---
 title: 'StitchAPI'
-description: 'The agent-native runtime where a typed, declarative stitch replaces fetch for humans and agents alike.'
+description: 'API stitching: turn any API into a typed, resilient function — declare an endpoint once and call it like a local function, for humans and agents alike.'
 ---
 
 A **stitch** is a typed, declarative, composable unit that turns one endpoint
 into a resilient, validated, observable function — you declare it once, and your
-code, the CLI, and an agent all call it without ever touching a credential.
-StitchAPI is the runtime that lets a stitch replace `fetch`.
+code, the CLI, and an agent all call it without ever touching a credential. Keep
+the `fetch` or axios you already have: it is the adapter underneath, and a stitch
+sits above it, turning an endpoint into a function rather than replacing the
+transport.
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
