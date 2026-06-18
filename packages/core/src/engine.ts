@@ -27,8 +27,8 @@ import type {
     AuthContext,
     DriftFinding,
     DriftSpec,
+    ResolvedStitchConfig,
     RunContext,
-    StitchConfig,
     StitchEvent,
     StitchInput,
     StitchStore,
@@ -60,7 +60,7 @@ function randomUUID(): string {
 }
 
 export interface Runtime {
-    cfg: StitchConfig;
+    cfg: ResolvedStitchConfig;
     adapter: Adapter;
     throttle: {
         acquire(
@@ -78,7 +78,7 @@ export interface Runtime {
 }
 
 export function makeRuntime(
-    cfg: StitchConfig,
+    cfg: ResolvedStitchConfig,
     throttle: Runtime['throttle'],
     trace: TraceSink,
     store: StitchStore,
@@ -129,7 +129,7 @@ function emitInto(
     };
 }
 
-const nameOf = (cfg: StitchConfig) => cfg.name ?? cfg.path ?? 'stitch';
+const nameOf = (cfg: ResolvedStitchConfig) => cfg.name ?? cfg.path ?? 'stitch';
 
 function joinUrl(base: string, path: string): string {
     if (/^https?:\/\//i.test(path)) return path;
@@ -146,7 +146,7 @@ function joinUrl(base: string, path: string): string {
 // in buildRequest) and the attempt loop reuses the same request, so it stays constant across
 // retries. GET/HEAD are skipped, and a caller-provided header (case-insensitive) wins.
 function applyIdempotency(
-    cfg: StitchConfig,
+    cfg: ResolvedStitchConfig,
     input: StitchInput,
     method: string,
     headers: Record<string, string>,
@@ -168,7 +168,10 @@ function applyIdempotency(
 const resolveStr = (v: string | (() => string) | undefined): string =>
     typeof v === 'function' ? v() : (v ?? '');
 
-function buildRequest(cfg: StitchConfig, input: StitchInput): AdapterRequest {
+function buildRequest(
+    cfg: ResolvedStitchConfig,
+    input: StitchInput,
+): AdapterRequest {
     // Endpoint resolution: when `url` is set it IS the whole endpoint (no base), but still
     // templated + query-split like a path. Otherwise join `baseUrl` + `path`. (Surface-specific
     // shaping — graphql's body/method/`/graphql` default — is applied below / by its helper.)
@@ -248,7 +251,7 @@ const cloneReq = (r: AdapterRequest): AdapterRequest => ({
     ...r,
     headers: { ...r.headers },
 });
-const hostKey = (req: AdapterRequest, cfg: StitchConfig): string => {
+const hostKey = (req: AdapterRequest, cfg: ResolvedStitchConfig): string => {
     if (cfg.throttle?.scope === 'host') {
         try {
             return new URL(req.url).host;
@@ -305,7 +308,7 @@ const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
 });
 
 async function validateInput(
-    cfg: StitchConfig,
+    cfg: ResolvedStitchConfig,
     input: StitchInput,
 ): Promise<void> {
     for (const part of [
@@ -337,7 +340,7 @@ async function validateInput(
 // failure on a `watch` (but not `critical`) path is a warning, otherwise an error. A bare validator
 // `output` (no DriftSpec) has empty watch/critical, so every failure is an error.
 async function validateSchema(
-    cfg: StitchConfig,
+    cfg: ResolvedStitchConfig,
     value: unknown,
 ): Promise<DriftFinding[]> {
     const out = cfg.output;
@@ -364,7 +367,7 @@ async function validateSchema(
 }
 
 async function validateOutput(
-    cfg: StitchConfig,
+    cfg: ResolvedStitchConfig,
     body: unknown,
 ): Promise<DriftFinding[]> {
     const out = cfg.output;
@@ -400,7 +403,10 @@ interface TotalBudget {
     totalMs: number; // configured total, kept for the error message
 }
 
-function totalBudget(cfg: StitchConfig, t0: number): TotalBudget | undefined {
+function totalBudget(
+    cfg: ResolvedStitchConfig,
+    t0: number,
+): TotalBudget | undefined {
     const totalMs = parseDuration(cfg.timeout?.total);
     return totalMs == null ? undefined : { deadline: t0 + totalMs, totalMs };
 }
@@ -893,7 +899,7 @@ async function ensureCache(rt: Runtime): Promise<CacheController | null> {
 // it (and the `DriftSpec.schema` layer) so the fingerprinter sees the real Zod/Valibot/… instance.
 // Falls back to the wrapper itself when no source was recorded — that is simply un-fingerprintable
 // (a custom Validator/predicate), which the resolver handles by refusing or re-validating.
-function outputSchemaSource(cfg: StitchConfig): unknown {
+function outputSchemaSource(cfg: ResolvedStitchConfig): unknown {
     const out = cfg.output;
     if (!out) return undefined;
     // Cast to a probe shape (not `DriftSpec`) so `__kind` stays `unknown` — a real comparison, not
@@ -956,7 +962,7 @@ const resultEvt = (
 // Interpret a buffered response into a result value via the surface's `interpret` hook (graphql's
 // "200-with-`errors`" failure lives there). No surface / no hook → the body is the value.
 function interpretResponse(
-    cfg: StitchConfig,
+    cfg: ResolvedStitchConfig,
     res: AdapterResponse,
 ): SurfaceOutcome {
     return cfg.kind?.interpret
@@ -1300,7 +1306,7 @@ async function* runStreaming(
 // reads the `sse` config slot, keeping `runStreaming` free of SSE-isms. `sse.reconnect` is off by
 // default; `true` enables it with sane defaults; the object form tunes the cap / fallback backoff.
 // `backoffMs` stays `undefined` when unset so the caller can fall back to the `retry` policy.
-function resolveReconnect(cfg: StitchConfig): {
+function resolveReconnect(cfg: ResolvedStitchConfig): {
     enabled: boolean;
     maxAttempts: number;
     backoffMs: number | undefined;
