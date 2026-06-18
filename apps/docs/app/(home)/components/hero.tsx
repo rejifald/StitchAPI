@@ -1,7 +1,7 @@
 import { BrandBackdrop } from './brand-backdrop';
 import { Code, CodePanel } from './code-panel';
 import { PrimaryButton, SecondaryButton } from './primitives';
-import { Tagline } from './tagline';
+import { Reel } from './reel';
 
 import {
     ArrowRight,
@@ -21,6 +21,24 @@ const simplicity = [
     { icon: Globe, label: 'Runs everywhere' },
 ];
 
+// The headline runs two drum reels on two stacked lines: the API KIND it
+// stitches (4 items → `reel-spin-4`) and the QUALITY the resulting function
+// gains (6 items → `reel-spin-6`). Each reel is the LAST token on its line, so
+// the fixed-width window's slack falls at the (invisible) line end rather than
+// opening a gap mid-phrase. Both are left-aligned (see global.css `.reel__item`);
+// the kinds are noun phrases (no trailing "API" to gap against) and the quality
+// is a predicate adjective, so the article never hits a vowel-initial word.
+const API_KINDS = ['REST endpoint', 'GraphQL query', 'SSE stream', 'LLM call'];
+
+const HERO_QUALITIES = [
+    'typed',
+    'validated',
+    'resilient',
+    'observable',
+    'streamable',
+    'composable',
+];
+
 export function Hero() {
     return (
         <section className="relative overflow-hidden border-b border-fd-border px-6 pt-20 pb-20 sm:pt-28 sm:pb-28">
@@ -33,9 +51,35 @@ export function Hero() {
                         Agent-native
                     </span>
 
-                    <h1 className="mt-6 font-display text-4xl font-black leading-[1.02] tracking-[-0.035em] text-fd-foreground sm:text-6xl">
-                        Turn any API into a typed,{' '}
-                        <span className="text-stitch">resilient function</span>
+                    <h1 className="mt-6 font-display text-4xl font-black leading-[1.2] tracking-[-0.035em] text-fd-foreground sm:text-6xl">
+                        {/* Animated headline — decorative; the static line below
+                            carries a11y/SEO and the reduced-motion fallback. */}
+                        <span
+                            aria-hidden="true"
+                            className="motion-reduce:hidden"
+                        >
+                            <span className="block">
+                                Turn any{' '}
+                                <Reel
+                                    items={API_KINDS}
+                                    className="text-stitch"
+                                />
+                            </span>
+                            <span className="block">
+                                into a function that’s{' '}
+                                <Reel
+                                    items={HERO_QUALITIES}
+                                    className="text-stitch"
+                                />
+                            </span>
+                        </span>
+                        {/* Read by screen readers always; shown when motion is reduced. */}
+                        <span className="sr-only motion-reduce:not-sr-only">
+                            Turn any REST, GraphQL, SSE, or LLM API into a
+                            typed,{' '}
+                            <span className="text-stitch">resilient</span>{' '}
+                            function.
+                        </span>
                     </h1>
 
                     <p className="mt-6 max-w-xl text-lg leading-relaxed text-fd-muted-foreground">
@@ -49,8 +93,6 @@ export function Hero() {
                         </span>
                         .
                     </p>
-
-                    <Tagline />
 
                     <div className="mt-9 flex flex-wrap items-center gap-3">
                         <PrimaryButton href="/docs">
