@@ -83,9 +83,12 @@ const flush = async (): Promise<void> => {
 
 describe('stitchStore', () => {
     test('emits idle/pending → success on subscribe', async () => {
-        const store = stitchStore(unaryStitch(async () => ({ name: 'Ada' })), {
-            params: { id: '1' },
-        });
+        const store = stitchStore(
+            unaryStitch(async () => ({ name: 'Ada' })),
+            {
+                params: { id: '1' },
+            },
+        );
 
         const { states, unsubscribe } = collect(store);
         // The fetch is deferred to first subscription, so subscribing drives the
@@ -181,7 +184,13 @@ describe('stitchStreamStore', () => {
             { type: 'delta', chunk: 1, at: 0 },
             { type: 'delta', chunk: 2, at: 0 },
             { type: 'delta', chunk: 3, at: 0 },
-            { type: 'result', value: [1, 2, 3], status: 200, attempts: 1, at: 0 },
+            {
+                type: 'result',
+                value: [1, 2, 3],
+                status: 200,
+                attempts: 1,
+                at: 0,
+            },
             { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
         ];
         const store = stitchStreamStore(streamStitch(events), undefined);
@@ -191,7 +200,9 @@ describe('stitchStreamStore', () => {
         // Saw a streaming state with the first chunk only.
         expect(
             states.some(
-                (s) => s.status === 'streaming' && (s.chunks as number[]).length === 1,
+                (s) =>
+                    s.status === 'streaming' &&
+                    (s.chunks as number[]).length === 1,
             ),
         ).toBe(true);
 
