@@ -53,15 +53,57 @@ npx stitch init
 ```
 
 `stitch init` (aliased as `stitch rules`) writes the rule into the convention
-each agent reads — `AGENTS.md`, `.cursor/rules/stitchapi.mdc`, and a `CLAUDE.md`
-section. Pick a target with `--format`:
+each agent reads. Pick one or more with `--format` (a comma list, or `all` — the
+default):
 
--   `--format agents` — write `AGENTS.md` only.
--   `--format cursor` — write `.cursor/rules/stitchapi.mdc` only.
--   `--format claude` — write (or append) the `CLAUDE.md` section only.
--   `--format all` — write every target (the default).
+| `--format` | Writes                                                                 |
+| ---------- | ---------------------------------------------------------------------- |
+| `agents`   | `AGENTS.md` (the open standard)                                        |
+| `cursor`   | `.cursor/rules/stitchapi.mdc` (Cursor)                                 |
+| `claude`   | a marked `## Using StitchAPI` section in `CLAUDE.md`                   |
+| `copilot`  | a marked section in `.github/copilot-instructions.md` (GitHub Copilot) |
+| `windsurf` | `.windsurf/rules/stitchapi.md` (Windsurf)                              |
+| `cline`    | `.clinerules/stitchapi.md` (Cline)                                     |
+| `aider`    | a marked section in `CONVENTIONS.md` (Aider)                           |
 
-It refuses to clobber an existing file unless you pass `--force`.
+For example, `npx stitch init --format agents,cursor` writes just those two.
+
+It refuses to clobber an existing file unless you pass `--force`. For the shared
+files (`CLAUDE.md`, Copilot, Aider) only the marked block is replaced — your
+surrounding content is left intact.
+
+## Make the rule about _your_ APIs
+
+Add `--project` and `stitch init` reads your stitches module (the `./stitches.*`
+it would `run`, or `--module <path>`) and appends the endpoints you have already
+declared — so an agent reuses them instead of duplicating a `fetch`:
+
+```bash
+npx stitch init --project
+```
+
+```md
+## Stitches already declared in this project
+
+Reuse these before declaring a new one — call them, compose them under a
+`seam(...)`, or extend an existing one.
+
+-   `getUser` — GET https://api.example.com/users/{id}
+-   `listOrders` — GET https://api.example.com/orders
+```
+
+## Keep it in sync — `--check`
+
+In CI, `--check` verifies the committed rule files still match the rule the
+installed StitchAPI would write, without touching disk. It exits non-zero when a
+file has **drifted** (an absent rule is reported, but is not a failure):
+
+```bash
+npx stitch init --check
+```
+
+Pair it with `--project` to also re-check the declared-stitches list:
+`npx stitch init --check --project`.
 
 ## See also
 
