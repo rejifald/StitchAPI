@@ -3,6 +3,7 @@ import { Differentiator } from './components/differentiator';
 import { Features } from './components/features';
 import { Hero } from './components/hero';
 import { Metrics } from './components/metrics';
+import { NotThis } from './components/not-this';
 import { Problem } from './components/problem';
 import { Surfaces } from './components/surfaces';
 
@@ -10,9 +11,9 @@ import { appName } from '@/lib/shared';
 
 import type { Metadata } from 'next';
 
-const title = 'StitchAPI — a typed stitch replaces fetch';
+const title = 'StitchAPI — turn any API into a typed, resilient function';
 const description =
-    'StitchAPI is an agent-native runtime whose core primitive — a stitch — replaces fetch. Declare one endpoint or one example and call it as a function, CLI, HTTP route, or MCP tool.';
+    'API stitching: declare an endpoint once — its types, auth, and resilience — and call it like a local function. No server, no codegen, no config files. The same definition runs from code, the CLI, an HTTP route, or as an MCP tool.';
 
 export const metadata: Metadata = {
     title,
@@ -42,6 +43,7 @@ export default function HomePage() {
             <Problem />
             <Surfaces />
             <Features />
+            <NotThis />
             <Differentiator />
             <Cta />
             <Footer />

@@ -1,0 +1,336 @@
+---
+title: 'Testing'
+description: 'Mock the transport to test a stitch definition, or swap in a fake stitch to test code that calls one — from stitchapi/testing.'
+---
+
+There are two things to test, and a tool for each. To test a **stitch
+definition** — does it route, retry, validate, time out the way you declared? —
+inject a mock `Adapter` and drive the real engine. To test **code that calls a
+stitch** — a service, a handler, a loader — replace the stitch with a fake
+`Stitch` so no network is involved at all.
+
+Both tools ship from the `stitchapi/testing` subpath. It is framework-agnostic
+and browser-safe — no `vitest`/`jest` imports, no `node:*` modules — so it runs
+in any test runner.
+
+<Callout type="info">
+    This guide covers the **mocking kit** for application authors. The
+    `verify*Contract` functions in the same entry — for proving a custom
+    adapter, store, or sink implements its seam — are a separate reference:
+    [Conformance kits](/docs/reference/conformance-kits).
+</Callout>
+
+## Testing a stitch definition — `mockAdapter`
+
+The transport is a [seam](/docs/concepts/the-stitch): a stitch sends through its
+`adapter`, defaulting to `fetch`. Pass a mock adapter instead and the rest of
+the engine runs for real — URL building, retry, timeout, validation, the event
+stream. Injecting an adapter beats monkeypatching global `fetch`: it is scoped
+to the stitch under test, typed, and comes with a request spy.
+
+`mockAdapter(routes, opts?)` takes one route or a list. The first route whose
+`method` + `match` accept a request answers it.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { mockAdapter } from 'stitchapi/testing';
+import { z } from 'zod';
+
+const api = mockAdapter([
+    {
+        method: 'GET',
+        match: '/users/42',
+        respond: { body: { id: 42, name: 'Ada' } },
+    },
+]);
+
+const getUser = stitch({
+    baseUrl: 'https://api.test',
+    path: '/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+    adapter: api,
+});
+
+const user = await getUser({ params: { id: 42 } });
+// user: { id: 42, name: 'Ada' } — validated against `output`
+
+api.callCount('/users/42'); // 1
+api.lastRequest()?.method; // 'GET'
+```
+
+### Matching
+
+A route's `match` selects which requests it answers:
+
+-   a **string** matches the URL pathname (or, failing that, any substring of
+    the full URL),
+-   a **`RegExp`** tests the full URL,
+-   a **function** `(req) => boolean` is a predicate.
+
+Omit `match` (and `method`) and the route catches every request.
+
+### Responding
+
+`respond` is one of three shapes:
+
+-   a single **`MockResponse`** — one fixed reply. Its fields: `status`,
+    `headers`, `body`, `stream`, `delayMs`, `retryAfter`.
+-   an **array** of them — one per call, the last entry repeating, which is how
+    you drive a retry sequence,
+-   a **function** `(call) => MockResponse` that sees `call.index` and
+    `call.req` — for pagination.
+
+`body` is the already-decoded body: an object is delivered as-is. `delayMs` is
+**abortable**, so a stitch `timeout` cancels it just like a real slow endpoint.
+
+A status sequence drives [retry](/docs/guides/resilience/retry), and the call
+spy proves how many attempts happened:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { mockAdapter } from 'stitchapi/testing';
+
+const api = mockAdapter({
+    match: '/flaky',
+    respond: [{ status: 503 }, { status: 503 }, { body: { ok: true } }],
+});
+
+const call = stitch({
+    baseUrl: 'https://api.test',
+    path: '/flaky',
+    adapter: api,
+    retry: { attempts: 3, on: [503], baseMs: 1 },
+});
+
+await call(); // { ok: true } — the third reply
+api.callCount(); // 3
+```
+
+A function responder sees a per-call `index`, which is all you need to test
+[pagination](/docs/guides/data/pagination):
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { mockAdapter } from 'stitchapi/testing';
+
+const api = mockAdapter({
+    match: '/items',
+    respond: ({ index }) => ({ body: { page: index } }),
+});
+
+const list = stitch({
+    baseUrl: 'https://api.test',
+    path: '/items',
+    adapter: api,
+});
+
+await list(); // { page: 0 }
+await list(); // { page: 1 }
+```
+
+### The request spy
+
+Every mock adapter records what it received:
+
+-   **`.calls(filter?)`** — the requests, optionally filtered by the same
+    string/regex/predicate as `match`.
+-   **`.callCount(filter?)`** — how many; assert retry and cache behaviour with
+    it.
+-   **`.lastRequest()`** — the most recent request, or `undefined`.
+-   **`.reset()`** — forget everything and reset each route's call counter.
+
+### Unmatched requests
+
+By default an unmatched request fails the test loudly — `opts.onUnmatched` is
+`'throw'`. Pass a status number to reply with that bare status instead:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { mockAdapter } from 'stitchapi/testing';
+
+const api = mockAdapter(
+    { match: '/known', respond: { body: {} } },
+    { onUnmatched: 404 },
+);
+
+const call = stitch({ url: 'https://api.test/missing', adapter: api });
+
+const res = await call.safe();
+res.ok; // false
+res.error?.status; // 404
+```
+
+## Testing code that calls a stitch — `stubStitch` / `failStitch`
+
+When the unit under test is a function that _takes_ a stitch and you do not care
+about the transport, hand it a fake. `stubStitch` and `failStitch` return a
+conformant `Stitch`: callable, with `.safe`/`.unwrap`/`.stream`/`.with`, passing
+`isStitch`, plus a call spy — but with no network behind it.
+
+`stubStitch(value | (input) => value, opts?)` resolves to the value (or a
+function of the call input). The spy exposes `.calls`, `.callCount`, and
+`.reset()`:
+
+```ts twoslash
+import { type Stitch, isStitch } from 'stitchapi';
+import { stubStitch } from 'stitchapi/testing';
+
+// The code under test depends on a stitch, not on the network.
+async function loadProfile(getUser: Stitch) {
+    return getUser({ params: { id: 42 } });
+}
+
+const getUser = stubStitch({ id: 42, name: 'Ada' });
+
+isStitch(getUser); // true — it's a real Stitch shape
+
+await loadProfile(getUser);
+getUser.callCount; // 1
+getUser.calls[0]; // { params: { id: 42 } }
+```
+
+`failStitch(error, opts?)` is the failure twin. Pass a message, an
+`{ status, message }` shape, or a ready `StitchError`. `await`/`.unwrap()`
+reject with a `StitchError`; `.safe()` resolves to `{ ok: false }`:
+
+```ts twoslash
+import { StitchError } from 'stitchapi';
+import { failStitch } from 'stitchapi/testing';
+
+const broken = failStitch({ status: 500, message: 'boom' });
+
+// await rejects with a StitchError…
+try {
+    await broken();
+} catch (e) {
+    if (e instanceof StitchError) {
+        e.message; // 'boom'
+        e.status; // 500
+    }
+}
+
+// …and .safe() never throws.
+const res = await broken.safe();
+res.ok; // false
+res.error?.status; // 500
+```
+
+<Callout type="info">
+    With NestJS these pair with `overrideProvider(token).useValue(...)`: stub
+    the stitch provider in a test module and the service under test never knows.
+    See [Integrations → NestJS](/docs/integrations/nestjs).
+</Callout>
+
+## Streaming bodies and `collectStitchEvents`
+
+To test the [`stream`](/docs/reference/surfaces) and [`sse`](/docs/reference/surfaces)
+surfaces you need a live response body. The stream builders produce one, and
+`collectStitchEvents` drains the result so you can assert on it.
+
+-   **`streamOf(chunks)`** — a `ReadableStream` that emits each chunk as its own
+    read, then closes.
+-   **`sseStream(events)`** — a `text/event-stream` body, one well-formed frame
+    per event (a bare string is shorthand for `{ data }`).
+-   **`streamThenError(chunks, err?)`** — emits the chunks, then errors instead
+    of closing — for a mid-stream transport failure.
+-   **`gatedStream(first, gate)`** — emits `first`, then stays open until `gate`
+    resolves — the long-lived shape a concurrency / long-poll test needs.
+-   **`streamAdapter(body, init?)`** — a minimal adapter that returns `body` as
+    the live response body; for routing and a spy, use `mockAdapter` (it accepts
+    a `stream` response too).
+
+`collectStitchEvents(source)` drains a `StitchResult` (or a `.stream()`
+generator) into `{ types, deltas, drifts, result, error, done, events }` — the
+canonical way to assert on a stream:
+
+```ts twoslash
+import { stream } from 'stitchapi/stream';
+import { collectStitchEvents, mockAdapter, streamOf } from 'stitchapi/testing';
+
+const api = mockAdapter({
+    match: '/s',
+    respond: { stream: streamOf(['ab', 'cd']) },
+});
+
+const logs = stream({ url: 'https://api.test/s', adapter: api });
+
+const ev = await collectStitchEvents(logs.stream());
+
+ev.types.includes('delta'); // true
+ev.deltas.length; // 2
+ev.done?.ok; // true
+```
+
+A `streamThenError` body surfaces as an `error` event with the deltas seen so
+far preserved:
+
+```ts twoslash
+import { stream } from 'stitchapi/stream';
+import {
+    collectStitchEvents,
+    mockAdapter,
+    streamThenError,
+} from 'stitchapi/testing';
+
+const api = mockAdapter({
+    match: '/s',
+    respond: { stream: streamThenError(['ab']) },
+});
+
+const logs = stream({ url: 'https://api.test/s', adapter: api });
+
+const ev = await collectStitchEvents(logs.stream());
+
+ev.deltas.length; // 1 — the chunk before the failure
+ev.error; // { message, status }
+ev.done?.ok; // false
+```
+
+`collectStitchEvents` also drains a plain call (the function surface synthesizes
+a `start → result → done` spine), so it works against a stub too — handy for
+asserting that your code consumed the stream it was given.
+
+## Controlling time — `manualClock`
+
+Retry backoff, throttle pacing, and the per-attempt timeout are time-driven, so
+testing them used to mean real waiting. Inject a `manualClock()` as `clock` and
+drive that time by hand with `advance(ms)` — no real delay, no fake-timer library:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { manualClock, mockAdapter } from 'stitchapi/testing';
+
+const clock = manualClock();
+const api = mockAdapter({
+    match: '/flaky',
+    respond: [{ status: 503 }, { body: { ok: true } }],
+});
+const call = stitch({
+    baseUrl: 'https://api.test',
+    path: '/flaky',
+    adapter: api,
+    retry: { attempts: 2, on: [503], baseMs: 10_000 },
+    clock,
+});
+
+const p = call.safe();
+await clock.advance(0); // run the first attempt (503)
+await clock.advance(10_000); // fire the backoff → the retry succeeds
+await p; // { ok: true } — with zero real waiting
+```
+
+`advance(ms)` fires every backoff/pacing/timeout due at or before the new time, in
+order, and `pending()` reports the timers still waiting. The default is the real
+`systemClock` (exported from the main entry), so this changes nothing until you
+inject a clock; you can also supply your own object implementing `Clock`. Note that
+`timeout.total` and event timestamps stay on wall-clock.
+
+## See also
+
+<Cards>
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="Conformance kits" href="/docs/reference/conformance-kits" />
+    <Card title="Retry & backoff" href="/docs/guides/resilience/retry" />
+    <Card title="NestJS" href="/docs/integrations/nestjs" />
+    <Card title="Surfaces" href="/docs/reference/surfaces" />
+</Cards>
