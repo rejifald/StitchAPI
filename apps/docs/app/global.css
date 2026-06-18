@@ -186,11 +186,12 @@ html > body[data-scroll-locked] {
    (--ease) so it reads as a calm detent, not a slot machine. The track stacks
    N items + a duplicate of the first; the loop ends on that duplicate so the
    reset to 0% is seamless. Step height and the item/window heights are all
-   1.5em, so they stay locked together. The keyframe is chosen by item count
-   (data-count) — add a `reel-spin-N` keyframe to support a new length. */
+   1.2em — matched to the hero headline's line-height (leading-[1.2]) so a reel
+   line and a plain line are the same height. The keyframe is chosen by item
+   count (data-count) — add a `reel-spin-N` keyframe to support a new length. */
 .reel__window {
     display: inline-block;
-    height: 1.5em;
+    height: 1.2em;
     overflow: hidden;
     vertical-align: bottom;
 }
@@ -209,11 +210,11 @@ html > body[data-scroll-locked] {
     display: flex;
     flex: none;
     align-items: center;
-    /* The window is as wide as the widest item; centering each word keeps the
-       spacing around a short word (e.g. "typed") symmetric instead of leaving
-       a lopsided gap before the following word. */
-    justify-content: center;
-    height: 1.5em;
+    /* The window is as wide as the widest item; left-align each word so it hugs
+       the preceding text and the slack falls at the (line-ending) right edge,
+       rather than centering a short word and opening a gap on both sides. */
+    justify-content: flex-start;
+    height: 1.2em;
     white-space: nowrap;
 }
 
@@ -224,18 +225,18 @@ html > body[data-scroll-locked] {
     }
     25%,
     43% {
-        transform: translateY(-1.5em);
+        transform: translateY(-1.2em);
     }
     50%,
     68% {
-        transform: translateY(-3em);
+        transform: translateY(-2.4em);
     }
     75%,
     93% {
-        transform: translateY(-4.5em);
+        transform: translateY(-3.6em);
     }
     100% {
-        transform: translateY(-6em);
+        transform: translateY(-4.8em);
     }
 }
 
@@ -246,26 +247,26 @@ html > body[data-scroll-locked] {
     }
     16.67%,
     28.67% {
-        transform: translateY(-1.5em);
+        transform: translateY(-1.2em);
     }
     33.33%,
     45.33% {
-        transform: translateY(-3em);
+        transform: translateY(-2.4em);
     }
     50%,
     62% {
-        transform: translateY(-4.5em);
+        transform: translateY(-3.6em);
     }
     66.67%,
     78.67% {
-        transform: translateY(-6em);
+        transform: translateY(-4.8em);
     }
     83.33%,
     95.33% {
-        transform: translateY(-7.5em);
+        transform: translateY(-6em);
     }
     100% {
-        transform: translateY(-9em);
+        transform: translateY(-7.2em);
     }
 }
 
