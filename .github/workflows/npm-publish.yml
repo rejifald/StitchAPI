@@ -1,6 +1,13 @@
-# Publishes the package to npm when a GitHub release is created. Publishing is
-# gated on the verify suite and the browser e2e gate passing first. See ~/Development/handbook
-# conventions/global/ci-canonical.md §13.
+# Publishes the packages to npm when a GitHub release is created, gated on the verify
+# suite and the browser e2e gate. Authentication is **OIDC trusted publishing** (no
+# long-lived npm token): the publish job mints a short-lived id-token that npm exchanges
+# for publish rights. Each package must have a Trusted Publisher configured on npmjs.com
+# (package Settings → Trusted Publisher → repo `rejifald/StitchAPI`, this workflow file).
+#
+# NOTE: a package's FIRST version cannot be published over OIDC — npm needs the package to
+# exist before a publisher can be attached. Bootstrap a brand-new package once with a local
+# interactive publish (see docs/RELEASING.md), then it rides this workflow for every release.
+# See ~/Development/handbook conventions/global/ci-canonical.md §13.
 name: Publish
 
 on:
@@ -62,30 +69,55 @@ jobs:
         needs: [verify, e2e]
         runs-on: ubuntu-latest
         timeout-minutes: 10
+        permissions:
+            contents: read
+            id-token: write # mint the OIDC token npm exchanges for publish auth (+ provenance)
         steps:
             - uses: actions/checkout@v4
             - uses: pnpm/action-setup@v4
             - uses: actions/setup-node@v4
               with:
                   node-version-file: .nvmrc
-                  registry-url: https://registry.npmjs.org/
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
-            # Build every publishable package up front, so a build failure aborts
-            # before anything reaches npm (no partial release).
+            # Trusted publishing needs npm >= 11.5.1 — newer than the npm bundled with Node — and
+            # pnpm's own OIDC publish is unreliable (pnpm/pnpm#11513), so publish with `npm` below.
+            - run: npm install -g npm@latest
+            # Build every publishable package up front, so a build failure aborts before anything
+            # reaches npm (no partial release).
             - run: pnpm --filter "./packages/*" build
-            # Derive the dist-tag from the version and refuse an unsafe release:
-            # version lockstep, prerelease-aware peer ranges, scoped access, a
-            # prerelease never landing on `latest`, a CHANGELOG entry, and the
-            # release tag matching the package version.
+            # Derive the dist-tag from the version and refuse an unsafe release: version lockstep,
+            # prerelease-aware peer ranges, scoped access, a prerelease never landing on `latest`,
+            # a CHANGELOG entry, and the release tag matching the package version.
             - name: Validate release & derive dist-tag
               id: release
               run: |
                   TAG="$(node scripts/check-release.mjs --print-tag)"
                   echo "tag=$TAG" >> "$GITHUB_OUTPUT"
                   node scripts/check-release.mjs --changelog --tag "$TAG" --release-tag "${{ github.event.release.tag_name }}"
-            # Publish core + every companion under the derived tag. pnpm skips
-            # private packages and any version already on the registry.
-            - run: pnpm -r publish --tag "${{ steps.release.outputs.tag }}" --no-git-checks
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.npm_token }}
+            # Publish each non-private package over OIDC. `pnpm pack` produces the tarball (it
+            # rewrites the `workspace:` protocol and runs each prepack/tsup build); `npm publish`
+            # uploads that tarball authenticated by the workflow's id-token — no NODE_AUTH_TOKEN.
+            # A version already on the registry is skipped, so a re-run after a partial publish is
+            # idempotent. `--provenance` attaches a signed build-provenance attestation.
+            - name: Publish (OIDC trusted publishing)
+              run: |
+                  set -euo pipefail
+                  TAG="${{ steps.release.outputs.tag }}"
+                  OUT="$(mktemp -d)"
+                  for d in packages/*/; do
+                      d="${d%/}"
+                      if [ "$(node -p "require('./$d/package.json').private === true")" = "true" ]; then
+                          continue
+                      fi
+                      name="$(node -p "require('./$d/package.json').name")"
+                      version="$(node -p "require('./$d/package.json').version")"
+                      if npm view "$name@$version" version >/dev/null 2>&1; then
+                          echo "✓ skip $name@$version (already on the registry)"
+                          continue
+                      fi
+                      (cd "$d" && pnpm pack --pack-destination "$OUT" >/dev/null)
+                      tgz="$OUT/$(echo "$name" | sed 's/@//; s#/#-#')-$version.tgz"
+                      echo "→ publishing $name@$version under dist-tag '$TAG'"
+                      npm publish "$tgz" --provenance --tag "$TAG"
+                  done
