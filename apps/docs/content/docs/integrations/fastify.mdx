@@ -1,0 +1,150 @@
+---
+title: Fastify
+description: Register stitchPlugin and your Fastify app gets a shared seam, a request-scoped principal, and bridges into Fastify's Pino logger, SSE streaming, and error handling.
+---
+
+Use `@stitchapi/fastify` when you serve an API with [Fastify](https://fastify.dev)
+and want your stitches wired into its request lifecycle: one shared `seam`
+decorated on the instance, a **request-scoped principal** bound per request, and
+three bridges into Fastify's world — its
+built-in Pino logger, SSE streaming, and a stitch-error → HTTP error handler. Like
+`@stitchapi/nest`, it is a thin peer-dependency plugin that adds no capability of
+its own: it wires StitchAPI's shared-runtime primitive (one store, one trace sink,
+a trusted principal boundary) into Fastify, so core stays untouched.
+
+## Example
+
+Install the package alongside core and Fastify:
+
+```package-install
+@stitchapi/fastify stitchapi fastify
+```
+
+Register the plugin once. Give it a `principal` resolver and every request gets
+its own `seam.as(principal)` handle on `request.stitch` — a separate session/token
+over the **shared** store and throttle. The plugin is wrapped with
+`fastify-plugin`, so the decorators escape its encapsulation and are visible
+app-wide:
+
+```ts twoslash
+import { stitchPlugin } from '@stitchapi/fastify';
+import Fastify from 'fastify';
+
+const app = Fastify({ logger: true });
+
+app.register(stitchPlugin, {
+    seamConfig: { baseUrl: 'https://api.example.com', retry: { attempts: 3 } },
+    principal: (req) => req.headers['x-tenant'] as string | undefined,
+});
+
+app.get('/me', async (request) => request.stitch.stitch({ path: '/me' })());
+```
+
+`request.stitch` is the per-request principal handle; `fastify.stitch` is the root
+seam, decorated app-wide. This is the trusted boundary StitchAPI's seam exists for:
+the principal lives in the closure, so a handler can never name another identity.
+
+## Seam: build or borrow
+
+Pass a `seamConfig` and the plugin **builds and owns** the seam — closing it on the
+Fastify `onClose` hook. Pass a prebuilt `seam` instead and the plugin **borrows**
+it: the app owns its lifecycle and the plugin never closes it.
+
+```ts twoslash
+import { stitchPlugin } from '@stitchapi/fastify';
+import Fastify from 'fastify';
+import { seam } from 'stitchapi';
+
+const api = seam({ baseUrl: 'https://api.example.com' });
+const app = Fastify();
+
+// borrowed — the app owns `api`; override with `closeSeam: true` to force-close.
+app.register(stitchPlugin, { seam: api });
+```
+
+The ownership rule mirrors `@stitchapi/nest`: a seam the plugin built is closed for
+you; a borrowed seam is yours to close.
+
+## Ambient principal — `currentStitch()`
+
+`currentStitch()` reads the request's bound seam from Node's `AsyncLocalStorage`,
+so services called from a handler need not thread `request` through every call — a
+value-add a Node integration can offer that the browser-first core cannot. It
+returns `undefined` outside a request, so a caller can fall back to an explicit
+seam:
+
+```ts twoslash
+import { currentStitch } from '@stitchapi/fastify';
+
+// In a service called from a handler — no `request` threaded through:
+async function loadProfile() {
+    const api = currentStitch(); // the request's principal-bound seam
+    return api?.stitch({ path: '/profile' })();
+}
+```
+
+## SSE streaming
+
+`sendStitchSse(reply, stream, options?)` streams a stitch's `.stream()` output to a
+`text/event-stream` reply. Each `delta` chunk becomes one SSE frame; an `error`
+event ends the stream as a named `error` frame; stream end closes the response; and
+a client disconnect aborts the upstream stitch generator rather than leaving it
+running.
+
+```ts twoslash
+import { sendStitchSse } from '@stitchapi/fastify';
+import Fastify from 'fastify';
+import { sse } from 'stitchapi/sse';
+
+const chat = sse({ url: 'https://api.example.com/chat' });
+const app = Fastify();
+
+app.get<{ Querystring: { q: string } }>('/chat', (req, reply) =>
+    sendStitchSse(reply, chat.stream({ query: { q: req.query.q } }), {
+        data: (chunk) => (chunk as { data: string }).data, // pull text out
+    }),
+);
+```
+
+## Error handling
+
+The plugin registers a `setErrorHandler` that maps a thrown `StitchError` to an
+HTTP response (`502` by default, so an upstream's status is never leaked) and
+rethrows everything else, leaving Fastify's default handler in charge. Propagate
+the upstream status instead by configuring it:
+
+```ts twoslash
+import { stitchPlugin } from '@stitchapi/fastify';
+import Fastify from 'fastify';
+
+const app = Fastify();
+
+app.register(stitchPlugin, {
+    seamConfig: { baseUrl: 'https://api.example.com' },
+    errorHandler: { status: (e) => e.status ?? 502 },
+});
+```
+
+Set `errorHandler: false` to register none and wire your own with
+`stitchErrorHandler(options)`.
+
+<Callout type="info">
+    By default `fastify.log` (Fastify's built-in Pino logger) is bridged as the
+    seam's `TraceSink`, logging **only metadata** — name, method, scrubbed URL,
+    status, attempts, timing — never request/response bodies or headers, so it is
+    safe on a secret-bearing seam. Disable it with `logger: false`, or drop the
+    happy path with `logger: { lifecycle: false }`. See [`@stitchapi/pino`](/docs/integrations/pino)
+    for the same sink as a standalone export.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+    <Card title="Pino" href="/docs/integrations/pino" />
+    <Card title="Hono" href="/docs/integrations/hono" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+</Cards>

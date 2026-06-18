@@ -259,8 +259,11 @@ playground + docs site as one public moment. See [`RELEASE.md`](RELEASE.md) for 
 
 **Shipped since this roadmap was written:** non-HTTP `shell` / `llm` kinds + `pipe()` composition
 (ADR 0008) · composition causality / run-identity span tree (ADR 0007) · ADR 0004 Standard-Schema
-fingerprint folded into cache generation · `@stitchapi/redis` · `stitch export --openapi` ·
-streaming polish (unframed `decode: 'json'`, typed `delta` arrays, resumable SSE / `Last-Event-ID`).
+fingerprint folded into cache generation · companion packages — `@stitchapi/redis` (store),
+`@stitchapi/nest` / `@stitchapi/fastify` / `@stitchapi/hono` (server bindings),
+`@stitchapi/react` + `@stitchapi/query-core` (frontend hooks), `@stitchapi/pino` (trace sink) ·
+`stitch export --openapi` · streaming polish (unframed `decode: 'json'`, typed `delta` arrays,
+resumable SSE / `Last-Event-ID`).
 
 ---
 

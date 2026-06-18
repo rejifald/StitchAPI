@@ -83,6 +83,8 @@ There are plenty of ways to get a typed API client — spec-based generators, ha
 
 -   **Composes with your data layer.** Already using TanStack Query, SWR, or RTK Query? A stitch _is_ the `queryFn` — it owns the call's resilience (retries, throttle, validation, drift); your query layer owns view state (subscriptions, cache, invalidation). They stack; they do not compete. See the [TanStack Query guide](https://stitchapi.dev/docs/integrations/tanstack-query).
 
+-   **First-party framework integrations.** Thin peer-dependency packages wire a stitch into the framework you already run, each adding no capability of its own (core stays untouched): [`@stitchapi/nest`](https://stitchapi.dev/docs/integrations/nestjs), [`@stitchapi/fastify`](https://stitchapi.dev/docs/integrations/fastify), and [`@stitchapi/hono`](https://stitchapi.dev/docs/integrations/hono) on the server; [`@stitchapi/react`](https://stitchapi.dev/docs/integrations/react) (`useStitch` / `useStitchStream`, over the framework-agnostic [`@stitchapi/query-core`](https://stitchapi.dev/docs/integrations/react) store) on the client; and [`@stitchapi/pino`](https://stitchapi.dev/docs/integrations/pino) for the event stream as structured logs.
+
 At a glance:
 
 | Alternative                                            | Needs                    | You maintain                                          | StitchAPI instead                                                        |
