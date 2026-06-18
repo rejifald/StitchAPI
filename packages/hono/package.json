@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/hono",
-    "version": "0.0.0",
+    "version": "1.0.0-rc.2",
     "type": "commonjs",
     "description": "Hono middleware + helpers for StitchAPI — put a seam on the request context, stream a stitch's SSE output, and map Stitch errors to HTTP. Edge/multi-runtime (Fetch-only, no node:*).",
     "main": "lib/index.js",
