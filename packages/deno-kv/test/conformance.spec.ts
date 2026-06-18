@@ -96,8 +96,7 @@ class FakeDenoKv implements DenoKvLike {
         this.data.set(keyId(key), {
             value,
             versionstamp,
-            expiresAt:
-                expireIn == null ? Infinity : Date.now() + expireIn,
+            expiresAt: expireIn == null ? Infinity : Date.now() + expireIn,
         });
         return versionstamp;
     }
