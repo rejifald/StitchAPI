@@ -1,5 +1,6 @@
 import { seam, stitch } from '../src';
 import type { StitchEvent } from '../src';
+import { compose } from '../src/stitch';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 import { asValidator } from './support/schema';
@@ -261,4 +262,45 @@ test('.with() partial application sends bound query alongside call-time query', 
 
     const call = server.calls('/items')[0];
     expect(call?.query).toEqual({ role: 'admin', q: 'ada' });
+});
+
+// 6) Scalar shorthands expand to their option objects at compose time.
+test('scalar shorthands (retry/timeout/cache) expand to option objects', () => {
+    const resolved = compose({
+        path: 'https://api.example.com/x',
+        retry: 3,
+        timeout: '5s',
+        cache: '1m',
+    });
+    expect(resolved.retry).toEqual({ attempts: 3 });
+    expect(resolved.timeout).toEqual({ total: '5s' });
+    expect(resolved.cache).toEqual({ ttl: '1m' });
+});
+
+// 6b) A scalar shorthand folds over an inherited object via extends, preserving the siblings the
+// scalar doesn't name (deep-merge runs AFTER each layer is normalized).
+test('a scalar shorthand merges over an inherited object, preserving siblings', () => {
+    const base = {
+        retry: { attempts: 2, on: [429, 503] },
+        timeout: { total: '30s', perAttempt: '10s' },
+    };
+    const resolved = compose({
+        extends: [base],
+        path: '/x',
+        retry: 5,
+        timeout: '5s',
+    });
+    expect(resolved.retry).toEqual({ attempts: 5, on: [429, 503] });
+    expect(resolved.timeout).toEqual({ total: '5s', perAttempt: '10s' });
+});
+
+// 6c) The shorthand survives end-to-end: a stitch's public __config shows the normalized objects.
+test('a stitch built from shorthand exposes the normalized objects on __config', () => {
+    const s = stitch({
+        path: 'https://api.example.com/x',
+        retry: 4,
+        timeout: 2000,
+    });
+    expect(s.__config.retry).toEqual({ attempts: 4 });
+    expect(s.__config.timeout).toEqual({ total: 2000 });
 });

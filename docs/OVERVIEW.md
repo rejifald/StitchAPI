@@ -9,8 +9,10 @@
 
 ## 1. What StitchAPI is (the 2026 pivot)
 
-StitchAPI moved from a declarative `fetch` wrapper into **an agent-native runtime whose core
-primitive — a _stitch_ — replaces `fetch`** for both humans and agents.
+StitchAPI turns any API into a typed, resilient function — what we call **API stitching**. Its
+core primitive, a _stitch_, takes a single endpoint and hands back a callable; `fetch`/axios are
+pluggable adapters underneath, not something it replaces. It is agent-native by the same move:
+the callable a human imports is the one an agent invokes — getting a capability, not a credential.
 
 A **stitch** is a typed, declarative, composable unit: `input → validated output`, wrapped with
 auth, retries, throttling, timeouts, lifecycle hooks, and observability. The primitive is
@@ -27,7 +29,7 @@ Two market quadrants are empty, and StitchAPI targets both:
 
 ---
 
-## 2. "Agent-friendly," defined — and why `fetch` is the wrong primitive
+## 2. "Agent-friendly," defined — and why raw bytes are the wrong result
 
 "Agent-friendly" is **not** "ship an MCP server." It means agents are **first-class users**: they
 invoke a stitch directly — without booting the whole app — and get a structured, validated,

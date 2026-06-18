@@ -16,13 +16,15 @@ export const source = loader({
 // The advertised numbers live here in ONE place so they can't drift across docs.
 export function llmsPreamble() {
     return `# StitchAPI
-> The agent-native runtime where a typed, declarative stitch replaces fetch for humans and agents alike — declare an endpoint once; your code, the CLI, and an agent all call it without ever touching a credential.
+> API stitching: turn any API into a typed, resilient function. Declare an endpoint once — its types, auth, and resilience — and call it like a local function, from your code, the CLI, or an AI agent over MCP, without ever touching a credential. fetch/axios are pluggable adapters underneath; a stitch sits above them, it does not replace them.
 
 ## What an agent needs to know
-- Agent-native: one context-frugal **code-mode** tool (run_stitch + list_stitches + describe_stitch), not one tool per endpoint — adding APIs never floods the context window.
+- API stitching, not an HTTP client: a **stitch** takes one endpoint (HTTP, GraphQL, SSE, an LLM, even a shell command) and hands back a callable. Keep the fetch/axios you already have — it is the adapter underneath.
 - Capability, not credential: an agent invokes a stitch and gets structured, validated, traceable data; the secret stays behind the boundary.
-- Zero-dependency core, ~17–21 kB min+gzip, validator-agnostic (bring your own Standard Schema / Zod), and it runs in the browser.
-- No spec, no codegen, no server — a URL and one example response is enough.
+- One context-frugal **code-mode** tool (run_stitch + list_stitches + describe_stitch), not one tool per endpoint — adding APIs never floods the context window.
+- No server, no codegen, no config files — a URL and one example response is enough; only explicit composition (no ambient/global config a stitch silently inherits).
+- Zero-dependency core, ~18–22 kB min+gzip, validator-agnostic (bring your own Standard Schema / Zod), and it runs in the browser.
+- Composes with your data layer: a stitch is the queryFn for TanStack Query / SWR — it owns the call's resilience; your query layer owns view state.
 
 ## Quickstart
 \`\`\`ts

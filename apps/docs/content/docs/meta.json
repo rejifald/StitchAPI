@@ -1,6 +1,6 @@
 {
     "title": "Documentation",
-    "description": "The agent-native runtime where a typed, declarative stitch replaces fetch — declare an endpoint once; humans, the CLI, and agents call it without touching a credential.",
+    "description": "API stitching: turn any API into a typed, resilient function — declare an endpoint once and call it like a local function from your code, the CLI, or an agent, without ever touching a credential.",
     "pages": [
         "getting-started",
         "recipes",

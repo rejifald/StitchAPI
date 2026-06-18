@@ -20,6 +20,12 @@ pre-commit:
         - name: size-docs
           glob: '{README.md,packages/core/README.md,apps/docs/**/installation.mdx,apps/docs/**/principles.mdx,apps/docs/**/metrics.tsx,packages/core/scripts/bundle-size.mjs}'
           run: pnpm check:size-docs
+        # README metrics badge block must match the committed snapshot. Tool-free
+        # drift guard (renders from scripts/readme-metrics.snapshot.json) — mirrors
+        # CI's check:readme step. Refresh the numbers with `pnpm metrics`.
+        - name: readme-metrics
+          glob: '{README.md,scripts/readme-metrics.snapshot.json,scripts/gen-readme-metrics.mjs}'
+          run: pnpm check:readme
         - name: format
           # Keep in sync with CI's `prettier --check .` (verify.yml) — cover every
           # extension Prettier handles here so committed files are never left unformatted

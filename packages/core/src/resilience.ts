@@ -5,11 +5,12 @@ import type {
     AcquireOptions,
     AdapterResponse,
     CircuitOptions,
+    Clock,
     RetryOptions,
     StitchStore,
     ThrottleOptions,
 } from './types';
-import { now, parseRate, sleep } from './util';
+import { parseRate, systemClock } from './util';
 
 export class TimeoutError extends Error {}
 
@@ -34,14 +35,17 @@ export function backoffDelay(attempt: number, opts?: RetryOptions): number {
 }
 
 /** Parse a `Retry-After` header (delta-seconds OR HTTP-date) into ms, or undefined. */
-export function parseRetryAfter(headerValue?: string): number | undefined {
+export function parseRetryAfter(
+    headerValue?: string,
+    clock: Clock = systemClock,
+): number | undefined {
     if (headerValue == null) return undefined;
     const raw = headerValue.trim();
     if (raw === '') return undefined;
     if (/^\d+$/.test(raw)) return parseInt(raw, 10) * 1000;
     const when = Date.parse(raw); // HTTP-date
     if (Number.isNaN(when)) return undefined;
-    return Math.max(0, when - now());
+    return Math.max(0, when - clock.now());
 }
 
 interface KeyState {
@@ -67,7 +71,10 @@ const hostStates = new Map<string, KeyState>();
  * budget pools in-process across independent stitch instances; `scope:'stitch'` (default)
  * keeps state closure-local to this limiter.
  */
-export function createThrottle(opts?: ThrottleOptions): {
+export function createThrottle(
+    opts?: ThrottleOptions,
+    clock: Clock = systemClock,
+): {
     acquire(key: string, opts?: AcquireOptions): Promise<{ waitedMs: number }>;
     release(key: string): void;
 } {
@@ -110,17 +117,17 @@ export function createThrottle(opts?: ThrottleOptions): {
             // Only a real concurrency block counts as "waited" — not incidental scheduling
             // jitter — so waitedMs (and the 'throttled' event) is deterministic.
             const blocked = limit != null && s.inFlight >= limit;
-            const blockStart = now();
+            const blockStart = clock.now();
             await takeSlot(s); // gate entry on concurrency first
-            if (blocked) waitedMs = now() - blockStart;
+            if (blocked) waitedMs = clock.now() - blockStart;
         }
         if (spacing > 0) {
             // Then pace within the held slot: reserve the next grant time and wait for it.
-            const at = Math.max(now(), s.nextGrantAt);
+            const at = Math.max(clock.now(), s.nextGrantAt);
             s.nextGrantAt = at + spacing;
-            const wait = at - now();
+            const wait = at - clock.now();
             if (wait > 0) {
-                await sleep(wait);
+                await clock.sleep(wait);
                 waitedMs += wait;
             }
         }
@@ -142,7 +149,7 @@ export function createThrottle(opts?: ThrottleOptions): {
         if (
             s.inFlight === 0 &&
             s.waiters.length === 0 &&
-            s.nextGrantAt <= now()
+            s.nextGrantAt <= clock.now()
         )
             states.delete(key);
     }
@@ -180,6 +187,7 @@ export function withTimeout<T>(
     fn: (signal: AbortSignal) => Promise<T>,
     ms?: number,
     linkSignal?: AbortSignal,
+    clock: Clock = systemClock,
 ): Promise<T> {
     const controller = new AbortController();
     let unlink: (() => void) | undefined;
@@ -198,18 +206,18 @@ export function withTimeout<T>(
         return unlink ? out.finally(unlink) : out;
     }
     return new Promise<T>((resolve, reject) => {
-        const timer = setTimeout(() => {
+        const timer = clock.setTimer(() => {
             controller.abort();
             reject(new TimeoutError(`timed out after ${ms}ms`));
         }, ms);
         fn(controller.signal).then(
             (value) => {
-                clearTimeout(timer);
+                clock.clearTimer(timer);
                 unlink?.();
                 resolve(value);
             },
             (err) => {
-                clearTimeout(timer);
+                clock.clearTimer(timer);
                 unlink?.();
                 reject(err);
             },
@@ -270,6 +278,7 @@ export function createCircuit(
     opts: CircuitOptions,
     store: StitchStore,
     fallbackKey: string,
+    clock: Clock = systemClock,
 ): {
     phase(): Promise<CircuitPhase>;
     onSuccess(): Promise<void>;
@@ -289,7 +298,9 @@ export function createCircuit(
         async phase(): Promise<CircuitPhase> {
             const r = await read();
             if (r.openedAt === 0) return 'closed';
-            return now() - r.openedAt >= halfOpenAfter ? 'half-open' : 'open';
+            return clock.now() - r.openedAt >= halfOpenAfter
+                ? 'half-open'
+                : 'open';
         },
         // A success closes the breaker and clears the failure count.
         async onSuccess(): Promise<void> {
@@ -302,7 +313,7 @@ export function createCircuit(
             const wasOpen = r.openedAt !== 0;
             if (wasOpen || failures >= opts.failureThreshold) {
                 // (re)open — arm a fresh cooldown window.
-                await store.set(nsKey, { failures, openedAt: now() });
+                await store.set(nsKey, { failures, openedAt: clock.now() });
                 return !wasOpen; // "newly opened" only when it had been closed
             }
             await store.set(nsKey, { failures, openedAt: 0 });

@@ -968,3 +968,46 @@ export function verifyFingerprintContract(
 
     return runRulesSync('fingerprint', rules);
 }
+
+// ---------------------------------------------------------------------------
+// Mocking kit — for testing your own stitches and the code that calls them
+// ---------------------------------------------------------------------------
+// The conformance verifiers above are for VENDORS proving a custom seam (store /
+// adapter / sink / fingerprinter) complies. The exports below are for APP AUTHORS,
+// the other audience: a mock transport to drive a stitch definition against canned
+// responses, fake stitches to stand in for the real thing when testing calling
+// code, builders for streaming bodies, and an event collector. All browser-safe.
+
+export {
+    mockAdapter,
+    type MockAdapter,
+    type MockAdapterOptions,
+    type MockCall,
+    type MockMatch,
+    type MockResponder,
+    type MockResponse,
+    type MockRoute,
+} from './test-mock';
+export {
+    gatedStream,
+    sseStream,
+    type SseEvent,
+    streamAdapter,
+    streamOf,
+    streamThenError,
+} from './test-stream';
+export {
+    collectStitchEvents,
+    type CollectedEvents,
+    type StitchEventSource,
+} from './test-events';
+export {
+    failStitch,
+    stubStitch,
+    type StubImpl,
+    type StubSpy,
+    type StubStitchOptions,
+} from './test-stub';
+// A manual Clock (ADR 0010): inject it as `clock` to drive retry/throttle/timeout/circuit timing by
+// hand — `advance(ms)` instead of real waiting. The system clock is `systemClock` (main entry).
+export { manualClock, type ManualClock } from './test-clock';

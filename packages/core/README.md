@@ -4,9 +4,9 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.1`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is very welcome.
+> **StitchAPI is at `1.0.0-rc.2`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is very welcome.
 
-StitchAPI is an agent-native integration runtime built around one primitive: a **stitch** — a typed, declarative, composable unit that turns a single endpoint into a resilient, validated, observable function. You declare it once; your code calls it, the CLI runs it, and an AI agent can invoke it without ever touching a credential.
+**StitchAPI turns any API into a typed, resilient function.** Its one primitive — a **stitch** — takes a single endpoint and hands you back a callable: declare the endpoint's contract once (input, output, auth, resilience) and call it like a local function. No server, no codegen, no config files — only explicit composition. The same definition your code calls, the CLI runs and an AI agent can invoke without ever touching a credential.
 
 The name StitchAPI combines the words “stitch” and “API,” reflecting its core purpose: to “stitch” or seamlessly connect any JSON-based API into your project. The term “stitch” conveys the idea of binding or linking various APIs into a unified system within your project.
 
@@ -59,13 +59,13 @@ The name StitchAPI combines the words “stitch” and “API,” reflecting its
 
 In almost every project involving HTTP calls, there’s usually a src/api directory filled with simple functions that make HTTP requests using a chosen HTTP library. These functions often do the bare minimum: send an HTTP request and “unwrap” the response.
 
-Everything that actually makes an integration reliable — auth lifecycle, retries, rate limits, timeouts, response validation, drift detection, observability — is left to be re-implemented at every call site, and each wrapper rots independently. `fetch` hands back opaque bytes; that is the wrong primitive for application code, and an even worse one for an AI agent that needs structured, validated, observable results.
+Everything that actually makes an integration reliable — auth lifecycle, retries, rate limits, timeouts, response validation, drift detection, observability — is left to be re-implemented at every call site, and each wrapper rots independently. `fetch` hands back opaque bytes — and raw bytes are not what application code, or an AI agent, actually needs; both want structured, validated, observable results.
 
 This project replaces that folder with a single primitive. You declare an endpoint (or “stitch”) and receive a ready-to-use function in return — with resilience, auth, validation, and observability folded into the call itself, for human and agent callers alike.
 
 ## Why StitchAPI
 
-There are plenty of ways to get a typed API client — spec-based generators, hand-authored contract clients, workflow platforms, or a folder of hand-rolled fetch wrappers. StitchAPI sits in a spot none of them cover: it turns **one endpoint at a time** into a resilient, validated, observable function — no spec, no codegen, no server.
+There are plenty of ways to get a typed API client — spec-based generators, hand-authored contract clients, workflow platforms, or a folder of hand-rolled fetch wrappers. StitchAPI sits in a spot none of them cover: it turns **one endpoint at a time** into a resilient, validated, observable function — no spec, no codegen, no config files, no server; only explicit composition.
 
 -   **Atomic, not spec-first.** Spec-based generators (openapi-generator, Orval, Kubb, …) need a complete, accurate OpenAPI document before they can emit anything — and most real-world APIs (internal services, undocumented vendors, the long tail) never get one. A stitch needs a URL and an example response. Got a spec anyway? It stays useful — spec ingestion is on the roadmap as a shortcut, never a requirement — and since every stitch carries its own schema, a spec can eventually be _emitted_ from your stitches instead.
 
@@ -80,6 +80,8 @@ There are plenty of ways to get a typed API client — spec-based generators, ha
 -   **Observability with zero infrastructure.** Every call emits a typed event stream, but tracing is **off by default** — a stitch's only effect is its call, writing and printing nothing until you opt in (per stitch with `trace: 'console'` / `fileSink(path)` / a `TraceSink`, or globally with `STITCH_TRACE_CONSOLE=1` / `STITCH_TRACE_FILE=<path>` / `STITCH_EXPORT=otlp`). Then it's the console and a local JSONL log (`stitch trace` to inspect) — no collector, no dashboard, nothing to deploy.
 
 -   **A library, not a platform.** Zero runtime dependencies, embeds in your project, nothing to operate. Workflow platforms (Windmill, n8n, …) solve integration with a server and a visual builder; StitchAPI keeps it a code primitive — stitches compose in plain TypeScript.
+
+-   **Composes with your data layer.** Already using TanStack Query, SWR, or RTK Query? A stitch _is_ the `queryFn` — it owns the call's resilience (retries, throttle, validation, drift); your query layer owns view state (subscriptions, cache, invalidation). They stack; they do not compete. See the [TanStack Query guide](https://stitchapi.dev/docs/integrations/tanstack-query).
 
 At a glance:
 
@@ -107,7 +109,7 @@ For the full competitive landscape and positioning, see the [Overview](docs/OVER
 -   **CLI, HTTP & MCP surfaces** - the definition your code imports is also runnable from the shell (`stitch run <name>` streams JSONL events), served over HTTP (`stitch serve`), or exposed to agents over MCP (`stitch mcp`) — the same stitch behind every front door.
 -   **Typed URLs** - full [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates (`{id}`, `{+path}`, `{?q,sort}`, explode `*`, prefix `:n`), and a `qs`-style query builder that serializes nested objects (`a[b]=c`) and arrays — both dependency-free.
 -   **Pluggable transport** - `fetch` by default; drop in the shipped `axiosAdapter`, or any `Adapter` function, to route requests through axios or another HTTP client.
--   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~22 kB min+gzip**; a typical `import { stitch }` trims to **~17 kB** — and with no transitive tree, that is the entire cost.
+-   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~22 kB min+gzip**; a typical `import { stitch }` trims to **~18 kB** — and with no transitive tree, that is the entire cost.
 
 ## Documentation
 
@@ -147,7 +149,7 @@ const { stitch } = require("stitchapi");
 
 The runtime ships with zero dependencies. Schema validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator ([Valibot](https://valibot.dev), [ArkType](https://arktype.io), …); none of them is bundled. The examples below use Zod for familiarity.
 
-**Bundle size.** The whole `stitchapi` entry is **~22 kB minified + gzipped** (~61 kB raw, ~19 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~17 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
+**Bundle size.** The whole `stitchapi` entry is **~22 kB minified + gzipped** (~61 kB raw, ~19 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~18 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
 
 ## Quick start
 
