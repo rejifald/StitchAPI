@@ -1,5 +1,5 @@
 import { BrandBackdrop } from './brand-backdrop';
-import { Code, CodePanel } from './code-panel';
+import { CodePanel } from './code-panel';
 import { PrimaryButton, SecondaryButton } from './primitives';
 import { Reel } from './reel';
 
@@ -120,8 +120,16 @@ export function Hero() {
                         </div>
                     </div>
 
-                    <CodePanel filename="users.ts">
-                        <Code>{`// Declare once — types, validation, resilience.
+                    <CodePanel
+                        filename="users.ts"
+                        code={`// [!code fold:start]
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string() });
+
+// [!code fold:end]
+// Declare once — types, validation, resilience.
 const getUser = stitch({
   path: 'https://api.example.com/users/{id}',
   output: User, // validator of your choice
@@ -132,8 +140,8 @@ const getUser = stitch({
 
 // Call it like a local function.
 const user = await getUser({ params: { id: '42' } });
-// → typed · validated · retried · cached`}</Code>
-                    </CodePanel>
+// → typed · validated · retried · cached`}
+                    />
                 </div>
             </div>
         </section>

@@ -5,6 +5,8 @@ import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { MDXComponents } from 'mdx/types';
 import type { ComponentProps } from 'react';
 
+import { FoldableCodeBlock } from '@/components/code-block';
+
 // One generator for the whole docs build — reads the real workspace types so
 // Reference pages render their option shapes straight from source (no hand-written
 // tables that can drift). `path` on <AutoTypeTable> resolves relative to this app's
@@ -19,6 +21,9 @@ type AutoTypeTableProps = Omit<
 export function getMDXComponents(components?: MDXComponents) {
     return {
         ...defaultMdxComponents,
+        // Adds a "Show full code" toggle to blocks with a fold region; falls
+        // back to the default code block otherwise (see components/code-block.tsx).
+        pre: FoldableCodeBlock,
         AutoTypeTable: (props: AutoTypeTableProps) => (
             <AutoTypeTable generator={generator} {...props} />
         ),

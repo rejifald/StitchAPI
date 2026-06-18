@@ -1,6 +1,9 @@
+'use client';
+
+import { FoldToggleBar } from '@/components/fold-toggle';
 import { cn } from '@/lib/cn';
 
-import type { ReactNode } from 'react';
+import { Fragment, useState } from 'react';
 
 const KEYWORDS = new Set([
     'const',
@@ -69,43 +72,108 @@ function tokenizeLine(line: string): Tok[] {
     return toks;
 }
 
-export function Code({ children }: { children: string }) {
-    const lines = children.replace(/\n$/, '').split('\n');
+const FOLD_START = /\/\/\s*\[!code fold:start\]/;
+const FOLD_END = /\/\/\s*\[!code fold:end\]/;
+
+type Segment = { folded: boolean; lines: string[] };
+
+/**
+ * Split code into folded / unfolded runs on `// [!code fold:start|end]` marker
+ * lines (the markers themselves are dropped) — the same sigils the docs MDX
+ * blocks use (see lib/transformer-fold.ts), so the affordance is identical.
+ */
+function splitFold(code: string): { segments: Segment[]; hasFold: boolean } {
+    const lines = code.replace(/\n$/, '').split('\n');
+    const segments: Segment[] = [];
+    let folding = false;
+    let hasFold = false;
+    for (const line of lines) {
+        if (FOLD_START.test(line)) {
+            folding = true;
+            hasFold = true;
+            continue;
+        }
+        if (FOLD_END.test(line)) {
+            folding = false;
+            continue;
+        }
+        const last = segments.at(-1);
+        if (last && last.folded === folding) last.lines.push(line);
+        else segments.push({ folded: folding, lines: [line] });
+    }
+    return { segments, hasFold };
+}
+
+function Line({ line, newline }: { line: string; newline: boolean }) {
+    return (
+        <span>
+            {tokenizeLine(line).map((t, ti) =>
+                t.className ? (
+                    <span key={ti} className={t.className}>
+                        {t.text}
+                    </span>
+                ) : (
+                    <span key={ti}>{t.text}</span>
+                ),
+            )}
+            {newline ? '\n' : ''}
+        </span>
+    );
+}
+
+/**
+ * Render tokenized lines, wrapping each folded run in a `[data-fold-region]`
+ * span — the shared CSS in global.css collapses it behind the toggle.
+ */
+function Code({ code }: { code: string }) {
+    const { segments } = splitFold(code);
+    const total = segments.reduce((n, s) => n + s.lines.length, 0);
+    let gi = 0;
     return (
         <>
-            {lines.map((line, li) => (
-                <span key={li}>
-                    {tokenizeLine(line).map((t, ti) =>
-                        t.className ? (
-                            <span key={ti} className={t.className}>
-                                {t.text}
-                            </span>
-                        ) : (
-                            <span key={ti}>{t.text}</span>
-                        ),
-                    )}
-                    {li < lines.length - 1 ? '\n' : ''}
-                </span>
-            ))}
+            {segments.map((seg, si) => {
+                const lines = seg.lines.map((line) => {
+                    const idx = gi++;
+                    return (
+                        <Line
+                            key={idx}
+                            line={line}
+                            newline={idx < total - 1}
+                        />
+                    );
+                });
+                return seg.folded ? (
+                    <span key={si} data-fold-region="">
+                        {lines}
+                    </span>
+                ) : (
+                    <Fragment key={si}>{lines}</Fragment>
+                );
+            })}
         </>
     );
 }
 
 export function CodePanel({
     filename,
-    children,
+    code,
     className,
 }: {
     filename: string;
-    children: ReactNode;
+    code: string;
     className?: string;
 }) {
+    const { hasFold } = splitFold(code);
+    const [open, setOpen] = useState(false);
     return (
         <div
             className={cn(
                 'overflow-hidden rounded-xl border border-fd-border bg-fd-card shadow-lg',
                 className,
             )}
+            data-fold-collapsed={
+                hasFold ? (open ? 'false' : 'true') : undefined
+            }
         >
             <div className="flex items-center gap-2 border-b border-fd-border bg-fd-muted/40 px-4 py-2.5">
                 <span className="size-3 rounded-full bg-fd-border" />
@@ -116,8 +184,13 @@ export function CodePanel({
                 </span>
             </div>
             <pre className="code-panel overflow-x-auto px-4 py-4 font-mono text-[13px] leading-relaxed text-fd-foreground">
-                <code>{children}</code>
+                <code>
+                    <Code code={code} />
+                </code>
             </pre>
+            {hasFold && (
+                <FoldToggleBar open={open} onToggle={() => setOpen((v) => !v)} />
+            )}
         </div>
     );
 }
