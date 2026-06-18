@@ -1,6 +1,7 @@
 import { BrandBackdrop } from './brand-backdrop';
 import { Code, CodePanel } from './code-panel';
 import { PrimaryButton, SecondaryButton } from './primitives';
+import { Tagline } from './tagline';
 
 import {
     ArrowRight,
@@ -48,6 +49,8 @@ export function Hero() {
                         </span>
                         .
                     </p>
+
+                    <Tagline />
 
                     <div className="mt-9 flex flex-wrap items-center gap-3">
                         <PrimaryButton href="/docs">

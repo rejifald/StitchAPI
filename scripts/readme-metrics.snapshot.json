@@ -1,0 +1,11 @@
+{
+    "_comment": "Dynamic README badge values from gitignored tool output (fallow code-health score, Vitest line/branch coverage). Refreshed by `pnpm gen:readme --refresh`, which `pnpm metrics` runs after fallow + coverage; committed so the README drift guard (`pnpm check:readme`) recomputes the badge block without running any tool. The license badge is read live from package.json, not stored here.",
+    "health": {
+        "score": 59,
+        "grade": "C"
+    },
+    "coverage": {
+        "lines": 89.8,
+        "branches": 77.5
+    }
+}
