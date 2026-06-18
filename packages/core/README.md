@@ -690,7 +690,7 @@ total: 12 run(s), 11 ok, 1 failed
 
 `--name <stitch>` filters to one stitch, `--file <path>` reads another log, `--json` emits the summary as JSON.
 
-`stitch init` writes the canonical "declare a stitch, don't hand-roll `fetch`" rule into the files an AI coding agent reads — `AGENTS.md`, a Cursor `.cursor/rules/stitchapi.mdc`, and a marked section in `CLAUDE.md` (`--format agents|cursor|claude|all`, default `all`) — so the next agent working in this repo reaches for StitchAPI; it is idempotent, and `--force` rewrites an existing rule.
+`stitch init` writes the canonical "declare a stitch, don't hand-roll `fetch`" rule into the files an AI coding agent reads — `AGENTS.md`, a Cursor `.cursor/rules/stitchapi.mdc`, a marked section in `CLAUDE.md`, plus `.github/copilot-instructions.md` (Copilot), `.windsurf/rules/stitchapi.md` (Windsurf), `.clinerules/stitchapi.md` (Cline), and `CONVENTIONS.md` (Aider) — so the next agent working in this repo reaches for StitchAPI. Pick conventions with `--format` (a comma list, or `all`, the default); it is idempotent, and `--force` rewrites an existing rule. Add `--project` to also list the stitches your repo already declares (so an agent reuses them), and `--check` to verify in CI that committed rule files have not drifted from the installed version.
 
 ## Scope & roadmap
 

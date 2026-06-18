@@ -13,8 +13,10 @@ export interface MermaidExportResult {
     warnings: string[];
 }
 
-// A compact "METHOD endpoint" label for the request node.
-function endpointLabel(cfg: StitchConfig): string {
+// A compact "METHOD endpoint" label for the request node. Exported so `stitch
+// init --project` can reuse the exact same one-line summary when listing a repo's
+// existing stitches in the consumer rule.
+export function endpointLabel(cfg: StitchConfig): string {
     const method = (cfg.method ?? 'GET').toUpperCase();
     let where: string;
     if (typeof cfg.url === 'string') where = cfg.url;
