@@ -1,5 +1,14 @@
 {
     "title": "Integrations",
     "icon": "Plug",
-    "pages": ["nestjs", "fastify", "hono", "react", "tanstack-query", "pino"]
+    "pages": [
+        "nestjs",
+        "fastify",
+        "hono",
+        "react",
+        "vue",
+        "svelte",
+        "tanstack-query",
+        "pino"
+    ]
 }
