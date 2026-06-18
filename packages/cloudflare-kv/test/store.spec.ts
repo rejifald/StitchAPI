@@ -48,9 +48,7 @@ class FakeKvNamespace implements KVNamespaceLike {
     ): Promise<void> {
         const ttl = options?.expirationTtl;
         if (ttl != null && ttl < 60) {
-            throw new Error(
-                `KV PUT: expirationTtl must be >= 60s, got ${ttl}`,
-            );
+            throw new Error(`KV PUT: expirationTtl must be >= 60s, got ${ttl}`);
         }
         this.data.set(key, {
             value,
