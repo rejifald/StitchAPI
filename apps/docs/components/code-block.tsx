@@ -1,9 +1,9 @@
 'use client';
 
-import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
-import { useState, type ComponentProps } from 'react';
-
 import { FoldToggleBar } from '@/components/fold-toggle';
+
+import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
+import { type ComponentProps, useState } from 'react';
 
 // `data-fold` is set on the `<pre>` by lib/transformer-fold.ts when a block has
 // a foldable region; it isn't part of the intrinsic `pre` prop types.

@@ -135,11 +135,7 @@ function Code({ code }: { code: string }) {
                 const lines = seg.lines.map((line) => {
                     const idx = gi++;
                     return (
-                        <Line
-                            key={idx}
-                            line={line}
-                            newline={idx < total - 1}
-                        />
+                        <Line key={idx} line={line} newline={idx < total - 1} />
                     );
                 });
                 return seg.folded ? (
@@ -189,7 +185,10 @@ export function CodePanel({
                 </code>
             </pre>
             {hasFold && (
-                <FoldToggleBar open={open} onToggle={() => setOpen((v) => !v)} />
+                <FoldToggleBar
+                    open={open}
+                    onToggle={() => setOpen((v) => !v)}
+                />
             )}
         </div>
     );

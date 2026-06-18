@@ -1,8 +1,8 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
-
 import { cn } from '@/lib/cn';
+
+import { ChevronDown } from 'lucide-react';
 
 /**
  * The footer bar that toggles a foldable code block's hidden setup. Shared by
