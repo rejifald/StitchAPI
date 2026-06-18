@@ -44,82 +44,80 @@ export function Hero() {
         <section className="relative overflow-hidden border-b border-fd-border px-6 pt-20 pb-20 sm:pt-28 sm:pb-28">
             <BrandBackdrop variant="hero" />
 
-            <div className="relative z-10 mx-auto grid w-full max-w-6xl items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
-                <div>
-                    <span className="inline-flex items-center gap-2 rounded-full border border-stitch-border bg-stitch-soft px-3 py-1 text-xs font-medium text-stitch-strong">
-                        <span className="size-1.5 rounded-full bg-stitch" />
-                        Agent-native
+            <div className="relative z-10 mx-auto w-full max-w-6xl">
+                <span className="inline-flex items-center gap-2 rounded-full border border-stitch-border bg-stitch-soft px-3 py-1 text-xs font-medium text-stitch-strong">
+                    <span className="size-1.5 rounded-full bg-stitch" />
+                    Agent-native
+                </span>
+
+                {/* Full-width headline. Each reel line is far wider than a grid
+                    column, so the H1 spans the whole row above the two-column
+                    body to stay at two lines. The large size kicks in only at
+                    lg, where the full width has room; below that it steps down
+                    so the line still fits without wrapping to a third row. */}
+                <h1 className="mt-6 max-w-5xl font-display text-4xl font-black leading-[1.2] tracking-[-0.035em] text-fd-foreground lg:text-6xl">
+                    {/* Animated headline — decorative; the static line below
+                        carries a11y/SEO and the reduced-motion fallback. */}
+                    <span aria-hidden="true" className="motion-reduce:hidden">
+                        <span className="block">
+                            Turn any{' '}
+                            <Reel items={API_KINDS} className="text-stitch" />
+                        </span>
+                        <span className="block">
+                            into a function that’s{' '}
+                            <Reel
+                                items={HERO_QUALITIES}
+                                className="text-stitch"
+                            />
+                        </span>
                     </span>
+                    {/* Read by screen readers always; shown when motion is reduced. */}
+                    <span className="sr-only motion-reduce:not-sr-only">
+                        Turn any REST, GraphQL, SSE, or LLM API into a typed,{' '}
+                        <span className="text-stitch">resilient</span> function.
+                    </span>
+                </h1>
 
-                    <h1 className="mt-6 font-display text-4xl font-black leading-[1.2] tracking-[-0.035em] text-fd-foreground sm:text-6xl">
-                        {/* Animated headline — decorative; the static line below
-                            carries a11y/SEO and the reduced-motion fallback. */}
-                        <span
-                            aria-hidden="true"
-                            className="motion-reduce:hidden"
-                        >
-                            <span className="block">
-                                Turn any{' '}
-                                <Reel
-                                    items={API_KINDS}
-                                    className="text-stitch"
-                                />
+                <div className="mt-12 grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
+                    <div>
+                        <p className="max-w-xl text-lg leading-relaxed text-fd-muted-foreground">
+                            Declare one endpoint — or one example — and call it
+                            like a local function, with types, validation,
+                            retries, and drift folded into the call. The same
+                            definition runs from the CLI, an HTTP route, or as
+                            an MCP tool — and humans and agents alike get a{' '}
+                            <span className="font-medium text-fd-foreground">
+                                capability, not a credential
                             </span>
-                            <span className="block">
-                                into a function that’s{' '}
-                                <Reel
-                                    items={HERO_QUALITIES}
-                                    className="text-stitch"
-                                />
-                            </span>
-                        </span>
-                        {/* Read by screen readers always; shown when motion is reduced. */}
-                        <span className="sr-only motion-reduce:not-sr-only">
-                            Turn any REST, GraphQL, SSE, or LLM API into a
-                            typed,{' '}
-                            <span className="text-stitch">resilient</span>{' '}
-                            function.
-                        </span>
-                    </h1>
+                            .
+                        </p>
 
-                    <p className="mt-6 max-w-xl text-lg leading-relaxed text-fd-muted-foreground">
-                        Declare one endpoint — or one example — and call it like
-                        a local function, with types, validation, retries, and
-                        drift folded into the call. The same definition runs
-                        from the CLI, an HTTP route, or as an MCP tool — and
-                        humans and agents alike get a{' '}
-                        <span className="font-medium text-fd-foreground">
-                            capability, not a credential
-                        </span>
-                        .
-                    </p>
+                        <div className="mt-9 flex flex-wrap items-center gap-3">
+                            <PrimaryButton href="/docs">
+                                Read the docs
+                                <ArrowRight className="size-4" />
+                            </PrimaryButton>
+                            <SecondaryButton href="/playground">
+                                <Terminal className="size-4 text-stitch" />
+                                Try the playground
+                            </SecondaryButton>
+                        </div>
 
-                    <div className="mt-9 flex flex-wrap items-center gap-3">
-                        <PrimaryButton href="/docs">
-                            Read the docs
-                            <ArrowRight className="size-4" />
-                        </PrimaryButton>
-                        <SecondaryButton href="/playground">
-                            <Terminal className="size-4 text-stitch" />
-                            Try the playground
-                        </SecondaryButton>
+                        <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
+                            {simplicity.map(({ icon: Icon, label }) => (
+                                <span
+                                    key={label}
+                                    className="inline-flex items-center gap-1.5 text-sm font-medium text-fd-foreground"
+                                >
+                                    <Icon className="size-4 text-stitch" />
+                                    {label}
+                                </span>
+                            ))}
+                        </div>
                     </div>
 
-                    <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
-                        {simplicity.map(({ icon: Icon, label }) => (
-                            <span
-                                key={label}
-                                className="inline-flex items-center gap-1.5 text-sm font-medium text-fd-foreground"
-                            >
-                                <Icon className="size-4 text-stitch" />
-                                {label}
-                            </span>
-                        ))}
-                    </div>
-                </div>
-
-                <CodePanel filename="users.ts">
-                    <Code>{`// Declare once — types, validation, resilience.
+                    <CodePanel filename="users.ts">
+                        <Code>{`// Declare once — types, validation, resilience.
 const getUser = stitch({
   path: 'https://api.example.com/users/{id}',
   output: User, // validator of your choice
@@ -131,7 +129,8 @@ const getUser = stitch({
 // Call it like a local function.
 const user = await getUser({ params: { id: '42' } });
 // → typed · validated · retried · cached`}</Code>
-                </CodePanel>
+                    </CodePanel>
+                </div>
             </div>
         </section>
     );
