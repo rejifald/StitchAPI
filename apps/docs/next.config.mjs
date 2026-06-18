@@ -2,8 +2,8 @@ import { buildSecurityHeaders } from './lib/security-headers.mjs';
 
 import { PlaygroundCompletionsPlugin } from '@stitchapi/completions-plugin';
 import { execFileSync } from 'child_process';
-import { createMDX } from 'fumadocs-mdx/next';
 import { existsSync } from 'fs';
+import { createMDX } from 'fumadocs-mdx/next';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
