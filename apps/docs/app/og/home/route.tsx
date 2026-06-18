@@ -9,8 +9,8 @@ export function GET() {
     return new ImageResponse(
         (
             <DefaultImage
-                title="A typed stitch replaces fetch"
-                description="An agent-native runtime whose core primitive — a stitch — replaces fetch. Call one endpoint as a function, CLI, HTTP route, or MCP tool."
+                title="Turn any API into a typed, resilient function"
+                description="API stitching: declare an endpoint once — its types, auth, and resilience — and call it like a local function. No server, no codegen, no config files."
                 site={appName}
             />
         ),

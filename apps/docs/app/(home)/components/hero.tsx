@@ -3,13 +3,22 @@ import { Code, CodePanel } from './code-panel';
 import { PrimaryButton, SecondaryButton } from './primitives';
 import { Tagline } from './tagline';
 
-import { ArrowRight, Bot, Code2, Server, Terminal } from 'lucide-react';
+import {
+    ArrowRight,
+    CloudOff,
+    FileCog,
+    Globe,
+    Hammer,
+    Package,
+    Terminal,
+} from 'lucide-react';
 
-const surfaces = [
-    { icon: Code2, label: 'Function' },
-    { icon: Terminal, label: 'CLI' },
-    { icon: Server, label: 'HTTP' },
-    { icon: Bot, label: 'MCP tool' },
+const simplicity = [
+    { icon: CloudOff, label: 'No infra' },
+    { icon: FileCog, label: 'No config files' },
+    { icon: Hammer, label: 'No scaffolding' },
+    { icon: Package, label: 'Zero deps' },
+    { icon: Globe, label: 'Runs everywhere' },
 ];
 
 export function Hero() {
@@ -21,22 +30,20 @@ export function Hero() {
                 <div>
                     <span className="inline-flex items-center gap-2 rounded-full border border-stitch-border bg-stitch-soft px-3 py-1 text-xs font-medium text-stitch-strong">
                         <span className="size-1.5 rounded-full bg-stitch" />
-                        Agent-native API runtime
+                        Agent-native
                     </span>
 
                     <h1 className="mt-6 font-display text-4xl font-black leading-[1.02] tracking-[-0.035em] text-fd-foreground sm:text-6xl">
-                        A typed <span className="text-stitch">stitch</span>{' '}
-                        replaces{' '}
-                        <code className="rounded-lg bg-fd-muted px-2 py-0.5 align-middle font-mono text-[0.7em] text-fd-muted-foreground">
-                            fetch
-                        </code>
+                        Turn any API into a typed,{' '}
+                        <span className="text-stitch">resilient function</span>
                     </h1>
 
                     <p className="mt-6 max-w-xl text-lg leading-relaxed text-fd-muted-foreground">
-                        StitchAPI turns one endpoint — or one example — into a
-                        declarative, validated, observable unit of work. Define
-                        it once; call it as a function, a CLI, an HTTP route, or
-                        an MCP tool. Humans and agents get a{' '}
+                        Declare one endpoint — or one example — and call it like
+                        a local function, with types, validation, retries, and
+                        drift folded into the call. The same definition runs
+                        from the CLI, an HTTP route, or as an MCP tool — and
+                        humans and agents alike get a{' '}
                         <span className="font-medium text-fd-foreground">
                             capability, not a credential
                         </span>
@@ -57,10 +64,7 @@ export function Hero() {
                     </div>
 
                     <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
-                        <span className="text-xs font-medium uppercase tracking-wider text-fd-muted-foreground">
-                            One definition →
-                        </span>
-                        {surfaces.map(({ icon: Icon, label }) => (
+                        {simplicity.map(({ icon: Icon, label }) => (
                             <span
                                 key={label}
                                 className="inline-flex items-center gap-1.5 text-sm font-medium text-fd-foreground"
@@ -72,21 +76,19 @@ export function Hero() {
                     </div>
                 </div>
 
-                <CodePanel filename="websites.ts">
-                    <Code>{`// Declare once — types, validation, retries, drift.
-const listWebsites = stitch({
-  path: '/api/websites',
-  output: Website.array(),   // response contract → drift
-  auth: session,             // capability, not a secret
-  retry: { attempts: 3, on: [429, 503] },
+                <CodePanel filename="users.ts">
+                    <Code>{`// Declare once — types, validation, resilience.
+const getUser = stitch({
+  path: 'https://api.example.com/users/{id}',
+  output: User, // validator of your choice
+  retry: 3,
+  timeout: '5s',
+  cache: '1m',
 });
 
-// Call it — awaitable and streamable.
-const sites = await listWebsites();
-
-for await (const ev of listWebsites.stream()) {
-  // start → progress → drift → result → done
-}`}</Code>
+// Call it like a local function.
+const user = await getUser({ params: { id: '42' } });
+// → typed · validated · retried · cached`}</Code>
                 </CodePanel>
             </div>
         </section>

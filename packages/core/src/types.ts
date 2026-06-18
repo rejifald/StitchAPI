@@ -599,8 +599,11 @@ export interface StitchConfig {
     };
     /** Auth strategy — the stitch holds the credential; the caller never sees it. */
     auth?: AuthStrategy;
-    /** Retry-and-backoff policy. */
-    retry?: RetryOptions;
+    /**
+     * Retry-and-backoff policy. A bare number is shorthand for the attempt count —
+     * `retry: 3` ≡ `retry: { attempts: 3 }`.
+     */
+    retry?: number | RetryOptions;
     /**
      * Statuses that are a NORMAL result rather than an error — a number list or a predicate.
      * An accepted non-2xx flows through interpret → transform → unwrap → validate exactly like a
@@ -615,8 +618,11 @@ export interface StitchConfig {
     acceptStatus?: number[] | ((status: number) => boolean);
     /** Rate and concurrency limits. */
     throttle?: ThrottleOptions;
-    /** Total and per-attempt timeouts. */
-    timeout?: TimeoutOptions;
+    /**
+     * Total and per-attempt timeouts. A bare number (ms) or duration string is shorthand for the
+     * total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`.
+     */
+    timeout?: number | string | TimeoutOptions;
     /** Circuit breaker that fast-fails a repeatedly failing dependency. */
     circuit?: CircuitOptions;
     /**
@@ -643,9 +649,12 @@ export interface StitchConfig {
     idempotency?: IdempotencyOptions;
     /**
      * Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine
-     * is loaded lazily from the `stitchapi/cache` subpath only when this block is present.
+     * is loaded lazily from the `stitchapi/cache` subpath only when this block is present. A bare
+     * number (ms) or duration string is shorthand for the TTL — `cache: '1m'` ≡
+     * `cache: { ttl: '1m' }` (still subject to the fingerprint / `version` rules before an entry is
+     * actually stored).
      */
-    cache?: CacheConfig;
+    cache?: number | string | CacheConfig;
     /**
      * Opt this stitch out of the cache **and** coalescing entirely — never stored, always a live
      * call. The honest "do not persist this response" hatch for one-time tokens or compliance-
@@ -687,6 +696,21 @@ export interface StitchConfig {
 }
 
 /**
+ * A {@link StitchConfig} after {@link compose} has run: every authoring shorthand is expanded, so
+ * the resilience fields are always their object form (a scalar `retry` / `timeout` / `cache`
+ * literal is normalised to `{ attempts }` / `{ total }` / `{ ttl }`). This is the shape the engine
+ * and {@link redactConfig} read — never the loose authoring union.
+ */
+export type ResolvedStitchConfig = Omit<
+    StitchConfig,
+    'retry' | 'timeout' | 'cache'
+> & {
+    retry?: RetryOptions;
+    timeout?: TimeoutOptions;
+    cache?: CacheConfig;
+};
+
+/**
  * The PUBLIC, redacted projection of a {@link StitchConfig} that a stitch exposes as `__config`
  * (and a seam as its shared `__config`). {@link redactConfig} produces it: the live, secret-bearing
  * handles are stripped (`auth`, `store`, `adapter`), the surface is normalised to its `id` string
@@ -700,7 +724,7 @@ export interface StitchConfig {
  * composition.)
  */
 export type RedactedStitchConfig = Omit<
-    StitchConfig,
+    ResolvedStitchConfig,
     'auth' | 'store' | 'adapter' | 'clock' | 'kind'
 > & {
     /** The surface's `id` string (never the live {@link Surface}); absent for the default `http`. */
