@@ -76,13 +76,20 @@ for you.
 ```ts twoslash
 import { stitch, cookieSession, env } from 'stitchapi';
 
-const me = stitch({
-    url: 'https://api.example.com/me',
+const signIn = stitch({
+    method: 'POST',
+    path: 'https://demo.stitchapi.dev/auth/sign-in',
+});
+
+const listUsers = stitch({
+    path: 'https://demo.stitchapi.dev/users',
+    unwrap: 'data',
     auth: cookieSession({
-        login: {
-            url: 'https://api.example.com/login',
-            body: { user: env('USER'), pass: env('PASS') },
-        },
+        login: signIn,
+        cookie: 'session_token',
+        loginInput: () => ({
+            body: { email: env('APP_USER')(), password: env('APP_PASS')() },
+        }),
         refreshOn: 401,
     }),
 });
@@ -217,10 +224,12 @@ description: Authentication failed, or a soft 200 login wall was hit and could n
 2. **Frontmatter is `title` + `description`, both mandatory.** `description` is a
    real sentence — it's the search result, the `llms.txt` line, and the agent's
    relevance signal. No placeholders, no fragments.
-3. **Neutral naming.** No real third-party service names. Use archetypes — "the
-   SaaS", "the aggregator" — and the canonical placeholder host
-   **`api.example.com`**. (This is a locked project convention, not a docs-only
-   rule.)
+3. **Neutral naming.** No real third-party service names — use archetypes ("the
+   SaaS", "the aggregator"). The canonical host is the first-party demo API
+   **`demo.stitchapi.dev`**, which the sandbox simulator serves so examples run.
+   (This is a locked project convention, not a docs-only rule.) Draw every example
+   from the shared roster — see
+   [The canonical example world](#the-canonical-example-world).
 4. **Terminology.** "stitch" is lowercase, both noun and verb. Say "capability,
    not credential" and "the event stream". Never "SDK", "endpoint wrapper", or
    "client".
@@ -251,6 +260,80 @@ description: Authentication failed, or a soft 200 login wall was hit and could n
     with the warning. Keep it to the one decision in front of the reader; a
     systemic failure mode is a catalog page in Errors & pitfalls (link it under
     `See also`), not a restated list elsewhere (rule 6).
+
+---
+
+## The canonical example world
+
+Every example everywhere draws from **one demo API** — `https://demo.stitchapi.dev`
+— and a fixed roster of named stitches. The host is **first-party and served by the
+sandbox simulator** (a fetch-shim that never touches the network), so the snippet a
+page shows is the snippet that _runs_ in the playground and the sandbox MCP. Reuse
+the same names: a reader who meets `getUser` on the intro page recognizes it on the
+auth page and in the playground — one example world, no drift.
+
+### The base
+
+Assumed by every page. A page inlines only the slice it needs — but when it needs
+a `baseUrl`, a type, or shared auth, it uses _these_, verbatim:
+
+<!-- prettier-ignore -->
+```ts
+import { seam, bearer, env } from 'stitchapi';
+import { z } from 'zod';
+
+// Types — reuse these exact shapes (they match what the sim returns).
+const User  = z.object({ id: z.number(), name: z.string(), email: z.string(), role: z.enum(['admin', 'member', 'viewer']) });
+const Order = z.object({ id: z.number(), total: z.number(), status: z.enum(['open', 'paid', 'shipped']) });
+
+// The shared base every stitch extends — or a `seam`, when runtime state is shared.
+const api = seam({
+    baseUrl: 'https://demo.stitchapi.dev',
+    auth: bearer(env('API_TOKEN')),
+    retry: { attempts: 3, on: [429, 503] },
+});
+```
+
+### The roster
+
+Each stitch is the canonical demonstration of **one** capability. Reach for the
+row that matches what the page teaches; don't coin a new stitch for a shape one of
+these already shows. (The sim wraps every payload in a `{ data }` envelope, so each
+stitch `unwrap`s it.)
+
+<!-- prettier-ignore -->
+```ts
+const getUser    = api.stitch({ path: '/users/{id}', unwrap: 'data', output: User });
+const listUsers  = api.stitch({ path: '/users', unwrap: 'data', output: User.array() });
+const createUser = api.stitch({ method: 'POST', path: '/users', input: { body: User.omit({ id: true }) },
+                               unwrap: 'data', output: User });
+const listOrders = api.stitch({ path: '/users/{id}/orders', unwrap: 'data', output: Order.array() });
+```
+
+| Stitch       | Endpoint                             | The canonical demo of                                                                                  |
+| ------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `getUser`    | `GET /users/{id}` → `User`           | the intro · path params · typed output · drift · all four surfaces                                     |
+| `listUsers`  | `GET /users?role&sort` → `User[]`    | query builder · pagination · `.with()` — `const admins = listUsers.with({ query: { role: 'admin' } })` |
+| `createUser` | `POST /users` → `User`               | input validation · `bodyType` · `.safe()` and errors                                                   |
+| `listOrders` | `GET /users/{id}/orders` → `Order[]` | nested resource · drift on money/status · `transform` / `unwrap` · throttle                            |
+| `events`     | `SSE /events` (`stitchapi/sse`)      | the streaming surfaces · the event spine                                                               |
+
+### Auth, secrets, surfaces — same names everywhere
+
+-   **Auth deep-dives reuse the base:** `cookieSession` logs in via a `signIn`
+    stitch; `oauth2` hangs off `api`. Secrets are **always** `API_TOKEN`,
+    `APP_USER` / `APP_PASS`, `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET`.
+-   **The four surfaces always show `getUser`**, so the comparison is
+    apples-to-apples: `await getUser({ params: { id: '42' } })` ·
+    `stitch run getUser --id 42` · `GET /get-user` · `tool: get_user`.
+-   **GraphQL** mirrors `getUser` against `/graphql` — the surface contrast is the
+    same operation, not a new one.
+
+**Extending the roster.** Only when a feature needs a shape these can't show
+(e.g. a `multipart` upload, a binary `download`). Add the stitch to this section
+first — same base, same `demo.stitchapi.dev` — and add a matching handler to the
+[sandbox simulator](../../docs/sandbox/contracts/sim.ts) so it still runs. A
+one-off domain invented inline is exactly what this section exists to stop.
 
 ---
 
@@ -310,7 +393,7 @@ and every one still type-checks (rule 1):
 ```ts twoslash tab="String form" tabGroup="definition-style"
 import { stitch } from 'stitchapi';
 
-const getUser = stitch('https://api.example.com/users/{id}');
+const getUser = stitch('https://demo.stitchapi.dev/users/{id}');
 ```
 
 ```ts twoslash tab="Config object" tabGroup="definition-style"
@@ -318,7 +401,7 @@ import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const getUser = stitch({
-    path: 'https://api.example.com/users/{id}',
+    path: 'https://demo.stitchapi.dev/users/{id}',
     output: z.object({ id: z.number(), name: z.string() }),
 });
 ```
@@ -339,7 +422,7 @@ and set `groupId` + `persist` so it persists like the fenced form:
     ```ts twoslash
     import { stitch } from 'stitchapi';
 
-    const getUser = stitch('https://api.example.com/users/{id}');
+    const getUser = stitch('https://demo.stitchapi.dev/users/{id}');
     const user = await getUser({ params: { id: 7 } });
     ```
 
@@ -416,7 +499,9 @@ Errors & pitfalls is keyed to a registry of stable codes (`STITCH_VALIDATION`,
 -   [ ] Equivalent forms (install, import, definition, consumption) are tabs with a
         canonical `tabGroup`, not prose alternatives.
 -   [ ] No hand-written type tables; shapes come from `AutoTypeTable`.
--   [ ] Neutral names only; `api.example.com` for hosts.
+-   [ ] Neutral names only; `demo.stitchapi.dev` for hosts. Examples come from the
+        canonical roster (`getUser` / `listUsers` / `createUser` / `listOrders` /
+        `events`), not a one-off domain.
 -   [ ] Reads correctly in isolation (imagine it as a lone `llms.mdx`).
 -   [ ] `See also` links neighbors, the Reference entry, and any catalog pages.
 -   [ ] Any tempting-but-wrong use is flagged with an inline **Anti-pattern**
