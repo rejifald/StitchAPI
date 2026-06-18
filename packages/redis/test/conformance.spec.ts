@@ -1,17 +1,19 @@
-// Conformance proof for @stitchapi/redis. Both driver adapters (`fromIoredis`,
-// `fromNodeRedis`) must pass `verifyStoreContract` from `stitchapi/testing`.
+// Conformance proof for @stitchapi/redis. All three driver adapters
+// (`fromIoredis`, `fromNodeRedis`, `fromUpstash`) must pass `verifyStoreContract`
+// from `stitchapi/testing`.
 //
 // The default run is hermetic and offline: a tiny in-repo Redis engine (a Map
 // with PX expiry + the atomic INCR/PEXPIRE the store's Lua performs) wrapped in
-// an ioredis-shaped and a node-redis-shaped facade, so each adapter's dialect
-// translation is exercised without a server. Single-threaded JS makes the engine
-// atomic, which is exactly what the real `EVAL` guarantees — so the contract's
-// "20 concurrent incrs net +20" rule holds here and on real Redis alike.
+// an ioredis-shaped, a node-redis-shaped and an Upstash-shaped facade, so each
+// adapter's dialect translation is exercised without a server. Single-threaded JS
+// makes the engine atomic, which is exactly what the real `EVAL` guarantees — so
+// the contract's "20 concurrent incrs net +20" rule holds here, on real Redis,
+// and on Upstash's edge HTTP Redis alike.
 //
 // Set REDIS_URL to additionally run the SAME verifier against a live Redis via a
 // real ioredis client, proving the atomic INCR+EXPIRE end to end.
-import { fromIoredis, fromNodeRedis, redisStore } from '../src';
-import type { IoredisLike, NodeRedisLike } from '../src';
+import { fromIoredis, fromNodeRedis, fromUpstash, redisStore } from '../src';
+import type { IoredisLike, NodeRedisLike, UpstashLike } from '../src';
 
 import { assertConformance, verifyStoreContract } from 'stitchapi/testing';
 import { describe, test } from 'vitest';
@@ -121,6 +123,38 @@ function nodeRedisFacade(engine: FakeRedisEngine): NodeRedisLike {
     };
 }
 
+// Upstash quirks faithfully reproduced: `set` takes `{ px }` (lowercase), `eval`
+// is `(script, keys[], args[])`, and replies are JSON-auto-deserialized — so a
+// stored JSON envelope comes back already parsed, exercising `fromUpstash.get`'s
+// re-serialize path. There is no `quit` (HTTP, stateless).
+function upstashFacade(engine: FakeRedisEngine): UpstashLike {
+    return {
+        async get(key) {
+            const raw = engine.get(key);
+            if (raw == null) return null;
+            // Mimic Upstash's automatic deserialization of JSON string replies.
+            try {
+                return JSON.parse(raw) as unknown;
+            } catch {
+                return raw;
+            }
+        },
+        async set(key, value, options) {
+            engine.set(key, value, options?.px);
+            return 'OK';
+        },
+        async del(key) {
+            engine.del(key);
+            return 1;
+        },
+        async eval(_script, keys, args) {
+            const key = keys[0] ?? '';
+            const ttlMs = Number(args[0]);
+            return engine.incrWithTtl(key, ttlMs);
+        },
+    };
+}
+
 // --- the hermetic contract runs -------------------------------------------
 
 describe('@stitchapi/redis store contract', () => {
@@ -138,6 +172,14 @@ describe('@stitchapi/redis store contract', () => {
                 redisStore(
                     fromNodeRedis(nodeRedisFacade(new FakeRedisEngine())),
                 ),
+            ),
+        );
+    });
+
+    test('redisStore(fromUpstash(...)) passes the store contract', async () => {
+        assertConformance(
+            await verifyStoreContract(() =>
+                redisStore(fromUpstash(upstashFacade(new FakeRedisEngine()))),
             ),
         );
     });
