@@ -1,6 +1,6 @@
 import './global.css';
 
-import { siteUrl } from '@/lib/shared';
+import { appName, gitConfig, siteUrl } from '@/lib/shared';
 
 import 'fumadocs-twoslash/twoslash.css';
 import { Banner } from 'fumadocs-ui/components/banner';
@@ -35,14 +35,110 @@ const fontMono = IBM_Plex_Mono({
 
 const fontVariables = `${fontDisplay.variable} ${fontSans.variable} ${fontMono.variable}`;
 
+const defaultTitle =
+    'StitchAPI — turn any API into a typed, resilient function';
+const defaultDescription =
+    'Turn any API into a typed, resilient function. Declare an endpoint once — its types, auth, retries, throttling, validation, and drift detection — and call it like a local function from your code, the CLI, an HTTP route, or as an MCP tool. No server, no codegen, zero dependencies.';
+
 export const metadata: Metadata = {
     metadataBase: new URL(siteUrl),
+    title: {
+        default: defaultTitle,
+        template: '%s — StitchAPI',
+    },
+    description: defaultDescription,
+    applicationName: appName,
+    keywords: [
+        'StitchAPI',
+        'API client',
+        'typed API client',
+        'TypeScript API client',
+        'HTTP client',
+        'REST client',
+        'GraphQL client',
+        'fetch wrapper',
+        'API integration',
+        'resilient API',
+        'retry',
+        'rate limiting',
+        'circuit breaker',
+        'schema validation',
+        'drift detection',
+        'Zod',
+        'Standard Schema',
+        'agent-native',
+        'AI agent tools',
+        'MCP',
+        'Model Context Protocol',
+        'LLM tools',
+        'OpenAPI alternative',
+    ],
+    authors: [{ name: 'Oleksandr Zhuravlov', url: siteUrl }],
+    creator: 'Oleksandr Zhuravlov',
+    publisher: appName,
+    category: 'technology',
+    openGraph: {
+        type: 'website',
+        url: siteUrl,
+        siteName: appName,
+        locale: 'en_US',
+        title: defaultTitle,
+        description: defaultDescription,
+        images: '/og/home',
+    },
+    twitter: {
+        card: 'summary_large_image',
+        title: defaultTitle,
+        description: defaultDescription,
+        images: '/og/home',
+    },
+    robots: {
+        index: true,
+        follow: true,
+        googleBot: {
+            index: true,
+            follow: true,
+            'max-image-preview': 'large',
+            'max-snippet': -1,
+            'max-video-preview': -1,
+        },
+    },
 };
+
+/* Structured data — lets search engines model StitchAPI as a developer tool
+   (rich results / knowledge panel) rather than an anonymous docs page. */
+const jsonLd = [
+    {
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: appName,
+        url: siteUrl,
+        description: defaultDescription,
+    },
+    {
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: appName,
+        applicationCategory: 'DeveloperApplication',
+        operatingSystem: 'Node.js, Deno, Bun, browsers, edge runtimes',
+        description: defaultDescription,
+        url: siteUrl,
+        downloadUrl: 'https://www.npmjs.com/package/stitchapi',
+        codeRepository: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
+        license: 'https://www.apache.org/licenses/LICENSE-2.0',
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        author: { '@type': 'Person', name: 'Oleksandr Zhuravlov' },
+    },
+];
 
 export default function Layout({ children }: LayoutProps<'/'>) {
     return (
         <html lang="en" className={fontVariables} suppressHydrationWarning>
             <body className="flex flex-col min-h-screen">
+                <script
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+                />
                 <RootProvider>
                     <Banner
                         variant="normal"
