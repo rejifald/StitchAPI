@@ -1,0 +1,79 @@
+{
+    "name": "@stitchapi/react",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
+    "description": "React bindings for StitchAPI — tearing-free useStitch/useStitchStream hooks over useSyncExternalStore, plus an optional TanStack Query queryOptions helper. Streaming-first: re-render as `delta` chunks arrive.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/react"
+    },
+    "keywords": [
+        "stitchapi",
+        "react",
+        "hooks",
+        "useSyncExternalStore",
+        "streaming",
+        "query",
+        "tanstack-query"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "peerDependencies": {
+        "@stitchapi/query-core": "^1.0.0-rc.2",
+        "stitchapi": "^1.0.0-rc.1",
+        "react": "^18.0.0 || ^19.0.0",
+        "@tanstack/react-query": "^5.0.0"
+    },
+    "peerDependenciesMeta": {
+        "@tanstack/react-query": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "@stitchapi/query-core": "workspace:*",
+        "@testing-library/react": "^16.1.0",
+        "@types/node": "^22.10.0",
+        "@types/react": "^19.0.0",
+        "jsdom": "^25.0.1",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "stitchapi": "workspace:*",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}
