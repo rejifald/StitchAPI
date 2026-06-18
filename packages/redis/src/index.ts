@@ -118,11 +118,7 @@ export interface NodeRedisLike {
  */
 export interface UpstashLike {
     get(key: string): Promise<unknown>;
-    set(
-        key: string,
-        value: string,
-        options?: { px: number },
-    ): Promise<unknown>;
+    set(key: string, value: string, options?: { px: number }): Promise<unknown>;
     del(key: string): Promise<unknown>;
     eval(script: string, keys: string[], args: string[]): Promise<unknown>;
 }
