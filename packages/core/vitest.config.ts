@@ -7,7 +7,10 @@ export default defineConfig({
         include: ['test/**/*.spec.ts'],
         coverage: {
             provider: 'v8',
-            reporter: ['text', 'lcov'],
+            // `json-summary` writes coverage/coverage-summary.json, the machine-
+            // readable totals the README coverage badge is refreshed from
+            // (scripts/gen-readme-metrics.mjs --refresh, run by `pnpm metrics`).
+            reporter: ['text', 'lcov', 'json-summary'],
             reportsDirectory: 'coverage',
             include: ['src/**/*.ts'],
             // Global per-metric floors so `test:coverage` fails if coverage regresses.

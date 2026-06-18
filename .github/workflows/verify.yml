@@ -65,6 +65,11 @@ jobs:
             # scoped publishConfig.access, LICENSE/README presence, so a bad bump fails
             # the PR, not the publish.
             - run: pnpm check:release
+            # README metrics drift guard: the generated badge block (code health, coverage,
+            # license + StandWithUkraine) must match the committed snapshot. Tool-free — it
+            # renders from scripts/readme-metrics.snapshot.json and compares, so it stays in
+            # this fast job. Refresh the numbers with `pnpm metrics` (runs fallow + coverage).
+            - run: pnpm check:readme
             # Playground autocomplete is generated from core `src/`; regenerate and fail if the
             # committed artifact drifted (a new *Config field shipped without a regen). Mirrors the
             # lefthook pre-commit `completions` job, enforced in CI.
