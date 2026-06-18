@@ -1,0 +1,128 @@
+---
+title: Hono
+description: Edge-ready Hono middleware for StitchAPI — a principal-bound seam on c.var.stitch, an SSE bridge with streamStitchSse, and stitch errors mapped to HTTPException.
+---
+
+Use `@stitchapi/hono` when you serve an API with [Hono](https://hono.dev) on the
+edge or across runtimes. It is three thin bridges between StitchAPI's backend
+primitive (the `seam`) and Hono's Fetch-based request model: middleware that puts
+a principal-bound seam on the request context, an SSE helper, and a stitch-error →
+HTTP mapper.
+
+<Callout type="info">
+    **Edge/multi-runtime by construction.** Every import is from `hono` or
+    `stitchapi`; there are **no `node:*` imports**, so the package runs
+    unchanged on Node, Cloudflare Workers, Deno, Bun, and Vercel Edge.
+</Callout>
+
+## Example
+
+Install the package alongside core and Hono:
+
+```package-install
+@stitchapi/hono stitchapi hono
+```
+
+Build (and own) the seam once at startup, then register the middleware. With a
+`principal` resolver, each request's `c.var.stitch` is a `seam.as(id)` handle — a
+principal-bound seam with separate auth sessions per principal over one shared
+throttle. Parametrise your app with `StitchEnv` so `c.get('stitch')` is typed:
+
+```ts twoslash
+import { type StitchEnv, stitch } from '@stitchapi/hono';
+import { Hono } from 'hono';
+import { seam } from 'stitchapi';
+import { z } from 'zod';
+
+const api = seam({ baseUrl: 'https://api.example.com' });
+
+const app = new Hono<StitchEnv>();
+
+// Put a principal-bound seam on every request's context.
+app.use(stitch({ seam: api, principal: (c) => c.req.header('x-tenant') }));
+
+app.get('/me', async (c) => {
+    const me = await c.get('stitch').stitch({
+        path: '/me',
+        output: z.object({ id: z.string(), name: z.string() }),
+    })();
+    return c.json(me);
+});
+```
+
+The principal lives in the closure, never in a call argument, so a handler can
+never name another identity. **Borrow, don't own:** the middleware never calls
+`seam.close()` — you build the seam at startup and close it on shutdown.
+
+## Streaming — `streamStitchSse`
+
+Stream a streaming/SSE stitch's `.stream()` to the client as Server-Sent Events,
+via Hono's `streamSSE`. Each `delta` becomes a `data:` message; a terminal `error`
+(or a throw) becomes a final `event: error` message; control events are consumed
+but not forwarded; and a client disconnect aborts the upstream stitch stream.
+
+```ts twoslash
+import { type StitchEnv, stitch, streamStitchSse } from '@stitchapi/hono';
+import { Hono } from 'hono';
+import { seam } from 'stitchapi';
+import { sseSurface } from 'stitchapi/sse';
+
+const api = seam({ baseUrl: 'https://api.example.com' });
+
+const app = new Hono<StitchEnv>();
+app.use(stitch({ seam: api }));
+
+app.get('/chat', (c) => {
+    const completion = c
+        .get('stitch')
+        .stitch({ kind: sseSurface, path: '/v1/messages' });
+    return streamStitchSse(
+        c,
+        completion.stream({ body: { prompt: c.req.query('q') } }),
+        { data: (chunk) => (chunk as { data: string }).data },
+    );
+});
+```
+
+## Errors — `stitchOnError`
+
+A failed stitch rejects with a `StitchError` carrying the upstream `status`.
+Register `stitchOnError()` as your app's `onError` so handlers need no per-route
+try/catch — it maps a `StitchError` to a Hono `HTTPException` (`502` by default,
+so an upstream's status is never leaked) and rethrows everything else:
+
+```ts twoslash
+import { stitchOnError } from '@stitchapi/hono';
+import { Hono } from 'hono';
+
+const app = new Hono();
+
+// default 502 — an upstream's 401/404/etc. is never leaked to your client.
+app.onError(stitchOnError());
+
+// or propagate the upstream status instead:
+app.onError(stitchOnError({ status: (e) => e.status ?? 502 }));
+```
+
+Or map a single error by hand with `stitchError(err)`, which returns an
+`HTTPException` — or `undefined` for a non-Stitch error, so you can rethrow it
+untouched.
+
+<Callout type="info">
+    On Cloudflare Workers and other multi-runtime deployments, pair the seam
+    with a shared [store](/docs/guides/state/pluggable-store) (e.g.
+    `@stitchapi/redis`) so throttle and sessions are fleet-wide rather than
+    per-isolate.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="Fastify" href="/docs/integrations/fastify" />
+    <Card
+        title="The pluggable store"
+        href="/docs/guides/state/pluggable-store"
+    />
+</Cards>
