@@ -11,9 +11,9 @@ binding: a request handler, an SSE writer, and an error-handling middleware.
 Works on Express 4 and 5.
 
 ```ts
-import { seam } from 'stitchapi';
-import express from 'express';
 import { stitch, stitchErrorHandler } from '@stitchapi/express';
+import express from 'express';
+import { seam } from 'stitchapi';
 
 // Build (and own) the seam once at startup.
 const api = seam({ baseUrl: 'https://api.example.com' });
@@ -97,7 +97,11 @@ app.use(stitchErrorHandler());
 app.use(stitchErrorHandler({ status: (e) => e.status ?? 502 }));
 
 // or shape your own error envelope:
-app.use(stitchErrorHandler({ body: (e, status) => ({ code: status, msg: e.message }) }));
+app.use(
+    stitchErrorHandler({
+        body: (e, status) => ({ code: status, msg: e.message }),
+    }),
+);
 ```
 
 Note: an Express error middleware is matched by its 4-arg arity — `stitchErrorHandler`
