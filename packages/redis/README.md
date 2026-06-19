@@ -22,8 +22,10 @@ const api = seam({
 ## Bring your own driver
 
 This package **imports no Redis client**. It runs on a small normalized
-`RedisDriver` surface, and ships adapters for the two popular clients — pick the
-one you already use (both are **optional** peer dependencies):
+`RedisDriver` surface, and ships adapters for the popular clients — pick the one
+you already use. `ioredis` and `redis` are **optional** peer dependencies;
+`@upstash/redis` is matched **structurally** (no declared dependency at all — just
+install it in your own app), so the edge client never weighs on Node-only users:
 
 ```ts
 // ioredis
@@ -41,6 +43,19 @@ import { createClient } from 'redis';
 const client = await createClient({ url: process.env.REDIS_URL }).connect();
 const store = redisStore(fromNodeRedis(client));
 ```
+
+```ts
+// @upstash/redis — edge / serverless HTTP Redis, no socket
+import { fromUpstash, redisStore } from '@stitchapi/redis';
+import { Redis } from '@upstash/redis';
+
+const store = redisStore(fromUpstash(Redis.fromEnv()));
+```
+
+`fromUpstash` is the edge path: Upstash speaks Redis over HTTP, so the **same**
+store (same atomic INCR+EXPIRE Lua) runs from Vercel/Cloudflare edge functions
+with no TCP connection — only the dialect differs (`set { px }`, positional
+`eval(script, keys, args)`, JSON auto-deserialized replies, no `quit`).
 
 ```ts
 // anything else — satisfy RedisDriver yourself (cluster proxy, mock, another client)
@@ -82,8 +97,9 @@ for the exact semantics.
 ## Conformance
 
 Compliance with the store seam is proven against `verifyStoreContract` from
-`stitchapi/testing`, for both driver adapters. Set `REDIS_URL` to additionally run
-the contract against a live Redis:
+`stitchapi/testing`, for all three driver adapters (`fromIoredis`,
+`fromNodeRedis`, `fromUpstash`). Set `REDIS_URL` to additionally run the contract
+against a live Redis:
 
 ```bash
 REDIS_URL=redis://localhost:6379 pnpm --filter @stitchapi/redis test

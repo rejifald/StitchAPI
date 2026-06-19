@@ -30,11 +30,11 @@ pre-commit:
           # Keep in sync with CI's `prettier --check .` (verify.yml) — cover every
           # extension Prettier handles here so committed files are never left unformatted
           # (notably .mdx, which the docs are written in).
-          glob: '*.{ts,tsx,js,jsx,mjs,cjs,json,md,mdx,yml,yaml,css}'
+          glob: '**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,mdx,yml,yaml,css}'
           run: pnpm exec prettier --write {staged_files}
           stage_fixed: true
         - name: lint
-          glob: '*.ts'
+          glob: '**/*.ts'
           run: pnpm check:lint
         - name: typecheck
           run: pnpm check:types

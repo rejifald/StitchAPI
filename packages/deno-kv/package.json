@@ -1,0 +1,65 @@
+{
+    "name": "@stitchapi/deno-kv",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
+    "description": "Deno KV-backed StitchStore for StitchAPI — distributed throttle + shared sessions/tokens with atomic incr. Bring your own Deno.Kv handle.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/deno-kv"
+    },
+    "keywords": [
+        "stitchapi",
+        "deno",
+        "deno-kv",
+        "store",
+        "rate-limit",
+        "distributed-rate-limiting",
+        "session"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "peerDependencies": {
+        "stitchapi": "^1.0.0-rc.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "stitchapi": "workspace:*",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}

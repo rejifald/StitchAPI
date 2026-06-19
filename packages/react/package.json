@@ -44,7 +44,10 @@
         "useSyncExternalStore",
         "streaming",
         "query",
-        "tanstack-query"
+        "tanstack-query",
+        "typescript",
+        "react-query",
+        "data-fetching"
     ],
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",

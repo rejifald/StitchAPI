@@ -2,10 +2,12 @@
  * S2 — Errors & status handlers + demo REST surface.
  *
  * Covers:
- *  - GET /users          list of users (fixed fixture)
- *  - GET /users/:id      single user by id (fixed fixture)
- *  - GET /status/:code   echo any HTTP status code with a JSON body
- *  - GET /malformed      200 with a non-JSON (HTML) body, for parse-failure demos
+ *  - GET  /users             list of users (fixed fixture)
+ *  - GET  /users/:id         single user by id (fixed fixture)
+ *  - POST /users             create a user (echoes body + an assigned id)
+ *  - GET  /users/:id/orders  a user's orders (fixed fixture)
+ *  - GET  /status/:code      echo any HTTP status code with a JSON body
+ *  - GET  /malformed         200 with a non-JSON (HTML) body, for parse-failure demos
  *
  * Handlers are knob-agnostic — they produce the BASE response only.
  * Generic knobs (status override, latencyMs, flaky, stream) are applied by the
@@ -52,6 +54,25 @@ const FIXED_USERS: User[] = [
         role: 'viewer',
     },
 ];
+
+interface Order {
+    id: number;
+    total: number;
+    status: 'open' | 'paid' | 'shipped';
+}
+
+// Orders keyed by the user ids above — deterministic fixture.
+const ORDERS_BY_USER: Record<number, Order[]> = {
+    1: [
+        { id: 1001, total: 4200, status: 'paid' },
+        { id: 1002, total: 1899, status: 'shipped' },
+    ],
+    2: [{ id: 2001, total: 999, status: 'open' }],
+    3: [
+        { id: 3001, total: 12500, status: 'paid' },
+        { id: 3002, total: 700, status: 'open' },
+    ],
+};
 
 // ---------------------------------------------------------------------------
 // Helper: parse a numeric trailing segment from a pathname like /users/2
@@ -111,6 +132,67 @@ const getUserHandler: SimHandler = {
             status: 200,
             headers: { 'content-type': 'application/json' },
             body: { data: user },
+        };
+    },
+};
+
+// ---------------------------------------------------------------------------
+// Handler: POST /users  — create a user (echoes the body + an assigned id)
+// ---------------------------------------------------------------------------
+
+const createUserHandler: SimHandler = {
+    match(req: SimRequest): boolean {
+        return req.method === 'POST' && req.url.pathname === '/users';
+    },
+
+    handle(req: SimRequest, _knobs: SimKnobs): SimResponse {
+        // Echo the posted fields plus a deterministic next id (one past the
+        // fixed fixture). req.body is the parsed JSON the fetch-shim built.
+        const fields =
+            req.body && typeof req.body === 'object'
+                ? (req.body as Record<string, unknown>)
+                : {};
+        const created = { id: FIXED_USERS.length + 1, ...fields };
+        return {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+            body: { data: created },
+        };
+    },
+};
+
+// ---------------------------------------------------------------------------
+// Handler: GET /users/:id/orders  — a user's orders (fixed fixture)
+// ---------------------------------------------------------------------------
+
+const listOrdersHandler: SimHandler = {
+    match(req: SimRequest): boolean {
+        return (
+            req.method === 'GET' &&
+            /^\/users\/\d+\/orders$/.test(req.url.pathname)
+        );
+    },
+
+    handle(req: SimRequest, _knobs: SimKnobs): SimResponse {
+        const id = parseInt(
+            req.url.pathname.replace(/^\/users\/(\d+)\/orders$/, '$1'),
+            10,
+        );
+        const orders = ORDERS_BY_USER[id];
+        if (!orders) {
+            return {
+                status: 404,
+                headers: { 'content-type': 'application/json' },
+                body: {
+                    error: 'not_found',
+                    message: `User ${id} does not exist in the sandbox fixture.`,
+                },
+            };
+        }
+        return {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+            body: { data: orders },
         };
     },
 };
@@ -189,6 +271,8 @@ const malformedHandler: SimHandler = {
 export const errorsStatusHandlers: SimHandler[] = [
     listUsersHandler,
     getUserHandler,
+    createUserHandler,
+    listOrdersHandler,
     statusEchoHandler,
     malformedHandler,
 ];
