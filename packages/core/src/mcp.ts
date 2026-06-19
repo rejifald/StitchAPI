@@ -7,6 +7,7 @@
 // transport (newline-delimited JSON), with no SDK — consistent with the library's
 // zero-dependency stance. `handle()` is transport-agnostic, so the same core can back a
 // Streamable HTTP transport too (see the `serve` surface for the HTTP pattern).
+import { endpointLabel, pipelineStages } from './config-summary';
 import { toMermaid } from './diagram';
 import { type StitchRegistry, selectStitch } from './registry';
 import type { RedactedStitchConfig, Stitch, StitchInput } from './types';
@@ -95,50 +96,15 @@ function errorResult(message: string): ToolResult {
     return { content: [{ type: 'text', text: message }], isError: true };
 }
 
-// A compact "METHOD endpoint" label built from the redacted __config (mirrors diagram.ts's
-// endpointLabel; kept local so mcp.ts pulls only `toMermaid`).
-function endpointOf(cfg: RedactedStitchConfig): string {
-    const method = (cfg.method ?? 'GET').toUpperCase();
-    let where: string;
-    if (typeof cfg.url === 'string') where = cfg.url;
-    else if (typeof cfg.url === 'function') where = '(dynamic url)';
-    else {
-        const base =
-            typeof cfg.baseUrl === 'string'
-                ? cfg.baseUrl
-                : cfg.baseUrl
-                  ? '(dynamic)'
-                  : '';
-        where = base + (cfg.path ?? '');
-    }
-    return `${method} ${where || '(no endpoint)'}`;
-}
-
 // The scheme TAG of a stitch's auth — never the credential. `authScheme` is the non-secret
 // SecurityScheme redaction projects onto the redacted `__config` (the live `auth` is stripped).
 // `http` reports its scheme (bearer/basic), other types report their `type`. No auth → null.
+// (`endpointLabel` and `pipelineStages` — the engine-order stage list, terse for this teaching view —
+// are shared with `diagram.ts` via ./config-summary.)
 function authTagOf(cfg: RedactedStitchConfig): string | null {
     const scheme = cfg.authScheme;
     if (!scheme) return null;
     return scheme.type === 'http' ? scheme.scheme : scheme.type;
-}
-
-// The configured pipeline stages, in engine order, as a teaching list (mirrors diagram.ts's
-// engine order). `call`/`result` bookend; the middle stages appear only when configured.
-function pipelineOf(cfg: RedactedStitchConfig): string[] {
-    const kind = cfg.kind ?? 'http'; // __config.kind is the surface id string
-    const stages: string[] = ['call'];
-    if (cfg.throttle) stages.push('throttle');
-    stages.push(endpointOf(cfg));
-    if (cfg.retry) stages.push('retry');
-    if (kind !== 'http') stages.push(`${kind} interpret`);
-    if (cfg.paginate) stages.push('paginate');
-    if (cfg.output) stages.push('validate');
-    if (cfg.transform) stages.push('transform');
-    if (cfg.unwrap) stages.push(`unwrap: ${cfg.unwrap}`);
-    if (cfg.cache) stages.push('cache');
-    stages.push('result');
-    return stages;
 }
 
 // Defense in depth: an MCP client is an untrusted agent, so `run_stitch` forwards only the input a
@@ -234,7 +200,7 @@ export function createMcpServer(
         const inputSlots = cfg.input ?? {};
         return textResult({
             name: a.name,
-            endpoint: endpointOf(cfg),
+            endpoint: endpointLabel(cfg),
             surface: cfg.kind ?? 'http', // __config.kind is the surface id string
             input: {
                 params: inputSlots.params !== undefined,
@@ -253,7 +219,7 @@ export function createMcpServer(
                 cache: cfg.cache !== undefined,
                 timeout: cfg.timeout !== undefined,
             },
-            pipeline: pipelineOf(cfg),
+            pipeline: pipelineStages(cfg),
             diagram: toMermaid(registry, { name: a.name }).diagram,
         });
     }

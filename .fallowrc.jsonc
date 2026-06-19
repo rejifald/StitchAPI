@@ -1,0 +1,36 @@
+{
+    // Fallow config for the StitchAPI monorepo.
+    //
+    // Scope: this file ONLY declares entry points fallow cannot infer — files
+    // that demonstrably run (a test the bespoke runner executes, or an esbuild
+    // entry a build script bundles) but are reached dynamically rather than
+    // through a static import. Declaring a real root as a root makes the analysis
+    // correct; it is not suppression. No `ignoreDependencies` / `ignoreExports`
+    // here on purpose: dependency and dead-export findings stay visible so a real
+    // regression is never silenced.
+    "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+    "entry": [
+        // Suite files executed by docs/sandbox's bespoke runner
+        // (docs/sandbox/tests/run-all.mjs) — discovered dynamically, so not
+        // reachable through any static import.
+        "docs/sandbox/**/*.test.ts",
+
+        // esbuild entry points bundled by the docs/sandbox build scripts
+        // (runtime/build-sandbox-worker.mjs, build-sandbox-mcp.mjs,
+        // build-stitch-browser.mjs) and the MCP bin — consumed by the build
+        // pipeline, never by a TS import. worker-entry.ts and runtime/shims/*
+        // are reachable transitively from these and need no separate entry.
+        "docs/sandbox/runtime/worker-main.ts",
+        "docs/sandbox/runtime/worker-main.node.ts",
+        "docs/sandbox/runtime/node-runner.ts",
+        "docs/sandbox/runtime/stitch-browser.ts",
+        "docs/sandbox/runtime/build-stitch-browser.mjs",
+        "docs/sandbox/mcp/bin.ts",
+
+        // Public contracts barrel, consumed via the package `exports` map.
+        "docs/sandbox/contracts/index.ts",
+
+        // Standalone, intentionally un-imported example sources.
+        "examples/**/*.ts",
+    ],
+}

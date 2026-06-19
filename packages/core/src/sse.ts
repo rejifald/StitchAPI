@@ -52,6 +52,48 @@ function parseData(raw: string): unknown {
     }
 }
 
+// The fields accumulated for the current event block, reset on every blank line.
+interface SseFrame {
+    event?: string;
+    id?: string;
+    retry?: number;
+    dataLines: string[];
+}
+
+function freshFrame(): SseFrame {
+    return { dataLines: [] };
+}
+
+// Apply one non-blank, non-comment field line to the frame. Split on the first colon; the value has
+// exactly one leading space stripped (SSE). `event` / `data` / `id` / `retry` are recognised — a
+// `data:` line accumulates (multiple join with `\n`), an `id` containing NUL and a non-numeric
+// `retry` are ignored per spec — and any other field name is dropped.
+function applyFieldLine(frame: SseFrame, line: string): void {
+    const colon = line.indexOf(':');
+    const field = colon === -1 ? line : line.slice(0, colon);
+    let value = colon === -1 ? '' : line.slice(colon + 1);
+    if (value.startsWith(' ')) value = value.slice(1); // strip ONE leading space
+
+    if (field === 'event') frame.event = value;
+    else if (field === 'data') frame.dataLines.push(value);
+    else if (field === 'id') {
+        if (!value.includes('\0')) frame.id = value; // SSE: ignore an id containing NUL
+    } else if (field === 'retry') {
+        if (/^\d+$/.test(value)) frame.retry = Number(value);
+    }
+}
+
+// Build the event a blank line dispatches — or `undefined` when no `data:` field was seen, since an
+// id/retry/event-only block is not dispatched (SSE spec dispatch step 2).
+function dispatchFrame(frame: SseFrame): SseEvent | undefined {
+    if (frame.dataLines.length === 0) return undefined;
+    const ev: SseEvent = { data: parseData(frame.dataLines.join('\n')) };
+    if (frame.event !== undefined) ev.event = frame.event;
+    if (frame.id !== undefined) ev.id = frame.id;
+    if (frame.retry !== undefined) ev.retry = frame.retry;
+    return ev;
+}
+
 // Parse the `text/event-stream` grammar off a byte stream: events are separated by blank lines;
 // `event:` / `data:` / `id:` / `retry:` fields accumulate (multiple `data:` lines join with `\n`);
 // `:`-prefixed lines are comments; exactly one leading space after the field colon is stripped. A
@@ -59,10 +101,7 @@ function parseData(raw: string): unknown {
 async function* parseEventStream(
     body: ReadableStream<Uint8Array>,
 ): AsyncGenerator<SseEvent, void> {
-    let event: string | undefined;
-    let id: string | undefined;
-    let retry: number | undefined;
-    let dataLines: string[] = [];
+    let frame = freshFrame();
 
     for await (const raw of lineReader(body)) {
         // lineReader splits on `\n`; strip a trailing `\r` so CRLF streams parse (the SSE plumbing
@@ -70,36 +109,12 @@ async function* parseEventStream(
         const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
 
         if (line === '') {
-            // Blank line dispatches the event — but only if a `data:` field was seen. An id/retry/
-            // event-only block sets no data and is not dispatched (SSE spec dispatch step 2).
-            if (dataLines.length > 0) {
-                const ev: SseEvent = { data: parseData(dataLines.join('\n')) };
-                if (event !== undefined) ev.event = event;
-                if (id !== undefined) ev.id = id;
-                if (retry !== undefined) ev.retry = retry;
-                yield ev;
-            }
-            event = undefined;
-            id = undefined;
-            retry = undefined;
-            dataLines = [];
-            continue;
+            const ev = dispatchFrame(frame);
+            if (ev !== undefined) yield ev;
+            frame = freshFrame();
+        } else if (!line.startsWith(':')) {
+            applyFieldLine(frame, line); // non-comment field line
         }
-        if (line.startsWith(':')) continue; // comment
-
-        const colon = line.indexOf(':');
-        const field = colon === -1 ? line : line.slice(0, colon);
-        let value = colon === -1 ? '' : line.slice(colon + 1);
-        if (value.startsWith(' ')) value = value.slice(1); // strip ONE leading space
-
-        if (field === 'event') event = value;
-        else if (field === 'data') dataLines.push(value);
-        else if (field === 'id') {
-            if (!value.includes('\0')) id = value; // SSE: ignore an id containing NUL
-        } else if (field === 'retry') {
-            if (/^\d+$/.test(value)) retry = Number(value);
-        }
-        // any other field name is ignored
     }
 }
 
