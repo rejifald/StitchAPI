@@ -6,6 +6,8 @@
         "fastify",
         "hono",
         "react",
+        "vue",
+        "svelte",
         "tanstack-query",
         "pino",
         "stores"
