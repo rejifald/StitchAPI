@@ -1,8 +1,8 @@
 {
-    "name": "@stitchapi/fastify",
+    "name": "@stitchapi/solid",
     "version": "1.0.0-rc.2",
     "type": "commonjs",
-    "description": "Fastify plugin for StitchAPI — decorate the app/request with a seam, request-scoped principal (AsyncLocalStorage), and SSE + error + Pino-logger bridges.",
+    "description": "Solid bindings for StitchAPI — createStitch/createStitchStream primitives that reconcile a Solid store from the query-core reactive store. Streaming-first: re-render as `delta` chunks arrive. Plus an optional TanStack Query queryOptions helper.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
     "types": "lib/index.d.ts",
@@ -35,20 +35,16 @@
     "repository": {
         "type": "git",
         "url": "git+https://github.com/rejifald/StitchAPI.git",
-        "directory": "packages/fastify"
+        "directory": "packages/solid"
     },
     "keywords": [
         "stitchapi",
-        "fastify",
-        "fastify-plugin",
-        "seam",
-        "principal",
-        "multi-tenant",
-        "sse",
-        "pino",
-        "typescript",
-        "api-client",
-        "rate-limiting"
+        "solid",
+        "solid-js",
+        "createStore",
+        "streaming",
+        "query",
+        "tanstack-query"
     ],
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",
@@ -57,15 +53,20 @@
         "node": ">=18.18.0"
     },
     "peerDependencies": {
+        "@stitchapi/query-core": "^1.0.0-rc.2",
         "stitchapi": "^1.0.0-rc.1",
-        "fastify": "^4.0.0 || ^5.0.0"
+        "solid-js": "^1.8.0",
+        "@tanstack/solid-query": "^5.0.0"
     },
-    "dependencies": {
-        "fastify-plugin": "^5.0.0"
+    "peerDependenciesMeta": {
+        "@tanstack/solid-query": {
+            "optional": true
+        }
     },
     "devDependencies": {
+        "@stitchapi/query-core": "workspace:*",
         "@types/node": "^22.10.0",
-        "fastify": "^5.2.0",
+        "solid-js": "^1.8.0",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",

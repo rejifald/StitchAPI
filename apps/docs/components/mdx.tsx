@@ -1,3 +1,5 @@
+import { FoldableCodeBlock } from '@/components/code-block';
+
 import { Popup, PopupContent, PopupTrigger } from 'fumadocs-twoslash/ui';
 import { createGenerator } from 'fumadocs-typescript';
 import { AutoTypeTable } from 'fumadocs-typescript/ui';
@@ -19,6 +21,9 @@ type AutoTypeTableProps = Omit<
 export function getMDXComponents(components?: MDXComponents) {
     return {
         ...defaultMdxComponents,
+        // Adds a "Show full code" toggle to blocks with a fold region; falls
+        // back to the default code block otherwise (see components/code-block.tsx).
+        pre: FoldableCodeBlock,
         AutoTypeTable: (props: AutoTypeTableProps) => (
             <AutoTypeTable generator={generator} {...props} />
         ),

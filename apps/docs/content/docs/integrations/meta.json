@@ -9,6 +9,7 @@
         "vue",
         "svelte",
         "tanstack-query",
-        "pino"
+        "pino",
+        "stores"
     ]
 }

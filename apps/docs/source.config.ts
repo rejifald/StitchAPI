@@ -1,3 +1,5 @@
+import { transformerFold } from './lib/transformer-fold';
+
 import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
 import { defineConfig, defineDocs } from 'fumadocs-mdx/config';
@@ -42,6 +44,13 @@ export default defineConfig({
                         compilerOptions: { experimentalDecorators: true },
                     },
                 }),
+                // Collapse `// [!code fold:start] … [!code fold:end]` regions
+                // behind a "Show full example" toggle. Runs AFTER twoslash so it
+                // folds the post-twoslash line elements (and keeps them in the
+                // DOM, unlike twoslash's `// ---cut---`). The toggle UI is the
+                // `pre` override in components/mdx.tsx. See AUTHORING.md →
+                // "Folding setup code".
+                transformerFold(),
             ],
         },
     },
