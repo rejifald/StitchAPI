@@ -58,11 +58,6 @@
       "count": 2
     }
   },
-  "test/composition.spec.ts": {
-    "@typescript-eslint/restrict-plus-operands": {
-      "count": 1
-    }
-  },
   "test/graphql-and-headers.spec.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
