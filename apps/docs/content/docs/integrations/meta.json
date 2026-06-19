@@ -9,6 +9,8 @@
         "vue",
         "svelte",
         "tanstack-query",
+        "swr",
+        "rtk-query",
         "pino",
         "stores"
     ]

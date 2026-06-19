@@ -1,0 +1,88 @@
+---
+title: SWR
+description: useStitchSWR runs a stitch as an SWR fetcher, so SWR owns caching and revalidation while the stitch stays typed, validated, and traced.
+---
+
+Use `@stitchapi/swr` when your app is already on [SWR](https://swr.vercel.app) and
+you want a stitch as the fetcher. SWR keeps owning caching, deduping, and
+revalidation; the stitch stays the **typed, validated, traced** call. There is no
+`@stitchapi/query-core` here — SWR is the store.
+
+If you'd rather StitchAPI own the lifecycle directly — especially **streaming**,
+which SWR doesn't model — reach for `useStitchStream` in
+[`@stitchapi/react`](/docs/integrations/react) instead.
+
+## Example
+
+Install the adapter alongside core, SWR, and React:
+
+```package-install
+@stitchapi/swr stitchapi swr react
+```
+
+`stitchapi`, `swr`, and `react` are peer dependencies.
+
+## `useStitchSWR`
+
+Pass a stitch and its input; get SWR's own response back (`data`, `error`,
+`isLoading`, `isValidating`, `mutate`). The cache key is the stitch's name plus the
+input, so two components calling the same stitch with the same input dedupe to one
+request.
+
+```tsx
+import { useStitchSWR } from '@stitchapi/swr';
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+function Profile({ id }: { id: string }) {
+    const { data, error, isLoading } = useStitchSWR(getUser, {
+        params: { id },
+    });
+    if (isLoading) return <Spinner />;
+    if (error) return <Retry />;
+    return <h1>{data?.name}</h1>;
+}
+```
+
+Pass SWR options as the third argument — they go straight through:
+
+```tsx
+useStitchSWR(getUser, { params: { id } }, { refreshInterval: 5000 });
+```
+
+## Conditional fetching &amp; `mutate`
+
+`swrKey(stitch, input)` returns the cache key, so you can use SWR's null-key
+conditional pattern or target a `mutate`:
+
+```tsx
+import { swrKey } from '@stitchapi/swr';
+import useSWR from 'swr';
+
+// Skip the request until `id` exists.
+const { data } = useSWR(id ? swrKey(getUser, { params: { id } }) : null, () =>
+    getUser({ params: { id } }),
+);
+```
+
+<Callout type="info">
+    `useStitchSWR` is for when SWR already owns your view state and you want a
+    stitch as the fetcher. For StitchAPI to own the lifecycle — and for
+    streaming — use [`useStitch` / `useStitchStream`](/docs/integrations/react).
+    The same split applies to [TanStack
+    Query](/docs/integrations/tanstack-query) and [RTK
+    Query](/docs/integrations/rtk-query).
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="React" href="/docs/integrations/react" />
+    <Card title="TanStack Query" href="/docs/integrations/tanstack-query" />
+    <Card title="RTK Query" href="/docs/integrations/rtk-query" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>
