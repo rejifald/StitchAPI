@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
-    'stitch-composition-' + process.pid + '.jsonl',
+    `stitch-composition-${process.pid}.jsonl`,
 );
 
 let server: MockServer;
