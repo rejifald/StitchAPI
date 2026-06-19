@@ -55,12 +55,10 @@
     "engines": {
         "node": ">=18.18.0"
     },
-    "dependencies": {
-        "@stitchapi/react-native": "workspace:*"
-    },
     "peerDependencies": {
         "@stitchapi/query-core": "^1.0.0-rc.2",
         "@stitchapi/react": "^1.0.0-rc.2",
+        "@stitchapi/react-native": "^1.0.0-rc.2",
         "stitchapi": "^1.0.0-rc.1",
         "react": "^18.0.0 || ^19.0.0",
         "react-native": ">=0.70.0",

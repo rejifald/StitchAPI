@@ -403,9 +403,6 @@ importers:
       '@react-native-community/netinfo':
         specifier: '>=9.0.0'
         version: 12.0.1(react-native@0.86.0(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.2.7))(react@19.2.7)
-      '@stitchapi/react-native':
-        specifier: workspace:*
-        version: link:../react-native
       expo:
         specifier: '>=51.0.0'
         version: 56.0.12(@babel/core@7.29.7)(@expo/dom-webview@56.0.5)(react-dom@19.2.7(react@19.2.7))(react-native@0.86.0(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.2.7))(react@19.2.7)(typescript@5.9.3)
@@ -422,6 +419,9 @@ importers:
       '@stitchapi/react':
         specifier: workspace:*
         version: link:../react
+      '@stitchapi/react-native':
+        specifier: workspace:*
+        version: link:../react-native
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.21
