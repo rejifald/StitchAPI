@@ -5,6 +5,7 @@
         "nestjs",
         "fastify",
         "hono",
+        "elysia",
         "next",
         "react",
         "vue",
