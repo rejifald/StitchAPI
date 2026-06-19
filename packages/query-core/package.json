@@ -44,7 +44,9 @@
         "reactive",
         "streaming",
         "useSyncExternalStore",
-        "framework-agnostic"
+        "framework-agnostic",
+        "typescript",
+        "data-fetching"
     ],
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",

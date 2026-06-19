@@ -48,7 +48,8 @@
         "store",
         "rate-limit",
         "distributed-rate-limiting",
-        "session"
+        "session",
+        "typescript"
     ],
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",

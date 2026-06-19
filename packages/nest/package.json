@@ -44,7 +44,8 @@
         "dependency-injection",
         "module",
         "adapter",
-        "api-client"
+        "api-client",
+        "typescript"
     ],
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",
