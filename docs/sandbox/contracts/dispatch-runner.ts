@@ -21,9 +21,9 @@
  * throws is caught here and treated as the browser tier — never the isolate.
  */
 import type { RunNotice } from '../component/runner';
-import type { DispatchOpts, SurfaceScan } from './dispatch';
 import type { CodeRunner, RunRequest, RunResult } from './runner';
 import { scanSurface } from './scan-surface';
+import type { DispatchOpts, SurfaceScan } from './surface';
 
 /** Build a shim notice for a Node-only surface routed to the browser. */
 function shimNotice(surface: string): RunNotice {

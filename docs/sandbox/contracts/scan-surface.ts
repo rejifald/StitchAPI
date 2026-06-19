@@ -34,24 +34,17 @@ import {
     NODE_ONLY_SURFACES,
     type NodeOnlySurface,
     type SurfaceScan,
-} from './dispatch';
+} from './surface';
 
 /** Import specifiers whose bindings we treat as the stitch core surface. */
 const STITCH_MODULES = new Set(['stitchapi']);
 
 /**
- * Set form of the frozen Node-only list, for O(1) membership checks.
- *
- * Computed lazily (not at module init) to stay robust against the import cycle:
- * `dispatch.ts` re-exports this module's `scanSurface`, so under CJS this file is
- * evaluated WHILE `dispatch.ts` is still initializing — touching
- * `NODE_ONLY_SURFACES` at top level would read it before its binding exists.
- * Building the set on first call sidesteps that ordering hazard entirely.
+ * Set form of the frozen Node-only list, for O(1) membership checks. The list
+ * lives in the dependency-free `./surface` leaf, so it is fully initialized
+ * before this module evaluates — no import-cycle ordering hazard to dodge.
  */
-let _nodeOnlySet: ReadonlySet<string> | undefined;
-function nodeOnlySet(): ReadonlySet<string> {
-    return (_nodeOnlySet ??= new Set(NODE_ONLY_SURFACES));
-}
+const NODE_ONLY_SET: ReadonlySet<string> = new Set(NODE_ONLY_SURFACES);
 
 /**
  * Patterns that signal dynamic / unresolvable access we cannot statically follow.
@@ -169,7 +162,7 @@ function stripCommentsAndStrings(src: string): string {
 
 /** True if `name` is one of the frozen Node-only surfaces. */
 function isNodeOnly(name: string): name is NodeOnlySurface {
-    return nodeOnlySet().has(name);
+    return NODE_ONLY_SET.has(name);
 }
 
 /**

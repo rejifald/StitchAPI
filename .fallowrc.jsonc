@@ -1,0 +1,46 @@
+{
+    // Fallow config for the StitchAPI monorepo.
+    //
+    // Without this file fallow runs on defaults and mis-reports live code as
+    // dead: it can't see docs/sandbox's custom test runner or its esbuild
+    // entry points, and it can't attribute deps consumed at runtime / via deep
+    // relative paths. Every entry below is a file that demonstrably runs (a test
+    // the runner executes, or an esbuild entry a build script bundles); every
+    // ignored dep is one fallow itself reports as used elsewhere. The goal is an
+    // accurate score, not a suppressed one.
+    "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+    "entry": [
+        // Suite files executed by docs/sandbox's bespoke runner
+        // (docs/sandbox/tests/run-all.mjs) — discovered dynamically, so not
+        // reachable through any static import.
+        "docs/sandbox/**/*.test.ts",
+
+        // esbuild entry points bundled by the docs/sandbox build scripts
+        // (runtime/build-sandbox-worker.mjs, build-sandbox-mcp.mjs,
+        // build-stitch-browser.mjs) and the MCP bin — consumed by the build
+        // pipeline, never by a TS import. worker-entry.ts and runtime/shims/*
+        // are reachable transitively from these and need no separate entry.
+        "docs/sandbox/runtime/worker-main.ts",
+        "docs/sandbox/runtime/worker-main.node.ts",
+        "docs/sandbox/runtime/node-runner.ts",
+        "docs/sandbox/runtime/stitch-browser.ts",
+        "docs/sandbox/runtime/build-stitch-browser.mjs",
+        "docs/sandbox/mcp/bin.ts",
+
+        // Public contracts barrel, consumed via the package `exports` map.
+        "docs/sandbox/contracts/index.ts",
+
+        // Standalone, intentionally un-imported example sources.
+        "examples/**/*.ts",
+    ],
+    "ignoreDependencies": [
+        // Consumed at runtime by generated temp modules: packages/eval-harness/
+        // score/run.ts writes snippets that `import 'stitchapi'` and resolves
+        // them against eval-harness/node_modules (see the comment there).
+        "stitchapi",
+        // Imported by eval-harness via deep relative path
+        // (../../sandbox-sim/src/adapters/node), which fallow can't attribute to
+        // the package name.
+        "@stitchapi/sandbox-sim",
+    ],
+}
