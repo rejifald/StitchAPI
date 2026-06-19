@@ -10,6 +10,8 @@
         "svelte",
         "angular",
         "tanstack-query",
+        "swr",
+        "rtk-query",
         "pino",
         "stores"
     ]

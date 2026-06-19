@@ -1,0 +1,90 @@
+---
+title: RTK Query
+description: stitchQueryFn turns a stitch into an RTK Query endpoint, and stitchStreamUpdater folds a streaming stitch into the cache — RTK Query keeps the cache, tags, and generated hooks.
+---
+
+Use `@stitchapi/rtk-query` when your app is already on
+[RTK Query](https://redux-toolkit.js.org/rtk-query/overview). RTK Query keeps
+owning the cache, tags, and generated hooks; the stitch stays the **typed,
+validated, traced** call. The adapters are plain functions (no React), so they
+work with both `@reduxjs/toolkit/query` and `@reduxjs/toolkit/query/react`. No
+`@stitchapi/query-core` — RTK Query is the store.
+
+## Example
+
+Install the adapter alongside core and Redux Toolkit:
+
+```package-install
+@stitchapi/rtk-query stitchapi @reduxjs/toolkit
+```
+
+`stitchapi` and `@reduxjs/toolkit` are peer dependencies.
+
+## `stitchQueryFn` — a stitch as an endpoint
+
+`stitchQueryFn(stitch)` returns an endpoint `queryFn`: `{ data }` with the validated
+output on success, or `{ error }` with a **serialisable** error on a throw (so
+Redux holds no non-serialisable value). `queryFn` bypasses the `baseQuery`, so
+`fakeBaseQuery()` is the natural base when every endpoint is a stitch:
+
+```ts
+import { createApi, fakeBaseQuery } from '@reduxjs/toolkit/query/react';
+import { stitchQueryFn } from '@stitchapi/rtk-query';
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+export const api = createApi({
+    baseQuery: fakeBaseQuery(),
+    endpoints: (build) => ({
+        getUser: build.query({ queryFn: stitchQueryFn(getUser) }),
+    }),
+});
+
+export const { useGetUserQuery } = api;
+// useGetUserQuery({ params: { id } })
+```
+
+## `stitchStreamUpdater` — streaming into the cache
+
+RTK Query is the one cache library here that models streaming, via
+`onCacheEntryAdded`. `stitchStreamUpdater(stitch)` folds a streaming stitch's
+`delta` chunks into the cached array as they arrive. Seed the endpoint with an
+empty array through `queryFn`:
+
+```ts
+import { sse } from 'stitchapi/sse';
+import { stitchStreamUpdater } from '@stitchapi/rtk-query';
+
+const chat = sse({ url: 'https://api.example.com/chat' });
+
+// inside endpoints: (build) => ({ ... })
+chat: build.query<number[], { prompt: string }>({
+    queryFn: () => ({ data: [] }),
+    onCacheEntryAdded: stitchStreamUpdater<number>(chat),
+}),
+```
+
+The cached data is the accumulated chunks (`mode: 'append'`, default) or the latest
+chunk (`mode: 'replace'`). Streaming stops when the cache entry is removed (the last
+subscriber leaves).
+
+<Callout type="info">
+    Reach for these adapters when RTK Query already owns your view state and you
+    want a stitch as the endpoint. For StitchAPI to own the lifecycle directly,
+    use [`useStitch` / `useStitchStream`](/docs/integrations/react). The same
+    split applies to [TanStack Query](/docs/integrations/tanstack-query) and
+    [SWR](/docs/integrations/swr).
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="React" href="/docs/integrations/react" />
+    <Card title="TanStack Query" href="/docs/integrations/tanstack-query" />
+    <Card title="SWR" href="/docs/integrations/swr" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>
