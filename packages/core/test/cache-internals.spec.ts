@@ -58,6 +58,19 @@ describe('deriveCacheKey canonicalisation', () => {
         expect(a).not.toBe(b);
     });
 
+    test('a bigint does not collide with its plain-string form', () => {
+        // `42n` (bigint) and `'42n'` (string) are distinct values that can produce distinct wire
+        // requests — a bigint query/param goes on the wire as `42`, the string as `42n`. The
+        // canonicaliser must keep them apart so one is never served the other's cached response.
+        const big = deriveCacheKey(GET({ body: { v: 42n } }), undefined);
+        const str = deriveCacheKey(GET({ body: { v: '42n' } }), undefined);
+        expect(big).not.toBe(str);
+        // …and a bigint must still NOT collide with the equivalent number (`42n` ≠ `42`),
+        // which is the distinction the original `…n` suffix was reaching for.
+        const num = deriveCacheKey(GET({ body: { v: 42 } }), undefined);
+        expect(big).not.toBe(num);
+    });
+
     test('null is kept; undefined is treated as absent', () => {
         const withNull = deriveCacheKey(GET({ body: { a: null } }), undefined);
         const empty = deriveCacheKey(GET({ body: {} }), undefined);
