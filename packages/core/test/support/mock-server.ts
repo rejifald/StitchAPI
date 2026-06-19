@@ -59,9 +59,7 @@ const parseCookies = (header: string | undefined): Record<string, string> => {
 const collectHeaders = (req: IncomingMessage): Record<string, string> => {
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) {
-        out[k.toLowerCase()] = Array.isArray(v)
-            ? v.join(', ')
-            : String(v ?? '');
+        out[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : (v ?? '');
     }
     return out;
 };
