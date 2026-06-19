@@ -36,8 +36,11 @@ function stable(value: unknown): string {
     if (t === 'number')
         return Number.isFinite(value) ? JSON.stringify(value) : 'null';
     if (t === 'boolean') return value ? 'true' : 'false';
-    if (t === 'bigint')
-        return JSON.stringify(`${(value as bigint).toString()}n`);
+    // A type tag (`bigint:`) — NOT a JSON-stringified `"…n"` — so a bigint never collides with a
+    // plain string of the same digits-plus-`n` (`42n` ≠ the string `'42n'`). The tag's leading
+    // letter also keeps it clear of every other token shape (quoted strings, bare numbers,
+    // `true`/`false`/`null`), so `42n` still stays distinct from the number `42`.
+    if (t === 'bigint') return `bigint:${(value as bigint).toString()}`;
     if (t === 'undefined') return 'null'; // only reached for an array hole; objects drop it
     if (value instanceof Date) return JSON.stringify(value.toISOString());
     if (Array.isArray(value))
@@ -118,8 +121,10 @@ export interface RequestDescriptor {
 }
 
 /** The frozen key-schema version. Folded into the hashed content AND prefixed onto the stored
- *  key, so any canonicalisation change is a mass self-healing miss, never a stale-key hit. */
-export const KEY_VERSION = 'k1';
+ *  key, so any canonicalisation change is a mass self-healing miss, never a stale-key hit.
+ *  `k2`: bigint canonicalisation changed from `"<n>n"` to the `bigint:<n>` type tag (it had
+ *  collided with the plain string `"<n>n"`), so old bigint-bearing keys must miss, not cross-hit. */
+export const KEY_VERSION = 'k2';
 
 function canonicalRequest(
     d: RequestDescriptor,
