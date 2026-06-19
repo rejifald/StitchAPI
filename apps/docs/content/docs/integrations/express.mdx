@@ -9,10 +9,11 @@ Use `@stitchapi/express` when you serve an API with [Express](https://expressjs.
 the request, an SSE writer, and a stitch-error → HTTP mapper.
 
 <Callout type="info">
-    **The shallow binding.** Express has no plugin / lifecycle / logger structure
-    to bridge — unlike [Fastify](/docs/integrations/fastify) — so this package is
-    just a request handler, an SSE writer, and an error middleware. Importing it
-    augments Express's `Request`, so `req.stitch` is typed everywhere.
+    **The shallow binding.** Express has no plugin / lifecycle / logger
+    structure to bridge — unlike [Fastify](/docs/integrations/fastify) — so this
+    package is just a request handler, an SSE writer, and an error middleware.
+    Importing it augments Express's `Request`, so `req.stitch` is typed
+    everywhere.
 </Callout>
 
 ## Example
@@ -96,8 +97,8 @@ app.get('/chat', async (req, res) => {
     **Anti-pattern:** don't also `res.json()` / `res.send()` from a handler that
     calls `streamStitchSse` — the helper owns the response (it writes the
     `text/event-stream` head and the frames). A second write corrupts the stream
-    or throws _headers already sent_. Let the helper finish the response; do your
-    own thing in a separate route.
+    or throws _headers already sent_. Let the helper finish the response; do
+    your own thing in a separate route.
 </Callout>
 
 ## Errors — `stitchErrorHandler`
