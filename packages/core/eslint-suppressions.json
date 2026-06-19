@@ -58,11 +58,6 @@
       "count": 2
     }
   },
-  "test/graphql-and-headers.spec.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    }
-  },
   "test/support/mock-server.ts": {
     "@typescript-eslint/no-redundant-type-constituents": {
       "count": 1
