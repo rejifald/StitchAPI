@@ -1,0 +1,77 @@
+---
+title: Sentry
+description: A Sentry TraceSink that maps the stitch event stream to breadcrumbs and captures error events with the call's context — metadata-only, safe on a secret-bearing seam.
+---
+
+The logger sinks ([`@stitchapi/pino`](/docs/integrations/pino), core's `loggerSink`)
+and the [OTLP bridge](/docs/guides/observability/otlp) cover logs and traces;
+[Sentry](https://sentry.io)'s model is different — a trail of **breadcrumbs**
+leading up to a **captured error**. `@stitchapi/sentry` is a
+[`TraceSink`](/docs/guides/observability/trace-sinks) that maps the stitch
+[event stream](/docs/concepts/event-stream) onto it: routine events become
+breadcrumbs, and an `error` event is captured as a Sentry issue with the call's
+context — so the breadcrumb trail attaches automatically.
+
+**Bring your own Sentry.** The sink imports no SDK — it talks to a small structural
+surface that `@sentry/node`, `@sentry/browser`, `@sentry/react`, and friends all
+satisfy. There's no `@sentry/*` dependency.
+
+## Example
+
+```package-install
+@stitchapi/sentry stitchapi
+```
+
+`stitchapi` is the only peer dependency; pass whichever `@sentry/*` SDK you already
+run.
+
+## Usage
+
+`sentrySink(Sentry)` returns a `TraceSink`. Pass it as a seam's `trace` and every
+call now reports through Sentry:
+
+```ts
+import * as Sentry from '@sentry/node';
+import { sentrySink } from '@stitchapi/sentry';
+import { seam } from 'stitchapi';
+
+const api = seam({
+    baseUrl: 'https://api.example.com',
+    trace: sentrySink(Sentry),
+});
+```
+
+The same sink works on a single stitch — `stitch({ trace: sentrySink(Sentry) })`.
+
+## What it sends
+
+| Event                          | Sentry                                                               |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `error`                        | `captureMessage` (level `error`) + an error breadcrumb               |
+| `progress` (`retry`/`circuit`) | breadcrumb, level `warning`                                          |
+| `progress` (throttle/paginate) | breadcrumb, level `debug`                                            |
+| `drift`                        | breadcrumb (level follows the finding); captured with `captureDrift` |
+| `start` / `result` / `done`    | breadcrumb only when `lifecycle: true` (off by default)              |
+| `delta` / `info`               | **never sent** (raw response data / strategy announcements)          |
+
+Options: `{ lifecycle?, captureErrors?, captureDrift? }`.
+
+<Callout type="warn">
+    **Metadata only, by design.** A custom `TraceSink` receives the **raw**
+    event — core only redacts inside its own built-in sinks. So this sink sends
+    only the stitch name, method, **redacted URL** (the query string is stripped
+    — it can carry `?api_key=…`), status, attempt counts, drift
+    path/level/change, phase, and timing. It never sends `event.input` (its
+    headers still hold the live `authorization` / `cookie`), the response
+    `value`, or a `delta` chunk — safe on a secret-bearing seam regardless of
+    core's trace redaction.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Pino" href="/docs/integrations/pino" />
+    <Card title="Trace sinks" href="/docs/guides/observability/trace-sinks" />
+    <Card title="OpenTelemetry (OTLP)" href="/docs/guides/observability/otlp" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>
