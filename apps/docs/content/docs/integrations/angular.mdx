@@ -1,0 +1,206 @@
+---
+title: Angular
+description: injectStitch and injectStitchStream expose a stitch's lifecycle as both Angular signals and an RxJS observable over the framework-agnostic @stitchapi/query-core store — plus an optional TanStack Query adapter.
+---
+
+Use `@stitchapi/angular` when you call stitches from Angular components and want the
+call's lifecycle — pending / success / error, cancellation, refetch, and
+**streaming re-renders** — managed for you. `injectStitch` is the request/response
+function; `injectStitchStream` re-renders as each `delta` chunk arrives, which is
+the differentiator over plain request/response query libraries.
+
+Every result is exposed **two ways from one shared execution**: fine-grained
+**signals** (`data()`, `isPending()`, …) for templates and `computed`, and an RxJS
+**observable** (`state$`) for the `async` pipe and operators. Both are a thin layer
+over [`@stitchapi/query-core`](#the-shared-store-stitchapiquery-core), the
+framework-agnostic store that owns the reactive lifecycle.
+
+## Example
+
+Install the bindings, the store, core, and Angular:
+
+```package-install
+@stitchapi/angular @stitchapi/query-core stitchapi @angular/core
+```
+
+`stitchapi`, `@angular/core`, and `rxjs` are peer dependencies;
+`@tanstack/angular-query-experimental` is an **optional** peer, needed only for the
+`queryOptions` adapter below.
+
+## `injectStitch` — request / response
+
+Call `injectStitch` in an injection context (a component field initializer). Pass
+the input as a **signal or getter** (`() => this.id()`) so the query re-fetches
+when it changes — Angular signal inputs are the natural source. Read the result's
+signals in the template; the in-flight run is aborted when the component is
+destroyed.
+
+```ts
+import { Component, input } from '@angular/core';
+import { injectStitch } from '@stitchapi/angular';
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+@Component({
+    selector: 'app-profile',
+    template: `
+        @if (user.isPending()) {
+            <app-spinner />
+        } @else if (user.isError()) {
+            <button (click)="user.refetch()">Retry</button>
+        } @else {
+            <h1>{{ user.data()?.name }}</h1>
+        }
+    `,
+})
+export class ProfileComponent {
+    readonly id = input.required<string>();
+    // `id` is a signal — passing a getter re-fetches when it changes.
+    readonly user = injectStitch(getUser, () => ({
+        params: { id: this.id() },
+    }));
+}
+```
+
+## `injectStitchStream` — live deltas
+
+For a streaming stitch (an [`sse`](/docs/reference/surfaces) or `stream` surface),
+`injectStitchStream` updates as each chunk arrives. `chunks()` is the running list,
+`data()` is the accumulated array (`mode: 'append'`, default) or the latest chunk
+(`mode: 'replace'`), and `status()` is `'streaming'` until the terminal `result`,
+then `'success'`:
+
+```ts
+import { Component, input } from '@angular/core';
+import { injectStitchStream } from '@stitchapi/angular';
+import { sse } from 'stitchapi/sse';
+
+const chat = sse({ url: 'https://api.example.com/chat' });
+
+@Component({
+    selector: 'app-chat',
+    template: `
+        @for (c of tokens.chunks(); track $index) {
+            <span>{{ c }}</span>
+        }
+        @if (tokens.isStreaming()) {
+            <app-cursor />
+        }
+    `,
+})
+export class ChatComponent {
+    readonly prompt = input.required<string>();
+    readonly tokens = injectStitchStream(chat, () => ({
+        body: { prompt: this.prompt() },
+    }));
+}
+```
+
+Both functions return the same shape — `data`, `error`, `status`, `chunks`, and the
+`isPending` / `isError` / `isSuccess` / `isStreaming` flags (each a `Signal`), the
+`state$` observable, plus `refetch` and `cancel`.
+
+## The observable: `state$`
+
+Prefer RxJS? The same state is a multicast `Observable<StitchQueryState<T>>` on
+`state$`, sharing the one query execution with the signals. Read it with the
+`async` pipe:
+
+```ts
+import { AsyncPipe } from '@angular/common';
+import { Component, input } from '@angular/core';
+import { injectStitch } from '@stitchapi/angular';
+
+@Component({
+    selector: 'app-profile',
+    imports: [AsyncPipe],
+    template: `
+        @if (state$ | async; as s) {
+            @if (s.isSuccess) {
+                <h1>{{ s.data?.name }}</h1>
+            }
+        }
+    `,
+})
+export class ProfileComponent {
+    readonly id = input.required<string>();
+    readonly state$ = injectStitch(getUser, () => ({
+        params: { id: this.id() },
+    })).state$;
+}
+```
+
+## The shared store: `@stitchapi/query-core`
+
+The bindings hold almost no logic. All of it — running the call under an
+`AbortController`, publishing status transitions, folding `delta` chunks into
+state, `cancel()` by aborting, `refetch()` by re-running — lives in
+`@stitchapi/query-core`'s `createStitchQuery`, a `subscribe` / `getSnapshot`
+handle with **no framework imports** and **no `node:*`**, so it is browser- and
+edge-safe. Angular bridges it to an observable and derives the signals from that:
+
+```ts twoslash
+import { createStitchQuery } from '@stitchapi/query-core';
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    output: z.array(z.object({ id: z.number(), name: z.string() })),
+});
+
+const query = createStitchQuery(listUsers, { query: { q: 'ada' } });
+const unsubscribe = query.subscribe(() => {
+    const snapshot = query.getSnapshot();
+    if (snapshot.isSuccess) console.log(snapshot.data);
+});
+```
+
+Because the whole reactive lifecycle lives in the store and not the binding, the
+[React](/docs/integrations/react), [Vue](/docs/integrations/vue), and
+[Svelte](/docs/integrations/svelte) bindings are the same few lines against their
+own reactive primitive — Angular's are `toSignal` + `toObservable`.
+
+## Optional: TanStack Query
+
+Already on [TanStack Query](/docs/integrations/tanstack-query)?
+`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
+pass straight to `injectQuery` — it imports nothing from
+`@tanstack/angular-query-experimental`, so it works even if you never install it:
+
+```ts
+import { Component, input } from '@angular/core';
+import { queryOptions } from '@stitchapi/angular';
+import { injectQuery } from '@tanstack/angular-query-experimental';
+
+@Component({ selector: 'app-profile', template: `...` })
+export class ProfileComponent {
+    readonly id = input.required<string>();
+    readonly user = injectQuery(() =>
+        queryOptions(getUser, { params: { id: this.id() } }),
+    );
+}
+```
+
+<Callout type="info">
+    Reach for `queryOptions` when TanStack Query already owns your view state
+    and you want a stitch as the `queryFn`; reach for `injectStitch` /
+    `injectStitchStream` when you want StitchAPI to own the lifecycle directly —
+    especially for streaming, which `injectQuery` does not model. See the
+    [TanStack Query guide](/docs/integrations/tanstack-query) for how the two
+    layers split.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="React" href="/docs/integrations/react" />
+    <Card title="Vue" href="/docs/integrations/vue" />
+    <Card title="Svelte" href="/docs/integrations/svelte" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>

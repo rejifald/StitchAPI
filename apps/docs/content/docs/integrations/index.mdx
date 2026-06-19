@@ -50,16 +50,31 @@ an SSE helper, and an error bridge.
 
 ## Frontend
 
-The hooks and composables are a thin layer over the shared `@stitchapi/query-core`
-store, so updates are tearing-free and **streaming-first** — the view re-renders as
-each `delta` chunk arrives, which plain request/response query libraries don't
-model.
+Each binding is a thin layer over the shared `@stitchapi/query-core` store, so
+updates are tearing-free and **streaming-first** — the view re-renders as each
+`delta` chunk arrives, which plain request/response query libraries don't model.
+One core, one binding per framework's own reactive primitive.
 
 <Cards>
     <Card
         title="React"
         href="/docs/integrations/react"
-        description="Tearing-free useStitch / useStitchStream hooks over query-core, plus an optional TanStack Query adapter."
+        description="Tearing-free useStitch / useStitchStream hooks built on useSyncExternalStore."
+    />
+    <Card
+        title="Vue"
+        href="/docs/integrations/vue"
+        description="useStitch / useStitchStream composables backed by Vue 3 reactivity (refs)."
+    />
+    <Card
+        title="Svelte"
+        href="/docs/integrations/svelte"
+        description="stitchStore / stitchStreamStore — real Svelte stores, on Svelte 4 and 5."
+    />
+    <Card
+        title="Angular"
+        href="/docs/integrations/angular"
+        description="injectStitch / injectStitchStream exposed as both signals and an RxJS observable."
     />
     <Card
         title="TanStack Query"
@@ -90,6 +105,19 @@ model.
 
 For OpenTelemetry, core exports an OTLP trace bridge directly — see the
 [OTLP guide](/docs/guides/observability/otlp).
+
+## State &amp; storage
+
+Attach a `StitchStore` to move a stitch's throttle counters, sessions, and cache
+into a shared backend — fleet-wide, with no call-site change.
+
+<Cards>
+    <Card
+        title="Distributed stores"
+        href="/docs/integrations/stores"
+        description="Redis (+ Upstash edge), Cloudflare Workers KV, and Deno KV drivers — with the atomic-incr trade-off that decides which fits."
+    />
+</Cards>
 
 ## See also
 
