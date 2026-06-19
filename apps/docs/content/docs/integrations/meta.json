@@ -10,6 +10,8 @@
         "vue",
         "svelte",
         "angular",
+        "react-native",
+        "expo",
         "tanstack-query",
         "swr",
         "rtk-query",
