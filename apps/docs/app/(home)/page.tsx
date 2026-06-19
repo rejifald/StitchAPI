@@ -1,3 +1,4 @@
+import { AgentNative } from './components/agent-native';
 import { Cta, Footer } from './components/cta';
 import { Differentiator } from './components/differentiator';
 import { Features } from './components/features';
@@ -16,7 +17,9 @@ const description =
     'API stitching: declare an endpoint once — its types, auth, and resilience — and call it like a local function. No server, no codegen, no config files. The same definition runs from code, the CLI, an HTTP route, or as an MCP tool.';
 
 export const metadata: Metadata = {
-    title,
+    // `absolute` opts out of the root `%s — StitchAPI` template — the home
+    // title already leads with the brand, so templating would double it.
+    title: { absolute: title },
     description,
     alternates: { canonical: '/' },
     openGraph: {
@@ -39,6 +42,7 @@ export default function HomePage() {
     return (
         <main className="flex flex-1 flex-col">
             <Hero />
+            <AgentNative />
             <Metrics />
             <Problem />
             <Surfaces />

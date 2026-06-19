@@ -1,0 +1,160 @@
+---
+title: Svelte
+description: stitchStore and stitchStreamStore — real Svelte stores wrapping a stitch call, over the framework-agnostic @stitchapi/query-core store. Works on Svelte 4 and 5, plus an optional TanStack Query adapter.
+---
+
+Use `@stitchapi/svelte` when you call stitches from Svelte components and want the
+call's lifecycle — pending / success / error, cancellation, refetch, and
+**streaming re-renders** — managed for you. `stitchStore` is the request/response
+store; `stitchStreamStore` emits a new state as each `delta` chunk arrives, which
+is the differentiator over plain request/response query libraries.
+
+Both are real Svelte stores (`{ subscribe }`) built on `readable` from
+`svelte/store` — the surface that is unchanged across **Svelte 4 and 5** — so you
+read them with the `$store` auto-subscription you already use. They are a thin
+layer over [`@stitchapi/query-core`](#the-shared-store-stitchapiquery-core), the
+framework-agnostic store that owns the reactive lifecycle.
+
+## Example
+
+Install the stores, the shared store, core, and Svelte:
+
+```package-install
+@stitchapi/svelte @stitchapi/query-core stitchapi svelte
+```
+
+`stitchapi` and `svelte` (`^4 || ^5`) are peer dependencies; `@tanstack/svelte-query`
+is an **optional** peer, needed only for the `queryOptions` adapter below.
+
+## `stitchStore` — request / response
+
+Create the store once, then read it with `$user`. The run starts on the store's
+**first subscriber** (so `$user` fetches when the component mounts) and is aborted
+when the **last subscriber** leaves (component teardown). `refetch()` re-runs;
+`cancel()` aborts:
+
+```svelte
+<script lang="ts">
+    import { stitchStore } from '@stitchapi/svelte';
+    import { stitch } from 'stitchapi';
+
+    const getUser = stitch({
+        baseUrl: 'https://api.example.com',
+        path: '/users/{id}',
+    });
+
+    export let id: string;
+
+    // Re-create the store when `id` changes — derive it in a reactive block.
+    $: user = stitchStore(getUser, { params: { id } });
+</script>
+
+{#if $user.isPending}
+    <Spinner />
+{:else if $user.isError}
+    <Retry onclick={user.refetch} />
+{:else}
+    <h1>{$user.data?.name}</h1>
+{/if}
+```
+
+`refetch` and `cancel` are attached as methods on the store itself (`user.refetch()`),
+while `$user` is the reactive state value.
+
+## `stitchStreamStore` — live deltas
+
+For a streaming stitch (an [`sse`](/docs/reference/surfaces) or `stream` surface),
+`stitchStreamStore` emits a new state as each chunk arrives. `chunks` is the
+running list, `data` is the accumulated array (`mode: 'append'`, default) or the
+latest chunk (`mode: 'replace'`), and `status` is `'streaming'` until the terminal
+`result`, then `'success'`:
+
+```svelte
+<script lang="ts">
+    import { stitchStreamStore } from '@stitchapi/svelte';
+    import { sse } from 'stitchapi/sse';
+
+    const chat = sse({ url: 'https://api.example.com/chat' });
+    export let prompt: string;
+
+    $: tokens = stitchStreamStore(chat, { body: { prompt } });
+</script>
+
+{#each $tokens.chunks as c}<span>{c}</span>{/each}
+{#if $tokens.isStreaming}<Cursor />{/if}
+```
+
+Same state shape as `stitchStore`. `useStitch` / `useStitchStream` are exported as
+aliases of these two, for callers who prefer the `use*` naming.
+
+## The shared store: `@stitchapi/query-core`
+
+The stores hold almost no logic. All of it — running the call under an
+`AbortController`, publishing status transitions, folding `delta` chunks into
+state, `cancel()` by aborting, `refetch()` by re-running — lives in
+`@stitchapi/query-core`'s `createStitchQuery`, a `subscribe` / `getSnapshot`
+handle with **no framework imports** and **no `node:*`**, so it is browser- and
+edge-safe. The Svelte binding hands its `subscribe` straight to `readable`:
+
+```ts twoslash
+import { createStitchQuery } from '@stitchapi/query-core';
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    output: z.array(z.object({ id: z.number(), name: z.string() })),
+});
+
+const query = createStitchQuery(listUsers, { query: { q: 'ada' } });
+const unsubscribe = query.subscribe(() => {
+    const snapshot = query.getSnapshot();
+    if (snapshot.isSuccess) console.log(snapshot.data);
+});
+```
+
+Because the whole reactive lifecycle lives in the store and not the binding, the
+[React](/docs/integrations/react), [Vue](/docs/integrations/vue), and Solid
+bindings are the same few lines against their own reactive primitive — Svelte's is
+`readable`, the one store contract shared by Svelte 4 and 5.
+
+## Optional: TanStack Query
+
+Already on [TanStack Query](/docs/integrations/tanstack-query)?
+`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
+pass straight to `createQuery` — it imports nothing from `@tanstack/svelte-query`,
+so it works even if you never install it:
+
+```svelte
+<script lang="ts">
+    import { queryOptions } from '@stitchapi/svelte';
+    import { createQuery } from '@tanstack/svelte-query';
+    import { stitch } from 'stitchapi';
+
+    const getUser = stitch({
+        baseUrl: 'https://api.example.com',
+        path: '/users/{id}',
+    });
+
+    const query = createQuery(queryOptions(getUser, { params: { id: '7' } }));
+</script>
+```
+
+<Callout type="info">
+    Reach for `queryOptions` when TanStack Query already owns your view state
+    and you want a stitch as the `queryFn`; reach for `stitchStore` /
+    `stitchStreamStore` when you want StitchAPI to own the lifecycle directly —
+    especially for streaming, which `createQuery` does not model. See the
+    [TanStack Query guide](/docs/integrations/tanstack-query) for how the two
+    layers split.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="React" href="/docs/integrations/react" />
+    <Card title="Vue" href="/docs/integrations/vue" />
+    <Card title="TanStack Query" href="/docs/integrations/tanstack-query" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>

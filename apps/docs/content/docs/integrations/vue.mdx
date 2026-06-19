@@ -1,0 +1,165 @@
+---
+title: Vue
+description: Reactive useStitch and useStitchStream composables backed by Vue 3 reactivity, over the framework-agnostic @stitchapi/query-core store — plus an optional TanStack Query adapter.
+---
+
+Use `@stitchapi/vue` when you call stitches from Vue 3 components and want the
+call's lifecycle — pending / success / error, cancellation, refetch, and
+**streaming re-renders** — managed for you. `useStitch` is the request/response
+composable; `useStitchStream` re-renders as each `delta` chunk arrives, which is
+the differentiator over plain request/response query libraries.
+
+The composables are a thin layer over [`@stitchapi/query-core`](#the-shared-store-stitchapiquery-core),
+the framework-agnostic store that owns the reactive lifecycle. Vue mirrors each
+snapshot into refs, so destructuring keeps reactivity and templates unwrap `.value`
+for you.
+
+## Example
+
+Install the composables, the store, core, and Vue:
+
+```package-install
+@stitchapi/vue @stitchapi/query-core stitchapi vue
+```
+
+`stitchapi` and `vue` (`^3.4`) are peer dependencies; `@tanstack/vue-query` is an
+**optional** peer, needed only for the `queryOptions` adapter below.
+
+## `useStitch` — request / response
+
+Declare a stitch once, then drive it from a component. `input` may be a plain
+value, a `ref`, or a getter — pass a getter (`() => props.id`) so the query
+re-fetches when its structural key changes. Each returned field is a
+`ComputedRef`, so destructuring keeps it reactive and the template unwraps `.value`
+automatically:
+
+```vue
+<script setup lang="ts">
+import { useStitch } from '@stitchapi/vue';
+import { stitch } from 'stitchapi';
+
+const props = defineProps<{ id: string }>();
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+const { data, isPending, isError, refetch } = useStitch(getUser, () => ({
+    params: { id: props.id },
+}));
+</script>
+
+<template>
+    <Spinner v-if="isPending" />
+    <Retry v-else-if="isError" @click="refetch" />
+    <h1 v-else>{{ data?.name }}</h1>
+</template>
+```
+
+The query is re-created (and re-fetched) when the stitch's name or a structural
+key of `input` changes. The in-flight run is aborted when the component's scope is
+disposed (`onScopeDispose`).
+
+## `useStitchStream` — live deltas
+
+For a streaming stitch (an [`sse`](/docs/reference/surfaces) or `stream` surface),
+`useStitchStream` re-renders as each chunk arrives. `chunks` is the running list,
+`data` is the accumulated array (`mode: 'append'`, default) or the latest chunk
+(`mode: 'replace'`), and `status` is `'streaming'` until the terminal `result`,
+then `'success'`:
+
+```vue
+<script setup lang="ts">
+import { useStitchStream } from '@stitchapi/vue';
+import { sse } from 'stitchapi/sse';
+
+const props = defineProps<{ prompt: string }>();
+const chat = sse({ url: 'https://api.example.com/chat' });
+
+const { chunks, isStreaming } = useStitchStream(chat, () => ({
+    body: { prompt: props.prompt },
+}));
+</script>
+
+<template>
+    <span v-for="(c, i) in chunks" :key="i">{{ c }}</span>
+    <Cursor v-if="isStreaming" />
+</template>
+```
+
+Both composables return the same shape — `data`, `error`, `status`, `chunks`, the
+`isPending` / `isError` / `isSuccess` / `isStreaming` flags (each a `ComputedRef`),
+plus `refetch` and `cancel`.
+
+## The shared store: `@stitchapi/query-core`
+
+The composables hold almost no logic. All of it — running the call under an
+`AbortController`, publishing status transitions, folding `delta` chunks into
+state, `cancel()` by aborting, `refetch()` by re-running — lives in
+`@stitchapi/query-core`'s `createStitchQuery`, a `subscribe` / `getSnapshot`
+handle with **no framework imports** and **no `node:*`**, so it is browser- and
+edge-safe. Vue subscribes to it and reconciles each snapshot into a `shallowRef`:
+
+```ts twoslash
+import { createStitchQuery } from '@stitchapi/query-core';
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    output: z.array(z.object({ id: z.number(), name: z.string() })),
+});
+
+const query = createStitchQuery(listUsers, { query: { q: 'ada' } });
+const unsubscribe = query.subscribe(() => {
+    const snapshot = query.getSnapshot();
+    if (snapshot.isSuccess) console.log(snapshot.data);
+});
+```
+
+Because the whole reactive lifecycle lives in the store and not the binding, the
+[React](/docs/integrations/react), [Svelte](/docs/integrations/svelte), and Solid
+bindings are the same few lines against their own reactive primitive — Vue's is
+`shallowRef` + `watch` + `onScopeDispose`.
+
+## Optional: TanStack Query
+
+Already on [TanStack Query](/docs/integrations/tanstack-query)?
+`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
+pass straight to `useQuery` — it imports nothing from `@tanstack/vue-query`, so it
+works even if you never install it:
+
+```vue
+<script setup lang="ts">
+import { queryOptions } from '@stitchapi/vue';
+import { useQuery } from '@tanstack/vue-query';
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+const { data } = useQuery(queryOptions(getUser, { params: { id: '7' } }));
+</script>
+```
+
+<Callout type="info">
+    Reach for `queryOptions` when TanStack Query already owns your view state
+    and you want a stitch as the `queryFn`; reach for `useStitch` /
+    `useStitchStream` when you want StitchAPI to own the lifecycle directly —
+    especially for streaming, which `useQuery` does not model. See the [TanStack
+    Query guide](/docs/integrations/tanstack-query) for how the two layers
+    split.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="React" href="/docs/integrations/react" />
+    <Card title="Svelte" href="/docs/integrations/svelte" />
+    <Card title="TanStack Query" href="/docs/integrations/tanstack-query" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>

@@ -43,7 +43,8 @@
         "trace",
         "tracesink",
         "observability",
-        "structured-logging"
+        "structured-logging",
+        "typescript"
     ],
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",

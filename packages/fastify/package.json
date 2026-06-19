@@ -45,7 +45,10 @@
         "principal",
         "multi-tenant",
         "sse",
-        "pino"
+        "pino",
+        "typescript",
+        "api-client",
+        "rate-limiting"
     ],
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",

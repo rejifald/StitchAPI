@@ -299,6 +299,31 @@ html > body[data-scroll-locked] {
     color: var(--syn-punct); /* punctuation → muted */
 }
 
+/* --- Foldable code: collapse "setup" lines behind a "Show full code" toggle --
+   A `// [!code fold:start] … [!code fold:end]` region is wrapped in a
+   `[data-fold-region]` span by lib/transformer-fold.ts. `display:contents`
+   keeps the folded lines in normal flow (Shiki line layout/highlighting is
+   untouched); when the React wrapper marks the block collapsed, the span is
+   removed from layout so only the focal code shows. The folded code is still
+   in the DOM and still type-checked — it's hidden, not cut. */
+[data-fold-region] {
+    display: contents;
+}
+[data-fold-collapsed='true'] [data-fold-region] {
+    display: none;
+}
+
+/* Attach the fold toggle flush to the bottom of a Fumadocs code block: the
+   wrapping `.code-fold` owns the border, rounding, shadow, and margin (and
+   clips the toggle bar with overflow-hidden), so strip the inner <figure>'s
+   own chrome. Unlayered, so it wins over Tailwind's utility layer. */
+.code-fold > figure {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
 /* --- Twoslash hover affordance: only underline the token under the cursor ----
    By default Twoslash reveals the dotted underline on *every* annotated token
    the moment the pointer enters a block (`.twoslash:hover .twoslash-hover`),

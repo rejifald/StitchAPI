@@ -160,7 +160,7 @@ The smallest stitch is a URL — declare once, call many times:
 ```ts
 import { stitch } from 'stitchapi';
 
-const getUsers = stitch('https://api.example.com/users');
+const getUsers = stitch('https://demo.stitchapi.dev/users');
 
 const users = await getUsers(); // GET, parsed JSON
 ```
@@ -168,16 +168,18 @@ const users = await getUsers(); // GET, parsed JSON
 Path params use [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates — simple `{id}` interpolation is the common case, with the full operator set available (`{+reserved}`, `{/segment}`, `{?query,keys}`, explode `{list*}`, prefix `{var:3}`). Template variables are filled from `params`; `params`, `query`, `headers`, and `body` all travel in a single input object:
 
 ```ts
-const getUser = stitch('https://api.example.com/users/{id}');
+const getUser = stitch('https://demo.stitchapi.dev/users/{id}');
 
 await getUser({ params: { id: 1 }, query: { expand: 'roles' } });
-// → GET https://api.example.com/users/1?expand=roles
+// → GET https://demo.stitchapi.dev/users/1?expand=roles
 ```
 
 The query builder serializes nested objects and arrays `qs`-style — `{ filter: { type: 'admin' }, ids: [1, 2] }` → `filter[type]=admin&ids[0]=1&ids[1]=2`. Query defaults can be baked into the path; call-time query keys merge over them:
 
 ```ts
-const findUsers = stitch('https://api.example.com/users?sort=name&type=admin');
+const findUsers = stitch(
+    'https://demo.stitchapi.dev/users?sort=name&type=admin',
+);
 
 await findUsers({ query: { type: 'user' } });
 // → /users?sort=name&type=user
@@ -189,12 +191,20 @@ Add an `output` schema and you get TypeScript types, runtime validation, and dri
 import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
-const getUser = stitch({
-    path: 'https://api.example.com/users/{id}',
-    output: z.object({ id: z.number(), name: z.string() }),
+const User = z.object({
+    id: z.number(),
+    name: z.string(),
+    email: z.string(),
+    role: z.enum(['admin', 'member', 'viewer']),
 });
 
-const user = await getUser({ params: { id: 1 } }); // typed { id: number; name: string }
+const getUser = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}',
+    output: User,
+    unwrap: 'data', // the demo sim wraps payloads in a { data } envelope
+});
+
+const user = await getUser({ params: { id: 1 } }); // typed User
 ```
 
 One endpoint is one `stitch`. The moment a service has more than one — sharing a base URL, auth, and a rate budget — model the whole surface as a [seam](#composition--reuse) and add each endpoint as a member; reach for a bare `stitch` only for a genuinely standalone call.
@@ -248,20 +258,29 @@ Everything reusable is a named value, and a stitch composes values — **no glob
 import { seam } from 'stitchapi';
 import { z } from 'zod';
 
-const Website = z.object({ id: z.number(), host: z.string() });
+const User = z.object({
+    id: z.number(),
+    name: z.string(),
+    email: z.string(),
+    role: z.enum(['admin', 'member', 'viewer']),
+});
 
 const api = seam({
-    baseUrl: 'https://api.example.com',
+    baseUrl: 'https://demo.stitchapi.dev',
     retry: { attempts: 3, on: [429, 503] },
     timeout: { total: '30s' },
 });
 
-const listWebsites = api.stitch({
-    path: '/websites',
-    output: Website.array(),
+const listUsers = api.stitch({
+    path: '/users',
+    output: User.array(),
     unwrap: 'data',
 });
-const getWebsite = api.stitch({ path: '/websites/{id}', output: Website });
+const getUser = api.stitch({
+    path: '/users/{id}',
+    output: User,
+    unwrap: 'data',
+});
 ```
 
 Reach for `extends` for the lighter cases — sharing a plain config fragment, or deriving one stitch from another — where you want config reuse without a shared runtime. A fragment is just an object; `extends: [...]` merges left→right, with own fields winning last:
@@ -271,14 +290,14 @@ import { stitch } from 'stitchapi';
 
 // A plain fragment — config to merge, no runtime of its own.
 const base = {
-    baseUrl: 'https://api.example.com',
+    baseUrl: 'https://demo.stitchapi.dev',
     retry: { attempts: 3, on: [429, 503] },
 };
 
-const listWebsites = stitch({
+const listUsers = stitch({
     extends: [base],
-    path: '/websites',
-    output: Website.array(),
+    path: '/users',
+    output: User.array(),
     unwrap: 'data',
 });
 ```
@@ -286,10 +305,10 @@ const listWebsites = stitch({
 A stitch is itself a composable value — extend one and override only the diff:
 
 ```ts
-const getOneWebsite = stitch({
-    extends: [listWebsites], // inherits baseUrl + retry + unwrap
-    path: '/websites/{id}',
-    output: Website,
+const getOneUser = stitch({
+    extends: [listUsers], // inherits baseUrl + retry + unwrap
+    path: '/users/{id}',
+    output: User,
 });
 ```
 
@@ -298,9 +317,9 @@ Merge semantics: scalars (`path`, `method`, `baseUrl`, `unwrap`) replace; object
 `.with()` pre-binds part of the input and returns a new stitch that reuses the same runtime — so cookies, tokens, and throttle state persist across the bound and unbound forms:
 
 ```ts
-const adminSearch = search.with({ query: { role: 'admin' } });
+const adminUsers = listUsers.with({ query: { role: 'admin' } });
 
-await adminSearch({ query: { q: 'ada' } }); // → /websites?role=admin&q=ada
+await adminUsers({ query: { q: 'ada' } }); // → /users?role=admin&q=ada
 ```
 
 ## Validation & leveled drift
@@ -317,15 +336,16 @@ Validation is not binary pass/fail. Wrap the `output` schema in `drift()` and ev
 import { drift, stitch } from 'stitchapi';
 import { z } from 'zod';
 
-const listListings = stitch({
-    path: 'https://api.example.com/listings',
+const listOrders = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}/orders',
+    unwrap: 'data',
     output: drift(
-        z.array(z.object({ id: z.number(), score: z.number().optional() })),
+        z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
             critical: ['[].id'], // error when these break — you rely on them
-            watch: ['[].score'], // warn when this changes
+            watch: ['[].total'], // warn when this changes
             onNew: 'info', // level for brand-new fields (default 'info')
-            snapshotFile: 'listings.contract.json', // committed baseline
+            snapshotFile: 'orders.contract.json', // committed baseline
         },
     ),
 });
@@ -338,9 +358,16 @@ The request side validates too. `input` takes a schema per part, and a mismatch 
 ```ts
 const createUser = stitch({
     method: 'POST',
-    path: 'https://api.example.com/users',
-    input: { body: z.object({ name: z.string() }) },
-    output: z.object({ id: z.number(), name: z.string() }),
+    path: 'https://demo.stitchapi.dev/users',
+    input: {
+        body: z.object({
+            name: z.string(),
+            email: z.string(),
+            role: z.enum(['admin', 'member', 'viewer']),
+        }),
+    },
+    output: User, // { id, name, email, role }
+    unwrap: 'data',
 });
 ```
 
@@ -351,9 +378,9 @@ Schemas can be Zod, any [Standard Schema](https://standardschema.dev) validator 
 The things every `src/api/` folder reinvents are configuration here — uniform across every stitch:
 
 ```ts
-const metadata = stitch({
-    baseUrl: 'https://api.example.com',
-    path: '/metadata',
+const listUsers = stitch({
+    baseUrl: 'https://demo.stitchapi.dev',
+    path: '/users',
     retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
     throttle: { rate: '1/s', concurrency: 2, scope: 'host' },
     timeout: { total: '30s', perAttempt: '10s' },
@@ -375,8 +402,8 @@ Header strategies — `bearer`, `apiKey` (default header `x-api-key`), `basic`:
 ```ts
 import { bearer, env, stitch } from 'stitchapi';
 
-const getMovie = stitch({
-    path: 'https://api.example.com/movies/{id}',
+const getUser = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}',
     auth: bearer(env('API_TOKEN')), // resolved per call; the caller passes no secret
 });
 ```
@@ -386,13 +413,13 @@ const getMovie = stitch({
 ```ts
 import { env, oauth2, stitch } from 'stitchapi';
 
-const listReports = stitch({
-    path: 'https://api.example.com/reports',
+const listOrders = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}/orders',
     auth: oauth2({
-        tokenUrl: 'https://auth.example.com/oauth/token',
+        tokenUrl: 'https://demo.stitchapi.dev/oauth/token',
         clientId: env('OAUTH_CLIENT_ID'),
         clientSecret: env('OAUTH_CLIENT_SECRET'),
-        scope: 'reports:read', // optional, space-delimited
+        scope: 'orders:read', // optional, space-delimited
     }),
 });
 ```
@@ -406,14 +433,14 @@ import { cookieSession, env, secretsFile, stitch } from 'stitchapi';
 
 const signIn = stitch({
     method: 'POST',
-    baseUrl: 'https://api.example.com',
+    baseUrl: 'https://demo.stitchapi.dev',
     path: '/auth/sign-in',
     bodyType: 'form',
 });
 
-const listWebsites = stitch({
-    baseUrl: 'https://api.example.com',
-    path: '/websites',
+const listUsers = stitch({
+    baseUrl: 'https://demo.stitchapi.dev',
+    path: '/users',
     unwrap: 'data',
     auth: cookieSession({
         login: signIn,
@@ -428,7 +455,7 @@ const listWebsites = stitch({
     }),
 });
 
-await listWebsites();
+await listUsers();
 // → logs in, replays the cookie, dissolves the 401 wall on expiry.
 //   The caller never saw the password and never wrote the cookie dance.
 ```
@@ -477,14 +504,14 @@ You opt into a real store only when you scale out — progressive disclosure, ap
 ```ts
 const submit = stitch({
     method: 'POST',
-    path: 'https://api.example.com/form',
+    path: 'https://demo.stitchapi.dev/form',
     bodyType: 'form', // application/x-www-form-urlencoded
 });
 await submit({ body: { a: 1, b: 'x y' } });
 
 const upload = stitch({
     method: 'POST',
-    path: 'https://api.example.com/upload',
+    path: 'https://demo.stitchapi.dev/upload',
     bodyType: 'multipart', // multipart/form-data
 });
 await upload({
@@ -502,7 +529,7 @@ import axios from 'axios';
 import { axiosAdapter, stitch } from 'stitchapi';
 
 const getUser = stitch({
-    path: 'https://api.example.com/users/{id}',
+    path: 'https://demo.stitchapi.dev/users/{id}',
     adapter: axiosAdapter(axios), // body encoding, headers, and parsing match fetchAdapter
 });
 ```
@@ -516,7 +543,7 @@ import { fetchAdapter, stitch } from 'stitchapi';
 import { Agent } from 'undici';
 
 const getUser = stitch({
-    path: 'https://api.example.com/users/{id}',
+    path: 'https://demo.stitchapi.dev/users/{id}',
     adapter: fetchAdapter({ dispatcher: new Agent({ connect: { ca } }) }),
 });
 ```
@@ -561,12 +588,12 @@ Every non-`http` surface ships as its own **subpath import**, so `import { stitc
 ```ts
 import { graphql } from 'stitchapi';
 
-const getThing = graphql({
-    baseUrl: 'https://api.example.com',
-    query: 'query ($id: ID) { thing(id: $id) { name } }',
+const getUser = graphql({
+    baseUrl: 'https://demo.stitchapi.dev',
+    query: 'query ($id: ID) { user(id: $id) { name } }',
 });
 
-const thing = await getThing({ variables: { id: 1 } });
+const user = await getUser({ variables: { id: 1 } });
 ```
 
 ### Streaming: `sse` and `stream`
@@ -576,9 +603,9 @@ A streaming surface decodes a live response body into `delta` events. `await` co
 ```ts
 import { sse } from 'stitchapi/sse';
 
-const ticks = sse({ url: 'https://api.example.com/ticks' });
+const events = sse({ url: 'https://demo.stitchapi.dev/events' });
 
-for await (const ev of ticks.stream()) {
+for await (const ev of events.stream()) {
     if (ev.type === 'delta') handle(ev.chunk); // a parsed SSE event
 }
 ```
@@ -589,7 +616,7 @@ for await (const ev of ticks.stream()) {
 import { stream } from 'stitchapi/stream';
 
 const logs = stream({
-    url: 'https://api.example.com/logs',
+    url: 'https://demo.stitchapi.dev/logs',
     stream: { decode: 'ndjson' },
 });
 
@@ -607,7 +634,7 @@ Opening a stream charges the rate limiter once but never holds a concurrency slo
 ```ts
 import { download } from 'stitchapi/download';
 
-const getReport = download({ url: 'https://api.example.com/report.pdf' });
+const getReport = download({ url: 'https://demo.stitchapi.dev/report.pdf' });
 
 const { blob, filename } = await getReport({
     onProgress: (p) => console.log(p.loaded, '/', p.total),
@@ -666,8 +693,8 @@ Because every surface is just a stitch underneath, `auth`, `retry`, `throttle`, 
 One logical call follows pages until `next` returns `undefined` (or the `max` safety cap, default 50, is hit), aggregating items into a single result. Each page is a full request — auth, retry, and throttle apply per page — and each page emits a `paginate` progress event:
 
 ```ts
-const listAll = stitch({
-    path: 'https://api.example.com/list',
+const listOrders = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}/orders',
     unwrap: 'data',
     paginate: {
         // previous page's raw body + pages fetched so far → input for the
@@ -677,7 +704,7 @@ const listAll = stitch({
     },
 });
 
-const everything = await listAll(); // [...page1, ...page2, ...] as one array
+const everything = await listOrders({ params: { id: 1 } }); // [...page1, ...page2, ...] as one array
 ```
 
 When the unwrapped page is not itself the array, pass `items` to pull the array out of each page.
@@ -687,11 +714,11 @@ When the unwrapped page is not itself the array, pass `items` to pull the array 
 `transform` runs before `unwrap` and validation — turn an arbitrary payload (HTML, text, a legacy shape) into structured data, then let `unwrap` + `output` / `drift` treat it like any other contract:
 
 ```ts
-const search = stitch({
-    path: 'https://api.example.com/search',
+const listOrders = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}/orders',
     transform: (html) => scrape(html), // your parser: HTML/text → { items: [...] }
     unwrap: 'items',
-    output: z.array(z.object({ title: z.string(), score: z.number() })),
+    output: z.array(z.object({ id: z.number(), total: z.number() })),
 });
 ```
 
@@ -723,7 +750,7 @@ One definition, more than one front door: the same stitch your code imports is c
 
 ```bash
 $ stitch run getUser --id 7 --query.expand roles
-{"type":"start","name":"getUser","method":"GET","url":"https://api.example.com/users/7?expand=roles",...}
+{"type":"start","name":"getUser","method":"GET","url":"https://demo.stitchapi.dev/users/7?expand=roles",...}
 {"type":"result","value":{"id":7,"name":"Ada"},"status":200,"attempts":1,...}
 {"type":"done","ok":true,"ms":142,...}
 ```
