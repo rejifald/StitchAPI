@@ -11,6 +11,7 @@
         "angular",
         "tanstack-query",
         "pino",
+        "sentry",
         "stores"
     ]
 }
