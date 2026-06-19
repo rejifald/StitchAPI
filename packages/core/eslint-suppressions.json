@@ -53,11 +53,6 @@
       "count": 3
     }
   },
-  "src/validator.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    }
-  },
   "test/cli.spec.ts": {
     "@typescript-eslint/no-unsafe-return": {
       "count": 2
