@@ -1,0 +1,86 @@
+{
+    "name": "@stitchapi/react-native",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
+    "description": "React Native bindings for StitchAPI — a streaming-capable XHR transport adapter (the streaming `fetch` bare RN lacks), an AsyncStorage-backed StitchStore for persistent sessions/tokens, AppState/NetInfo refetch helpers, and the re-exported useStitch/useStitchStream hooks.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/react-native"
+    },
+    "keywords": [
+        "stitchapi",
+        "react-native",
+        "expo",
+        "streaming",
+        "sse",
+        "hooks",
+        "asyncstorage",
+        "offline",
+        "mobile",
+        "typescript"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "peerDependencies": {
+        "@stitchapi/query-core": "^1.0.0-rc.2",
+        "@stitchapi/react": "^1.0.0-rc.2",
+        "stitchapi": "^1.0.0-rc.1",
+        "react": "^18.0.0 || ^19.0.0",
+        "react-native": ">=0.70.0",
+        "@react-native-async-storage/async-storage": "^1.0.0 || ^2.0.0",
+        "@react-native-community/netinfo": ">=9.0.0"
+    },
+    "peerDependenciesMeta": {
+        "@react-native-async-storage/async-storage": {
+            "optional": true
+        },
+        "@react-native-community/netinfo": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "@stitchapi/query-core": "workspace:*",
+        "@stitchapi/react": "workspace:*",
+        "@types/node": "^22.10.0",
+        "@types/react": "^19.0.0",
+        "react": "^19.0.0",
+        "stitchapi": "workspace:*",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}

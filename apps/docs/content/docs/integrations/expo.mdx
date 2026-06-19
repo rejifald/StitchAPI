@@ -1,0 +1,110 @@
+---
+title: Expo
+description: expoFetchAdapter streams over expo/fetch with no polyfills, and expoSecureStore keeps auth tokens encrypted — over the same hooks, AsyncStorage store, and lifecycle helpers as @stitchapi/react-native.
+---
+
+Use `@stitchapi/expo` when you call stitches from an Expo app. Expo ships
+[`expo/fetch`](https://docs.expo.dev/versions/latest/sdk/expo/), a WinterCG-compliant
+fetch whose `Response#body` is a real `ReadableStream` — so the streaming gap bare
+React Native has is already solved at the Expo layer, and this package is thin.
+
+Everything except the two Expo-specific pieces below is re-exported from
+[`@stitchapi/react-native`](/docs/integrations/react-native): the `useStitch` /
+`useStitchStream` hooks, the `asyncStorageStore`, and the `useAppActiveRefetch` /
+`useReconnectRefetch` lifecycle helpers. You import it all from `@stitchapi/expo`.
+
+<Callout type="info">
+    Bare React Native needs an XHR shim and `TextEncoder` / `ReadableStream`
+    polyfills to stream. Expo needs **neither** — `expoFetchAdapter` is just
+    core's `fetchAdapter` pointed at `expo/fetch`.
+</Callout>
+
+## Example
+
+Install the bindings, the shared store, and core:
+
+```package-install
+@stitchapi/expo @stitchapi/react @stitchapi/query-core stitchapi
+```
+
+`stitchapi`, `react`, `react-native`, and `expo` are peer dependencies;
+`expo-secure-store`, `@react-native-async-storage/async-storage`, and
+`@react-native-community/netinfo` are **optional** peers.
+
+## Wire it into a seam
+
+`expoFetchAdapter` streams via `expo/fetch`; `expoSecureStore` keeps the auth vault
+encrypted at rest (keychain / keystore) rather than in plaintext AsyncStorage:
+
+```ts
+import { expoFetchAdapter, expoSecureStore } from '@stitchapi/expo';
+import * as SecureStore from 'expo-secure-store';
+import { seam } from 'stitchapi';
+
+export const api = seam({
+    baseUrl: 'https://api.example.com',
+    adapter: expoFetchAdapter(),
+    secretStore: expoSecureStore(SecureStore),
+});
+```
+
+## Stream deltas into a component
+
+```tsx
+import { expoFetchAdapter, useStitchStream } from '@stitchapi/expo';
+import { sse } from 'stitchapi/sse';
+
+const chat = sse({
+    url: 'https://api.example.com/chat',
+    adapter: expoFetchAdapter(),
+});
+
+function Chat({ prompt }: { prompt: string }) {
+    const { chunks, isStreaming } = useStitchStream(chat, { body: { prompt } });
+    return (
+        <Text>
+            {(chunks as string[]).join('')}
+            {isStreaming ? '▌' : null}
+        </Text>
+    );
+}
+```
+
+## Refetch on foreground / reconnect
+
+These come straight through from `@stitchapi/react-native` — they use RN's built-in
+`AppState`, which Expo apps have:
+
+```tsx
+import NetInfo from '@react-native-community/netinfo';
+import {
+    useAppActiveRefetch,
+    useReconnectRefetch,
+    useStitch,
+} from '@stitchapi/expo';
+
+const q = useStitch(getInbox, {});
+useAppActiveRefetch(q);
+useReconnectRefetch(q, { netInfo: NetInfo });
+```
+
+## The secure store
+
+`expoSecureStore(SecureStore, options?)` reuses the AsyncStorage store's logic
+(JSON envelope, TTL, serialized atomic `incr`) over SecureStore's `*Async` methods,
+hex-encoding engine keys into SecureStore's restricted key charset. Keep individual
+values under SecureStore's ~2 KB limit — auth tokens fit comfortably. For non-secret
+throttle counters, pair it with the re-exported `asyncStorageStore`.
+
+## See also
+
+<Cards>
+    <Card
+        title="React Native"
+        href="/docs/integrations/react-native"
+        description="The bare-RN foundation — the XHR streaming adapter, AsyncStorage store, and lifecycle helpers this package builds on."
+    />
+    <Card title="React" href="/docs/integrations/react" />
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
+    <Card title="Pluggable store" href="/docs/guides/state/pluggable-store" />
+</Cards>

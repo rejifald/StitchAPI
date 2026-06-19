@@ -1,0 +1,136 @@
+---
+title: React Native
+description: A streaming XHR adapter (the streaming fetch bare RN lacks), an AsyncStorage-backed StitchStore for persistent sessions, and AppState/NetInfo refetch helpers — plus the re-exported useStitch / useStitchStream hooks.
+---
+
+Use `@stitchapi/react-native` when you call stitches from a bare React Native app.
+The `useStitch` / `useStitchStream` hooks are re-exported verbatim from
+[`@stitchapi/react`](/docs/integrations/react) — they are pure `useSyncExternalStore`
+over the shared [`@stitchapi/query-core`](/docs/integrations/react#the-shared-store-stitchapiquery-core)
+store and run unchanged on React Native. What this package **adds** is the platform
+glue bare RN needs.
+
+<Callout type="info">
+    On **Expo**, use [`@stitchapi/expo`](/docs/integrations/expo) instead —
+    `expo/fetch` streams natively, so it needs none of the XHR shim or polyfills
+    below.
+</Callout>
+
+## Why a dedicated adapter
+
+StitchAPI is streaming-first, but bare RN's global `fetch` **cannot stream**:
+`response.body` is `undefined`, not a `ReadableStream`
+([facebook/react-native#27741](https://github.com/facebook/react-native/issues/27741)).
+RN's `XMLHttpRequest`, however, exposes `responseText` incrementally as bytes
+arrive. `rnStreamAdapter` wraps that growing text in a real `ReadableStream`, which
+is exactly what core's [`sse`](/docs/reference/surfaces) / `stream` decoders consume
+— while non-streaming requests delegate to core's buffered `xhrAdapter`.
+
+## Example
+
+Install the bindings, the shared store, core, and React Native:
+
+```package-install
+@stitchapi/react-native @stitchapi/react @stitchapi/query-core stitchapi
+```
+
+`stitchapi`, `react`, and `react-native` are peer dependencies;
+`@react-native-async-storage/async-storage` and `@react-native-community/netinfo`
+are **optional** peers, for the store and reconnect helpers.
+
+### Polyfills (streaming only)
+
+Hermes ships no `TextEncoder` / `TextDecoder` / `ReadableStream`, which the stream
+decoder needs. Install them once at your app's entry — `rnStreamAdapter` throws a
+precise error if they're missing. Non-streaming stitches need none of this.
+
+```ts
+import 'react-native-polyfill-globals/auto';
+```
+
+## Wire it into a seam
+
+`rnStreamAdapter` streams when asked and buffers otherwise; `asyncStorageStore`
+makes the auth vault and throttle counters survive app restarts:
+
+```ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { asyncStorageStore, rnStreamAdapter } from '@stitchapi/react-native';
+import { seam } from 'stitchapi';
+
+export const api = seam({
+    baseUrl: 'https://api.example.com',
+    adapter: rnStreamAdapter(),
+    store: asyncStorageStore(AsyncStorage),
+});
+```
+
+## Stream deltas into a component
+
+```tsx
+import { rnStreamAdapter, useStitchStream } from '@stitchapi/react-native';
+import { sse } from 'stitchapi/sse';
+
+const chat = sse({
+    url: 'https://api.example.com/chat',
+    adapter: rnStreamAdapter(),
+});
+
+function Chat({ prompt }: { prompt: string }) {
+    const { chunks, isStreaming } = useStitchStream(chat, { body: { prompt } });
+    return (
+        <Text>
+            {(chunks as string[]).join('')}
+            {isStreaming ? '▌' : null}
+        </Text>
+    );
+}
+```
+
+## Refetch on foreground / reconnect
+
+The data lifecycle a mobile app expects — refetch when the app returns to the
+foreground, and when connectivity comes back:
+
+```tsx
+import NetInfo from '@react-native-community/netinfo';
+import {
+    useAppActiveRefetch,
+    useReconnectRefetch,
+    useStitch,
+} from '@stitchapi/react-native';
+
+function Inbox() {
+    const q = useStitch(getInbox, {});
+    useAppActiveRefetch(q);
+    useReconnectRefetch(q, { netInfo: NetInfo });
+    // ...
+}
+```
+
+`useAppActiveRefetch` uses RN's built-in `AppState` (no extra dependency);
+`useReconnectRefetch` takes your NetInfo module. Both are also available as plain
+functions — `onAppActive(appState, cb)` and `onReconnect(netInfo, cb)` — for use
+outside React.
+
+## The persistent store
+
+`asyncStorageStore(storage, options?)` accepts any client matching
+`{ getItem, setItem, removeItem }`. Values ride in a JSON envelope with an absolute
+expiry (AsyncStorage has no native TTL), and `incr` is serialized so concurrent
+increments stay atomic — the throttle counter behaves exactly as it does on Redis.
+It is proven against the same `verifyStoreContract` kit every
+[`StitchStore`](/docs/guides/state/pluggable-store) passes.
+
+## See also
+
+<Cards>
+    <Card
+        title="Expo"
+        href="/docs/integrations/expo"
+        description="The Expo specialization — streaming over expo/fetch with no polyfills, plus an encrypted SecureStore."
+    />
+    <Card title="React" href="/docs/integrations/react" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="Pluggable store" href="/docs/guides/state/pluggable-store" />
+</Cards>
