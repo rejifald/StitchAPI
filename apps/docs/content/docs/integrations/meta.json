@@ -11,6 +11,7 @@
         "react",
         "vue",
         "svelte",
+        "solid",
         "angular",
         "react-native",
         "expo",
