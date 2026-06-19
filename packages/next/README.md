@@ -1,0 +1,69 @@
+# @stitchapi/next
+
+[Next.js](https://nextjs.org) helpers for [StitchAPI](https://stitchapi.dev).
+
+Next App Router route handlers are Web-standard — they take a `Request` and return a `Response` — so a stitch already runs in one directly: define a `seam` once and call it in the handler. What's worth a helper is the two bits you'd otherwise hand-roll on the Web platform:
+
+-   **`sseResponse(stitch.stream())`** — turn a streaming stitch into a `text/event-stream` `Response`.
+-   **`stitchErrorResponse(err)`** — map a thrown `StitchError` to a `Response` with a safe status.
+
+Built on Web standards only (`Response`, `ReadableStream`, `TextEncoder`) — **no `next` import** — so the same helpers also work in Remix, SvelteKit endpoints, Bun, Deno, and Workers.
+
+## Install
+
+```sh
+pnpm add @stitchapi/next stitchapi
+```
+
+`stitchapi` is the only peer dependency.
+
+## A route handler
+
+A non-streaming endpoint is just the stitch plus the error helper:
+
+```ts
+// app/api/users/[id]/route.ts
+import { getUser } from '@/lib/api';
+
+import { isStitchError, stitchErrorResponse } from '@stitchapi/next';
+
+export async function GET(
+    _req: Request,
+    { params }: { params: Promise<{ id: string }> },
+) {
+    const { id } = await params;
+    try {
+        return Response.json(await getUser({ params: { id } }));
+    } catch (err) {
+        if (isStitchError(err)) return stitchErrorResponse(err);
+        throw err;
+    }
+}
+```
+
+`stitchErrorResponse` maps a `StitchError` to `502` by default (never leaking the upstream's status); pass `{ status: (e) => e.status ?? 502 }` to propagate it.
+
+## Streaming with SSE
+
+`sseResponse` streams a stitch's events as `text/event-stream`. Each `delta` becomes one frame; an `error` event ends with a named `event: error` frame:
+
+```ts
+// app/api/chat/route.ts
+import { chat } from '@/lib/api';
+
+import { sseResponse } from '@stitchapi/next';
+
+export async function POST(request: Request) {
+    const { prompt } = await request.json();
+    return sseResponse(chat({ body: { prompt } }).stream(), {
+        data: (c) => String(c), // pull text out of each chunk
+        signal: request.signal, // abort the upstream if the client leaves
+    });
+}
+```
+
+Pass `request.signal` so a client disconnect tears the stitch down rather than leaving it running.
+
+## License
+
+Apache-2.0

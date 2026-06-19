@@ -1,0 +1,109 @@
+---
+title: AWS SigV4
+description: awsSigV4 signs each request with AWS Signature Version 4 — the request-signing AuthStrategy that core's built-in bearer/apiKey/basic/oauth2 don't cover. Edge-safe Web Crypto, no dependencies.
+---
+
+Core's built-in [auth strategies](/docs/reference/auth-strategies) cover bearer,
+apiKey, basic, cookieSession, and oauth2 — but not **request signing**, which AWS
+APIs, S3-compatible object stores, and many SigV4-protected endpoints require.
+`@stitchapi/aws-sigv4` adds it as an `AuthStrategy`.
+
+`awsSigV4(...)` signs the **fully-built** request — method, URI, query, headers, and
+payload hash — at call time, attaching the `Authorization` and `x-amz-*` headers. As
+with every StitchAPI auth strategy, the caller (an agent) gets a
+[capability, not the credential](/docs/concepts/capability-not-credential): the keys
+resolve per call and never reach the call site or a trace.
+
+Crypto is the platform's **Web Crypto** (`crypto.subtle`), so it runs unchanged on
+Node 20+, edge runtimes (Workers / Deno), and the browser; Node 18 falls back to
+`node:crypto`. No runtime dependencies.
+
+## Example
+
+```package-install
+@stitchapi/aws-sigv4 stitchapi
+```
+
+`stitchapi` is the only peer dependency.
+
+## Sign a stitch
+
+Attach `awsSigV4(...)` as the stitch's `auth`. Pass the region, service, and
+credentials (as `Secret`s — a string or a call-time getter like `env(...)`):
+
+```ts
+import { awsSigV4 } from '@stitchapi/aws-sigv4';
+import { env, stitch } from 'stitchapi';
+
+const putObject = stitch({
+    baseUrl: 'https://my-bucket.s3.us-east-1.amazonaws.com',
+    path: '/{key}',
+    method: 'PUT',
+    auth: awsSigV4({
+        region: 'us-east-1',
+        service: 's3',
+        accessKeyId: env('AWS_ACCESS_KEY_ID'),
+        secretAccessKey: env('AWS_SECRET_ACCESS_KEY'),
+        // sessionToken: env('AWS_SESSION_TOKEN'), // temporary STS credentials
+    }),
+});
+```
+
+The signature is computed on the final request — after path templating and query
+building — so it always matches the bytes the transport sends. A `sessionToken`
+adds and signs `x-amz-security-token` for temporary credentials.
+
+## Payload signing
+
+The `x-amz-content-sha256` header is set for you:
+
+-   **No body** → the empty-payload hash (always correct).
+-   **String body** → its SHA-256 (exact bytes).
+-   **Non-string body** → `UNSIGNED-PAYLOAD` — safe over HTTPS, and what S3 and many
+    services accept. Set `signBody: true` to hash `JSON.stringify(body)` instead (it
+    must match what the transport sends).
+
+## Low-level signer
+
+`signRequestV4(params)` is the pure signing function the strategy wraps — exported
+for out-of-band signing (presigned URLs, custom flows) and verified against the
+official AWS `aws-sig-v4-test-suite` vectors.
+
+```ts
+import { EMPTY_PAYLOAD_SHA256, signRequestV4 } from '@stitchapi/aws-sigv4';
+
+const { authorization } = await signRequestV4({
+    method: 'GET',
+    url: 'https://example.amazonaws.com/',
+    headers: {
+        host: 'example.amazonaws.com',
+        'x-amz-date': '20150830T123600Z',
+    },
+    payloadHash: EMPTY_PAYLOAD_SHA256,
+    accessKeyId: 'AKID…',
+    secretAccessKey: '…',
+    region: 'us-east-1',
+    service: 'service',
+    dateTime: '20150830T123600Z',
+});
+```
+
+<Callout type="info">
+    Generic per-API HMAC signing isn't shipped as a strategy — each vendor
+    canonicalises differently, so there's no single contract to standardise.
+    SigV4 is the one signing scheme common enough to ship; for a one-off scheme,
+    write a small custom `AuthStrategy` (an `apply(req, ctx)` that sets your
+    header).
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Auth strategies" href="/docs/reference/auth-strategies" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card title="Secret resolvers" href="/docs/guides/auth/secret-resolvers" />
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+</Cards>

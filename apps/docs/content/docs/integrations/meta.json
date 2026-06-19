@@ -5,13 +5,18 @@
         "nestjs",
         "fastify",
         "hono",
+        "next",
         "react",
         "vue",
         "svelte",
         "angular",
         "tanstack-query",
+        "swr",
+        "rtk-query",
         "pino",
+        "sentry",
         "stores",
+        "aws-sigv4",
         "vercel-ai"
     ]
 }
