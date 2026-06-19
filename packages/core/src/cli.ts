@@ -431,6 +431,21 @@ function defaultIO(): CliIO {
     };
 }
 
+// Resolve a `--module` path against cwd and load its registry, writing any error to stderr and
+// returning undefined on failure (the caller returns exit code 1). Centralises the load-or-fail block
+// the registry commands (run/serve/mcp/diagram/export/…) each repeated verbatim.
+async function loadRegistryOrReport(
+    modulePath: string | undefined,
+    io: CliIO,
+): Promise<StitchRegistry | undefined> {
+    try {
+        return await io.load(resolveModulePath(modulePath, io.cwd));
+    } catch (e) {
+        io.writeErr(`${(e as Error).message}\n`);
+        return undefined;
+    }
+}
+
 const HELP = `stitch — one stitch definition, many front doors
 
 usage:
@@ -524,13 +539,8 @@ async function runCommand(args: string[], io: CliIO): Promise<number> {
     // in (default JSONL file / console / a path), applied via env before the module loads
     // so the trace sink picks it up.
     applyTraceFlag(trace, io);
-    let registry: StitchRegistry;
-    try {
-        registry = await io.load(resolveModulePath(modulePath, io.cwd));
-    } catch (e) {
-        io.writeErr(`${(e as Error).message}\n`);
-        return 1;
-    }
+    const registry = await loadRegistryOrReport(modulePath, io);
+    if (registry === undefined) return 1;
     try {
         return await runStitch(registry, name, flags, (l) => {
             io.write(`${l}\n`);
@@ -633,13 +643,8 @@ async function serveCommand(args: string[], io: CliIO): Promise<number> {
         else if (a === '--host') host = args[++i];
     }
 
-    let registry: StitchRegistry;
-    try {
-        registry = await io.load(resolveModulePath(modulePath, io.cwd));
-    } catch (e) {
-        io.writeErr(`${(e as Error).message}\n`);
-        return 1;
-    }
+    const registry = await loadRegistryOrReport(modulePath, io);
+    if (registry === undefined) return 1;
 
     const handle = await serve(registry, {
         ...(port !== undefined ? { port } : {}),
@@ -665,13 +670,8 @@ async function mcpCommand(args: string[], io: CliIO): Promise<number> {
         if (a === '--module' || a === '-m') modulePath = args[++i];
     }
 
-    let registry: StitchRegistry;
-    try {
-        registry = await io.load(resolveModulePath(modulePath, io.cwd));
-    } catch (e) {
-        io.writeErr(`${(e as Error).message}\n`);
-        return 1;
-    }
+    const registry = await loadRegistryOrReport(modulePath, io);
+    if (registry === undefined) return 1;
 
     serveStdio(registry);
     io.writeErr(
@@ -696,13 +696,8 @@ async function diagramCommand(args: string[], io: CliIO): Promise<number> {
         else if (a === '--name') name = args[++i];
     }
 
-    let registry: StitchRegistry;
-    try {
-        registry = await io.load(resolveModulePath(modulePath, io.cwd));
-    } catch (e) {
-        io.writeErr(`${(e as Error).message}\n`);
-        return 1;
-    }
+    const registry = await loadRegistryOrReport(modulePath, io);
+    if (registry === undefined) return 1;
 
     const { diagram, warnings } = toMermaid(registry, {
         ...(name !== undefined ? { name } : {}),
@@ -814,13 +809,8 @@ async function driftCommand(args: string[], io: CliIO): Promise<number> {
         else flags.push(a);
     }
 
-    let registry: StitchRegistry;
-    try {
-        registry = await io.load(resolveModulePath(modulePath, io.cwd));
-    } catch (e) {
-        io.writeErr(`${(e as Error).message}\n`);
-        return 1;
-    }
+    const registry = await loadRegistryOrReport(modulePath, io);
+    if (registry === undefined) return 1;
 
     const found = driftTargets(registry, name);
     if ('error' in found) {
@@ -894,13 +884,8 @@ async function exportCommand(args: string[], io: CliIO): Promise<number> {
         return 2;
     }
 
-    let registry: StitchRegistry;
-    try {
-        registry = await io.load(resolveModulePath(modulePath, io.cwd));
-    } catch (e) {
-        io.writeErr(`${(e as Error).message}\n`);
-        return 1;
-    }
+    const registry = await loadRegistryOrReport(modulePath, io);
+    if (registry === undefined) return 1;
 
     // Optional bring-your-own Standard Schema → JSON Schema converter (its default export or a
     // named `toJsonSchema`), so body schemas come out as real JSON Schema instead of `{}`.
