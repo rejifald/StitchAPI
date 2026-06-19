@@ -1,0 +1,140 @@
+---
+title: Express
+description: Express 4/5 middleware for StitchAPI — a principal-bound seam on req.stitch, an SSE bridge with streamStitchSse, and stitch errors mapped to JSON by a 4-arg error handler.
+---
+
+Use `@stitchapi/express` when you serve an API with [Express](https://expressjs.com)
+(4 or 5). It is three thin bridges between StitchAPI's backend primitive (the
+`seam`) and Express's `req`/`res`: middleware that puts a principal-bound seam on
+the request, an SSE writer, and a stitch-error → HTTP mapper.
+
+<Callout type="info">
+    **The shallow binding.** Express has no plugin / lifecycle / logger
+    structure to bridge — unlike [Fastify](/docs/integrations/fastify) — so this
+    package is just a request handler, an SSE writer, and an error middleware.
+    Importing it augments Express's `Request`, so `req.stitch` is typed
+    everywhere.
+</Callout>
+
+## Example
+
+Install the package alongside core and Express:
+
+```package-install
+@stitchapi/express stitchapi express
+```
+
+Build (and own) the seam once at startup, then register the middleware. With a
+`principal` resolver, each request's `req.stitch` is a `seam.as(id)` handle — a
+principal-bound seam with separate auth sessions per principal over one shared
+throttle:
+
+```ts
+import { stitch } from '@stitchapi/express';
+import express from 'express';
+import { seam } from 'stitchapi';
+import { z } from 'zod';
+
+const api = seam({ baseUrl: 'https://api.example.com' });
+
+const app = express();
+
+// Put a principal-bound seam on every request.
+app.use(stitch({ seam: api, principal: (req) => req.header('x-tenant') }));
+
+app.get('/me', async (req, res) => {
+    const me = await req.stitch.stitch({
+        path: '/me',
+        output: z.object({ id: z.string(), name: z.string() }),
+    })();
+    res.json(me);
+});
+```
+
+The principal lives in the closure, never in a call argument, so a handler can
+never name another identity. **Borrow, don't own:** the middleware never calls
+`seam.close()` — you build the seam at startup and close it on shutdown.
+
+A generic helper that only holds a loosely-typed `Request` can read the same
+handle back with `currentStitch(req)`, which throws if the middleware never ran —
+so a missing `app.use(stitch(...))` fails loudly instead of silently.
+
+## Streaming — `streamStitchSse`
+
+Stream a streaming/SSE stitch's `.stream()` to the client as Server-Sent Events.
+Each `delta` becomes a `data:` frame; a terminal `error` (or a throw) becomes a
+final `event: error` frame; control events are consumed but not forwarded; and a
+client disconnect aborts the upstream stitch stream.
+
+```ts
+import { stitch, streamStitchSse } from '@stitchapi/express';
+import express from 'express';
+import { seam } from 'stitchapi';
+import { sseSurface } from 'stitchapi/sse';
+
+const api = seam({ baseUrl: 'https://api.example.com' });
+
+const app = express();
+app.use(stitch({ seam: api }));
+
+app.get('/chat', async (req, res) => {
+    const completion = req.stitch.stitch({
+        kind: sseSurface,
+        path: '/v1/messages',
+    });
+    await streamStitchSse(
+        res,
+        completion.stream({ body: { prompt: String(req.query.q ?? '') } }),
+        {
+            data: (chunk) => (chunk as { data: string }).data,
+            req, // also tear down if the request socket signals disconnect
+        },
+    );
+});
+```
+
+<Callout type="warn">
+    **Anti-pattern:** don't also `res.json()` / `res.send()` from a handler that
+    calls `streamStitchSse` — the helper owns the response (it writes the
+    `text/event-stream` head and the frames). A second write corrupts the stream
+    or throws _headers already sent_. Let the helper finish the response; do
+    your own thing in a separate route.
+</Callout>
+
+## Errors — `stitchErrorHandler`
+
+A failed stitch throws a `StitchError` carrying the upstream `status`. Register
+`stitchErrorHandler()` **after your routes** (an Express error middleware is
+matched by its 4-arg arity) so handlers need no per-route try/catch — it maps a
+`StitchError` to a JSON response (`502` by default, so an upstream's status is
+never leaked) and `next(err)`s everything else:
+
+```ts
+import { stitchErrorHandler } from '@stitchapi/express';
+import express from 'express';
+
+const app = express();
+
+// default 502 — an upstream's 401/404/etc. is never leaked to your client.
+app.use(stitchErrorHandler());
+
+// or propagate the upstream status, or shape your own envelope:
+app.use(
+    stitchErrorHandler({
+        status: (e) => e.status ?? 502,
+        body: (e, status) => ({ code: status, msg: e.message }),
+    }),
+);
+```
+
+Because it `next(err)`s any non-Stitch error, Express's default handler — and any
+error middleware you register after it — stays in charge of everything else.
+
+## See also
+
+<Cards>
+    <Card title="Fastify" href="/docs/integrations/fastify" />
+    <Card title="Hono" href="/docs/integrations/hono" />
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>
