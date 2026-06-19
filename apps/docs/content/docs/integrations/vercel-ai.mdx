@@ -4,7 +4,7 @@ description: stitchTool exposes a stitch as a Vercel AI SDK tool() the model can
 ---
 
 StitchAPI is agent-native through the [MCP surface](/docs/surfaces/mcp) — the
-canonical way to hand a stitch to any agent. `@stitchapi/ai` is the framework-specific
+canonical way to hand a stitch to any agent. `@stitchapi/vercel-ai` is the framework-specific
 convenience for apps already on the [Vercel AI SDK](https://sdk.vercel.ai): wrap a
 stitch as a `tool()` the model can call inside `generateText` / `streamText`.
 
@@ -18,7 +18,7 @@ carries both `parameters` (AI SDK v4) and `inputSchema` (v5), so it drops into e
 ## Example
 
 ```package-install
-@stitchapi/ai stitchapi
+@stitchapi/vercel-ai stitchapi
 ```
 
 `stitchapi` is the only required peer; bring the `ai` SDK you already run.
@@ -30,7 +30,7 @@ Drop a stitch straight into a `tools` map:
 ```ts
 import { getUser } from './api';
 
-import { stitchTool } from '@stitchapi/ai';
+import { stitchTool } from '@stitchapi/vercel-ai';
 import { generateText } from 'ai';
 import { z } from 'zod';
 
@@ -60,7 +60,7 @@ If you'd rather compose the tool yourself — e.g. with `ai`'s own `tool()` for 
 typing — `stitchExecute` is just the `execute`:
 
 ```ts
-import { stitchExecute } from '@stitchapi/ai';
+import { stitchExecute } from '@stitchapi/vercel-ai';
 import { tool } from 'ai';
 import { z } from 'zod';
 

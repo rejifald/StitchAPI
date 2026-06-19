@@ -1,4 +1,4 @@
-# @stitchapi/ai
+# @stitchapi/vercel-ai
 
 [Vercel AI SDK](https://sdk.vercel.ai) adapter for [StitchAPI](https://stitchapi.dev). Expose a stitch as a `tool()` the model can call inside `generateText` / `streamText`: the stitch runs as the tool's `execute`, so the model gets **typed, validated** data back — and the credential stays behind the boundary (a capability, not the credential).
 
@@ -9,7 +9,7 @@ StitchAPI is agent-native through the [MCP surface](https://stitchapi.dev/docs/s
 ## Install
 
 ```sh
-pnpm add @stitchapi/ai stitchapi
+pnpm add @stitchapi/vercel-ai stitchapi
 ```
 
 `stitchapi` is the only required peer; bring the `ai` SDK you already run.
@@ -19,7 +19,7 @@ pnpm add @stitchapi/ai stitchapi
 ```ts
 import { getUser } from './api';
 
-import { stitchTool } from '@stitchapi/ai';
+import { stitchTool } from '@stitchapi/vercel-ai';
 import { generateText } from 'ai';
 import { z } from 'zod';
 
@@ -46,7 +46,7 @@ The tool's result is the stitch's validated output, so the model reasons over re
 Just the `execute` function, if you compose the tool yourself (e.g. with `ai`'s `tool()` for tighter typing):
 
 ```ts
-import { stitchExecute } from '@stitchapi/ai';
+import { stitchExecute } from '@stitchapi/vercel-ai';
 import { tool } from 'ai';
 import { z } from 'zod';
 

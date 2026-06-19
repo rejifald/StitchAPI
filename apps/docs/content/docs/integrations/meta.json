@@ -12,6 +12,6 @@
         "tanstack-query",
         "pino",
         "stores",
-        "ai-sdk"
+        "vercel-ai"
     ]
 }

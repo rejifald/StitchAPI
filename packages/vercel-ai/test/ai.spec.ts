@@ -1,4 +1,4 @@
-// @stitchapi/ai behaviour, driven with fake stitches. No engine, no AI SDK — the
+// @stitchapi/vercel-ai behaviour, driven with fake stitches. No engine, no AI SDK — the
 // tool object is structural, so we assert its shape and run its `execute`.
 import { stitchExecute, stitchTool } from '../src';
 import type { StitchLike } from '../src';

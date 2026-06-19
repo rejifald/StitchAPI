@@ -1,4 +1,4 @@
-// @stitchapi/ai — expose a stitch as a Vercel AI SDK tool.
+// @stitchapi/vercel-ai — expose a stitch as a Vercel AI SDK tool.
 //
 // StitchAPI is agent-native through the MCP surface (`stitchapi/mcp`), the canonical
 // way to hand a stitch to any agent. This is the framework-specific convenience for
@@ -115,7 +115,7 @@ export interface StitchToolOptions<Args, Input> {
  * ```ts
  * import { generateText } from 'ai';
  * import { z } from 'zod';
- * import { stitchTool } from '@stitchapi/ai';
+ * import { stitchTool } from '@stitchapi/vercel-ai';
  *
  * const { text } = await generateText({
  *     model,

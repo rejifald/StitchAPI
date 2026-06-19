@@ -1,5 +1,5 @@
 {
-    "name": "@stitchapi/ai",
+    "name": "@stitchapi/vercel-ai",
     "version": "1.0.0-rc.2",
     "type": "commonjs",
     "description": "Vercel AI SDK adapter for StitchAPI — expose a stitch as a tool() the model can call. It runs the typed, validated, traced stitch as the tool's execute; the model gets validated data, never the credential.",
@@ -35,7 +35,7 @@
     "repository": {
         "type": "git",
         "url": "git+https://github.com/rejifald/StitchAPI.git",
-        "directory": "packages/ai"
+        "directory": "packages/vercel-ai"
     },
     "keywords": [
         "stitchapi",
