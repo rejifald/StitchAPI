@@ -8,6 +8,7 @@
         "react",
         "vue",
         "svelte",
+        "angular",
         "tanstack-query",
         "pino",
         "stores"
