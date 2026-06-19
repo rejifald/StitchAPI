@@ -13,6 +13,7 @@
         "swr",
         "rtk-query",
         "pino",
-        "stores"
+        "stores",
+        "aws-sigv4"
     ]
 }

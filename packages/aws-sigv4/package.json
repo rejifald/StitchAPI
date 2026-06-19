@@ -1,0 +1,65 @@
+{
+    "name": "@stitchapi/aws-sigv4",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
+    "description": "AWS Signature V4 request signing for StitchAPI — an AuthStrategy that signs each request with SigV4 (Web Crypto, edge-safe), for AWS APIs, S3-compatible stores, and any SigV4-protected endpoint.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/aws-sigv4"
+    },
+    "keywords": [
+        "stitchapi",
+        "aws",
+        "sigv4",
+        "signature-v4",
+        "auth",
+        "signing",
+        "s3"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "peerDependencies": {
+        "stitchapi": "^1.0.0-rc.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "stitchapi": "workspace:*",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}
