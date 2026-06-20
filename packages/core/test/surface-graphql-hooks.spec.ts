@@ -38,7 +38,9 @@ const res = (body: unknown, status = 200): AdapterResponse => ({
 
 describe('graphqlSurface.buildRequest', () => {
     test('packs { query, variables } as a JSON POST, preserving the base request', () => {
-        const req = build(cfg({ query: '{ thing }' }), { variables: { id: 1 } });
+        const req = build(cfg({ query: '{ thing }' }), {
+            variables: { id: 1 },
+        });
         expect(req.method).toBe('POST');
         expect(req.bodyType).toBe('json');
         expect(req.body).toEqual({ query: '{ thing }', variables: { id: 1 } });
@@ -60,7 +62,9 @@ describe('graphqlSurface.buildRequest', () => {
             variables: { v: 1 },
             body: { b: 2 },
         });
-        expect((req.body as { variables: unknown }).variables).toEqual({ v: 1 });
+        expect((req.body as { variables: unknown }).variables).toEqual({
+            v: 1,
+        });
     });
 
     test('defaults the query to an empty string when none is configured', () => {
