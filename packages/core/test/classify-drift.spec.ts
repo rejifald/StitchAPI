@@ -34,10 +34,16 @@ describe('classifyDrift', () => {
 
     test('a new field is info by default, or opts.onNew', () => {
         expect(classifyDrift({ a: 1, b: 2 }, { a: 1 })).toEqual([
-            { level: 'info', path: 'b', change: 'new', detail: 'new field (number)' },
+            {
+                level: 'info',
+                path: 'b',
+                change: 'new',
+                detail: 'new field (number)',
+            },
         ]);
         expect(
-            classifyDrift({ a: 1, b: 2 }, { a: 1 }, { onNew: 'warn' })[0]?.level,
+            classifyDrift({ a: 1, b: 2 }, { a: 1 }, { onNew: 'warn' })[0]
+                ?.level,
         ).toBe('warn');
     });
 
@@ -56,8 +62,12 @@ describe('classifyDrift', () => {
     });
 
     test('a null↔type change is classified as nullable (either direction)', () => {
-        expect(classifyDrift({ a: null }, { a: 1 })[0]?.change).toBe('nullable');
-        expect(classifyDrift({ a: 1 }, { a: null })[0]?.change).toBe('nullable');
+        expect(classifyDrift({ a: null }, { a: 1 })[0]?.change).toBe(
+            'nullable',
+        );
+        expect(classifyDrift({ a: 1 }, { a: null })[0]?.change).toBe(
+            'nullable',
+        );
     });
 
     test('topmost dedup: a missing ancestor suppresses its descendants', () => {
@@ -67,13 +77,8 @@ describe('classifyDrift', () => {
     });
 
     test('array element shapes are diffed via the [] segment', () => {
-        const findings = classifyDrift(
-            { items: [] },
-            { items: [{ id: 1 }] },
-        );
-        const itemEl = findings.find(
-            (f: DriftFinding) => f.path === 'items[]',
-        );
+        const findings = classifyDrift({ items: [] }, { items: [{ id: 1 }] });
+        const itemEl = findings.find((f: DriftFinding) => f.path === 'items[]');
         expect(itemEl?.change).toBe('missing');
     });
 });
