@@ -173,6 +173,47 @@ describe('useStitch', () => {
         expect(result.isPending.value).toBe(true);
         expect(result.data.value).toBeUndefined();
     });
+
+    test('forwards onSuccess to the underlying query', async () => {
+        let received: unknown;
+        const { scope } = withScope(() =>
+            useStitch(
+                unaryStitch(async () => ({ id: 7 })),
+                {},
+                {
+                    onSuccess: (d) => {
+                        received = d;
+                    },
+                },
+            ),
+        );
+
+        await flush();
+        expect(received).toEqual({ id: 7 });
+        scope.stop();
+    });
+
+    test('forwards onError to the underlying query', async () => {
+        let received: unknown;
+        const boom = new Error('nope');
+        const { scope } = withScope(() =>
+            useStitch<{ id: number }>(
+                unaryStitch(async () => {
+                    throw boom;
+                }),
+                {},
+                {
+                    onError: (e) => {
+                        received = e;
+                    },
+                },
+            ),
+        );
+
+        await flush();
+        expect(received).toBe(boom);
+        scope.stop();
+    });
 });
 
 // --- useStitchStream -------------------------------------------------------
