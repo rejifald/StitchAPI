@@ -2,8 +2,10 @@
 // directly (no Nest DI container needed) and run the resulting stitches against a mock
 // adapter, asserting wire-level effects — the same style as core's tests.
 import {
+    // Deprecated aliases (ADR 0012) — exercised by the alias-guard test below.
     type ConfigServiceLike,
     type LoggerLike,
+    type NestConfigServiceLike,
     type NestLoggerLike,
     STITCH_SEAM,
     STITCH_STORE,
@@ -13,7 +15,9 @@ import {
     borrowStore,
     defineStitch,
     fromConfig,
+    fromNestConfig,
     loggerSink,
+    nestBorrowStore,
     nestLoggerSink,
 } from '../src';
 
@@ -266,7 +270,7 @@ describe('defineStitch token', () => {
 });
 
 describe('bridges', () => {
-    it('borrowStore delegates get/set/incr but omits close', async () => {
+    it('nestBorrowStore delegates get/set/incr but omits close', async () => {
         const calls: string[] = [];
         const backing: StitchStore = {
             get: async () => {
@@ -284,7 +288,7 @@ describe('bridges', () => {
                 calls.push('close');
             },
         };
-        const borrowed = borrowStore(backing);
+        const borrowed = nestBorrowStore(backing);
         expect(borrowed.close).toBeUndefined();
         expect(await borrowed.get('k')).toBe(1);
         await borrowed.set('k', 'v');
@@ -311,17 +315,26 @@ describe('bridges', () => {
         return { rec, logger };
     };
 
-    it('keeps loggerSink / LoggerLike as deprecated aliases of the nest* names (ADR 0012)', () => {
-        // Runtime: the deprecated function export is the very same function object.
+    it('keeps the pre-ADR-0012 names as deprecated aliases of the ecosystem-qualified ones', () => {
+        // Runtime: each deprecated function export is the very same function object.
         expect(loggerSink).toBe(nestLoggerSink);
-        // Type-level: the deprecated type alias stays interchangeable with the canonical one.
-        const viaDeprecated: LoggerLike = {
+        expect(fromConfig).toBe(fromNestConfig);
+        expect(borrowStore).toBe(nestBorrowStore);
+        // Type-level: the deprecated type aliases stay interchangeable with the canonical ones.
+        const loggerViaDeprecated: LoggerLike = {
             log() {},
             warn() {},
             error() {},
         };
-        const viaCanonical: NestLoggerLike = viaDeprecated;
-        expect(typeof viaCanonical.log).toBe('function');
+        const loggerViaCanonical: NestLoggerLike = loggerViaDeprecated;
+        expect(typeof loggerViaCanonical.log).toBe('function');
+        const cfgViaDeprecated: ConfigServiceLike = {
+            getOrThrow<T = string>(key: string): T {
+                return key as T;
+            },
+        };
+        const cfgViaCanonical: NestConfigServiceLike = cfgViaDeprecated;
+        expect(typeof cfgViaCanonical.getOrThrow).toBe('function');
     });
 
     it('nestLoggerSink maps each event to the right level, payload-free, query redacted', () => {
@@ -504,36 +517,36 @@ describe('bridges', () => {
         expect(warn.length).toBe(1);
     });
 
-    it('fromConfig resolves a synchronous secret thunk from a ConfigService-like', () => {
-        const config: ConfigServiceLike = {
+    it('fromNestConfig resolves a synchronous secret thunk from a ConfigService-like', () => {
+        const config: NestConfigServiceLike = {
             getOrThrow<T = string>(key: string): T {
                 return `val:${key}` as T;
             },
         };
-        expect(fromConfig(config)('API_TOKEN')()).toBe('val:API_TOKEN');
+        expect(fromNestConfig(config)('API_TOKEN')()).toBe('val:API_TOKEN');
     });
 
-    it('fromConfig propagates ConfigService.getOrThrow on a missing key', () => {
-        const config: ConfigServiceLike = {
+    it('fromNestConfig propagates ConfigService.getOrThrow on a missing key', () => {
+        const config: NestConfigServiceLike = {
             getOrThrow<T = string>(key: string): T {
                 throw new Error(`Configuration key "${key}" does not exist`);
             },
         };
         // The Nest getOrThrow error still surfaces through the core secretFrom delegation.
-        expect(() => fromConfig(config)('API_TOKEN')()).toThrow(
+        expect(() => fromNestConfig(config)('API_TOKEN')()).toThrow(
             'Configuration key "API_TOKEN" does not exist',
         );
     });
 
-    it('fromConfig rejects an empty value (delegates to core secretFrom)', () => {
-        const config: ConfigServiceLike = {
+    it('fromNestConfig rejects an empty value (delegates to core secretFrom)', () => {
+        const config: NestConfigServiceLike = {
             // Present but blank — Nest's getOrThrow does NOT throw on '' (only on undefined).
             getOrThrow<T = string>(_key: string): T {
                 return '' as T;
             },
         };
         // secretFrom rejects '' like env() does, so a blank credential never rides along.
-        expect(() => fromConfig(config)('API_TOKEN')()).toThrow(
+        expect(() => fromNestConfig(config)('API_TOKEN')()).toThrow(
             'missing secret',
         );
     });

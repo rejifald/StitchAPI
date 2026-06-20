@@ -1,6 +1,6 @@
 # ADR 0012 — Integration symbol naming (ecosystem-qualified adapters)
 
--   **Status:** Accepted (2026-06-20). Applies to every `@stitchapi/*` adapter package; the first enforcement pass renames `@stitchapi/nest`'s `loggerSink` / `LoggerLike` (the only violators at the time of writing).
+-   **Status:** Accepted (2026-06-20). Applies to every published `@stitchapi/*` package. The enforcement sweep qualifies the bare adapter exports in `@stitchapi/nest` (5), `@stitchapi/hono` (1), and `@stitchapi/react` (1); the rest were already on-pattern.
 -   **Date:** 2026-06-20
 -   **Tags:** naming, conventions, public-api, packaging, adapters, integrations, dx
 
@@ -105,48 +105,83 @@ ecosystem plus only the token needed to answer _"which subsystem of that ecosyst
 -   A web framework is not a logger, so name the subsystem you are bridging:
     `fastifyLoggerSink`, `nestLoggerSink` (you are bridging its `.log`, not its router).
 
-**4. Constructors that adapt a foreign instance use `from{Source}`.** e.g.
-`fromIoredis`, `fromNodeRedis`, `fromConfig`. The source token names the thing being
-adapted.
+**4. Constructors that adapt a foreign instance use `from{Source}` — and the source
+token must be specific enough not to collide.** A concrete library name is its own
+qualifier: `fromIoredis`, `fromNodeRedis` (nobody else ships an `ioredis` adapter). A
+_generic_ source word is not, so it carries the ecosystem: **`fromNestConfig`**, not a
+bare `fromConfig` (every framework has a "config"). The test is the flattened import:
+would two packages plausibly export this exact identifier? If yes, qualify it.
 
-**5. The generic base in `core` stays bare.** `core`'s `loggerSink` / `LoggerSinkOptions`
-/ `LoggerLike` / `consoleSink` / `fileSink` / `memoryStore` are the _unqualified_
-primitives. Bare is correct there precisely because they are the generic base every
-qualified adapter specializes — and it keeps the qualified names meaningful as
-"the {ecosystem} flavor of the core thing."
+**5. The generic base packages (`core`, `query-core`) stay bare.** `core`'s
+`loggerSink` / `LoggerSinkOptions` / `LoggerLike` / `consoleSink` / `fileSink` /
+`memoryStore`, and `query-core`'s `StitchQuery*` / `QueryInput` / `QueryOutput` /
+`StreamableResult`, are the _unqualified_ primitives. Bare is correct there precisely
+because they are the generic base every adapter specializes or re-exports — and it
+keeps the qualified names meaningful as "the {ecosystem} flavor of the core thing."
+
+**6. Qualify proactively, not only on a live collision.** A bare, non-branded export in
+an adapter/provider package is a latent collision — the cost lands later, on whoever
+first imports two packages together, as a silent shadow or a forced alias. So an
+adapter export that is neither `Stitch`-branded (rule 1) nor `{provider}`-branded
+(rule 1) nor a specific `from{Lib}` (rule 4) gets its ecosystem qualifier _now_, even
+if nothing collides today. This is why `@stitchapi/nest`'s `fromConfig` / `borrowStore`
+/ `ConfigServiceLike`, `@stitchapi/hono`'s `RequestSeam`, and `@stitchapi/react`'s
+`queryOptions` are all qualified, not just the names that already clashed. (Private,
+unpublished packages — `eval-harness`, `sandbox-sim`, `completions-plugin` — are not
+public surface and are out of scope.)
 
 ## Conformance at adoption (2026-06-20)
 
-| Package               | Verdict                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------- |
-| `stitchapi` (core)    | ✅ generic base — bare names are correct                                                    |
-| `@stitchapi/fastify`  | ✅ already canonical (`fastifyLoggerSink`, `FastifyLoggerLike`, `FastifyLoggerSinkOptions`) |
-| `@stitchapi/hono`     | ✅ `Stitch`-branded surface; no logger bridge                                               |
-| `@stitchapi/pino`     | ✅ `pinoSink` (the `Logger` token is rightly elided for a logger library)                   |
-| `@stitchapi/redis`    | ✅ `redisStore`, `fromIoredis`, `fromNodeRedis`                                             |
-| `@stitchapi/react`    | ✅ `Stitch`-branded surface (`useStitch`, `createStitchQuery`)                              |
-| **`@stitchapi/nest`** | **⚠️ → fixed here:** `loggerSink` → `nestLoggerSink`, `LoggerLike` → `NestLoggerLike`       |
+A sweep of every **published** package's public surface:
 
-`@stitchapi/nest` was the only violator. `NestLoggerSinkOptions`, `fromConfig`,
-`borrowStore`, and `ConfigServiceLike` were already on-pattern and are unchanged.
+| Package                    | Verdict                                                                                                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stitchapi` (core)         | ✅ generic base — bare names are correct                                                                                                                                                  |
+| `@stitchapi/query-core`    | ✅ generic base (the framework-agnostic query engine) — bare names are correct                                                                                                            |
+| `@stitchapi/fastify`       | ✅ already canonical (`fastifyLoggerSink`, `FastifyLoggerLike`, `FastifyLoggerSinkOptions`)                                                                                               |
+| `@stitchapi/pino`          | ✅ `pinoSink` (the `Logger` token is rightly elided for a logger library)                                                                                                                 |
+| `@stitchapi/redis`         | ✅ `redisStore`, `fromIoredis`, `fromNodeRedis` (specific-lib `from{Lib}` constructors)                                                                                                   |
+| `@stitchapi/fingerprint-*` | ✅ five packages, each `{lib}Fingerprinter` (`zodFingerprinter`, `valibotFingerprinter`, …) — the exemplar of the rule                                                                    |
+| `@stitchapi/shell`         | ✅ surface package — `shell` / `ShellOptions` named for the surface                                                                                                                       |
+| **`@stitchapi/nest`**      | **⚠️ → fixed:** `loggerSink`→`nestLoggerSink`, `LoggerLike`→`NestLoggerLike`, `fromConfig`→`fromNestConfig`, `borrowStore`→`nestBorrowStore`, `ConfigServiceLike`→`NestConfigServiceLike` |
+| **`@stitchapi/hono`**      | **⚠️ → fixed:** `RequestSeam` → `HonoRequestSeam` (the rest of the surface is `Stitch`-branded)                                                                                           |
+| **`@stitchapi/react`**     | **⚠️ → fixed:** `queryOptions` → `stitchQueryOptions` (it clashed with TanStack Query's own `queryOptions`; the rest is `Stitch`-branded)                                                 |
+
+Three packages carried bare, non-branded adapter exports; all are renamed here, with
+`@deprecated` aliases. `@stitchapi/nest`'s `NestLoggerSinkOptions` was already
+on-pattern. Private packages (`eval-harness`, `sandbox-sim`, `completions-plugin`) are
+not public surface and are out of scope.
 
 ## Migration & deprecation
 
-Every package is pre-GA (`1.0.0-rc.2`), so this is the cheap moment to align. The
-rename ships with `@deprecated` re-export aliases for the old names
-(`loggerSink = nestLoggerSink`, `type LoggerLike = NestLoggerLike`) so no `rc`
-consumer hard-breaks. **The aliases are removed at the 1.0 GA cut.** A test pins the
-alias identity until then ([`module.spec.ts`](../../packages/nest/test/module.spec.ts)).
+Every package is pre-GA (`1.0.0-rc.2`), so this is the cheap moment to align. Each
+rename ships with a `@deprecated` re-export alias for the old name, so no `rc` consumer
+hard-breaks:
+
+| Old (deprecated)    | Canonical               | Package            |
+| ------------------- | ----------------------- | ------------------ |
+| `loggerSink`        | `nestLoggerSink`        | `@stitchapi/nest`  |
+| `LoggerLike`        | `NestLoggerLike`        | `@stitchapi/nest`  |
+| `fromConfig`        | `fromNestConfig`        | `@stitchapi/nest`  |
+| `borrowStore`       | `nestBorrowStore`       | `@stitchapi/nest`  |
+| `ConfigServiceLike` | `NestConfigServiceLike` | `@stitchapi/nest`  |
+| `RequestSeam`       | `HonoRequestSeam`       | `@stitchapi/hono`  |
+| `queryOptions`      | `stitchQueryOptions`    | `@stitchapi/react` |
+
+**The aliases are removed at the 1.0 GA cut.** Tests pin the alias identity until then
+([nest](../../packages/nest/test/module.spec.ts),
+[react](../../packages/react/test/hooks.spec.tsx)).
 
 ## Enforcement
 
 -   **Review gate.** This ADR is the reference; new adapter packages and exports are
-    checked against rules 1–5 in review. `pnpm check:exports` surfaces the full public
+    checked against rules 1–6 in review. `pnpm check:exports` surfaces the full public
     surface of each package so a reviewer can eyeball it.
--   **Future (optional).** A small lint over each package's `index.ts` could assert
-    "a host-adapter package exports no bare `loggerSink` / `LoggerLike` / `*Sink`."
-    Deferred until a second violation justifies the machinery — one ADR + review has
-    covered every package so far.
+-   **Future (optional).** A small lint over each published package's `index.ts` could
+    assert "an adapter/provider package exports no bare, non-branded identifier" (no
+    export that is neither `Stitch`-/`{provider}`-prefixed nor a specific `from{Lib}`).
+    That would mechanize rule 6. Deferred until the surface grows enough to justify the
+    machinery — this sweep covered every published package by hand.
 
 ## Alternatives considered
 

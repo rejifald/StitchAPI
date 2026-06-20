@@ -397,6 +397,11 @@ Core has since grown two generic primitives that the original ADRs hand-rolled i
 
 This is the **deliberate exception** to the original "no core change" / "this ADR modifies no core code" stance (Context line, Decision _No core change_, and the boilerplate addendum above): the core additions are generic, additive, off-by-default, and covered by core tests, so the **contract-not-dependency** gate stays green — `@stitchapi/nest` still adds no capability, forks nothing, and peer-depends on `stitchapi`. The trade taken: a small, generic widening of core's `loggerSink` surface in exchange for deleting the duplicated dispatch / formatting / secret-resolution logic from the bridge package.
 
-## Addendum (2026-06-20) — `loggerSink` / `LoggerLike` renamed to `nestLoggerSink` / `NestLoggerLike`
+## Addendum (2026-06-20) — bridge exports renamed to ecosystem-qualified names
 
-[ADR 0012](./0012-integration-symbol-naming.md) makes integration-package adapter symbols ecosystem-qualified, so this package's bridge sink and its duck-type are renamed: **`loggerSink` → `nestLoggerSink`** and **`LoggerLike` → `NestLoggerLike`** (`NestLoggerSinkOptions`, `fromConfig`, `borrowStore`, and `ConfigServiceLike` were already on-pattern and are unchanged). The bare names collided with core's _generic_ `loggerSink` / `LoggerLike` — `bridges.ts` already had to import them as `coreLoggerSink` / `CoreLoggerLike` to disambiguate. The old names remain as `@deprecated` aliases through the `1.0.0-rc` line and are removed at the 1.0 GA cut. The delegation described above is unchanged; only the public symbol names move.
+[ADR 0012](./0012-integration-symbol-naming.md) makes integration-package adapter symbols ecosystem-qualified, so **all four** of this package's generically-named bridge exports are renamed:
+
+-   **`loggerSink` → `nestLoggerSink`** and **`LoggerLike` → `NestLoggerLike`** — these collided with core's _generic_ `loggerSink` / `LoggerLike` outright (`bridges.ts` already had to import core's as `coreLoggerSink` / `CoreLoggerLike` to disambiguate).
+-   **`fromConfig` → `fromNestConfig`**, **`borrowStore` → `nestBorrowStore`**, **`ConfigServiceLike` → `NestConfigServiceLike`** — no collision _yet_, but the bare names would clash the moment another adapter ships a config-secret bridge or a store wrapper, so they are qualified proactively (ADR 0012 rule 6). `NestLoggerSinkOptions` was already on-pattern and is unchanged.
+
+The old names all remain as `@deprecated` aliases through the `1.0.0-rc` line and are removed at the 1.0 GA cut. The delegation described above is unchanged; only the public symbol names move.

@@ -1,7 +1,7 @@
 // The three bridges between core primitives and the NestJS world (ADR 0006
 // Decisions 6-8). None of them CHANGES core — they are built ON it: `nestLoggerSink` and
-// `fromConfig` DELEGATE to core's `loggerSink` / `secretFrom` (passing Nest-flavored
-// level/format/source adapters), and `borrowStore` wraps a `StitchStore`. A TraceSink,
+// `fromNestConfig` DELEGATE to core's `loggerSink` / `secretFrom` (passing Nest-flavored
+// level/format/source adapters), and `nestBorrowStore` wraps a `StitchStore`. A TraceSink,
 // a `Secret` thunk, and a StitchStore are all existing extension points.
 import { Logger } from '@nestjs/common';
 import { loggerSink as coreLoggerSink, secretFrom } from 'stitchapi';
@@ -174,7 +174,7 @@ function redactUrl(url: string): string {
 
 /** The minimal slice of Nest's `ConfigService` this package needs — kept structural so
  * `@nestjs/config` is not even a peer dependency. */
-export interface ConfigServiceLike {
+export interface NestConfigServiceLike {
     getOrThrow<T = string>(key: string): T;
 }
 
@@ -182,7 +182,7 @@ export interface ConfigServiceLike {
  * A `ConfigService`-backed secret resolver — core's `secretFrom(source, name)` bound to a Nest
  * `ConfigService`. Returns a synchronous `Secret` thunk (`() => string`) resolved at call time,
  * so the credential never lands on `__config` or in a trace. Pass it to any auth strategy:
- * `bearer(fromConfig(config)('API_TOKEN'))`.
+ * `bearer(fromNestConfig(config)('API_TOKEN'))`.
  *
  * Resolution delegates to core: a missing key still throws (the `ConfigService.getOrThrow` error
  * propagates), and — like core's `env()` / `secretFrom()` — an empty value is rejected too, so a
@@ -191,8 +191,8 @@ export interface ConfigServiceLike {
  * NOTE: `Secret` is synchronous, so this cannot fetch a rotating secret per call — that
  * is what `oauth2` / `cookieSession` are for (they refresh asynchronously via the vault).
  */
-export function fromConfig(
-    config: ConfigServiceLike,
+export function fromNestConfig(
+    config: NestConfigServiceLike,
 ): (key: string) => () => string {
     // `getOrThrow` already throws on a missing key (Nest's own error); core's `secretFrom` adds
     // the empty-value rejection and the `() => string` thunk shape, matching `env()`/`secretFrom()`.
@@ -205,10 +205,35 @@ export function fromConfig(
  * omitted, so a seam's `close()` never tears down a store the app passed in (ADR 0006
  * Decision 8). The app — not the package — disposes a store it provides.
  */
-export function borrowStore(store: StitchStore): StitchStore {
+export function nestBorrowStore(store: StitchStore): StitchStore {
     return {
         get: (key) => store.get(key),
         set: (key, value, ttlMs) => store.set(key, value, ttlMs),
         incr: (key, ttlMs) => store.incr(key, ttlMs),
     };
 }
+
+/**
+ * @deprecated Renamed to {@link fromNestConfig} so the adapter's secret-source
+ * constructor is ecosystem-qualified (a bare `fromConfig` would collide with any
+ * other framework's config bridge) — see
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
+ * `1.0.0-rc` line and removed at the 1.0 GA cut.
+ */
+export const fromConfig = fromNestConfig;
+
+/**
+ * @deprecated Renamed to {@link nestBorrowStore} so the helper is ecosystem-qualified
+ * (a bare `borrowStore` would collide with any other adapter's store wrapper) — see
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
+ * `1.0.0-rc` line and removed at the 1.0 GA cut.
+ */
+export const borrowStore = nestBorrowStore;
+
+/**
+ * @deprecated Renamed to {@link NestConfigServiceLike} so the duck-type is
+ * ecosystem-qualified — see
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
+ * `1.0.0-rc` line and removed at the 1.0 GA cut.
+ */
+export type ConfigServiceLike = NestConfigServiceLike;

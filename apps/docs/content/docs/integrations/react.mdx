@@ -22,7 +22,7 @@ Install the hooks, the store, core, and your React:
 ```
 
 `stitchapi` and `react` are peer dependencies; `@tanstack/react-query` is an
-**optional** peer, needed only for the `queryOptions` adapter below.
+**optional** peer, needed only for the `stitchQueryOptions` adapter below.
 
 ## `useStitch` — request / response
 
@@ -119,12 +119,12 @@ are cheap follow-ons rather than rewrites.
 ## Optional: TanStack Query
 
 Already on [TanStack Query](/docs/integrations/tanstack-query)?
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
 pass straight to `useQuery` — it imports nothing from `@tanstack/react-query`, so
 it works even if you never install it:
 
 ```ts twoslash
-import { queryOptions } from '@stitchapi/react';
+import { stitchQueryOptions } from '@stitchapi/react';
 import { useQuery } from '@tanstack/react-query';
 import { stitch } from 'stitchapi';
 import { z } from 'zod';
@@ -136,13 +136,13 @@ const listUsers = stitch({
 });
 
 function useUsers(q: string) {
-    return useQuery(queryOptions(listUsers, { query: { q } }));
+    return useQuery(stitchQueryOptions(listUsers, { query: { q } }));
 }
 ```
 
 <Callout type="info">
-    Reach for `queryOptions` when TanStack Query already owns your view state
-    and you want a stitch as the `queryFn`; reach for `useStitch` /
+    Reach for `stitchQueryOptions` when TanStack Query already owns your view
+    state and you want a stitch as the `queryFn`; reach for `useStitch` /
     `useStitchStream` when you want StitchAPI to own the lifecycle directly —
     especially for streaming, which `useQuery` does not model. See the [TanStack
     Query guide](/docs/integrations/tanstack-query) for how the two layers

@@ -29,7 +29,7 @@ sink) and a default seam carrying your `SeamConfig` defaults (`baseUrl`, `header
 `'logger'` sentinel.
 
 ```ts
-import { StitchModule, fromConfig } from '@stitchapi/nest';
+import { StitchModule, fromNestConfig } from '@stitchapi/nest';
 import { bearer } from 'stitchapi';
 
 @Module({
@@ -40,7 +40,7 @@ import { bearer } from 'stitchapi';
             useFactory: (config: ConfigService) => ({
                 baseUrl: config.getOrThrow('API_BASE_URL'),
                 store: new RedisStore(config.getOrThrow('REDIS_URL')), // any StitchStore
-                auth: bearer(fromConfig(config)('API_TOKEN')),
+                auth: bearer(fromNestConfig(config)('API_TOKEN')),
                 trace: 'logger', // → nestLoggerSink(new Logger('Stitch'))
             }),
         }),
@@ -125,13 +125,21 @@ seam and bind explicitly — `seam.as(job.data.tenantId)`.
     → `debug`/`verbose` (the happy path, hidden at Nest's default level — `lifecycle: false`
     drops them). It logs **only metadata** and strips the URL query, so it is safe on a
     secret-bearing seam: a custom sink receives **un-redacted** events, so never log
-    `event.input`/headers or a `delta` chunk raw. _(Renamed from `loggerSink`, which
-    collided with core's generic `loggerSink`; the old name is a deprecated alias kept
-    through `1.0.0-rc` and removed at GA — see
-    [ADR 0012](../../docs/adr/0012-integration-symbol-naming.md).)_
--   **`fromConfig(config)(key)`** — a `ConfigService`-backed secret thunk (core's `env()`
+    `event.input`/headers or a `delta` chunk raw.
+-   **`fromNestConfig(config)(key)`** — a `ConfigService`-backed secret thunk (core's `env()`
     twin). Synchronous, so it cannot fetch a rotating secret per call — use
     `oauth2`/`cookieSession` for that.
+-   **`nestBorrowStore(store)`** — wraps an app-owned `StitchStore` so the seam never
+    `close()`s it (the app owns disposal). `NestConfigServiceLike` is the structural type
+    `fromNestConfig` accepts.
+
+> [!NOTE]
+>
+> `nestLoggerSink` / `fromNestConfig` / `nestBorrowStore` / `NestConfigServiceLike` are
+> the ecosystem-qualified names introduced by
+> [ADR 0012](../../docs/adr/0012-integration-symbol-naming.md). The former bare names
+> (`loggerSink`, `fromConfig`, `borrowStore`, `ConfigServiceLike`) remain as
+> `@deprecated` aliases through the `1.0.0-rc` line and are removed at the 1.0 GA cut.
 
 ## Errors → HTTP — `StitchExceptionFilter`
 

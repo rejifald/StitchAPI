@@ -12,7 +12,7 @@ These hooks are a thin layer over [`@stitchapi/query-core`](../query-core), the 
 pnpm add @stitchapi/react @stitchapi/query-core stitchapi react
 ```
 
-`stitchapi` (`>=0.7.0`) and `react` (`^18 || ^19`) are peer dependencies. `@tanstack/react-query` is an **optional** peer — only needed if you use `queryOptions`.
+`stitchapi` (`>=0.7.0`) and `react` (`^18 || ^19`) are peer dependencies. `@tanstack/react-query` is an **optional** peer — only needed if you use `stitchQueryOptions`.
 
 ## `useStitch` — request / response
 
@@ -80,14 +80,21 @@ interface UseStitchResult<T> {
 
 ## Optional: TanStack Query
 
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/react-query` required, so it works even if you never install it.
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/react-query` required, so it works even if you never install it.
 
 ```tsx
-import { queryOptions } from '@stitchapi/react';
+import { stitchQueryOptions } from '@stitchapi/react';
 import { useQuery } from '@tanstack/react-query';
 
-const { data } = useQuery(queryOptions(getUser, { params: { id } }));
+const { data } = useQuery(stitchQueryOptions(getUser, { params: { id } }));
 ```
+
+> [!NOTE]
+>
+> It is `stitchQueryOptions`, not a bare `queryOptions`, because TanStack Query
+> exports its own `queryOptions` — the bare name would clash on import
+> ([ADR 0012](../../docs/adr/0012-integration-symbol-naming.md)). `queryOptions`
+> remains a `@deprecated` alias through `1.0.0-rc`, removed at the 1.0 GA cut.
 
 ## License
 
