@@ -98,6 +98,55 @@ const fixtures: FingerprintFixtures = {
             label: 'union-snb',
             schema: () => v.union([v.string(), v.number(), v.boolean()]),
         },
+        // Less-common Valibot types the original battery omitted — each exercises
+        // a distinct type-dispatch branch and must fingerprint to a unique value.
+        { label: 'bigint', schema: () => v.bigint() },
+        { label: 'date', schema: () => v.date() },
+        { label: 'symbol', schema: () => v.symbol() },
+        { label: 'null', schema: () => v.null_() },
+        { label: 'undefined', schema: () => v.undefined_() },
+        { label: 'void', schema: () => v.void_() },
+        { label: 'nan', schema: () => v.nan() },
+        { label: 'any', schema: () => v.any() },
+        { label: 'unknown', schema: () => v.unknown() },
+        { label: 'never', schema: () => v.never() },
+        { label: 'nullable', schema: () => v.nullable(v.string()) },
+        { label: 'nullish', schema: () => v.nullish(v.string()) },
+        {
+            label: 'tuple',
+            schema: () => v.tuple([v.string(), v.number()]),
+        },
+        {
+            label: 'record',
+            schema: () => v.record(v.string(), v.number()),
+        },
+        { label: 'map', schema: () => v.map(v.string(), v.number()) },
+        { label: 'set', schema: () => v.set(v.number()) },
+        { label: 'enum', schema: () => v.enum_({ A: 'x', B: 'y' }) },
+        {
+            label: 'variant',
+            schema: () =>
+                v.variant('t', [
+                    v.object({ t: v.literal('a') }),
+                    v.object({ t: v.literal('b') }),
+                ]),
+        },
+        {
+            label: 'intersect',
+            schema: () =>
+                v.intersect([
+                    v.object({ a: v.number() }),
+                    v.object({ b: v.string() }),
+                ]),
+        },
+        {
+            label: 'strict-object',
+            schema: () => v.strictObject({ id: v.number() }),
+        },
+        {
+            label: 'loose-object',
+            schema: () => v.looseObject({ id: v.number() }),
+        },
     ],
     abstain: [
         // Opaque predicate (check) → cannot capture the logic.

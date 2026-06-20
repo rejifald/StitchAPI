@@ -218,6 +218,40 @@ describe('streamStitchSse writes SSE frames to res', () => {
         );
     });
 
+    test('the default data mapper sends a string verbatim and JSON-stringifies an object', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'plain', at: 1 };
+            yield { type: 'delta', chunk: { a: 1 }, at: 2 };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, events());
+
+        expect(res.body()).toBe('data: plain\n\ndata: {"a":1}\n\n');
+    });
+
+    test('the id option emits an id: line per frame with the zero-based index', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'a', at: 1 };
+            yield { type: 'delta', chunk: 'b', at: 2 };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, events(), {
+            id: (chunk, index) => `${String(chunk)}-${index}`,
+        });
+
+        expect(res.body()).toBe('id: a-0\ndata: a\n\nid: b-1\ndata: b\n\n');
+    });
+
+    test('a multi-line chunk gets one data: prefix per line (SSE spec)', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'line1\nline2', at: 1 };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, events());
+
+        expect(res.body()).toBe('data: line1\ndata: line2\n\n');
+    });
+
     test('a client disconnect aborts the upstream iterator (iterator.return is called)', async () => {
         let returned = false;
         // A stream that blocks after the first delta until torn down — exactly the shape of a real
