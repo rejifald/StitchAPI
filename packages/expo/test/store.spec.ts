@@ -47,4 +47,20 @@ describe('expoSecureStore', () => {
         expect(seen[0]).toMatch(/^[A-Za-z0-9._-]+$/);
         expect(seen[0]).toMatch(/^[0-9a-f]+$/);
     });
+
+    test('pads each code unit to 4 hex digits so distinct keys never collide', async () => {
+        const api = expoSecureStore(fakeSecureStore());
+        // Codes [1, 0] and [16] both hex to "10" under a NAIVE, unpadded
+        // per-code-unit encoding ("1"+"0" vs "10"). padStart(4) keeps them
+        // distinct ("00010000" vs "0010") — without it the second write would
+        // clobber the first.
+        const keyA = String.fromCharCode(1, 0);
+        const keyB = String.fromCharCode(16);
+
+        await api.set(keyA, 'first');
+        await api.set(keyB, 'second');
+
+        expect(await api.get(keyA)).toBe('first');
+        expect(await api.get(keyB)).toBe('second');
+    });
 });
