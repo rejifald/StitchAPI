@@ -41,6 +41,31 @@ const fixtures: FingerprintFixtures = {
             a: () => z.enum(['a', 'b']),
             b: () => z4.enum(['a', 'b']),
         },
+        // Cross-version stability for less-common types: a v3→v4 upgrade that
+        // keeps the shape keeps the fingerprint — and this exercises the v4
+        // type-dispatch for each (the original battery only crossed enums).
+        { label: 'cross-null', a: () => z.null(), b: () => z4.null() },
+        {
+            label: 'cross-undefined',
+            a: () => z.undefined(),
+            b: () => z4.undefined(),
+        },
+        { label: 'cross-any', a: () => z.any(), b: () => z4.any() },
+        { label: 'cross-unknown', a: () => z.unknown(), b: () => z4.unknown() },
+        { label: 'cross-never', a: () => z.never(), b: () => z4.never() },
+        { label: 'cross-void', a: () => z.void(), b: () => z4.void() },
+        { label: 'cross-bigint', a: () => z.bigint(), b: () => z4.bigint() },
+        { label: 'cross-date', a: () => z.date(), b: () => z4.date() },
+        {
+            label: 'cross-set',
+            a: () => z.set(z.number()),
+            b: () => z4.set(z4.number()),
+        },
+        {
+            label: 'cross-tuple',
+            a: () => z.tuple([z.string()]),
+            b: () => z4.tuple([z4.string()]),
+        },
     ],
     distinct: [
         { label: 'v3-string', schema: () => z.string() },
@@ -81,6 +106,34 @@ const fixtures: FingerprintFixtures = {
         },
         { label: 'v4-string-min2', schema: () => z4.string().min(2) },
         { label: 'v4-enum-xy', schema: () => z4.enum(['x', 'y']) },
+        // Less-common Zod types the original battery omitted — each exercises a
+        // distinct type-dispatch branch and must fingerprint to a unique value.
+        { label: 'v3-bigint', schema: () => z.bigint() },
+        { label: 'v3-date', schema: () => z.date() },
+        { label: 'v3-tuple', schema: () => z.tuple([z.string(), z.number()]) },
+        { label: 'v3-record', schema: () => z.record(z.number()) },
+        { label: 'v3-map', schema: () => z.map(z.string(), z.number()) },
+        { label: 'v3-set', schema: () => z.set(z.number()) },
+        {
+            label: 'v3-intersection',
+            schema: () =>
+                z.intersection(
+                    z.object({ a: z.number() }),
+                    z.object({ b: z.string() }),
+                ),
+        },
+        {
+            label: 'v3-readonly',
+            schema: () => z.object({ a: z.number() }).readonly(),
+        },
+        { label: 'v3-branded', schema: () => z.string().brand('UserId') },
+        { label: 'v3-null', schema: () => z.null() },
+        { label: 'v3-undefined', schema: () => z.undefined() },
+        { label: 'v3-any', schema: () => z.any() },
+        { label: 'v3-unknown', schema: () => z.unknown() },
+        { label: 'v3-never', schema: () => z.never() },
+        { label: 'v3-void', schema: () => z.void() },
+        { label: 'v3-nan', schema: () => z.nan() },
     ],
     abstain: [
         {
