@@ -174,6 +174,43 @@ describe('stitchStore', () => {
     test('useStitch is an alias of stitchStore', () => {
         expect(useStitch).toBe(stitchStore);
     });
+
+    test('forwards onSuccess to the underlying query (fires on success after subscribe)', async () => {
+        let received: unknown;
+        const store = stitchStore(
+            unaryStitch(async () => ({ id: 7 })),
+            {},
+            {
+                onSuccess: (d) => {
+                    received = d;
+                },
+            },
+        );
+        const { unsubscribe } = collect(store); // first subscriber starts the run
+        await flush();
+        expect(received).toEqual({ id: 7 });
+        unsubscribe();
+    });
+
+    test('forwards onError to the underlying query', async () => {
+        let received: unknown;
+        const boom = new Error('nope');
+        const store = stitchStore<{ id: number }>(
+            unaryStitch(async () => {
+                throw boom;
+            }),
+            {},
+            {
+                onError: (e) => {
+                    received = e;
+                },
+            },
+        );
+        const { unsubscribe } = collect(store);
+        await flush();
+        expect(received).toBe(boom);
+        unsubscribe();
+    });
 });
 
 // --- stitchStreamStore (streaming) -----------------------------------------
