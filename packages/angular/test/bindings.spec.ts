@@ -163,6 +163,59 @@ describe('injectStitch', () => {
         expect(result.status()).toBe('pending'); // never advanced
         expect(result.data()).toBeUndefined();
     });
+
+    test('enabled:false starts idle and only runs on refetch', async () => {
+        const stitch = unaryStitch(async () => ({ name: 'lazy' }));
+        const result = run(() => injectStitch(stitch, {}, { enabled: false }));
+
+        await tick();
+        expect(result.status()).toBe('idle');
+        expect(result.data()).toBeUndefined();
+
+        result.refetch();
+        await tick();
+        expect(result.isSuccess()).toBe(true);
+        expect(result.data()).toEqual({ name: 'lazy' });
+    });
+
+    test('forwards onSuccess to the underlying query', async () => {
+        let received: unknown;
+        run(() =>
+            injectStitch(
+                unaryStitch(async () => ({ id: 7 })),
+                {},
+                {
+                    onSuccess: (d) => {
+                        received = d;
+                    },
+                },
+            ),
+        );
+
+        await tick();
+        expect(received).toEqual({ id: 7 });
+    });
+
+    test('forwards onError to the underlying query', async () => {
+        let received: unknown;
+        const boom = new Error('nope');
+        run(() =>
+            injectStitch<{ id: number }>(
+                unaryStitch(async () => {
+                    throw boom;
+                }),
+                {},
+                {
+                    onError: (e) => {
+                        received = e;
+                    },
+                },
+            ),
+        );
+
+        await tick();
+        expect(received).toBe(boom);
+    });
 });
 
 // --- injectStitchStream ----------------------------------------------------
