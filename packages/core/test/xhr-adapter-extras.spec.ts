@@ -143,7 +143,9 @@ test('a caller-supplied content-type is preserved (not overridden by the body ty
             bodyType: 'json',
         }),
     );
-    expect(Fake.last?.requestHeaders['content-type']).toBe('application/custom');
+    expect(Fake.last?.requestHeaders['content-type']).toBe(
+        'application/custom',
+    );
 });
 
 test('non-lengthComputable progress reports loaded with no total', async () => {
