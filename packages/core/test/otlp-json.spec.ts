@@ -88,24 +88,31 @@ describe('toOtlpJson', () => {
     });
 
     it('converts millisecond timestamps to nanosecond strings', () => {
-        const span = firstSpan([baseSpan({ startUnixMs: 1000, endUnixMs: 1002.5 })]);
+        const span = firstSpan([
+            baseSpan({ startUnixMs: 1000, endUnixMs: 1002.5 }),
+        ]);
         expect(span.startTimeUnixNano).toBe('1000000000'); // 1000 ms × 1e6
         expect(span.endTimeUnixNano).toBe('1002500000'); // 1002.5 ms × 1e6
     });
 
     it('maps status codes UNSET/OK/ERROR → 0/1/2', () => {
-        expect(firstSpan([baseSpan({ status: { code: 'UNSET' } })]).status).toEqual({
+        expect(
+            firstSpan([baseSpan({ status: { code: 'UNSET' } })]).status,
+        ).toEqual({
             code: 0,
         });
-        expect(firstSpan([baseSpan({ status: { code: 'OK' } })]).status).toEqual({
+        expect(
+            firstSpan([baseSpan({ status: { code: 'OK' } })]).status,
+        ).toEqual({
             code: 1,
         });
     });
 
     it('includes a status message only when present', () => {
         expect(
-            firstSpan([baseSpan({ status: { code: 'ERROR', message: 'boom' } })])
-                .status,
+            firstSpan([
+                baseSpan({ status: { code: 'ERROR', message: 'boom' } }),
+            ]).status,
         ).toEqual({ code: 2, message: 'boom' });
     });
 
@@ -113,7 +120,11 @@ describe('toOtlpJson', () => {
         const span = firstSpan([
             baseSpan({
                 events: [
-                    { name: 'retry', timeUnixMs: 1001, attributes: { attempt: 2 } },
+                    {
+                        name: 'retry',
+                        timeUnixMs: 1001,
+                        attributes: { attempt: 2 },
+                    },
                 ],
             }),
         ]);
