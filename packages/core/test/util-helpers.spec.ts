@@ -95,11 +95,13 @@ describe('isObj', () => {
 
 describe('deepMerge', () => {
     it('recursively merges nested objects', () => {
-        expect(deepMerge({ a: 1, b: { c: 2 } }, { b: { d: 3 }, e: 4 })).toEqual({
-            a: 1,
-            b: { c: 2, d: 3 },
-            e: 4,
-        });
+        expect(deepMerge({ a: 1, b: { c: 2 } }, { b: { d: 3 }, e: 4 })).toEqual(
+            {
+                a: 1,
+                b: { c: 2, d: 3 },
+                e: 4,
+            },
+        );
     });
 
     it('replaces arrays wholesale rather than concatenating', () => {
@@ -107,12 +109,20 @@ describe('deepMerge', () => {
     });
 
     it('returns the other side when one is undefined', () => {
-        expect(deepMerge({ a: 1 }, undefined as unknown as { a: number })).toEqual({ a: 1 });
-        expect(deepMerge(undefined as unknown as { b: number }, { b: 2 })).toEqual({ b: 2 });
+        expect(
+            deepMerge({ a: 1 }, undefined as unknown as { a: number }),
+        ).toEqual({ a: 1 });
+        expect(
+            deepMerge(undefined as unknown as { b: number }, { b: 2 }),
+        ).toEqual({ b: 2 });
     });
 
     it('lets b win when the two sides have mismatched shapes', () => {
-        expect(deepMerge({ a: { x: 1 } }, { a: 5 } as unknown as { a: { x: number } })).toEqual({ a: 5 });
+        expect(
+            deepMerge({ a: { x: 1 } }, { a: 5 } as unknown as {
+                a: { x: number };
+            }),
+        ).toEqual({ a: 5 });
     });
 });
 
