@@ -12,7 +12,9 @@ const cfg = (o: Record<string, unknown>): RedactedStitchConfig => o;
 
 describe('endpointLabel', () => {
     it('defaults the method to GET for a string url', () => {
-        expect(endpointLabel(cfg({ url: 'https://x/y' }))).toBe('GET https://x/y');
+        expect(endpointLabel(cfg({ url: 'https://x/y' }))).toBe(
+            'GET https://x/y',
+        );
     });
 
     it('uppercases a non-GET method', () => {
