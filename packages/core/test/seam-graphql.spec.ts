@@ -34,7 +34,9 @@ describe('seam.graphql() member', () => {
         const q = api.graphql({ query: '{ thing }' });
 
         // kind round-trips as the graphql surface id.
-        const json = JSON.parse(JSON.stringify(q.__config)) as { kind?: unknown };
+        const json = JSON.parse(JSON.stringify(q.__config)) as {
+            kind?: unknown;
+        };
         expect(json.kind).toBe('graphql');
 
         // resolves to the unwrapped `data`.
