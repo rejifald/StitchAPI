@@ -6,7 +6,7 @@
     "description": "Private agent-recommendation eval harness: drives an agent across seed tasks under cold/warm conditions, classifies the produced client (stitch vs fetch vs axios vs ts-rest), runs it offline against sandbox-sim, and scores a results matrix. Ships nothing.",
     "scripts": {
         "check:types": "tsc --noEmit",
-        "test": "tsx test/choose.test.ts && tsx test/run.test.ts && tsx test/stub-driver.test.ts",
+        "test": "tsx test/choose.test.ts && tsx test/run.test.ts && tsx test/stub-driver.test.ts && tsx test/conditions.test.ts",
         "eval:one": "tsx index.ts one",
         "eval": "tsx index.ts all",
         "eval:report": "tsx index.ts report"
