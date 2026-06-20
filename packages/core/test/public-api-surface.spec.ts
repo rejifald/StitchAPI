@@ -55,7 +55,11 @@ describe('public API surface (src/index.ts)', () => {
     });
 
     test('exports the error classes (both extend Error)', () => {
-        const response: AdapterResponse = { status: 429, headers: {}, body: {} };
+        const response: AdapterResponse = {
+            status: 429,
+            headers: {},
+            body: {},
+        };
         const rate = new api.RateLimitError({ status: 429, response });
         expect(rate).toBeInstanceOf(Error);
         expect(rate.status).toBe(429);
