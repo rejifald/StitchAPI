@@ -31,7 +31,9 @@ describe('isStandardSchema', () => {
 
     it('rejects an object without ~standard', () => {
         expect(isStandardSchema({})).toBe(false);
-        expect(isStandardSchema({ validate: () => ({ value: 1 }) })).toBe(false);
+        expect(isStandardSchema({ validate: () => ({ value: 1 }) })).toBe(
+            false,
+        );
     });
 
     it('rejects a plain function without ~standard', () => {
