@@ -37,7 +37,11 @@ describe('redactConfig', () => {
                 baseUrl: 'https://api.test',
                 path: '/x',
                 method: 'GET',
-                store: { get: () => undefined, set: () => undefined, incr: () => 1 },
+                store: {
+                    get: () => undefined,
+                    set: () => undefined,
+                    incr: () => 1,
+                },
                 adapter: () => Promise.resolve({}),
                 clock: systemClock,
                 auth: { scheme: { type: 'http', scheme: 'bearer' } },
