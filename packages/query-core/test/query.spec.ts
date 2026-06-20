@@ -354,3 +354,88 @@ describe('destroy()', () => {
         expect(listener).not.toHaveBeenCalled();
     });
 });
+
+// --- lifecycle callbacks ---------------------------------------------------
+
+describe('onSuccess / onError callbacks', () => {
+    test('unary onSuccess fires once with the resolved value', async () => {
+        const onSuccess = vi.fn();
+        const q = createStitchQuery(
+            unaryStitch(async () => ({ id: 1 })),
+            undefined,
+            { onSuccess },
+        );
+        await tick();
+        expect(onSuccess).toHaveBeenCalledTimes(1);
+        expect(onSuccess).toHaveBeenCalledWith({ id: 1 });
+        q.destroy();
+    });
+
+    test('unary onError fires with the thrown reason', async () => {
+        const onError = vi.fn();
+        const boom = new Error('nope');
+        const q = createStitchQuery(
+            unaryStitch(async () => {
+                throw boom;
+            }),
+            undefined,
+            { onError },
+        );
+        await tick();
+        expect(onError).toHaveBeenCalledTimes(1);
+        expect(onError).toHaveBeenCalledWith(boom);
+        q.destroy();
+    });
+
+    test('streaming onSuccess fires with the terminal result value', async () => {
+        const onSuccess = vi.fn();
+        const events: StitchEvent<string>[] = [
+            { type: 'delta', chunk: 'a', at: 0 },
+            { type: 'result', value: 'final', status: 200, attempts: 1, at: 0 },
+        ];
+        const q = createStitchQuery(streamStitch(events), undefined, {
+            stream: true,
+            onSuccess,
+        });
+        await tick();
+        expect(onSuccess).toHaveBeenCalledWith('final');
+        q.destroy();
+    });
+
+    test('streaming onError fires with an Error carrying the event message', async () => {
+        const onError = vi.fn();
+        const events: StitchEvent<string>[] = [
+            { type: 'delta', chunk: 'a', at: 0 },
+            {
+                type: 'error',
+                name: 'StitchError',
+                message: 'stream failed',
+                attempts: 1,
+                at: 0,
+            },
+        ];
+        const q = createStitchQuery(streamStitch(events), undefined, {
+            stream: true,
+            onError,
+        });
+        await tick();
+        expect(onError).toHaveBeenCalledTimes(1);
+        const reason = onError.mock.calls[0]?.[0];
+        expect(reason).toBeInstanceOf(Error);
+        expect((reason as Error).message).toBe('stream failed');
+        q.destroy();
+    });
+
+    test('a cancelled run does not fire onSuccess (the run-token guard covers callbacks)', async () => {
+        const onSuccess = vi.fn();
+        const q = createStitchQuery(
+            unaryStitch(async () => ({ id: 1 })),
+            undefined,
+            { onSuccess },
+        );
+        q.cancel(); // invalidate before the microtask resolves
+        await tick();
+        expect(onSuccess).not.toHaveBeenCalled();
+        q.destroy();
+    });
+});
