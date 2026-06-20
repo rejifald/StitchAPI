@@ -1,7 +1,7 @@
 // `stitch diagram` — render a Mermaid flowchart of each stitch's SHAPE from its definition
 // (`__config`), not from a run. A glance-able "what does this stitch do": the configured request
 // pipeline — throttle, the request, retry, a non-http surface's interpret step, pagination,
-// validation, transform, unwrap, cache — in engine order. A trace-driven DAG of what actually ran
+// transform, unwrap, validation, cache — in engine order. A trace-driven DAG of what actually ran
 // is a separate, future capability (it needs composition causality the flat event stream does not
 // yet emit). Auth is intentionally absent: it is redacted from `__config` (ADR 0002), so a stitch
 // cannot leak which credential it holds — not even its scheme — through this view.

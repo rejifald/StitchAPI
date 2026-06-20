@@ -45,9 +45,11 @@ export function pipelineStages(
                 ? `paginate (max ${cfg.paginate.max ?? 50})`
                 : 'paginate',
         );
-    if (cfg.output) stages.push('validate');
+    // Post-response order matches the engine (engine.ts): transform → unwrap → validate. The body
+    // is transformed, then the unwrap path is read, then the result is validated against `output`.
     if (cfg.transform) stages.push('transform');
     if (cfg.unwrap) stages.push(`unwrap: ${cfg.unwrap}`);
+    if (cfg.output) stages.push('validate');
     if (cfg.cache) stages.push('cache');
     stages.push('result');
     return stages;

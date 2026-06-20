@@ -184,6 +184,12 @@ test('tools/call describe_stitch teaches a stitch shape without running it', asy
         body: false,
     });
     expect(shape.output).toMatchObject({ validated: true, unwrap: 'data' });
+    // the pipeline lists stages in engine order: the engine unwraps THEN validates, so the
+    // 'unwrap' stage must precede 'validate' (not the reverse).
+    expect(shape.pipeline.indexOf('unwrap: data')).toBeGreaterThanOrEqual(0);
+    expect(shape.pipeline.indexOf('unwrap: data')).toBeLessThan(
+        shape.pipeline.indexOf('validate'),
+    );
     // a Mermaid flowchart string is included for the diagram view
     expect(shape.diagram).toContain('flowchart');
     // policies reflect the configured retry/timeout (no throttle/cache)
