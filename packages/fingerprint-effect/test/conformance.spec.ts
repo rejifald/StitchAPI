@@ -77,6 +77,17 @@ const fixtures: FingerprintFixtures = {
             schema: std(() => S.Record({ key: S.String, value: S.Number })),
         },
         { label: 'empty-struct', schema: std(() => S.Struct({})) },
+        // Keyword AST tags the original battery omitted — each exercises a
+        // distinct case and must hash to a unique value. (bigint/symbol use the
+        // *FromSelf keywords; the plain S.BigInt/S.Symbol are transforms → abstain.)
+        { label: 'bigint', schema: std(() => S.BigIntFromSelf) },
+        { label: 'symbol', schema: std(() => S.SymbolFromSelf) },
+        { label: 'undefined', schema: std(() => S.Undefined) },
+        { label: 'void', schema: std(() => S.Void) },
+        { label: 'unknown', schema: std(() => S.Unknown) },
+        { label: 'any', schema: std(() => S.Any) },
+        { label: 'object', schema: std(() => S.Object) },
+        { label: 'never', schema: std(() => S.Never) },
     ],
     abstain: [
         {

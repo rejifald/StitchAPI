@@ -202,6 +202,54 @@ describe('createStitch', () => {
         expect(store.state.status).toBe('pending');
         expect(store.state.data).toBeUndefined();
     });
+
+    test('a reactive options accessor recreates the handle (enabled flips false → true)', async () => {
+        let calls = 0;
+        const stitch = unaryStitch(async () => {
+            calls += 1;
+            return 'v';
+        });
+
+        let store!: StitchStore<string>;
+        let setEnabled!: (v: boolean) => void;
+        const dispose = createRoot((d) => {
+            const [enabled, set] = createSignal(false);
+            setEnabled = set;
+            store = createStitch(stitch, undefined, () => ({
+                enabled: enabled(),
+            }));
+            return d;
+        });
+
+        // enabled:false → idle, the stitch never ran.
+        expect(store.state.status).toBe('idle');
+        expect(calls).toBe(0);
+
+        // Flipping the reactive OPTION recreates the handle with enabled:true.
+        setEnabled(true);
+        expect(store.state.status).toBe('pending');
+        await tick();
+        expect(store.state.status).toBe('success');
+        expect(store.state.data).toBe('v');
+        expect(calls).toBe(1);
+        dispose();
+    });
+
+    test('forwards onSuccess to the underlying query', async () => {
+        let received: unknown;
+        const stitch = unaryStitch(async () => ({ id: 7 }));
+        const { dispose } = root(() =>
+            createStitch(stitch, undefined, {
+                onSuccess: (d) => {
+                    received = d;
+                },
+            }),
+        );
+
+        await tick();
+        expect(received).toEqual({ id: 7 });
+        dispose();
+    });
 });
 
 // --- createStitchStream ----------------------------------------------------
