@@ -36,9 +36,9 @@ describe('adapterContractFixture', () => {
     });
 
     test('a query string is stripped before routing', () => {
-        expect(adapterContractFixture(reqOf({ path: '/status/404?x=1' })).status).toBe(
-            404,
-        );
+        expect(
+            adapterContractFixture(reqOf({ path: '/status/404?x=1' })).status,
+        ).toBe(404);
     });
 
     test('/echo reflects the upper-cased method, body, and parsed JSON', () => {
@@ -56,15 +56,23 @@ describe('adapterContractFixture', () => {
 
     test('/echo json is null for an absent or unparseable body', () => {
         expect(
-            (bodyJson(adapterContractFixture(reqOf({ path: '/echo' })).body) as {
-                json: unknown;
-            }).json,
+            (
+                bodyJson(
+                    adapterContractFixture(reqOf({ path: '/echo' })).body,
+                ) as {
+                    json: unknown;
+                }
+            ).json,
         ).toBeNull();
         expect(
             (
                 bodyJson(
                     adapterContractFixture(
-                        reqOf({ method: 'POST', path: '/echo', body: 'notjson' }),
+                        reqOf({
+                            method: 'POST',
+                            path: '/echo',
+                            body: 'notjson',
+                        }),
                     ).body,
                 ) as { json: unknown }
             ).json,
