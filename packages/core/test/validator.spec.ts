@@ -70,9 +70,7 @@ describe('toValidator: Standard Schema (~standard)', () => {
                 v === 'ok'
                     ? { value: 'V' }
                     : {
-                          issues: [
-                              { message: 'm', path: ['x', { key: 'y' }] },
-                          ],
+                          issues: [{ message: 'm', path: ['x', { key: 'y' }] }],
                       },
         },
     };
