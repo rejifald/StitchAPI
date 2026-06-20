@@ -46,10 +46,10 @@ describe('GraphQL kind', () => {
 
         const call = server.calls('/graphql')[0];
         expect(call?.headers['apikey']).toBe('gql_tok');
-        expect((call?.body as { variables: unknown })?.variables).toEqual({
+        expect((call?.body as { variables: unknown }).variables).toEqual({
             id: 1,
         });
-        expect((call?.body as { query: string })?.query).toMatch(/thing/);
+        expect((call?.body as { query: string }).query).toMatch(/thing/);
     });
 
     test('.with({ variables }) carries GraphQL variables into the request', async () => {
