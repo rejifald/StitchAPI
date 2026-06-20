@@ -20,13 +20,19 @@ const enc = (s: string): ArrayBuffer => new TextEncoder().encode(s).buffer;
 
 describe('encodeRequestBody', () => {
     test('GET/HEAD never send a body', () => {
-        expect(encodeRequestBody(req({ method: 'GET', body: { a: 1 } })).body).toBeUndefined();
-        expect(encodeRequestBody(req({ method: 'HEAD', body: { a: 1 } })).body).toBeUndefined();
+        expect(
+            encodeRequestBody(req({ method: 'GET', body: { a: 1 } })).body,
+        ).toBeUndefined();
+        expect(
+            encodeRequestBody(req({ method: 'HEAD', body: { a: 1 } })).body,
+        ).toBeUndefined();
     });
 
     test('a null/undefined body produces none', () => {
         expect(encodeRequestBody(req({ body: null })).body).toBeUndefined();
-        expect(encodeRequestBody(req({ body: undefined })).body).toBeUndefined();
+        expect(
+            encodeRequestBody(req({ body: undefined })).body,
+        ).toBeUndefined();
     });
 
     test('a string body passes through verbatim with no content-type', () => {
@@ -64,9 +70,9 @@ describe('encodeRequestBody', () => {
 describe('decodeResponseBody', () => {
     test('arrayBuffer passes the bytes through unchanged', () => {
         const bytes = enc('anything');
-        expect(decodeResponseBody('arrayBuffer', 'application/json', bytes)).toBe(
-            bytes,
-        );
+        expect(
+            decodeResponseBody('arrayBuffer', 'application/json', bytes),
+        ).toBe(bytes);
     });
 
     test('blob carries the content-type', () => {
@@ -86,19 +92,29 @@ describe('decodeResponseBody', () => {
             decodeResponseBody(undefined, 'application/json', enc('{"a":1}')),
         ).toEqual({ a: 1 });
         expect(
-            decodeResponseBody(undefined, 'application/ld+json', enc('{"a":1}')),
+            decodeResponseBody(
+                undefined,
+                'application/ld+json',
+                enc('{"a":1}'),
+            ),
         ).toEqual({ a: 1 });
     });
 
     test("responseType 'json' forces a parse for a non-JSON content-type", () => {
-        expect(decodeResponseBody('json', 'text/plain', enc('{"a":1}'))).toEqual({
+        expect(
+            decodeResponseBody('json', 'text/plain', enc('{"a":1}')),
+        ).toEqual({
             a: 1,
         });
     });
 
     test('an empty JSON body decodes to undefined', () => {
         expect(
-            decodeResponseBody(undefined, 'application/json', new ArrayBuffer(0)),
+            decodeResponseBody(
+                undefined,
+                'application/json',
+                new ArrayBuffer(0),
+            ),
         ).toBeUndefined();
     });
 
