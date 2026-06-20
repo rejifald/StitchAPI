@@ -4,6 +4,9 @@
 // (timeout) wraps the subprocess. The node binary itself is the controlled subprocess.
 import { shell } from '../src/index';
 
+import { realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+
 const NODE = process.execPath; // an absolute path — no PATH needed to resolve it
 
 test('runs a static command; stdout is the result (text mode)', async () => {
@@ -96,4 +99,28 @@ test('a spawn failure (missing binary) rejects as a transport error — NOT a 50
     // resilience chain then sees a real transport failure (retryable/abortable), not a result.
     const missing = shell({ command: '/no/such/binary-xyz-stitchapi' });
     await expect(missing({ body: [] })).rejects.toThrow(/ENOENT/);
+});
+
+test('cwd sets the subprocess working directory', async () => {
+    const dir = realpathSync(tmpdir());
+    const pwd = shell({ command: NODE, cwd: dir });
+    const out = await pwd({
+        body: ['-e', 'process.stdout.write(process.cwd())'],
+    });
+    // realpath both sides so a symlinked temp dir (/var → /private/var) compares equal.
+    expect(realpathSync(out)).toBe(dir);
+});
+
+test('decode: "json" falls back to the raw text when stdout is not valid JSON', async () => {
+    const j = shell<unknown>({ command: NODE, decode: 'json' });
+    await expect(
+        j({ body: ['-e', 'process.stdout.write("not json")'] }),
+    ).resolves.toBe('not json');
+});
+
+test('exceeding maxBuffer rejects as a transport error (not a 500 response)', async () => {
+    const tiny = shell({ command: NODE, maxBuffer: 4 });
+    await expect(
+        tiny({ body: ['-e', 'process.stdout.write("x".repeat(100))'] }),
+    ).rejects.toThrow(/maxBuffer/i);
 });

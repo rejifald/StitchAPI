@@ -143,6 +143,30 @@ const fixtures: FingerprintFixtures = {
             label: 'union-string-number',
             schema: () => std(Type.Union([Type.String(), Type.Number()])),
         },
+        // Representable JSON-Schema shapes the original battery omitted — each
+        // exercises a distinct walker path and must hash to a unique value.
+        { label: 'null', schema: () => std(Type.Null()) },
+        { label: 'date', schema: () => std(Type.Date()) },
+        { label: 'bigint', schema: () => std(Type.BigInt()) },
+        { label: 'uint8array', schema: () => std(Type.Uint8Array()) },
+        {
+            label: 'tuple',
+            schema: () => std(Type.Tuple([Type.String(), Type.Number()])),
+        },
+        {
+            label: 'record',
+            schema: () => std(Type.Record(Type.String(), Type.Number())),
+        },
+        {
+            label: 'intersect',
+            schema: () =>
+                std(
+                    Type.Intersect([
+                        Type.Object({ a: Type.Number() }),
+                        Type.Object({ b: Type.String() }),
+                    ]),
+                ),
+        },
     ],
     abstain: [
         // A transform attaches an opaque Decode/Encode codec, invisible to the
