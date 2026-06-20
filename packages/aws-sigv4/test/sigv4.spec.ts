@@ -76,6 +76,54 @@ describe('signRequestV4 (AWS official vectors)', () => {
         });
         expect(a.signature).toBe(b.signature);
     });
+
+    test('canonicalises header names (lower-case) and values (trim + collapse whitespace)', async () => {
+        const base = {
+            method: 'GET',
+            url: 'https://example.amazonaws.com/',
+            payloadHash: EMPTY_PAYLOAD_SHA256,
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+            region: 'us-east-1',
+            service: 'service',
+            dateTime: '20150830T123600Z',
+        } as const;
+        // A mixed-case name and a value with leading/trailing/inner whitespace must
+        // canonicalise to the already-clean form → an identical signature.
+        const messy = await signRequestV4({
+            ...base,
+            headers: {
+                host: 'example.amazonaws.com',
+                'X-My-Header': '  a    b  ',
+            },
+        });
+        const clean = await signRequestV4({
+            ...base,
+            headers: { host: 'example.amazonaws.com', 'x-my-header': 'a b' },
+        });
+        expect(messy.signedHeaders).toBe('host;x-my-header');
+        expect(messy.signature).toBe(clean.signature);
+    });
+
+    test('derives the host header from the URL when it is absent', async () => {
+        const base = {
+            method: 'GET',
+            url: 'https://example.amazonaws.com/',
+            payloadHash: EMPTY_PAYLOAD_SHA256,
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+            region: 'us-east-1',
+            service: 'service',
+            dateTime: '20150830T123600Z',
+        } as const;
+        const explicit = await signRequestV4({
+            ...base,
+            headers: { host: 'example.amazonaws.com' },
+        });
+        const derived = await signRequestV4({ ...base, headers: {} });
+        expect(derived.signedHeaders).toBe('host');
+        expect(derived.signature).toBe(explicit.signature);
+    });
 });
 
 // --- awsSigV4 strategy ------------------------------------------------------
@@ -139,6 +187,52 @@ describe('awsSigV4 strategy', () => {
         expect(req.headers['x-amz-security-token']).toBe('tmp-token');
         expect(req.headers['authorization']).toContain(
             'SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token',
+        );
+    });
+
+    test('signBody:false forces UNSIGNED-PAYLOAD even for a string body', async () => {
+        const strategy = awsSigV4({
+            region: 'us-east-1',
+            service: 's3',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+            signBody: false,
+        });
+        const req = fakeReq({ method: 'PUT', body: 'hello' });
+        await strategy.apply(req, fakeCtx as never);
+        expect(req.headers['x-amz-content-sha256']).toBe('UNSIGNED-PAYLOAD');
+    });
+
+    test('signBody:true hashes an object body as JSON, matching the equivalent string body', async () => {
+        const obj = awsSigV4({
+            region: 'us-east-1',
+            service: 'dynamodb',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+            signBody: true,
+        });
+        const reqObj = fakeReq({ method: 'POST', body: { TableName: 'x' } });
+        await obj.apply(reqObj, fakeCtx as never);
+
+        // The default (no signBody) hashes a string body verbatim; for the same JSON
+        // text, signBody:true on the object must produce the identical content hash.
+        const str = awsSigV4({
+            region: 'us-east-1',
+            service: 'dynamodb',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+        });
+        const reqStr = fakeReq({
+            method: 'POST',
+            body: JSON.stringify({ TableName: 'x' }),
+        });
+        await str.apply(reqStr, fakeCtx as never);
+
+        expect(reqObj.headers['x-amz-content-sha256']).toMatch(
+            /^[0-9a-f]{64}$/,
+        );
+        expect(reqObj.headers['x-amz-content-sha256']).toBe(
+            reqStr.headers['x-amz-content-sha256'],
         );
     });
 });
