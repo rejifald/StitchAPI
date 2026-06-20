@@ -72,6 +72,58 @@ describe('sseResponse', () => {
         expect(body).toContain('event: error');
         expect(body).toContain('"message":"boom"');
     });
+
+    test('the event option labels each frame', async () => {
+        const res = sseResponse(events(delta('a'), done), { event: 'token' });
+        expect(await res.text()).toBe('event: token\ndata: a\n\n');
+    });
+
+    test('the id option emits an id: line per frame with the zero-based index', async () => {
+        const res = sseResponse(events(delta('a'), delta('b'), done), {
+            id: (chunk, i) => `${String(chunk)}-${i}`,
+        });
+        expect(await res.text()).toBe(
+            'id: a-0\ndata: a\n\nid: b-1\ndata: b\n\n',
+        );
+    });
+
+    test('a multi-line chunk gets one data: prefix per line (SSE spec)', async () => {
+        const res = sseResponse(events(delta('l1\nl2'), done));
+        expect(await res.text()).toBe('data: l1\ndata: l2\n\n');
+    });
+
+    test('extra headers merge over the SSE defaults, with overrides winning', async () => {
+        const res = sseResponse(events(delta('a'), done), {
+            headers: { 'x-custom': '1', 'cache-control': 'no-store' },
+        });
+        expect(res.headers.get('x-custom')).toBe('1');
+        // A default that is not overridden survives…
+        expect(res.headers.get('content-type')).toBe(
+            'text/event-stream; charset=utf-8',
+        );
+        // …and an explicit override wins (spread after the defaults).
+        expect(res.headers.get('cache-control')).toBe('no-store');
+        await res.text();
+    });
+
+    test('a pre-aborted signal yields no frames', async () => {
+        const res = sseResponse(events(delta('a'), delta('b'), done), {
+            signal: AbortSignal.abort(),
+        });
+        expect(await res.text()).toBe('');
+    });
+
+    test('a throw mid-stream ends with an error frame carrying the message', async () => {
+        async function* boom(): AsyncGenerator<StitchEvent, void> {
+            yield delta('a');
+            throw new Error('stream blew up');
+        }
+        const res = sseResponse(boom());
+        const body = await res.text();
+        expect(body).toContain('data: a\n\n');
+        expect(body).toContain('event: error');
+        expect(body).toContain('"message":"stream blew up"');
+    });
 });
 
 // --- stitchErrorResponse ---------------------------------------------------

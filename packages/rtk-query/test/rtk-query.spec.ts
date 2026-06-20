@@ -86,6 +86,42 @@ describe('stitchQueryFn', () => {
         // The error is a plain serialisable object (safe for Redux state).
         expect(result.error && typeof result.error).toBe('object');
     });
+
+    test('keeps primitive own fields but DROPS non-primitive ones (Redux-serialisable)', async () => {
+        class RichError extends Error {
+            override name = 'StitchError';
+            status = 502; // primitive → carried
+            response = { headers: { secret: 'x' } }; // object → dropped
+        }
+        const qfn = stitchQueryFn(
+            unaryStitch(async () => {
+                throw new RichError('bad gateway');
+            }),
+        );
+        const result = await qfn({});
+
+        expect(result.error).toEqual({
+            name: 'StitchError',
+            message: 'bad gateway',
+            status: 502,
+        });
+        // A non-serialisable object field must never reach Redux state.
+        expect(result.error && 'response' in result.error).toBe(false);
+    });
+
+    test('serialises a non-Error throw via String(reason)', async () => {
+        const qfn = stitchQueryFn(
+            unaryStitch(async () => {
+                // eslint-disable-next-line @typescript-eslint/only-throw-error
+                throw 'plain string failure';
+            }),
+        );
+        const result = await qfn({});
+        expect(result.error).toEqual({
+            name: 'Error',
+            message: 'plain string failure',
+        });
+    });
 });
 
 // --- stitchStreamUpdater ---------------------------------------------------
@@ -111,6 +147,30 @@ describe('stitchStreamUpdater', () => {
             mode: 'replace',
         })(undefined, api);
         expect(data).toEqual([3]);
+    });
+
+    test('stops when the cache entry is removed, even if the stream never ends', async () => {
+        const data: number[] = [];
+        const api: CacheLifecycleApi<number[]> = {
+            updateCachedData: (recipe) => recipe(data),
+            cacheDataLoaded: Promise.resolve({ data }),
+            // The entry is evicted (component unmounted) — this must win the race.
+            cacheEntryRemoved: Promise.resolve(),
+        };
+        // A stitch whose stream never completes on its own.
+        const neverEnding: StreamableStitchLike<number> = () => ({
+            then: (onf) => Promise.resolve(undefined as never).then(onf),
+            stream() {
+                return (async function* () {
+                    await new Promise<void>(() => {});
+                })();
+            },
+        });
+
+        // Must resolve via cacheEntryRemoved rather than hang on the live stream.
+        await expect(
+            stitchStreamUpdater<number>(neverEnding)(undefined, api),
+        ).resolves.toBeUndefined();
     });
 });
 

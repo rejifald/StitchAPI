@@ -64,6 +64,18 @@ const fixtures: FingerprintFixtures = {
         { label: 'enum-abc', schema: () => type('"a"|"b"|"c"') }, // enum variant added
         { label: 'tuple-sn', schema: () => type(['string', 'number']) },
         { label: 'tuple-ns', schema: () => type(['number', 'string']) }, // order-significant
+        // Domains / keywords / composites the original battery omitted — each
+        // exercises a distinct walker path and must hash to a unique value.
+        { label: 'bigint', schema: () => type('bigint') },
+        { label: 'symbol', schema: () => type('symbol') },
+        { label: 'date', schema: () => type('Date') },
+        { label: 'string-email', schema: () => type('string.email') },
+        { label: 'string-uuid', schema: () => type('string.uuid') },
+        { label: 'record', schema: () => type({ '[string]': 'number' }) },
+        {
+            label: 'intersection',
+            schema: () => type({ a: 'number' }).and({ b: 'string' }),
+        },
     ],
     abstain: [
         // Morph (.pipe): JSON carries a non-deterministic opaque `$ark.fn` ref.
