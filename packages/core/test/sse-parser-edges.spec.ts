@@ -10,7 +10,8 @@ import { streamOf } from './support/streams';
 async function parse(chunks: string[]): Promise<SseEvent[]> {
     const res = { status: 200, headers: {}, body: streamOf(chunks) };
     const out: SseEvent[] = [];
-    for await (const ev of sseSurface.stream!(res, {})) out.push(ev as SseEvent);
+    for await (const ev of sseSurface.stream!(res, {}))
+        out.push(ev as SseEvent);
     return out;
 }
 
