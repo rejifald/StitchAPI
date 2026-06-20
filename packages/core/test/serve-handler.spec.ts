@@ -5,11 +5,11 @@
 //   - SSE is triggered by `?stream=1`, not only the Accept header;
 //   - runJson clamps a sub-400 / missing error status to 502, and returns null when no result event;
 //   - a populated registry lists its names sorted.
+import type { StitchRegistry } from '../src/registry';
 import { createServeHandler } from '../src/serve';
 import { failStitch, stubStitch } from '../src/test-stub';
-import type { StitchRegistry } from '../src/registry';
-import type { IncomingMessage, ServerResponse } from 'node:http';
 
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
 class FakeRes {
@@ -120,7 +120,14 @@ describe('createServeHandler SSE + JSON outcomes', () => {
         const registry: StitchRegistry = {
             quiet: stubStitch('ignored', {
                 events: () => [
-                    { type: 'start', name: 'quiet', method: 'GET', url: '', input: {}, at: 1 },
+                    {
+                        type: 'start',
+                        name: 'quiet',
+                        method: 'GET',
+                        url: '',
+                        input: {},
+                        at: 1,
+                    },
                     { type: 'done', ok: true, ms: 0, attempts: 1, at: 1 },
                 ],
             }),
