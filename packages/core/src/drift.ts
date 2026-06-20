@@ -73,7 +73,8 @@ function serializeShape(shape: Shape): Record<string, string> {
  * older baselines still compare correctly.
  */
 function snapshotShape(snapshot: unknown): Shape {
-    if (isShapeSnapshot(snapshot)) return new Map(Object.entries(snapshot.shape));
+    if (isShapeSnapshot(snapshot))
+        return new Map(Object.entries(snapshot.shape));
     return shapeOf(snapshot, '', new Map());
 }
 

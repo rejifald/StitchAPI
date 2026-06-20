@@ -390,7 +390,10 @@ describe('stitch drift generate (CLI)', () => {
         const { code } = await runGenerate({ a, b }, ['--name', 'b']);
 
         expect(code).toBe(0);
-        expect(loadSnapshot(fileB)).toEqual({ version: 1, shape: { id: 'number' } });
+        expect(loadSnapshot(fileB)).toEqual({
+            version: 1,
+            shape: { id: 'number' },
+        });
         expect(loadSnapshot(fileA)).toBeUndefined(); // a was left untouched
         expect(server.callCount('/a')).toBe(0);
         expect(server.callCount('/b')).toBe(1);
