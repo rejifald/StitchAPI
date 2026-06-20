@@ -59,7 +59,14 @@ describe('collectStitchEvents', () => {
     test('captures an error event (message + status), with status undefined when omitted', async () => {
         const withStatus = await collectStitchEvents(
             gen(
-                { type: 'error', name: 'StitchError', message: 'boom', status: 503, attempts: 1, at: 1 },
+                {
+                    type: 'error',
+                    name: 'StitchError',
+                    message: 'boom',
+                    status: 503,
+                    attempts: 1,
+                    at: 1,
+                },
                 { type: 'done', ok: false, ms: 0, attempts: 1, at: 1 },
             ),
         );
@@ -68,7 +75,13 @@ describe('collectStitchEvents', () => {
         expect(withStatus.result).toBeUndefined();
 
         const noStatus = await collectStitchEvents(
-            gen({ type: 'error', name: 'StitchError', message: 'nope', attempts: 1, at: 1 }),
+            gen({
+                type: 'error',
+                name: 'StitchError',
+                message: 'nope',
+                attempts: 1,
+                at: 1,
+            }),
         );
         expect(noStatus.error).toEqual({ message: 'nope', status: undefined });
     });
