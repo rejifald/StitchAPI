@@ -152,7 +152,7 @@ counts, drift path/level, timing — never the body, result value, or a `delta`
 chunk) and maps each event to a level: `result` → `info`, `error` → `error`,
 `drift` → the finding's level, `start`/`progress`/`info`/`done` → `debug`, and
 `delta` is never logged. Override per type with `levels`. The logger-agnostic core
-twin of `@stitchapi/nest`'s `loggerSink`.
+twin of `@stitchapi/nest`'s `nestLoggerSink`.
 
 ```ts twoslash
 import { loggerSink } from 'stitchapi';

@@ -4,6 +4,7 @@
 import {
     type ConfigServiceLike,
     type LoggerLike,
+    type NestLoggerLike,
     STITCH_SEAM,
     STITCH_STORE,
     STITCH_TRACE,
@@ -13,6 +14,7 @@ import {
     defineStitch,
     fromConfig,
     loggerSink,
+    nestLoggerSink,
 } from '../src';
 
 import { Scope } from '@nestjs/common';
@@ -290,7 +292,7 @@ describe('bridges', () => {
         expect(calls).toEqual(['get', 'set', 'incr']); // close is never delegated
     });
 
-    // A LoggerLike that records messages per level.
+    // A NestLoggerLike that records messages per level.
     const recordingLogger = () => {
         const rec = {
             log: [] as string[],
@@ -299,7 +301,7 @@ describe('bridges', () => {
             debug: [] as string[],
             verbose: [] as string[],
         };
-        const logger: LoggerLike = {
+        const logger: NestLoggerLike = {
             log: (m) => rec.log.push(m),
             warn: (m) => rec.warn.push(m),
             error: (m) => rec.error.push(m),
@@ -309,9 +311,22 @@ describe('bridges', () => {
         return { rec, logger };
     };
 
-    it('loggerSink maps each event to the right level, payload-free, query redacted', () => {
+    it('keeps loggerSink / LoggerLike as deprecated aliases of the nest* names (ADR 0012)', () => {
+        // Runtime: the deprecated function export is the very same function object.
+        expect(loggerSink).toBe(nestLoggerSink);
+        // Type-level: the deprecated type alias stays interchangeable with the canonical one.
+        const viaDeprecated: LoggerLike = {
+            log() {},
+            warn() {},
+            error() {},
+        };
+        const viaCanonical: NestLoggerLike = viaDeprecated;
+        expect(typeof viaCanonical.log).toBe('function');
+    });
+
+    it('nestLoggerSink maps each event to the right level, payload-free, query redacted', () => {
         const { rec, logger } = recordingLogger();
-        const sink = loggerSink(logger);
+        const sink = nestLoggerSink(logger);
         const ctx = { name: 'x' };
 
         sink.handle(
@@ -427,9 +442,9 @@ describe('bridges', () => {
         expect(all).not.toContain('nope');
     });
 
-    it('loggerSink lifecycle:false drops start/result/done but keeps retry/drift/error', () => {
+    it('nestLoggerSink lifecycle:false drops start/result/done but keeps retry/drift/error', () => {
         const { rec, logger } = recordingLogger();
-        const sink = loggerSink(logger, { lifecycle: false });
+        const sink = nestLoggerSink(logger, { lifecycle: false });
         const ctx = { name: 'x' };
         sink.handle(
             {
@@ -461,14 +476,14 @@ describe('bridges', () => {
         expect(rec.error.some((l) => l.includes('boom'))).toBe(true); // error kept
     });
 
-    it('loggerSink tolerates a logger without debug/verbose (guarded)', () => {
+    it('nestLoggerSink tolerates a logger without debug/verbose (guarded)', () => {
         const warn: string[] = [];
-        const partial: LoggerLike = {
+        const partial: NestLoggerLike = {
             log: () => {},
             warn: (m) => warn.push(m),
             error: () => {},
         };
-        const sink = loggerSink(partial);
+        const sink = nestLoggerSink(partial);
         expect(() =>
             sink.handle(
                 {
@@ -523,9 +538,9 @@ describe('bridges', () => {
         );
     });
 
-    it('loggerSink drops an info (strategy announcement) event', () => {
+    it('nestLoggerSink drops an info (strategy announcement) event', () => {
         const { rec, logger } = recordingLogger();
-        const sink = loggerSink(logger);
+        const sink = nestLoggerSink(logger);
         // The delegated core sink would log an `info` event at debug, but Nest's level
         // resolver returns null for it — preserving the prior switch, which dropped it.
         sink.handle(

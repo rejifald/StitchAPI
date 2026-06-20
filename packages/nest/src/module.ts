@@ -2,7 +2,7 @@
 // configure shared infrastructure (store + trace) and a default seam; forFeature
 // registers injectable stitches and, optionally, a per-upstream feature seam built over
 // that shared infrastructure. `SeamRegistry` owns the shutdown lifecycle.
-import { borrowStore, loggerSink } from './bridges';
+import { borrowStore, nestLoggerSink } from './bridges';
 import type { AnyStitchDef, StitchHost } from './define-stitch';
 import { STITCH_SEAM, STITCH_STORE, STITCH_TRACE } from './tokens';
 
@@ -85,7 +85,7 @@ function resolveInfra(options: StitchModuleOptions): Infra {
         store: store ? borrowStore(store) : memoryStore(),
         trace:
             trace === 'logger'
-                ? loggerSink(new Logger('Stitch'))
+                ? nestLoggerSink(new Logger('Stitch'))
                 : (trace ?? false),
         defaults: defaults as Omit<SeamOptions, 'store' | 'trace'>,
     };
