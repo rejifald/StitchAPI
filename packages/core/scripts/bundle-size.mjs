@@ -39,16 +39,22 @@ const KB = 1024;
 // sweeps expired keys, and the throttle reclaims idle per-key/host state. The growth
 // (~0.3 KB gzip) buys leak-freedom under long uptime and prompt cancellation; the
 // headroom (~0.4 / ~0.3 KB) is deliberately kept tight so the gate stays meaningful.
+//
+// Budgets raised for 1.0.0-rc.2 (22.0→22.25 / 17.75→18.0 KB): the shape-only,
+// BigInt-safe drift snapshot baselines and the secret-query-key registry (now exported
+// for custom trace sinks) both sit on the core path; they push the entry to ~22.04 /
+// ~17.78 KB gzip. The +0.25 KB step restores the same tight headroom (~0.2 KB) the
+// gate is meant to keep.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 22.0 * KB,
+        budget: 22.25 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 17.75 * KB,
+        budget: 18.0 * KB,
     },
 ];
 
