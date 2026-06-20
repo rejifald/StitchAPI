@@ -136,6 +136,78 @@ describe('useStitch', () => {
         });
         await waitFor(() => expect(screen.getByText('id-2')).toBeDefined());
     });
+
+    test('enabled:false stays idle and never invokes the stitch', async () => {
+        let calls = 0;
+        const stitch = unaryStitch(async () => {
+            calls += 1;
+            return { name: 'Ada' };
+        });
+
+        function Comp(): React.ReactElement {
+            const { status, isPending } = useStitch(
+                stitch,
+                { params: { id: '1' } },
+                { enabled: false },
+            );
+            return (
+                <span data-testid="status">
+                    {status}
+                    {isPending ? '!' : ''}
+                </span>
+            );
+        }
+        render(<Comp />);
+
+        // The gate holds the store at idle — no pending, no run.
+        expect(screen.getByTestId('status').textContent).toBe('idle');
+        // Flush microtasks: an eager run would have called the stitch by now.
+        await Promise.resolve();
+        expect(calls).toBe(0);
+    });
+
+    test('a fresh stitch identity each render does not re-fetch (no loop)', async () => {
+        let calls = 0;
+        const settle = async (): Promise<{ name: string }> => {
+            calls += 1;
+            return { name: `call-${calls}` };
+        };
+
+        function Comp(): React.ReactElement {
+            const [, force] = React.useState(0);
+            // `unaryStitch(settle)` mints a new function identity on every
+            // render. With the structural input unchanged, that identity churn
+            // must NOT key a fresh run — otherwise each run's notify would
+            // re-render and re-create, looping forever.
+            const { data } = useStitch(unaryStitch(settle), {
+                params: { id: '1' },
+            });
+            return (
+                <div>
+                    <span data-testid="name">{data?.name ?? '...'}</span>
+                    <button onClick={() => force((n) => n + 1)}>
+                        rerender
+                    </button>
+                </div>
+            );
+        }
+        render(<Comp />);
+        await waitFor(() =>
+            expect(screen.getByTestId('name').textContent).toBe('call-1'),
+        );
+
+        act(() => {
+            screen.getByText('rerender').click();
+        });
+        act(() => {
+            screen.getByText('rerender').click();
+        });
+
+        // Two extra renders (new stitch identity each), same structural key →
+        // still exactly one run.
+        expect(calls).toBe(1);
+        expect(screen.getByTestId('name').textContent).toBe('call-1');
+    });
 });
 
 // --- useStitchStream -------------------------------------------------------
