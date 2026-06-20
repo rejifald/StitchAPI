@@ -19,9 +19,9 @@ describe('projectStitchesSection', () => {
         const out = projectStitchesSection([
             { name: 'getUser', summary: 'GET /users/{id}' },
         ]);
-        expect(out.startsWith('\n## Stitches already declared in this project')).toBe(
-            true,
-        );
+        expect(
+            out.startsWith('\n## Stitches already declared in this project'),
+        ).toBe(true);
         expect(out).toContain('Reuse these before declaring a new one');
     });
 
