@@ -6,6 +6,9 @@
     "exports": {
         ".": "./index.mjs"
     },
+    "scripts": {
+        "test": "node --test test/codegen.test.mjs"
+    },
     "peerDependencies": {
         "typescript": ">=5.0.0"
     },
