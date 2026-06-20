@@ -98,7 +98,7 @@ function chainHooks(layers: Hooks[]): Hooks | undefined {
 
 function normalizeOutput(out: StitchConfig['output']): StitchConfig['output'] {
     if (!out) return undefined;
-    if ((out as DriftSpec).__kind === 'drift') return out;
+    if ((out as Partial<DriftSpec>).__kind === 'drift') return out;
     return toValidator(out);
 }
 

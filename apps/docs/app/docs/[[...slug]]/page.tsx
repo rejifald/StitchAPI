@@ -1,5 +1,5 @@
 import { getMDXComponents } from '@/components/mdx';
-import { gitConfig } from '@/lib/shared';
+import { appName, gitConfig } from '@/lib/shared';
 import { getPageImage, getPageMarkdownUrl, source } from '@/lib/source';
 
 import {
@@ -58,11 +58,30 @@ export async function generateMetadata(
     const page = source.getPage(params.slug);
     if (!page) notFound();
 
+    const isIndex = !params.slug?.length;
+    const image = getPageImage(page).url;
+
     return {
-        title: page.data.title,
+        // The /docs index title is just "StitchAPI"; the root `%s — StitchAPI`
+        // template would render "StitchAPI — StitchAPI", so name it explicitly.
+        title: isIndex
+            ? { absolute: `${appName} Documentation` }
+            : page.data.title,
         description: page.data.description,
+        alternates: { canonical: page.url },
         openGraph: {
-            images: getPageImage(page).url,
+            type: 'article',
+            url: page.url,
+            siteName: appName,
+            title: page.data.title,
+            description: page.data.description,
+            images: image,
+        },
+        twitter: {
+            card: 'summary_large_image',
+            title: page.data.title,
+            description: page.data.description,
+            images: image,
         },
     };
 }

@@ -36,13 +36,34 @@ describe('toMermaid', () => {
 
     test('a stitch chains its configured pipeline stages in order', () => {
         const { diagram } = toMermaid(sampleRegistry());
-        // getUser: call -> request -> retry -> validate -> unwrap -> result (no throttle/cache).
+        // getUser: call -> request -> retry -> unwrap -> validate -> result (no throttle/cache).
         expect(diagram).toContain('(["call"]) -->');
         expect(diagram).toContain('GET https://api.example.com/users/{id}');
         expect(diagram).toContain('retry');
         expect(diagram).toContain('validate');
         expect(diagram).toContain('unwrap: data');
         expect(diagram).toContain('(["result"])');
+    });
+
+    test('post-response stages render in engine order: transform -> unwrap -> validate', () => {
+        // The engine processes the response body transform → unwrap → validate (engine.ts), and the
+        // diagram's contract is "the configured request pipeline … in engine order". So the diagram
+        // must place validate LAST of the three, not first.
+        const { diagram } = toMermaid({
+            proc: stitch({
+                baseUrl: 'https://api.example.com',
+                path: '/x',
+                transform: (b) => b,
+                unwrap: 'data',
+                output: z.object({ id: z.number() }),
+            }),
+        });
+        const iTransform = diagram.indexOf('transform');
+        const iUnwrap = diagram.indexOf('unwrap: data');
+        const iValidate = diagram.indexOf('validate');
+        expect(iTransform).toBeGreaterThanOrEqual(0);
+        expect(iUnwrap).toBeGreaterThan(iTransform); // unwrap after transform
+        expect(iValidate).toBeGreaterThan(iUnwrap); // validate after unwrap
     });
 
     test('a bare stitch is just call -> request -> result', () => {

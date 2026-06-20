@@ -52,11 +52,12 @@ export function toValidator(schema: unknown): Validator | undefined {
 
     // Zod (v3): has safeParse
     const zodLike = schema as { safeParse?: (v: unknown) => ZodResult };
-    if (typeof zodLike.safeParse === 'function') {
+    const { safeParse } = zodLike;
+    if (typeof safeParse === 'function') {
         return withSource(
             {
                 async validate(value) {
-                    const r = zodLike.safeParse!(value);
+                    const r = safeParse(value);
                     if (r.success) return { ok: true, value: r.data };
                     return {
                         ok: false,

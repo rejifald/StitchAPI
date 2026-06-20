@@ -171,3 +171,89 @@ identity statically, or is it inferred from the snippet AST? Do base (never-call
 nodes, and how are they de-duped across calls? Overlay vs. toggle vs. a separate panel relative to
 the runtime-causality edges? (Down-payment on the Studio "Mermaid-from-definition" line; see the
 `docs/sandbox` A2 trace follow-up noted in `RELEASE.md`.)
+
+---
+
+## Frontend reactive bindings — Vue · Svelte · Solid
+
+-   **Status:** idea
+-   **Date:** 2026-06
+-   **Tags:** integration, frontend, reactivity, streaming, DX
+-   **Gates:** browser-first ✅ (it _is_ a FE surface) · bundle-frugal ✅ — a thin per-framework
+    binding over the shared `@stitchapi/query-core`, never a re-implementation.
+
+**Problem / why** — `@stitchapi/react` (shipped) gives `useStitch`/`useStitchStream` over a
+framework-agnostic reactive store. React is ~45% of the market, but Vue/Svelte/Solid users have no
+first-party binding — and the streaming-first story (re-render as `delta` chunks arrive) is exactly
+where each framework's native fine-grained reactivity shines.
+
+**Sketch** — One ~100-line binding per framework over the same `createStitchQuery`
+`subscribe`/`getSnapshot` store: a Vue composable (`shallowRef` + `onScopeDispose`), a Svelte 5
+`$state`/`$derived` rune (readable store for Svelte 4), a Solid `createResource`-style signal. The
+same `queryOptions` POJO helper so each composes with its TanStack `*-query` adapter. Astro is **not**
+a separate target — you use these as islands inside Astro, so it's covered for free.
+
+**Backed by / builds on** — the just-shipped `@stitchapi/query-core` (the keystone — designed so these
+are cheap follow-ons; PR #189) and the SSE/stream surfaces (ADR 0005). Mirrors TanStack Query's own
+shared-core + per-framework-binding model.
+
+**Open questions** — One package each (`@stitchapi/vue`, …) or a single `@stitchapi/query-*` family?
+SSR/hydration story per meta-framework (Nuxt / SvelteKit / SolidStart)? Ship the TanStack adapter per
+framework, or leave it to the POJO `queryOptions`?
+
+---
+
+## Edge-KV stores — Upstash · Cloudflare KV · Deno KV
+
+-   **Status:** idea
+-   **Date:** 2026-06
+-   **Tags:** integration, storage, edge, StitchStore
+-   **Gates:** browser-first ✅ (HTTP / Web-API drivers, edge-safe) · bundle-frugal ✅ — a peer-dep
+    package implementing the existing `StitchStore` contract, zero core change.
+
+**Problem / why** — `@stitchapi/redis` makes "two workers share one login + rate budget"
+demonstrable, but it's Node/TCP. The edge story (Workers / Deno / Vercel + `@stitchapi/hono`) needs an
+HTTP/Web-API-native store so distributed throttle + shared sessions/cache work where there is no TCP
+socket. "Edge caching is eating Redis's lunch" — Upstash (HTTP Redis), Cloudflare Workers KV, Deno KV.
+
+**Sketch** — Thin `StitchStore` implementations (`get`/`set`/`incr`/`close?`) over each driver, same
+shape as `@stitchapi/redis`: `upstashStore(redis)` (Redis-command-compatible — `incr` is atomic),
+`cloudflareKvStore(KVNamespace)` (CF-KV has **no atomic `incr`** → rate-limiting needs Durable Objects;
+document the gap or expose a DO-backed variant), `denoKvStore(kv)` (atomic ops available). Each ships
+against the `stitchapi/testing` store conformance kit.
+
+**Backed by / builds on** — the `StitchStore` contract (`types.ts`), the `@stitchapi/redis` skeleton
+(driver-adapter + conformance pattern), and `@stitchapi/hono` (the edge backend they pair with).
+
+**Open questions** — `@stitchapi/redis` already takes any Redis-shaped driver — does Upstash just need
+a `fromUpstash` adapter there, or a dedicated package? How to expose the CF-KV `incr` gap without a
+footgun? **Postgres-as-KV is explicitly rejected** — KV-on-RDBMS is an anti-pattern and Redis already
+covers the `StitchStore` contract; it is not the storage gap worth filling.
+
+---
+
+## More backend adapters — Express · Elysia
+
+-   **Status:** idea
+-   **Date:** 2026-06
+-   **Tags:** integration, backend, seam, lifecycle
+-   **Gates:** browser-first n/a (a companion inherits its **host's** environment — the browser-first
+    gate binds _core_ only; Node/Bun is fine here) · bundle-frugal ✅.
+
+**Problem / why** — Nest (DI), Fastify (plugin), and Hono (edge) are shipped. Express still has the
+largest install base (mostly legacy); Bun-native Elysia is rising. Neither has a first-party seam
+binding, so users hand-wire lifecycle + per-request principal + SSE today.
+
+**Sketch** — Express: a thin `stitch()` middleware attaching a request-scoped `seam.as(principal)` to
+`req`, plus an SSE helper and an error-mapping middleware — shallower than Fastify (Express has no
+plugin/lifecycle/logger structure to bridge), so a small, broad-reach add. Elysia: a plugin over its
+`decorate`/`derive` + lifecycle hooks, closer to the Fastify shape. The five backend concerns
+(lifecycle · principal · SSE→response · logger · error→HTTP) are identical across all of them — a tiny
+shared helper would make each new framework cheap.
+
+**Backed by / builds on** — the `seam` primitive and the shipped `@stitchapi/nest` /
+`@stitchapi/fastify` / `@stitchapi/hono` (copy their lifecycle + `seam.as` + SSE-bridge patterns).
+
+**Open questions** — Is Express worth a first-party package given how thin the bridge is, or better as
+a docs recipe? Extract the shared backend helper now, or after a 4th framework proves the pattern?
+Elysia priority vs. waiting for a clearer Bun-server adoption signal?

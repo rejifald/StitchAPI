@@ -779,13 +779,26 @@ async function* attemptWithCircuit(
     }
 }
 
+// Fold the paginator's next-page partial onto the base input. Kept in lock-step with the `.with()`
+// merge in stitch.ts: `variables` is a first-class StitchInput field (GraphQL's primary input, the
+// slot a cursor rides in `next: () => ({ variables: { after } })`), so it must merge like the rest —
+// dropping it stranded paginated GraphQL on page 1. `signal`/`onProgress` carry too so an aborted
+// paginated call still cancels mid-pagination. Omit a key entirely when neither side sets it
+// (exactOptionalPropertyTypes forbids `variables: undefined`).
 function mergeInput(a: StitchInput, b: StitchInput): StitchInput {
-    return {
+    const merged: StitchInput = {
         params: { ...(a.params ?? {}), ...(b.params ?? {}) },
         query: { ...(a.query ?? {}), ...(b.query ?? {}) },
         headers: { ...(a.headers ?? {}), ...(b.headers ?? {}) },
         body: b.body !== undefined ? b.body : a.body,
     };
+    if (a.variables ?? b.variables)
+        merged.variables = { ...(a.variables ?? {}), ...(b.variables ?? {}) };
+    const signal = b.signal ?? a.signal;
+    if (signal) merged.signal = signal;
+    const onProgress = b.onProgress ?? a.onProgress;
+    if (onProgress) merged.onProgress = onProgress;
+    return merged;
 }
 
 // Pagination: one logical call that follows pages until `paginate.next` returns undefined

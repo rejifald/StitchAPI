@@ -121,11 +121,21 @@ export function xhrAdapter(XHR?: XhrLikeCtor): Adapter {
             };
 
             if (req.signal) {
-                if (req.signal.aborted) xhr.abort();
-                else
-                    req.signal.addEventListener('abort', () => {
+                // A pre-aborted signal must REJECT here, not `xhr.abort()`: calling abort() before
+                // send() fires NO `abort` event (WHATWG XHR dispatches it only once the send() flag
+                // is set), so `onabort` would never run and the cancelled request would be sent
+                // anyway. Reject and return so `send()` below never fires.
+                if (req.signal.aborted) {
+                    reject(new Error('xhrAdapter: aborted'));
+                    return;
+                }
+                req.signal.addEventListener(
+                    'abort',
+                    () => {
                         xhr.abort();
-                    });
+                    },
+                    { once: true },
+                );
             }
 
             xhr.send(body ?? null);

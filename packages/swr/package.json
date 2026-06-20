@@ -1,0 +1,72 @@
+{
+    "name": "@stitchapi/swr",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
+    "description": "SWR bindings for StitchAPI — useStitchSWR runs a stitch as an SWR fetcher, so SWR owns caching and revalidation while the stitch stays typed, validated, and traced.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/swr"
+    },
+    "keywords": [
+        "stitchapi",
+        "swr",
+        "react",
+        "cache",
+        "fetcher",
+        "query"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "peerDependencies": {
+        "react": "^18.0.0 || ^19.0.0",
+        "stitchapi": "^1.0.0-rc.1",
+        "swr": "^2.0.0"
+    },
+    "devDependencies": {
+        "@testing-library/react": "^16.1.0",
+        "@types/node": "^22.10.0",
+        "@types/react": "^19.0.0",
+        "jsdom": "^25.0.1",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "stitchapi": "workspace:*",
+        "swr": "^2.2.5",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}

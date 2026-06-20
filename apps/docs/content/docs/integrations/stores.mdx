@@ -1,0 +1,165 @@
+---
+title: Distributed stores
+description: Attach a Redis, Cloudflare Workers KV, or Deno KV StitchStore so a stitch's throttle, sessions, and cache become fleet-wide — same call site, no backend in core. Includes the atomic-incr trade-off that decides which store fits.
+---
+
+A [`StitchStore`](/docs/guides/state/pluggable-store) is the one seam that turns
+the process-local pieces of a stitch — its
+[rate-limit counters](/docs/guides/state/distributed-throttle), its
+[auth sessions and tokens](/docs/guides/state/shared-sessions), and its response
+cache — into **fleet-wide** state, with **no change to the call site**. Core ships
+no backend; you attach one of these drivers to a [`seam`](/docs/concepts/event-stream)
+and every worker shares the same counters and sessions.
+
+Each driver is a thin peer-dependency (or zero-dependency) package that imports no
+client of its own — it runs on a small structural surface, so the client you
+already use is a drop-in, and a test double is too. All three are proven against
+the same `verifyStoreContract` from `stitchapi/testing`.
+
+## Which store?
+
+The deciding axis is **atomic `incr`**: a distributed _throttle_ needs it (rate
+counters must increment exactly once under concurrency), while shared _cache_ and
+_sessions_ need only `get` / `set`.
+
+| Package                    | Runtime                                        | Atomic `incr` → distributed throttle      | Shared cache & sessions | TTL unit    |
+| -------------------------- | ---------------------------------------------- | ----------------------------------------- | ----------------------- | ----------- |
+| `@stitchapi/redis`         | Node (TCP) **and** edge (Upstash HTTP)         | ✅ Lua `INCR` + `PEXPIRE`                 | ✅                      | ms          |
+| `@stitchapi/deno-kv`       | Deno / Deno Deploy · Node & Bun via `@deno/kv` | ✅ atomic compare-and-set                 | ✅                      | ms          |
+| `@stitchapi/cloudflare-kv` | Cloudflare Workers / Pages (Web-API only)      | ❌ throws — back it with a Durable Object | ✅                      | s (60s min) |
+
+Reach for **Redis** on Node — or when you want one store that _also_ runs on the
+edge via Upstash; **Deno KV** on Deno Deploy, where the same handle is replicated
+globally; **Cloudflare Workers KV** when you're on Workers and need shared cache
+and sessions (and pair it with a Durable Object if you also need a throttle).
+
+## Redis — `@stitchapi/redis`
+
+```package-install
+@stitchapi/redis stitchapi
+```
+
+Attach a `redisStore` to a seam and its throttle budget and auth sessions become
+fleet-wide. The package imports no Redis client — wrap the one you already run with
+the matching adapter (`ioredis` and `redis` are optional peers; `@upstash/redis` is
+matched structurally, so it never weighs on Node-only users):
+
+```ts
+import { fromIoredis, redisStore } from '@stitchapi/redis';
+import Redis from 'ioredis';
+import { seam } from 'stitchapi';
+
+const api = seam({
+    store: redisStore(fromIoredis(new Redis(process.env.REDIS_URL))),
+});
+```
+
+The same store runs on the **edge** with `fromUpstash` — Upstash speaks Redis over
+HTTP, so the identical atomic `INCR` + `EXPIRE` logic works from a Vercel or
+Cloudflare function with no TCP socket:
+
+```ts
+import { fromUpstash, redisStore } from '@stitchapi/redis';
+import { Redis } from '@upstash/redis';
+
+const store = redisStore(fromUpstash(Redis.fromEnv()));
+```
+
+`incr` must be **atomic** and set the key's TTL only when it _creates_ the counter
+— the bundled adapters do this in a single Lua `EVAL` (`INCR`, then `PEXPIRE` only
+when the value is `1`), so a rate window can't slide forever and a crash can't
+strand an immortal counter. With a shared store the rate limiter is
+**even-spaced across the fleet** — see
+[distributed throttle](/docs/guides/state/distributed-throttle) for the exact
+pacing semantics. Namespace keys with `keyPrefix` to share one Redis with other
+data:
+
+```ts
+redisStore(fromIoredis(client), { keyPrefix: 'myapp:' });
+```
+
+## Cloudflare Workers KV — `@stitchapi/cloudflare-kv`
+
+```package-install
+@stitchapi/cloudflare-kv stitchapi
+```
+
+Web-API only (no `node:*`), so it runs in a Worker, in Pages Functions, and in any
+other edge runtime. Bind a KV namespace and the read-heavy halves of a stitch —
+**cache** and **shared sessions/tokens** — become fleet-wide across every isolate:
+
+```ts
+import { cloudflareKvStore } from '@stitchapi/cloudflare-kv';
+import { seam } from 'stitchapi';
+
+export default {
+    async fetch(req, env) {
+        const api = seam({ store: cloudflareKvStore(env.MY_KV) });
+        return handle(api, req);
+    },
+};
+```
+
+<Callout type="warn">
+    **Workers KV has no atomic increment.** It is last-write-wins `get` / `put`
+    / `delete` only, so a throttle counter built on it would undercount under
+    concurrency and silently break rate limiting. Rather than do that,
+    `cloudflareKvStore(...).incr(...)` **throws** a documented error. For a
+    distributed throttle, back it with a [Durable
+    Object](https://developers.cloudflare.com/durable-objects/) — the
+    single-writer, strongly-consistent counter an atomic `incr` requires. KV
+    remains the right backend for cache and sessions, the common edge need.
+</Callout>
+
+KV's `expirationTtl` is in **seconds** with a **60-second minimum**; the store
+reconciles that with the contract's millisecond TTLs (`ttlMs` →
+`max(60, ceil(ttlMs / 1000))` s), so a value asked to live 5s lives 60s (harmless
+for caches and sessions). `set(key, undefined)` deletes; `keyPrefix` namespaces.
+
+## Deno KV — `@stitchapi/deno-kv`
+
+```package-install
+@stitchapi/deno-kv stitchapi
+```
+
+Zero runtime dependencies — it never touches the `Deno` global, running on a
+structural `DenoKvLike` surface that a real `Deno.Kv` satisfies as-is. On Deno
+Deploy the same handle is replicated globally, so a stitch's state is edge-native
+for free:
+
+```ts
+import { denoKvStore } from '@stitchapi/deno-kv';
+import { seam } from 'stitchapi';
+
+const api = seam({ store: denoKvStore(await Deno.openKv()) });
+```
+
+The same package runs on **Node or Bun** through the
+[`@deno/kv`](https://www.npmjs.com/package/@deno/kv) npm package:
+
+```ts
+import { openKv } from '@deno/kv';
+import { denoKvStore } from '@stitchapi/deno-kv';
+import { seam } from 'stitchapi';
+
+const api = seam({ store: denoKvStore(await openKv(process.env.DENO_KV_URL)) });
+```
+
+Deno KV has no native `INCR`, so `incr` is an **atomic compare-and-set loop**
+(read value + `versionstamp`, then `atomic().check(...).set(...).commit()`,
+retrying if another isolate raced) — N concurrent increments net exactly +N. The
+TTL (`expireIn`, already in milliseconds) is set only on the increment that
+creates the counter, so a busy window never resets. `keyPrefix` namespaces every
+key for sharing one KV database.
+
+## See also
+
+<Cards>
+    <Card title="Pluggable store" href="/docs/guides/state/pluggable-store" />
+    <Card
+        title="Distributed throttle"
+        href="/docs/guides/state/distributed-throttle"
+    />
+    <Card title="Shared sessions" href="/docs/guides/state/shared-sessions" />
+    <Card title="Hono (edge backend)" href="/docs/integrations/hono" />
+</Cards>

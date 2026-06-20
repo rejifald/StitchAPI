@@ -122,6 +122,25 @@ test('SSE start frame scrubs credential headers the caller echoed (serve is unau
     expect(text).not.toContain('Bearer SECRET'); // the secret never rides the wire
 });
 
+test('SSE start frame scrubs a secret query param the caller echoed (structured input.query)', async () => {
+    api.route('GET', '/ping', { body: { ok: true } });
+    const res = await fetch(`${base}/stitch/ping`, {
+        method: 'POST',
+        headers: { accept: 'text/event-stream' },
+        body: JSON.stringify({ query: { api_key: 'SQLEAK', page: '2' } }),
+    });
+    const text = await res.text();
+    const start = parseSse(text).find((f) => f.event === 'start');
+    const echoed = (
+        start?.data?.['input'] as
+            | { query?: Record<string, unknown> }
+            | undefined
+    )?.query;
+    expect(echoed?.['api_key']).toBe('[REDACTED]'); // secret query value scrubbed before it leaves
+    expect(echoed?.['page']).toBe('2'); // non-secret query param preserved
+    expect(text).not.toContain('SQLEAK'); // the secret never rides the wire (url OR structured input)
+});
+
 test('an unknown stitch is a 404 with a listing message', async () => {
     const res = await fetch(`${base}/stitch/nope`, {
         method: 'POST',

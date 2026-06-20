@@ -1,0 +1,75 @@
+{
+    "name": "@stitchapi/svelte",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
+    "description": "Svelte bindings for StitchAPI — stitchStore/stitchStreamStore Svelte stores over @stitchapi/query-core (unary + streaming deltas), plus an optional TanStack-shaped queryOptions helper. Works on Svelte 4 and 5.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/svelte"
+    },
+    "keywords": [
+        "stitchapi",
+        "svelte",
+        "store",
+        "readable",
+        "streaming",
+        "query",
+        "tanstack-query"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "peerDependencies": {
+        "@stitchapi/query-core": "^1.0.0-rc.2",
+        "stitchapi": "^1.0.0-rc.1",
+        "svelte": "^4.0.0 || ^5.0.0",
+        "@tanstack/svelte-query": "^5.0.0"
+    },
+    "peerDependenciesMeta": {
+        "@tanstack/svelte-query": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "@stitchapi/query-core": "workspace:*",
+        "@types/node": "^22.10.0",
+        "stitchapi": "workspace:*",
+        "svelte": "^5.0.0",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}

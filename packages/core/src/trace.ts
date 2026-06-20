@@ -37,9 +37,11 @@ const REDACTED = '[REDACTED]';
 // Redact an event for delivery over an UNTRUSTED transport — the `stitch serve` SSE stream, which
 // is unauthenticated and may be fronted. Unlike the built-in sinks this PRESERVES the payload
 // (`delta`/`result` — a streaming consumer asked for it); it only scrubs the credential-bearing
-// metadata a `start` frame echoes back: URL credentials/secret query slots (via `scrubUrl`) and any
-// denylisted header value in `input.headers` (`authorization` / `cookie` / …). Every other event
-// type passes through untouched.
+// metadata a `start` frame echoes back: URL credentials + secret query values in the URL string
+// (via `scrubUrl`), the SAME secret query values in the structured `input.query` (via
+// `redactSecretQuery` — `scrubUrl` reaches only the URL string, so the parsed query must be
+// scrubbed too, exactly as the JSONL sink does), and any denylisted header value in `input.headers`
+// (`authorization` / `cookie` / …). Every other event type passes through untouched.
 export function redactEventForTransport(event: StitchEvent): StitchEvent {
     if (event.type !== 'start') return event;
     const headers = event.input.headers;
@@ -51,12 +53,16 @@ export function redactEventForTransport(event: StitchEvent): StitchEvent {
               ]),
           )
         : undefined;
+    const query = event.input.query;
+    const safeQuery = query ? redactSecretQuery(query) : undefined;
     return {
         ...event,
         url: scrubUrl(event.url),
-        input: safeHeaders
-            ? { ...event.input, headers: safeHeaders }
-            : event.input,
+        input: {
+            ...event.input,
+            ...(safeHeaders ? { headers: safeHeaders } : {}),
+            ...(safeQuery ? { query: safeQuery } : {}),
+        },
     };
 }
 

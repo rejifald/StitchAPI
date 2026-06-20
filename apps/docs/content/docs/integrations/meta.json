@@ -1,5 +1,27 @@
 {
     "title": "Integrations",
     "icon": "Plug",
-    "pages": ["nestjs", "fastify", "hono", "react", "tanstack-query", "pino"]
+    "pages": [
+        "nestjs",
+        "fastify",
+        "hono",
+        "elysia",
+        "express",
+        "next",
+        "react",
+        "vue",
+        "svelte",
+        "solid",
+        "angular",
+        "react-native",
+        "expo",
+        "tanstack-query",
+        "swr",
+        "rtk-query",
+        "pino",
+        "sentry",
+        "stores",
+        "aws-sigv4",
+        "vercel-ai"
+    ]
 }

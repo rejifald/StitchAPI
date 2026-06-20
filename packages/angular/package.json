@@ -1,0 +1,83 @@
+{
+    "name": "@stitchapi/angular",
+    "version": "1.0.0-rc.2",
+    "type": "commonjs",
+    "description": "Angular bindings for StitchAPI — injectStitch/injectStitchStream expose a stitch's lifecycle as both signals and an RxJS observable over @stitchapi/query-core. Streaming-first: re-render as `delta` chunks arrive. Plus an optional TanStack Query queryOptions helper.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/angular"
+    },
+    "keywords": [
+        "stitchapi",
+        "angular",
+        "signals",
+        "rxjs",
+        "streaming",
+        "query",
+        "tanstack-query"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "peerDependencies": {
+        "@angular/core": ">=16.0.0",
+        "@stitchapi/query-core": "^1.0.0-rc.2",
+        "@tanstack/angular-query-experimental": ">=5.0.0",
+        "rxjs": ">=7.0.0",
+        "stitchapi": "^1.0.0-rc.1"
+    },
+    "peerDependenciesMeta": {
+        "@tanstack/angular-query-experimental": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "@angular/common": "^20.3.25",
+        "@angular/compiler": "^20.3.25",
+        "@angular/core": "^20.3.25",
+        "@angular/platform-browser": "^19.2.0",
+        "@angular/platform-browser-dynamic": "^19.2.0",
+        "@stitchapi/query-core": "workspace:*",
+        "@types/node": "^22.10.0",
+        "jsdom": "^25.0.1",
+        "rxjs": "^7.8.0",
+        "stitchapi": "workspace:*",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8",
+        "zone.js": "~0.15.0"
+    }
+}

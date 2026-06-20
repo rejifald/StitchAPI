@@ -1,0 +1,97 @@
+---
+title: Vercel AI SDK
+description: stitchTool exposes a stitch as a Vercel AI SDK tool() the model can call — the stitch runs as the tool's execute, so the model gets typed, validated data and never the credential.
+---
+
+StitchAPI is agent-native through the [MCP surface](/docs/surfaces/mcp) — the
+canonical way to hand a stitch to any agent. `@stitchapi/vercel-ai` is the framework-specific
+convenience for apps already on the [Vercel AI SDK](https://sdk.vercel.ai): wrap a
+stitch as a `tool()` the model can call inside `generateText` / `streamText`.
+
+The stitch runs as the tool's `execute`, so the model gets **typed, validated** data
+back — and the credential stays behind the boundary (a
+[capability, not the credential](/docs/concepts/capability-not-credential)).
+
+**Structural, version-bridged.** It imports nothing from `ai`; the returned tool
+carries both `parameters` (AI SDK v4) and `inputSchema` (v5), so it drops into either.
+
+## Example
+
+```package-install
+@stitchapi/vercel-ai stitchapi
+```
+
+`stitchapi` is the only required peer; bring the `ai` SDK you already run.
+
+## `stitchTool`
+
+Drop a stitch straight into a `tools` map:
+
+```ts
+import { getUser } from './api';
+
+import { stitchTool } from '@stitchapi/vercel-ai';
+import { generateText } from 'ai';
+import { z } from 'zod';
+
+const { text } = await generateText({
+    model,
+    prompt: 'Who is user 7?',
+    tools: {
+        getUser: stitchTool(getUser, {
+            description: 'Fetch a user by id',
+            inputSchema: z.object({ id: z.string() }),
+            toInput: ({ id }) => ({ params: { id } }),
+        }),
+    },
+});
+```
+
+-   `inputSchema` — the schema the model fills (a Zod schema, or any AI SDK `Schema`).
+-   `toInput` — maps the model's args onto the stitch's `{ params, query, body }`. Omit
+    it when the model's args _are_ the stitch input.
+
+The tool's result is the stitch's validated output, so the model reasons over real
+data, not a guess; a failure rejects, and the AI SDK's tool-error handling reports it.
+
+## `stitchExecute`
+
+If you'd rather compose the tool yourself — e.g. with `ai`'s own `tool()` for tighter
+typing — `stitchExecute` is just the `execute`:
+
+```ts
+import { stitchExecute } from '@stitchapi/vercel-ai';
+import { tool } from 'ai';
+import { z } from 'zod';
+
+const getUserTool = tool({
+    description: 'Fetch a user by id',
+    inputSchema: z.object({ id: z.string() }),
+    execute: stitchExecute(getUser, ({ id }) => ({ params: { id } })),
+});
+```
+
+<Callout type="info">
+    For a model running outside the AI SDK — Claude, an MCP client, your own
+    agent loop — expose the stitch over [MCP](/docs/surfaces/mcp) instead: one
+    `run_stitch` tool reaches every stitch, no per-endpoint wiring. This adapter
+    is for when the AI SDK already owns your tool-calling loop.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="MCP surface" href="/docs/surfaces/mcp" />
+    <Card
+        title="Expose a stitch to an agent"
+        href="/docs/recipes/expose-a-stitch-to-an-agent"
+    />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card
+        title="Standard Schema"
+        href="/docs/guides/validation/standard-schema"
+    />
+</Cards>

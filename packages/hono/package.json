@@ -45,7 +45,9 @@
         "cloudflare-workers",
         "sse",
         "seam",
-        "fetch"
+        "fetch",
+        "typescript",
+        "api-client"
     ],
     "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
     "license": "Apache-2.0",

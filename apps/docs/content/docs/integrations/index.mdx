@@ -1,0 +1,195 @@
+---
+title: Integrations
+description: First-party companion packages that bridge a stitch to the framework, frontend, logger, and store you already run — each a thin layer over a stable seam, never a re-implementation.
+---
+
+A stitch is plain TypeScript with no framework and no `node:*`, so it already runs
+anywhere. The packages here are the **companions**: thin bridges that wire a stitch
+into the tool you already run — a backend framework, a frontend's reactivity, your
+logger, your store — so its lifecycle, principal, streaming, and telemetry line up
+with the host instead of being bolted on.
+
+Each one is small on purpose. They plug into a handful of **stable seams**, so a
+new integration is ~100 lines over an existing contract, not a rewrite — and every
+companion is proven against the same conformance kits the core ships:
+
+-   **Backend seam** — lifecycle, request-scoped principal (`seam.as(user)`), an
+    SSE→response bridge, and an error→HTTP mapping, identical across frameworks.
+-   **Reactive store** — [`@stitchapi/query-core`](/docs/integrations/react) owns a
+    framework-agnostic `subscribe` / `getSnapshot` store; each frontend binding is a
+    few lines against its own primitive.
+-   **[`TraceSink`](/docs/guides/observability/trace-sinks)** — forward the typed
+    [event stream](/docs/concepts/event-stream) to the logger or telemetry pipeline
+    you already run.
+-   **[`StitchStore`](/docs/guides/state/pluggable-store)** — move throttle counters,
+    sessions, and cache into a shared backend so they go fleet-wide with no call-site
+    change.
+
+## Backend frameworks
+
+Attach a `seam` to your server: one shared client with a request-scoped principal,
+an SSE helper, and an error bridge.
+
+<Cards>
+    <Card
+        title="NestJS"
+        href="/docs/integrations/nestjs"
+        description="A module + injectable seam, request-scoped principal, and an exception filter that maps StitchError to HTTP."
+    />
+    <Card
+        title="Fastify"
+        href="/docs/integrations/fastify"
+        description="A plugin with a request-scoped principal, SSE reply bridge, and an error handler — wired to Fastify's lifecycle and logger."
+    />
+    <Card
+        title="Hono"
+        href="/docs/integrations/hono"
+        description="Edge/multi-runtime middleware with a per-request seam and an SSE bridge — Workers, Deno, Bun, Node."
+    />
+    <Card
+        title="Next.js"
+        href="/docs/integrations/next"
+        description="Web-standard route-handler helpers — sseResponse (text/event-stream) and stitchErrorResponse (StitchError → Response)."
+    />
+</Cards>
+
+## Frontend
+
+Each binding is a thin layer over the shared `@stitchapi/query-core` store, so
+updates are tearing-free and **streaming-first** — the view re-renders as each
+`delta` chunk arrives, which plain request/response query libraries don't model.
+One core, one binding per framework's own reactive primitive.
+
+<Cards>
+    <Card
+        title="React"
+        href="/docs/integrations/react"
+        description="Tearing-free useStitch / useStitchStream hooks built on useSyncExternalStore."
+    />
+    <Card
+        title="Vue"
+        href="/docs/integrations/vue"
+        description="useStitch / useStitchStream composables backed by Vue 3 reactivity (refs)."
+    />
+    <Card
+        title="Svelte"
+        href="/docs/integrations/svelte"
+        description="stitchStore / stitchStreamStore — real Svelte stores, on Svelte 4 and 5."
+    />
+    <Card
+        title="Angular"
+        href="/docs/integrations/angular"
+        description="injectStitch / injectStitchStream exposed as both signals and an RxJS observable."
+    />
+    <Card
+        title="TanStack Query"
+        href="/docs/integrations/tanstack-query"
+        description="Use a stitch as a queryFn with the framework-agnostic queryOptions(stitch, input) helper — no hard dependency."
+    />
+    <Card
+        title="SWR"
+        href="/docs/integrations/swr"
+        description="useStitchSWR runs a stitch as an SWR fetcher — SWR owns caching and revalidation."
+    />
+    <Card
+        title="RTK Query"
+        href="/docs/integrations/rtk-query"
+        description="stitchQueryFn / stitchStreamUpdater slot a stitch into an RTK Query endpoint (incl. streaming)."
+    />
+</Cards>
+
+## Mobile
+
+The same hooks, made to stream on device — where the platform's `fetch`, storage,
+and lifecycle differ from the web.
+
+<Cards>
+    <Card
+        title="React Native"
+        href="/docs/integrations/react-native"
+        description="A streaming XHR adapter (bare RN's fetch can't stream), an AsyncStorage store for persistent sessions, and AppState/NetInfo refetch helpers."
+    />
+    <Card
+        title="Expo"
+        href="/docs/integrations/expo"
+        description="Streaming over expo/fetch with no polyfills, plus an encrypted expo-secure-store vault — over the same hooks as React Native."
+    />
+</Cards>
+
+## Observability
+
+<Cards>
+    <Card
+        title="Pino"
+        href="/docs/integrations/pino"
+        description="Forward the event stream to a Pino logger as structured, leveled records — metadata-only, safe on a secret-bearing seam."
+    />
+    <Card
+        title="Sentry"
+        href="/docs/integrations/sentry"
+        description="Map the event stream to Sentry breadcrumbs and capture error events with the call's context."
+    />
+</Cards>
+
+For OpenTelemetry, core exports an OTLP trace bridge directly — see the
+[OTLP guide](/docs/guides/observability/otlp).
+
+## State &amp; storage
+
+Attach a `StitchStore` to move a stitch's throttle counters, sessions, and cache
+into a shared backend — fleet-wide, with no call-site change.
+
+<Cards>
+    <Card
+        title="Distributed stores"
+        href="/docs/integrations/stores"
+        description="Redis (+ Upstash edge), Cloudflare Workers KV, and Deno KV drivers — with the atomic-incr trade-off that decides which fits."
+    />
+</Cards>
+
+## Authentication
+
+Core ships bearer / apiKey / basic / cookieSession / oauth2 built in; companions
+add the schemes that need more.
+
+<Cards>
+    <Card
+        title="AWS SigV4"
+        href="/docs/integrations/aws-sigv4"
+        description="Sign requests with AWS Signature V4 (Web Crypto, edge-safe) — for AWS APIs, S3-compatible stores, and any SigV4-protected endpoint."
+    />
+</Cards>
+
+## Agents &amp; AI
+
+A stitch is agent-native through the [MCP surface](/docs/surfaces/mcp); a
+companion adapts it to a specific framework's tool-calling loop.
+
+<Cards>
+    <Card
+        title="Vercel AI SDK"
+        href="/docs/integrations/vercel-ai"
+        description="stitchTool exposes a stitch as an AI SDK tool() — the model gets typed, validated data, never the credential."
+    />
+</Cards>
+
+## See also
+
+<Cards>
+    <Card
+        title="The event stream"
+        href="/docs/concepts/event-stream"
+        description="The typed events every companion forwards or renders."
+    />
+    <Card
+        title="Pluggable store"
+        href="/docs/guides/state/pluggable-store"
+        description="The StitchStore seam that makes throttle, sessions, and cache fleet-wide."
+    />
+    <Card
+        title="Standard Schema"
+        href="/docs/guides/validation/standard-schema"
+        description="Bring Zod, Valibot, or ArkType for validation and inferred types."
+    />
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+</Cards>

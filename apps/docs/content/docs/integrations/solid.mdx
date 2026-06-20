@@ -1,0 +1,183 @@
+---
+title: Solid
+description: createStitch and createStitchStream primitives that reconcile a Solid store from a stitch call, over the framework-agnostic @stitchapi/query-core store — plus an optional TanStack Query adapter.
+---
+
+Use `@stitchapi/solid` when you call stitches from Solid components and want the
+call's lifecycle — pending / success / error, cancellation, refetch, and
+**streaming re-renders** — managed for you. `createStitch` is the request/response
+primitive; `createStitchStream` reconciles each `delta` chunk into the store as it
+arrives, which is the differentiator over plain request/response query libraries.
+
+The primitives are a thin layer over [`@stitchapi/query-core`](#the-shared-store-stitchapiquery-core),
+the framework-agnostic store that owns the reactive lifecycle. Solid mirrors each
+snapshot into a `createStore`, so reads inside JSX track fine-grained.
+
+## Example
+
+Install the primitives, the store, core, and Solid:
+
+```package-install
+@stitchapi/solid @stitchapi/query-core stitchapi solid-js
+```
+
+`stitchapi`, `@stitchapi/query-core`, and `solid-js` (`^1.8`) are peer
+dependencies; `@tanstack/solid-query` is an **optional** peer, needed only for the
+`queryOptions` adapter below.
+
+## `createStitch` — request / response
+
+Declare a stitch once, then drive it from a component. `input` and `options` may be
+plain values (read once) or accessors — pass an accessor (`() => props.id`) so the
+query re-fetches when its value changes. Read state off the returned store's
+`state` proxy:
+
+```tsx
+import { createStitch } from '@stitchapi/solid';
+import { Show } from 'solid-js';
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+function Profile(props: { id: string }) {
+    // Pass an accessor so the query re-fetches when `props.id` changes.
+    const user = createStitch(getUser, () => ({ params: { id: props.id } }));
+
+    return (
+        <Show when={!user.state.isPending} fallback={<Spinner />}>
+            <Show
+                when={!user.state.isError}
+                fallback={<Retry onClick={user.refetch} />}
+            >
+                <h1>{user.state.data?.name}</h1>
+            </Show>
+        </Show>
+    );
+}
+```
+
+The query is re-created (and re-fetched) when the stitch's name or a structural key
+of `input` changes. The in-flight run is aborted when the component's scope is
+disposed (`onCleanup`).
+
+<Callout type="warn">
+    **Anti-pattern:** don't destructure `state` — `const {data} = user.state`
+    reads the field once and loses reactivity, because `state` is a Solid store
+    proxy that tracks on property access. Read `user.state.data` directly inside
+    JSX (or an effect) so Solid re-renders fine-grained when it changes.
+</Callout>
+
+## `createStitchStream` — live deltas
+
+For a streaming stitch (an [`sse`](/docs/reference/surfaces) or `stream` surface),
+`createStitchStream` reconciles each chunk into the store as it arrives. `chunks`
+is the running list, `data` is the accumulated array (`mode: 'append'`, default) or
+the latest chunk (`mode: 'replace'`), and `status` is `'streaming'` until the
+terminal `result`, then `'success'`:
+
+```tsx
+import { createStitchStream } from '@stitchapi/solid';
+import { For, Show } from 'solid-js';
+import { sse } from 'stitchapi/sse';
+
+const chat = sse({ url: 'https://api.example.com/chat' });
+
+function Chat(props: { prompt: string }) {
+    const c = createStitchStream(chat, () => ({
+        body: { prompt: props.prompt },
+    }));
+
+    return (
+        <div>
+            <For each={c.state.chunks as string[]}>
+                {(chunk) => <span>{chunk}</span>}
+            </For>
+            <Show when={c.state.isStreaming}>
+                <Cursor />
+            </Show>
+        </div>
+    );
+}
+```
+
+Both primitives return the same shape — a `state` proxy carrying `data`, `error`,
+`status`, `chunks`, and the `isPending` / `isError` / `isSuccess` / `isStreaming`
+flags, plus `refetch` and `cancel` methods.
+
+## The shared store: `@stitchapi/query-core`
+
+The primitives hold almost no logic. All of it — running the call under an
+`AbortController`, publishing status transitions, folding `delta` chunks into
+state, `cancel()` by aborting, `refetch()` by re-running — lives in
+`@stitchapi/query-core`'s `createStitchQuery`, a `subscribe` / `getSnapshot` handle
+with **no framework imports** and **no `node:*`**, so it is browser- and edge-safe.
+Solid subscribes to it and reconciles each snapshot into a `createStore`:
+
+```ts twoslash
+import { createStitchQuery } from '@stitchapi/query-core';
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    output: z.array(z.object({ id: z.number(), name: z.string() })),
+});
+
+const query = createStitchQuery(listUsers, { query: { q: 'ada' } });
+const unsubscribe = query.subscribe(() => {
+    const snapshot = query.getSnapshot();
+    if (snapshot.isSuccess) console.log(snapshot.data);
+});
+```
+
+Because the whole reactive lifecycle lives in the store and not the binding, the
+[React](/docs/integrations/react), [Vue](/docs/integrations/vue), and
+[Svelte](/docs/integrations/svelte) bindings are the same few lines against their
+own reactive primitive — Solid's is `createStore` + `onCleanup`.
+
+## Optional: TanStack Query
+
+Already on [TanStack Query](/docs/integrations/tanstack-query)?
+`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
+pass straight to `createQuery` — it imports nothing from `@tanstack/solid-query`,
+so it works even if you never install it:
+
+```tsx
+import { queryOptions } from '@stitchapi/solid';
+import { createQuery } from '@tanstack/solid-query';
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+function User(props: { id: string }) {
+    const query = createQuery(() =>
+        queryOptions(getUser, { params: { id: props.id } }),
+    );
+    return <span>{query.data?.name}</span>;
+}
+```
+
+<Callout type="info">
+    Reach for `queryOptions` when TanStack Query already owns your view state
+    and you want a stitch as the `queryFn`; reach for `createStitch` /
+    `createStitchStream` when you want StitchAPI to own the lifecycle directly —
+    especially for streaming, which `createQuery` does not model. See the
+    [TanStack Query guide](/docs/integrations/tanstack-query) for how the two
+    layers split.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="React" href="/docs/integrations/react" />
+    <Card title="Vue" href="/docs/integrations/vue" />
+    <Card title="Svelte" href="/docs/integrations/svelte" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+</Cards>

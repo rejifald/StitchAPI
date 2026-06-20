@@ -141,4 +141,57 @@ describe('xhrAdapter (ADR 0005 Decision 9)', () => {
             }),
         ).rejects.toThrow(/stream/i);
     });
+
+    test('a pre-aborted signal rejects without sending the request', async () => {
+        // A fake that models REAL XHR abort semantics: `abort()` dispatches an `abort` event ONLY
+        // once a request is in flight (the send() flag is set). `abort()` BEFORE `send()` is a
+        // no-op event-wise — which is exactly why a pre-aborted signal must be handled by
+        // rejecting, not by calling `abort()` and then sending anyway. `send()` fires `onload`
+        // (a real server answering), so a cancelled request that slips through RESOLVES.
+        class RealAbortXHR {
+            static last: RealAbortXHR | undefined;
+            sentFlag = false;
+            responseType = '';
+            status = 0;
+            response: unknown = new ArrayBuffer(0);
+            upload = { onprogress: null as ((e: XhrProgress) => void) | null };
+            onload: (() => void) | null = null;
+            onerror: (() => void) | null = null;
+            onabort: (() => void) | null = null;
+            onprogress: ((e: XhrProgress) => void) | null = null;
+            constructor() {
+                RealAbortXHR.last = this;
+            }
+            open(): void {
+                /* no-op fake */
+            }
+            setRequestHeader(): void {
+                /* no-op fake */
+            }
+            getAllResponseHeaders(): string {
+                return 'content-type: application/json\r\n';
+            }
+            abort(): void {
+                if (this.sentFlag) this.onabort?.(); // no `abort` event before send()
+            }
+            send(): void {
+                this.sentFlag = true;
+                this.status = 200;
+                this.onload?.();
+            }
+        }
+
+        const ac = new AbortController();
+        ac.abort(); // already aborted before the call
+        await expect(
+            xhrAdapter(RealAbortXHR as unknown as XhrLikeCtor)({
+                url: 'http://h/u',
+                method: 'GET',
+                headers: {},
+                signal: ac.signal,
+            }),
+        ).rejects.toThrow(/abort/i);
+        // The cancelled request must never go out.
+        expect(RealAbortXHR.last?.sentFlag).toBe(false);
+    });
 });

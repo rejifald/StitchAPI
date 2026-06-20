@@ -8,12 +8,17 @@
 //
 // Bring your own driver. The store never imports a Redis client — it talks to a
 // tiny normalized {@link RedisDriver} surface, and {@link fromIoredis} /
-// {@link fromNodeRedis} adapt the two popular clients to it (each is the same
-// store; only the client dialect differs). Anything that satisfies `RedisDriver`
-// works, so a third client, a cluster proxy, or a test double is a drop-in. Both
-// `ioredis` and `redis` are OPTIONAL peer dependencies — install whichever you
-// already use. This mirrors core's "contract, not dependency" stance (DESIGN §10,
-// like the BYO axios adapter).
+// {@link fromNodeRedis} / {@link fromUpstash} adapt the popular clients to it
+// (each is the same store; only the client dialect differs). Anything that
+// satisfies `RedisDriver` works, so another client, a cluster proxy, or a test
+// double is a drop-in. `ioredis`, `redis` and `@upstash/redis` are all OPTIONAL
+// peer dependencies — install whichever you already use. This mirrors core's
+// "contract, not dependency" stance (DESIGN §10, like the BYO axios adapter).
+//
+// `@upstash/redis` is the edge path: a serverless HTTP Redis with the same
+// command vocabulary (including atomic `INCR` and `EVAL`), so it slots straight
+// into the driver seam and lets the store run from Vercel/Cloudflare edge
+// functions with zero TCP socket.
 //
 // Compliance with the store contract is proven against `verifyStoreContract` from
 // `stitchapi/testing` (see test/conformance.spec.ts).
@@ -100,6 +105,25 @@ export interface NodeRedisLike {
 }
 
 /**
+ * The slice of an [`@upstash/redis`](https://github.com/upstash/redis-js) client
+ * {@link fromUpstash} uses. A `new Redis({ url, token })` (or `Redis.fromEnv()`)
+ * instance satisfies it structurally — you never implement this yourself.
+ *
+ * Upstash speaks Redis over HTTP, so there's no connection to open or `quit`
+ * (each call is a stateless request); that's why this surface has no `quit`.
+ * `eval` takes `(script, keys[], args[])` — the same shape as `redis-cli EVAL`,
+ * unlike node-redis's options bag — and Upstash JSON-decodes string replies, so
+ * `get` can hand back a parsed value; {@link redisStore} stores JSON strings and
+ * tolerates either.
+ */
+export interface UpstashLike {
+    get(key: string): Promise<unknown>;
+    set(key: string, value: string, options?: { px: number }): Promise<unknown>;
+    del(key: string): Promise<unknown>;
+    eval(script: string, keys: string[], args: string[]): Promise<unknown>;
+}
+
+/**
  * Adapt an `ioredis` client to a {@link RedisDriver}:
  *
  * ```ts
@@ -165,6 +189,50 @@ export function fromNodeRedis(client: NodeRedisLike): RedisDriver {
         },
         async close() {
             await client.quit?.();
+        },
+    };
+}
+
+/**
+ * Adapt an [`@upstash/redis`](https://github.com/upstash/redis-js) client to a
+ * {@link RedisDriver} — the edge/serverless path (HTTP Redis, no socket):
+ *
+ * ```ts
+ * import { Redis } from '@upstash/redis';
+ * import { redisStore, fromUpstash } from '@stitchapi/redis';
+ *
+ * const store = redisStore(fromUpstash(Redis.fromEnv()));
+ * ```
+ *
+ * Same store, same atomic INCR+EXPIRE Lua as the TCP adapters — only the dialect
+ * differs: Upstash's `set` takes `{ px }` (lowercase) and `eval(script, keys[],
+ * args[])` with positional array arguments (args stringified). There's no
+ * connection to release, so the driver omits `close()`.
+ */
+export function fromUpstash(client: UpstashLike): RedisDriver {
+    return {
+        async get(key) {
+            // The driver contract is "return the raw stored string or null".
+            // Upstash auto-deserializes JSON replies, so a value we wrote as a
+            // JSON envelope can come back already parsed into an object/number;
+            // re-serialize those so `redisStore.get`'s `JSON.parse` round-trips,
+            // and pass strings through untouched (bare counters stay strings).
+            const v = await client.get(key);
+            if (v == null) return null;
+            return typeof v === 'string' ? v : JSON.stringify(v);
+        },
+        async set(key, value, ttlMs) {
+            if (ttlMs == null) await client.set(key, value);
+            else await client.set(key, value, { px: ttlMs });
+        },
+        async del(key) {
+            await client.del(key);
+        },
+        async incr(key, ttlMs) {
+            // Upstash: eval(script, keys[], args[]); ARGV are strings.
+            return Number(
+                await client.eval(INCR_WITH_TTL, [key], [String(ttlMs)]),
+            );
         },
     };
 }

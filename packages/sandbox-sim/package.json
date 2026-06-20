@@ -5,7 +5,7 @@
     "description": "Isomorphic fake-API simulator for the StitchAPI playground — handlers and adapters for testing snippet execution across browser and server tiers.",
     "scripts": {
         "check:types": "tsc --noEmit",
-        "test": "tsx src/dispatch.test.ts && tsx src/handlers/streaming-llm.test.ts && tsx src/handlers/registration.test.ts && tsx src/handlers/auth-resilience.test.ts && tsx src/handlers/errors-status.test.ts && tsx src/handlers/graphql.test.ts && tsx src/handlers/pagination.test.ts"
+        "test": "tsx src/dispatch.test.ts && tsx src/adapters/fetch-shim.test.ts && tsx src/handlers/streaming-llm.test.ts && tsx src/handlers/registration.test.ts && tsx src/handlers/auth-resilience.test.ts && tsx src/handlers/errors-status.test.ts && tsx src/handlers/events.test.ts && tsx src/handlers/graphql.test.ts && tsx src/handlers/pagination.test.ts"
     },
     "devDependencies": {
         "@types/node": "^22.10.0",
