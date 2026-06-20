@@ -74,8 +74,7 @@ function channelPair(): {
     };
 }
 
-const tick = (ms = 20): Promise<void> =>
-    new Promise((r) => setTimeout(r, ms));
+const tick = (ms = 20): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 describe('respond() replacement', () => {
     test('a second respond(type) replaces the first; the stale unsubscribe is a no-op', async () => {
