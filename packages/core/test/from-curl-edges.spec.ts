@@ -151,8 +151,6 @@ describe('parseHar — body kind and entry selection', () => {
             5,
         );
         expect(req.url).toBe('https://api.example.com/only');
-        expect(req.warnings.some((w) => w.includes('out of range'))).toBe(
-            true,
-        );
+        expect(req.warnings.some((w) => w.includes('out of range'))).toBe(true);
     });
 });
