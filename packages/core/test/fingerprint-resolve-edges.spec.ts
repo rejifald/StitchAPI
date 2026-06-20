@@ -34,8 +34,14 @@ describe('resolveFingerprint: no-output (rung 4) folds unwrap + transform', () =
 
     it('distinct transformVersion → distinct no-schema generation (still fast)', () => {
         const fn = (x: unknown) => x;
-        const v1 = resolveFingerprint({ transform: fn, transformVersion: 'v1' });
-        const v2 = resolveFingerprint({ transform: fn, transformVersion: 'v2' });
+        const v1 = resolveFingerprint({
+            transform: fn,
+            transformVersion: 'v1',
+        });
+        const v2 = resolveFingerprint({
+            transform: fn,
+            transformVersion: 'v2',
+        });
         expect(v1.policy).toBe('fast'); // no output → rung 4
         expect(v2.policy).toBe('fast');
         expect(v1.generation).not.toBe(v2.generation);
