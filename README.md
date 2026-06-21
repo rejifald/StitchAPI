@@ -59,21 +59,9 @@ This repository is a [pnpm](https://pnpm.io) workspace.
 
 Design notes, overview, and feature lenses live in [`docs/`](docs).
 
-## Develop
+## Contributing
 
-```sh
-corepack enable          # use the pinned pnpm
-pnpm install             # install the whole workspace
-pnpm build               # build every package
-pnpm test                # run the test suites
-pnpm check:format        # prettier across the repo
-```
-
-Scope work to one package with a filter, e.g. `pnpm --filter stitchapi test`.
-
-`pnpm --filter stitchapi size` checks the core entry against its bundle-size
-budget (`packages/core/scripts/bundle-size.mjs`) — the same gate CI enforces, so
-a change that grows the bundle past its ceiling fails unless the budget is
-raised deliberately in the same PR.
+Local setup, the dev loop, the bundle-size budget, and the worktree + PR
+workflow are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 The published library's own README is in [`packages/core/README.md`](packages/core/README.md).
