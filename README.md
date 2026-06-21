@@ -14,6 +14,10 @@
 </p>
 
 <p align="center">
+  📖 <strong><a href="https://stitchapi.dev">stitchapi.dev</a></strong> — documentation, guides &amp; a live playground
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
   <img alt="npm bundle size (minified + gzipped)" src="https://img.shields.io/bundlephobia/minzip/stitchapi" />
   <img alt="Bundle: ~22 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~22%20kB-2563EB" />
@@ -73,7 +77,7 @@ This repository is a [pnpm](https://pnpm.io) workspace.
 | [`@stitchapi/shell`](packages/shell)                 | `packages/shell`         | The non-HTTP `shell` surface — run a static local command as a stitch (injection-proof).                   |
 | `@stitchapi/fingerprint-*`                           | `packages/fingerprint-*` | Per-validator cache-fingerprint adapters (Zod, Valibot, ArkType, Effect, TypeBox).                         |
 
-Design notes, overview, and feature lenses live in [`docs/`](docs).
+The full documentation site — guides, integration pages, and a live playground — is at **[stitchapi.dev](https://stitchapi.dev)**. Design notes, overview, and feature lenses live in [`docs/`](docs).
 
 ## Contributing
 
