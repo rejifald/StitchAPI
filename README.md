@@ -44,18 +44,34 @@
 
 This repository is a [pnpm](https://pnpm.io) workspace.
 
-| Package                                        | Path                     | Description                                                                                |
-| ---------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------ |
-| [`stitchapi`](packages/core)                   | `packages/core`          | The published library — the `stitch` runtime, CLI, auth, tracing.                          |
-| [`@stitchapi/nest`](packages/nest)             | `packages/nest`          | NestJS module — injectable stitches, `Logger` / `ConfigService` bridges, multi-tenancy.    |
-| [`@stitchapi/fastify`](packages/fastify)       | `packages/fastify`       | Fastify plugin — shared seam, request-scoped principal, SSE + error + logger bridges.      |
-| [`@stitchapi/hono`](packages/hono)             | `packages/hono`          | Hono middleware — edge-ready principal-bound seam, SSE bridge, error mapper.               |
-| [`@stitchapi/react`](packages/react)           | `packages/react`         | React hooks — `useStitch` / `useStitchStream` + an optional TanStack Query adapter.        |
-| [`@stitchapi/query-core`](packages/query-core) | `packages/query-core`    | Framework-agnostic reactive store behind the React (and future Vue/Svelte/Solid) bindings. |
-| [`@stitchapi/pino`](packages/pino)             | `packages/pino`          | A Pino `TraceSink` — the stitch event stream as structured Pino logs.                      |
-| [`@stitchapi/redis`](packages/redis)           | `packages/redis`         | A Redis-backed store — distributed throttle and sessions shared across workers.            |
-| [`@stitchapi/shell`](packages/shell)           | `packages/shell`         | The non-HTTP `shell` kind — run a local command as a stitch.                               |
-| `@stitchapi/fingerprint-*`                     | `packages/fingerprint-*` | Per-validator cache-fingerprint adapters (Zod, Valibot, ArkType, Effect, TypeBox).         |
+| Package                                              | Path                     | Description                                                                                                |
+| ---------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| [`stitchapi`](packages/core)                         | `packages/core`          | The published library — the `stitch` runtime, CLI, auth, tracing.                                          |
+| [`@stitchapi/nest`](packages/nest)                   | `packages/nest`          | NestJS module — injectable stitches, `Logger` / `ConfigService` bridges, multi-tenancy.                    |
+| [`@stitchapi/fastify`](packages/fastify)             | `packages/fastify`       | Fastify plugin — shared seam, request-scoped principal, SSE + error + logger bridges.                      |
+| [`@stitchapi/hono`](packages/hono)                   | `packages/hono`          | Hono middleware — edge-ready principal-bound seam, SSE bridge, error mapper.                               |
+| [`@stitchapi/express`](packages/express)             | `packages/express`       | Express 4 & 5 middleware — request-scoped seam on `req`, SSE bridge, error mapper.                         |
+| [`@stitchapi/elysia`](packages/elysia)               | `packages/elysia`        | Elysia plugin — request-scoped seam, SSE output, error mapper (Fetch-only, no `node:*`).                   |
+| [`@stitchapi/next`](packages/next)                   | `packages/next`          | Next.js helpers — stream a stitch as an SSE `Response` / map errors, for App Router handlers.              |
+| [`@stitchapi/react`](packages/react)                 | `packages/react`         | React hooks — `useStitch` / `useStitchStream` + an optional TanStack Query adapter.                        |
+| [`@stitchapi/vue`](packages/vue)                     | `packages/vue`           | Vue 3 composables — reactive `useStitch` / `useStitchStream` + optional TanStack Query adapter.            |
+| [`@stitchapi/svelte`](packages/svelte)               | `packages/svelte`        | Svelte 4 & 5 stores — `stitchStore` / `stitchStreamStore` + optional TanStack-shaped helper.               |
+| [`@stitchapi/solid`](packages/solid)                 | `packages/solid`         | Solid primitives — `createStitch` / `createStitchStream` reconciled into a Solid store.                    |
+| [`@stitchapi/angular`](packages/angular)             | `packages/angular`       | Angular bindings — `injectStitch` / `injectStitchStream` as signals and an RxJS observable.                |
+| [`@stitchapi/query-core`](packages/query-core)       | `packages/query-core`    | Framework-agnostic reactive store behind the React/Vue/Svelte/Solid/Angular bindings.                      |
+| [`@stitchapi/react-native`](packages/react-native)   | `packages/react-native`  | React Native bindings — streaming XHR adapter, AsyncStorage store, AppState/NetInfo refetch.               |
+| [`@stitchapi/expo`](packages/expo)                   | `packages/expo`          | Expo bindings — `expo/fetch` streaming adapter + an `expo-secure-store` token store.                       |
+| [`@stitchapi/rtk-query`](packages/rtk-query)         | `packages/rtk-query`     | RTK Query bindings — a stitch as an endpoint `queryFn` + a streaming cache updater.                        |
+| [`@stitchapi/swr`](packages/swr)                     | `packages/swr`           | SWR binding — `useStitchSWR` runs a stitch as the fetcher; SWR owns caching/revalidation.                  |
+| [`@stitchapi/redis`](packages/redis)                 | `packages/redis`         | A Redis-backed store — distributed throttle + sessions (ioredis / node-redis / Upstash).                   |
+| [`@stitchapi/cloudflare-kv`](packages/cloudflare-kv) | `packages/cloudflare-kv` | A Workers KV-backed store — edge cache + shared sessions/tokens.                                           |
+| [`@stitchapi/deno-kv`](packages/deno-kv)             | `packages/deno-kv`       | A Deno KV-backed store — distributed throttle + sessions with atomic `incr`.                               |
+| [`@stitchapi/pino`](packages/pino)                   | `packages/pino`          | A Pino `TraceSink` — the stitch event stream as structured Pino logs.                                      |
+| [`@stitchapi/sentry`](packages/sentry)               | `packages/sentry`        | A Sentry `TraceSink` — stitch events as breadcrumbs, errors captured with call context.                    |
+| [`@stitchapi/aws-sigv4`](packages/aws-sigv4)         | `packages/aws-sigv4`     | AWS SigV4 request signing — an edge-safe `AuthStrategy` (Web Crypto) for AWS / S3-style APIs.              |
+| [`@stitchapi/vercel-ai`](packages/vercel-ai)         | `packages/vercel-ai`     | Vercel AI SDK adapter — expose a stitch as a model-callable `tool()`; the model never sees the credential. |
+| [`@stitchapi/shell`](packages/shell)                 | `packages/shell`         | The non-HTTP `shell` surface — run a static local command as a stitch (injection-proof).                   |
+| `@stitchapi/fingerprint-*`                           | `packages/fingerprint-*` | Per-validator cache-fingerprint adapters (Zod, Valibot, ArkType, Effect, TypeBox).                         |
 
 Design notes, overview, and feature lenses live in [`docs/`](docs).
 
