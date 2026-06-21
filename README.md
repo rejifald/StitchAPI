@@ -65,6 +65,7 @@
 -   [Zero-infra observability](#zero-infra-observability)
 -   [Packages](#packages)
 -   [Documentation](#documentation)
+-   [Contributing](#contributing)
 -   [License](#license)
 
 ## What is a stitch?
@@ -441,6 +442,10 @@ This repository is a [pnpm](https://pnpm.io) workspace. The published library is
 The full documentation site lives at **[stitchapi.dev](https://stitchapi.dev)** — [Quickstart](https://stitchapi.dev/docs/getting-started/quickstart), per-feature [Guides](https://stitchapi.dev/docs/guides/authoring/stitch), [Concepts](https://stitchapi.dev/docs/concepts/the-stitch), [Surfaces](https://stitchapi.dev/docs/surfaces/function), [For agents](https://stitchapi.dev/docs/agents), and the generated [Reference](https://stitchapi.dev/docs/reference/stitch).
 
 The published library's own README (what npm renders) is in [`packages/core/README.md`](packages/core/README.md). Design notes live in [`docs/`](docs): [Feature Lenses](docs/FEATURE-LENSES.md), [Overview](docs/OVERVIEW.md), [Design](docs/DESIGN.md).
+
+## Contributing
+
+Local setup, the dev loop, the bundle-size budget, and the worktree + PR workflow are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
