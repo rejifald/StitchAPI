@@ -24,7 +24,35 @@ concurrency:
     cancel-in-progress: false
 
 jobs:
+    # Fast fail-first gate. Before the ~15-min verify + e2e gates run (let alone a
+    # publish), reject a release whose tag does not match the version in the commit it
+    # points at. This catches the classic mistake of cutting the release tag on a commit
+    # from *before* the version-bump PR merged (e.g. tagging `main`'s old tip): the tag
+    # then carries an rc.3 label over an rc.2 tree, which previously only surfaced at the
+    # publish step's `check-release --release-tag` after the whole gate had already run.
+    # The publish job keeps that authoritative check as defense-in-depth; this just fails
+    # in seconds with a fix-it message.
+    preflight:
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+            - name: Release tag must match the tagged commit's version
+              run: |
+                  set -euo pipefail
+                  TAG="${{ github.event.release.tag_name }}"
+                  VERSION="$(node -p "require('./packages/core/package.json').version")"
+                  if [ "$TAG" != "v$VERSION" ]; then
+                      echo "::error title=Release tag/version mismatch::Release tag '$TAG' points at a commit whose package version is 'v$VERSION'. The tag was almost certainly cut on a commit from before the version-bump PR merged. Re-point it to the bumped commit — \`git tag -f $TAG <bump-commit> && git push -f origin $TAG\` — or delete and re-create the release on that commit, then re-run."
+                      exit 1
+                  fi
+                  echo "✓ release tag $TAG matches package version v$VERSION"
+
     verify:
+        needs: preflight
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
@@ -52,6 +80,7 @@ jobs:
     # playground DAG. A release waits on it so we never publish a broken browser
     # sandbox. Mirrors the `e2e` job in verify.yml.
     e2e:
+        needs: preflight
         runs-on: ubuntu-latest
         timeout-minutes: 15
         steps:

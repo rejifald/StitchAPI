@@ -118,10 +118,14 @@ npm dist-tag add stitchapi@1.0.0 latest
 
 ## CI & authentication (OIDC trusted publishing)
 
--   `npm-publish.yml` triggers on `release: created`, runs the full verify gate
-    (`check:format` → `lint` → `types` → `test:coverage` → `exports` →
-    `check:release`) + the browser e2e gate, then publishes. Node version comes from
-    [`.nvmrc`](../.nvmrc).
+-   `npm-publish.yml` triggers on `release: created`. A fast **`preflight`** job runs
+    first and gates everything else: it rejects in seconds a release whose tag does not
+    match the version in the commit it points at (the classic "tagged `main` before the
+    bump PR merged" mistake), so the long gates never run on a doomed release. Then the
+    full verify gate (`check:format` → `lint` → `types` → `test:coverage` → `exports` →
+    `check:release`) + the browser e2e gate run, and finally it publishes — the publish
+    job re-runs `check-release --release-tag` as the authoritative final guard. Node
+    version comes from [`.nvmrc`](../.nvmrc).
 -   **No npm token.** The publish job authenticates with **OIDC trusted publishing**:
     it requests an `id-token: write` permission, mints a short-lived token, and npm
     exchanges it for publish rights — nothing to store, rotate, or leak. It then runs
