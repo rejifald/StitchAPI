@@ -351,7 +351,9 @@ function renderPackagesTable(pkgs) {
             lines.push(
                 `<tr><td><a href="${p.dir}"><code>${escapeHtml(
                     p.name,
-                )}</code></a></td><td>${escapeHtml(p.headline)}</td></tr>`,
+                )}</code></a> · <a href="https://www.npmjs.com/package/${
+                    p.name
+                }">npm</a></td><td>${escapeHtml(p.headline)}</td></tr>`,
             );
         }
     }

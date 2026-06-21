@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/stitchapi"><img alt="npm version" src="https://img.shields.io/npm/v/stitchapi?color=2563EB&label=npm" /></a>
   <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
   <img alt="npm bundle size (minified + gzipped)" src="https://img.shields.io/bundlephobia/minzip/stitchapi" />
   <img alt="Bundle: ~22 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~22%20kB-2563EB" />
@@ -393,45 +394,45 @@ This repository is a [pnpm](https://pnpm.io) workspace. The published library is
 <thead><tr><th>Package</th><th>Description</th></tr></thead>
 <tbody>
 <tr><th colspan="2">Core</th></tr>
-<tr><td><a href="packages/core"><code>stitchapi</code></a></td><td>Turn any API into a typed, resilient function</td></tr>
+<tr><td><a href="packages/core"><code>stitchapi</code></a> · <a href="https://www.npmjs.com/package/stitchapi">npm</a></td><td>Turn any API into a typed, resilient function</td></tr>
 <tr><th colspan="2">Server frameworks</th></tr>
-<tr><td><a href="packages/elysia"><code>@stitchapi/elysia</code></a></td><td>Elysia plugin</td></tr>
-<tr><td><a href="packages/express"><code>@stitchapi/express</code></a></td><td>Express middleware</td></tr>
-<tr><td><a href="packages/fastify"><code>@stitchapi/fastify</code></a></td><td>Fastify plugin</td></tr>
-<tr><td><a href="packages/hono"><code>@stitchapi/hono</code></a></td><td>Hono middleware + helpers</td></tr>
-<tr><td><a href="packages/nest"><code>@stitchapi/nest</code></a></td><td>First-class NestJS integration</td></tr>
-<tr><td><a href="packages/next"><code>@stitchapi/next</code></a></td><td>Next.js helpers</td></tr>
+<tr><td><a href="packages/elysia"><code>@stitchapi/elysia</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/elysia">npm</a></td><td>Elysia plugin</td></tr>
+<tr><td><a href="packages/express"><code>@stitchapi/express</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/express">npm</a></td><td>Express middleware</td></tr>
+<tr><td><a href="packages/fastify"><code>@stitchapi/fastify</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fastify">npm</a></td><td>Fastify plugin</td></tr>
+<tr><td><a href="packages/hono"><code>@stitchapi/hono</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/hono">npm</a></td><td>Hono middleware + helpers</td></tr>
+<tr><td><a href="packages/nest"><code>@stitchapi/nest</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/nest">npm</a></td><td>First-class NestJS integration</td></tr>
+<tr><td><a href="packages/next"><code>@stitchapi/next</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/next">npm</a></td><td>Next.js helpers</td></tr>
 <tr><th colspan="2">Client &amp; UI bindings</th></tr>
-<tr><td><a href="packages/angular"><code>@stitchapi/angular</code></a></td><td>Angular bindings</td></tr>
-<tr><td><a href="packages/expo"><code>@stitchapi/expo</code></a></td><td>Expo bindings</td></tr>
-<tr><td><a href="packages/query-core"><code>@stitchapi/query-core</code></a></td><td>Framework-agnostic reactive query store</td></tr>
-<tr><td><a href="packages/react"><code>@stitchapi/react</code></a></td><td>React bindings</td></tr>
-<tr><td><a href="packages/react-native"><code>@stitchapi/react-native</code></a></td><td>React Native bindings</td></tr>
-<tr><td><a href="packages/solid"><code>@stitchapi/solid</code></a></td><td>Solid bindings</td></tr>
-<tr><td><a href="packages/svelte"><code>@stitchapi/svelte</code></a></td><td>Svelte bindings</td></tr>
-<tr><td><a href="packages/vue"><code>@stitchapi/vue</code></a></td><td>Vue 3 bindings</td></tr>
+<tr><td><a href="packages/angular"><code>@stitchapi/angular</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/angular">npm</a></td><td>Angular bindings</td></tr>
+<tr><td><a href="packages/expo"><code>@stitchapi/expo</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/expo">npm</a></td><td>Expo bindings</td></tr>
+<tr><td><a href="packages/query-core"><code>@stitchapi/query-core</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/query-core">npm</a></td><td>Framework-agnostic reactive query store</td></tr>
+<tr><td><a href="packages/react"><code>@stitchapi/react</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/react">npm</a></td><td>React bindings</td></tr>
+<tr><td><a href="packages/react-native"><code>@stitchapi/react-native</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/react-native">npm</a></td><td>React Native bindings</td></tr>
+<tr><td><a href="packages/solid"><code>@stitchapi/solid</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/solid">npm</a></td><td>Solid bindings</td></tr>
+<tr><td><a href="packages/svelte"><code>@stitchapi/svelte</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/svelte">npm</a></td><td>Svelte bindings</td></tr>
+<tr><td><a href="packages/vue"><code>@stitchapi/vue</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/vue">npm</a></td><td>Vue 3 bindings</td></tr>
 <tr><th colspan="2">Data-fetching libraries</th></tr>
-<tr><td><a href="packages/rtk-query"><code>@stitchapi/rtk-query</code></a></td><td>RTK Query bindings</td></tr>
-<tr><td><a href="packages/swr"><code>@stitchapi/swr</code></a></td><td>SWR bindings</td></tr>
+<tr><td><a href="packages/rtk-query"><code>@stitchapi/rtk-query</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/rtk-query">npm</a></td><td>RTK Query bindings</td></tr>
+<tr><td><a href="packages/swr"><code>@stitchapi/swr</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/swr">npm</a></td><td>SWR bindings</td></tr>
 <tr><th colspan="2">State stores</th></tr>
-<tr><td><a href="packages/cloudflare-kv"><code>@stitchapi/cloudflare-kv</code></a></td><td>Cloudflare Workers KV-backed StitchStore</td></tr>
-<tr><td><a href="packages/deno-kv"><code>@stitchapi/deno-kv</code></a></td><td>Deno KV-backed StitchStore</td></tr>
-<tr><td><a href="packages/redis"><code>@stitchapi/redis</code></a></td><td>Redis-backed StitchStore</td></tr>
+<tr><td><a href="packages/cloudflare-kv"><code>@stitchapi/cloudflare-kv</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/cloudflare-kv">npm</a></td><td>Cloudflare Workers KV-backed StitchStore</td></tr>
+<tr><td><a href="packages/deno-kv"><code>@stitchapi/deno-kv</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/deno-kv">npm</a></td><td>Deno KV-backed StitchStore</td></tr>
+<tr><td><a href="packages/redis"><code>@stitchapi/redis</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/redis">npm</a></td><td>Redis-backed StitchStore</td></tr>
 <tr><th colspan="2">Auth</th></tr>
-<tr><td><a href="packages/aws-sigv4"><code>@stitchapi/aws-sigv4</code></a></td><td>AWS Signature V4 request signing</td></tr>
+<tr><td><a href="packages/aws-sigv4"><code>@stitchapi/aws-sigv4</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/aws-sigv4">npm</a></td><td>AWS Signature V4 request signing</td></tr>
 <tr><th colspan="2">AI</th></tr>
-<tr><td><a href="packages/vercel-ai"><code>@stitchapi/vercel-ai</code></a></td><td>Vercel AI SDK adapter</td></tr>
+<tr><td><a href="packages/vercel-ai"><code>@stitchapi/vercel-ai</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/vercel-ai">npm</a></td><td>Vercel AI SDK adapter</td></tr>
 <tr><th colspan="2">Observability</th></tr>
-<tr><td><a href="packages/pino"><code>@stitchapi/pino</code></a></td><td>Pino TraceSink</td></tr>
-<tr><td><a href="packages/sentry"><code>@stitchapi/sentry</code></a></td><td>A Sentry TraceSink</td></tr>
+<tr><td><a href="packages/pino"><code>@stitchapi/pino</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/pino">npm</a></td><td>Pino TraceSink</td></tr>
+<tr><td><a href="packages/sentry"><code>@stitchapi/sentry</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/sentry">npm</a></td><td>A Sentry TraceSink</td></tr>
 <tr><th colspan="2">Surfaces</th></tr>
-<tr><td><a href="packages/shell"><code>@stitchapi/shell</code></a></td><td>Run a static local command as a StitchAPI surface</td></tr>
+<tr><td><a href="packages/shell"><code>@stitchapi/shell</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/shell">npm</a></td><td>Run a static local command as a StitchAPI surface</td></tr>
 <tr><th colspan="2">Cache fingerprint adapters</th></tr>
-<tr><td><a href="packages/fingerprint-arktype"><code>@stitchapi/fingerprint-arktype</code></a></td><td>Stable Standard Schema fingerprint strategy for ArkType</td></tr>
-<tr><td><a href="packages/fingerprint-effect"><code>@stitchapi/fingerprint-effect</code></a></td><td>Stable Standard Schema fingerprint strategy for Effect Schema</td></tr>
-<tr><td><a href="packages/fingerprint-typebox"><code>@stitchapi/fingerprint-typebox</code></a></td><td>Stable Standard Schema fingerprint strategy for TypeBox</td></tr>
-<tr><td><a href="packages/fingerprint-valibot"><code>@stitchapi/fingerprint-valibot</code></a></td><td>Stable Standard Schema fingerprint strategy for Valibot</td></tr>
-<tr><td><a href="packages/fingerprint-zod"><code>@stitchapi/fingerprint-zod</code></a></td><td>Stable Standard Schema fingerprint strategy for Zod</td></tr>
+<tr><td><a href="packages/fingerprint-arktype"><code>@stitchapi/fingerprint-arktype</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fingerprint-arktype">npm</a></td><td>Stable Standard Schema fingerprint strategy for ArkType</td></tr>
+<tr><td><a href="packages/fingerprint-effect"><code>@stitchapi/fingerprint-effect</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fingerprint-effect">npm</a></td><td>Stable Standard Schema fingerprint strategy for Effect Schema</td></tr>
+<tr><td><a href="packages/fingerprint-typebox"><code>@stitchapi/fingerprint-typebox</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fingerprint-typebox">npm</a></td><td>Stable Standard Schema fingerprint strategy for TypeBox</td></tr>
+<tr><td><a href="packages/fingerprint-valibot"><code>@stitchapi/fingerprint-valibot</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fingerprint-valibot">npm</a></td><td>Stable Standard Schema fingerprint strategy for Valibot</td></tr>
+<tr><td><a href="packages/fingerprint-zod"><code>@stitchapi/fingerprint-zod</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fingerprint-zod">npm</a></td><td>Stable Standard Schema fingerprint strategy for Zod</td></tr>
 </tbody>
 </table>
 
