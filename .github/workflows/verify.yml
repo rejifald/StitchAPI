@@ -75,6 +75,13 @@ jobs:
             # lefthook pre-commit `completions` job, enforced in CI.
             - run: pnpm --filter @stitchapi/docs gen:completions
             - run: git diff --exit-code "apps/docs/app/(home)/playground/playground-completions.generated.ts"
+            # Docs IA drift guard: content.manifest.ts is the source of truth for the sidebar,
+            # but pages get added straight into the per-folder meta.json files, so the manifest
+            # silently rots and a stray `gen:docs` would delete real pages. Regenerate and fail
+            # if any meta.json drifted from the manifest (two-way sync is also unit-tested in
+            # apps/docs/test/content-manifest.spec.ts). Mirrors the completions gate above.
+            - run: pnpm --filter @stitchapi/docs gen:docs
+            - run: git diff --exit-code apps/docs/content/docs
             # Render gate: `tsc` type-checks the docs but never renders a page, so a
             # broken AutoTypeTable path/name, an unregistered MDX component, or a
             # generator throw all pass type-check and only fail at build. Building the

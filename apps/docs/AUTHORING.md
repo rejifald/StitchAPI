@@ -23,6 +23,14 @@ machine-readable `llms.mdx`.
     emit folders, each `meta.json`, and a stub `.mdx` per page.
     **A page that isn't in the manifest doesn't exist; a manifest entry with no
     file is a bug.** Don't reorganize the tree by hand — change the manifest.
+    `test/content-manifest.spec.ts` and a CI `gen:docs` diff gate enforce this
+    two-way sync, so a drifted manifest fails the build.
+    -   **Exception — hand-maintained sections:** a section listed in
+        `HAND_MAINTAINED_SECTIONS` (e.g. `integrations`, whose pages are added
+        per-PR as each `@stitchapi/*` package ships) curates its own `meta.json`
+        and page set. The generator skips it and the sync test exempts its pages,
+        so for those folders you edit `meta.json` by hand and the manifest stays
+        out of it.
 -   **Machine-readable output is automatic:** Fumadocs emits `llms.txt`,
     `llms-full.txt`, and a per-page `llms.mdx` from your content. You never write
     these — but [rule 5](#authoring-rules) exists because of them.
