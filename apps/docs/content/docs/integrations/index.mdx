@@ -25,16 +25,21 @@ companion is proven against the same conformance kits the core ships:
     sessions, and cache into a shared backend so they go fleet-wide with no call-site
     change.
 
-## Backend frameworks
+## Server frameworks
 
 Attach a `seam` to your server: one shared client with a request-scoped principal,
 an SSE helper, and an error bridge.
 
 <Cards>
     <Card
-        title="NestJS"
-        href="/docs/integrations/nestjs"
-        description="A module + injectable seam, request-scoped principal, and an exception filter that maps StitchError to HTTP."
+        title="Elysia"
+        href="/docs/integrations/elysia"
+        description="A plugin with a principal-bound seam on the context, a streamStitchSse → Response bridge, and StitchError mapped to HTTP via onError."
+    />
+    <Card
+        title="Express"
+        href="/docs/integrations/express"
+        description="Express 4/5 middleware: a principal-bound seam on req.stitch, an SSE bridge (streamStitchSse), and StitchError mapped to JSON by a 4-arg error handler."
     />
     <Card
         title="Fastify"
@@ -47,29 +52,51 @@ an SSE helper, and an error bridge.
         description="Edge/multi-runtime middleware with a per-request seam and an SSE bridge — Workers, Deno, Bun, Node."
     />
     <Card
+        title="NestJS"
+        href="/docs/integrations/nestjs"
+        description="A module + injectable seam, request-scoped principal, and an exception filter that maps StitchError to HTTP."
+    />
+    <Card
         title="Next.js"
         href="/docs/integrations/next"
         description="Web-standard route-handler helpers — sseResponse (text/event-stream) and stitchErrorResponse (StitchError → Response)."
     />
 </Cards>
 
-## Frontend
+## Client &amp; UI bindings
 
 Each binding is a thin layer over the shared `@stitchapi/query-core` store, so
 updates are tearing-free and **streaming-first** — the view re-renders as each
 `delta` chunk arrives, which plain request/response query libraries don't model.
-One core, one binding per framework's own reactive primitive.
+One core, one binding per framework's own reactive primitive — including the
+mobile bindings, made to stream on device where the platform's `fetch`, storage,
+and lifecycle differ from the web.
 
 <Cards>
+    <Card
+        title="Angular"
+        href="/docs/integrations/angular"
+        description="injectStitch / injectStitchStream exposed as both signals and an RxJS observable."
+    />
+    <Card
+        title="Expo"
+        href="/docs/integrations/expo"
+        description="Streaming over expo/fetch with no polyfills, plus an encrypted expo-secure-store vault — over the same hooks as React Native."
+    />
     <Card
         title="React"
         href="/docs/integrations/react"
         description="Tearing-free useStitch / useStitchStream hooks built on useSyncExternalStore."
     />
     <Card
-        title="Vue"
-        href="/docs/integrations/vue"
-        description="useStitch / useStitchStream composables backed by Vue 3 reactivity (refs)."
+        title="React Native"
+        href="/docs/integrations/react-native"
+        description="A streaming XHR adapter (bare RN's fetch can't stream), an AsyncStorage store for persistent sessions, and AppState/NetInfo refetch helpers."
+    />
+    <Card
+        title="Solid"
+        href="/docs/integrations/solid"
+        description="createStitch / createStitchStream primitives reconciled into a Solid store, over @stitchapi/query-core — plus an optional TanStack Query adapter."
     />
     <Card
         title="Svelte"
@@ -77,14 +104,22 @@ One core, one binding per framework's own reactive primitive.
         description="stitchStore / stitchStreamStore — real Svelte stores, on Svelte 4 and 5."
     />
     <Card
-        title="Angular"
-        href="/docs/integrations/angular"
-        description="injectStitch / injectStitchStream exposed as both signals and an RxJS observable."
+        title="Vue"
+        href="/docs/integrations/vue"
+        description="useStitch / useStitchStream composables backed by Vue 3 reactivity (refs)."
     />
+</Cards>
+
+## Data-fetching libraries
+
+Run a stitch through the cache-and-revalidation library you already use — the
+stitch is the fetcher; the library owns caching, dedup, and invalidation.
+
+<Cards>
     <Card
-        title="TanStack Query"
-        href="/docs/integrations/tanstack-query"
-        description="Use a stitch as a queryFn with the framework-agnostic queryOptions(stitch, input) helper — no hard dependency."
+        title="RTK Query"
+        href="/docs/integrations/rtk-query"
+        description="stitchQueryFn / stitchStreamUpdater slot a stitch into an RTK Query endpoint (incl. streaming)."
     />
     <Card
         title="SWR"
@@ -92,27 +127,48 @@ One core, one binding per framework's own reactive primitive.
         description="useStitchSWR runs a stitch as an SWR fetcher — SWR owns caching and revalidation."
     />
     <Card
-        title="RTK Query"
-        href="/docs/integrations/rtk-query"
-        description="stitchQueryFn / stitchStreamUpdater slot a stitch into an RTK Query endpoint (incl. streaming)."
+        title="TanStack Query"
+        href="/docs/integrations/tanstack-query"
+        description="Use a stitch as a queryFn with the framework-agnostic queryOptions(stitch, input) helper — no hard dependency."
     />
 </Cards>
 
-## Mobile
+## State stores
 
-The same hooks, made to stream on device — where the platform's `fetch`, storage,
-and lifecycle differ from the web.
+Attach a `StitchStore` to move a stitch's throttle counters, sessions, and cache
+into a shared backend — fleet-wide, with no call-site change.
 
 <Cards>
     <Card
-        title="React Native"
-        href="/docs/integrations/react-native"
-        description="A streaming XHR adapter (bare RN's fetch can't stream), an AsyncStorage store for persistent sessions, and AppState/NetInfo refetch helpers."
+        title="Distributed stores"
+        href="/docs/integrations/stores"
+        description="Redis (+ Upstash edge), Cloudflare Workers KV, and Deno KV drivers — with the atomic-incr trade-off that decides which fits."
     />
+</Cards>
+
+## Auth
+
+Core ships bearer / apiKey / basic / cookieSession / oauth2 built in; companions
+add the schemes that need more.
+
+<Cards>
     <Card
-        title="Expo"
-        href="/docs/integrations/expo"
-        description="Streaming over expo/fetch with no polyfills, plus an encrypted expo-secure-store vault — over the same hooks as React Native."
+        title="AWS SigV4"
+        href="/docs/integrations/aws-sigv4"
+        description="Sign requests with AWS Signature V4 (Web Crypto, edge-safe) — for AWS APIs, S3-compatible stores, and any SigV4-protected endpoint."
+    />
+</Cards>
+
+## AI
+
+A stitch is agent-native through the [MCP surface](/docs/surfaces/mcp); a
+companion adapts it to a specific framework's tool-calling loop.
+
+<Cards>
+    <Card
+        title="Vercel AI SDK"
+        href="/docs/integrations/vercel-ai"
+        description="stitchTool exposes a stitch as an AI SDK tool() — the model gets typed, validated data, never the credential."
     />
 </Cards>
 
@@ -133,45 +189,6 @@ and lifecycle differ from the web.
 
 For OpenTelemetry, core exports an OTLP trace bridge directly — see the
 [OTLP guide](/docs/guides/observability/otlp).
-
-## State &amp; storage
-
-Attach a `StitchStore` to move a stitch's throttle counters, sessions, and cache
-into a shared backend — fleet-wide, with no call-site change.
-
-<Cards>
-    <Card
-        title="Distributed stores"
-        href="/docs/integrations/stores"
-        description="Redis (+ Upstash edge), Cloudflare Workers KV, and Deno KV drivers — with the atomic-incr trade-off that decides which fits."
-    />
-</Cards>
-
-## Authentication
-
-Core ships bearer / apiKey / basic / cookieSession / oauth2 built in; companions
-add the schemes that need more.
-
-<Cards>
-    <Card
-        title="AWS SigV4"
-        href="/docs/integrations/aws-sigv4"
-        description="Sign requests with AWS Signature V4 (Web Crypto, edge-safe) — for AWS APIs, S3-compatible stores, and any SigV4-protected endpoint."
-    />
-</Cards>
-
-## Agents &amp; AI
-
-A stitch is agent-native through the [MCP surface](/docs/surfaces/mcp); a
-companion adapts it to a specific framework's tool-calling loop.
-
-<Cards>
-    <Card
-        title="Vercel AI SDK"
-        href="/docs/integrations/vercel-ai"
-        description="stitchTool exposes a stitch as an AI SDK tool() — the model gets typed, validated data, never the credential."
-    />
-</Cards>
 
 ## See also
 
