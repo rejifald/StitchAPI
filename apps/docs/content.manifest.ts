@@ -2,14 +2,17 @@
  * StitchAPI docs — content manifest.
  *
  * The single source of truth for the documentation information architecture.
- * The skeleton generator (`scripts/generate-skeleton.ts`, added next) reads this
- * to emit the folder tree, each `meta.json` (label + page order), and a stub
- * `.mdx` per page using the template for its `kind`.
+ * The skeleton generator (`scripts/generate-skeleton.mjs`) reads this to emit
+ * the folder tree, each `meta.json` (label + page order), and a stub `.mdx`
+ * per page using the template for its `kind`.
  *
- * Invariants (a test will enforce the first one):
+ * Invariants (enforced by `test/content-manifest.spec.ts`, plus a CI gate that
+ * re-runs `gen:docs` and fails on any diff):
  *  - Two-way sync: every `.mdx` under `content/docs` is listed here, and every
  *    entry here has a file. No orphan pages, no undocumented pages. This is the
  *    same anti-drift rule the runtime sells, applied to the docs themselves.
+ *    Exception: sections in `HAND_MAINTAINED_SECTIONS` curate their own
+ *    `meta.json` and page set, so their pages live outside this manifest.
  *  - `description` is mandatory and is a real sentence — it feeds search,
  *    `llms.txt`, and an agent's relevance decision when the page is pulled as
  *    standalone `llms.mdx`. Never ship a placeholder.
@@ -35,6 +38,11 @@ export interface Section {
     path: string;
     /** Sidebar group label — becomes the folder `meta.json` `title`. */
     title: string;
+    /**
+     * Optional folder-level blurb — becomes the `meta.json` `description`.
+     * Currently only the root section carries one (it feeds the docs home).
+     */
+    description?: string;
     /** Optional lucide icon name (the lucide-icons source plugin is enabled). */
     icon?: string;
 }
@@ -56,8 +64,14 @@ export interface Page {
  * entry; the root entry orders the top-level groups.
  */
 export const sections: Section[] = [
-    { path: '', title: 'Documentation' },
+    {
+        path: '',
+        title: 'Documentation',
+        description:
+            'API stitching: turn any API into a typed, resilient function — declare an endpoint once and call it like a local function from your code, the CLI, or an agent, without ever touching a credential.',
+    },
     { path: 'getting-started', title: 'Getting started', icon: 'Rocket' },
+    { path: 'recipes', title: 'Recipes', icon: 'ChefHat' },
     { path: 'concepts', title: 'Concepts', icon: 'Lightbulb' },
     { path: 'guides', title: 'Guides', icon: 'BookOpen' },
     { path: 'guides/authoring', title: 'Authoring & composition' },
@@ -67,12 +81,26 @@ export const sections: Section[] = [
     { path: 'guides/validation', title: 'Validation & drift' },
     { path: 'guides/observability', title: 'Observability' },
     { path: 'guides/state', title: 'State & stores' },
+    { path: 'guides/testing', title: 'Testing' },
     { path: 'surfaces', title: 'Surfaces', icon: 'Layers' },
     { path: 'integrations', title: 'Integrations', icon: 'Plug' },
     { path: 'agents', title: 'For agents', icon: 'Bot' },
     { path: 'reference', title: 'Reference', icon: 'Code' },
     { path: 'errors', title: 'Errors & pitfalls', icon: 'TriangleAlert' },
 ];
+
+/**
+ * Sections whose `meta.json` and page set are curated by hand, NOT generated
+ * from this manifest. The skeleton generator skips them (never rewrites their
+ * `meta.json`) and the two-way-sync test exempts their pages. Use this only for
+ * a section whose page set churns independently of this file — e.g.
+ * integrations, where every shipped `@stitchapi/*` package adds its own page
+ * per-PR. The section entry still lives in `sections` (above) so the generator
+ * keeps it in its parent's sidebar order.
+ */
+export const HAND_MAINTAINED_SECTIONS: ReadonlySet<string> = new Set([
+    'integrations',
+]);
 
 /**
  * Every page, grouped by section in reading order. The generator preserves this
@@ -115,6 +143,113 @@ export const pages: Page[] = [
         title: 'Migration notes',
         description:
             'Three spec-correct behaviors — lowercase header names, %20 query spaces, and template-narrowed stitch types — that differ from a naive baseline and surprise migrators.',
+        kind: 'guide',
+    },
+
+    // ── Recipes ─────────────────────────────────────────────────────────────
+    {
+        path: 'recipes/index',
+        title: 'Recipes',
+        description:
+            'Working examples of common tasks — each one the whole thing in a single block, with links down to the guides for depth.',
+        kind: 'landing',
+    },
+    {
+        path: 'recipes/typed-json-round-trip',
+        title: 'Send JSON and get a typed result back',
+        description:
+            'POST a validated body and read a typed, runtime-validated result — input checked before the request, output checked after.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/define-an-entity-once',
+        title: 'Define an entity once, derive every request shape',
+        description:
+            'Declare a resource schema once and derive the create body, update body, and query filter with your validator’s own .omit()/.partial()/.pick() — no StitchAPI-specific schema layer.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/paginate-into-one-array',
+        title: 'Loop a cursor API into one array',
+        description:
+            'Follow nextCursor across every page and aggregate the items — no manual while-loop, cursor bookkeeping, or concat.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/make-a-flaky-call-succeed',
+        title: 'Make a flaky call succeed on its own',
+        description:
+            'Add retry with backoff so transient 429s and 5xxs recover without your code noticing.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/survive-a-flaky-dependency',
+        title: 'Keep a failing dependency from taking you down',
+        description:
+            'Compose timeout, retry, and a circuit breaker so a degraded upstream fails fast instead of hanging every caller.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/idempotent-writes',
+        title: 'Retry a write without double-charging',
+        description:
+            'Attach an idempotency key so a retried POST settles once, not twice.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/catch-a-breaking-api-change',
+        title: 'Catch a breaking API change before your users do',
+        description:
+            'Wrap output with drift to compare every response against a committed snapshot and flag dropped fields, type flips, and new keys by severity.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/catch-a-selector-rename',
+        title: 'Catch a silent selector rename in scraped HTML',
+        description:
+            'Scrape an HTML page into a structured object with transform, then drift the structured shape so a markup or selector rename becomes a loud contract error instead of a silently missing field.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/watch-a-call-as-it-happens',
+        title: 'Watch retries and throttling as they happen',
+        description:
+            "Iterate a stitch's event stream instead of awaiting it, and observe every retry, pause, and drift in real time.",
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/mirror-a-paginated-api',
+        title: 'Mirror a paginated API to NDJSON',
+        description:
+            'Pull every page of a cursor-paginated, OAuth2-protected endpoint — with retry and throttle on each page — and write the rows as newline-delimited JSON.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/one-rate-limit-across-workers',
+        title: 'Share one rate limit across every worker',
+        description:
+            'Point the throttle at a shared store so a whole fleet draws from a single rate budget instead of N× the limit.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/auth-as-a-capability',
+        title: 'Authenticate without the token touching your code',
+        description:
+            'Declare auth on the stitch so callers get a capability, not a credential — the secret is read per call and never returned.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/expose-a-stitch-to-an-agent',
+        title: 'Let an agent call your API without handing it the key',
+        description:
+            'Expose your stitches over MCP through one run_stitch tool — the agent invokes a capability and never sees the credential.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/one-stitch-every-surface',
+        title: 'Call one stitch as a function, a CLI command, and an agent tool',
+        description:
+            'One definition, four front doors — in-process, shell, HTTP, and MCP — with nothing about the stitch changing.',
         kind: 'guide',
     },
 
@@ -170,6 +305,13 @@ export const pages: Page[] = [
             'Pre-bind part of a call and reuse the same runtime so cookies, throttle, and sessions persist.',
         kind: 'guide',
     },
+    {
+        path: 'guides/authoring/hooks',
+        title: 'Hooks',
+        description:
+            'Observe a call as it runs — onRequest, onResponse, onError, onRetry — and where each fires relative to auth, retry, throttle, and timeout.',
+        kind: 'guide',
+    },
 
     // ── Guides · Auth ───────────────────────────────────────────────────────
     {
@@ -221,6 +363,13 @@ export const pages: Page[] = [
         title: 'Retry & backoff',
         description:
             'Retry on configurable status codes with expo/jitter/fixed backoff and respect for Retry-After.',
+        kind: 'guide',
+    },
+    {
+        path: 'guides/resilience/accept-status',
+        title: 'Accept status',
+        description:
+            'Declare statuses that are a normal result, not an error — an accepted non-2xx flows through transform/unwrap/validate instead of throwing.',
         kind: 'guide',
     },
     {
@@ -284,6 +433,13 @@ export const pages: Page[] = [
         path: 'guides/data/body-encoding',
         title: 'Body encoding',
         description: 'Send request bodies as json, form, or multipart.',
+        kind: 'guide',
+    },
+    {
+        path: 'guides/data/url-shaping',
+        title: 'URL shaping',
+        description:
+            'RFC 6570 path templates and qs-style nested query serialization — how params and query become the URL.',
         kind: 'guide',
     },
     {
@@ -356,6 +512,15 @@ export const pages: Page[] = [
         kind: 'guide',
     },
 
+    // ── Guides · Testing ────────────────────────────────────────────────────
+    {
+        path: 'guides/testing/mocking',
+        title: 'Testing',
+        description:
+            'Mock the transport to test a stitch definition, or swap in a fake stitch to test code that calls one — from stitchapi/testing.',
+        kind: 'guide',
+    },
+
     // ── Surfaces ────────────────────────────────────────────────────────────
     {
         path: 'surfaces/function',
@@ -387,13 +552,9 @@ export const pages: Page[] = [
     },
 
     // ── Integrations ────────────────────────────────────────────────────────
-    {
-        path: 'integrations/nestjs',
-        title: 'NestJS',
-        description:
-            'Wire stitches into a NestJS app with StitchModule — injectable stitches, a Logger trace bridge, ConfigService-backed secrets, and request-scoped multi-tenancy.',
-        kind: 'guide',
-    },
+    // Hand-maintained (see HAND_MAINTAINED_SECTIONS): the integrations pages
+    // live in content/docs/integrations/meta.json, added per-PR as each
+    // @stitchapi/* package ships. Intentionally absent from this manifest.
 
     // ── For agents ──────────────────────────────────────────────────────────
     {
@@ -415,6 +576,13 @@ export const pages: Page[] = [
         title: 'Author from one example',
         description:
             'Have an agent emit a stitch declaration from a single curl, HAR, or doc snippet.',
+        kind: 'guide',
+    },
+    {
+        path: 'agents/adopt-in-your-project',
+        title: 'Adopt in your project',
+        description:
+            'Drop a rule into your repo so any agent reaches for a typed stitch instead of a hand-rolled fetch — by hand, or with npx stitch init.',
         kind: 'guide',
     },
     {
@@ -447,10 +615,24 @@ export const pages: Page[] = [
         kind: 'reference',
     },
     {
+        path: 'reference/surfaces',
+        title: 'Request surfaces',
+        description:
+            'http, graphql, sse, stream, and download — the request styles a stitch can speak, each a subpath import riding one engine.',
+        kind: 'reference',
+    },
+    {
         path: 'reference/helpers',
         title: 'Helpers',
         description:
             'fetchAdapter, createTrace, multiplex, the OTLP exporters, memoryStore, and toValidator.',
+        kind: 'reference',
+    },
+    {
+        path: 'reference/conformance-kits',
+        title: 'Conformance kits',
+        description:
+            'Prove a custom adapter, store, or trace sink implements its seam — from stitchapi/testing, in your own CI.',
         kind: 'reference',
     },
     {
