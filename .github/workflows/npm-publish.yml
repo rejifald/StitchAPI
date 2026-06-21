@@ -129,11 +129,20 @@ jobs:
             # uploads that tarball authenticated by the workflow's id-token — no NODE_AUTH_TOKEN.
             # A version already on the registry is skipped, so a re-run after a partial publish is
             # idempotent. `--provenance` attaches a signed build-provenance attestation.
+            #
+            # The loop does NOT abort on the first package that fails — it attempts every package,
+            # then exits non-zero with the full list of failures. A single missing/mismatched npm
+            # Trusted Publisher (ENEEDAUTH/E403) on one package would otherwise mask the state of
+            # all the packages after it, turning a release into a blind one-at-a-time grind. Each
+            # `npm publish` runs under an `if` so its failure is recorded, not fatal (errexit is
+            # exempt inside an `if` condition); successful publishes still land, and the re-run
+            # skips them.
             - name: Publish (OIDC trusted publishing)
               run: |
                   set -euo pipefail
                   TAG="${{ steps.release.outputs.tag }}"
                   OUT="$(mktemp -d)"
+                  published=() skipped=() failed=()
                   for d in packages/*/; do
                       d="${d%/}"
                       if [ "$(node -p "require('./$d/package.json').private === true")" = "true" ]; then
@@ -143,10 +152,30 @@ jobs:
                       version="$(node -p "require('./$d/package.json').version")"
                       if npm view "$name@$version" version >/dev/null 2>&1; then
                           echo "✓ skip $name@$version (already on the registry)"
+                          skipped+=("$name")
                           continue
                       fi
-                      (cd "$d" && pnpm pack --pack-destination "$OUT" >/dev/null)
                       tgz="$OUT/$(echo "$name" | sed 's/@//; s#/#-#')-$version.tgz"
+                      if ! (cd "$d" && pnpm pack --pack-destination "$OUT" >/dev/null); then
+                          echo "::error::pack failed for $name@$version"
+                          failed+=("$name")
+                          continue
+                      fi
                       echo "→ publishing $name@$version under dist-tag '$TAG'"
-                      npm publish "$tgz" --provenance --tag "$TAG"
+                      if npm publish "$tgz" --provenance --tag "$TAG"; then
+                          echo "✓ published $name@$version"
+                          published+=("$name")
+                      else
+                          echo "::warning::publish failed for $name@$version (likely a missing/mismatched npm Trusted Publisher)"
+                          failed+=("$name")
+                      fi
                   done
+                  echo "── publish summary ────────────────────────────────────"
+                  echo "  published (${#published[@]}): ${published[*]:-—}"
+                  echo "  skipped   (${#skipped[@]}): ${skipped[*]:-—}"
+                  echo "  failed    (${#failed[@]}): ${failed[*]:-—}"
+                  if [ "${#failed[@]}" -gt 0 ]; then
+                      echo "::error title=Publish incomplete::${#failed[@]} package(s) failed to publish: ${failed[*]}. ENEEDAUTH/E403 here almost always means that package's npm Trusted Publisher is missing or doesn't match — it must be GitHub Actions, repo rejifald/StitchAPI, workflow npm-publish.yml, no environment. Fix those on npmjs.com, then re-run this job; already-published packages are skipped, so the re-run only retries the failures."
+                      exit 1
+                  fi
+                  echo "✓ all publishable packages are on the registry at $TAG"
