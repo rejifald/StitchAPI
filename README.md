@@ -14,6 +14,10 @@
 </p>
 
 <p align="center">
+  <a href="https://stitchapi.dev"><strong>📚 stitchapi.dev</strong></a> — documentation, guides &amp; live playground
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
   <img alt="npm bundle size (minified + gzipped)" src="https://img.shields.io/bundlephobia/minzip/stitchapi" />
   <img alt="Bundle: ~22 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~22%20kB-2563EB" />
@@ -40,28 +44,409 @@
 
 ---
 
-# StitchAPI — monorepo
+## Table of Contents
 
-This repository is a [pnpm](https://pnpm.io) workspace.
+-   [What is a stitch?](#what-is-a-stitch)
+-   [Motivation](#motivation)
+-   [Why StitchAPI](#why-stitchapi)
+-   [What StitchAPI is not](#what-stitchapi-is-not)
+-   [Features](#features)
+-   [Install](#install)
+-   [Quick start](#quick-start)
+-   [Composition: seam, extends, `.with()`](#composition-seam-extends-with)
+-   [Validation & leveled drift](#validation--leveled-drift)
+-   [Resilience: retry, throttle, timeout](#resilience-retry-throttle-timeout)
+-   [Caching](#caching)
+-   [Auth as a boundary](#auth-as-a-boundary)
+-   [Surfaces: any request style](#surfaces-any-request-style)
+-   [Four front doors](#four-front-doors)
+-   [Agent-native](#agent-native)
+-   [Errors & pitfalls](#errors--pitfalls)
+-   [Zero-infra observability](#zero-infra-observability)
+-   [Packages](#packages)
+-   [Documentation](#documentation)
+-   [Contributing](#contributing)
+-   [License](#license)
 
-| Package                                        | Path                     | Description                                                                                |
-| ---------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------ |
-| [`stitchapi`](packages/core)                   | `packages/core`          | The published library — the `stitch` runtime, CLI, auth, tracing.                          |
-| [`@stitchapi/nest`](packages/nest)             | `packages/nest`          | NestJS module — injectable stitches, `Logger` / `ConfigService` bridges, multi-tenancy.    |
-| [`@stitchapi/fastify`](packages/fastify)       | `packages/fastify`       | Fastify plugin — shared seam, request-scoped principal, SSE + error + logger bridges.      |
-| [`@stitchapi/hono`](packages/hono)             | `packages/hono`          | Hono middleware — edge-ready principal-bound seam, SSE bridge, error mapper.               |
-| [`@stitchapi/react`](packages/react)           | `packages/react`         | React hooks — `useStitch` / `useStitchStream` + an optional TanStack Query adapter.        |
-| [`@stitchapi/query-core`](packages/query-core) | `packages/query-core`    | Framework-agnostic reactive store behind the React (and future Vue/Svelte/Solid) bindings. |
-| [`@stitchapi/pino`](packages/pino)             | `packages/pino`          | A Pino `TraceSink` — the stitch event stream as structured Pino logs.                      |
-| [`@stitchapi/redis`](packages/redis)           | `packages/redis`         | A Redis-backed store — distributed throttle and sessions shared across workers.            |
-| [`@stitchapi/shell`](packages/shell)           | `packages/shell`         | The non-HTTP `shell` kind — run a local command as a stitch.                               |
-| `@stitchapi/fingerprint-*`                     | `packages/fingerprint-*` | Per-validator cache-fingerprint adapters (Zod, Valibot, ArkType, Effect, TypeBox).         |
+## What is a stitch?
 
-Design notes, overview, and feature lenses live in [`docs/`](docs).
+A **stitch** is StitchAPI's core primitive: it takes a single endpoint and hands back a callable. You declare the contract once — input, output, auth, resilience — and call it like a local function. The same definition your code calls, the CLI runs and an AI agent invokes — and every caller gets a **capability, not a credential**. A service with more than one endpoint is a **seam** — a group of stitches that share a base URL, auth, and one runtime (throttle budget, store, trace sink).
+
+```ts
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getUser = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+    unwrap: 'data',
+});
+
+const user = await getUser({ params: { id: 1 } }); // typed · validated
+```
+
+Keep the `fetch` or axios you already have — it's the adapter underneath. A stitch sits _above_ the transport and turns an endpoint into a function rather than replacing the call.
+
+## Motivation
+
+In almost every project there's a `src/api/` folder of thin functions that fire an HTTP request and unwrap the response. Everything that actually makes an integration reliable — auth lifecycle, retries, rate limits, timeouts, response validation, drift detection, observability — gets re-implemented at every call site, and each wrapper rots independently. `fetch` hands back opaque bytes, and raw bytes aren't what application code (or an AI agent) needs; both want structured, validated, observable results.
+
+A stitch folds all of that back into the call:
+
+| Around raw `fetch`, you hand-roll…                  | …a stitch declares it once                                    |
+| --------------------------------------------------- | ------------------------------------------------------------- |
+| Opaque bytes you parse and hope are the right shape | Schema-validated, typed results — drift caught on every call  |
+| A throw on the first failure, then it's on you      | Retries with backoff + jitter, honoring `Retry-After`         |
+| One coarse timeout, if you remember it              | Layered total / per-attempt timeouts with real aborts         |
+| No rate control — you meet the 429s in production   | Proactive throttle: rate + concurrency caps, shared per host  |
+| A raw byte stream you frame and paginate yourself   | SSE framing, delta concatenation, auto-pagination             |
+| Zero visibility into what the call did              | A typed event stream + opt-in traces: latency, retries, drift |
+
+## Why StitchAPI
+
+There are plenty of ways to get a typed API client — spec-based generators, hand-authored contract clients, workflow platforms, or a folder of hand-rolled fetch wrappers. StitchAPI sits in a spot none of them cover: it turns **one endpoint at a time** into a resilient, validated, observable function — no spec, no codegen, no config files, no server; only explicit composition.
+
+-   **Atomic, not spec-first.** Spec-based generators (openapi-generator, Orval, Kubb, …) need a complete OpenAPI document first — and most real-world APIs (internal, undocumented, the long tail) never get one. A stitch needs a URL and one example response.
+-   **A runtime, not a code generator.** No generated SDK to commit, diff, and regenerate. The declaration _is_ the client, validated on every live call — so a silently renamed field is a loud, leveled **drift** signal, not an `undefined` three layers downstream.
+-   **Resilience is declared, not hand-rolled.** Retries, throttling, timeouts, circuit breaking, pagination — configuration on the stitch, uniform across every integration.
+-   **Auth is a boundary.** A stitch owns its credential and lifecycle; callers get a **capability, not the credential**. That matters double when the caller is an AI agent.
+-   **Agents are first-class callers.** One definition is a function, a CLI command, an HTTP endpoint, and an MCP tool — returning structured, schema-validated, traceable results instead of opaque bytes.
+-   **A library, not a platform.** Zero runtime dependencies, embeds in your project, nothing to operate.
+
+| Alternative                                            | Needs                    | You maintain                                          | StitchAPI instead                                                        |
+| ------------------------------------------------------ | ------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| Spec-based codegen (openapi-generator, Orval, Kubb, …) | a complete OpenAPI spec  | a generated SDK, regenerated on every API change      | one endpoint at a time, validated live at runtime                        |
+| Typed runtime clients (Zodios, ts-rest, …)             | a hand-authored contract | your own retry / auth / rate-limit code around it     | resilience, auth lifecycle, and drift detection built into the primitive |
+| Workflow platforms (Windmill, n8n, …)                  | a server to deploy       | flows inside someone else's runtime                   | a zero-dependency library; composition is just code                      |
+| Hand-rolled `fetch` wrappers                           | nothing                  | bespoke auth, retries, limits — re-solved per project | the same concerns, declared once per stitch                              |
+
+For the full competitive landscape and positioning, see the [Overview](docs/OVERVIEW.md).
+
+## What StitchAPI is not
+
+Knowing what a tool refuses to be is how you trust what it is:
+
+-   **Not an HTTP client or `fetch` replacement** — `fetch`/axios are the substrate underneath; a stitch sits above the transport.
+-   **Not a code generator** — no SDK to commit, diff, and regenerate; the declaration is the runtime, validated live.
+-   **Not spec-first** — no OpenAPI document required; a URL and one example response is enough.
+-   **Not a server to deploy** — a zero-dependency library you import, for the APIs you don't control.
+-   **Not a workflow engine or iPaaS** — no orchestration, queues, or visual builder; composition is plain TypeScript.
+-   **No config files or hidden inheritance** — nothing ambient a stitch silently reads.
+
+No server, no codegen, no config files, no implicit inheritance — **only explicit composition.**
+
+## Features
+
+-   **One primitive, scoped to a surface** — `stitch(url | config)` returns a typed callable; **a service with more than one endpoint is a `seam`** that shares base, auth, throttle budget, store, and trace sink across its members.
+-   **Event-stream core** — every call yields a typed stream (`start → progress → drift → result → done`); `await` is sugar that returns the final validated value.
+-   **Bring-your-own validation** — [Zod](https://zod.dev) or any [Standard Schema](https://standardschema.dev) validator (Valibot, ArkType, …); types are inferred from the schemas.
+-   **Leveled drift detection** — live responses diffed against a committed contract snapshot; changes surface as `error` / `warn` / `info` instead of a silent `undefined`.
+-   **Declared resilience** — retry with backoff and `Retry-After`, proactive throttle, layered timeouts, a circuit breaker, and idempotency keys.
+-   **Read-through caching** — opt-in response cache + in-process coalescing, keyed by a derived, principal-scoped key, loaded lazily from `stitchapi/cache`.
+-   **Auth as a boundary** — `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login/re-login), `oauth2`; secrets resolve at call time and never reach the caller.
+-   **Any request style** — `http` by default; `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` are peer surfaces behind subpath imports.
+-   **Pluggable state store** — throttle counters and sessions behind a 3-method store; swap in Redis/Postgres to go distributed.
+-   **Zero-infra observability** — tracing is **off by default**; opt in per stitch or via `STITCH_TRACE_*` env vars. No collector, no dashboard.
+-   **Four front doors, one definition** — in-process function, CLI (`stitch run`), HTTP (`stitch serve`), and MCP (`stitch mcp`).
+-   **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~22 kB min+gzip** for the whole entry, **~18 kB** for a typical `import { stitch }`.
+
+## Install
+
+```bash
+npm install stitchapi   # or: pnpm add stitchapi · yarn add stitchapi
+```
+
+Validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator; none is bundled. The examples below use Zod for familiarity, and hit the live demo API at `demo.stitchapi.dev`.
+
+## Quick start
+
+The smallest stitch is a URL — declare once, call many times:
+
+```ts
+import { stitch } from 'stitchapi';
+
+const getUsers = stitch('https://demo.stitchapi.dev/users');
+
+const users = await getUsers(); // GET, parsed JSON
+```
+
+Path params use [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates; `params`, `query`, `headers`, and `body` all travel in one input object:
+
+```ts
+const getUser = stitch('https://demo.stitchapi.dev/users/{id}');
+
+await getUser({ params: { id: 1 }, query: { expand: 'roles' } });
+// → GET https://demo.stitchapi.dev/users/1?expand=roles
+```
+
+Reach for the full set of knobs only when you need them — they default off:
+
+```ts
+const getUser = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}',
+    output: User, // a validator of your choice
+    unwrap: 'data',
+    retry: 3, // ≡ { attempts: 3 }
+    timeout: '5s', // ≡ { total: '5s' }
+    cache: '1m', // ≡ { ttl: '1m' }
+});
+
+const user = await getUser({ params: { id: 42 } });
+// → typed · validated · retried · cached
+```
+
+A stitch yields a typed **event stream**; `await` consumes it and returns the final value, while `.safe()` resolves to `{ ok, data, error }` and `.stream()` yields progress, throttle waits, retries, and drift as they happen.
+
+## Composition: seam, extends, `.with()`
+
+Everything reusable is a named value, and a stitch composes values — **no global config is ever required**. A service with more than one endpoint is a `seam`: declare the shared base, auth, and budget once; each endpoint is a member that inherits the config _and_ shares one runtime (throttle bucket, store, trace sink):
+
+```ts
+import { seam } from 'stitchapi';
+
+const api = seam({
+    baseUrl: 'https://demo.stitchapi.dev',
+    retry: { attempts: 3, on: [429, 503] },
+    timeout: { total: '30s' },
+});
+
+const listUsers = api.stitch({
+    path: '/users',
+    output: User.array(),
+    unwrap: 'data',
+});
+const getUser = api.stitch({
+    path: '/users/{id}',
+    output: User,
+    unwrap: 'data',
+});
+```
+
+For lighter reuse, `extends: [fragment | stitch]` merges config left→right (own fields win), and `.with()` pre-binds part of the input while reusing the same runtime. Full guide: [Authoring](https://stitchapi.dev/docs/guides/authoring/stitch).
+
+## Validation & leveled drift
+
+Wrap an `output` schema in `drift()` and every live response is compared against the schema **and** a committed snapshot, with each difference classified by level:
+
+| Level     | Trigger                                            | Behavior                         |
+| --------- | -------------------------------------------------- | -------------------------------- |
+| **error** | a `critical` field went missing or changed type    | fails the call (`error` event)   |
+| **warn**  | a watched / non-critical field changed             | `warn` event; the call succeeds  |
+| **info**  | a brand-new field appeared that the contract lacks | `info` event — “want to use it?” |
+
+```ts
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const listOrders = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}/orders',
+    unwrap: 'data',
+    output: drift(
+        z.array(z.object({ id: z.number(), total: z.number().optional() })),
+        {
+            critical: ['[].id'], // error when these break — you rely on them
+            watch: ['[].total'], // warn when this changes
+            snapshotFile: 'orders.contract.json',
+        },
+    ),
+});
+```
+
+A silently renamed field — the classic integration breakage — becomes a loud, leveled signal. The request side validates too: `input` takes a schema per part and fails fast before any request is sent. Full guide: [Validation & drift](https://stitchapi.dev/docs/guides/validation/drift).
+
+## Resilience: retry, throttle, timeout
+
+The things every `src/api/` folder reinvents are configuration here — uniform across every stitch:
+
+```ts
+const listUsers = stitch({
+    baseUrl: 'https://demo.stitchapi.dev',
+    path: '/users',
+    retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
+    throttle: { rate: '1/s', concurrency: 2, scope: 'host' },
+    timeout: { total: '30s', perAttempt: '10s' },
+});
+```
+
+`throttle` is proactive (keeps you under a limit before it bites; `scope: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`acceptStatus`** treats a non-2xx (e.g. `404`) as a normal result instead of a throw. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry).
+
+## Caching
+
+A read-through response cache with in-process request coalescing — **off by default**, loaded lazily from `stitchapi/cache` only when a stitch sets `cache`. The key is **derived** from the resolved request (no caller-authored keys to drift) and **principal-scoped by default**, so user A is never served user B's cached response:
+
+```ts
+const getUser = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}',
+    output: User,
+    unwrap: 'data',
+    cache: '5m',
+});
+
+const listAnnouncements = stitch({
+    path: 'https://demo.stitchapi.dev/announcements',
+    output: z.array(z.object({ id: z.number(), title: z.string() })),
+    unwrap: 'data',
+    cache: {
+        ttl: '1h',
+        scope: 'app',
+        vary: ['accept-language'],
+        maxEntries: 500,
+    },
+});
+```
+
+Caching is sound by construction: a stitch with an `output` schema caches only when that schema can be fingerprinted or you pin a `version` — otherwise it **refuses to cache** rather than serve a stale shape. Mark sensitive data `sensitive: true` to opt out entirely.
+
+## Auth as a boundary
+
+Auth is a field on the stitch — never global. Secrets resolve **at call time** (`env()`, `secretsFile()`), the declaration is committable, and the caller gets data without ever seeing the credential:
+
+```ts
+import { bearer, env, stitch } from 'stitchapi';
+
+const getUser = stitch({
+    path: 'https://demo.stitchapi.dev/users/{id}',
+    auth: bearer(env('API_TOKEN')), // resolved per call; the caller passes no secret
+});
+```
+
+`bearer`, `apiKey`, and `basic` are header strategies; `oauth2()` runs the client-credentials grant and caches/refreshes the token; and `cookieSession` runs a login, captures the cookie, replays it, and re-logs-in when the wall returns — the caller never sees the password or writes the cookie dance. Full guide: [Auth](https://stitchapi.dev/docs/guides/auth/bearer).
+
+## Surfaces: any request style
+
+A **surface** is the request _style_ a stitch speaks. `http` is the default; the rest are peer surfaces on the same engine — `auth`, `retry`, `throttle`, `timeout`, validation, and the event stream compose with every one. Each ships as its own subpath import, so `import { stitch }` pulls in `http` alone.
+
+| Surface       | Import                        | Shapes                                     | `await` resolves to            |
+| ------------- | ----------------------------- | ------------------------------------------ | ------------------------------ |
+| `http`        | `stitch` (default)            | a JSON-over-HTTP call                      | the validated body             |
+| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, unwrap `data` | the `data` payload             |
+| `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
+| `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader              | every decoded chunk, collected |
+| `download`    | `stitchapi/download`          | a buffered binary GET                      | `{ blob, filename }`           |
+| `llm`         | `stitchapi/llm`               | a chat-completion via a provider contract  | the normalised `{ text, … }`   |
+| `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin              | the command's stdout           |
+| `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call  | the typed RPC response         |
+
+Full guide: [Surfaces](https://stitchapi.dev/docs/reference/surfaces).
+
+## Four front doors
+
+The same typed unit is reachable four ways, so humans and agents call exactly the same validated, observable thing:
+
+| Front door              | How             | Example                   |
+| ----------------------- | --------------- | ------------------------- |
+| **In-process function** | import and call | `await listUsers()`       |
+| **CLI command**         | `stitch run`    | `$ stitch run list-users` |
+| **HTTP endpoint**       | `stitch serve`  | `GET /list-users`         |
+| **MCP / agent tool**    | `stitch mcp`    | `tool: list_users`        |
+
+`stitch run` streams every event as one JSON line on stdout (ready for `jq`); `stitch trace` summarizes the run log — runs, failures, retries, drift, and latency percentiles. Full guide: [Surfaces → CLI](https://stitchapi.dev/docs/surfaces/cli).
+
+## Agent-native
+
+A stitch is built to be invoked by an AI agent. Auth lives on the stitch, so an agent gets a **capability, not a credential**. And rather than one MCP tool per endpoint (which floods the model's context), an agent drives a single **code-mode** tool, `run_stitch`: it writes a small TypeScript snippet that imports `stitchapi` and calls the stitch, with `list_stitches` and `describe_stitch` for discovery — so the context budget stays flat as the catalog grows.
+
+Authoring is agent-friendly too — hand an agent one `curl`/HAR/doc example and it emits a stitch declaration, with a deterministic shortcut for the common case:
+
+```bash
+$ stitch from-curl 'curl https://demo.stitchapi.dev/users/7 -H "authorization: Bearer …"'
+# prints a ready-to-commit stitch: id-like segments lifted to {params}, secrets → env()
+```
+
+`stitch init` writes the “declare a stitch, don't hand-roll `fetch`” rule into the files coding agents read (`AGENTS.md`, Cursor/Windsurf/Cline rules, a `CLAUDE.md` section), and the docs build emits an auto-generated [`llms.txt`](https://stitchapi.dev/llms.txt). Full guide: [Use from an agent](https://stitchapi.dev/docs/agents).
+
+## Errors & pitfalls
+
+A failed stitch throws a `StitchError` — an `Error` subclass carrying `.status`, `.attempts`, and (for response failures) `.body` (the parsed error payload, on a non-enumerable channel that never reaches a trace sink) and `.url`. Prefer branching? `.safe()` resolves to `{ ok, data, error }`. Each failure mode has a stable code and a docs page:
+
+| Code                  | When                                                              |
+| --------------------- | ----------------------------------------------------------------- |
+| `STITCH_VALIDATION`   | a response failed its output schema                               |
+| `STITCH_DRIFT`        | a response drifted past the level you allowed                     |
+| `STITCH_AUTH_WALL`    | auth failed, or a soft `200` login wall couldn't be refreshed     |
+| `STITCH_TIMEOUT`      | a call exceeded its timeout budget                                |
+| `STITCH_CIRCUIT_OPEN` | the circuit breaker is open after repeated failures               |
+| `STITCH_GRAPHQL`      | a GraphQL response came back `200` but carried an `errors` array  |
+| `RateLimitError`      | a delegate-backoff stitch surfaced a rate-limit for an outer gate |
+
+Full catalog: [Errors & pitfalls](https://stitchapi.dev/docs/errors).
+
+## Zero-infra observability
+
+Observability is a consumer of the event stream, not a separate system — and it's **off by default**. Opt in per stitch (`trace: 'console'` / `fileSink(path)` / a `TraceSink`) or globally with env vars — no collector, no dashboard, nothing to deploy:
+
+```bash
+STITCH_TRACE_CONSOLE=1 node app.js          # live, colored, one line per event on stderr
+STITCH_TRACE_FILE=./run.jsonl node app.js   # append JSONL to a path
+STITCH_EXPORT=otlp node app.js              # also fan events to an OTLP collector
+```
+
+Built-in sinks scrub secrets at the sink boundary (the live request is never touched). `stitch trace` summarizes the JSONL; [`@stitchapi/pino`](https://stitchapi.dev/docs/integrations/pino) ships the same events as structured logs.
+
+## Packages
+
+This repository is a [pnpm](https://pnpm.io) workspace. The published library is [`stitchapi`](packages/core); the rest are thin, peer-dependency integrations that add no capability of their own. The table below is **generated from each package's `package.json`** by `pnpm gen:readme` (and verified in CI by `pnpm check:readme`), so it never drifts as packages are added.
+
+<!-- PACKAGES:START — generated by `pnpm gen:readme`; do not edit by hand -->
+
+<table>
+<thead><tr><th>Package</th><th>Description</th></tr></thead>
+<tbody>
+<tr><th colspan="2">Core</th></tr>
+<tr><td><a href="packages/core"><code>stitchapi</code></a></td><td>Turn any API into a typed, resilient function</td></tr>
+<tr><th colspan="2">Server frameworks</th></tr>
+<tr><td><a href="packages/elysia"><code>@stitchapi/elysia</code></a></td><td>Elysia plugin</td></tr>
+<tr><td><a href="packages/express"><code>@stitchapi/express</code></a></td><td>Express middleware</td></tr>
+<tr><td><a href="packages/fastify"><code>@stitchapi/fastify</code></a></td><td>Fastify plugin</td></tr>
+<tr><td><a href="packages/hono"><code>@stitchapi/hono</code></a></td><td>Hono middleware + helpers</td></tr>
+<tr><td><a href="packages/nest"><code>@stitchapi/nest</code></a></td><td>First-class NestJS integration</td></tr>
+<tr><td><a href="packages/next"><code>@stitchapi/next</code></a></td><td>Next.js helpers</td></tr>
+<tr><th colspan="2">Client &amp; UI bindings</th></tr>
+<tr><td><a href="packages/angular"><code>@stitchapi/angular</code></a></td><td>Angular bindings</td></tr>
+<tr><td><a href="packages/expo"><code>@stitchapi/expo</code></a></td><td>Expo bindings</td></tr>
+<tr><td><a href="packages/query-core"><code>@stitchapi/query-core</code></a></td><td>Framework-agnostic reactive query store</td></tr>
+<tr><td><a href="packages/react"><code>@stitchapi/react</code></a></td><td>React bindings</td></tr>
+<tr><td><a href="packages/react-native"><code>@stitchapi/react-native</code></a></td><td>React Native bindings</td></tr>
+<tr><td><a href="packages/solid"><code>@stitchapi/solid</code></a></td><td>Solid bindings</td></tr>
+<tr><td><a href="packages/svelte"><code>@stitchapi/svelte</code></a></td><td>Svelte bindings</td></tr>
+<tr><td><a href="packages/vue"><code>@stitchapi/vue</code></a></td><td>Vue 3 bindings</td></tr>
+<tr><th colspan="2">Data-fetching libraries</th></tr>
+<tr><td><a href="packages/rtk-query"><code>@stitchapi/rtk-query</code></a></td><td>RTK Query bindings</td></tr>
+<tr><td><a href="packages/swr"><code>@stitchapi/swr</code></a></td><td>SWR bindings</td></tr>
+<tr><th colspan="2">State stores</th></tr>
+<tr><td><a href="packages/cloudflare-kv"><code>@stitchapi/cloudflare-kv</code></a></td><td>Cloudflare Workers KV-backed StitchStore</td></tr>
+<tr><td><a href="packages/deno-kv"><code>@stitchapi/deno-kv</code></a></td><td>Deno KV-backed StitchStore</td></tr>
+<tr><td><a href="packages/redis"><code>@stitchapi/redis</code></a></td><td>Redis-backed StitchStore</td></tr>
+<tr><th colspan="2">Auth</th></tr>
+<tr><td><a href="packages/aws-sigv4"><code>@stitchapi/aws-sigv4</code></a></td><td>AWS Signature V4 request signing</td></tr>
+<tr><th colspan="2">AI</th></tr>
+<tr><td><a href="packages/vercel-ai"><code>@stitchapi/vercel-ai</code></a></td><td>Vercel AI SDK adapter</td></tr>
+<tr><th colspan="2">Observability</th></tr>
+<tr><td><a href="packages/pino"><code>@stitchapi/pino</code></a></td><td>Pino TraceSink</td></tr>
+<tr><td><a href="packages/sentry"><code>@stitchapi/sentry</code></a></td><td>A Sentry TraceSink</td></tr>
+<tr><th colspan="2">Surfaces</th></tr>
+<tr><td><a href="packages/shell"><code>@stitchapi/shell</code></a></td><td>Run a static local command as a StitchAPI surface</td></tr>
+<tr><th colspan="2">Cache fingerprint adapters</th></tr>
+<tr><td><a href="packages/fingerprint-arktype"><code>@stitchapi/fingerprint-arktype</code></a></td><td>Stable Standard Schema fingerprint strategy for ArkType</td></tr>
+<tr><td><a href="packages/fingerprint-effect"><code>@stitchapi/fingerprint-effect</code></a></td><td>Stable Standard Schema fingerprint strategy for Effect Schema</td></tr>
+<tr><td><a href="packages/fingerprint-typebox"><code>@stitchapi/fingerprint-typebox</code></a></td><td>Stable Standard Schema fingerprint strategy for TypeBox</td></tr>
+<tr><td><a href="packages/fingerprint-valibot"><code>@stitchapi/fingerprint-valibot</code></a></td><td>Stable Standard Schema fingerprint strategy for Valibot</td></tr>
+<tr><td><a href="packages/fingerprint-zod"><code>@stitchapi/fingerprint-zod</code></a></td><td>Stable Standard Schema fingerprint strategy for Zod</td></tr>
+</tbody>
+</table>
+
+<!-- PACKAGES:END -->
+
+## Documentation
+
+The full documentation site lives at **[stitchapi.dev](https://stitchapi.dev)** — [Quickstart](https://stitchapi.dev/docs/getting-started/quickstart), per-feature [Guides](https://stitchapi.dev/docs/guides/authoring/stitch), [Concepts](https://stitchapi.dev/docs/concepts/the-stitch), [Surfaces](https://stitchapi.dev/docs/surfaces/function), [For agents](https://stitchapi.dev/docs/agents), and the generated [Reference](https://stitchapi.dev/docs/reference/stitch).
+
+The published library's own README (what npm renders) is in [`packages/core/README.md`](packages/core/README.md). Design notes live in [`docs/`](docs): [Feature Lenses](docs/FEATURE-LENSES.md), [Overview](docs/OVERVIEW.md), [Design](docs/DESIGN.md).
 
 ## Contributing
 
-Local setup, the dev loop, the bundle-size budget, and the worktree + PR
-workflow are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Local setup, the dev loop, the bundle-size budget, and the worktree + PR workflow are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-The published library's own README is in [`packages/core/README.md`](packages/core/README.md).
+## License
+
+[Apache-2.0](LICENSE)
