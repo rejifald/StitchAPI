@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/cloudflare-kv",
-    "version": "1.0.0-rc.2",
+    "version": "1.0.0-rc.3",
     "type": "commonjs",
     "description": "Cloudflare Workers KV-backed StitchStore for StitchAPI — edge cache + shared sessions/tokens. Bring your own KV namespace binding. (incr → use a Durable Object store.)",
     "main": "lib/index.js",

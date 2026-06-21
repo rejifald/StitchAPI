@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/rtk-query",
-    "version": "1.0.0-rc.2",
+    "version": "1.0.0-rc.3",
     "type": "commonjs",
     "description": "RTK Query bindings for StitchAPI — stitchQueryFn turns a stitch into an RTK Query endpoint queryFn (error-normalized), and stitchStreamUpdater folds a streaming stitch into the cache via onCacheEntryAdded.",
     "main": "lib/index.js",

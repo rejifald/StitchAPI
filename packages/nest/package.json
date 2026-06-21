@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/nest",
-    "version": "1.0.0-rc.2",
+    "version": "1.0.0-rc.3",
     "type": "commonjs",
     "description": "First-class NestJS integration for StitchAPI — StitchModule.forRoot/forFeature/forFeatureScoped, injectable stitches, Logger + ConfigService bridges, an exception filter and an SSE bridge (ADR 0006).",
     "main": "lib/index.js",
