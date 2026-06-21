@@ -1,5 +1,7 @@
 # @stitchapi/sentry
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/sentry?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/sentry)
+
 A [Sentry](https://sentry.io) `TraceSink` for [StitchAPI](https://stitchapi.dev). The logger sinks (`@stitchapi/pino`, core's `loggerSink`) and the OTLP bridge cover logs and traces; Sentry's model is different — a trail of **breadcrumbs** leading up to a **captured error**. This sink maps the stitch [event stream](https://stitchapi.dev/docs/concepts/event-stream) onto it.
 
 Routine events become breadcrumbs (category `stitch`); an `error` event is captured as a Sentry issue with the call's context, so the breadcrumb trail attaches automatically.

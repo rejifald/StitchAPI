@@ -1,5 +1,7 @@
 # @stitchapi/express
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/express?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/express)
+
 **Express middleware + helpers for [StitchAPI](https://stitchapi.dev).** Attach a
 `seam` to every request, stream a stitch's SSE output to the client, and map
 Stitch errors to HTTP — three thin bridges between StitchAPI's backend primitive

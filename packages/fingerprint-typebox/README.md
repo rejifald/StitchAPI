@@ -1,5 +1,7 @@
 # @stitchapi/fingerprint-typebox
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/fingerprint-typebox?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/fingerprint-typebox)
+
 Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
 **TypeBox**, for StitchAPI's response-cache invalidation (ADR 0004).
 

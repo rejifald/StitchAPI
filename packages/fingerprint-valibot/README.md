@@ -1,5 +1,7 @@
 # @stitchapi/fingerprint-valibot
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/fingerprint-valibot?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/fingerprint-valibot)
+
 Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
 **Valibot**, for StitchAPI's response-cache invalidation (ADR 0004).
 

@@ -1,5 +1,7 @@
 # @stitchapi/react-native
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/react-native?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/react-native)
+
 React Native bindings for [StitchAPI](https://stitchapi.dev). The `useStitch` / `useStitchStream` hooks are re-exported verbatim from [`@stitchapi/react`](../react) — they are pure `useSyncExternalStore` over the shared [`@stitchapi/query-core`](../query-core) store and run unchanged on React Native. What this package **adds** is the platform glue bare RN needs:
 
 -   **`rnStreamAdapter`** — a streaming transport. RN's global `fetch` cannot stream (`response.body` is `undefined`, [facebook/react-native#27741](https://github.com/facebook/react-native/issues/27741)); this reads `XMLHttpRequest.responseText` incrementally and surfaces it as a `ReadableStream`, which is exactly what core's `sse` / `stream` decoders consume.

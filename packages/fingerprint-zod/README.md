@@ -1,5 +1,7 @@
 # @stitchapi/fingerprint-zod
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/fingerprint-zod?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/fingerprint-zod)
+
 Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
 **Zod**, for StitchAPI's response-cache invalidation (ADR 0004).
 

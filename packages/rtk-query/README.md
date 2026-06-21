@@ -1,5 +1,7 @@
 # @stitchapi/rtk-query
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/rtk-query?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/rtk-query)
+
 [RTK Query](https://redux-toolkit.js.org/rtk-query/overview) bindings for [StitchAPI](https://stitchapi.dev). Use a stitch inside an RTK Query endpoint: RTK Query keeps owning the cache, tags, and generated hooks, while the stitch stays the **typed, validated, traced** call.
 
 Reach for this when your app is already on Redux Toolkit / RTK Query. The adapters are plain functions (no React), so they work with both `@reduxjs/toolkit/query` and `@reduxjs/toolkit/query/react`.

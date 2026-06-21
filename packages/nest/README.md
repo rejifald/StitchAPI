@@ -1,5 +1,7 @@
 # @stitchapi/nest
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/nest?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/nest)
+
 First-class [NestJS](https://nestjs.com) integration for
 [StitchAPI](https://stitchapi.dev) — design captured in
 [ADR 0006](../../docs/adr/0006-nestjs-integration.md).

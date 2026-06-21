@@ -1,5 +1,7 @@
 # @stitchapi/solid
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/solid?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/solid)
+
 Solid bindings for [StitchAPI](https://stitchapi.dev). `createStitch` / `createStitchStream` primitives that reconcile a Solid `createStore` from the query store, plus an optional [TanStack Query](https://tanstack.com/query) adapter.
 
 **Streaming-first.** A `stitch` can stream (`sse` / `stream` surfaces) — `createStitchStream` reconciles each `delta` chunk into the store as it arrives. That's the differentiator over plain request/response query libraries.

@@ -1,5 +1,7 @@
 # @stitchapi/fastify
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/fastify?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/fastify)
+
 A **[Fastify](https://fastify.dev) plugin** for [StitchAPI](https://stitchapi.dev).
 Register it and your app gets a shared [`seam`](https://stitchapi.dev) decorated
 on the instance, a **request-scoped principal** bound per request, and three

@@ -1,5 +1,7 @@
 # @stitchapi/angular
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/angular?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/angular)
+
 Angular bindings for [StitchAPI](https://stitchapi.dev). `injectStitch` / `injectStitchStream` expose a stitch's lifecycle as **both Angular signals and an RxJS observable** from one shared execution, plus an optional [TanStack Query](https://tanstack.com/query) adapter.
 
 **Streaming-first.** A `stitch` can stream (`sse` / `stream` surfaces) — `injectStitchStream` surfaces each `delta` chunk as it arrives. That's the differentiator over plain request/response query libraries.

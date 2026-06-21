@@ -1,5 +1,7 @@
 # @stitchapi/aws-sigv4
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/aws-sigv4?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/aws-sigv4)
+
 [AWS Signature Version 4](https://docs.aws.amazon.com/general/latest/gr/signature-version-4.html) request signing for [StitchAPI](https://stitchapi.dev). Core's built-in auth covers bearer / apiKey / basic / cookieSession / oauth2 — this adds the one scheme they don't: **request signing**, which AWS APIs, S3-compatible stores, and many SigV4-protected endpoints require.
 
 `awsSigV4(...)` returns an `AuthStrategy` you attach as a stitch's `auth`. It signs the **fully-built** request (method · URI · query · headers · payload hash) at call time and attaches the `Authorization` / `x-amz-*` headers — so the secret never reaches the call site or a trace.

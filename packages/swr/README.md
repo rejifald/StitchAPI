@@ -1,5 +1,7 @@
 # @stitchapi/swr
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/swr?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/swr)
+
 [SWR](https://swr.vercel.app) bindings for [StitchAPI](https://stitchapi.dev). `useStitchSWR` runs a stitch as an SWR fetcher, so SWR keeps owning caching, deduping, and revalidation while the stitch stays the **typed, validated, traced** call.
 
 Reach for this when your app is already on SWR. If you want StitchAPI to own the lifecycle directly — especially **streaming** (`useStitchStream`), which SWR doesn't model — use [`@stitchapi/react`](../react) instead.
