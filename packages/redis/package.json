@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/redis",
-    "version": "1.0.0-rc.2",
+    "version": "1.0.0-rc.3",
     "type": "commonjs",
     "description": "Redis-backed StitchStore for StitchAPI — distributed throttle + shared sessions/tokens. Bring your own ioredis, node-redis, or Upstash (edge HTTP Redis) client.",
     "main": "lib/index.js",

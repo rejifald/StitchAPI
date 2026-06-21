@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/swr",
-    "version": "1.0.0-rc.2",
+    "version": "1.0.0-rc.3",
     "type": "commonjs",
     "description": "SWR bindings for StitchAPI — useStitchSWR runs a stitch as an SWR fetcher, so SWR owns caching and revalidation while the stitch stays typed, validated, and traced.",
     "main": "lib/index.js",

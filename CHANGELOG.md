@@ -11,6 +11,48 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+## [1.0.0-rc.3] — 2026-06-21
+
+### Added — the integration ecosystem
+
+The first wave of `@stitchapi/*` ecosystem adapters — a stitch now drops into the
+framework, runtime, and store you already use, each a thin typed seam over the
+same core runtime (no new concepts; streaming-first where it applies):
+
+-   **Server frameworks:** `@stitchapi/elysia`, `@stitchapi/express`,
+    `@stitchapi/fastify`, `@stitchapi/hono`, and `@stitchapi/next` — a
+    request-scoped seam on the context/`req`, an SSE bridge for a streaming
+    stitch, and `StitchError`→HTTP mapping. The Fetch-only adapters (`hono`,
+    `elysia`, `next`) stay edge/multi-runtime safe.
+-   **Client & UI bindings:** `@stitchapi/react`, `@stitchapi/vue`,
+    `@stitchapi/svelte`, `@stitchapi/solid`, and `@stitchapi/angular` —
+    tearing-free `useStitch`/`useStitchStream` (and the framework-native
+    equivalents) that re-render as `delta` chunks arrive, over the new shared
+    `@stitchapi/query-core` reactive store, plus an optional TanStack Query
+    `queryOptions` helper. `@stitchapi/react-native` adds the streaming XHR
+    transport bare RN lacks and an AsyncStorage `StitchStore`, and
+    `@stitchapi/expo` layers `expo/fetch` streaming and a secure-store token
+    store on top.
+-   **Data-fetching libraries:** `@stitchapi/swr` (`useStitchSWR`) and
+    `@stitchapi/rtk-query` (`stitchQueryFn` + `stitchStreamUpdater`) hand
+    caching/revalidation to the host library while the stitch stays typed,
+    validated, and traced.
+-   **State stores:** `@stitchapi/cloudflare-kv` (Workers KV) and
+    `@stitchapi/deno-kv` (atomic `incr` for distributed throttle) join
+    `@stitchapi/redis` as edge-/runtime-native `StitchStore` backends.
+-   **Auth:** `@stitchapi/aws-sigv4` — an `AuthStrategy` that signs each request
+    with AWS SigV4 over edge-safe Web Crypto (AWS APIs, S3-compatible stores, any
+    SigV4-protected endpoint).
+-   **Observability:** `@stitchapi/pino` and `@stitchapi/sentry` `TraceSink`s map
+    the stitch event stream to structured logs and breadcrumbs/error capture —
+    metadata-only, safe on a secret-bearing seam.
+-   **AI:** `@stitchapi/vercel-ai` exposes a stitch as a Vercel AI SDK `tool()`
+    the model can call — it gets validated data, never the credential.
+
+Each ships `publishConfig.access: public`, a README, and a LICENSE. A new package's
+first publish is a one-time bootstrap (OIDC cannot publish a brand-new name); it
+rides the OIDC publish workflow thereafter — see [`docs/RELEASING.md`](docs/RELEASING.md).
+
 ### Added — a published testing story
 
 -   **Mocking kit on `stitchapi/testing`:** helpers for testing your own stitches
@@ -192,6 +234,7 @@ causality push:
 -   **Playground:** the browser Worker runner, handler registration, incremental
     streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.2...HEAD
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.3...HEAD
+[1.0.0-rc.3]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/rejifald/StitchAPI/compare/v0.7.0...v1.0.0-rc.1

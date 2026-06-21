@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/fingerprint-typebox",
-    "version": "1.0.0-rc.2",
+    "version": "1.0.0-rc.3",
     "type": "commonjs",
     "description": "Stable Standard Schema fingerprint strategy for TypeBox — StitchAPI ADR 0004 cache invalidation.",
     "main": "lib/index.js",
