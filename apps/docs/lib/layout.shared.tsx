@@ -19,6 +19,11 @@ export function baseOptions(): BaseLayoutProps {
                 text: 'Playground',
                 url: '/playground',
             },
+            {
+                text: 'npm',
+                url: 'https://www.npmjs.com/package/stitchapi',
+                external: true,
+            },
         ],
         githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
     };

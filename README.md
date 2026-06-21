@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/stitchapi"><img alt="npm version" src="https://img.shields.io/npm/v/stitchapi?color=2563EB&label=npm" /></a>
   <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
   <img alt="npm bundle size (minified + gzipped)" src="https://img.shields.io/bundlephobia/minzip/stitchapi" />
   <img alt="Bundle: ~22 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~22%20kB-2563EB" />
@@ -44,18 +45,21 @@
 
 This repository is a [pnpm](https://pnpm.io) workspace.
 
-| Package                                        | Path                     | Description                                                                                |
-| ---------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------ |
-| [`stitchapi`](packages/core)                   | `packages/core`          | The published library — the `stitch` runtime, CLI, auth, tracing.                          |
-| [`@stitchapi/nest`](packages/nest)             | `packages/nest`          | NestJS module — injectable stitches, `Logger` / `ConfigService` bridges, multi-tenancy.    |
-| [`@stitchapi/fastify`](packages/fastify)       | `packages/fastify`       | Fastify plugin — shared seam, request-scoped principal, SSE + error + logger bridges.      |
-| [`@stitchapi/hono`](packages/hono)             | `packages/hono`          | Hono middleware — edge-ready principal-bound seam, SSE bridge, error mapper.               |
-| [`@stitchapi/react`](packages/react)           | `packages/react`         | React hooks — `useStitch` / `useStitchStream` + an optional TanStack Query adapter.        |
-| [`@stitchapi/query-core`](packages/query-core) | `packages/query-core`    | Framework-agnostic reactive store behind the React (and future Vue/Svelte/Solid) bindings. |
-| [`@stitchapi/pino`](packages/pino)             | `packages/pino`          | A Pino `TraceSink` — the stitch event stream as structured Pino logs.                      |
-| [`@stitchapi/redis`](packages/redis)           | `packages/redis`         | A Redis-backed store — distributed throttle and sessions shared across workers.            |
-| [`@stitchapi/shell`](packages/shell)           | `packages/shell`         | The non-HTTP `shell` kind — run a local command as a stitch.                               |
-| `@stitchapi/fingerprint-*`                     | `packages/fingerprint-*` | Per-validator cache-fingerprint adapters (Zod, Valibot, ArkType, Effect, TypeBox).         |
+Every `@stitchapi/*` package below is published to npm — click a package name
+for its npm page, or the path for its source.
+
+| Package                                                                  | Path                                          | Description                                                                                |
+| ------------------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [`stitchapi`](https://www.npmjs.com/package/stitchapi)                   | [`packages/core`](packages/core)              | The published library — the `stitch` runtime, CLI, auth, tracing.                          |
+| [`@stitchapi/nest`](https://www.npmjs.com/package/@stitchapi/nest)       | [`packages/nest`](packages/nest)              | NestJS module — injectable stitches, `Logger` / `ConfigService` bridges, multi-tenancy.    |
+| [`@stitchapi/fastify`](https://www.npmjs.com/package/@stitchapi/fastify) | [`packages/fastify`](packages/fastify)        | Fastify plugin — shared seam, request-scoped principal, SSE + error + logger bridges.      |
+| [`@stitchapi/hono`](https://www.npmjs.com/package/@stitchapi/hono)       | [`packages/hono`](packages/hono)              | Hono middleware — edge-ready principal-bound seam, SSE bridge, error mapper.               |
+| [`@stitchapi/react`](https://www.npmjs.com/package/@stitchapi/react)     | [`packages/react`](packages/react)            | React hooks — `useStitch` / `useStitchStream` + an optional TanStack Query adapter.        |
+| [`@stitchapi/query-core`](https://www.npmjs.com/package/@stitchapi/query-core) | [`packages/query-core`](packages/query-core) | Framework-agnostic reactive store behind the React (and future Vue/Svelte/Solid) bindings. |
+| [`@stitchapi/pino`](https://www.npmjs.com/package/@stitchapi/pino)       | [`packages/pino`](packages/pino)              | A Pino `TraceSink` — the stitch event stream as structured Pino logs.                      |
+| [`@stitchapi/redis`](https://www.npmjs.com/package/@stitchapi/redis)     | [`packages/redis`](packages/redis)            | A Redis-backed store — distributed throttle and sessions shared across workers.            |
+| [`@stitchapi/shell`](https://www.npmjs.com/package/@stitchapi/shell)     | [`packages/shell`](packages/shell)            | The non-HTTP `shell` kind — run a local command as a stitch.                               |
+| `@stitchapi/fingerprint-*`                                               | [`packages/fingerprint-*`](packages)          | Per-validator cache-fingerprint adapters (Zod, Valibot, ArkType, Effect, TypeBox).         |
 
 Design notes, overview, and feature lenses live in [`docs/`](docs).
 
