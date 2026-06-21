@@ -16,7 +16,16 @@ import type { PrincipalSeam, Seam } from 'stitchapi';
  * root {@link Seam}. The lifecycle levers (`close`/`flush`/`invalidate`) live on the root seam the
  * app owns — never on the per-request handle.
  */
-export type RequestSeam = PrincipalSeam | Seam;
+export type HonoRequestSeam = PrincipalSeam | Seam;
+
+/**
+ * @deprecated Renamed to {@link HonoRequestSeam} so the public type is
+ * ecosystem-qualified (a bare `RequestSeam` would collide with any other host
+ * adapter's per-request seam type) — see
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
+ * `1.0.0-rc` line and removed at the 1.0 GA cut.
+ */
+export type RequestSeam = HonoRequestSeam;
 
 /** The key the seam is stored under on `c.var` / via `c.set` / `c.get`. */
 export const STITCH_VAR = 'stitch' as const;
@@ -36,7 +45,7 @@ export const STITCH_VAR = 'stitch' as const;
  */
 export interface StitchEnv extends Env {
     Variables: {
-        [STITCH_VAR]: RequestSeam;
+        [STITCH_VAR]: HonoRequestSeam;
     };
 }
 

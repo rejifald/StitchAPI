@@ -1,5 +1,6 @@
 import { drift, stitch } from '../src';
 import type { DriftFinding, StitchEvent } from '../src';
+import { loadSnapshot } from '../src/drift';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 import { asValidator } from './support/schema';
@@ -342,6 +343,42 @@ test('default (no readonly): first run writes the baseline, no finding', async (
         expect(events.some((e) => e.type === 'result')).toBe(true);
         // …and the baseline file was created.
         expect(existsSync(snapshotFile)).toBe(true);
+    } finally {
+        rmSync(snapshotFile, { force: true });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// 10. Shape-only, BigInt-safe baseline — a transform yields a value carrying a
+//     BigInt (which `JSON.stringify` cannot serialise). The baseline must still
+//     write (no throw), storing the payload-free SHAPE with the field typed
+//     `bigint`, and a subsequent identical run drifts nothing.
+// ---------------------------------------------------------------------------
+test('bigint-safe: baseline stores the shape (bigint field) without throwing', async () => {
+    const snapshotFile = freshSnapshot();
+    try {
+        server.route('GET', '/sized', { body: { id: 1 } });
+        const s = stitch({
+            baseUrl: server.url,
+            path: '/sized',
+            // The transform mints a BigInt — the shape baseline must not choke on it.
+            transform: () => ({ id: 1, sizeBytes: 42n }),
+            output: drift(() => true, { snapshotFile }),
+        });
+
+        const first = await collect(s.stream());
+        expect(driftFindings(first)).toHaveLength(0);
+        expect(first.some((e) => e.type === 'result')).toBe(true);
+
+        // Payload-free shape, with the BigInt typed as "bigint".
+        expect(loadSnapshot(snapshotFile)).toEqual({
+            version: 1,
+            shape: { id: 'number', sizeBytes: 'bigint' },
+        });
+
+        // A second identical run compares clean — no drift findings.
+        const second = await collect(s.stream());
+        expect(driftFindings(second)).toHaveLength(0);
     } finally {
         rmSync(snapshotFile, { force: true });
     }

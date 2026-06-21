@@ -2,8 +2,11 @@
 // directly (no Nest DI container needed) and run the resulting stitches against a mock
 // adapter, asserting wire-level effects — the same style as core's tests.
 import {
+    // Deprecated aliases (ADR 0012) — exercised by the alias-guard test below.
     type ConfigServiceLike,
     type LoggerLike,
+    type NestConfigServiceLike,
+    type NestLoggerLike,
     STITCH_SEAM,
     STITCH_STORE,
     STITCH_TRACE,
@@ -12,7 +15,10 @@ import {
     borrowStore,
     defineStitch,
     fromConfig,
+    fromNestConfig,
     loggerSink,
+    nestBorrowStore,
+    nestLoggerSink,
 } from '../src';
 
 import { Scope } from '@nestjs/common';
@@ -264,7 +270,7 @@ describe('defineStitch token', () => {
 });
 
 describe('bridges', () => {
-    it('borrowStore delegates get/set/incr but omits close', async () => {
+    it('nestBorrowStore delegates get/set/incr but omits close', async () => {
         const calls: string[] = [];
         const backing: StitchStore = {
             get: async () => {
@@ -282,7 +288,7 @@ describe('bridges', () => {
                 calls.push('close');
             },
         };
-        const borrowed = borrowStore(backing);
+        const borrowed = nestBorrowStore(backing);
         expect(borrowed.close).toBeUndefined();
         expect(await borrowed.get('k')).toBe(1);
         await borrowed.set('k', 'v');
@@ -290,7 +296,7 @@ describe('bridges', () => {
         expect(calls).toEqual(['get', 'set', 'incr']); // close is never delegated
     });
 
-    // A LoggerLike that records messages per level.
+    // A NestLoggerLike that records messages per level.
     const recordingLogger = () => {
         const rec = {
             log: [] as string[],
@@ -299,7 +305,7 @@ describe('bridges', () => {
             debug: [] as string[],
             verbose: [] as string[],
         };
-        const logger: LoggerLike = {
+        const logger: NestLoggerLike = {
             log: (m) => rec.log.push(m),
             warn: (m) => rec.warn.push(m),
             error: (m) => rec.error.push(m),
@@ -309,9 +315,31 @@ describe('bridges', () => {
         return { rec, logger };
     };
 
-    it('loggerSink maps each event to the right level, payload-free, query redacted', () => {
+    it('keeps the pre-ADR-0012 names as deprecated aliases of the ecosystem-qualified ones', () => {
+        // Runtime: each deprecated function export is the very same function object.
+        expect(loggerSink).toBe(nestLoggerSink);
+        expect(fromConfig).toBe(fromNestConfig);
+        expect(borrowStore).toBe(nestBorrowStore);
+        // Type-level: the deprecated type aliases stay interchangeable with the canonical ones.
+        const loggerViaDeprecated: LoggerLike = {
+            log() {},
+            warn() {},
+            error() {},
+        };
+        const loggerViaCanonical: NestLoggerLike = loggerViaDeprecated;
+        expect(typeof loggerViaCanonical.log).toBe('function');
+        const cfgViaDeprecated: ConfigServiceLike = {
+            getOrThrow<T = string>(key: string): T {
+                return key as T;
+            },
+        };
+        const cfgViaCanonical: NestConfigServiceLike = cfgViaDeprecated;
+        expect(typeof cfgViaCanonical.getOrThrow).toBe('function');
+    });
+
+    it('nestLoggerSink maps each event to the right level, payload-free, query redacted', () => {
         const { rec, logger } = recordingLogger();
-        const sink = loggerSink(logger);
+        const sink = nestLoggerSink(logger);
         const ctx = { name: 'x' };
 
         sink.handle(
@@ -427,9 +455,9 @@ describe('bridges', () => {
         expect(all).not.toContain('nope');
     });
 
-    it('loggerSink lifecycle:false drops start/result/done but keeps retry/drift/error', () => {
+    it('nestLoggerSink lifecycle:false drops start/result/done but keeps retry/drift/error', () => {
         const { rec, logger } = recordingLogger();
-        const sink = loggerSink(logger, { lifecycle: false });
+        const sink = nestLoggerSink(logger, { lifecycle: false });
         const ctx = { name: 'x' };
         sink.handle(
             {
@@ -461,14 +489,14 @@ describe('bridges', () => {
         expect(rec.error.some((l) => l.includes('boom'))).toBe(true); // error kept
     });
 
-    it('loggerSink tolerates a logger without debug/verbose (guarded)', () => {
+    it('nestLoggerSink tolerates a logger without debug/verbose (guarded)', () => {
         const warn: string[] = [];
-        const partial: LoggerLike = {
+        const partial: NestLoggerLike = {
             log: () => {},
             warn: (m) => warn.push(m),
             error: () => {},
         };
-        const sink = loggerSink(partial);
+        const sink = nestLoggerSink(partial);
         expect(() =>
             sink.handle(
                 {
@@ -489,43 +517,43 @@ describe('bridges', () => {
         expect(warn.length).toBe(1);
     });
 
-    it('fromConfig resolves a synchronous secret thunk from a ConfigService-like', () => {
-        const config: ConfigServiceLike = {
+    it('fromNestConfig resolves a synchronous secret thunk from a ConfigService-like', () => {
+        const config: NestConfigServiceLike = {
             getOrThrow<T = string>(key: string): T {
                 return `val:${key}` as T;
             },
         };
-        expect(fromConfig(config)('API_TOKEN')()).toBe('val:API_TOKEN');
+        expect(fromNestConfig(config)('API_TOKEN')()).toBe('val:API_TOKEN');
     });
 
-    it('fromConfig propagates ConfigService.getOrThrow on a missing key', () => {
-        const config: ConfigServiceLike = {
+    it('fromNestConfig propagates ConfigService.getOrThrow on a missing key', () => {
+        const config: NestConfigServiceLike = {
             getOrThrow<T = string>(key: string): T {
                 throw new Error(`Configuration key "${key}" does not exist`);
             },
         };
         // The Nest getOrThrow error still surfaces through the core secretFrom delegation.
-        expect(() => fromConfig(config)('API_TOKEN')()).toThrow(
+        expect(() => fromNestConfig(config)('API_TOKEN')()).toThrow(
             'Configuration key "API_TOKEN" does not exist',
         );
     });
 
-    it('fromConfig rejects an empty value (delegates to core secretFrom)', () => {
-        const config: ConfigServiceLike = {
+    it('fromNestConfig rejects an empty value (delegates to core secretFrom)', () => {
+        const config: NestConfigServiceLike = {
             // Present but blank — Nest's getOrThrow does NOT throw on '' (only on undefined).
             getOrThrow<T = string>(_key: string): T {
                 return '' as T;
             },
         };
         // secretFrom rejects '' like env() does, so a blank credential never rides along.
-        expect(() => fromConfig(config)('API_TOKEN')()).toThrow(
+        expect(() => fromNestConfig(config)('API_TOKEN')()).toThrow(
             'missing secret',
         );
     });
 
-    it('loggerSink drops an info (strategy announcement) event', () => {
+    it('nestLoggerSink drops an info (strategy announcement) event', () => {
         const { rec, logger } = recordingLogger();
-        const sink = loggerSink(logger);
+        const sink = nestLoggerSink(logger);
         // The delegated core sink would log an `info` event at debug, but Nest's level
         // resolver returns null for it — preserving the prior switch, which dropped it.
         sink.handle(

@@ -28,7 +28,7 @@ URL, secrets, and store. `trace: 'logger'` sends the event stream to the Nest
 // app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { StitchModule, fromConfig } from '@stitchapi/nest';
+import { StitchModule, fromNestConfig } from '@stitchapi/nest';
 import { bearer } from 'stitchapi';
 
 @Module({
@@ -38,7 +38,7 @@ import { bearer } from 'stitchapi';
             inject: [ConfigService],
             useFactory: (config: ConfigService) => ({
                 baseUrl: config.getOrThrow('API_BASE_URL'),
-                auth: bearer(fromConfig(config)('API_TOKEN')),
+                auth: bearer(fromNestConfig(config)('API_TOKEN')),
                 trace: 'logger',
             }),
         }),
@@ -110,7 +110,7 @@ Two bridges connect the framework, and neither changes core:
     [event stream](/docs/concepts/event-stream) to the Nest `Logger`. It logs
     method, URL, and status only, and strips the query string; tracing is
     otherwise [off by default](/docs/guides/observability/trace-sinks).
--   **`fromConfig(config)('KEY')`** is a `ConfigService`-backed
+-   **`fromNestConfig(config)('KEY')`** is a `ConfigService`-backed
     [secret resolver](/docs/guides/auth/secret-resolvers) — the `ConfigService`
     twin of `env()`. It resolves synchronously at call time, so the credential
     never lands on the config or in a trace.

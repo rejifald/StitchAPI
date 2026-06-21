@@ -15,12 +15,18 @@ export {
     type Injected,
 } from './define-stitch';
 export {
+    nestLoggerSink,
+    fromNestConfig,
+    nestBorrowStore,
+    type NestConfigServiceLike,
+    type NestLoggerLike,
+    type NestLoggerSinkOptions,
+    // Deprecated aliases (kept through 1.0.0-rc, removed at GA) — see ADR 0012.
     loggerSink,
     fromConfig,
     borrowStore,
-    type ConfigServiceLike,
     type LoggerLike,
-    type NestLoggerSinkOptions,
+    type ConfigServiceLike,
 } from './bridges';
 export { STITCH_SEAM, STITCH_STORE, STITCH_TRACE } from './tokens';
 export {
