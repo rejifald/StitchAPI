@@ -1,5 +1,7 @@
 # @stitchapi/query-core
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/query-core?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/query-core)
+
 A tiny, **framework-agnostic** reactive store wrapping a [StitchAPI](https://stitchapi.dev) call. It turns a one-shot `stitch(...)` into a `subscribe` / `getSnapshot` handle — the kind React's `useSyncExternalStore` (and the equivalent primitives in Vue, Svelte, and Solid) consume directly.
 
 This package imports **no framework** and **no `node:*`**, so it is browser- and edge-safe. It is the shared core behind [`@stitchapi/react`](../react); the React hooks are a thin binding over it, which is what makes Vue/Svelte/Solid bindings cheap follow-ons.

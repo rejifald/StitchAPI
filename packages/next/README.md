@@ -1,5 +1,7 @@
 # @stitchapi/next
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/next?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/next)
+
 [Next.js](https://nextjs.org) helpers for [StitchAPI](https://stitchapi.dev).
 
 Next App Router route handlers are Web-standard — they take a `Request` and return a `Response` — so a stitch already runs in one directly: define a `seam` once and call it in the handler. What's worth a helper is the two bits you'd otherwise hand-roll on the Web platform:

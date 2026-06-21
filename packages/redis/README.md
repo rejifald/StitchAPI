@@ -1,5 +1,7 @@
 # @stitchapi/redis
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/redis?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/redis)
+
 A **Redis-backed [`StitchStore`](https://stitchapi.dev)** for StitchAPI. Attach
 it and two process-local pieces of a stitch become fleet-wide, with **no change
 to the call site** (DESIGN §13):

@@ -1,5 +1,7 @@
 # @stitchapi/fingerprint-effect
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/fingerprint-effect?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/fingerprint-effect)
+
 Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
 **Effect Schema**, for StitchAPI's response-cache invalidation (ADR 0004).
 

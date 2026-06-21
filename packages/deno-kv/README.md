@@ -1,5 +1,7 @@
 # @stitchapi/deno-kv
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/deno-kv?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/deno-kv)
+
 A **[Deno KV](https://docs.deno.com/deploy/kv/manual/)-backed
 [`StitchStore`](https://stitchapi.dev)** for StitchAPI. Attach it and two
 process-local pieces of a stitch become fleet-wide, with **no change to the call

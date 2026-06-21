@@ -1,5 +1,7 @@
 # @stitchapi/vue
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/vue?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/vue)
+
 Vue 3 bindings for [StitchAPI](https://stitchapi.dev). Reactive `useStitch` / `useStitchStream` composables backed by Vue's reactivity, plus an optional [TanStack Query](https://tanstack.com/query) adapter.
 
 **Streaming-first.** A `stitch` can stream (`sse` / `stream` surfaces) — `useStitchStream` re-renders as each `delta` chunk arrives. That's the differentiator over plain request/response query libraries.

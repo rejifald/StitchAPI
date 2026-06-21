@@ -1,5 +1,7 @@
 # @stitchapi/react
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/react?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/react)
+
 React bindings for [StitchAPI](https://stitchapi.dev). Tearing-free `useStitch` / `useStitchStream` hooks built on `React.useSyncExternalStore`, plus an optional [TanStack Query](https://tanstack.com/query) adapter.
 
 **Streaming-first.** A `stitch` can stream (`sse` / `stream` surfaces) — `useStitchStream` re-renders as each `delta` chunk arrives. That's the differentiator over plain request/response query libraries.

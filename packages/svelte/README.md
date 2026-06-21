@@ -1,5 +1,7 @@
 # @stitchapi/svelte
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/svelte?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/svelte)
+
 Svelte bindings for [StitchAPI](https://stitchapi.dev). `stitchStore` / `stitchStreamStore` are real Svelte stores (`{ subscribe }`) wrapping a stitch call, plus an optional [TanStack Query](https://tanstack.com/query) adapter. Works on **Svelte 4 and 5** (built on `readable` from `svelte/store`, the surface that is unchanged across both).
 
 **Streaming-first.** A `stitch` can stream (`sse` / `stream` surfaces) — `stitchStreamStore` emits a new state as each `delta` chunk arrives. That's the differentiator over plain request/response query libraries.

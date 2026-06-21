@@ -1,5 +1,7 @@
 # @stitchapi/cloudflare-kv
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/cloudflare-kv?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/cloudflare-kv)
+
 A **[Cloudflare Workers KV](https://developers.cloudflare.com/kv/)-backed
 [`StitchStore`](https://stitchapi.dev)** for StitchAPI. Attach it on the edge and
 the read-heavy halves of a stitch become fleet-wide, with **no change to the call

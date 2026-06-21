@@ -1,5 +1,7 @@
 # @stitchapi/fingerprint-arktype
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/fingerprint-arktype?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/fingerprint-arktype)
+
 Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
 **ArkType**, for StitchAPI's response-cache invalidation (ADR 0004).
 

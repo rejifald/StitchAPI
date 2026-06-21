@@ -902,43 +902,43 @@ StitchAPI ships thin, peer-dependency integration packages — server frameworks
 <thead><tr><th>Package</th><th>Description</th></tr></thead>
 <tbody>
 <tr><th colspan="2">Server frameworks</th></tr>
-<tr><td><a href="packages/elysia"><code>@stitchapi/elysia</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/elysia">npm</a></td><td>Elysia plugin</td></tr>
-<tr><td><a href="packages/express"><code>@stitchapi/express</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/express">npm</a></td><td>Express middleware</td></tr>
-<tr><td><a href="packages/fastify"><code>@stitchapi/fastify</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fastify">npm</a></td><td>Fastify plugin</td></tr>
-<tr><td><a href="packages/hono"><code>@stitchapi/hono</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/hono">npm</a></td><td>Hono middleware + helpers</td></tr>
-<tr><td><a href="packages/nest"><code>@stitchapi/nest</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/nest">npm</a></td><td>First-class NestJS integration</td></tr>
-<tr><td><a href="packages/next"><code>@stitchapi/next</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/next">npm</a></td><td>Next.js helpers</td></tr>
+<tr><td><a href="packages/elysia"><code>@stitchapi/elysia</code></a></td><td>Web-standard seam on the context; SSE and error mapping</td></tr>
+<tr><td><a href="packages/express"><code>@stitchapi/express</code></a></td><td>Request-scoped seam on req, with SSE and error mapping</td></tr>
+<tr><td><a href="packages/fastify"><code>@stitchapi/fastify</code></a></td><td>App/request seam with SSE, error and Pino-logger bridges</td></tr>
+<tr><td><a href="packages/hono"><code>@stitchapi/hono</code></a></td><td>Edge-ready seam on the request context; SSE and errors</td></tr>
+<tr><td><a href="packages/nest"><code>@stitchapi/nest</code></a></td><td>Injectable stitches wired into the Nest DI graph</td></tr>
+<tr><td><a href="packages/next"><code>@stitchapi/next</code></a></td><td>Stream a stitch as an SSE Response in the App Router</td></tr>
 <tr><th colspan="2">Client &amp; UI bindings</th></tr>
-<tr><td><a href="packages/angular"><code>@stitchapi/angular</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/angular">npm</a></td><td>Angular bindings</td></tr>
-<tr><td><a href="packages/expo"><code>@stitchapi/expo</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/expo">npm</a></td><td>Expo bindings</td></tr>
-<tr><td><a href="packages/query-core"><code>@stitchapi/query-core</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/query-core">npm</a></td><td>Framework-agnostic reactive query store</td></tr>
-<tr><td><a href="packages/react"><code>@stitchapi/react</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/react">npm</a></td><td>React bindings</td></tr>
-<tr><td><a href="packages/react-native"><code>@stitchapi/react-native</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/react-native">npm</a></td><td>React Native bindings</td></tr>
-<tr><td><a href="packages/solid"><code>@stitchapi/solid</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/solid">npm</a></td><td>Solid bindings</td></tr>
-<tr><td><a href="packages/svelte"><code>@stitchapi/svelte</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/svelte">npm</a></td><td>Svelte bindings</td></tr>
-<tr><td><a href="packages/vue"><code>@stitchapi/vue</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/vue">npm</a></td><td>Vue 3 bindings</td></tr>
+<tr><td><a href="packages/angular"><code>@stitchapi/angular</code></a></td><td>Stitch lifecycle as Angular signals and an RxJS observable</td></tr>
+<tr><td><a href="packages/expo"><code>@stitchapi/expo</code></a></td><td>Streaming over expo/fetch with a secure-store token store</td></tr>
+<tr><td><a href="packages/query-core"><code>@stitchapi/query-core</code></a></td><td>Framework-agnostic reactive store behind the UI bindings</td></tr>
+<tr><td><a href="packages/react"><code>@stitchapi/react</code></a></td><td>Tearing-free useStitch / useStitchStream hooks</td></tr>
+<tr><td><a href="packages/react-native"><code>@stitchapi/react-native</code></a></td><td>Streaming XHR adapter and AsyncStorage-backed store</td></tr>
+<tr><td><a href="packages/solid"><code>@stitchapi/solid</code></a></td><td>createStitch primitives reconciled into a Solid store</td></tr>
+<tr><td><a href="packages/svelte"><code>@stitchapi/svelte</code></a></td><td>Stitch stores for Svelte 4 and 5 (unary + streaming)</td></tr>
+<tr><td><a href="packages/vue"><code>@stitchapi/vue</code></a></td><td>Reactive useStitch / useStitchStream composables</td></tr>
 <tr><th colspan="2">Data-fetching libraries</th></tr>
-<tr><td><a href="packages/rtk-query"><code>@stitchapi/rtk-query</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/rtk-query">npm</a></td><td>RTK Query bindings</td></tr>
-<tr><td><a href="packages/swr"><code>@stitchapi/swr</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/swr">npm</a></td><td>SWR bindings</td></tr>
+<tr><td><a href="packages/rtk-query"><code>@stitchapi/rtk-query</code></a></td><td>Run a stitch as an RTK Query endpoint, with stream updates</td></tr>
+<tr><td><a href="packages/swr"><code>@stitchapi/swr</code></a></td><td>Run a stitch as an SWR fetcher; SWR owns caching</td></tr>
 <tr><th colspan="2">State stores</th></tr>
-<tr><td><a href="packages/cloudflare-kv"><code>@stitchapi/cloudflare-kv</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/cloudflare-kv">npm</a></td><td>Cloudflare Workers KV-backed StitchStore</td></tr>
-<tr><td><a href="packages/deno-kv"><code>@stitchapi/deno-kv</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/deno-kv">npm</a></td><td>Deno KV-backed StitchStore</td></tr>
-<tr><td><a href="packages/redis"><code>@stitchapi/redis</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/redis">npm</a></td><td>Redis-backed StitchStore</td></tr>
+<tr><td><a href="packages/cloudflare-kv"><code>@stitchapi/cloudflare-kv</code></a></td><td>Edge cache and shared sessions on Workers KV</td></tr>
+<tr><td><a href="packages/deno-kv"><code>@stitchapi/deno-kv</code></a></td><td>Distributed throttle and sessions on Deno KV</td></tr>
+<tr><td><a href="packages/redis"><code>@stitchapi/redis</code></a></td><td>Distributed throttle and shared sessions via Redis</td></tr>
 <tr><th colspan="2">Auth</th></tr>
-<tr><td><a href="packages/aws-sigv4"><code>@stitchapi/aws-sigv4</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/aws-sigv4">npm</a></td><td>AWS Signature V4 request signing</td></tr>
+<tr><td><a href="packages/aws-sigv4"><code>@stitchapi/aws-sigv4</code></a></td><td>Sign requests with AWS SigV4 (edge-safe Web Crypto)</td></tr>
 <tr><th colspan="2">AI</th></tr>
-<tr><td><a href="packages/vercel-ai"><code>@stitchapi/vercel-ai</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/vercel-ai">npm</a></td><td>Vercel AI SDK adapter</td></tr>
+<tr><td><a href="packages/vercel-ai"><code>@stitchapi/vercel-ai</code></a></td><td>Expose a stitch as a model-callable tool, credential-safe</td></tr>
 <tr><th colspan="2">Observability</th></tr>
-<tr><td><a href="packages/pino"><code>@stitchapi/pino</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/pino">npm</a></td><td>Pino TraceSink</td></tr>
-<tr><td><a href="packages/sentry"><code>@stitchapi/sentry</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/sentry">npm</a></td><td>A Sentry TraceSink</td></tr>
+<tr><td><a href="packages/pino"><code>@stitchapi/pino</code></a></td><td>The stitch event stream as structured Pino logs</td></tr>
+<tr><td><a href="packages/sentry"><code>@stitchapi/sentry</code></a></td><td>Stitch events as Sentry breadcrumbs, with error capture</td></tr>
 <tr><th colspan="2">Surfaces</th></tr>
-<tr><td><a href="packages/shell"><code>@stitchapi/shell</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/shell">npm</a></td><td>Run a static local command as a StitchAPI surface</td></tr>
+<tr><td><a href="packages/shell"><code>@stitchapi/shell</code></a></td><td>Run a static local command as a stitch (injection-proof)</td></tr>
 <tr><th colspan="2">Cache fingerprint adapters</th></tr>
-<tr><td><a href="packages/fingerprint-arktype"><code>@stitchapi/fingerprint-arktype</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fingerprint-arktype">npm</a></td><td>Stable Standard Schema fingerprint strategy for ArkType</td></tr>
-<tr><td><a href="packages/fingerprint-effect"><code>@stitchapi/fingerprint-effect</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fingerprint-effect">npm</a></td><td>Stable Standard Schema fingerprint strategy for Effect Schema</td></tr>
-<tr><td><a href="packages/fingerprint-typebox"><code>@stitchapi/fingerprint-typebox</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fingerprint-typebox">npm</a></td><td>Stable Standard Schema fingerprint strategy for TypeBox</td></tr>
-<tr><td><a href="packages/fingerprint-valibot"><code>@stitchapi/fingerprint-valibot</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fingerprint-valibot">npm</a></td><td>Stable Standard Schema fingerprint strategy for Valibot</td></tr>
-<tr><td><a href="packages/fingerprint-zod"><code>@stitchapi/fingerprint-zod</code></a> · <a href="https://www.npmjs.com/package/@stitchapi/fingerprint-zod">npm</a></td><td>Stable Standard Schema fingerprint strategy for Zod</td></tr>
+<tr><td><a href="packages/fingerprint-arktype"><code>@stitchapi/fingerprint-arktype</code></a></td><td>Cache-fingerprint strategy for ArkType schemas</td></tr>
+<tr><td><a href="packages/fingerprint-effect"><code>@stitchapi/fingerprint-effect</code></a></td><td>Cache-fingerprint strategy for Effect Schema</td></tr>
+<tr><td><a href="packages/fingerprint-typebox"><code>@stitchapi/fingerprint-typebox</code></a></td><td>Cache-fingerprint strategy for TypeBox schemas</td></tr>
+<tr><td><a href="packages/fingerprint-valibot"><code>@stitchapi/fingerprint-valibot</code></a></td><td>Cache-fingerprint strategy for Valibot schemas</td></tr>
+<tr><td><a href="packages/fingerprint-zod"><code>@stitchapi/fingerprint-zod</code></a></td><td>Cache-fingerprint strategy for Zod schemas</td></tr>
 </tbody>
 </table>
 

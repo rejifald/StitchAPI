@@ -1,5 +1,7 @@
 # @stitchapi/expo
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/expo?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/expo)
+
 Expo bindings for [StitchAPI](https://stitchapi.dev). Expo ships [`expo/fetch`](https://docs.expo.dev/versions/latest/sdk/expo/#expofetch-api), a WinterCG-compliant fetch whose `Response#body` is a real `ReadableStream` — so the streaming gap bare React Native has is already solved at the Expo layer. This package is therefore thin:
 
 -   **`expoFetchAdapter`** — a streaming transport, just core's `fetchAdapter` pointed at `expo/fetch`. **No XHR shim, no `TextDecoder` / `ReadableStream` polyfills.**

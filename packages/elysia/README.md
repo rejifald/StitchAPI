@@ -1,5 +1,7 @@
 # @stitchapi/elysia
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/elysia?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/elysia)
+
 An **[Elysia](https://elysiajs.com) plugin** for [StitchAPI](https://stitchapi.dev).
 `.use()` it and every request gets a [`seam`](https://stitchapi.dev) on its
 context — a **request-scoped principal** bound per request — plus two bridges into

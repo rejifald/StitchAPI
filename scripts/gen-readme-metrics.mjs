@@ -303,6 +303,56 @@ function packageHeadline(description) {
         .trim();
 }
 
+/**
+ * Curated, scannable one-liner per package for the table's Description column,
+ * keyed by directory slug. Hand-written so the table says what each package
+ * *does* — the full npm-facing description still lives in each package.json
+ * (and the per-package README links to npm). A package with no entry here falls
+ * back to {@link packageHeadline}, so a newly added package still appears (the
+ * drift guard flags it) — give it a line here when you do.
+ */
+const TABLE_DESCRIPTIONS = {
+    core: 'Turn any API into a typed, resilient function',
+    // Server frameworks
+    express: 'Request-scoped seam on req, with SSE and error mapping',
+    fastify: 'App/request seam with SSE, error and Pino-logger bridges',
+    hono: 'Edge-ready seam on the request context; SSE and errors',
+    elysia: 'Web-standard seam on the context; SSE and error mapping',
+    nest: 'Injectable stitches wired into the Nest DI graph',
+    next: 'Stream a stitch as an SSE Response in the App Router',
+    // Client & UI bindings
+    angular: 'Stitch lifecycle as Angular signals and an RxJS observable',
+    expo: 'Streaming over expo/fetch with a secure-store token store',
+    react: 'Tearing-free useStitch / useStitchStream hooks',
+    'react-native': 'Streaming XHR adapter and AsyncStorage-backed store',
+    solid: 'createStitch primitives reconciled into a Solid store',
+    svelte: 'Stitch stores for Svelte 4 and 5 (unary + streaming)',
+    vue: 'Reactive useStitch / useStitchStream composables',
+    'query-core': 'Framework-agnostic reactive store behind the UI bindings',
+    // Data-fetching libraries
+    'rtk-query': 'Run a stitch as an RTK Query endpoint, with stream updates',
+    swr: 'Run a stitch as an SWR fetcher; SWR owns caching',
+    // State stores
+    redis: 'Distributed throttle and shared sessions via Redis',
+    'cloudflare-kv': 'Edge cache and shared sessions on Workers KV',
+    'deno-kv': 'Distributed throttle and sessions on Deno KV',
+    // Auth
+    'aws-sigv4': 'Sign requests with AWS SigV4 (edge-safe Web Crypto)',
+    // AI
+    'vercel-ai': 'Expose a stitch as a model-callable tool, credential-safe',
+    // Observability
+    pino: 'The stitch event stream as structured Pino logs',
+    sentry: 'Stitch events as Sentry breadcrumbs, with error capture',
+    // Surfaces
+    shell: 'Run a static local command as a stitch (injection-proof)',
+    // Cache fingerprint adapters
+    'fingerprint-arktype': 'Cache-fingerprint strategy for ArkType schemas',
+    'fingerprint-effect': 'Cache-fingerprint strategy for Effect Schema',
+    'fingerprint-typebox': 'Cache-fingerprint strategy for TypeBox schemas',
+    'fingerprint-valibot': 'Cache-fingerprint strategy for Valibot schemas',
+    'fingerprint-zod': 'Cache-fingerprint strategy for Zod schemas',
+};
+
 /** Every publishable workspace package (skips `private`). */
 function readPackages() {
     const dir = resolve(repoRoot, 'packages');
@@ -317,7 +367,9 @@ function readPackages() {
             name: pj.name,
             slug: entry.name,
             dir: `packages/${entry.name}`,
-            headline: packageHeadline(pj.description),
+            headline:
+                TABLE_DESCRIPTIONS[entry.name] ??
+                packageHeadline(pj.description),
         });
     }
     return pkgs;
@@ -351,9 +403,7 @@ function renderPackagesTable(pkgs) {
             lines.push(
                 `<tr><td><a href="${p.dir}"><code>${escapeHtml(
                     p.name,
-                )}</code></a> · <a href="https://www.npmjs.com/package/${
-                    p.name
-                }">npm</a></td><td>${escapeHtml(p.headline)}</td></tr>`,
+                )}</code></a></td><td>${escapeHtml(p.headline)}</td></tr>`,
             );
         }
     }

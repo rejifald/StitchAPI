@@ -1,5 +1,7 @@
 # @stitchapi/pino
 
+[![npm](https://img.shields.io/npm/v/@stitchapi/pino?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/pino)
+
 A **[Pino](https://getpino.io) `TraceSink`** for StitchAPI. Attach it and the
 stitch event stream becomes structured Pino logs — one record per event, at the
 right level, with **no change to the call site**:
