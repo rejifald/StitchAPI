@@ -101,14 +101,30 @@ if (
 const stockTest = join(CONTENT, 'test.mdx');
 if (existsSync(stockTest)) rmSync(stockTest);
 
-// 2. meta.json per section (always rewritten — it is derived from the manifest).
+// Sections whose meta.json is HAND-MAINTAINED and intentionally NOT derived
+// from the manifest. The generator skips them — rewriting would clobber edits.
+//
+// `integrations`: its sidebar is hand-curated to mirror the README package
+// table (21 pages today, each added one-per-PR straight into its meta.json) and
+// the manifest deliberately carries only a single `integrations/nestjs` entry.
+// `childrenOf()` emits a flat `pages` array and cannot express Fumadocs
+// `---Group---` separators, so the generator could never reproduce this layout —
+// it leaves the file alone instead. Keep this paired with the note on the
+// `integrations` entry in content.manifest.ts.
+const HAND_MAINTAINED_SECTIONS = new Set(['integrations']);
+
+// 2. meta.json per section (rewritten from the manifest — it is derived —
+//    except hand-maintained sections, which are left untouched).
+let metaWritten = 0;
 for (const s of sections) {
+    if (HAND_MAINTAINED_SECTIONS.has(s.path)) continue;
     const dir = s.path ? join(CONTENT, s.path) : CONTENT;
     mkdirSync(dir, { recursive: true });
     const meta = { title: s.title };
     if (s.icon) meta.icon = s.icon;
     meta.pages = childrenOf(s.path);
     writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(meta, null, 4)}\n`);
+    metaWritten += 1;
 }
 
 // 3. Stub .mdx per page (only if absent — never clobber written content).
@@ -126,5 +142,5 @@ for (const p of pages) {
 }
 
 console.log(
-    `skeleton: ${sections.length} meta.json, ${created} stub(s) created, ${skipped} existing page(s) kept`,
+    `skeleton: ${metaWritten} meta.json, ${created} stub(s) created, ${skipped} existing page(s) kept`,
 );

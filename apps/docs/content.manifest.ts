@@ -68,6 +68,11 @@ export const sections: Section[] = [
     { path: 'guides/observability', title: 'Observability' },
     { path: 'guides/state', title: 'State & stores' },
     { path: 'surfaces', title: 'Surfaces', icon: 'Layers' },
+    // `integrations` meta.json is HAND-MAINTAINED and NOT regenerated: it is
+    // hand-curated to mirror the README package table, and the generator skips
+    // it (see HAND_MAINTAINED_SECTIONS in scripts/generate-skeleton.mjs).
+    // Pages added under `integrations/` in the `pages` array below do NOT drive
+    // its sidebar — edit content/docs/integrations/meta.json directly.
     { path: 'integrations', title: 'Integrations', icon: 'Plug' },
     { path: 'agents', title: 'For agents', icon: 'Bot' },
     { path: 'reference', title: 'Reference', icon: 'Code' },
@@ -387,6 +392,11 @@ export const pages: Page[] = [
     },
 
     // ── Integrations ────────────────────────────────────────────────────────
+    // NOTE: integrations/meta.json is hand-maintained and NOT generated (see the
+    // `integrations` entry in `sections` above). This single entry exists only so
+    // the section is represented here; the live sidebar lists 21 hand-ordered
+    // pages. Do not rely on the generator to reproduce that list — adding entries
+    // here will not change the sidebar.
     {
         path: 'integrations/nestjs',
         title: 'NestJS',
