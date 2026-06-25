@@ -7,9 +7,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-export default async function BlogPostPage(
-    props: PageProps<'/blog/[slug]'>,
-) {
+export default async function BlogPostPage(props: PageProps<'/blog/[slug]'>) {
     const { slug } = await props.params;
     const post = blogSource.getPage([slug]);
     if (!post) notFound();
