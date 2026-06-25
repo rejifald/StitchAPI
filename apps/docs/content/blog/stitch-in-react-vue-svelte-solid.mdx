@@ -1,20 +1,20 @@
 ---
-title: 'Stitch in Your UI: React, Vue, Svelte, and Solid'
+title: 'Stitch in Your UI: React, Vue, Svelte, Solid, and Angular'
 description: The same stitch plugs into each major UI framework via a thin binding, surfacing loading, error, drift, and streaming as idiomatic reactive state. Here's the shared core that makes that consistent.
 author: Oleksandr Zhuravlov
 date: '2026-05-04'
-tags: [ui, react, vue, svelte, solid]
+tags: [ui, react, vue, svelte, solid, angular]
 ---
 
 You declared a stitch — typed input, validated output, retries, drift detection — and now a component has to call it. That's where the boilerplate usually creeps back in: a `useState` for the data, another for the loading flag, another for the error, a `useEffect` to fire the call, an `AbortController` to cancel it on unmount, and — if the call streams — a reducer to fold chunks as they arrive. You wrote that once per framework, and you'll write it again the next time, slightly differently, in the next component.
 
-A stitch already knows its own lifecycle. Every call yields a typed event stream — `start → progress → drift → result → done` — and `await` is just sugar over consuming it. The framework bindings take that stream and project it into the host's native reactive primitive, so loading, error, drift, and streaming state become idiomatic state in React, Vue, Svelte, or Solid — without you re-deriving it by hand each time.
+A stitch already knows its own lifecycle. Every call yields a typed event stream — `start → progress → drift → result → done` — and `await` is just sugar over consuming it. The framework bindings take that stream and project it into the host's native reactive primitive, so loading, error, drift, and streaming state become idiomatic state in React, Vue, Svelte, Solid, or Angular — without you re-deriving it by hand each time.
 
-## One reactive core, four thin bindings
+## One reactive core, five thin bindings
 
-The thing that keeps these four bindings consistent is that they aren't four independent implementations. They all sit on **`@stitchapi/query-core`** — a framework-agnostic reactive store that wraps a stitch call and exposes a `subscribe` / `getSnapshot` handle, the exact shape React's `useSyncExternalStore` (and the equivalent primitive in Vue, Svelte, and Solid) consumes directly.
+The thing that keeps these bindings consistent is that they aren't independent implementations. They all sit on **`@stitchapi/query-core`** — a framework-agnostic reactive store that wraps a stitch call and exposes a `subscribe` / `getSnapshot` handle, the exact shape React's `useSyncExternalStore` (and the equivalent primitive in Vue, Svelte, Solid, and Angular) consumes directly.
 
-Query-core owns the lifecycle and nothing else: status transitions, cancellation, re-fetching, and the streaming fold. It imports no framework and no `node:*`, so it's browser- and edge-safe. The snapshot it hands out is identity-stable between real changes — it only produces a new object when something actually changed, which is what keeps `useSyncExternalStore` from tearing or looping.
+Query-core owns the lifecycle and nothing else: status transitions, cancellation, re-fetching, and the streaming fold. It imports no framework and no `node:*`, so it runs unchanged in the browser, in React Server Components, and in edge runtimes like Cloudflare Workers — no polyfills, no `node:` shims. The snapshot it hands out is identity-stable between real changes — it only produces a new object when something actually changed, which is what keeps `useSyncExternalStore` from tearing or looping.
 
 That shared core is why the per-framework state shape is the same everywhere:
 
@@ -31,7 +31,7 @@ interface StitchQueryState<T> {
 }
 ```
 
-Learn it once and it transfers. The same `isPending` / `isError` / `isStreaming` booleans, the same `chunks` list for streaming surfaces, the same `status` enum — whether you're in a React hook, a Vue composable, a Svelte store, or a Solid store proxy. The binding's job is only to wire that state into the host's render loop and to tear the call down when the component goes away.
+Learn it once and it transfers. The same `isPending` / `isError` / `isStreaming` booleans, the same `chunks` list for streaming surfaces, the same `status` enum — whether you're in a React hook, a Vue composable, a Svelte store, a Solid store proxy, or an Angular signal. The binding's job is only to wire that state into the host's render loop and to tear the call down when the component goes away.
 
 ## React — `useStitch` / `useStitchStream`
 
@@ -73,29 +73,21 @@ function Chat({ prompt }: { prompt: string }) {
 }
 ```
 
-## Vue — reactive composables
+## Same state, every other primitive
 
-The Vue binding exposes the same `useStitch` / `useStitchStream` names as composables backed by Vue's reactivity. The input may be a value, a `ref`, or a getter — a getter re-fetches when its structural key changes — and the in-flight run is aborted when the component's scope is disposed:
+Swap React's hook for the next framework's idiomatic shape and nothing else moves. **Vue** exposes `useStitch` / `useStitchStream` as composables whose fields are `ComputedRef`s — destructure them, and templates unwrap `.value` for you. **Svelte** ships real stores (`stitchStore` / `stitchStreamStore`, built on `readable`, unchanged across Svelte 4 and 5), so `$user` fetches on first subscribe and tears down when the last subscriber leaves. **Solid** reconciles a `createStore` proxy, so `user.state.data` tracks fine-grained inside JSX. Each one takes a value, a `ref`/accessor, or a getter for the input, and aborts the in-flight run on scope teardown — the same lifecycle, in each framework's idiom.
+
+**Angular** is the sharpest illustration of "same state, different primitive": `injectStitch` hands the lifecycle back as _both_ fine-grained signals and an RxJS observable, from one shared execution.
 
 ```ts
-import { useStitch } from '@stitchapi/vue';
+import { injectStitch } from '@stitchapi/angular';
 
-const { data, isPending, isError, refetch } = useStitch(getUser, () => ({
-    params: { id: props.id },
-}));
+readonly user = injectStitch(getUser, () => ({ params: { id: this.id() } }));
+// signals for templates and `computed`:  user.data()   user.isPending()
+// the same state as an observable:        user.state$   // async pipe + RxJS operators
 ```
 
-Each field is a `ComputedRef`, so you can destructure without losing reactivity, and templates unwrap `.value` for you. The state names — `isPending`, `isError`, `isStreaming`, `chunks`, `status` — are exactly the ones from the React hook.
-
-## Svelte and Solid — same state, native primitive
-
-The other two bindings carry the same state into each framework's idiomatic shape.
-
-In **Svelte**, `stitchStore` / `stitchStreamStore` are real Svelte stores — built on `readable` from `svelte/store`, the surface that's unchanged across **Svelte 4 and 5**. The run starts on the store's first subscriber and is aborted when the last one leaves, so `$user` fetches on mount and tears down on teardown. (`useStitch` / `useStitchStream` exist as aliases if you prefer the `use*` naming.)
-
-In **Solid**, `createStitch` / `createStitchStream` reconcile the query store into a Solid `createStore`, so reading `user.state.data` inside JSX tracks it fine-grained. Pass an accessor (`() => props.id`) and the handle is recreated and re-fetched when it changes; the run is aborted on scope teardown via `onCleanup`.
-
-Different primitives — an external store, a store proxy — but the same `state.status`, `state.chunks`, `state.isStreaming` underneath, because the same query-core sits behind both.
+Refs, stores, store proxies, signals, observables — different surfaces, but the same `status` / `chunks` / `isStreaming` underneath, because one query-core sits behind every binding. The exact signatures — and the optional TanStack Query adapter each one ships — live in the per-framework guides.
 
 ## It composes with the data layer you already have
 
@@ -109,19 +101,17 @@ So the decision isn't "stitch bindings _or_ my query library." It's which layer 
 
 ## When this isn't worth it
 
-A few honest caveats:
+Two honest caveats:
 
--   **Pick one binding for your stack — don't mix.** Each binding targets one framework's reactivity model. Reach for `@stitchapi/react` in a React app and `@stitchapi/vue` in a Vue app; there's no reason to layer two of them in the same tree.
 -   **If a query library already owns your view state, you may not need the binding's hooks at all.** Going through `@stitchapi/swr`, `@stitchapi/rtk-query`, or the TanStack Query adapter can be the simpler path — let that layer manage state and let the stitch be the `queryFn`.
--   **A single, fire-once call may not justify a hook.** For a one-shot call outside a reactive view, `await stitch(...)` is fine on its own; the binding earns its keep when a component needs to react to loading, error, drift, or streaming state over time.
--   **Confirm the exact API for your framework in the docs.** The bindings deliberately differ in surface — hooks vs. composables vs. stores vs. store proxies, plain values vs. refs vs. accessors. The shared state shape is consistent, but the call conventions are framework-shaped, so check the page for your stack before wiring it up.
+-   **A one-shot call doesn't need a binding.** For a fire-once call outside a reactive view, `await stitch(...)` is enough; the binding earns its keep only when a component has to react to loading, error, drift, or streaming state over time.
 
 ## Try it
 
-Install the core plus the binding for your framework — for example, React:
+Install the core plus the binding for your framework — React, here:
 
 ```bash
 npm i stitchapi @stitchapi/query-core @stitchapi/react
 ```
 
-Then see the per-framework guides for the exact signatures: [React](/docs/integrations/react), [Vue](/docs/integrations/vue), [Svelte](/docs/integrations/svelte), and [Solid](/docs/integrations/solid). If you already run a query layer, [`@stitchapi/swr`](/docs/integrations/swr) and [`@stitchapi/rtk-query`](/docs/integrations/rtk-query) let the stitch be the call while that layer keeps the view state — or start from [the docs](/docs).
+The per-framework guides have the exact signatures: [React](/docs/integrations/react), [Vue](/docs/integrations/vue), [Svelte](/docs/integrations/svelte), [Solid](/docs/integrations/solid), and [Angular](/docs/integrations/angular).
