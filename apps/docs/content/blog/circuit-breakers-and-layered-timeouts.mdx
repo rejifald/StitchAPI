@@ -1,0 +1,114 @@
+---
+title: Circuit Breakers and Layered Timeouts for Flaky APIs
+description: When an upstream dependency is already down or crawling, naive retries make its outage yours. Here's how a circuit breaker plus layered timeouts turn that failure mode into a bounded, declared policy.
+author: Oleksandr Zhuravlov
+date: '2026-06-25'
+tags: [resilience, reliability, timeouts, circuit-breaker, retry]
+---
+
+An upstream provider starts to crawl. Not down — crawling. Responses that used to land in 80ms now take eight seconds, when they land at all. Your code does the reasonable thing: it has a timeout, so it gives up after thirty seconds and retries. Three attempts, a little backoff between them. Sensible in isolation.
+
+Now multiply it. Every request in flight is holding a connection open for the better part of thirty seconds, then retrying into the same tar pit. Your thread pool, your connection pool, your event loop's pending promises — all of it fills with calls waiting on a dependency that was never going to answer in time. The provider's slow afternoon has become _your_ outage, and you caused the second half of it yourself by retrying into a wall.
+
+This is the failure mode that a flat timeout doesn't catch and that naive retries actively worsen. Two pieces of declared resilience address it directly: a **circuit breaker** that stops you from hammering a dependency that's already failing, and **layered timeouts** that bound latency at two scopes instead of one. In StitchAPI both are fields on the stitch — declared once, applied to every caller.
+
+## Why one flat timeout isn't enough
+
+A single timeout answers one question: how long is the _whole call_ allowed to take? That's a real and necessary bound, but it papers over a distinction that matters the moment you add retries.
+
+Say you set a 30-second timeout and retry three times. What does the 30 seconds cover? If it's per-attempt, a slow dependency can legitimately keep you waiting 30s × 3 attempts plus backoff — well past a minute — and the caller you promised "30 seconds, tops" is still blocked. If instead the 30 seconds is the total budget, then your second and third retries are squeezed into whatever's left, and a single slow attempt can eat the entire budget so the retries never actually fire.
+
+You want both bounds, and you want them named separately:
+
+-   **`perAttempt`** — how long any single try gets before it's aborted and (maybe) retried.
+-   **`total`** — how long the entire call gets, across every attempt and the backoff waits between them.
+
+StitchAPI declares them as one `timeout` object:
+
+```ts
+import { stitch } from 'stitchapi';
+
+const report = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/report',
+    timeout: { total: '10s', perAttempt: '3s' },
+});
+```
+
+Each attempt gets at most 3 seconds; the whole call gets at most 10. Whichever fires first wins. The deadline is backed by a real `AbortSignal` — when it elapses the underlying request is actually cancelled, not just ignored while the connection leaks in the background. That last detail is the one a hand-rolled `Promise.race` usually gets wrong: racing a timeout against a fetch resolves _your_ promise, but the socket stays open, still consuming a slot in your connection pool.
+
+With retry in the picture, the two timeouts compose cleanly: each try is gated by `perAttempt`, while `total` caps the sum of all tries plus their backoff waits. A long enough `total` is precisely what _allows_ a slow attempt to be retried at all — and a tight `perAttempt` is what stops one hung attempt from swallowing the whole budget.
+
+## Why the breaker exists: retries are the wrong reflex against a dead dependency
+
+Layered timeouts bound how long _one_ caller waits. They don't stop a hundred callers from each independently discovering that the dependency is down, the slow way, by waiting out their timeout and retrying.
+
+That's the cascading-failure pattern. When a dependency is already failing, every retry is load you're adding to a system that's struggling, and every in-flight attempt is one of your own resources tied up waiting for a response that isn't coming. Retries are the right reflex against a _transient_ blip — a single dropped packet, a one-off 503. They're exactly the wrong reflex against a dependency that is comprehensively, currently down. Against that, the correct move is to stop calling for a bit.
+
+A **circuit breaker** encodes "stop calling for a bit" as state. The mechanics are a small state machine:
+
+-   It starts **closed** — calls pass through normally.
+-   After a run of consecutive failures (the `failureThreshold`) it trips **open**. While open, calls **fast-fail** immediately without touching the dependency, for a cooldown window.
+-   Once the cooldown elapses it goes **half-open** and lets a single trial call through. If that probe succeeds, the breaker **closes** and normal traffic resumes; if it fails, the breaker re-**opens** for a fresh cooldown.
+
+The fast-fail is the whole point. While the circuit is open, a call returns in microseconds instead of burning a `perAttempt` timeout discovering — again — that the dependency is unreachable. You stop adding load to a struggling upstream, and you stop tying up your own connections and promises waiting on doomed calls. The half-open probe is how you find out it's healthy again without flipping the floodgates open on the first hopeful guess.
+
+```ts
+import { stitch } from 'stitchapi';
+
+const orders = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    circuit: { failureThreshold: 5, cooldownMs: 30_000 },
+});
+```
+
+After five consecutive failures the breaker opens; for the next 30 seconds calls to `orders()` fast-fail instead of hitting the host. Then one trial call decides whether to close it or wait out another cooldown. (`halfOpenAfterMs` lets you probe on a different clock than the fast-fail window, if you want them decoupled.)
+
+When the breaker is open, the call surfaces a `STITCH_CIRCUIT_OPEN` error — a distinct, catchable signal that means "I didn't even try, the dependency is presumed down," which is exactly the case your fallback logic wants to branch on.
+
+## One declared policy, not three bolted-on behaviors
+
+The reason these compose well is that the breaker, the timeouts, and retry/backoff are all configuration on the same stitch — declared together, evaluated together:
+
+```ts
+import { stitch } from 'stitchapi';
+
+const getQuote = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/quote/{symbol}',
+    retry: { attempts: 3, on: [429, 502, 503], respectRetryAfter: true },
+    timeout: { total: '10s', perAttempt: '3s' },
+    circuit: { failureThreshold: 5, cooldownMs: 30_000 },
+});
+```
+
+Read top to bottom, that's a coherent reliability story. Retry absorbs the transient blips — a stray 503, a rate-limited 429 whose `Retry-After` you honor. The layered timeout bounds how long any single attempt and the whole call can take, with real aborts so nothing leaks. And the breaker is the backstop for when the failures stop being transient: once five in a row have failed, retrying is clearly futile, so it stops trying and fast-fails until a probe says otherwise.
+
+Each piece covers a gap the others can't. Retry without a breaker turns a sustained outage into a retry storm. A breaker without timeouts still lets individual slow calls block you right up until the threshold trips. Timeouts without a breaker bound each call but never stop you from re-discovering the same outage, caller after caller. Declared together on the stitch, they cover transient, slow, and sustained failure as one policy — and because it lives on the definition, every front door inherits it: the in-process function, the CLI, the HTTP endpoint, and the agent calling over MCP all get the same behavior, not three slightly different hand-rolled versions.
+
+## The honest caveats
+
+None of this is free, and the defaults that are right for one dependency are wrong for another.
+
+-   **Breaker thresholds need tuning, and the failure modes are symmetric.** Set `failureThreshold` too low or `cooldownMs` too long and the breaker trips on a momentary blip, cutting you off from a dependency that was fine. Set it too high or too short and it never really protects you — the circuit stays closed through an outage you wanted it to short. There's no universal number; it depends on the dependency's normal failure rate and how costly a false trip is. Start conservative and watch the `progress` events the breaker emits with phase `circuit`.
+
+-   **The default breaker is process-local.** The failure counter lives in memory, so across multiple workers or replicas each one tallies its own failures and trips independently — meaning a failing host can take many times the hits you intended before every process's circuit opens. If you run more than one instance, give the stitches a shared `key` plus a durable store so one breaker spans the fleet.
+
+-   **Fast-fail means you need a plan for the fast failure.** A breaker doesn't make the data appear; it converts "wait, then fail" into "fail now." That's only an improvement if you have somewhere to go when it fires — a cached value, a degraded response, a queued retry, a clear error to the user. A `STITCH_CIRCUIT_OPEN` with no fallback is just a faster error, and sometimes that genuinely is the right call. But decide it on purpose.
+
+-   **Timeouts trade completeness for bounded latency.** A call that would have succeeded in 11 seconds fails under a 10-second `total`. That's the deal you're making on purpose: predictable latency in exchange for occasionally abandoning a slow-but-valid response. For a user-facing path it's almost always the right trade; for a nightly batch job that genuinely needs to finish, a tight timeout can be actively harmful. Match the budget to the caller.
+
+The throughline: these tools bound a bad situation, they don't fix it. A dependency that's down is still down. What you've changed is that its outage no longer drags your service down with it — failures fail fast, in a shape you can catch and route around, instead of piling up as held connections and stalled loops.
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Declare a stitch, give it a `timeout`, a `retry` policy, and a `circuit`, and you've described how it should behave when the upstream misbehaves — once, for every caller. The per-feature guides go deeper:
+
+-   [Circuit breaker](/docs/guides/resilience/circuit-breaker) — the state machine, shared breakers, and `STITCH_CIRCUIT_OPEN`.
+-   [Timeouts](/docs/guides/resilience/timeout) — `total` vs `perAttempt`, and how they compose with retry.
+-   [Retry](/docs/guides/resilience/retry) — backoff, jitter, and honoring `Retry-After`.

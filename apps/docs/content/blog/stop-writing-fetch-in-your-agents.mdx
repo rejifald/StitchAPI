@@ -1,0 +1,108 @@
+---
+title: Stop Writing fetch() in Your Agents
+description: When an AI agent is the caller, raw fetch() is the wrong primitive — it leaks the credential, returns unvalidated bytes, and has no retry, throttle, timeout, or trace. Here's the case for handing the agent a stitch instead.
+author: Oleksandr Zhuravlov
+date: '2026-06-25'
+tags: [agents, ai, fetch, mcp, auth]
+---
+
+Here's a tool definition that ships in more agent codebases than anyone wants to admit:
+
+```ts
+async function getOrders(userId: string) {
+    const res = await fetch(`https://api.example.com/users/${userId}/orders`, {
+        headers: { authorization: `Bearer ${process.env.API_TOKEN}` },
+    });
+    return res.json();
+}
+```
+
+It works on the happy path, and the happy path is where it gets demoed. The trouble is what this hands to the model behind it. The token is interpolated into a string the agent's code constructs. The return type is `any` — whatever JSON came back, parsed and unchecked. There's no retry, no rate limit, no timeout, and no record that the call ever happened. For a human writing this once and reading the result with their own eyes, that's mostly fine. For a model that will retry on a whim, fan the call out across ten branches, and loop until something looks done, every one of those gaps is a place where the wheels come off.
+
+The argument here isn't that `fetch` is bad. It's that `fetch` is the wrong _altitude_ to hand an agent. It's a transport primitive, and an agent isn't a transport — it's an untrusted, tireless caller that wants a capability, not a socket.
+
+## What raw fetch hands the agent
+
+Walk the four-line function above one concern at a time.
+
+**The credential.** `process.env.API_TOKEN` is in scope wherever the agent's code runs. If the model writes the request — and in code-mode setups it does — the secret is one string-interpolation away from a log line, an error message, or a response echoed back into the model's context. You're trusting the caller with the key when all you wanted was for it to be able to read orders.
+
+**The shape.** `res.json()` is `any`. Nothing checked that `orders` is an array, that each order has an `id`, or that the field the agent depends on is still called `total` and not `total_cents` after last Tuesday's deploy. The model gets bytes and guesses. When the upstream quietly renames a field, the failure surfaces three steps later as a confidently wrong answer, not as an error you can catch.
+
+**The resilience.** There isn't any. One transient `503` throws. A flaky upstream that needs a second attempt gets none. A metered endpoint that a looping agent hammers gets hammered — there's no concurrency cap, no rate ceiling, no circuit breaker to fast-fail a dependency that's already down, no `Retry-After` honored. The agent's enthusiasm and the endpoint's limits meet for the first time in production.
+
+**The trace.** When the agent does something expensive or wrong, there's no event stream to read back. You can't see the retries, the latency, or the drift, because none of it was ever emitted. You're debugging a black box whose caller you also can't fully predict.
+
+None of these are exotic. They're the same concerns you'd hand-roll around any important call. The difference is that an agent multiplies the cost of skipping them, because it calls more often, more concurrently, and with less judgment than the human who wrote the wrapper.
+
+## A stitch is the capability, not the transport
+
+A **stitch** is StitchAPI's core primitive: you declare one endpoint — its types, its auth, its resilience — and get back a typed callable. The agent invokes that callable. It never sees the URL-building, never sees the token, and never sees raw bytes.
+
+Crucially, **a stitch does not replace `fetch`**. Your `fetch` (or axios) is still the adapter underneath; a stitch sits _above_ the transport and turns the endpoint into a function. You're not swapping out the engine — you're putting a contract in front of it.
+
+Here's the same orders call as a stitch:
+
+```ts
+import { bearer, env, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+export const getOrders = stitch({
+    path: 'https://api.example.com/users/{userId}/orders',
+    auth: bearer(env('API_TOKEN')), // resolved at call time; the caller never sees it
+    output: z.array(z.object({ id: z.number(), total: z.number() })),
+    unwrap: 'data',
+    retry: { attempts: 3, on: [429, 503], respectRetryAfter: true },
+    throttle: { rate: '10/s', concurrency: 4, scope: 'host' },
+    timeout: { total: '10s' },
+});
+```
+
+Now look at what the four concerns above turn into.
+
+The **credential** is gone from the call site. `env('API_TOKEN')` resolves _at call time_, inside the stitch, and the resolved secret never reaches whoever invokes `getOrders`. The agent gets a capability — "you may read orders" — not the key that grants it. That's the whole point of [auth as a boundary](/docs/concepts/capability-not-credential): the secret stays behind the seam.
+
+The **shape** is enforced. The `output` schema validates every live response, so the agent gets `{ id: number; total: number }[]` or a typed `STITCH_VALIDATION` error — never a silent `any`. Wrap that schema in `drift()` and a renamed field becomes a loud, leveled [drift](/docs/guides/validation/drift) signal instead of an `undefined` three layers downstream.
+
+The **resilience** is declared, not improvised. Retry with backoff and `Retry-After`, a proactive throttle that keeps a looping agent under the rate and concurrency caps before it earns a wall of `429`s, and a real timeout that aborts with an `AbortSignal`. The agent can be as eager as it likes; the stitch holds the line.
+
+The **trace** is there when you want it. Every call yields a typed event stream (`start → progress → drift → result → done`), and tracing — off by default — turns on per stitch or via `STITCH_TRACE_*` env vars. When the agent does something surprising, you have a record of it.
+
+## Before / after, side by side
+
+The contrast isn't really about line count — the stitch is arguably more code. It's about _where the concerns live_. In the `fetch` version, every guarantee is the caller's job, re-solved (or skipped) at each call site. In the stitch version, the guarantees live on the declaration, once, and the caller just invokes a capability:
+
+```ts
+// before — the agent's tool body owns the credential, the parsing, the failure handling (all of it, badly)
+const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+const orders = await res.json(); // any; no retry, no throttle, no trace
+
+// after — the agent invokes a capability and gets validated, traced data back
+const orders = await getOrders({ params: { userId: '7' } }); // typed · validated · resilient
+```
+
+The agent's view shrinks to the second line. Everything dangerous — the token, the retry policy, the rate ceiling — moved behind the declaration, where you control it and the model can't fumble it.
+
+## One declaration, four front doors
+
+A useful side effect of putting the contract on the declaration: the _same_ stitch is callable from four places without rewriting it. It's an in-process function (`await getOrders(...)`), a CLI command (`stitch run`), an HTTP endpoint (`stitch serve`), and an MCP tool (`stitch mcp`). An agent reaching it over MCP gets exactly the same validated, throttled, credential-free call that your code gets in-process.
+
+And because the agent surface is MCP, you don't enumerate one tool per endpoint — that floods the model's context as you add APIs. The agent drives a single code-mode tool, `run_stitch`, writing a small snippet that calls the stitches by name, with `list_stitches` and `describe_stitch` for discovery. The contract you declared once is what every door serves.
+
+## When raw fetch is still fine
+
+This is a tradeoff, not a commandment. The honest version:
+
+-   **A one-off, throwaway script** — a single call you'll run once and read with your own eyes — doesn't need any of this. Raw `fetch` is the right amount of ceremony. Reaching for a stitch there is over-engineering.
+-   **The payoff grows with reuse.** The first time you call an endpoint, a stitch is more setup. By the tenth call site, or the third endpoint sharing one auth and throttle budget, the declaration has paid for itself several times over.
+-   **It grows fastest with untrusted, tireless callers.** The credential boundary, the validation, and the throttle matter most precisely when the caller is a model that will retry, fan out, and loop — which is the whole reason this post exists. A trusted human running a script feels these gaps least.
+
+So the rule isn't "never write `fetch`." It's: the moment the caller is an agent, or the endpoint gets reused, the four gaps stop being theoretical. That's when you want the endpoint declared once, with the secret behind the boundary and the resilience on the definition — and the agent holding a capability, not a key.
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Declare one endpoint as a stitch, point an agent at it over MCP, and the agent invokes a capability instead of constructing a request. Start with [the stitch concept](/docs/concepts/the-stitch), then [use it from an agent](/docs/agents) to see the credential-free call path end to end.

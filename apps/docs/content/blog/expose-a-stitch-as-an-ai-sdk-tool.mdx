@@ -1,0 +1,128 @@
+---
+title: Expose a Stitch as a Model-Callable Tool, Credential-Safe
+description: How to hand a model a stitch as a callable tool with @stitchapi/vercel-ai — so it gets typed, validated data while the credential stays behind the seam, and your declared resilience comes along for free.
+author: Oleksandr Zhuravlov
+date: '2026-06-25'
+tags: [ai, agents, auth, tools]
+---
+
+Letting a model call your API during generation is a small superpower and a real liability at the same time. The usual way to wire it up — give the model a raw `fetch` wrapper as a tool — leaks two things you'd rather keep separate. It hands the model an opaque blob of bytes to reason over, and it puts the API key on the same side of the boundary as the model that's about to improvise tool arguments.
+
+You want the opposite on both counts: the model should get back data you've already validated, and it should never be anywhere near the credential. It should hold a **capability** — the ability to invoke this one endpoint — not the secret that authorizes it.
+
+That's exactly the shape `@stitchapi/vercel-ai` gives you. You define a stitch once, wrap it as a tool, and the model calls it inside `generateText` / `streamText`. The stitch runs as the tool's `execute`, so the model gets typed, validated output back — and the credential stays where it was declared, behind the seam.
+
+## Start with the stitch, not the tool
+
+The tool is the thin part. The substance is the stitch: a single endpoint declared with a typed input, a validated output, and whatever resilience that integration needs. Here's a stitch for a small internal "lookup" API, with auth, validation, and a few resilience knobs already on it:
+
+```ts
+import { bearer, env, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const Order = z.object({
+    id: z.string(),
+    status: z.enum(['pending', 'shipped', 'delivered', 'cancelled']),
+    total: z.number(),
+    placedAt: z.string(),
+});
+
+export const getOrder = stitch({
+    path: 'https://internal.example.com/orders/{id}',
+    output: Order,
+    unwrap: 'data',
+    // The credential resolves at call time and never reaches the caller.
+    auth: bearer(env('ORDERS_API_TOKEN')),
+    // Resilience is declared once, here — not in the tool, not in the agent.
+    retry: { attempts: 3, on: [429, 503], respectRetryAfter: true },
+    throttle: { rate: '10/s', concurrency: 4, scope: 'host' },
+    timeout: { total: '5s' },
+    cache: '30s',
+});
+```
+
+Two things to notice before any model is involved. First, `output: Order` means the stitch validates the response on every call — a renamed field or a wrong type fails loudly here, not three layers downstream inside the model's reasoning. Second, `auth: bearer(env('ORDERS_API_TOKEN'))` resolves the secret at call time, on the inside of the seam. Whoever calls `getOrder` gets the order back; they never see, pass, or even know the token. That property is the whole point of [auth as a boundary](/docs/concepts/capability-not-credential), and it's worth far more when the caller is a model than when it's your own code.
+
+## Wire it as a tool
+
+Now expose that stitch to the model. `stitchTool` takes the stitch plus a small options object — a `description` the model reads to decide _when_ to call, an `inputSchema` the model fills, and an optional `toInput` to map the model's flat arguments onto the stitch's `{ params, query, body }` shape:
+
+```ts
+import { getOrder } from './api';
+
+import { stitchTool } from '@stitchapi/vercel-ai';
+import { generateText } from 'ai';
+import { z } from 'zod';
+
+const { text } = await generateText({
+    model,
+    prompt: 'Is order A-1042 shipped yet?',
+    tools: {
+        getOrder: stitchTool(getOrder, {
+            description: 'Look up an order by its id.',
+            inputSchema: z.object({ id: z.string() }),
+            toInput: ({ id }) => ({ params: { id } }),
+        }),
+    },
+});
+```
+
+That's the whole wiring. The model decides to call `getOrder`, fills `{ id: 'A-1042' }` against the `inputSchema`, and `toInput` reshapes that into the stitch's `{ params: { id } }`. The stitch runs — with its auth, retries, throttle, timeout, and cache — and resolves to a validated `Order`. The model reasons over that typed object, not over whatever bytes the upstream happened to return.
+
+`toInput` exists so the model's schema can stay flat and obvious (`{ id: string }`) while the stitch keeps its structured input. When the two already line up, you can drop `toInput` entirely and the model's args _are_ the stitch input.
+
+If you'd rather compose the tool yourself — for example with the AI SDK's own `tool()` helper for tighter typing — there's `stitchExecute`, which is just the `execute` half:
+
+```ts
+import { getOrder } from './api';
+
+import { stitchExecute } from '@stitchapi/vercel-ai';
+import { tool } from 'ai';
+import { z } from 'zod';
+
+const getOrderTool = tool({
+    description: 'Look up an order by its id.',
+    inputSchema: z.object({ id: z.string() }),
+    execute: stitchExecute(getOrder, ({ id }) => ({ params: { id } })),
+});
+```
+
+One implementation detail worth knowing: `@stitchapi/vercel-ai` imports nothing from `ai`. The tool it returns carries both `parameters` (AI SDK v4) and `inputSchema` (v5), so it drops into either version, and `ai` stays an optional peer. Check the [integration docs](/docs/integrations/vercel-ai) for the current surface before you pin anything in particular.
+
+## Why validated output is safer to hand a model
+
+Handing a model raw JSON is handing it a guess. It will pattern-match the bytes, infer a shape, and confidently build the rest of its reasoning on top of that inference. When the upstream quietly renames `total_cents` to `amount`, the model doesn't error — it improvises, and you find out from a wrong answer two turns later.
+
+A validated result removes that class of failure at the door. Because the stitch carries `output: Order`, the tool only ever resolves with data that matched the schema. If it didn't match, the stitch fails, and the failure rejects — which means the AI SDK's own tool-error handling reports it, instead of the model silently reasoning over a broken shape. The model sees either a known-good `Order` or a clean error, never a malformed blob it has to interpret.
+
+It cuts the other way too. The schema is also documentation the model can use: the field names and types in `Order` tell it what's actually available, so it asks for orders by `id` rather than inventing a `customerName` field that the API never had.
+
+## Resilience comes along for free
+
+This is the part that makes a stitch-as-tool different from a hand-rolled fetch tool. Everything declared on the stitch applies no matter who pulls the trigger — and a model is an unusually trigger-happy caller.
+
+-   The `throttle` caps how fast the model can hammer the endpoint, even if it gets stuck in a retry-it-yourself loop. With `scope: 'host'`, that ceiling is shared across every stitch hitting the same host, so a chatty agent can't starve the rest of your app.
+-   The `retry` absorbs a transient `503` without the model ever seeing it — and honors `Retry-After`, so you back off the way the upstream asked.
+-   The `cache` collapses a model that asks the same question twice in one loop into a single paid upstream call.
+-   The `timeout` bounds how long a single tool call can hang, so one slow dependency doesn't stall the whole generation.
+
+None of that is configured in the tool or in the agent. It's on the stitch, which is the right place: the same `getOrder` behaves identically whether it's called from your code, the CLI, [over MCP](/docs/surfaces/mcp), or from this AI SDK tool. The [throttle guide](/docs/guides/resilience/throttle) covers the semantics if you want to tune them.
+
+## The honest caveats
+
+This pattern closes real gaps, but it isn't a force field. A few things it deliberately does not do:
+
+-   **You still scope which stitches an agent may call.** Wrapping a stitch as a tool grants exactly that capability — and only the ones you put in the `tools` map. Handing a model `getOrder` is safe; handing it `deleteOrder` is a decision you make on purpose, not a default. Curate the `tools` map per agent.
+-   **A model can call a tool wrongly.** The credential is safe and the output is validated, but the model can still pass a nonsensical `id`, or call the tool when it shouldn't. That's why the **input** schema matters: keep `inputSchema` tight, and let `toInput` (or the stitch's own input validation) reject bad arguments before a request is ever sent. A capability the model holds is still a capability the model can misuse.
+-   **Validation guards shape, not truth.** A response can match `Order` perfectly and still be wrong for the user's question. The schema stops malformed data from poisoning the model's reasoning; it doesn't make the data correct.
+-   **Confirm the exact API in the docs.** The exports here — `stitchTool` and `stitchExecute` — are what this package ships today, but the AI SDK moves quickly. Treat [the integration page](/docs/integrations/vercel-ai) as the source of truth for the current signatures rather than a code snippet in a blog post.
+
+For most apps already on the AI SDK, the MCP surface is still the canonical way to hand a stitch to any agent — this package is the framework-specific convenience when you're already inside `generateText` / `streamText` and want the wiring to be three lines.
+
+## Try it
+
+```bash
+npm i stitchapi @stitchapi/vercel-ai
+```
+
+Declare one endpoint as a stitch, wrap it with `stitchTool`, and drop it into your `tools` map. The model gets typed, validated data; the credential never leaves the seam. The full surface — `stitchTool`, `stitchExecute`, and the v4/v5 bridging — is in the [Vercel AI SDK integration docs](/docs/integrations/vercel-ai), and the broader agent story lives under [/docs/agents](/docs/agents).

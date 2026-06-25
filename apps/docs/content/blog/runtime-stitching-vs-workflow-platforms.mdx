@@ -1,0 +1,108 @@
+---
+title: Runtime Stitching vs. a Workflow Platform
+description: Hosted workflow platforms and a library like StitchAPI solve overlapping but different problems. A neutral comparison on deployment model, where the logic lives, operational surface, and the unit of work — including when each is the better fit.
+author: Oleksandr Zhuravlov
+date: '2026-06-25'
+tags: [comparison, workflow, integration, architecture]
+---
+
+You need to pull an order from one API, enrich it with a lookup against another, and post the result to a third. Two tools can do that, and at first glance they look like competitors: a hosted workflow platform — the Zapier / n8n / Windmill category — or a library like StitchAPI that you import into your own code. They overlap enough that the choice feels like an either/or.
+
+It mostly isn't. They sit at different layers, and the honest version of the comparison is about which layer your problem lives in — not which tool is "better." This post walks the differences on four axes, then gets to the part that matters most: a stitch can be the reliable call _inside_ a workflow, so the two are often complementary rather than rival.
+
+## What each one actually is
+
+A **workflow / integration-orchestration platform** is a hosted service. You build automations in its editor — often a visual graph of nodes, sometimes code steps — and the platform runs them on its own infrastructure: triggers, schedules, retries between steps, run history, a library of prebuilt connectors. The orchestration is the product.
+
+**StitchAPI** is a library. A **stitch** takes one endpoint and hands back a typed callable; you declare its types, auth, and resilience once and call it like a local function. There's no server to deploy and no runtime to operate — it's a zero-dependency package you import, and composition is just code you write. The README is blunt about the boundary: StitchAPI is "not a workflow engine or iPaaS — no orchestration, queues, or visual builder; composition is plain TypeScript."
+
+That single sentence is the whole comparison in miniature. The rest is unpacking it on the axes that decide a real choice.
+
+## Axis 1 — deployment model
+
+A platform is a service you run (or pay someone to run). Even a self-hosted one is a process with a database, a queue, and an uptime story — something in your architecture diagram with a box around it.
+
+A stitch adds no box. It's ~18–22 kB of code that tree-shakes into the app you already ship. It runs wherever your code runs — a Node server, a serverless function, the edge, even the browser — because there's nothing to stand up. If "one more service to operate" is a cost you're trying to avoid, that's the axis that decides it.
+
+## Axis 2 — where the logic lives
+
+On a platform, the logic lives in the platform: its editor, its graph, its stored representation of your flow. That's a genuine strength — a non-developer can open the canvas and see what happens, and you didn't write or maintain the connector code. But the source of truth is the platform's, and your normal engineering reflexes — diff this change, review it in a PR, roll it back with `git revert`, test it in CI — apply only as far as the platform exposes them.
+
+With a stitch, the logic lives in your codebase. The declaration is a value in a `.ts` file:
+
+```ts
+import { seam } from 'stitchapi';
+import { bearer, env } from 'stitchapi';
+
+const orders = seam({
+    baseUrl: 'https://api.example.com',
+    auth: bearer(env('ORDERS_TOKEN')),
+    retry: { attempts: 3, on: [429, 503] },
+    timeout: { total: '10s' },
+});
+
+const getOrder = orders.stitch({ path: '/orders/{id}' });
+const enrich = orders.stitch({ path: '/customers/{id}' });
+```
+
+It diffs, reviews, tests, and reverts like the rest of your code, because it _is_ the rest of your code. That's the trade: you give up the shared visual canvas to keep the integration inside version control, where your existing tooling already works.
+
+## Axis 3 — operational surface
+
+A platform owns the run: it triggers the automation, persists each run's history, retries failed steps, and shows you a dashboard. You operate that surface — capacity, retention, access, and the bill that scales with executions — but you don't build it.
+
+StitchAPI's stance is "zero-infra." Resilience is declared on the stitch — retry with backoff and `Retry-After`, proactive throttle, layered timeouts, a circuit breaker, idempotency keys — and runs in-process. Observability is the same: tracing is **off by default**, and you opt in per stitch or via `STITCH_TRACE_*` env vars, with no collector and no dashboard to deploy. Events can bridge to Pino logs or Sentry breadcrumbs if you already run those.
+
+The difference is real and cuts both ways. A platform gives you durable, cross-process run history and scheduling for free; you don't get those from an in-process library, and pretending otherwise would be overclaiming. A library gives you resilience and tracing with nothing extra to operate; you don't get a hosted dashboard. Which "free" you want depends on what you already run.
+
+## Axis 4 — the unit of work
+
+This is the axis that most often dissolves the rivalry. A platform's unit of work is a **workflow** — a multi-step automation, "when X happens, do A then B then C." A stitch's unit of work is a **single call**: one endpoint turned into a resilient, typed, observable function.
+
+Those are different grains. A workflow is _composed of_ calls. A stitch _is_ one of those calls, hardened. So the interesting question usually isn't "platform or stitch?" — it's "what makes each call inside my automation reliable?"
+
+## They compose: a stitch inside a workflow
+
+Most platforms have a code step — a node where you run your own function. That's the seam where the two meet cleanly. Instead of hand-rolling a `fetch` inside that node, with its own ad-hoc retry and zero validation, you call a stitch:
+
+```ts
+// Inside a platform's code step, or your own orchestrator:
+const order = await getOrder({ params: { id: input.orderId } });
+const customer = await enrich({ params: { id: order.customerId } });
+
+return { order, customer };
+```
+
+The platform still owns the orchestration — the trigger, the schedule, the run history, the steps before and after. The stitch owns the _call_: the auth boundary, the retry, the timeout, the drift check against a committed snapshot. The platform decides _when_ and _in what order_; the stitch decides _how reliably_ each hop happens. That layering is the point of the comparison — they're stacked, not opposed.
+
+## When a platform is the better choice
+
+Plainly, because this isn't a sales pitch:
+
+-   **Non-developers own the automation.** A visual canvas lets someone who doesn't write TypeScript build and read the flow. A library can't do that — its surface is code.
+-   **You want managed, scheduled, durable runs.** Cron triggers, run history that survives a process restart, retries _between_ steps across a queue — that's the platform's home turf, and an in-process library doesn't replicate it.
+-   **You lean on prebuilt connectors.** Hundreds of ready-made integrations to popular SaaS tools are a real head start a library doesn't hand you.
+-   **The orchestration _is_ the product.** If the value is the multi-step graph itself, you want the tool built around graphs.
+
+## When a stitch is the better fit
+
+-   **The logic belongs in your codebase.** You want integrations to diff, review, test, and deploy with the rest of your app — under version control, not in a separate editor.
+-   **You don't want another service to run.** Zero dependencies, embeds in what you already ship, nothing extra to operate or pay per-execution for.
+-   **The hard part is one call, not the sequence.** A long-tail or internal API with no connector, where what you actually need is auth, retries, timeouts, and drift detection on _that_ endpoint — declared once.
+-   **An AI agent is the caller.** A stitch hands an agent a capability, not a credential, and presents the same definition over MCP that your code calls — without standing up an orchestration service to do it.
+
+## The honest caveats
+
+-   **A stitch is not an orchestrator.** It doesn't schedule, it doesn't persist runs across processes, and it has no visual builder. If you need durable, scheduled, multi-step automation, a stitch is a _component_ of that, not a replacement for it.
+-   **A platform is not a typed-call primitive.** Its connectors give you breadth, but the per-call hardening — schema validation, leveled drift against a committed snapshot, an explicit auth boundary — is a different concern than wiring nodes together.
+-   **"Complementary" has a cost too.** Running a stitch inside a platform's code step means you're operating the platform _and_ maintaining code. That's the right call when you need both layers — and overhead when you only needed one.
+
+The useful frame: a platform answers "in what order, and when, do these steps run?" A stitch answers "how does this one step talk to its API without falling over?" Pick the platform when the first question is your problem, the library when the second is, and reach for both when the honest answer is "both."
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Declare one endpoint as a stitch, then decide whether it lives in your own code or inside a workflow's code step — the definition is the same either way. The [concepts overview](/docs/concepts/the-stitch) explains the primitive, and [the docs](/docs) cover composition, auth, and resilience in depth.

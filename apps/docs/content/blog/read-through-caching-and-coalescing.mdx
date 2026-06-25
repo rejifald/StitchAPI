@@ -1,0 +1,120 @@
+---
+title: Read-through caching and request coalescing, explained
+description: How StitchAPI's read-through cache and in-process request coalescing actually work — the derived, principal-scoped cache key, the coalescing window, and what's safe to put behind them.
+author: Oleksandr Zhuravlov
+date: '2026-06-25'
+tags: [caching, coalescing, performance, resilience]
+---
+
+Picture a request that fans out. A page loads, and three components each ask for the current user. An agent kicks off the same lookup across ten parallel branches. A burst of traffic hits an endpoint that returns the same answer for everyone for the next minute. In each case you make N calls upstream where one would have done — and if that upstream is metered, rate-limited, or just slow, you pay for all N.
+
+There are two different ways to make that one call instead of N, and they're easy to conflate. **Caching** reuses a result _across time_: the second caller, a moment later, gets the first caller's stored answer. **Coalescing** reuses a result _across concurrent callers in flight_: ten callers asking the same thing _right now_ ride along on a single upstream request that hasn't returned yet. StitchAPI's `cache` gives you both, declared on the stitch. This post is about how each one actually works — and, just as importantly, when neither is safe to use.
+
+## Caching across time vs coalescing across callers
+
+The distinction is the whole point, so it's worth being precise.
+
+A **read-through cache** sits in front of the upstream call. On a hit, the stored value is returned and the upstream is never touched. On a miss, the call goes through and the result is stored under a key for the next caller — for as long as the `ttl` allows. The benefit is bounded by how often the same request repeats _within the TTL window_.
+
+**Request coalescing** solves a problem a cache alone can't. Imagine a cold cache and ten identical calls in the same millisecond. Every one misses — the first hasn't stored anything yet, because it hasn't returned — so without coalescing you get ten upstream calls, a thundering herd against a cold key. Coalescing collapses them: the first call goes upstream, and the other nine _attach to the same in-flight promise_ and resolve from its single result. The window is naturally short — it lasts exactly as long as that one request is outstanding — but for fan-out, it's the half that matters most.
+
+The two compose. Coalescing flattens the concurrent spike; the cache absorbs the repeats that follow over the next TTL. A cache alone still stampedes on a cold key; coalescing alone re-fetches the moment the herd disperses. You want both, and a stitch turns both on together.
+
+## Turning it on
+
+Caching is **off by default** and loaded lazily — the cache machinery only enters your bundle when a stitch actually asks for it. The smallest form is a TTL:
+
+```ts
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    path: 'https://api.example.com/users/{id}',
+    output: User,
+    unwrap: 'data',
+    cache: '5m', // ≡ { ttl: '5m' }
+});
+```
+
+That single string opts the stitch into the read-through cache _and_ in-process coalescing. Ten concurrent `getUser({ params: { id: 7 } })` calls collapse to one upstream request; subsequent calls within five minutes are served from the store without touching the upstream at all.
+
+The object form exposes the knobs when you need them:
+
+```ts
+const listAnnouncements = stitch({
+    path: 'https://api.example.com/announcements',
+    output: z.array(z.object({ id: z.number(), title: z.string() })),
+    unwrap: 'data',
+    cache: {
+        ttl: '1h',
+        scope: 'app', // shared across principals — see below
+        vary: ['accept-language'], // fold a header into the key
+        maxEntries: 500,
+    },
+});
+```
+
+## The derived key — and why you don't author it
+
+A cache is only as correct as its key, and authoring keys by hand is where most homegrown caches go wrong: someone forgets the response varies by `Accept-Language` or by a query param, and two genuinely different requests collide on one key and serve each other's data.
+
+StitchAPI doesn't ask you to write the key. It **derives** it from the resolved request — the method, the fully-resolved URL (path params and query folded in), and the parts that actually change the response. There's no caller-authored key string to drift out of sync as the stitch evolves. If you know the upstream varies on a header the derivation wouldn't otherwise include, you add it with `vary: ['accept-language']` — additive and visible, not a string you keep correct by memory.
+
+## Principal-scoped by default
+
+Here's the property that matters most for correctness, and the one a naive cache gets wrong: by default the key is **principal-scoped**. The identity the call was made _as_ is part of the key, so user A's cached response is never handed to user B.
+
+Why it's the default and not an option you remember to set: the dangerous failure mode of a shared cache is silent cross-principal leakage. `GET /me` returns different data per user; cache it under a key that ignores _who asked_, and the second user gets the first user's profile back — no error, no warning, just the wrong person's data served fast. Principal scoping is the default precisely so that the unsafe thing is the one you opt into, not the one you fall into.
+
+This is where caching meets [auth as a boundary](/docs/concepts/capability-not-credential). A stitch already knows the identity it acts as — that's what the `auth` strategy resolves at call time — and the cache reuses that same notion of principal to scope the key. So the credential never reaches the caller _and_ the cached response inherits the same boundary: the cache can't become a side channel that leaks across the identity wall auth was there to enforce.
+
+When a response genuinely is the same for everyone — a public feed, a shared catalog — you opt out with `scope: 'app'` and the entry is shared across principals. That's a deliberate widening of the blast radius, and reading it in the declaration says exactly that: this data is not user-specific.
+
+```ts
+// Principal-scoped (default): each user gets their own entry.
+const getProfile = stitch({
+    path: 'https://api.example.com/me',
+    auth: bearer(env('API_TOKEN')),
+    cache: '30s',
+});
+
+// App-scoped: genuinely shared, identical for everyone.
+const getStatusPage = stitch({
+    path: 'https://api.example.com/status',
+    cache: { ttl: '10s', scope: 'app' },
+});
+```
+
+## What's safe to cache — and what isn't
+
+Caching is only correct for **idempotent reads**: a request you could make twice and reasonably expect the same answer. That's the whole safe set.
+
+-   **Writes are out.** A `POST` that creates an order or charges a card is not a read; there's no "same answer" to reuse. (For a _retried_ write settling once instead of twice, the tool is [idempotency keys](/docs/guides/resilience/idempotency) — a different mechanism entirely.)
+-   **Per-request-varying reads are out.** A response that legitimately changes every call — a fresh nonce, a timestamp, a random pick — gains nothing from a cache and risks serving something stale.
+-   **Anything you can't safely share across the chosen scope.** If a response is user-specific it must stay principal-scoped; widening it to `scope: 'app'` to "improve the hit rate" is the exact move that turns a cache into a leak.
+
+There's a guardrail in the shape layer too: a stitch with an `output` schema caches only when that schema can be fingerprinted (or you pin a `version`). If it can't establish the shape it's storing, it **refuses to cache** rather than serve a value that no longer matches its contract. Data you never want at rest can be marked `sensitive: true` to opt out entirely.
+
+## In-process means in-process
+
+The honest caveat about coalescing: it's **in-process**. The collapse-to-one happens within a single Node process (or worker, or browser tab); it is not a shared, cross-instance lock.
+
+Run four instances behind a load balancer and a cold key can produce up to four concurrent upstream calls — one per process — not one. Within each process the herd still collapses; across processes it doesn't, because the default in-memory store has no shared coordination point. The same goes for the cache: each instance warms its own copy in memory. For a single long-lived process or a fan-out inside one agent run, that's exactly right and adds no infrastructure. For genuine multi-instance dedup and a shared cache you swap the store — a different article: see [distributed throttle and shared state](/docs/guides/state/distributed-throttle) and the [pluggable store](/docs/guides/state/pluggable-store).
+
+## When this isn't worth it
+
+Caching and coalescing are leverage, not free wins, and the leverage is uneven:
+
+-   **No repeats, no benefit.** A request made once, or one whose result legitimately differs every time, gets nothing from a cache. The hit rate is the whole story; near zero, you've added a key derivation and a store lookup for no return.
+-   **No concurrency, no coalescing.** If calls are strictly sequential there's never an in-flight request for a second caller to attach to. The win is proportional to how much the _same_ call overlaps itself in time.
+-   **A wrong key or scope is worse than no cache.** A key too coarse serves stale data; a scope too wide leaks one principal's data to another — both _silently_, which is harder to catch than slow-but-right. The defaults make the safe path the default one, but widening the scope is a decision you own.
+-   **It doesn't make a needed call free.** It removes the calls you didn't need to repeat. The first call, and every genuinely-distinct one, still costs what it costs.
+
+Keep this distinct from throttling, the sibling concern: throttling caps the _rate and concurrency_ of calls you do make; caching and coalescing remove calls you didn't need to make at all. They stack well, but they answer different questions.
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Add `cache: '5m'` to one read-heavy stitch, fan a few identical calls at it, and watch them collapse to a single upstream request. The full configuration surface — `ttl`, `scope`, `vary`, `maxEntries`, `sensitive`, and the fingerprinting rules — lives in the [docs](/docs).

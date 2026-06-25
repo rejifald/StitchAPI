@@ -1,0 +1,107 @@
+---
+title: Why Your Agent Shouldn't Get One Tool Per Endpoint
+description: The one-tool-per-endpoint pattern re-sends every endpoint's JSON schema on every turn of an agent loop. Here's why that cost compounds, and how code-mode keeps the standing context flat as your catalog grows.
+author: Oleksandr Zhuravlov
+date: '2026-06-25'
+tags: [ai, agents, mcp, context, tokens]
+---
+
+You wire forty endpoints into your agent, each as its own tool, and the demo works. Then the bill arrives, and it's bigger than the work the agent actually did. The agent ran a six-step loop; somewhere in those six steps it called three tools. You paid for forty, six times over.
+
+That's not a quirk of one provider or one framework. It's a structural property of the most common way to give a model an API: **one tool per endpoint**. This post is about why that pattern taxes you on every turn, and what to expose instead.
+
+## Where the tool catalog lives
+
+The path of least resistance is to make each endpoint a tool. `getUser`, `listUsers`, `createOrder`, `refundOrder` — every one becomes a tool with its own JSON schema describing its parameters and shape, and the model picks from the menu. It's tidy, it's explicit, and for a handful of endpoints it's completely fine.
+
+The problem is _where that menu lives_ during the loop. Tool schemas aren't sent once and remembered. They're part of the model's context, and the context is rebuilt on every step. So every tool's schema is re-sent on turn 1, turn 2, turn 3, and so on for the whole length of the loop — whether or not the model touches that tool that turn. The catalog is a **fixed per-turn cost**: you pay for the entire menu every time the model takes a step, even the steps where it just reads a result and thinks.
+
+## The cost compounds on two axes
+
+The size of that per-turn cost grows along two things you don't control well.
+
+The first is **catalog size**. Forty endpoints means forty schemas in context. Add the 41st integration and every future turn gets a little more expensive — not once, but forever, on every loop the agent ever runs.
+
+The second is **loop length**. The catalog cost is paid _per turn_, so a longer loop multiplies it. A forty-tool catalog in a three-step loop is forty schemas paid three times. The same catalog in a twenty-step loop is forty schemas paid twenty times. Nothing about the work changed; the loop just ran longer, and the standing tax rode along.
+
+Multiply the two and you get the shape of the problem: a large catalog inside a long loop pays `catalog × turns`, and most of those payments are for tools the model never calls. The schemas describing `refundOrder` and `deleteUser` sit in context on every turn of a loop that only ever reads users.
+
+<Callout type="info">
+    The numbers here are illustrative, not measured — the point is the _shape_.
+    A two-endpoint, single-shot agent won't notice any of this. A forty-tool
+    agent grinding through a twenty-step loop pays the catalog twenty times, and
+    that's where the structural cost lives.
+</Callout>
+
+## Code-mode: one tool, discovery on demand
+
+StitchAPI inverts the pattern. Instead of enumerating every endpoint as a tool, an agent drives a single **code-mode** tool, `run_stitch`, plus two small companions for discovery:
+
+-   `run_stitch` — execute a stitch by name, passing `{ name, input }`
+-   `list_stitches` — discover the available stitch names, methods, and paths, on demand
+-   `describe_stitch` — pull one stitch's shape (its input slots, output, auth _scheme_, policies) only when the model actually needs it
+
+The tool surface is **a constant three**, whether you have four stitches or four hundred. The schemas the model carries every turn describe those three tools and nothing else. Discovery moves out of the standing context and into _tool calls the model makes only on the turns it cares_ — `list_stitches` once to orient, `describe_stitch` for the few names it's about to use.
+
+A typical exchange: the model lists, then runs by name. These are plain MCP tool calls — there's no per-endpoint schema being re-sent.
+
+```json
+{ "name": "list_stitches", "input": {} }
+```
+
+```json
+{
+    "name": "run_stitch",
+    "input": { "name": "getUser", "input": { "params": { "id": 7 } } }
+}
+```
+
+The inner `input` is the stitch's own input — `{ params?, query?, body?, headers? }` — and the call runs against the upstream API behind the capability boundary. The agent names a capability; the server holds the credential.
+
+Here's the before/after stated plainly:
+
+```ts
+// Before — one tool per endpoint. Every schema re-sent each turn:
+//   tools: [
+//     getUser, listUsers, createUser, updateUser, deleteUser,
+//     getOrder, listOrders, createOrder, refundOrder,
+//     ... 30+ more, all in context, every turn, called or not ...
+//   ]
+
+// After — one execution tool + on-demand discovery:
+//   tools: [run_stitch, list_stitches, describe_stitch]
+//
+// The model lists once, describes the few it needs, then runs by name.
+```
+
+The effect on the two cost axes is the point. **Catalog size stops mattering for standing context**: adding the 41st stitch costs roughly zero additional per-turn tokens, because the per-turn surface is still three tools. **Loop length still multiplies that surface** — but three tools multiplied by twenty turns is a flat, small number, not forty schemas multiplied by twenty.
+
+## The zero-tool-call discovery channel
+
+There's an even cheaper way for an agent to orient, one that doesn't spend a tool call at all. The docs build emits an auto-generated [`llms.txt`](/docs/agents/llms-txt): a curated, one-line-per-page index of what's available, plus per-page Markdown an agent can pull for a single feature. An agent can read that once to understand the catalog rather than carrying every endpoint's schema in its working context for the whole session. Discovery becomes something the agent _fetches when it wants it_, not something it _pays to hold_ every turn.
+
+## When this isn't worth it
+
+Code-mode is not free, and it isn't always the right call.
+
+-   **It needs a sandbox.** `run_stitch` executes a named stitch on the server side of the capability boundary; a setup where the model writes and runs code needs an eval/execution path you trust. One tool per endpoint needs none of that — the model just fills in a schema. If you can't or won't run a sandbox, the per-endpoint pattern is the simpler thing.
+-   **It leans on the model.** Driving stitches by name — listing, describing, composing a call — asks more of the model than picking from a flat menu of typed tools. A model that's weak at this kind of structured tool use may do better with explicit per-endpoint schemas, paid-per-turn and all.
+-   **Small catalogs see no savings.** The whole win is `catalog × turns` collapsing on the catalog axis. With two endpoints and a single-shot call, there was never a fat menu to re-send — two schemas once is cheaper than standing up code-mode. The savings only show up when the catalog is large, the loops are long, or both.
+
+None of this makes a call the agent genuinely needs any cheaper. It removes the schemas you re-sent every turn for tools you didn't touch. The work the agent actually has to do still costs what it costs.
+
+## Try it
+
+This is the sharp version of one half of [cutting your LLM bill from both ends](/blog/cut-llm-costs-from-both-ends) — the context tax, on its own. If you want the mechanics:
+
+-   [Use StitchAPI from an agent](/docs/agents) — the agent entry point and the capability boundary.
+-   [run_stitch & code-mode](/docs/agents/run-stitch-tool) — the three-tool surface in full.
+-   [Point an agent at llms.txt](/docs/agents/llms-txt) — the zero-tool-call discovery channel.
+
+Or just start:
+
+```bash
+npm i stitchapi
+```
+
+Declare your endpoints once, point an agent at `run_stitch`, and watch the per-turn catalog stop growing.
