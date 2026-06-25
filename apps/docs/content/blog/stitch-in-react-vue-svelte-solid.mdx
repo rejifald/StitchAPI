@@ -87,7 +87,7 @@ readonly user = injectStitch(getUser, () => ({ params: { id: this.id() } }));
 // the same state as an observable:        user.state$   // async pipe + RxJS operators
 ```
 
-Refs, stores, store proxies, signals, observables — different surfaces, but the same `status` / `chunks` / `isStreaming` underneath, because one query-core sits behind every binding. The exact signatures — and the optional TanStack Query adapter each one ships — live in the per-framework guides.
+Refs, stores, store proxies, signals, observables — different surfaces, but the same `status` / `chunks` / `isStreaming` underneath, because one query-core sits behind every binding. The exact signatures — and the optional TanStack Query adapter each one ships — live in the per-framework guides: [React](/docs/integrations/react), [Vue](/docs/integrations/vue), [Svelte](/docs/integrations/svelte), [Solid](/docs/integrations/solid), and [Angular](/docs/integrations/angular).
 
 ## It composes with the data layer you already have
 
@@ -103,15 +103,5 @@ So the decision isn't "stitch bindings _or_ my query library." It's which layer 
 
 Two honest caveats:
 
--   **If a query library already owns your view state, you may not need the binding's hooks at all.** Going through `@stitchapi/swr`, `@stitchapi/rtk-query`, or the TanStack Query adapter can be the simpler path — let that layer manage state and let the stitch be the `queryFn`.
+-   **If a query library already owns your view state, you may not need the binding's hooks at all.** Going through SWR, RTK Query, or TanStack Query can be the simpler path — let that layer manage state and let the stitch be the `queryFn`.
 -   **A one-shot call doesn't need a binding.** For a fire-once call outside a reactive view, `await stitch(...)` is enough; the binding earns its keep only when a component has to react to loading, error, drift, or streaming state over time.
-
-## Try it
-
-Install the core plus the binding for your framework — React, here:
-
-```bash
-npm i stitchapi @stitchapi/query-core @stitchapi/react
-```
-
-The per-framework guides have the exact signatures: [React](/docs/integrations/react), [Vue](/docs/integrations/vue), [Svelte](/docs/integrations/svelte), [Solid](/docs/integrations/solid), and [Angular](/docs/integrations/angular).
