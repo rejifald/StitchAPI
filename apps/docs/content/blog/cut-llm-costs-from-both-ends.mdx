@@ -94,19 +94,19 @@ The reason both axes close at once is that they're properties of the stitch _def
 
 So the savings don't depend on _who_ calls. A human running the stitch from the CLI gets the same coalescing as an agent calling it over MCP. You declare the cost behavior once; every surface inherits it.
 
-## When it matters most — and when it doesn't
+## Where it pays off — and where it doesn't
 
-The biggest wins, honestly stated:
-
--   **Long, multi-step agent loops** — the context tax is per turn, so loop length multiplies it.
--   **Fan-out / parallel tool calls** — coalescing turns N identical concurrent calls into one paid call.
--   **Large tool catalogs** — code-mode's flat three-tool surface is where the per-turn schema cost would otherwise pile up.
-
-And the caveats, because overclaiming helps no one:
+The caveats first, because overclaiming helps no one:
 
 -   **Caching only helps idempotent reads.** A cache in front of a write, or a read whose result legitimately changes every call, buys you nothing — and you shouldn't pretend it does.
 -   **Context savings scale with catalog size and loop length, not every workload.** A single tool answering a single question won't see the per-turn schema savings, because there was never a fat catalog to re-send.
 -   **None of this makes a needed call free.** It removes the calls you didn't need and the schemas you re-sent for no reason. The work your agent genuinely has to do still costs what it costs.
+
+And where the two taxes actually shrink the most:
+
+-   **Long, multi-step agent loops** — the context tax is per turn, so loop length multiplies it.
+-   **Fan-out / parallel tool calls** — coalescing turns N identical concurrent calls into one paid call.
+-   **Large tool catalogs** — code-mode's flat three-tool surface is where the per-turn schema cost would otherwise pile up.
 
 ## Try it
 

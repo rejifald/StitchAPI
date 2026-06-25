@@ -1,8 +1,8 @@
 ---
-title: Runtime Stitching vs. Codegen API Clients
+title: Stitching vs. Codegen API Clients
 description: Spec-based generators turn an OpenAPI document into a fully typed client. Runtime stitching turns a single URL into a validated function. Here's an honest, axis-by-axis comparison — and when each one is the right call.
 author: Oleksandr Zhuravlov
-date: '2026-06-25'
+date: '2026-05-25'
 tags: [codegen, openapi, typescript, drift, comparison]
 ---
 
@@ -42,20 +42,13 @@ A generated client gives you **static** types: they describe what the spec _said
 A stitch validates the **live** response on every call. The schema runs against real bytes, so a shape mismatch is caught the moment it happens, at the boundary, with a typed error — not swallowed into an `undefined`. On top of plain validation, StitchAPI adds **leveled drift detection** ([schema drift is a production bug](/blog/schema-drift-is-a-production-bug)): wrap an `output` schema in `drift()` and each live response is compared against a committed snapshot, with every difference classified by severity:
 
 ```ts
-import { drift, stitch } from 'stitchapi';
-import { z } from 'zod';
-
 const listOrders = stitch({
     path: 'https://api.example.com/orders',
-    unwrap: 'data',
-    output: drift(
-        z.array(z.object({ id: z.number(), total: z.number().optional() })),
-        {
-            critical: ['[].id'], // error — you depend on this field
-            watch: ['[].total'], // warn — flag a change, don't fail
-            snapshotFile: 'orders.contract.json',
-        },
-    ),
+    // wrap the output schema in drift() to compare each response to a snapshot
+    output: drift(OrdersSchema, {
+        critical: ['[].id'], // missing or retyped → error
+        watch: ['[].total'], // changed → warn, the call still succeeds
+    }),
 });
 ```
 

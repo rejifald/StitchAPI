@@ -2,7 +2,7 @@
 title: One Definition, Four Front Doors
 description: The same stitch declaration is callable as an in-process function, a CLI command, an HTTP endpoint, and an MCP tool — no rewrite, and the resilience, auth, and drift you declared once apply identically through all four.
 author: Oleksandr Zhuravlov
-date: '2026-06-25'
+date: '2026-05-28'
 tags: [cli, http, mcp, agents, architecture]
 ---
 
@@ -93,7 +93,7 @@ The agent calls `run_stitch` with a stitch name and its input, and uses `list_st
 }
 ```
 
-This is for AI agents, and the design is deliberate. A tool-per-endpoint surface re-sends every tool's schema on every turn of the loop, so the context bill grows with your catalog. Code-mode keeps the tool list at a fixed handful no matter how many stitches you register. And the agent invokes a **capability, not a credential** — it names `getUser` and gets the validated result; the bearer token resolves server-side and never reaches the model.
+This is for AI agents, and the design is deliberate. A [tool-per-endpoint surface](/blog/one-tool-per-endpoint) re-sends every tool's schema on every turn of the loop, so the context bill grows with your catalog. Code-mode keeps the tool list at a fixed handful no matter how many stitches you register. And the agent invokes a **capability, not a credential** — it names `getUser` and gets the validated result; the bearer token resolves server-side and never reaches the model.
 
 ## Declared once, applied identically
 
