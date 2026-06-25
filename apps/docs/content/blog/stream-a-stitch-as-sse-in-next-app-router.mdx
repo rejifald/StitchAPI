@@ -96,7 +96,7 @@ export function Chat({ prompt }: { prompt: string }) {
 
 `chunks` grows as deltas land; `isStreaming` flips false on `done`. Unmounting the component aborts the in-flight run — which, combined with `request.signal` on the server, means a user leaving the page cancels the whole chain end to end.
 
-If you're not in React, you don't need the hook at all: the route emits standard SSE, so a plain browser `EventSource` (or a manual `fetch` + `ReadableStream` reader, when you need POST bodies) consumes it just as well. The same `@stitchapi/next` handler feeds any of them — the streaming hooks for [Vue, Svelte, and Solid](/docs/integrations/react) are the same few lines against their own reactivity primitive.
+If you're not in React, you don't need the hook at all: the route emits standard SSE, so a plain browser `EventSource` (or a manual `fetch` + `ReadableStream` reader, when you need POST bodies) consumes it just as well. The same `@stitchapi/next` handler feeds any of them — the streaming hooks for [Vue, Svelte, and Solid](/blog/stitch-in-react-vue-svelte-solid) are the same few lines against their own reactivity primitive.
 
 ## Honest caveats
 

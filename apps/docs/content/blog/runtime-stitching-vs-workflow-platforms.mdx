@@ -89,7 +89,7 @@ Plainly, because this isn't a sales pitch:
 -   **The logic belongs in your codebase.** You want integrations to diff, review, test, and deploy with the rest of your app — under version control, not in a separate editor.
 -   **You don't want another service to run.** Zero dependencies, embeds in what you already ship, nothing extra to operate or pay per-execution for.
 -   **The hard part is one call, not the sequence.** A long-tail or internal API with no connector, where what you actually need is auth, retries, timeouts, and drift detection on _that_ endpoint — declared once.
--   **An AI agent is the caller.** A stitch hands an agent a capability, not a credential, and presents the same definition over MCP that your code calls — without standing up an orchestration service to do it.
+-   **An AI agent is the caller.** A stitch hands an agent a capability, not a credential, and presents the same definition over MCP that your code calls — without standing up an orchestration service to do it (or [an MCP server per integration](/blog/you-might-not-need-an-mcp-server-per-integration)).
 
 ## The honest caveats
 

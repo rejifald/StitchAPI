@@ -41,7 +41,7 @@ export const getOrder = stitch({
 });
 ```
 
-Two things to notice before any model is involved. First, `output: Order` means the stitch validates the response on every call — a renamed field or a wrong type fails loudly here, not three layers downstream inside the model's reasoning. Second, `auth: bearer(env('ORDERS_API_TOKEN'))` resolves the secret at call time, on the inside of the seam. Whoever calls `getOrder` gets the order back; they never see, pass, or even know the token. That property is the whole point of [auth as a boundary](/docs/concepts/capability-not-credential), and it's worth far more when the caller is a model than when it's your own code.
+Two things to notice before any model is involved. First, `output: Order` means the stitch validates the response on every call — a renamed field or a wrong type fails loudly here, not three layers downstream inside the model's reasoning. Second, `auth: bearer(env('ORDERS_API_TOKEN'))` resolves the secret at call time, on the inside of the seam. Whoever calls `getOrder` gets the order back; they never see, pass, or even know the token. That property is the whole point of [auth as a boundary](/docs/concepts/capability-not-credential) (the [capability-not-credential argument](/blog/auth-as-a-capability-not-a-credential) spelled out), and it's worth far more when the caller is a model than when it's your own code.
 
 ## Wire it as a tool
 

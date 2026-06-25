@@ -60,9 +60,9 @@ export const getOrders = stitch({
 
 Now look at what the four concerns above turn into.
 
-The **credential** is gone from the call site. `env('API_TOKEN')` resolves _at call time_, inside the stitch, and the resolved secret never reaches whoever invokes `getOrders`. The agent gets a capability — "you may read orders" — not the key that grants it. That's the whole point of [auth as a boundary](/docs/concepts/capability-not-credential): the secret stays behind the seam.
+The **credential** is gone from the call site. `env('API_TOKEN')` resolves _at call time_, inside the stitch, and the resolved secret never reaches whoever invokes `getOrders`. The agent gets a capability — "you may read orders" — not the key that grants it. That's the whole point of [auth as a boundary](/docs/concepts/capability-not-credential) (the [capability-not-credential argument](/blog/auth-as-a-capability-not-a-credential) in full): the secret stays behind the seam.
 
-The **shape** is enforced. The `output` schema validates every live response, so the agent gets `{ id: number; total: number }[]` or a typed `STITCH_VALIDATION` error — never a silent `any`. Wrap that schema in `drift()` and a renamed field becomes a loud, leveled [drift](/docs/guides/validation/drift) signal instead of an `undefined` three layers downstream.
+The **shape** is enforced. The `output` schema validates every live response, so the agent gets `{ id: number; total: number }[]` or a typed `STITCH_VALIDATION` error — never a silent `any`. Wrap that schema in `drift()` and a renamed field becomes a loud, leveled [drift](/docs/guides/validation/drift) signal instead of an `undefined` three layers downstream — [schema drift is a production bug](/blog/schema-drift-is-a-production-bug), caught at the boundary.
 
 The **resilience** is declared, not improvised. Retry with backoff and `Retry-After`, a proactive throttle that keeps a looping agent under the rate and concurrency caps before it earns a wall of `429`s, and a real timeout that aborts with an `AbortSignal`. The agent can be as eager as it likes; the stitch holds the line.
 

@@ -1,5 +1,5 @@
 ---
-title: Read-through caching and request coalescing, explained
+title: Read-Through Caching and Request Coalescing, Explained
 description: How StitchAPI's read-through cache and in-process request coalescing actually work — the derived, principal-scoped cache key, the coalescing window, and what's safe to put behind them.
 author: Oleksandr Zhuravlov
 date: '2026-06-25'
@@ -98,7 +98,7 @@ There's a guardrail in the shape layer too: a stitch with an `output` schema cac
 
 The honest caveat about coalescing: it's **in-process**. The collapse-to-one happens within a single Node process (or worker, or browser tab); it is not a shared, cross-instance lock.
 
-Run four instances behind a load balancer and a cold key can produce up to four concurrent upstream calls — one per process — not one. Within each process the herd still collapses; across processes it doesn't, because the default in-memory store has no shared coordination point. The same goes for the cache: each instance warms its own copy in memory. For a single long-lived process or a fan-out inside one agent run, that's exactly right and adds no infrastructure. For genuine multi-instance dedup and a shared cache you swap the store — a different article: see [distributed throttle and shared state](/docs/guides/state/distributed-throttle) and the [pluggable store](/docs/guides/state/pluggable-store).
+Run four instances behind a load balancer and a cold key can produce up to four concurrent upstream calls — one per process — not one. Within each process the herd still collapses; across processes it doesn't, because the default in-memory store has no shared coordination point. The same goes for the cache: each instance warms its own copy in memory. For a single long-lived process or a fan-out inside one agent run, that's exactly right and adds no infrastructure. For genuine multi-instance dedup and a shared cache you swap the store — a different article: see [distributed throttle and shared state](/blog/distributed-throttle-with-redis-kv) and the [pluggable store](/docs/guides/state/pluggable-store).
 
 ## When this isn't worth it
 
@@ -109,7 +109,7 @@ Caching and coalescing are leverage, not free wins, and the leverage is uneven:
 -   **A wrong key or scope is worse than no cache.** A key too coarse serves stale data; a scope too wide leaks one principal's data to another — both _silently_, which is harder to catch than slow-but-right. The defaults make the safe path the default one, but widening the scope is a decision you own.
 -   **It doesn't make a needed call free.** It removes the calls you didn't need to repeat. The first call, and every genuinely-distinct one, still costs what it costs.
 
-Keep this distinct from throttling, the sibling concern: throttling caps the _rate and concurrency_ of calls you do make; caching and coalescing remove calls you didn't need to make at all. They stack well, but they answer different questions.
+Keep this distinct from [throttling](/blog/proactive-throttling-vs-reactive-429s), the sibling concern: throttling caps the _rate and concurrency_ of calls you do make; caching and coalescing remove calls you didn't need to make at all. They stack well, but they answer different questions.
 
 ## Try it
 
@@ -117,4 +117,4 @@ Keep this distinct from throttling, the sibling concern: throttling caps the _ra
 npm i stitchapi
 ```
 
-Add `cache: '5m'` to one read-heavy stitch, fan a few identical calls at it, and watch them collapse to a single upstream request. The full configuration surface — `ttl`, `scope`, `vary`, `maxEntries`, `sensitive`, and the fingerprinting rules — lives in the [docs](/docs).
+Add `cache: '5m'` to one read-heavy stitch, fan a few identical calls at it, and watch them collapse to a single upstream request. The full configuration surface — `ttl`, `scope`, `vary`, `maxEntries`, the stitch-level `sensitive` flag, and the fingerprinting rules — lives in the [docs](/docs).

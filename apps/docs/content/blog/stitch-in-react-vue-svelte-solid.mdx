@@ -1,5 +1,5 @@
 ---
-title: 'Stitch in your UI: React, Vue, Svelte, and Solid'
+title: 'Stitch in Your UI: React, Vue, Svelte, and Solid'
 description: The same stitch plugs into each major UI framework via a thin binding, surfacing loading, error, drift, and streaming as idiomatic reactive state. Here's the shared core that makes that consistent.
 author: Oleksandr Zhuravlov
 date: '2026-06-25'
@@ -53,7 +53,7 @@ function Profile({ id }: { id: string }) {
 
 The query re-creates and re-fetches when the stitch identity or a structural key of the input changes, and the in-flight run is aborted on unmount — no `AbortController` to wire by hand.
 
-For a streaming surface (`sse` / `stream`), `useStitchStream` re-renders as each `delta` chunk arrives. Same result shape; `chunks` is the running list, and `isStreaming` stays true until the terminal `result`:
+For a streaming surface (`sse` / `stream`), `useStitchStream` re-renders as each `delta` chunk arrives — [feed those deltas from a server route](/blog/stream-a-stitch-as-sse-in-next-app-router) and the client just maps over `chunks`. Same result shape; `chunks` is the running list, and `isStreaming` stays true until the terminal `result`:
 
 ```ts
 import { useStitchStream } from '@stitchapi/react';

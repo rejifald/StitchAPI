@@ -60,7 +60,7 @@ stitch mcp
 }
 ```
 
-The model learns about a new stitch through `list_stitches` only on the turns it cares about, so the per-turn context stays flat as the catalog grows. (The token economics of catalogs versus code-mode is its own subject — there's a [companion post](/blog/cut-llm-costs-from-both-ends) on that; here the point is the architecture, not the math.)
+The model learns about a new stitch through `list_stitches` only on the turns it cares about, so the per-turn context stays flat as the catalog grows. (The token economics of catalogs versus code-mode is its own subject — there's a [companion post](/blog/cut-llm-costs-from-both-ends) on that, and [the catalog-tax deep dive](/blog/one-tool-per-endpoint) goes deeper still; here the point is the architecture, not the math.)
 
 ## Where the three costs go
 
@@ -77,7 +77,7 @@ And because the stitch is the unit — not the server — the same definition is
 This isn't an argument against MCP servers — code-mode _is_ an MCP surface. It's an argument against reflexively running _one per integration_ when the integrations are HTTP APIs you could declare. A dedicated server earns its keep when:
 
 -   **A vendor ships a rich, official MCP server.** If the service you're integrating already maintains a well-built server — with curated tools, server-side logic, and ergonomics tuned for the model — adopting it is usually better than re-deriving the surface from raw endpoints. Don't rebuild what someone maintains for you.
--   **The capability isn't an HTTP request.** A stitch sits above a transport — strongest fit is HTTP, with `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` as peer surfaces. If a server's value is something outside that — driving a database session, orchestrating local processes, wrapping a non-HTTP protocol, holding rich server-side state — a purpose-built MCP server may model it better than a stitch would.
+-   **The capability isn't an HTTP request.** A stitch sits above a transport — strongest fit is HTTP, with `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` as peer surfaces. If a server's value is something outside that — driving a database session, [orchestrating](/blog/runtime-stitching-vs-workflow-platforms) local processes, wrapping a non-HTTP protocol, holding rich server-side state — a purpose-built MCP server may model it better than a stitch would.
 -   **You specifically want that tool's ergonomics.** Sometimes the curated, named-tool-per-action shape _is_ the interface you want the model to see — a small, deliberately designed menu beats code-mode's "discover and call." If a tightly authored tool surface is the product, build it as one.
 
 The honest framing: a dedicated server is right when someone else maintains a good one, when the capability isn't a plain HTTP call, or when the exact tool ergonomics are the point. A single runtime is right when you're otherwise about to stand up your own thin server around a handful of endpoints — and then another, and another.

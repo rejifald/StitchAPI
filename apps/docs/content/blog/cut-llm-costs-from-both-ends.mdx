@@ -1,5 +1,5 @@
 ---
-title: Cut your LLM bill from both ends
+title: Cut Your LLM Bill From Both Ends
 description: StitchAPI attacks AI cost on two axes — the tokens you spend describing tools to a model, and the redundant upstream calls your agents make. Here's the mechanism behind each.
 author: Oleksandr Zhuravlov
 date: '2026-06-25'
@@ -50,7 +50,7 @@ const user = await runStitch('getUser', { params: { id: 7 } });
 const orders = await runStitch('listOrders', { query: { userId: user.id } });
 ```
 
-The fixed three-tool surface is the same whether you have four stitches or four hundred. Adding the 41st API costs roughly zero additional context per turn — the model learns about it through `list_stitches` only on the turns it cares.
+The fixed three-tool surface is the same whether you have four stitches or four hundred. Adding the 41st API costs roughly zero additional context per turn — the model learns about it through `list_stitches` only on the turns it cares. (For [the deep dive on Axis A alone](/blog/one-tool-per-endpoint), this is the whole story.)
 
 There's a discovery channel for this that doesn't even cost a tool call: StitchAPI auto-generates an `llms.txt` describing your stitches in a compact, agent-readable form. An agent can read that once to orient, rather than carrying every schema in its working context for the whole session.
 
@@ -74,11 +74,10 @@ Here's a stitch declaring a cached, throttled read:
 ```ts
 import { stitch } from 'stitchapi';
 
-const search = stitch('https://api.example.com/search', {
-    // Read-through cache; identical concurrent calls coalesce into one.
-    cache: { ttl: '5m', coalesce: true },
-    // Bound the spend: at most 5 in flight, 20 calls/sec.
-    throttle: { concurrency: 5, rate: { limit: 20, per: '1s' } },
+const search = stitch({
+    path: 'https://api.example.com/search',
+    cache: { ttl: '5m' }, // coalescing is on by default
+    throttle: { concurrency: 5, rate: '20/s' },
 });
 
 // Ten parallel branches asking the same thing => one paid upstream call.
@@ -109,7 +108,7 @@ And the caveats, because overclaiming helps no one:
 -   **Context savings scale with catalog size and loop length, not every workload.** A single tool answering a single question won't see the per-turn schema savings, because there was never a fat catalog to re-send.
 -   **None of this makes a needed call free.** It removes the calls you didn't need and the schemas you re-sent for no reason. The work your agent genuinely has to do still costs what it costs.
 
-## Where to go next
+## Try it
 
 If you want the mechanics:
 
