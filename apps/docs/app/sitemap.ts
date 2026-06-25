@@ -1,4 +1,5 @@
-import { siteUrl } from '@/lib/shared';
+import { getSortedPosts, postSlug } from '@/lib/blog';
+import { blogRoute, siteUrl } from '@/lib/shared';
 import { source } from '@/lib/source';
 
 import type { MetadataRoute } from 'next';
@@ -23,6 +24,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
             lastModified,
             changeFrequency: 'weekly' as const,
             priority: 0.8,
+        })),
+        {
+            url: absolute(blogRoute),
+            lastModified,
+            changeFrequency: 'weekly' as const,
+            priority: 0.7,
+        },
+        ...getSortedPosts().map((post) => ({
+            url: absolute(`${blogRoute}/${postSlug(post)}`),
+            lastModified,
+            changeFrequency: 'monthly' as const,
+            priority: 0.6,
         })),
     ];
 }

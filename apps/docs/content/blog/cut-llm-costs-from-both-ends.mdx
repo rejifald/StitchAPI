@@ -1,0 +1,128 @@
+---
+title: Cut your LLM bill from both ends
+description: StitchAPI attacks AI cost on two axes — the tokens you spend describing tools to a model, and the redundant upstream calls your agents make. Here's the mechanism behind each.
+author: Oleksandr Zhuravlov
+date: '2026-06-25'
+tags: [ai, agents, cost, mcp]
+---
+
+Most advice on cutting AI costs lands in one of two buckets: compress your prompts, or switch to a cheaper model. Both help. Both also leave the structural cost untouched — the part of your bill that scales with how your agents are _wired_, not with how cleverly you phrase a system prompt.
+
+There are two places that structural cost leaks, and they sit on opposite ends of the request. StitchAPI is API stitching: you declare an endpoint once — its types, auth, and resilience — and call it like a local function, from code, the CLI, plain HTTP, or an AI agent over MCP. Because the cost-shaping lives in that one declaration, both leaks close as a property of how you _declare_ an integration, not an optimization you bolt on afterward.
+
+## The two places the money leaks
+
+1. **The context tax.** The tokens you pay to describe your tools to the model — on _every_ turn of a multi-step loop.
+2. **The redundant-call tax.** The paid upstream calls your agent makes that it didn't actually need to make: duplicate fan-out, retries against a dead provider, a runaway loop hammering the same endpoint.
+
+The first is an input-token problem. The second is an upstream-spend problem. Neither is fixed by a cheaper model. Let's take them in turn.
+
+## Axis A — the context tax
+
+The common way to give a model access to an API is one tool per endpoint. It's the path of least resistance: each endpoint becomes a tool with its own JSON schema, and the model picks from the menu.
+
+The problem is where that menu lives. Every tool's schema is re-sent in the model's context on _every_ step of the agent loop. Forty endpoints means forty schemas, re-paid on turn 1, turn 2, turn 3, and so on for the length of the loop. The catalog is fixed cost you pay per turn, whether or not the model touches a given tool that turn.
+
+So the bill grows along two axes you don't control well: the **size of your tool catalog** and the **length of your agent loops**. Add the 41st integration and every future turn gets a little more expensive, forever.
+
+StitchAPI's **code-mode** inverts this. Instead of enumerating every endpoint as a tool, you expose one small, fixed set:
+
+-   `run_stitch` — execute a snippet that calls the stitches it needs
+-   `list_stitches` — discover what's available, on demand
+-   `describe_stitch` — pull the detail for one stitch, only when the model actually needs it
+
+The model writes a short TypeScript snippet that calls the stitches by name, and discovers their shapes _on demand_ instead of being handed the whole catalog up front. Conceptually:
+
+```ts
+// Before — one tool per endpoint, every schema re-sent each turn:
+//   tools: [
+//     getUser, listUsers, createUser, updateUser, deleteUser,
+//     getOrder, listOrders, createOrder, refundOrder,
+//     ... 40 more, all in context, every turn ...
+//   ]
+
+// After — one execution tool + on-demand discovery:
+//   tools: [run_stitch, list_stitches, describe_stitch]
+//
+// The model calls list_stitches once, describe_stitch for the few it
+// needs, then writes a snippet:
+const user = await runStitch('getUser', { params: { id: 7 } });
+const orders = await runStitch('listOrders', { query: { userId: user.id } });
+```
+
+The fixed three-tool surface is the same whether you have four stitches or four hundred. Adding the 41st API costs roughly zero additional context per turn — the model learns about it through `list_stitches` only on the turns it cares.
+
+There's a discovery channel for this that doesn't even cost a tool call: StitchAPI auto-generates an `llms.txt` describing your stitches in a compact, agent-readable form. An agent can read that once to orient, rather than carrying every schema in its working context for the whole session.
+
+<Callout type="info">
+    The context savings scale with the size of your catalog and the length of
+    your loops. A two-tool, single-shot call won't notice. A forty-tool agent
+    grinding through a twenty-step loop will.
+</Callout>
+
+## Axis B — the redundant-call tax
+
+The second leak is on the far end of the request: paid upstream calls your agent didn't need to make. These are declared right on the stitch, so they apply no matter who pulls the trigger.
+
+-   **Read-through caching + in-process request coalescing.** A cached read skips the upstream call entirely. Coalescing is the underrated half: identical concurrent calls collapse to _one_ paid upstream request. For a fan-out agent that kicks off the same lookup — or the same model prompt — across ten parallel branches, that's ten paid calls becoming one.
+-   **Throttle.** Concurrency and rate caps put a ceiling on a runaway loop's spend. A model stuck in a retry spiral can't quietly run up a four-figure bill against a metered endpoint.
+-   **Circuit breaker.** When a provider is already down, the breaker fast-fails instead of paying for a wall of doomed retries against it.
+-   **Idempotency keys.** A retried write settles once, not twice — no duplicate paid side effects.
+
+Here's a stitch declaring a cached, throttled read:
+
+```ts
+import { stitch } from 'stitchapi';
+
+const search = stitch('https://api.example.com/search', {
+    // Read-through cache; identical concurrent calls coalesce into one.
+    cache: { ttl: '5m', coalesce: true },
+    // Bound the spend: at most 5 in flight, 20 calls/sec.
+    throttle: { concurrency: 5, rate: { limit: 20, per: '1s' } },
+});
+
+// Ten parallel branches asking the same thing => one paid upstream call.
+const results = await Promise.all(
+    Array.from({ length: 10 }, () => search({ query: { q: 'stitchapi' } })),
+);
+```
+
+None of that is agent-specific. It's the same machinery you'd want around any expensive call — it just happens to matter a lot more when the caller is a model that will cheerfully retry, fan out, and loop.
+
+## Declared, not bolted on
+
+The reason both axes close at once is that they're properties of the stitch _definition_, not of any one caller. A stitch has four front doors — an in-process function, a CLI command, an HTTP endpoint, and an MCP tool — and the cache, the throttle, the breaker, the idempotency key live on the definition behind all four.
+
+So the savings don't depend on _who_ calls. A human running the stitch from the CLI gets the same coalescing as an agent calling it over MCP. You declare the cost behavior once; every surface inherits it.
+
+## When it matters most — and when it doesn't
+
+The biggest wins, honestly stated:
+
+-   **Long, multi-step agent loops** — the context tax is per turn, so loop length multiplies it.
+-   **Fan-out / parallel tool calls** — coalescing turns N identical concurrent calls into one paid call.
+-   **Large tool catalogs** — code-mode's flat three-tool surface is where the per-turn schema cost would otherwise pile up.
+
+And the caveats, because overclaiming helps no one:
+
+-   **Caching only helps idempotent reads.** A cache in front of a write, or a read whose result legitimately changes every call, buys you nothing — and you shouldn't pretend it does.
+-   **Context savings scale with catalog size and loop length, not every workload.** A single tool answering a single question won't see the per-turn schema savings, because there was never a fat catalog to re-send.
+-   **None of this makes a needed call free.** It removes the calls you didn't need and the schemas you re-sent for no reason. The work your agent genuinely has to do still costs what it costs.
+
+## Where to go next
+
+If you want the mechanics:
+
+-   [Use StitchAPI from an agent](/docs/agents) — the agent entry point, and how invocation works without handing over a credential.
+-   [run_stitch & code-mode](/docs/agents/run-stitch-tool) — the one-tool surface behind Axis A.
+-   [Point an agent at llms.txt](/docs/agents/llms-txt) — the zero-tool-call discovery channel.
+-   [Throttle](/docs/guides/resilience/throttle) and [Circuit breaker](/docs/guides/resilience/circuit-breaker) — the spend caps behind Axis B.
+-   [Idempotency keys](/docs/guides/resilience/idempotency) — so a retried write doesn't double-charge.
+
+Or just start:
+
+```bash
+npm i stitchapi
+```
+
+Declare one endpoint, point an agent at it, and watch the two taxes shrink at the same time.

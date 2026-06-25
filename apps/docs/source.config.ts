@@ -4,6 +4,7 @@ import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
 import { defineConfig, defineDocs } from 'fumadocs-mdx/config';
 import { transformerTwoslash } from 'fumadocs-twoslash';
+import { z } from 'zod';
 
 // You can customize Zod schemas for frontmatter and `meta.json` here
 // see https://fumadocs.dev/docs/mdx/collections
@@ -14,6 +15,49 @@ export const docs = defineDocs({
         postprocess: {
             includeProcessedMarkdown: true,
         },
+    },
+    meta: {
+        schema: metaSchema,
+    },
+});
+
+// A SEPARATE collection from `docs`, with its own `content/blog` tree, so it
+// stays clear of the docs IA drift guard (content.manifest.ts + the skeleton
+// generator + content-manifest.spec.ts), which is scoped to `content/docs`.
+//
+// Blog posts carry the standard page frontmatter (title/description) plus
+// author + date + optional tags. Extending `pageSchema` keeps the blog in sync
+// with however the docs page schema evolves rather than re-declaring it.
+// `date` is an ISO date string (`YYYY-MM-DD`); we keep it a string the loader
+// can sort lexicographically and parse with `new Date(...)` for display. The
+// YAML parser turns an unquoted `date: 2026-06-25` into a `Date`, so coerce it
+// back to an ISO date string before validating — quoting in frontmatter is
+// preferred, but this keeps an unquoted date from breaking the build.
+//
+// NOTE: `source.config.ts` may only export collections — keep the schema inline
+// (fumadocs-mdx rejects any other export from this file).
+export const blog = defineDocs({
+    dir: 'content/blog',
+    docs: {
+        schema: pageSchema.extend({
+            author: z.string(),
+            date: z.preprocess(
+                (value) =>
+                    value instanceof Date
+                        ? value.toISOString().slice(0, 10)
+                        : value,
+                z
+                    .string()
+                    .refine(
+                        (value) => !Number.isNaN(new Date(value).getTime()),
+                        {
+                            message:
+                                'Invalid date — use an ISO date like 2026-06-25',
+                        },
+                    ),
+            ),
+            tags: z.array(z.string()).optional(),
+        }),
     },
     meta: {
         schema: metaSchema,
