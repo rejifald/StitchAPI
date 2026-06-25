@@ -1,0 +1,116 @@
+---
+title: Stream a Stitch as SSE in the Next.js App Router
+description: Take a streaming stitch and expose it as a text/event-stream Response from a Next.js App Router route handler with @stitchapi/next, then consume the deltas on the client.
+author: Oleksandr Zhuravlov
+date: '2026-05-14'
+tags: [next, sse, streaming, react]
+---
+
+A long-running call — a model completion, a slow report, a progressive search — produces a result over seconds, not milliseconds. If your route handler `await`s the whole thing and then returns one JSON blob, the user stares at a spinner the entire time, can't see partial output, and can't cancel a run they've already decided they don't want. Streaming fixes all three: you render tokens as they land, show progress before the final answer exists, and tear the upstream call down the moment the client navigates away.
+
+Server-Sent Events (SSE) is the boring, well-supported way to push that stream from a server to a browser over a single HTTP response. The friction has always been the plumbing: framing each chunk as an `event:`/`data:` block, wiring a `ReadableStream`, flushing on time, and aborting when the client leaves. This is a walk-through of doing it with a **stitch** as the source and [`@stitchapi/next`](/docs/integrations/next) as the thin layer that turns its event stream into an SSE `Response`.
+
+## The streaming source: a stitch
+
+A StitchAPI **stitch** declares one endpoint and hands back a typed callable. The detail that matters here is that every stitch is, underneath, an **event stream** — a call yields `start → progress → drift → result → done`, and `await` is just sugar that consumes that stream and returns the final value. When you don't `await` but call `.stream()` instead, you get the events as they happen, which is exactly what SSE wants to forward.
+
+For genuinely streaming responses there are dedicated request styles — `sse`, `stream`, and `llm` — that read a `text/event-stream` or raw `ReadableStream` from the upstream and surface each chunk as a `delta`. Here's a streaming stitch built on the `sse` surface, pointed at some upstream that emits incremental output:
+
+```ts
+// lib/api.ts
+import { sse } from 'stitchapi';
+
+// A streaming endpoint: emits incremental chunks as text/event-stream.
+export const chat = sse({
+    url: 'https://api.example.com/chat',
+    // auth, retry, throttle, timeout all compose here too — same as any stitch
+});
+```
+
+The exact surface import and options are in the [Surfaces reference](/docs/reference/surfaces); the point is that calling `chat(input).stream()` gives you an iterable of typed events, with each upstream chunk arriving as a `delta`.
+
+## The route handler: a stitch's stream as an SSE Response
+
+App Router route handlers are **Web-standard** — they receive a `Request` and return a `Response`. A stitch already runs in one directly, so the only thing worth a helper is the SSE framing. That's what `@stitchapi/next` provides. Despite the name it imports nothing from `next` — it's built on `Response`, `ReadableStream`, and `TextEncoder` — so the same handler shape works in Remix, SvelteKit endpoints, Bun, Deno, or Workers.
+
+Install it alongside the core library:
+
+```bash
+npm install @stitchapi/next stitchapi
+```
+
+Then `sseResponse` takes the stitch's event stream and returns a `text/event-stream` `Response`. Each `delta` becomes one SSE frame; you tell it how to pull the renderable payload out of a chunk with `data`:
+
+```ts
+// app/api/chat/route.ts
+import { chat } from '@/lib/api';
+
+import {
+    isStitchError,
+    sseResponse,
+    stitchErrorResponse,
+} from '@stitchapi/next';
+
+export async function POST(request: Request) {
+    const { prompt } = await request.json();
+
+    try {
+        return sseResponse(chat({ body: { prompt } }).stream(), {
+            data: (chunk) => String(chunk), // pull text out of each delta
+            signal: request.signal, // abort the stitch if the client leaves
+        });
+    } catch (err) {
+        if (isStitchError(err)) return stitchErrorResponse(err);
+        throw err;
+    }
+}
+```
+
+Two lines carry most of the value:
+
+-   **`data`** maps each `delta` chunk to the string you actually want to send down the wire — text out of a model chunk, a field off a JSON event, whatever the frame should carry.
+-   **`signal: request.signal`** is the cancellation story. When the browser disconnects — the user closed the tab, hit stop, or navigated away — `request.signal` aborts, and passing it through tears the stitch (and its upstream call) down instead of leaving an orphaned request burning a token budget. That early-cancel is half the reason to stream at all.
+
+The `try/catch` with `isStitchError` / `stitchErrorResponse` handles a stitch that fails _before_ the stream opens (auth wall, timeout, the upstream being down). `stitchErrorResponse` maps a `StitchError` to a safe `502` by default rather than leaking the upstream's status. Confirm the exact options for both helpers in the [`@stitchapi/next` docs](/docs/integrations/next) — the surface is small but it's the source of truth, not this post.
+
+## The client: consuming deltas
+
+The natural client for a React app is [`@stitchapi/react`](/docs/integrations/react), whose `useStitchStream` hook is streaming-first: it re-renders as each `delta` arrives, so you get partial output on screen without managing an `EventSource` and its lifecycle by hand.
+
+```ts
+import { useStitchStream } from '@stitchapi/react';
+
+import { chat } from '@/lib/api';
+
+export function Chat({ prompt }: { prompt: string }) {
+    const { chunks, isStreaming } = useStitchStream(chat, { body: { prompt } });
+
+    return (
+        <div>
+            {(chunks as string[]).join('')}
+            {isStreaming ? <Cursor /> : null}
+        </div>
+    );
+}
+```
+
+`chunks` grows as deltas land; `isStreaming` flips false on `done`. Unmounting the component aborts the in-flight run — which, combined with `request.signal` on the server, means a user leaving the page cancels the whole chain end to end.
+
+If you're not in React, you don't need the hook at all: the route emits standard SSE, so a plain browser `EventSource` (or a manual `fetch` + `ReadableStream` reader, when you need POST bodies) consumes it just as well. The same `@stitchapi/next` handler feeds any of them — the streaming hooks for [Vue, Svelte, and Solid](/blog/stitch-in-react-vue-svelte-solid) are the same few lines against their own reactivity primitive.
+
+## Honest caveats
+
+Streaming over HTTP has sharp edges that have nothing to do with StitchAPI, and it's worth naming them before you ship:
+
+-   **Buffering in the middle.** SSE only works if nothing between your server and the browser buffers the response. Reverse proxies (nginx without `proxy_buffering off;` on the route), some CDNs, and corporate proxies will happily collect the whole stream and deliver it as one lump — which silently defeats the entire exercise. Test through your real edge, not just `localhost`.
+-   **Edge vs Node runtime.** App Router handlers run on either runtime. The helpers are Web-standard so they work on both, but your _upstream_ may not — a streaming SDK that needs Node APIs, or a `fetch` quirk on the edge, will surface here. Pick the runtime deliberately (`export const runtime = 'edge' | 'nodejs'`) and test the streaming path on the one you deploy.
+-   **It's not always worth it.** If your call returns in a few hundred milliseconds, or the consumer can't use partial results (it needs the whole object validated before it does anything), streaming adds plumbing and failure modes for no user-visible win. A normal JSON route — the stitch plus `stitchErrorResponse`, no `sseResponse` — is the right call there.
+-   **Confirm the API surface.** The exact option names on `sseResponse` and `stitchErrorResponse` live in the package docs and may evolve. Treat the snippets above as the shape, and check [`/docs/integrations/next`](/docs/integrations/next) for the current signatures.
+
+## Try it
+
+```bash
+npm i stitchapi @stitchapi/next
+```
+
+Declare a streaming stitch, return `sseResponse(stitch.stream())` from a route handler, and consume the deltas with `useStitchStream`. The full guides: [`@stitchapi/next`](/docs/integrations/next), [`@stitchapi/react`](/docs/integrations/react), and the [event stream](/docs/reference/events) that makes all of it one moving part.

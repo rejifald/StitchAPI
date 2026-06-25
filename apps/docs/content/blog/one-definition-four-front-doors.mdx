@@ -1,0 +1,125 @@
+---
+title: One Definition, Four Front Doors
+description: The same stitch declaration is callable as an in-process function, a CLI command, an HTTP endpoint, and an MCP tool — no rewrite, and the resilience, auth, and drift you declared once apply identically through all four.
+author: Oleksandr Zhuravlov
+date: '2026-05-28'
+tags: [cli, http, mcp, agents, architecture]
+---
+
+Look at how one integration usually gets consumed. Your app imports a function that calls the API. A CI script needs the same call, so someone writes a thin CLI wrapper around it. Another service can't import your code, so it gets an HTTP handler that does roughly the same thing. Then an agent shows up, and you write a tool definition describing the same endpoint a fourth time.
+
+Four surfaces, four copies of the same intent — and they drift. The CLI wrapper forgets the retry policy the library added last month. The HTTP handler validates a slightly older response shape. The agent's tool definition still points at the v1 path. None of these are bugs anyone wrote on purpose; they're the cost of expressing one integration in four places.
+
+A stitch collapses that. You declare an endpoint once — its types, auth, and resilience — and the **same definition** answers to four front doors: an in-process function, the CLI (`stitch run`), an HTTP service (`stitch serve`), and an MCP server (`stitch mcp`). There's no library-plus-three-wrappers to keep in sync, because there's only the one declaration.
+
+## The one definition
+
+Here's the whole thing — a single stitch with its resilience and validation declared on it. Everything below is just a different way to call _this_.
+
+```ts
+// stitches.ts
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi';
+import { z } from 'zod';
+
+export const getUser = stitch({
+    name: 'getUser',
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+    unwrap: 'data',
+    auth: bearer(env('API_TOKEN')),
+    retry: { attempts: 3, on: [429, 503] },
+    timeout: { total: '10s' },
+});
+```
+
+Export your stitches by name from a module (the CLI and the servers default to `./stitches.ts`). That export _is_ the registry every front door reads from.
+
+## Door 1 — the in-process function: your app code
+
+The closest door. Import the stitch and call it like any async function; `await` returns the final unwrapped, validated value.
+
+```ts
+import { getUser } from './stitches';
+
+const user = await getUser({ params: { id: 1 } }); // typed · validated
+```
+
+This is for the code that ships in your app — components, jobs, request handlers. No process to run, no transport in the way. Reach for `getUser.stream(input)` instead when you want to watch the event stream (`start → progress → drift → result → done`) rather than just the result.
+
+## Door 2 — the CLI: a shell or CI
+
+When the caller is a terminal or a CI step, run the stitch by name. Every event prints as one line of JSON on stdout, so it pipes straight into `jq`.
+
+```bash
+stitch run getUser --id 1
+```
+
+A bare `--id` routes to the `{id}` path param; `--query.*`, `--headers.*`, and `--body` target the other buckets explicitly. This is for the work that lives in a shell: a smoke check in CI, a one-off lookup during an incident, a script gluing tools together. It runs the very same definition as the function — the retry policy and the output schema above apply unchanged.
+
+## Door 3 — the HTTP service: another process
+
+When a caller can't import your code — a remote service, another language, a script on another box — serve the registry over a thin local HTTP front door.
+
+```bash
+stitch serve
+# → listening on http://127.0.0.1:8787
+
+curl -X POST http://127.0.0.1:8787/stitch/getUser \
+  -H 'content-type: application/json' \
+  -d '{ "params": { "id": 1 } }'
+```
+
+`GET /` lists the available stitch names; `POST /stitch/:name` runs one with the JSON body as its input, and returns the final validated result. Send `Accept: text/event-stream` to get the live event stream as SSE instead. The same `serve` is importable from `stitchapi/serve` if you'd rather embed the server in a process you already run.
+
+## Door 4 — the MCP server: an AI agent
+
+When the caller is an agent, expose the registry over MCP. The key move: it's **one** code-mode tool, `run_stitch`, not one tool per endpoint.
+
+```bash
+stitch mcp --module ./stitches.ts
+```
+
+The agent calls `run_stitch` with a stitch name and its input, and uses `list_stitches` to discover what's available:
+
+```json
+{
+    "name": "run_stitch",
+    "input": {
+        "name": "getUser",
+        "input": { "params": { "id": 1 } }
+    }
+}
+```
+
+This is for AI agents, and the design is deliberate. A [tool-per-endpoint surface](/blog/one-tool-per-endpoint) re-sends every tool's schema on every turn of the loop, so the context bill grows with your catalog. Code-mode keeps the tool list at a fixed handful no matter how many stitches you register. And the agent invokes a **capability, not a credential** — it names `getUser` and gets the validated result; the bearer token resolves server-side and never reaches the model.
+
+## Declared once, applied identically
+
+Here's the part that makes four doors worth it rather than four times the work: the behavior you put on the declaration is the same through every door, because there's only the one declaration.
+
+-   **Resilience.** The `retry: { attempts: 3, on: [429, 503] }` and `timeout: { total: '10s' }` above fire identically whether the call came from your app, a `curl`, or an agent. A flaky upstream is retried the same way for everyone.
+-   **Auth.** `bearer(env('API_TOKEN'))` resolves at call time, on the server side of every door. The CLI user, the HTTP caller, and the agent all get data without ever seeing the token.
+-   **Drift.** Wrap the `output` in `drift()` and a silently renamed upstream field surfaces as a leveled `error` / `warn` / `info` signal — through all four doors, not just the one you happened to test. ([Schema drift is a production bug](/blog/schema-drift-is-a-production-bug), caught at the boundary.)
+-   **Observability.** Every door emits the same typed event stream. Tracing is off by default; opt in per stitch or with `STITCH_TRACE_*` env vars, and a CLI run, an HTTP request, and an agent call all record the same shape of trace.
+
+You don't reconcile four policies. You change the stitch, and every front door changes with it.
+
+## When this isn't worth it — and the honest caveats
+
+Two doors are free in the sense that they run nothing extra: the in-process function is just an import, and the CLI is a process you start when you need it and let exit. The other two are not free.
+
+-   **Serving over HTTP or MCP means operating a process.** `stitch serve` and `stitch mcp` are things you deploy, keep alive, and watch. That's real operational surface — don't stand one up for a call your own code could just import.
+-   **The HTTP front door has no auth of its own.** It binds to `127.0.0.1` loopback on purpose. Moving that bind to a public interface turns the registry into an open proxy that runs every stitch for anyone who can reach the port. Put a gateway or reverse proxy that authenticates the caller in front of it; the stitch still holds and resolves its own credential server-side.
+-   **Not every stitch should be exposed through every door.** A destructive write you call from one carefully-reviewed code path probably shouldn't be a tool an agent can invoke by name, or a route any HTTP caller can POST to. Scope what each server exposes deliberately — expose the registry an agent _should_ have, not your whole module.
+
+So the win isn't "turn everything on." It's that when a stitch _does_ belong behind several doors, you describe it once and let the doors share it — instead of maintaining a library, a CLI wrapper, an HTTP handler, and an agent tool definition that quietly drift apart.
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Declare one stitch, then reach it four ways — the [in-process function](/docs/surfaces/function), the [CLI](/docs/surfaces/cli), [HTTP serve](/docs/surfaces/http-serve), and [MCP](/docs/surfaces/mcp).
