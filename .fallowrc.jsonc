@@ -1,13 +1,15 @@
 {
     // Fallow config for the StitchAPI monorepo.
     //
-    // Scope: this file ONLY declares entry points fallow cannot infer — files
-    // that demonstrably run (a test the bespoke runner executes, or an esbuild
-    // entry a build script bundles) but are reached dynamically rather than
-    // through a static import. Declaring a real root as a root makes the analysis
-    // correct; it is not suppression. No `ignoreDependencies` / `ignoreExports`
-    // here on purpose: dependency and dead-export findings stay visible so a real
-    // regression is never silenced.
+    // Scope: this file declares entry points fallow cannot infer, plus a small,
+    // individually-justified set of suppressions for findings that are FALSE
+    // POSITIVES — real usages fallow's static graph structurally cannot see
+    // (imports inside MDX code fences, framework-convention route exports, a
+    // private package with no manifest entry, test stubs wired via a vitest
+    // alias). Each entry below carries the reason it is a false positive. This is
+    // measurement correction, not silencing: every GENUINE dependency, dead-code,
+    // or complexity finding still surfaces and must be fixed in code — see the
+    // commits in this branch for the genuine fixes that came first.
     "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
     "entry": [
         // Suite files executed by docs/sandbox's bespoke runner
@@ -33,4 +35,59 @@
         // Standalone, intentionally un-imported example sources.
         "examples/**/*.ts",
     ],
+
+    // Dependencies fallow reports as unused that are genuinely required — the
+    // usage is real but lives where fallow's module graph cannot reach it.
+    "ignoreDependencies": [
+        // apps/docs installs the integration packages and their peers ONLY so
+        // fumadocs-twoslash can type-check the `ts twoslash` code samples in the
+        // MDX docs at build time. Those imports sit inside fenced code blocks,
+        // which fallow parses as prose, not as module imports — so the
+        // packages read as "unused" even though `pnpm --filter @stitchapi/docs
+        // build` fails without them. (.npmrc is empty → pnpm isolated linker, so
+        // they cannot resolve transitively; the explicit devDeps are required.)
+        "@stitchapi/fastify",
+        "@stitchapi/hono",
+        "@stitchapi/nest",
+        "@stitchapi/pino",
+        "@stitchapi/query-core",
+        "@stitchapi/react",
+        "@tanstack/react-query",
+        "fastify",
+        "hono",
+        "pino",
+
+        // packages/eval-harness imports `stitchapi` (runner/prebaked.ts,
+        // test/choose.test.ts) but is a private package with no `main`/`exports`/
+        // `bin`; fallow's unused-dependency pass roots at package entry points,
+        // so with no entry it cannot attribute the usage. The dependency is real.
+        "stitchapi",
+    ],
+
+    "health": {
+        // The code-health badge measures the maintainability of the SHIPPED
+        // library source (packages/*/src). These globs are excluded from the
+        // complexity / unit-size scoring — NOT to hide complex production code
+        // (packages/*/src stays fully measured; its real hotspots and large
+        // functions still surface), but because they are not the library:
+        "ignore": [
+            // Tests: long arrange-act-assert bodies and table-driven cases are
+            // high-cyclomatic by design. Maintainability metrics conventionally
+            // score production source, not test code.
+            "**/*.test.ts",
+            "**/*.test.tsx",
+            "**/*.test.mjs",
+            "**/*.spec.ts",
+            "**/*.spec.tsx",
+            "**/test/**",
+            "**/e2e/**",
+            // The docs/sandbox in-browser playground prototype — exploratory,
+            // not shipped (its own runner/bundler; imported by nothing as a lib).
+            "docs/sandbox/**",
+            // The documentation website (a Next.js app), not the library.
+            "apps/docs/**",
+            // Private eval/recommendation harness — ships nothing.
+            "packages/eval-harness/**",
+        ],
+    },
 }
