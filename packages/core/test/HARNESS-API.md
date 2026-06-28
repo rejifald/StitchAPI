@@ -72,7 +72,7 @@ Merge: scalars replace, objects deep-merge, `hooks` CHAIN (onRequest base→chil
 ## drift(schema, opts)
 
 `opts = { ignore?: string[], severity?: DriftSeverity | DriftSeverity[] | Partial<Record<'undeclared'|'coerced'|'defaulted', DriftSeverity>> }` where `DriftSeverity = 'warn'|'info'|'verbose'`.
-Drift is schema-anchored — no snapshot (ADR 0013). Each call validates the unwrapped value against `schema`: a missing-required / incompatible value throws (`change:'invalid'`, **error**), and the call returns the VALIDATED value (coerced/defaulted/stripped). Then it diffs raw-vs-validated for soft drift: a stripped key → `undeclared` (**info**), a coercion → `coerced` (**warn**), a default fired → `defaulted` (**verbose**). Paths look like `data[].headline` (array indices render as `[]`, deduped). `ignore` silences paths; `severity` filters (a level/list) or re-levels (a map). Declared variance (optional absent, nullable null, empty/heterogeneous arrays) validates clean and yields no findings.
+Drift is schema-anchored — no snapshot (ADR 0015). Each call validates the unwrapped value against `schema`: a missing-required / incompatible value throws (`change:'invalid'`, **error**), and the call returns the VALIDATED value (coerced/defaulted/stripped). Then it diffs raw-vs-validated for soft drift: a stripped key → `undeclared` (**info**), a coercion → `coerced` (**warn**), a default fired → `defaulted` (**verbose**). Paths look like `data[].headline` (array indices render as `[]`, deduped). `ignore` silences paths; `severity` filters (a level/list) or re-levels (a map). Declared variance (optional absent, nullable null, empty/heterogeneous arrays) validates clean and yields no findings.
 
 ## Auth
 

@@ -1,4 +1,4 @@
-// Leveled drift — schema-anchored, diff-based (ADR 0013).
+// Leveled drift — schema-anchored, diff-based (ADR 0015).
 //
 // Drift is the diagnostic layer over consumer-contract validation. Validation owns the HARD signal:
 // a missing-required field or an incompatible value throws (`validationErrors` → `invalid`/`error`).

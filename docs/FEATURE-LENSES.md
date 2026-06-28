@@ -121,7 +121,7 @@ existing or proposed — passes through all three before it ships.
 
 ### Contract & drift
 
--   `drift()` — schema-anchored, leveled findings instead of pass/fail (ADR 0013) — [`src/drift.ts`](../src/drift.ts)
+-   `drift()` — schema-anchored, leveled findings instead of pass/fail (ADR 0015) — [`src/drift.ts`](../src/drift.ts)
 -   Two tiers — validation throws (`invalid`/`error`, returns the validated value); soft drift is the `diff(raw, validated)` — [`src/diff.ts`](../src/diff.ts)
 -   Change classification — `undeclared` (info) / `coerced` (warn) / `defaulted` (verbose) / `invalid` (error)
 -   `ignore` path globs to silence known fields; `severity` to filter (level/list) or re-level (map)

@@ -1,4 +1,4 @@
-# ADR 0013 — Schema-anchored drift detection
+# ADR 0015 — Schema-anchored drift detection
 
 -   **Status:** Accepted (decided 2026-06-28 in the [issue #327](https://github.com/rejifald/StitchAPI/issues/327) design review). Supersedes the **snapshot** drift mechanism (which shipped without an ADR) and the interim **Zod issue-code** mapping; supersedes in part the drift clauses of [ADR 0005](./0005-surfaces-and-the-authoring-model.md). Implementation follows in the same PR line.
 -   **Date:** 2026-06-28

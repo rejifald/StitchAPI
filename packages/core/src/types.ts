@@ -39,7 +39,7 @@ export interface StitchInput {
 export type DriftLevel = 'error' | 'warn' | 'info' | 'verbose';
 /**
  * What a finding reports. The three **soft** kinds come from diffing the raw response against the
- * validated value (ADR 0013): `undeclared` (a key the schema stripped), `coerced` (a value the
+ * validated value (ADR 0015): `undeclared` (a key the schema stripped), `coerced` (a value the
  * schema coerced — a hidden wire-type shift), `defaulted` (a `.default()` fired because the field
  * was absent). `invalid` is the **hard** validation failure (missing-required / incompatible) that
  * throws.
@@ -58,7 +58,7 @@ export interface DriftFinding {
 export interface DriftOptions {
     /**
      * Paths whose soft drift is suppressed — the acknowledged-but-unconsumed surface of the API, kept
-     * out of the typed schema so the contract stays tight (ADR 0013). A narrow consumer schema means
+     * out of the typed schema so the contract stays tight (ADR 0015). A narrow consumer schema means
      * an undeclared field is usually one you already know about, not a true addition; `ignore` is the
      * curated, path-only "known surface" (no typed baseline, so no variance false positives).
      *
@@ -70,7 +70,7 @@ export interface DriftOptions {
      */
     ignore?: string[];
     /**
-     * How soft drift is leveled / filtered. Three shapes (ADR 0013):
+     * How soft drift is leveled / filtered. Three shapes (ADR 0015):
      * - a **single level** or a **bare list** of levels — an _allowlist_ of which severities to
      *   surface (others are dropped), keeping the per-kind defaults below. `'warn'` ≡ `['warn']`.
      * - a **map** of soft-change kind → severity — _re-levels_ a kind (all kinds still surface).

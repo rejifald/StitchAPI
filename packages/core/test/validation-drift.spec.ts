@@ -1,4 +1,4 @@
-// Drift is schema-anchored and diff-based (ADR 0013). Validation is the hard contract (returns the
+// Drift is schema-anchored and diff-based (ADR 0015). Validation is the hard contract (returns the
 // VALIDATED value — coerced/defaulted/stripped — or throws); drift is the soft diff of the raw body
 // against that validated value. These exercise it end-to-end through the engine:
 //   - validation throws on a missing-required / incompatible value (change: 'invalid', error);

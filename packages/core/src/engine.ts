@@ -337,7 +337,7 @@ async function validateInput(
     }
 }
 
-// Validate ONE value against the output schema (ADR 0013). On success returns the PARSED value —
+// Validate ONE value against the output schema (ADR 0015). On success returns the PARSED value —
 // coerced, defaulted, stripped — so the result matches the declared contract; on failure returns the
 // hard `error`/`invalid` findings that fail the call. Natural variance an honest schema permits
 // (optional absent, nullable null, empty/heterogeneous arrays) validates clean and yields nothing.
@@ -1047,7 +1047,7 @@ async function* runFrom(
         return { ok: false };
     }
 
-    value = validated; // serve the validated value — sound, matches the declared contract (ADR 0013)
+    value = validated; // serve the validated value — sound, matches the declared contract (ADR 0015)
     yield resultEvt(value, res.status, state.attempts);
     yield doneEvt(true, t0, state.attempts);
     const vary = res.headers['vary'];

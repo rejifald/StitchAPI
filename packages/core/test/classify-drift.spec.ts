@@ -1,4 +1,4 @@
-// Unit tests for the drift classifiers (src/drift.ts), ADR 0013. `classifyDiff` turns the structural
+// Unit tests for the drift classifiers (src/drift.ts), ADR 0015. `classifyDiff` turns the structural
 // diff of raw-vs-validated into leveled soft findings; `validationErrors` turns hard validation issues
 // into fatal `invalid` findings. The diff is pure, so these use plain objects (no Zod needed).
 import { classifyDiff, validationErrors } from '../src/drift';

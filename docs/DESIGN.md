@@ -213,7 +213,7 @@ timeout:  { total: '30s', perAttempt: '10s' },
 
 ---
 
-## 7. Validation & drift — schema-anchored (ADR 0013)
+## 7. Validation & drift — schema-anchored (ADR 0015)
 
 Validation is **not** binary pass/fail, and it needs **no snapshot**. The declared `output` schema _is_ the contract. A stitch validates each live response against it (returning the validated value — coerced, defaulted, unknown keys stripped) and then **diffs the raw body against that validated value**; the delta is the drift:
 
@@ -231,7 +231,7 @@ output: drift(Torrent, {
 }),
 ```
 
-Severity lives in the **schema**, not a parallel `critical`/`watch` system: make a field required and its loss throws (`invalid`); make it `.optional()`/`.nullable()` and that variance validates clean and is never drift. Soft drift is always non-fatal; `severity` (a level, list, or per-kind map) filters or re-levels it, and `ignore` silences known-but-unconsumed paths. All drift becomes events on the stream → console/JSONL/OTLP. (Author-contract drift in fields you don't declare needs a published spec or observation, deliberately out of scope — see ADR 0013.)
+Severity lives in the **schema**, not a parallel `critical`/`watch` system: make a field required and its loss throws (`invalid`); make it `.optional()`/`.nullable()` and that variance validates clean and is never drift. Soft drift is always non-fatal; `severity` (a level, list, or per-kind map) filters or re-levels it, and `ignore` silences known-but-unconsumed paths. All drift becomes events on the stream → console/JSONL/OTLP. (Author-contract drift in fields you don't declare needs a published spec or observation, deliberately out of scope — see ADR 0015.)
 
 This directly answers the "I care about some fields, not others, but still want to know" need — and turns a silent HTML-scrape breakage into a loud, leveled signal.
 

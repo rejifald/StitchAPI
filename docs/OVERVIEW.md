@@ -142,7 +142,7 @@ The v1 runtime (in `src/`, **zero runtime dependencies**):
 -   **Event-stream return** (`start → progress → drift → result → done`) + an `await` convenience.
 -   **Flexible validation** (Zod _and_ Standard Schema) + **leveled drift** — schema-anchored, no
     snapshot: a required field missing/incompatible throws, soft drift (coerced/undeclared/defaulted)
-    is non-fatal `warn`/`info`/`verbose` (ADR 0013).
+    is non-fatal `warn`/`info`/`verbose` (ADR 0015).
 -   **Resilience** — retry (backoff, `Retry-After`), throttle (rate + concurrency), timeout (abort).
 -   **Auth-as-boundary** — bearer / apiKey / basic / cookieSession (auto-login, refresh-on-status,
     content-aware refresh) and **OAuth2 client_credentials** (token endpoint, cached access token,
@@ -211,7 +211,7 @@ v1.0 release candidate, zero runtime deps). Full gate green — eslint, prettier
     principal-scoped auth (ADR 0002), `.with()` partial application, deep fragment composition +
     hook chaining.
 -   **Engine** — RFC 6570 Level-4 templates, nested query encoding, transform/unwrap, pagination;
-    Zod **and** Standard Schema validation with schema-anchored leveled drift (ADR 0013).
+    Zod **and** Standard Schema validation with schema-anchored leveled drift (ADR 0015).
 -   **End-to-end type inference** — `Stitch<T>` inferred from the `output` schema **and** call
     arguments inferred from `config.input`, including graphql `variables`, path literals, and
     `extends`/compose typing (all now supported).
