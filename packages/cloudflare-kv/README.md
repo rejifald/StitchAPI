@@ -77,3 +77,7 @@ const store = cloudflareKvStore({
     delete: (k) => myKv.delete(k),
 });
 ```
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

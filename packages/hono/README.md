@@ -100,3 +100,7 @@ On Cloudflare Workers / multi-runtime deployments, pair the seam with a shared
 store so throttle + sessions are fleet-wide — see
 [`@stitchapi/redis`](https://stitchapi.dev). (A Workers-KV store pairing is a
 tracked follow-up.)
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.
