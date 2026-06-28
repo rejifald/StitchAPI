@@ -41,7 +41,7 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.2`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is very welcome.
+> **StitchAPI is at `1.0.0-rc.3`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 ---
 
