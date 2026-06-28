@@ -1,6 +1,12 @@
+import { version } from './package.json';
+
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+    // Mirror the tsup `define` so the test run sees the same build-time version
+    // constant the shipped bundle does (src/mcp.ts → SERVER_VERSION). Kept in
+    // lockstep with tsup.config.ts; sourced from the canonical package.json.
+    define: { __PKG_VERSION__: JSON.stringify(version) },
     test: {
         globals: true,
         environment: 'node',
