@@ -1,7 +1,7 @@
 import { BrandBackdrop } from './brand-backdrop';
 import { PrimaryButton } from './primitives';
 
-import { gitConfig } from '@/lib/shared';
+import { gitConfig, npmUrl } from '@/lib/shared';
 
 import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
@@ -54,6 +54,14 @@ export function Footer() {
                         className="transition-colors hover:text-fd-foreground"
                     >
                         GitHub
+                    </a>
+                    <a
+                        href={npmUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="transition-colors hover:text-fd-foreground"
+                    >
+                        npm
                     </a>
                     <Link
                         href="/docs/reference/stitch"
