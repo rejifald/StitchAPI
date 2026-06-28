@@ -54,6 +54,8 @@ export interface DriftFinding {
     path: string;
     change: DriftChange;
     detail?: string;
+    /** Concrete-index path for the first occurrence of this finding within an array summary (e.g. `"items[3].x"`). Present only on array-collapsed findings (ADR 0017). */
+    sample?: string;
 }
 export interface DriftOptions {
     /**
