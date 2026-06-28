@@ -45,16 +45,24 @@ const KB = 1024;
 // for custom trace sinks) both sit on the core path; they push the entry to ~22.04 /
 // ~17.78 KB gzip. The +0.25 KB step restores the same tight headroom (~0.2 KB) the
 // gate is meant to keep.
+//
+// Budgets raised for `.inspect()` — ADR 0016 (22.25→22.65 / 18.0→18.30 KB): the
+// never-throwing raw-body + drift-findings probe is baked into the core path by design
+// (ADR 0016 Decision 6 — it reuses 0015's diff/findings, so it ships always, opt-in by
+// call, and cannot move to a subpath). The retainRaw/bypassCache run flags, the
+// `Inspection` wrapper consumer, and the contract-violation raw-pinning add ~0.19 / ~0.12
+// KB gzip (entry ~22.44 / stitch ~18.12). The step restores the same tight ~0.2 KB
+// headroom the gate is meant to hold.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 22.25 * KB,
+        budget: 22.65 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 18.0 * KB,
+        budget: 18.3 * KB,
     },
 ];
 

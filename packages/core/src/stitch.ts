@@ -3,6 +3,8 @@
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
 import {
     ERROR_SOURCE,
+    RAW_BODY,
+    type RunFlags,
     type Runtime,
     cacheInvalidateBulk,
     cacheInvalidateExact,
@@ -20,11 +22,14 @@ import { graphqlSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
 import {
     type Clock,
+    type DriftFinding,
     type DriftOptions,
     type DriftSpec,
     type HookContext,
     type Hooks,
     type InputSchemas,
+    type InspectOptions,
+    type Inspection,
     type RedactedStitchConfig,
     type ResolvedStitchConfig,
     type RunContext,
@@ -255,43 +260,101 @@ async function drain<T>(
     let error: Error | undefined;
     for await (const ev of gen) {
         if (ev.type === 'result') value = ev.value;
-        else if (ev.type === 'error') {
-            const source = (ev as { [ERROR_SOURCE]?: Error })[ERROR_SOURCE];
-            const res =
-                source === undefined
-                    ? undefined
-                    : (
-                          source as {
-                              response?: { body?: unknown; url?: string };
-                          }
-                      ).response;
-            // A pinned HTTP error (has `.response`, but is neither a StitchError nor a
-            // RateLimitError): rebuild as a StitchError carrying the response `body`/`url`. A
-            // RateLimitError keeps its class identity (re-surfaced unchanged) so the delegate-backoff
-            // caller still gets `retryAfterMs`/`response`.
-            if (
-                res !== undefined &&
-                !(source instanceof StitchError) &&
-                !(source instanceof RateLimitError)
-            ) {
-                error = new StitchError(ev.message, {
-                    status: ev.status,
-                    attempts: ev.attempts,
-                    body: res.body,
-                    url: res.url,
-                    cause: source,
-                });
-            } else {
-                error =
-                    source ??
-                    new StitchError(ev.message, {
-                        status: ev.status,
-                        attempts: ev.attempts,
-                    });
-            }
-        }
+        else if (ev.type === 'error') error = rebuildError(ev);
     }
     return error ? { error } : { value: value as T };
+}
+
+// Rebuild the terminal error from an `error` event, honouring the non-enumerable ERROR_SOURCE channel
+// (engine.ts). Three kinds ride it: a delegate-backoff RateLimitError is re-surfaced UNCHANGED (the
+// caller keeps its class identity + `retryAfterMs`/`response`); a plain HTTP error (`.response`, but
+// not a StitchError/RateLimitError) is flattened into a StitchError carrying the response `body`/`url`;
+// a contract-violation StitchError (pinned by `.inspect()`'s retain path) passes through. Absent a
+// source, build a StitchError from the event's `status`/`attempts`. Shared by `drain` and
+// `consumeInspect`.
+function rebuildError(ev: Extract<StitchEvent, { type: 'error' }>): Error {
+    const source = (ev as { [ERROR_SOURCE]?: Error })[ERROR_SOURCE];
+    const res =
+        source === undefined
+            ? undefined
+            : (source as { response?: { body?: unknown; url?: string } })
+                  .response;
+    if (
+        res !== undefined &&
+        !(source instanceof StitchError) &&
+        !(source instanceof RateLimitError)
+    ) {
+        return new StitchError(ev.message, {
+            status: ev.status,
+            attempts: ev.attempts,
+            body: res.body,
+            url: res.url,
+            cause: source,
+        });
+    }
+    return (
+        source ??
+        new StitchError(ev.message, {
+            status: ev.status,
+            attempts: ev.attempts,
+        })
+    );
+}
+
+// Build the `Inspection` wrapper (ADR 0016): every field enumerable EXCEPT `raw`, which is defined
+// non-enumerable so `JSON.stringify(wrapper)`, `{ ...wrapper }`, and trace walkers all skip the
+// unredacted body — you reach for `wrapper.raw` deliberately. Mirrors the `__rawConfig` discipline.
+function makeInspection<T>(
+    value: T | null,
+    raw: unknown,
+    findings: DriftFinding[],
+    status: number,
+    error: StitchError | null,
+): Inspection<T> {
+    const wrapper = { value, findings, status, error } as Inspection<T>;
+    // `enumerable: false` is the whole point; the other descriptor flags default false (the wrapper
+    // is transient — nobody reassigns or reconfigures `raw`).
+    Object.defineProperty(wrapper, 'raw', { value: raw, enumerable: false });
+    return wrapper;
+}
+
+// `.inspect()` consumer (ADR 0016): drain ONE run and assemble the `Inspection` — never throws.
+// `findings` collect from every `drift` event; `value`/`status` from the terminal `result`; on a hard
+// failure `value` stays `null` and `error` is the rebuilt StitchError. `raw` rides the non-enumerable
+// RAW_BODY channel — on the `result` event for a success, on the pinned StitchError (recovered via
+// ERROR_SOURCE) for a contract violation; it stays `null` when not retained (streaming / cache hit).
+async function consumeInspect<T>(
+    gen: AsyncGenerator<StitchEvent<T>, void>,
+): Promise<Inspection<T>> {
+    const findings: DriftFinding[] = [];
+    let value: T | null = null;
+    let raw: unknown = null;
+    let status = 0;
+    let error: StitchError | null = null;
+    const readRaw = (carrier: object): void => {
+        const r = (carrier as { [RAW_BODY]?: unknown })[RAW_BODY];
+        if (r !== undefined) raw = r;
+    };
+    try {
+        for await (const ev of gen) {
+            if (ev.type === 'drift') findings.push(ev.finding);
+            else if (ev.type === 'result') {
+                value = ev.value;
+                status = ev.status;
+                readRaw(ev);
+            } else if (ev.type === 'error') {
+                if (ev.status !== undefined) status = ev.status;
+                const rebuilt = rebuildError(ev);
+                error = asStitchError(rebuilt);
+                readRaw(rebuilt);
+            }
+        }
+    } catch (e) {
+        // A stream that throws mid-drain (not an `error` event) still yields a never-throwing
+        // Inspection — surface the throw as `error`, leaving `value` null.
+        error = asStitchError(e);
+    }
+    return makeInspection<T>(value, raw, findings, status, error);
 }
 
 // Throwing consumer: `await stitch(...)` / `stitch.unwrap(...)`. Rejects with the StitchError.
@@ -482,10 +545,22 @@ export function makeStitch<T = unknown>(
     // One traced run for `input` under a given run identity (ADR 0007). `streamFn` mints a fresh
     // ROOT run per consumption; `pipe()` (stitchapi/pipe) supplies a CHILD run via `__runWith`, so a
     // step joins the pipe's chain (its events tee with parentId set).
-    const streamWith = (input: StitchInput, run: RunContext) =>
-        tee<T>(execute(rt, input, run) as never, rt.trace, name, run);
+    const streamWith = (
+        input: StitchInput,
+        run: RunContext,
+        flags?: RunFlags,
+    ) => tee<T>(execute(rt, input, run, flags) as never, rt.trace, name, run);
     const streamFn = (input?: StitchInput) =>
         streamWith(input ?? {}, newRunContext());
+    // `.inspect()` (ADR 0016): one fresh root run with the raw body retained and the cache bypassed by
+    // default (`{ cache: true }` opts caching back in). Consumed by the never-throwing `consumeInspect`.
+    const inspectFn = (input: StitchInput, opts?: InspectOptions) =>
+        consumeInspect<T>(
+            streamWith(input, newRunContext(), {
+                retainRaw: true,
+                bypassCache: !opts?.cache,
+            }),
+        );
 
     const result = (input?: StitchInput): StitchResult<T> => {
         const make = () => streamFn(input);
@@ -532,6 +607,8 @@ export function makeStitch<T = unknown>(
     stitchFn.stream = streamFn;
     stitchFn.safe = (input?: StitchInput) => consumeSafe<T>(streamFn(input));
     stitchFn.unwrap = (input?: StitchInput) => consume<T>(streamFn(input));
+    stitchFn.inspect = (input?: StitchInput, opts?: InspectOptions) =>
+        inspectFn(input ?? {}, opts);
     stitchFn.with = (partial: StitchInput) => {
         // bind partial input; the bound stitch reuses the same runtime (cookies/throttle persist)
         const bound = ((input?: StitchInput) =>
@@ -552,6 +629,8 @@ export function makeStitch<T = unknown>(
             consumeSafe<T>(streamFn(mergeInput(partial, input)));
         bound.unwrap = (input?: StitchInput) =>
             consume<T>(streamFn(mergeInput(partial, input)));
+        bound.inspect = (input?: StitchInput, opts?: InspectOptions) =>
+            inspectFn(mergeInput(partial, input), opts);
         bound.with = (more: StitchInput) =>
             stitchFn.with(mergeInput(partial, more));
         bound.__raw = (input?: StitchInput) =>

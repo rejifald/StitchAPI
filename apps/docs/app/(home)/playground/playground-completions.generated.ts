@@ -239,6 +239,12 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
             info: "Call and unwrap to the value, throwing a `StitchError` on failure. The named twin of `.safe()` (and an explicit spelling of the throwing bare call).",
         },
         {
+            label: "inspect",
+            type: "method",
+            detail: "(...args: [...Args<TIn>, opts?: InspectOptions]) => Promise<Inspection<TOut>>",
+            info: "Probe a fresh call and return an  — `{ value, raw, findings, status, error }` — **without throwing** (ADR 0016). Use it after the fact to ask \"the schema coerced/stripped this; what did the server actually send?\": `raw` is the pre-validation body, `findings` the soft + hard drift between it and `value`. `.inspect()` **always hits the network and bypasses the cache by default**, so it is a fresh probe — *not* an observer of what your cached `await` call did. Pass `{ cache: true }` to honour the cache policy (then `raw` is `null` on a hit). On a streaming surface `raw` is `null` too (no single buffered body). ⚠️ `raw` is unredacted and non-enumerable — read `wrapper.raw` deliberately; never log the whole wrapper.",
+        },
+        {
             label: "with",
             type: "method",
             detail: "(partial: P) => Stitch<TOut, RelaxKeys<TIn, keyof P>>",

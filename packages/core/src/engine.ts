@@ -35,6 +35,7 @@ import type {
     StitchStore,
     TraceSink,
 } from './types';
+import { StitchError } from './types';
 import {
     appendQueryString,
     buildQuery,
@@ -270,6 +271,69 @@ const hostKey = (req: AdapterRequest, cfg: ResolvedStitchConfig): string => {
 // never reaches a trace sink (which serialises via Object.entries / JSON.stringify, both of which
 // skip it), so the full `response` can't leak into a JSONL/console log. See `drain` in stitch.ts.
 export const ERROR_SOURCE = Symbol('stitch.errorSource');
+
+// A non-enumerable channel for the retained pre-validation body (`.inspect()`, ADR 0016). Like
+// ERROR_SOURCE, non-enumerable means a trace sink (Object.entries / JSON.stringify) never sees it, so
+// the unredacted body can't leak into a JSONL/console log. Rides the `result` event on the success
+// path and the pinned StitchError (via ERROR_SOURCE) on the hard-fail path; read by `.inspect()` only.
+export const RAW_BODY = Symbol('stitch.rawBody');
+
+// Per-call run flags (ADR 0016), threaded into `execute` by `.inspect()`. `retainRaw` retains the
+// pre-validation body and surfaces it on the terminal event; `bypassCache` skips the cache entirely
+// (neither read nor write). Both default off, so the await/safe/stream paths are byte-identical.
+export interface RunFlags {
+    retainRaw?: boolean;
+    bypassCache?: boolean;
+}
+
+// Mutable per-run state threaded through the run functions. `attempts` is the live attempt counter
+// the events stamp; `retainRaw` (ADR 0016) is the per-call request to surface the raw body.
+interface RunState {
+    attempts: number;
+    retainRaw?: boolean;
+}
+
+// Attach the retained raw body to a terminal `result` event on the non-enumerable RAW_BODY channel —
+// only when `.inspect()` asked for it (`state.retainRaw`). A no-op otherwise, so the await/safe path
+// yields a byte-identical event. The body never serialises into a trace sink (non-enumerable).
+function withRaw(ev: StitchEvent, state: RunState, raw: unknown): StitchEvent {
+    if (state.retainRaw)
+        Object.defineProperty(ev, RAW_BODY, { value: raw, enumerable: false });
+    return ev;
+}
+
+// The contract-violation (hard drift) error event. When `.inspect()` asked to retain the raw body,
+// pin a StitchError carrying it (on RAW_BODY) via the ERROR_SOURCE channel, so `.inspect()` recovers
+// the body the failure path would otherwise drop (ADR 0016, required engine change). Without
+// `retainRaw` the event is identical to before — no source pinned — so the await/safe path rebuilds
+// its own StitchError exactly as it did pre-0016.
+function contractViolationEvt(
+    name: string,
+    status: number,
+    state: RunState,
+    raw: unknown,
+): StitchEvent {
+    const evt: Extract<StitchEvent, { type: 'error' }> = {
+        type: 'error',
+        name,
+        message: 'contract violation (drift)',
+        status,
+        attempts: state.attempts,
+        at: now(),
+    };
+    if (state.retainRaw) {
+        const err = new StitchError('contract violation (drift)', {
+            status,
+            attempts: state.attempts,
+        });
+        Object.defineProperty(err, RAW_BODY, { value: raw, enumerable: false });
+        Object.defineProperty(evt, ERROR_SOURCE, {
+            value: err,
+            enumerable: false,
+        });
+    }
+    return evt;
+}
 
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const e = err as { message?: string; status?: number };
@@ -527,7 +591,7 @@ async function drainErrorBody(body: unknown): Promise<unknown> {
 async function* attemptLoop(
     rt: Runtime,
     baseReq: AdapterRequest,
-    state: { attempts: number },
+    state: RunState,
     run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, AdapterResponse> {
@@ -714,7 +778,7 @@ async function* attemptLoop(
 async function* attemptWithCircuit(
     rt: Runtime,
     baseReq: AdapterRequest,
-    state: { attempts: number },
+    state: RunState,
     run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, AdapterResponse> {
@@ -785,7 +849,7 @@ function mergeInput(a: StitchInput, b: StitchInput): StitchInput {
 async function* paginated(
     rt: Runtime,
     input: StitchInput,
-    state: { attempts: number },
+    state: RunState,
     t0: number,
     run: RunContext,
     budget?: TotalBudget,
@@ -847,6 +911,9 @@ async function* paginated(
         pageInput = mergeInput(input, nextPartial);
     }
 
+    // The aggregated pages ARE the raw body the contract validates and drift diffs against (ADR
+    // 0015); `.inspect()` (ADR 0016) surfaces this array as `raw`.
+    const rawBody = acc;
     const { value: validated, findings } = await validateOutput(cfg, acc);
     let fatal = false;
     for (const finding of findings) {
@@ -854,25 +921,16 @@ async function* paginated(
         if (finding.level === 'error') fatal = true;
     }
     if (fatal) {
-        yield {
-            type: 'error',
-            name,
-            message: 'contract violation (drift)',
-            status: lastStatus,
-            attempts: state.attempts,
-            at: now(),
-        };
+        yield contractViolationEvt(name, lastStatus, state, rawBody);
         yield doneEvt(false, t0, state.attempts);
         return;
     }
 
-    yield {
-        type: 'result',
-        value: validated,
-        status: lastStatus,
-        attempts: state.attempts,
-        at: now(),
-    };
+    yield withRaw(
+        resultEvt(validated, lastStatus, state.attempts),
+        state,
+        rawBody,
+    );
     yield doneEvt(true, t0, state.attempts);
 }
 
@@ -1002,7 +1060,7 @@ async function* runFrom(
     rt: Runtime,
     baseReq: AdapterRequest,
     name: string,
-    state: { attempts: number },
+    state: RunState,
     t0: number,
     run: RunContext,
     budget?: TotalBudget,
@@ -1028,6 +1086,9 @@ async function* runFrom(
     let value: unknown = outcome.value;
     if (cfg.transform) value = await cfg.transform(value);
     if (cfg.unwrap) value = getPath(value, cfg.unwrap);
+    // The pre-validation body — the left side of 0015's `diff(raw, validated)`, the coordinate space a
+    // finding's `path` is anchored to. `.inspect()` (ADR 0016) surfaces it; otherwise it's discarded.
+    const rawBody = value;
     const { value: validated, findings } = await validateOutput(cfg, value);
     let fatal = false;
     for (const finding of findings) {
@@ -1035,20 +1096,13 @@ async function* runFrom(
         if (finding.level === 'error') fatal = true;
     }
     if (fatal) {
-        yield {
-            type: 'error',
-            name,
-            message: 'contract violation (drift)',
-            status: res.status,
-            attempts: state.attempts,
-            at: now(),
-        };
+        yield contractViolationEvt(name, res.status, state, rawBody);
         yield doneEvt(false, t0, state.attempts);
         return { ok: false };
     }
 
     value = validated; // serve the validated value — sound, matches the declared contract (ADR 0015)
-    yield resultEvt(value, res.status, state.attempts);
+    yield withRaw(resultEvt(value, res.status, state.attempts), state, rawBody);
     yield doneEvt(true, t0, state.attempts);
     const vary = res.headers['vary'];
     return vary !== undefined
@@ -1076,7 +1130,7 @@ async function* runStreaming(
     rt: Runtime,
     input: StitchInput,
     name: string,
-    state: { attempts: number },
+    state: RunState,
     t0: number,
     run: RunContext,
     budget?: TotalBudget,
@@ -1337,7 +1391,7 @@ async function* runOnce(
     rt: Runtime,
     input: StitchInput,
     name: string,
-    state: { attempts: number },
+    state: RunState,
     t0: number,
     run: RunContext,
     budget?: TotalBudget,
@@ -1362,7 +1416,7 @@ async function* runCached(
     ctl: CacheController,
     input: StitchInput,
     name: string,
-    state: { attempts: number },
+    state: RunState,
     t0: number,
     run: RunContext,
     budget?: TotalBudget,
@@ -1491,11 +1545,16 @@ export async function* execute(
     // `parentId` (a `cookieSession` login, a `pipe()` step). Stamped on the `start` event and
     // carried onto the trace-sink ctx by `tee` (stitch.ts).
     run: RunContext = newRunContext(),
+    // Per-call run flags (ADR 0016), set by `.inspect()`: `retainRaw` surfaces the pre-validation
+    // body on the terminal event; `bypassCache` skips the cache entirely (neither read nor write).
+    // Both default off, so every other consumer (await/safe/stream) is byte-identical.
+    flags?: RunFlags,
 ): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
     const name = nameOf(cfg);
     const t0 = now();
-    const state = { attempts: 0 };
+    const state: RunState = { attempts: 0 };
+    if (flags?.retainRaw) state.retainRaw = true;
     const budget = totalBudget(cfg, t0);
 
     try {
@@ -1521,7 +1580,10 @@ export async function* execute(
 
     // Cache lookup is OUTERMOST over the expensive chain but AFTER input validation, so a hit can
     // never tunnel an invalid call past the boundary and the key mirrors the resolved request.
-    const ctl = await ensureCache(rt);
+    // `.inspect()` bypasses it by default (ADR 0016): a hit stores only `{ value, status }` — no
+    // `raw` — so serving one defeats the probe; bypass runs the uncached path, which neither reads
+    // nor writes the cache and stays out of single-flight coalescing (it runs its own request).
+    const ctl = flags?.bypassCache ? null : await ensureCache(rt);
     if (ctl) {
         yield* runCached(rt, ctl, input, name, state, t0, run, budget);
         return;

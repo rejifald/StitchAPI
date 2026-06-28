@@ -111,3 +111,7 @@ pnpm --filter @stitchapi/eval-harness eval:report --driver claude --model <model
 A real run literally writes the WARM seed docs into a per-cell scratch dir, runs
 the CLI there, collects the produced `*.ts`, and scores it through the same
 offline pipeline as the stub.
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.
