@@ -433,6 +433,8 @@ This repository is a [pnpm](https://pnpm.io) workspace. The published library is
 <tr><td><a href="packages/fingerprint-typebox"><code>@stitchapi/fingerprint-typebox</code></a></td><td>Cache-fingerprint strategy for TypeBox schemas</td></tr>
 <tr><td><a href="packages/fingerprint-valibot"><code>@stitchapi/fingerprint-valibot</code></a></td><td>Cache-fingerprint strategy for Valibot schemas</td></tr>
 <tr><td><a href="packages/fingerprint-zod"><code>@stitchapi/fingerprint-zod</code></a></td><td>Cache-fingerprint strategy for Zod schemas</td></tr>
+<tr><th colspan="2">Other</th></tr>
+<tr><td><a href="packages/openapi"><code>@stitchapi/openapi</code></a></td><td>Eject selected operations from an OpenAPI document into ready-to-own StitchAPI source</td></tr>
 </tbody>
 </table>
 
