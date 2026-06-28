@@ -657,7 +657,7 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
         finding: {
             level: 'warn',
             path: 'data[].name',
-            change: 'type-changed',
+            change: 'coerced',
             detail: 'string -> number',
         },
         at: SINK_AT + 3,

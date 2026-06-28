@@ -39,20 +39,20 @@ This is the axis people underweight, so it's worth being precise.
 
 A generated client gives you **static** types: they describe what the spec _said_ the response would be, frozen at generation time. They're excellent for editor autocomplete and compile-time safety against your own code. What they cannot do is notice when the live API stops matching them. If the provider renames `total` to `amount` next Tuesday, your generated type still says `total`, your build still passes, and you get `undefined` three layers downstream at runtime — until you regenerate, which you'll only think to do once something is already broken.
 
-A stitch validates the **live** response on every call. The schema runs against real bytes, so a shape mismatch is caught the moment it happens, at the boundary, with a typed error — not swallowed into an `undefined`. On top of plain validation, StitchAPI adds **leveled drift detection** ([schema drift is a production bug](/blog/schema-drift-is-a-production-bug)): wrap an `output` schema in `drift()` and each live response is compared against a committed snapshot, with every difference classified by severity:
+A stitch validates the **live** response on every call. The schema runs against real bytes, so a shape mismatch is caught the moment it happens, at the boundary, with a typed error — not swallowed into an `undefined`. On top of plain validation, StitchAPI adds **leveled drift detection** ([schema drift is a production bug](/blog/schema-drift-is-a-production-bug)): the declared schema _is_ the contract — wrap it in `drift()` and each response is validated and then diffed against the validated value, with every difference classified by severity:
 
 ```ts
 const listOrders = stitch({
     path: 'https://api.example.com/orders',
-    // wrap the output schema in drift() to compare each response to a snapshot
+    // the schema is the contract; required fields throw, soft drift is leveled
     output: drift(OrdersSchema, {
-        critical: ['[].id'], // missing or retyped → error
-        watch: ['[].total'], // changed → warn, the call still succeeds
+        ignore: ['[].meta'], // acknowledged, unconsumed — don't report it
+        severity: { coerced: 'info' }, // re-level a kind (or a level/list to filter)
     }),
 });
 ```
 
-A `critical` field that vanishes or changes type fails the call loudly (an `error`-level event). A watched field that shifts emits a `warn` but lets the call succeed. A brand-new field the contract didn't know about surfaces as `info` — "want to use this?" That's a class of change a spec-derived type can't see, because the spec was never told. The flip side: this only catches what your declared schema and snapshot describe. Endpoints you never declared aren't watched at all, whereas a generator at least _typed_ the whole surface from the spec, accurate or not.
+A required field that vanishes or turns incompatible fails the call loudly (a hard `invalid`/`error`). Soft drift is non-fatal: a coercion (`"42"`→`42`) the schema quietly absorbed surfaces as `warn`, an undeclared key the API added as `info`, a default that fired as `verbose` — all on the event stream, none throwing. That's a class of change a spec-derived type can't see, because the spec was never told. The flip side: this only catches the surface you declared. Endpoints and fields you never modeled aren't watched, whereas a generator at least _typed_ the whole surface from the spec, accurate or not.
 
 ## Resilience, auth, and observability: built-in vs. bolt-on
 

@@ -153,10 +153,6 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
     test('a markup class rename (score -> rank) is caught as a drift ERROR instead of silent undefined', async () => {
         process.env['SCRAPE_USER'] = 'u';
         process.env['SCRAPE_PASS'] = 'p';
-        const snapshotFile = join(
-            tmpdir(),
-            `patterns-scrape-${process.pid}-${Date.now()}.contract.json`,
-        );
 
         server.route('POST', '/login', {
             setCookie: { name: 'session_id', value: 'SESS' },
@@ -194,22 +190,20 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
             throttle: { rate: '5/s' },
             transform: scrapeListings, // HTML -> { items: [...] }
             unwrap: 'items',
+            // `score` is REQUIRED — the schema is the contract, so a markup rename that drops it
+            // is a loud validation error, not a silent gap. No snapshot, no baseline call.
             output: drift(
                 z.array(
                     z.object({
                         title: z.string(),
                         link: z.string().optional(),
-                        score: z.number().optional(),
+                        score: z.number(),
                     }),
                 ),
-                {
-                    critical: ['[].score'], // losing score silently corrupts ranking -> make it loud
-                    snapshotFile,
-                },
             ),
         });
 
-        // call #1: original markup -> score present, records the baseline contract.
+        // call #1: original markup -> score present, validates clean.
         const first = await search({ query: { q: 'item' } });
         expect(first).toEqual([{ title: 'Item A', link: '/i/1', score: 42 }]);
 
@@ -227,8 +221,8 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
         const scoreDrift = findings.find((f) => f.path.includes('score'));
         expect(scoreDrift).toBeDefined();
         expect(scoreDrift?.level).toBe('error');
-        expect(scoreDrift?.change).toBe('missing');
-        expect(rejected).toBe(true); // a critical-field drift is fatal, not silent
+        expect(scoreDrift?.change).toBe('invalid');
+        expect(rejected).toBe(true); // a required-field violation is fatal, not silent
     });
 });
 

@@ -1,6 +1,6 @@
 ---
 title: 'Catch a silent selector rename in scraped HTML'
-description: 'Scrape an HTML page into a structured object with transform, then drift the structured shape so a markup or selector rename becomes a loud contract error instead of a silently missing field.'
+description: 'Scrape an HTML page into a structured object with transform, then drift the structured shape against its schema so a markup or selector rename becomes a hard contract error instead of a silently missing field.'
 ---
 
 ## Task
@@ -17,8 +17,8 @@ want that markup rename to surface the moment it happens, as a loud error on the
 
 The response pipeline is `transform → unwrap → validation`, so `transform`
 reshapes the HTML into a structured object **before** drift ever runs — drift
-then compares the _parsed_ value, not the raw markup. List the path that must
-not move under `critical`.
+then validates the _parsed_ value, not the raw markup. Declare `score` as
+**required** in the schema: its loss is the breakage you want caught.
 
 ```ts twoslash
 import { drift, stitch } from 'stitchapi';
@@ -48,12 +48,9 @@ const catalog = stitch({
     transform: scrape, // HTML string -> { items: [...] }
     unwrap: 'items',
     output: drift(
-        z.array(z.object({ title: z.string(), score: z.number().optional() })),
-        {
-            // `[].score` is a path on the STRUCTURED shape, not the raw HTML.
-            critical: ['[].score'],
-            snapshotFile: 'catalog.contract.json',
-        },
+        // `score` is REQUIRED — its loss is the breakage we want caught.
+        // A required field that goes missing throws (`STITCH_DRIFT`, `change: 'invalid'`).
+        z.array(z.object({ title: z.string(), score: z.number() })),
     ),
 });
 
@@ -62,70 +59,45 @@ const items = await catalog();
 
 ## How it works
 
-The first call records the baseline into `catalog.contract.json` (check it into
-the repo) from the **transformed** shape — `[{ title, score }]`, not the HTML
-body. Every call after parses the page and compares that structured value
-against the snapshot.
+Each call parses the page and validates the **transformed** shape —
+`[{ title, score }]`, not the HTML body — against the schema. No baseline to
+generate or commit: the schema _is_ the contract.
 
 When the provider renames the score cell's class (`score` → `rank`), the
-selector stops matching and `scrape` drops `score` from each item. Because
-`[].score` is `critical`, drift emits an `error`-level finding —
-`{ level: 'error', change: 'missing', path: '[].score' }` — which breaks the
-contract and throws [`STITCH_DRIFT`](/docs/errors/stitch-drift). The path is the
+selector stops matching and `scrape` drops `score` from each item. Because the
+schema requires `score`, validation sees a missing required field and throws
+[`STITCH_DRIFT`](/docs/errors/stitch-drift) — a finding with
+`{ level: 'error', change: 'invalid', path: '[].score' }`. The path is the
 proof: `[].score` exists only on the parsed object, so a finding on it can only
 come from drift inspecting the `transform` output, not the raw markup. The
 silent `undefined` is now a loud, immediate failure.
 
-`warn` and `info` findings (a non-critical field changing, a new field
-appearing) don't throw — they ride the
-[event stream](/docs/concepts/event-stream) as `drift` events, so you can
-[watch a field erode](/docs/recipes/watch-a-call-as-it-happens) before it
-breaks. Reserve `critical` for the few paths whose loss corrupts your data.
+Other non-fatal soft-drift findings (`undeclared`, `coerced`, `defaulted`) ride
+the [event stream](/docs/concepts/event-stream) without throwing — you can
+[watch them](/docs/recipes/watch-a-call-as-it-happens) before any becomes a
+hard failure.
 
-## Ship it read-only in production
-
-The first call with no committed snapshot **writes** one and reports nothing — a
-convenience while you develop the contract, but a footgun in a deployed run,
-where the first request would silently persist a baseline and "pass" instead of
-detecting drift. Generate the baseline once, commit `catalog.contract.json`,
-then ship with `readonly: true` so drift _detects but never writes_:
-
-```ts twoslash
-import { drift, stitch } from 'stitchapi';
-import { z } from 'zod';
-
-declare function scrape(html: unknown): { items: Record<string, unknown>[] };
-// ---cut---
-const catalog = stitch({
-    baseUrl: 'https://api.example.com',
-    path: '/catalog',
-    transform: scrape,
-    unwrap: 'items',
-    output: drift(
-        z.array(z.object({ title: z.string(), score: z.number().optional() })),
-        {
-            critical: ['[].score'],
-            readonly: true, // detect-but-never-write
-            onMissing: 'error', // a missing baseline fails CI, not slips past
-            snapshotFile: 'catalog.contract.json',
-        },
-    ),
-});
-```
+<Callout type="info">
+    Declaring `score` **required** is the whole trick. Drift honors the schema's
+    optionality: if `score` were `.optional()`, a response without it would
+    validate clean and the rename would slip past — which is correct for a field
+    that genuinely may be absent. Make a field required precisely when its
+    disappearance is a bug.
+</Callout>
 
 <Callout type="warn">
-    **Anti-pattern:** don't drift the raw HTML body and skip `transform`.
+    **Anti-pattern:** do not drift the raw HTML body and skip `transform`.
     Snapshotting the markup makes every cosmetic edit — a reordered attribute, a
     whitespace change — look like drift, burying the one rename that matters.
-    Parse to the structured shape first, then drift the few `critical` fields
-    you actually depend on.
+    Parse to the structured shape first, then rely on required fields in the
+    schema to catch the breakage you actually depend on.
 </Callout>
 
 ## See also
 
 <Cards>
     <Card title="transform" href="/docs/guides/data/transform" />
-    <Card title="Leveled drift" href="/docs/guides/validation/drift" />
+    <Card title="Drift detection" href="/docs/guides/validation/drift" />
     <Card
         title="Catch a breaking API change before your users do"
         href="/docs/recipes/catch-a-breaking-api-change"

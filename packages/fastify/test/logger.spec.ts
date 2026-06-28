@@ -87,7 +87,7 @@ describe('fastifyLoggerSink — level mapping', () => {
         const sink = fastifyLoggerSink(logger);
         const drift = (level: 'error' | 'warn' | 'info'): StitchEvent => ({
             type: 'drift',
-            finding: { level, path: 'data.id', change: 'type-changed' },
+            finding: { level, path: 'data.id', change: 'coerced' },
             at: 0,
         });
 

@@ -200,14 +200,14 @@ export const pages: Page[] = [
         path: 'recipes/catch-a-breaking-api-change',
         title: 'Catch a breaking API change before your users do',
         description:
-            'Wrap output with drift to compare every response against a committed snapshot and flag dropped fields, type flips, and new keys by severity.',
+            'Wrap output with drift to validate every response against the declared schema and catch a dropped required field, a type coercion, or an undeclared new key.',
         kind: 'guide',
     },
     {
         path: 'recipes/catch-a-selector-rename',
         title: 'Catch a silent selector rename in scraped HTML',
         description:
-            'Scrape an HTML page into a structured object with transform, then drift the structured shape so a markup or selector rename becomes a loud contract error instead of a silently missing field.',
+            'Scrape an HTML page into a structured object with transform, then drift the structured shape against its schema so a markup or selector rename becomes a hard contract error instead of a silently missing field.',
         kind: 'guide',
     },
     {
@@ -474,9 +474,9 @@ export const pages: Page[] = [
     },
     {
         path: 'guides/validation/drift',
-        title: 'Leveled drift',
+        title: 'Drift detection',
         description:
-            'Detect silent contract changes as leveled findings (error/warn/info) against a committed snapshot.',
+            'Detect silent contract changes as non-fatal findings by diffing the raw response against the validated value.',
         kind: 'guide',
     },
     {
@@ -679,7 +679,7 @@ export const pages: Page[] = [
         path: 'errors/stitch-drift',
         title: 'STITCH_DRIFT',
         description:
-            'An error-level drift finding broke the response contract.',
+            'A required field was missing or incompatible, breaking the response contract.',
         kind: 'error',
         code: 'STITCH_DRIFT',
     },

@@ -73,7 +73,7 @@ const customer = await enrich({ params: { id: order.customerId } });
 return { order, customer };
 ```
 
-The platform still owns the orchestration — the trigger, the schedule, the run history, the steps before and after. The stitch owns the _call_: the auth boundary, the retry, the timeout, the drift check against a committed snapshot. The platform decides _when_ and _in what order_; the stitch decides _how reliably_ each hop happens. That layering is the point of the comparison — they're stacked, not opposed.
+The platform still owns the orchestration — the trigger, the schedule, the run history, the steps before and after. The stitch owns the _call_: the auth boundary, the retry, the timeout, the drift check against the declared schema. The platform decides _when_ and _in what order_; the stitch decides _how reliably_ each hop happens. That layering is the point of the comparison — they're stacked, not opposed.
 
 ## When a platform is the better choice
 
@@ -94,7 +94,7 @@ Plainly, because this isn't a sales pitch:
 ## The honest caveats
 
 -   **A stitch is not an orchestrator.** It doesn't schedule, it doesn't persist runs across processes, and it has no visual builder. If you need durable, scheduled, multi-step automation, a stitch is a _component_ of that, not a replacement for it.
--   **A platform is not a typed-call primitive.** Its connectors give you breadth, but the per-call hardening — schema validation, leveled drift against a committed snapshot, an explicit auth boundary — is a different concern than wiring nodes together.
+-   **A platform is not a typed-call primitive.** Its connectors give you breadth, but the per-call hardening — schema validation, leveled drift against the declared schema, an explicit auth boundary — is a different concern than wiring nodes together.
 -   **"Complementary" has a cost too.** Running a stitch inside a platform's code step means you're operating the platform _and_ maintaining code. That's the right call when you need both layers — and overhead when you only needed one.
 
 The useful frame: a platform answers "in what order, and when, do these steps run?" A stitch answers "how does this one step talk to its API without falling over?" Pick the platform when the first question is your problem, the library when the second is, and reach for both when the honest answer is "both."
