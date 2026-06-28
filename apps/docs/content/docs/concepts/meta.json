@@ -3,6 +3,7 @@
     "icon": "Lightbulb",
     "pages": [
         "the-stitch",
+        "the-seam",
         "event-stream",
         "capability-not-credential",
         "principles"
