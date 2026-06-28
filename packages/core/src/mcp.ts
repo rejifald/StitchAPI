@@ -16,7 +16,11 @@ import type { Readable, Writable } from 'node:stream';
 
 const PROTOCOL_VERSION = '2025-06-18';
 const SERVER_NAME = 'stitchapi';
-const SERVER_VERSION = '1.0.0-rc.1';
+// Derived at build time from packages/core/package.json `version` via an esbuild
+// `define` (see tsup.config.ts / vitest.config.ts and src/version.d.ts), so the
+// version the MCP server reports can never drift from the published release. An
+// explicit `info.version` from the caller still wins (see `createMcpServer`).
+const SERVER_VERSION = __PKG_VERSION__;
 
 export interface JsonRpcMessage {
     jsonrpc: '2.0';
