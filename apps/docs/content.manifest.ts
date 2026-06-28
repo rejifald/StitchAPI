@@ -211,6 +211,13 @@ export const pages: Page[] = [
         kind: 'guide',
     },
     {
+        path: 'recipes/inspect-what-the-server-sent',
+        title: 'Inspect what the server actually sent',
+        description:
+            'Probe a fresh call with .inspect() to read the unredacted raw body next to the validated value and the drift findings diffed between them — without throwing — when you need to see what changed after the fact.',
+        kind: 'guide',
+    },
+    {
         path: 'recipes/watch-a-call-as-it-happens',
         title: 'Watch retries and throttling as they happen',
         description:
