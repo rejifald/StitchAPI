@@ -1,0 +1,103 @@
+---
+title: 'How to Rate-Limit and Throttle API Calls in TypeScript (Node and Edge)'
+description: Rate (calls per unit time) and concurrency (in-flight cap) are different controls, and the usual setTimeout queue breaks the moment a second call site or process shares the limit. Here's how to pace calls correctly in TypeScript, and how a stitch declares it as data.
+author: Oleksandr Zhuravlov
+date: '2026-06-28'
+tags: [throttle, rate-limits, http, typescript, resilience]
+---
+
+You need to rate-limit outbound API calls in TypeScript when an upstream caps how fast you may call it and you'd rather pace under that cap than bounce off it. The first thing to get right is that "rate-limit" is two different controls, and most homegrown limiters only implement one.
+
+## Rate is not concurrency
+
+These two answer different questions, and conflating them is the most common bug in a hand-rolled limiter.
+
+-   **Rate** is _how fast_ — calls per unit time. "Five per second" is a pace: roughly one call every 200ms. It governs the gap between successive requests, not how many are open at once.
+-   **Concurrency** is _how many at once_ — the in-flight cap. "At most two" means a third call waits until one of the first two returns, no matter how quickly that happens.
+
+They're orthogonal. An upstream that tolerates a steady stream but falls over on fifty simultaneous sockets wants a concurrency cap. One that counts requests in a window and returns `429` past the count wants a rate cap. Most real limits are both, and a limiter that only spaces calls in time will still open a hundred sockets the instant they're all due.
+
+## The naive limiter, and where it breaks
+
+The first version everyone writes is a `setTimeout` between calls or a small promise queue:
+
+```ts
+let last = 0;
+
+async function paced<T>(fn: () => Promise<T>): Promise<T> {
+    const wait = Math.max(0, last + 200 - Date.now());
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    last = Date.now();
+    return fn();
+}
+```
+
+This holds one call site to roughly 5/s. It breaks the moment reality is bigger than one function:
+
+-   **Multiple call sites.** Two modules each keep their own `last`, and the upstream sees the sum. Three of them at 5/s apiece is 15/s against a host that allows five — and you're back to meeting `429`s in production.
+-   **No concurrency cap.** It spaces _starts_ but never counts in-flight requests. Slow responses pile up, and you breach a concurrency limit the timer never modeled.
+-   **Multiple processes.** Scale to three instances behind a load balancer, or a dozen serverless isolates, and each keeps its own `last` in its own memory. Your real upstream rate is N times your cap, where N is however many copies happen to be running.
+
+Every one of these is the same root issue: the budget lives in one variable in one place, and the limit it's protecting is shared somewhere wider.
+
+## Pace before you send, don't wait for the 429
+
+There's a second axis underneath the mechanics: _when_ you find the limit. The reactive approach is to fire as fast as your code produces calls, and when one returns `429`, back off and honor `Retry-After`. It works as a backstop, but by the time the `429` lands you've already spent the round trip and earned a rejection. Pacing yourself **under** the limit before requests leave is the proactive approach — fewer wasted trips, no rejection latency. The full argument for why proactive beats reactive, and how the two compose, is in [proactive throttling beats reacting to 429s](/blog/proactive-throttling-vs-reactive-429s).
+
+## The stitch way: declare the throttle as data
+
+A stitch is one API call turned into a typed function, and its rate limit is a field on that declaration, not a queue you assemble around the call. You name the pace and the cap; the stitch holds you to them before any request leaves.
+
+```ts
+import { stitch } from 'stitchapi';
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+});
+
+const results = await search({ query: 'shoes' }); // paced and bounded
+```
+
+`rate` is a string like `'5/s'` — a minimum spacing between successive calls, not a token bucket that lets a burst through. `concurrency` caps simultaneous in-flight calls; set either on its own or both together. When a call has to wait its turn it isn't a silent stall — the stitch emits a `progress` event with phase `throttled`, so a queued call shows up on the event stream instead of looking like a hang.
+
+`scope` is the answer to the multiple-call-sites problem. The default `'stitch'` gives each stitch its own budget; `'host'` pools one budget across every stitch hitting the same host — which is how a provider actually counts, since a rate limit is per account or per host, almost never per endpoint. Set `scope: 'host'` and three stitches against `api.example.com` draw from one `5/s` budget no matter which one a caller reaches for. Host-scoped pooling works in-process with no extra setup.
+
+## Multiple processes: the distributed story
+
+`scope: 'host'` shares a budget across stitches in one process; it does nothing across processes, because the counters live in memory. Run more than one instance against the same upstream budget and you're back to N times your cap. The fix isn't a different limiter — it's a different place to keep the counters. Attach a shared `store` to move them off-box, so every instance pointed at the same store draws from one budget:
+
+```ts
+import { fromIoredis, redisStore } from '@stitchapi/redis';
+import Redis from 'ioredis';
+import { seam } from 'stitchapi';
+
+const api = seam({
+    baseUrl: 'https://api.example.com',
+    throttle: { rate: '5/s', concurrency: 4, scope: 'host' },
+    store: redisStore(fromIoredis(new Redis(process.env.REDIS_URL))),
+});
+```
+
+The `throttle` declaration is unchanged from the single-process version — only `store` is new. The mechanics, which drivers give you an atomic increment (Redis and Deno KV do; Workers KV doesn't), and what that means at the edge are in [distributed throttle and shared sessions](/blog/distributed-throttle-with-redis-kv).
+
+## When a simple limiter is enough
+
+Reaching for any of this when you don't need it is its own mistake. The `setTimeout` version above is correct for the shape of problem it fits, and a declared throttle is dead weight when:
+
+-   **You call from one place, in one process.** A CLI run or a single long-lived worker with one call site has nothing to share a budget across — the in-memory limiter counts exactly right, and a store would add a network hop to fix a problem you don't have.
+-   **You never brush the limit.** A handful of calls that come nowhere near the cap don't need pacing. The reactive `429` path alone is enough until your volume starts touching the ceiling.
+-   **You don't know the real limit.** A proactive throttle paces you to the number you declare, not the provider's actual ceiling. If a provider documents its limit, use it; if not, start conservative and tighten as you watch for `429`s. There's no pacing without a number.
+
+The line is whether the budget is shared wider than the one variable holding it. While it isn't, a few lines of `setTimeout` are honest. The moment it is — a second call site, a second process — a homegrown limiter quietly stops protecting the limit, and declaring `throttle` (with `scope` and, across processes, a `store`) is what keeps the cap you wrote the cap the upstream sees.
+
+If you're weighing this against the interceptor stack you'd otherwise hand-write around axios, [axios alternatives in 2026](/blog/axios-alternatives) maps where a stitch fits.
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Declare a `throttle` on a stitch, set `scope: 'host'` to share the budget the way the provider counts, and pace under the limit instead of bouncing off it. The full field list and `scope` semantics are in the [Throttle guide](/docs/guides/resilience/throttle).

@@ -1,0 +1,143 @@
+---
+title: 'How to Retry a Failed Fetch in TypeScript (the Right Way)'
+description: Native fetch has no retry, and the while-loop everyone copies retries the wrong things — non-idempotent writes, dead 4xx, no backoff. Here's a correct hand-rolled retry in plain TypeScript, the four pitfalls it has to dodge, and the one-line declarative version.
+author: Oleksandr Zhuravlov
+date: '2026-06-28'
+tags: [retry, fetch, typescript, resilience, http]
+---
+
+A call to `fetch` fails once with a `503`, the data was there a second ago, and a single retry would have saved the request — but native `fetch` has no retry, so the error surfaces straight to your caller. You reach for the obvious fix: wrap it in a loop. That loop is where most retry code goes wrong, because retrying correctly means deciding _what_ to retry, _how long_ to wait, and _when to stop_ — and the naive version answers all three badly.
+
+## Why `fetch` gives you nothing
+
+`fetch` rejects only on a network error — DNS failure, dropped connection, an aborted signal. A `429` or a `503` is a perfectly resolved promise with `response.ok === false`. So before you can retry anything you have to decide what counts as a failure, because the runtime won't tell you. That's the first thing a retry has to get right and the first thing a `try/catch` around `fetch` gets wrong: it never fires for the status codes you most want to retry.
+
+## The loop everyone writes first
+
+Here's the version that shows up in most codebases. It runs, and it's better than nothing:
+
+```ts
+async function fetchWithRetry(url: string, attempts = 3): Promise<Response> {
+    let lastError: unknown;
+    for (let i = 0; i < attempts; i++) {
+        try {
+            const res = await fetch(url);
+            if (res.ok) return res;
+            lastError = new Error(`HTTP ${res.status}`);
+        } catch (err) {
+            lastError = err;
+        }
+    }
+    throw lastError;
+}
+```
+
+It loops, it catches both rejection modes, it surfaces the last error. And it's wrong in four ways that only show up under load or against a misbehaving server — exactly when you needed the retry to be right.
+
+## The four pitfalls
+
+**No backoff means a thundering herd.** The loop above retries with no wait at all, hammering a struggling server as fast as the event loop allows. Add a fixed delay and you've fixed the rate but not the synchronization: when a dependency blips, every client that was mid-call retries on the _same_ schedule, so the recovering server gets a synchronized wall of traffic on each tick. The fix is exponential backoff — double the wait each attempt — plus **jitter**, a random spread on each delay so a thousand clients don't line up on the same millisecond.
+
+**Retrying a 4xx that will never succeed.** A `400` is a malformed request; a `401` is a missing credential; a `404` is a wrong path. None of them get better by trying again — retrying only delays the inevitable error by three round-trips and adds load for nothing. Retry the transient set (`429`, `502`, `503`, `504`) and let the rest fail fast.
+
+**Retrying a non-idempotent write.** This is the dangerous one. A `POST` that creates an order can time out _after_ the server committed the write but _before_ the response reached you. Retry it and you've created two orders. A retry policy that doesn't know which calls are safe to repeat will silently double-apply side effects under exactly the network conditions that triggered the retry. Reads are safe; blind writes are not.
+
+**Ignoring `Retry-After`.** When a server returns a `429` or a `503` it often tells you precisely when to come back, in a `Retry-After` header — either delta-seconds or an HTTP-date. Your computed backoff is a guess; that header is the answer. Ignoring it means you retry too early (and get rate-limited again) or too late (and wait longer than asked).
+
+## A correct-ish hand-rolled retry
+
+Fold all four in and the helper grows teeth. This one backs off exponentially with jitter, retries only a transient set, honors `Retry-After`, and stays a `GET` so repeating it is safe:
+
+```ts
+const RETRYABLE = new Set([429, 502, 503, 504]);
+
+function parseRetryAfter(res: Response): number | null {
+    const header = res.headers.get('retry-after');
+    if (!header) return null;
+    const seconds = Number(header);
+    if (!Number.isNaN(seconds)) return seconds * 1000;
+    const date = Date.parse(header);
+    return Number.isNaN(date) ? null : Math.max(0, date - Date.now());
+}
+
+async function fetchWithRetry(
+    url: string,
+    { attempts = 3, baseMs = 200, maxMs = 10_000 } = {},
+): Promise<Response> {
+    let lastError: unknown;
+    for (let i = 0; i < attempts; i++) {
+        try {
+            const res = await fetch(url);
+            if (res.ok) return res;
+            if (!RETRYABLE.has(res.status)) return res; // dead 4xx — fail fast
+            lastError = new Error(`HTTP ${res.status}`);
+
+            if (i < attempts - 1) {
+                const serverWait = parseRetryAfter(res);
+                const expo = Math.min(maxMs, baseMs * 2 ** i);
+                const jittered = Math.random() * expo;
+                await new Promise((r) => setTimeout(r, serverWait ?? jittered));
+            }
+        } catch (err) {
+            lastError = err;
+            if (i < attempts - 1) {
+                await new Promise((r) =>
+                    setTimeout(
+                        r,
+                        Math.random() * Math.min(maxMs, baseMs * 2 ** i),
+                    ),
+                );
+            }
+        }
+    }
+    throw lastError;
+}
+```
+
+That's the honest minimum, and it's a lot more than a `for` loop. It also still doesn't compose with a timeout (a hung attempt blocks the whole budget), it doesn't bound the _total_ time across attempts, and the moment you have a second endpoint you copy-paste it or thread the differences through arguments. The logic that decides whether to retry is now tangled into the function that makes the call.
+
+## The declarative version
+
+The retry policy isn't really code — it's data: a count, a status set, a backoff curve, a flag for `Retry-After`. A stitch lets you say exactly that data and keeps the deciding logic out of your call site. You declare the call once, with its retry policy as a field:
+
+```ts
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    retry: {
+        attempts: 3,
+        on: [429, 503],
+        backoff: 'expo-jitter',
+        baseMs: 200,
+        respectRetryAfter: true,
+    },
+});
+
+const user = await getUser({ id: '42' }); // retried, backed off, Retry-After honored
+```
+
+Every pitfall above is now a named field. `attempts` is the **total** number of tries including the first, so `attempts: 3` means up to two retries. `on` lists the status codes that trigger a retry — defaulting to the transient set `[429, 502, 503, 504]`, which is what keeps a dead `4xx` from being retried at all. `backoff: 'expo-jitter'` doubles the delay each attempt and spreads it randomly to break up the herd, paced from `baseMs` and clamped to `maxMs`; `'expo'` and `'fixed'` are there when you want a different curve. And `respectRetryAfter: true` uses the server's `Retry-After` header in place of the computed backoff when the response carries one.
+
+The non-idempotent-write pitfall doesn't vanish — nothing can make a blind `POST` retry safe — but it stops being a silent default. Adding `retry` to a write is a deliberate line you write, and the [retry guide](/docs/guides/resilience/retry) flags it: pair it with an idempotency key so the server collapses the duplicate, or leave retry off. The policy is declared where you can see it, not buried in a shared helper three files away.
+
+Because the policy lives on the definition, it composes instead of tangling. Each retry surfaces as a `progress` event on the [event stream](/docs/concepts/event-stream), so a trace shows every wait and re-attempt rather than a silent stall inside a loop. And the same declaration takes a `timeout` next to `retry` — a per-attempt budget and a total budget that the hand-rolled version never bounded — which is the composition the [circuit breakers and layered timeouts](/blog/circuit-breakers-and-layered-timeouts) post walks through end to end.
+
+## When a tiny retry helper is enough
+
+A stitch earns its keep when the retry policy is load-bearing and shared. It's overkill when it isn't:
+
+-   **One call site, one well-behaved endpoint.** If you retry a single internal `GET` that flakes once a month, the dozen lines above are clearer than a dependency. Keep them.
+-   **A script that runs once and exits.** No long-lived process, no fleet of clients, no thundering herd to break up — a fixed-delay loop is fine, and jitter is solving a problem you don't have.
+-   **You won't reuse the policy.** The argument for declaring retry as data is that the same data covers your next ten endpoints and stays visible at each call site. If there's no next endpoint, there's less to gain.
+
+The line is reuse and visibility. The moment "retry the transient set, back off with jitter, honor `Retry-After`, and don't you dare retry that `POST`" becomes a rule you want applied the same way across many calls — and want to _see_ applied, not trust by convention — it belongs on the definition, not copy-pasted into each call site. If you're arriving here from axios interceptors rather than raw `fetch`, the same trade is mapped out in [axios alternatives](/blog/axios-alternatives).
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Declare one endpoint with a `retry` field and the loop, the backoff math, the status-code allowlist, and the `Retry-After` parsing collapse into five lines of policy you can read at a glance. The full option list — every `backoff` curve, `baseMs`, `maxMs`, and the idempotency caveat — lives in [Retry & backoff](/docs/guides/resilience/retry).
