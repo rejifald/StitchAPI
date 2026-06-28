@@ -1,0 +1,97 @@
+---
+title: What Is Schema Drift?
+description: Schema drift is when an API's response shape changes after you've written code against it, while your types and tests keep passing. This defines the term, names the kinds of drift, and shows how to detect each one by diffing the live response against the schema you already declared.
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [glossary, drift, schema, api, reliability]
+---
+
+Schema drift is the gap that opens when an API's response shape changes after you've written code against it — a field renamed, a number turned into a string, a `null` appearing where one never did — while your types still compile and your tests still pass. You reach for the term when an integration breaks in production over a change you never made, on a machine you don't own.
+
+This is the definition page. For the argument that drift is the single most under-defended bug class in an integration, and how to react to a live drift event, see [schema drift is the bug you ship to production](/blog/schema-drift-is-a-production-bug). Here the goal is narrower: define the term precisely, name its kinds, and show how each is detected.
+
+## A precise definition
+
+Schema drift is a divergence between the **contract you wrote down** and the **bytes the API actually returns**, introduced by a change on the provider's side after your code was written. Three properties make it its own category:
+
+-   **It happens out-of-band.** The change lands on a system you don't control, with no commit in your repo, no PR, no review.
+-   **It's invisible to static checks.** Your TypeScript types describe what you expected, frozen when you wrote them. The compiler checks your code against that claim, not the claim against reality.
+-   **Its first witness is runtime.** The only place a live response appears is on a real call — so the first code to see the new shape is whatever runs in production on the unlucky request.
+
+That last property is why drift is different from an ordinary type error or a failing test. Neither of those looks at a live response; drift is, by definition, a change to one.
+
+## What it looks like
+
+Drift is concrete. Common shapes, from a `/orders/{id}` response you depend on:
+
+-   **A rename.** `total` becomes `total_amount`. Your code reads `order.total` and gets `undefined`.
+-   **A type shift.** A numeric `total: 42` comes back as `"42"`. Arithmetic on it produces `NaN`.
+-   **A new nullable.** `shippedAt` was always a string; now it's sometimes `null`. A `.toISOString()` three layers down throws.
+-   **An added field.** The provider grows a `discount` key you never modeled. Harmless until you assume the old shape elsewhere.
+-   **A removed required field.** `customerId` stops appearing. Everything keyed on it silently misbehaves.
+
+## The kinds of drift: breaking vs. additive
+
+Not all drift is equal, and a useful definition separates the change that should stop the call from the change that should only be noticed. Anchored on a declared schema, drift falls into one hard kind and three soft ones:
+
+| Kind             | What changed                                              | Severity                  |
+| ---------------- | --------------------------------------------------------- | ------------------------- |
+| **`invalid`**    | a required field went missing or its type is incompatible | breaking — fails the call |
+| **`undeclared`** | the response carried a key your schema doesn't model      | additive — `info`         |
+| **`coerced`**    | the schema absorbed a wire-type shift (`"42"` → `42`)     | additive — `warn`         |
+| **`defaulted`**  | a default fired because an expected field was absent      | additive — `verbose`      |
+
+The line between breaking and additive isn't a separate config list — it's whether the field is required in the schema. A required field that vanishes is `invalid`; an undeclared key that appears is `undeclared`. Both are drift; only one breaks the contract.
+
+## How you detect it
+
+The generic answers all involve remembering a shape and comparing against it.
+
+**Snapshot testing** records a response once and diffs future responses against the saved sample. The trouble is that a remembered sample can't tell a real change from normal variation: an optional field that's sometimes absent, an array that's sometimes empty, a `string | null` that's sometimes null all read as a difference, so you learn to mute the alarm.
+
+**Contract testing** (Pact and similar) verifies provider and consumer against a shared, exhaustive contract in CI. It's the right tool for proving full-surface coverage before deploy — but it probes endpoints with synthetic traffic on a schedule; it doesn't watch the live calls your code actually makes between runs.
+
+**Manual diffing** — eyeballing the provider's changelog — only works for providers disciplined enough to publish one, and only if you read it.
+
+### The stitch way: diff the live response against the schema
+
+A [stitch](/docs/concepts/the-stitch) detects drift by reusing the contract you already wrote. Wrap a stitch's `output` schema in `drift()`, and every live response is validated against the schema and then diffed against the validated value — the difference is the drift:
+
+```ts
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getOrder = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders/{id}',
+    output: drift(
+        z.object({
+            id: z.number(), // required → its loss throws
+            total: z.number(), // required → its loss throws
+            note: z.string().optional(), // optional → its absence is fine
+        }),
+    ),
+});
+```
+
+Two tiers run on every call. Validation comes first: a required field that's missing or incompatible fails the call with [STITCH_DRIFT](/docs/errors/stitch-drift) (`change: 'invalid'`, `level: 'error'`), and on success the call returns the validated value — coerced, defaulted, unknown keys stripped. Then drift diffs the raw body against that validated value and emits each soft difference as a non-fatal finding on the [event stream](/docs/concepts/event-stream): `coerced` at `warn`, `undeclared` at `info`, `defaulted` at `verbose`.
+
+Because the schema _declares_ what may vary, normal variance never reads as drift — `z.string().optional()`, `z.string().nullable()`, and `z.array(...)` all validate clean, so the snapshot problem doesn't arise. A field you know about but don't consume goes in `ignore: ['meta', '_links']` to keep the typed contract tight, and `severity` re-levels or filters the soft kinds. The full grammar is in the [drift detection guide](/docs/guides/validation/drift).
+
+## When you don't need drift tooling
+
+Drift detection earns its keep against surfaces you don't control: third-party vendors, services owned by another team, anything that ships "minor" response tweaks without telling you. It's overhead you can skip when:
+
+-   **You own and version the endpoint.** If you change both sides in the same commit, a plain `output` schema is enough — there's no out-of-band change to catch. (The mechanics of plain validation are in the [validation guide](/docs/guides/validation/validation).)
+-   **You need exhaustive pre-deploy coverage, not live observation.** Proving every endpoint matches a contract before release is a contract-testing job; drift observes the calls your code actually makes, which is a different question.
+-   **You won't write a schema.** Drift's signal comes from diffing against a declared shape. With no schema there's nothing to anchor on, and a stitch is back to being a fetch wrapper.
+
+The trade is the same either way. Without a contract checked on every call, a quietly renamed field is an `undefined` you discover from a production incident; with one, it's either a thrown `STITCH_DRIFT` on the request that actually drifted or a `drift` event on a named path — caught at the boundary, not on the call that finally fell over.
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Wrap an `output` in `drift()`, make the fields you depend on required, and the next upstream rename arrives as a typed signal instead of a downstream `undefined`. The mechanics live in [Drift detection](/docs/guides/validation/drift), the hard-failure error in [STITCH_DRIFT](/docs/errors/stitch-drift), and the broader case in [schema drift is the bug you ship to production](/blog/schema-drift-is-a-production-bug).
