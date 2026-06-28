@@ -79,3 +79,7 @@ Compliance with the store seam is proven against `verifyStoreContract` from
 with expiry + a monotonic versionstamp + an atomic builder that fails a commit
 when a checked versionstamp is stale — so the compare-and-set retry path is
 genuinely exercised). See `test/conformance.spec.ts`.
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

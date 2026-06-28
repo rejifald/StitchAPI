@@ -75,3 +75,7 @@ asserts the secret never appears in any logged argument.
 -   `interface PinoLoggerLike` — the structural logger slice
 -   `interface PinoLogFn` — a single level method (`(obj, msg?)` and `(msg)`)
 -   `interface PinoSinkOptions` — `{ lifecycle?: boolean }` (default `true`)
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

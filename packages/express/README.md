@@ -108,3 +108,7 @@ app.use(
 
 Note: an Express error middleware is matched by its 4-arg arity — `stitchErrorHandler`
 returns a `(err, req, res, next)` function for exactly that reason.
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.
