@@ -1,0 +1,64 @@
+---
+title: 'Code Mode vs Tool Calling: Giving an Agent Many Tools Without Flooding Its Context'
+description: Tool calling hands the model one schema per endpoint and re-sends every one each turn; code mode hands it a small typed API and lets it discover the rest on demand. Here's what the two patterns actually are, and how StitchAPI exposes code mode as three fixed tools.
+author: Oleksandr Zhuravlov
+date: '2026-06-28'
+tags: [ai, agents, mcp, code-mode, context, tokens]
+---
+
+Reach for **code mode** when an agent needs access to many tools and you don't want every tool's schema sitting in the model's context on every turn. It's an industry pattern, not a StitchAPI invention — the same idea shows up wherever a model is given more capabilities than fit comfortably in a per-turn tool list. This post defines code mode against the pattern it replaces, **tool calling**, then shows the concrete three-tool shape StitchAPI uses.
+
+## Tool calling: one schema per endpoint, re-sent every turn
+
+The default way to give a model an API is **tool calling**: each endpoint becomes a named tool with its own JSON schema describing its parameters and result, and the model picks from the menu. `getUser`, `listOrders`, `createOrder`, `refundOrder` — one tool each. The model reads the menu, fills in a schema, and the runtime executes the call.
+
+The catch is _where the menu lives_. Tool schemas aren't sent once and remembered; they're part of the model's context, and the context is rebuilt on every step of the loop. So every tool's schema is re-sent on turn 1, turn 2, turn 3, and on for the whole length of the loop — whether or not the model touches that tool that turn. Forty endpoints means forty schemas in context on every step, including the steps where the model only reads a result and thinks. The tool list is a fixed per-turn cost that grows with the catalog and multiplies with the loop.
+
+## Code mode: a small typed API the model writes against
+
+**Code mode** inverts the arrangement. Instead of enumerating every endpoint as a tool, you give the model a small, fixed surface — often a single execution tool — and let it _write code_ or _name a call_ against that surface. The endpoints don't live in the standing tool list; the model discovers them when it needs them, through calls it makes on the turns it cares about.
+
+The contrast is the whole point. **Discovery on demand, not a menu re-sent every turn.** Tool calling pays for the full catalog on every step; code mode pays for discovery only on the steps that discover. The schemas the model carries each turn describe the fixed surface and nothing else, so the standing context stays flat as the catalog behind it grows from four endpoints to four hundred.
+
+## How StitchAPI does it: three fixed tools
+
+StitchAPI exposes code mode over MCP as exactly three tools, no matter how many stitches sit behind them:
+
+-   `run_stitch` — execute a stitch by name, passing `{ name, input }`
+-   `list_stitches` — discover the available stitch names, methods, and paths, on demand
+-   `describe_stitch` — pull one stitch's shape (its input slots, output, auth _scheme_, policies) only when the model is about to use it
+
+The agent orients first, then runs by name. These are plain MCP tool calls — there's no per-endpoint schema being re-sent:
+
+```json
+{ "name": "list_stitches", "input": {} }
+```
+
+```json
+{
+    "name": "run_stitch",
+    "input": { "name": "getUser", "input": { "params": { "id": 7 } } }
+}
+```
+
+The inner `input` is the stitch's own input — `{ params?, query?, body?, headers? }` — and the call runs against the upstream API behind a capability boundary. The agent names a capability; the runtime holds the credential. `describe_stitch` even reports the auth _scheme_ (`bearer`, `apiKey`, …) without ever exposing the token, so the model can reason about a call it isn't trusted to see the secret for.
+
+Map it back onto the two costs. The per-turn surface is **a constant three** — adding the 41st stitch costs roughly zero additional standing tokens, because the tool list still describes three tools. Loop length still multiplies that surface, but three tools across twenty turns is a small, flat number, not forty schemas across twenty turns. Discovery moved out of the standing context and into `list_stitches` and `describe_stitch` calls the model makes only when it needs them.
+
+## When one tool per endpoint is fine
+
+Code mode earns its keep on large catalogs and long loops. Below that, tool calling is the simpler thing, and overselling code mode helps no one:
+
+-   **A small, fixed catalog.** Two or three endpoints, a single-shot call — there was never a fat menu to re-send. Two schemas sent once is cheaper than standing up an execution surface and asking the model to discover and name calls.
+-   **You want a curated menu.** Sometimes the named-tool-per-action shape _is_ the interface you want the model to see: a small, deliberately authored set of tools beats "discover, then call." If a tight tool surface is the product, build it as tool calling.
+-   **The model is weak at structured tool use.** Driving stitches by name — listing, describing, composing a call — asks more of the model than picking from a flat menu of typed tools. A model that struggles with that may do better with explicit per-endpoint schemas, paid-per-turn and all.
+
+For the deeper opinion on the catalog-tax math and why the per-endpoint reflex compounds, see [Why your agent shouldn't get one tool per endpoint](/blog/one-tool-per-endpoint). The architectural cousin — when to stop running a separate MCP server for each service — is [You might not need an MCP server per integration](/blog/you-might-not-need-an-mcp-server-per-integration). And if you're picking an HTTP layer underneath all this, [axios alternatives in 2026](/blog/axios-alternatives) maps the field.
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Declare your endpoints once, point an agent at the three-tool surface, and watch the per-turn tool list stop growing. See [Use StitchAPI from an agent](/docs/agents) for the entry point and the capability boundary, [run_stitch & code-mode](/docs/agents/run-stitch-tool) for the three tools in full, and [capability, not credential](/docs/concepts/capability-not-credential) for why the agent calls without seeing the secret.
