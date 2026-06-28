@@ -770,6 +770,42 @@ export type SafeResult<T> =
     | { ok: true; data: T; error: null }
     | { ok: false; data: null; error: StitchError };
 
+/** Options for {@link Stitch.inspect} (ADR 0016). */
+export interface InspectOptions {
+    /**
+     * Honour the cache policy instead of bypassing it. Default `false` — `.inspect()` is a fresh
+     * network probe (neither reads nor writes the cache), so `raw` is always live. With `cache: true`
+     * a cache hit is allowed, but the cache stores only `{ value, status }` — so `raw` is `null` on
+     * a hit (it is only populated on a miss, where a live request actually ran).
+     */
+    cache?: boolean;
+}
+
+/**
+ * The result of {@link Stitch.inspect} (ADR 0016) — the validated value alongside the pre-validation
+ * raw body and the drift {@link DriftFinding}s diffed between them, plus the response `status`. It
+ * **never throws**: a hard contract violation comes back as `{ value: null, error }` with `raw`,
+ * `findings`, and `status` still populated. `value` and `error` are **inverse** — `value` is `null`
+ * iff `error` is set.
+ *
+ * ⚠️ `raw` is the UNREDACTED pre-validation body, exposed on a **non-enumerable** field: `JSON.stringify`,
+ * object spread, and trace walkers all skip it, so it can't leak by accident — reach for `wrapper.raw`
+ * deliberately, and never log the whole wrapper. `raw` is `null` on a streaming surface (no single
+ * buffered body) and on a cache hit.
+ */
+export interface Inspection<T> {
+    /** The validated value — coerced/defaulted/stripped per ADR 0015; `null` iff `error` is set. */
+    value: T | null;
+    /** The pre-validation body the findings are diffed against. Non-enumerable; `null` on streaming/cache-hit. */
+    raw: unknown;
+    /** Soft + hard drift findings (including those that ride the event stream), in emission order. */
+    findings: DriftFinding[];
+    /** HTTP status of the probed response — makes `raw` interpretable (a `422` body reads unlike a `200`). */
+    status: number;
+    /** The {@link StitchError} on a hard failure; `null` on success. */
+    error: StitchError | null;
+}
+
 export interface StitchResult<T> extends PromiseLike<T> {
     stream(): AsyncGenerator<StitchEvent<T>, void>;
     /** Consume the call without throwing — resolves to `{ ok, data, error }` (see {@link SafeResult}); shares the one run with `then`/`catch`/`finally`. */
@@ -802,6 +838,21 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
      * of `.safe()` (and an explicit spelling of the throwing bare call).
      */
     unwrap(...args: Args<TIn>): Promise<TOut>;
+    /**
+     * Probe a fresh call and return an {@link Inspection} — `{ value, raw, findings, status, error }` —
+     * **without throwing** (ADR 0016). Use it after the fact to ask "the schema coerced/stripped this;
+     * what did the server actually send?": `raw` is the pre-validation body, `findings` the soft + hard
+     * drift between it and `value`.
+     *
+     * `.inspect()` **always hits the network and bypasses the cache by default**, so it is a fresh probe
+     * — *not* an observer of what your cached `await` call did. Pass `{ cache: true }` to honour the
+     * cache policy (then `raw` is `null` on a hit). On a streaming surface `raw` is `null` too (no single
+     * buffered body). ⚠️ `raw` is unredacted and non-enumerable — read `wrapper.raw` deliberately; never
+     * log the whole wrapper.
+     */
+    inspect(
+        ...args: [...Args<TIn>, opts?: InspectOptions]
+    ): Promise<Inspection<TOut>>;
     with<const P extends Partial<TIn>>(
         partial: P,
     ): Stitch<TOut, RelaxKeys<TIn, keyof P>>;

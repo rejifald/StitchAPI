@@ -10,6 +10,7 @@
         "idempotent-writes",
         "catch-a-breaking-api-change",
         "catch-a-selector-rename",
+        "inspect-what-the-server-sent",
         "watch-a-call-as-it-happens",
         "mirror-a-paginated-api",
         "one-rate-limit-across-workers",
