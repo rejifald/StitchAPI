@@ -19,7 +19,7 @@ import type { StitchEvent } from 'stitchapi';
 
 ## The events
 
-A union table can render sparsely, so here is each of the seven variants and its
+A union table can render sparsely, so here is each of the eight variants and its
 fields. Every event carries an `at` field — a millisecond timestamp.
 
 -   **`start`** — the request is about to go out. Fields: `name` (the stitch
@@ -27,6 +27,9 @@ fields. Every event carries an `at` field — a millisecond timestamp.
 -   **`progress`** — a lifecycle beat within an attempt. Fields: `phase` (a
     `ProgressPhase`), `attempt` (1-based), `detail?`, `waitedMs?` (set when the
     phase involved a wait, e.g. `throttled` or `retry`), `at`.
+-   **`info`** — an auth strategy announcing a decision it made (e.g. which env
+    var a `bearer` token resolved from, or that `oauth2` fetched a token); it
+    never carries the secret itself. Fields: `topic`, `detail?`, `at`.
 -   **`drift`** — a single contract-drift observation against the response.
     Fields: `finding` (a `DriftFinding` with `level`, `path`, `change`,
     `detail?`), `at`.

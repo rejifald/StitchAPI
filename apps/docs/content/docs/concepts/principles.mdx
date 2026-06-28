@@ -45,10 +45,10 @@ declaration _is_ the runtime; there is nothing to commit, diff, and regenerate.
 
 Cross-cutting concerns — `baseUrl`, auth, `unwrap`, retry, throttle, timeout —
 are named, shareable values you compose, not a central config object far from the
-call site — and nothing is inherited implicitly: no config file, no ambient
-defaults, no global a stitch silently reads, so everything that shapes a call was
-composed into it explicitly and you can read one stitch and know exactly what it
-does. `extends` folds fragments into a stitch. You share a plain fragment
+call site. Nothing is inherited implicitly: no config file, no ambient defaults,
+no global a stitch silently reads. Everything that shapes a call was composed into
+it explicitly, so you can read one stitch and know exactly what it does. `extends`
+folds fragments into a stitch. You share a plain fragment
 instead of re-typing config, and a stitch is itself a composable value others can
 extend. (For a whole shared surface — shared runtime plus a trusted principal
 boundary — a `seam` owns the fragment instead.)
