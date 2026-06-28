@@ -22,9 +22,9 @@ So the breakage slips through the net by construction. Types check source agains
 
 ## Make the silent change loud
 
-The fix isn't more types or more mocks. It's to compare the response you actually receive against a baseline you committed, on the calls you actually make, and to treat any difference as a signal you can route.
+The fix isn't more types or more mocks. It's to check the response you actually receive against a contract, on the calls you actually make, and route any difference as a signal. And you already have the contract — it's the schema you declared. There is nothing extra to maintain.
 
-StitchAPI does this with **leveled drift detection**. You wrap a stitch's `output` schema in `drift()`, point it at a committed snapshot file, and every live response is diffed against that baseline. Each difference becomes a finding, classified by how much you care:
+StitchAPI does this with **schema-anchored drift detection**. You wrap a stitch's `output` schema in `drift()`, and every live response is checked against that schema in two tiers:
 
 ```ts
 import { drift, stitch } from 'stitchapi';
@@ -35,68 +35,61 @@ const getOrder = stitch({
     path: '/orders/{id}',
     output: drift(
         z.object({
-            id: z.number(),
-            total: z.number(),
-            note: z.string().optional(),
+            id: z.number(), // required → its loss throws
+            total: z.number(), // required → its loss throws
+            note: z.string().optional(), // optional → its absence is fine
         }),
-        {
-            critical: ['id', 'total'], // breaking these is fatal
-            watch: ['note'], // changes here are a warning
-            snapshotFile: 'orders.contract.json',
-        },
     ),
 });
 ```
 
-The `orders.contract.json` file is the load-bearing part. It's a baseline you check into the repo — the shape you agreed to — and it's the thing the live response gets measured against. Generate it deliberately with `stitch drift generate`, commit it, and now "the upstream changed" has a place to register. The committed snapshot is what turns an invisible delta into a visible one: without a baseline, a renamed field is just `undefined` three layers downstream; with one, it's a named finding on a known path.
+**Tier one is validation — the hard contract.** A field you declared **required** that goes missing or comes back the wrong type fails the call with `STITCH_DRIFT`. You don't configure which fields are fatal with a separate list; you say it the way you already say everything else about the shape — by making the field required. Make it `.optional()` and its absence is tolerated; make it required and its disappearance throws. Severity lives in the schema, where it belongs.
 
-Drift detects the three changes that actually break integrations — a field that went **missing**, one whose type **changed**, and one that became **nullable**. Those are exactly the moves that slip past a frozen type and a stale mock.
+**Tier two is drift — the soft, non-fatal layer.** Once a response validates, StitchAPI returns the _validated_ value (coerced, defaulted, unknown keys stripped) and diffs the raw body against it. That difference is the drift, and it catches three things plain validation hides:
 
-## The leveling is the point
+-   **`coerced`** — the schema quietly absorbed a wire-type shift. A defensive `z.coerce.number()` turns the provider's new `"42"` back into `42`, validation passes, and _nothing_ tells you the wire format changed — except the diff. This is drift intel you can't get any other way.
+-   **`undeclared`** — the response carried a key your schema doesn't model. The API grew something.
+-   **`defaulted`** — a `.default()` fired because a field you expected wasn't there.
 
-Detecting a change is half the value. The other half is deciding what it _means_ — and not every change means the same thing.
+No snapshot. No baseline to generate, commit, or regenerate when the API legitimately changes. The contract is the code.
 
-If `total` goes missing, you're shipping broken order totals; that should stop the call cold. If a `note` field changes wording, you'd like to know, but it shouldn't take down checkout. If the provider adds a brand-new field you've never used, that's not a problem at all — it might even be an opportunity. Collapsing all three into one "drift!" alarm gives you something you'll learn to ignore.
+## Variance is not drift
 
-So drift findings carry a level, and you set the policy:
+The reason a snapshot was the wrong tool: a single remembered shape can't tell a real change from normal variation. An optional field that's sometimes absent, a `string | null` that's sometimes null, an array that's sometimes empty — a baseline flags all of them, and you learn to mute the alarm.
 
--   **`error`** — a path you listed as `critical` broke. The finding rides the event stream as a `drift` event and then the call fails with `STITCH_DRIFT`, because you declared this field load-bearing and it moved.
--   **`warn`** — a `watch`ed (or otherwise non-critical) field changed. You get a `drift` event, the call still succeeds. You watch the field erode for a release or two before it becomes fatal.
--   **`info`** — a new field appeared that your contract doesn't mention. Streamed as a `drift` event, never fatal — a nudge that the API grew something you might want.
-
-You choose which paths are fatal. That's the design: the same upstream change is a page-me emergency on one field and a shrug on another, and only you know which is which.
+A schema doesn't have that problem, because it _declares_ what may vary. `z.string().optional()` says "absent is fine." `z.string().nullable()` says "null is fine." `z.array(...)` says "empty is fine." All of it validates clean, so none of it is drift. You describe the envelope of normal once, in the type you were going to write anyway, and only genuine change is reported. That's the whole reason to anchor on the schema instead of a remembered sample.
 
 ## Reacting to a drift event
 
-Because every call is an event stream — `start → progress → drift → result → done`, with `await` as sugar over it — drift isn't a separate channel you have to wire up. It's an event in the same stream you already consume. When you only want the value, `await` the stitch and an `error`-level finding throws `STITCH_DRIFT` for you. When you want to see findings as they happen, iterate the stream:
+Because every call is an event stream — `start → progress → drift → result → done`, with `await` as sugar over it — drift isn't a separate channel you wire up. When you only want the value, `await` the stitch and a required-field violation throws `STITCH_DRIFT` for you. When you want to see the soft findings as they happen, iterate the stream:
 
 ```ts
 for await (const event of getOrder({ params: { id: 7 } }).stream()) {
     if (event.type === 'drift') {
         const { level, path, change } = event.finding;
-        // e.g. level: 'warn', path: 'note', change: 'type-changed'
+        // e.g. level: 'warn', path: 'total', change: 'coerced'
         log.warn(`drift on ${path}: ${change}`, { level });
     }
     if (event.type === 'result') {
-        renderOrder(event.value); // typed, validated, post-drift
+        renderOrder(event.value); // the validated value — coerced, stripped, typed
     }
 }
 ```
 
-In practice a `warn` finding flows to your logs (or a Sentry breadcrumb, or a Pino line) where you'll see a field start to wobble before it breaks; an `error` finding fails the call so the broken path can't quietly hand back garbage. The change you'd otherwise have discovered from a production incident becomes a line in your trace, attached to the exact `path` and `change` that moved.
+Soft findings carry a default level — `coerced` is a `warn`, `undeclared` an `info`, `defaulted` a `verbose` — and you can re-level or filter them with `severity`, or silence a field you already know about with `ignore: ['meta', '_links']` (the API surface you've acknowledged but don't consume, kept out of the typed schema so the contract stays tight). The change you'd otherwise have discovered from a production incident becomes a line in your trace, on the exact `path` and `change` that moved.
 
 ## When this isn't worth it — and the honest limits
 
-Drift detection earns its keep against APIs you don't control and can't pin: third-party vendors, internal services owned by another team, anything with a habit of shipping "minor" response tweaks. For an endpoint you own and version yourself, a plain `output` schema is usually enough — you'll change both sides in the same commit.
+Drift earns its keep against APIs you don't control and can't pin: third-party vendors, internal services owned by another team, anything with a habit of shipping "minor" response tweaks. For an endpoint you own and version yourself, a plain `output` schema is usually enough — you'll change both sides in the same commit.
 
-And the caveats matter, because drift is a real tool with real edges:
+And the edges are real:
 
--   **It observes the responses you actually receive — it is not a contract test.** Drift checks the live calls your code makes; it doesn't probe every endpoint or every field with synthetic traffic. A field that only appears in a response path you never exercise won't be checked until something calls it. If you need exhaustive coverage of an API surface, that's a contract-testing job, not a drift job.
--   **Snapshots are maintenance.** A committed baseline is a thing you own. When the upstream change is _intended_, you have to regenerate (`stitch drift generate --force`) and re-commit the snapshot, or every call will keep flagging the new-but-correct shape. A stale baseline is noise, and noise gets muted.
--   **The severity policy is yours, including the mistakes.** Mark too many paths `critical` and you'll fail calls over cosmetic changes; mark too few and a real break slips through as a `warn` nobody reads. Drift gives you the dial — it doesn't tell you where to set it.
--   **First-call baselining is a footgun in prod.** With no committed snapshot, the first live call _writes_ one and reports nothing — convenient in dev, dangerous in production where it silently persists whatever the first response happened to be. Set `readonly: true` so a missing baseline surfaces a finding instead of being written as a side effect.
+-   **It observes the responses you actually receive — it is not a contract test.** Drift checks the live calls your code makes; it doesn't probe every endpoint with synthetic traffic. A field in a response path you never exercise isn't checked until something calls it. Exhaustive surface coverage is a contract-testing job.
+-   **Drift watches the surface you declare.** The flip side of anchoring on your schema: change the provider makes in a field you don't model is, by definition, change you don't consume — so it's invisible. That's a deliberate scope, not an accident. (Catching drift in undeclared fields would need the provider's published spec, or the kind of remembered-sample baseline this design rejected.)
+-   **Severity is yours, including the mistakes.** What you make required is what throws; under-specify and a real break slips through as a `warn` nobody reads, over-specify and you fail calls over a tolerable shift. The schema is the dial — it doesn't tell you where to set it.
+-   **Keep transforms out of the schema.** Drift diffs the raw body against the validated value, so a `.transform()` _inside_ the schema looks like drift. Reshape in the pipeline `transform` step instead, which runs before validation.
 
-None of that changes the core trade. Without a baseline, a quietly renamed field is an `undefined` you discover from a production incident. With one, it's a `drift` event on a named path, leveled by a policy you set — caught on the request that actually drifted, not on the one that finally fell over.
+None of that changes the core trade. Without drift, a quietly renamed field is an `undefined` you discover from a production incident. With it, a required field's loss throws on the request that actually drifted, and a coercion or new key is a `drift` event on a named path — caught at the boundary, not on the call that finally fell over.
 
 ## Try it
 
@@ -104,4 +97,4 @@ None of that changes the core trade. Without a baseline, a quietly renamed field
 npm i stitchapi
 ```
 
-Wrap an `output` in `drift()`, commit the snapshot, and pick which fields are fatal. The full mechanics — `readonly` baselines, generating snapshots in CI, and the `STITCH_DRIFT` error — are in the [Leveled drift](/docs/guides/validation/drift) guide, with the broader picture in [Validation](/docs/guides/validation/validation) and the [event stream](/docs/concepts/event-stream).
+Wrap an `output` in `drift()` and make the fields you depend on required. The full mechanics — the change kinds, `severity`, `ignore`, and the `STITCH_DRIFT` error — are in the [Drift detection](/docs/guides/validation/drift) guide, with the broader picture in [Validation](/docs/guides/validation/validation) and the [event stream](/docs/concepts/event-stream).

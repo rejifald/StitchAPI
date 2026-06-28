@@ -1,64 +1,72 @@
 ---
 title: 'STITCH_DRIFT'
-description: 'An error-level drift finding broke the response contract.'
+description: 'A required field was missing or incompatible, breaking the response contract.'
 ---
 
-## What you'll see
+## What you will see
 
-A call fails right after a `drift` event whose finding carries `level: 'error'`.
-The event names the offending `path` and the `change` it detected — `missing`,
-`type-changed`, or `nullable` — and the call then surfaces a `StitchError`
-instead of a `result`. The stable code is `STITCH_DRIFT` (provisional while the
-runtime error taxonomy settles).
+A call fails during validation with a `drift` finding that carries
+`level: 'error'` and `change: 'invalid'`. The finding names the offending
+`path` and the call surfaces a `StitchError` with code `STITCH_DRIFT` instead of
+a result.
 
 <Callout type="info">
-    `warn`- and `info`-level findings still stream as `drift` events, but they
-    do not fail the call — only an `error`-level finding breaks the contract.
+    Soft drift findings — `undeclared` (`info`), `coerced` (`warn`), `defaulted`
+    (`verbose`) — stream as `drift` events but do **not** fail the call. Only a
+    hard validation failure (`change: 'invalid'`, `level: 'error'`) breaks the
+    contract.
 </Callout>
 
 ## Why it happens
 
-Drift compares the live response's shape against a committed snapshot
-(`snapshotFile`, the `<name>.contract.json` baseline) and classifies each delta
-by level. A path you listed under `critical` changed shape versus that baseline:
-a field went missing, switched type, or became nullable. That is a real contract
-break on a path you declared fatal, so the finding is raised to `error` and the
-call stops rather than handing back a response that no longer matches what you
-committed to.
+Drift validates the live response against the declared `output` schema (the
+consumer contract). A **required field was missing** or the **value was
+incompatible** with its declared type — the schema could not produce a valid
+result. Because the field is required, this is a hard contract break: the engine
+throws rather than returning a value that does not match the declared TypeScript
+type.
+
+Soft drift (`undeclared`, `coerced`, `defaulted`) is always non-fatal. Fatality
+lives entirely in the schema: a required field whose absence or type mismatch
+throws; an optional field whose absence is silently tolerated.
 
 ## How to fix
 
-Read the finding's `path` and `change` to see exactly what moved, then decide
-which of two cases you're in:
+Read the finding's `path` to see exactly what moved, then decide which case you
+are in:
 
 -   **The change is intended.** The upstream shape genuinely changed and you want
-    the new shape. Update the committed snapshot (and any output schema) to match,
-    re-commit the `<name>.contract.json` baseline, and the path stops drifting.
--   **It's a vendor regression.** You did not expect this change — that is the
-    signal `critical` exists to give you. Treat the broken call as the alert and
-    act on the upstream break.
+    the new shape. Update the `output` schema to match the new type or mark the
+    field optional, and the error stops.
+-   **It is a vendor regression.** You did not expect this change — that is the
+    signal drift exists to give you. Treat the thrown error as the alert and act
+    on the upstream break.
 
-If a path shouldn't be fatal at all, re-level it from `critical` to `watch` so
-its changes stream as `warn` findings without failing the call:
+If a field should be tolerated when absent, declare it `.optional()` in the
+schema. Validation will then succeed, and drift may emit a soft `defaulted`
+finding if the schema has a `.default()` — but the call will not throw.
 
 ```ts twoslash
 import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
 
 const user = stitch({
     baseUrl: 'https://api.example.com',
     path: '/user',
-    output: drift((body: unknown) => body, {
-        // `id` must never change shape — a change here fails the call.
-        critical: ['id'],
-        // `displayName` is allowed to drift; it only warns.
-        watch: ['displayName'],
-        snapshotFile: 'user.contract.json',
-    }),
+    output: drift(
+        z.object({
+            // `id` is required — its absence or type mismatch throws STITCH_DRIFT.
+            id: z.number(),
+            // `displayName` is optional — its absence is tolerated, no error thrown.
+            displayName: z.string().optional(),
+        }),
+    ),
 });
 ```
 
-See the [drift guide](/docs/guides/validation/drift) for how `critical`,
-`watch`, and `onNew` map onto finding levels.
+See the [drift guide](/docs/guides/validation/drift) for how the schema's
+required/optional structure maps to finding levels, and how `severity` and
+`ignore` filter soft findings.
 
 ## Related
 

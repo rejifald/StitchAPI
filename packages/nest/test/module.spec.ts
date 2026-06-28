@@ -370,7 +370,7 @@ describe('bridges', () => {
         sink.handle(
             {
                 type: 'drift',
-                finding: { level: 'error', path: 'a.b', change: 'missing' },
+                finding: { level: 'error', path: 'a.b', change: 'invalid' },
                 at: 0,
             },
             ctx,
@@ -378,7 +378,7 @@ describe('bridges', () => {
         sink.handle(
             {
                 type: 'drift',
-                finding: { level: 'warn', path: 'a.c', change: 'type-changed' },
+                finding: { level: 'warn', path: 'a.c', change: 'coerced' },
                 at: 0,
             },
             ctx,
@@ -386,7 +386,7 @@ describe('bridges', () => {
         sink.handle(
             {
                 type: 'drift',
-                finding: { level: 'info', path: 'a.d', change: 'new' },
+                finding: { level: 'info', path: 'a.d', change: 'undeclared' },
                 at: 0,
             },
             ctx,

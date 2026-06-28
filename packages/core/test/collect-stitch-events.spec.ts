@@ -17,7 +17,7 @@ async function* gen(
 const finding: DriftFinding = {
     level: 'warn',
     path: 'data.id',
-    change: 'missing',
+    change: 'coerced',
 };
 
 const fullRun = (): StitchEvent[] => [

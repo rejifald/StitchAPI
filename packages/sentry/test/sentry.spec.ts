@@ -48,7 +48,7 @@ const ev = {
     },
     driftError: {
         type: 'drift',
-        finding: { path: '$.user.name', level: 'error', change: 'missing' },
+        finding: { path: '$.user.name', level: 'error', change: 'invalid' },
         at: 0,
     },
     result: {
@@ -141,7 +141,7 @@ describe('sentrySink', () => {
             finding: {
                 path: '$.user.age',
                 level: 'warn',
-                change: 'type-changed',
+                change: 'coerced',
             },
             at: 0,
         };

@@ -73,7 +73,7 @@ describe('pinoSink — event → level mapping', () => {
     it('maps `drift` to the finding level (error / warn / debug)', () => {
         const at = (level: 'error' | 'warn' | 'info'): StitchEvent => ({
             type: 'drift',
-            finding: { level, path: 'data.id', change: 'missing' },
+            finding: { level, path: 'data.id', change: 'invalid' },
             at: 0,
         });
         expect(run(at('error'))[0]!.level).toBe('error');
@@ -210,7 +210,7 @@ describe('pinoSink — lifecycle gating', () => {
                     finding: {
                         level: 'warn',
                         path: 'data.id',
-                        change: 'missing',
+                        change: 'invalid',
                     },
                     at: 0,
                 },
