@@ -1,5 +1,6 @@
 import './global.css';
 
+import { jsonLdHtml } from '@/lib/json-ld';
 import { appName, gitConfig, siteUrl } from '@/lib/shared';
 
 import 'fumadocs-twoslash/twoslash.css';
@@ -137,7 +138,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
             <body className="flex flex-col min-h-screen">
                 <script
                     type="application/ld+json"
-                    dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+                    dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }}
                 />
                 <RootProvider>
                     <Banner

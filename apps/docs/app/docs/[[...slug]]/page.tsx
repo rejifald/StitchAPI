@@ -1,4 +1,5 @@
 import { getMDXComponents } from '@/components/mdx';
+import { jsonLdHtml } from '@/lib/json-ld';
 import { appName, gitConfig } from '@/lib/shared';
 import { getPageImage, getPageMarkdownUrl, source } from '@/lib/source';
 import { docsStructuredData } from '@/lib/structured-data';
@@ -30,7 +31,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
             <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{
-                    __html: JSON.stringify(docsStructuredData(page)),
+                    __html: jsonLdHtml(docsStructuredData(page)),
                 }}
             />
             <DocsPage toc={page.data.toc} full={page.data.full}>
