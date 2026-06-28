@@ -312,12 +312,9 @@ function makeInspection<T>(
     error: StitchError | null,
 ): Inspection<T> {
     const wrapper = { value, findings, status, error } as Inspection<T>;
-    Object.defineProperty(wrapper, 'raw', {
-        value: raw,
-        enumerable: false,
-        writable: true,
-        configurable: true,
-    });
+    // `enumerable: false` is the whole point; the other descriptor flags default false (the wrapper
+    // is transient — nobody reassigns or reconfigures `raw`).
+    Object.defineProperty(wrapper, 'raw', { value: raw, enumerable: false });
     return wrapper;
 }
 
