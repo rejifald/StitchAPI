@@ -213,25 +213,25 @@ timeout:  { total: '30s', perAttempt: '10s' },
 
 ---
 
-## 7. Validation & drift — error / warn / info
+## 7. Validation & drift — schema-anchored (ADR 0013)
 
-Validation is **not** binary pass/fail. A stitch compares each live response against (a) its `output` schema and (b) the committed **contract snapshot** (`<stitch>.contract.json`), and classifies every difference by level:
+Validation is **not** binary pass/fail, and it needs **no snapshot**. The declared `output` schema _is_ the contract. A stitch validates each live response against it (returning the validated value — coerced, defaulted, unknown keys stripped) and then **diffs the raw body against that validated value**; the delta is the drift:
 
-| Level     | Trigger                                                                             | Behavior                                                           |
-| --------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **error** | a field you _rely on_ is missing or wrong type                                      | fail the call (or `error` event); **CI fails**                     |
-| **warn**  | a watched, non-critical field changed (type, became nullable, removed-but-optional) | `warn` event; call still succeeds                                  |
-| **info**  | a **new** field appeared that isn't in the contract                                 | `info` event — "the vendor added `rating_v2`, want to consume it?" |
+| Change         | Trigger                                                        | Level (default) | Behavior                     |
+| -------------- | -------------------------------------------------------------- | --------------- | ---------------------------- |
+| **invalid**    | a required field is missing or incompatible                    | `error`         | **throws** (`STITCH_DRIFT`)  |
+| **coerced**    | the schema coerced a value (`"42"`→`42`) — a hidden wire shift | `warn`          | `drift` event; call succeeds |
+| **undeclared** | the response carried a key the schema strips                   | `info`          | `drift` event; call succeeds |
+| **defaulted**  | a `.default()` fired because the field was absent              | `verbose`       | `drift` event; call succeeds |
 
 ```ts
 output: drift(Torrent, {
-  critical: ['id', 'magnet'],   // error if these break — you depend on them
-  watch:    ['seeders'],        // warn if this changes
-  onNew:    'info',             // default: surface new fields as info
+  ignore: ['meta', '_debug'],      // acknowledged, unconsumed fields — never reported
+  severity: { coerced: 'info' },   // re-level a kind; or pass a level / list to filter
 }),
 ```
 
-Defaults (progressive disclosure): required schema fields → **error**, unknown new fields → **info**, optional changes → **warn**. The snapshot is what makes "a _new_ field appeared" detectable (diff live shape vs last-known shape, not just vs schema). All drift becomes events on the stream → console/JSONL/OTLP. CI mode re-validates committed sample payloads and fails on `error` (configurable to fail on `warn`).
+Severity lives in the **schema**, not a parallel `critical`/`watch` system: make a field required and its loss throws (`invalid`); make it `.optional()`/`.nullable()` and that variance validates clean and is never drift. Soft drift is always non-fatal; `severity` (a level, list, or per-kind map) filters or re-levels it, and `ignore` silences known-but-unconsumed paths. All drift becomes events on the stream → console/JSONL/OTLP. (Author-contract drift in fields you don't declare needs a published spec or observation, deliberately out of scope — see ADR 0013.)
 
 This directly answers the "I care about some fields, not others, but still want to know" need — and turns a silent HTML-scrape breakage into a loud, leveled signal.
 
@@ -413,10 +413,10 @@ for await (const ev of listWebsites.stream()) {
 const listings = stitch({
     baseUrl: env('SEARCH_API'),
     path: '/search',
+    // `id` required in the schema → its loss throws; soft drift is leveled here
     output: drift(Listing.array(), {
-        critical: ['id'],
-        watch: ['score'],
-        onNew: 'info',
+        ignore: ['[].meta'], // acknowledged, unconsumed
+        severity: { coerced: 'info' }, // re-level a kind (or a level/list to filter)
     }),
 });
 ```
@@ -514,7 +514,7 @@ Next, to close the validated gaps (§12), in leverage order:
 4. **Multi-cookie jar** for `cookieSession`.
 5. **Binary/blob responses.**
 6. **Circuit breaker · idempotency keys.**
-7. **Depth:** OTLP export; CI contract-snapshot gate; the four surfaces (CLI/HTTP/MCP); Mermaid-from-definition.
+7. **Depth:** OTLP export; the four surfaces (CLI/HTTP/MCP); Mermaid-from-definition.
 8. **Kinds:** shell → LLM; `pipe()` composition.
 
 ---

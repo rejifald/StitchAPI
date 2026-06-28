@@ -6,7 +6,7 @@
 // The real module is reached via a lazy `import('./cache')` only when a stitch has a `cache`
 // block (bundle-frugal gate — ADR 0003 decision 11).
 import type { CacheController, CacheHit, RequestDescriptor } from './cache';
-import { classifyDrift, loadSnapshot, saveSnapshot } from './drift';
+import { classifyDiff, validationErrors } from './drift';
 import { fetchAdapter } from './http-adapter';
 import {
     CircuitOpenError,
@@ -40,7 +40,6 @@ import {
     buildQuery,
     expandPath,
     getPath,
-    matchAny,
     newRunContext,
     now,
     parseDuration,
@@ -338,65 +337,45 @@ async function validateInput(
     }
 }
 
-// Schema validation + drift leveling for ONE value, without the snapshot step. Shared by the
-// buffered `output` check below and the per-`delta` streaming check (ADR 0005 Addendum): a schema
-// failure on a `watch` (but not `critical`) path is a warning, otherwise an error. A bare validator
-// `output` (no DriftSpec) has empty watch/critical, so every failure is an error.
-async function validateSchema(
+// Validate ONE value against the output schema (ADR 0013). On success returns the PARSED value —
+// coerced, defaulted, stripped — so the result matches the declared contract; on failure returns the
+// hard `error`/`invalid` findings that fail the call. Natural variance an honest schema permits
+// (optional absent, nullable null, empty/heterogeneous arrays) validates clean and yields nothing.
+async function validateValue(
     cfg: ResolvedStitchConfig,
     value: unknown,
-): Promise<DriftFinding[]> {
+): Promise<{ value: unknown; errors: DriftFinding[] }> {
     const out = cfg.output;
-    if (!out) return [];
+    if (!out) return { value, errors: [] };
     // Probe cast keeps `__kind` `unknown`, so this is a real comparison — not an always-true
     // check against the `'drift'` literal (the idiom used by `outputSchemaSource`).
     const isDrift = (out as { __kind?: unknown }).__kind === 'drift';
     const validator: Validator = isDrift
         ? (out as DriftSpec).schema
         : (out as Validator);
-    const opts = isDrift ? (out as DriftSpec).options : {};
     const r = await validator.validate(value);
-    if (r.ok) return [];
-    const findings: DriftFinding[] = [];
-    for (const iss of r.issues) {
-        const path = iss.path.join('.');
-        const level =
-            matchAny(opts.watch, path) && !matchAny(opts.critical, path)
-                ? 'warn'
-                : 'error';
-        findings.push({ level, path, change: 'invalid', detail: iss.message });
-    }
-    return findings;
+    if (r.ok) return { value: r.value, errors: [] };
+    return { value, errors: validationErrors(r.issues) };
 }
 
+// Buffered output check: validate `raw` (→ the parsed value), then — when wrapped in `drift()` — diff
+// the raw body against the validated value for soft drift (undeclared / coerced / defaulted). Returns
+// the VALIDATED value as the result (sound; matches the contract) plus all findings. A validation
+// failure short-circuits with the hard `error` findings and the raw value (the call will fail).
 async function validateOutput(
     cfg: ResolvedStitchConfig,
-    body: unknown,
-): Promise<DriftFinding[]> {
+    raw: unknown,
+): Promise<{ value: unknown; findings: DriftFinding[] }> {
     const out = cfg.output;
-    if (!out) return [];
-    // Schema + leveling first, then the snapshot baseline (whole-body only — see validateSchema).
-    const findings: DriftFinding[] = await validateSchema(cfg, body);
-    if ((out as { __kind?: unknown }).__kind === 'drift') {
-        const opts = (out as DriftSpec).options;
-        if (opts.snapshotFile) {
-            const snap = loadSnapshot(opts.snapshotFile);
-            if (snap === undefined) {
-                // No committed baseline. By default record one (the spike's first-run behaviour);
-                // in `readonly` mode (deployed/prod) never write — surface a `no-baseline` finding
-                // so a drift-guarded call can't write a baseline as a side effect.
-                if (opts.readonly)
-                    findings.push({
-                        level: opts.onMissing ?? 'warn',
-                        path: '',
-                        change: 'no-baseline',
-                        detail: `no committed snapshot at ${opts.snapshotFile}; generate the baseline before enabling readonly drift`,
-                    });
-                else saveSnapshot(opts.snapshotFile, body);
-            } else findings.push(...classifyDrift(body, snap, opts));
-        }
-    }
-    return findings;
+    if (!out) return { value: raw, findings: [] };
+    const { value: validated, errors } = await validateValue(cfg, raw);
+    if (errors.length) return { value: raw, findings: errors };
+    if ((out as { __kind?: unknown }).__kind === 'drift')
+        return {
+            value: validated,
+            findings: classifyDiff(raw, validated, (out as DriftSpec).options),
+        };
+    return { value: validated, findings: [] };
 }
 
 // `timeout.total` is a WALL-CLOCK budget for the whole logical call: every attempt,
@@ -868,7 +847,7 @@ async function* paginated(
         pageInput = mergeInput(input, nextPartial);
     }
 
-    const findings = await validateOutput(cfg, acc);
+    const { value: validated, findings } = await validateOutput(cfg, acc);
     let fatal = false;
     for (const finding of findings) {
         yield { type: 'drift', finding, at: now() };
@@ -889,7 +868,7 @@ async function* paginated(
 
     yield {
         type: 'result',
-        value: acc,
+        value: validated,
         status: lastStatus,
         attempts: state.attempts,
         at: now(),
@@ -1049,7 +1028,7 @@ async function* runFrom(
     let value: unknown = outcome.value;
     if (cfg.transform) value = await cfg.transform(value);
     if (cfg.unwrap) value = getPath(value, cfg.unwrap);
-    const findings = await validateOutput(cfg, value);
+    const { value: validated, findings } = await validateOutput(cfg, value);
     let fatal = false;
     for (const finding of findings) {
         yield { type: 'drift', finding, at: now() };
@@ -1068,6 +1047,7 @@ async function* runFrom(
         return { ok: false };
     }
 
+    value = validated; // serve the validated value — sound, matches the declared contract (ADR 0013)
     yield resultEvt(value, res.status, state.attempts);
     yield doneEvt(true, t0, state.attempts);
     const vary = res.headers['vary'];
@@ -1253,7 +1233,8 @@ async function* runStreaming(
                         ? cfg.kind.contractValue(chunk)
                         : chunk;
                     let fatal = false;
-                    for (const finding of await validateSchema(cfg, target)) {
+                    const { errors } = await validateValue(cfg, target);
+                    for (const finding of errors) {
                         yield { type: 'drift', finding, at: now() };
                         if (finding.level === 'error') fatal = true;
                     }
@@ -1441,7 +1422,10 @@ async function* runCached(
         // a hit still short-circuits network/throttle/transform.
         let stale = false;
         if (ctl.revalidateOnHit && cfg.output) {
-            for (const finding of await validateOutput(cfg, found.value)) {
+            // Only the hard validation result matters on a cache hit: a stored value that no longer
+            // satisfies the schema is stale-shaped. Soft drift (raw-vs-validated) is meaningless here.
+            const { errors } = await validateValue(cfg, found.value);
+            for (const finding of errors) {
                 yield { type: 'drift', finding, at: now() };
                 if (finding.level === 'error') stale = true;
             }
