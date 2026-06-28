@@ -1,0 +1,107 @@
+---
+title: 'Stitch in Your UI: React, Vue, Svelte, Solid, and Angular'
+description: The same stitch plugs into each major UI framework via a thin binding, surfacing loading, error, drift, and streaming as idiomatic reactive state. Here's the shared core that makes that consistent.
+author: Oleksandr Zhuravlov
+date: '2026-05-04'
+tags: [ui, react, vue, svelte, solid, angular]
+---
+
+You declared a stitch — typed input, validated output, retries, drift detection — and now a component has to call it. That's where the boilerplate usually creeps back in: a `useState` for the data, another for the loading flag, another for the error, a `useEffect` to fire the call, an `AbortController` to cancel it on unmount, and — if the call streams — a reducer to fold chunks as they arrive. You wrote that once per framework, and you'll write it again the next time, slightly differently, in the next component.
+
+A stitch already knows its own lifecycle. Every call yields a typed event stream — `start → progress → drift → result → done` — and `await` is just sugar over consuming it. The framework bindings take that stream and project it into the host's native reactive primitive, so loading, error, drift, and streaming state become idiomatic state in React, Vue, Svelte, Solid, or Angular — without you re-deriving it by hand each time.
+
+## One reactive core, five thin bindings
+
+The thing that keeps these bindings consistent is that they aren't independent implementations. They all sit on **`@stitchapi/query-core`** — a framework-agnostic reactive store that wraps a stitch call and exposes a `subscribe` / `getSnapshot` handle, the exact shape React's `useSyncExternalStore` (and the equivalent primitive in Vue, Svelte, Solid, and Angular) consumes directly.
+
+Query-core owns the lifecycle and nothing else: status transitions, cancellation, re-fetching, and the streaming fold. It imports no framework and no `node:*`, so it runs unchanged in the browser, in React Server Components, and in edge runtimes like Cloudflare Workers — no polyfills, no `node:` shims. The snapshot it hands out is identity-stable between real changes — it only produces a new object when something actually changed, which is what keeps `useSyncExternalStore` from tearing or looping.
+
+That shared core is why the per-framework state shape is the same everywhere:
+
+```ts
+interface StitchQueryState<T> {
+    status: 'idle' | 'pending' | 'streaming' | 'success' | 'error';
+    data: T | undefined;
+    error: unknown;
+    chunks: readonly unknown[];
+    isPending: boolean;
+    isError: boolean;
+    isSuccess: boolean;
+    isStreaming: boolean;
+}
+```
+
+Learn it once and it transfers. The same `isPending` / `isError` / `isStreaming` booleans, the same `chunks` list for streaming surfaces, the same `status` enum — whether you're in a React hook, a Vue composable, a Svelte store, a Solid store proxy, or an Angular signal. The binding's job is only to wire that state into the host's render loop and to tear the call down when the component goes away.
+
+## React — `useStitch` / `useStitchStream`
+
+The React binding is a pair of hooks built on `useSyncExternalStore`, so they're tearing-free under concurrent rendering. `useStitch` is the request/response case:
+
+```ts
+import { useStitch } from '@stitchapi/react';
+
+function Profile({ id }: { id: string }) {
+    const { data, isPending, isError, refetch } = useStitch(getUser, {
+        params: { id },
+    });
+
+    if (isPending) return <Spinner />;
+    if (isError) return <Retry onClick={refetch} />;
+    return <h1>{data.name}</h1>;
+}
+```
+
+The query re-creates and re-fetches when the stitch identity or a structural key of the input changes, and the in-flight run is aborted on unmount — no `AbortController` to wire by hand.
+
+For a streaming surface (`sse` / `stream`), `useStitchStream` re-renders as each `delta` chunk arrives — [feed those deltas from a server route](/blog/stream-a-stitch-as-sse-in-next-app-router) and the client just maps over `chunks`. Same result shape; `chunks` is the running list, and `isStreaming` stays true until the terminal `result`:
+
+```ts
+import { useStitchStream } from '@stitchapi/react';
+
+function Chat({ prompt }: { prompt: string }) {
+    const { chunks, isStreaming } = useStitchStream(chat, {
+        body: { prompt },
+    });
+    return (
+        <div>
+            {chunks.map((c, i) => (
+                <span key={i}>{String(c)}</span>
+            ))}
+            {isStreaming && <Cursor />}
+        </div>
+    );
+}
+```
+
+## Same state, every other primitive
+
+Swap React's hook for the next framework's idiomatic shape and nothing else moves. **Vue** exposes `useStitch` / `useStitchStream` as composables whose fields are `ComputedRef`s — destructure them, and templates unwrap `.value` for you. **Svelte** ships real stores (`stitchStore` / `stitchStreamStore`, built on `readable`, unchanged across Svelte 4 and 5), so `$user` fetches on first subscribe and tears down when the last subscriber leaves. **Solid** reconciles a `createStore` proxy, so `user.state.data` tracks fine-grained inside JSX. Each one takes a value, a `ref`/accessor, or a getter for the input, and aborts the in-flight run on scope teardown — the same lifecycle, in each framework's idiom.
+
+**Angular** is the sharpest illustration of "same state, different primitive": `injectStitch` hands the lifecycle back as _both_ fine-grained signals and an RxJS observable, from one shared execution.
+
+```ts
+import { injectStitch } from '@stitchapi/angular';
+
+readonly user = injectStitch(getUser, () => ({ params: { id: this.id() } }));
+// signals for templates and `computed`:  user.data()   user.isPending()
+// the same state as an observable:        user.state$   // async pipe + RxJS operators
+```
+
+Refs, stores, store proxies, signals, observables — different surfaces, but the same `status` / `chunks` / `isStreaming` underneath, because one query-core sits behind every binding. The exact signatures — and the optional TanStack Query adapter each one ships — live in the per-framework guides: [React](/docs/integrations/react), [Vue](/docs/integrations/vue), [Svelte](/docs/integrations/svelte), [Solid](/docs/integrations/solid), and [Angular](/docs/integrations/angular).
+
+## It composes with the data layer you already have
+
+If you already run a query/cache layer, the stitch doesn't fight it — it slots in as the call. The split is clean: **the query layer owns view state** (caching, invalidation, refetch policy) and **the stitch owns the call** (types, auth, resilience, drift).
+
+-   **`@stitchapi/swr`** runs a stitch as an SWR fetcher; SWR keeps owning the cache.
+-   **`@stitchapi/rtk-query`** runs a stitch as an RTK Query endpoint, with stream updates flowing through.
+-   Each of the framework bindings above also ships an optional TanStack Query adapter (a plain `{ queryKey, queryFn }` object), so you can hand a stitch straight to `useQuery` without pulling the binding's own hooks into the picture.
+
+So the decision isn't "stitch bindings _or_ my query library." It's which layer owns view state — and the stitch is the call either way.
+
+## When this isn't worth it
+
+Two honest caveats:
+
+-   **If a query library already owns your view state, you may not need the binding's hooks at all.** Going through SWR, RTK Query, or TanStack Query can be the simpler path — let that layer manage state and let the stitch be the `queryFn`.
+-   **A one-shot call doesn't need a binding.** For a fire-once call outside a reactive view, `await stitch(...)` is enough; the binding earns its keep only when a component has to react to loading, error, drift, or streaming state over time.

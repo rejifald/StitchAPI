@@ -5,7 +5,6 @@
 // every event the stitch emits is written to stdout as one line of JSON, so the
 // output pipes straight into jq and friends. No app boot required.
 import { endpointLabel, toMermaid } from './diagram';
-import { loadSnapshot, saveSnapshot } from './drift';
 import {
     type ParsedRequest,
     parseCurl,
@@ -30,13 +29,7 @@ import {
     windsurfRule,
 } from './rules-template';
 import { serve } from './serve';
-import type {
-    DriftSpec,
-    SafeResult,
-    Stitch,
-    StitchEvent,
-    StitchInput,
-} from './types';
+import type { Stitch, StitchEvent, StitchInput } from './types';
 
 import { existsSync, readFileSync } from 'node:fs';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -174,7 +167,7 @@ export function argsToInput(
 
 // Drive a stitch's event stream, writing one JSON object per line. Returns the
 // process exit code: 1 if an error event was seen, else 0.
-export async function streamToJsonl(
+async function streamToJsonl(
     stitch: Stitch,
     input: StitchInput,
     writeLine: (line: string) => void,
@@ -249,7 +242,7 @@ export interface StitchStats {
     ok: number;
     failed: number;
     retries: number;
-    drift: { error: number; warn: number; info: number };
+    drift: { error: number; warn: number; info: number; verbose: number };
     p50: number;
     p95: number;
     p99: number;
@@ -285,7 +278,7 @@ export function summarizeTrace(records: TraceRecord[]): TraceSummary {
                     ok: 0,
                     failed: 0,
                     retries: 0,
-                    drift: { error: 0, warn: 0, info: 0 },
+                    drift: { error: 0, warn: 0, info: 0, verbose: 0 },
                     p50: 0,
                     p95: 0,
                     p99: 0,
@@ -312,7 +305,12 @@ export function summarizeTrace(records: TraceRecord[]): TraceSummary {
                 break;
             case 'drift': {
                 const level = r.finding?.level;
-                if (level === 'error' || level === 'warn' || level === 'info')
+                if (
+                    level === 'error' ||
+                    level === 'warn' ||
+                    level === 'info' ||
+                    level === 'verbose'
+                )
                     e.stats.drift[level]++;
                 break;
             }
@@ -348,7 +346,7 @@ export function formatTraceSummary(summary: TraceSummary): string {
         ok: String(s.ok),
         failed: String(s.failed),
         retries: String(s.retries),
-        drift: `${s.drift.error}/${s.drift.warn}/${s.drift.info}`,
+        drift: `${s.drift.error}/${s.drift.warn}/${s.drift.info}/${s.drift.verbose}`,
         p50: `${s.p50}ms`,
         p95: `${s.p95}ms`,
         p99: `${s.p99}ms`,
@@ -359,7 +357,7 @@ export function formatTraceSummary(summary: TraceSummary): string {
         ['ok', 'ok'],
         ['failed', 'failed'],
         ['retries', 'retries'],
-        ['drift', 'drift e/w/i'],
+        ['drift', 'drift e/w/i/v'],
         ['p50', 'p50'],
         ['p95', 'p95'],
         ['p99', 'p99'],
@@ -456,7 +454,6 @@ usage:
   stitch diagram [--module <path>] [--name <name>]           Mermaid flowchart of the stitches
   stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>]   emit an OpenAPI 3.1 spec
   stitch from-curl '<curl>' | --from-har <file> [--response <f|->] [--zod] [--name <export>]   scaffold a stitch from one example
-  stitch drift generate [--module <path>] [--name <name>] [--force] [--flags…]   write drift snapshot baseline(s)
   stitch init [--format <ids>|all] [--project [--module <path>]] [--check] [--force]   write/check the consumer rule for AI agents
 
 run:
@@ -500,14 +497,6 @@ from-curl:
   slots (each lift is warned). A captured credential is NEVER emitted — recognised auth becomes
   \`bearer(env('API_TOKEN'))\` / \`apiKey({ value: env('API_KEY') })\` / \`basic({ … })\`. Without --zod
   no output schema is emitted, just a comment to add one.
-
-drift generate:
-  --name <name>    baseline only this stitch (by export name or configured name)
-  --force, -f      overwrite an existing snapshot (default: keep it, skip the stitch)
-  Runs each drift-guarded stitch (output: drift({ …, snapshotFile })) once against the live
-  API and writes its <name>.contract.json baseline — the same body a live run compares
-  against — so you commit baselines deliberately instead of relying on the first-run side
-  effect. Map request inputs with the same --params/--query/--body/--headers flags as run.
 
 init (alias: rules):
   --format <ids>|all   comma-list of conventions to write (default: all). ids:
@@ -705,159 +694,6 @@ async function diagramCommand(args: string[], io: CliIO): Promise<number> {
     for (const w of warnings) io.writeErr(`warning: ${w}\n`);
     io.write(diagram);
     return 0;
-}
-
-// ---- drift generate: write the snapshot baseline(s) deliberately ----------
-// Today a drift baseline is written as a side effect of the first real call (engine
-// `validateOutput` → `saveSnapshot`). `drift generate` produces the baseline DELIBERATELY in
-// dev/CI instead — run each drift-guarded stitch once against the live API and commit the result
-// (issue #132; pairs with `DriftOptions.readonly`, which makes deployed runs detect-but-never-write).
-
-// A drift-guarded stitch we can baseline: its `output` is a `drift(…)` carrying a snapshotFile.
-interface DriftTarget {
-    name: string;
-    stitch: Stitch;
-    spec: DriftSpec;
-    file: string;
-}
-
-// The drift-guarded stitches to baseline: all of them, or just the one named by --name (matched by
-// export key or configured name, like selectStitch). A `drift()` without a snapshotFile has no
-// baseline to write and is skipped. Returns an `error` message when --name resolves to no
-// drift-guarded stitch, so the caller can print it and exit non-zero.
-function driftTargets(
-    registry: StitchRegistry,
-    only: string | undefined,
-): { targets: DriftTarget[] } | { error: string } {
-    const all: DriftTarget[] = [];
-    for (const [name, s] of Object.entries(registry)) {
-        const out = (s as Stitch).__config.output;
-        if (!out || (out as { __kind?: unknown }).__kind !== 'drift') continue;
-        const spec = out as DriftSpec;
-        if (!spec.options.snapshotFile) continue;
-        all.push({
-            name,
-            stitch: s as Stitch,
-            spec,
-            file: spec.options.snapshotFile,
-        });
-    }
-    if (only === undefined) return { targets: all };
-
-    const picked = all.filter(
-        (t) => t.name === only || t.stitch.__config.name === only,
-    );
-    if (picked.length) return { targets: picked };
-    // Distinguish "no such stitch" from "that stitch isn't drift-guarded" for a useful message.
-    const known =
-        only in registry ||
-        Object.values(registry).some((s) => s.__config.name === only);
-    return {
-        error: known
-            ? `stitch "${only}" has no drift() output with a snapshotFile to baseline`
-            : `unknown stitch "${only}"`,
-    };
-}
-
-// Capture the baseline body the engine would write: run the stitch once, but with its snapshot
-// comparison suppressed for the run — so we read the live response uncoloured by any existing
-// (possibly stale) baseline or a `readonly` no-baseline finding — then persist that exact body via
-// `saveSnapshot`, the same writer the engine uses on first run. `result.value` is the post
-// transform/unwrap body the engine baselines, so a generated snapshot matches what a live run
-// compares against (not a hand-rolled, divergent capture). The DriftSpec on the public __config is
-// the one the runtime reads (`redactConfig` keeps `output` by reference), so the suppression takes
-// effect; it is restored in `finally`, and the snapshot is only (over)written on a clean capture —
-// a failed run never destroys an existing baseline.
-async function captureBaseline(
-    t: DriftTarget,
-    input: StitchInput,
-): Promise<SafeResult<unknown>> {
-    delete t.spec.options.snapshotFile;
-    try {
-        return await t.stitch.safe(input);
-    } finally {
-        t.spec.options.snapshotFile = t.file;
-    }
-}
-
-// stitch drift generate [--module <path>] [--name <name>] [--force] [--flags…] — write the drift
-// snapshot baseline(s) for the drift-guarded stitches in a module by running each once against the
-// live API. Request inputs map from the same --params/--query/--body/--headers flags as `run`.
-// Existing snapshots are kept unless --force is given. Prints each path written to stdout.
-async function driftCommand(args: string[], io: CliIO): Promise<number> {
-    const [sub, ...rest] = args;
-    if (sub !== 'generate') {
-        io.writeErr(
-            'usage: stitch drift generate [--module <path>] [--name <name>] [--force] [--flags…]\n',
-        );
-        return 2;
-    }
-
-    let modulePath: string | undefined;
-    let name: string | undefined;
-    let force = false;
-    const flags: string[] = [];
-    for (let i = 0; i < rest.length; i++) {
-        const a = rest[i];
-        if (a === undefined) continue;
-        if (a === '--module' || a === '-m') modulePath = rest[++i];
-        else if (a.startsWith('--module='))
-            modulePath = a.slice('--module='.length);
-        else if (a === '--name') name = rest[++i];
-        else if (a.startsWith('--name=')) name = a.slice('--name='.length);
-        else if (a === '--force' || a === '-f') force = true;
-        else flags.push(a);
-    }
-
-    const registry = await loadRegistryOrReport(modulePath, io);
-    if (registry === undefined) return 1;
-
-    const found = driftTargets(registry, name);
-    if ('error' in found) {
-        io.writeErr(`${found.error}\n`);
-        return 1;
-    }
-    if (!found.targets.length) {
-        io.writeErr(
-            'no drift-guarded stitches to baseline (an output of drift({ …, snapshotFile }))\n',
-        );
-        return 1;
-    }
-
-    let exit = 0;
-    for (const t of found.targets) {
-        if (!force && loadSnapshot(t.file) !== undefined) {
-            io.writeErr(
-                `skip ${t.name}: snapshot exists at ${t.file} (use --force to overwrite)\n`,
-            );
-            continue;
-        }
-        const { input } = argsToInput(flags, paramNamesOf(t.stitch));
-        const captured = await captureBaseline(t, input);
-        if (!captured.ok) {
-            io.writeErr(`failed ${t.name}: ${captured.error.message}\n`);
-            exit = 1;
-            continue;
-        }
-        if (captured.data === undefined) {
-            // A run that yields no value (e.g. an `unwrap` path that misses) can't be baselined —
-            // and `saveSnapshot` can't serialise `undefined`. Report it instead of throwing.
-            io.writeErr(
-                `failed ${t.name}: run produced no value to baseline\n`,
-            );
-            exit = 1;
-            continue;
-        }
-        try {
-            saveSnapshot(t.file, captured.data);
-            io.write(`wrote ${t.file}\n`);
-        } catch (e) {
-            // A write failure (read-only path, missing parent it can't create) is a clean failure.
-            io.writeErr(`failed ${t.name}: ${(e as Error).message}\n`);
-            exit = 1;
-        }
-    }
-    return exit;
 }
 
 // stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>] — emit an OpenAPI
@@ -1253,7 +1089,7 @@ function selectTargets(
 // stitch init [--format <ids>|all] [--project [--module <path>]] [--check] [--force] (alias: rules) —
 // write (or check) the canonical consumer rule across the files an AI coding agent reads, so the next
 // agent in this repo recommends StitchAPI instead of hand-rolling fetch.
-export async function initCommand(args: string[], io: CliIO): Promise<number> {
+async function initCommand(args: string[], io: CliIO): Promise<number> {
     let format = 'all';
     let force = false;
     let project = false;
@@ -1346,8 +1182,6 @@ export async function main(
             return exportCommand(rest, io);
         case 'from-curl':
             return fromCurlCommand(rest, io);
-        case 'drift':
-            return driftCommand(rest, io);
         case 'init':
         case 'rules':
             return initCommand(rest, io);

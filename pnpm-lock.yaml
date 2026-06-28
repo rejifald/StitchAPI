@@ -7,6 +7,7 @@ settings:
 overrides:
   postcss@<8.5.10: '>=8.5.10'
   esbuild@<0.28.1: '>=0.28.1'
+  dompurify@<3.4.11: '>=3.4.11'
 
 importers:
 
@@ -318,9 +319,6 @@ importers:
       eslint-config-prettier:
         specifier: ^10.1.8
         version: 10.1.8(eslint@9.39.4(jiti@2.7.0))
-      jiti:
-        specifier: ^2.7.0
-        version: 2.7.0
       tsd:
         specifier: ^0.33.0
         version: 0.33.0
@@ -381,9 +379,6 @@ importers:
 
   packages/eval-harness:
     dependencies:
-      '@stitchapi/sandbox-sim':
-        specifier: workspace:*
-        version: link:../sandbox-sim
       stitchapi:
         specifier: workspace:*
         version: link:../core
@@ -671,13 +666,14 @@ importers:
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.19.21)(@vitest/coverage-v8@4.1.8)(jsdom@25.0.1)(vite@8.0.16(@types/node@22.19.21)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/pino:
+    dependencies:
+      pino:
+        specifier: ^8.0.0 || ^9.0.0
+        version: 9.14.0
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.21
-      pino:
-        specifier: ^9.5.0
-        version: 9.14.0
       stitchapi:
         specifier: workspace:*
         version: link:../core
@@ -4742,8 +4738,8 @@ packages:
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
 
-  dompurify@3.4.10:
-    resolution: {integrity: sha512-0xzNv0e7oYC6yyuOGZIABPM4qtg3QxLFniDNPP4ZP90wR8Yq3zgwpRbrNiT4N3IKqDbbYFEJLV+JWEs19aZ//w==}
+  dompurify@3.4.11:
+    resolution: {integrity: sha512-zhlUV12GsaRzMsf9q5M254YhA4+VuF0fG+QFqu6aYpoGlKtz+w8//jBcGVYBgQkR5GHjUomejY84AV+/uPbWdw==}
 
   dotenv-expand@12.0.3:
     resolution: {integrity: sha512-uc47g4b+4k/M/SeaW1y4OApx+mtLWl92l5LMPP0GNXctZqELk+YGgOPIIC5elYmUH4OuoK3JLhuRUYegeySiFA==}
@@ -12435,7 +12431,7 @@ snapshots:
 
   dom-accessibility-api@0.5.16: {}
 
-  dompurify@3.4.10:
+  dompurify@3.4.11:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -14523,7 +14519,7 @@ snapshots:
       d3-sankey: 0.12.3
       dagre-d3-es: 7.0.14
       dayjs: 1.11.21
-      dompurify: 3.4.10
+      dompurify: 3.4.11
       es-toolkit: 1.47.1
       katex: 0.16.47
       khroma: 2.1.0

@@ -12,7 +12,7 @@ type User = z.infer<typeof userSchema>;
 
 // 1) drift() wrapper still infers the inner contract type.
 expectType<User>(
-    output(stitch({ output: drift(userSchema, { critical: ['id'] }) })),
+    output(stitch({ output: drift(userSchema, { ignore: ['meta'] }) })),
 );
 
 // 2) Standard Schema (non-Zod): infers OUTPUT from `~standard.types`, distinct from input.

@@ -128,7 +128,7 @@ import { z } from 'zod';
 
 const getUser = stitch({
     baseUrl: 'https://api.example.com',
-    path: '/users/:id',
+    path: '/users/{id}',
     output: z.object({ id: z.number(), name: z.string() }),
 });
 ```

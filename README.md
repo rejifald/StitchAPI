@@ -28,7 +28,7 @@
 
 <p align="center">
   <a href="https://stand-with-ukraine.pp.ua"><img alt="StandWithUkraine" src="https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg" /></a>
-  <img alt="code health: 59 (C)" src="https://img.shields.io/badge/code_health-59_%28C%29-yellow" />
+  <img alt="code health: 77 (B)" src="https://img.shields.io/badge/code_health-77_%28B%29-green" />
   <img alt="coverage: 90% lines · 78% branches" src="https://img.shields.io/badge/coverage-90%25_lines_%C2%B7_78%25_branches-green" />
   <a href="LICENSE"><img alt="license: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
 </p>
@@ -41,7 +41,7 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.2`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is very welcome.
+> **StitchAPI is at `1.0.0-rc.3`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 ---
 
@@ -141,7 +141,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 -   **One primitive, scoped to a surface** — `stitch(url | config)` returns a typed callable; **a service with more than one endpoint is a `seam`** that shares base, auth, throttle budget, store, and trace sink across its members.
 -   **Event-stream core** — every call yields a typed stream (`start → progress → drift → result → done`); `await` is sugar that returns the final validated value.
 -   **Bring-your-own validation** — [Zod](https://zod.dev) or any [Standard Schema](https://standardschema.dev) validator (Valibot, ArkType, …); types are inferred from the schemas.
--   **Leveled drift detection** — live responses diffed against a committed contract snapshot; changes surface as `error` / `warn` / `info` instead of a silent `undefined`.
+-   **Leveled drift detection** — live responses validated against the declared schema (the contract); a required field missing/incompatible **throws**, while soft drift (a coercion, an undeclared or defaulted field) surfaces as a non-fatal `warn` / `info` / `verbose` finding instead of a silent `undefined`.
 -   **Declared resilience** — retry with backoff and `Retry-After`, proactive throttle, layered timeouts, a circuit breaker, and idempotency keys.
 -   **Read-through caching** — opt-in response cache + in-process coalescing, keyed by a derived, principal-scoped key, loaded lazily from `stitchapi/cache`.
 -   **Auth as a boundary** — `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login/re-login), `oauth2`; secrets resolve at call time and never reach the caller.
@@ -227,13 +227,14 @@ For lighter reuse, `extends: [fragment | stitch]` merges config left→right (ow
 
 ## Validation & leveled drift
 
-Wrap an `output` schema in `drift()` and every live response is compared against the schema **and** a committed snapshot, with each difference classified by level:
+The declared `output` schema **is** the contract. Wrap it in `drift()`: a response is validated (the call returns the validated value — coerced, defaulted, unknown keys stripped), and the difference between the raw body and that validated value is reported as a leveled, non-fatal signal:
 
-| Level     | Trigger                                            | Behavior                         |
-| --------- | -------------------------------------------------- | -------------------------------- |
-| **error** | a `critical` field went missing or changed type    | fails the call (`error` event)   |
-| **warn**  | a watched / non-critical field changed             | `warn` event; the call succeeds  |
-| **info**  | a brand-new field appeared that the contract lacks | `info` event — “want to use it?” |
+| Change         | What it means                                              | Level     |
+| -------------- | ---------------------------------------------------------- | --------- |
+| **invalid**    | a required field missing or incompatible — **throws**      | `error`   |
+| **coerced**    | a coercion (`"42"`→`42`): a wire-type shift validation hid | `warn`    |
+| **undeclared** | a key the schema strips                                    | `info`    |
+| **defaulted**  | a `.default()` fired (field absent)                        | `verbose` |
 
 ```ts
 import { drift, stitch } from 'stitchapi';
@@ -245,15 +246,14 @@ const listOrders = stitch({
     output: drift(
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
-            critical: ['[].id'], // error when these break — you rely on them
-            watch: ['[].total'], // warn when this changes
-            snapshotFile: 'orders.contract.json',
+            ignore: ['[].meta'], // acknowledged, unconsumed — don't report it
+            severity: { coerced: 'info' }, // re-level a kind, or pass a level/list to filter
         },
     ),
 });
 ```
 
-A silently renamed field — the classic integration breakage — becomes a loud, leveled signal. The request side validates too: `input` takes a schema per part and fails fast before any request is sent. Full guide: [Validation & drift](https://stitchapi.dev/docs/guides/validation/drift).
+Drift is schema-anchored — no snapshot to manage. Severity lives in the schema: a required field missing/incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift on the event stream. Declared variance (an optional field, a nullable, an empty array) validates clean, so it's never a false alarm; `ignore` silences known-but-unconsumed fields and `severity` filters or re-levels the soft signals. The request side validates too: `input` takes a schema per part and fails fast before any request is sent. Full guide: [Validation & drift](https://stitchapi.dev/docs/guides/validation/drift).
 
 ## Resilience: retry, throttle, timeout
 

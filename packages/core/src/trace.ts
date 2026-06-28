@@ -25,7 +25,7 @@ export interface TraceOptions {
 // Header names whose values are secrets: redacted before any event leaves for a
 // built-in sink (JSONL/console). Matched case-insensitively wherever headers appear
 // in an event payload (start input.headers, result/response headers, etc.).
-export const SECRET_HEADERS = [
+const SECRET_HEADERS = [
     'authorization',
     'proxy-authorization',
     'cookie',
@@ -178,6 +178,7 @@ const LEVEL_COLOR: Record<DriftLevel, string> = {
     error: RED,
     warn: YELLOW,
     info: BLUE,
+    verbose: DIM,
 };
 
 function paint(color: string, text: string): string {
@@ -368,7 +369,11 @@ export function loggerSink(
             level ??=
                 overrides?.[event.type] ??
                 (event.type === 'drift'
-                    ? event.finding.level
+                    ? // a drift finding's level is a LogLevel as-is, except `verbose` (the quiet
+                      // soft-drift tier) which maps to `debug`.
+                      event.finding.level === 'verbose'
+                        ? 'debug'
+                        : event.finding.level
                     : DEFAULT_LEVELS[event.type]);
             // Default formatter is payload-free; a `format` override owns that guarantee itself.
             const message = format

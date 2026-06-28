@@ -1,0 +1,98 @@
+---
+title: seam
+description: Group stitches under one shared runtime — store, vault, throttle bucket, and trace sink — behind a shared base config, and bind per-principal sessions with seam.as().
+---
+
+Use `seam` when several stitches hit the same API and should share one runtime — one throttle budget, one store, one trace sink, one auth vault — instead of each carrying its own copy of the config. Build it once, then create members with `.stitch()` and `.graphql()`.
+
+## Example
+
+```ts twoslash
+import { bearer, env, seam } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({
+    id: z.number(),
+    name: z.string(),
+    email: z.string(),
+    role: z.enum(['admin', 'member', 'viewer']),
+});
+
+// Build the seam once: its config is the base every member inherits, and its
+// runtime — store, vault, throttle bucket, trace sink — is shared across them.
+const api = seam({
+    baseUrl: 'https://demo.stitchapi.dev',
+    auth: bearer(env('API_TOKEN')),
+    retry: { attempts: 3, on: [429, 503] },
+});
+
+// Members are stitches that belong to the seam.
+const getUser = api.stitch({
+    path: '/users/{id}',
+    unwrap: 'data',
+    output: User,
+});
+const listUsers = api.stitch({
+    path: '/users',
+    unwrap: 'data',
+    output: User.array(),
+});
+
+const user = await getUser({ params: { id: 7 } });
+```
+
+## Options
+
+A seam takes the same fields a stitch does — `baseUrl`, `auth`, `retry`, `throttle`, `timeout`, `store`, `trace`, and the rest — as the base its members extend, plus a `secretStore` for a hardened auth vault. See [Reference → Config types](/docs/reference/config-types) for every field.
+
+**Members extend the base; a member's own throttle stacks on the seam's.** Anything a member declares layers on top of the shared config — and a member's own `throttle` is _tighten-only_: it gates only that stitch on top of the shared bucket, so it can be stricter than the seam's budget but never escape it.
+
+**Per-principal sessions — `seam.as(id)`.** Derive a handle whose members carry a principal. The handle binds that principal in the closure, never in the call's input, so a caller can't name another one. Each principal gets its own sessions; the throttle bucket stays shared.
+
+```ts twoslash
+import { seam } from 'stitchapi';
+
+const api = seam({ baseUrl: 'https://demo.stitchapi.dev' });
+
+// One handle per request — bind the caller's identity, then create members.
+const forTenant = api.as('tenant-42');
+const getUser = forTenant.stitch({ path: '/users/{id}', unwrap: 'data' });
+```
+
+<Callout type="warn">
+    **Anti-pattern:** don't build a fresh `seam` per request — you'd get a new
+    store, throttle bucket, and vault each time, so nothing pools or persists.
+    Build the seam **once at startup** and derive a per-request identity with
+    `seam.as(req.user.id)` instead.
+</Callout>
+
+**Lifecycle — `flush` / `close` / `invalidate`.** These act on the shared runtime, so they live on the root seam only (a `seam.as(...)` handle is lifecycle-free). `close()` flushes the trace sink and closes the shared store on shutdown; `invalidate()` bulk-evicts the cache across members.
+
+```ts twoslash
+import { seam } from 'stitchapi';
+
+const api = seam({ baseUrl: 'https://demo.stitchapi.dev' });
+// ... build members, serve requests ...
+
+await api.close(); // flush the trace sink, close the shared store
+```
+
+## See also
+
+<Cards>
+    <Card title="Concept: the seam" href="/docs/concepts/the-seam" />
+    <Card title="extends" href="/docs/guides/authoring/extends" />
+    <Card
+        title=".with() partial application"
+        href="/docs/guides/authoring/with"
+    />
+    <Card
+        title="Distributed throttle"
+        href="/docs/guides/state/distributed-throttle"
+    />
+    <Card title="Shared sessions" href="/docs/guides/state/shared-sessions" />
+    <Card
+        title="The pluggable store"
+        href="/docs/guides/state/pluggable-store"
+    />
+</Cards>

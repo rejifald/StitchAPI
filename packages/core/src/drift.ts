@@ -1,156 +1,118 @@
-// Leveled drift detection: compare a live payload's *shape* against a committed
-// snapshot and classify each delta as error / warn / info.
-//   - critical paths that go missing or change type  -> error
-//   - watched / other paths that change              -> warn
-//   - brand-new fields that appear                   -> info (or opts.onNew)
+// Leveled drift — schema-anchored, diff-based (ADR 0015).
 //
-// The committed baseline stores the SHAPE ONLY — a sorted `{ path: type }` map under
-// `{ version: 1, shape }` — not a representative body. That keeps a baseline tiny and
-// payload-free (no response values, ids, or secrets land on disk), makes its diff
-// stable, and serialises safely regardless of the value types in the body — a `bigint`
-// (which `JSON.stringify` cannot serialise) becomes the string `"bigint"` in the shape,
-// so drifting a payload that carries one no longer throws. A pre-shape (representative
-// body) snapshot is still understood on read, so older baselines keep working.
-import type { DriftFinding, DriftOptions } from './types';
-import { dirnameOf, matchAny, nodeFs } from './util';
+// Drift is the diagnostic layer over consumer-contract validation. Validation owns the HARD signal:
+// a missing-required field or an incompatible value throws (`validationErrors` → `invalid`/`error`).
+// Drift owns the SOFT signal: with the response validated (coerced / defaulted / stripped) into a
+// value that matches the contract, the *difference between the raw body and that validated value* is
+// the drift — computed by the in-house structural `diff` (no snapshot, no schema introspection):
+//
+//   - `remove` (a key the schema stripped)              -> `undeclared` (a field you don't model)
+//   - `change` (a value the schema coerced, "42"->42)   -> `coerced` (a hidden wire-type shift)
+//   - `create` (a `.default()` fired, field was absent) -> `defaulted`
+//
+// Soft drift is always non-fatal (`warn` / `info` / `verbose`) — fatality is the schema's job. Levels
+// are per-kind (defaults below), overridable/filterable via `DriftOptions.severity`, and any path can
+// be acknowledged-and-silenced with `DriftOptions.ignore` without touching the typed schema.
+import { type Diff, diff } from './diff';
+import type {
+    DriftFinding,
+    DriftOptions,
+    DriftSeverity,
+    SoftDriftChange,
+} from './types';
+import { matchAny } from './util';
+import type { Issue } from './validator';
 
-type Shape = Map<string, string>;
+/** Render a diff/issue path into the drift grammar: object keys join with `.`, an array index → `[]`. */
+function renderPath(path: (string | number)[]): string {
+    let out = '';
+    for (const seg of path) {
+        if (typeof seg === 'number') out += '[]';
+        else out += out ? `.${seg}` : seg;
+    }
+    return out;
+}
 
-function typeOf(v: unknown): string {
+/**
+ * A hard validation failure → `error` / `invalid` findings (one per issue). Not leveled or
+ * suppressible: a contract violation fails the call. The engine throws on any of these.
+ */
+export function validationErrors(issues: Issue[]): DriftFinding[] {
+    return issues.map((iss) => ({
+        level: 'error',
+        path: renderPath(iss.path),
+        change: 'invalid',
+        detail: iss.message,
+    }));
+}
+
+const OP_CHANGE: Record<Diff['op'], SoftDriftChange> = {
+    remove: 'undeclared',
+    change: 'coerced',
+    create: 'defaulted',
+};
+
+const DEFAULT_LEVEL: Record<SoftDriftChange, DriftSeverity> = {
+    undeclared: 'info',
+    coerced: 'warn',
+    defaulted: 'verbose',
+};
+
+function kindOf(v: unknown): string {
     if (v === null) return 'null';
     if (Array.isArray(v)) return 'array';
     return typeof v;
 }
 
-function shapeOf(value: unknown, base: string, out: Shape): Shape {
-    if (base !== '') out.set(base, typeOf(value));
-    const t = typeOf(value);
-    if (t === 'object') {
-        for (const k of Object.keys(value as Record<string, unknown>)) {
-            shapeOf(
-                (value as Record<string, unknown>)[k],
-                base ? `${base}.${k}` : k,
-                out,
-            );
-        }
-    } else if (t === 'array' && (value as unknown[]).length > 0) {
-        shapeOf((value as unknown[])[0], `${base}[]`, out);
-    }
-    return out;
-}
-
-const SNAPSHOT_VERSION = 1 as const;
-
-/** The on-disk baseline: a versioned, payload-free shape map (sorted for stable diffs). */
-interface ShapeSnapshot {
-    version: typeof SNAPSHOT_VERSION;
-    shape: Record<string, string>;
-}
-
-function isShapeSnapshot(s: unknown): s is ShapeSnapshot {
-    return (
-        typeof s === 'object' &&
-        s !== null &&
-        (s as { version?: unknown }).version === SNAPSHOT_VERSION &&
-        typeof (s as { shape?: unknown }).shape === 'object' &&
-        (s as { shape?: unknown }).shape !== null
-    );
-}
-
-/** Serialise a shape Map to a plain object with keys sorted, so the committed file is stable. */
-function serializeShape(shape: Shape): Record<string, string> {
-    const out: Record<string, string> = {};
-    const entries = [...shape.entries()].sort((a, b) =>
-        a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0,
-    );
-    for (const [key, type] of entries) out[key] = type;
-    return out;
+function detailFor(change: SoftDriftChange, d: Diff): string {
+    if (change === 'coerced')
+        return `${kindOf(d.oldValue)} -> ${kindOf(d.value)}`;
+    if (change === 'undeclared')
+        return `undeclared field (${kindOf(d.oldValue)})`;
+    return 'default applied';
 }
 
 /**
- * Resolve a loaded snapshot to its shape Map. A `version: 1` snapshot carries the shape
- * directly; a legacy representative-body snapshot (or any raw value) is shaped on read so
- * older baselines still compare correctly.
+ * Resolve {@link DriftOptions.severity} into the level each soft kind gets, plus an optional allowlist
+ * of levels to surface. A single value / bare list is an allowlist over the per-kind defaults; a map
+ * re-levels each kind (and surfaces all). See {@link DriftOptions.severity}.
  */
-function snapshotShape(snapshot: unknown): Shape {
-    if (isShapeSnapshot(snapshot))
-        return new Map(Object.entries(snapshot.shape));
-    return shapeOf(snapshot, '', new Map());
+function resolveSeverity(severity: DriftOptions['severity']): {
+    levelOf: (c: SoftDriftChange) => DriftSeverity;
+    allow: Set<DriftSeverity> | null;
+} {
+    const byDefault = (c: SoftDriftChange): DriftSeverity => DEFAULT_LEVEL[c];
+    if (severity === undefined) return { levelOf: byDefault, allow: null };
+    if (typeof severity === 'string')
+        return { levelOf: byDefault, allow: new Set([severity]) };
+    if (Array.isArray(severity))
+        return { levelOf: byDefault, allow: new Set(severity) };
+    return { levelOf: (c) => severity[c] ?? DEFAULT_LEVEL[c], allow: null };
 }
 
-const isDescendant = (parent: string, child: string): boolean =>
-    child.startsWith(parent + '.') || child.startsWith(parent + '[');
-
-/** Drop paths that are covered by an ancestor already in the same set (reduces noise). */
-function topmost(paths: string[]): string[] {
-    return paths.filter(
-        (p) => !paths.some((q) => q !== p && isDescendant(q, p)),
-    );
-}
-
-export function classifyDrift(
-    actual: unknown,
-    snapshot: unknown,
+/**
+ * Soft drift: classify the difference between the raw body and the validated value into leveled
+ * findings. Array-element paths collapse to the `[]` grammar and dedupe (a stripped field on every
+ * element is one finding), `ignore` suppresses acknowledged paths, and `severity` levels/filters.
+ */
+export function classifyDiff(
+    raw: unknown,
+    validated: unknown,
     opts: DriftOptions = {},
 ): DriftFinding[] {
-    if (snapshot === undefined) return []; // first run = baseline
-    const a = shapeOf(actual, '', new Map());
-    const s = snapshotShape(snapshot);
+    const { levelOf, allow } = resolveSeverity(opts.severity);
     const findings: DriftFinding[] = [];
-
-    const missing = topmost([...s.keys()].filter((p) => !a.has(p)));
-    for (const path of missing) {
-        findings.push({
-            level: matchAny(opts.critical, path) ? 'error' : 'warn',
-            path,
-            change: 'missing',
-            detail: `expected ${s.get(path)} no longer present`,
-        });
-    }
-
-    const added = topmost([...a.keys()].filter((p) => !s.has(p)));
-    for (const path of added) {
-        findings.push({
-            level: opts.onNew ?? 'info',
-            path,
-            change: 'new',
-            detail: `new field (${a.get(path)})`,
-        });
-    }
-
-    for (const [path, ta] of a) {
-        const ts = s.get(path);
-        if (ts && ts !== ta) {
-            const nullable = ta === 'null' || ts === 'null';
-            findings.push({
-                level: matchAny(opts.critical, path) ? 'error' : 'warn',
-                path,
-                change: nullable ? 'nullable' : 'type-changed',
-                detail: `${ts} -> ${ta}`,
-            });
-        }
+    const seen = new Set<string>();
+    for (const d of diff(raw, validated)) {
+        const change = OP_CHANGE[d.op];
+        const path = renderPath(d.path);
+        const key = `${change}|${path}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (matchAny(opts.ignore, path)) continue;
+        const level = levelOf(change);
+        if (allow && !allow.has(level)) continue;
+        findings.push({ level, path, change, detail: detailFor(change, d) });
     }
     return findings;
-}
-
-export function loadSnapshot(file: string): unknown {
-    const fs = nodeFs();
-    if (!fs) return undefined; // browser: snapshot files are a no-op
-    try {
-        if (!fs.existsSync(file)) return undefined;
-        return JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-        return undefined;
-    }
-}
-
-export function saveSnapshot(file: string, value: unknown): void {
-    const fs = nodeFs();
-    if (!fs) return; // browser: snapshot files are a no-op
-    const snapshot: ShapeSnapshot = {
-        version: SNAPSHOT_VERSION,
-        shape: serializeShape(shapeOf(value, '', new Map())),
-    };
-    fs.mkdirSync(dirnameOf(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(snapshot, null, 2));
 }

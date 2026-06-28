@@ -97,7 +97,7 @@ for await (const ev of logs.stream()) {
 
 Streaming members open on the same auth/retry/throttle spine, with one twist:
 opening a stream **charges the rate limiter once** but **never holds a
-concurrency slot**, so a long-lived connection can't pin a [seam](/docs/concepts/the-stitch)'s
+concurrency slot**, so a long-lived connection can't pin a [seam](/docs/concepts/the-seam)'s
 concurrency budget.
 
 ## Validating streamed values

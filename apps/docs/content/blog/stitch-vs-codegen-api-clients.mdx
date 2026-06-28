@@ -1,0 +1,117 @@
+---
+title: Stitching vs. Codegen API Clients
+description: Spec-based generators turn an OpenAPI document into a fully typed client. Runtime stitching turns a single URL into a validated function. Here's an honest, axis-by-axis comparison — and when each one is the right call.
+author: Oleksandr Zhuravlov
+date: '2026-05-25'
+tags: [codegen, openapi, typescript, drift, comparison]
+---
+
+You're wiring up a third API this quarter. The first two had a clean OpenAPI document, so you ran a generator, committed the SDK, and moved on. This one is internal, half-documented, and the spec — if it exists — was last regenerated two releases ago. So the question stops being academic: do you generate a client from a spec, or declare the few endpoints you actually call and validate them at runtime?
+
+Both approaches give you typed, reusable API access. They make opposite bets about where the truth lives. A code generator like [openapi-typescript-codegen](https://github.com/ferdikoomen/openapi-typescript-codegen) or [Orval](https://orval.dev) bets the spec is accurate and treats it as the source of truth, emitting types and request functions ahead of time. StitchAPI bets that the only thing you can fully trust is the response on the wire, and validates against it on every call. Neither bet is wrong everywhere. Let's walk the axes that actually decide it.
+
+## What each one needs to get started
+
+A generator needs a spec. Point it at an OpenAPI (or GraphQL) document and it emits a typed client covering the whole surface — every path, every model, request functions and all. That's the headline feature: one command, the entire API typed up front.
+
+A stitch needs a URL and one example response. You declare the endpoints you call, and the response shape comes from a validator you write (or generate from a sample):
+
+```ts
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getUser = stitch({
+    path: 'https://api.example.com/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+    unwrap: 'data',
+});
+
+const user = await getUser({ params: { id: 1 } }); // typed · validated
+```
+
+The trade is real and cuts both ways. The generator types the _whole_ surface from one artifact — great when you'll touch many endpoints and a maintained spec exists. The stitch types only what you declare — better when there's no spec, the spec is stale or partial, or the API is internal and never got an OpenAPI document at all. If you have an accurate spec and want everything typed in one shot, that's the generator's home turf, and a stitch's per-endpoint declarations would be more work for no gain.
+
+There's also no codegen step in the stitch path: no generated SDK to commit, diff, and regenerate, and no build artifact to drift from the source it was generated from. That removes a maintenance chore, but it also removes the "type the entire API at once" convenience. Pick the property you value.
+
+## Static types vs. runtime validation
+
+This is the axis people underweight, so it's worth being precise.
+
+A generated client gives you **static** types: they describe what the spec _said_ the response would be, frozen at generation time. They're excellent for editor autocomplete and compile-time safety against your own code. What they cannot do is notice when the live API stops matching them. If the provider renames `total` to `amount` next Tuesday, your generated type still says `total`, your build still passes, and you get `undefined` three layers downstream at runtime — until you regenerate, which you'll only think to do once something is already broken.
+
+A stitch validates the **live** response on every call. The schema runs against real bytes, so a shape mismatch is caught the moment it happens, at the boundary, with a typed error — not swallowed into an `undefined`. On top of plain validation, StitchAPI adds **leveled drift detection** ([schema drift is a production bug](/blog/schema-drift-is-a-production-bug)): the declared schema _is_ the contract — wrap it in `drift()` and each response is validated and then diffed against the validated value, with every difference classified by severity:
+
+```ts
+const listOrders = stitch({
+    path: 'https://api.example.com/orders',
+    // the schema is the contract; required fields throw, soft drift is leveled
+    output: drift(OrdersSchema, {
+        ignore: ['[].meta'], // acknowledged, unconsumed — don't report it
+        severity: { coerced: 'info' }, // re-level a kind (or a level/list to filter)
+    }),
+});
+```
+
+A required field that vanishes or turns incompatible fails the call loudly (a hard `invalid`/`error`). Soft drift is non-fatal: a coercion (`"42"`→`42`) the schema quietly absorbed surfaces as `warn`, an undeclared key the API added as `info`, a default that fired as `verbose` — all on the event stream, none throwing. That's a class of change a spec-derived type can't see, because the spec was never told. The flip side: this only catches the surface you declared. Endpoints and fields you never modeled aren't watched, whereas a generator at least _typed_ the whole surface from the spec, accurate or not.
+
+## Resilience, auth, and observability: built-in vs. bolt-on
+
+Generators are, by design, scoped to the request-and-types problem. Most emit thin request functions over `fetch` (or axios). Retries with backoff, proactive rate limiting, layered timeouts, a circuit breaker, idempotency keys, caching, the auth token lifecycle, tracing — those are yours to add, usually as a wrapper or interceptor layer you maintain around the generated code. That's not a flaw; it's a scope boundary. It does mean the resilience story is bolt-on.
+
+In a stitch, those concerns are fields on the declaration, uniform across every endpoint:
+
+```ts
+const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
+    throttle: { rate: '1/s', concurrency: 2, scope: 'host' },
+    timeout: { total: '30s', perAttempt: '10s' },
+});
+```
+
+`throttle` is proactive — it keeps you under a limit before the 429s arrive, and `scope: 'host'` shares one limiter across stitches hitting the same host. Auth is a boundary too: `bearer`, `apiKey`, `basic`, `cookieSession` (with auto-login and re-login), and `oauth2` live on the stitch, secrets resolve at call time, and the caller gets data without ever holding the credential. Observability rides the same event stream every call already emits — off by default, opt in per stitch or via `STITCH_TRACE_*` env vars, with bridges to Pino logs or Sentry breadcrumbs.
+
+The honest framing: you _can_ build all of this around a generated client, and plenty of teams have. The difference is whether it's declared once on a primitive or assembled and maintained per project. If your integration is a single well-behaved internal service that never rate-limits you and never flakes, the resilience layer is weight you don't need — and the generator's leaner output is the better fit.
+
+## Agent-friendliness
+
+This axis didn't exist a few years ago, and it's where the two diverge most. A generated client is TypeScript you import — perfectly usable from code an agent writes, but it doesn't come with an agent front door.
+
+A stitch is reachable four ways from one definition — an in-process function, a CLI command (`stitch run`), an HTTP endpoint (`stitch serve`), and an MCP tool (`stitch mcp`) — so an agent calls the exact same validated, observable thing your code does. And it does so through **code-mode**: rather than registering one MCP tool per endpoint (which re-sends every tool's schema into the model's context on every turn), an agent drives a small fixed set — `run_stitch` to execute a snippet, plus `list_stitches` and `describe_stitch` for on-demand discovery. The context cost stays flat as you add APIs. Because auth lives behind the seam, the agent gets a **capability, not a credential** — it can call the endpoint without ever seeing the token. None of that is something a codegen client offers out of the box, because solving it wasn't in its scope. (That single MCP surface is also why [you might not need an MCP server per integration](/blog/you-might-not-need-an-mcp-server-per-integration).)
+
+## A side-by-side
+
+| Axis                  | Spec-based codegen (openapi-typescript-codegen, Orval, …) | Runtime stitching (StitchAPI)                             |
+| --------------------- | --------------------------------------------------------- | --------------------------------------------------------- |
+| **Needs to start**    | a complete, accurate OpenAPI/GraphQL spec                 | a URL + one example response                              |
+| **Surface typed**     | the whole API, up front, in one command                   | the endpoints you declare, one at a time                  |
+| **Types reflect**     | the spec at generation time (static)                      | the live response on every call (validated)               |
+| **Schema changes**    | invisible until you regenerate                            | caught as leveled `error` / `warn` / `info` drift         |
+| **Build artifact**    | a generated SDK to commit & regenerate                    | none — the declaration is the client                      |
+| **Resilience / auth** | bolt-on (wrappers, interceptors)                          | declared on the stitch (retry, throttle, breaker, auth)   |
+| **Agent surface**     | importable code; no built-in agent door                   | function / CLI / HTTP / MCP code-mode from one definition |
+
+## When a generated client is the better choice
+
+This isn't a piece that ends with "so never run a generator." There's a clear lane where codegen wins, and it's worth naming plainly:
+
+-   **You have a maintained, accurate spec.** If the OpenAPI document is real, current, and owned by someone who keeps it honest, generation gives you the entire surface typed for the cost of one command. A stitch's per-endpoint declarations are simply more typing for that case.
+-   **You'll touch a large fraction of the API.** Building a big chunk of a known surface? Having every model and path typed up front, ready in autocomplete, is a genuine head start.
+-   **The contract is stable and you control the cadence.** When the API and its spec move together on a schedule you trust, the regenerate-on-change loop is a feature, not a chore, and you may not need runtime drift signals at all.
+
+Runtime stitching earns its keep on the opposite shape of problem: spec-less, partial-spec, internal, or long-tail APIs; heterogeneous surfaces stitched together (HTTP, GraphQL, SSE, shell, an LLM endpoint) under one model; providers that change shape without warning you; and anywhere you want resilience, an auth boundary, and an agent front door declared on the primitive instead of assembled around it. They're not really competing for the same job — they're tuned for different assumptions about how trustworthy your spec is.
+
+## When stitching isn't worth it
+
+-   **You already have a great spec and only need types.** If accurate types are the whole requirement and you don't want runtime validation, drift signals, or built-in resilience, a generator is less ceremony for that narrow goal.
+-   **A single, stable, well-behaved endpoint.** If one internal service never rate-limits, never flakes, and never changes shape, most of a stitch's machinery is dormant — a thin typed wrapper is enough, and honesty means saying so.
+-   **You won't write or generate a schema.** A stitch's runtime guarantees come from the `output` validator. Skip the schema and you skip validation and drift — at which point a stitch is just a fetch wrapper with extra steps.
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Declare one endpoint, wrap its output in `drift()`, and watch the next upstream rename arrive as a typed signal instead of a downstream `undefined`. The mechanics live in [Validation & drift](/docs/guides/validation/drift), the agent surface in [Use from an agent](/docs/agents), and the primitive itself in [The stitch](/docs/concepts/the-stitch).

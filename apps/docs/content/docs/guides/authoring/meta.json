@@ -1,4 +1,4 @@
 {
     "title": "Authoring & composition",
-    "pages": ["stitch", "extends", "with", "hooks"]
+    "pages": ["stitch", "extends", "seam", "with", "hooks"]
 }

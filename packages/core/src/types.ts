@@ -31,14 +31,24 @@ export interface StitchInput {
 }
 
 // ---- Drift ----------------------------------------------------------------
-export type DriftLevel = 'error' | 'warn' | 'info';
-export type DriftChange =
-    | 'missing'
-    | 'type-changed'
-    | 'nullable'
-    | 'new'
-    | 'no-baseline'
-    | 'invalid';
+/**
+ * Severity of a finding. `error` is reserved for a hard validation failure (`change: 'invalid'`),
+ * which fails the call; soft drift is non-fatal — `warn` / `info` / `verbose` (quietest), see
+ * {@link DriftSeverity}.
+ */
+export type DriftLevel = 'error' | 'warn' | 'info' | 'verbose';
+/**
+ * What a finding reports. The three **soft** kinds come from diffing the raw response against the
+ * validated value (ADR 0015): `undeclared` (a key the schema stripped), `coerced` (a value the
+ * schema coerced — a hidden wire-type shift), `defaulted` (a `.default()` fired because the field
+ * was absent). `invalid` is the **hard** validation failure (missing-required / incompatible) that
+ * throws.
+ */
+export type DriftChange = 'undeclared' | 'coerced' | 'defaulted' | 'invalid';
+/** The soft (diff-derived) drift kinds — the ones whose severity is configurable. */
+export type SoftDriftChange = Exclude<DriftChange, 'invalid'>;
+/** Non-fatal severities a soft drift finding can carry. (Fatality is the schema's job — make the field required.) */
+export type DriftSeverity = 'warn' | 'info' | 'verbose';
 export interface DriftFinding {
     level: DriftLevel;
     path: string;
@@ -47,59 +57,36 @@ export interface DriftFinding {
 }
 export interface DriftOptions {
     /**
-     * Dotted paths whose disappearance or type change is escalated from the default
-     * `warn` to an `error`. The path grammar mirrors the response-shape walk: nested
-     * keys join with `.`, and an **array element** is addressed with `[]` — so
-     * `items[].id` matches the `id` of every element of the `items` array. A pattern
-     * matches by exact path, by a single-segment `*` wildcard, or as a prefix (`data`
-     * matches `data[].id` and everything beneath it). See `matchPath` for the full grammar.
+     * Paths whose soft drift is suppressed — the acknowledged-but-unconsumed surface of the API, kept
+     * out of the typed schema so the contract stays tight (ADR 0015). A narrow consumer schema means
+     * an undeclared field is usually one you already know about, not a true addition; `ignore` is the
+     * curated, path-only "known surface" (no typed baseline, so no variance false positives).
      *
-     * @example
-     * ```ts
-     * drift(userSchema, {
-     *     critical: [
-     *         'id', // top-level `id` going missing / changing type → error
-     *         'items[].sku', // the `sku` of ANY element of `items` → error
-     *         'meta.*', // any direct child of `meta` (single-segment wildcard)
-     *     ],
-     * });
-     * ```
-     */
-    critical?: string[];
-    /** Paths (same grammar as {@link DriftOptions.critical}, e.g. `items[].field`) whose change is leveled to a `warn`. */
-    watch?: string[];
-    onNew?: DriftLevel; // level for brand-new fields (default 'info')
-    /**
-     * Detect-but-never-write (default `false`). When `true`, a missing snapshot is NOT written;
-     * instead it surfaces a `no-baseline` finding (at {@link DriftOptions.onMissing}). Use in
-     * deployed/prod contexts so a drift-guarded call can never write a baseline as a side effect
-     * (the default first-run behaviour writes one).
-     */
-    readonly?: boolean;
-    /**
-     * Level for the `no-baseline` finding emitted in {@link DriftOptions.readonly} mode when the
-     * snapshot is absent. Default `'warn'`.
-     */
-    onMissing?: DriftLevel;
-    /**
-     * Committed baseline (`<name>.contract.json`). The path is resolved relative to
-     * `process.cwd()` — **not** the declaring module — so running a package's tests/app from a
-     * different working directory writes/reads the snapshot in the wrong place. Prefer an absolute
-     * or caller-relative path; anchor it to the module that declares the stitch with
-     * `fileURLToPath(new URL(...))`:
+     * The grammar mirrors the finding path: nested keys join with `.`, an **array element** is `[]`
+     * (so `items[].meta` matches every element's `meta`), and a pattern matches by exact path, a
+     * single-segment `*` wildcard, or as a prefix (`meta` ignores `meta` and everything beneath it).
      *
-     * @example
-     * ```ts
-     * import { fileURLToPath } from 'node:url';
-     *
-     * drift(userSchema, {
-     *     snapshotFile: fileURLToPath(
-     *         new URL('./users.contract.json', import.meta.url),
-     *     ),
-     * });
-     * ```
+     * @example `ignore: ['meta', '_links', 'debug.*']`
      */
-    snapshotFile?: string;
+    ignore?: string[];
+    /**
+     * How soft drift is leveled / filtered. Three shapes (ADR 0015):
+     * - a **single level** or a **bare list** of levels — an _allowlist_ of which severities to
+     *   surface (others are dropped), keeping the per-kind defaults below. `'warn'` ≡ `['warn']`.
+     * - a **map** of soft-change kind → severity — _re-levels_ a kind (all kinds still surface).
+     *
+     * Per-kind defaults: `undeclared` → `info`, `coerced` → `warn`, `defaulted` → `verbose`.
+     * Omitted ⇒ every soft drift surfaces at its default level. Soft drift is always non-fatal;
+     * to fail on a change, make the field required/strict in the schema (it becomes `invalid`).
+     *
+     * @example severity: 'warn'                         // surface only warn-level drift
+     * @example severity: ['info', 'warn']               // surface info and warn (drop verbose)
+     * @example severity: { coerced: 'info', defaulted: 'info' } // re-level two kinds
+     */
+    severity?:
+        | DriftSeverity
+        | DriftSeverity[]
+        | Partial<Record<SoftDriftChange, DriftSeverity>>;
 }
 export interface DriftSpec<T = unknown> {
     __kind: 'drift';

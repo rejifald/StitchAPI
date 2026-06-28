@@ -8,7 +8,7 @@ Stitch errors to HTTP — three thin bridges between StitchAPI's backend primiti
 (the `seam`, ADR 0002) and Express's `req`/`res`.
 
 Express has no plugin/lifecycle/logger structure to bridge (cf.
-[`@stitchapi/fastify`](https://stitchapi.dev)), so this is the **shallow**
+[`@stitchapi/fastify`](https://stitchapi.dev/docs/integrations/fastify)), so this is the **shallow**
 binding: a request handler, an SSE writer, and an error-handling middleware.
 Works on Express 4 and 5.
 

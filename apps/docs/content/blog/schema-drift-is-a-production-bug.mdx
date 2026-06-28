@@ -1,0 +1,100 @@
+---
+title: Schema Drift Is the Bug You Ship to Production
+description: A third-party field quietly changes shape and your code keeps compiling, your tests keep passing, and the breakage only shows up live. Here's how leveled drift detection turns that silent failure into a visible signal.
+author: Oleksandr Zhuravlov
+date: '2026-06-11'
+tags: [reliability, drift, validation, types, observability]
+---
+
+A provider you depend on renames `total` to `total_amount`, or turns a number into a string, or starts returning `null` where it never did before. Nobody told you. Your build is green. Your tests are green. The deploy goes out. And then, hours later, a chart renders `NaN`, an order total comes out `undefined`, and a pager goes off — for a code path you didn't touch.
+
+This is schema drift, and it's a peculiarly nasty class of bug because every guardrail you'd expect to catch it was looking the wrong way. The change happened on a machine you don't own, to a contract you only assumed. The first runtime that sees the new shape is production.
+
+## Why types don't save you here
+
+The intuitive defense is TypeScript. You typed the response, so surely a shape change is a compile error?
+
+It isn't. Your types describe what you _expected_ the response to be — they're a claim you wrote down once, frozen at the moment you wrote it. The compiler checks your code against that claim, not the claim against reality. When the upstream JSON stops matching your interface, nothing recompiles, because nothing in your source changed. The types are a fossil of an old agreement, and the bytes on the wire have quietly moved on.
+
+Tests don't catch it either, and for a sharper reason: most suites mock the upstream. The fixture is a snapshot of the _old_ shape — the shape you captured back when you wrote the test. So the mock and the types agree perfectly, the assertions pass, and the green check tells you your code is correct _about a response that no longer exists_. The one thing that would catch the drift — a real call to the real API returning the real new shape — is exactly what a unit test is designed not to do.
+
+So the breakage slips through the net by construction. Types check source against a frozen claim; tests check code against a frozen fixture. Drift is a change to neither of those — it's a change to the live response, and the only place a live response shows up is at runtime, in production, on the unlucky request.
+
+## Make the silent change loud
+
+The fix isn't more types or more mocks. It's to check the response you actually receive against a contract, on the calls you actually make, and route any difference as a signal. And you already have the contract — it's the schema you declared. There is nothing extra to maintain.
+
+StitchAPI does this with **schema-anchored drift detection**. You wrap a stitch's `output` schema in `drift()`, and every live response is checked against that schema in two tiers:
+
+```ts
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getOrder = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders/{id}',
+    output: drift(
+        z.object({
+            id: z.number(), // required → its loss throws
+            total: z.number(), // required → its loss throws
+            note: z.string().optional(), // optional → its absence is fine
+        }),
+    ),
+});
+```
+
+**Tier one is validation — the hard contract.** A field you declared **required** that goes missing or comes back the wrong type fails the call with `STITCH_DRIFT`. You don't configure which fields are fatal with a separate list; you say it the way you already say everything else about the shape — by making the field required. Make it `.optional()` and its absence is tolerated; make it required and its disappearance throws. Severity lives in the schema, where it belongs.
+
+**Tier two is drift — the soft, non-fatal layer.** Once a response validates, StitchAPI returns the _validated_ value (coerced, defaulted, unknown keys stripped) and diffs the raw body against it. That difference is the drift, and it catches three things plain validation hides:
+
+-   **`coerced`** — the schema quietly absorbed a wire-type shift. A defensive `z.coerce.number()` turns the provider's new `"42"` back into `42`, validation passes, and _nothing_ tells you the wire format changed — except the diff. This is drift intel you can't get any other way.
+-   **`undeclared`** — the response carried a key your schema doesn't model. The API grew something.
+-   **`defaulted`** — a `.default()` fired because a field you expected wasn't there.
+
+No snapshot. No baseline to generate, commit, or regenerate when the API legitimately changes. The contract is the code.
+
+## Variance is not drift
+
+The reason a snapshot was the wrong tool: a single remembered shape can't tell a real change from normal variation. An optional field that's sometimes absent, a `string | null` that's sometimes null, an array that's sometimes empty — a baseline flags all of them, and you learn to mute the alarm.
+
+A schema doesn't have that problem, because it _declares_ what may vary. `z.string().optional()` says "absent is fine." `z.string().nullable()` says "null is fine." `z.array(...)` says "empty is fine." All of it validates clean, so none of it is drift. You describe the envelope of normal once, in the type you were going to write anyway, and only genuine change is reported. That's the whole reason to anchor on the schema instead of a remembered sample.
+
+## Reacting to a drift event
+
+Because every call is an event stream — `start → progress → drift → result → done`, with `await` as sugar over it — drift isn't a separate channel you wire up. When you only want the value, `await` the stitch and a required-field violation throws `STITCH_DRIFT` for you. When you want to see the soft findings as they happen, iterate the stream:
+
+```ts
+for await (const event of getOrder({ params: { id: 7 } }).stream()) {
+    if (event.type === 'drift') {
+        const { level, path, change } = event.finding;
+        // e.g. level: 'warn', path: 'total', change: 'coerced'
+        log.warn(`drift on ${path}: ${change}`, { level });
+    }
+    if (event.type === 'result') {
+        renderOrder(event.value); // the validated value — coerced, stripped, typed
+    }
+}
+```
+
+Soft findings carry a default level — `coerced` is a `warn`, `undeclared` an `info`, `defaulted` a `verbose` — and you can re-level or filter them with `severity`, or silence a field you already know about with `ignore: ['meta', '_links']` (the API surface you've acknowledged but don't consume, kept out of the typed schema so the contract stays tight). The change you'd otherwise have discovered from a production incident becomes a line in your trace, on the exact `path` and `change` that moved.
+
+## When this isn't worth it — and the honest limits
+
+Drift earns its keep against APIs you don't control and can't pin: third-party vendors, internal services owned by another team, anything with a habit of shipping "minor" response tweaks. For an endpoint you own and version yourself, a plain `output` schema is usually enough — you'll change both sides in the same commit.
+
+And the edges are real:
+
+-   **It observes the responses you actually receive — it is not a contract test.** Drift checks the live calls your code makes; it doesn't probe every endpoint with synthetic traffic. A field in a response path you never exercise isn't checked until something calls it. Exhaustive surface coverage is a contract-testing job.
+-   **Drift watches the surface you declare.** The flip side of anchoring on your schema: change the provider makes in a field you don't model is, by definition, change you don't consume — so it's invisible. That's a deliberate scope, not an accident. (Catching drift in undeclared fields would need the provider's published spec, or the kind of remembered-sample baseline this design rejected.)
+-   **Severity is yours, including the mistakes.** What you make required is what throws; under-specify and a real break slips through as a `warn` nobody reads, over-specify and you fail calls over a tolerable shift. The schema is the dial — it doesn't tell you where to set it.
+-   **Keep transforms out of the schema.** Drift diffs the raw body against the validated value, so a `.transform()` _inside_ the schema looks like drift. Reshape in the pipeline `transform` step instead, which runs before validation.
+
+None of that changes the core trade. Without drift, a quietly renamed field is an `undefined` you discover from a production incident. With it, a required field's loss throws on the request that actually drifted, and a coercion or new key is a `drift` event on a named path — caught at the boundary, not on the call that finally fell over.
+
+## Try it
+
+```bash
+npm i stitchapi
+```
+
+Wrap an `output` in `drift()` and make the fields you depend on required. The full mechanics — the change kinds, `severity`, `ignore`, and the `STITCH_DRIFT` error — are in the [Drift detection](/docs/guides/validation/drift) guide, with the broader picture in [Validation](/docs/guides/validation/validation) and the [event stream](/docs/concepts/event-stream).

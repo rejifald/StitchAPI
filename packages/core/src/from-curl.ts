@@ -125,26 +125,161 @@ const SKIP_VALUE_FLAGS = new Set([
  * `--data-urlencode`, `-G`/`--get`, and the URL (quoted or bare). Unknown flags are warned about,
  * never fatal.
  */
+// `-d`/`--data` family: a raw body part (not url-encoded). `--data-urlencode`
+// is handled separately because it sets the urlencode flag.
+const DATA_FLAGS = new Set([
+    '-d',
+    '--data',
+    '--data-raw',
+    '--data-ascii',
+    '--data-binary',
+]);
+
+// Flags we recognise but ignore: transport/output toggles with no bearing on
+// the request shape.
+const NOOP_FLAGS = new Set([
+    '-L',
+    '--location',
+    '-s',
+    '--silent',
+    '-k',
+    '--insecure',
+    '-v',
+    '--verbose',
+    '--compressed',
+    '-f',
+    '--fail',
+    '-#',
+]);
+
+// Mutable accumulator threaded through the per-argument parse.
+interface CurlAcc {
+    warnings: string[];
+    headers: { name: string; value: string }[];
+    dataParts: { value: string; urlencode: boolean }[];
+    method?: string;
+    url?: string;
+    asQuery: boolean;
+    sawData: boolean;
+}
+
+function pushHeader(acc: CurlAcc, raw: string): void {
+    const idx = raw.indexOf(':');
+    if (idx < 0) {
+        acc.warnings.push(`ignored header without a colon: "${raw}"`);
+        return;
+    }
+    acc.headers.push({
+        name: raw.slice(0, idx).trim(),
+        value: raw.slice(idx + 1).trim(),
+    });
+}
+
+// The switch default: a value-skipping flag (consume its value), an unknown
+// flag (warn), or a bare token — the first bare token becomes the URL.
+function applyPositionalOrUnknown(
+    acc: CurlAcc,
+    flag: string,
+    tok: string,
+    take: () => string | undefined,
+): void {
+    if (flag.startsWith('-')) {
+        if (SKIP_VALUE_FLAGS.has(flag)) {
+            take(); // consume its value so it is not read as the URL
+        } else {
+            acc.warnings.push(`ignored unknown flag: ${flag}`);
+        }
+        return;
+    }
+    // A bare token is the URL (first one wins; later bare tokens are noise).
+    acc.url ??= tok;
+}
+
+// Apply one argv token to the accumulator and return the (possibly advanced)
+// index — `take()` consumes the following token for flags that carry a value.
+function applyCurlArg(
+    acc: CurlAcc,
+    argv: string[],
+    i: number,
+    flag: string,
+    inline: string | undefined,
+    tok: string,
+): number {
+    const take = (): string | undefined => inline ?? argv[++i];
+
+    if (DATA_FLAGS.has(flag)) {
+        const v = take();
+        if (v !== undefined) {
+            acc.dataParts.push({ value: v, urlencode: false });
+            acc.sawData = true;
+        }
+        return i;
+    }
+    if (NOOP_FLAGS.has(flag)) return i;
+
+    switch (flag) {
+        case '-X':
+        case '--request': {
+            const v = take();
+            if (v !== undefined) acc.method = v.toUpperCase();
+            return i;
+        }
+        case '-H':
+        case '--header': {
+            const v = take();
+            if (v !== undefined) pushHeader(acc, v);
+            return i;
+        }
+        case '--data-urlencode': {
+            const v = take();
+            if (v !== undefined) {
+                acc.dataParts.push({ value: v, urlencode: true });
+                acc.sawData = true;
+            }
+            return i;
+        }
+        case '-G':
+        case '--get':
+            acc.asQuery = true;
+            return i;
+        case '-I':
+        case '--head':
+            acc.method = 'HEAD';
+            return i;
+        default:
+            applyPositionalOrUnknown(acc, flag, tok, take);
+            return i;
+    }
+}
+
+function finalizeRequest(acc: CurlAcc): ParsedRequest {
+    const warnings = acc.warnings;
+    let url = acc.url;
+    if (url === undefined) {
+        warnings.push('no URL found in the curl command');
+        url = '';
+    }
+
+    const req: ParsedRequest = { url, headers: acc.headers, warnings };
+    if (acc.method !== undefined) req.method = acc.method;
+    if (acc.asQuery) req.asQuery = true;
+    if (acc.sawData) {
+        const joined = acc.dataParts.map((p) => p.value).join('&');
+        req.body = joined;
+        const anyUrlencode = acc.dataParts.some((p) => p.urlencode);
+        req.bodyKind = anyUrlencode ? 'form' : sniffBodyKind(joined);
+    }
+    return req;
+}
+
 export function parseCurl(curl: string | string[]): ParsedRequest {
     const argv = dropCurl(Array.isArray(curl) ? curl.slice() : tokenize(curl));
-    const warnings: string[] = [];
-    const headers: { name: string; value: string }[] = [];
-    const dataParts: { value: string; urlencode: boolean }[] = [];
-    let method: string | undefined;
-    let url: string | undefined;
-    let asQuery = false;
-    let sawData = false;
-
-    const splitHeader = (raw: string): void => {
-        const idx = raw.indexOf(':');
-        if (idx < 0) {
-            warnings.push(`ignored header without a colon: "${raw}"`);
-            return;
-        }
-        headers.push({
-            name: raw.slice(0, idx).trim(),
-            value: raw.slice(idx + 1).trim(),
-        });
+    const acc: CurlAcc = {
+        warnings: [],
+        headers: [],
+        dataParts: [],
+        asQuery: false,
+        sawData: false,
     };
 
     for (let i = 0; i < argv.length; i++) {
@@ -160,93 +295,10 @@ export function parseCurl(curl: string | string[]): ParsedRequest {
                 inline = tok.slice(eq + 1);
             }
         }
-        const take = (): string | undefined => inline ?? argv[++i];
-
-        switch (flag) {
-            case '-X':
-            case '--request': {
-                const v = take();
-                if (v !== undefined) method = v.toUpperCase();
-                break;
-            }
-            case '-H':
-            case '--header': {
-                const v = take();
-                if (v !== undefined) splitHeader(v);
-                break;
-            }
-            case '-d':
-            case '--data':
-            case '--data-raw':
-            case '--data-ascii':
-            case '--data-binary': {
-                const v = take();
-                if (v !== undefined) {
-                    dataParts.push({ value: v, urlencode: false });
-                    sawData = true;
-                }
-                break;
-            }
-            case '--data-urlencode': {
-                const v = take();
-                if (v !== undefined) {
-                    dataParts.push({ value: v, urlencode: true });
-                    sawData = true;
-                }
-                break;
-            }
-            case '-G':
-            case '--get':
-                asQuery = true;
-                break;
-            case '-I':
-            case '--head':
-                method = 'HEAD';
-                break;
-            case '-L':
-            case '--location':
-            case '-s':
-            case '--silent':
-            case '-k':
-            case '--insecure':
-            case '-v':
-            case '--verbose':
-            case '--compressed':
-            case '-f':
-            case '--fail':
-            case '-#':
-                break; // known no-op flags
-            default: {
-                if (flag.startsWith('-')) {
-                    if (SKIP_VALUE_FLAGS.has(flag)) {
-                        take(); // consume its value so it is not read as the URL
-                    } else {
-                        warnings.push(`ignored unknown flag: ${flag}`);
-                    }
-                    break;
-                }
-                // A bare token is the URL (first one wins; later bare tokens are noise).
-                url ??= tok;
-                break;
-            }
-        }
+        i = applyCurlArg(acc, argv, i, flag, inline, tok);
     }
 
-    if (url === undefined) {
-        warnings.push('no URL found in the curl command');
-        url = '';
-    }
-
-    const req: ParsedRequest = { url, headers, warnings };
-    if (method !== undefined) req.method = method;
-    if (asQuery) req.asQuery = true;
-    if (sawData) {
-        const joined = dataParts.map((p) => p.value).join('&');
-        req.body = joined;
-        const anyUrlencode = dataParts.some((p) => p.urlencode);
-        req.bodyKind = anyUrlencode ? 'form' : sniffBodyKind(joined);
-    }
-    return req;
+    return finalizeRequest(acc);
 }
 
 // Classify a raw `-d` payload: a JSON-parseable document → 'json', else (k=v&… or anything else)
@@ -627,10 +679,49 @@ function recogniseAuth(
  * SECURITY: a captured credential never appears in the source — recognised auth becomes an
  * `env('NAME')` placeholder.
  */
-export function toStitchSource(
-    req: ParsedRequest,
-    opts: ToStitchSourceOptions = {},
-): ToStitchSourceResult {
+// The shape of a parsed request once curl/HAR noise is resolved into the
+// pieces a stitch needs: a templated path, recognised auth, the carried query,
+// the static headers, and the effective body type + method.
+interface AnalyzedRequest {
+    origin: string | undefined;
+    path: string;
+    params: { name: string; value: string }[];
+    auth: AuthEmit | undefined;
+    query: { name: string; value: string }[];
+    staticHeaders: { name: string; value: string }[];
+    // analyzeRequest only ever emits 'json' | 'form' (or undefined); the narrower
+    // type lets renderBody/renderConfig consume it without a cast.
+    bodyType: 'json' | 'form' | undefined;
+    method: string | undefined;
+    warnings: string[];
+}
+
+// Whether a header survives into the static `headers:` block: drop the auth
+// header, transport noise, and a content-type already implied by bodyType.
+function keepStaticHeader(
+    h: { name: string; value: string },
+    usedHeader: string | undefined,
+    bodyType: 'json' | 'form' | undefined,
+): boolean {
+    const lower = h.name.toLowerCase();
+    if (lower === usedHeader) return false;
+    if (DROP_HEADERS.has(lower)) return false;
+    if (lower === 'content-type') {
+        // Drop content-type only when bodyType implies it (json/form); keep an explicit one
+        // for an unusual type so the request still asks for it.
+        if (bodyType === 'json' && /application\/json/i.test(h.value))
+            return false;
+        if (bodyType === 'form' && /x-www-form-urlencoded/i.test(h.value))
+            return false;
+    }
+    if (lower === 'accept' && /^\*\/\*$/.test(h.value.trim())) return false;
+    return true;
+}
+
+// Resolve a ParsedRequest into the pieces toStitchSource emits: lift id path
+// segments, recognise auth, compute the carried query, drop noise headers, and
+// decide the body type + method. Warnings accumulate the lifts.
+function analyzeRequest(req: ParsedRequest): AnalyzedRequest {
     const warnings: string[] = [...req.warnings];
     const { origin, path: rawPath, query: urlQuery } = splitUrl(req.url);
 
@@ -662,115 +753,146 @@ export function toStitchSource(
                 ? 'form'
                 : 'json'
             : undefined;
-    const staticHeaders = req.headers.filter((h) => {
-        const lower = h.name.toLowerCase();
-        if (lower === usedHeader) return false;
-        if (DROP_HEADERS.has(lower)) return false;
-        if (lower === 'content-type') {
-            // Drop content-type only when bodyType implies it (json/form); keep an explicit one
-            // for an unusual type so the request still asks for it.
-            if (bodyType === 'json' && /application\/json/i.test(h.value))
-                return false;
-            if (bodyType === 'form' && /x-www-form-urlencoded/i.test(h.value))
-                return false;
-        }
-        if (lower === 'accept' && /^\*\/\*$/.test(h.value.trim())) return false;
-        return true;
-    });
+    const staticHeaders = req.headers.filter((h) =>
+        keepStaticHeader(h, usedHeader, bodyType),
+    );
 
     // Method: explicit wins; else POST when a body is present and we are not folding it to query.
     const method =
         req.method ?? (req.body && !req.asQuery ? 'POST' : undefined);
 
-    // ---- assemble the config object ----
+    return {
+        origin,
+        path,
+        params,
+        auth,
+        query,
+        staticHeaders,
+        bodyType,
+        method,
+        warnings,
+    };
+}
+
+// The `output:` line under --zod: a generated schema from the --response
+// sample, or z.unknown() with a warning when the sample is missing/invalid.
+function renderOutputLine(
+    opts: ToStitchSourceOptions,
+    warnings: string[],
+): string {
+    let sample: unknown;
+    if (opts.response !== undefined) {
+        try {
+            sample = JSON.parse(opts.response);
+        } catch {
+            warnings.push(
+                '--response was not valid JSON; emitted z.unknown() for output',
+            );
+        }
+    } else {
+        warnings.push(
+            'no --response sample; emitted z.unknown() for the output schema',
+        );
+    }
+    const output =
+        sample === undefined ? 'z.unknown()' : zodFor(sample, '    ');
+    return `    output: ${output},`;
+}
+
+// Render the `stitch({...})` config plus its import head. `--zod` may append a
+// generated output schema (and warnings when no/invalid --response sample).
+function renderConfig(
+    a: AnalyzedRequest,
+    req: ParsedRequest,
+    opts: ToStitchSourceOptions,
+    warnings: string[],
+): { head: string; config: string; name: string } {
     // An explicit --name wins, but a blank/whitespace-only name falls through to the derived one
     // (so `''` is treated as "unset", which is why this is not a plain `??`).
     const trimmedName = opts.name?.trim();
     const name =
         trimmedName !== undefined && trimmedName.length > 0
             ? trimmedName
-            : deriveName(method ?? 'GET', path);
+            : deriveName(a.method ?? 'GET', a.path);
     const lines: string[] = [];
-    if (origin) {
-        lines.push(`    baseUrl: ${quote(origin)},`);
-        lines.push(`    path: ${quote(path)},`);
+    if (a.origin) {
+        lines.push(`    baseUrl: ${quote(a.origin)},`);
+        lines.push(`    path: ${quote(a.path)},`);
     } else {
         lines.push(`    url: ${quote(req.url)},`);
     }
-    if (method && method !== 'GET') lines.push(`    method: ${quote(method)},`);
+    if (a.method && a.method !== 'GET')
+        lines.push(`    method: ${quote(a.method)},`);
 
-    if (auth) lines.push(`    auth: ${renderAuth(auth)},`);
+    if (a.auth) lines.push(`    auth: ${renderAuth(a.auth)},`);
 
-    if (staticHeaders.length) {
-        const hdr = staticHeaders
+    if (a.staticHeaders.length) {
+        const hdr = a.staticHeaders
             .map((h) => `        ${renderKey(h.name)}: ${quote(h.value)}`)
             .join(',\n');
         lines.push(`    headers: {\n${hdr},\n    },`);
     }
 
     // Request body (only when NOT folded to query). JSON → an example object; form → a note.
-    if (bodyType && req.body) {
-        lines.push(`    bodyType: ${quote(bodyType)},`);
+    if (a.bodyType && req.body) {
+        lines.push(`    bodyType: ${quote(a.bodyType)},`);
     }
 
     // Output schema: default = a comment; with --zod = a generated schema string from --response.
-    if (opts.zod) {
-        let sample: unknown;
-        if (opts.response !== undefined) {
-            try {
-                sample = JSON.parse(opts.response);
-            } catch {
-                warnings.push(
-                    '--response was not valid JSON; emitted z.unknown() for output',
-                );
-            }
-        } else {
-            warnings.push(
-                'no --response sample; emitted z.unknown() for the output schema',
-            );
-        }
-        const output =
-            sample === undefined ? 'z.unknown()' : zodFor(sample, '    ');
-        lines.push(`    output: ${output},`);
-    }
+    if (opts.zod) lines.push(renderOutputLine(opts, warnings));
 
-    const importLine = buildImport(auth);
+    const importLine = buildImport(a.auth);
     const head = opts.zod
         ? `${importLine}\nimport { z } from 'zod';\n`
         : `${importLine}\n`;
-
     const config = `export const ${name} = stitch({\n${lines.join('\n')}\n});`;
+    return { head, config, name };
+}
 
-    // The example call: show params for lifted ids, query, and an example body.
+// The example call: show params for lifted ids, query, and an example body.
+function renderExampleCall(
+    a: AnalyzedRequest,
+    req: ParsedRequest,
+    name: string,
+): string {
     const callArgLines: string[] = [];
-    if (params.length) {
-        const ps = params
+    if (a.params.length) {
+        const ps = a.params
             .map(
                 (p) => `        ${renderKey(p.name)}: ${exampleParam(p.value)}`,
             )
             .join(',\n');
         callArgLines.push(`    params: {\n${ps},\n    }`);
     }
-    if (query.length) {
-        const qs = query
+    if (a.query.length) {
+        const qs = a.query
             .map(
                 (q) => `        ${renderKey(q.name)}: ${exampleParam(q.value)}`,
             )
             .join(',\n');
         callArgLines.push(`    query: {\n${qs},\n    }`);
     }
-    if (bodyType && req.body) {
-        callArgLines.push(`    body: ${renderBody(req.body, bodyType)}`);
+    if (a.bodyType && req.body) {
+        callArgLines.push(`    body: ${renderBody(req.body, a.bodyType)}`);
     }
     const callArg = callArgLines.length
         ? `{\n${callArgLines.join(',\n')},\n}`
         : '';
-    const call = `await ${name}(${callArg});`;
+    return `await ${name}(${callArg});`;
+}
 
-    let comment = '';
-    if (!opts.zod)
-        comment =
-            '// add an output schema to validate + type the response (rerun with --zod)\n';
+export function toStitchSource(
+    req: ParsedRequest,
+    opts: ToStitchSourceOptions = {},
+): ToStitchSourceResult {
+    const a = analyzeRequest(req);
+    const warnings = a.warnings;
+    const { head, config, name } = renderConfig(a, req, opts, warnings);
+    const call = renderExampleCall(a, req, name);
+
+    const comment = opts.zod
+        ? ''
+        : '// add an output schema to validate + type the response (rerun with --zod)\n';
 
     const source = `${head}\n${config}\n\n${comment}${call}\n`;
     return { source, warnings };

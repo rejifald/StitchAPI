@@ -8,6 +8,8 @@ export const docsRoute = '/docs';
 export const docsImageRoute = '/og/docs';
 export const docsContentRoute = '/llms.mdx/docs';
 
+export const blogRoute = '/blog';
+
 // GitHub repository, used for "edit on GitHub" / source links.
 export const gitConfig = {
     user: 'rejifald',

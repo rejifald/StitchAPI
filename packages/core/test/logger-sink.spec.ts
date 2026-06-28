@@ -116,7 +116,7 @@ test("a drift event logs at the finding's own level", () => {
     sink.handle(
         {
             type: 'drift',
-            finding: { level: 'error', path: 'id', change: 'missing' },
+            finding: { level: 'error', path: 'id', change: 'invalid' },
             at: 0,
         },
         ctx,
@@ -124,7 +124,7 @@ test("a drift event logs at the finding's own level", () => {
     sink.handle(
         {
             type: 'drift',
-            finding: { level: 'warn', path: 'name', change: 'nullable' },
+            finding: { level: 'warn', path: 'name', change: 'coerced' },
             at: 0,
         },
         ctx,
@@ -132,7 +132,7 @@ test("a drift event logs at the finding's own level", () => {
     sink.handle(
         {
             type: 'drift',
-            finding: { level: 'info', path: 'extra', change: 'new' },
+            finding: { level: 'info', path: 'extra', change: 'undeclared' },
             at: 0,
         },
         ctx,
@@ -140,7 +140,7 @@ test("a drift event logs at the finding's own level", () => {
 
     expect(entries.map((e) => e.level)).toEqual(['error', 'warn', 'info']);
     // The drift line carries the path/change metadata, not any value.
-    expect(entries[0]?.message).toContain('drift[error] id missing');
+    expect(entries[0]?.message).toContain('drift[error] id invalid');
 });
 
 test('a delta event is never logged', () => {
@@ -183,7 +183,7 @@ test('opts.levels can override the drift level too', () => {
     sink.handle(
         {
             type: 'drift',
-            finding: { level: 'error', path: 'id', change: 'missing' },
+            finding: { level: 'error', path: 'id', change: 'invalid' },
             at: 0,
         },
         { name: 'users' },
