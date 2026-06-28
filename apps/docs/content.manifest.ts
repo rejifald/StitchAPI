@@ -262,6 +262,13 @@ export const pages: Page[] = [
         kind: 'concept',
     },
     {
+        path: 'concepts/the-seam',
+        title: 'The seam',
+        description:
+            'The shared-runtime primitive a set of stitches belong to — one store, vault, throttle bucket, and trace sink behind a shared base config and a trusted principal boundary.',
+        kind: 'concept',
+    },
+    {
         path: 'concepts/event-stream',
         title: 'The event stream',
         description:
@@ -296,6 +303,13 @@ export const pages: Page[] = [
         title: 'extends',
         description:
             'Layer fragments — strings, objects, or other stitches — with deep-merge to compose configuration.',
+        kind: 'guide',
+    },
+    {
+        path: 'guides/authoring/seam',
+        title: 'seam',
+        description:
+            'Group stitches under one shared runtime — store, vault, throttle bucket, and trace sink — behind a shared base config, and bind per-principal sessions with seam.as().',
         kind: 'guide',
     },
     {
