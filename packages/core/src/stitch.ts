@@ -44,7 +44,13 @@ import {
     type TraceSink,
     isStitch,
 } from './types';
-import { deepMerge, newRunContext, readEnv, systemClock } from './util';
+import {
+    deepMerge,
+    newRunContext,
+    readEnv,
+    redactSecretsDeep,
+    systemClock,
+} from './util';
 import { type Validator, toValidator } from './validator';
 
 export type Fragment = Partial<StitchConfig> | Stitch | string;
@@ -318,13 +324,17 @@ function makeInspection<T>(
     return wrapper;
 }
 
-// `.inspect()` consumer (ADR 0016): drain ONE run and assemble the `Inspection` — never throws.
-// `findings` collect from every `drift` event; `value`/`status` from the terminal `result`; on a hard
-// failure `value` stays `null` and `error` is the rebuilt StitchError. `raw` rides the non-enumerable
-// RAW_BODY channel — on the `result` event for a success, on the pinned StitchError (recovered via
-// ERROR_SOURCE) for a contract violation; it stays `null` when not retained (streaming / cache hit).
+// `.inspect()` consumer (ADR 0016 / ADR 0018): drain ONE run and assemble the `Inspection` — never
+// throws. `findings` collect from every `drift` event; `value`/`status` from the terminal `result`;
+// on a hard failure `value` stays `null` and `error` is the rebuilt StitchError. `raw` rides the
+// non-enumerable RAW_BODY channel — on the `result` event for a success, on the pinned StitchError
+// (recovered via ERROR_SOURCE) for a contract violation; it stays `null` when not retained (streaming
+// / cache hit). When `opts.redact` is set, `raw` is replaced with a deep-cloned, scrubbed copy
+// AFTER findings are computed (findings run on the unredacted body — safe, since detailFor emits
+// kinds only, never values).
 async function consumeInspect<T>(
     gen: AsyncGenerator<StitchEvent<T>, void>,
+    opts?: InspectOptions,
 ): Promise<Inspection<T>> {
     const findings: DriftFinding[] = [];
     let value: T | null = null;
@@ -354,7 +364,15 @@ async function consumeInspect<T>(
         // Inspection — surface the throw as `error`, leaving `value` null.
         error = asStitchError(e);
     }
-    return makeInspection<T>(value, raw, findings, status, error);
+    // ADR 0018: opt-in redaction — applied AFTER findings are computed so the diff runs on the
+    // unredacted body. `raw` is only non-null here when a live request ran (streaming / cache
+    // hits already stay null, redaction is a no-op on null).
+    const { redact } = opts ?? {};
+    const redactedRaw =
+        redact && raw !== null
+            ? redactSecretsDeep(raw, Array.isArray(redact) ? redact : undefined)
+            : raw;
+    return makeInspection<T>(value, redactedRaw, findings, status, error);
 }
 
 // Throwing consumer: `await stitch(...)` / `stitch.unwrap(...)`. Rejects with the StitchError.
@@ -552,14 +570,16 @@ export function makeStitch<T = unknown>(
     ) => tee<T>(execute(rt, input, run, flags) as never, rt.trace, name, run);
     const streamFn = (input?: StitchInput) =>
         streamWith(input ?? {}, newRunContext());
-    // `.inspect()` (ADR 0016): one fresh root run with the raw body retained and the cache bypassed by
-    // default (`{ cache: true }` opts caching back in). Consumed by the never-throwing `consumeInspect`.
+    // `.inspect()` (ADR 0016 / ADR 0018): one fresh root run with the raw body retained and the
+    // cache bypassed by default (`{ cache: true }` opts caching back in). Consumed by the
+    // never-throwing `consumeInspect`, which also applies opt-in redaction (ADR 0018).
     const inspectFn = (input: StitchInput, opts?: InspectOptions) =>
         consumeInspect<T>(
             streamWith(input, newRunContext(), {
                 retainRaw: true,
                 bypassCache: !opts?.cache,
             }),
+            opts,
         );
 
     const result = (input?: StitchInput): StitchResult<T> => {

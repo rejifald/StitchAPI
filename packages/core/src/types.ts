@@ -770,7 +770,7 @@ export type SafeResult<T> =
     | { ok: true; data: T; error: null }
     | { ok: false; data: null; error: StitchError };
 
-/** Options for {@link Stitch.inspect} (ADR 0016). */
+/** Options for {@link Stitch.inspect} (ADR 0016 / ADR 0018). */
 export interface InspectOptions {
     /**
      * Honour the cache policy instead of bypassing it. Default `false` — `.inspect()` is a fresh
@@ -779,6 +779,21 @@ export interface InspectOptions {
      * a hit (it is only populated on a miss, where a live request actually ran).
      */
     cache?: boolean;
+    /**
+     * Scrub secret-named fields from `raw` before placing it on the wrapper (ADR 0018). Default
+     * `false` — `raw` is unredacted so the deliberate-use case ("catch a stray token in an
+     * undeclared field") is unimpaired. Set when you want to pipe `wrapper.raw` into a log or
+     * support ticket and need the _known-secret_ fields removed first.
+     *
+     * - `true` — apply the shared secret-key denylist (`isSecretKey` / `registerSecretQueryKey`
+     *   registrations) to every object key in `raw`, depth-first. Returns a deep clone.
+     * - `string[]` — additionally scrub the listed key-name/path patterns on top of the shared
+     *   denylist (reuses the {@link matchPath} grammar: exact, `*` wildcard, or prefix).
+     *
+     * ⚠️ Name-based only — cannot catch a secret in an innocuously-named undeclared field.
+     * `status`/`findings`/`value` are never affected.
+     */
+    redact?: boolean | string[];
 }
 
 /**
@@ -796,7 +811,13 @@ export interface InspectOptions {
 export interface Inspection<T> {
     /** The validated value — coerced/defaulted/stripped per ADR 0015; `null` iff `error` is set. */
     value: T | null;
-    /** The pre-validation body the findings are diffed against. Non-enumerable; `null` on streaming/cache-hit. */
+    /**
+     * The pre-validation body the findings are diffed against. Non-enumerable; `null` on
+     * streaming/cache-hit. Unredacted by default — to scrub known-secret fields before
+     * sharing, pass `{ redact: true }` (or `{ redact: ['extra.path'] }`) to `.inspect()`
+     * (ADR 0018). Non-enumerability already prevents accidental leakage via
+     * `JSON.stringify` / spread; `redact` is the deliberate-sharing escape hatch.
+     */
     raw: unknown;
     /** Soft + hard drift findings (including those that ride the event stream), in emission order. */
     findings: DriftFinding[];

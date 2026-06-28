@@ -41,12 +41,18 @@ export type {
     SpanAttributes,
     OtlpOptions,
 } from './otlp';
-// Trace-redaction escape hatch: widen the secret-query-key denylist so a host's custom credential
+// Trace-redaction escape hatch: widen the secret-key denylist so a host's custom credential
 // param name is scrubbed in every trace sink (start.url, OTLP url.full, input.query). `apiKey({ in:
 // 'query', name })` registers its name here automatically; this is the manual hook for a credential
-// the built-in set/stems don't catch. `isSecretQueryKey` is the matching predicate, exposed so a
-// host can audit which of its query params the scrubbers already cover.
-export { registerSecretQueryKey, isSecretQueryKey } from './util';
+// the built-in set/stems don't catch. `isSecretKey` is the matching predicate (alias:
+// `isSecretQueryKey`), exposed so a host can audit which of its query params / body keys the
+// scrubbers already cover. `redactSecretsDeep` walks a plain value and replaces secret-named keys.
+export {
+    registerSecretQueryKey,
+    isSecretKey,
+    isSecretQueryKey,
+    redactSecretsDeep,
+} from './util';
 export { toValidator } from './validator';
 export type { Issue, ValidationResult, Validator } from './validator';
 export type { InferInput, InferOutput, SchemaLike } from './infer';
