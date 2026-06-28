@@ -45,3 +45,7 @@ host-inferred bearer tokens in StitchAPI's auth:
 `shell(options)` takes the static `command`, optional `cwd` / `env` / `decode` / `maxBuffer`, plus
 the usual `StitchConfig` keys (`retry`, `throttle`, `timeout`, `circuit`, `trace`, …) — all applied
 by the engine around the subprocess.
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

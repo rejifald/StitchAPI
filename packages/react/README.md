@@ -101,3 +101,7 @@ const { data } = useQuery(stitchQueryOptions(getUser, { params: { id } }));
 ## License
 
 Apache-2.0
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.
