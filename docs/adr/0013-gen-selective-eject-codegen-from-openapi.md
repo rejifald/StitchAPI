@@ -1,6 +1,7 @@
 # ADR 0013 — `stitch gen`: selective, eject-model codegen from OpenAPI
 
--   **Status:** Proposed
+-   **Status:** Proposed (all five open questions resolved 2026-06-28 — see _Open
+    questions (resolved)_; no code yet)
 -   **Date:** 2026-06-28
 -   **Tags:** codegen, openapi, cli, eject, bundle-frugal, contract-not-dependency, atomicity, audit, lint
 
@@ -85,7 +86,9 @@ self-owned orphan detection below.
 
     This is the inverse of the conventional `schemas/` + `operations/` layout,
     chosen because group-by-kind leaves dead types behind in a central file when
-    an operation is removed — the opposite of the atomicity goal.
+    an operation is removed — the opposite of the atomicity goal. This
+    directory-per-operation shape is the default (`--layout dir`); `flat` and
+    `single` are escape hatches (Q3, resolved).
 
 4.  **Ownership by fan-in over the _condensed_ `$ref` graph.** Where a schema
     lives is decided by how many _selected_ operations reference it, not by where
@@ -131,12 +134,15 @@ self-owned orphan detection below.
     **source** for a chosen target:
 
     -   `types-only` — emit TS types only; `output` is a passthrough/predicate.
-        Zero runtime weight; the lightest frontend tier by far.
+        Zero runtime weight; the lightest frontend tier by far. **The default**
+        (Q2, resolved): it imposes neither a validator dependency nor bundle
+        bytes, but runtime validation + `drift` are off under it, so the
+        generator emits a loud one-line notice pointing at `--validator`.
     -   `valibot` — modular, function-based, built for tree-shaking; you pay
-        roughly per-validator-used. The recommended default for the frontend
-        story.
+        roughly per-validator-used. The recommended tier when runtime validation
+        is wanted (best frontend runtime story).
     -   `zod` — ergonomic but a chunkier, less-shakeable baseline; fine for a
-        backend SDK, heavier for bit-counting frontends.
+        backend SDK, heavier for bit-counting frontends. Opt-in.
 
     **Consistency with [ADR 0011](./0011-no-pattern-primitive-schema-reuse-is-the-validators-job.md):**
     this emits validator **source code at build time**; it does **not** add a
@@ -167,8 +173,9 @@ self-owned orphan detection below.
     never from `import { stitch }`, so the core bundle and its zero-dep gate are
     untouched. Local `#/components/...` `$ref`s are resolved by a **hand-rolled,
     bounded resolver** in the from-curl tradition (refs within a single document
-    are a small, regular problem). YAML input and external/remote `$ref`s are the
-    open question (Q1).
+    are a small, regular problem). JSON parses natively; YAML loads through a
+    lazily-`import()`ed optional, never a core dep; external/remote `$ref` is out
+    — all resolved in Q1.
 
 ### Self-owned orphan detection
 
@@ -193,26 +200,27 @@ already own the graph.
     without a TypeScript parse because we only need the **ESM import/export-from
     sublanguage**, which is tiny and regular:
 
-        -   mark roots: the package `index.ts` exports + every file containing a
-            `stitch(` call;
-        -   build edges from each module's import/export specifiers via a small
-            purpose-built tokenizer;
-        -   mark-and-sweep; any schema/type file unreachable from a root is an orphan.
+            -   mark roots: the package `index.ts` exports + every file containing a
+                `stitch(` call;
+            -   build edges from each module's import/export specifiers via a small
+                purpose-built tokenizer;
+            -   mark-and-sweep; any schema/type file unreachable from a root is an orphan.
 
-        The honest cost is in the tokenizer, not the algorithm: it must track
-        string/comment state and handle multiline imports, side-effect imports
-        (`import './x'` — an **edge**, not an orphan), `export * from` / `export { x }
+            The honest cost is in the tokenizer, not the algorithm: it must track
+            string/comment state and handle multiline imports, side-effect imports
+            (`import './x'` — an **edge**, not an orphan), `export * from` / `export { x }
 
-    from` re-exports, **`import type`/ inline`type {}`as edges** (or every type
-file is flagged dead), and dynamic`import('…')`, while ignoring `import`-like
-text inside strings and comments. A few hundred lines of bounded, dependency-
-free code — the same "hand-roll the bounded sublanguage" move as the curl
-parser and the `$ref`resolver.`stitch gen prune --fix` deletes the orphans.
+        from` re-exports, **`import type`/ inline`type {}`as edges** (or every type
 
-        ```
-        stitch gen prune ./src/foo          # list orphans (manifest, then scanner)
-        stitch gen prune ./src/foo --fix    # delete them
-        ```
+    file is flagged dead), and dynamic`import('…')`, while ignoring `import`-like
+    text inside strings and comments. A few hundred lines of bounded, dependency-
+    free code — the same "hand-roll the bounded sublanguage" move as the curl
+    parser and the `$ref`resolver.`stitch gen prune --fix` deletes the orphans.
+
+            ```
+            stitch gen prune ./src/foo          # list orphans (manifest, then scanner)
+            stitch gen prune ./src/foo --fix    # delete them
+            ```
 
 ### Evolution — `gen` is the seed of a `stitch audit` / lint surface
 
@@ -256,25 +264,93 @@ parser and the `$ref`resolver.`stitch gen prune --fix` deletes the orphans.
     heavier parse (YAML, remote deref) is a lazily-loaded **CLI-only** optional,
     never a core runtime/peer dependency.
 
-## Open questions
+## Open questions (resolved)
 
--   **Q1 — YAML and external/remote `$ref` ingestion.** Hand-roll local
-    (`#/components/...`) resolution and require JSON / pre-dereferenced input for
-    everything else, or lazily `require` a CLI-only optional (a YAML parser /
-    spec dereferencer) when the input needs it? _Leaning:_ local `$ref` + JSON in
-    v1; YAML behind a lazy optional; remote/`$dynamicRef` out (see _Out of
-    scope_).
--   **Q2 — validator default.** `types-only` (safest zero-runtime default) or
-    `valibot` (best frontend runtime story)? _Leaning:_ `types-only` as the
-    default, `valibot` as the recommended runtime tier, `zod` opt-in.
--   **Q3 — layout granularity.** Directory-per-operation (Decision 3) vs. flat vs.
-    single-file, via `--layout`? _Leaning:_ directory-per-operation as the
-    default (most deletable/reshuffleable), `--layout flat|single` as escape
-    hatches.
--   **Q4 — naming when `operationId` is absent.** Deterministic fallback
-    (`${method}_${pathToIdentifier}`) plus a collision-disambiguation rule.
--   **Q5 — does `prune` graduate?** Ship as `stitch gen prune`, then generalise
-    the scanner into `stitch doctor` / `stitch audit` (Decision 11)?
+All five resolved 2026-06-28, before any code. Each lands where the original
+leaning pointed; the reasoning is recorded here.
+
+### Q1 — YAML and external/remote `$ref` ingestion
+
+**Resolved:** _JSON natively (zero-dep); YAML via a lazily-loaded optional; local
+JSON-pointer `$ref` hand-rolled; external/remote `$ref` rejected with an
+actionable error (deferred)._
+
+JSON input parses with the native `JSON.parse` — no dependency. Most real-world
+specs are YAML, so requiring JSON-only would cripple the common case, but YAML is
+**not** a bounded sublanguage (unlike curl or JSON-pointer), so hand-rolling a
+parser is the wrong kind of work. The generator therefore lazily `import()`s an
+optional YAML parser (`yaml`) only when the input is `.yaml`/`.yml`, exactly as
+the engine reaches the cache via a lazy `import('./cache')`; if it is absent the
+CLI prints a clear, actionable hint (`install \`yaml\`, or pass a JSON spec`).
+The parser is never a core runtime/peer dependency and never in any bundle — the
+zero-dep and bundle-frugal gates hold. Local `#/components/...` `$ref`s are
+resolved by the hand-rolled bounded resolver (Decision 8) — a JSON pointer within
+one document _is_ a bounded sublanguage. External / remote / `$dynamicRef`
+resolution is **out** (it needs multi-file fetch + assembly); on encountering one
+the generator fails with "bundle/dereference your spec first," rather than
+silently emitting a broken stitch.
+
+### Q2 — validator default
+
+**Resolved:** _`types-only` is the default, with a loud notice; `valibot` is the
+recommended runtime tier; `zod` opt-in._
+
+`types-only` is the only tier that imposes **zero** runtime weight and **zero**
+validator dependency, so it is the conservative, gate-respecting, agnostic
+default — the generator should not silently pick a validator for the user, nor
+silently add bytes to a frontend bundle. The cost is that runtime response
+validation and `drift` are **off** under the default; per the project's
+no-silent-caps discipline this is **not** silent — the generator emits a one-line
+notice (`runtime validation + drift are off; re-run with --validator valibot|zod
+to enable`). Note the loss is bounded: a `types-only` stitch still carries
+retry / throttle / auth / the drift _structure_; only the runtime schema check on
+`output` is a passthrough. `valibot` is documented as the recommended tier when
+runtime validation is wanted (modular, tree-shakeable — the best frontend runtime
+story); `zod` is the ergonomic-but-heavier opt-in.
+
+### Q3 — layout granularity
+
+**Resolved:** _`--layout dir` (directory-per-operation) is the default; `flat`
+and `single` are escape hatches._
+
+Directory-per-operation is the model designed and validated in Decision 3: it is
+uniform and predictable (good for reshuffling and for the import scanner), it
+scales to operations with several private schemas without any one file ballooning,
+and it makes the stitch directory the literal unit of deletion. `--layout flat`
+emits one file per operation with its private (fan-in-1) schemas inlined — more
+compact for the common CRUD-over-shared-entities case where most operations have
+no private schemas, and still fully deletable (deleting the file removes its
+inlined types). `--layout single` emits the whole client in one file for tiny
+clients / drop-in use. `_shared/` (fan-in ≥ 2, Decision 4) is identical across
+all three layouts.
+
+### Q4 — naming
+
+**Resolved:** _prefer a sanitized `operationId`; else derive deterministically
+from method + path; dedupe by document-order suffix._
+
+The stitch's symbol name, runtime `name`, and (kebab-cased) filename all derive
+from one rule: (1) if `operationId` is present, sanitize it to a valid TS
+identifier (camelCase, strip non-identifier characters); (2) if absent, derive
+`camelCase(method + path segments)` with `{param}` braces stripped and the param
+name contributing the segment — `GET /users` → `getUsers`, `GET /users/{id}` →
+`getUsersId`, `POST /users/{id}/comments` → `postUsersIdComments` (the `method`
+prefix keeps `GET` vs `HEAD` on the same path distinct); (3) on a residual
+collision, append a stable `_2` / `_3` by document order **and** emit a
+`// TODO: rename` comment — eject means the user gives it a real name in place.
+
+### Q5 — does `prune` graduate?
+
+**Resolved:** _ship `stitch gen prune` now; factor the scanner as a reusable
+internal module; the future home for rule-enforcement is `stitch audit`, not a
+new `doctor` command._
+
+`prune` ships as a `gen` subcommand (it operates on generated trees, where the
+manifest exists). The import-scanner core (Decision 10) is factored as an
+internal module so the `stitch audit` / lint family (Decision 11) reuses it
+without a rewrite. No `stitch doctor` surface is introduced now — there is no
+second command to justify before the audit rules exist; `audit` (matching the
+rule-enforcement framing of Decision 11) is the single future home.
 
 ## Out of scope (considered, deferred)
 
