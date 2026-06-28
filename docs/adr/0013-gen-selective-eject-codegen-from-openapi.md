@@ -1,7 +1,8 @@
 # ADR 0013 — `stitch gen`: selective, eject-model codegen from OpenAPI
 
--   **Status:** Proposed (all five open questions resolved 2026-06-28 — see _Open
-    questions (resolved)_; no code yet)
+-   **Status:** Proposed (open questions resolved 2026-06-28; v1 implemented as the
+    separate **`@stitchapi/openapi`** package, _not_ a `stitch` subcommand — see
+    _Addendum: packaging_)
 -   **Date:** 2026-06-28
 -   **Tags:** codegen, openapi, cli, eject, bundle-frugal, contract-not-dependency, atomicity, audit, lint
 
@@ -149,7 +150,7 @@ self-owned orphan detection below.
     runtime JSON-Schema→validator capability to core, and core gains no schema
     engine. The JSON-Schema→validator-source mapping is the generator's bounded,
     build-time job — the symmetric inverse of `openapi.ts`'s BYO `toJsonSchema`
-    converter — and lives entirely in the CLI. ADR 0011 explicitly blesses this:
+    converter — and lives entirely in `@stitchapi/openapi`. ADR 0011 explicitly blesses this:
     "define once, emit many" as an artifact is fine; a live core primitive is
     not.
 
@@ -168,10 +169,10 @@ self-owned orphan detection below.
     No overlay config file is required for v1. (The overlay was the _managed-regen_
     model's tax; eject drops it.)
 
-8.  **Parse + deref without burdening core.** The generator is **CLI-only** —
-    reached through [`cli.ts`](../../packages/core/src/cli.ts) like `from-curl`,
-    never from `import { stitch }`, so the core bundle and its zero-dep gate are
-    untouched. Local `#/components/...` `$ref`s are resolved by a **hand-rolled,
+8.  **Parse + deref without burdening core.** The generator ships as its **own
+    package, `@stitchapi/openapi`** (see _Addendum: packaging_) — never imported by
+    the `stitchapi` runtime, so the core bundle, its zero-dep gate, and its install
+    footprint are untouched. Local `#/components/...` `$ref`s are resolved by a **hand-rolled,
     bounded resolver** in the from-curl tradition (refs within a single document
     are a small, regular problem). JSON parses natively; YAML loads through a
     lazily-`import()`ed optional, never a core dep; external/remote `$ref` is out
@@ -188,7 +189,7 @@ already own the graph.
 9.  **A generated manifest — exact and nearly free.** Emit `.stitch-gen.json`
     alongside the output recording the ownership graph already computed in
     Decision 4 (each schema → its file → its importers, plus which files are
-    stitch entry points). `stitch gen prune` reads it, checks which stitch
+    stitch entry points). `stitch-openapi prune` reads it, checks which stitch
     directories still exist on disk, recomputes reachability, and flags any
     `_shared/` file nothing reaches. Exact and instant on the as-generated
     layout, and it doubles as documentation of the ownership graph. It goes stale
@@ -215,11 +216,11 @@ already own the graph.
     file is flagged dead), and dynamic`import('…')`, while ignoring `import`-like
     text inside strings and comments. A few hundred lines of bounded, dependency-
     free code — the same "hand-roll the bounded sublanguage" move as the curl
-    parser and the `$ref`resolver.`stitch gen prune --fix` deletes the orphans.
+    parser and the `$ref`resolver.`stitch-openapi prune --fix` deletes the orphans.
 
             ```
-            stitch gen prune ./src/foo          # list orphans (manifest, then scanner)
-            stitch gen prune ./src/foo --fix    # delete them
+            stitch-openapi prune ./src/foo          # list orphans (manifest, then scanner)
+            stitch-openapi prune ./src/foo --fix    # delete them
             ```
 
 ### Evolution — `gen` is the seed of a `stitch audit` / lint surface
@@ -252,17 +253,18 @@ already own the graph.
 -   **Bundle-frugal.** Atomic per-operation layout + atomic schemas + no eager
     barrel + `types-only`/`valibot` tiers ⇒ an operation costs its transitive
     `$ref` closure and nothing else. The generator, `prune`, and the future
-    `audit` are CLI-only, never reachable from `import { stitch }`.
+    `audit` live in `@stitchapi/openapi`, never reachable from `import { stitch }`
+    and never shipped in the `stitchapi` tarball.
 -   **Contract-not-dependency.** Generated stitch declarations round-trip as JSON
     like any hand-written stitch (`auth` → descriptor, surface → id per
     [ADR 0005](./0005-surfaces-and-the-authoring-model.md)). The generator reads
     a contract (OpenAPI) and emits contracts (stitches) — symmetric to
     `export --openapi`. No live-closure dependency is introduced into the
     declaration.
--   **Zero-deps.** Core untouched. The generator hand-rolls its bounded parsers
-    (local `$ref` resolver, import scanner) in the from-curl tradition; any
-    heavier parse (YAML, remote deref) is a lazily-loaded **CLI-only** optional,
-    never a core runtime/peer dependency.
+-   **Zero-deps.** Core untouched — the generator is a _separate package_, so its
+    dependencies never touch `stitchapi`. v1 is itself zero-dep (JSON native, YAML
+    a lazily-loaded optional); future tiers (valibot/zod emitters, a YAML parser)
+    take their deps in `@stitchapi/openapi`, where they belong.
 
 ## Open questions (resolved)
 
@@ -341,7 +343,7 @@ collision, append a stable `_2` / `_3` by document order **and** emit a
 
 ### Q5 — does `prune` graduate?
 
-**Resolved:** _ship `stitch gen prune` now; factor the scanner as a reusable
+**Resolved:** _ship `stitch-openapi prune` now; factor the scanner as a reusable
 internal module; the future home for rule-enforcement is `stitch audit`, not a
 new `doctor` command._
 
@@ -388,3 +390,39 @@ rule-enforcement framing of Decision 11) is the single future home.
 -   **F. Require a complete overlay config up front.** Rejected: that is the
     managed-regen model's tax; eject uses TODO placeholders so the tool runs with
     zero config (Decision 7).
+
+## Addendum (2026-06-28) — packaging: a separate `@stitchapi/openapi`, not a `stitch` subcommand
+
+The v1 first cut originally landed as a `stitch gen openapi` subcommand inside the
+`stitchapi` package's CLI (`packages/core/src/cli.ts`), alongside `from-curl` and
+`export --openapi`. On reflection that was wrong, and the generator was moved to
+its **own package, `@stitchapi/openapi`** (`packages/openapi`), with its own bin
+(`stitch-openapi`) and a `planGen` library export. The supersedes the earlier
+"lives in the CLI" wording in Decision 8 and the Gates.
+
+**Why — dependency trajectory, not "it's a tool."** `from-curl` and
+`export --openapi` are _also_ build-time/CLI-only, and they **stay** in core,
+because they are tiny, pure-string, and **zero-dep** (even `from-curl --zod` emits
+zod as generated _text_, importing nothing). The OpenAPI generator is the one
+member of the family whose roadmap pulls in **dependencies and weight** — the
+`valibot`/`zod` validator-source emitters, a YAML parser (Q1), the future
+`audit`/lint surface. Even though it is tree-shaken out of the runtime _bundle_,
+shipping it inside `stitchapi` would (a) grow the published tarball every consumer
+installs and (b) widen that package's dependency surface over time. A separate
+package lets it take those deps freely without ever touching the zero-dep core.
+The line is therefore **"does it grow deps?"**, not "is it a build tool" — which
+keeps the codegen family coherent: `from-curl`/`export` stay; `gen` moves out.
+
+**Shape.** `@stitchapi/openapi` sits in the existing `packages/*` tier
+(`1.0.0-rc.3`, Apache-2.0), exports `planGen` + types as a library, and ships the
+`stitch-openapi` bin (`npx @stitchapi/openapi <spec> --out <dir>` /
+`pnpm dlx`). It has **no dependency on `stitchapi`** — the generator emits
+`stitchapi` symbols as text, so there is zero coupling (which made the move
+mechanical). The command is now `stitch-openapi …` rather than
+`stitch gen openapi …` throughout this ADR.
+
+**Alternative considered (B): keep a thin `stitch gen` stub in core that
+lazy-`import()`s the optional package.** Rejected: it preserves the unified CLI
+UX but re-couples a command stub + a dynamic-import seam into core, undercutting
+the whole point of getting the generator out. A scaffolder/codegen is run rarely,
+so `npx @stitchapi/openapi` is the right ergonomics.

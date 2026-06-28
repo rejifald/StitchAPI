@@ -12,7 +12,6 @@ import {
     parseHar,
     toStitchSource,
 } from './from-curl';
-import { type GenOptions, type OpenApiDoc, planGen } from './gen-openapi';
 import { serveStdio } from './mcp';
 import { type OpenApiExportOptions, toOpenApi } from './openapi';
 import {
@@ -41,7 +40,7 @@ import type {
 
 import { existsSync, readFileSync } from 'node:fs';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve as resolvePath } from 'node:path';
+import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // ---- arg → input mapping --------------------------------------------------
@@ -457,7 +456,6 @@ usage:
   stitch diagram [--module <path>] [--name <name>]           Mermaid flowchart of the stitches
   stitch export --openapi [--module <path>] [--title <t>] [--api-version <v>]   emit an OpenAPI 3.1 spec
   stitch from-curl '<curl>' | --from-har <file> [--response <f|->] [--zod] [--name <export>]   scaffold a stitch from one example
-  stitch gen openapi <spec> --out <dir> [--all|--tag <t>|--only <id>|--grep <s>] [--layout dir|flat]   eject selected operations as stitches
   stitch drift generate [--module <path>] [--name <name>] [--force] [--flags…]   write drift snapshot baseline(s)
   stitch init [--format <ids>|all] [--project [--module <path>]] [--check] [--force]   write/check the consumer rule for AI agents
 
@@ -502,23 +500,6 @@ from-curl:
   slots (each lift is warned). A captured credential is NEVER emitted — recognised auth becomes
   \`bearer(env('API_TOKEN'))\` / \`apiKey({ value: env('API_KEY') })\` / \`basic({ … })\`. Without --zod
   no output schema is emitted, just a comment to add one.
-
-gen openapi:
-  <spec>                 an OpenAPI 3.x document (JSON; YAML needs the optional \`yaml\` package)
-  --out, -o <dir>        output directory (required unless --dry-run)
-  --all                  generate every operation (otherwise pass a selector)
-  --tag <t>              only operations with this tag (repeatable)
-  --only <id>            only this operationId / export name (repeatable)
-  --grep <substr>        only operations whose path contains this substring
-  --layout dir|flat      dir = one folder per operation (default); flat = one file per operation
-  --validator <tier>     types-only (default; v1). valibot/zod tiers are not implemented yet
-  --dry-run              print the files to stdout instead of writing them
-  Ejects a SELECTED set of operations as ready-to-own stitch source (you edit it afterward). One
-  \`client.ts\` seam (baseUrl + auth, with TODOs), one stitch per operation typed via \`stitch<T>()\`,
-  and atomic component types placed by fan-in: used by ≥2 ops → _shared/, by one → private to it.
-  A \`.stitch-gen.json\` manifest records the ownership graph. Default types-only emits no runtime
-  validation (a notice says so). Auth maps securitySchemes → bearer/apiKey/basic; the secret is an
-  env() placeholder, never emitted.
 
 drift generate:
   --name <name>    baseline only this stitch (by export name or configured name)
@@ -1026,124 +1007,6 @@ async function fromCurlCommand(args: string[], io: CliIO): Promise<number> {
     return 0;
 }
 
-// ---- gen: eject stitches from an OpenAPI document -------------------------
-// `stitch gen openapi <spec> --out <dir> [--all|--tag|--only|--grep] [--validator types-only]
-// [--layout dir|flat] [--dry-run]` — emit a SELECTED set of operations as ejected stitch source
-// (ADR 0013). Deterministic: the planning is the pure `planGen` in src/gen-openapi.ts; this command
-// reads the spec (JSON natively; YAML via a lazily-loaded optional), then writes the files via io.
-async function genCommand(args: string[], io: CliIO): Promise<number> {
-    const [sub, ...rest] = args;
-    if (sub !== 'openapi') {
-        io.writeErr(
-            'usage: stitch gen openapi <spec> --out <dir> [--all|--tag <t>|--only <id>|--grep <s>] [--validator types-only] [--layout dir|flat] [--dry-run]\n',
-        );
-        return 2;
-    }
-
-    let spec: string | undefined;
-    let out: string | undefined;
-    let dryRun = false;
-    const opts: GenOptions = {};
-    const tags: string[] = [];
-    const only: string[] = [];
-    for (let i = 0; i < rest.length; i++) {
-        const a = rest[i];
-        if (a === undefined) continue;
-        if (a === '--out' || a === '-o') out = rest[++i];
-        else if (a === '--all') opts.all = true;
-        else if (a === '--tag') {
-            const v = rest[++i];
-            if (v) tags.push(v);
-        } else if (a === '--only') {
-            const v = rest[++i];
-            if (v) only.push(v);
-        } else if (a === '--grep') {
-            const v = rest[++i];
-            if (v) opts.grep = v;
-        } else if (a === '--validator') {
-            const v = rest[++i];
-            if (v) opts.validator = v as NonNullable<GenOptions['validator']>;
-        } else if (a === '--layout') {
-            const v = rest[++i];
-            if (v) opts.layout = v as NonNullable<GenOptions['layout']>;
-        } else if (a === '--dry-run') dryRun = true;
-        else if (!a.startsWith('-') && spec === undefined) spec = a;
-        else io.writeErr(`warning: ignored unknown arg: ${a}\n`);
-    }
-    if (tags.length) opts.tags = tags;
-    if (only.length) opts.only = only;
-
-    if (spec === undefined) {
-        io.writeErr('gen openapi: missing <spec> file\n');
-        return 2;
-    }
-    if (out === undefined && !dryRun) {
-        io.writeErr(
-            'gen openapi: --out <dir> is required (or use --dry-run)\n',
-        );
-        return 2;
-    }
-
-    // Read + parse the spec. JSON parses natively; YAML loads through a lazily-imported optional.
-    let raw: string;
-    try {
-        raw = await io.readFileText(spec);
-    } catch (e) {
-        io.writeErr(
-            `gen openapi: could not read ${spec}: ${(e as Error).message}\n`,
-        );
-        return 1;
-    }
-    let doc: OpenApiDoc;
-    try {
-        if (/\.ya?ml$/i.test(spec)) {
-            let yaml: { parse: (s: string) => unknown };
-            try {
-                // Runtime-computed specifier so the bundler leaves `yaml` as a true optional
-                // (it is never a core dependency — ADR 0013 Q1).
-                const mod = ['ya', 'ml'].join('');
-                yaml = (await import(mod)) as typeof yaml;
-            } catch {
-                io.writeErr(
-                    'gen openapi: reading YAML needs the optional `yaml` package (run `npm i -D yaml`), or pass a JSON spec\n',
-                );
-                return 1;
-            }
-            doc = yaml.parse(raw) as OpenApiDoc;
-        } else {
-            doc = JSON.parse(raw) as OpenApiDoc;
-        }
-    } catch (e) {
-        io.writeErr(
-            `gen openapi: could not parse ${spec}: ${(e as Error).message}\n`,
-        );
-        return 1;
-    }
-
-    const result = planGen(doc, opts);
-    for (const n of result.notices) io.writeErr(`note: ${n}\n`);
-    for (const w of result.warnings) io.writeErr(`warning: ${w}\n`);
-    if (result.selected.length === 0) return 1;
-
-    io.writeErr(`selected ${result.selected.length} operation(s):\n`);
-    for (const s of result.selected)
-        io.writeErr(`  ${s.method} ${s.path} → ${s.name}\n`);
-
-    if (dryRun) {
-        for (const f of result.files) {
-            io.write(`\n// ===== ${f.path} =====\n`);
-            io.write(f.contents);
-        }
-        return 0;
-    }
-
-    const base = out as string;
-    for (const f of result.files)
-        await io.writeFile(resolvePath(io.cwd, base, f.path), f.contents);
-    io.writeErr(`wrote ${result.files.length} file(s) to ${base}\n`);
-    return 0;
-}
-
 // Read all of stdin as UTF-8 (for `--response -`). A small, command-local helper.
 function readStdin(): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -1483,8 +1346,6 @@ export async function main(
             return exportCommand(rest, io);
         case 'from-curl':
             return fromCurlCommand(rest, io);
-        case 'gen':
-            return genCommand(rest, io);
         case 'drift':
             return driftCommand(rest, io);
         case 'init':
