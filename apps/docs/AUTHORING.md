@@ -2,6 +2,11 @@
 
 This is the contract for writing docs pages. Read it before you write one.
 
+This guide governs **structure** — templates, sections, twoslash, tabs, the
+manifest. How the prose _reads_ — voice, economy, how a claim is shown rather than
+asserted — is the separate, equally-mandatory contract in
+[`EDITORIAL.md`](./EDITORIAL.md). A page must pass both.
+
 It matters more than a usual style guide because the first content pass ships
 the **structure only** — every page starts life as a generated stub. There is no
 finished page to copy yet, so **this guide plus [`content.manifest.ts`](./content.manifest.ts)

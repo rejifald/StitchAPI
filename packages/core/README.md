@@ -4,11 +4,9 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.2`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is very welcome.
+> **StitchAPI is at `1.0.0-rc.3`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 **Turn any REST, GraphQL, SSE, or LLM API into a typed, resilient function.** Its one primitive — a **stitch** — takes a single endpoint and hands you back a callable: declare the endpoint's contract once (input, output, auth, resilience) and call it like a local function. No server, no codegen, no config files — only explicit composition. The same definition your code calls, the CLI runs and an AI agent can invoke without ever touching a credential.
-
-The name StitchAPI combines the words “stitch” and “API,” reflecting its core purpose: to “stitch” or seamlessly connect any JSON-based API into your project. The term “stitch” conveys the idea of binding or linking various APIs into a unified system within your project.
 
 **Full documentation, guides, and a live playground live at [stitchapi.dev](https://stitchapi.dev).**
 

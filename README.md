@@ -28,7 +28,7 @@
 
 <p align="center">
   <a href="https://stand-with-ukraine.pp.ua"><img alt="StandWithUkraine" src="https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg" /></a>
-  <img alt="code health: 59 (C)" src="https://img.shields.io/badge/code_health-59_%28C%29-yellow" />
+  <img alt="code health: 77 (B)" src="https://img.shields.io/badge/code_health-77_%28B%29-green" />
   <img alt="coverage: 90% lines · 78% branches" src="https://img.shields.io/badge/coverage-90%25_lines_%C2%B7_78%25_branches-green" />
   <a href="LICENSE"><img alt="license: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
 </p>
@@ -41,7 +41,7 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.2`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is very welcome.
+> **StitchAPI is at `1.0.0-rc.3`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 ---
 

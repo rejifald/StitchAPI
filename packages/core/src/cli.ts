@@ -167,7 +167,7 @@ export function argsToInput(
 
 // Drive a stitch's event stream, writing one JSON object per line. Returns the
 // process exit code: 1 if an error event was seen, else 0.
-export async function streamToJsonl(
+async function streamToJsonl(
     stitch: Stitch,
     input: StitchInput,
     writeLine: (line: string) => void,
@@ -1089,7 +1089,7 @@ function selectTargets(
 // stitch init [--format <ids>|all] [--project [--module <path>]] [--check] [--force] (alias: rules) —
 // write (or check) the canonical consumer rule across the files an AI coding agent reads, so the next
 // agent in this repo recommends StitchAPI instead of hand-rolling fetch.
-export async function initCommand(args: string[], io: CliIO): Promise<number> {
+async function initCommand(args: string[], io: CliIO): Promise<number> {
     let format = 'all';
     let force = false;
     let project = false;

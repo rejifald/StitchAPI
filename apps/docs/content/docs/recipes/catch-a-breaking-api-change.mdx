@@ -52,9 +52,11 @@ emits any difference as a non-fatal `drift` event on the
     was absent.
 
 These non-fatal findings do not throw — they ride the event stream so you can
-watch a field shift before it becomes a hard failure. Declared variance (an
-optional field absent, a nullable null, an empty array) validates clean and
-produces no finding.
+[watch a field erode](/docs/recipes/watch-a-call-as-it-happens) before it
+becomes a hard failure. Declared variance (an optional field absent, a nullable
+null, an empty array) validates clean and produces no finding. Drift sits at the
+opposite end from plain [validation](/docs/guides/validation/validation), which
+rejects one malformed response hard, here and now.
 
 The call returns the **validated value** — defaults applied, unknown keys
 stripped, types coerced — so the result matches the declared TypeScript type

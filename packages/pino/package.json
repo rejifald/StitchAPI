@@ -58,7 +58,6 @@
     },
     "devDependencies": {
         "@types/node": "^22.10.0",
-        "pino": "^9.5.0",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",

@@ -322,7 +322,7 @@ await p; // { ok: true } — with zero real waiting
 `advance(ms)` fires every backoff/pacing/timeout due at or before the new time, in
 order, and `pending()` reports the timers still waiting. The default is the real
 `systemClock` (exported from the main entry), so this changes nothing until you
-inject a clock; you can also supply your own object implementing `Clock`. Note that
+inject a clock; you can also supply your own object implementing `Clock`.
 `timeout.total` and event timestamps stay on wall-clock.
 
 ## See also

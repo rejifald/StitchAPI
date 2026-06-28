@@ -25,7 +25,7 @@ export interface TraceOptions {
 // Header names whose values are secrets: redacted before any event leaves for a
 // built-in sink (JSONL/console). Matched case-insensitively wherever headers appear
 // in an event payload (start input.headers, result/response headers, etc.).
-export const SECRET_HEADERS = [
+const SECRET_HEADERS = [
     'authorization',
     'proxy-authorization',
     'cookie',
