@@ -9,7 +9,7 @@ Reach for this when your app is already on Redux Toolkit / RTK Query. The adapte
 ## Install
 
 ```sh
-pnpm add @stitchapi/rtk-query stitchapi @reduxjs/toolkit
+pnpm add @stitchapi/rtk-query@rc stitchapi@rc @reduxjs/toolkit
 ```
 
 `stitchapi` and `@reduxjs/toolkit` (`^2`) are peer dependencies. There is **no** `@stitchapi/query-core` dependency — RTK Query is the store.

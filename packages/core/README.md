@@ -137,19 +137,19 @@ Design notes and positioning live in the repo:
 Using npm:
 
 ```bash
-$ npm install stitchapi
+$ npm install stitchapi@rc
 ```
 
 Using yarn:
 
 ```bash
-$ yarn add stitchapi
+$ yarn add stitchapi@rc
 ```
 
 Using pnpm:
 
 ```bash
-$ pnpm add stitchapi
+$ pnpm add stitchapi@rc
 ```
 
 Once the package is installed, you can import the library using `import` or `require` approach:

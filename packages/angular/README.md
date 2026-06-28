@@ -11,7 +11,7 @@ These functions are a thin layer over [`@stitchapi/query-core`](../query-core), 
 ## Install
 
 ```sh
-pnpm add @stitchapi/angular @stitchapi/query-core stitchapi @angular/core rxjs
+pnpm add @stitchapi/angular@rc @stitchapi/query-core@rc stitchapi@rc @angular/core rxjs
 ```
 
 `stitchapi`, `@angular/core` (`>=16`), and `rxjs` (`>=7`) are peer dependencies. `@tanstack/angular-query-experimental` is an **optional** peer — only needed if you use `queryOptions`.
