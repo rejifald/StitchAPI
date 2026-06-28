@@ -14,7 +14,7 @@ extension point, and the `Logger` sink and `ConfigService` bridge **delegate** t
 dependency and the package forks nothing (contract-not-dependency).
 
 ```sh
-pnpm add @stitchapi/nest stitchapi
+pnpm add @stitchapi/nest@rc stitchapi@rc
 # peers you already have in a Nest app: @nestjs/common, @nestjs/core, rxjs, reflect-metadata
 ```
 
