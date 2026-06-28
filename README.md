@@ -154,7 +154,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 ## Install
 
 ```bash
-npm install stitchapi   # or: pnpm add stitchapi · yarn add stitchapi
+npm install stitchapi@rc   # or: pnpm add stitchapi@rc · yarn add stitchapi@rc
 ```
 
 Validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator; none is bundled. The examples below use Zod for familiarity, and hit the live demo API at `demo.stitchapi.dev`.

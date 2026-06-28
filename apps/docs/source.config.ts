@@ -1,3 +1,4 @@
+import { remarkInstallChannel } from './lib/remark-install-channel';
 import { transformerFold } from './lib/transformer-fold';
 
 import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
@@ -72,6 +73,12 @@ export default defineConfig({
         // code-variant tabs persist per `tabGroup` id set on the fence.
         // See AUTHORING.md → "Code variants — tabs".
         remarkNpmOptions: { persist: { id: 'package-manager' } },
+        // Stamp the documented npm dist-tag (e.g. `@rc`) onto bare first-party
+        // specs in ```package-install``` blocks BEFORE fumadocs' remarkNpm expands
+        // them into per-manager tabs. The array form of `remarkPlugins` runs AFTER
+        // remarkNpm; the function form receives the built-in list so we can
+        // prepend and run first. See lib/remark-install-channel.ts.
+        remarkPlugins: (builtin) => [remarkInstallChannel, ...builtin],
         // Twoslash type-checks every ```ts twoslash``` block against the real
         // `stitchapi` types at build time and renders hover tooltips. Spread the
         // defaults so the stock Shiki transformers (tab/title/icon meta) survive;

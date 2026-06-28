@@ -13,7 +13,7 @@ A `stitch` is a typed declarative call: invoking it returns a `StitchResult<T>` 
 ## Install
 
 ```sh
-pnpm add @stitchapi/query-core stitchapi
+pnpm add @stitchapi/query-core@rc stitchapi@rc
 ```
 
 `stitchapi` is a peer dependency (`>=0.7.0`).

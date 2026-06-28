@@ -11,7 +11,7 @@ StitchAPI is agent-native through the [MCP surface](https://stitchapi.dev/docs/s
 ## Install
 
 ```sh
-pnpm add @stitchapi/vercel-ai stitchapi
+pnpm add @stitchapi/vercel-ai@rc stitchapi@rc
 ```
 
 `stitchapi` is the only required peer; bring the `ai` SDK you already run.
