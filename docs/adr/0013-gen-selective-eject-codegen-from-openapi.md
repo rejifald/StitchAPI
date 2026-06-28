@@ -174,9 +174,9 @@ self-owned orphan detection below.
     the `stitchapi` runtime, so the core bundle, its zero-dep gate, and its install
     footprint are untouched. Local `#/components/...` `$ref`s are resolved by a **hand-rolled,
     bounded resolver** in the from-curl tradition (refs within a single document
-    are a small, regular problem). JSON parses natively; YAML loads through a
-    lazily-`import()`ed optional, never a core dep; external/remote `$ref` is out
-    — all resolved in Q1.
+    are a small, regular problem). JSON parses natively; YAML is parsed by the
+    package's own `yaml` dependency (lazily `import()`ed so JSON-only runs never
+    load it) — never a _core_ dep; external/remote `$ref` is out — all resolved in Q1.
 
 ### Self-owned orphan detection
 
@@ -262,9 +262,9 @@ already own the graph.
     `export --openapi`. No live-closure dependency is introduced into the
     declaration.
 -   **Zero-deps.** Core untouched — the generator is a _separate package_, so its
-    dependencies never touch `stitchapi`. v1 is itself zero-dep (JSON native, YAML
-    a lazily-loaded optional); future tiers (valibot/zod emitters, a YAML parser)
-    take their deps in `@stitchapi/openapi`, where they belong.
+    dependencies never touch `stitchapi`. The package takes the deps it needs
+    there (today: `yaml`, lazily imported so JSON-only runs skip it); future tiers
+    (valibot/zod emitters) add theirs in `@stitchapi/openapi`, where they belong.
 
 ## Open questions (resolved)
 
@@ -273,19 +273,19 @@ leaning pointed; the reasoning is recorded here.
 
 ### Q1 — YAML and external/remote `$ref` ingestion
 
-**Resolved:** _JSON natively (zero-dep); YAML via a lazily-loaded optional; local
-JSON-pointer `$ref` hand-rolled; external/remote `$ref` rejected with an
-actionable error (deferred)._
+**Resolved:** _JSON natively; YAML via the package's `yaml` dependency
+(lazily imported); local JSON-pointer `$ref` hand-rolled; external/remote `$ref`
+rejected with an actionable error (deferred)._
 
 JSON input parses with the native `JSON.parse` — no dependency. Most real-world
 specs are YAML, so requiring JSON-only would cripple the common case, but YAML is
 **not** a bounded sublanguage (unlike curl or JSON-pointer), so hand-rolling a
-parser is the wrong kind of work. The generator therefore lazily `import()`s an
-optional YAML parser (`yaml`) only when the input is `.yaml`/`.yml`, exactly as
-the engine reaches the cache via a lazy `import('./cache')`; if it is absent the
-CLI prints a clear, actionable hint (`install \`yaml\`, or pass a JSON spec`).
-The parser is never a core runtime/peer dependency and never in any bundle — the
-zero-dep and bundle-frugal gates hold. Local `#/components/...` `$ref`s are
+parser is the wrong kind of work. Because the generator is its own package (see
+_Addendum: packaging_), it simply takes `yaml` as a dependency and `import()`s it
+lazily — only when the input is `.yaml`/`.yml`, so JSON-only runs never load it
+(the same lazy-reach pattern the engine uses for `import('./cache')`). The dep
+lives in `@stitchapi/openapi`, never in `stitchapi`, so the **core's** zero-dep
+and bundle-frugal gates are untouched. Local `#/components/...` `$ref`s are
 resolved by the hand-rolled bounded resolver (Decision 8) — a JSON pointer within
 one document _is_ a bounded sublanguage. External / remote / `$dynamicRef`
 resolution is **out** (it needs multi-file fetch + assembly); on encountering one

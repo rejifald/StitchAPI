@@ -672,6 +672,10 @@ importers:
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.19.21)(@vitest/coverage-v8@4.1.8)(jsdom@25.0.1)(vite@8.0.16(@types/node@22.19.21)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/openapi:
+    dependencies:
+      yaml:
+        specifier: ^2.4.2
+        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^22.10.0

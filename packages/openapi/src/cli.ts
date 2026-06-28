@@ -1,6 +1,7 @@
 // `stitch-openapi` — eject a SELECTED set of operations from an OpenAPI document into ready-to-own
 // stitch source (ADR 0013). Thin wrapper over the pure `planGen`: parse argv, read the spec (JSON
-// natively; YAML via a lazily-imported optional), then write the files (or print them on --dry-run).
+// natively; YAML via the `yaml` dependency, imported lazily), then write the files (or print them
+// on --dry-run).
 import { type GenOptions, type OpenApiDoc, planGen } from './gen-openapi';
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -12,7 +13,7 @@ usage:
   stitch-openapi <spec> --out <dir> [--all | --tag <t> | --only <id> | --grep <s>]
                  [--layout dir|flat] [--validator types-only] [--dry-run]
 
-  <spec>            an OpenAPI 3.x document (JSON; YAML needs the optional \`yaml\` package)
+  <spec>            an OpenAPI 3.x document (JSON or YAML)
   --out, -o <dir>   output directory (required unless --dry-run)
   --all             generate every operation (otherwise pass a selector)
   --tag <t>         only operations with this tag (repeatable)
@@ -113,18 +114,9 @@ export async function main(
     let doc: OpenApiDoc;
     try {
         if (/\.ya?ml$/i.test(spec)) {
-            let yaml: { parse: (s: string) => unknown };
-            try {
-                // Runtime-computed specifier so the bundler leaves `yaml` as a true optional.
-                const mod = ['ya', 'ml'].join('');
-                yaml = (await import(mod)) as typeof yaml;
-            } catch {
-                io.writeErr(
-                    'reading YAML needs the optional `yaml` package (run `npm i -D yaml`), or pass a JSON spec\n',
-                );
-                return 1;
-            }
-            doc = yaml.parse(raw) as OpenApiDoc;
+            // Lazy so JSON-only runs never load the YAML parser; `yaml` is a real dependency.
+            const { parse } = await import('yaml');
+            doc = parse(raw) as OpenApiDoc;
         } else {
             doc = JSON.parse(raw) as OpenApiDoc;
         }
