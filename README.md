@@ -229,12 +229,12 @@ For lighter reuse, `extends: [fragment | stitch]` merges config left→right (ow
 
 The declared `output` schema **is** the contract. Wrap it in `drift()`: a response is validated (the call returns the validated value — coerced, defaulted, unknown keys stripped), and the difference between the raw body and that validated value is reported as a leveled, non-fatal signal:
 
-| Change         | What it means                                            | Level     |
-| -------------- | ------------------------------------------------------- | --------- |
-| **invalid**    | a required field missing or incompatible — **throws**    | `error`   |
+| Change         | What it means                                              | Level     |
+| -------------- | ---------------------------------------------------------- | --------- |
+| **invalid**    | a required field missing or incompatible — **throws**      | `error`   |
 | **coerced**    | a coercion (`"42"`→`42`): a wire-type shift validation hid | `warn`    |
-| **undeclared** | a key the schema strips                                  | `info`    |
-| **defaulted**  | a `.default()` fired (field absent)                      | `verbose` |
+| **undeclared** | a key the schema strips                                    | `info`    |
+| **defaulted**  | a `.default()` fired (field absent)                        | `verbose` |
 
 ```ts
 import { drift, stitch } from 'stitchapi';
