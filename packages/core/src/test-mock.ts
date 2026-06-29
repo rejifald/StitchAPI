@@ -6,6 +6,7 @@
 // mock server internally; this is the published, isomorphic counterpart.
 import { streamOf } from './test-stream';
 import type { Adapter, AdapterRequest, AdapterResponse } from './types';
+import { parseDuration } from './util';
 
 /** One canned response. Omitted fields default sensibly (`status` 200, empty headers). */
 export interface MockResponse {
@@ -19,11 +20,16 @@ export interface MockResponse {
     /** A live response body for the `stream`/`sse` surfaces — a `ReadableStream`, or chunks that
      *  {@link streamOf} turns into one. Delivered as `AdapterResponse.body`. */
     stream?: ReadableStream<Uint8Array> | (string | Uint8Array)[];
-    /** Wait this many ms before responding — abortable, so a stitch `timeout` cancels it like a
-     *  real slow endpoint. Drives timeout / `Retry-After` pacing tests. */
+    /** Wait this long before responding — `100`, `'100ms'`, `'1s'`; abortable, so a stitch `timeout`
+     *  cancels it like a real slow endpoint. Drives timeout / `Retry-After` pacing tests. */
+    delay?: number | string;
+    /** @deprecated Renamed to {@link MockResponse.delay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     delayMs?: number;
-    /** Sets the `Retry-After` header (seconds, or an HTTP-date string) — for `429`/`503` retry and
-     *  `rateLimit.delegate` tests. */
+    /** Sets the `Retry-After` header in SECONDS (or an HTTP-date string) — for `429`/`503` retry and
+     *  `throttle.delegate` tests. Named with its true unit per CONTRACT.md P17 (a wire format speaks
+     *  seconds, not the house ms). */
+    retryAfterSeconds?: number | string;
+    /** @deprecated Renamed to {@link MockResponse.retryAfterSeconds} (CONTRACT.md P17 unit-hazard). Read until the 1.0 GA cut. */
     retryAfter?: number | string;
 }
 
@@ -138,8 +144,10 @@ export function mockAdapter(
         const headers: Record<string, string> = {};
         for (const [k, v] of Object.entries(r.headers ?? {}))
             headers[k.toLowerCase()] = v;
-        if (r.retryAfter !== undefined)
-            headers['retry-after'] = String(r.retryAfter);
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `retryAfter` is the @deprecated alias of `retryAfterSeconds`, read for back-compat until the GA cut (CONTRACT.md P17)
+        const retryAfterSeconds = r.retryAfterSeconds ?? r.retryAfter;
+        if (retryAfterSeconds !== undefined)
+            headers['retry-after'] = String(retryAfterSeconds);
         const body = r.stream
             ? Array.isArray(r.stream)
                 ? streamOf(r.stream)
@@ -173,7 +181,9 @@ export function mockAdapter(
               ? await route.respond({ index: callIndex, req })
               : route.respond;
 
-        if (r.delayMs && r.delayMs > 0) await sleep(r.delayMs, req.signal);
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `delayMs` is the @deprecated alias of `delay`, read for back-compat until the GA cut (CONTRACT.md P17)
+        const delay = parseDuration(r.delay ?? r.delayMs);
+        if (delay && delay > 0) await sleep(delay, req.signal);
         return build(r);
     }) as MockAdapter;
 

@@ -383,6 +383,8 @@ export interface FixtureResponse {
     /** Raw response body text. */
     body: string;
     /** When set, the host MUST delay sending the response by this many ms. */
+    delay?: number;
+    /** @deprecated Renamed to {@link FixtureResponse.delay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     delayMs?: number;
 }
 
@@ -401,11 +403,11 @@ export interface FixtureResponse {
  *   response header `x-stitch-echo: text`.
  * - `GET /json` → 200 `application/json` body
  *   `{"kit":"stitchapi","numbers":[1,2,3]}` with `x-stitch-echo: json`.
- * - `GET /slow` → 200 JSON `{"slow":true}` with `delayMs: 300`.
+ * - `GET /slow` → 200 JSON `{"slow":true}` with `delay: 300`.
  * - anything else → 404 JSON `{"error":"not_found"}`.
  *
  * Host duties: lowercase request header names, hand over the raw request body
- * text, and honor `delayMs` (the in-flight abort rule depends on it).
+ * text, and honor `delay` (the in-flight abort rule depends on it).
  */
 export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
     const path = req.path.split('?', 1)[0] ?? req.path;
@@ -457,7 +459,13 @@ export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
         return json(200, JSON_BODY, { 'x-stitch-echo': 'json' });
     }
     if (path === '/slow' && method === 'GET') {
-        return { ...json(200, { slow: true }), delayMs: SLOW_DELAY_MS };
+        const res: FixtureResponse = {
+            ...json(200, { slow: true }),
+            delay: SLOW_DELAY_MS,
+        };
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-set the @deprecated `delayMs` alias for back-compat (CONTRACT.md P17)
+        res.delayMs = SLOW_DELAY_MS;
+        return res;
     }
     return json(404, { error: 'not_found' });
 }
@@ -612,7 +620,7 @@ export async function verifyAdapterContract(
                 if (outcome === 'resolved') {
                     throw new Error(
                         'adapter resolved a /slow request despite an in-flight abort ' +
-                            '(is the host honoring the fixture delayMs?)',
+                            '(is the host honoring the fixture delay?)',
                     );
                 }
                 if (elapsed > ABORT_PROMPT_MS) {

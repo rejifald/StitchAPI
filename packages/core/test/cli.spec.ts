@@ -280,7 +280,7 @@ describe('summarizeTrace', () => {
         expect(a.retries).toBe(1);
         expect(a.drift.warn).toBe(1);
         expect(a.p50).toBeGreaterThan(0);
-        expect(a.avgMs).toBe(20); // (10 + 30 + 20) / 3
+        expect(a.avg).toBe(20); // (10 + 30 + 20) / 3
     });
 
     test('formatTraceSummary renders a table mentioning each stitch', () => {
