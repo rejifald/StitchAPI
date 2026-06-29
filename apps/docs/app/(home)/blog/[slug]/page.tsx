@@ -1,5 +1,10 @@
 import { getMDXComponents } from '@/components/mdx';
-import { blogSource, formatPostDate } from '@/lib/blog';
+import {
+    blogSource,
+    formatPostDate,
+    getRelatedPosts,
+    postSlug,
+} from '@/lib/blog';
 import { appName, siteUrl } from '@/lib/shared';
 
 import { DocsBody } from 'fumadocs-ui/layouts/docs/page';
@@ -13,6 +18,7 @@ export default async function BlogPostPage(props: PageProps<'/blog/[slug]'>) {
     if (!post) notFound();
 
     const MDX = post.data.body;
+    const related = getRelatedPosts(post);
 
     return (
         <main className="container mx-auto max-w-3xl px-4 py-16">
@@ -39,6 +45,36 @@ export default async function BlogPostPage(props: PageProps<'/blog/[slug]'>) {
                     <MDX components={getMDXComponents()} />
                 </DocsBody>
             </article>
+
+            {related.length > 0 ? (
+                <aside
+                    aria-label="Related posts"
+                    className="border-fd-border mt-16 border-t pt-10"
+                >
+                    <h2 className="mb-6 text-sm font-semibold tracking-wide uppercase">
+                        Related reading
+                    </h2>
+                    <ul className="flex flex-col gap-6">
+                        {related.map((other) => (
+                            <li key={other.url}>
+                                <Link
+                                    href={`/blog/${postSlug(other)}`}
+                                    className="group block"
+                                >
+                                    <h3 className="group-hover:text-fd-primary text-lg font-medium tracking-tight transition-colors">
+                                        {other.data.title}
+                                    </h3>
+                                    {other.data.description ? (
+                                        <p className="text-fd-muted-foreground mt-1 text-sm">
+                                            {other.data.description}
+                                        </p>
+                                    ) : null}
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                </aside>
+            ) : null}
         </main>
     );
 }

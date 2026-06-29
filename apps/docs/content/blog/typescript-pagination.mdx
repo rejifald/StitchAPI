@@ -38,7 +38,7 @@ async function fetchAllUsers(): Promise<unknown[]> {
 
 An offset or page-number API is the same loop with a counter instead of a cursor — bump `page` until a short page (or an empty one) tells you to stop. For one well-behaved endpoint, this is fine; the logic is small and you can read it.
 
-The fragility shows up under real conditions. The loop fires requests back to back with nothing pacing them, so a rate-limited API answers page seven with a `429` and the whole run throws. Add retry and you're wrapping the `fetch` in backoff code, then a throttle to stay under the limit, then a guard so a misbehaving `nextCursor` can't loop forever — and all of it is now tangled into the pagination loop, re-written for the next paginated endpoint you hit.
+The fragility shows up under real conditions. The loop fires requests back to back with nothing pacing them, so a rate-limited API answers page seven with a `429` and the whole run throws. Add retry and you're wrapping the `fetch` in backoff code, then a throttle to stay under the limit, then a guard so a misbehaving `nextCursor` can't loop forever — and all of it is now tangled into the pagination loop, re-written for the next paginated endpoint you hit. These are the same fixes one endpoint up: [retrying a failed fetch the right way](/blog/retry-fetch-in-typescript) and [rate-limiting your calls in TypeScript](/blog/rate-limit-api-calls-typescript).
 
 ## The stitch way: declare next and items, await once
 

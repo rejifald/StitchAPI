@@ -72,9 +72,9 @@ const user = await getUserViaFetch(id);
 const user = await getUser({ params: { id } });
 ```
 
-The rest of the file keeps using raw `fetch`. The other twenty endpoints keep using whatever they use today. There is no provider to mount, no client to thread through props, no global to initialize before the first call works. One endpoint becomes typed and resilient; everything around it is untouched.
+The rest of the file keeps using raw `fetch`. The other twenty endpoints keep using whatever they use today. There is no provider to mount, no client to thread through props, no global to initialize before the first call works. One endpoint becomes typed and resilient; everything around it is untouched. When you _do_ want to convert a whole module wholesale, the mechanical swap goes end to end in [migrating from fetch](/blog/migrate-from-fetch-to-stitchapi) and [from axios](/blog/migrate-from-axios-to-stitchapi).
 
-It drops into the libraries you already run, too. A stitch is the `queryFn` TanStack Query wants — awaiting it returns the validated value and throws on failure, which is exactly the contract — so it goes straight in:
+It drops into the libraries you already run, too. A stitch is the `queryFn` TanStack Query wants — awaiting it returns the validated value and throws on failure, which is exactly the contract ([a stitch as your React Query `queryFn`](/blog/stitch-as-react-query-queryfn) walks through the whole pattern) — so it goes straight in:
 
 ```ts
 useQuery({
