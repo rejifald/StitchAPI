@@ -26,7 +26,7 @@ The fix isn't more types or more mocks. It's to [validate the response you actua
 
 StitchAPI does this with **schema-anchored drift detection**. You wrap a stitch's `output` schema in `drift()`, and every live response is checked against that schema in two tiers:
 
-```ts
+```ts tab="StitchAPI" tabGroup="approach"
 import { drift, stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -41,6 +41,24 @@ const getOrder = stitch({
         }),
     ),
 });
+```
+
+```ts tab="fetch" tabGroup="approach"
+// By hand you hard-check the required fields yourself — and the soft
+// drift (a "42" that should be 42, a key the API just grew) has nowhere
+// to surface, so the silent change stays silent.
+const getOrder = async (id: number) => {
+    const res = await fetch(`https://api.example.com/orders/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+
+    if (typeof body.id !== 'number') throw new Error('drift: id');
+    if (typeof body.total !== 'number') throw new Error('drift: total');
+    // note is optional; no diff against a contract, so coerced/undeclared
+    // changes pass unnoticed.
+
+    return body as { id: number; total: number; note?: string };
+};
 ```
 
 **Tier one is validation — the hard contract.** A field you declared **required** that goes missing or comes back the wrong type fails the call with `STITCH_DRIFT`. You don't configure which fields are fatal with a separate list; you say it the way you already say everything else about the shape — by making the field required. Make it `.optional()` and its absence is tolerated; make it required and its disappearance throws. Severity lives in the schema, where it belongs.

@@ -16,7 +16,7 @@ StitchAPI core is Web-API only on the hot path — `fetch`, `Request`, `URL`, `c
 
 Here is the whole client. A stitch declares one endpoint as a typed function; the Worker's `fetch` handler calls it.
 
-```ts
+```ts tab="StitchAPI" tabGroup="approach"
 import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -31,6 +31,42 @@ export default {
     async fetch(req: Request): Promise<Response> {
         const id = new URL(req.url).searchParams.get('id') ?? '1';
         const user = await getUser({ params: { id } });
+        return Response.json(user);
+    },
+};
+```
+
+```ts tab="fetch" tabGroup="approach"
+// By hand, the retry loop, the timeout, and the validation are all
+// open-coded inside the handler — and they live nowhere reusable.
+export default {
+    async fetch(req: Request): Promise<Response> {
+        const id = new URL(req.url).searchParams.get('id') ?? '1';
+        const retryOn = new Set([429, 502, 503, 504]);
+
+        let res: Response | undefined;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 4000); // perAttempt
+            try {
+                res = await fetch(`https://api.example.com/users/${id}`, {
+                    signal: ctrl.signal,
+                });
+            } finally {
+                clearTimeout(t);
+            }
+            if (!retryOn.has(res.status)) break;
+            await new Promise((r) => setTimeout(r, 2 ** attempt * 100)); // backoff
+        }
+        if (!res || !res.ok)
+            return new Response('upstream failed', { status: 502 });
+
+        const user = (await res.json()) as {
+            id: string;
+            name: string;
+            email: string;
+        };
+        // the `as` is a hope — a dropped field is not caught here
         return Response.json(user);
     },
 };

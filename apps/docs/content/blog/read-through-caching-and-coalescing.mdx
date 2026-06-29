@@ -24,7 +24,7 @@ The two compose. Coalescing flattens the concurrent spike; the cache absorbs the
 
 Caching is **off by default** and loaded lazily — the cache machinery only enters your bundle when a stitch actually asks for it. The smallest form is a TTL:
 
-```ts
+```ts tab="StitchAPI" tabGroup="approach"
 import { stitch } from 'stitchapi';
 
 const getUser = stitch({
@@ -33,6 +33,30 @@ const getUser = stitch({
     unwrap: 'data',
     cache: '5m', // ≡ { ttl: '5m' }
 });
+```
+
+```ts tab="fetch" tabGroup="approach"
+// By hand: a TTL map for the cache, plus an in-flight map for coalescing.
+// Miss the second map and ten concurrent calls all stampede the cold key.
+const cache = new Map<number, { value: unknown; expires: number }>();
+const inFlight = new Map<number, Promise<unknown>>();
+
+async function getUser(id: number) {
+    const hit = cache.get(id);
+    if (hit && hit.expires > Date.now()) return hit.value;
+    if (inFlight.has(id)) return inFlight.get(id); // ride the in-flight call
+
+    const p = fetch(`https://api.example.com/users/${id}`)
+        .then((r) => r.json())
+        .then((body) => {
+            const value = body.data; // no output validation here
+            cache.set(id, { value, expires: Date.now() + 5 * 60_000 });
+            inFlight.delete(id);
+            return value;
+        });
+    inFlight.set(id, p);
+    return p;
+}
 ```
 
 That single string opts the stitch into the read-through cache _and_ in-process coalescing. Ten concurrent `getUser({ params: { id: 7 } })` calls collapse to one upstream request; subsequent calls within five minutes are served from the store without touching the upstream at all.

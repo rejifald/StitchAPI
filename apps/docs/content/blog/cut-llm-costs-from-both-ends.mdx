@@ -71,7 +71,7 @@ The second leak is on the far end of the request: paid upstream calls your agent
 
 Here's a stitch declaring a cached, throttled read:
 
-```ts
+```ts tab="StitchAPI" tabGroup="approach"
 import { stitch } from 'stitchapi';
 
 const search = stitch({
@@ -83,6 +83,18 @@ const search = stitch({
 // Ten parallel branches asking the same thing => one paid upstream call.
 const results = await Promise.all(
     Array.from({ length: 10 }, () => search({ query: { q: 'stitchapi' } })),
+);
+```
+
+```ts tab="fetch" tabGroup="approach"
+const search = (q: string) =>
+    fetch(`https://api.example.com/search?q=${encodeURIComponent(q)}`).then(
+        (r) => r.json(),
+    );
+
+// Nothing dedupes, caches, or throttles — ten branches => ten paid calls.
+const results = await Promise.all(
+    Array.from({ length: 10 }, () => search('stitchapi')),
 );
 ```
 

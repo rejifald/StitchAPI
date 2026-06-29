@@ -57,7 +57,7 @@ The generic answers all involve remembering a shape and comparing against it.
 
 A [stitch](/docs/concepts/the-stitch) detects drift by reusing the contract you already wrote. Wrap a stitch's `output` schema in `drift()`, and every live response is validated against the schema and then diffed against the validated value — the difference is the drift:
 
-```ts
+```ts tab="StitchAPI" tabGroup="approach"
 import { drift, stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -72,6 +72,23 @@ const getOrder = stitch({
         }),
     ),
 });
+```
+
+```ts tab="fetch" tabGroup="approach"
+// By hand you validate the required fields yourself — and the soft
+// drift (a coercion, an undeclared key) has nowhere to surface, so it
+// passes silently.
+const getOrder = async (id: number) => {
+    const res = await fetch(`https://api.example.com/orders/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+
+    if (typeof body.id !== 'number') throw new Error('drift: id');
+    if (typeof body.total !== 'number') throw new Error('drift: total');
+    // note is optional; nothing diffs the rest against a contract.
+
+    return body as { id: number; total: number; note?: string };
+};
 ```
 
 Two tiers run on every call. Validation comes first: a required field that's missing or incompatible fails the call with [STITCH_DRIFT](/docs/errors/stitch-drift) (`change: 'invalid'`, `level: 'error'`), and on success the call returns the validated value — coerced, defaulted, unknown keys stripped. Then drift diffs the raw body against that validated value and emits each soft difference as a non-fatal finding on the [event stream](/docs/concepts/event-stream): `coerced` at `warn`, `undeclared` at `info`, `defaulted` at `verbose`.
