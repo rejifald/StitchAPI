@@ -61,7 +61,7 @@ test('maps a successful call to one CLIENT span with OTel HTTP semconv attribute
             at: 1010,
         },
         { type: 'result', value: {}, status: 200, attempts: 2, at: 1050 },
-        { type: 'done', ok: true, ms: 50, attempts: 2, at: 1050 },
+        { type: 'done', ok: true, elapsed: 50, attempts: 2, at: 1050 },
     ];
     for (const ev of events) sink.handle(ev, { name });
 
@@ -99,7 +99,7 @@ test('maps an error to an ERROR span with error.type and status_code', () => {
             attempts: 1,
             at: 1020,
         },
-        { type: 'done', ok: false, ms: 20, attempts: 1, at: 1020 },
+        { type: 'done', ok: false, elapsed: 20, attempts: 1, at: 1020 },
     ];
     for (const ev of events) sink.handle(ev, { name });
 
@@ -138,7 +138,7 @@ test('STITCH_EXPORT parses to a list and multiplex fans out to every sink', () =
     });
     const mux = multiplex(into(seenA), into(seenB));
     mux.handle(
-        { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
+        { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
         { name: 'x' },
     );
     expect(seenA).toEqual(['done']);
@@ -161,7 +161,7 @@ test('url.full strips userinfo and redacts secret query params before export', (
             at: 1000,
         },
         { type: 'result', value: {}, status: 200, attempts: 1, at: 1050 },
-        { type: 'done', ok: true, ms: 50, attempts: 1, at: 1050 },
+        { type: 'done', ok: true, elapsed: 50, attempts: 1, at: 1050 },
     ];
     for (const ev of events) sink.handle(ev, { name });
 

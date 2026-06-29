@@ -232,6 +232,8 @@ interface TraceRecord {
     type: string;
     at?: number;
     ok?: boolean;
+    elapsed?: number;
+    /** Pre-rename JSONL still carries `ms`; read it as a fallback (CONTRACT.md P17). */
     ms?: number;
     phase?: string;
     finding?: { level?: string };
@@ -298,7 +300,10 @@ export function summarizeTrace(records: TraceRecord[]): TraceSummary {
                 e.stats.runs++;
                 if (r.ok) e.stats.ok++;
                 else e.stats.failed++;
-                if (typeof r.ms === 'number') e.durations.push(r.ms);
+                {
+                    const dur = r.elapsed ?? r.ms;
+                    if (typeof dur === 'number') e.durations.push(dur);
+                }
                 break;
             case 'progress':
                 if (r.phase === 'retry') e.stats.retries++;

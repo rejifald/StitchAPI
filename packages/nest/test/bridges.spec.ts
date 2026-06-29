@@ -72,7 +72,7 @@ describe('loggerSink — level mapping', () => {
                 attempts: 3,
                 at: 0,
             },
-            { type: 'done', ok: true, ms: 5, attempts: 1, at: 0 },
+            { type: 'done', ok: true, elapsed: 5, attempts: 1, at: 0 },
         ];
         for (const e of events) sink.handle(e, ctx);
 
@@ -123,7 +123,10 @@ describe('loggerSink — level mapping', () => {
             { type: 'result', value: 1, status: 200, attempts: 1, at: 0 },
             ctx,
         );
-        sink.handle({ type: 'done', ok: true, ms: 1, attempts: 1, at: 0 }, ctx);
+        sink.handle(
+            { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+            ctx,
+        );
         sink.handle(
             { type: 'error', name: 'E', message: 'x', attempts: 1, at: 0 },
             ctx,

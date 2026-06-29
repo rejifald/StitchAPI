@@ -117,8 +117,8 @@ function breadcrumbFor(
                 data: {
                     phase: event.phase,
                     attempt: event.attempt,
-                    ...(event.waitedMs !== undefined
-                        ? { waitedMs: event.waitedMs }
+                    ...(event.waited !== undefined
+                        ? { waited: event.waited }
                         : {}),
                 },
             };
@@ -163,10 +163,10 @@ function breadcrumbFor(
                 ? {
                       category: 'stitch',
                       level: 'debug',
-                      message: `done ${name} (${event.ok ? 'ok' : 'failed'}, ${event.ms}ms)`,
+                      message: `done ${name} (${event.ok ? 'ok' : 'failed'}, ${event.elapsed}ms)`,
                       data: {
                           ok: event.ok,
-                          ms: event.ms,
+                          elapsed: event.elapsed,
                           attempts: event.attempts,
                       },
                   }

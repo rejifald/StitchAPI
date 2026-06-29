@@ -358,7 +358,7 @@ describe('bridges', () => {
                 type: 'progress',
                 phase: 'retry',
                 attempt: 2,
-                waitedMs: 100,
+                waited: 100,
                 at: 0,
             },
             ctx,
@@ -402,7 +402,7 @@ describe('bridges', () => {
             ctx,
         );
         sink.handle(
-            { type: 'done', ok: true, ms: 12, attempts: 1, at: 0 },
+            { type: 'done', ok: true, elapsed: 12, attempts: 1, at: 0 },
             ctx,
         );
         sink.handle(
@@ -474,7 +474,10 @@ describe('bridges', () => {
             { type: 'result', value: 1, status: 200, attempts: 1, at: 0 },
             ctx,
         );
-        sink.handle({ type: 'done', ok: true, ms: 1, attempts: 1, at: 0 }, ctx);
+        sink.handle(
+            { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+            ctx,
+        );
         sink.handle(
             { type: 'progress', phase: 'retry', attempt: 2, at: 0 },
             ctx,
