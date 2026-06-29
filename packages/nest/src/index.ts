@@ -33,7 +33,7 @@ export {
     StitchExceptionFilter,
     toHttpException,
     isStitchError,
-    type StitchError,
+    type StitchErrorLike,
     type ToHttpExceptionOptions,
 } from './exception-filter';
 export { stitchSse, type MessageEventLike, type StitchSseOptions } from './sse';
