@@ -164,8 +164,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "idempotency",
             type: "property",
-            detail: "IdempotencyOptions",
-            info: "Inject a stable Idempotency-Key header on writes so safe retries don't duplicate.",
+            detail: "boolean | AtLeastOne<IdempotencyOptions>",
+            info: "Inject a stable Idempotency-Key header on writes so safe retries don't duplicate. `true` enables it with defaults (header `Idempotency-Key`, a random uuid per call); the object form customizes it and **must** set at least one field — the opaque `idempotency: {}` is rejected (CONTRACT.md P20).",
         },
         {
             label: "cache",
