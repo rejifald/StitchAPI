@@ -1,0 +1,152 @@
+---
+title: 'Upload a File With a Progress Bar'
+description: 'fetch cannot report how many bytes have left the machine, so a 50MB upload looks frozen. Declare a multipart upload on xhrAdapter, pass onProgress per call, and drive a real bar from the bytes sent.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [upload, progress, xhr, typescript, multipart]
+---
+
+A user picks a 50MB video, clicks **Upload**, and your UI just sits there. No bar, no percentage, no sign the bytes are even moving — until, a minute later, the response lands and the screen jumps to "done." The user has already refreshed twice. The problem is not your code; it is the transport: `fetch` cannot tell you how many bytes of the request body have left the machine. `XMLHttpRequest` can, through `xhr.upload`. StitchAPI ships `xhrAdapter()` for exactly this case, and an upload built on it is still an ordinary stitch — typed, authenticated, time-bounded.
+
+## Why fetch leaves you blind
+
+`fetch` reports nothing about the request body's progress. There is no `upload` event, no `onUploadProgress` option, no way to read bytes sent. The Streams API can give you a request `ReadableStream`, but browsers do not surface per-chunk upload counts from it, and support is uneven. So the honest "before" with `fetch` is a spinner and a guess:
+
+```ts
+async function uploadVideo(file: File) {
+    const body = new FormData();
+    body.append('file', file);
+
+    // No upload-progress signal exists here. The bar can only be fake.
+    const res = await fetch('https://api.example.com/videos', {
+        method: 'POST',
+        body,
+        headers: { Authorization: `Bearer ${process.env.API_TOKEN}` },
+    });
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+    return res.json();
+}
+```
+
+You can animate a CSS bar to 90% and freeze it there, but that is theater. The bytes are not being measured, so the bar is not tracking anything.
+
+`XMLHttpRequest` predates `fetch` and kept a feature `fetch` dropped: an `upload` object that fires `progress` events as the body is sent. Hand-rolling it means wiring `xhr.upload.onprogress`, `xhr.onload`, `xhr.onerror`, `xhr.onabort`, `setRequestHeader` for auth, JSON-parsing the response, and translating non-2xx into an error — every callback by hand, every time. That is the glue `xhrAdapter()` already wrote.
+
+## Declare the upload as a stitch
+
+A stitch turns one endpoint into a typed function you call with `await`. Swap the default transport for `xhrAdapter()` and set `bodyType: 'multipart'`, and you get upload-progress reporting with the rest of the stitch contract intact:
+
+```ts
+import { bearer, env, stitch, xhrAdapter } from 'stitchapi';
+import { z } from 'zod';
+
+const uploadVideo = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/videos',
+    bodyType: 'multipart',
+    adapter: xhrAdapter(),
+    auth: bearer(env('API_TOKEN')),
+    timeout: '2m',
+    output: z.object({ id: z.string(), url: z.string().url() }),
+});
+```
+
+Each field replaces glue you would otherwise write:
+
+-   `adapter: xhrAdapter()` routes the request through `XMLHttpRequest` instead of the default `fetchAdapter()`, so `xhr.upload` is available to report bytes sent. It is **browser-only** (it needs `XMLHttpRequest`) and **buffered**, not streaming — it reads the whole response into memory, and rejects a `stream` request. Upload progress is its reason to exist.
+-   `bodyType: 'multipart'` encodes the body as `multipart/form-data` and sets the boundary header for you.
+-   `auth: bearer(env('API_TOKEN'))` resolves the token at call time and sets the `Authorization` header; the caller never holds the secret.
+-   `output` validates the JSON the server returns, so a successful `await` hands back a typed `{ id, url }` — not `unknown`.
+
+A multipart **file part** in the body can be a `Blob` (a `File` is a `Blob`), a `Uint8Array`, or a `{ value, filename?, type? }` wrapper when you want to name the part or set its content type explicitly. Scalar values — strings, numbers — become string parts. So the body for this stitch is a plain object whose `file` key holds the upload.
+
+## Drive the bar from bytes sent
+
+`onProgress` is a **per-call control**, not config. You pass it in the call input alongside the body, and the callback receives an `AdapterProgress`:
+
+```ts
+type AdapterProgress = {
+    phase: 'upload' | 'download';
+    loaded: number;
+    total?: number;
+};
+```
+
+`loaded` is the number of bytes transferred so far; `total` is the full size when the transport knows it. Tag by `phase` so you only move the upload bar while the request body is going out:
+
+```ts
+async function send(file: File, onPct: (pct: number) => void) {
+    const result = await uploadVideo({
+        body: { file },
+        onProgress: (p) => {
+            if (p.phase === 'upload') {
+                onPct(Math.round((p.loaded / (p.total ?? 1)) * 100));
+            }
+        },
+    });
+    return result; // typed { id, url }
+}
+```
+
+Wiring that into a `<progress>` element is the whole feature:
+
+```tsx
+function Uploader() {
+    const [pct, setPct] = useState(0);
+
+    async function handle(file: File) {
+        setPct(0);
+        const { url } = await send(file, setPct);
+        console.log('uploaded to', url);
+    }
+
+    return (
+        <>
+            <input type="file" onChange={(e) => handle(e.target.files![0])} />
+            <progress value={pct} max={100} />
+        </>
+    );
+}
+```
+
+The bar now moves because it is reading real bytes off the wire, not a timer pretending to.
+
+Two controls travel with the call this way, and in both cases **the call argument wins over a bound or configured value**:
+
+-   `onProgress`, above — supply a different callback per upload without redeclaring the stitch.
+-   `signal`, an `AbortSignal` — pass `{ body, onProgress, signal }` and a cancel button aborts the in-flight upload.
+
+```ts
+const controller = new AbortController();
+uploadVideo({ body: { file }, onProgress, signal: controller.signal });
+// later: controller.abort();
+```
+
+## Upload progress, not just any progress
+
+The `phase` tag exists because progress runs **both directions**:
+
+| Axis        | `phase: 'upload'`              | `phase: 'download'`             |
+| ----------- | ------------------------------ | ------------------------------- |
+| Measures    | bytes of the request body sent | bytes of the response body read |
+| Transport   | needs `xhrAdapter()`           | works on `fetchAdapter()` too   |
+| Typical use | a file/video upload bar        | a large-download bar            |
+
+Download progress is the easier half — `fetchAdapter()`, the default transport, reports it by reading the response stream — so if you only need a download bar you do not have to switch adapters at all. The reason this article reaches for `xhrAdapter()` is the upload direction, which `fetch` cannot measure at all. Filter on `p.phase === 'upload'` and the same callback ignores the download tail.
+
+This stays inside the stitch contract, not beside it. `auth` still resolves the token at call time; `timeout` still bounds the call (a generous `'2m'` here, because a large upload is slow, not stuck); `output` still validates the response, so a corrupt or unexpected body throws a `StitchError` carrying the offending `.body` instead of slipping through as `any`. You traded the transport, not the guarantees.
+
+One honest edge: `xhrAdapter()` is **browser-only and buffered**. It cannot run under Node, and it cannot stream a response — ask it to `stream` and it rejects. If you need response streaming (SSE, an LLM token feed, a chunked download you consume as it arrives), that is `fetchAdapter()`'s job. Pick `xhrAdapter()` when the thing you must show the user is the upload climbing.
+
+## From one upload to every upload
+
+This `uploadVideo` is one declaration that bounds the call you have today: one endpoint, one progress callback, one typed result. It scales **down** to a single line — drop `output` and `timeout` and you still have a multipart POST with a real progress bar, which is fewer moving parts than the hand-rolled `XMLHttpRequest` callbacks it replaces. It scales **up** without a rewrite — add `retry` for transient network blips, `throttle` to cap concurrent uploads, `hooks` to log each attempt, all as fields on the same object, the call site untouched. (Be deliberate about `retry` on an upload: re-sending a 50MB body is rarely free, so scope it tightly or skip it.) And every other endpoint in your app declares the same way, so the upload is not a special case bolted onto your client — it is one more stitch.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+`xhrAdapter()` and the other built-in transports live in core — no extra package. From there: read [choosing an HTTP adapter](/blog/choosing-an-http-adapter) for when to reach for `xhrAdapter` over `fetchAdapter`, [migrate from fetch to StitchAPI](/blog/migrate-from-fetch-to-stitchapi) to convert an existing client, the [helpers reference](/docs/reference/helpers) for the adapter signatures, the [body-encoding guide](/docs/guides/data/body-encoding) for how multipart parts are serialized, and [the stitch](/docs/concepts/the-stitch) for the full call contract.
