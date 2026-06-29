@@ -33,7 +33,7 @@ import type { StitchStore } from 'stitchapi';
  * primitives only. `redisStore` layers the JSON envelope and key prefixing on
  * top; a driver only moves opaque strings and one atomic counter.
  *
- * `incr(key, ttlMs)` MUST be atomic and set the key's expiry **only when it
+ * `incr(key, ttl)` MUST be atomic and set the key's expiry **only when it
  * creates the counter** (the first increment), never extending it afterwards —
  * otherwise a busy rate window would slide forever and never reset. {@link
  * fromIoredis} / {@link fromNodeRedis} guarantee this with a Lua `EVAL`; a custom
@@ -42,12 +42,12 @@ import type { StitchStore } from 'stitchapi';
 export interface RedisDriver {
     /** `GET key` — the raw stored string, or `null` when absent. */
     get(key: string): Promise<string | null>;
-    /** `SET key value` (no TTL) or `SET key value PX ttlMs` when `ttlMs` is set. */
-    set(key: string, value: string, ttlMs?: number): Promise<void>;
+    /** `SET key value` (no TTL) or `SET key value PX ttl` when `ttl` is set. */
+    set(key: string, value: string, ttl?: number): Promise<void>;
     /** `DEL key`. */
     del(key: string): Promise<void>;
-    /** Atomic `INCR key` + first-time `PEXPIRE key ttlMs`; resolves to the new count. */
-    incr(key: string, ttlMs: number): Promise<number>;
+    /** Atomic `INCR key` + first-time `PEXPIRE key ttl`; resolves to the new count. */
+    incr(key: string, ttl: number): Promise<number>;
     /** Release the connection (optional — `redisStore().close()` delegates here). */
     close?(): Promise<void>;
 }
@@ -77,7 +77,7 @@ export interface IoredisLike {
         key: string,
         value: string,
         expiryMode: 'PX',
-        ttlMs: number,
+        ttl: number,
     ): Promise<unknown>;
     del(key: string): Promise<unknown>;
     eval(
@@ -138,16 +138,16 @@ export function fromIoredis(client: IoredisLike): RedisDriver {
         async get(key) {
             return client.get(key);
         },
-        async set(key, value, ttlMs) {
-            if (ttlMs == null) await client.set(key, value);
-            else await client.set(key, value, 'PX', ttlMs);
+        async set(key, value, ttl) {
+            if (ttl == null) await client.set(key, value);
+            else await client.set(key, value, 'PX', ttl);
         },
         async del(key) {
             await client.del(key);
         },
-        async incr(key, ttlMs) {
+        async incr(key, ttl) {
             // ioredis: eval(script, numKeys, ...keysThenArgs).
-            return Number(await client.eval(INCR_WITH_TTL, 1, key, ttlMs));
+            return Number(await client.eval(INCR_WITH_TTL, 1, key, ttl));
         },
         async close() {
             await client.quit?.();
@@ -171,19 +171,19 @@ export function fromNodeRedis(client: NodeRedisLike): RedisDriver {
         async get(key) {
             return client.get(key);
         },
-        async set(key, value, ttlMs) {
-            if (ttlMs == null) await client.set(key, value);
-            else await client.set(key, value, { PX: ttlMs });
+        async set(key, value, ttl) {
+            if (ttl == null) await client.set(key, value);
+            else await client.set(key, value, { PX: ttl });
         },
         async del(key) {
             await client.del(key);
         },
-        async incr(key, ttlMs) {
+        async incr(key, ttl) {
             // node-redis: eval(script, { keys, arguments }); ARGV are strings.
             return Number(
                 await client.eval(INCR_WITH_TTL, {
                     keys: [key],
-                    arguments: [String(ttlMs)],
+                    arguments: [String(ttl)],
                 }),
             );
         },
@@ -221,17 +221,17 @@ export function fromUpstash(client: UpstashLike): RedisDriver {
             if (v == null) return null;
             return typeof v === 'string' ? v : JSON.stringify(v);
         },
-        async set(key, value, ttlMs) {
-            if (ttlMs == null) await client.set(key, value);
-            else await client.set(key, value, { px: ttlMs });
+        async set(key, value, ttl) {
+            if (ttl == null) await client.set(key, value);
+            else await client.set(key, value, { px: ttl });
         },
         async del(key) {
             await client.del(key);
         },
-        async incr(key, ttlMs) {
+        async incr(key, ttl) {
             // Upstash: eval(script, keys[], args[]); ARGV are strings.
             return Number(
-                await client.eval(INCR_WITH_TTL, [key], [String(ttlMs)]),
+                await client.eval(INCR_WITH_TTL, [key], [String(ttl)]),
             );
         },
     };
@@ -285,16 +285,16 @@ export function redisStore(
                 return raw;
             }
         },
-        async set(key, value, ttlMs) {
+        async set(key, value, ttl) {
             // `set(key, undefined)` is the cache's delete (ADR 0003 §8) — drop the key.
             if (value === undefined) {
                 await driver.del(k(key));
                 return;
             }
-            await driver.set(k(key), JSON.stringify(value), ttlMs);
+            await driver.set(k(key), JSON.stringify(value), ttl);
         },
-        incr(key, ttlMs) {
-            return driver.incr(k(key), ttlMs);
+        incr(key, ttl) {
+            return driver.incr(k(key), ttl);
         },
     };
     if (driver.close) {
