@@ -223,6 +223,13 @@ export interface RetryOptions {
 export interface ThrottleOptions {
     rate?: string; // "2/s"
     concurrency?: number;
+    /**
+     * Where the limiter's counter is pooled: `'stitch'` (default) keeps a per-stitch
+     * budget; `'host'` shares one budget across every stitch hitting the same host. Renamed
+     * from `scope` (CONTRACT.md P2) so `scope` only ever means principal/app tenancy.
+     */
+    pool?: 'stitch' | 'host';
+    /** @deprecated Renamed to {@link ThrottleOptions.pool} (CONTRACT.md P2). Read until the 1.0 GA cut. */
     scope?: 'stitch' | 'host';
 }
 /**
@@ -245,7 +252,10 @@ export interface CircuitOptions {
 }
 export interface IdempotencyOptions {
     header?: string; // header name (default 'Idempotency-Key')
-    key?: (input: StitchInput) => string; // stable key per logical call (default: a random uuid)
+    /** Derive a stable key per logical call (default: a random uuid). Renamed from `key` (CONTRACT.md P6: `key` is a string, a derivation fn is `keyOf`). */
+    keyOf?: (input: StitchInput) => string;
+    /** @deprecated Renamed to {@link IdempotencyOptions.keyOf} (CONTRACT.md P6). Read until the 1.0 GA cut. */
+    key?: (input: StitchInput) => string;
 }
 
 // ---- Cache (ADR 0003) -----------------------------------------------------
@@ -318,7 +328,9 @@ export interface CacheConfig {
      * only for pure validators with no coercion/transform inside the schema).
      */
     onUnfingerprintable?: 'refuse' | 'revalidate';
-    /** Sugar: author the key seed from the input instead of deriving it from the request. */
+    /** Sugar: author the key seed from the input instead of deriving it from the request. Renamed from `key` (CONTRACT.md P6). */
+    keyOf?: (input: StitchInput) => string;
+    /** @deprecated Renamed to {@link CacheConfig.keyOf} (CONTRACT.md P6). Read until the 1.0 GA cut. */
     key?: (input: StitchInput) => string;
 }
 

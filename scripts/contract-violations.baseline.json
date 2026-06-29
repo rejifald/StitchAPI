@@ -1,6 +1,6 @@
 {
     "generatedBy": "scripts/check-contract.mjs --update",
-    "count": 46,
+    "count": 43,
     "violations": [
         {
             "rule": "R1",
@@ -55,7 +55,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "CacheConfig",
             "detail": "banned suffix on consumer type → *Options (P3)",
-            "line": 260,
+            "line": 270,
             "key": "R1|packages/core/src/types.ts|CacheConfig"
         },
         {
@@ -95,7 +95,7 @@
             "file": "packages/core/src/engine.ts",
             "symbol": "backoffMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 1375,
+            "line": 1374,
             "key": "R2|packages/core/src/engine.ts|backoffMs"
         },
         {
@@ -103,7 +103,7 @@
             "file": "packages/core/src/engine.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 725,
+            "line": 724,
             "key": "R2|packages/core/src/engine.ts|retryAfterMs"
         },
         {
@@ -111,7 +111,7 @@
             "file": "packages/core/src/engine.ts",
             "symbol": "totalMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 448,
+            "line": 447,
             "key": "R2|packages/core/src/engine.ts|totalMs"
         },
         {
@@ -127,7 +127,7 @@
             "file": "packages/core/src/resilience.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 252,
+            "line": 254,
             "key": "R2|packages/core/src/resilience.ts|retryAfterMs"
         },
         {
@@ -215,7 +215,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "cooldownMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 241,
+            "line": 248,
             "key": "R2|packages/core/src/types.ts|cooldownMs"
         },
         {
@@ -223,7 +223,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "halfOpenAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 242,
+            "line": 249,
             "key": "R2|packages/core/src/types.ts|halfOpenAfterMs"
         },
         {
@@ -239,7 +239,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 457,
+            "line": 469,
             "key": "R2|packages/core/src/types.ts|retryAfterMs"
         },
         {
@@ -247,7 +247,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "ttlMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 936,
+            "line": 948,
             "key": "R2|packages/core/src/types.ts|ttlMs"
         },
         {
@@ -255,7 +255,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "waitedMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 440,
+            "line": 452,
             "key": "R2|packages/core/src/types.ts|waitedMs"
         },
         {
@@ -289,30 +289,6 @@
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
             "line": 121,
             "key": "R2|packages/sentry/src/index.ts|waitedMs"
-        },
-        {
-            "rule": "R3",
-            "file": "packages/core/src/types.ts",
-            "symbol": "CacheConfig.key",
-            "detail": "function-typed key → rename keyOf (P6)",
-            "line": 260,
-            "key": "R3|packages/core/src/types.ts|CacheConfig.key"
-        },
-        {
-            "rule": "R3",
-            "file": "packages/core/src/types.ts",
-            "symbol": "IdempotencyOptions.key",
-            "detail": "function-typed key → rename keyOf (P6)",
-            "line": 246,
-            "key": "R3|packages/core/src/types.ts|IdempotencyOptions.key"
-        },
-        {
-            "rule": "R4",
-            "file": "packages/core/src/types.ts",
-            "symbol": "ThrottleOptions.scope",
-            "detail": "pool axis named scope → rename pool (P2)",
-            "line": 223,
-            "key": "R4|packages/core/src/types.ts|ThrottleOptions.scope"
         },
         {
             "rule": "R5",

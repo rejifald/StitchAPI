@@ -359,6 +359,11 @@ New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multi
 `sse`, `.inspect()` scalars (P12); `idempotency` boolean (P13-toggle);
 `throttle` string (P14).
 
+**Shipped (migration in progress):** `ThrottleOptions.scope`→`pool` (P2) and
+`IdempotencyOptions.key`/`CacheConfig.key`→`keyOf` (P6) have landed under `@deprecated`
+aliases (read until the GA cut); the runtime prefers the new field
+(`pool ?? scope`, `keyOf ?? key`) and the lint no longer flags the deprecated members.
+
 ---
 
 ## 7. Enforcement
