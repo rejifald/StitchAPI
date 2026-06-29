@@ -346,10 +346,14 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
         at: now(),
     };
     if (e.status !== undefined) evt.status = e.status;
-    // Delegate-backoff signal: stamp the structured `retryAfterMs` onto the event (so `.stream()`
+    // Delegate-backoff signal: stamp the structured `retryAfter` onto the event (so `.stream()`
     // consumers get it) and pin the live RateLimitError so the awaited path re-throws it intact.
     if (err instanceof RateLimitError) {
-        if (err.retryAfterMs !== undefined) evt.retryAfterMs = err.retryAfterMs;
+        if (err.retryAfter !== undefined) {
+            evt.retryAfter = err.retryAfter;
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-emit the @deprecated alias for back-compat (CONTRACT.md P17)
+            evt.retryAfterMs = err.retryAfter;
+        }
         Object.defineProperty(evt, ERROR_SOURCE, {
             value: err,
             enumerable: false,
@@ -738,7 +742,7 @@ async function* attemptLoop(
             if (delegate && rlMatch(res.status)) {
                 throw new RateLimitError({
                     status: res.status,
-                    retryAfterMs: parseRetryAfter(
+                    retryAfter: parseRetryAfter(
                         res.headers['retry-after'],
                         rt.clock,
                     ),

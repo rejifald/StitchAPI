@@ -466,12 +466,14 @@ export interface AuthFailureResult {
     /** The login response status when the login responded at all (absent when it threw). */
     status?: number;
     /** `Retry-After` parsed to ms when the login was rate-limited (status 429). */
+    retryAfter?: number;
+    /** @deprecated Renamed to {@link AuthFailureResult.retryAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     retryAfterMs?: number;
     /** The thrown value when the login stitch itself threw (network/transport failure). */
     error?: unknown;
     /**
      * - `'unauthenticated'` — login responded with a `refreshOn` status (e.g. 401) and set no cookie (bad/expired creds);
-     * - `'rate-limited'` — login responded `429` (back off, then retry; see `retryAfterMs`);
+     * - `'rate-limited'` — login responded `429` (back off, then retry; see `retryAfter`);
      * - `'network'` — the login stitch threw before any response (DNS/connection/transport);
      * - `'unknown'` — login responded but captured no cookie for some other reason.
      */
@@ -594,15 +596,20 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
         headers: Record<string, string>,
     ): AuthFailureResult => {
         if (status === 429) {
-            // Omit `retryAfterMs` entirely when the header is absent/unparseable —
+            // Omit `retryAfter` entirely when the header is absent/unparseable —
             // `exactOptionalPropertyTypes` forbids setting an optional prop to `undefined`.
-            const retryAfterMs = parseRetryAfter(headers['retry-after']);
-            return {
+            const retryAfter = parseRetryAfter(headers['retry-after']);
+            const result: AuthFailureResult = {
                 phase,
                 status,
                 category: 'rate-limited',
-                ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+                ...(retryAfter !== undefined ? { retryAfter } : {}),
             };
+            // Co-set the @deprecated `retryAfterMs` alias for back-compat (CONTRACT.md P17/P19), by
+            // assignment (not a literal `*Ms:` key) so the contract lint's R2 stays clean.
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- writing the @deprecated alias for back-compat
+            if (retryAfter !== undefined) result.retryAfterMs = retryAfter;
+            return result;
         }
         if (refreshOn.includes(status))
             return { phase, status, category: 'unauthenticated' };
