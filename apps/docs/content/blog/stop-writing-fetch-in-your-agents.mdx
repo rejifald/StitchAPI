@@ -89,12 +89,12 @@ A useful side effect of putting the contract on the declaration: the _same_ stit
 
 And because the agent surface is MCP, you don't enumerate one tool per endpoint — that floods the model's context as you add APIs. The agent drives a single code-mode tool, `run_stitch`, writing a small snippet that calls the stitches by name, with `list_stitches` and `describe_stitch` for discovery. The contract you declared once is what every door serves.
 
-## When raw fetch is still fine
+## When to graduate from raw fetch
 
 This is a tradeoff, not a commandment. The honest version:
 
 -   **A one-off, throwaway script** — a single call you'll run once and read with your own eyes — doesn't need any of this. Raw `fetch` is the right amount of ceremony. Reaching for a stitch there is over-engineering.
--   **The payoff grows with reuse.** The first time you call an endpoint, a stitch is more setup. By the tenth call site, or the third endpoint sharing one auth and throttle budget, the declaration has paid for itself several times over.
+-   **The first call is already a one-liner** — a URL and a field. Every new call site after that reuses the same declaration for free: same auth, same throttle budget, same validated shape. And every front door (function, CLI, HTTP, MCP) that opens onto the stitch adds reach without adding duplication. The compounding is structural, not a reward you wait for.
 -   **It grows fastest with untrusted, tireless callers.** The credential boundary, the validation, and the throttle matter most precisely when the caller is a model that will retry, fan out, and loop — which is the whole reason this post exists. A trusted human running a script feels these gaps least.
 
 So the rule isn't "never write `fetch`." It's: the moment the caller is an agent, or the endpoint gets reused, the four gaps stop being theoretical. That's when you want the endpoint declared once, with the secret behind the boundary and the resilience on the definition — and the agent holding a capability, not a key.

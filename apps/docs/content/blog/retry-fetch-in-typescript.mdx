@@ -124,15 +124,15 @@ The non-idempotent-write pitfall doesn't vanish — nothing can make a blind `PO
 
 Because the policy lives on the definition, it composes instead of tangling. Each retry surfaces as a `progress` event on the [event stream](/docs/concepts/event-stream), so a trace shows every wait and re-attempt rather than a silent stall inside a loop. And the same declaration takes a `timeout` next to `retry` — a per-attempt budget and a total budget that the hand-rolled version never bounded — which is the composition the [circuit breakers and layered timeouts](/blog/circuit-breakers-and-layered-timeouts) post walks through end to end.
 
-## When a tiny retry helper is enough
+## Start with the helper — reach for a stitch when the policy spreads
 
-A stitch earns its keep when the retry policy is load-bearing and shared. It's overkill when it isn't:
+The dozen lines above are a fine floor. For a single internal `GET` that flakes once a month they're clearer than a dependency, and a run-once script never meets the thundering herd that jitter exists to break up. What the helper can't do is stay in one place — the moment the rule has to hold the same way across a second call site, it gets copy-pasted, and the copies drift:
 
--   **One call site, one well-behaved endpoint.** If you retry a single internal `GET` that flakes once a month, the dozen lines above are clearer than a dependency. Keep them.
--   **A script that runs once and exits.** No long-lived process, no fleet of clients, no thundering herd to break up — a fixed-delay loop is fine, and jitter is solving a problem you don't have.
--   **You won't reuse the policy.** The argument for declaring retry as data is that the same data covers your next ten endpoints and stays visible at each call site. If there's no next endpoint, there's less to gain.
+-   **A second endpoint needs the same policy.** "Retry the transient set, back off with jitter, honor `Retry-After`, and don't you dare retry that `POST`" is now duplicated logic, each copy free to fall out of step with the others.
+-   **You want the policy visible, not trusted.** Buried in a shared helper three files away, retry is something a reader takes on faith. On the declaration it's a field they can see at the call site.
+-   **The policy gains a neighbor.** The same definition takes a `timeout` next to `retry` — a per-attempt and total budget the loop never bounded — and surfaces each attempt as a `progress` event instead of a silent stall.
 
-The line is reuse and visibility. The moment "retry the transient set, back off with jitter, honor `Retry-After`, and don't you dare retry that `POST`" becomes a rule you want applied the same way across many calls — and want to _see_ applied, not trust by convention — it belongs on the definition, not copy-pasted into each call site. If you're arriving here from axios interceptors rather than raw `fetch`, the same trade is mapped out in [axios alternatives](/blog/axios-alternatives).
+That's the line, and crossing it is a field, not a rewrite: the same call gains `retry` declared once, applied by the engine rather than by convention. A stitch is the helper you'd graduate to anyway — it just starts where the helper tops out. If you're arriving here from axios interceptors rather than raw `fetch`, the same trade is mapped out in [axios alternatives](/blog/axios-alternatives).
 
 ## Try it
 

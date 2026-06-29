@@ -99,9 +99,10 @@ If you already run a query/cache layer, the stitch doesn't fight it — it slots
 
 So the decision isn't "stitch bindings _or_ my query library." It's which layer owns view state — and the stitch is the call either way.
 
-## When this isn't worth it
+## Start with a direct call — reach for the binding when the view reacts
 
-Two honest caveats:
+`await stitch(...)` is the floor. A fire-once call outside a reactive view starts there and stays there — no binding needed, no overhead, just the call.
 
--   **If a query library already owns your view state, you may not need the binding's hooks at all.** Going through SWR, RTK Query, or TanStack Query can be the simpler path — let that layer manage state and let the stitch be the `queryFn`.
--   **A one-shot call doesn't need a binding.** For a fire-once call outside a reactive view, `await stitch(...)` is enough; the binding earns its keep only when a component has to react to loading, error, drift, or streaming state over time.
+You reach for the binding the moment a component must render against loading, error, drift, or streaming state over time. That's the trigger: the view reacts, the binding earns its keep.
+
+If a query library already owns your view state, the stitch becomes the `queryFn` and you skip the binding's hooks entirely — SWR, RTK Query, or TanStack Query own the reactive layer, the stitch owns the call. That's not a detour; it's the same graduation applied to a different state layer.

@@ -73,15 +73,19 @@ const search = stitch({
 
 The two cover different failure shapes. The throttle handles the limit _you know about_ — the documented account ceiling you can pace yourself under. The retry handles the limit _you don't_: a burst from another process sharing the same token, a provider that tightened its limit without telling you, a transient `503` that has nothing to do with rate at all. When a `429` does land, `respectRetryAfter` defers to the server's `Retry-After` header instead of guessing. Throttle reduces how often you reach for the net; the net is still there for when you do.
 
-## When this isn't worth it
+## Start reactive — turn on `throttle` when you brush the ceiling
 
-A proactive throttle is only as good as the number you give it, and it carries one sharp caveat.
+The reactive `429`/retry path is the sensible floor. At low volume you'll never come close to a provider's limit, and `retry` with `respectRetryAfter` handles the occasional burst cleanly. Start there.
 
--   **You have to know — or estimate — the real limit.** The throttle paces you to the cap you declare, not to the provider's actual ceiling. Set it too high and it does nothing the `429` path wasn't already doing; set it too low and you've throttled yourself below a limit that was never going to bite. If a provider documents its limit, use that. If it doesn't, start conservative, watch for `429`s, and tighten. This is the work the control asks of you, and there's no way around it.
--   **The default limiter is per-process.** The in-process throttle counts in memory, in one process. Run two instances and each keeps its own count — together, N workers can hit a host at up to N times the rate you declared, and a host-scoped budget silently stops honoring an account-wide limit. For a single process or a CLI run, that's fine. To make the budget span workers you need a shared store; the mechanics are a topic of their own, covered in the [distributed throttle](/blog/distributed-throttle-with-redis-kv) write-up.
--   **Low-volume callers won't notice.** If you make a handful of calls and never come close to the limit, the throttle is dead weight — accurate, but solving a problem you don't have. The reactive `429` path alone is enough until your volume starts brushing the ceiling.
+Flip on `throttle` — a single field on the same stitch — when:
 
-None of this makes the reactive path obsolete. It just stops you from leaning on it for a limit you could have stayed under in the first place.
+-   **Your volume brushes the limit.** You're making enough calls that `429`s start appearing in normal traffic, not just spikes. A declared rate gives you smooth pacing instead of a bounce-and-wait cycle.
+-   **You want to stop hammering a shared cap.** Multiple call sites share one account quota. The throttle keeps any one stitch from consuming the whole budget before others get a turn.
+-   **Many stitches share one host budget.** Set `scope: 'host'` and the limiter counts across every stitch pointed at that origin — the right control when the ceiling is per-domain, not per-endpoint.
+
+Two caveats stay real regardless of volume: you have to declare the actual limit (set it too high and `retry` is still doing the work; set it too low and you've throttled yourself for no reason), and the default limiter is per-process (multiple workers each keep their own count — span them with a shared store, covered in the [distributed throttle](/blog/distributed-throttle-with-redis-kv) write-up).
+
+The reactive path is the floor you start from. `throttle` is the field you add when you outgrow it.
 
 ## Try it
 

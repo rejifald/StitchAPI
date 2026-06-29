@@ -42,7 +42,7 @@ try {
 }
 ```
 
-For a single call, stop here — this is the right amount of code, and it does the one thing that matters: the `signal` makes the abort real, so the connection is actually cancelled.
+For a single call this is the right amount of code, and it does the one thing that matters: the `signal` makes the abort real, so the connection is actually cancelled. What it won't do is grow with you — the day the call needs a retry or a second deadline, this shape gets rewritten.
 
 ### The trap: racing a Promise doesn't cancel anything
 
@@ -95,15 +95,34 @@ const getQuote = stitch({
 
 Because the timeout lives on the declaration, every front door — the in-process function, the CLI, the HTTP endpoint, the agent over MCP — inherits the same deadline instead of each re-wiring its own `AbortController`.
 
-## When the plain AbortSignal is enough
+## Start simple — and keep your options open
 
-The stitch buys you two scopes, a typed error, and composition with retry; a one-off call needs none of that.
+If today's job really is one endpoint, one attempt, one deadline, you still don't have to trade simple for extensible. A stitch scales down to the same one line — `timeout` takes a bare duration as shorthand for the total:
 
--   **A single fetch with no retries.** One endpoint, one attempt — `AbortSignal.timeout(3000)` on the `signal` is the whole job. A stitch would be more setup for the same bound.
--   **You're not also adding retry, auth, or validation.** A timeout earns its place on a declaration when it sits next to `retry`, an auth boundary, and an `output` validator that all share the call. If a bare deadline is genuinely all you need, the inline signal is leaner.
--   **The deadline never composes.** The reason for `total` _and_ `perAttempt` is retry. With no retries there's only one question to answer, and one `AbortSignal` answers it.
+```ts
+import { stitch } from 'stitchapi';
 
-The line isn't the timeout itself — both versions cancel the socket with an `AbortSignal`. It's whether you need one deadline or two that compose, a typed error, and the same policy on every caller. When a slow dependency turns into a sustained one and retries start making the outage worse, that's a different problem — a [circuit breaker plus layered timeouts](/blog/circuit-breakers-and-layered-timeouts) is the tool for it.
+const report = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/report',
+    timeout: '3s', // shorthand for { total: '3s' }
+});
+```
+
+That's the whole bound, and it cancels the socket with the same real `AbortSignal` the manual version did right. The difference is what each one is ready for next. The inline `AbortSignal.timeout(3000)` answers exactly one question and stops there: the day the call needs a retry, a per-attempt cap, an auth header, or an `output` validator, you're back at the call site re-wiring an `AbortController` by hand — the boilerplate this article opened with.
+
+The stitch is that same simple call today and one edit away from the rest tomorrow. Growing it to two composing deadlines plus retry is two lines on the declaration, not a rewrite:
+
+```ts
+const report = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/report',
+    timeout: { total: '10s', perAttempt: '3s' },
+    retry: { attempts: 3, on: [429, 502, 503] },
+});
+```
+
+Same call site, same callers, more guarantees. That's the trade: a bare `AbortSignal` bounds the call you have, while a stitch bounds it just as simply and is already shaped for the call it's about to become. When a slow dependency turns into a sustained one and retries start making the outage worse, that's the next deadline on the same declaration — a [circuit breaker plus layered timeouts](/blog/circuit-breakers-and-layered-timeouts) is the tool for it.
 
 ## Try it
 

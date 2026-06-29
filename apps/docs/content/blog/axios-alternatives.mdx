@@ -16,7 +16,7 @@ This is the common case, and the honest answer is that the field is good. Native
 -   **[ky](https://github.com/sindresorhus/ky).** A tiny `fetch`-based client with retry, timeout, and hooks built in, written in TypeScript. It's the closest "axios feel" in a fraction of the size, and the default pick if you're browser-first and want batteries included.
 -   **[ofetch](https://github.com/unjs/ofetch).** Auto-parses JSON, throws on errors, retries, and runs the same in Node and the browser. It's the `fetch` layer under Nuxt, and a clean choice if you live in that ecosystem.
 
-If a smaller wrapper is genuinely all you need — you call a couple of well-behaved endpoints and the rest of the reliability story isn't yours to own — stop here. One of these is the right move, and the rest of this post is for a different problem.
+If a smaller wrapper is genuinely all you need — a couple of well-behaved endpoints, and the reliability story isn't yours to own — one of these is the right move, and it's the floor to start from. The rest of this post is for the moment that story becomes yours: when the glue around `fetch` is the real work.
 
 ## If the wrapper was never the point
 
