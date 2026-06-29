@@ -1,0 +1,126 @@
+---
+title: 'Run a Stitch on the Edge: Cloudflare Workers and Zero node:'
+description: 'Most HTTP clients drag a node: import that breaks on a Worker. StitchAPI core is Web-API only, so the same stitch runs unchanged on Cloudflare Workers and Deno — and a KV-backed store shares its cache and auth across isolates.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [edge, cloudflare, workers, typescript, kv]
+---
+
+You wrote a clean API client, it passes every test on your laptop, and then the Cloudflare deploy fails at build time with `Could not resolve "node:crypto"`. The client you picked reaches for a Node built-in somewhere deep in its transport or its cache, and a Worker has no `node:` to give it. Now you are pinning polyfills, flipping compatibility flags, and hoping the shim behaves the same as the real thing.
+
+The edge runtime is not a smaller Node. It is a different runtime: no `node:` built-ins, no filesystem, isolates that cold-start per request and share no memory between them. A library that imports `node:crypto`, `node:fs`, or `node:http` does not run here — and the cache or session store it kept in a module-level variable evaporates the moment the isolate is recycled.
+
+## What runs on the edge
+
+StitchAPI core is Web-API only on the hot path — `fetch`, `Request`, `URL`, `crypto.subtle`, nothing from `node:`. It ships a `browser` export condition that the Workers and Deno bundlers pick automatically, and it has zero runtime dependencies, so there is no transitive package waiting to pull a Node built-in in behind your back. A stitch you wrote for a server runs unchanged in a Worker, in Pages Functions, on Deno Deploy — no polyfills, no `node:` shims, no compatibility flag.
+
+Here is the whole client. A stitch declares one endpoint as a typed function; the Worker's `fetch` handler calls it.
+
+```ts
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getUser = stitch({
+    url: 'https://api.example.com/users/{id}',
+    output: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+    retry: { attempts: 3, on: [429, 502, 503, 504], backoff: 'expo-jitter' },
+    timeout: { total: '10s', perAttempt: '4s' },
+});
+
+export default {
+    async fetch(req: Request): Promise<Response> {
+        const id = new URL(req.url).searchParams.get('id') ?? '1';
+        const user = await getUser({ params: { id } });
+        return Response.json(user);
+    },
+};
+```
+
+`await getUser(...)` returns the validated `User` and throws a `StitchError` (with `.status`, `.attempts`, `.body`, `.url`) once the stitch exhausts its own retries — so the resilience and the validation that you would otherwise hand-write live in the declaration, and they run on the isolate exactly as they run on your laptop.
+
+That covers a stateless call. The problem the edge adds is everything that wants to _remember_.
+
+## The state the edge throws away
+
+Two of a stitch's jobs are read-heavy and want shared state across calls:
+
+-   The **response cache** dedupes repeat reads and coalesces concurrent ones.
+-   The **auth jar** holds a `cookieSession` cookie jar or an `oauth2` token cache so you reuse a session instead of re-authenticating on every request.
+
+On a single Node process both live in memory and that is fine. On the edge it is not: each isolate has its own memory and gets recycled between requests, so an in-memory cache is cold on nearly every hit, and a token refreshed on one isolate is invisible to the next. You would be re-authenticating constantly and caching nothing.
+
+The fix is the `store` seam. A stitch keeps its mutable state behind a pluggable `StitchStore`; swap the backend and the cache and auth jar move with it. `@stitchapi/cloudflare-kv` exports `cloudflareKvStore`, a Workers-KV-backed store you attach as `store`:
+
+```ts
+import {
+    type KVNamespaceLike,
+    cloudflareKvStore,
+} from '@stitchapi/cloudflare-kv';
+import { cookieSession, seam } from 'stitchapi';
+import { z } from 'zod';
+
+export default {
+    async fetch(
+        req: Request,
+        env: { MY_KV: KVNamespaceLike },
+    ): Promise<Response> {
+        const api = seam({
+            baseUrl: 'https://api.example.com',
+            store: cloudflareKvStore(env.MY_KV),
+        });
+
+        // the login stitch — its Set-Cookie seeds the session
+        const login = api.stitch({ method: 'POST', path: '/auth/login' });
+
+        const getUser = api.stitch({
+            path: '/users/{id}',
+            auth: cookieSession({ login, cookie: 'session' }),
+            output: z.object({ id: z.string(), name: z.string() }),
+            cache: '5m',
+        });
+
+        const id = new URL(req.url).searchParams.get('id') ?? '1';
+        return Response.json(await getUser({ params: { id } }));
+    },
+};
+```
+
+Pass `cloudflareKvStore(env.MY_KV)` the KV binding — that is the whole API. With it attached, the cache lives in KV: shared across every isolate, surviving cold starts, so a value one request wrote another request reads. The auth cookie jar and token cache live in KV too: a session or token refreshed by one isolate is visible to all of them. The call site does not change. `await getUser({ params: { id } })` is identical with or without the store; only where the state lives moved.
+
+## It imports no Cloudflare types
+
+`@stitchapi/cloudflare-kv` is itself Web-API only — no `node:*`, zero runtime dependencies — and it imports **no** Cloudflare runtime types. It runs against a small structural surface, `KVNamespaceLike`, that a real `KVNamespace` binding satisfies as-is. You do not need `@cloudflare/workers-types` for the store to typecheck or run; the binding you already have fits the shape.
+
+The same seam reaches past Cloudflare. `@stitchapi/deno-kv` is the Deno-KV equivalent — same `store` field, different backend — for a stitch deployed to Deno Deploy.
+
+## One seam, the backend you have
+
+The `store` field is the same on the edge as it is on a Node fleet. The distributed-throttle post wires a stitch to a Redis-backed store so a rate limiter, cache, and session jar are shared across a fleet of Node processes. This is that exact seam — the call site is unchanged, the state moves to a shared backend — with the backend chosen for where you deploy:
+
+| Axis              | In-memory (default) | Redis store         | Workers KV store                 |
+| ----------------- | ------------------- | ------------------- | -------------------------------- |
+| Where it runs     | one process         | a Node fleet        | edge isolates                    |
+| Cache scope       | this process only   | fleet-wide          | fleet-wide, survives cold starts |
+| Auth jar / tokens | this process only   | shared across nodes | shared across isolates           |
+| `node:` needed    | no                  | the Redis client's  | none                             |
+| Call-site change  | —                   | none                | none                             |
+
+You pick the row that matches your deployment. The stitch — its types, retries, timeout, validation, auth — is the same code in every column. Redis for a Node fleet behind a load balancer; Workers KV for the edge.
+
+## From one Worker to a fleet
+
+The bare `fetch` handler at the top of this post is already a working edge client: a typed, validated, retrying call with no `node:` import to break the build. Reach for the KV store the day a second isolate needs to see the first one's cache or session — and reaching for it is one field, `store: cloudflareKvStore(env.MY_KV)`, on a `seam`. Nothing about the call you write changes between the single-Worker version and the fleet-wide one; you add a backend, not a rewrite. The same stitch scales down to one stateless handler and up to a shared edge fleet on the strength of a single line.
+
+## Try it
+
+```package-install
+stitchapi @stitchapi/cloudflare-kv
+```
+
+Attach `cloudflareKvStore(env.MY_KV)` as your seam's `store` and the cache and auth jar go fleet-wide across isolates — no call-site change. For the backend story end to end, see:
+
+-   [The pluggable store](/docs/guides/state/pluggable-store)
+-   [Distributed throttle, cache, and sessions](/docs/guides/state/distributed-throttle)
+-   [What a stitch is](/docs/concepts/the-stitch)
+-   [Distributed throttle with Redis as the KV](/blog/distributed-throttle-with-redis-kv) — the same seam, a Node backend
+-   [Choosing an HTTP adapter](/blog/choosing-an-http-adapter) and [adopting StitchAPI without a rewrite](/blog/adopt-stitchapi-without-a-rewrite)
