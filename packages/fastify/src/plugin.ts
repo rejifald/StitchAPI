@@ -23,7 +23,15 @@ import {
 
 // The host a route reads off `request.stitch` / `currentStitch()`: a principal-bound handle
 // when a `principal` resolver is set, else the root seam (both create member stitches).
-export type StitchHost = Seam | PrincipalSeam;
+export type FastifyRequestSeam = Seam | PrincipalSeam;
+
+/**
+ * @deprecated Renamed to {@link FastifyRequestSeam} so the public type is ecosystem-qualified (a bare
+ * `StitchHost` would collide with any other host adapter's per-request seam type) — see
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the `1.0.0-rc`
+ * line and removed at the 1.0 GA cut.
+ */
+export type StitchHost = FastifyRequestSeam;
 
 /** Common options shared by both `StitchPluginOptions` variants. */
 interface StitchPluginCommon {
@@ -74,10 +82,10 @@ export type StitchPluginOptions =
 
 // The ambient request-scoped host. `currentStitch()` reads it; the `onRequest` hook runs each
 // request inside `als.run(host, …)` so the value is the per-request principal handle.
-const als = new AsyncLocalStorage<StitchHost>();
+const als = new AsyncLocalStorage<FastifyRequestSeam>();
 
 /**
- * The ambient request-scoped {@link StitchHost} for the in-flight request — the principal-bound
+ * The ambient request-scoped {@link FastifyRequestSeam} for the in-flight request — the principal-bound
  * `seam.as(principal)` handle (or the root seam when no principal resolver is set). Returns
  * `undefined` outside a request (no ambient context), so a caller can fall back to an explicit
  * seam. Backed by Node's {@link AsyncLocalStorage}: a value-add a Node integration offers that
@@ -91,7 +99,7 @@ const als = new AsyncLocalStorage<StitchHost>();
  * }
  * ```
  */
-export function currentStitch(): StitchHost | undefined {
+export function currentStitch(): FastifyRequestSeam | undefined {
     return als.getStore();
 }
 
@@ -125,7 +133,7 @@ const pluginImpl: FastifyPluginAsync<StitchPluginOptions> = async (
     const ownsSeam = options.closeSeam ?? built;
 
     // Decorate the app with the root seam, and reserve `request.stitch` (set in onRequest, which
-    // runs before any handler, so the declared non-null `StitchHost` type is always satisfied).
+    // runs before any handler, so the declared non-null `FastifyRequestSeam` type is always satisfied).
     fastify.decorate('stitch', instance);
     fastify.decorateRequest('stitch');
 
@@ -133,11 +141,11 @@ const pluginImpl: FastifyPluginAsync<StitchPluginOptions> = async (
     // and run the rest of the request inside the ALS context so `currentStitch()` is ambient.
     fastify.addHook('onRequest', (request, _reply, done) => {
         const principal = options.principal?.(request);
-        const host: StitchHost =
+        const host: FastifyRequestSeam =
             principal !== undefined ? instance.as(principal) : instance;
         // `seam.as()` is lifecycle-free (it shares the root runtime), so the per-request handle
         // needs no teardown — it is dropped when the request ends.
-        (request as { stitch: StitchHost }).stitch = host;
+        (request as { stitch: FastifyRequestSeam }).stitch = host;
         // Enter the ALS context for the whole request lifecycle. `done` is called *inside*
         // `run`, so every subsequent hook/handler on this request sees the ambient host.
         als.run(host, done);
@@ -156,7 +164,7 @@ const pluginImpl: FastifyPluginAsync<StitchPluginOptions> = async (
 
 /**
  * The StitchAPI Fastify plugin. Register it to decorate the app with a {@link Seam} and each
- * request with a principal-bound {@link StitchHost}, bridge Fastify's Pino logger as the seam's
+ * request with a principal-bound {@link FastifyRequestSeam}, bridge Fastify's Pino logger as the seam's
  * trace sink, map stitch failures to HTTP responses, and tear the seam down on close.
  *
  * Wrapped with `fastify-plugin` so the `fastify.stitch` / `request.stitch` decorators and the
@@ -186,10 +194,10 @@ declare module 'fastify' {
     }
     interface FastifyRequest {
         /**
-         * The request-scoped {@link StitchHost}: a `seam.as(principal)` handle when a
+         * The request-scoped {@link FastifyRequestSeam}: a `seam.as(principal)` handle when a
          * `principal` resolver is set, else the root seam. The same value `currentStitch()`
          * returns inside the request.
          */
-        stitch: StitchHost;
+        stitch: FastifyRequestSeam;
     }
 }

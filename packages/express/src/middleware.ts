@@ -16,7 +16,15 @@ import type { PrincipalSeam, Seam } from 'stitchapi';
  * root {@link Seam}. The lifecycle levers (`close`/`flush`/`invalidate`) live on the root seam the
  * app owns — never on the per-request handle.
  */
-export type RequestSeam = PrincipalSeam | Seam;
+export type ExpressRequestSeam = PrincipalSeam | Seam;
+
+/**
+ * @deprecated Renamed to {@link ExpressRequestSeam} so the public type is ecosystem-qualified (a bare
+ * `RequestSeam` would collide with any other host adapter's per-request seam type) — see
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the `1.0.0-rc`
+ * line and removed at the 1.0 GA cut.
+ */
+export type RequestSeam = ExpressRequestSeam;
 
 export interface StitchMiddlewareOptions {
     /**
@@ -56,7 +64,7 @@ export function stitch(options: StitchMiddlewareOptions): RequestHandler {
     const { seam, principal } = options;
     return (req: Request, res: Response, next: NextFunction): void => {
         const id = principal?.(req);
-        const host: RequestSeam = id !== undefined ? seam.as(id) : seam;
+        const host: ExpressRequestSeam = id !== undefined ? seam.as(id) : seam;
         req.stitch = host;
         // Mirror onto res.locals so view layers / downstream middleware that only carry `res` reach
         // the same per-request handle.
@@ -66,7 +74,7 @@ export function stitch(options: StitchMiddlewareOptions): RequestHandler {
 }
 
 /**
- * Read the request-scoped {@link RequestSeam} off a request as a typed value — the same handle
+ * Read the request-scoped {@link ExpressRequestSeam} off a request as a typed value — the same handle
  * `stitch()` set on `req.stitch`. A convenience for code paths that hold a loosely-typed `Request`
  * (e.g. a generic helper) and want the seam without re-declaring the augmentation. Throws if the
  * middleware did not run for this request (so a missing `app.use(stitch(...))` fails loudly).
@@ -76,8 +84,8 @@ export function stitch(options: StitchMiddlewareOptions): RequestHandler {
  * const api = currentStitch(req); // the caller's principal-bound seam
  * ```
  */
-export function currentStitch(req: Request): RequestSeam {
-    const host = req.stitch as RequestSeam | undefined;
+export function currentStitch(req: Request): ExpressRequestSeam {
+    const host = req.stitch as ExpressRequestSeam | undefined;
     if (host === undefined) {
         throw new Error(
             'req.stitch is not set — register `app.use(stitch({ seam }))` before this handler',
@@ -91,10 +99,10 @@ declare global {
     namespace Express {
         interface Request {
             /**
-             * The request-scoped {@link RequestSeam}: a `seam.as(principal)` handle when a
+             * The request-scoped {@link ExpressRequestSeam}: a `seam.as(principal)` handle when a
              * `principal` resolver is set, else the root seam. Set by the {@link stitch} middleware.
              */
-            stitch: RequestSeam;
+            stitch: ExpressRequestSeam;
         }
     }
 }
