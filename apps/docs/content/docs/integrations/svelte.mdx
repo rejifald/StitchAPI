@@ -24,7 +24,7 @@ Install the stores, the shared store, core, and Svelte:
 ```
 
 `stitchapi` and `svelte` (`^4 || ^5`) are peer dependencies; `@tanstack/svelte-query`
-is an **optional** peer, needed only for the `queryOptions` adapter below.
+is an **optional** peer, needed only for the `stitchQueryOptions` adapter below.
 
 ## `stitchStore` — request / response
 
@@ -122,13 +122,13 @@ bindings are the same few lines against their own reactive primitive — Svelte'
 ## Optional: TanStack Query
 
 Already on [TanStack Query](/docs/integrations/tanstack-query)?
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
 pass straight to `createQuery` — it imports nothing from `@tanstack/svelte-query`,
 so it works even if you never install it:
 
 ```svelte
 <script lang="ts">
-    import { queryOptions } from '@stitchapi/svelte';
+    import { stitchQueryOptions } from '@stitchapi/svelte';
     import { createQuery } from '@tanstack/svelte-query';
     import { stitch } from 'stitchapi';
 
@@ -137,13 +137,13 @@ so it works even if you never install it:
         path: '/users/{id}',
     });
 
-    const query = createQuery(queryOptions(getUser, { params: { id: '7' } }));
+    const query = createQuery(stitchQueryOptions(getUser, { params: { id: '7' } }));
 </script>
 ```
 
 <Callout type="info">
-    Reach for `queryOptions` when TanStack Query already owns your view state
-    and you want a stitch as the `queryFn`; reach for `stitchStore` /
+    Reach for `stitchQueryOptions` when TanStack Query already owns your view
+    state and you want a stitch as the `queryFn`; reach for `stitchStore` /
     `stitchStreamStore` when you want StitchAPI to own the lifecycle directly —
     especially for streaming, which `createQuery` does not model. See the
     [TanStack Query guide](/docs/integrations/tanstack-query) for how the two

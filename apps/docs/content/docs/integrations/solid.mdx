@@ -23,7 +23,7 @@ Install the primitives, the store, core, and Solid:
 
 `stitchapi`, `@stitchapi/query-core`, and `solid-js` (`^1.8`) are peer
 dependencies; `@tanstack/solid-query` is an **optional** peer, needed only for the
-`queryOptions` adapter below.
+`stitchQueryOptions` adapter below.
 
 ## `createStitch` — request / response
 
@@ -142,12 +142,12 @@ own reactive primitive — Solid's is `createStore` + `onCleanup`.
 ## Optional: TanStack Query
 
 Already on [TanStack Query](/docs/integrations/tanstack-query)?
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
 pass straight to `createQuery` — it imports nothing from `@tanstack/solid-query`,
 so it works even if you never install it:
 
 ```tsx
-import { queryOptions } from '@stitchapi/solid';
+import { stitchQueryOptions } from '@stitchapi/solid';
 import { createQuery } from '@tanstack/solid-query';
 import { stitch } from 'stitchapi';
 
@@ -158,15 +158,15 @@ const getUser = stitch({
 
 function User(props: { id: string }) {
     const query = createQuery(() =>
-        queryOptions(getUser, { params: { id: props.id } }),
+        stitchQueryOptions(getUser, { params: { id: props.id } }),
     );
     return <span>{query.data?.name}</span>;
 }
 ```
 
 <Callout type="info">
-    Reach for `queryOptions` when TanStack Query already owns your view state
-    and you want a stitch as the `queryFn`; reach for `createStitch` /
+    Reach for `stitchQueryOptions` when TanStack Query already owns your view
+    state and you want a stitch as the `queryFn`; reach for `createStitch` /
     `createStitchStream` when you want StitchAPI to own the lifecycle directly —
     especially for streaming, which `createQuery` does not model. See the
     [TanStack Query guide](/docs/integrations/tanstack-query) for how the two
