@@ -39,7 +39,7 @@ const api = stitch({
   },
   timeout: { total: '4s', perAttempt: '2s' }, // fail fast instead of hanging
   throttle: { rate: '50/s' }, // client-side rate limit
-  circuit: { failureThreshold: 5, cooldownMs: 1000 }, // stop hammering a dead dep
+  circuit: { failures: 5, cooldown: 1000 }, // stop hammering a dead dep
   idempotency: { header: 'Idempotency-Key' }, // safe-retry writes (GET ignores it)
   hooks: {
     onRetry: () => console.log('   retrying after a transient failure...'),

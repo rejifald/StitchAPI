@@ -16,7 +16,7 @@ import { stitch } from 'stitchapi';
 const orders = stitch({
     baseUrl: 'https://api.example.com',
     path: '/orders',
-    circuit: { failureThreshold: 5, cooldownMs: 30_000 },
+    circuit: { failures: 5, cooldown: 30_000 },
 });
 ```
 
@@ -26,18 +26,18 @@ to `orders()` fast-fail instead of hitting `api.example.com`.
 ## Options
 
 The breaker moves through four states. It starts **closed** (calls pass
-through). After `failureThreshold` consecutive failures it trips **open** and
-calls fast-fail for `cooldownMs`. It then goes **half-open** and lets a single
+through). After `failures` consecutive failures it trips **open** and
+calls fast-fail for `cooldown`. It then goes **half-open** and lets a single
 trial call through: a success **closes** it and clears the count, another
 failure re-**opens** it for a fresh cooldown. The breaker emits `progress`
 events with phase `circuit`.
 
-`failureThreshold` and `cooldownMs` are both required — `failureThreshold` is
-the count of consecutive failures that trips the breaker open, and `cooldownMs`
+`failures` and `cooldown` are both required — `failures` is
+the count of consecutive failures that trips the breaker open, and `cooldown`
 is the fast-fail window after opening, before a half-open trial is allowed.
 
-`halfOpenAfterMs` controls when the half-open trial is permitted (default
-`cooldownMs`), letting you fast-fail and probe on different clocks.
+`halfOpenAfter` controls when the half-open trial is permitted (default
+`cooldown`), letting you fast-fail and probe on different clocks.
 
 `key` is a store namespace: give two stitches the same `key` plus a shared
 [`store`](/docs/guides/state/pluggable-store) to share one breaker, so a failing
@@ -47,7 +47,7 @@ stitch/host key.
 <Callout type="warn">
     **Anti-pattern:** don't lean on the default in-memory breaker across
     multiple workers or instances — the counter is process-local, so each
-    replica tallies its own failures and `failureThreshold` trips per process,
+    replica tallies its own failures and `failures` trips per process,
     letting a failing host take many times the hits you intended before every
     circuit opens. Give the stitches a shared `key` plus a durable `store` so
     one breaker spans the fleet. See [Pluggable

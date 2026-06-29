@@ -275,10 +275,29 @@ export interface TimeoutOptions {
     perAttempt?: number | string;
 }
 export interface CircuitOptions {
-    failureThreshold: number; // consecutive failures that trip the breaker OPEN
-    cooldownMs: number; // fast-fail window after opening, before a half-open trial
-    halfOpenAfterMs?: number; // when to allow a half-open trial (default cooldownMs)
-    key?: string; // store namespace to share a breaker across stitches (default: stitch/host key)
+    /**
+     * Consecutive failures that trip the breaker OPEN. Required by design — a breaker with an
+     * invisible threshold fails silently (CONTRACT.md P15); `createCircuit` throws if neither
+     * `failures` nor the @deprecated `failureThreshold` is set. Optional at the type level only so
+     * the deprecated alias can stand in until the GA cut.
+     */
+    failures?: number;
+    /** @deprecated Renamed to {@link CircuitOptions.failures} (CONTRACT.md P4). Read until the 1.0 GA cut. */
+    failureThreshold?: number;
+    /**
+     * Fast-fail window after opening, before a half-open trial — `30_000`, `'30s'`. Required by
+     * design (P15); `createCircuit` throws if neither `cooldown` nor the @deprecated `cooldownMs`
+     * is set.
+     */
+    cooldown?: number | string;
+    /** @deprecated Renamed to {@link CircuitOptions.cooldown} (CONTRACT.md P17). Read until the 1.0 GA cut. */
+    cooldownMs?: number;
+    /** When to allow a half-open trial — `60_000`, `'1m'`. Default: `cooldown`. */
+    halfOpenAfter?: number | string;
+    /** @deprecated Renamed to {@link CircuitOptions.halfOpenAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
+    halfOpenAfterMs?: number;
+    /** Store namespace to share a breaker across stitches (default: stitch/host key). */
+    key?: string;
 }
 export interface IdempotencyOptions {
     header?: string; // header name (default 'Idempotency-Key')
@@ -665,8 +684,11 @@ export interface StitchConfig {
      * total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`.
      */
     timeout?: number | string | TimeoutOptions;
-    /** Circuit breaker that fast-fails a repeatedly failing dependency. */
-    circuit?: CircuitOptions;
+    /**
+     * Circuit breaker that fast-fails a repeatedly failing dependency. `failures` + `cooldown` are
+     * required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`).
+     */
+    circuit?: AtLeastOne<CircuitOptions>;
     /**
      * @deprecated Folded into `throttle` (CONTRACT.md P14): use `throttle.delegate` / `throttle.on`.
      * Read until the 1.0 GA cut.
