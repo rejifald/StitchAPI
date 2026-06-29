@@ -89,8 +89,8 @@ The reactive path is the floor you start from. `throttle` is the field you add w
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Declare a `throttle` on a stitch, pair it with `retry` as a backstop, and the next time you brush a provider's rate limit you'll pace under it instead of bouncing off it. The full field list and `scope` semantics are in the [Throttle guide](/docs/guides/resilience/throttle); the reactive side is in [Retry & backoff](/docs/guides/resilience/retry).

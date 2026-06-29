@@ -115,8 +115,8 @@ Keep this distinct from [throttling](/blog/proactive-throttling-vs-reactive-429s
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Add `cache: '5m'` to one read-heavy stitch, fan a few identical calls at it, and watch them collapse to a single upstream request. The full configuration surface — `ttl`, `scope`, `vary`, `maxEntries`, the stitch-level `sensitive` flag, and the fingerprinting rules — lives in the [docs](/docs).

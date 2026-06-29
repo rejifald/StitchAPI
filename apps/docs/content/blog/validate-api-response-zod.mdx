@@ -90,8 +90,8 @@ The schema is the same Zod object either way. The only question is whether it ru
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Move your `safeParse` schema onto a stitch's `output` with `toValidator()`, pair it with the `stitch<T>` generic, and every call validates its response with a typed error and no per-call-site boilerplate. The mechanics are in [Validation](/docs/guides/validation/validation), the validator adapter in [Standard Schema](/docs/guides/validation/standard-schema), and getting types without a codegen step in [a type-safe API client without codegen](/blog/type-safe-api-client-without-codegen).
