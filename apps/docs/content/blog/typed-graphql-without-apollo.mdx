@@ -1,0 +1,157 @@
+---
+title: 'Typed GraphQL Without Apollo'
+description: 'A GraphQL endpoint can answer HTTP 200 and still have failed. A graphql() stitch posts the operation, treats a 200-with-errors as a failure, and hands back the validated data — no client, no codegen.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [graphql, typescript, validation, resilience]
+---
+
+You point a `fetch` at a GraphQL endpoint, POST `{ query, variables }`, get back a `200`, read `json.data.user` — and three weeks later that call is silently returning `undefined` because the server moved the failure into a `200`-with-`errors` body instead of a status code. The transport said success; the operation did not. Most GraphQL clients you'd reach for to close that gap — Apollo Client, urql — also bring a normalized cache, a React layer, and a build step you didn't ask for when all you wanted was to call one query and trust the result.
+
+A `graphql()` stitch is that one query as a typed function. It POSTs the operation, treats a `200` carrying an `errors` array as the failure it is, validates the response, and hands you the unwrapped `data` — without a client object, a cache, or codegen.
+
+## The honest "before"
+
+Here is the call most TypeScript codebases write against a GraphQL API they don't own:
+
+```ts
+type User = { id: string; name: string };
+
+async function getUser(id: string): Promise<User> {
+    const res = await fetch('https://api.example.com/graphql', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+            query: `query GetUser($id: ID!) { user(id: $id) { id name } }`,
+            variables: { id },
+        }),
+    });
+
+    const json = await res.json();
+    // res.ok is true even when the operation failed.
+    return json.data.user as User;
+}
+```
+
+The sharp edges are real. `res.ok` is `true` for a `200` that carries `{ "errors": [...] }`, so the failure path never runs and `json.data` is `undefined` — you read `.user` off `undefined` and crash somewhere far from the cause. The `as User` is a lie the compiler believes: nothing checked that the body matches the shape. And every variant of this query is a fresh copy of the POST boilerplate, each free to drift.
+
+## The same job as a stitch
+
+Declare the operation once. `graphql()` is a thin wrapper over `stitch()` that fixes `kind: 'graphql'`, `method: 'POST'`, and `unwrap: 'data'`:
+
+```ts
+import { graphql } from 'stitchapi';
+
+const getUser = graphql<{ user: { id: string; name: string } }>({
+    baseUrl: 'https://api.example.com',
+    path: '/graphql',
+    query: `query GetUser($id: ID!) { user(id: $id) { id name } }`,
+});
+
+const data = await getUser({ variables: { id: '1' } });
+// data is already unwrapped from `data`: { user: { id, name } }
+```
+
+Each field maps to glue you no longer write. `graphql()` sends the POST and the JSON body shape for you, so the `method`, the `content-type` header, and the `{ query, variables }` envelope vanish from your code. The arguments travel in the call input's `variables` field at call time, so one declared stitch serves every set of arguments — you do not interpolate values into the query string and mint a stitch per call. Because `unwrap` defaults to `'data'`, the resolved value is the contents of the response's `data` field; override `unwrap` to read a different field or the raw envelope.
+
+The footgun closes here. A GraphQL endpoint can return HTTP `200` while carrying a top-level `errors` array; the stitch treats that as a failure and surfaces it, rather than unwrapping a `data` that isn't there. A failed query rejects the awaitable with a `StitchError` whose message carries the GraphQL error text, prefixed `GraphQL:` (joined with `; ` when there is more than one):
+
+```ts
+import { StitchError, graphql } from 'stitchapi';
+
+const getUser = graphql<{ user: { name: string } }>({
+    baseUrl: 'https://api.example.com',
+    path: '/graphql',
+    query: `query GetUser($id: ID!) { user(id: $id) { name } }`,
+});
+
+try {
+    await getUser({ variables: { id: '42' } });
+} catch (err) {
+    if (err instanceof StitchError) {
+        // err is a StitchError. The GraphQL messages are folded into err.message,
+        // prefixed `GraphQL:` — e.g. 'GraphQL: Not authorized to view user 42.'
+        // err.status is the HTTP status (200 for an errors-in-body failure).
+        console.error(err.message);
+    }
+}
+```
+
+(`STITCH_GRAPHQL` is the provisional registry label for this failure in the [error reference](/docs/errors/stitch-graphql); the runtime throws a plain `StitchError` today — it carries no `.code`.)
+
+## It is still a stitch
+
+`graphql()` returns the same object `stitch()` does, so every resilience and validation field applies. Add an `output` schema and the unwrapped `data` is validated before you touch it — the `as User` cast is gone, replaced by a runtime check the compiler can trust:
+
+```ts
+import { bearer, env, graphql } from 'stitchapi';
+import { z } from 'zod';
+
+const getUser = graphql({
+    baseUrl: 'https://api.example.com',
+    path: '/graphql',
+    query: `query GetUser($id: ID!) { user(id: $id) { id name } }`,
+    output: z.object({
+        user: z.object({ id: z.string(), name: z.string() }),
+    }),
+    auth: bearer(env('API_TOKEN')),
+    retry: 3,
+    timeout: '10s',
+});
+
+const { user } = await getUser({ variables: { id: '1' } });
+// user is typed AND validated; auth, retry, and timeout all applied.
+```
+
+The secret resolves at call time from the environment, so the caller never holds the token. `retry` retries the request on transient transport failures; `timeout` bounds the call. `operationName` rides along with the request when you set it.
+
+## What moved where
+
+| Axis                     | Hand-rolled `fetch`                                                                   | A `graphql()` stitch                                               |
+| ------------------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| The POST + JSON envelope | You write `method`, `content-type`, `JSON.stringify({ query, variables })` every call | `graphql()` fixes them; you supply `path` + `query`                |
+| Variables                | Re-stringified per call site                                                          | Travel in `variables` at call time; one stitch, every argument set |
+| `200` with `errors`      | `res.ok` is `true` — failure slips through as `undefined`                             | A `StitchError` whose message is prefixed `GraphQL:`               |
+| Response shape           | `as User` — unchecked                                                                 | `output` schema validates the unwrapped `data` at runtime          |
+| Unwrapping `data`        | `json.data.user`, by hand                                                             | `unwrap: 'data'` by default; resolved value is `data`              |
+| Auth, retry, timeout     | More hand-written loops and headers                                                   | Config fields on the same declaration                              |
+
+The layer split is clean: the GraphQL document describes **what** you're asking for, and the stitch config describes **how** the call behaves — validation, auth, resilience — without a client object owning either. You keep writing GraphQL; you stop writing the POST around it.
+
+## From one query to a typed surface
+
+The bare `graphql()` form is one query, one function — and it scales the way the rest of StitchAPI does. When a second query against the same endpoint shows up, bind the shared `baseUrl` and `auth` once with a seam and let each operation inherit them:
+
+```ts
+import { bearer, env, seam } from 'stitchapi';
+
+const api = seam({
+    baseUrl: 'https://api.example.com',
+    auth: bearer(env('API_TOKEN')),
+});
+
+const getUser = api.graphql({
+    path: '/graphql',
+    query: `query GetUser($id: ID!) { user(id: $id) { id name } }`,
+});
+
+const listOrders = api.graphql({
+    path: '/graphql',
+    query: `query Orders($userId: ID!) { orders(userId: $userId) { id total } }`,
+});
+```
+
+The first query is one line you can ship today; the tenth is the same declaration ten times, each one a typed, validated, resilient function. No client to instantiate, no schema to generate, no second code path between the query you tried in a playground and the one running in production.
+
+## Try it
+
+```package-install
+stitchapi zod
+```
+
+`graphql()` wraps `stitch()`, so install the core package, bring your own validator, and point a query at an endpoint.
+
+-   [Guide: GraphQL](/docs/guides/data/graphql) — how `graphql()` posts the operation and unwraps `data`
+-   [Error: STITCH_GRAPHQL](/docs/errors/stitch-graphql) — what a `200`-with-`errors` failure looks like
+-   [Validate an API response with Zod](/blog/validate-api-response-zod) — wiring an `output` schema
+-   [A type-safe API client without codegen](/blog/type-safe-api-client-without-codegen) — the same idea across REST and GraphQL
