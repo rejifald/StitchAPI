@@ -1,30 +1,14 @@
 {
     "generatedBy": "scripts/check-contract.mjs --update",
-    "count": 42,
+    "count": 32,
     "violations": [
-        {
-            "rule": "R2",
-            "file": "packages/core/src/auth.ts",
-            "symbol": "refreshSkewMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 271,
-            "key": "R2|packages/core/src/auth.ts|refreshSkewMs"
-        },
         {
             "rule": "R2",
             "file": "packages/core/src/auth.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 463,
+            "line": 467,
             "key": "R2|packages/core/src/auth.ts|retryAfterMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/auth.ts",
-            "symbol": "ttlMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 506,
-            "key": "R2|packages/core/src/auth.ts|ttlMs"
         },
         {
             "rule": "R2",
@@ -37,17 +21,9 @@
         {
             "rule": "R2",
             "file": "packages/core/src/engine.ts",
-            "symbol": "backoffMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 1377,
-            "key": "R2|packages/core/src/engine.ts|backoffMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/engine.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 726,
+            "line": 731,
             "key": "R2|packages/core/src/engine.ts|retryAfterMs"
         },
         {
@@ -71,7 +47,7 @@
             "file": "packages/core/src/resilience.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 253,
+            "line": 255,
             "key": "R2|packages/core/src/resilience.ts|retryAfterMs"
         },
         {
@@ -79,7 +55,7 @@
             "file": "packages/core/src/resilience.ts",
             "symbol": "waitedMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 78,
+            "line": 80,
             "key": "R2|packages/core/src/resilience.ts|waitedMs"
         },
         {
@@ -100,14 +76,6 @@
         },
         {
             "rule": "R2",
-            "file": "packages/core/src/test-clock.ts",
-            "symbol": "baseMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 38,
-            "key": "R2|packages/core/src/test-clock.ts|baseMs"
-        },
-        {
-            "rule": "R2",
             "file": "packages/core/src/test-mock.ts",
             "symbol": "delayMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
@@ -119,47 +87,23 @@
             "file": "packages/core/src/testing.ts",
             "symbol": "delayMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 379,
+            "line": 385,
             "key": "R2|packages/core/src/testing.ts|delayMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/testing.ts",
-            "symbol": "ttlMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 174,
-            "key": "R2|packages/core/src/testing.ts|ttlMs"
         },
         {
             "rule": "R2",
             "file": "packages/core/src/testing.ts",
             "symbol": "waitedMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 645,
+            "line": 651,
             "key": "R2|packages/core/src/testing.ts|waitedMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/types.ts",
-            "symbol": "backoffMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 162,
-            "key": "R2|packages/core/src/types.ts|backoffMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/types.ts",
-            "symbol": "baseMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 230,
-            "key": "R2|packages/core/src/types.ts|baseMs"
         },
         {
             "rule": "R2",
             "file": "packages/core/src/types.ts",
             "symbol": "cooldownMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 260,
+            "line": 278,
             "key": "R2|packages/core/src/types.ts|cooldownMs"
         },
         {
@@ -167,39 +111,23 @@
             "file": "packages/core/src/types.ts",
             "symbol": "halfOpenAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 261,
+            "line": 279,
             "key": "R2|packages/core/src/types.ts|halfOpenAfterMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/types.ts",
-            "symbol": "maxMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 231,
-            "key": "R2|packages/core/src/types.ts|maxMs"
         },
         {
             "rule": "R2",
             "file": "packages/core/src/types.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 483,
+            "line": 501,
             "key": "R2|packages/core/src/types.ts|retryAfterMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/types.ts",
-            "symbol": "ttlMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 970,
-            "key": "R2|packages/core/src/types.ts|ttlMs"
         },
         {
             "rule": "R2",
             "file": "packages/core/src/types.ts",
             "symbol": "waitedMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 466,
+            "line": 484,
             "key": "R2|packages/core/src/types.ts|waitedMs"
         },
         {
@@ -217,14 +145,6 @@
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
             "line": 179,
             "key": "R2|packages/pino/src/index.ts|waitedMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/redis/src/index.ts",
-            "symbol": "ttlMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 46,
-            "key": "R2|packages/redis/src/index.ts|ttlMs"
         },
         {
             "rule": "R2",
@@ -295,7 +215,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.hooks",
             "detail": "all-optional Hooks accepts {} → Scalar|AtLeastOne<Hooks> (P20)",
-            "line": 524,
+            "line": 560,
             "key": "R6|packages/core/src/types.ts|StitchConfig.hooks"
         },
         {
@@ -303,7 +223,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.input",
             "detail": "all-optional InputSchemas accepts {} → Scalar|AtLeastOne<InputSchemas> (P20)",
-            "line": 524,
+            "line": 560,
             "key": "R6|packages/core/src/types.ts|StitchConfig.input"
         },
         {
@@ -311,7 +231,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.multipart",
             "detail": "all-optional MultipartOptions accepts {} → Scalar|AtLeastOne<MultipartOptions> (P20)",
-            "line": 524,
+            "line": 560,
             "key": "R6|packages/core/src/types.ts|StitchConfig.multipart"
         },
         {
@@ -319,7 +239,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.sse",
             "detail": "all-optional SseOptions accepts {} → Scalar|AtLeastOne<SseOptions> (P20)",
-            "line": 524,
+            "line": 560,
             "key": "R6|packages/core/src/types.ts|StitchConfig.sse"
         },
         {
@@ -327,7 +247,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.stream",
             "detail": "all-optional StreamOptions accepts {} → Scalar|AtLeastOne<StreamOptions> (P20)",
-            "line": 524,
+            "line": 560,
             "key": "R6|packages/core/src/types.ts|StitchConfig.stream"
         },
         {
@@ -335,7 +255,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.throttle",
             "detail": "all-optional ThrottleOptions accepts {} → Scalar|AtLeastOne<ThrottleOptions> (P20)",
-            "line": 524,
+            "line": 560,
             "key": "R6|packages/core/src/types.ts|StitchConfig.throttle"
         }
     ]

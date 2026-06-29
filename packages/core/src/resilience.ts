@@ -10,28 +10,30 @@ import type {
     StitchStore,
     ThrottleOptions,
 } from './types';
-import { parseRate, systemClock } from './util';
+import { parseDuration, parseRate, systemClock } from './util';
 
 export class TimeoutError extends Error {}
 
 /**
  * Backoff (ms) BEFORE the given 1-based `attempt` (attempt=2 is the first retry).
- * 'expo' = baseMs * 2^(attempt-2); 'expo-jitter' adds random jitter in [0, computed];
- * 'fixed' = baseMs. Result is clamped to maxMs.
+ * 'expo' = base * 2^(attempt-2); 'expo-jitter' adds random jitter in [0, computed];
+ * 'fixed' = base. Result is clamped to max.
  */
 export function backoffDelay(attempt: number, opts?: RetryOptions): number {
     const kind = opts?.backoff ?? 'expo-jitter';
-    const baseMs = opts?.baseMs ?? 100;
-    const maxMs = opts?.maxMs ?? 10_000;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `baseMs` is the @deprecated alias of `baseDelay`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const base = parseDuration(opts?.baseDelay ?? opts?.baseMs) ?? 100;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxMs` is the @deprecated alias of `maxDelay`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const max = parseDuration(opts?.maxDelay ?? opts?.maxMs) ?? 10_000;
     const exp = Math.max(0, attempt - 2); // attempt 2 -> 2^0
     let delay: number;
     if (kind === 'fixed') {
-        delay = baseMs;
+        delay = base;
     } else {
-        const computed = baseMs * 2 ** exp;
+        const computed = base * 2 ** exp;
         delay = kind === 'expo-jitter' ? Math.random() * computed : computed;
     }
-    return Math.min(delay, maxMs);
+    return Math.min(delay, max);
 }
 
 /** Parse a `Retry-After` header (delta-seconds OR HTTP-date) into ms, or undefined. */

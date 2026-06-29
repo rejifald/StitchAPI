@@ -36,7 +36,7 @@ expiry, all behind the capability boundary.
 `env('CLIENT_ID')` — so the credentials are read at call time and never
 committed. `scope` is an optional space-delimited scope string.
 
-The token is cached and auto-refreshed: `refreshSkewMs` (default `30_000`)
+The token is cached and auto-refreshed: `refreshSkew` (default `30_000`)
 refreshes it that many milliseconds before expiry, so it is never used
 mid-flight, and `refreshOn` (default `[401]`) lists the statuses that mean the
 token was rejected and force a fresh fetch plus retry.

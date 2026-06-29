@@ -34,8 +34,8 @@ const api = stitch({
     attempts: 4,
     on: [429, 502, 503, 504],
     backoff: 'expo-jitter',
-    baseMs: 100,
-    maxMs: 400,
+    baseDelay: 100,
+    maxDelay: 400,
   },
   timeout: { total: '4s', perAttempt: '2s' }, // fail fast instead of hanging
   throttle: { rate: '50/s' }, // client-side rate limit

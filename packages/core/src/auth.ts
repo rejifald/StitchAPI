@@ -17,6 +17,7 @@ import {
     buildQuery,
     nodeFs,
     now,
+    parseDuration,
     readEnv,
     registerSecretQueryKey,
 } from './util';
@@ -268,7 +269,9 @@ export interface OAuth2Options {
     headers?: Record<string, string>;
     /** Statuses that mean the token was rejected and should force a refresh. Default [401]. */
     refreshOn?: number[];
-    /** Refresh this many ms BEFORE the token's expiry, so it is never used mid-flight. Default 30_000. */
+    /** Refresh this long BEFORE the token's expiry, so it is never used mid-flight — `30_000`, `'30s'`. Default 30s. */
+    refreshSkew?: number | string;
+    /** @deprecated Renamed to {@link OAuth2Options.refreshSkew} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     refreshSkewMs?: number;
     /** Store namespace — give two stitches the same `key` + a shared `store` to share one token. Default: `tokenUrl`. */
     key?: string;
@@ -309,13 +312,15 @@ function singleFlight<T>(): (key: string, run: () => Promise<T>) => Promise<T> {
 
 /**
  * OAuth2 `client_credentials`: POST the token endpoint, cache the access token in the
- * StitchStore (TTL from `expires_in`), refresh it `refreshSkewMs` before expiry, and attach
+ * StitchStore (TTL from `expires_in`), refresh it `refreshSkew` before expiry, and attach
  * it as `Authorization: Bearer …`. A SHARED store makes one token serve many stitches/workers
  * and survive restarts; a rejected token (status in `refreshOn`) forces a fresh fetch + retry.
  */
 export function oauth2(opts: OAuth2Options): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
-    const skew = opts.refreshSkewMs ?? 30_000;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `refreshSkewMs` is the @deprecated alias of `refreshSkew`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const skewInput = opts.refreshSkew ?? opts.refreshSkewMs;
+    const skew = parseDuration(skewInput) ?? 30_000;
     const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const tenancy = opts.tenancy ?? 'app';
     const adapter = opts.adapter ?? fetchAdapter();
@@ -503,7 +508,9 @@ export interface CookieSessionOptions {
     refreshWhen?: (res: AdapterResponse) => boolean;
     /** Vault namespace — give two stitches the same `key` + a shared seam/store to share one session. */
     key?: string;
-    /** Optional TTL (ms) for the stored session. With `scope: 'principal'`, set this — per-user sessions multiply. */
+    /** Optional TTL for the stored session — `60_000`, `'1m'`. With `scope: 'principal'`, set this — per-user sessions multiply. */
+    ttl?: number | string;
+    /** @deprecated Renamed to {@link CookieSessionOptions.ttl} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     ttlMs?: number;
     /**
      * Who the session belongs to (ADR 0002 §3). **Fail-closed default `'principal'`**: the
@@ -675,17 +682,19 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
         const setCookie =
             res.headers['set-cookie'] ?? res.headers['Set-Cookie'];
         let captured = false;
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `ttlMs` is the @deprecated alias of `ttl`, read for back-compat until the GA cut (CONTRACT.md P17)
+        const sessionTtl = parseDuration(opts.ttl ?? opts.ttlMs);
         if (jarMode) {
             // Capture the full jar: every name=value pair the login set.
             const jar = parseCookieJar(setCookie);
             if (Object.keys(jar).length > 0) {
-                await ctx.vault.set(key, jar, opts.ttlMs);
+                await ctx.vault.set(key, jar, sessionTtl);
                 captured = true;
             }
         } else {
             const value = parseCookie(setCookie, opts.cookie);
             if (value != null) {
-                await ctx.vault.set(key, `${opts.cookie}=${value}`, opts.ttlMs);
+                await ctx.vault.set(key, `${opts.cookie}=${value}`, sessionTtl);
                 captured = true;
             }
         }

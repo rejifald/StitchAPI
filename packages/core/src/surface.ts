@@ -74,7 +74,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
     /**
      * Read the server-suggested reconnect backoff (ms) off an emitted `delta` chunk (issue #71). The
      * engine tracks the latest value and uses it as the reconnect delay, falling back to the
-     * stitch's `reconnect.backoffMs` / `retry` policy when no value was seen on the dropped
+     * stitch's `reconnect.backoff` / `retry` policy when no value was seen on the dropped
      * connection. `sse` returns the event's `retry` field. Omitted ⇒ always use the fallback backoff.
      */
     readonly resumeRetryMs?: (chunk: unknown) => number | undefined;

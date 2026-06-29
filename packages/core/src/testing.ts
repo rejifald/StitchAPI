@@ -155,25 +155,31 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
  *
  * - `set`/`get` round-trips a value; a missing key resolves to `undefined`;
  *   a second `set` overwrites; writes are isolated by key.
- * - `set(key, value, ttlMs)` expires the value after `ttlMs`; a `set` without
- *   `ttlMs` does not expire.
- * - `incr(key, ttlMs)` initializes a missing key to 1, increments an existing
+ * - `set(key, value, ttl)` expires the value after `ttl` ms; a `set` without
+ *   `ttl` does not expire.
+ * - `incr(key, ttl)` initializes a missing key to 1, increments an existing
  *    counter, is ATOMIC within a process (20 concurrent calls return
  *    1..20 exactly), and restarts at 1 once its TTL window lapses.
  *
  * TTL rules use real timers with a small window (default 60ms); raise
- * `opts.ttlMs` for backends with coarser expiry. Keys are namespaced per run,
+ * `opts.ttl` for backends with coarser expiry. Keys are namespaced per run,
  * so reruns against a persistent backend (Redis, Postgres, ...) never collide.
  *
  * @param makeStore Factory for the store under test; awaited, so it may
  *   connect to a real backend.
- * @param opts `ttlMs` — the expiry window the TTL rules use (default 60).
+ * @param opts `ttl` — the expiry window (ms) the TTL rules use (default 60).
  */
 export async function verifyStoreContract(
     makeStore: () => StitchStore | Promise<StitchStore>,
-    opts?: { ttlMs?: number },
+    opts?: {
+        /** Expiry window (ms) the TTL rules use. Default 60. */
+        ttl?: number;
+        /** @deprecated Renamed to `ttl` (CONTRACT.md P17). Read until the 1.0 GA cut. */
+        ttlMs?: number;
+    },
 ): Promise<ContractReport> {
-    const ttlMs = opts?.ttlMs ?? 60;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `ttlMs` is the @deprecated alias of `ttl`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const ttlMs = opts?.ttl ?? opts?.ttlMs ?? 60;
     const store = await makeStore();
     const ns = `stitch-conformance:${Date.now().toString(36)}-${Math.random()
         .toString(36)
