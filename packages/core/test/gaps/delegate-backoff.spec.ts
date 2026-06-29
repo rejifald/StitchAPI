@@ -39,9 +39,9 @@ async function rejectionOf(
 
 // ── A. a 429 throws RateLimitError on the awaited path, with NO internal retry ──
 // `throttle: { delegate: true }` turns a 429 into a thrown RateLimitError carrying the parsed
-// `retryAfterMs`, and — crucially — does NOT retry: even with retry.attempts > 1 (and 429 in
+// `retryAfter`, and — crucially — does NOT retry: even with retry.attempts > 1 (and 429 in
 // retry.on) the adapter must be hit exactly once, because delegate mode short-circuits the loop.
-test('a 429 with Retry-After: 2 throws RateLimitError(retryAfterMs=2000) and is hit exactly once', async () => {
+test('a 429 with Retry-After: 2 throws RateLimitError(retryAfter=2000) and is hit exactly once', async () => {
     server.route('GET', '/rl', {
         statuses: [429],
         retryAfter: 2, // delta-seconds → Retry-After: 2
@@ -60,7 +60,9 @@ test('a 429 with Retry-After: 2 throws RateLimitError(retryAfterMs=2000) and is 
     expect(err).toBeInstanceOf(RateLimitError);
     expect(err.name).toBe('RateLimitError');
     expect(err.status).toBe(429);
-    expect(err.retryAfterMs).toBe(2000);
+    expect(err.retryAfter).toBe(2000);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- the @deprecated `retryAfterMs` alias is co-set until the GA cut (CONTRACT.md P17)
+    expect(err.retryAfterMs).toBe(2000); // back-compat alias parity
     // The raw response rides along so the host can read other rate headers.
     expect(err.response.status).toBe(429);
     expect(err.response.body).toEqual({ error: 'slow down' });
@@ -68,8 +70,8 @@ test('a 429 with Retry-After: 2 throws RateLimitError(retryAfterMs=2000) and is 
     expect(server.callCount('/rl')).toBe(1);
 });
 
-// ── B. the same outcome surfaces as an `error` event with retryAfterMs on .stream() ──
-test('.stream() surfaces an error event with status 429 and retryAfterMs 2000', async () => {
+// ── B. the same outcome surfaces as an `error` event with retryAfter on .stream() ──
+test('.stream() surfaces an error event with status 429 and retryAfter 2000', async () => {
     server.route('GET', '/rl-stream', {
         statuses: [429],
         retryAfter: 2,
@@ -89,7 +91,7 @@ test('.stream() surfaces an error event with status 429 and retryAfterMs 2000', 
     expect(error).toMatchObject({
         type: 'error',
         status: 429,
-        retryAfterMs: 2000,
+        retryAfter: 2000,
     });
     // The run terminates as a failure — never a `result`.
     expect(events.some((e) => e.type === 'result')).toBe(false);
@@ -132,8 +134,8 @@ test('the configured throttle does not pace the call and emits no throttled even
     });
 });
 
-// ── D. Retry-After as an HTTP-date parses to a positive retryAfterMs ──
-test('Retry-After as an HTTP-date parses to a positive retryAfterMs', async () => {
+// ── D. Retry-After as an HTTP-date parses to a positive retryAfter ──
+test('Retry-After as an HTTP-date parses to a positive retryAfter', async () => {
     const when = new Date(Date.now() + 5000).toUTCString(); // ~5s in the future, RFC 1123
     server.route('GET', '/rl-date', {
         statuses: [429],
@@ -149,14 +151,14 @@ test('Retry-After as an HTTP-date parses to a positive retryAfterMs', async () =
     const err = await rejectionOf(call());
 
     expect(err).toBeInstanceOf(RateLimitError);
-    expect(err.retryAfterMs).toBeGreaterThan(0);
+    expect(err.retryAfter).toBeGreaterThan(0);
     // ~5s out; allow generous slack for clock/transit but stay well under/over the bounds.
-    expect(err.retryAfterMs).toBeLessThanOrEqual(5000);
-    expect(err.retryAfterMs).toBeGreaterThan(3000);
+    expect(err.retryAfter).toBeLessThanOrEqual(5000);
+    expect(err.retryAfter).toBeGreaterThan(3000);
 });
 
 // ── E. a missing Retry-After yields RateLimitError with retryAfterMs undefined ──
-test('a 429 without Retry-After throws RateLimitError with retryAfterMs undefined', async () => {
+test('a 429 without Retry-After throws RateLimitError with retryAfter undefined', async () => {
     server.route('GET', '/rl-bare', {
         statuses: [429],
         body: { error: 'slow down' },
@@ -171,7 +173,7 @@ test('a 429 without Retry-After throws RateLimitError with retryAfterMs undefine
 
     expect(err).toBeInstanceOf(RateLimitError);
     expect(err.status).toBe(429);
-    expect(err.retryAfterMs).toBeUndefined();
+    expect(err.retryAfter).toBeUndefined();
 });
 
 // ── F. a custom `on` list lets a 503 delegate while a 429 retries normally ──
@@ -192,7 +194,7 @@ test('throttle.on selects which statuses delegate (503 delegates, 429 retries)',
     const err = await rejectionOf(delegated());
     expect(err).toBeInstanceOf(RateLimitError);
     expect(err.status).toBe(503);
-    expect(err.retryAfterMs).toBe(1000);
+    expect(err.retryAfter).toBe(1000);
     expect(server.callCount('/rl-503')).toBe(1);
 
     // A 429 under the same `on: [503]` is NOT delegated — it flows through ordinary retry: two 429s
@@ -259,7 +261,7 @@ test('.safe() surfaces the rate-limit status as a non-throwing StitchError', asy
     expect(out.error?.status).toBe(429);
     // The real RateLimitError is preserved as the cause.
     expect(out.error?.cause).toBeInstanceOf(RateLimitError);
-    expect((out.error?.cause as RateLimitError).retryAfterMs).toBe(2000);
+    expect((out.error?.cause as RateLimitError).retryAfter).toBe(2000);
 });
 
 // ── I. back-compat + predicate widening (CONTRACT.md P14 / P7) ──
