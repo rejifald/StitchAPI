@@ -266,7 +266,7 @@ async function drain<T>(
     let value: T | undefined;
     let error: Error | undefined;
     for await (const ev of gen) {
-        if (ev.type === 'result') value = ev.value;
+        if (ev.type === 'result') value = ev.data;
         else if (ev.type === 'error') error = rebuildError(ev);
     }
     return error ? { error } : { value: value as T };
@@ -318,7 +318,14 @@ function makeInspection<T>(
     status: number,
     error: StitchError | null,
 ): Inspection<T> {
-    const wrapper = { value, findings, status, error } as Inspection<T>;
+    // `data` is canonical; `value` is co-set as the @deprecated alias (CONTRACT.md P5).
+    const wrapper = {
+        data: value,
+        value,
+        findings,
+        status,
+        error,
+    } as Inspection<T>;
     // `enumerable: false` is the whole point; the other descriptor flags default false (the wrapper
     // is transient — nobody reassigns or reconfigures `raw`).
     Object.defineProperty(wrapper, 'raw', { value: raw, enumerable: false });
@@ -346,7 +353,7 @@ async function consumeInspect<T>(
         for await (const ev of gen) {
             if (ev.type === 'drift') findings.push(ev.finding);
             else if (ev.type === 'result') {
-                value = ev.value;
+                value = ev.data;
                 status = ev.status;
                 readRaw(ev);
             } else if (ev.type === 'error') {

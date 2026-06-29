@@ -66,7 +66,7 @@ function levelFor(event: StitchEvent, lifecycle: boolean): Level | null {
 // built-in sinks), so a `start` event's `input.headers` still holds `authorization` /
 // `cookie` and a `delta`'s `chunk` is raw response data. This logs **only metadata** — name,
 // method, scrubbed URL, status, attempt counts, drift path/level, timing — never
-// `event.input`, `event.value`, a `delta` chunk, or `JSON.stringify(event)`, and it strips the
+// `event.input`, `event.data`, a `delta` chunk, or `JSON.stringify(event)`, and it strips the
 // URL query (it can carry `?api_key=…`). `null` ⇒ skip the event.
 function messageFor(name: string, event: StitchEvent): string | null {
     switch (event.type) {

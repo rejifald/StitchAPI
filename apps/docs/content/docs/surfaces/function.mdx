@@ -23,7 +23,7 @@ const user = await getUser({ params: { id: 1 } });
 
 // …or iterate the typed event stream for everything that happened.
 for await (const event of getUser.stream({ params: { id: 1 } })) {
-    if (event.type === 'result') console.log(event.value);
+    if (event.type === 'result') console.log(event.data);
 }
 ```
 

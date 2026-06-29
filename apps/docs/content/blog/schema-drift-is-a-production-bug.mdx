@@ -71,7 +71,7 @@ for await (const event of getOrder({ params: { id: 7 } }).stream()) {
         log.warn(`drift on ${path}: ${change}`, { level });
     }
     if (event.type === 'result') {
-        renderOrder(event.value); // the validated value — coerced, stripped, typed
+        renderOrder(event.data); // the validated value — coerced, stripped, typed
     }
 }
 ```

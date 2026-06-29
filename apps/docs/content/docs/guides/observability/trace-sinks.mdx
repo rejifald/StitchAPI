@@ -68,7 +68,7 @@ const search = stitch({ baseUrl: 'https://api.example.com', path: '/search' });
 for await (const event of search({ query: { q: 'mango' } }).stream()) {
     if (event.type === 'drift')
         console.log(event.finding.level, event.finding.path);
-    if (event.type === 'result') console.log(event.value);
+    if (event.type === 'result') console.log(event.data);
 }
 ```
 
@@ -104,7 +104,7 @@ event stream straight onto it — no JSONL file, no OTLP collector. It is
 **logger-agnostic** (anything with `error` / `warn` / `info` / `debug` methods
 satisfies the `LoggerLike` shape) and **payload-free**: it logs only metadata —
 name, method, scrubbed URL, status, attempt counts, drift path/level, timing —
-never `event.input`, `event.value`, or a streamed `delta` chunk.
+never `event.input`, `event.data`, or a streamed `delta` chunk.
 
 ```ts twoslash
 import { loggerSink, stitch } from 'stitchapi';

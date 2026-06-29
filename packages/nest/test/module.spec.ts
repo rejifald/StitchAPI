@@ -394,7 +394,7 @@ describe('bridges', () => {
         sink.handle(
             {
                 type: 'result',
-                value: { secretField: 'nope' },
+                data: { secretField: 'nope' },
                 status: 200,
                 attempts: 1,
                 at: 0,
@@ -471,7 +471,7 @@ describe('bridges', () => {
             ctx,
         );
         sink.handle(
-            { type: 'result', value: 1, status: 200, attempts: 1, at: 0 },
+            { type: 'result', data: 1, status: 200, attempts: 1, at: 0 },
             ctx,
         );
         sink.handle(

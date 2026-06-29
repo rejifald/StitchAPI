@@ -35,7 +35,7 @@ const getUser = stitch({
 // [!code fold:end]
 const result = await getUser.inspect({ params: { id: 1 } });
 
-result.value; // the validated User (coerced/defaulted/stripped) — or null on a hard fail
+result.data; // the validated User (coerced/defaulted/stripped) — or null on a hard fail
 result.findings; // every drift finding: undeclared, coerced, defaulted, invalid
 result.status; // the HTTP status, so `raw` is interpretable (a 422 body reads unlike a 200)
 result.error; // a StitchError on a contract violation, else null — value/error are inverse

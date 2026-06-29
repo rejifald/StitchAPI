@@ -31,7 +31,7 @@ for await (const event of search({ query: { q: 'mango' } }).stream()) {
     if (event.type === 'progress') console.log(event.phase, event.attempt);
     if (event.type === 'drift')
         console.log(event.finding.level, event.finding.path);
-    if (event.type === 'result') console.log(event.value);
+    if (event.type === 'result') console.log(event.data);
 }
 ```
 

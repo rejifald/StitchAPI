@@ -50,11 +50,13 @@ test('primitive T: value + raw are the primitive, no findings', async () => {
         output: asValidator(z.number()),
     });
     const r = await s.inspect();
-    expect(r.value).toBe(42);
+    expect(r.data).toBe(42);
     expect(r.raw).toBe(42);
     expect(r.status).toBe(200);
     expect(r.error).toBeNull();
     expect(r.findings).toEqual([]);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- the @deprecated `value` alias is co-set with `data` until the GA cut (CONTRACT.md P5)
+    expect(r.value).toBe(42); // back-compat alias parity
 });
 
 // ---------------------------------------------------------------------------
@@ -70,7 +72,7 @@ test('array T: value + raw are the array', async () => {
         output: asValidator(z.array(z.object({ id: z.number() }))),
     });
     const r = await s.inspect();
-    expect(r.value).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(r.data).toEqual([{ id: 1 }, { id: 2 }]);
     expect(r.raw).toEqual([{ id: 1 }, { id: 2 }]);
     expect(r.error).toBeNull();
 });
@@ -90,7 +92,7 @@ test('object T: coerced + defaulted + undeclared findings ride the wrapper; raw 
         ),
     });
     const r = await s.inspect();
-    expect(r.value).toEqual({ n: 42, m: 5 }); // coerced + defaulted
+    expect(r.data).toEqual({ n: 42, m: 5 }); // coerced + defaulted
     expect(r.raw).toEqual({ n: '42', extra: 'x' }); // the body, untouched by validation
     const changes = r.findings.map((f) => f.change);
     expect(changes).toContain('coerced'); // n: string -> number
@@ -112,7 +114,7 @@ test('hard-fail: value null + error + raw + findings', async () => {
         output: asValidator(z.object({ id: z.number() })),
     });
     const r = await s.inspect();
-    expect(r.value).toBeNull();
+    expect(r.data).toBeNull();
     expect(r.error).toBeInstanceOf(StitchError);
     expect(r.raw).toEqual({ id: '1' });
     expect(
@@ -184,7 +186,7 @@ test('{ cache: true }: a cache hit yields value but raw null', async () => {
 
     const r = await s.inspect(undefined, { cache: true }); // served from cache
     expect(calls()).toBe(1); // no new origin call — it read the entry
-    expect(r.value).toEqual({ n: 1 });
+    expect(r.data).toEqual({ n: 1 });
     expect(r.raw).toBeNull(); // the cache holds { value, status }, never raw
     expect(r.status).toBe(200);
     expect(r.error).toBeNull();
@@ -203,7 +205,7 @@ test('streaming surface: raw is null; value (chunks) + status populate', async (
     });
     const r = await s.inspect();
     expect(r.raw).toBeNull();
-    expect(r.value).toEqual(['a', 'b', 'c']);
+    expect(r.data).toEqual(['a', 'b', 'c']);
     expect(r.status).toBe(200);
     expect(r.error).toBeNull();
 });
@@ -220,7 +222,7 @@ test('.with(...).inspect() composes with partial-input binding', async () => {
         output: asValidator(z.object({ ok: z.boolean() })),
     }).with({ query: { page: 1 } });
     const r = await s.inspect();
-    expect(r.value).toEqual({ ok: true });
+    expect(r.data).toEqual({ ok: true });
     expect(r.raw).toEqual({ ok: true });
     expect(r.error).toBeNull();
 });

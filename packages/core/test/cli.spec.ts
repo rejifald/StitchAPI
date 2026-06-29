@@ -222,7 +222,7 @@ describe('runStitch (arg → input → JSONL)', () => {
         expect(events[0].type).toBe('start');
         expect(events.at(-1).type).toBe('done');
         const result = events.find((e) => e.type === 'result');
-        expect(result.value).toEqual([{ id: 1, name: 'Cog' }]);
+        expect(result.data).toEqual([{ id: 1, name: 'Cog' }]);
     });
 
     test('routes a bare path-param flag into the URL', async () => {
@@ -240,9 +240,9 @@ describe('runStitch (arg → input → JSONL)', () => {
         );
         expect(code).toBe(0);
         expect(server.callCount('/widgets/7')).toBe(1);
-        expect(
-            parseLines(lines).find((e) => e.type === 'result').value,
-        ).toEqual({ id: 7 });
+        expect(parseLines(lines).find((e) => e.type === 'result').data).toEqual(
+            { id: 7 },
+        );
     });
 
     test('exit code 1 and an error event on failure', async () => {
@@ -261,12 +261,12 @@ describe('runStitch (arg → input → JSONL)', () => {
 
 describe('summarizeTrace', () => {
     const records = [
-        { name: 'a', type: 'done', ok: true, ms: 10, at: 1 },
+        { name: 'a', type: 'done', ok: true, elapsed: 10, at: 1 },
         { name: 'a', type: 'progress', phase: 'retry', at: 1 },
-        { name: 'a', type: 'done', ok: true, ms: 30, at: 2 },
-        { name: 'a', type: 'done', ok: false, ms: 20, at: 3 },
+        { name: 'a', type: 'done', ok: true, elapsed: 30, at: 2 },
+        { name: 'a', type: 'done', ok: false, elapsed: 20, at: 3 },
         { name: 'a', type: 'drift', finding: { level: 'warn' }, at: 3 },
-        { name: 'b', type: 'done', ok: true, ms: 5, at: 4 },
+        { name: 'b', type: 'done', ok: true, elapsed: 5, at: 4 },
     ];
 
     test('aggregates runs, ok/failed, retries, drift, and percentiles per stitch', () => {

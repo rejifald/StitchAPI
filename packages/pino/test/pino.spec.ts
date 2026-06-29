@@ -110,7 +110,7 @@ describe('pinoSink — event → level mapping', () => {
 
         const result = run({
             type: 'result',
-            value: { id: 1 },
+            data: { id: 1 },
             status: 200,
             attempts: 1,
             at: 0,
@@ -145,7 +145,7 @@ describe('pinoSink — event → level mapping', () => {
     it('logs in pino structured form: an object plus a short message', () => {
         const calls = run({
             type: 'result',
-            value: { id: 1 },
+            data: { id: 1 },
             status: 200,
             attempts: 1,
             at: 0,
@@ -176,7 +176,7 @@ describe('pinoSink — lifecycle gating', () => {
             run(
                 {
                     type: 'result',
-                    value: { id: 1 },
+                    data: { id: 1 },
                     status: 200,
                     attempts: 1,
                     at: 0,
@@ -274,7 +274,7 @@ describe('pinoSink — secret safety', () => {
     it('never logs the `result.value` response body', () => {
         const calls = run({
             type: 'result',
-            value: { ssn: '123-45-6789', token: 'leak-me' },
+            data: { ssn: '123-45-6789', token: 'leak-me' },
             status: 200,
             attempts: 1,
             at: 0,
