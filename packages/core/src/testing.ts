@@ -818,19 +818,23 @@ function callFingerprint(
         throw new Error(`${label}: fingerprint() must be synchronous`);
     }
     const r = result as
-        | { value?: unknown; strength?: unknown }
+        | { token?: unknown; value?: unknown; strength?: unknown }
         | null
         | undefined;
+    // Accept the canonical `token` or the @deprecated `value` alias (CONTRACT.md P5), and normalize
+    // so downstream rules read `.token` regardless of which spelling the fingerprinter produced. A
+    // presence check (not `??`) preserves the `null` ABSTAIN sentinel — `null ?? value` would drop it.
+    const token = r?.token !== undefined ? r.token : r?.value;
     if (
         !r ||
-        (r.value !== null && typeof r.value !== 'string') ||
+        (token !== null && typeof token !== 'string') ||
         (r.strength !== 'strong' && r.strength !== 'weak')
     ) {
         throw new Error(
-            `${label}: expected { value: string|null, strength: 'strong'|'weak' }, got ${show(result)}`,
+            `${label}: expected { token: string|null, strength: 'strong'|'weak' }, got ${show(result)}`,
         );
     }
-    return r as SchemaFingerprint;
+    return { token, value: token, strength: r.strength };
 }
 
 /**
@@ -887,9 +891,9 @@ export function verifyFingerprintContract(
             for (const { label, schema } of stable) {
                 const a = callFingerprint(fingerprinter, schema(), label);
                 const b = callFingerprint(fingerprinter, schema(), label);
-                if (a.value === null) fails.push(`${label} (abstained)`);
-                else if (a.value !== b.value)
-                    fails.push(`${label} (${a.value} != ${b.value})`);
+                if (a.token === null) fails.push(`${label} (abstained)`);
+                else if (a.token !== b.token)
+                    fails.push(`${label} (${a.token} != ${b.token})`);
             }
             if (fails.length) throw new Error(`unstable: ${fails.join('; ')}`);
         },
@@ -911,10 +915,10 @@ export function verifyFingerprintContract(
                         b(),
                         `${label}.b`,
                     );
-                    if (fa.value === null || fb.value === null)
+                    if (fa.token === null || fb.token === null)
                         fails.push(`${label} (abstained)`);
-                    else if (fa.value !== fb.value)
-                        fails.push(`${label} (${fa.value} != ${fb.value})`);
+                    else if (fa.token !== fb.token)
+                        fails.push(`${label} (${fa.token} != ${fb.token})`);
                 }
                 if (fails.length)
                     throw new Error(`not equivalent: ${fails.join('; ')}`);
@@ -925,18 +929,18 @@ export function verifyFingerprintContract(
     rules.push([
         'distinct: semantically-different schemas → distinct fingerprints',
         () => {
-            const byValue = new Map<string, string>();
+            const byToken = new Map<string, string>();
             const fails: string[] = [];
             for (const { label, schema } of distinct) {
                 const f = callFingerprint(fingerprinter, schema(), label);
-                if (f.value === null) {
+                if (f.token === null) {
                     fails.push(`${label} (abstained — cannot distinguish)`);
                     continue;
                 }
-                const prev = byValue.get(f.value);
+                const prev = byToken.get(f.token);
                 if (prev !== undefined)
-                    fails.push(`${label} collides with ${prev} (${f.value})`);
-                else byValue.set(f.value, label);
+                    fails.push(`${label} collides with ${prev} (${f.token})`);
+                else byToken.set(f.token, label);
             }
             if (fails.length)
                 throw new Error(`collisions: ${fails.join('; ')}`);
@@ -950,9 +954,9 @@ export function verifyFingerprintContract(
                 const fails: string[] = [];
                 for (const { label, schema } of abstain) {
                     const f = callFingerprint(fingerprinter, schema(), label);
-                    if (f.value !== null)
+                    if (f.token !== null)
                         fails.push(
-                            `${label} (returned ${f.value}, expected null)`,
+                            `${label} (returned ${f.token}, expected null)`,
                         );
                 }
                 if (fails.length)
@@ -978,8 +982,8 @@ export function verifyFingerprintContract(
                         continue;
                     }
                     const f = callFingerprint(fingerprinter, thunk(), label);
-                    if (f.value !== expected)
-                        fails.push(`${label} (${f.value} != ${expected})`);
+                    if (f.token !== expected)
+                        fails.push(`${label} (${f.token} != ${expected})`);
                 }
                 if (fails.length)
                     throw new Error(`snapshot drift: ${fails.join('; ')}`);

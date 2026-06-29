@@ -177,7 +177,7 @@ describe('@stitchapi/fingerprint-zod', () => {
         const refined = zodFingerprinter.fingerprint(
             z.string().refine((x) => x.length > 0) as never,
         );
-        expect(base.value).not.toBeNull();
-        expect(refined.value).toBeNull();
+        expect(base.token).not.toBeNull();
+        expect(refined.token).toBeNull();
     });
 });
