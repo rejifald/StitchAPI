@@ -126,8 +126,8 @@ Same call site, same callers, more guarantees. That's the trade: a bare `AbortSi
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Give a stitch a `timeout: { total, perAttempt }` and a slow upstream is bounded at two scopes with a real abort and a typed error — once, for every caller. The mechanics are in [Timeouts](/docs/guides/resilience/timeout), the error in [STITCH_TIMEOUT](/docs/errors/stitch-timeout), and how it composes with backoff in [Retry](/docs/guides/resilience/retry).

@@ -78,8 +78,8 @@ A stitch earns its keep on the opposite shape of problem: APIs that rate-limit, 
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Declare one endpoint with a `retry` and an `output` schema, and watch the retry, the rate-limit handling, and the shape check that used to be three interceptors collapse into the declaration. The primitive itself is [The stitch](/docs/concepts/the-stitch), the policies live in [Retry](/docs/guides/resilience/retry), [Throttle](/docs/guides/resilience/throttle), and [Validation & drift](/docs/guides/validation/drift), and if you're coming from a generated client instead, there's [stitching vs. codegen](/blog/stitch-vs-codegen-api-clients).

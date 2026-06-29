@@ -136,8 +136,8 @@ That's the line, and crossing it is a field, not a rewrite: the same call gains 
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Declare one endpoint with a `retry` field and the loop, the backoff math, the status-code allowlist, and the `Retry-After` parsing collapse into five lines of policy you can read at a glance. The full option list — every `backoff` curve, `baseMs`, `maxMs`, and the idempotency caveat — lives in [Retry & backoff](/docs/guides/resilience/retry).

@@ -35,8 +35,8 @@ App Router route handlers are **Web-standard** — they receive a `Request` and 
 
 Install it alongside the core library:
 
-```bash
-npm install @stitchapi/next stitchapi
+```package-install
+@stitchapi/next stitchapi
 ```
 
 Then `sseResponse` takes the stitch's event stream and returns a `text/event-stream` `Response`. Each `delta` becomes one SSE frame; you tell it how to pull the renderable payload out of a chunk with `data`:
@@ -109,8 +109,8 @@ Streaming over HTTP has sharp edges that have nothing to do with StitchAPI, and 
 
 ## Try it
 
-```bash
-npm i stitchapi @stitchapi/next
+```package-install
+stitchapi @stitchapi/next
 ```
 
 Declare a streaming stitch, return `sseResponse(stitch.stream())` from a route handler, and consume the deltas with `useStitchStream`. The full guides: [`@stitchapi/next`](/docs/integrations/next), [`@stitchapi/react`](/docs/integrations/react), and the [event stream](/docs/reference/events) that makes all of it one moving part.
