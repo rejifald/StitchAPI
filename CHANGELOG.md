@@ -11,6 +11,8 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] — 2026-06-29
+
 ### Added
 
 -   **GraphQL `operationName`.** The `graphql` surface now sends `operationName`
