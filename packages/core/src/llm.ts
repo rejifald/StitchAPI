@@ -113,7 +113,7 @@ function llmSurface(d: LlmDefaults): Surface<StitchInput, LlmResult> {
 }
 
 /** Config for {@link llm}: the shared {@link StitchConfig} keys plus the llm defaults. */
-export type LlmConfig = Partial<StitchConfig> & {
+export type LlmOptions = Partial<StitchConfig> & {
     provider: LlmProvider;
     model?: string;
     system?: string;
@@ -141,7 +141,7 @@ export type LlmConfig = Partial<StitchConfig> & {
  * const { text } = await chat({ body: { messages: [{ role: 'user', content: 'hi' }] } });
  * ```
  */
-export function llm(config: LlmConfig): Stitch<LlmResult> {
+export function llm(config: LlmOptions): Stitch<LlmResult> {
     const { provider, model, system, maxTokens, temperature, ...rest } = config;
     const defaults: LlmDefaults = { provider };
     if (model !== undefined) defaults.model = model;
@@ -266,3 +266,7 @@ export const openai: LlmProvider = {
         return result;
     },
 };
+
+// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
+/** @deprecated Renamed to {@link LlmOptions} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
+export type LlmConfig = LlmOptions;

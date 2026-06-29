@@ -306,7 +306,7 @@ export interface IdempotencyOptions {
  *
  * Every field round-trips as JSON; `key` is **sugar** (a function override) that does not.
  */
-export interface CacheConfig {
+export interface CacheOptions {
     /** Time-to-live for a cached entry — `30_000`, `'30s'`, `'5m'`. Bounds staleness/drift. */
     ttl: number | string;
     /**
@@ -342,19 +342,19 @@ export interface CacheConfig {
      * `output`/`transform`/`unwrap` are unchanged for this tag). Leaving it unset hands off to the
      * automatic fingerprint: a registered `@stitchapi/fingerprint-*` strategy makes `output`
      * changes self-invalidate on the fast path; an un-fingerprintable schema falls to
-     * {@link CacheConfig.onUnfingerprintable} (default **refuse-to-cache**, fail-closed).
+     * {@link CacheOptions.onUnfingerprintable} (default **refuse-to-cache**, fail-closed).
      */
     version?: string | number;
     /**
      * Version tag for an opaque `transform` (ADR 0004). A `transform` is a closure that cannot be
      * soundly hashed, so by default a stitch that has one **refuses to cache** (re-validation can't
      * detect a transform change). Set this to make the transform sound and re-enable caching; bump
-     * it whenever the transform's behaviour changes. See also {@link CacheConfig.trustTransform}.
+     * it whenever the transform's behaviour changes. See also {@link CacheOptions.trustTransform}.
      */
     transformVersion?: string | number;
     /**
      * Opt in to caching despite an un-versioned `transform`, trusting that its output is stable for
-     * the `ttl`. Weaker than {@link CacheConfig.transformVersion} (a transform change is invisible,
+     * the `ttl`. Weaker than {@link CacheOptions.transformVersion} (a transform change is invisible,
      * bounded only by TTL); prefer `transformVersion` when you can name a version.
      */
     trustTransform?: boolean;
@@ -369,7 +369,7 @@ export interface CacheConfig {
     onUnfingerprintable?: 'refuse' | 'revalidate';
     /** Sugar: author the key seed from the input instead of deriving it from the request. Renamed from `key` (CONTRACT.md P6). */
     keyOf?: (input: StitchInput) => string;
-    /** @deprecated Renamed to {@link CacheConfig.keyOf} (CONTRACT.md P6). Read until the 1.0 GA cut. */
+    /** @deprecated Renamed to {@link CacheOptions.keyOf} (CONTRACT.md P6). Read until the 1.0 GA cut. */
     key?: (input: StitchInput) => string;
 }
 
@@ -698,7 +698,7 @@ export interface StitchConfig {
      * `cache: { ttl: '1m' }` (still subject to the fingerprint / `version` rules before an entry is
      * actually stored).
      */
-    cache?: number | string | CacheConfig;
+    cache?: number | string | CacheOptions;
     /**
      * Opt this stitch out of the cache **and** coalescing entirely — never stored, always a live
      * call. The honest "do not persist this response" hatch for one-time tokens or compliance-
@@ -751,7 +751,7 @@ export type ResolvedStitchConfig = Omit<
 > & {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
-    cache?: CacheConfig;
+    cache?: CacheOptions;
 };
 
 /**
@@ -1092,3 +1092,7 @@ export interface Seam {
     readonly __config: RedactedStitchConfig;
     readonly __seam: true;
 }
+
+// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
+/** @deprecated Renamed to {@link CacheOptions} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
+export type CacheConfig = CacheOptions;

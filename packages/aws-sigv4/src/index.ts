@@ -130,7 +130,7 @@ function canonicalQuery(search: URLSearchParams): string {
 // signRequestV4 — the pure signer (verifiable against AWS test vectors)
 // ---------------------------------------------------------------------------
 
-export interface SignV4Params {
+export interface SignV4Options {
     method: string;
     /** The fully-built request URL (host, path, query). */
     url: string;
@@ -161,7 +161,7 @@ export interface SignV4Result {
  * {@link awsSigV4} strategy wraps this with timestamping, payload hashing, and
  * header attachment.
  */
-export async function signRequestV4(p: SignV4Params): Promise<SignV4Result> {
+export async function signRequestV4(p: SignV4Options): Promise<SignV4Result> {
     const u = new URL(p.url);
     const amzDate = p.dateTime;
     const dateStamp = amzDate.slice(0, 8);
@@ -319,3 +319,7 @@ export function awsSigV4(opts: AwsSigV4Options): AuthStrategy {
         },
     };
 }
+
+// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
+/** @deprecated Renamed to {@link SignV4Options} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
+export type SignV4Params = SignV4Options;

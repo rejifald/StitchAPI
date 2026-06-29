@@ -1,63 +1,7 @@
 {
     "generatedBy": "scripts/check-contract.mjs --update",
-    "count": 43,
+    "count": 36,
     "violations": [
-        {
-            "rule": "R1",
-            "file": "packages/aws-sigv4/src/index.ts",
-            "symbol": "SignV4Params",
-            "detail": "banned suffix on consumer type → *Options (P3)",
-            "line": 133,
-            "key": "R1|packages/aws-sigv4/src/index.ts|SignV4Params"
-        },
-        {
-            "rule": "R1",
-            "file": "packages/core/src/auth.ts",
-            "symbol": "AuthFailureInfo",
-            "detail": "banned suffix on consumer type → *Options (P3)",
-            "line": 458,
-            "key": "R1|packages/core/src/auth.ts|AuthFailureInfo"
-        },
-        {
-            "rule": "R1",
-            "file": "packages/core/src/auth.ts",
-            "symbol": "CookieSessionOpts",
-            "detail": "banned suffix on consumer type → *Options (P3)",
-            "line": 484,
-            "key": "R1|packages/core/src/auth.ts|CookieSessionOpts"
-        },
-        {
-            "rule": "R1",
-            "file": "packages/core/src/auth.ts",
-            "symbol": "OAuth2Opts",
-            "detail": "banned suffix on consumer type → *Options (P3)",
-            "line": 238,
-            "key": "R1|packages/core/src/auth.ts|OAuth2Opts"
-        },
-        {
-            "rule": "R1",
-            "file": "packages/core/src/llm.ts",
-            "symbol": "LlmConfig",
-            "detail": "banned suffix on consumer type → *Options (P3)",
-            "line": 116,
-            "key": "R1|packages/core/src/llm.ts|LlmConfig"
-        },
-        {
-            "rule": "R1",
-            "file": "packages/core/src/mcp.ts",
-            "symbol": "McpServerInfo",
-            "detail": "banned suffix on consumer type → *Options (P3)",
-            "line": 136,
-            "key": "R1|packages/core/src/mcp.ts|McpServerInfo"
-        },
-        {
-            "rule": "R1",
-            "file": "packages/core/src/types.ts",
-            "symbol": "CacheConfig",
-            "detail": "banned suffix on consumer type → *Options (P3)",
-            "line": 270,
-            "key": "R1|packages/core/src/types.ts|CacheConfig"
-        },
         {
             "rule": "R2",
             "file": "packages/core/src/auth.ts",
@@ -95,7 +39,7 @@
             "file": "packages/core/src/engine.ts",
             "symbol": "backoffMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 1374,
+            "line": 1376,
             "key": "R2|packages/core/src/engine.ts|backoffMs"
         },
         {
@@ -103,7 +47,7 @@
             "file": "packages/core/src/engine.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 724,
+            "line": 726,
             "key": "R2|packages/core/src/engine.ts|retryAfterMs"
         },
         {
@@ -111,7 +55,7 @@
             "file": "packages/core/src/engine.ts",
             "symbol": "totalMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 447,
+            "line": 449,
             "key": "R2|packages/core/src/engine.ts|totalMs"
         },
         {
@@ -127,7 +71,7 @@
             "file": "packages/core/src/resilience.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 254,
+            "line": 253,
             "key": "R2|packages/core/src/resilience.ts|retryAfterMs"
         },
         {

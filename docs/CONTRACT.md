@@ -359,10 +359,16 @@ New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multi
 `sse`, `.inspect()` scalars (P12); `idempotency` boolean (P13-toggle);
 `throttle` string (P14).
 
-**Shipped (migration in progress):** `ThrottleOptions.scope`→`pool` (P2) and
-`IdempotencyOptions.key`/`CacheConfig.key`→`keyOf` (P6) have landed under `@deprecated`
-aliases (read until the GA cut); the runtime prefers the new field
-(`pool ?? scope`, `keyOf ?? key`) and the lint no longer flags the deprecated members.
+**Shipped (migration in progress)** — all under `@deprecated` aliases read until the GA
+cut; the lint skips the deprecated members so each rename ratchets the baseline down:
+
+-   **P2** `ThrottleOptions.scope`→`pool`; runtime prefers `pool ?? scope`.
+-   **P6** `IdempotencyOptions.key`/`CacheOptions.key`→`keyOf`; runtime prefers `keyOf ?? key`.
+-   **P3** suffix renames (type-only, zero runtime): `CacheConfig`→`CacheOptions`,
+    `OAuth2Opts`→`OAuth2Options`, `CookieSessionOpts`→`CookieSessionOptions`,
+    `McpServerInfo`→`McpServerOptions`, `LlmConfig`→`LlmOptions`,
+    `SignV4Params`→`SignV4Options`, and the read-back `AuthFailureInfo`→`AuthFailureResult`.
+    (`OAuth2Opts`/`CookieSessionOpts` are auth-internal — renamed without an alias.)
 
 ---
 
