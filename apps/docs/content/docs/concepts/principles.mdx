@@ -105,7 +105,7 @@ behind its own import — so an app never ships bytes for a CLI it will not run.
 The same frugality the event stream practices with an agent's context, the
 package practices with your bundle.
 
-Concretely, the whole `stitch` entry is **~22 kB minified + gzipped**
+Concretely, the whole `stitch` entry is **~23 kB minified + gzipped**
 (≈61 kB raw), and because every surface beyond `http` is a separate subpath
 import, a typical `import { stitch }` tree-shakes to **~18 kB**. With zero
 runtime dependencies, that figure is the entire cost — not the tip of a

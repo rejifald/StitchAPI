@@ -6,7 +6,7 @@ date: '2026-06-29'
 tags: [http, adapter, fetch, axios, typescript]
 ---
 
-You're streaming a server-sent-events feed in one corner of the app and uploading a multi-megabyte file with a progress bar in another, and the transport that handles one can't do the other. `fetch` streams a download but can't tell you how many bytes of an upload have left the machine; `XMLHttpRequest` reports that upload progress but can't stream a response; the axios instance you already configured with a corporate proxy and a custom CA does neither. Under a stitch, the transport is a swappable seam — you pick the one that fits the call, and the stitch's types, validation, retries, and auth ride on top unchanged.
+You're streaming a server-sent-events feed in one corner of the app and uploading a multi-megabyte file with a progress bar in another, and the transport that handles one can't do the other. `fetch` streams a download but can't tell you how many bytes of an upload have left the machine; `XMLHttpRequest` reports that upload progress but can't stream a response; the axios instance you already configured with a corporate proxy and a custom CA can't stream either, but it carries the setup your platform already trusts. Under a stitch, the transport is a swappable seam — you pick the one that fits the call, and the stitch's types, validation, retries, and auth ride on top unchanged.
 
 A stitch turns one endpoint into a typed, validated, resilient function. The **adapter** is the layer it delegates to for the actual round trip: take a request, return a response. Swapping it changes how the bytes move; it never changes what the stitch promises the caller.
 
@@ -72,7 +72,7 @@ const legacy = stitch({
 });
 ```
 
-The honest tradeoff: `axiosAdapter` is **buffered-only**. Point it at a `stream` or `sse` surface and it throws — by design, so the failure is loud at wiring time, not a silent hang. Reach for `fetchAdapter` to stream. axios also reports no upload progress.
+The honest tradeoff: `axiosAdapter` is **buffered-only**. Point it at a `stream` or `sse` surface and it throws — by design, so the failure is loud at wiring time, not a silent hang. Reach for `fetchAdapter` to stream. It does report byte progress for both phases, though — the adapter wires axios's native `onUploadProgress`/`onDownloadProgress` into `onProgress`, so on a modern axios you get an upload bar without leaving the instance you already trust.
 
 `xhrAdapter(XHR?)` is browser-only and backed by `XMLHttpRequest`. Its one reason to exist over `fetchAdapter` is **upload progress**: `fetch` cannot report bytes sent, `xhr.upload` can. If you're drawing a progress bar for a file going up, this is the adapter.
 
@@ -88,6 +88,16 @@ const upload = stitch({
 ```
 
 It is buffered-only too — it rejects `stream`. Pass it a constructor (`xhrAdapter(FakeXHR)`) to inject a stand-in in tests.
+
+And if you forget — wire up `onProgress` for an upload bar but leave the call on the default `fetch` — the stitch tells you instead of drawing a bar that never moves. Each built-in adapter declares the features it `supports` (`fetch` → `['stream', 'downloadProgress']`, `xhr` and axios → `['uploadProgress', 'downloadProgress']`), and `fetch` is the only one that can't report bytes sent. When a call passes `onProgress` with a request body to an adapter whose `supports` omits `'uploadProgress'`, the engine emits one `info` event through your trace sink:
+
+```
+adapter.upload-progress-unsupported — onProgress is set with a request body, but
+fetchAdapter cannot report upload progress — only 'phase: download' events fire.
+Use xhrAdapter() to draw an upload progress bar.
+```
+
+It's a note, not an error: `fetch` still reports `phase: 'download'` progress, so a download bar on a `POST` keeps working — the silent gap is only the upload phase, and only that gets called out. The fix is the one field this whole article is about: `adapter: xhrAdapter()`.
 
 ## Which one
 

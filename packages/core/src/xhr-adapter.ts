@@ -39,7 +39,7 @@ export type XhrLikeCtor = new () => XhrLike;
  * browser global. Throws if no constructor is available, and rejects `stream` (buffered-only).
  */
 export function xhrAdapter(XHR?: XhrLikeCtor): Adapter {
-    return function xhrAdapterRequest(
+    const xhrAdapterRequest: Adapter = function xhrAdapterRequest(
         req: AdapterRequest,
     ): Promise<AdapterResponse> {
         if (req.stream) {
@@ -141,6 +141,15 @@ export function xhrAdapter(XHR?: XhrLikeCtor): Adapter {
             xhr.send(body ?? null);
         });
     };
+    // The one reason xhr exists over fetch: `xhr.upload` reports bytes SENT, so it is a built-in
+    // that can drive an upload progress bar. It also reports `phase: 'download'` progress via
+    // `xhr.onprogress`. It is buffered-only — it rejects `stream`, so `supports` carries both
+    // progress phases but not `'stream'`.
+    xhrAdapterRequest.capabilities = {
+        name: 'xhrAdapter',
+        supports: ['uploadProgress', 'downloadProgress'],
+    };
+    return xhrAdapterRequest;
 }
 
 const hasHeader = (headers: Record<string, string>, name: string): boolean =>
