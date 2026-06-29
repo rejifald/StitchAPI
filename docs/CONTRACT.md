@@ -483,6 +483,12 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `StitchError` **class**. Renamed to `StitchErrorLike` (`Error & { status? }`), matching elysia/hono —
     so bare `StitchError` is now core-only (R5 clears, watch-list unchanged), and `StitchErrorLike` is one
     structural contract across all six host adapters (de-listed from R5, the `isStitchError` guard stays).
+-   **P9/P16 (per-request seam)** — third R5 pair. The per-request seam handle is ecosystem-qualified
+    per ADR 0012 (extending hono's `HonoRequestSeam`): express `RequestSeam`→`ExpressRequestSeam`, elysia
+    →`ElysiaRequestSeam`, fastify `StitchHost`→`FastifyRequestSeam`, nest `StitchHost`→`NestRequestSeam`.
+    Each keeps the bare name as a `@deprecated` alias (re-exported with a leading comment in the index
+    block, the codebase's established way to keep an alias off R5's name count). Bare `RequestSeam` /
+    `StitchHost` are no longer a canonical export anywhere, so both R5 findings clear (watch-list unchanged).
 
 ## 7. Enforcement
 

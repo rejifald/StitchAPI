@@ -1,23 +1,7 @@
 {
     "generatedBy": "scripts/check-contract.mjs --update",
-    "count": 9,
+    "count": 7,
     "violations": [
-        {
-            "rule": "R5",
-            "file": "packages/<multiple>",
-            "symbol": "RequestSeam",
-            "detail": "exported by elysia, express — must be unique-by-shape (P9/P16)",
-            "line": null,
-            "key": "R5|packages/<multiple>|RequestSeam"
-        },
-        {
-            "rule": "R5",
-            "file": "packages/<multiple>",
-            "symbol": "StitchHost",
-            "detail": "exported by fastify, nest — must be unique-by-shape (P9/P16)",
-            "line": null,
-            "key": "R5|packages/<multiple>|StitchHost"
-        },
         {
             "rule": "R5",
             "file": "packages/<multiple>",

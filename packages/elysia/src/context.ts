@@ -3,7 +3,7 @@
 // a handful of fields, so we declare those structurally. This keeps the public surface stable and
 // the wiring readable without depending on Elysia's deep type machinery (the values still flow from
 // the real Elysia context at runtime).
-import type { RequestSeam } from './plugin';
+import type { ElysiaRequestSeam } from './plugin';
 
 /**
  * The slice of Elysia's request context the `principal` resolver reads: just the incoming
@@ -27,5 +27,5 @@ export interface StitchEnvLike {
  * `interface`) so it is assignable to Elysia's `Record<string, unknown>` derive constraint.
  */
 export type StitchContext = {
-    stitch: RequestSeam;
+    stitch: ElysiaRequestSeam;
 };
