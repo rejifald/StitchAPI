@@ -22,6 +22,9 @@ import useSWR, { type SWRConfiguration, type SWRResponse } from 'swr';
 /** A callable that, given its input, returns an awaitable validated output. The
  * real `Stitch` satisfies this; so does a plain fake in a test. SWR only needs the
  * awaitable side, so — unlike the reactive bindings — there is no `.stream()`. */
+// The MINIMAL await-only stitch duck-type (CONTRACT.md P9): this adapter never calls `.stream()`,
+// so it accepts any `(input?) => PromiseLike<T>`. The RICH canonical `StitchLike` (awaitable +
+// streamable) lives in `@stitchapi/query-core`; a real stitch satisfies both.
 export type StitchLike<T, Input = unknown> = (input?: Input) => PromiseLike<T>;
 
 /** The validated output type of a stitch (or `StitchLike`). */
