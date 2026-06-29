@@ -471,6 +471,13 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     the `@deprecated` `value` alias, and both the cache-generation deriver and the `verifyFingerprintContract`
     kit read `token` (normalizing either spelling, preserving the `null` ABSTAIN sentinel via a presence
     check, not `??`).
+-   **P9 (`StitchStore`) + P16 (`queryOptions`)** — first R5 pair. The per-framework query store is
+    framework-qualified (ADR 0012 rule 6): `@stitchapi/solid`'s `StitchStore`→`SolidStitchStore`,
+    `@stitchapi/svelte`'s →`SvelteStitchStore` (genuinely incompatible — Solid nests `.state`, Svelte is
+    a `Readable` — and both collided with core's state-store `StitchStore`). The ADR 0012
+    `stitchQueryOptions` rename now covers vue/solid/svelte/angular (was react-only); the bare
+    `queryOptions` survives as a uniform `@deprecated` alias (identity-tested) and is **de-listed from the
+    R5 watch-list** since it is no longer a competing canonical.
 
 ## 7. Enforcement
 

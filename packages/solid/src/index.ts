@@ -40,7 +40,7 @@ export type {
 /** What `createStitch` / `createStitchStream` return: the reactive store (a Solid
  * proxy, so reading `store.data` inside an effect/JSX tracks it) plus the
  * imperative `refetch` / `cancel` handles. */
-export interface StitchStore<T> {
+export interface SolidStitchStore<T> {
     /** The reactive state — a Solid store proxy. Read fields inside tracking
      * scopes (effects, JSX) to re-run on change. */
     readonly state: StitchQueryState<T>;
@@ -88,7 +88,7 @@ function createStitchInternal<T>(
     input: MaybeAccessor<unknown>,
     options: MaybeAccessor<CreateStitchOptions<T>>,
     stream: boolean,
-): StitchStore<T> {
+): SolidStitchStore<T> {
     // The Solid store we reconcile from the core query's snapshots. `reconcile`
     // does a structural diff so only the fields that actually changed notify
     // their dependents (mirrors core's identity-stable snapshots, fine-grained).
@@ -184,17 +184,17 @@ export function createStitch<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: MaybeAccessor<QueryInput<S>>,
     options?: MaybeAccessor<CreateStitchOptions<QueryOutput<S>>>,
-): StitchStore<QueryOutput<S>>;
+): SolidStitchStore<QueryOutput<S>>;
 export function createStitch<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: MaybeAccessor<Input>,
     options?: MaybeAccessor<CreateStitchOptions<T>>,
-): StitchStore<T>;
+): SolidStitchStore<T>;
 export function createStitch<T>(
     stitch: StitchLike<T, unknown>,
     input: MaybeAccessor<unknown>,
     options: MaybeAccessor<CreateStitchOptions<T>> = {},
-): StitchStore<T> {
+): SolidStitchStore<T> {
     return createStitchInternal<T>(stitch, input, options, false);
 }
 
@@ -220,17 +220,17 @@ export function createStitchStream<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: MaybeAccessor<QueryInput<S>>,
     options?: MaybeAccessor<CreateStitchOptions<QueryOutput<S>>>,
-): StitchStore<QueryOutput<S>>;
+): SolidStitchStore<QueryOutput<S>>;
 export function createStitchStream<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: MaybeAccessor<Input>,
     options?: MaybeAccessor<CreateStitchOptions<T>>,
-): StitchStore<T>;
+): SolidStitchStore<T>;
 export function createStitchStream<T>(
     stitch: StitchLike<T, unknown>,
     input: MaybeAccessor<unknown>,
     options: MaybeAccessor<CreateStitchOptions<T>> = {},
-): StitchStore<T> {
+): SolidStitchStore<T> {
     return createStitchInternal<T>(stitch, input, options, true);
 }
 
@@ -242,7 +242,7 @@ export function createStitchStream<T>(
 // POJO shape `@tanstack/solid-query`'s `createQuery(options)` consumes is the same
 // `{ queryKey, queryFn }` TanStack uses everywhere.
 
-/** The plain object {@link queryOptions} returns — structurally compatible with
+/** The plain object {@link stitchQueryOptions} returns — structurally compatible with
  * TanStack Query's `createQuery(options)` without importing the library. */
 export interface StitchQueryOptions<T> {
     queryKey: readonly unknown[];
@@ -256,23 +256,23 @@ export interface StitchQueryOptions<T> {
  *
  * ```tsx
  * import { createQuery } from '@tanstack/solid-query';
- * import { queryOptions } from '@stitchapi/solid';
+ * import { stitchQueryOptions } from '@stitchapi/solid';
  *
- * const query = createQuery(() => queryOptions(getUser, { params: { id: id() } }));
+ * const query = createQuery(() => stitchQueryOptions(getUser, { params: { id: id() } }));
  * ```
  *
  * The `queryFn` awaits the stitch (the validated output); the `queryKey` is the
  * stitch's `name` (when present) plus the input, so TanStack caches per call.
  */
-export function queryOptions<S extends StitchLike<unknown, never>>(
+export function stitchQueryOptions<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: QueryInput<S>,
 ): StitchQueryOptions<QueryOutput<S>>;
-export function queryOptions<T, Input = unknown>(
+export function stitchQueryOptions<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: Input,
 ): StitchQueryOptions<T>;
-export function queryOptions<T>(
+export function stitchQueryOptions<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
 ): StitchQueryOptions<T> {
@@ -282,3 +282,11 @@ export function queryOptions<T>(
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }
+
+/**
+ * @deprecated Renamed to {@link stitchQueryOptions} — a bare `queryOptions` collides
+ * with TanStack Query's own `queryOptions` export when both are imported. See
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
+ * `1.0.0-rc` line and removed at the 1.0 GA cut.
+ */
+export const queryOptions = stitchQueryOptions;

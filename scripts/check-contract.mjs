@@ -183,7 +183,10 @@ const UNIQUE_WATCH = new Set([
     'StitchHost',
     'StitchError',
     'StitchErrorLike',
-    'queryOptions', // P16: the bare TanStack alias; canonical is stitchQueryOptions
+    // `queryOptions` was watch-listed as the bare TanStack alias; the canonical
+    // `stitchQueryOptions` rename (ADR 0012) is now applied to ALL five framework bindings
+    // (react/vue/solid/svelte/angular), and the bare `queryOptions` survives only as a uniform
+    // `@deprecated` re-export of it — no longer a competing canonical, so it is de-listed (P16).
 ]);
 
 function collect() {

@@ -3,10 +3,11 @@
 // assertion run in `createRoot` so the effects/cleanups have an owner, and dispose
 // it to exercise teardown.
 import {
-    type StitchStore,
+    type SolidStitchStore,
     createStitch,
     createStitchStream,
     queryOptions,
+    stitchQueryOptions,
 } from '../src';
 
 import type { StitchCallResult, StitchLike } from '@stitchapi/query-core';
@@ -135,7 +136,7 @@ describe('createStitch', () => {
             name: `id-${(input as { params: { id: string } }).params.id}`,
         }));
 
-        let store!: StitchStore<{ name: string }>;
+        let store!: SolidStitchStore<{ name: string }>;
         let setId!: (v: string) => void;
         const dispose = createRoot((d) => {
             const [id, set] = createSignal('1');
@@ -210,7 +211,7 @@ describe('createStitch', () => {
             return 'v';
         });
 
-        let store!: StitchStore<string>;
+        let store!: SolidStitchStore<string>;
         let setEnabled!: (v: boolean) => void;
         const dispose = createRoot((d) => {
             const [enabled, set] = createSignal(false);
@@ -339,21 +340,27 @@ describe('createStitchStream', () => {
     });
 });
 
-// --- queryOptions ----------------------------------------------------------
+// --- stitchQueryOptions ----------------------------------------------------------
 
-describe('queryOptions', () => {
+describe('stitchQueryOptions', () => {
     test('returns a TanStack-shaped POJO with key + async queryFn', async () => {
         const stitch = unaryStitch(async () => ({ ok: true }), {
             name: 'getThing',
         });
-        const opts = queryOptions(stitch, { params: { id: '7' } });
+        const opts = stitchQueryOptions(stitch, { params: { id: '7' } });
         expect(opts.queryKey).toEqual(['getThing', { params: { id: '7' } }]);
         await expect(opts.queryFn()).resolves.toEqual({ ok: true });
     });
 
     test('falls back to "stitch" when no __config.name', () => {
         const stitch = unaryStitch(async () => 1);
-        const opts = queryOptions(stitch, null);
+        const opts = stitchQueryOptions(stitch, null);
         expect(opts.queryKey[0]).toBe('stitch');
+    });
+});
+
+describe('queryOptions (deprecated alias)', () => {
+    test('queryOptions stays a deprecated alias of stitchQueryOptions (ADR 0012)', () => {
+        expect(queryOptions).toBe(stitchQueryOptions);
     });
 });
