@@ -1,0 +1,333 @@
+#!/usr/bin/env node
+// API meta-contract gate — see docs/CONTRACT.md.
+//
+// A RATCHET, not a hard gate. The current surface predates the contract and violates it
+// in many places (that backlog is docs/CONTRACT.md §6). So this script freezes today's
+// violations in scripts/contract-violations.baseline.json and fails ONLY when a NEW
+// violation appears — exactly like the repo's ESLint-suppression ratchet. The gate never
+// blocks unrelated work, but the surface can only get more consistent, never less.
+//
+//   pnpm check:contract            # check working tree against the baseline (CI/hook mode)
+//   node scripts/check-contract.mjs --list     # print every current violation, grouped
+//   node scripts/check-contract.mjs --update    # rewrite the baseline to the current set
+//
+// Rules are intentionally HIGH-PRECISION source-text checks (no TS type info), so a flagged
+// line is a real violation, not a guess. Shape-diffing (full P9), duration-type conformance,
+// and default-value inversion (P8) need the TS checker and are deferred to a type-aware phase.
+import {
+    existsSync,
+    readFileSync,
+    readdirSync,
+    statSync,
+    writeFileSync,
+} from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const PKGS = join(ROOT, 'packages');
+const BASELINE = join(ROOT, 'scripts', 'contract-violations.baseline.json');
+
+// ---- the published surface ------------------------------------------------
+// Every packages/* whose manifest is not `private: true`. Those are the consumer-facing
+// contracts the meta-contract governs; private tooling (eval-harness, sandbox-sim, …) is out.
+function publishedPackages() {
+    const out = [];
+    for (const dir of readdirSync(PKGS)) {
+        const manifest = join(PKGS, dir, 'package.json');
+        if (!existsSync(manifest)) continue;
+        let pkg;
+        try {
+            pkg = JSON.parse(readFileSync(manifest, 'utf8'));
+        } catch {
+            continue;
+        }
+        if (pkg.private === true) continue;
+        if (!existsSync(join(PKGS, dir, 'src'))) continue;
+        out.push({ dir, name: pkg.name });
+    }
+    return out.sort((a, b) => a.dir.localeCompare(b.dir));
+}
+
+function tsFiles(root) {
+    const out = [];
+    const walk = (d) => {
+        for (const e of readdirSync(d)) {
+            const p = join(d, e);
+            const s = statSync(p);
+            if (s.isDirectory()) walk(p);
+            else if (
+                /\.tsx?$/.test(e) &&
+                !/\.d\.ts$/.test(e) &&
+                !/\.(spec|test)\.tsx?$/.test(e) &&
+                !/\.generated\./.test(e)
+            )
+                out.push(p);
+        }
+    };
+    walk(root);
+    return out;
+}
+
+const lineOf = (src, idx) => src.slice(0, idx).split('\n').length;
+const rel = (p) => relative(ROOT, p);
+
+// Brace-match an exported `interface Name { … }`; returns { name, body, index }.
+function interfaceBlocks(src) {
+    const blocks = [];
+    const re = /\bexport\s+interface\s+([A-Za-z_]\w*)[^{]*\{/g;
+    let m;
+    while ((m = re.exec(src))) {
+        let depth = 0;
+        let j = m.index + m[0].length - 1; // sit on the opening brace
+        const open = j;
+        for (; j < src.length; j++) {
+            if (src[j] === '{') depth++;
+            else if (src[j] === '}' && --depth === 0) {
+                j++;
+                break;
+            }
+        }
+        blocks.push({
+            name: m[1],
+            body: src.slice(open + 1, j - 1),
+            index: m.index,
+        });
+    }
+    return blocks;
+}
+
+// Names declared-and-exported in a file (declaration sites; not re-export resolution).
+function exportedDeclNames(src) {
+    const names = [];
+    const re =
+        /\bexport\s+(?:abstract\s+)?(interface|type|class|function|const)\s+([A-Za-z_]\w*)/g;
+    let m;
+    while ((m = re.exec(src)))
+        names.push({ kind: m[1], name: m[2], index: m.index });
+    return names;
+}
+
+// Identifiers a package's index.ts puts on its PUBLIC surface (direct decls + `export {…}`
+// blocks, taking the post-`as` alias). `export * from` is not expanded — a known gap noted
+// in CONTRACT.md §7; the watch-list (R5) is curated so this gap doesn't hide a real clash.
+function indexExports(indexPath) {
+    if (!existsSync(indexPath)) return new Set();
+    const src = readFileSync(indexPath, 'utf8');
+    const names = new Set(exportedDeclNames(src).map((d) => d.name));
+    const block = /\bexport\s+(?:type\s+)?\{([^}]*)\}/g;
+    let m;
+    while ((m = block.exec(src))) {
+        for (let part of m[1].split(',')) {
+            part = part.trim().replace(/^type\s+/, '');
+            if (!part) continue;
+            const as = part.split(/\s+as\s+/);
+            const id = (as[1] ?? as[0]).trim();
+            if (/^[A-Za-z_]\w*$/.test(id)) names.add(id);
+        }
+    }
+    return names;
+}
+
+// ---- rules ----------------------------------------------------------------
+// P3 — banned consumer-input suffix. Carve-outs: the well-known StitchConfig authoring
+// family, and any *Like* duck-type (P18: an adapter mirror keeps its upstream spelling).
+const BANNED_SUFFIX = /(Opts|Info|Params|Config)$/;
+const SUFFIX_CARVEOUT = new Set([
+    'StitchConfig',
+    'ResolvedStitchConfig',
+    'RedactedStitchConfig',
+    'SeamConfig',
+    'OpenApiInfo', // mirrors the OpenAPI spec's InfoObject (P18: keep the upstream spelling)
+]);
+const isLike = (n) => /Like/.test(n);
+
+// P9/P16 — identifiers that MUST be unique-by-shape across packages (a curated watch list;
+// full shape-diff is the deferred type-aware phase). Flagged when ≥2 packages export one.
+const UNIQUE_WATCH = new Set([
+    'StitchStore',
+    'StitchLike',
+    'RequestSeam',
+    'StitchHost',
+    'StitchError',
+    'StitchErrorLike',
+    'queryOptions', // P16: the bare TanStack alias; canonical is stitchQueryOptions
+]);
+
+function collect() {
+    const violations = [];
+    const add = (rule, file, symbol, detail, line) =>
+        violations.push({
+            rule,
+            file: rel(file),
+            symbol,
+            detail,
+            line: line ?? null,
+            key: `${rule}|${rel(file)}|${symbol}`,
+        });
+
+    const packages = publishedPackages();
+    const exportsByName = new Map(); // identifier -> Set(dir)
+
+    for (const { dir } of packages) {
+        const srcRoot = join(PKGS, dir, 'src');
+        for (const file of tsFiles(srcRoot)) {
+            const src = readFileSync(file, 'utf8');
+
+            // R1 — banned type-name suffix (P3). Type declarations only — a `function`/`const`
+            // ending in Config (redactConfig, the ADR-0012 fromNestConfig constructor) is not
+            // a consumer-input type and is out of scope.
+            for (const { kind, name, index } of exportedDeclNames(src)) {
+                if (kind !== 'interface' && kind !== 'type' && kind !== 'class')
+                    continue;
+                if (
+                    BANNED_SUFFIX.test(name) &&
+                    !SUFFIX_CARVEOUT.has(name) &&
+                    !isLike(name)
+                ) {
+                    add(
+                        'R1',
+                        file,
+                        name,
+                        `banned suffix on consumer type → *Options (P3)`,
+                        lineOf(src, index),
+                    );
+                }
+            }
+
+            for (const blk of interfaceBlocks(src)) {
+                // R2 — *Ms-suffixed field inside an input bag (P17). Matches *Options and the
+                // legacy *Opts bags (which R1 will rename to *Options anyway).
+                if (/(Options|Opts)$/.test(blk.name)) {
+                    const fre = /(^|\n)\s*([A-Za-z_]\w*Ms)\s*\??:/g;
+                    let f;
+                    while ((f = fre.exec(blk.body))) {
+                        add(
+                            'R2',
+                            file,
+                            `${blk.name}.${f[2]}`,
+                            `input duration carries Ms suffix → de-suffix + number|string (P17)`,
+                            lineOf(src, blk.index),
+                        );
+                    }
+                }
+                // R3 — function-typed `key` (P6: a derivation fn must be `keyOf`)
+                if (/(^|\n)\s*key\s*\??:\s*\(/.test(blk.body)) {
+                    add(
+                        'R3',
+                        file,
+                        `${blk.name}.key`,
+                        `function-typed key → rename keyOf (P6)`,
+                        lineOf(src, blk.index),
+                    );
+                }
+                // R4 — `scope: 'stitch'|'host'` overloads the tenancy word (P2: rename to pool)
+                if (/(^|\n)\s*scope\s*\??:\s*'(stitch|host)'/.test(blk.body)) {
+                    add(
+                        'R4',
+                        file,
+                        `${blk.name}.scope`,
+                        `pool axis named scope → rename pool (P2)`,
+                        lineOf(src, blk.index),
+                    );
+                }
+            }
+        }
+
+        for (const id of indexExports(join(srcRoot, 'index.ts'))) {
+            if (!exportsByName.has(id)) exportsByName.set(id, new Set());
+            exportsByName.get(id).add(dir);
+        }
+    }
+
+    // R5 — watch-listed identifier exported by ≥2 published packages (P9/P16)
+    for (const [id, dirs] of exportsByName) {
+        if (UNIQUE_WATCH.has(id) && dirs.size > 1) {
+            add(
+                'R5',
+                join(PKGS, '<multiple>'),
+                id,
+                `exported by ${[...dirs].sort().join(', ')} — must be unique-by-shape (P9/P16)`,
+                null,
+            );
+        }
+    }
+
+    return violations.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+// ---- ratchet --------------------------------------------------------------
+const args = new Set(process.argv.slice(2));
+const current = collect();
+const currentKeys = new Set(current.map((v) => v.key));
+
+if (args.has('--list')) {
+    const byRule = {};
+    for (const v of current) (byRule[v.rule] ??= []).push(v);
+    for (const rule of Object.keys(byRule).sort()) {
+        console.log(`\n${rule} (${byRule[rule].length}):`);
+        for (const v of byRule[rule])
+            console.log(
+                `  ${v.file}${v.line ? `:${v.line}` : ''}  ${v.symbol} — ${v.detail}`,
+            );
+    }
+    console.log(`\nTotal: ${current.length} violations.`);
+    process.exit(0);
+}
+
+if (args.has('--update')) {
+    writeFileSync(
+        BASELINE,
+        JSON.stringify(
+            {
+                generatedBy: 'scripts/check-contract.mjs --update',
+                count: current.length,
+                violations: current,
+            },
+            null,
+            4,
+        ) + '\n',
+    );
+    console.log(`✓ Baseline rewritten: ${current.length} known violations.`);
+    process.exit(0);
+}
+
+if (!existsSync(BASELINE)) {
+    console.error(
+        '✗ No baseline found. Run `node scripts/check-contract.mjs --update` to create it.',
+    );
+    process.exit(1);
+}
+
+const baseline = JSON.parse(readFileSync(BASELINE, 'utf8'));
+const baseKeys = new Set((baseline.violations ?? []).map((v) => v.key));
+
+const added = current.filter((v) => !baseKeys.has(v.key));
+const fixed = [...baseKeys].filter((k) => !currentKeys.has(k));
+
+if (fixed.length) {
+    console.log(
+        `\n✓ ${fixed.length} baseline violation(s) fixed — shrink the baseline with ` +
+            '`node scripts/check-contract.mjs --update`:',
+    );
+    for (const k of fixed.sort()) console.log(`    ${k}`);
+}
+
+if (added.length) {
+    console.error(
+        `\n✗ ${added.length} NEW API meta-contract violation(s) (docs/CONTRACT.md):`,
+    );
+    for (const v of added)
+        console.error(
+            `    [${v.rule}] ${v.file}${v.line ? `:${v.line}` : ''}  ${v.symbol} — ${v.detail}`,
+        );
+    console.error(
+        '\n  Fix it, or — if this is an intentional, contract-aligned change — refresh the ' +
+            'baseline with `node scripts/check-contract.mjs --update` and commit it.',
+    );
+    process.exit(1);
+}
+
+console.log(
+    `✓ API meta-contract: no new violations (${baseKeys.size} known, baselined).`,
+);
