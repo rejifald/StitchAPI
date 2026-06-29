@@ -679,7 +679,7 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
     { type: 'delta', chunk: { partial: true }, at: SINK_AT + 4 },
     {
         type: 'result',
-        value: { users: [] },
+        data: { users: [] },
         status: 200,
         attempts: 1,
         at: SINK_AT + 5,

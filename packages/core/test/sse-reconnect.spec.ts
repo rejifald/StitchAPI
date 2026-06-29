@@ -67,7 +67,7 @@ async function drainAll(
             out.reconnects.push({ attempt: ev.attempt, waited: ev.waited });
         else if (ev.type === 'drift')
             out.drifts.push({ level: ev.finding.level });
-        else if (ev.type === 'result') out.result = ev.value;
+        else if (ev.type === 'result') out.result = ev.data;
         else if (ev.type === 'error')
             out.error = { message: ev.message, status: ev.status };
         else if (ev.type === 'done') out.doneOk = ev.ok;

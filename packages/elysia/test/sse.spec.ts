@@ -33,7 +33,7 @@ describe('streamStitchSse — delta mapping', () => {
             gen([
                 { type: 'delta', chunk: 'hello', at: 0 },
                 { type: 'delta', chunk: { a: 1 }, at: 0 },
-                { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
+                { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
             ]),
         );
 
@@ -46,7 +46,7 @@ describe('streamStitchSse — delta mapping', () => {
         const res = streamStitchSse(
             gen([
                 { type: 'delta', chunk: 't1', at: 0 },
-                { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
+                { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
             ]),
             { event: 'token' },
         );
@@ -60,7 +60,7 @@ describe('streamStitchSse — delta mapping', () => {
         const res = streamStitchSse(
             gen([
                 { type: 'delta', chunk: { text: 'pulled' }, at: 0 },
-                { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
+                { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
             ]),
             { data: (chunk) => (chunk as { text: string }).text },
         );
@@ -73,7 +73,7 @@ describe('streamStitchSse — delta mapping', () => {
         const res = streamStitchSse(
             gen([
                 { type: 'delta', chunk: 'line1\nline2', at: 0 },
-                { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
+                { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
             ]),
         );
 
@@ -98,12 +98,12 @@ describe('streamStitchSse — control events', () => {
                 { type: 'delta', chunk: 'only-this', at: 0 },
                 {
                     type: 'result',
-                    value: { leak: 'SHOULD-NOT-APPEAR' },
+                    data: { leak: 'SHOULD-NOT-APPEAR' },
                     status: 200,
                     attempts: 1,
                     at: 0,
                 },
-                { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
+                { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
             ]),
         );
 
@@ -167,7 +167,7 @@ describe('streamStitchSse — error paths', () => {
 describe('streamStitchSse — response', () => {
     test('returns a text/event-stream Response', async () => {
         const res = streamStitchSse(
-            gen([{ type: 'done', ok: true, ms: 1, attempts: 1, at: 0 }]),
+            gen([{ type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 }]),
         );
         expect(res.headers.get('content-type')).toBe('text/event-stream');
         expect(res.headers.get('cache-control')).toContain('no-cache');

@@ -15,7 +15,7 @@
 // SECURITY: a custom TraceSink receives the RAW event — core only redacts inside its
 // own built-in sinks. So this sends **metadata only** (name, method, redacted URL,
 // status, attempt counts, drift path/level/change, phase, timing) and NEVER
-// `event.input` (its headers carry the live `authorization`/`cookie`), `event.value`,
+// `event.input` (its headers carry the live `authorization`/`cookie`), `event.data`,
 // or a `delta` chunk. The URL query string is dropped (it can carry `?api_key=…`).
 import type { StitchEvent, TraceContext, TraceSink } from 'stitchapi';
 

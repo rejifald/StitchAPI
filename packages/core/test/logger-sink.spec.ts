@@ -162,7 +162,7 @@ test('opts.levels overrides the default per event type', () => {
 
     const result: StitchEvent = {
         type: 'result',
-        value: { token: SECRET_BODY },
+        data: { token: SECRET_BODY },
         status: 200,
         attempts: 1,
         at: 0,
@@ -248,7 +248,7 @@ test('opts.level returning null drops the event', () => {
         { name: 'x' },
     );
     sink.handle(
-        { type: 'result', value: 1, status: 200, attempts: 1, at: 0 },
+        { type: 'result', data: 1, status: 200, attempts: 1, at: 0 },
         { name: 'x' },
     );
     sink.handle(

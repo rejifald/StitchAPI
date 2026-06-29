@@ -28,7 +28,7 @@ function unaryStitch<T>(
                     const value = await promise;
                     yield {
                         type: 'result',
-                        value,
+                        data: value,
                         status: 200,
                         attempts: 1,
                         at: 0,
@@ -46,7 +46,7 @@ function streamStitch<T>(events: StitchEvent<T>[]): StitchLike<T> {
         const terminal = events.find((e) => e.type === 'result');
         const value =
             terminal && terminal.type === 'result'
-                ? terminal.value
+                ? terminal.data
                 : (undefined as T);
         const promise = Promise.resolve(value);
         return {
@@ -223,12 +223,12 @@ describe('stitchStreamStore', () => {
             { type: 'delta', chunk: 3, at: 0 },
             {
                 type: 'result',
-                value: [1, 2, 3],
+                data: [1, 2, 3],
                 status: 200,
                 attempts: 1,
                 at: 0,
             },
-            { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
+            { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
         ];
         const store = stitchStreamStore(streamStitch(events), undefined);
         const { states, unsubscribe } = collect(store);
@@ -253,7 +253,7 @@ describe('stitchStreamStore', () => {
         const events: StitchEvent<number>[] = [
             { type: 'delta', chunk: 10, at: 0 },
             { type: 'delta', chunk: 20, at: 0 },
-            { type: 'result', value: 20, status: 200, attempts: 1, at: 0 },
+            { type: 'result', data: 20, status: 200, attempts: 1, at: 0 },
         ];
         const store = stitchStreamStore(streamStitch(events), undefined, {
             mode: 'replace',

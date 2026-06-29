@@ -92,7 +92,7 @@ async function runJson(
     let value: unknown;
     let failure: { message: string; status?: number } | undefined;
     for await (const ev of stream) {
-        if (ev.type === 'result') value = ev.value;
+        if (ev.type === 'result') value = ev.data;
         else if (ev.type === 'error') {
             failure = { message: ev.message };
             if (ev.status !== undefined) failure.status = ev.status;

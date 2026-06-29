@@ -25,7 +25,7 @@ const fullRun = (): StitchEvent[] => [
     { type: 'delta', chunk: 'a', at: 1 },
     { type: 'delta', chunk: 'b', at: 1 },
     { type: 'drift', finding, at: 1 },
-    { type: 'result', value: 'R', status: 200, attempts: 1, at: 1 },
+    { type: 'result', data: 'R', status: 200, attempts: 1, at: 1 },
     { type: 'done', ok: true, elapsed: 0, attempts: 1, at: 1 },
 ];
 
