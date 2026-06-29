@@ -445,8 +445,10 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     (a helper, so the literal-`*Ms:` lint R2 stays clean). Every first-party sink (core trace/cli/otlp,
     `@stitchapi/pino`/`sentry`/`fastify`/`nest`) reads the canonical field. Parity tested in
     `contract-event-aliases.spec.ts`.
-
----
+-   **P17 (emitted: retryAfter)** `retryAfterMs`→`retryAfter` on the three read-back surfaces that carry
+    a parsed `Retry-After`: `RateLimitError`, `StitchEvent.error`, and `AuthFailureResult`. Each co-sets
+    the `@deprecated` alias for back-compat (by assignment, R2-clean); the engine/auth set both. Docs and
+    the delegate-backoff / cookie-session tests move to the canonical name (alias parity asserted).
 
 ## 7. Enforcement
 

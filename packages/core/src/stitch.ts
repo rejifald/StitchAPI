@@ -256,7 +256,7 @@ export function resolveTrace(trace: StitchConfig['trace']): TraceSink {
 // The non-enumerable ERROR_SOURCE key (engine.ts) pins the live error behind the event without
 // leaking its payload into a trace sink. Two kinds ride it:
 //   • a delegate-backoff RateLimitError (issue #145): re-surface THAT instance unchanged, so the
-//     caller keeps the real class identity plus `retryAfterMs`/`response`.
+//     caller keeps the real class identity plus `retryAfter`/`response`.
 //   • a plain HTTP error carrying `.response` (issue #155): flatten into a StitchError, lifting the
 //     response `body`/`url` onto the error so a result-shaped caller can read the API's error
 //     payload (`{ error: "…" }`) it would otherwise never see.
@@ -274,7 +274,7 @@ async function drain<T>(
 
 // Rebuild the terminal error from an `error` event, honouring the non-enumerable ERROR_SOURCE channel
 // (engine.ts). Three kinds ride it: a delegate-backoff RateLimitError is re-surfaced UNCHANGED (the
-// caller keeps its class identity + `retryAfterMs`/`response`); a plain HTTP error (`.response`, but
+// caller keeps its class identity + `retryAfter`/`response`); a plain HTTP error (`.response`, but
 // not a StitchError/RateLimitError) is flattened into a StitchError carrying the response `body`/`url`;
 // a contract-violation StitchError (pinned by `.inspect()`'s retain path) passes through. Absent a
 // source, build a StitchError from the event's `status`/`attempts`. Shared by `drain` and
