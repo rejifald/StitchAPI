@@ -142,7 +142,7 @@ describe('@stitchapi/fingerprint-effect', () => {
         const refined = effectFingerprinter.fingerprint(
             S.standardSchemaV1(S.String.pipe(S.minLength(2))) as never,
         );
-        expect(base.value).not.toBeNull();
-        expect(refined.value).toBeNull();
+        expect(base.token).not.toBeNull();
+        expect(refined.token).toBeNull();
     });
 });

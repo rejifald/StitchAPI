@@ -36,8 +36,8 @@ const testFingerprinter: SchemaFingerprinter = {
     fingerprint(schema) {
         const desc = (schema as { __desc?: unknown }).__desc;
         if (desc && typeof desc === 'object' && 'opaque' in desc)
-            return { value: null, strength: 'strong' };
-        return { value: JSON.stringify(desc), strength: 'strong' };
+            return { token: null, strength: 'strong' };
+        return { token: JSON.stringify(desc), strength: 'strong' };
     },
 };
 

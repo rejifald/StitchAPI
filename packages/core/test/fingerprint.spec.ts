@@ -54,9 +54,9 @@ const refFingerprinter: SchemaFingerprinter = {
     fingerprint(schema) {
         const desc = (schema as { __desc?: unknown }).__desc;
         if (desc && typeof desc === 'object' && 'opaque' in desc) {
-            return { value: null, strength: 'strong' };
+            return { token: null, strength: 'strong' };
         }
-        return { value: hash(canonical(desc)), strength: 'strong' };
+        return { token: hash(canonical(desc)), strength: 'strong' };
     },
 };
 
@@ -94,7 +94,7 @@ describe('registry', () => {
         const other: SchemaFingerprinter = {
             vendor: 'test',
             supports: '*',
-            fingerprint: () => ({ value: 'x', strength: 'strong' }),
+            fingerprint: () => ({ token: 'x', strength: 'strong' }),
         };
         registerFingerprinter(refFingerprinter);
         registerFingerprinter(other);
@@ -294,7 +294,7 @@ describe('verifyFingerprintContract', () => {
         const baseValue =
             refFingerprinter.fingerprint(
                 fakeSchema({ type: 'object', fields: { id: 'number' } }),
-            ).value ?? '';
+            ).token ?? '';
         const ok = verifyFingerprintContract(refFingerprinter, {
             ...goodFixtures,
             snapshots: { base: baseValue },
@@ -315,7 +315,7 @@ describe('verifyFingerprintContract', () => {
         const broken: SchemaFingerprinter = {
             vendor: 'test',
             supports: '*',
-            fingerprint: () => ({ value: 'CONST', strength: 'strong' }),
+            fingerprint: () => ({ token: 'CONST', strength: 'strong' }),
         };
         const report = verifyFingerprintContract(broken, goodFixtures);
         expect(report.ok).toBe(false);
@@ -337,7 +337,7 @@ describe('verifyFingerprintContract', () => {
             vendor: 'test',
             supports: '*',
             fingerprint: () =>
-                Promise.resolve({ value: 'x', strength: 'strong' }),
+                Promise.resolve({ token: 'x', strength: 'strong' }),
         } as unknown as SchemaFingerprinter;
         const report = verifyFingerprintContract(asyncFp, goodFixtures);
         expect(report.ok).toBe(false);
