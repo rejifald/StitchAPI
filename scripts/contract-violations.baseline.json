@@ -1,13 +1,13 @@
 {
     "generatedBy": "scripts/check-contract.mjs --update",
-    "count": 32,
+    "count": 30,
     "violations": [
         {
             "rule": "R2",
             "file": "packages/core/src/auth.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 467,
+            "line": 468,
             "key": "R2|packages/core/src/auth.ts|retryAfterMs"
         },
         {
@@ -101,25 +101,9 @@
         {
             "rule": "R2",
             "file": "packages/core/src/types.ts",
-            "symbol": "cooldownMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 278,
-            "key": "R2|packages/core/src/types.ts|cooldownMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/types.ts",
-            "symbol": "halfOpenAfterMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 279,
-            "key": "R2|packages/core/src/types.ts|halfOpenAfterMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/types.ts",
             "symbol": "retryAfterMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 501,
+            "line": 520,
             "key": "R2|packages/core/src/types.ts|retryAfterMs"
         },
         {
@@ -127,7 +111,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "waitedMs",
             "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 484,
+            "line": 503,
             "key": "R2|packages/core/src/types.ts|waitedMs"
         },
         {
@@ -215,7 +199,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.hooks",
             "detail": "all-optional Hooks accepts {} → Scalar|AtLeastOne<Hooks> (P20)",
-            "line": 560,
+            "line": 579,
             "key": "R6|packages/core/src/types.ts|StitchConfig.hooks"
         },
         {
@@ -223,7 +207,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.input",
             "detail": "all-optional InputSchemas accepts {} → Scalar|AtLeastOne<InputSchemas> (P20)",
-            "line": 560,
+            "line": 579,
             "key": "R6|packages/core/src/types.ts|StitchConfig.input"
         },
         {
@@ -231,7 +215,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.multipart",
             "detail": "all-optional MultipartOptions accepts {} → Scalar|AtLeastOne<MultipartOptions> (P20)",
-            "line": 560,
+            "line": 579,
             "key": "R6|packages/core/src/types.ts|StitchConfig.multipart"
         },
         {
@@ -239,7 +223,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.sse",
             "detail": "all-optional SseOptions accepts {} → Scalar|AtLeastOne<SseOptions> (P20)",
-            "line": 560,
+            "line": 579,
             "key": "R6|packages/core/src/types.ts|StitchConfig.sse"
         },
         {
@@ -247,7 +231,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.stream",
             "detail": "all-optional StreamOptions accepts {} → Scalar|AtLeastOne<StreamOptions> (P20)",
-            "line": 560,
+            "line": 579,
             "key": "R6|packages/core/src/types.ts|StitchConfig.stream"
         },
         {
@@ -255,7 +239,7 @@
             "file": "packages/core/src/types.ts",
             "symbol": "StitchConfig.throttle",
             "detail": "all-optional ThrottleOptions accepts {} → Scalar|AtLeastOne<ThrottleOptions> (P20)",
-            "line": 560,
+            "line": 579,
             "key": "R6|packages/core/src/types.ts|StitchConfig.throttle"
         }
     ]

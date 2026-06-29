@@ -23,7 +23,7 @@ const orders = stitch({
     path: '/orders',
     timeout: { total: '10s', perAttempt: '3s' },
     retry: { attempts: 3, on: [429, 503], backoff: 'expo-jitter' },
-    circuit: { failureThreshold: 5, cooldownMs: 30_000 },
+    circuit: { failures: 5, cooldown: 30_000 },
 });
 
 const result = await orders();
