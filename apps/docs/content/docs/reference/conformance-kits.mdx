@@ -88,7 +88,7 @@ The echo contract itself ships as `adapterContractFixture` — a **pure**
 function (request in, response out, no server), so you can mount it on
 anything: `node:http`, hono, a service worker. The host lowercases request
 header names, hands over the raw body text, and honors the fixture's
-`delayMs` (the in-flight abort rule depends on it):
+`delay` (the in-flight abort rule depends on it):
 
 ```ts
 import { createServer } from 'node:http';
@@ -114,7 +114,7 @@ const server = createServer((req, res) => {
             res.writeHead(out.status, out.headers);
             res.end(out.body);
         };
-        if (out.delayMs) setTimeout(respond, out.delayMs);
+        if (out.delay) setTimeout(respond, out.delay);
         else respond();
     });
 });

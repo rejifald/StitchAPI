@@ -460,19 +460,19 @@ async function validateOutput(
 // backoff sleep, and throttle wait counts against one shared deadline (GAP-AUDIT §1.1).
 interface TotalBudget {
     deadline: number; // epoch ms after which the call must fail with a timeout
-    totalMs: number; // configured total, kept for the error message
+    total: number; // configured total (ms), kept for the error message
 }
 
 function totalBudget(
     cfg: ResolvedStitchConfig,
     t0: number,
 ): TotalBudget | undefined {
-    const totalMs = parseDuration(cfg.timeout?.total);
-    return totalMs == null ? undefined : { deadline: t0 + totalMs, totalMs };
+    const total = parseDuration(cfg.timeout?.total);
+    return total == null ? undefined : { deadline: t0 + total, total };
 }
 
 const budgetError = (b: TotalBudget): TimeoutError =>
-    new TimeoutError(`timed out after ${b.totalMs}ms`);
+    new TimeoutError(`timed out after ${b.total}ms`);
 
 // Sleep `ms`, but never past the budget's deadline — when the budget would run out
 // mid-wait, wait only the remainder and fail with the timeout error. The caller's
@@ -1164,7 +1164,8 @@ async function* runStreaming(
     // The resume hooks (issue #71) stay optional; the surface is resumable only when both are set.
     const streamHook: NonNullable<Surface['stream']> = surface.stream;
     const resumeToken = surface.resumeToken;
-    const resumeRetryMs = surface.resumeRetryMs;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `resumeRetryMs` is the @deprecated alias of `resumeRetry`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const resumeRetry = surface.resumeRetry ?? surface.resumeRetryMs;
     const applyResume = surface.applyResume;
 
     let baseReq: AdapterRequest;
@@ -1299,7 +1300,7 @@ async function* runStreaming(
                 // later drop resumes from here. Unchanged when the surface isn't resumable (no hook).
                 const tok = resumeToken?.(chunk);
                 if (tok !== undefined) lastToken = tok;
-                const ret = resumeRetryMs?.(chunk);
+                const ret = resumeRetry?.(chunk);
                 if (ret !== undefined) lastRetryMs = ret;
 
                 if (cfg.output) {

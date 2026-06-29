@@ -82,7 +82,7 @@ export function createThrottle(
 } {
     const limit = opts?.concurrency;
     const rate = opts?.rate ? parseRate(opts.rate) : undefined;
-    const spacing = rate ? rate.perMs / rate.count : 0; // ms between grants
+    const spacing = rate ? rate.per / rate.count : 0; // ms between grants
     // eslint-disable-next-line @typescript-eslint/no-deprecated -- `scope` is the @deprecated alias of `pool`, read as the back-compat fallback until the GA cut (CONTRACT.md P2)
     const hostPooled = (opts?.pool ?? opts?.scope) === 'host';
     const states = hostPooled ? hostStates : new Map<string, KeyState>();

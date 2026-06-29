@@ -74,13 +74,13 @@ Omit `match` (and `method`) and the route catches every request.
 `respond` is one of three shapes:
 
 -   a single **`MockResponse`** — one fixed reply. Its fields: `status`,
-    `headers`, `body`, `stream`, `delayMs`, `retryAfter`.
+    `headers`, `body`, `stream`, `delay`, `retryAfterSeconds`.
 -   an **array** of them — one per call, the last entry repeating, which is how
     you drive a retry sequence,
 -   a **function** `(call) => MockResponse` that sees `call.index` and
     `call.req` — for pagination.
 
-`body` is the already-decoded body: an object is delivered as-is. `delayMs` is
+`body` is the already-decoded body: an object is delivered as-is. `delay` is
 **abortable**, so a stitch `timeout` cancels it just like a real slow endpoint.
 
 A status sequence drives [retry](/docs/guides/resilience/retry), and the call

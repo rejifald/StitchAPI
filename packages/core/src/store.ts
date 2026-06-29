@@ -109,7 +109,7 @@ export interface Throttle {
 
 /**
  * Store-backed throttle. Rate is paced by EVEN-SPACED grants over an atomic per-window counter in
- * the store: the Nth grant in a window is scheduled at `windowStart + (N-1)·(perMs/count)` — the
+ * the store: the Nth grant in a window is scheduled at `windowStart + (N-1)·(per/count)` — the
  * same cadence as the in-process limiter ({@link createThrottle}), so attaching a store no longer
  * silently switches pacing to bursty fixed-window (the spacing even carries across the window
  * boundary). A SHARED store paces calls across the whole fleet; concurrency stays in-process (a
@@ -176,9 +176,8 @@ export function createStoreThrottle(
             // scheduled at windowStart + (N-1)·spacing. Slot count+1 lands exactly at the next
             // windowStart, so grants stay one `spacing` apart across the boundary — no fixed-window
             // burst. No re-check loop: each caller owns a distinct, non-colliding slot.
-            const spacing = rate.perMs / rate.count; // ms between grants
-            const windowStart =
-                Math.floor(clock.now() / rate.perMs) * rate.perMs;
+            const spacing = rate.per / rate.count; // ms between grants
+            const windowStart = Math.floor(clock.now() / rate.per) * rate.per;
             // Track the window we minted a key for; when it rolls over, DELETE the previous
             // window's `rl:` key eagerly instead of waiting for its TTL to expire (the store's
             // own sweep is opportunistic). Without this, a long-lived rate-limited seam leaves a
@@ -189,7 +188,7 @@ export function createStoreThrottle(
             s.lastWindow = windowStart;
             const n = await store.incr(
                 `rl:${key}:${windowStart}`,
-                rate.perMs + 100,
+                rate.per + 100,
             );
             const grantAt = windowStart + (n - 1) * spacing;
             const wait = grantAt - clock.now();

@@ -79,12 +79,12 @@ export function parseDuration(
     return m[2] === 'ms' ? n : m[2] === 's' ? n * 1000 : n * 60000;
 }
 
-/** "2/s" | "10/m" -> { count, perMs }. */
-export function parseRate(r: string): { count: number; perMs: number } {
+/** "2/s" | "10/m" -> { count, per } (window length in ms). */
+export function parseRate(r: string): { count: number; per: number } {
     const m = /^(\d+)\s*\/\s*(ms|s|m)$/.exec(r.trim());
     if (!m) throw new Error(`bad rate: ${r}`);
     const per = m[2] === 'ms' ? 1 : m[2] === 's' ? 1000 : 60000;
-    return { count: parseInt(m[1] ?? '', 10), perMs: per };
+    return { count: parseInt(m[1] ?? '', 10), per };
 }
 
 /**

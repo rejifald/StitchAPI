@@ -47,13 +47,13 @@ describe('parseDuration', () => {
 
 describe('parseRate', () => {
     it('parses count and per-unit window', () => {
-        expect(parseRate('2/s')).toEqual({ count: 2, perMs: 1000 });
-        expect(parseRate('10/m')).toEqual({ count: 10, perMs: 60_000 });
-        expect(parseRate('5/ms')).toEqual({ count: 5, perMs: 1 });
+        expect(parseRate('2/s')).toEqual({ count: 2, per: 1000 });
+        expect(parseRate('10/m')).toEqual({ count: 10, per: 60_000 });
+        expect(parseRate('5/ms')).toEqual({ count: 5, per: 1 });
     });
 
     it('tolerates whitespace around the slash', () => {
-        expect(parseRate('  3 / s ')).toEqual({ count: 3, perMs: 1000 });
+        expect(parseRate('  3 / s ')).toEqual({ count: 3, per: 1000 });
     });
 
     it('throws on a malformed rate', () => {

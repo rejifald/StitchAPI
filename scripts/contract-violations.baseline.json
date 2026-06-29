@@ -1,55 +1,7 @@
 {
     "generatedBy": "scripts/check-contract.mjs --update",
-    "count": 19,
+    "count": 13,
     "violations": [
-        {
-            "rule": "R2",
-            "file": "packages/core/src/cli.ts",
-            "symbol": "avgMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 250,
-            "key": "R2|packages/core/src/cli.ts|avgMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/engine.ts",
-            "symbol": "totalMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 462,
-            "key": "R2|packages/core/src/engine.ts|totalMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/sse.ts",
-            "symbol": "resumeRetryMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 139,
-            "key": "R2|packages/core/src/sse.ts|resumeRetryMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/test-mock.ts",
-            "symbol": "delayMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 23,
-            "key": "R2|packages/core/src/test-mock.ts|delayMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/testing.ts",
-            "symbol": "delayMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 385,
-            "key": "R2|packages/core/src/testing.ts|delayMs"
-        },
-        {
-            "rule": "R2",
-            "file": "packages/core/src/util.ts",
-            "symbol": "perMs",
-            "detail": "duration field carries Ms suffix → drop it (ms is the house unit; P17)",
-            "line": 83,
-            "key": "R2|packages/core/src/util.ts|perMs"
-        },
         {
             "rule": "R5",
             "file": "packages/<multiple>",
