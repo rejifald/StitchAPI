@@ -8,7 +8,7 @@ tags: [reliability, drift, validation, types, observability]
 
 A provider you depend on renames `total` to `total_amount`, or turns a number into a string, or starts returning `null` where it never did before. Nobody told you. Your build is green. Your tests are green. The deploy goes out. And then, hours later, a chart renders `NaN`, an order total comes out `undefined`, and a pager goes off — for a code path you didn't touch.
 
-This is schema drift, and it's a peculiarly nasty class of bug because every guardrail you'd expect to catch it was looking the wrong way. The change happened on a machine you don't own, to a contract you only assumed. The first runtime that sees the new shape is production.
+This is schema drift ([what schema drift is, exactly](/blog/what-is-schema-drift), if the term is new), and it's a peculiarly nasty class of bug because every guardrail you'd expect to catch it was looking the wrong way. The change happened on a machine you don't own, to a contract you only assumed. The first runtime that sees the new shape is production.
 
 ## Why types don't save you here
 
@@ -22,7 +22,7 @@ So the breakage slips through the net by construction. Types check source agains
 
 ## Make the silent change loud
 
-The fix isn't more types or more mocks. It's to check the response you actually receive against a contract, on the calls you actually make, and route any difference as a signal. And you already have the contract — it's the schema you declared. There is nothing extra to maintain.
+The fix isn't more types or more mocks. It's to [validate the response you actually receive](/blog/validate-api-response-zod) against a contract, on the calls you actually make, and route any difference as a signal. And you already have the contract — it's the schema you declared. There is nothing extra to maintain.
 
 StitchAPI does this with **schema-anchored drift detection**. You wrap a stitch's `output` schema in `drift()`, and every live response is checked against that schema in two tiers:
 

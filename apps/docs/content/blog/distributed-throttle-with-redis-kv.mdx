@@ -6,7 +6,7 @@ date: '2026-05-07'
 tags: [throttle, sessions, distributed, edge, stores]
 ---
 
-You set a throttle on a stitch — say two requests a second to a metered upstream — and on your laptop it behaves exactly as declared. Then you deploy three instances behind a load balancer, or your handler runs as a serverless function that scales to a dozen concurrent isolates, and the upstream starts handing you `429`s you can't explain. The math is the problem: three processes each enforcing two-per-second is six-per-second at the wall. Your real upstream rate is N times your cap, where N is however many copies of your code happen to be running right now.
+You set a throttle on a stitch — say two requests a second to a metered upstream, a [proactive limiter that keeps you under the cap before the 429s arrive](/blog/proactive-throttling-vs-reactive-429s) — and on your laptop it behaves exactly as declared. Then you deploy three instances behind a load balancer, or your handler runs as a serverless function that scales to a dozen concurrent isolates, and the upstream starts handing you `429`s you can't explain. The math is the problem: three processes each enforcing two-per-second is six-per-second at the wall. Your real upstream rate is N times your cap, where N is however many copies of your code happen to be running right now.
 
 The throttle isn't broken. It's doing precisely what it was told — for one process. The default state lives in memory, and memory isn't shared across instances.
 
