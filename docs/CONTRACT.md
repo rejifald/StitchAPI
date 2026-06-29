@@ -489,6 +489,13 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     Each keeps the bare name as a `@deprecated` alias (re-exported with a leading comment in the index
     block, the codebase's established way to keep an alias off R5's name count). Bare `RequestSeam` /
     `StitchHost` are no longer a canonical export anywhere, so both R5 findings clear (watch-list unchanged).
+-   **P9 (`StitchLike`)** — final R5. It is two deliberate, compatible tiers, not a clash: the canonical
+    RICH `(input?) => StitchCallResult<T>` (awaitable + streamable) in `@stitchapi/query-core`, re-exported
+    by the five TanStack-family bindings; and an intentional MINIMAL await-only `(input?) => PromiseLike<T>`
+    in the three stream-less adapters (swr/rtk-query/vercel-ai), which never call `.stream()`. query-core's
+    rich shape is assignable to the minimal one (a real stitch satisfies both), so it is **de-listed**.
+    With this, **R5 is fully cleared** — the baseline is now 6, exactly R6's P20 backlog
+    (multipart/stream/sse/throttle/hooks/input → `Scalar | AtLeastOne`).
 
 ## 7. Enforcement
 

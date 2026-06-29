@@ -1,15 +1,7 @@
 {
     "generatedBy": "scripts/check-contract.mjs --update",
-    "count": 7,
+    "count": 6,
     "violations": [
-        {
-            "rule": "R5",
-            "file": "packages/<multiple>",
-            "symbol": "StitchLike",
-            "detail": "exported by angular, query-core, react, rtk-query, solid, svelte, swr, vercel-ai, vue — must be unique-by-shape (P9/P16)",
-            "line": null,
-            "key": "R5|packages/<multiple>|StitchLike"
-        },
         {
             "rule": "R6",
             "file": "packages/core/src/types.ts",
