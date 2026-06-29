@@ -141,7 +141,7 @@ test('the OTLP sink builds a span tree from the ctx ids (traceId / spanId / pare
             ctx,
         );
         sink.handle(
-            { type: 'result', value: {}, status: 200, attempts: 1, at: 2 },
+            { type: 'result', data: {}, status: 200, attempts: 1, at: 2 },
             ctx,
         );
         sink.handle(

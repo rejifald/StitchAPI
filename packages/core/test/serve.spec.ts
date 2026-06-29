@@ -96,7 +96,7 @@ test('Accept: text/event-stream returns the live event stream as SSE', async () 
     expect(types[0]).toBe('start');
     expect(types).toContain('result');
     expect(types.at(-1)).toBe('done');
-    expect(frames.find((f) => f.event === 'result')?.data?.value).toEqual({
+    expect(frames.find((f) => f.event === 'result')?.data?.['data']).toEqual({
         ok: true,
     });
 });

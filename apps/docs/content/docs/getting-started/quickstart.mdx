@@ -85,7 +85,7 @@ import { stitch } from 'stitchapi';
 const getUsers = stitch('https://api.example.com/users');
 
 for await (const ev of getUsers.stream()) {
-    if (ev.type === 'result') console.log(ev.value);
+    if (ev.type === 'result') console.log(ev.data);
 }
 ```
 

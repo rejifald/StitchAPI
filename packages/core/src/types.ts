@@ -550,7 +550,16 @@ export type StitchEvent<T = unknown> =
     | { type: 'info'; topic: string; detail?: string; at: number }
     | { type: 'drift'; finding: DriftFinding; at: number }
     | { type: 'delta'; chunk: unknown; at: number }
-    | { type: 'result'; value: T; status: number; attempts: number; at: number }
+    | {
+          type: 'result';
+          /** The terminal/aggregated result payload (aligns with `SafeResult.data`; CONTRACT.md P5/D1). */
+          data: T;
+          /** @deprecated Renamed to `data` (CONTRACT.md P5). Set alongside `data` until the 1.0 GA cut. */
+          value?: T;
+          status: number;
+          attempts: number;
+          at: number;
+      }
     | {
           type: 'error';
           name: string;
@@ -933,8 +942,10 @@ export interface InspectOptions {
  * buffered body) and on a cache hit.
  */
 export interface Inspection<T> {
-    /** The validated value — coerced/defaulted/stripped per ADR 0015; `null` iff `error` is set. */
-    value: T | null;
+    /** The validated result payload — coerced/defaulted/stripped per ADR 0015; `null` iff `error` is set. Aligns with `SafeResult.data` (CONTRACT.md P5). */
+    data: T | null;
+    /** @deprecated Renamed to `data` (CONTRACT.md P5). Set alongside `data` until the 1.0 GA cut. */
+    value?: T | null;
     /** The pre-validation body the findings are diffed against. Non-enumerable; `null` on streaming/cache-hit. */
     raw: unknown;
     /** Soft + hard drift findings (including those that ride the event stream), in emission order. */

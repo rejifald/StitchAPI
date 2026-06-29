@@ -114,7 +114,7 @@ test('drift fires on the TRANSFORM output: a required scraped field renamed away
     expect(driftFindings(first)).toHaveLength(0);
     const firstResult = first.find((e) => e.type === 'result');
     expect(
-        (firstResult as Extract<StitchEvent, { type: 'result' }>).value,
+        (firstResult as Extract<StitchEvent, { type: 'result' }>).data,
     ).toEqual([{ title: 'Item A', link: '/i/1', score: 42 }]);
 
     // The score cell renamed `score` -> `rank`. The scraper silently drops `score`; the HTTP

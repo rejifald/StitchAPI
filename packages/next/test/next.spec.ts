@@ -21,12 +21,18 @@ const delta = (chunk: unknown): StitchEvent => ({
 });
 const result = (value: unknown): StitchEvent => ({
     type: 'result',
-    value,
+    data: value,
     status: 200,
     attempts: 1,
     at: 0,
 });
-const done: StitchEvent = { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 };
+const done: StitchEvent = {
+    type: 'done',
+    ok: true,
+    elapsed: 1,
+    attempts: 1,
+    at: 0,
+};
 
 function stitchError(message: string, status?: number): Error {
     const e = new Error(message) as Error & { status?: number };

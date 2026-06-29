@@ -54,7 +54,7 @@ export async function collectStitchEvents<T = unknown>(
         types.push(ev.type);
         if (ev.type === 'delta') deltas.push(ev.chunk);
         else if (ev.type === 'drift') drifts.push(ev.finding);
-        else if (ev.type === 'result') result = ev.value;
+        else if (ev.type === 'result') result = ev.data;
         else if (ev.type === 'error')
             error = { message: ev.message, status: ev.status };
         else if (ev.type === 'done') done = { ok: ev.ok };

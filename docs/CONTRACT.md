@@ -459,6 +459,13 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `parseRate`'s `{ count, per }`, `StitchStats.avg` (the `stitch summary` mean). `Surface.resumeRetryMs`
     →`resumeRetry` keeps a `@deprecated` alias (a `Surface` is the public extension seam). This completes
     the R2 (`*Ms`) clearance; the remaining baseline is R5 (P9/P16) + R6's P20 slots.
+-   **P5 (success payload `data`)** `value`→`data` on the runtime result envelopes: `StitchEvent.result`
+    and `Inspection`. Both co-set the `@deprecated` `value` alias for back-compat (the engine /
+    `makeInspection` set both; the trace JSONL caps both keys so the body never leaks uncapped). Stream
+    increments keep `chunk`; the Standard-Schema layer keeps spec `value`/`issues`. Every sink/adapter
+    (core trace/cli/serve, `@stitchapi/query-core`, all five TanStack/RTK/SWR readers) and the docs read
+    the canonical `data`. (Also folds the cross-package done-event `ms`→`elapsed` fixtures missed when
+    P17(c) only typechecked core + four sinks.)
 
 ## 7. Enforcement
 

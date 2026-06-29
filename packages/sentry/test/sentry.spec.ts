@@ -53,7 +53,7 @@ const ev = {
     },
     result: {
         type: 'result',
-        value: { secret: 'X' },
+        data: { secret: 'X' },
         status: 200,
         attempts: 1,
         at: 0,
