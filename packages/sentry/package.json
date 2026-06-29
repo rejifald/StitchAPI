@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/sentry",
-    "version": "1.0.0-rc.3",
+    "version": "1.0.0-rc.4",
     "type": "commonjs",
     "description": "A Sentry TraceSink for StitchAPI — maps the stitch event stream to Sentry breadcrumbs, and captures error events with the call's context. Metadata-only, safe on a secret-bearing seam.",
     "main": "lib/index.js",
