@@ -182,7 +182,10 @@ const UNIQUE_WATCH = new Set([
     'RequestSeam',
     'StitchHost',
     'StitchError',
-    'StitchErrorLike',
+    // `StitchErrorLike` de-listed: the host adapters' error duck-type is now uniformly
+    // named `StitchErrorLike` (`Error & { status? }`) across elysia/hono/express/fastify/nest/next —
+    // one structural contract (P9). The mis-named `StitchError` duck-types (which shadowed core's
+    // real `StitchError` class) were renamed here, so bare `StitchError` is now core-only.
     // `queryOptions` was watch-listed as the bare TanStack alias; the canonical
     // `stitchQueryOptions` rename (ADR 0012) is now applied to ALL five framework bindings
     // (react/vue/solid/svelte/angular), and the bare `queryOptions` survives only as a uniform

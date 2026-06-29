@@ -30,6 +30,6 @@ export {
 export {
     stitchErrorHandler,
     isStitchError,
-    type StitchError,
+    type StitchErrorLike,
     type StitchErrorHandlerOptions,
 } from './error';

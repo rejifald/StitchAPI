@@ -478,6 +478,11 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `stitchQueryOptions` rename now covers vue/solid/svelte/angular (was react-only); the bare
     `queryOptions` survives as a uniform `@deprecated` alias (identity-tested) and is **de-listed from the
     R5 watch-list** since it is no longer a competing canonical.
+-   **P9 (`StitchError` / `StitchErrorLike`)** — second R5 pair. The host adapters
+    (express/fastify/nest/next) mis-named their error **duck-type** `StitchError`, shadowing core's real
+    `StitchError` **class**. Renamed to `StitchErrorLike` (`Error & { status? }`), matching elysia/hono —
+    so bare `StitchError` is now core-only (R5 clears, watch-list unchanged), and `StitchErrorLike` is one
+    structural contract across all six host adapters (de-listed from R5, the `isStitchError` guard stays).
 
 ## 7. Enforcement
 

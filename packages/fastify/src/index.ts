@@ -10,7 +10,7 @@ export { sendStitchSse, type SendStitchSseOptions } from './sse';
 export {
     stitchErrorHandler,
     isStitchError,
-    type StitchError,
+    type StitchErrorLike,
     type StitchErrorHandlerOptions,
 } from './error-handler';
 export {

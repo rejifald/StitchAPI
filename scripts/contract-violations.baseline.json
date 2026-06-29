@@ -1,6 +1,6 @@
 {
     "generatedBy": "scripts/check-contract.mjs --update",
-    "count": 11,
+    "count": 9,
     "violations": [
         {
             "rule": "R5",
@@ -9,22 +9,6 @@
             "detail": "exported by elysia, express — must be unique-by-shape (P9/P16)",
             "line": null,
             "key": "R5|packages/<multiple>|RequestSeam"
-        },
-        {
-            "rule": "R5",
-            "file": "packages/<multiple>",
-            "symbol": "StitchError",
-            "detail": "exported by express, fastify, nest, next — must be unique-by-shape (P9/P16)",
-            "line": null,
-            "key": "R5|packages/<multiple>|StitchError"
-        },
-        {
-            "rule": "R5",
-            "file": "packages/<multiple>",
-            "symbol": "StitchErrorLike",
-            "detail": "exported by elysia, hono — must be unique-by-shape (P9/P16)",
-            "line": null,
-            "key": "R5|packages/<multiple>|StitchErrorLike"
         },
         {
             "rule": "R5",
