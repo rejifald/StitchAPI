@@ -5,8 +5,8 @@ description: 'The delegate-backoff error: a rate-limit response surfaced for an 
 
 ## What you'll see
 
-A stitch with [`rateLimit: { delegate: true }`](/docs/guides/resilience/delegate-backoff)
-that gets a rate-limit response (status in `rateLimit.on`, default `[429]`)
+A stitch with [`throttle: { delegate: true }`](/docs/guides/resilience/delegate-backoff)
+that gets a rate-limit response (status in `throttle.on`, default `[429]`)
 rejects with a **`RateLimitError`** instead of retrying. Unlike most failures,
 this is _not_ a `StitchError` — it's its own exported class, so you can catch it
 specifically and hand the signal to whatever owns your backoff:
@@ -17,7 +17,7 @@ import { RateLimitError, stitch } from 'stitchapi';
 const fetchPage = stitch({
     baseUrl: 'https://api.example.com',
     path: '/pages/{id}',
-    rateLimit: { delegate: true },
+    throttle: { delegate: true },
 });
 
 try {
@@ -34,7 +34,7 @@ try {
 `RateLimitError` carries:
 
 -   **`status`** — the rate-limit status (e.g. `429`, or whatever you listed in
-    `rateLimit.on`).
+    `throttle.on`).
 -   **`retryAfterMs`** — the wait the server asked for, parsed from `Retry-After`
     (delta-seconds **or** an HTTP-date) into milliseconds; `undefined` when the
     header is absent or unparseable.
@@ -65,7 +65,7 @@ purpose.
     `RateLimitError` (so `retryAfterMs` is still reachable via the cause).
 -   **Reconsider whether to delegate.** If nothing outside StitchAPI actually
     owns the backoff, you probably want internal handling instead — drop
-    `rateLimit` and use [retry](/docs/guides/resilience/retry) +
+    `throttle.delegate` and use [retry](/docs/guides/resilience/retry) +
     [throttle](/docs/guides/resilience/throttle).
 
 ## Related

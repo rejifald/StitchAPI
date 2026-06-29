@@ -419,6 +419,13 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `CacheOptions.maxEntries`→`entries`, `paginate.max`→`pages`; runtime prefers the new
     field. (`CircuitOptions.failureThreshold`→`failures` is deferred to the P17 CircuitOptions
     overhaul, where its required-ness + `cooldownMs`/`halfOpenAfterMs` are handled together.)
+-   **P7** `RetryOptions.on` (and the folded `throttle.on`) now accept
+    `number[] | (status) => boolean` — additive widening, no alias. The engine normalizes via the
+    shared `acceptsStatus` matcher.
+-   **P14** `rateLimit` folded into `throttle` (`throttle.delegate` / `throttle.on`); the top-level
+    `rateLimit` is `@deprecated` (runtime prefers `throttle.* ?? rateLimit.*`). `PaginateOptions`
+    extracted from the inline `paginate` shape (named + exported). `throttle: { rate, delegate }` is
+    the unified envelope — delegate makes the rate inert, now legible within one object.
 
 ---
 
