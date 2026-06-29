@@ -15,7 +15,9 @@ import type {
     StitchInput,
 } from '../src/types';
 
-const cfg = (o: { query?: string; method?: string } = {}): StitchConfig => o;
+const cfg = (
+    o: { query?: string; method?: string; operationName?: string } = {},
+): StitchConfig => o;
 
 const base: AdapterRequest = {
     url: 'https://api.test/graphql',
@@ -75,6 +77,79 @@ describe('graphqlSurface.buildRequest', () => {
     test('honours and upper-cases a configured method', () => {
         const req = build(cfg({ query: 'q', method: 'put' }), {});
         expect(req.method).toBe('PUT');
+    });
+
+    test('derives operationName from the first named operation in the query', () => {
+        const req = build(
+            cfg({
+                query: 'query findScene($id: ID!) { scene(id: $id) { id } }',
+            }),
+            { variables: { id: 's1' } },
+        );
+        expect(req.body).toEqual({
+            query: 'query findScene($id: ID!) { scene(id: $id) { id } }',
+            variables: { id: 's1' },
+            operationName: 'findScene',
+        });
+    });
+
+    test('derives the name across mutation/subscription too', () => {
+        expect(
+            (
+                build(
+                    cfg({ query: 'mutation Login($p: P!) { login(p: $p) }' }),
+                    {},
+                ).body as {
+                    operationName?: string;
+                }
+            ).operationName,
+        ).toBe('Login');
+        expect(
+            (
+                build(cfg({ query: 'subscription OnTick { tick }' }), {})
+                    .body as {
+                    operationName?: string;
+                }
+            ).operationName,
+        ).toBe('OnTick');
+    });
+
+    test('omits operationName for an anonymous document (shorthand or unnamed query)', () => {
+        for (const query of [
+            '{ thing }',
+            'query($id: ID) { thing(id: $id) }',
+        ]) {
+            const body = build(cfg({ query }), {}).body as Record<
+                string,
+                unknown
+            >;
+            expect('operationName' in body).toBe(false);
+        }
+    });
+
+    test('an explicit cfg.operationName overrides the derived name', () => {
+        const body = build(
+            cfg({ query: 'query A { a } query B { b }', operationName: 'B' }),
+            {},
+        ).body as { operationName?: string };
+        expect(body.operationName).toBe('B');
+    });
+
+    test('cfg.operationName of "" suppresses the field even for a named query', () => {
+        const body = build(
+            cfg({ query: 'query Named { x }', operationName: '' }),
+            {},
+        ).body as Record<string, unknown>;
+        expect('operationName' in body).toBe(false);
+    });
+
+    test('does not mistake a field or type named like a keyword for the operation', () => {
+        // `queryStatus` field + `query` keyword: only the real operation `Dash` is picked up.
+        const body = build(
+            cfg({ query: 'query Dash { queryStatus mutationCount }' }),
+            {},
+        ).body as { operationName?: string };
+        expect(body.operationName).toBe('Dash');
     });
 });
 
