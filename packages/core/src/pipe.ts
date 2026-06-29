@@ -7,10 +7,21 @@
 import type { RunContext, Stitch, StitchInput } from './types';
 import { newRunContext } from './util';
 
+/**
+ * A stitch accepted as a pipe member regardless of its inferred input/output types. `Stitch<TOut,
+ * TIn>` is CONTRAVARIANT in `TIn` (it sits in the call signature and in `with()`'s parameter), so a
+ * stitch with a NARROWER input — e.g. one built from a templated URL `'/users/{id}'`, whose `TIn`
+ * carries a required `params: { id }` — is *not* assignable to the bare `Stitch` default
+ * (`Stitch<unknown, StitchInput>`). `never` in the input slot erases that contravariance (`never`
+ * is assignable to every `TIn`), so every stitch is accepted while `TOut` stays `unknown`. This is
+ * the idiom pipe's own example uses; without it that example fails to type-check (TS2345).
+ */
+type AnyStitch = Stitch<unknown, never>;
+
 /** A pipe step: the stitch to run, and how to turn the previous result into its call input. */
 export interface PipeStep {
     /** The stitch to run for this step. */
-    readonly stitch: Stitch;
+    readonly stitch: AnyStitch;
     /**
      * Map the previous step's result to this step's call input (sugar; not serialised). Omitted ⇒
      * the previous result is passed as the call `body`. The FIRST step receives the pipe's initial
@@ -28,7 +39,7 @@ interface Runnable {
     ) => Promise<unknown>;
 }
 
-const asStep = (s: PipeStep | Stitch): PipeStep =>
+const asStep = (s: PipeStep | AnyStitch): PipeStep =>
     typeof s === 'function' ? { stitch: s } : s;
 
 /**
@@ -51,7 +62,7 @@ const asStep = (s: PipeStep | Stitch): PipeStep =>
  * ```
  */
 export function pipe<Out = unknown>(
-    ...steps: (PipeStep | Stitch)[]
+    ...steps: (PipeStep | AnyStitch)[]
 ): (input?: StitchInput) => Promise<Out> {
     const resolved = steps.map(asStep);
     return async (input?: StitchInput): Promise<Out> => {
