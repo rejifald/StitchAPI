@@ -39,12 +39,11 @@ export function pipelineStages(
             opts.detailed ? `retry ×${cfg.retry.attempts ?? 1}` : 'retry',
         );
     if (kind !== 'http') stages.push(`${kind} interpret`);
-    if (cfg.paginate)
-        stages.push(
-            opts.detailed
-                ? `paginate (max ${cfg.paginate.max ?? 50})`
-                : 'paginate',
-        );
+    if (cfg.paginate) {
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `max` is the @deprecated alias of `pages`, read for back-compat until the GA cut (CONTRACT.md P4)
+        const pages = cfg.paginate.pages ?? cfg.paginate.max ?? 50;
+        stages.push(opts.detailed ? `paginate (max ${pages})` : 'paginate');
+    }
     // Post-response order matches the engine (engine.ts): transform → unwrap → validate. The body
     // is transformed, then the unwrap path is read, then the result is validated against `output`.
     if (cfg.transform) stages.push('transform');

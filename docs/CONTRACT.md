@@ -369,6 +369,10 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `McpServerInfo`→`McpServerOptions`, `LlmConfig`→`LlmOptions`,
     `SignV4Params`→`SignV4Options`, and the read-back `AuthFailureInfo`→`AuthFailureResult`.
     (`OAuth2Opts`/`CookieSessionOpts` are auth-internal — renamed without an alias.)
+-   **P4** caps → bare nouns: `ReconnectOptions.maxAttempts`→`attempts`,
+    `CacheOptions.maxEntries`→`entries`, `paginate.max`→`pages`; runtime prefers the new
+    field. (`CircuitOptions.failureThreshold`→`failures` is deferred to the P17 CircuitOptions
+    overhaul, where its required-ness + `cooldownMs`/`halfOpenAfterMs` are handled together.)
 
 ---
 

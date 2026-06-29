@@ -142,6 +142,8 @@ export interface ReconnectOptions {
      * Total reconnect attempts after the first connection drops, before the stream gives up and
      * ends/errors exactly as today. Default 3.
      */
+    attempts?: number;
+    /** @deprecated Renamed to {@link ReconnectOptions.attempts} (CONTRACT.md P4). Read until the 1.0 GA cut. */
     maxAttempts?: number;
     /**
      * Fallback reconnect backoff (ms) when the server has NOT sent a `retry:` field on the dropped
@@ -290,6 +292,8 @@ export interface CacheOptions {
      */
     methods?: string[];
     /** In-process LRU cap on live entries (the store stays dumb). Default 1000. */
+    entries?: number;
+    /** @deprecated Renamed to {@link CacheOptions.entries} (CONTRACT.md P4). Read until the 1.0 GA cut. */
     maxEntries?: number;
     /**
      * Request coalescing mode. `'process'` (v1 default) collapses concurrent identical in-flight
@@ -600,6 +604,8 @@ export interface StitchConfig {
         /** Pull the array from each unwrapped page. Default: the value if it is an array. */
         items?: (value: unknown) => unknown[];
         /** Safety cap on pages. Default 50. */
+        pages?: number;
+        /** @deprecated Renamed to `pages` (CONTRACT.md P4). Read until the 1.0 GA cut. */
         max?: number;
     };
     /** Auth strategy — the stitch holds the credential; the caller never sees it. */

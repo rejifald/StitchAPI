@@ -39,7 +39,7 @@ const mirror = stitch({
             return cursor ? { query: { cursor } } : undefined;
         },
         items: (value) => (value as { results: unknown[] }).results,
-        max: 100,
+        pages: 100,
     },
 });
 
