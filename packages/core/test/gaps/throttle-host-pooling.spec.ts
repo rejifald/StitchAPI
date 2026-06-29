@@ -34,13 +34,16 @@ describe('GAP-AUDIT §1.4 — throttle scope:"host" pools across instances', () 
         });
 
         // Two INDEPENDENT stitch() instances — no `store` configured — both
-        // declaring scope:'host' against the same origin. throttle.mdx says
+        // declaring host pooling against the same origin. throttle.mdx says
         // 'host' "pools the budget across every stitch hitting the same host",
         // so the 2/s budget (500ms spacing) must apply across BOTH instances.
+        // `a` uses the canonical `pool` (CONTRACT.md P2); `b` uses the
+        // `@deprecated` `scope` alias — they MUST pool together, proving the
+        // alias is byte-equivalent to the new field.
         const a = stitch({
             baseUrl: server.url,
             path: '/pooled',
-            throttle: { rate: '2/s', scope: 'host' },
+            throttle: { rate: '2/s', pool: 'host' },
         });
         const b = stitch({
             baseUrl: server.url,

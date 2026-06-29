@@ -163,9 +163,9 @@ function applyIdempotency(
         )
     )
         return;
-    headers[header] = cfg.idempotency.key
-        ? cfg.idempotency.key(input)
-        : randomUUID();
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the @deprecated alias of `keyOf`, read as the back-compat fallback until the GA cut (CONTRACT.md P6)
+    const keyOf = cfg.idempotency.keyOf ?? cfg.idempotency.key;
+    headers[header] = keyOf ? keyOf(input) : randomUUID();
 }
 
 const resolveStr = (v: string | (() => string) | undefined): string =>
@@ -255,7 +255,8 @@ const cloneReq = (r: AdapterRequest): AdapterRequest => ({
     headers: { ...r.headers },
 });
 const hostKey = (req: AdapterRequest, cfg: ResolvedStitchConfig): string => {
-    if (cfg.throttle?.scope === 'host') {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `scope` is the @deprecated alias of `pool`, read as the back-compat fallback until the GA cut (CONTRACT.md P2)
+    if ((cfg.throttle?.pool ?? cfg.throttle?.scope) === 'host') {
         try {
             return new URL(req.url).host;
         } catch {

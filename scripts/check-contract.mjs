@@ -92,9 +92,21 @@ function interfaceBlocks(src) {
             name: m[1],
             body: src.slice(open + 1, j - 1),
             index: m.index,
+            bodyStart: open + 1,
         });
     }
     return blocks;
+}
+
+// True when the declaration at `idx` is immediately preceded by a JSDoc block carrying
+// `@deprecated`. A deprecated member is a known, time-boxed migration alias (P19), not an
+// active violation — so the rules skip it, and a rename-under-alias clears the finding.
+function deprecatedBefore(src, idx) {
+    let j = idx;
+    while (j > 0 && /[\s{;,(]/.test(src[j - 1])) j--; // skip whitespace + the field anchor
+    if (src.slice(j - 2, j) !== '*/') return false; // must sit right after a comment
+    const open = src.lastIndexOf('/*', j - 2);
+    return open !== -1 && /@deprecated/.test(src.slice(open, j));
 }
 
 // Names declared-and-exported in a file (declaration sites; not re-export resolution).
@@ -183,7 +195,8 @@ function collect() {
                 if (
                     BANNED_SUFFIX.test(name) &&
                     !SUFFIX_CARVEOUT.has(name) &&
-                    !isLike(name)
+                    !isLike(name) &&
+                    !deprecatedBefore(src, index)
                 ) {
                     add(
                         'R1',
@@ -206,12 +219,13 @@ function collect() {
                 const seen = new Set();
                 let f;
                 while ((f = fre.exec(src))) {
-                    if (seen.has(f[1])) continue;
-                    seen.add(f[1]);
                     // Carve-out: an epoch *timestamp* (`*UnixMs`) keeps its unit — Unix time is
                     // conventionally SECONDS, so a bare `startUnix` would be misleading, and these
                     // mirror OTLP's `*Unix*` fields (P18). The rule targets DURATIONS, not instants.
                     if (/Unix(Ms|Nano|Seconds)$/.test(f[1])) continue;
+                    if (deprecatedBefore(src, f.index)) continue; // a renamed-under-alias field
+                    if (seen.has(f[1])) continue;
+                    seen.add(f[1]);
                     add(
                         'R2',
                         file,
@@ -224,23 +238,33 @@ function collect() {
 
             for (const blk of interfaceBlocks(src)) {
                 // R3 — function-typed `key` (P6: a derivation fn must be `keyOf`)
-                if (/(^|\n)\s*key\s*\??:\s*\(/.test(blk.body)) {
+                const keyM = /(^|\n)\s*key\s*\??:\s*\(/.exec(blk.body);
+                if (
+                    keyM &&
+                    !deprecatedBefore(src, blk.bodyStart + keyM.index)
+                ) {
                     add(
                         'R3',
                         file,
                         `${blk.name}.key`,
                         `function-typed key → rename keyOf (P6)`,
-                        lineOf(src, blk.index),
+                        lineOf(src, blk.bodyStart + keyM.index),
                     );
                 }
                 // R4 — `scope: 'stitch'|'host'` overloads the tenancy word (P2: rename to pool)
-                if (/(^|\n)\s*scope\s*\??:\s*'(stitch|host)'/.test(blk.body)) {
+                const scopeM = /(^|\n)\s*scope\s*\??:\s*'(stitch|host)'/.exec(
+                    blk.body,
+                );
+                if (
+                    scopeM &&
+                    !deprecatedBefore(src, blk.bodyStart + scopeM.index)
+                ) {
                     add(
                         'R4',
                         file,
                         `${blk.name}.scope`,
                         `pool axis named scope → rename pool (P2)`,
-                        lineOf(src, blk.index),
+                        lineOf(src, blk.bodyStart + scopeM.index),
                     );
                 }
             }
