@@ -165,11 +165,16 @@ const chat = llm({
 
 The `llm` surface is buffered: `await chat(...)` resolves the whole `LlmResult`, it does not hand you the completion token by token. When you want the deltas — render text as it lands, not after the full reply — read them off the **`sse` surface** pointed at the provider's streaming endpoint. Every stitch is an event stream underneath, so a streaming stitch exposes `.stream()`: an async iterable of typed events, one per upstream chunk.
 
-The OpenAI-compatible endpoint streams when the body carries `stream: true`. Declare it as an `sse` stitch and accumulate `choices[0].delta.content` off each frame:
+The OpenAI-compatible endpoint streams when the body carries `stream: true`. Declare it as an `sse` stitch and accumulate `choices[0].delta.content` off each frame. `.stream()` yields the run's lifecycle events, so filter for the `delta` ones — each carries one parsed SSE frame as its `chunk`:
 
 ```ts
 import { bearer, env } from 'stitchapi';
-import { sse } from 'stitchapi/sse';
+import { type SseEvent, sse } from 'stitchapi/sse';
+
+// the wire is untyped JSON; name the one chunk shape we read off it
+interface ChatChunk {
+    choices?: { delta?: { content?: string } }[];
+}
 
 const chatStream = sse({
     url: 'https://api.openai.com/v1/chat/completions',
@@ -187,17 +192,18 @@ const stream = chatStream({
 
 let text = '';
 for await (const event of stream) {
-    // each frame is one parsed SSE event; the `[DONE]` terminator
-    // parses to a bare string, so reach for the delta defensively
-    const delta = (event.data as any).choices?.[0]?.delta?.content;
-    if (delta) {
-        text += delta; // accumulate the full reply
-        process.stdout.write(delta); // and render each token as it arrives
+    if (event.type !== 'delta') continue; // skip start/progress/done
+    // typing the frame as SseEvent<ChatChunk> types `.data` — no `any`
+    const { data } = event.chunk as SseEvent<ChatChunk>;
+    const token = data.choices?.[0]?.delta?.content;
+    if (token) {
+        text += token; // accumulate the full reply
+        process.stdout.write(token); // and render each token as it arrives
     }
 }
 ```
 
-`event.data` is the chunk's JSON and `choices[0].delta.content` is the incremental token; the loop ends when the upstream closes the stream. The same `auth`, `retry`, `throttle`, and `timeout` fields compose here — it is still a stitch, still HTTP, just read as a stream instead of awaited. To forward those deltas to a browser as a `text/event-stream` `Response`, that is the job covered in [streaming a stitch as SSE](/blog/stream-a-stitch-as-sse-in-next-app-router).
+Each `delta` event's `chunk` is one parsed SSE frame; typing it as `SseEvent<ChatChunk>` makes `data` the shape you read — `choices[0].delta.content` is the incremental token, with no `any` in sight. The loop ends when the upstream closes the stream. The same `auth`, `retry`, `throttle`, and `timeout` fields compose here — it is still a stitch, still HTTP, just read as a stream instead of awaited. To forward those deltas to a browser as a `text/event-stream` `Response`, that is the job covered in [streaming a stitch as SSE](/blog/stream-a-stitch-as-sse-in-next-app-router).
 
 ## From one call to every model
 
