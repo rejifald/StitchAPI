@@ -1,0 +1,187 @@
+---
+title: 'Migrate From axios to StitchAPI'
+description: 'The axios.create() is the small part of a mature setup — the bulk is interceptors: retry-with-backoff, a 401 refresh, baseURL, validateStatus, manual typing. Migrate that layer onto a stitch, keeping or dropping axios.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [axios, typescript, migration, interceptors, resilience]
+---
+
+You open the file that configures axios for a real service, and the `axios.create()` at the top is two lines. Below it sit two hundred: a request interceptor that attaches a bearer token, a response interceptor that catches a 401 and refreshes, a retry-with-backoff bolted on by hand, a `validateStatus` override, a `transformResponse` that reshapes the body, and a cast that tells TypeScript the result is `User` without anyone checking. That interceptor stack is what you maintain. Migrating to StitchAPI is migrating _that layer_ — and you can keep axios as the transport while you do it, or drop it.
+
+This is the how-to after you've already decided to leave axios. If you're still weighing the move against ky, ofetch, or staying put, start with [axios alternatives](/blog/axios-alternatives) and come back.
+
+## The "before" — a mature axios instance
+
+Here's the shape of the thing, condensed. None of it is wrong; it's just yours to carry.
+
+```ts
+import axios from 'axios';
+
+const http = axios.create({
+    baseURL: 'https://api.example.com',
+    timeout: 10_000,
+    validateStatus: (s) => s < 500, // don't throw on 4xx; handle them downstream
+});
+
+// request interceptor: attach the token
+http.interceptors.request.use((config) => {
+    const token = store.getAccessToken();
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+});
+
+// response interceptor: refresh once on 401, then replay
+http.interceptors.response.use(undefined, async (error) => {
+    if (error.response?.status === 401 && !error.config._retried) {
+        error.config._retried = true;
+        await store.refresh();
+        return http(error.config);
+    }
+    throw error;
+});
+
+// retry interceptor: back off on 429/502/503/504
+http.interceptors.response.use(undefined, async (error) => {
+    const cfg = error.config;
+    cfg._attempt = (cfg._attempt ?? 0) + 1;
+    const retriable = [429, 502, 503, 504].includes(error.response?.status);
+    if (retriable && cfg._attempt < 4) {
+        await sleep(2 ** cfg._attempt * 200);
+        return http(cfg);
+    }
+    throw error;
+});
+
+// transformResponse: the API wraps everything in { data }
+http.defaults.transformResponse = [(body) => JSON.parse(body).data];
+
+async function getUser(id: string) {
+    const res = await http.get(`/users/${id}`);
+    return res.data as User; // the cast nobody verifies
+}
+```
+
+The sharp edges are familiar. The two response interceptors fire in an order you have to reason about, and each tracks its own retry flag on the request config. The refresh path replays the request by hand. `validateStatus` quietly changes what a non-2xx means for _every_ call on this instance. And `as User` is a promise to the compiler that the runtime never keeps — the day the API renames a field, you find out three layers downstream when something is `undefined`.
+
+## The "after" — the interceptors become fields
+
+A stitch is one endpoint as a typed, validated, resilient function. The interceptor stack above isn't ported line by line; it's _declared_ as data on the stitch.
+
+```ts
+import { bearer, drift, env, oauth2, seam, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string(), email: z.string() });
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    auth: bearer(env('API_TOKEN')),
+    retry: {
+        attempts: 4,
+        on: [429, 502, 503, 504],
+        backoff: 'expo-jitter',
+        respectRetryAfter: true,
+    },
+    timeout: { total: '30s', perAttempt: '10s' },
+    unwrap: 'data', // the API wraps payloads in { data }
+    output: drift(User),
+});
+
+const user = await getUser({ params: { id } }); // typed · validated · retried
+```
+
+`await getUser({ params: { id } })` returns the validated `User` and throws a `StitchError` on failure, after the stitch has exhausted its own retries — `.status`, `.attempts`, `.body`, and `.url` ride along on the error. In a loader or server action where you don't want a throw, call `getUser.safe({ params: { id } })` for an `{ ok, data, error }` envelope instead.
+
+### Interceptor → field
+
+| axios interceptor / option                  | What it did                   | On a stitch                                                                                                                       |
+| ------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| request interceptor adding `Authorization`  | attaches a token per request  | `auth: bearer(env('API_TOKEN'))` — secret resolves at call time, caller never holds it ([bearer](/docs/guides/auth/bearer))       |
+| 401 response interceptor → refresh + replay | re-login on expiry            | `auth: oauth2(...)` or `cookieSession(...)` — auto re-login on expiry, no hand-rolled replay ([oauth2](/docs/guides/auth/oauth2)) |
+| retry interceptor with backoff              | re-issues on 429/502/503/504  | `retry: { attempts, on, backoff: 'expo-jitter', respectRetryAfter: true }` ([retry](/docs/guides/resilience/retry))               |
+| `baseURL`                                   | one host for many calls       | `baseUrl` on the stitch, or once on a `seam()` ([seam](/docs/guides/authoring/seam))                                              |
+| `validateStatus`                            | decide what status throws     | the engine never throws on a non-2xx by itself — you declare which statuses `retry`, and a `StitchError` carries the rest         |
+| `transformResponse` + `as User`             | reshape, then assert the type | `unwrap` plus an `output` schema (wrap in `drift()` to flag shape changes) ([drift](/docs/guides/validation/drift))               |
+
+The last row is the one axios never had. `output` validates the _live_ response on every call, so a mismatch is a typed error at the boundary, not an `undefined` downstream. Wrap it in `drift()` and each response is diffed against its validated form, every change leveled by severity — a renamed required field throws, a coercion the schema absorbed surfaces as a `warn` on the event stream.
+
+## Path A — keep axios as the transport
+
+You don't have to rip axios out to get the layer. Your configured instance — proxy, custom CA, `httpsAgent`, timeouts negotiated with a finicky upstream — stays exactly as it is, and the stitch routes its requests through it via `axiosAdapter`. axios is the transport; the interceptors-turned-fields are the layer above it.
+
+```ts
+import axios from 'axios';
+import { axiosAdapter, bearer, env, stitch } from 'stitchapi';
+
+const client = axios.create({ proxy: false, httpsAgent: myAgent });
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    adapter: axiosAdapter(client, { timeout: 10_000 }), // defaults merge under every request
+    auth: bearer(env('API_TOKEN')),
+    retry: { attempts: 4, on: [429, 502, 503, 504], respectRetryAfter: true },
+    output: User,
+});
+```
+
+The second argument to `axiosAdapter` is a defaults object — `{ httpsAgent, proxy, timeout }` — merged under every request and overridden by per-call values. One honest limit: `axiosAdapter` is **buffered-only**. It throws on a `stream`/`sse` surface and reports no progress, because axios buffers the whole body. If you need streaming on a given endpoint, that one rides `fetchAdapter` instead — which is Path B. The two adapters share the same body-encoding and response-decoding helpers, so swapping the transport never changes how a request is sent or a response is read. Picking between them is its own short decision: [choosing an HTTP adapter](/blog/choosing-an-http-adapter).
+
+## Path B — drop axios entirely
+
+If nothing in your instance needed axios specifically, leave the adapter off. A stitch defaults to `fetchAdapter()`, backed by global `fetch`, and StitchAPI's core is zero runtime dependencies — there's no transitive tree to vet.
+
+```ts
+import { bearer, env, stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    auth: bearer(env('API_TOKEN')),
+    retry: { attempts: 4, on: [429, 502, 503, 504], respectRetryAfter: true },
+    output: User,
+}); // no adapter → fetchAdapter() · zero runtime deps
+```
+
+The declaration is identical to Path A minus the `adapter` line. `fetchAdapter` is also the only adapter that streams: it backs `stream`/`sse` surfaces and download progress, and it threads an undici `Agent` through `fetchAdapter({ dispatcher })` for a proxy or custom CA without StitchAPI importing undici. So the proxy story Path A kept axios for is reachable here too, with one less package installed.
+
+## Declare it once with a seam
+
+A mature codebase has many endpoints behind one host, sharing a base URL, an auth scheme, and a retry policy. Declare that surface once with `seam()` and let each stitch inherit it; explicit per-stitch fields still win.
+
+```ts
+import { env, oauth2, seam } from 'stitchapi';
+
+const api = seam({
+    baseUrl: 'https://api.example.com',
+    auth: oauth2({
+        tokenUrl: 'https://api.example.com/oauth/token',
+        clientId: env('CLIENT_ID'),
+        clientSecret: env('CLIENT_SECRET'),
+    }),
+    retry: { attempts: 4, on: [429, 502, 503, 504], respectRetryAfter: true },
+});
+
+const getUser = api.stitch({ path: '/users/{id}', output: User });
+const listOrders = api.stitch({
+    path: '/orders',
+    output: z.object({ orders: z.array(Order) }),
+});
+```
+
+This is where the 401-refresh interceptor finally disappears. `oauth2` on the seam handles the token lifecycle for every stitch under it — acquire, attach, re-login on expiry — so the replay logic you wrote by hand isn't ported, it's deleted. The seam is the migration target for `axios.create()` itself: the shared instance becomes shared config.
+
+## The migration is one layer, then a line
+
+The interceptor stack was the thing you maintained, and it migrates as a block of fields — not a rewrite of every call site. Adopt it where it earns its keep: a stitch bounds the call you already have, and it bounds it just as simply whether axios stays underneath or leaves, whether one endpoint moves or twenty share a seam. Honest edges stay honest — `axiosAdapter` can't stream, so the streaming endpoints ride `fetchAdapter`; retrying a write is unsafe, so set `retry` only where replays are safe. Each is guidance you apply inline, not a reason to stop.
+
+If the callers are React components, the same stitch slots straight into TanStack Query as a `queryFn` with no glue — [a stitch as a React Query queryFn](/blog/stitch-as-react-query-queryfn). And if axios isn't your starting point, the [fetch migration](/blog/migrate-from-fetch-to-stitchapi) covers the same move from raw `fetch`.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+Pick one endpoint with the heaviest interceptor stack, declare it as a stitch — keep axios via `axiosAdapter(client)` or drop it for the default `fetchAdapter()` — and watch the request-auth, the 401 refresh, the backoff, and the unchecked cast collapse into fields. The adapter reference is in [Helpers](/docs/reference/helpers), shared config lives in [Seam](/docs/guides/authoring/seam), and the auth and resilience policies are documented in [bearer](/docs/guides/auth/bearer), [oauth2](/docs/guides/auth/oauth2), [retry](/docs/guides/resilience/retry), and [drift](/docs/guides/validation/drift).
