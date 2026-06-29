@@ -101,6 +101,32 @@ links **back up** to the explainer — the interlinking compounds authority.
 These are low-effort/high-return because the engineering content already lives in the
 docs — the work is re-framing around the search query.
 
+## Backlog — uncovered angles (added 2026-06-29)
+
+The 2026-06-29 coverage push shipped 15 posts across 5 PRs (#355–#360): the migration
+cluster (fetch/axios), the adapter/transport seam, React Query, incremental adoption,
+GraphQL, testing with `mockAdapter`, idempotency keys, safe tracing/redaction,
+scaffold-from-curl, upload progress, typed errors, edge/Cloudflare, LLM-as-function,
+OpenAPI export, non-JSON responses, and `pipe` composition. The angles below are the
+remaining gaps — each maps to a shipped feature with no blog post yet. Same pattern as
+above: rank for the generic problem, teach it honestly, then show the one-line stitch way.
+
+| Topic (working title)                                       | Pillar | Target query                                          | Maps to (feature)                                                             |
+| ----------------------------------------------------------- | ------ | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Session auth that logs itself back in                       | 1      | "refresh token on 401", "session auth fetch"          | `cookieSession` (`refreshOn`/`refreshWhen`/`loginInput`) + `oauth2`           |
+| Multi-tenant API calls from one definition                  | 4      | "multi-tenant api client"                             | `seam.as(principal)` + `oauth2` `tenancy`, per-tenant credentials             |
+| Tap into every request with hooks (interceptor alternative) | 1      | "fetch interceptor alternative", "http middleware ts" | request/response/error/retry `hooks`                                          |
+| Use any validator (Standard Schema)                         | 3      | "valibot api validation", "standard schema"           | validator-agnostic core; Zod/Valibot/ArkType/Effect/Typebox via `toValidator` |
+| Expose a stitch as an HTTP endpoint                         | 4      | "turn a function into an http endpoint"               | the `serve` surface (`stitchapi/serve`, `stitch serve`)                       |
+| Give an agent a stitch as an MCP tool                       | 2      | "build an mcp server typescript"                      | the `mcp` surface (`stitchapi/mcp`, `stitch mcp`)                             |
+| Run a stitch from the command line                          | 4      | "call an api from the terminal"                       | the CLI `run` surface                                                         |
+| Download a file as a stitch (with progress)                 | 1      | "download file typescript"                            | the `download` surface (Content-Disposition filename + progress)              |
+| Visualize your stitches as a diagram                        | 4      | "visualize api calls"                                 | `stitch diagram` / `toMermaid` call graph                                     |
+
+Lower priority / niche (capture only if a search angle emerges): the `shell` surface
+(run a command as a stitch), `delegate` backoff and `acceptStatus` as standalone
+resilience guides, and typed iframe↔parent RPC (`stitchapi/postmessage`, ADR 0009).
+
 ## Notes & guardrails
 
 -   **Honesty bar.** Every comparison names where the alternative wins (see the "when a
