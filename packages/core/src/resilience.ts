@@ -272,10 +272,13 @@ interface CircuitRecord {
 }
 
 /**
- * A store-backed circuit breaker. After `failureThreshold` consecutive failures it OPENS:
- * calls fast-fail for `cooldownMs`, then it goes HALF-OPEN and lets a single trial through —
+ * A store-backed circuit breaker. After `failures` consecutive failures it OPENS:
+ * calls fast-fail for `cooldown`, then it goes HALF-OPEN and lets a single trial through —
  * a success closes it, another failure re-opens it. State lives in the StitchStore, so a shared
  * store gives a breaker shared across workers (DESIGN.md §13).
+ *
+ * `failures` and `cooldown` are required by design (CONTRACT.md P15); this throws if neither they
+ * nor their deprecated `failureThreshold`/`cooldownMs` aliases are set.
  */
 export function createCircuit(
     opts: CircuitOptions,
@@ -287,7 +290,17 @@ export function createCircuit(
     onSuccess(): Promise<void>;
     onFailure(): Promise<boolean>;
 } {
-    const halfOpenAfter = opts.halfOpenAfterMs ?? opts.cooldownMs;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `failureThreshold` is the @deprecated alias of `failures` (CONTRACT.md P4)
+    const failureThreshold = opts.failures ?? opts.failureThreshold;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `cooldownMs` is the @deprecated alias of `cooldown` (CONTRACT.md P17)
+    const cooldown = parseDuration(opts.cooldown ?? opts.cooldownMs);
+    if (failureThreshold == null || cooldown == null)
+        throw new Error(
+            'circuit requires `failures` and `cooldown`. Fix: set both, e.g. `circuit: { failures: 5, cooldown: "30s" }`.',
+        );
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `halfOpenAfterMs` is the @deprecated alias of `halfOpenAfter` (CONTRACT.md P17)
+    const halfOpenInput = opts.halfOpenAfter ?? opts.halfOpenAfterMs;
+    const halfOpenAfter = parseDuration(halfOpenInput) ?? cooldown;
     const nsKey = 'circuit:' + (opts.key ?? fallbackKey);
 
     const read = async (): Promise<CircuitRecord> =>
@@ -314,7 +327,7 @@ export function createCircuit(
             const r = await read();
             const failures = r.failures + 1;
             const wasOpen = r.openedAt !== 0;
-            if (wasOpen || failures >= opts.failureThreshold) {
+            if (wasOpen || failures >= failureThreshold) {
                 // (re)open — arm a fresh cooldown window.
                 await store.set(nsKey, { failures, openedAt: clock.now() });
                 return !wasOpen; // "newly opened" only when it had been closed
