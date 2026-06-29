@@ -45,7 +45,12 @@ function readFences(): Fence[] {
             }
             open = true; // this ``` opens a block
             const info = m[1].trim();
-            fences.push({ slug, line: i + 1, info, lang: info.split(/\s+/)[0] });
+            fences.push({
+                slug,
+                line: i + 1,
+                info,
+                lang: info.split(/\s+/)[0],
+            });
         });
     }
     return fences;
