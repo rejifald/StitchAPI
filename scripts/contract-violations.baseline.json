@@ -1,0 +1,198 @@
+{
+    "generatedBy": "scripts/check-contract.mjs --update",
+    "count": 24,
+    "violations": [
+        {
+            "rule": "R1",
+            "file": "packages/aws-sigv4/src/index.ts",
+            "symbol": "SignV4Params",
+            "detail": "banned suffix on consumer type → *Options (P3)",
+            "line": 133,
+            "key": "R1|packages/aws-sigv4/src/index.ts|SignV4Params"
+        },
+        {
+            "rule": "R1",
+            "file": "packages/core/src/auth.ts",
+            "symbol": "AuthFailureInfo",
+            "detail": "banned suffix on consumer type → *Options (P3)",
+            "line": 458,
+            "key": "R1|packages/core/src/auth.ts|AuthFailureInfo"
+        },
+        {
+            "rule": "R1",
+            "file": "packages/core/src/auth.ts",
+            "symbol": "CookieSessionOpts",
+            "detail": "banned suffix on consumer type → *Options (P3)",
+            "line": 484,
+            "key": "R1|packages/core/src/auth.ts|CookieSessionOpts"
+        },
+        {
+            "rule": "R1",
+            "file": "packages/core/src/auth.ts",
+            "symbol": "OAuth2Opts",
+            "detail": "banned suffix on consumer type → *Options (P3)",
+            "line": 238,
+            "key": "R1|packages/core/src/auth.ts|OAuth2Opts"
+        },
+        {
+            "rule": "R1",
+            "file": "packages/core/src/llm.ts",
+            "symbol": "LlmConfig",
+            "detail": "banned suffix on consumer type → *Options (P3)",
+            "line": 116,
+            "key": "R1|packages/core/src/llm.ts|LlmConfig"
+        },
+        {
+            "rule": "R1",
+            "file": "packages/core/src/mcp.ts",
+            "symbol": "McpServerInfo",
+            "detail": "banned suffix on consumer type → *Options (P3)",
+            "line": 136,
+            "key": "R1|packages/core/src/mcp.ts|McpServerInfo"
+        },
+        {
+            "rule": "R1",
+            "file": "packages/core/src/types.ts",
+            "symbol": "CacheConfig",
+            "detail": "banned suffix on consumer type → *Options (P3)",
+            "line": 260,
+            "key": "R1|packages/core/src/types.ts|CacheConfig"
+        },
+        {
+            "rule": "R2",
+            "file": "packages/core/src/auth.ts",
+            "symbol": "CookieSessionOpts.ttlMs",
+            "detail": "input duration carries Ms suffix → de-suffix + number|string (P17)",
+            "line": 484,
+            "key": "R2|packages/core/src/auth.ts|CookieSessionOpts.ttlMs"
+        },
+        {
+            "rule": "R2",
+            "file": "packages/core/src/auth.ts",
+            "symbol": "OAuth2Opts.refreshSkewMs",
+            "detail": "input duration carries Ms suffix → de-suffix + number|string (P17)",
+            "line": 238,
+            "key": "R2|packages/core/src/auth.ts|OAuth2Opts.refreshSkewMs"
+        },
+        {
+            "rule": "R2",
+            "file": "packages/core/src/types.ts",
+            "symbol": "CircuitOptions.cooldownMs",
+            "detail": "input duration carries Ms suffix → de-suffix + number|string (P17)",
+            "line": 240,
+            "key": "R2|packages/core/src/types.ts|CircuitOptions.cooldownMs"
+        },
+        {
+            "rule": "R2",
+            "file": "packages/core/src/types.ts",
+            "symbol": "CircuitOptions.halfOpenAfterMs",
+            "detail": "input duration carries Ms suffix → de-suffix + number|string (P17)",
+            "line": 240,
+            "key": "R2|packages/core/src/types.ts|CircuitOptions.halfOpenAfterMs"
+        },
+        {
+            "rule": "R2",
+            "file": "packages/core/src/types.ts",
+            "symbol": "ReconnectOptions.backoffMs",
+            "detail": "input duration carries Ms suffix → de-suffix + number|string (P17)",
+            "line": 140,
+            "key": "R2|packages/core/src/types.ts|ReconnectOptions.backoffMs"
+        },
+        {
+            "rule": "R2",
+            "file": "packages/core/src/types.ts",
+            "symbol": "RetryOptions.baseMs",
+            "detail": "input duration carries Ms suffix → de-suffix + number|string (P17)",
+            "line": 215,
+            "key": "R2|packages/core/src/types.ts|RetryOptions.baseMs"
+        },
+        {
+            "rule": "R2",
+            "file": "packages/core/src/types.ts",
+            "symbol": "RetryOptions.maxMs",
+            "detail": "input duration carries Ms suffix → de-suffix + number|string (P17)",
+            "line": 215,
+            "key": "R2|packages/core/src/types.ts|RetryOptions.maxMs"
+        },
+        {
+            "rule": "R3",
+            "file": "packages/core/src/types.ts",
+            "symbol": "CacheConfig.key",
+            "detail": "function-typed key → rename keyOf (P6)",
+            "line": 260,
+            "key": "R3|packages/core/src/types.ts|CacheConfig.key"
+        },
+        {
+            "rule": "R3",
+            "file": "packages/core/src/types.ts",
+            "symbol": "IdempotencyOptions.key",
+            "detail": "function-typed key → rename keyOf (P6)",
+            "line": 246,
+            "key": "R3|packages/core/src/types.ts|IdempotencyOptions.key"
+        },
+        {
+            "rule": "R4",
+            "file": "packages/core/src/types.ts",
+            "symbol": "ThrottleOptions.scope",
+            "detail": "pool axis named scope → rename pool (P2)",
+            "line": 223,
+            "key": "R4|packages/core/src/types.ts|ThrottleOptions.scope"
+        },
+        {
+            "rule": "R5",
+            "file": "packages/<multiple>",
+            "symbol": "queryOptions",
+            "detail": "exported by angular, react, solid, svelte, vue — must be unique-by-shape (P9/P16)",
+            "line": null,
+            "key": "R5|packages/<multiple>|queryOptions"
+        },
+        {
+            "rule": "R5",
+            "file": "packages/<multiple>",
+            "symbol": "RequestSeam",
+            "detail": "exported by elysia, express — must be unique-by-shape (P9/P16)",
+            "line": null,
+            "key": "R5|packages/<multiple>|RequestSeam"
+        },
+        {
+            "rule": "R5",
+            "file": "packages/<multiple>",
+            "symbol": "StitchError",
+            "detail": "exported by express, fastify, nest, next — must be unique-by-shape (P9/P16)",
+            "line": null,
+            "key": "R5|packages/<multiple>|StitchError"
+        },
+        {
+            "rule": "R5",
+            "file": "packages/<multiple>",
+            "symbol": "StitchErrorLike",
+            "detail": "exported by elysia, hono — must be unique-by-shape (P9/P16)",
+            "line": null,
+            "key": "R5|packages/<multiple>|StitchErrorLike"
+        },
+        {
+            "rule": "R5",
+            "file": "packages/<multiple>",
+            "symbol": "StitchHost",
+            "detail": "exported by fastify, nest — must be unique-by-shape (P9/P16)",
+            "line": null,
+            "key": "R5|packages/<multiple>|StitchHost"
+        },
+        {
+            "rule": "R5",
+            "file": "packages/<multiple>",
+            "symbol": "StitchLike",
+            "detail": "exported by angular, query-core, react, rtk-query, solid, svelte, swr, vercel-ai, vue — must be unique-by-shape (P9/P16)",
+            "line": null,
+            "key": "R5|packages/<multiple>|StitchLike"
+        },
+        {
+            "rule": "R5",
+            "file": "packages/<multiple>",
+            "symbol": "StitchStore",
+            "detail": "exported by solid, svelte — must be unique-by-shape (P9/P16)",
+            "line": null,
+            "key": "R5|packages/<multiple>|StitchStore"
+        }
+    ]
+}
