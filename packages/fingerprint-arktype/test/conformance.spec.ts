@@ -119,7 +119,7 @@ describe('@stitchapi/fingerprint-arktype', () => {
         const morphed = arktypeFingerprinter.fingerprint(
             type('string').pipe((s: string) => s.length) as never,
         );
-        expect(base.value).not.toBeNull();
-        expect(morphed.value).toBeNull();
+        expect(base.token).not.toBeNull();
+        expect(morphed.token).toBeNull();
     });
 });

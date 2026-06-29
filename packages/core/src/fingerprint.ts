@@ -43,9 +43,9 @@ export function hash(input: string): string {
 /**
  * The result of fingerprinting one schema.
  *
- * `value` is an opaque, stable token that MUST change whenever the schema's
+ * `token` is an opaque, stable token that MUST change whenever the schema's
  * validation/shape semantics change, and MUST be equal for two structurally
- * identical schemas. `value === null` is the strategy ABSTAINING: it has
+ * identical schemas. `token === null` is the strategy ABSTAINING: it has
  * encountered something it cannot soundly capture (an opaque `.refine`/
  * `.transform`, an unrepresentable type) and is signalling that the caller must
  * fall back rather than trust a possibly-colliding token.
@@ -55,7 +55,9 @@ export function hash(input: string): string {
  * across owner-declared equivalences. Strong is the safe default.
  */
 export interface SchemaFingerprint {
-    readonly value: string | null;
+    readonly token: string | null;
+    /** @deprecated Renamed to {@link SchemaFingerprint.token} (CONTRACT.md P5: `value` is the success payload, not a token). Read until the 1.0 GA cut. */
+    readonly value?: string | null;
     readonly strength: 'strong' | 'weak';
 }
 
@@ -225,11 +227,14 @@ export function resolveFingerprint(
         };
     }
 
-    // rung 3 — sound structural fingerprint → fast path.
-    if (fp?.value != null) {
+    // rung 3 — sound structural fingerprint → fast path. Prefer `token`; fall back to the
+    // @deprecated `value` so an external fingerprinter still on the old spelling keeps working.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- back-compat fallback for the renamed `value` alias (CONTRACT.md P5)
+    const token = fp?.token ?? fp?.value;
+    if (token != null) {
         return {
             generation: hash(
-                `s|${vendor}|${fp.value}|${fp.strength}|u|${unwrap}|${xTag}`,
+                `s|${vendor}|${token}|${fp?.strength}|u|${unwrap}|${xTag}`,
             ),
             policy: 'fast',
             reason: 'sound structural fingerprint',
