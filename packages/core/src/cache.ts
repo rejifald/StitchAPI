@@ -10,7 +10,7 @@
 import { resolveFingerprint } from './fingerprint';
 import type { CachePolicy } from './fingerprint';
 import { xxh128 } from './hash';
-import type { CacheConfig, StitchInput, StitchStore } from './types';
+import type { CacheOptions, StitchInput, StitchStore } from './types';
 import { parseDuration } from './util';
 
 // The 128-bit synchronous non-crypto key hash now lives in the shared `./hash` module so the cache
@@ -340,7 +340,7 @@ export interface CacheController {
 }
 
 export interface CacheControllerOptions {
-    config: CacheConfig;
+    config: CacheOptions;
     store: StitchStore;
     stitchId: string;
     principal?: string;

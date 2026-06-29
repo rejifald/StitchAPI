@@ -77,7 +77,7 @@ never crashes the call.
 
 ```ts twoslash
 import { cookieSession, env, stitch } from 'stitchapi';
-import type { AuthFailureInfo, RefreshResult } from 'stitchapi';
+import type { AuthFailureResult, RefreshResult } from 'stitchapi';
 
 // Your own durable store — a row in a database, a Redis hash, anything.
 declare const sessionState: {
@@ -107,7 +107,7 @@ const me = stitch({
             if (ok) await sessionState.markActive();
         },
         // Categorise a failure and drive your own recovery loop.
-        onAuthFailure: async (info: AuthFailureInfo) => {
+        onAuthFailure: async (info: AuthFailureResult) => {
             switch (info.category) {
                 case 'rate-limited':
                     // Back off until the server says we may retry.
