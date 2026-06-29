@@ -116,7 +116,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "paginate",
             type: "property",
-            detail: "{ /** * Given the previous page's raw body and how many pages were fetched, return the * input (merged over the original) for the next page, or `undefined` to stop. */ next: ( prevBody: unknown, pagesFetched: number, ) => StitchInput | undefined; /** Pull the array from each unwrapped page. Default: the value if it is an array. */ items?: (value: unknown) => unknown[]; /** Safety cap on pages. Default 50. */ max?: number; }",
+            detail: "{ /** * Given the previous page's raw body and how many pages were fetched, return the * input (merged over the original) for the next page, or `undefined` to stop. */ next: ( prevBody: unknown, pagesFetched: number, ) => StitchInput | undefined; /** Pull the array from each unwrapped page. Default: the value if it is an array. */ items?: (value: unknown) => unknown[]; /** Safety cap on pages. Default 50. */ pages?: number; /** @deprecated Renamed to `pages` (CONTRACT.md P4). Read until the 1.0 GA cut. */ max?: number; }",
             info: "Auto-loop pages, aggregating items, with auth/retry/throttle applied to every page.",
         },
         {

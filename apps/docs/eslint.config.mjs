@@ -10,6 +10,10 @@ const eslintConfig = defineConfig([
         'next-env.d.ts',
         '.source/**',
         'scripts/**',
+        // Generated bundle of the core runtime for the live playground (build:sandbox). It
+        // carries core's source comments verbatim — including `eslint-disable` directives for
+        // rules this app's flat config doesn't load — so it must never be linted as app source.
+        'public/sandbox/**',
     ]),
 ]);
 

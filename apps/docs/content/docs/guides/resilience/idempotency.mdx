@@ -19,7 +19,7 @@ const charge = stitch({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/charges',
-    idempotency: {},
+    idempotency: true,
 });
 
 // Custom: derive a stable key from the input. `body` is `unknown`, so narrow it.

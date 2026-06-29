@@ -322,6 +322,52 @@ re-export/field alias pinned by an identity test, removed at the **1.0 GA cut**
 (extending ADR 0012's precedent from symbols to fields). Widening
 (`number → number | string`, P17) is non-breaking and needs no alias.
 
+### P20 · No empty-object config; enable-with-defaults is a scalar
+
+The empty object `{}` **MUST NOT** be a valid value at a config slot. Where `{}` would
+carry meaning — "enable this capability with all defaults" — the capability **MUST**
+express that case as a **scalar** (`true` for a toggle; the dominant field's value for a
+single-field envelope, per P12) and **MUST** type its object form so the empty object is
+a **compile error**: `boolean | AtLeastOne<Options>` (a toggle) or
+`Scalar | AtLeastOne<Options>`. The object form is then reserved for real customization
+(≥1 field); the all-defaults case is the scalar.
+
+_Why:_ `idempotency: {}` reads as a no-op but silently **enables** idempotency with
+defaults — a meaningful value hidden behind the most opaque possible spelling. `true`
+says what `{}` means; rejecting `{}` removes the trap. This is the enforcement teeth for
+[P13](#p13--boolean-toggle-means-enable-with-defaults) (which _offers_ `true`) — P20
+also _forbids_ `{}`. It refines [P15](#p15--required-fields-are-deliberate-and-get-a-namedpositional-shorthand--not-silent-defaults):
+an all-optional envelope is still internally `{}`-constructible, but at the **slot** the
+all-defaults case is the scalar, not `{}`.
+
+_Helper:_ `AtLeastOne<T>` = a value with at least one property of `T` set (`{}` matches
+none of its per-key-required variants, so it is rejected).
+
+_Violations:_ `idempotency?: IdempotencyOptions` (so `idempotency: {}` is legal — **fixed
+here**); the other all-optional bare-`*Options` slots accept `{}` too: `multipart`,
+`stream`, `sse`, `throttle`, `hooks`, `input` (each → `Scalar | AtLeastOne<Options>` per
+P12/P13; lint **R6** flags them).
+
+### P21 · Every contract has an extension seam
+
+No consumer-facing contract may be a closed dead end. Every capability **MUST** be
+extensible **without forking core** — through a plugin interface (`Surface`, `Adapter`,
+`StitchStore`, `TraceSink`, `AuthStrategy`, `Validator`/`SchemaLike`), config composition
+(`extends` fragments), or a documented escape hatch. A new behaviour is added as a
+**pluggable seam**, never a hard-coded branch a host cannot reach. When P20 tightens an
+envelope, this rule guarantees the door stays open: there is always a way to extend.
+
+_Why:_ strictness without an escape hatch paints consumers into a corner. The two rules
+are a pair — P20 says "the envelope is exact," P21 says "but the system is open." A
+capability that can only be configured the one way core shipped, with no seam to extend
+it, is a contract bug.
+
+_Existing seams (the bar a new capability must clear):_ surfaces are `Surface` plugins
+(HTTP/GraphQL/SSE/shell/LLM are all the same seam); transport is a swappable `Adapter`;
+state is a pluggable `StitchStore`; observability is any `TraceSink`; auth is any
+`AuthStrategy`; validation is any Standard-Schema `Validator`; and every stitch composes
+via `extends` fragments. A new capability that exposes none of these is the violation.
+
 ---
 
 ## 6. Migration backlog (proposed renames — confirm during sweep)
@@ -392,7 +438,8 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
 -   Rules implemented today (high-precision, source-text level): **R1** banned type-name
     suffix (P3), **R2** any `*Ms`-suffixed duration field, input or emitted (P17),
     **R3** function-typed `key` (P6), **R4** `scope: 'stitch'|'host'` overload (P2),
-    **R5** same identifier exported by ≥2 published packages (P9).
+    **R5** same identifier exported by ≥2 published packages (P9), **R6** a `StitchConfig`
+    slot typed as a bare all-optional `*Options` bag that accepts `{}` (P20).
 -   Deferred to a type-aware phase (needs the TS checker, not regex): full
     same-name-different-**shape** detection, duration-type conformance, default-value
     inversion (P8). Tracked as comments in the lint.

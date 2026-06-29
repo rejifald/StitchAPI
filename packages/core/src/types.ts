@@ -10,6 +10,16 @@ import type {
 import type { Surface } from './surface';
 import type { Validator } from './validator';
 
+/**
+ * A value with **at least one** property of `T` set. The empty object `{}` satisfies none of the
+ * per-key-required variants, so it is a type error — used so an all-optional options envelope's
+ * object form requires real customization while the enable-with-defaults case stays a scalar
+ * (`true`), never the opaque `{}` (CONTRACT.md P20).
+ */
+export type AtLeastOne<T, K extends keyof T = keyof T> = {
+    [P in K]: Required<Pick<T, P>> & Partial<Omit<T, P>>;
+}[K];
+
 export interface StitchInput {
     params?: Record<string, unknown>;
     query?: Record<string, unknown>;
@@ -656,8 +666,13 @@ export interface StitchConfig {
         /** Statuses treated as a rate-limit signal. Default `[429]`. */
         on?: number[];
     };
-    /** Inject a stable Idempotency-Key header on writes so safe retries don't duplicate. */
-    idempotency?: IdempotencyOptions;
+    /**
+     * Inject a stable Idempotency-Key header on writes so safe retries don't duplicate.
+     * `true` enables it with defaults (header `Idempotency-Key`, a random uuid per call); the
+     * object form customizes it and **must** set at least one field — the opaque `idempotency: {}`
+     * is rejected (CONTRACT.md P20).
+     */
+    idempotency?: boolean | AtLeastOne<IdempotencyOptions>;
     /**
      * Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine
      * is loaded lazily from the `stitchapi/cache` subpath only when this block is present. A bare
@@ -714,11 +729,12 @@ export interface StitchConfig {
  */
 export type ResolvedStitchConfig = Omit<
     StitchConfig,
-    'retry' | 'timeout' | 'cache'
+    'retry' | 'timeout' | 'cache' | 'idempotency'
 > & {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
     cache?: CacheOptions;
+    idempotency?: IdempotencyOptions;
 };
 
 /**

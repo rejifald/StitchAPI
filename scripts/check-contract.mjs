@@ -109,6 +109,26 @@ function deprecatedBefore(src, idx) {
     return open !== -1 && /@deprecated/.test(src.slice(open, j));
 }
 
+// True when every TOP-LEVEL member of an interface body is optional (`?`) — so the bag is
+// `{}`-constructible and would accept the opaque empty object at a config slot (P20). Tracks
+// brace/paren depth so a nested object-literal field type doesn't read as a required member.
+function isAllOptional(body) {
+    let depth = 0;
+    for (const line of body.split('\n')) {
+        if (depth === 0) {
+            const m = /^\s*(?:readonly\s+)?([A-Za-z_]\w*)\s*(\??)\s*[:(]/.exec(
+                line,
+            );
+            if (m && m[2] !== '?') return false; // a required member at depth 0
+        }
+        for (const ch of line) {
+            if (ch === '{' || ch === '(') depth++;
+            else if (ch === '}' || ch === ')') depth--;
+        }
+    }
+    return true;
+}
+
 // Names declared-and-exported in a file (declaration sites; not re-export resolution).
 function exportedDeclNames(src) {
     const names = [];
@@ -236,7 +256,8 @@ function collect() {
                 }
             }
 
-            for (const blk of interfaceBlocks(src)) {
+            const blocks = interfaceBlocks(src);
+            for (const blk of blocks) {
                 // R3 — function-typed `key` (P6: a derivation fn must be `keyOf`)
                 const keyM = /(^|\n)\s*key\s*\??:\s*\(/.exec(blk.body);
                 if (
@@ -266,6 +287,28 @@ function collect() {
                         `pool axis named scope → rename pool (P2)`,
                         lineOf(src, blk.bodyStart + scopeM.index),
                     );
+                }
+            }
+
+            // R6 — a StitchConfig capability slot typed as a bare all-optional `*Options` bag
+            // accepts the opaque empty object `{}` (P20). The fix is `Scalar | AtLeastOne<Options>`
+            // so the all-defaults case is a scalar and `{}` is a compile error.
+            const allOptional = new Set(
+                blocks.filter((b) => isAllOptional(b.body)).map((b) => b.name),
+            );
+            const cfgBlock = blocks.find((b) => b.name === 'StitchConfig');
+            if (cfgBlock) {
+                const fre = /(?:^|\n)\s*([A-Za-z_]\w*)\??:\s*([A-Z]\w*)\s*;/g;
+                let f6;
+                while ((f6 = fre.exec(cfgBlock.body))) {
+                    if (allOptional.has(f6[2]))
+                        add(
+                            'R6',
+                            file,
+                            `StitchConfig.${f6[1]}`,
+                            `all-optional ${f6[2]} accepts {} → Scalar|AtLeastOne<${f6[2]}> (P20)`,
+                            lineOf(src, cfgBlock.bodyStart),
+                        );
                 }
             }
         }
