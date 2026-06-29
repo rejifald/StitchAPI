@@ -31,7 +31,7 @@ type FetchInitWithDispatcher = RequestInit & { dispatcher?: unknown };
 export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
     // Resolve the fetch implementation once (override wins; else the global).
     const fetchImpl = opts?.fetch ?? fetch;
-    return async function fetchAdapterRequest(
+    const fetchAdapterRequest: Adapter = async function fetchAdapterRequest(
         req: AdapterRequest,
     ): Promise<AdapterResponse> {
         const method = req.method.toUpperCase();
@@ -136,6 +136,15 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
             url: response.url,
         };
     };
+    // `fetch` streams a response (so `stream`/`sse` ride it) and reports `phase: 'download'`
+    // progress while reading a buffered body, but cannot report bytes SENT — the upload phase stays
+    // silent, so `'uploadProgress'` is absent from `supports`. Declaring it lets the engine teach
+    // instead of no-op when a call asks for upload progress.
+    fetchAdapterRequest.capabilities = {
+        name: 'fetchAdapter',
+        supports: ['stream', 'downloadProgress'],
+    };
+    return fetchAdapterRequest;
 }
 
 // Read a response body to completion, reporting download progress per chunk (ADR 0005

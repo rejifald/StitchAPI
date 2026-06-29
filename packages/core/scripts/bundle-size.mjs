@@ -53,16 +53,25 @@ const KB = 1024;
 // `Inspection` wrapper consumer, and the contract-violation raw-pinning add ~0.19 / ~0.12
 // KB gzip (entry ~22.44 / stitch ~18.12). The step restores the same tight ~0.2 KB
 // headroom the gate is meant to hold.
+//
+// Budgets raised for adapter capabilities + the upload-progress teaching note — ADR 0005
+// Decision 9 addendum (22.65→22.95 / 18.30→18.55 KB): the built-in adapters now declare a
+// `capabilities` descriptor (a positive `supports` list) and the engine emits one `info`
+// event when a call asks for upload progress a transport whose `supports` omits it can't
+// give (turning a silent dead bar into a teaching note). Both sit on the core path — the
+// check is in `execute` and the default `fetch` adapter carries the descriptor — so neither
+// can move to a subpath. They add ~0.10 / ~0.04 KB gzip (entry ~22.74 / stitch ~18.34). The
+// step restores the same tight ~0.2 KB headroom the gate is meant to hold.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 22.65 * KB,
+        budget: 22.95 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 18.3 * KB,
+        budget: 18.55 * KB,
     },
 ];
 
