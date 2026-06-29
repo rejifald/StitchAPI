@@ -36,7 +36,7 @@ The vendor SDK hides the URL and the header names, but it does not buy you anyth
 
 A stitch turns one endpoint into a typed function you call with `await`. The `llm` surface declares a chat call the same way, binding the provider and its defaults to the surface; the messages travel in the call:
 
-```ts
+```ts twoslash
 import { apiKey, env } from 'stitchapi';
 import { anthropic, llm } from 'stitchapi/llm';
 
@@ -67,7 +67,7 @@ Each field replaces something the SDK did opaquely or `fetch` did by hand:
 
 The reason the rewrite goes away is that the provider is a value, not a library. The first-party providers ship as plain `LlmProvider` config — no SDK dependency, the contract-not-dependency gate — so moving from Claude to GPT-4o is a `provider:` change and an `auth:` change, nothing at the call site:
 
-```ts
+```ts twoslash
 import { bearer, env } from 'stitchapi';
 import { llm, openai } from 'stitchapi/llm';
 
@@ -87,9 +87,14 @@ const { text } = await chat({
 
 When you need a provider that does not ship first-party, you implement the same contract the built-ins do. An `LlmProvider` declares its `id`, its full completions `endpoint`, optional non-secret `headers`, an optional `defaultModel`, a `buildBody` that maps a normalised `LlmRequest` to that vendor's wire body, and a `parse` that lifts the response back into an `LlmResult`:
 
-```ts
+```ts twoslash
 import { bearer, env } from 'stitchapi';
 import { type LlmProvider, llm } from 'stitchapi/llm';
+
+// the vendor's wire response — name the shape `parse` reads, no `any`
+interface MistralResponse {
+    choices: { message: { content: string } }[];
+}
 
 const mistral: LlmProvider = {
     id: 'mistral',
@@ -101,7 +106,7 @@ const mistral: LlmProvider = {
     }),
     // lift the provider's response back into an LlmResult
     parse: (body) => ({
-        text: (body as any).choices[0].message.content,
+        text: (body as MistralResponse).choices[0].message.content,
         raw: body,
     }),
 };
@@ -111,11 +116,47 @@ const chat = llm({ provider: mistral, auth: bearer(env('MISTRAL_API_KEY')) });
 
 The credential stays the stitch's `auth`, never the provider — so a provider you write is config you can commit, with no secret baked in.
 
+## Two stitches, picked per call
+
+Switching at edit time covers the cost review. But the same property — a provider is a value, a stitch is a function — means you can hold both at once and choose between them per call. Declare a cheap stitch and a capable one, then route on whatever condition you have:
+
+```ts twoslash
+import { apiKey, bearer, env } from 'stitchapi';
+import { anthropic, llm, openai } from 'stitchapi/llm';
+
+// ---cut---
+const fast = llm({
+    provider: openai,
+    model: 'gpt-4o-mini',
+    auth: bearer(env('OPENAI_API_KEY')),
+});
+
+const deep = llm({
+    provider: anthropic,
+    model: 'claude-opus-4-8',
+    auth: apiKey({ header: 'x-api-key', value: env('ANTHROPIC_API_KEY') }),
+});
+
+async function summarize(input: string, hard: boolean) {
+    const chat = hard ? deep : fast;
+    const { text } = await chat({
+        body: { messages: [{ role: 'user', content: input }] },
+    });
+    return text;
+}
+```
+
+Both stitches are the same `chat` shape — same call signature, same `result.text` — so the choice is a one-line `hard ? deep : fast` and everything downstream is identical. The condition is yours: prompt length, a feature flag, a per-tenant tier, even a fallback that escalates to the stronger model after the cheap one fails. Because each stitch carries its own provider, model, auth, and resilience, "switch models on the fly" is just picking which function you call.
+
 ## An LLM call is HTTP, so resilience comes free
 
 Because the surface sends an HTTP request, every resilience field a stitch has applies to a model call. Provider overloads (`429`, `529`) are exactly what retry is for, and a metered key is exactly what throttle is for:
 
-```ts
+```ts twoslash
+import { apiKey, env } from 'stitchapi';
+import { anthropic, llm } from 'stitchapi/llm';
+
+// ---cut---
 const chat = llm({
     provider: anthropic,
     model: 'claude-opus-4-8',
@@ -133,7 +174,53 @@ const chat = llm({
 
 `retry` backs off with jitter and honors the provider's `Retry-After`; `throttle` keeps you under the rate limit instead of discovering it at `429`; `timeout` bounds a call that hangs. None of that is LLM-specific code — it is the same engine that runs any stitch, applied to a request that happens to carry messages. `trace` works the same way, with the API key kept out of the event stream.
 
-One thing the `llm` surface does not do yet: stream tokens. It is buffered today — you `await` the full completion, you do not iterate it chunk by chunk. Token streaming is a follow-up; if you need to push tokens to a browser now, that is the SSE surface's job, covered in [streaming a stitch as SSE](/blog/stream-a-stitch-as-sse-in-next-app-router).
+## Reading deltas as they arrive
+
+The `llm` surface is buffered: `await chat(...)` resolves the whole `LlmResult`, it does not hand you the completion token by token. When you want the deltas — render text as it lands, not after the full reply — read them off the **`sse` surface** pointed at the provider's streaming endpoint. Every stitch is an event stream underneath, so a streaming stitch exposes `.stream()`: an async iterable of typed events, one per upstream chunk.
+
+The OpenAI-compatible endpoint streams when the body carries `stream: true`. Declare it as an `sse` stitch and accumulate `choices[0].delta.content` off each frame. `.stream()` yields the run's lifecycle events, so filter for the `delta` ones — each carries one parsed SSE frame as its `chunk`:
+
+```ts twoslash
+// your sink: a socket, the UI, stdout
+// ---cut---
+import { bearer, env } from 'stitchapi';
+import { type SseEvent, sse } from 'stitchapi/sse';
+
+declare function onToken(token: string): void; // your sink: a socket, the UI, stdout
+
+// the wire is untyped JSON; name the one chunk shape we read off it
+interface ChatChunk {
+    choices?: { delta?: { content?: string } }[];
+}
+
+const chatStream = sse({
+    url: 'https://api.openai.com/v1/chat/completions',
+    method: 'POST',
+    auth: bearer(env('OPENAI_API_KEY')),
+});
+
+const stream = chatStream({
+    body: {
+        model: 'gpt-4o',
+        stream: true,
+        messages: [{ role: 'user', content: 'Summarize this.' }],
+    },
+}).stream();
+
+let text = '';
+for await (const event of stream) {
+    if (event.type !== 'delta') continue; // skip start/progress/done
+    // typing the frame as SseEvent<ChatChunk> types `.data` — no `any`
+    const { data } = event.chunk as SseEvent<ChatChunk>;
+    const token = data.choices?.[0]?.delta?.content;
+    if (token) {
+        text += token; // accumulate the full reply
+        onToken(token); // push each token onward as it arrives
+    }
+}
+```
+
+Each `delta` event's `chunk` is one parsed SSE frame; typing it as `SseEvent<ChatChunk>` makes `data` the shape you read — `choices[0].delta.content` is the incremental token, with no `any` in sight. The loop ends when the upstream closes the stream. The same `auth`, `retry`, `throttle`, and `timeout` fields compose here — it is still a stitch, still HTTP, just read as a stream instead of awaited. To forward those deltas to a browser as a `text/event-stream` `Response`, that is the job covered in [streaming a stitch as SSE](/blog/stream-a-stitch-as-sse-in-next-app-router).
 
 ## From one call to every model
 
