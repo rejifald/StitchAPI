@@ -31,7 +31,7 @@ Four forks were decided by the maintainer on adoption; the rules below assume th
 | --- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | D1  | Success-payload field name | **`data`** (align with axios / React Query / SWR / RTK Query, which every hook package wraps; `SafeResult` already uses it). Stream increments keep **`chunk`**; the Standard-Schema validation layer keeps spec-mandated **`value`/`issues`**. | [P5](#p5--one-success-field-one-failure-field) |
 | D2  | Cap-word convention        | **Bare nouns, no `max-` prefix**, for **count** caps (`attempts`, `entries`, `pages`, `failures`, `concurrency`). `max-` is retained only where it bounds a continuous **magnitude** and a bare noun would be ambiguous (a delay ceiling).      | [P4](#p4--one-cap-vocabulary)                  |
-| D3  | Duration style             | **`number \| string`** (`'5s'` or raw ms) for every consumer-authored duration, parsed by one `parseDuration`. **Drop the `Ms` suffix from inputs**; reserve `Ms` for emitted telemetry only.                                                   | [P17](#p17--one-canonical-duration-form)       |
+| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `parseDuration`.                | [P17](#p17--one-canonical-duration-form)       |
 | D4  | Home of the contract       | **This `CONTRACT.md` (living doc) + an enforcement lint** in the verify gate.                                                                                                                                                                   | [§7](#7-enforcement)                           |
 
 ---
@@ -225,9 +225,9 @@ A capability whose primary act is an on-switch **MUST** accept **`boolean | Opti
 where `true` = enable-with-documented-defaults; it **MUST NOT** require an object
 literal merely to switch on.
 
-_Apply to:_ `idempotency?: boolean | IdempotencyOptions`,
-`rateLimit?: boolean | RateLimitOptions` (`true ≡ { delegate: true }`),
-`inspect(input, true)`. `sse.reconnect: true` already sets the precedent.
+_Apply to:_ `idempotency?: boolean | IdempotencyOptions` and `inspect(input, true)`.
+`sse.reconnect: true` already sets the precedent. (Rate-limit delegation becomes a
+`throttle` mode after the P14 fold, not its own toggle.)
 
 ### P14 · Multi-field envelopes are named, exported, and MAY shorthand their dominant field
 
@@ -236,8 +236,11 @@ interface (never an anonymous inline shape), so it can be imported, extended, an
 referenced. A multi-field envelope **MAY** still offer a scalar shorthand for an
 **unambiguously dominant** field (this is **not** the single-field collapse of P12).
 
-_Violations:_ `paginate` (`{ next; items?; max? }`) and `rateLimit`
-(`{ delegate?; on? }`) are anonymous → extract `PaginateOptions`, `RateLimitOptions`.
+_Violations:_ `paginate` (`{ next; items?; max? }`) is anonymous → extract
+`PaginateOptions`. `rateLimit` (`{ delegate?; on? }`) is anonymous **and** a near-synonym
+of `throttle` → **fold it into the `throttle` envelope** (`delegate` / `on` become
+throttle modes), collapsing two top-level keys into one and turning the buried "delegate
+makes throttle inert" interaction into a within-envelope rule.
 _Allowed example:_ `throttle?: string | ThrottleOptions` where `'2/s' ≡ { rate: '2/s' }`
 — `rate` dominates although `concurrency` also exists (so this is a P14 dominant-field
 shorthand, not a P12 collapse).
@@ -278,22 +281,24 @@ result interface is `UseStitchResult` / `UseStitchReturn` / `InjectStitchResult`
 
 ### P17 · One canonical duration form
 
-Per **D3**, every **consumer-authored** duration **MUST** accept
-**`number | string`** (raw ms or a token like `'5s'`/`'1m'`), parsed by one shared
-`parseDuration`, and **MUST** drop the `Ms` name suffix. The `Ms` suffix is **reserved
-for emitted/telemetry/wire** durations, which are always raw ms.
+Per **D3**, **ms is the single house time unit** and **no duration field carries the
+`Ms` suffix** — input or emitted. Every **consumer-authored** duration additionally
+**MUST** accept **`number | string`** (raw ms or a token like `'5s'`/`'1m'`), parsed by
+one shared `parseDuration`. Every **emitted** duration is a raw-ms `number`; its unit is
+stated in its JSDoc, not its name.
 
 _Why:_ every JS-native time API (`Date.now()`, `setTimeout`, `performance.now()`) is
-**already ms**, so a bare number on an input is unambiguously ms and the `Ms` suffix
-is redundant noise; accepting `'5s'` on top of it is pure ergonomic gain. The suffix
-earns its place only on emitted numbers, where it documents the unit a reader can't
-otherwise infer.
+**already ms**, so ms is the unambiguous default and the suffix is redundant noise
+everywhere. On inputs, accepting `'5s'` on top is pure ergonomic gain (and a `Ms` name
+on a field that takes `'5s'` would be a lie). On outputs, one uniform de-suffixed
+vocabulary beats a split convention; the JSDoc carries the unit.
 
-_Violations (inputs to widen + de-suffix):_ `RetryOptions.baseMs`/`maxMs`,
+_Violations (inputs — widen + de-suffix):_ `RetryOptions.baseMs`/`maxMs`,
 `CircuitOptions.cooldownMs`/`halfOpenAfterMs`, `ReconnectOptions.backoffMs`,
 `OAuth2Opts.refreshSkewMs`, `CookieSessionOpts.ttlMs`, store-contract `ttlMs`.
-_Telemetry to keep/normalize as `*Ms`:_ `StitchEvent.waitedMs` / `retryAfterMs`;
-rename bare `StitchEvent.done.ms` → `doneMs` and `SseEvent.retry` → `retryMs`.
+_Violations (emitted — de-suffix):_ `StitchEvent` `waitedMs`→`waited`,
+`retryAfterMs`→`retryAfter`, the `done` event's `ms`→`elapsed`; `SseEvent.retry` stays
+(already bare; it mirrors the SSE `retry:` wire field); `MockResponse.delayMs`→`delay`.
 _Unit hazard (the exception to "all JS time is ms"):_ a few fields are **seconds**
 because they mirror a wire format — `MockResponse.retryAfter` and the HTTP
 `Retry-After` header (delta-seconds), Cloudflare KV `expirationTtl`. Every
@@ -305,10 +310,10 @@ at the adapter edge and is named with its true unit (`expirationSeconds`,
 
 A duck-type that mirrors a foreign SDK **MUST** keep that SDK's spelling (so it
 structurally matches). StitchAPI's **own normalized** contracts (`StitchStore`,
-`RedisDriver`) **MUST** use one house vocabulary: `ttlMs` (always ms; convert foreign
-units at the edge), `delete` (not `del`), `close(): Promise<void>` (async, per P11),
-with one optionality per parameter (`ttlMs` MUST NOT be optional on `set` but required
-on `incr`).
+`RedisDriver`) **MUST** use one house vocabulary: `ttl` (ms — the house unit, no suffix
+per P17; convert foreign units at the edge), `delete` (not `del`),
+`close(): Promise<void>` (async, per P11), with one optionality per parameter (`ttl`
+MUST NOT be optional on `set` but required on `incr`).
 
 ### P19 · No pre-GA hard break
 
@@ -324,33 +329,34 @@ re-export/field alias pinned by an identity test, removed at the **1.0 GA cut**
 Not normative. The rule is the law; these are the proposed target spellings the sweep
 will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 
-| Sev  | Current                                                               | Proposed                                | Rule |
-| ---- | --------------------------------------------------------------------- | --------------------------------------- | ---- |
-| High | `SafeResult.data` ↔ `Inspection.value` ↔ `StitchEvent.result.value` | `data` everywhere                       | P5   |
-| High | `IdempotencyOptions.key`, `CacheConfig.key` (fn)                      | `keyOf`                                 | P6   |
-| High | `ThrottleOptions.scope` (`'stitch'｜'host'`)                          | `pool`                                  | P2   |
-| High | `retry.on`, `rateLimit.on` (`number[]`)                               | `number[] ｜ (status)=>boolean`         | P7   |
-| High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes            | hoist or qualify                        | P9   |
-| High | `queryOptions` bare in vue/solid/svelte/angular                       | `stitchQueryOptions`                    | P16  |
-| Med  | `CacheConfig` →                                                       | `CacheOptions`                          | P3   |
-| Med  | `OAuth2Opts`, `CookieSessionOpts`                                     | `OAuth2Options`, `CookieSessionOptions` | P3   |
-| Med  | `McpServerInfo`, `SignV4Params`                                       | `…Options`                              | P3   |
-| Med  | `StitchQueryOptions` (a result)                                       | `StitchQueryResult`                     | P3   |
-| Med  | `ReconnectOptions.maxAttempts`                                        | `attempts`                              | P4   |
-| Med  | `CacheConfig.maxEntries`                                              | `entries`                               | P4   |
-| Med  | `CircuitOptions.failureThreshold`                                     | `failures`                              | P4   |
-| Med  | `paginate.max`                                                        | `pages`                                 | P4   |
-| Med  | `*Ms` input durations (`cooldownMs`, `backoffMs`, `baseMs`, …)        | de-suffix + `number｜string`            | P17  |
-| Med  | `paginate`, `rateLimit` inline shapes                                 | `PaginateOptions`, `RateLimitOptions`   | P14  |
-| Med  | SSE helper `sendStitchSse`/`stitchSse`                                | `streamStitchSse`                       | P16  |
-| Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions`    | `StitchErrorOptions` (+ `body`)         | P16  |
-| Low  | `RedisDriver.del`, `…quit`, sync `close`                              | `delete`, async `close`                 | P18  |
-| Low  | `SchemaFingerprint.value`                                             | `token`                                 | P5   |
-| Low  | `bodyKind` (from-curl)                                                | `bodyType`                              | P1   |
-| Low  | `StitchEvent.done.ms`, `SseEvent.retry`                               | `doneMs`, `retryMs`                     | P17  |
+| Sev  | Current                                                               | Proposed                                                       | Rule   |
+| ---- | --------------------------------------------------------------------- | -------------------------------------------------------------- | ------ |
+| High | `SafeResult.data` ↔ `Inspection.value` ↔ `StitchEvent.result.value` | `data` everywhere                                              | P5     |
+| High | `IdempotencyOptions.key`, `CacheConfig.key` (fn)                      | `keyOf`                                                        | P6     |
+| High | `ThrottleOptions.scope` (`'stitch'｜'host'`)                          | `pool`                                                         | P2     |
+| High | `rateLimit` (separate top-level key) vs `throttle`                    | fold into one `throttle` envelope (`delegate` / `on` as modes) | P2/P14 |
+| High | `retry.on` + rate-limit `on` (`number[]`)                             | `number[] ｜ (status)=>boolean`                                | P7     |
+| High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes            | hoist or qualify                                               | P9     |
+| High | `queryOptions` bare in vue/solid/svelte/angular                       | `stitchQueryOptions`                                           | P16    |
+| Med  | `CacheConfig` →                                                       | `CacheOptions`                                                 | P3     |
+| Med  | `OAuth2Opts`, `CookieSessionOpts`                                     | `OAuth2Options`, `CookieSessionOptions`                        | P3     |
+| Med  | `McpServerInfo`, `SignV4Params`                                       | `…Options`                                                     | P3     |
+| Med  | `StitchQueryOptions` (a result)                                       | `StitchQueryResult`                                            | P3     |
+| Med  | `ReconnectOptions.maxAttempts`                                        | `attempts`                                                     | P4     |
+| Med  | `CacheConfig.maxEntries`                                              | `entries`                                                      | P4     |
+| Med  | `CircuitOptions.failureThreshold`                                     | `failures`                                                     | P4     |
+| Med  | `paginate.max`                                                        | `pages`                                                        | P4     |
+| Med  | `*Ms` duration inputs (`cooldownMs`, `backoffMs`, `ttlMs`, …)         | de-suffix + `number｜string`                                   | P17    |
+| Med  | `paginate` inline shape                                               | `PaginateOptions`                                              | P14    |
+| Med  | SSE helper `sendStitchSse`/`stitchSse`                                | `streamStitchSse`                                              | P16    |
+| Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions`    | `StitchErrorOptions` (+ `body`)                                | P16    |
+| Low  | `RedisDriver.del`, `…quit`, sync `close`                              | `delete`, async `close`                                        | P18    |
+| Low  | `SchemaFingerprint.value`                                             | `token`                                                        | P5     |
+| Low  | `bodyKind` (from-curl)                                                | `bodyType`                                                     | P1     |
+| Low  | emitted `*Ms` (`waitedMs`, `retryAfterMs`, done `ms`)                 | de-suffix (`waited`, `retryAfter`, `elapsed`); units → JSDoc   | P17    |
 
 New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multipart`,
-`sse`, `.inspect()` scalars (P12); `idempotency`, `rateLimit` booleans (P13-toggle);
+`sse`, `.inspect()` scalars (P12); `idempotency` boolean (P13-toggle);
 `throttle` string (P14).
 
 ---
@@ -369,7 +375,7 @@ New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multi
     ESLint-suppression ratchet: the gate never blocks unrelated work, but the surface can
     only get more consistent, never less.
 -   Rules implemented today (high-precision, source-text level): **R1** banned type-name
-    suffix (P3), **R2** `*Ms`-suffixed field inside an `*Options` input bag (P17),
+    suffix (P3), **R2** any `*Ms`-suffixed duration field, input or emitted (P17),
     **R3** function-typed `key` (P6), **R4** `scope: 'stitch'|'host'` overload (P2),
     **R5** same identifier exported by ≥2 published packages (P9).
 -   Deferred to a type-aware phase (needs the TS checker, not regex): full
