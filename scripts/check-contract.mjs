@@ -195,22 +195,34 @@ function collect() {
                 }
             }
 
-            for (const blk of interfaceBlocks(src)) {
-                // R2 — *Ms-suffixed field inside an input bag (P17). Matches *Options and the
-                // legacy *Opts bags (which R1 will rename to *Options anyway).
-                if (/(Options|Opts)$/.test(blk.name)) {
-                    const fre = /(^|\n)\s*([A-Za-z_]\w*Ms)\s*\??:/g;
-                    let f;
-                    while ((f = fre.exec(blk.body))) {
-                        add(
-                            'R2',
-                            file,
-                            `${blk.name}.${f[2]}`,
-                            `input duration carries Ms suffix → de-suffix + number|string (P17)`,
-                            lineOf(src, blk.index),
-                        );
-                    }
+            // R2 — ANY field carrying the `Ms` suffix (P17: ms is the house unit, so the
+            // suffix is dropped EVERYWHERE — input and emitted; the unit lives in JSDoc).
+            // File-level scan so it catches type-union / class fields (StitchEvent,
+            // RateLimitError), not only interface bags. Anchored to a declaration position
+            // ([\n{;,(] then `name?:`) so prose mentions of `…Ms` in JSDoc don't match.
+            // Deduped by field name per file.
+            {
+                const fre = /(?:^|[\n{;,(])\s*([A-Za-z_]\w*Ms)\s*\??:/g;
+                const seen = new Set();
+                let f;
+                while ((f = fre.exec(src))) {
+                    if (seen.has(f[1])) continue;
+                    seen.add(f[1]);
+                    // Carve-out: an epoch *timestamp* (`*UnixMs`) keeps its unit — Unix time is
+                    // conventionally SECONDS, so a bare `startUnix` would be misleading, and these
+                    // mirror OTLP's `*Unix*` fields (P18). The rule targets DURATIONS, not instants.
+                    if (/Unix(Ms|Nano|Seconds)$/.test(f[1])) continue;
+                    add(
+                        'R2',
+                        file,
+                        f[1],
+                        `duration field carries Ms suffix → drop it (ms is the house unit; P17)`,
+                        lineOf(src, f.index),
+                    );
                 }
+            }
+
+            for (const blk of interfaceBlocks(src)) {
                 // R3 — function-typed `key` (P6: a derivation fn must be `keyOf`)
                 if (/(^|\n)\s*key\s*\??:\s*\(/.test(blk.body)) {
                     add(
