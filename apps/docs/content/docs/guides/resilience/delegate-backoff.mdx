@@ -27,7 +27,7 @@ declare const outerGate: { penalize(ms: number): void };
 const fetchPage = stitch({
     baseUrl: 'https://api.example.com',
     path: '/pages/{id}',
-    rateLimit: { delegate: true }, // surface 429s; don't retry or throttle them
+    throttle: { delegate: true }, // surface 429s; don't retry or throttle them
 });
 
 try {
@@ -71,7 +71,7 @@ declare const outerGate: { penalize(ms: number): void };
 const fetchPage = stitch({
     baseUrl: 'https://api.example.com',
     path: '/pages/{id}',
-    rateLimit: { delegate: true },
+    throttle: { delegate: true },
 });
 
 for await (const ev of fetchPage.stream({ params: { id: '42' } })) {
@@ -100,7 +100,7 @@ block, if you also set one, still applies — you can let the host layer both.
 
 <Callout type="info">
     Delegate mode and internal retry-on-rate-limit are mutually exclusive _for
-    the delegated statuses_: a status in `rateLimit.on` is surfaced, never
+    the delegated statuses_: a status in `throttle.on` is surfaced, never
     retried, even if it also appears in `retry.on`.
 </Callout>
 

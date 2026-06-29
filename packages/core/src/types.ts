@@ -226,7 +226,7 @@ export type Adapter = (req: AdapterRequest) => Promise<AdapterResponse>;
 // ---- Resilience options ---------------------------------------------------
 export interface RetryOptions {
     attempts?: number; // total attempts incl. the first (default 1 = no retry)
-    on?: number[]; // status codes that trigger a retry (default [429,502,503,504])
+    on?: number[] | ((status: number) => boolean); // statuses (or a predicate) that trigger a retry (default [429,502,503,504])
     backoff?: 'expo' | 'expo-jitter' | 'fixed';
     baseMs?: number;
     maxMs?: number;
@@ -243,6 +243,15 @@ export interface ThrottleOptions {
     pool?: 'stitch' | 'host';
     /** @deprecated Renamed to {@link ThrottleOptions.pool} (CONTRACT.md P2). Read until the 1.0 GA cut. */
     scope?: 'stitch' | 'host';
+    /**
+     * Delegate rate-limit handling to the host (folded in from the top-level `rateLimit`,
+     * CONTRACT.md P14). When `true`, a rate-limit response (status matched by `on`, default `[429]`)
+     * is **not** retried or throttled internally — self-pacing (`rate`/`concurrency`) is bypassed and
+     * the outcome surfaces as a {@link RateLimitError}. Use it when an OUTER gate owns the backoff.
+     */
+    delegate?: boolean;
+    /** Statuses that count as a rate-limit signal under `delegate` — a list or a predicate. Default `[429]`. */
+    on?: number[] | ((status: number) => boolean);
 }
 /**
  * Options for one throttle `acquire`. `rateOnly` charges the rate limiter but takes NO concurrency
@@ -521,6 +530,24 @@ export interface InputSchemas {
     // slots; left undeclared, `variables` stays the loose untyped passthrough it has always been.
     variables?: SchemaLike;
 }
+/**
+ * Auto-pagination: follow pages until {@link PaginateOptions.next} returns `undefined`, aggregating
+ * `items` with auth/retry/throttle applied to every page (CONTRACT.md P14 — extracted from the
+ * inline `paginate` shape so it can be imported and composed).
+ */
+export interface PaginateOptions {
+    /**
+     * Given the previous page's raw body and how many pages were fetched, return the input (merged
+     * over the original) for the next page, or `undefined` to stop.
+     */
+    next: (prevBody: unknown, pagesFetched: number) => StitchInput | undefined;
+    /** Pull the array from each unwrapped page. Default: the value if it is an array. */
+    items?: (value: unknown) => unknown[];
+    /** Safety cap on pages. Default 50. */
+    pages?: number;
+    /** @deprecated Renamed to `pages` (CONTRACT.md P4). Read until the 1.0 GA cut. */
+    max?: number;
+}
 export interface StitchConfig {
     /** Label used in events and traces; defaults to `path` or `'stitch'`. */
     name?: string;
@@ -602,22 +629,7 @@ export interface StitchConfig {
     /** Reshape the raw body before unwrap and validation (e.g. scrape HTML to structured data). */
     transform?: (body: unknown) => unknown;
     /** Auto-loop pages, aggregating items, with auth/retry/throttle applied to every page. */
-    paginate?: {
-        /**
-         * Given the previous page's raw body and how many pages were fetched, return the
-         * input (merged over the original) for the next page, or `undefined` to stop.
-         */
-        next: (
-            prevBody: unknown,
-            pagesFetched: number,
-        ) => StitchInput | undefined;
-        /** Pull the array from each unwrapped page. Default: the value if it is an array. */
-        items?: (value: unknown) => unknown[];
-        /** Safety cap on pages. Default 50. */
-        pages?: number;
-        /** @deprecated Renamed to `pages` (CONTRACT.md P4). Read until the 1.0 GA cut. */
-        max?: number;
-    };
+    paginate?: PaginateOptions;
     /** Auth strategy — the stitch holds the credential; the caller never sees it. */
     auth?: AuthStrategy;
     /**
@@ -647,6 +659,9 @@ export interface StitchConfig {
     /** Circuit breaker that fast-fails a repeatedly failing dependency. */
     circuit?: CircuitOptions;
     /**
+     * @deprecated Folded into `throttle` (CONTRACT.md P14): use `throttle.delegate` / `throttle.on`.
+     * Read until the 1.0 GA cut.
+     *
      * Delegate backoff to the host (issue #145). When `delegate: true`, a rate-limit response
      * (status in `on`, default `[429]`) is **not** retried internally and the built-in `throttle`
      * is **bypassed** for the call — instead the outcome surfaces as a {@link RateLimitError}

@@ -598,16 +598,21 @@ async function* attemptLoop(
 ): AsyncGenerator<StitchEvent, AdapterResponse> {
     const { cfg } = rt;
     const max = cfg.retry?.attempts ?? 1;
-    const retryOn = cfg.retry?.on ?? [429, 502, 503, 504];
+    // P7: `retry.on` accepts a status list OR a predicate — normalize to one matcher.
+    const retryMatch = acceptsStatus(cfg.retry?.on ?? [429, 502, 503, 504]);
     const perAttemptMs = parseDuration(cfg.timeout?.perAttempt);
     const key = hostKey(baseReq, cfg);
     let refreshed = false;
     // Delegate-backoff mode (issue #145): the host owns the gate. We bypass the internal throttle
     // for the call (no acquire/release, so `throttle` is inert and no `throttled` event fires) and,
-    // on a response whose status is in `rlOn` (default [429]), surface a RateLimitError instead of
-    // retrying. Everything else — auth, the success path, non-rate-limit failures — is unchanged.
-    const delegate = cfg.rateLimit?.delegate === true;
-    const rlOn = cfg.rateLimit?.on ?? [429];
+    // on a response whose status matches `rlMatch` (default [429]), surface a RateLimitError instead
+    // of retrying. Everything else — auth, the success path, non-rate-limit failures — is unchanged.
+    // P14: `rateLimit` folded into `throttle` — read `throttle.delegate`/`throttle.on`, falling back
+    // to the @deprecated top-level `rateLimit` (read once here) until the GA cut.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `rateLimit` folded into `throttle` (P14); back-compat fallback until GA
+    const legacyRl = cfg.rateLimit;
+    const delegate = (cfg.throttle?.delegate ?? legacyRl?.delegate) === true;
+    const rlMatch = acceptsStatus(cfg.throttle?.on ?? legacyRl?.on ?? [429]);
     // acceptStatus (issue #155): statuses the caller declares NORMAL — an accepted non-2xx returns
     // `res` like a 2xx (flowing through interpret → transform → unwrap → validate) instead of
     // throwing. Checked at the `>= 400` site, i.e. AFTER the retry-on-status path, so `retry.on`
@@ -721,7 +726,7 @@ async function* attemptLoop(
             // gate owns the backoff. Checked BEFORE the internal retry-on-status path so it wins even
             // when the same status is also in `retry.on` (the common `429` overlap). `Retry-After` is
             // parsed with the same helper the internal retry uses, so the host gets an identical hint.
-            if (delegate && rlOn.includes(res.status)) {
+            if (delegate && rlMatch(res.status)) {
                 throw new RateLimitError({
                     status: res.status,
                     retryAfterMs: parseRetryAfter(
@@ -732,7 +737,7 @@ async function* attemptLoop(
                 });
             }
 
-            if (retryOn.includes(res.status) && attempt < max) {
+            if (retryMatch(res.status) && attempt < max) {
                 const ra = cfg.retry?.respectRetryAfter
                     ? parseRetryAfter(res.headers['retry-after'], rt.clock)
                     : undefined;
