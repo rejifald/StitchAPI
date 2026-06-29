@@ -175,13 +175,13 @@ function recordFor(
                     stitch: name,
                     phase: event.phase,
                     attempt: event.attempt,
-                    ...(event.waitedMs !== undefined
-                        ? { waitedMs: event.waitedMs }
+                    ...(event.waited !== undefined
+                        ? { waited: event.waited }
                         : {}),
                 },
                 msg: `· ${name} ${event.phase}#${event.attempt}${
-                    event.waitedMs !== undefined
-                        ? ` waited ${event.waitedMs}ms`
+                    event.waited !== undefined
+                        ? ` waited ${event.waited}ms`
                         : ''
                 }`,
             };
@@ -222,10 +222,10 @@ function recordFor(
                 obj: {
                     stitch: name,
                     ok: event.ok,
-                    ms: event.ms,
+                    elapsed: event.elapsed,
                     attempts: event.attempts,
                 },
-                msg: `${name} done ${event.ok ? 'ok' : 'failed'} in ${event.ms}ms (${event.attempts} attempt(s))`,
+                msg: `${name} done ${event.ok ? 'ok' : 'failed'} in ${event.elapsed}ms (${event.attempts} attempt(s))`,
             };
         default:
             return null; // 'info' + 'delta' — never logged

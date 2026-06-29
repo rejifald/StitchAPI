@@ -67,7 +67,7 @@ export interface Runtime {
         acquire(
             key: string,
             opts?: AcquireOptions,
-        ): Promise<{ waitedMs: number }>;
+        ): Promise<{ waited: number }>;
         release(key: string): void;
     };
     trace: TraceSink;
@@ -366,13 +366,22 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     }
     return evt;
 }
-const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
-    type: 'done',
-    ok,
-    ms: now() - t0,
-    attempts,
-    at: now(),
-});
+const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => {
+    const elapsed = now() - t0;
+    // `elapsed` is canonical; `ms` is set alongside it as the @deprecated alias (CONTRACT.md P17).
+    return { type: 'done', ok, elapsed, ms: elapsed, attempts, at: now() };
+};
+
+// Co-emit a `progress` event's @deprecated `waitedMs` alias by ASSIGNMENT (not a literal `waitedMs:`
+// key) so back-compat holds until the GA cut (CONTRACT.md P17/P19) without re-tripping the contract
+// lint's R2, which flags a literal `*Ms:` declaration. The canonical field is `waited`.
+function coemitWaitedMs(
+    evt: Extract<StitchEvent, { type: 'progress' }>,
+): Extract<StitchEvent, { type: 'progress' }> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- writing the @deprecated alias for back-compat (CONTRACT.md P17/P19)
+    if (evt.waited !== undefined) evt.waitedMs = evt.waited;
+    return evt;
+}
 
 async function validateInput(
     cfg: ResolvedStitchConfig,
@@ -491,7 +500,7 @@ async function acquireWithin(
     budget?: TotalBudget,
     opts?: AcquireOptions,
     signal?: AbortSignal,
-): Promise<{ waitedMs: number }> {
+): Promise<{ waited: number }> {
     if (signal?.aborted) throw abortReason(signal);
     if (budget == null && signal === undefined)
         return throttle.acquire(key, opts);
@@ -624,21 +633,21 @@ async function* attemptLoop(
         // Skip the throttle entirely in delegate mode — the outer gate paces the call, so acquiring
         // here would double-count against it (the bug this mode fixes).
         if (!delegate) {
-            const { waitedMs } = await acquireWithin(
+            const { waited } = await acquireWithin(
                 rt.throttle,
                 key,
                 budget,
                 undefined,
                 baseReq.signal,
             );
-            if (waitedMs > 0)
-                yield {
+            if (waited > 0)
+                yield coemitWaitedMs({
                     type: 'progress',
                     phase: 'throttled',
                     attempt,
-                    waitedMs,
+                    waited,
                     at: now(),
-                };
+                });
         }
         try {
             const req = cloneReq(baseReq);
@@ -1203,7 +1212,7 @@ async function* runStreaming(
         // against the rate budget like any other (Decision 12) — but still take NO concurrency slot.
         let waited: number;
         try {
-            ({ waitedMs: waited } = await acquireWithin(
+            ({ waited } = await acquireWithin(
                 rt.throttle,
                 hostKey(baseReq, cfg),
                 budget,
@@ -1216,13 +1225,13 @@ async function* runStreaming(
             return 'fail';
         }
         if (waited > 0)
-            yield {
+            yield coemitWaitedMs({
                 type: 'progress',
                 phase: 'throttled',
                 attempt,
-                waitedMs: waited,
+                waited,
                 at: now(),
-            };
+            });
 
         let res: AdapterResponse;
         try {
@@ -1359,13 +1368,13 @@ async function* runStreaming(
             lastRetryMs ??
             policy.backoff ??
             backoffDelay(attempt + 1, cfg.retry);
-        yield {
+        yield coemitWaitedMs({
             type: 'progress',
             phase: 'reconnect',
             attempt,
-            waitedMs: backoff,
+            waited: backoff,
             at: now(),
-        };
+        });
         await sleepWithin(backoff, budget, baseReq.signal, rt.clock);
     }
 

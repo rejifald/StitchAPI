@@ -38,7 +38,7 @@ async function wasThrottled(s: Stitch): Promise<number> {
         if (
             ev.type === 'progress' &&
             ev.phase === 'throttled' &&
-            (ev.waitedMs ?? 0) > 0
+            (ev.waited ?? 0) > 0
         )
             throttled = 1;
     }

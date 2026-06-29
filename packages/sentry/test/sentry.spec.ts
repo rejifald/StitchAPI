@@ -43,7 +43,7 @@ const ev = {
         type: 'progress',
         phase: 'throttled',
         attempt: 1,
-        waitedMs: 50,
+        waited: 50,
         at: 0,
     },
     driftError: {
@@ -95,7 +95,7 @@ describe('sentrySink', () => {
         expect(breadcrumbs.map((b) => b.level)).toEqual(['warning', 'debug']);
         expect(breadcrumbs[1]!.data).toMatchObject({
             phase: 'throttled',
-            waitedMs: 50,
+            waited: 50,
         });
     });
 

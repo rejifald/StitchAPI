@@ -120,7 +120,7 @@ describe('pinoSink — event → level mapping', () => {
         const done = run({
             type: 'done',
             ok: true,
-            ms: 12,
+            elapsed: 12,
             attempts: 1,
             at: 0,
         });
@@ -185,7 +185,10 @@ describe('pinoSink — lifecycle gating', () => {
             ),
         ).toHaveLength(0);
         expect(
-            run({ type: 'done', ok: true, ms: 12, attempts: 1, at: 0 }, opts),
+            run(
+                { type: 'done', ok: true, elapsed: 12, attempts: 1, at: 0 },
+                opts,
+            ),
         ).toHaveLength(0);
     });
 

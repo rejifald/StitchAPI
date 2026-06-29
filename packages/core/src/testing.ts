@@ -649,7 +649,7 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
         phase: 'throttled',
         attempt: 1,
         detail: 'rate',
-        waitedMs: 12,
+        waited: 12,
         at: SINK_AT + 1,
     },
     {
@@ -684,7 +684,14 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
         attempts: 2,
         at: SINK_AT + 6,
     },
-    { type: 'done', ok: true, ms: 34, attempts: 1, at: SINK_AT + 7 },
+    {
+        type: 'done',
+        ok: true,
+        elapsed: 34,
+        ms: 34,
+        attempts: 1,
+        at: SINK_AT + 7,
+    },
 ];
 
 /**

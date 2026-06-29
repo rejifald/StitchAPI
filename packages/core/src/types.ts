@@ -475,7 +475,7 @@ export type ProgressPhase =
     | 'retry'
     // A resumable-SSE reconnect (issue #71): emitted before the engine waits the backoff and
     // reopens a dropped `text/event-stream` body with the last `id:` replayed as `Last-Event-ID`.
-    // Reuses the `progress` event (its `attempt` is the reconnect count, `waitedMs` the backoff)
+    // Reuses the `progress` event (its `attempt` is the reconnect count, `waited` the backoff)
     // rather than minting a new StitchEvent type — same shape as the `retry` phase.
     | 'reconnect'
     | 'paginate'
@@ -501,6 +501,9 @@ export type StitchEvent<T = unknown> =
           phase: ProgressPhase;
           attempt: number;
           detail?: string;
+          /** How long the engine waited before this step (ms): throttle pacing or retry/reconnect backoff. */
+          waited?: number;
+          /** @deprecated Renamed to `waited` (CONTRACT.md P17). Set alongside `waited` until the 1.0 GA cut. */
           waitedMs?: number;
           at: number;
       }
@@ -522,7 +525,16 @@ export type StitchEvent<T = unknown> =
           attempts: number;
           at: number;
       }
-    | { type: 'done'; ok: boolean; ms: number; attempts: number; at: number };
+    | {
+          type: 'done';
+          ok: boolean;
+          /** Total wall-clock time for the run (ms). */
+          elapsed: number;
+          /** @deprecated Renamed to `elapsed` (CONTRACT.md P17). Set alongside `elapsed` until the 1.0 GA cut. */
+          ms?: number;
+          attempts: number;
+          at: number;
+      };
 
 // ---- Clock (injectable time, ADR 0010) ------------------------------------
 /** An opaque timer handle returned by {@link Clock.setTimer}. */

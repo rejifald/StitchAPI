@@ -4,7 +4,7 @@
 //   memoryStore   — the bare key/value contract (get-missing, set/get, set(undefined) deletes,
 //                   incr atomicity, close clears);
 //   vaultView     — the namespaced lens that prefixes every key and delegates close to the backend;
-//   chainThrottle — composing gates: acquire each in order (summing waitedMs), release in REVERSE,
+//   chainThrottle — composing gates: acquire each in order (summing waited), release in REVERSE,
 //                   threading acquire options to every gate.
 import { chainThrottle, memoryStore, vaultView } from '../src/store';
 import type { Throttle } from '../src/store';
@@ -91,7 +91,7 @@ describe('chainThrottle (compose gates)', () => {
                 order.push(
                     `acq:${name}:${key}:${opts?.rateOnly ? 'rateOnly' : 'full'}`,
                 );
-                return { waitedMs: waited };
+                return { waited: waited };
             },
             release: (key) => {
                 order.push(`rel:${name}:${key}`);
@@ -100,11 +100,11 @@ describe('chainThrottle (compose gates)', () => {
         return { order, mk };
     };
 
-    test('acquires every gate in order and sums waitedMs', async () => {
+    test('acquires every gate in order and sums waited', async () => {
         const { order, mk } = recorder();
         const chain = chainThrottle([mk('a', 10), mk('b', 5)]);
-        const { waitedMs } = await chain.acquire('K');
-        expect(waitedMs).toBe(15);
+        const { waited } = await chain.acquire('K');
+        expect(waited).toBe(15);
         expect(order).toEqual(['acq:a:K:full', 'acq:b:K:full']);
     });
 

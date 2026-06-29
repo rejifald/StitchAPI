@@ -77,7 +77,7 @@ export function createThrottle(
     opts?: ThrottleOptions,
     clock: Clock = systemClock,
 ): {
-    acquire(key: string, opts?: AcquireOptions): Promise<{ waitedMs: number }>;
+    acquire(key: string, opts?: AcquireOptions): Promise<{ waited: number }>;
     release(key: string): void;
 } {
     const limit = opts?.concurrency;
@@ -110,19 +110,19 @@ export function createThrottle(
     async function acquire(
         key: string,
         acqOpts?: AcquireOptions,
-    ): Promise<{ waitedMs: number }> {
+    ): Promise<{ waited: number }> {
         const s = stateFor(key);
-        let waitedMs = 0;
+        let waited = 0;
         // A rate-only acquire (a streaming surface — ADR 0005 Decision 12) skips the concurrency
         // slot entirely: it never takes (or, lacking a paired release, holds) one. It still paces
         // on the rate budget below, so opening a stream is counted against the rate limiter.
         if (!acqOpts?.rateOnly) {
             // Only a real concurrency block counts as "waited" — not incidental scheduling
-            // jitter — so waitedMs (and the 'throttled' event) is deterministic.
+            // jitter — so `waited` (and the 'throttled' event) is deterministic.
             const blocked = limit != null && s.inFlight >= limit;
             const blockStart = clock.now();
             await takeSlot(s); // gate entry on concurrency first
-            if (blocked) waitedMs = clock.now() - blockStart;
+            if (blocked) waited = clock.now() - blockStart;
         }
         if (spacing > 0) {
             // Then pace within the held slot: reserve the next grant time and wait for it.
@@ -131,10 +131,10 @@ export function createThrottle(
             const wait = at - clock.now();
             if (wait > 0) {
                 await clock.sleep(wait);
-                waitedMs += wait;
+                waited += wait;
             }
         }
-        return { waitedMs };
+        return { waited };
     }
 
     function release(key: string): void {

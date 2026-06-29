@@ -364,7 +364,7 @@ describe('Decision 12 — streaming is concurrency-exempt but rate-charged', () 
         await t.acquire('k', { rateOnly: true });
         // The slot was never consumed, so a normal acquire still proceeds immediately.
         const r = await t.acquire('k');
-        expect(r.waitedMs).toBe(0);
+        expect(r.waited).toBe(0);
     });
 
     test('createStoreThrottle: rateOnly skips concurrency but DOES charge the rate window', async () => {
@@ -387,6 +387,6 @@ describe('Decision 12 — streaming is concurrency-exempt but rate-charged', () 
         await t.acquire('k', { rateOnly: true });
         await t.acquire('k', { rateOnly: true });
         const r = await t.acquire('k', { rateOnly: true });
-        expect(r.waitedMs).toBe(0);
+        expect(r.waited).toBe(0);
     });
 });
