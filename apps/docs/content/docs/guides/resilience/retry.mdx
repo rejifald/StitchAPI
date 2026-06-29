@@ -20,7 +20,7 @@ const getUser = stitch({
         attempts: 3,
         on: [429, 503],
         backoff: 'expo-jitter',
-        baseMs: 200,
+        baseDelay: 200,
         respectRetryAfter: true,
     },
 });
@@ -36,10 +36,10 @@ retrying.
 `[429, 502, 503, 504]` — the usual transient set — and you narrow or widen it
 per stitch.
 
-`backoff` chooses how long to wait between attempts, paced from `baseMs` and
-clamped to `maxMs`: `'expo'` doubles the delay each attempt, `'expo-jitter'`
+`backoff` chooses how long to wait between attempts, paced from `baseDelay` and
+clamped to `maxDelay`: `'expo'` doubles the delay each attempt, `'expo-jitter'`
 spreads it randomly up to that exponential value to avoid thundering herds, and
-`'fixed'` waits a constant `baseMs` every time.
+`'fixed'` waits a constant `baseDelay` every time.
 
 `respectRetryAfter` honors a `Retry-After` header on the failing response —
 delta-seconds or an HTTP-date — using it in place of the computed backoff when

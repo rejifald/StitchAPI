@@ -156,10 +156,13 @@ export interface ReconnectOptions {
     /** @deprecated Renamed to {@link ReconnectOptions.attempts} (CONTRACT.md P4). Read until the 1.0 GA cut. */
     maxAttempts?: number;
     /**
-     * Fallback reconnect backoff (ms) when the server has NOT sent a `retry:` field on the dropped
-     * connection. When omitted, the stitch's `retry` (`RetryOptions` — `backoff`/`baseMs`/`maxMs`)
-     * supplies the delay. A server-sent `retry:` on the connection always wins over both.
+     * Fallback reconnect backoff when the server has NOT sent a `retry:` field on the dropped
+     * connection — `1000`, `'1s'`. When omitted, the stitch's `retry` (`RetryOptions` —
+     * `backoff`/`baseDelay`/`maxDelay`) supplies the delay. A server-sent `retry:` on the connection
+     * always wins over both.
      */
+    backoff?: number | string;
+    /** @deprecated Renamed to {@link ReconnectOptions.backoff} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     backoffMs?: number;
 }
 /**
@@ -167,7 +170,7 @@ export interface ReconnectOptions {
  * default**: with no `sse.reconnect` block the engine opens the body exactly once (today's
  * behaviour, byte-identical). When enabled the engine tracks the last `id:` seen and replays it as
  * `Last-Event-ID` on each reconnect, honours a server-sent `retry:` as the backoff (falling back to
- * `reconnect.backoffMs` / the stitch's `retry` policy), and caps reconnects at `maxAttempts`.
+ * `reconnect.backoff` / the stitch's `retry` policy), and caps reconnects at `maxAttempts`.
  *
  * `true` = enabled with sane defaults; the object form tunes the cap / fallback backoff. Plain JSON
  * (the contract gate). Only the `sse` surface acts on this; other surfaces ignore it.
@@ -267,7 +270,13 @@ export interface RetryOptions {
     attempts?: number; // total attempts incl. the first (default 1 = no retry)
     on?: number[] | ((status: number) => boolean); // statuses (or a predicate) that trigger a retry (default [429,502,503,504])
     backoff?: 'expo' | 'expo-jitter' | 'fixed';
+    /** Base backoff delay before the first retry — `100`, `'100ms'`, `'1s'`. Default 100ms. */
+    baseDelay?: number | string;
+    /** @deprecated Renamed to {@link RetryOptions.baseDelay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     baseMs?: number;
+    /** Backoff ceiling the computed delay is clamped to — `10_000`, `'10s'`. Default 10s. */
+    maxDelay?: number | string;
+    /** @deprecated Renamed to {@link RetryOptions.maxDelay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     maxMs?: number;
     respectRetryAfter?: boolean;
 }
@@ -617,7 +626,7 @@ export interface StitchConfig {
      * Resumable-SSE options (issue #71) — sibling to {@link StitchConfig.stream}, but for the `sse`
      * surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once
      * (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as
-     * `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoffMs` / the `retry`
+     * `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry`
      * policy), capped at `maxAttempts`. Plain JSON (the contract gate). Only the `sse` surface
      * reads it.
      */
@@ -1021,8 +1030,8 @@ export interface TraceSink {
 // sessions persistent/shared across workers — see DESIGN.md §13.
 export interface StitchStore {
     get(key: string): Promise<unknown>;
-    set(key: string, value: unknown, ttlMs?: number): Promise<void>;
-    incr(key: string, ttlMs: number): Promise<number>;
+    set(key: string, value: unknown, ttl?: number): Promise<void>;
+    incr(key: string, ttl: number): Promise<number>;
     /**
      * Release any resources (connections, timers) the store holds. Optional — the in-memory
      * default clears its map. A seam's `close()` calls this as the last lifecycle step.

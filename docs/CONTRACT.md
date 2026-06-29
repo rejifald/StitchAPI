@@ -426,6 +426,13 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `rateLimit` is `@deprecated` (runtime prefers `throttle.* ?? rateLimit.*`). `PaginateOptions`
     extracted from the inline `paginate` shape (named + exported). `throttle: { rate, delegate }` is
     the unified envelope — delegate makes the rate inert, now legible within one object.
+-   **P17 (inputs)** consumer-authored durations de-suffixed and widened to `number | string` (parsed
+    by `parseDuration`): `RetryOptions.baseMs`→`baseDelay`, `maxMs`→`maxDelay`;
+    `ReconnectOptions.backoffMs`→`backoff`; `OAuth2Options.refreshSkewMs`→`refreshSkew`;
+    `CookieSessionOptions.ttlMs`→`ttl`. Each keeps a `@deprecated` `*Ms` alias (runtime prefers
+    `new ?? old`). House store contracts use the bare `ttl` param (ms, no suffix): `StitchStore` /
+    `RedisDriver` `set`/`incr` and the redis/deno-kv/cloudflare-kv drivers; `verifyStoreContract`'s
+    knob is `ttl` (deprecated `ttlMs` alias).
 
 ---
 

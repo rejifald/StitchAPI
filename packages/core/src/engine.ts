@@ -1361,7 +1361,7 @@ async function* runStreaming(
     // The reconnect loop. The first open is mandatory; each subsequent open is gated on a drop
     // (`'closed'`/`'error'`) AND remaining attempts. On a drop we emit a `reconnect` progress event
     // (reusing the `progress` spine — Decision: no new StitchEvent type), wait the backoff (the
-    // server `retry:` seen this run, else `reconnect.backoffMs`, else the `retry` policy), then loop
+    // server `retry:` seen this run, else `reconnect.backoff`, else the `retry` policy), then loop
     // — `openAndDecode` reapplies auth + injects the resume token on the reopened request.
     for (;;) {
         const ended = yield* openAndDecode();
@@ -1381,11 +1381,11 @@ async function* runStreaming(
         }
 
         // Backoff: a server-sent `retry:` (seen on any connection this run) wins; else the explicit
-        // `reconnect.backoffMs`; else the stitch's `retry` backoff math. `attempt` is now the count
+        // `reconnect.backoff`; else the stitch's `retry` backoff math. `attempt` is now the count
         // of opens DONE, so `attempt + 1` is the upcoming reconnect for the expo curve.
         const backoff =
             lastRetryMs ??
-            policy.backoffMs ??
+            policy.backoff ??
             backoffDelay(attempt + 1, cfg.retry);
         yield {
             type: 'progress',
@@ -1404,21 +1404,23 @@ async function* runStreaming(
 // Resolve the resumable-SSE reconnect policy from config (issue #71) — the ONE place the engine
 // reads the `sse` config slot, keeping `runStreaming` free of SSE-isms. `sse.reconnect` is off by
 // default; `true` enables it with sane defaults; the object form tunes the cap / fallback backoff.
-// `backoffMs` stays `undefined` when unset so the caller can fall back to the `retry` policy.
+// `backoff` stays `undefined` when unset so the caller can fall back to the `retry` policy.
 function resolveReconnect(cfg: ResolvedStitchConfig): {
     enabled: boolean;
     maxAttempts: number;
-    backoffMs: number | undefined;
+    backoff: number | undefined;
 } {
     const r = cfg.sse?.reconnect;
-    if (!r) return { enabled: false, maxAttempts: 0, backoffMs: undefined };
+    if (!r) return { enabled: false, maxAttempts: 0, backoff: undefined };
     if (r === true)
-        return { enabled: true, maxAttempts: 3, backoffMs: undefined };
+        return { enabled: true, maxAttempts: 3, backoff: undefined };
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `backoffMs` is the @deprecated alias of `backoff`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const backoff = parseDuration(r.backoff ?? r.backoffMs);
     return {
         enabled: true,
         // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxAttempts` is the @deprecated alias of `attempts`, read for back-compat until the GA cut (CONTRACT.md P4)
         maxAttempts: r.attempts ?? r.maxAttempts ?? 3,
-        backoffMs: r.backoffMs,
+        backoff,
     };
 }
 

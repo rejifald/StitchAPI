@@ -113,8 +113,8 @@ export default {
 </Callout>
 
 KV's `expirationTtl` is in **seconds** with a **60-second minimum**; the store
-reconciles that with the contract's millisecond TTLs (`ttlMs` →
-`max(60, ceil(ttlMs / 1000))` s), so a value asked to live 5s lives 60s (harmless
+reconciles that with the contract's millisecond TTLs (`ttl` →
+`max(60, ceil(ttl / 1000))` s), so a value asked to live 5s lives 60s (harmless
 for caches and sessions). `set(key, undefined)` deletes; `keyPrefix` namespaces.
 
 ## Deno KV — `@stitchapi/deno-kv`

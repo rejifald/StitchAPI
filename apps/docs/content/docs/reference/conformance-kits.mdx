@@ -57,13 +57,13 @@ surface the engine uses for throttle counters and auth/session state:
 
 -   `set`/`get` round-trips a value; a missing key resolves to `undefined`;
     a second `set` overwrites; writes are isolated by key.
--   A `set` with `ttlMs` expires; a `set` without `ttlMs` does not.
+-   A `set` with `ttl` expires; a `set` without `ttl` does not.
 -   `incr` initializes a missing key to 1, increments an existing counter,
     restarts at 1 once its TTL window lapses, and is atomic within a process:
     20 concurrent calls must return 1..20 exactly.
 
 TTL rules use real timers with a small window (default 60ms). Pass
-`{ ttlMs }` to give a backend with coarser expiry more room. Keys are
+`{ ttl }` to give a backend with coarser expiry more room. Keys are
 namespaced per run, so rerunning against a persistent backend never collides.
 
 ## verifyAdapterContract
@@ -155,7 +155,7 @@ test('redisStore implements the StitchStore contract', async () => {
         assertConformance(
             await verifyStoreContract(() => redisStore(client), {
                 // Give Redis expiry more room than the 60ms default.
-                ttlMs: 250,
+                ttl: 250,
             }),
         );
     } finally {
