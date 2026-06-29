@@ -12,7 +12,7 @@ import type {
     Adapter,
     AdapterRequest,
     AdapterResponse,
-    StitchConfig,
+    ResolvedStitchConfig,
     StitchInput,
 } from './types';
 
@@ -35,7 +35,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      * (possibly patched) one. Omitted = the http identity. (Wired for graphql in Stage 4.)
      */
     readonly buildRequest?: (
-        cfg: StitchConfig,
+        cfg: ResolvedStitchConfig,
         input: StitchInput,
         base: AdapterRequest,
     ) => AdapterRequest;
@@ -45,7 +45,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      */
     readonly interpret?: (
         res: AdapterResponse,
-        cfg: StitchConfig,
+        cfg: ResolvedStitchConfig,
     ) => SurfaceOutcome<TResult>;
     /**
      * Decode a live response body into `delta` chunks. Its presence marks a surface as
@@ -53,7 +53,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      */
     readonly stream?: (
         res: AdapterResponse,
-        cfg: StitchConfig,
+        cfg: ResolvedStitchConfig,
     ) => AsyncIterable<unknown>;
     /**
      * Map an emitted `delta` to the value the `output` contract validates (per-`delta`
