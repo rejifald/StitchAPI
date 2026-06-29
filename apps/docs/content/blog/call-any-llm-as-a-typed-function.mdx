@@ -36,7 +36,7 @@ The vendor SDK hides the URL and the header names, but it does not buy you anyth
 
 A stitch turns one endpoint into a typed function you call with `await`. The `llm` surface declares a chat call the same way, binding the provider and its defaults to the surface; the messages travel in the call:
 
-```ts
+```ts twoslash
 import { apiKey, env } from 'stitchapi';
 import { anthropic, llm } from 'stitchapi/llm';
 
@@ -67,7 +67,7 @@ Each field replaces something the SDK did opaquely or `fetch` did by hand:
 
 The reason the rewrite goes away is that the provider is a value, not a library. The first-party providers ship as plain `LlmProvider` config — no SDK dependency, the contract-not-dependency gate — so moving from Claude to GPT-4o is a `provider:` change and an `auth:` change, nothing at the call site:
 
-```ts
+```ts twoslash
 import { bearer, env } from 'stitchapi';
 import { llm, openai } from 'stitchapi/llm';
 
@@ -87,9 +87,14 @@ const { text } = await chat({
 
 When you need a provider that does not ship first-party, you implement the same contract the built-ins do. An `LlmProvider` declares its `id`, its full completions `endpoint`, optional non-secret `headers`, an optional `defaultModel`, a `buildBody` that maps a normalised `LlmRequest` to that vendor's wire body, and a `parse` that lifts the response back into an `LlmResult`:
 
-```ts
+```ts twoslash
 import { bearer, env } from 'stitchapi';
 import { type LlmProvider, llm } from 'stitchapi/llm';
+
+// the vendor's wire response — name the shape `parse` reads, no `any`
+interface MistralResponse {
+    choices: { message: { content: string } }[];
+}
 
 const mistral: LlmProvider = {
     id: 'mistral',
@@ -101,7 +106,7 @@ const mistral: LlmProvider = {
     }),
     // lift the provider's response back into an LlmResult
     parse: (body) => ({
-        text: (body as any).choices[0].message.content,
+        text: (body as MistralResponse).choices[0].message.content,
         raw: body,
     }),
 };
@@ -115,7 +120,11 @@ The credential stays the stitch's `auth`, never the provider — so a provider y
 
 Switching at edit time covers the cost review. But the same property — a provider is a value, a stitch is a function — means you can hold both at once and choose between them per call. Declare a cheap stitch and a capable one, then route on whatever condition you have:
 
-```ts
+```ts twoslash
+import { apiKey, bearer, env } from 'stitchapi';
+import { anthropic, llm, openai } from 'stitchapi/llm';
+
+// ---cut---
 const fast = llm({
     provider: openai,
     model: 'gpt-4o-mini',
@@ -143,7 +152,11 @@ Both stitches are the same `chat` shape — same call signature, same `result.te
 
 Because the surface sends an HTTP request, every resilience field a stitch has applies to a model call. Provider overloads (`429`, `529`) are exactly what retry is for, and a metered key is exactly what throttle is for:
 
-```ts
+```ts twoslash
+import { apiKey, env } from 'stitchapi';
+import { anthropic, llm } from 'stitchapi/llm';
+
+// ---cut---
 const chat = llm({
     provider: anthropic,
     model: 'claude-opus-4-8',
@@ -167,9 +180,13 @@ The `llm` surface is buffered: `await chat(...)` resolves the whole `LlmResult`,
 
 The OpenAI-compatible endpoint streams when the body carries `stream: true`. Declare it as an `sse` stitch and accumulate `choices[0].delta.content` off each frame. `.stream()` yields the run's lifecycle events, so filter for the `delta` ones — each carries one parsed SSE frame as its `chunk`:
 
-```ts
+```ts twoslash
+// your sink: a socket, the UI, stdout
+// ---cut---
 import { bearer, env } from 'stitchapi';
 import { type SseEvent, sse } from 'stitchapi/sse';
+
+declare function onToken(token: string): void; // your sink: a socket, the UI, stdout
 
 // the wire is untyped JSON; name the one chunk shape we read off it
 interface ChatChunk {
@@ -198,7 +215,7 @@ for await (const event of stream) {
     const token = data.choices?.[0]?.delta?.content;
     if (token) {
         text += token; // accumulate the full reply
-        process.stdout.write(token); // and render each token as it arrives
+        onToken(token); // push each token onward as it arrives
     }
 }
 ```
