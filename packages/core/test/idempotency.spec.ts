@@ -34,7 +34,7 @@ test('injects a stable Idempotency-Key on a write, unchanged across a retry', as
         baseUrl: server.url,
         path: '/create',
         retry: { attempts: 2, on: [503], baseMs: 5 },
-        idempotency: {}, // default header + random per-call key
+        idempotency: true, // default header + random per-call key
     });
 
     await expect(create({ body: { x: 1 } })).resolves.toEqual({ ok: true });
@@ -95,7 +95,7 @@ test('separate logical calls get distinct generated keys', async () => {
         method: 'POST',
         baseUrl: server.url,
         path: '/c',
-        idempotency: {},
+        idempotency: true,
     });
 
     await create({ body: {} });
@@ -112,11 +112,25 @@ test('does not inject on GET (writes only)', async () => {
     const read = stitch({
         baseUrl: server.url,
         path: '/read',
-        idempotency: {},
+        idempotency: true,
     });
 
     await read();
     expect(
         server.calls('/read')[0]!.headers['idempotency-key'],
     ).toBeUndefined();
+});
+
+test('the opaque `idempotency: {}` is a type error — use `true` for defaults (P20)', () => {
+    const enableWithDefaults = () =>
+        stitch({
+            method: 'POST',
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — the empty object is rejected at the slot; `true` is the all-defaults form.
+            idempotency: {},
+        });
+    // The assertion that matters is the @ts-expect-error above (checked by `check:types`); the
+    // closure is never invoked, so this only pins the compile-time contract.
+    expect(typeof enableWithDefaults).toBe('function');
 });

@@ -20,6 +20,7 @@ import { makeStitch } from './stitch';
 import type { Surface } from './surface';
 import {
     type AdapterResponse,
+    type ResolvedStitchConfig,
     type Seam,
     type SeamOptions,
     type Stitch,
@@ -61,7 +62,7 @@ type StreamElement<C> =
 // Decode the live body into `delta` items per `cfg.stream.decode` (default `'bytes'`).
 async function* decodeStream(
     res: AdapterResponse,
-    cfg: StitchConfig,
+    cfg: ResolvedStitchConfig,
 ): AsyncGenerator<unknown, void> {
     const body = res.body;
     if (!(body instanceof ReadableStream)) return;

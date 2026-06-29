@@ -27,6 +27,7 @@ import {
     type DriftSpec,
     type HookContext,
     type Hooks,
+    type IdempotencyOptions,
     type InputSchemas,
     type InspectOptions,
     type Inspection,
@@ -136,6 +137,12 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
         cfg.timeout = { total: cfg.timeout };
     if (typeof cfg.cache === 'number' || typeof cfg.cache === 'string')
         cfg.cache = { ttl: cfg.cache };
+    // P20: `idempotency: true` enables it with defaults; `false`/absent is off. Normalize the
+    // boolean toggle to the object form the engine reads (the opaque `idempotency: {}` is a type
+    // error at the slot, so the all-defaults case arrives here as `true`).
+    if (cfg.idempotency === true)
+        (cfg as { idempotency?: IdempotencyOptions }).idempotency = {};
+    else if (cfg.idempotency === false) delete cfg.idempotency;
 }
 
 export function compose(config: Fragment): ResolvedStitchConfig {
