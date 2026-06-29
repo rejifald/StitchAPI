@@ -177,14 +177,16 @@ const chatStream = sse({
     auth: bearer(env('OPENAI_API_KEY')),
 });
 
-let text = '';
-for await (const event of chatStream({
+const stream = chatStream({
     body: {
         model: 'gpt-4o',
         stream: true,
         messages: [{ role: 'user', content: 'Summarize this.' }],
     },
-}).stream()) {
+}).stream();
+
+let text = '';
+for await (const event of stream) {
     // each frame is one parsed SSE event; the `[DONE]` terminator
     // parses to a bare string, so reach for the delta defensively
     const delta = (event.data as any).choices?.[0]?.delta?.content;
