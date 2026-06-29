@@ -12,7 +12,8 @@ Validate an API response with Zod when you want a malformed or unexpected shape 
 
 Zod's own answer is direct. Define a schema, fetch, and run the parsed JSON through it. Use `safeParse` so a bad shape is a value you handle, not a thrown `ZodError` you forgot to catch:
 
-```ts
+```ts twoslash
+// @noErrors
 import { z } from 'zod';
 
 const User = z.object({ id: z.number(), name: z.string() });
@@ -38,7 +39,7 @@ The rough edges show up once you have more than one endpoint. The `res.ok` check
 
 A [stitch](/docs/concepts/the-stitch) makes the schema a property of the call instead of code you run after it. You hand the response schema to `output` and pair it with a generic; the validator runs against every response, and the rest of the boilerplate disappears:
 
-```ts
+```ts twoslash
 import { stitch, toValidator } from 'stitchapi';
 import { z } from 'zod';
 
@@ -59,7 +60,7 @@ const user = await getUser({ params: { id: 1 } }); // typed · validated
 
 The manual pattern guards the response; the stitch guards both ends. `input` is a map of `{ params, query, body, headers }`, each an optional validator that runs _before_ the request leaves the process — so a bad body fails fast with no wasted network call:
 
-```ts
+```ts twoslash
 import { stitch, toValidator } from 'stitchapi';
 import { z } from 'zod';
 

@@ -12,7 +12,8 @@ You ship a feature on Claude, then a cost review says move the cheap path to GPT
 
 Strip a chat completion down and it is a request to one endpoint with a JSON body of messages and an `Authorization` header:
 
-```ts
+```ts twoslash
+// @noErrors
 const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {

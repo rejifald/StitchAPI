@@ -20,7 +20,8 @@ npx openapi-typescript ./openapi.yaml -o ./api-types.ts
 
 Then you create a client bound to those types and call paths against them:
 
-```ts
+```ts twoslash
+// @noErrors
 import type { paths } from './api-types';
 
 import createClient from 'openapi-fetch';
@@ -40,7 +41,7 @@ The cost is the part the types can't show you. They describe what the spec _said
 
 A [stitch](/docs/concepts/the-stitch) inverts where the types come from. Instead of generating them from a document, you hand the endpoint a validator and pair it with a generic. The validator runs against real bytes on every call, so the type and the runtime check come from one source:
 
-```ts
+```ts twoslash
 import { stitch, toValidator } from 'stitchapi';
 import { z } from 'zod';
 
@@ -59,7 +60,11 @@ const user = await getUser({ params: { id: 1 } }); // typed · validated
 
 Input is typed and checked the same way, before the request leaves the process:
 
-```ts
+```ts twoslash
+import { stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+// ---cut---
 const createUser = stitch<{ id: number; name: string }>({
     method: 'POST',
     baseUrl: 'https://api.example.com',
@@ -75,7 +80,13 @@ A bad `body` rejects before the POST is sent; a response that doesn't match `out
 
 A strict `output` validator throws when the response stops matching, which is right for a hard break but wrong for an additive change — a new field the provider added shouldn't fail your call. Wrap the schema in `drift()` instead, and each response is validated and then diffed against the validated value, with every difference classified by severity:
 
-```ts
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const OrdersSchema = z.array(z.object({ id: z.number(), total: z.number() }));
+
+// ---cut---
 const listOrders = stitch({
     baseUrl: 'https://api.example.com',
     path: '/orders',

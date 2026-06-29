@@ -12,7 +12,8 @@ Fetch all pages of a paginated API when you want every record in a single array 
 
 The hand-rolled answer is a loop that follows the cursor off each page and concatenates the items. For a cursor API:
 
-```ts
+```ts twoslash
+// @noErrors
 async function fetchAllUsers(): Promise<unknown[]> {
     const all: unknown[] = [];
     let cursor: string | undefined;
@@ -44,7 +45,7 @@ The fragility shows up under real conditions. The loop fires requests back to ba
 
 A [stitch](/docs/concepts/the-stitch) turns the loop into two functions on a `paginate` field: how to find the next page, and which array to collect. You `await` once and get every page aggregated:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const allUsers = stitch({
@@ -67,7 +68,7 @@ const users = (await allUsers()) as unknown[]; // every page, one array
 
 For an offset or page-number API, `next` uses the page count it's handed instead of a cursor:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const allOrders = stitch({
@@ -90,7 +91,7 @@ const allOrders = stitch({
 
 The reason to declare pagination rather than write it is that the other concerns then apply to every page for free. `retry`, `throttle`, and auth are independent keys on the same stitch, and the page loop runs each page through all of them:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const mirror = stitch({

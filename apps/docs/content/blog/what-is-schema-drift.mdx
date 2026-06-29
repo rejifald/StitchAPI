@@ -57,7 +57,7 @@ The generic answers all involve remembering a shape and comparing against it.
 
 A [stitch](/docs/concepts/the-stitch) detects drift by reusing the contract you already wrote. Wrap a stitch's `output` schema in `drift()`, and every live response is validated against the schema and then diffed against the validated value — the difference is the drift:
 
-```ts
+```ts twoslash
 import { drift, stitch } from 'stitchapi';
 import { z } from 'zod';
 

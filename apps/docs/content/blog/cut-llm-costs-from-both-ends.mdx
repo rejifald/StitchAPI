@@ -33,7 +33,8 @@ StitchAPI's **code-mode** inverts this. Instead of enumerating every endpoint as
 
 The model writes a short TypeScript snippet that calls the stitches by name, and discovers their shapes _on demand_ instead of being handed the whole catalog up front. Conceptually:
 
-```ts
+```ts twoslash
+// @noErrors
 // Before — one tool per endpoint, every schema re-sent each turn:
 //   tools: [
 //     getUser, listUsers, createUser, updateUser, deleteUser,
@@ -71,7 +72,7 @@ The second leak is on the far end of the request: paid upstream calls your agent
 
 Here's a stitch declaring a cached, throttled read:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const search = stitch({

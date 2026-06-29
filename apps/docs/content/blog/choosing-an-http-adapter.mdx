@@ -14,7 +14,10 @@ A stitch turns one endpoint into a typed, validated, resilient function. The **a
 
 An adapter is one function:
 
-```ts
+```ts twoslash
+import type { AdapterRequest, AdapterResponse } from 'stitchapi';
+
+// ---cut---
 type Adapter = (req: AdapterRequest) => Promise<AdapterResponse>;
 ```
 
@@ -28,7 +31,7 @@ All three built-in adapters share the same body-encoding and response-decoding h
 
 The default is `fetchAdapter()`. You rarely name it — the engine wires `cfg.adapter ?? fetchAdapter()` — so a stitch with no `adapter` field is already on `fetch`.
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const getUser = stitch({
@@ -39,7 +42,8 @@ const getUser = stitch({
 
 You reach for `fetchAdapter(opts?)` explicitly when you need to thread infrastructure through it. It backs onto the global `fetch`, and its `dispatcher` option takes an undici `Agent` — a proxy, a custom CA, a bound network interface — without StitchAPI ever importing undici, so the zero-dependency core stays zero-dependency. It is also the **only** built-in that streams: `stream` and `sse` surfaces and download progress run through `fetch` and nothing else.
 
-```ts
+```ts twoslash
+// @noErrors
 import { fetchAdapter, stitch } from 'stitchapi';
 import { Agent } from 'undici';
 
@@ -56,7 +60,8 @@ const behindProxy = stitch({
 
 `axiosAdapter(client, defaults?)` routes the call through an axios instance you supply. axios is never a dependency — you bring the client, the adapter borrows it. Use it when an instance is already configured the way your platform demands: an `httpsAgent`, a proxy, interceptors a team relies on. The `defaults` merge under every request and per-call values override them.
 
-```ts
+```ts twoslash
+// @noErrors
 import axios from 'axios';
 import { axiosAdapter, stitch } from 'stitchapi';
 
@@ -71,7 +76,7 @@ The honest tradeoff: `axiosAdapter` is **buffered-only**. Point it at a `stream`
 
 `xhrAdapter(XHR?)` is browser-only and backed by `XMLHttpRequest`. Its one reason to exist over `fetchAdapter` is **upload progress**: `fetch` cannot report bytes sent, `xhr.upload` can. If you're drawing a progress bar for a file going up, this is the adapter.
 
-```ts
+```ts twoslash
 import { stitch, xhrAdapter } from 'stitchapi';
 
 const upload = stitch({
@@ -112,9 +117,10 @@ The contract _is_ the extension point. Take `req`, return `{ status, headers, bo
 
 The canned-response case is common enough that it already ships: `mockAdapter(routes, opts?)` from `stitchapi/testing` builds an adapter from one route or a list of them. Each route is `{ method?, match?, respond }` — `method` and `match` decide which requests it answers (a string or `RegExp` against the URL pathname, or a predicate), and `respond` is the reply. The reply can be a fixed `MockResponse`, an array consumed one per call (to script a flaky endpoint), or a function of the call. You pass one route or an **array** of them, and the first whose `method` and `match` accept a request wins:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 import { mockAdapter } from 'stitchapi/testing';
+import { expect } from 'vitest';
 
 const api = mockAdapter([
     {

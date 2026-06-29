@@ -14,7 +14,8 @@ A `graphql()` stitch is that one query as a typed function. It POSTs the operati
 
 Here is the call most TypeScript codebases write against a GraphQL API they don't own:
 
-```ts
+```ts twoslash
+// @noErrors
 type User = { id: string; name: string };
 
 async function getUser(id: string): Promise<User> {
@@ -39,7 +40,7 @@ The sharp edges are real. `res.ok` is `true` for a `200` that carries `{ "errors
 
 Declare the operation once. `graphql()` is a thin wrapper over `stitch()` that fixes `kind: 'graphql'`, `method: 'POST'`, and `unwrap: 'data'`:
 
-```ts
+```ts twoslash
 import { graphql } from 'stitchapi';
 
 const getUser = graphql<{ user: { id: string; name: string } }>({
@@ -56,7 +57,7 @@ Each field maps to glue you no longer write. `graphql()` sends the POST and the 
 
 The footgun closes here. A GraphQL endpoint can return HTTP `200` while carrying a top-level `errors` array; the stitch treats that as a failure and surfaces it, rather than unwrapping a `data` that isn't there. A failed query rejects the awaitable with a `StitchError` whose message carries the GraphQL error text, prefixed `GraphQL:` (joined with `; ` when there is more than one):
 
-```ts
+```ts twoslash
 import { StitchError, graphql } from 'stitchapi';
 
 const getUser = graphql<{ user: { name: string } }>({
@@ -83,17 +84,19 @@ try {
 
 `graphql()` returns the same object `stitch()` does, so every resilience and validation field applies. Add an `output` schema and the unwrapped `data` is validated before you touch it — the `as User` cast is gone, replaced by a runtime check the compiler can trust:
 
-```ts
-import { bearer, env, graphql } from 'stitchapi';
+```ts twoslash
+import { bearer, env, graphql, toValidator } from 'stitchapi';
 import { z } from 'zod';
 
-const getUser = graphql({
+const getUser = graphql<{ user: { id: string; name: string } }>({
     baseUrl: 'https://api.example.com',
     path: '/graphql',
     query: `query GetUser($id: ID!) { user(id: $id) { id name } }`,
-    output: z.object({
-        user: z.object({ id: z.string(), name: z.string() }),
-    }),
+    output: toValidator(
+        z.object({
+            user: z.object({ id: z.string(), name: z.string() }),
+        }),
+    ),
     auth: bearer(env('API_TOKEN')),
     retry: 3,
     timeout: '10s',
@@ -122,7 +125,7 @@ The layer split is clean: the GraphQL document describes **what** you're asking 
 
 The bare `graphql()` form is one query, one function — and it scales the way the rest of StitchAPI does. When a second query against the same endpoint shows up, bind the shared `baseUrl` and `auth` once with a seam and let each operation inherit them:
 
-```ts
+```ts twoslash
 import { bearer, env, seam } from 'stitchapi';
 
 const api = seam({

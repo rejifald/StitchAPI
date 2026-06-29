@@ -60,7 +60,8 @@ The inner `input` is the stitch's own input — `{ params?, query?, body?, heade
 
 Here's the before/after stated plainly:
 
-```ts
+```ts twoslash
+// @noErrors
 // Before — one tool per endpoint. Every schema re-sent each turn:
 //   tools: [
 //     getUser, listUsers, createUser, updateUser, deleteUser,

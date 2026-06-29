@@ -16,7 +16,8 @@ An idempotency key closes that gap. The client sends a unique token with the wri
 
 Here is the honest version with `fetch`. You want a retry, and you want it to be safe, so you mint a key once and thread it through the loop by hand.
 
-```ts
+```ts twoslash
+// @noErrors
 async function charge(body: { amount: number; ref: string }) {
     const key = crypto.randomUUID();
 
@@ -47,7 +48,7 @@ The bug is one indentation level away. Move `const key = crypto.randomUUID()` in
 
 A stitch is one API endpoint declared as a typed function. The retry policy and the idempotency key are config fields, not control flow, so the key cannot drift out of the loop — there is no loop to drift out of.
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const charge = stitch({
@@ -73,7 +74,10 @@ A customer double-clicks "Pay." Your handler fires `charge(...)` twice. Each cal
 
 The fix is a stable key derived from something the duplicates share — an order reference, a request id, anything that is identical across the two submissions:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// ---cut---
 const createOrder = stitch({
     method: 'POST',
     baseUrl: 'https://api.example.com',
@@ -100,7 +104,10 @@ If the duplicates have nothing in common to hash, no key can join them — that 
 
 Some APIs expect the token on a header other than `Idempotency-Key`. Name it:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// ---cut---
 const createOrder = stitch({
     method: 'POST',
     baseUrl: 'https://api.example.com',
