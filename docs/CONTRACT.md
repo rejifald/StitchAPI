@@ -439,6 +439,12 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `createCircuit` throws if neither spelling is set (required-by-design, P15). The
     `StitchConfig.circuit` slot is `AtLeastOne<CircuitOptions>`, so the empty object is rejected (P20)
     while the breaker stays required-by-design.
+-   **P17 (emitted: waited/elapsed)** `StitchEvent` `progress.waitedMs`→`waited` and `done.ms`→`elapsed`;
+    `Throttle.acquire` now returns `{ waited }`. The engine **co-emits** the `@deprecated` aliases for
+    back-compat (the type carries both): `done.ms` as a plain literal, `progress.waitedMs` by assignment
+    (a helper, so the literal-`*Ms:` lint R2 stays clean). Every first-party sink (core trace/cli/otlp,
+    `@stitchapi/pino`/`sentry`/`fastify`/`nest`) reads the canonical field. Parity tested in
+    `contract-event-aliases.spec.ts`.
 
 ---
 

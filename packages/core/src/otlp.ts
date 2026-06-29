@@ -205,8 +205,8 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                             ...(event.detail
                                 ? { 'stitch.detail': event.detail }
                                 : {}),
-                            ...(event.waitedMs != null
-                                ? { 'stitch.waited_ms': event.waitedMs }
+                            ...(event.waited != null
+                                ? { 'stitch.waited_ms': event.waited }
                                 : {}),
                         },
                     });

@@ -287,7 +287,7 @@ test('opts.format overrides the one-liner; null skips the event', () => {
     );
     // a non-start event → format returns null → nothing logged for it
     sink.handle(
-        { type: 'done', ok: true, ms: 5, attempts: 1, at: 0 },
+        { type: 'done', ok: true, elapsed: 5, attempts: 1, at: 0 },
         { name: 'x' },
     );
 

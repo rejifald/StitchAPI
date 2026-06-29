@@ -65,7 +65,7 @@ describe('fastifyLoggerSink — level mapping', () => {
                 attempts: 3,
                 at: 0,
             },
-            { type: 'done', ok: true, ms: 12, attempts: 1, at: 0 },
+            { type: 'done', ok: true, elapsed: 12, attempts: 1, at: 0 },
         ];
         for (const e of events) sink.handle(e, ctx);
 
@@ -120,7 +120,10 @@ describe('fastifyLoggerSink — level mapping', () => {
             { type: 'result', value: 1, status: 200, attempts: 1, at: 0 },
             ctx,
         );
-        sink.handle({ type: 'done', ok: true, ms: 1, attempts: 1, at: 0 }, ctx);
+        sink.handle(
+            { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+            ctx,
+        );
         sink.handle(
             {
                 type: 'error',

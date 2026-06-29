@@ -144,7 +144,10 @@ test('the OTLP sink builds a span tree from the ctx ids (traceId / spanId / pare
             { type: 'result', value: {}, status: 200, attempts: 1, at: 2 },
             ctx,
         );
-        sink.handle({ type: 'done', ok: true, ms: 1, attempts: 1, at: 2 }, ctx);
+        sink.handle(
+            { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 2 },
+            ctx,
+        );
     };
     emit('parentCall', parent);
     emit('childCall', child);
@@ -211,7 +214,7 @@ test('a hand-fed OTLP sink (no ctx ids) still mints a valid span — back-compat
         { name }, // no runId/traceId — the fallback path
     );
     sink.handle(
-        { type: 'done', ok: true, ms: 1, attempts: 1, at: 2 },
+        { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 2 },
         { name },
     );
 

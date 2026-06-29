@@ -39,7 +39,7 @@ function scriptedAdapter(
 interface Drained {
     types: string[];
     deltas: unknown[];
-    reconnects: { attempt: number; waitedMs: number | undefined }[];
+    reconnects: { attempt: number; waited: number | undefined }[];
     drifts: { level: string }[];
     result: unknown;
     error: { message: string; status: number | undefined } | undefined;
@@ -64,7 +64,7 @@ async function drainAll(
         out.types.push(ev.type);
         if (ev.type === 'delta') out.deltas.push(ev.chunk);
         else if (ev.type === 'progress' && ev.phase === 'reconnect')
-            out.reconnects.push({ attempt: ev.attempt, waitedMs: ev.waitedMs });
+            out.reconnects.push({ attempt: ev.attempt, waited: ev.waited });
         else if (ev.type === 'drift')
             out.drifts.push({ level: ev.finding.level });
         else if (ev.type === 'result') out.result = ev.value;
@@ -163,7 +163,7 @@ describe('sse reconnect backoff: server retry: vs fallback (issue #71)', () => {
         const t0 = Date.now();
         const out = await drainAll(s.stream());
         const elapsed = Date.now() - t0;
-        expect(out.reconnects[0]?.waitedMs).toBe(120);
+        expect(out.reconnects[0]?.waited).toBe(120);
         expect(elapsed).toBeGreaterThanOrEqual(110);
         expect(out.doneOk).toBe(true);
     });
@@ -181,7 +181,7 @@ describe('sse reconnect backoff: server retry: vs fallback (issue #71)', () => {
         const t0 = Date.now();
         const out = await drainAll(s.stream());
         const elapsed = Date.now() - t0;
-        expect(out.reconnects[0]?.waitedMs).toBe(90);
+        expect(out.reconnects[0]?.waited).toBe(90);
         expect(elapsed).toBeGreaterThanOrEqual(80);
         expect(out.doneOk).toBe(true);
     });
@@ -201,7 +201,7 @@ describe('sse reconnect backoff: server retry: vs fallback (issue #71)', () => {
         const t0 = Date.now();
         const out = await drainAll(s.stream());
         const elapsed = Date.now() - t0;
-        expect(out.reconnects[0]?.waitedMs).toBe(70);
+        expect(out.reconnects[0]?.waited).toBe(70);
         expect(elapsed).toBeGreaterThanOrEqual(60);
         expect(out.doneOk).toBe(true);
     });
