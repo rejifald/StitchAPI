@@ -64,7 +64,7 @@ export interface DenoAtomicOperation {
  * `Deno.openKv()` (or the npm `@deno/kv` package) satisfies it structurally — you
  * never implement this yourself in production.
  *
- * Note `expireIn` is **milliseconds** (matching the store contract's `ttlMs`),
+ * Note `expireIn` is **milliseconds** (matching the store contract's `ttl`),
  * which is exactly Deno KV's own unit — no conversion at the seam.
  */
 export interface DenoKvLike {
@@ -146,7 +146,7 @@ export function denoKvStore(
                 return value;
             }
         },
-        async set(key, value, ttlMs) {
+        async set(key, value, ttl) {
             // `set(key, undefined)` is the cache's delete (ADR 0003 §8) — drop the key.
             if (value === undefined) {
                 await kv.delete(k(key));
@@ -154,10 +154,10 @@ export function denoKvStore(
             }
             // Deno KV rejects `expireIn` of 0/negative; only attach a positive TTL.
             const options =
-                ttlMs != null && ttlMs > 0 ? { expireIn: ttlMs } : undefined;
+                ttl != null && ttl > 0 ? { expireIn: ttl } : undefined;
             await kv.set(k(key), JSON.stringify(value), options);
         },
-        async incr(key, ttlMs) {
+        async incr(key, ttl) {
             // Atomic counter-with-window via compare-and-set. Read the current
             // value + its versionstamp, then commit `next` guarded by a `check`
             // on that versionstamp: if another isolate raced us, the versionstamp
@@ -175,8 +175,8 @@ export function denoKvStore(
                     typeof entry.value === 'number' ? entry.value : 0;
                 const next = current + 1;
                 const options =
-                    entry.versionstamp === null && ttlMs > 0
-                        ? { expireIn: ttlMs }
+                    entry.versionstamp === null && ttl > 0
+                        ? { expireIn: ttl }
                         : undefined;
                 const res = await kv
                     .atomic()

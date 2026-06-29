@@ -100,7 +100,7 @@ const call = stitch({
     baseUrl: 'https://api.test',
     path: '/flaky',
     adapter: api,
-    retry: { attempts: 3, on: [503], baseMs: 1 },
+    retry: { attempts: 3, on: [503], baseDelay: 1 },
 });
 
 await call(); // { ok: true } — the third reply
@@ -310,7 +310,7 @@ const call = stitch({
     baseUrl: 'https://api.test',
     path: '/flaky',
     adapter: api,
-    retry: { attempts: 2, on: [503], baseMs: 10_000 },
+    retry: { attempts: 2, on: [503], baseDelay: 10_000 },
     clock,
 });
 
