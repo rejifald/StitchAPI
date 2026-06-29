@@ -121,7 +121,7 @@ test('max caps the page loop (guards a runaway paginator)', async () => {
         baseUrl: server.url,
         path: '/loop',
         unwrap: 'data',
-        paginate: { next: () => ({}), max: 2 },
+        paginate: { next: () => ({}), pages: 2 },
     });
     await list();
     expect(server.callCount('/loop')).toBe(2); // stopped at the cap, not infinitely

@@ -283,13 +283,13 @@ describe('cache — invalidation', () => {
 });
 
 describe('cache — LRU bound', () => {
-    test('maxEntries evicts the least-recently-used entry', async () => {
+    test('entries evicts the least-recently-used entry', async () => {
         const { adapter, calls } = counting();
         const s = stitch({
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app', maxEntries: 2 },
+            cache: { ttl: '60s', scope: 'app', entries: 2 },
         });
         await s({ query: { id: 1 } }); // 1
         await s({ query: { id: 2 } }); // 2

@@ -62,7 +62,7 @@ describe('pipelineStages', () => {
             method: 'POST',
             throttle: { concurrency: 2 },
             retry: { attempts: 3 },
-            paginate: { max: 7 },
+            paginate: { pages: 7 },
             transform: () => undefined,
             unwrap: 'data',
             output: () => true,
@@ -87,7 +87,7 @@ describe('pipelineStages', () => {
         const c = cfg({
             url: 'https://x/y',
             retry: { attempts: 3 },
-            paginate: { max: 7 },
+            paginate: { pages: 7 },
         });
         expect(pipelineStages(c)).toEqual([
             'call',

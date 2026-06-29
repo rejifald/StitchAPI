@@ -858,7 +858,8 @@ async function* paginated(
     const { cfg } = rt;
     const name = nameOf(cfg);
     const pg = cfg.paginate!;
-    const max = pg.max ?? 50;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `max` is the @deprecated alias of `pages`, read for back-compat until the GA cut (CONTRACT.md P4)
+    const max = pg.pages ?? pg.max ?? 50;
     const acc: unknown[] = [];
     let pageInput = input;
     let page = 0;
@@ -1410,7 +1411,8 @@ function resolveReconnect(cfg: ResolvedStitchConfig): {
         return { enabled: true, maxAttempts: 3, backoffMs: undefined };
     return {
         enabled: true,
-        maxAttempts: r.maxAttempts ?? 3,
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxAttempts` is the @deprecated alias of `attempts`, read for back-compat until the GA cut (CONTRACT.md P4)
+        maxAttempts: r.attempts ?? r.maxAttempts ?? 3,
         backoffMs: r.backoffMs,
     };
 }
