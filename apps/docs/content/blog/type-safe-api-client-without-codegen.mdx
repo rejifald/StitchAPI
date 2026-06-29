@@ -41,7 +41,7 @@ The cost is the part the types can't show you. They describe what the spec _said
 
 A [stitch](/docs/concepts/the-stitch) inverts where the types come from. Instead of generating them from a document, you hand the endpoint a validator and pair it with a generic. The validator runs against real bytes on every call, so the type and the runtime check come from one source:
 
-```ts twoslash
+```ts twoslash tab="StitchAPI" tabGroup="approach"
 import { stitch, toValidator } from 'stitchapi';
 import { z } from 'zod';
 
@@ -54,6 +54,24 @@ const getUser = stitch<{ id: number; name: string }>({
 });
 
 const user = await getUser({ params: { id: 1 } }); // typed · validated
+```
+
+```ts twoslash tab="fetch" tabGroup="approach"
+// @noErrors
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+
+// No generated client; you wire the fetch, the status check, and the
+// parse yourself — and the schema's inferred type is the only thing
+// keeping the call typed and runtime-validated from one source.
+const getUser = async (id: number) => {
+    const res = await fetch(`https://api.example.com/users/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return User.parse(await res.json()); // typed · validated, by hand
+};
+
+const user = await getUser(1);
 ```
 
 `output` takes a `Validator`, and `toValidator()` adapts a Zod schema — or any [Standard Schema](/docs/guides/validation/standard-schema) validator like Valibot or ArkType, or a plain predicate — into one. The `stitch<{ id: number; name: string }>` generic types the resolved value, so `user` is `{ id: number; name: string }` in the editor exactly as a generated type would be. There is no `api-types.ts` to generate, no client to commit, and nothing to regenerate when you add an endpoint — you write the next stitch.

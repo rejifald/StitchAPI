@@ -506,6 +506,7 @@ lands on, so make it the recommended form.
 | `module`           | imports differ by module system         | `ESM` · `CommonJS`                                      |
 | `consumption`      | how a stitch's result is consumed       | `await` · `Stream` · `.then()`                          |
 | `runtime`          | the same operation in code vs the shell | `Programmatic` · `CLI`                                  |
+| `approach`         | a stitch snippet vs the hand-rolled way | `StitchAPI` · `fetch`                                   |
 
 Four rules keep it coherent:
 
@@ -515,6 +516,35 @@ Four rules keep it coherent:
     with the config-object tab; it doesn't parade all twelve call styles.
 -   **A new axis is a new row here first.** Don't coin ad-hoc `tabGroup` values
     inline — add the row above, then use it, so persistence stays consistent.
+
+### `approach` — the "peek at the hand-rolled way" axis (blog)
+
+`approach` is the one axis aimed squarely at blog posts. A post that is about a
+**stitch-only feature** — one that has no fetch-vs-stitch prose "before" — stays
+stitch-first, and offers the equivalent raw-`fetch` code as an on-demand second
+tab on its **hero snippet**. The reader lands on `StitchAPI` and can switch to
+`fetch` to see what the same outcome costs by hand; the choice persists site-wide.
+
+Specific to this axis:
+
+-   **`StitchAPI` is always the default (first) tab.** The point is to stay
+    stitch-first; the `fetch` tab is the comparison, not the lede.
+-   **The `fetch` tab must be an _honest_ equivalent of that hero snippet** — the
+    naive hand-rolled version a reader would actually write, so the contrast is
+    real (the boilerplate the stitch folds in is visibly present, or visibly
+    absent). Don't gold-plate it and don't strawman it.
+-   **Hero snippet only, and only where an honest equivalent exists.** Don't tab
+    every block, and skip it where there's no faithful `fetch` form (a `pipe()`
+    composition, a CLI command, a conceptual essay with no single API call).
+-   **Both fences are `twoslash`** (the blog gate requires it — see "Blog
+    posts"). The `StitchAPI` tab type-checks against the real `stitchapi` types
+    like any other snippet. The `fetch` tab is a deliberately hand-rolled
+    baseline that imports no `stitchapi`, so it carries an in-block `// @noErrors`
+    — the gate's sanctioned escape hatch — keeping the fence uniform and the
+    exception explicit:
+    ` ```ts twoslash tab="fetch" tabGroup="approach" ` then `// @noErrors`.
+-   **Posts that already carry a fetch-vs-stitch prose "before" don't need this**
+    — they've made the comparison already.
 
 ## Type tables — AutoTypeTable
 

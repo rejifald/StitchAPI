@@ -16,7 +16,7 @@ That's exactly the shape `@stitchapi/vercel-ai` gives you. You define a stitch o
 
 The tool is the thin part. The substance is the stitch: a single endpoint declared with a typed input, a validated output, and whatever resilience that integration needs. Here's a stitch for a small internal "lookup" API, with auth, validation, and a few resilience knobs already on it:
 
-```ts twoslash
+```ts twoslash tab="StitchAPI" tabGroup="approach"
 import { bearer, env, stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -39,6 +39,54 @@ export const getOrder = stitch({
     timeout: { total: '5s' },
     cache: '30s',
 });
+```
+
+```ts twoslash tab="fetch" tabGroup="approach"
+// @noErrors
+import { z } from 'zod';
+
+const Order = z.object({
+    id: z.string(),
+    status: z.enum(['pending', 'shipped', 'delivered', 'cancelled']),
+    total: z.number(),
+    placedAt: z.string(),
+});
+
+// Every concern the stitch declared, now hand-wired into one call:
+// auth, validation, retry-on-429/503, timeout, and a cache — by hand.
+const cache = new Map<string, { at: number; order: unknown }>();
+
+export async function getOrder(id: string) {
+    const hit = cache.get(id);
+    if (hit && Date.now() - hit.at < 30_000) return Order.parse(hit.order);
+
+    for (let attempt = 1; ; attempt++) {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 5_000);
+        try {
+            const res = await fetch(
+                `https://internal.example.com/orders/${id}`,
+                {
+                    signal: ctrl.signal,
+                    headers: {
+                        Authorization: `Bearer ${process.env.ORDERS_API_TOKEN}`,
+                    },
+                },
+            );
+            if ((res.status === 429 || res.status === 503) && attempt < 3) {
+                const after = Number(res.headers.get('retry-after')) || 1;
+                await new Promise((r) => setTimeout(r, after * 1000));
+                continue;
+            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const order = Order.parse((await res.json()).data);
+            cache.set(id, { at: Date.now(), order });
+            return order;
+        } finally {
+            clearTimeout(t);
+        }
+    }
+}
 ```
 
 Two things to notice before any model is involved. First, `output: Order` means the stitch validates the response on every call — a renamed field or a wrong type fails loudly here, not three layers downstream inside the model's reasoning. Second, `auth: bearer(env('ORDERS_API_TOKEN'))` resolves the secret at call time, on the inside of the seam. Whoever calls `getOrder` gets the order back; they never see, pass, or even know the token. That property is the whole point of [auth as a boundary](/docs/concepts/capability-not-credential) (the [capability-not-credential argument](/blog/auth-as-a-capability-not-a-credential) spelled out), and it's worth far more when the caller is a model than when it's your own code.

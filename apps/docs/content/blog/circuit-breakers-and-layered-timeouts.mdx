@@ -71,7 +71,7 @@ When the breaker is open, the call surfaces a `STITCH_CIRCUIT_OPEN` error — a 
 
 The reason these compose well is that the breaker, the timeouts, and retry/backoff are all configuration on the same stitch — declared together, evaluated together:
 
-```ts twoslash
+```ts twoslash tab="StitchAPI" tabGroup="approach"
 import { stitch } from 'stitchapi';
 
 const getQuote = stitch({
@@ -81,6 +81,38 @@ const getQuote = stitch({
     timeout: { total: '10s', perAttempt: '3s' },
     circuit: { failureThreshold: 5, cooldownMs: 30_000 },
 });
+```
+
+```ts twoslash tab="fetch" tabGroup="approach"
+// @noErrors
+// Retry + layered timeouts + a breaker, all by hand — and the breaker
+// state has to live in module scope to span calls.
+let failures = 0;
+let openedAt = 0;
+
+async function getQuote(symbol: string) {
+    if (failures >= 5 && Date.now() - openedAt < 30_000) {
+        throw new Error('circuit open'); // fast-fail, no probe logic
+    }
+
+    const total = AbortSignal.timeout(10_000);
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const perAttempt = AbortSignal.timeout(3_000);
+        try {
+            const res = await fetch(`https://api.example.com/quote/${symbol}`, {
+                signal: AbortSignal.any([total, perAttempt]),
+            });
+            if ([429, 502, 503].includes(res.status)) throw res;
+            failures = 0;
+            return res.json();
+        } catch (err) {
+            failures++;
+            openedAt = Date.now();
+            if (total.aborted || attempt === 2) throw err;
+            await new Promise((r) => setTimeout(r, 200 * 2 ** attempt));
+        }
+    }
+}
 ```
 
 Read top to bottom, that's a coherent reliability story. Retry absorbs the transient blips — a stray 503, a rate-limited 429 whose `Retry-After` you honor. The layered timeout bounds how long any single attempt and the whole call can take, with real aborts so nothing leaks. And the breaker is the backstop for when the failures stop being transient: once five in a row have failed, retrying is clearly futile, so it stops trying and fast-fails until a probe says otherwise.

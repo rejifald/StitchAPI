@@ -21,7 +21,7 @@ The throttle is two independent caps, and conflating them is the most common mis
 
 They're orthogonal. A slow-but-parallel API wants a concurrency cap and a loose rate. A fast-but-serial one wants a tight rate and `concurrency: 1`. Most real limits are a combination, and you can set either on its own or both together.
 
-```ts twoslash
+```ts twoslash tab="StitchAPI" tabGroup="approach"
 import { stitch } from 'stitchapi';
 
 const search = stitch({
@@ -30,6 +30,29 @@ const search = stitch({
     // Pace to five calls/sec, never more than two in flight at once.
     throttle: { rate: '5/s', concurrency: 2 },
 });
+```
+
+```ts twoslash tab="fetch" tabGroup="approach"
+// @noErrors
+// Two orthogonal caps by hand: a 200ms gate for rate, a counter for
+// concurrency. Forget the second and a burst opens every socket at once.
+let last = 0;
+let inFlight = 0;
+
+async function search(query: string) {
+    const wait = Math.max(0, last + 200 - Date.now()); // 5/s = one per 200ms
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    while (inFlight >= 2) await new Promise((r) => setTimeout(r, 25));
+    last = Date.now();
+
+    inFlight++;
+    try {
+        const url = `https://api.example.com/search?q=${query}`;
+        return await fetch(url).then((r) => r.json());
+    } finally {
+        inFlight--;
+    }
+}
 ```
 
 When a call has to wait its turn, it isn't silently stalled — the stitch emits a `progress` event with phase `throttled` on its event stream, so a queued call is visible to a trace rather than looking like a hang. You can watch the backpressure happen instead of inferring it from latency graphs.
