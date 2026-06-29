@@ -50,11 +50,11 @@ const s2 = s.with({ query: { role: 'admin' } });   // partial application -> new
 ## Events (each also has `at: number`)
 
 -   `{ type:'start', name, method, url, input }`
--   `{ type:'progress', phase:'auth'|'request'|'throttled'|'retry'|'paginate', attempt, detail?, waitedMs? }`
+-   `{ type:'progress', phase:'auth'|'request'|'throttled'|'retry'|'paginate', attempt, detail?, waited? }`
 -   `{ type:'drift', finding:{ level:'error'|'warn'|'info'|'verbose', path, change:'invalid'|'undeclared'|'coerced'|'defaulted', detail? } }`
 -   `{ type:'result', value, status, attempts }`
 -   `{ type:'error', name, message, status?, attempts }`
--   `{ type:'done', ok, ms, attempts }`
+-   `{ type:'done', ok, elapsed, attempts }`
 
 ## Composition (all equivalent — one engine)
 

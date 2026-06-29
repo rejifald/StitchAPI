@@ -192,7 +192,7 @@ function format(name: string, event: StitchEvent): string | null {
             return `${paint(CYAN, '→')} ${name} ${event.method} ${scrubUrl(event.url)}`;
         case 'progress': {
             const waited =
-                event.waitedMs != null ? ` waited ${event.waitedMs}ms` : '';
+                event.waited != null ? ` waited ${event.waited}ms` : '';
             return paint(
                 DIM,
                 `  · ${name} ${event.phase}#${event.attempt}${waited}`,
@@ -217,7 +217,7 @@ function format(name: string, event: StitchEvent): string | null {
             return paint(RED, `✗ ${name} ${event.message}${status}`);
         }
         case 'done':
-            return paint(DIM, `  ${name} done in ${event.ms}ms`);
+            return paint(DIM, `  ${name} done in ${event.elapsed}ms`);
         default:
             return null; // 'delta' and any future events: file-only, no console line
     }
@@ -291,7 +291,7 @@ function summary(name: string, event: StitchEvent): string | null {
             return `${name} ${event.method} ${scrubUrl(event.url)}`;
         case 'progress': {
             const waited =
-                event.waitedMs != null ? ` waited ${event.waitedMs}ms` : '';
+                event.waited != null ? ` waited ${event.waited}ms` : '';
             return `${name} ${event.phase}#${event.attempt}${waited}`;
         }
         case 'info': {
@@ -310,7 +310,7 @@ function summary(name: string, event: StitchEvent): string | null {
             return `${name} ${event.message}${status}`;
         }
         case 'done':
-            return `${name} done in ${event.ms}ms`;
+            return `${name} done in ${event.elapsed}ms`;
         default:
             return null; // 'delta': raw response data — never logged.
     }

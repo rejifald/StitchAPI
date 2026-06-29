@@ -37,7 +37,7 @@ describe('stitchSse', () => {
                     },
                     { type: 'delta', chunk: 'a', at: 0 },
                     { type: 'delta', chunk: 'b', at: 0 },
-                    { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
+                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
                 ),
             ),
         );

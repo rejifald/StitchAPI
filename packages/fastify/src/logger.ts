@@ -74,9 +74,7 @@ function messageFor(name: string, event: StitchEvent): string | null {
             return `→ ${name} ${event.method} ${scrubUrl(event.url)}`;
         case 'progress':
             return `· ${name} ${event.phase}#${event.attempt}${
-                event.waitedMs !== undefined
-                    ? ` waited ${event.waitedMs}ms`
-                    : ''
+                event.waited !== undefined ? ` waited ${event.waited}ms` : ''
             }`;
         case 'drift': {
             const f = event.finding;
@@ -87,7 +85,7 @@ function messageFor(name: string, event: StitchEvent): string | null {
         case 'error':
             return `✗ ${name} ${event.message}${event.status != null ? ` ${event.status}` : ''} (${event.attempts} attempt(s))`;
         case 'done':
-            return `${name} done ${event.ok ? 'ok' : 'failed'} in ${event.ms}ms (${event.attempts} attempt(s))`;
+            return `${name} done ${event.ok ? 'ok' : 'failed'} in ${event.elapsed}ms (${event.attempts} attempt(s))`;
         default:
             return null; // 'info' + 'delta'
     }
