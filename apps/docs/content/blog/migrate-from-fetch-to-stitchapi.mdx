@@ -1,0 +1,125 @@
+---
+title: 'Migrate From Fetch to StitchAPI'
+description: 'Your fetch call works until the API blips: no retry, no timeout, no validation, and the JSON is typed `any`. Here is the same call as a stitch, field by field, and how each line of glue becomes a declaration.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [fetch, migration, typescript, validation, resilience]
+---
+
+You have a `fetch` call that reads a user from an internal API. It works on your machine, it works in CI, and then one afternoon the upstream service returns a `503` for ninety seconds, your call surfaces the error straight to the page, and the JSON you parsed turns out to have dropped a field a release ago that nobody caught because `res.json()` is typed `any`. The call did exactly what `fetch` promises — one request, one response, no opinions — and every opinion you needed (retry the blip, bound the wait, check the shape) was yours to hand-write around it. Migrating to a stitch is moving each of those opinions out of glue code and onto the call's declaration.
+
+## The call you have now
+
+Here is the honest version — the `fetch` call with the edges it actually has in production, not the three-line happy path:
+
+```ts
+async function getUser(id: string): Promise<User> {
+    const res = await fetch(`https://api.example.com/users/${id}`, {
+        headers: { authorization: `Bearer ${process.env.API_TOKEN}` },
+    });
+    if (!res.ok) {
+        throw new Error(`getUser failed: ${res.status}`);
+    }
+    return (await res.json()) as User; // typed, not validated
+}
+```
+
+It runs. It also carries four sharp edges that only show up off the happy path:
+
+-   **No retry.** A single `503` or a dropped connection surfaces to the caller, even when the data was there a second earlier and one retry would have caught it.
+-   **No timeout.** A hung connection blocks the `await` until the platform's default kills it — often minutes, sometimes never — and the call holds its slot the whole time.
+-   **No validation.** `res.json() as User` is a cast, not a check. The runtime never compares the bytes to `User`, so a renamed or missing field flows downstream as the wrong type and crashes somewhere far from here.
+-   **The token lives at the call site.** `process.env.API_TOKEN` is read inline, interpolated into a header, and now sits in this function's scope where every code path can see it.
+
+Each fix is a known recipe — a retry loop, an `AbortController`, a schema parse, a secret helper — and each one is more code wrapped around the same call, in a function that grows until the request is the smallest part of it.
+
+## The same call as a stitch
+
+A stitch is the same request expressed as a declaration: the URL, the auth, the resilience policy, and the response shape are fields, and the engine applies them on every call.
+
+```ts
+import { bearer, env, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({
+    id: z.string(),
+    name: z.string(),
+    email: z.string().email(),
+});
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    auth: bearer(env('API_TOKEN')),
+    output: User,
+    retry: { attempts: 3, on: [429, 503], backoff: 'expo-jitter' },
+    timeout: { total: '10s', perAttempt: '4s' },
+});
+
+const user = await getUser({ params: { id: '42' } }); // validated User, or throws StitchError
+```
+
+Awaiting the stitch returns a validated `User`. On failure — after the stitch exhausts its own retries — it throws a `StitchError` carrying `.status`, `.attempts`, `.body`, and `.url`, so the `catch` block sees structured detail instead of a hand-rolled `Error` string.
+
+## The migration is field-by-field
+
+Each sharp edge in the `fetch` version corresponds to exactly one field on the stitch, and nothing in the request itself disappears — the URL, the bearer token, and the path parameter all carry over. What changes is that the glue around them becomes data:
+
+| Axis        | The `fetch` version                        | A stitch                                           |
+| ----------- | ------------------------------------------ | -------------------------------------------------- |
+| URL + param | template string, `${id}` interpolated      | `baseUrl` + `path: '/users/{id}'`, `{ params }`    |
+| Auth        | `process.env` read and interpolated inline | `auth: bearer(env('API_TOKEN'))`, resolved later   |
+| Failure     | `if (!res.ok) throw new Error(...)`        | throws `StitchError` with `.status`/`.body`/`.url` |
+| Retry       | hand-written loop, or absent               | `retry: { attempts, on, backoff }`                 |
+| Timeout     | `AbortController` plumbing, or absent      | `timeout: { total, perAttempt }`                   |
+| Validation  | `as User` cast, never checked at runtime   | `output: User`, parsed on every response           |
+
+Two of those rows are worth reading closely, because they change behavior rather than just relocating it.
+
+`auth: bearer(env('API_TOKEN'))` does not read the variable when the module loads. The secret resolves at call time, so the token never sits in your function's scope — the call site holds a capability to make the request, not the credential itself. That is the [capability, not credential](/docs/concepts/capability-not-credential) split.
+
+`output: User` runs the schema against every response. A renamed or missing field is caught here, at the boundary, instead of flowing downstream as the wrong type. If you want the boundary to report drift rather than only reject it, wrap the schema in [`drift`](/docs/guides/validation/drift) and each response is diffed against its validated form — a renamed required field throws, an absorbed coercion logs a `warn`.
+
+## What composes once the call is a declaration
+
+The `fetch` version tangles policy into the call: the retry loop, the abort plumbing, and the parse all live inside the function body, so a second endpoint means copying the function and letting the copies drift. A stitch keeps the policy as fields, so it composes instead.
+
+**Declare the shared parts once, not per call.** When a second and third endpoint hit the same host with the same auth and retry, a [`seam`](/docs/guides/authoring/seam) holds that base and every stitch inherits it:
+
+```ts
+import { bearer, env, seam } from 'stitchapi';
+
+const api = seam({
+    baseUrl: 'https://api.example.com',
+    auth: bearer(env('API_TOKEN')),
+    retry: { attempts: 3, on: [429, 503], backoff: 'expo-jitter' },
+});
+
+const getUser = api.stitch({ path: '/users/{id}', output: User });
+const listOrders = api.stitch({ path: '/orders', output: Orders });
+```
+
+**The query owns the view; the stitch owns the call.** A stitch is a function that returns a validated value and throws `StitchError` on failure — exactly the contract TanStack Query's `queryFn` wants, so it drops straight in:
+
+```ts
+useQuery({
+    queryKey: ['user', id],
+    queryFn: () => getUser({ params: { id } }),
+});
+```
+
+The query layer keeps the cache, the refetch-on-focus, and the invalidation; the stitch keeps the types, the auth, and the resilience. Pick one retry owner — the stitch's retry is status-aware and honors `Retry-After`, so let it own retries and set `retry: false` on the query. The same shape works with SWR and RTK Query; the [React Query guide](/docs/integrations/tanstack-query) walks through it.
+
+**Side effects need a deliberate line.** Retrying a write is not safe by default, and a stitch does not pretend otherwise — adding `retry` to a `POST` is a line you write on purpose, paired with an idempotency key so the server collapses the duplicate. The tradeoff stays visible on the declaration instead of hiding in a shared loop.
+
+## One call, or a hundred — same declaration
+
+The plain `fetch` call bounds exactly the one request in front of you: this URL, this header, this parse. A stitch bounds that same single call just as tightly — `getUser({ params: { id } })` is one line at the call site — and it is one edit away from the call it grows into. Add `retry` when the upstream starts flaking; add `timeout` when an attempt hangs; add a `seam` when the second endpoint shows up; pass it to `useQuery` when a component needs it. None of those is a rewrite of the call. They are fields on a declaration that already holds your one request, so the call scales down to a single line today and up to the whole API surface without your touching the call site again.
+
+## Try it
+
+```package-install
+stitchapi zod
+```
+
+Move one `fetch` call onto a stitch: set `baseUrl` and `path`, add `output` for the response shape, and the retry loop, the abort plumbing, and the `as User` cast collapse into fields you can read at a glance. Start with the [quickstart](/docs/getting-started/quickstart), then add resilience from the [retry](/docs/guides/resilience/retry) and [timeout](/docs/guides/resilience/timeout) guides. Coming from interceptors instead of raw `fetch`? The same trade is mapped in [migrate from axios to StitchAPI](/blog/migrate-from-axios-to-stitchapi).
