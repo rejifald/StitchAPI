@@ -433,6 +433,12 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `new ?? old`). House store contracts use the bare `ttl` param (ms, no suffix): `StitchStore` /
     `RedisDriver` `set`/`incr` and the redis/deno-kv/cloudflare-kv drivers; `verifyStoreContract`'s
     knob is `ttl` (deprecated `ttlMs` alias).
+-   **P17 (circuit) + P4** `CircuitOptions` overhaul: `failureThreshold`→`failures` (P4),
+    `cooldownMs`→`cooldown`, `halfOpenAfterMs`→`halfOpenAfter` (P17, widened to `number | string`).
+    `failures`/`cooldown` become type-optional so the `@deprecated` aliases can stand in;
+    `createCircuit` throws if neither spelling is set (required-by-design, P15). The
+    `StitchConfig.circuit` slot is `AtLeastOne<CircuitOptions>`, so the empty object is rejected (P20)
+    while the breaker stays required-by-design.
 
 ---
 
