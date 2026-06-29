@@ -134,7 +134,7 @@ test('timeout.total bounds a paginated call across pages', async () => {
             next: (body) => ({
                 query: { cursor: String((body as { cursor: number }).cursor) },
             }),
-            max: 50,
+            pages: 50,
         },
         timeout: { total: 400 },
     });

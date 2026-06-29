@@ -170,7 +170,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "cache",
             type: "property",
-            detail: "number | string | CacheConfig",
+            detail: "number | string | CacheOptions",
             info: "Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine is loaded lazily from the `stitchapi/cache` subpath only when this block is present. A bare number (ms) or duration string is shorthand for the TTL — `cache: '1m'` ≡ `cache: { ttl: '1m' }` (still subject to the fingerprint / `version` rules before an entry is actually stored).",
         },
         {
