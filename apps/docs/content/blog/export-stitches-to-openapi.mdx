@@ -1,0 +1,112 @@
+---
+title: Export Your Stitches to an OpenAPI Spec
+description: 'Codegen consumes an OpenAPI document to build a client. Run it the other way: emit an OpenAPI 3.1 spec from the stitches you already declared, so the teams and tools that still need a spec get one without the stitch stopping being the source of truth.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [openapi, codegen, cli, typescript, tooling]
+---
+
+Your stitches already describe the endpoints you call: the path, the method, the parameters, the auth. Then a downstream team — the API gateway, a partner's import wizard, the docs portal — asks for an OpenAPI document, and you are staring at hand-writing one that restates facts already living in your code. Keep them in sync by hand and they drift the day someone forgets.
+
+The `stitch` CLI runs codegen in reverse. Instead of consuming a spec to generate a client, it reads the stitches you wrote and emits an OpenAPI 3.1 document. The stitch stays the source of truth; the spec is a view of it.
+
+## The reverse of codegen
+
+A code generator points at an OpenAPI document and produces a typed client. That bets the spec is accurate and treats it as the origin of every type. A stitch makes the opposite bet — the response on the wire is the only thing you fully trust — so you declare the few endpoints you call and validate them at runtime.
+
+But the spec format does not disappear just because you stopped consuming it. Gateways ingest one, partners import one, a docs site renders one. So you emit it from the declarations instead of authoring it alongside them:
+
+```sh
+stitch export --openapi --module ./stitches.ts > openapi.json
+```
+
+That prints an OpenAPI 3.1 JSON document to stdout. `--module` points at the file that exports your stitches; it probes `stitches.ts` and friends by default. `--title` and `--api-version` set the `info` block.
+
+## What it derives from a declaration
+
+Take two stitches you would write anyway. `listOrders` declares its `status` query parameter where the export can see it — as an RFC 6570 `{?status}` template in the path, with an `input.query` schema describing the value:
+
+```ts
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi';
+import { z } from 'zod';
+
+export const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    auth: bearer(env('API_TOKEN')),
+    output: z.object({ id: z.number(), name: z.string() }),
+});
+
+export const listOrders = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders{?status}',
+    input: { query: z.object({ status: z.string().optional() }) },
+    output: z.array(z.object({ id: z.number(), total: z.number() })),
+});
+```
+
+Run the export against that file and the structural pass fills in the parts of the spec it can read straight off the config, no extra wiring:
+
+-   **Paths and methods** — each export becomes a `paths` entry with its HTTP method and an `operationId`.
+-   **Path parameters** — every `{id}` slot in the path template becomes a required path parameter.
+-   **Query parameters** — every query-position expression in the path template becomes a query parameter: `/orders{?status}` emits `status`. An `input.query` schema refines those parameters, marking a name required when the schema requires it. (A path with no `{?...}` template and no `input.query` emits no query parameters — there is no top-level `query` config slot, because on a stitch `query` is the GraphQL query string.)
+-   **Security schemes** — each stitch's `auth` (`bearer`/`basic`/`apiKey`/`oauth2`) becomes a security scheme on the operation. The credential itself is never emitted.
+
+The pass is structural by design, so request and response **body** schemas are `{}` (any) by default. That keeps core zero-dependency: turning a `z.object({...})` into JSON Schema needs a converter, and a converter is a dependency.
+
+## Real body schemas, bring your own converter
+
+When you want the bodies and the per-parameter shapes filled in with real JSON Schema, pass a converter — the same bring-your-own seam `axiosAdapter` uses for the transport. You hand the export a `toJsonSchema(source, info)` function and it converts `input.body`, `output`, and the decomposed `params`/`query` schemas; without it those stay `{}`.
+
+```sh
+stitch export --openapi --module ./stitches.ts \
+  --schema-module ./to-json-schema.ts > openapi.json
+```
+
+The `--schema-module` file exports a `toJsonSchema(source, info)` converter — for Zod, a thin wrapper around `zod-to-json-schema`. Core never imports it; you bring the one that matches the validator you already chose.
+
+Prefer to do it in code? `toOpenApi` is the same machinery the CLI runs on:
+
+```ts
+import { getUser, listOrders } from './stitches';
+import { toJsonSchema } from './to-json-schema';
+
+import { toOpenApi } from 'stitchapi/registry';
+
+const { document, warnings } = toOpenApi(
+    { getUser, listOrders },
+    { title: 'Orders API', version: '1.0.0', toJsonSchema },
+);
+```
+
+The registry is a plain object mapping export names to stitches. `toOpenApi` is pure — it returns `{ document, warnings }` and reaches for nothing on disk — so you can write the document wherever you like or assert on it in a test.
+
+## A view, not a second source of truth
+
+| Axis                   | Hand-written spec                 | Exported from stitches                       |
+| ---------------------- | --------------------------------- | -------------------------------------------- |
+| Where the truth lives  | The spec, restated in code        | The stitch; the spec is generated            |
+| Drift between them     | Manual sync, silent when it slips | One command regenerates the view             |
+| Paths, methods, params | Typed by hand                     | Read off `path`/method/`input.query`         |
+| Auth                   | Documented separately             | Derived from each stitch's `auth`            |
+| Body schemas           | Authored twice                    | One `toJsonSchema` converter, your validator |
+
+This is not StitchAPI going spec-first. The stitch is still where the call is defined, validated, and made resilient; the OpenAPI document is a projection you regenerate whenever the declarations change. The teams that need a spec get one; you keep writing functions.
+
+## Where the spec takes you
+
+Wire the export into a commit hook or a CI step and the document tracks the stitches automatically — change a path or add an endpoint, regenerate, and the gateway or portal gets the new shape without anyone editing JSON by hand. Each stitch stays a standalone typed function you call, test, and run on its own; the spec is one more front door onto the same declarations, added with a single command and dropped when no downstream tool asks for it.
+
+## Try it
+
+The export ships in the core package and its CLI — no extra install beyond what a stitch already needs.
+
+```package-install
+stitchapi
+```
+
+-   [The CLI surface](/docs/surfaces/cli) — `run`, `serve`, `mcp`, `diagram`, and `export`.
+-   [What a stitch is](/docs/concepts/the-stitch) — the declaration the spec is generated from.
+-   [Stitching vs. codegen API clients](/blog/stitch-vs-codegen-api-clients) — the consume-a-spec direction, argued axis by axis.
+-   [Orval vs. runtime stitching](/blog/orval-vs-runtime-stitching) — where generating from a spec earns its keep.
