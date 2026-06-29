@@ -209,7 +209,46 @@ export interface AdapterResponse {
      */
     url?: string;
 }
-export type Adapter = (req: AdapterRequest) => Promise<AdapterResponse>;
+/**
+ * An optional transport feature an adapter can declare it supports:
+ *
+ * -   `'stream'` — honours {@link AdapterRequest.stream}, handing back a live `ReadableStream`
+ *     instead of rejecting it. `fetch` only among the built-ins (`xhr`/axios buffer and reject it).
+ * -   `'uploadProgress'` — reports `phase: 'upload'` byte progress through
+ *     {@link AdapterRequest.onProgress}. `xhr` and axios can; `fetch` cannot (it leaves the upload
+ *     phase silent).
+ * -   `'downloadProgress'` — reports `phase: 'download'` byte progress through
+ *     {@link AdapterRequest.onProgress} as the response arrives. `fetch`, `xhr`, and axios all can.
+ */
+export type AdapterCapability =
+    | 'stream'
+    | 'uploadProgress'
+    | 'downloadProgress';
+/**
+ * What a transport supports, declared on the adapter itself (ADR 0005 Decision 9). An adapter is
+ * still just a function — this is an OPTIONAL hint hung off it. A descriptor lists the features the
+ * transport HAS in `supports`; anything not listed, it can't do. Built-in adapters declare one so
+ * the engine can turn a silent no-op into a teaching note: a call that asks for `phase: 'upload'`
+ * progress on a transport whose `supports` omits `'uploadProgress'` (`fetch`, axios) gets an `info`
+ * event pointing at `xhrAdapter`, instead of an upload bar that never moves. A custom adapter that
+ * declares nothing is treated as unknown — no checks, the open contract stands.
+ *
+ * Diagnostics only; never part of `__config`, never serialised.
+ */
+export interface AdapterCapabilities {
+    /** Human label for diagnostics, e.g. `'fetchAdapter'`. */
+    name?: string;
+    /** The optional features this transport supports. Anything NOT listed, it cannot do. */
+    supports: AdapterCapability[];
+}
+/**
+ * A transport: take a request, return a response, never throw on a non-2xx (ADR 0005). The optional
+ * {@link AdapterCapabilities} is hung off the function so a plain `(req) => Promise<res>` still
+ * satisfies the type — declaring capabilities is opt-in.
+ */
+export type Adapter = ((req: AdapterRequest) => Promise<AdapterResponse>) & {
+    capabilities?: AdapterCapabilities;
+};
 
 // ---- Resilience options ---------------------------------------------------
 export interface RetryOptions {
