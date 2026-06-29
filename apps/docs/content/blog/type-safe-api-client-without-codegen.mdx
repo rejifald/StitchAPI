@@ -88,11 +88,11 @@ const listOrders = stitch({
 
 A required field that vanishes or turns incompatible fails loudly; a coercion the schema quietly absorbed or an undeclared key the API added surfaces as a non-fatal signal on the event stream. That `total` → `amount` rename arrives as a typed drift event the moment it happens — a class of change a spec-derived type can't report, because the spec was never told. The reasoning behind treating it that way is in [schema drift is a production bug](/blog/schema-drift-is-a-production-bug).
 
-## When the generated client is enough
+## When a generated client is the better fit
 
-The honest line: if you have a maintained, accurate spec and accurate types are the whole requirement, a generator is less ceremony for that goal.
+The honest line: if you have a maintained, accurate spec and accurate types are the whole requirement, a generator is less ceremony for that goal — and that's the floor you'd start from before reaching for a stitch.
 
--   **The spec is real, current, and owned.** When someone keeps the OpenAPI document honest and you'll touch a large fraction of the surface, generation types everything for the cost of one command. Per-endpoint stitch declarations would be more typing for no gain.
+-   **The spec is real, current, and owned.** When someone keeps the OpenAPI document honest and you'll touch a large fraction of the surface, generation types everything for the cost of one command. Per-endpoint stitch declarations would be more typing for that case.
 -   **You don't want runtime validation.** A stitch's guarantees come from the `output` validator running on every response. If you don't want that work happening at runtime — or won't write a schema — a generated type is the leaner choice, and a stitch without an `output` is a fetch wrapper with extra steps.
 -   **The contract and its spec move together.** When the API and document change on a cadence you control, regenerate-on-change is a feature, not a chore, and you may not need drift signals at all.
 

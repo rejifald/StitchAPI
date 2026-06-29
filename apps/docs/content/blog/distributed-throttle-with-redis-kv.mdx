@@ -87,16 +87,19 @@ For a fleet of **servers**, reach for Redis: it has a real atomic `INCR`, so the
     splits Workers KV off from the other two.
 </Callout>
 
-## When this isn't worth it
+## Start in-memory — reach for a shared store when you scale out
 
-A shared store is the right answer to a real problem, but it has a price, and a single process never has to pay it:
+The in-process default is the floor you start from. One process, one upstream account, one rate budget: in-memory throttle, no store, nothing to operate.
 
--   **It adds a network hop and a dependency to operate.** Every throttle check and session read now crosses the wire to Redis or KV instead of touching local memory — latency on the hot path, and one more thing that can be down, misconfigured, or saturated. On a single process you'd be paying all of that to fix a problem you don't have; keep the in-process default.
--   **The caps become approximate under contention, not exact.** Even with atomic `incr`, a distributed limiter coordinates across the network, and brief overshoot is possible when many workers race the same window. Treat a shared throttle as "close to N/s across the fleet," not a hard guarantee — keep a little headroom under the upstream's real ceiling.
--   **Eventually-consistent edge KV is looser still.** Workers KV reads can lag writes by design, and its TTLs are coarse (seconds, 60-second floor). Fine for caching and sessions that tolerate a slightly stale cookie; a poor foundation for second-by-second accuracy — which is exactly why `incr` throws there rather than quietly lying.
--   **One backend, many environments.** Staging and production must not collide on the same keys; namespace with `keyPrefix` so they share one store without stepping on each other's counters and sessions.
+Reach for a shared store the moment any of these are true:
 
-Stay in-process until you actually run more than one instance against the same upstream budget or account. The moment you do, the store is the one line that turns N independent limiters back into one — and N independent logins into one shared session.
+-   **You run more than one instance.** Two workers with independent in-memory limiters each enforce the full cap — the upstream sees double. Attach a store and both workers share one counter.
+-   **You autoscale.** Ephemeral instances spin up with no memory of what the others have already sent. The store is the one line that turns N independent limiters back into one.
+-   **The upstream enforces per-account, not per-IP.** One account, many servers — the limit applies across all of them, so the counter has to live somewhere they all reach.
+
+A few trade-offs to account for when you cross that line: the store adds a network hop on every throttle check (latency on the hot path), and under contention the cap is "close to N/s across the fleet" rather than exact — keep a little headroom below the upstream's real ceiling. Workers KV is looser still (eventually-consistent reads, 60-second TTL floor), which is why `incr` throws there. And namespace staging vs. production with `keyPrefix` — one store, no collision.
+
+It's a config change, not a rewrite. The call sites don't move.
 
 ## Try it
 

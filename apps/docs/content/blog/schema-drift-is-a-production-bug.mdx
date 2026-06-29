@@ -78,11 +78,11 @@ for await (const event of getOrder({ params: { id: 7 } }).stream()) {
 
 Soft findings carry a default level — `coerced` is a `warn`, `undeclared` an `info`, `defaulted` a `verbose` — and you can re-level or filter them with `severity`, or silence a field you already know about with `ignore: ['meta', '_links']` (the API surface you've acknowledged but don't consume, kept out of the typed schema so the contract stays tight). The change you'd otherwise have discovered from a production incident becomes a line in your trace, on the exact `path` and `change` that moved.
 
-## When this isn't worth it — and the honest limits
+## Plain validation is the floor — drift is where you graduate
 
-Drift earns its keep against APIs you don't control and can't pin: third-party vendors, internal services owned by another team, anything with a habit of shipping "minor" response tweaks. For an endpoint you own and version yourself, a plain `output` schema is usually enough — you'll change both sides in the same commit.
+If you own the API and deploy both sides in lockstep, a plain `output` schema is the floor you start from — you change the schema and the provider in the same commit, so there's no out-of-band drift to catch. Wrapping it in `drift()` adds nothing until the two sides can move independently. The moment they can — a third-party vendor, an internal service owned by another team, anything that ships "minor" response tweaks without telling you — that's the trigger. `drift()` wraps the same schema you already have; it's not a rewrite.
 
-And the edges are real:
+The honest edges of what drift watches:
 
 -   **It observes the responses you actually receive — it is not a contract test.** Drift checks the live calls your code makes; it doesn't probe every endpoint with synthetic traffic. A field in a response path you never exercise isn't checked until something calls it. Exhaustive surface coverage is a contract-testing job.
 -   **Drift watches the surface you declare.** The flip side of anchoring on your schema: change the provider makes in a field you don't model is, by definition, change you don't consume — so it's invisible. That's a deliberate scope, not an accident. (Catching drift in undeclared fields would need the provider's published spec, or the kind of remembered-sample baseline this design rejected.)

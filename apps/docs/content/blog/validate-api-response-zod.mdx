@@ -30,7 +30,7 @@ async function getUser(id: number): Promise<User> {
 }
 ```
 
-This is correct and you should reach for it for a one-off. `parsed.data` is typed by `z.infer`, the runtime check actually runs, and a renamed or missing field is caught here rather than downstream. For a single call in a script, stop here — anything more is overhead.
+This is correct, and for a one-off it's the right amount of code. `parsed.data` is typed by `z.infer`, the runtime check actually runs, and a renamed or missing field is caught here rather than downstream. What it won't do is hold its shape across more than one call site — which is where it starts to fray.
 
 The rough edges show up once you have more than one endpoint. The `res.ok` check, the `safeParse`, the error wrapping, and the JSON parse repeat at every call site, each free to drift from the others. Input is unvalidated — you can still send a malformed body and learn about it from the API's 400. And the schema only guards the response _body_; the status check, retries on a flaky upstream, a timeout, and an auth header are all separate concerns you bolt on by hand around each `fetch`.
 
@@ -78,15 +78,15 @@ A malformed `body` rejects before the POST is sent; a response that doesn't matc
 
 One trap worth naming: a strict `output` schema seems like a good drift alarm, but it's the wrong tool. An _additive_ change — a new field the provider adds — then throws `STITCH_VALIDATION` and breaks a call that should have kept working. When you want to notice a response changing shape without failing on harmless additions, wrap the schema in `drift()` instead, which validates and then reports differences as non-fatal findings. The reasoning is in [schema drift detection](/docs/guides/validation/drift) and [what is schema drift](/blog/what-is-schema-drift).
 
-## When the plain `safeParse` is enough
+## Start with `safeParse` — declare it on the call when it spreads
 
-The stitch buys you uniformity and an input boundary; you don't always need them.
+For a true one-off — one endpoint, run once, no retries or auth in sight — `User.safeParse(await res.json())` is the right amount of ceremony. The schema doesn't change when you outgrow that; it just moves. The same Zod object goes on `output` and runs on every response instead of in a branch you re-type after each `fetch`, and that move pays off the moment any of these is true:
 
--   **A single call in a script.** One endpoint, run once, no resilience or auth concerns — `User.safeParse(await res.json())` is the right amount of ceremony. Declaring a stitch would be more setup for the same check.
--   **You're not adding retries, timeouts, or auth.** A stitch's value compounds when validation sits next to `retry`, `timeout`, and an auth boundary on the same declaration. If the response check is genuinely all you need and the endpoint never flakes, the inline parse is leaner.
--   **You won't reuse the schema.** The declaration pays off across many call sites that share concerns. For a throwaway, the manual parse is fewer moving parts.
+-   **A second call site appears.** The `res.ok` check, the parse, and the error wrapping stop being written once and start being copy-pasted — each free to drift. On a stitch they're declared once and uniform.
+-   **The call gains a neighbor.** When validation sits next to `retry`, a `timeout`, or an auth boundary, declaring them together on one call beats bolting each around the `fetch` by hand.
+-   **You want the request guarded too.** `safeParse` checks the response; `input` checks the request before it leaves the process — a boundary the manual pattern doesn't give you.
 
-The line is reuse and surrounding concerns, not the validation itself — the schema is the same Zod object either way. The question is whether it runs as a step you write after each `fetch` or as a property of a call you declare once.
+The schema is the same Zod object either way. The only question is whether it runs as a step you repeat after each `fetch` or as a property of a call you declare once — and turning one into the other is a move you make when the second caller arrives, not a rewrite.
 
 ## Try it
 

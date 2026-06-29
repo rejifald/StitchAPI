@@ -120,15 +120,20 @@ A `429` on page seven now recovers on its own through [retry](/docs/guides/resil
 
 One detail to get right: `next` reads the **raw body**, while `items` reads the value after [unwrap](/docs/guides/data/unwrap) runs. Reach for the cursor in `next` from where it actually lives in the response. And without an [`output` schema](/docs/guides/validation/validation) the aggregated rows arrive as `unknown[]` — hence the cast; add a schema and each row is typed and validated, and the cast goes away.
 
-## When the hand-rolled loop is enough
+## Where the hand-rolled loop tops out
 
-The stitch earns its keep when pagination meets rate limits, retries, or auth. Without those, the loop is the leaner choice.
+The `do/while` over a cursor is a fine floor. A handful of pages from a well-behaved endpoint you control — no rate limit, no flakiness — and the inline loop is exactly right. Start there.
 
--   **One small, well-behaved endpoint you control.** A handful of pages, no rate limit, no flakiness — a `do/while` over the cursor is readable and needs no dependency.
--   **You want to stream pages, not aggregate them.** `paginate` collects every page into one array, which loads the whole set into memory. If the result set is large and you'd rather process each page as it lands and discard it, a manual loop (or a generator) you drive yourself is the better fit.
--   **You're not adding retry, throttle, or auth.** The per-page resilience is most of the value. If the response is genuinely all you need and the API never pushes back, the inline loop is fewer moving parts.
+You reach for `paginate` when the loop hits a wall:
 
-The dividing line is the surrounding concerns, not the looping — both versions walk the same pages. The question is whether retry, throttle, and auth get re-tangled into the loop each time or declared once beside it.
+-   **Rate limit on page seven.** A `429` mid-run means adding retry logic inside the loop — or pulling it out to a wrapper that now has to know about cursors. With `paginate`, `retry` is a field on the declaration.
+-   **Throttle across pages.** Keeping the whole run under N requests per second means coordinating state across iterations. `throttle` on the stitch applies it per page without touching the pagination logic.
+-   **An auth boundary.** Token refresh mid-run tangles into the loop. On a stitch it's a separate concern, declared beside `paginate`.
+-   **A second paginated endpoint that needs the same handling.** Copy-pasting the loop copies the retry logic too. The stitch's policy is reused across both declarations.
+
+The loop and `paginate` walk the same pages. The difference is where the surrounding concerns live — in the loop body each time, or declared once beside it. Crossing from loop to stitch is a field on a declaration, not a rewrite.
+
+One caveat in the other direction: `paginate` aggregates every page into a single array, so a result set too large to hold in memory is the one case to keep driving the loop yourself (or a generator), processing each page as it lands and discarding it.
 
 ## Try it
 
