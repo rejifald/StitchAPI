@@ -12,7 +12,8 @@ A user picks a 50MB video, clicks **Upload**, and your UI just sits there. No ba
 
 `fetch` reports nothing about the request body's progress. There is no `upload` event, no `onUploadProgress` option, no way to read bytes sent. The Streams API can give you a request `ReadableStream`, but browsers do not surface per-chunk upload counts from it, and support is uneven. So the honest "before" with `fetch` is a spinner and a guess:
 
-```ts
+```ts twoslash
+// @noErrors
 async function uploadVideo(file: File) {
     const body = new FormData();
     body.append('file', file);
@@ -36,11 +37,11 @@ You can animate a CSS bar to 90% and freeze it there, but that is theater. The b
 
 A stitch turns one endpoint into a typed function you call with `await`. Swap the default transport for `xhrAdapter()` and set `bodyType: 'multipart'`, and you get upload-progress reporting with the rest of the stitch contract intact:
 
-```ts
-import { bearer, env, stitch, xhrAdapter } from 'stitchapi';
+```ts twoslash
+import { bearer, env, stitch, toValidator, xhrAdapter } from 'stitchapi';
 import { z } from 'zod';
 
-const uploadVideo = stitch({
+const uploadVideo = stitch<{ id: string; url: string }>({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/videos',
@@ -48,7 +49,7 @@ const uploadVideo = stitch({
     adapter: xhrAdapter(),
     auth: bearer(env('API_TOKEN')),
     timeout: '2m',
-    output: z.object({ id: z.string(), url: z.string().url() }),
+    output: toValidator(z.object({ id: z.string(), url: z.string().url() })),
 });
 ```
 
@@ -65,7 +66,7 @@ A multipart **file part** in the body can be a `Blob` (a `File` is a `Blob`), a 
 
 `onProgress` is a **per-call control**, not config. You pass it in the call input alongside the body, and the callback receives an `AdapterProgress`:
 
-```ts
+```ts twoslash
 type AdapterProgress = {
     phase: 'upload' | 'download';
     loaded: number;
@@ -75,7 +76,21 @@ type AdapterProgress = {
 
 `loaded` is the number of bytes transferred so far; `total` is the full size when the transport knows it. Tag by `phase` so you only move the upload bar while the request body is going out:
 
-```ts
+```ts twoslash
+import { bearer, env, stitch, toValidator, xhrAdapter } from 'stitchapi';
+import { z } from 'zod';
+
+const uploadVideo = stitch<{ id: string; url: string }>({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/videos',
+    bodyType: 'multipart',
+    adapter: xhrAdapter(),
+    auth: bearer(env('API_TOKEN')),
+    timeout: '2m',
+    output: toValidator(z.object({ id: z.string(), url: z.string().url() })),
+});
+// ---cut---
 async function send(file: File, onPct: (pct: number) => void) {
     const result = await uploadVideo({
         body: { file },
@@ -91,7 +106,8 @@ async function send(file: File, onPct: (pct: number) => void) {
 
 Wiring that into a `<progress>` element is the whole feature:
 
-```tsx
+```tsx twoslash
+// @noErrors
 function Uploader() {
     const [pct, setPct] = useState(0);
 
@@ -117,7 +133,25 @@ Two controls travel with the call this way, and in both cases **the call argumen
 -   `onProgress`, above — supply a different callback per upload without redeclaring the stitch.
 -   `signal`, an `AbortSignal` — pass `{ body, onProgress, signal }` and a cancel button aborts the in-flight upload.
 
-```ts
+```ts twoslash
+import { bearer, env, stitch, toValidator, xhrAdapter } from 'stitchapi';
+import type { AdapterProgress } from 'stitchapi';
+import { z } from 'zod';
+
+const uploadVideo = stitch<{ id: string; url: string }>({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/videos',
+    bodyType: 'multipart',
+    adapter: xhrAdapter(),
+    auth: bearer(env('API_TOKEN')),
+    timeout: '2m',
+    output: toValidator(z.object({ id: z.string(), url: z.string().url() })),
+});
+
+declare const file: File;
+declare const onProgress: (p: AdapterProgress) => void;
+// ---cut---
 const controller = new AbortController();
 uploadVideo({ body: { file }, onProgress, signal: controller.signal });
 // later: controller.abort();

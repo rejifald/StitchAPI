@@ -25,7 +25,7 @@ You want both bounds, and you want them named separately:
 
 StitchAPI declares them as one `timeout` object:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const report = stitch({
@@ -53,7 +53,7 @@ A **circuit breaker** encodes "stop calling for a bit" as state. The mechanics a
 
 The fast-fail is the whole point. While the circuit is open, a call returns in microseconds instead of burning a `perAttempt` timeout discovering — again — that the dependency is unreachable. You stop adding load to a struggling upstream, and you stop tying up your own connections and promises waiting on doomed calls. The half-open probe is how you find out it's healthy again without flipping the floodgates open on the first hopeful guess.
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const orders = stitch({
@@ -71,7 +71,7 @@ When the breaker is open, the call surfaces a `STITCH_CIRCUIT_OPEN` error — a 
 
 The reason these compose well is that the breaker, the timeouts, and retry/backoff are all configuration on the same stitch — declared together, evaluated together:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const getQuote = stitch({

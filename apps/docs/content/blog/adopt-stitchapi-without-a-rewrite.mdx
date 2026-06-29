@@ -14,7 +14,8 @@ That is the whole adoption story: a stitch wraps **one endpoint**, returns a fun
 
 Here is the kind of `fetch` that ends up everywhere — a read that the team has quietly copied, tweaked, and re-tweaked across the app.
 
-```ts
+```ts twoslash
+// @noErrors
 async function getUser(id: string) {
     const res = await fetch(`https://api.example.com/users/${id}`, {
         headers: { Authorization: `Bearer ${process.env.API_TOKEN}` },
@@ -35,7 +36,7 @@ The sharp edges are real, and they are the ones you keep patching by hand:
 
 Wrap that one endpoint. Each field is a sharp edge moved from glue into a declaration.
 
-```ts
+```ts twoslash
 import { bearer, env, stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -65,7 +66,8 @@ The reason this is a no-rewrite move: a stitch IS an async function. It takes in
 
 So you swap the call site and stop:
 
-```ts
+```ts twoslash
+// @noErrors
 // before
 const user = await getUserViaFetch(id);
 // after — same signature, same await, same caller
@@ -76,7 +78,13 @@ The rest of the file keeps using raw `fetch`. The other twenty endpoints keep us
 
 It drops into the libraries you already run, too. A stitch is the `queryFn` TanStack Query wants — awaiting it returns the validated value and throws on failure, which is exactly the contract ([a stitch as your React Query `queryFn`](/blog/stitch-as-react-query-queryfn) walks through the whole pattern) — so it goes straight in:
 
-```ts
+```ts twoslash
+import { useQuery } from '@tanstack/react-query';
+import { stitch } from 'stitchapi';
+
+declare const id: string;
+const getUser = stitch({ url: 'https://api.example.com/users/{id}' });
+// ---cut---
 useQuery({
     queryKey: ['user', id],
     queryFn: () => getUser({ params: { id } }),
@@ -89,8 +97,12 @@ Let the stitch own retries and set `retry: false` on the query so attempts don't
 
 Once two endpoints share a base URL and an auth scheme, lift those into a `seam` and stop repeating them. The seam declares the shared config once; each stitch inherits it, and an explicit per-stitch field wins.
 
-```ts
+```ts twoslash
 import { bearer, env, seam } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+const Orders = z.array(z.object({ id: z.number() }));
 
 const api = seam({
     baseUrl: 'https://api.example.com',
@@ -116,7 +128,10 @@ This is the same incremental move at the next size up: you hardened one call, th
 
 The smallest possible stitch is one line, and it already buys you something:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// ---cut---
 const ping = stitch({ url: 'https://api.example.com/health' });
 const data = await ping();
 ```

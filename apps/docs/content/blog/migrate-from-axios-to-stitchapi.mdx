@@ -14,7 +14,8 @@ This is the how-to after you've already decided to leave axios. If you're still 
 
 Here's the shape of the thing, condensed. None of it is wrong; it's just yours to carry.
 
-```ts
+```ts twoslash
+// @noErrors
 import axios from 'axios';
 
 const http = axios.create({
@@ -67,10 +68,12 @@ The sharp edges are familiar. The two response interceptors fire in an order you
 
 A stitch is one endpoint as a typed, validated, resilient function. The interceptor stack above isn't ported line by line; it's _declared_ as data on the stitch.
 
-```ts
+```ts twoslash
 import { bearer, drift, env, oauth2, seam, stitch } from 'stitchapi';
 import { z } from 'zod';
 
+declare const id: string;
+// ---cut---
 const User = z.object({ id: z.string(), name: z.string(), email: z.string() });
 
 const getUser = stitch({
@@ -110,7 +113,8 @@ The last row is the one axios never had. `output` validates the _live_ response 
 
 You don't have to rip axios out to get the layer. Your configured instance — proxy, custom CA, `httpsAgent`, timeouts negotiated with a finicky upstream — stays exactly as it is, and the stitch routes its requests through it via `axiosAdapter`. axios is the transport; the interceptors-turned-fields are the layer above it.
 
-```ts
+```ts twoslash
+// @noErrors
 import axios from 'axios';
 import { axiosAdapter, bearer, env, stitch } from 'stitchapi';
 
@@ -132,8 +136,12 @@ The second argument to `axiosAdapter` is a defaults object — `{ httpsAgent, pr
 
 If nothing in your instance needed axios specifically, leave the adapter off. A stitch defaults to `fetchAdapter()`, backed by global `fetch`, and StitchAPI's core is zero runtime dependencies — there's no transitive tree to vet.
 
-```ts
+```ts twoslash
+// ---cut---
 import { bearer, env, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string(), email: z.string() });
 
 const getUser = stitch({
     baseUrl: 'https://api.example.com',
@@ -150,8 +158,13 @@ The declaration is identical to Path A minus the `adapter` line. `fetchAdapter` 
 
 A mature codebase has many endpoints behind one host, sharing a base URL, an auth scheme, and a retry policy. Declare that surface once with `seam()` and let each stitch inherit it; explicit per-stitch fields still win.
 
-```ts
+```ts twoslash
+// ---cut---
 import { env, oauth2, seam } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string(), email: z.string() });
+const Order = z.object({ id: z.string(), total: z.number() });
 
 const api = seam({
     baseUrl: 'https://api.example.com',

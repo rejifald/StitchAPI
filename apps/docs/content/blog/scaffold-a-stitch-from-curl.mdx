@@ -24,7 +24,7 @@ Translating that by hand means deciding where the origin ends and the path begin
 stitch from-curl 'curl https://api.acme.dev/v1/orders/4821'
 ```
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 export const getOrders = stitch({
@@ -51,7 +51,7 @@ stitch from-curl 'curl https://api.acme.dev/v1/orders/4821 \
   -H "Authorization: Bearer sk_live_a1b2c3d4e5f6"'
 ```
 
-```ts
+```ts twoslash
 import { bearer, env, stitch } from 'stitchapi';
 
 export const getOrders = stitch({
@@ -93,7 +93,10 @@ stitch from-curl 'curl https://api.acme.dev/v1/orders/4821' \
 
 What you get back is an ordinary stitch declaration, not a frozen artifact. The same fields you would reach for on any stitch are one edit away:
 
-```ts
+```ts twoslash
+import { bearer, env, stitch } from 'stitchapi';
+
+// ---cut---
 export const getOrder = stitch({
     baseUrl: 'https://api.acme.dev',
     path: '/v1/orders/{orderId}',

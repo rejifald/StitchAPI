@@ -16,7 +16,8 @@ A call to `fetch` fails once with a `503`, the data was there a second ago, and 
 
 Here's the version that shows up in most codebases. It runs, and it's better than nothing:
 
-```ts
+```ts twoslash
+// @noErrors
 async function fetchWithRetry(url: string, attempts = 3): Promise<Response> {
     let lastError: unknown;
     for (let i = 0; i < attempts; i++) {
@@ -48,7 +49,8 @@ It loops, it catches both rejection modes, it surfaces the last error. And it's 
 
 Fold all four in and the helper grows teeth. This one backs off exponentially with jitter, retries only a transient set, honors `Retry-After`, and stays a `GET` so repeating it is safe:
 
-```ts
+```ts twoslash
+// @noErrors
 const RETRYABLE = new Set([429, 502, 503, 504]);
 
 function parseRetryAfter(res: Response): number | null {
@@ -100,7 +102,7 @@ That's the honest minimum, and it's a lot more than a `for` loop. It also still 
 
 The retry policy isn't really code — it's data: a count, a status set, a backoff curve, a flag for `Retry-After`. A stitch lets you say exactly that data and keeps the deciding logic out of your call site. You declare the call once, with its retry policy as a field:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const getUser = stitch({
@@ -115,7 +117,7 @@ const getUser = stitch({
     },
 });
 
-const user = await getUser({ id: '42' }); // retried, backed off, Retry-After honored
+const user = await getUser({ params: { id: '42' } }); // retried, backed off, Retry-After honored
 ```
 
 Every pitfall above is now a named field. `attempts` is the **total** number of tries including the first, so `attempts: 3` means up to two retries. `on` lists the status codes that trigger a retry — defaulting to the transient set `[429, 502, 503, 504]`, which is what keeps a dead `4xx` from being retried at all. `backoff: 'expo-jitter'` doubles the delay each attempt and spreads it randomly to break up the herd, paced from `baseMs` and clamped to `maxMs`; `'expo'` and `'fixed'` are there when you want a different curve. And `respectRetryAfter: true` uses the server's `Retry-After` header in place of the computed backoff when the response carries one.

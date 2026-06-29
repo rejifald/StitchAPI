@@ -26,7 +26,7 @@ The fix isn't more types or more mocks. It's to [validate the response you actua
 
 StitchAPI does this with **schema-anchored drift detection**. You wrap a stitch's `output` schema in `drift()`, and every live response is checked against that schema in two tiers:
 
-```ts
+```ts twoslash
 import { drift, stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -63,7 +63,30 @@ A schema doesn't have that problem, because it _declares_ what may vary. `z.stri
 
 Because every call is an event stream — `start → progress → drift → result → done`, with `await` as sugar over it — drift isn't a separate channel you wire up. When you only want the value, `await` the stitch and a required-field violation throws `STITCH_DRIFT` for you. When you want to see the soft findings as they happen, iterate the stream:
 
-```ts
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getOrder = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders/{id}',
+    output: drift(
+        z.object({
+            id: z.number(),
+            total: z.number(),
+            note: z.string().optional(),
+        }),
+    ),
+});
+
+declare const log: { warn(msg: string, meta: { level: string }): void };
+declare function renderOrder(order: {
+    id: number;
+    total: number;
+    note?: string;
+}): void;
+
+// ---cut---
 for await (const event of getOrder({ params: { id: 7 } }).stream()) {
     if (event.type === 'drift') {
         const { level, path, change } = event.finding;

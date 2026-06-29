@@ -24,8 +24,11 @@ The two compose. Coalescing flattens the concurrent spike; the cache absorbs the
 
 Caching is **off by default** and loaded lazily — the cache machinery only enters your bundle when a stitch actually asks for it. The smallest form is a TTL:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
 
 const getUser = stitch({
     path: 'https://api.example.com/users/{id}',
@@ -39,7 +42,11 @@ That single string opts the stitch into the read-through cache _and_ in-process 
 
 The object form exposes the knobs when you need them:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+// ---cut---
 const listAnnouncements = stitch({
     path: 'https://api.example.com/announcements',
     output: z.array(z.object({ id: z.number(), title: z.string() })),
@@ -69,7 +76,10 @@ This is where caching meets [auth as a boundary](/docs/concepts/capability-not-c
 
 When a response genuinely is the same for everyone — a public feed, a shared catalog — you opt out with `scope: 'app'` and the entry is shared across principals. That's a deliberate widening of the blast radius, and reading it in the declaration says exactly that: this data is not user-specific.
 
-```ts
+```ts twoslash
+import { bearer, env, stitch } from 'stitchapi';
+
+// ---cut---
 // Principal-scoped (default): each user gets their own entry.
 const getProfile = stitch({
     path: 'https://api.example.com/me',

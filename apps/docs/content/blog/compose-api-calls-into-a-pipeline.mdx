@@ -14,7 +14,8 @@ You need a user, then that user's posts, then each post enriched with its author
 
 Here is the real multi-step flow, written by hand. It works. It is also where every project quietly accumulates scar tissue.
 
-```ts
+```ts twoslash
+// @noErrors
 async function getUserPosts(id: number) {
     let user;
     try {
@@ -52,8 +53,8 @@ The sharp edges, named:
 
 Declare each call once as a stitch — a typed, validated, resilient function over one endpoint — then state the order.
 
-```ts
-import { stitch } from 'stitchapi';
+```ts twoslash
+import { type Stitch, stitch } from 'stitchapi';
 import { pipe } from 'stitchapi/pipe';
 import { z } from 'zod';
 
@@ -76,7 +77,7 @@ const fetchPosts = stitch({
 });
 
 const userPosts = pipe(
-    fetchUser, // receives the pipe's input
+    fetchUser as Stitch, // receives the pipe's input
     {
         stitch: fetchPosts,
         input: (u) => ({ query: { userId: (u as User).id } }),
@@ -102,7 +103,11 @@ The two `try/catch` blocks are gone, and so is the status checking, the manual r
 
 It also **fails fast, not best-effort.** A stitch throws `StitchError` once it exhausts its own retries; inside a pipe, that error rejects the entire pipeline. No later step runs, and the rejection carries the failing call's `.status`, `.attempts`, `.body`, and `.url`. You handle one failure at the boundary instead of one per step:
 
-```ts
+```ts twoslash
+import type { StitchInput } from 'stitchapi';
+
+declare const userPosts: (input?: StitchInput) => Promise<unknown>;
+// ---cut---
 try {
     const posts = await userPosts({ params: { id: 1 } });
 } catch (err) {
@@ -133,9 +138,28 @@ The step-to-step `input` mapper is a closure — sugar, the same category as `tr
 
 `pipe()` bounds a flow exactly as tightly as you bound a single stitch. One call you `await`; a sequence of dependent calls is the same `await` over a value that happens to contain three. Adding a third enrichment step is one more entry in the list, not another `try/catch` block and another untyped variable:
 
-```ts
+```ts twoslash
+import { type Stitch, stitch } from 'stitchapi';
+import { pipe } from 'stitchapi/pipe';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+type User = z.infer<typeof User>;
+const Posts = z.array(z.object({ id: z.number(), title: z.string() }));
+type Posts = z.infer<typeof Posts>;
+
+const fetchUser = stitch({
+    url: 'https://api.example.com/users/{id}',
+    output: User,
+});
+const fetchPosts = stitch({
+    url: 'https://api.example.com/posts',
+    output: Posts,
+});
+const fetchComments = stitch({ url: 'https://api.example.com/comments' });
+// ---cut---
 const enriched = pipe(
-    fetchUser,
+    fetchUser as Stitch,
     {
         stitch: fetchPosts,
         input: (u) => ({ query: { userId: (u as User).id } }),

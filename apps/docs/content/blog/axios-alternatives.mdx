@@ -24,9 +24,11 @@ Open the axios setup in a mature codebase and the `axios.create()` call is usual
 
 A stitch is the alternative for that problem, and it's a different category on purpose. **It isn't a smaller HTTP client — it's a layer above whichever one you keep.** `fetch` and axios become pluggable adapters underneath; a stitch sits on top and turns one endpoint into a typed, validated, resilient function. You declare the call and its policy once, as data:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 import { z } from 'zod';
+
+const Order = z.object({ id: z.number() });
 
 const listOrders = stitch({
     baseUrl: 'https://api.example.com',

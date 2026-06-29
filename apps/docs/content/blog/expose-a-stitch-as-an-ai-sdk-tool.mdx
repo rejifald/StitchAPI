@@ -16,7 +16,7 @@ That's exactly the shape `@stitchapi/vercel-ai` gives you. You define a stitch o
 
 The tool is the thin part. The substance is the stitch: a single endpoint declared with a typed input, a validated output, and whatever resilience that integration needs. Here's a stitch for a small internal "lookup" API, with auth, validation, and a few resilience knobs already on it:
 
-```ts
+```ts twoslash
 import { bearer, env, stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -47,7 +47,8 @@ Two things to notice before any model is involved. First, `output: Order` means 
 
 Now expose that stitch to the model. `stitchTool` takes the stitch plus a small options object — a `description` the model reads to decide _when_ to call, an `inputSchema` the model fills, and an optional `toInput` to map the model's flat arguments onto the stitch's `{ params, query, body }` shape:
 
-```ts
+```ts twoslash
+// @noErrors
 import { getOrder } from './api';
 
 import { stitchTool } from '@stitchapi/vercel-ai';
@@ -73,7 +74,8 @@ That's the whole wiring. The model decides to call `getOrder`, fills `{ id: 'A-1
 
 If you'd rather compose the tool yourself — for example with the AI SDK's own `tool()` helper for tighter typing — there's `stitchExecute`, which is just the `execute` half:
 
-```ts
+```ts twoslash
+// @noErrors
 import { getOrder } from './api';
 
 import { stitchExecute } from '@stitchapi/vercel-ai';
