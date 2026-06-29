@@ -148,7 +148,7 @@ function canonicalRequest(
 
 /** Derive the opaque 128-bit key from a resolved request, or `undefined` when the request is
  *  not hashable (an unserialisable body) — the caller then warns and passes through. With a
- *  `userKey` (the `cache.key` sugar) the request canonicalisation is replaced, but the version
+ *  `userKey` (the `cache.keyOf` sugar) the request canonicalisation is replaced, but the version
  *  and principal still fold in so scope isolation is never lost. */
 export function deriveCacheKey(
     d: RequestDescriptor,
@@ -440,7 +440,9 @@ export function createCache(opts: CacheControllerOptions): CacheController {
                 principalForScope !== undefined
                     ? { ...d, principal: principalForScope }
                     : d;
-            const userKey = config.key ? config.key(input) : undefined;
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the @deprecated alias of `keyOf`, read as the back-compat fallback until the GA cut (CONTRACT.md P6)
+            const keyOf = config.keyOf ?? config.key;
+            const userKey = keyOf ? keyOf(input) : undefined;
             return deriveCacheKey(scoped, explicitVary, userKey);
         },
 

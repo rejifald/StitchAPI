@@ -54,10 +54,10 @@ interface KeyState {
     nextGrantAt: number; // earliest time the next rate-limited acquire may proceed
 }
 
-// In-process registry of host-scoped limiter state. `scope:'host'` must pool the rate
+// In-process registry of host-pooled limiter state. `pool:'host'` must pool the rate
 // budget across SEPARATE stitch() instances hitting the same host even without a shared
 // store (throttle.mdx: "'host' pools the budget across every stitch hitting the same
-// host"). Closure-local maps can't do that, so host-scoped throttles share their KeyState
+// host"). Closure-local maps can't do that, so host-pooled throttles share their KeyState
 // here, keyed by the host. A configured `store` still overrides for cross-process pooling.
 const hostStates = new Map<string, KeyState>();
 
@@ -67,8 +67,8 @@ const hostStates = new Map<string, KeyState>();
  * `acquire` resolves once a slot is free (reporting how long it waited) and MUST be
  * paired with `release`. Concurrency waiters are served FIFO.
  *
- * With `scope:'host'`, per-key state lives in the module-level `hostStates` registry so the
- * budget pools in-process across independent stitch instances; `scope:'stitch'` (default)
+ * With `pool:'host'`, per-key state lives in the module-level `hostStates` registry so the
+ * budget pools in-process across independent stitch instances; `pool:'stitch'` (default)
  * keeps state closure-local to this limiter.
  */
 export function createThrottle(
@@ -81,8 +81,9 @@ export function createThrottle(
     const limit = opts?.concurrency;
     const rate = opts?.rate ? parseRate(opts.rate) : undefined;
     const spacing = rate ? rate.perMs / rate.count : 0; // ms between grants
-    const states =
-        opts?.scope === 'host' ? hostStates : new Map<string, KeyState>();
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `scope` is the @deprecated alias of `pool`, read as the back-compat fallback until the GA cut (CONTRACT.md P2)
+    const hostPooled = (opts?.pool ?? opts?.scope) === 'host';
+    const states = hostPooled ? hostStates : new Map<string, KeyState>();
 
     const stateFor = (key: string): KeyState => {
         let s = states.get(key);
