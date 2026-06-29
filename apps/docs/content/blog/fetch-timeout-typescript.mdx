@@ -12,7 +12,8 @@ Add a timeout to `fetch` when a slow or hung response shouldn't be allowed to bl
 
 The correct primitive is `AbortSignal`. On current runtimes (Node 18+, modern browsers) `AbortSignal.timeout(ms)` gives you one that aborts itself after the deadline — pass it to `fetch` and a breached deadline cancels the in-flight request:
 
-```ts
+```ts twoslash
+// @noErrors
 async function getReport(): Promise<unknown> {
     try {
         const res = await fetch('https://api.example.com/report', {
@@ -31,7 +32,8 @@ async function getReport(): Promise<unknown> {
 
 If your runtime predates `AbortSignal.timeout`, build the same thing from an `AbortController` and a timer — and clear the timer on success so it doesn't dangle:
 
-```ts
+```ts twoslash
+// @noErrors
 const controller = new AbortController();
 const timer = setTimeout(() => controller.abort(), 3000);
 try {
@@ -48,7 +50,8 @@ For a single call this is the right amount of code, and it does the one thing th
 
 The pattern that looks equivalent but isn't is `Promise.race` against a timer:
 
-```ts
+```ts twoslash
+// @noErrors
 // Looks like a timeout. Leaks the request.
 const res = await Promise.race([
     fetch(url),
@@ -68,7 +71,7 @@ A single `AbortSignal` answers one question — how long the _whole call_ gets. 
 
 A [stitch](/docs/concepts/the-stitch) makes the timeout a property of the call. You declare both scopes as one `timeout` object, and the engine backs them with a real `AbortSignal` — the same cancellation the manual version did right, without the wiring:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const report = stitch({
@@ -82,7 +85,7 @@ const report = stitch({
 
 The two scopes exist because they compose with [retry](/docs/guides/resilience/retry). Each try is gated by `perAttempt`, while `total` caps the sum of all tries plus their waits — so a long enough `total` is what _lets_ a slow attempt be retried at all, and a tight `perAttempt` stops one hung attempt from swallowing the budget:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const getQuote = stitch({
@@ -99,7 +102,7 @@ Because the timeout lives on the declaration, every front door — the in-proces
 
 If today's job really is one endpoint, one attempt, one deadline, you still don't have to trade simple for extensible. A stitch scales down to the same one line — `timeout` takes a bare duration as shorthand for the total:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const report = stitch({
@@ -113,7 +116,10 @@ That's the whole bound, and it cancels the socket with the same real `AbortSigna
 
 The stitch is that same simple call today and one edit away from the rest tomorrow. Growing it to two composing deadlines plus retry is two lines on the declaration, not a rewrite:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// ---cut---
 const report = stitch({
     baseUrl: 'https://api.example.com',
     path: '/report',

@@ -16,7 +16,7 @@ StitchAPI core is Web-API only on the hot path — `fetch`, `Request`, `URL`, `c
 
 Here is the whole client. A stitch declares one endpoint as a typed function; the Worker's `fetch` handler calls it.
 
-```ts tab="StitchAPI" tabGroup="approach"
+```ts twoslash tab="StitchAPI" tabGroup="approach"
 import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -36,7 +36,8 @@ export default {
 };
 ```
 
-```ts tab="fetch" tabGroup="approach"
+```ts twoslash tab="fetch" tabGroup="approach"
+// @noErrors
 // By hand, the retry loop, the timeout, and the validation are all
 // open-coded inside the handler — and they live nowhere reusable.
 export default {
@@ -87,7 +88,8 @@ On a single Node process both live in memory and that is fine. On the edge it is
 
 The fix is the `store` seam. A stitch keeps its mutable state behind a pluggable `StitchStore`; swap the backend and the cache and auth jar move with it. `@stitchapi/cloudflare-kv` exports `cloudflareKvStore`, a Workers-KV-backed store you attach as `store`:
 
-```ts
+```ts twoslash
+// @noErrors
 import {
     type KVNamespaceLike,
     cloudflareKvStore,

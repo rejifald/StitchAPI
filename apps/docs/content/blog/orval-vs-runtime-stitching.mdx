@@ -14,7 +14,8 @@ This is the Orval-specific version of a broader comparison. For the general spec
 
 Orval's pitch is breadth from one input. Point it at an OpenAPI document and a config, and it emits a typed client plus framework data-fetching hooks, Zod schemas, and MSW mocks — the whole stack, generated:
 
-```ts
+```ts twoslash
+// @noErrors
 // orval.config.ts
 export default {
     petstore: {
@@ -47,7 +48,7 @@ None of that is a flaw in Orval — it's the boundary of generating from a spec.
 
 Runtime stitching makes the opposite bet: the only thing you can fully trust is the response on the wire, so validate against it on every call. A [stitch](/docs/concepts/the-stitch) is a per-endpoint declaration — a URL and a schema — with no spec and no generated artifact:
 
-```ts
+```ts twoslash
 import { stitch, toValidator } from 'stitchapi';
 import { z } from 'zod';
 
@@ -70,18 +71,29 @@ The trade is real and cuts both ways: Orval types the whole API from one artifac
 
 Orval's headline is generated hooks, so the honest question is what you give up there. You don't get a hook generated per operation — but you do get hooks. [`@stitchapi/react`](/docs/integrations/react) gives you `useStitch` (request/response) and `useStitchStream` (re-renders as each `delta` chunk arrives), and `stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` you hand straight to TanStack Query's `useQuery`:
 
-```ts
+```ts twoslash
+// ---cut---
 import { stitchQueryOptions, useStitch } from '@stitchapi/react';
 import { useQuery } from '@tanstack/react-query';
+import { stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+const listPets = stitch<{ id: number; name: string }[]>({
+    baseUrl: 'https://api.example.com',
+    path: '/pets',
+    output: toValidator(
+        z.array(z.object({ id: z.number(), name: z.string() })),
+    ),
+});
 
 // StitchAPI owns the lifecycle — including streaming, which useQuery doesn't model.
 function usePets() {
-    return useStitch(listPets);
+    return useStitch(listPets, {});
 }
 
 // Or hand the stitch to TanStack Query as the queryFn.
 function usePetsViaTanstack() {
-    return useQuery(stitchQueryOptions(listPets));
+    return useQuery(stitchQueryOptions(listPets, {}));
 }
 ```
 

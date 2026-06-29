@@ -16,7 +16,7 @@ A generator needs a spec. Point it at an OpenAPI (or GraphQL) document and it em
 
 A stitch needs a URL and one example response. You declare the endpoints you call, and the response shape comes from a validator you write (or generate from a sample):
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -41,7 +41,13 @@ A generated client gives you **static** types: they describe what the spec _said
 
 A stitch validates the **live** response on every call. The schema runs against real bytes, so a shape mismatch is caught the moment it happens, at the boundary, with a typed error — not swallowed into an `undefined`. On top of plain validation, StitchAPI adds **leveled drift detection** ([schema drift is a production bug](/blog/schema-drift-is-a-production-bug)): the declared schema _is_ the contract — wrap it in `drift()` and each response is validated and then diffed against the validated value, with every difference classified by severity:
 
-```ts
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const OrdersSchema = z.array(z.object({ id: z.number(), total: z.number() }));
+
+// ---cut---
 const listOrders = stitch({
     path: 'https://api.example.com/orders',
     // the schema is the contract; required fields throw, soft drift is leveled
@@ -60,7 +66,10 @@ Generators are, by design, scoped to the request-and-types problem. Most emit th
 
 In a stitch, those concerns are fields on the declaration, uniform across every endpoint:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// ---cut---
 const listUsers = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users',

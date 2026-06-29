@@ -26,7 +26,7 @@ That prints an OpenAPI 3.1 JSON document to stdout. `--module` points at the fil
 
 Take two stitches you would write anyway. `listOrders` declares its `status` query parameter where the export can see it — as an RFC 6570 `{?status}` template in the path, with an `input.query` schema describing the value:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 import { bearer, env } from 'stitchapi';
 import { z } from 'zod';
@@ -68,11 +68,15 @@ The `--schema-module` file exports a `toJsonSchema(source, info)` converter — 
 
 Prefer to do it in code? `toOpenApi` is the same machinery the CLI runs on:
 
-```ts
-import { getUser, listOrders } from './stitches';
-import { toJsonSchema } from './to-json-schema';
-
+```ts twoslash
+import type { Stitch } from 'stitchapi';
+import type { OpenApiExportOptions } from 'stitchapi/registry';
+// ---cut---
 import { toOpenApi } from 'stitchapi/registry';
+
+declare const getUser: Stitch;
+declare const listOrders: Stitch;
+declare const toJsonSchema: OpenApiExportOptions['toJsonSchema'];
 
 const { document, warnings } = toOpenApi(
     { getUser, listOrders },

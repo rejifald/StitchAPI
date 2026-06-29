@@ -14,7 +14,8 @@ A stitch gives you the other shape. Awaiting a stitch throws on failure — the 
 
 Here is the honest "before" — fetch, a hand-written status check, and a `catch` that has to reconstruct what it caught:
 
-```ts
+```ts twoslash
+// @noErrors
 async function loadUser(id: string) {
     try {
         const res = await fetch(`https://api.example.com/users/${id}`);
@@ -39,16 +40,16 @@ Three sharp edges, all real. The `catch` parameter is `unknown` (TypeScript has 
 
 Declare the call as a stitch with an `output` schema, then call it with `.safe()`. The result is a `SafeResult<T>` you branch on — no `try`, no `catch`, no re-narrowing:
 
-```ts
-import { stitch } from 'stitchapi';
+```ts twoslash
+import { stitch, toValidator } from 'stitchapi';
 import { z } from 'zod';
 
 const User = z.object({ id: z.string(), name: z.string() });
 
-const getUser = stitch({
+const getUser = stitch<{ id: string; name: string }>({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    output: User,
+    output: toValidator(User),
 });
 
 async function loadUser(id: string) {
@@ -71,7 +72,10 @@ async function loadUser(id: string) {
 
 `SafeResult<T>` is a discriminated union, and every member carries all four fields so the discriminant is exhaustive on both arms:
 
-```ts
+```ts twoslash
+import type { StitchError } from 'stitchapi';
+
+// ---cut---
 type SafeResult<T> =
     | { ok: true; data: T; error: null }
     | { ok: false; data: null; error: StitchError };
@@ -83,7 +87,21 @@ Branch on `ok` (or check `error === null`) and the union collapses to one arm. T
 
 `.safe()` is one of four ways to consume the same single run. The stitch executes once; `then`, `catch`, `finally`, and `safe` all share that run rather than firing it again:
 
-```ts
+```ts twoslash
+import { stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string() });
+
+const getUser = stitch<{ id: string; name: string }>({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: toValidator(User),
+});
+
+const id = '1';
+const fallbackUser = { id, name: 'anon' };
+// ---cut---
 const user = await getUser({ params: { id } }); // throws StitchError on failure
 const safe = await getUser.safe({ params: { id } }); // { ok, data, error }, never throws
 const user2 = await getUser.unwrap({ params: { id } }); // the throwing twin of .safe()

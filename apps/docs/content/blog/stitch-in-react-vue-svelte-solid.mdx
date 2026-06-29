@@ -18,7 +18,7 @@ Query-core owns the lifecycle and nothing else: status transitions, cancellation
 
 That shared core is why the per-framework state shape is the same everywhere:
 
-```ts
+```ts twoslash
 interface StitchQueryState<T> {
     status: 'idle' | 'pending' | 'streaming' | 'success' | 'error';
     data: T | undefined;
@@ -37,7 +37,8 @@ Learn it once and it transfers. The same `isPending` / `isError` / `isStreaming`
 
 The React binding is a pair of hooks built on `useSyncExternalStore`, so they're tearing-free under concurrent rendering. `useStitch` is the request/response case:
 
-```ts
+```ts twoslash
+// @noErrors
 import { useStitch } from '@stitchapi/react';
 
 function Profile({ id }: { id: string }) {
@@ -55,7 +56,8 @@ The query re-creates and re-fetches when the stitch identity or a structural key
 
 For a streaming surface (`sse` / `stream`), `useStitchStream` re-renders as each `delta` chunk arrives — [feed those deltas from a server route](/blog/stream-a-stitch-as-sse-in-next-app-router) and the client just maps over `chunks`. Same result shape; `chunks` is the running list, and `isStreaming` stays true until the terminal `result`:
 
-```ts
+```ts twoslash
+// @noErrors
 import { useStitchStream } from '@stitchapi/react';
 
 function Chat({ prompt }: { prompt: string }) {
@@ -79,7 +81,8 @@ Swap React's hook for the next framework's idiomatic shape and nothing else move
 
 **Angular** is the sharpest illustration of "same state, different primitive": `injectStitch` hands the lifecycle back as _both_ fine-grained signals and an RxJS observable, from one shared execution.
 
-```ts
+```ts twoslash
+// @noErrors
 import { injectStitch } from '@stitchapi/angular';
 
 readonly user = injectStitch(getUser, () => ({ params: { id: this.id() } }));

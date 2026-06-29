@@ -14,7 +14,8 @@ A stitch moves the seam. Because a stitch is a function with a transport plugged
 
 Here is the function and the test you reach for first. The function calls `GET /users/{id}` and the test fakes `fetch`:
 
-```ts
+```ts twoslash
+// @noErrors
 async function getUser(id: string): Promise<User> {
     const res = await fetch(`https://api.example.com/users/${id}`);
     if (!res.ok) throw new Error(`getUser failed: ${res.status}`);
@@ -40,11 +41,18 @@ The sharp edges are real. The mock is global: every spec sharing this process sh
 
 Declare the call as a stitch. The transport is a config field — `adapter` — that defaults to `fetchAdapter()`. In a test you pass `mockAdapter` instead and the real engine runs against your fixtures:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 import { mockAdapter } from 'stitchapi/testing';
 import { z } from 'zod';
 
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): {
+    toBe(expected: unknown): void;
+    toHaveLength(n: number): void;
+    not: { toHaveLength(n: number): void };
+};
+// ---cut---
 const User = z.object({ id: z.string(), name: z.string() });
 
 const adapter = mockAdapter({
@@ -70,7 +78,17 @@ The fixture is scoped to this stitch, not to a global. `mockAdapter` returns a r
 
 A `MockRoute` is `{ method?, match?, respond }`. `match` is a URL substring, a `RegExp` against the full URL, or a predicate — first match wins. `respond` is a fixed `MockResponse` (status defaults to `200`), a function of the call, or — the useful one for resilience — an array consumed one per call, last entry repeating. That last form scripts a flaky endpoint, which is how you exercise the real retry path:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { mockAdapter } from 'stitchapi/testing';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string() });
+
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): { toBe(expected: unknown): void };
+
+// ---cut---
 const adapter = mockAdapter({
     match: '/users/',
     respond: [
@@ -103,9 +121,17 @@ One default worth knowing: an unmatched request **throws** by default. `opts.onU
 
 Sometimes the stitch is not what you are testing — it is a dependency of the function you are testing, and you want to control its output without a transport at all. `stubStitch` and `failStitch`, both from `stitchapi/testing`, stand in for the stitch itself:
 
-```ts
+```ts twoslash
+import type { Stitch } from 'stitchapi';
 import { failStitch, stubStitch } from 'stitchapi/testing';
 
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): { toBe(expected: unknown): void };
+declare function loadProfile(
+    getUser: Stitch<unknown>,
+): Promise<{ heading?: string; error?: string }>;
+
+// ---cut---
 test('loader renders the user', async () => {
     const getUser = stubStitch({ id: '1', name: 'Ada' });
     const view = await loadProfile(getUser);
@@ -137,9 +163,35 @@ Inject a mock adapter when the stitch's own behavior is the subject. Stub the st
 
 A stitch emits an event stream as it works: `start`, `progress`, `info`, `drift`, `delta`, `result`, `error`, `done`. A retry is not a peer event — it rides a `progress` event whose `phase` is `'retry'`. `collectStitchEvents(source)` drains the stream into its parts so you can assert the process, not only the return value — that it retried twice, or that the response drifted from its schema:
 
-```ts
-import { collectStitchEvents } from 'stitchapi/testing';
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { collectStitchEvents, mockAdapter } from 'stitchapi/testing';
+import { z } from 'zod';
 
+const User = z.object({ id: z.string(), name: z.string() });
+const adapter = mockAdapter({
+    match: '/users/',
+    respond: [
+        { status: 503 },
+        { status: 503 },
+        { body: { id: '1', name: 'Ada' } },
+    ],
+});
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: User,
+    retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 0 },
+    adapter,
+});
+
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): {
+    toBe(expected: unknown): void;
+    toHaveLength(n: number): void;
+};
+
+// ---cut---
 test('retries before succeeding', async () => {
     const events = await collectStitchEvents(getUser({ params: { id: '1' } }));
 
@@ -154,7 +206,29 @@ test('retries before succeeding', async () => {
 
 `collectStitchEvents` returns a `CollectedEvents` object — `{ types, deltas, drifts, result, error, done, events }` — not a bare array. The full ordered list lives at `.events`; the convenience fields surface the common asks, so `events.drifts` collects every `drift` finding when a response no longer matches its validated shape. That is the contract test that fails the moment an upstream API renames a field:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { collectStitchEvents, mockAdapter } from 'stitchapi/testing';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string() });
+const adapter = mockAdapter({
+    match: '/users/',
+    respond: { body: { id: '1', name: 'Ada' } },
+});
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: User,
+    adapter,
+});
+
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): {
+    not: { toHaveLength(n: number): void };
+};
+
+// ---cut---
 test('flags drift when a field is renamed', async () => {
     const events = await collectStitchEvents(getUser({ params: { id: '1' } }));
     expect(events.drifts).not.toHaveLength(0);
@@ -165,8 +239,21 @@ test('flags drift when a field is renamed', async () => {
 
 Retry backoff, throttle pacing, and per-attempt timeouts all wait on a clock. A test that waits on the real clock is slow and timing-dependent — the flake you were trying to delete. Inject `manualClock()` as the stitch's `clock` and advance it yourself:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { mockAdapter } from 'stitchapi/testing';
+// ---cut---
 import { manualClock } from 'stitchapi/testing';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string() });
+const adapter = mockAdapter({
+    match: '/users/',
+    respond: [{ status: 503 }, { body: { id: '1', name: 'Ada' } }],
+});
+
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): { toBe(expected: unknown): void };
 
 const clock = manualClock();
 const getUser = stitch({

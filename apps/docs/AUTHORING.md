@@ -536,10 +536,15 @@ Specific to this axis:
 -   **Hero snippet only, and only where an honest equivalent exists.** Don't tab
     every block, and skip it where there's no faithful `fetch` form (a `pipe()`
     composition, a CLI command, a conceptual essay with no single API call).
--   **Blog code is plain ` ```ts ` (not twoslash)**, so both fences are plain
-    ` ```ts tab="…" tabGroup="approach" `. Posts that already carry a
-    fetch-vs-stitch prose "before" don't need this — they've made the comparison
-    already.
+-   **Both fences are `twoslash`** (the blog gate requires it — see "Blog
+    posts"). The `StitchAPI` tab type-checks against the real `stitchapi` types
+    like any other snippet. The `fetch` tab is a deliberately hand-rolled
+    baseline that imports no `stitchapi`, so it carries an in-block `// @noErrors`
+    — the gate's sanctioned escape hatch — keeping the fence uniform and the
+    exception explicit:
+    ` ```ts twoslash tab="fetch" tabGroup="approach" ` then `// @noErrors`.
+-   **Posts that already carry a fetch-vs-stitch prose "before" don't need this**
+    — they've made the comparison already.
 
 ## Type tables — AutoTypeTable
 

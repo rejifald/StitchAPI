@@ -14,7 +14,8 @@ A stitch is exactly the function `queryFn` wants. It returns the validated value
 
 Here's the typical fetch sitting inside a query: the status check, the cast, and a retry the hook owns by hand.
 
-```tsx
+```tsx twoslash
+// @noErrors
 import { useQuery } from '@tanstack/react-query';
 
 function useUser(id: string) {
@@ -38,19 +39,20 @@ The sharp edges are all in `queryFn`. The `as User` is a lie the compiler can't 
 
 Declare the call once as a stitch, then hand the stitch to `queryFn`:
 
-```tsx
-import { bearer, env, stitch } from 'stitchapi';
+```tsx twoslash
+import { bearer, env, stitch, toValidator } from 'stitchapi';
 import { z } from 'zod';
 
-const getUser = stitch({
+const getUser = stitch<{ id: string; name: string }>({
     url: 'https://api.example.com/users/{id}',
-    output: z.object({ id: z.string(), name: z.string() }),
+    output: toValidator(z.object({ id: z.string(), name: z.string() })),
     auth: bearer(env('API_TOKEN')),
     retry: { attempts: 3, on: [429, 502, 503, 504], backoff: 'expo-jitter' },
 });
 ```
 
-```tsx
+```tsx twoslash
+// @noErrors
 import { useQuery } from '@tanstack/react-query';
 
 function useUser(id: string) {
@@ -70,7 +72,8 @@ Awaiting a stitch returns the validated value and throws `StitchError` on failur
 
 A stitch gives you two call shapes. Inside a query, use the bare awaitable (or `.unwrap()`), which throws on failure:
 
-```tsx
+```tsx twoslash
+// @noErrors
 queryFn: () => getUser({ params: { id } });
 ```
 
@@ -97,7 +100,8 @@ A writing stitch is a `mutationFn` the same way — hand it straight to `useMuta
 
 If you'd rather not spell out the `queryKey` each time, `@stitchapi/react` ships `stitchQueryOptions` — a typed `{ queryKey, queryFn }` object you spread into `useQuery`:
 
-```tsx
+```tsx twoslash
+// @noErrors
 import { stitchQueryOptions } from '@stitchapi/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -108,7 +112,8 @@ It returns a plain object, so it needs no import of `@tanstack/react-query` — 
 
 Streaming surfaces (`sse` / `stream` / `llm`) stay out of `useQuery` — that hook is request/response only. Consume `.stream()` directly, or use the `useStitchStream` hook, which re-renders as each `delta` chunk arrives. Its result carries a `chunks` list and an `isStreaming` flag that stays true until the terminal `result`:
 
-```tsx
+```tsx twoslash
+// @noErrors
 import { useStitchStream } from '@stitchapi/react';
 
 function Answer({ prompt }: { prompt: string }) {

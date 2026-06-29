@@ -57,7 +57,7 @@ The generic answers all involve remembering a shape and comparing against it.
 
 A [stitch](/docs/concepts/the-stitch) detects drift by reusing the contract you already wrote. Wrap a stitch's `output` schema in `drift()`, and every live response is validated against the schema and then diffed against the validated value — the difference is the drift:
 
-```ts tab="StitchAPI" tabGroup="approach"
+```ts twoslash tab="StitchAPI" tabGroup="approach"
 import { drift, stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -74,7 +74,8 @@ const getOrder = stitch({
 });
 ```
 
-```ts tab="fetch" tabGroup="approach"
+```ts twoslash tab="fetch" tabGroup="approach"
+// @noErrors
 // By hand you validate the required fields yourself — and the soft
 // drift (a coercion, an undeclared key) has nowhere to surface, so it
 // passes silently.

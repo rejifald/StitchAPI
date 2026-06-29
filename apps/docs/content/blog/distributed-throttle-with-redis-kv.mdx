@@ -29,7 +29,8 @@ The three first-party drivers are thin peer-dependency packages:
 -   `@stitchapi/cloudflare-kv` — for Cloudflare Workers and Pages
 -   `@stitchapi/deno-kv` — for Deno Deploy, Node, or Bun
 
-```ts
+```ts twoslash
+// @noErrors
 import { fromIoredis, redisStore } from '@stitchapi/redis';
 import Redis from 'ioredis';
 import { seam } from 'stitchapi';
@@ -46,7 +47,8 @@ The `throttle` declaration is unchanged from the single-process version — this
 
 Sessions ride along for free. Give two stitches the same `key` plus a shared `store` and they share one login — capture the cookie once, on whichever worker logs in first, and every other worker replays it instead of re-authenticating:
 
-```ts
+```ts twoslash
+// @noErrors
 import { cookieSession, env, stitch } from 'stitchapi';
 
 const me = stitch({

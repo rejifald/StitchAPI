@@ -12,7 +12,8 @@ You have a `fetch` call that reads a user from an internal API. It works on your
 
 Here is the honest version — the `fetch` call with the edges it actually has in production, not the three-line happy path:
 
-```ts
+```ts twoslash
+// @noErrors
 async function getUser(id: string): Promise<User> {
     const res = await fetch(`https://api.example.com/users/${id}`, {
         headers: { authorization: `Bearer ${process.env.API_TOKEN}` },
@@ -37,7 +38,7 @@ Each fix is a known recipe — a retry loop, an `AbortController`, a schema pars
 
 A stitch is the same request expressed as a declaration: the URL, the auth, the resilience policy, and the response shape are fields, and the engine applies them on every call.
 
-```ts
+```ts twoslash
 import { bearer, env, stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -86,8 +87,12 @@ The `fetch` version tangles policy into the call: the retry loop, the abort plum
 
 **Declare the shared parts once, not per call.** When a second and third endpoint hit the same host with the same auth and retry, a [`seam`](/docs/guides/authoring/seam) holds that base and every stitch inherits it:
 
-```ts
+```ts twoslash
 import { bearer, env, seam } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string() });
+const Orders = z.array(z.object({ id: z.string() }));
 
 const api = seam({
     baseUrl: 'https://api.example.com',
@@ -101,7 +106,19 @@ const listOrders = api.stitch({ path: '/orders', output: Orders });
 
 **The query owns the view; the stitch owns the call.** A stitch is a function that returns a validated value and throws `StitchError` on failure — exactly the contract TanStack Query's `queryFn` wants, so it drops straight in:
 
-```ts
+```ts twoslash
+import { useQuery } from '@tanstack/react-query';
+import { bearer, env, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    auth: bearer(env('API_TOKEN')),
+    output: z.object({ id: z.string(), name: z.string() }),
+});
+declare const id: string;
+// ---cut---
 useQuery({
     queryKey: ['user', id],
     queryFn: () => getUser({ params: { id } }),

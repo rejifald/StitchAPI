@@ -16,7 +16,7 @@ A stitch collapses that. You declare an endpoint once — its types, auth, and r
 
 Here's the whole thing — a single stitch with its resilience and validation declared on it. Everything below is just a different way to call _this_.
 
-```ts
+```ts twoslash
 // stitches.ts
 import { stitch } from 'stitchapi';
 import { bearer, env } from 'stitchapi';
@@ -40,9 +40,20 @@ Export your stitches by name from a module (the CLI and the servers default to `
 
 The closest door. Import the stitch and call it like any async function; `await` returns the final unwrapped, validated value.
 
-```ts
-import { getUser } from './stitches';
+```ts twoslash
+import { bearer, env, stitch } from 'stitchapi';
+import { z } from 'zod';
 
+// the stitch declared in stitches.ts, imported here as `getUser`
+const getUser = stitch({
+    name: 'getUser',
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+    unwrap: 'data',
+    auth: bearer(env('API_TOKEN')),
+});
+// ---cut---
 const user = await getUser({ params: { id: 1 } }); // typed · validated
 ```
 
