@@ -553,6 +553,12 @@ export interface StitchConfig {
     headers?: Record<string, string>;
     /** GraphQL query string (`kind: 'graphql'`). */
     query?: string;
+    /**
+     * GraphQL `operationName` sent alongside `query` + `variables` (`kind: 'graphql'`). Omit to
+     * derive it from the first named operation in `query`; set it explicitly to override (e.g. a
+     * multi-operation document) or pass `''` to suppress the field entirely.
+     */
+    operationName?: string;
     /** Schemas validating params, query, body, headers, and (GraphQL) variables before the request. */
     input?: InputSchemas;
     /**
