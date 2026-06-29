@@ -11,7 +11,7 @@
 // These standalone stitches share ONE session across all callers, so they pass `scope: 'app'`
 // explicitly — the fail-closed default `'principal'` would throw (no seam binds a principal).
 import {
-    type AuthFailureInfo,
+    type AuthFailureResult,
     type RefreshResult,
     cookieSession,
     env,
@@ -64,7 +64,7 @@ test('onRefresh fires with { ok: true, status: 200 } after a successful cold log
     });
 
     const refreshes: RefreshResult[] = [];
-    const failures: AuthFailureInfo[] = [];
+    const failures: AuthFailureResult[] = [];
 
     const data = stitch({
         baseUrl: server.url,
@@ -139,7 +139,7 @@ test("onAuthFailure fires category 'unauthenticated' when the login returns 401 
         body: { ok: true },
     });
 
-    const failures: AuthFailureInfo[] = [];
+    const failures: AuthFailureResult[] = [];
     const refreshes: RefreshResult[] = [];
 
     const data = stitch({
@@ -181,7 +181,7 @@ test("onAuthFailure fires category 'rate-limited' + retryAfterMs when the login 
         body: { ok: true },
     });
 
-    const failures: AuthFailureInfo[] = [];
+    const failures: AuthFailureResult[] = [];
 
     const data = stitch({
         baseUrl: server.url,
@@ -219,7 +219,7 @@ test("onAuthFailure fires category 'network' + error when the login stitch throw
         body: { ok: true },
     });
 
-    const failures: AuthFailureInfo[] = [];
+    const failures: AuthFailureResult[] = [];
     const refreshes: RefreshResult[] = [];
 
     const data = stitch({

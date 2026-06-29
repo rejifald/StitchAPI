@@ -235,7 +235,7 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
     };
 }
 
-export interface OAuth2Opts {
+export interface OAuth2Options {
     /** The `client_credentials` token endpoint (POST, form-encoded). */
     tokenUrl: string;
     /** OAuth2 client id; resolved at call time (env/secretsFile), never committed. */
@@ -276,7 +276,7 @@ export interface OAuth2Opts {
      * Token tenancy (ADR 0002 §3). Default **`'app'`**: one token serves every caller — the right
      * model for `client_credentials`, which authenticates the *application*, not a user. Set
      * `'principal'` to fold the seam-bound principal into the token's cache key (and **throw if no
-     * principal is bound**, mirroring {@link CookieSessionOpts.scope}); each tenant then caches its
+     * principal is bound**, mirroring {@link CookieSessionOptions.scope}); each tenant then caches its
      * own token and one tenant's 401/refresh never disturbs another's in-flight calls. Pair it with
      * per-tenant `clientId`/`clientSecret`/`scope` for full multi-tenant separation.
      */
@@ -313,7 +313,7 @@ function singleFlight<T>(): (key: string, run: () => Promise<T>) => Promise<T> {
  * it as `Authorization: Bearer …`. A SHARED store makes one token serve many stitches/workers
  * and survive restarts; a rejected token (status in `refreshOn`) forces a fresh fetch + retry.
  */
-export function oauth2(opts: OAuth2Opts): AuthStrategy {
+export function oauth2(opts: OAuth2Options): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
     const skew = opts.refreshSkewMs ?? 30_000;
     const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
@@ -453,9 +453,9 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
  * Why an `apply`/`refresh` login attempt failed, categorised so the HOST can drive its OWN
  * durable state machine (wrong-creds vs rate-limited vs network) — StitchAPI keeps doing the
  * mechanical cookie capture/replay, but it can't model a host's external recovery loop, so it
- * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOpts.onAuthFailure}.
+ * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOptions.onAuthFailure}.
  */
-export interface AuthFailureInfo {
+export interface AuthFailureResult {
     /** `'apply'` = cold session had no stored cookie; `'refresh'` = a 401-style wall was hit. */
     phase: 'apply' | 'refresh';
     /** The login response status when the login responded at all (absent when it threw). */
@@ -473,7 +473,7 @@ export interface AuthFailureInfo {
     category: 'unauthenticated' | 'rate-limited' | 'network' | 'unknown';
 }
 
-/** Outcome of a single (re)login attempt, surfaced via {@link CookieSessionOpts.onRefresh}. */
+/** Outcome of a single (re)login attempt, surfaced via {@link CookieSessionOptions.onRefresh}. */
 export interface RefreshResult {
     /** A cookie (named, or any jar entry) was captured from the login response. */
     ok: boolean;
@@ -481,7 +481,7 @@ export interface RefreshResult {
     status?: number;
 }
 
-export interface CookieSessionOpts {
+export interface CookieSessionOptions {
     /** The login stitch — its raw response (the Set-Cookie headers) seeds the session. */
     login: Stitch;
     /**
@@ -516,11 +516,11 @@ export interface CookieSessionOpts {
     /**
      * Host-owned hook fired once per ACTUAL login attempt that failed to capture a cookie — NOT
      * per coalesced waiter (it runs inside the single-flight-guarded `doRefresh`). The host maps the
-     * categorised {@link AuthFailureInfo} to its own status (active/backoff/failed/unauthenticated)
+     * categorised {@link AuthFailureResult} to its own status (active/backoff/failed/unauthenticated)
      * and owns the external recovery loop that StitchAPI's per-call single-flight can't model. A
      * throwing hook never crashes the call (it is caught and announced on the `auth` trace topic).
      */
-    onAuthFailure?: (info: AuthFailureInfo) => void | Promise<void>;
+    onAuthFailure?: (info: AuthFailureResult) => void | Promise<void>;
     /**
      * Host-owned hook fired once after EVERY (re)login attempt — success or failure — with its
      * {@link RefreshResult}, so the host can persist durable session state and clear/extend its
@@ -530,7 +530,7 @@ export interface CookieSessionOpts {
     onRefresh?: (result: RefreshResult) => void | Promise<void>;
 }
 
-export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
+export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
     const jarMode = opts.jar === true || opts.cookie === '*';
     const scope = opts.scope ?? 'principal';
@@ -585,7 +585,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         phase: 'apply' | 'refresh',
         status: number,
         headers: Record<string, string>,
-    ): AuthFailureInfo => {
+    ): AuthFailureResult => {
         if (status === 429) {
             // Omit `retryAfterMs` entirely when the header is absent/unparseable —
             // `exactOptionalPropertyTypes` forbids setting an optional prop to `undefined`.
@@ -608,7 +608,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         ctx: AuthContext,
         ok: boolean,
         status: number | undefined,
-        failure?: AuthFailureInfo,
+        failure?: AuthFailureResult,
     ): Promise<void> => {
         // Bind into locals so the optional hooks narrow to defined — no non-null assertion needed.
         const onRefresh = opts.onRefresh;
@@ -662,7 +662,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
                 response?: AdapterResponse;
             };
             const status = typeof e.status === 'number' ? e.status : undefined;
-            const failure: AuthFailureInfo =
+            const failure: AuthFailureResult =
                 status === undefined
                     ? { phase, category: 'network', error }
                     : classify(phase, status, e.response?.headers ?? {});
@@ -775,3 +775,7 @@ function serializeJar(jar: Record<string, string> | undefined): string {
         .map(([k, v]) => `${k}=${v}`)
         .join('; ');
 }
+
+// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
+/** @deprecated Renamed to {@link AuthFailureResult} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
+export type AuthFailureInfo = AuthFailureResult;
