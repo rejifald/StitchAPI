@@ -466,6 +466,11 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     (core trace/cli/serve, `@stitchapi/query-core`, all five TanStack/RTK/SWR readers) and the docs read
     the canonical `data`. (Also folds the cross-package done-event `ms`→`elapsed` fixtures missed when
     P17(c) only typechecked core + four sinks.)
+-   **P5 (`SchemaFingerprint.value`→`token`)** the fingerprint token is renamed off the overloaded
+    `value` (P5 reserves `value` for the success payload); all five vendor fingerprint-\* packages co-set
+    the `@deprecated` `value` alias, and both the cache-generation deriver and the `verifyFingerprintContract`
+    kit read `token` (normalizing either spelling, preserving the `null` ABSTAIN sentinel via a presence
+    check, not `??`).
 
 ## 7. Enforcement
 
