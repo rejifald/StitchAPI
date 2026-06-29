@@ -1068,10 +1068,18 @@ function uploadProgressWarning(
 }
 
 const resultEvt = (
-    value: unknown,
+    data: unknown,
     status: number,
     attempts: number,
-): StitchEvent => ({ type: 'result', value, status, attempts, at: now() });
+    // `data` is canonical; `value` is co-set as the @deprecated alias (CONTRACT.md P5).
+): StitchEvent => ({
+    type: 'result',
+    data,
+    value: data,
+    status,
+    attempts,
+    at: now(),
+});
 
 // Interpret a buffered response into a result value via the surface's `interpret` hook (graphql's
 // "200-with-`errors`" failure lives there). No surface / no hook → the body is the value.

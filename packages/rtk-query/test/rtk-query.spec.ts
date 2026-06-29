@@ -25,7 +25,7 @@ function streamStitch<T>(events: StitchEvent<T>[]): StreamableStitchLike<T> {
         const terminal = events.find((e) => e.type === 'result');
         const value =
             terminal && terminal.type === 'result'
-                ? terminal.value
+                ? terminal.data
                 : (undefined as T);
         const promise = Promise.resolve(value);
         return {
@@ -131,8 +131,8 @@ describe('stitchStreamUpdater', () => {
         { type: 'delta', chunk: 1, at: 0 },
         { type: 'delta', chunk: 2, at: 0 },
         { type: 'delta', chunk: 3, at: 0 },
-        { type: 'result', value: 3, status: 200, attempts: 1, at: 0 },
-        { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
+        { type: 'result', data: 3, status: 200, attempts: 1, at: 0 },
+        { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
     ];
 
     test('append mode pushes every delta chunk into the cached array', async () => {
@@ -193,7 +193,7 @@ describe('createApi composition', () => {
                             { type: 'delta', chunk: 1, at: 0 },
                             {
                                 type: 'result',
-                                value: 1,
+                                data: 1,
                                 status: 200,
                                 attempts: 1,
                                 at: 0,

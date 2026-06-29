@@ -75,7 +75,7 @@ export interface PinoSinkOptions {
  * built-in sinks), so a `start` event's `input.headers` still holds `authorization` /
  * `cookie` and a `delta`'s `chunk` is raw response data. This sink therefore logs
  * **only metadata** — name, method, redacted URL, status, attempt counts, drift
- * path/level/change, phase, waited timing — never `event.input`, `event.value`, a
+ * path/level/change, phase, waited timing — never `event.input`, `event.data`, a
  * `delta` chunk, or `JSON.stringify(event)`, and it strips the URL query (it can carry
  * `?api_key=…`). That keeps it safe on a secret-bearing seam independent of core's
  * trace redaction.
@@ -153,7 +153,7 @@ function redactUrl(url: string): string {
 // sinks), so a `start` event's `input.headers` still holds `authorization` / `cookie`
 // and a `delta`'s `chunk` is raw response data. It therefore logs **only metadata** —
 // name, method, redacted URL, status, attempt counts, drift path/level/change, phase,
-// waited timing — never `event.input`, `event.value`, a `delta` chunk, or
+// waited timing — never `event.input`, `event.data`, a `delta` chunk, or
 // `JSON.stringify(event)`, and it strips the URL query. `null` ⇒ skip the event.
 function recordFor(
     name: string,

@@ -152,8 +152,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "circuit",
             type: "property",
-            detail: "CircuitOptions",
-            info: "Circuit breaker that fast-fails a repeatedly failing dependency.",
+            detail: "AtLeastOne<CircuitOptions>",
+            info: "Circuit breaker that fast-fails a repeatedly failing dependency. `failures` + `cooldown` are required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`).",
         },
         {
             label: "rateLimit",

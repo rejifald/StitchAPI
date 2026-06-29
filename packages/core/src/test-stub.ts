@@ -92,7 +92,7 @@ function defaultEvents<TOut>(
     }
     return [
         start,
-        { type: 'result', value: value as TOut, status, attempts: 1, at },
+        { type: 'result', data: value as TOut, status, attempts: 1, at },
         { type: 'done', ok: true, elapsed: 0, ms: 0, attempts: 1, at },
     ];
 }

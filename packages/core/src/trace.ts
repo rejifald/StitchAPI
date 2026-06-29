@@ -158,7 +158,11 @@ function prepareRecord(
                 );
         }
     } else if (event.type === 'result') {
-        record['value'] = capBody(record['value'], maxBody);
+        record['data'] = capBody(record['data'], maxBody);
+        // The @deprecated `value` alias is co-emitted (CONTRACT.md P5); cap it too so the body is
+        // never written uncapped under either key.
+        if ('value' in record)
+            record['value'] = capBody(record['value'], maxBody);
     } else if (event.type === 'delta') {
         // A streamed chunk is response-body data too — cap it like `result.value`.
         record['chunk'] = capBody(record['chunk'], maxBody);

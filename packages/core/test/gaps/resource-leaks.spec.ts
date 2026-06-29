@@ -175,7 +175,7 @@ test('otlp sink: the internal open-span map is empty after a completed run', () 
             runId,
         );
         ev(
-            { type: 'result', value: {}, status: 200, attempts: 1, at: 1 },
+            { type: 'result', data: {}, status: 200, attempts: 1, at: 1 },
             runId,
         );
         ev({ type: 'done', ok: true, elapsed: 1, attempts: 1, at: 1 }, runId);

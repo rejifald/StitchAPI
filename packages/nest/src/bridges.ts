@@ -53,7 +53,7 @@ export interface NestLoggerSinkOptions {
  * built-in sinks), so a `start` event's `input.headers` still holds `authorization` /
  * `cookie` and a `delta`'s `chunk` is raw response data. This sink therefore logs
  * **only metadata** — name, method, redacted URL, status, attempt counts, drift
- * path/level, timing — never `event.input`, `event.value`, a `delta` chunk, or
+ * path/level, timing — never `event.input`, `event.data`, a `delta` chunk, or
  * `JSON.stringify(event)`, and it strips the URL query (it can carry `?api_key=…`).
  * That keeps it safe on a secret-bearing seam independent of core's trace redaction.
  */
@@ -138,7 +138,7 @@ function nestLevel(event: StitchEvent, lifecycle: boolean): LogLevel | null {
 // SECURITY: a custom formatter receives the **raw** event (core only redacts inside its own
 // built-in sinks), so a `start` event's `input.headers` still holds `authorization` /
 // `cookie` and a `delta`'s `chunk` is raw response data. This logs **only metadata** — never
-// `event.input`, `event.value`, a `delta` chunk, or `JSON.stringify(event)` — and strips the
+// `event.input`, `event.data`, a `delta` chunk, or `JSON.stringify(event)` — and strips the
 // URL query (it can carry `?api_key=…`), keeping the sink safe on a secret-bearing seam
 // independent of core's trace redaction. `null` ⇒ skip the event.
 function nestFormat(name: string, event: StitchEvent): string | null {

@@ -277,7 +277,7 @@ export function createStitchQuery<T>(
                         );
                     }
                 } else if (event.type === 'result') {
-                    const value = event.value;
+                    const value = event.data;
                     setState(
                         freeze<T>({
                             status: 'success',

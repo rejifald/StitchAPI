@@ -60,7 +60,7 @@ test('maps a successful call to one CLIENT span with OTel HTTP semconv attribute
             detail: '503',
             at: 1010,
         },
-        { type: 'result', value: {}, status: 200, attempts: 2, at: 1050 },
+        { type: 'result', data: {}, status: 200, attempts: 2, at: 1050 },
         { type: 'done', ok: true, elapsed: 50, attempts: 2, at: 1050 },
     ];
     for (const ev of events) sink.handle(ev, { name });
@@ -160,7 +160,7 @@ test('url.full strips userinfo and redacts secret query params before export', (
             input: {},
             at: 1000,
         },
-        { type: 'result', value: {}, status: 200, attempts: 1, at: 1050 },
+        { type: 'result', data: {}, status: 200, attempts: 1, at: 1050 },
         { type: 'done', ok: true, elapsed: 50, attempts: 1, at: 1050 },
     ];
     for (const ev of events) sink.handle(ev, { name });

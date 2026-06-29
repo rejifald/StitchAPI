@@ -208,7 +208,7 @@ test('deep-merge keeps base retry.attempts/on when child adds retry.baseMs', asy
     const events = await collect(flaky.stream());
     const result = resultOf(events);
     expect(result).toBeDefined();
-    expect(result?.value).toEqual({ ok: true });
+    expect(result?.data).toEqual({ ok: true });
     // 503, 503, 200 -> success on the third attempt, proving attempts:3 and on:[503] survived.
     expect(result?.attempts).toBe(3);
     expect(server.callCount('/flaky')).toBe(3);
