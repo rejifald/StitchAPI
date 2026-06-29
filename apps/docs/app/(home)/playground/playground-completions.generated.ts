@@ -245,6 +245,12 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
             info: "Probe a fresh call and return an  — `{ value, raw, findings, status, error }` — **without throwing** (ADR 0016). Use it after the fact to ask \"the schema coerced/stripped this; what did the server actually send?\": `raw` is the pre-validation body, `findings` the soft + hard drift between it and `value`. `.inspect()` **always hits the network and bypasses the cache by default**, so it is a fresh probe — *not* an observer of what your cached `await` call did. Pass `{ cache: true }` to honour the cache policy (then `raw` is `null` on a hit). On a streaming surface `raw` is `null` too (no single buffered body). ⚠️ `raw` is unredacted and non-enumerable — read `wrapper.raw` deliberately; never log the whole wrapper.",
         },
         {
+            label: "report",
+            type: "method",
+            detail: "(...args: [...Args<TIn>, opts?: InspectOptions]) => Promise<RunReport<TOut>>",
+            info: "Probe a fresh call and return a  — an  (`{ value, raw, findings, status, error, source }`) **plus** run diagnostics: `attempts`, `timing` (`{ ms, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome (ADR 0019). Like `.inspect()` it **never throws** (a hard contract violation comes back with `error` set and the diagnostics populated) and is a **network probe**: it always hits the network and **bypasses the cache by default** — pass `{ cache: true }` to honour the cache policy (then `cache` reports the real `hit`/`miss` and `raw` is `null`/`source` is `'cache'` on a hit). Use `.report()` to ask \"how did this run go?\"; `.inspect()` stays the minimal \"raw + drift\" probe. ⚠️ `raw` is inherited unredacted and non-enumerable — the rest of the report is safe to log.",
+        },
+        {
             label: "with",
             type: "method",
             detail: "(partial: P) => Stitch<TOut, RelaxKeys<TIn, keyof P>>",
