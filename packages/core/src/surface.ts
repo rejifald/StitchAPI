@@ -77,6 +77,8 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      * stitch's `reconnect.backoff` / `retry` policy when no value was seen on the dropped
      * connection. `sse` returns the event's `retry` field. Omitted ⇒ always use the fallback backoff.
      */
+    readonly resumeRetry?: (chunk: unknown) => number | undefined;
+    /** @deprecated Renamed to {@link Surface.resumeRetry} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     readonly resumeRetryMs?: (chunk: unknown) => number | undefined;
     /**
      * Inject a resume token into the NEXT request before it is reopened (issue #71) — mutates `req`

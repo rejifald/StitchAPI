@@ -449,6 +449,16 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     a parsed `Retry-After`: `RateLimitError`, `StitchEvent.error`, and `AuthFailureResult`. Each co-sets
     the `@deprecated` alias for back-compat (by assignment, R2-clean); the engine/auth set both. Docs and
     the delegate-backoff / cookie-session tests move to the canonical name (alias parity asserted).
+-   **P17 (mock fixtures)** `MockResponse.delayMs`→`delay` (widened to `number | string`) and the
+    adapter-conformance `FixtureResponse.delayMs`→`delay`; both keep the `@deprecated` `delayMs` alias.
+    **Unit hazard:** `MockResponse.retryAfter` is **seconds** (it sets the `Retry-After` wire header), so
+    it is renamed to `retryAfterSeconds` (deprecated `retryAfter` alias) — the unit is in the name, per
+    P17.
+-   **P17 (internal `*Ms`)** the remaining internal duration fields are de-suffixed (no public alias —
+    none are consumer-authored): the `Throttle.acquire` result `{ waited }`, `TotalBudget.total`,
+    `parseRate`'s `{ count, per }`, `StitchStats.avg` (the `stitch summary` mean). `Surface.resumeRetryMs`
+    →`resumeRetry` keeps a `@deprecated` alias (a `Surface` is the public extension seam). This completes
+    the R2 (`*Ms`) clearance; the remaining baseline is R5 (P9/P16) + R6's P20 slots.
 
 ## 7. Enforcement
 
