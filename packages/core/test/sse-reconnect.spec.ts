@@ -342,11 +342,9 @@ describe('sse reconnect config round-trips as JSON (contract-not-dependency gate
 });
 
 describe('sse resume hooks are wired on the surface (issue #71)', () => {
-    test('resumeToken reads id, resumeRetryMs reads retry, applyResume sets Last-Event-ID', () => {
+    test('resumeToken reads id, resumeRetry reads retry, applyResume sets Last-Event-ID', () => {
         expect(sseSurface.resumeToken?.({ data: 'x', id: '7' })).toBe('7');
-        expect(sseSurface.resumeRetryMs?.({ data: 'x', retry: 1500 })).toBe(
-            1500,
-        );
+        expect(sseSurface.resumeRetry?.({ data: 'x', retry: 1500 })).toBe(1500);
         const req: AdapterRequest = {
             url: 'https://x.test/e',
             method: 'GET',

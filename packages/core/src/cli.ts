@@ -248,7 +248,8 @@ export interface StitchStats {
     p50: number;
     p95: number;
     p99: number;
-    avgMs: number;
+    /** Mean run duration in ms. */
+    avg: number;
 }
 export interface TraceSummary {
     stitches: StitchStats[];
@@ -284,7 +285,7 @@ export function summarizeTrace(records: TraceRecord[]): TraceSummary {
                     p50: 0,
                     p95: 0,
                     p99: 0,
-                    avgMs: 0,
+                    avg: 0,
                 },
                 durations: [],
             };
@@ -331,7 +332,7 @@ export function summarizeTrace(records: TraceRecord[]): TraceSummary {
         stats.p50 = percentile(sorted, 50);
         stats.p95 = percentile(sorted, 95);
         stats.p99 = percentile(sorted, 99);
-        stats.avgMs = sorted.length
+        stats.avg = sorted.length
             ? Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length)
             : 0;
         stitches.push(stats);

@@ -96,9 +96,11 @@ describe('adapterContractFixture', () => {
         });
     });
 
-    test('GET /slow carries delayMs', () => {
+    test('GET /slow carries delay (and the @deprecated delayMs alias)', () => {
         const res = adapterContractFixture(reqOf({ path: '/slow' }));
         expect(res.status).toBe(200);
+        expect(res.delay).toBe(300);
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- the alias is co-set until the GA cut (CONTRACT.md P17)
         expect(res.delayMs).toBe(300);
         expect(bodyJson(res.body)).toEqual({ slow: true });
     });
