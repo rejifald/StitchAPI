@@ -242,17 +242,22 @@ export class CircuitOpenError extends Error {
  * (`rateLimit.delegate`) and the response carries a rate-limit status (default `429`). Instead of
  * retrying internally or pacing on the built-in throttle, the engine surfaces the outcome so an
  * OUTER gate/circuit — owned by the host — decides the backoff (issue #145). Carries the structured
- * signal that gate needs: the `status`, the `retryAfterMs` parsed from `Retry-After` (delta-seconds
+ * signal that gate needs: the `status`, the `retryAfter` parsed from `Retry-After` (delta-seconds
  * OR HTTP-date; `undefined` when the header is absent/unparseable), and the raw `response` so the
  * host can read other rate headers (`X-RateLimit-*`, etc.). The full `response` rides on the live
  * instance only — never the serialized `error` event — so it cannot leak into a trace sink.
  */
 export class RateLimitError extends Error {
     readonly status: number;
+    /** `Retry-After` parsed to ms (delta-seconds OR HTTP-date); `undefined` when absent/unparseable. */
+    readonly retryAfter: number | undefined;
+    /** @deprecated Renamed to {@link RateLimitError.retryAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     readonly retryAfterMs: number | undefined;
     readonly response: AdapterResponse;
     constructor(opts: {
         status: number;
+        retryAfter?: number | undefined;
+        /** @deprecated Use `retryAfter` (CONTRACT.md P17). */
         retryAfterMs?: number | undefined;
         response: AdapterResponse;
         message?: string;
@@ -260,7 +265,10 @@ export class RateLimitError extends Error {
         super(opts.message ?? `rate limited (HTTP ${opts.status})`);
         this.name = 'RateLimitError';
         this.status = opts.status;
-        this.retryAfterMs = opts.retryAfterMs;
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- read the @deprecated constructor alias for back-compat (CONTRACT.md P17)
+        this.retryAfter = opts.retryAfter ?? opts.retryAfterMs;
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-set the @deprecated field alias for back-compat (CONTRACT.md P17)
+        this.retryAfterMs = this.retryAfter;
         this.response = opts.response;
     }
 }

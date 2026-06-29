@@ -36,14 +36,14 @@ try {
 } catch (e) {
     if (e instanceof RateLimitError) {
         // Hand the signal to your outer gate — it owns the backoff.
-        outerGate.penalize(e.retryAfterMs ?? 1000);
+        outerGate.penalize(e.retryAfter ?? 1000);
     }
 }
 ```
 
 A `429` no longer retries: the call rejects with a
 [`RateLimitError`](/docs/errors/rate-limit) carrying `status`, the
-`retryAfterMs` parsed from `Retry-After` (delta-seconds **or** an HTTP-date), and
+`retryAfter` parsed from `Retry-After` (delta-seconds **or** an HTTP-date), and
 the raw `response` so you can read any other rate headers the API sent. The
 internal throttle is bypassed for the call, so it adds no pacing of its own.
 
@@ -61,7 +61,7 @@ the ordinary [retry](/docs/guides/resilience/retry) path.
 
 If you iterate the [event stream](/docs/concepts/event-stream) instead of
 awaiting, the same outcome arrives as an `error` event carrying `status` and
-`retryAfterMs`, so a streaming consumer gets the identical structured hint:
+`retryAfter`, so a streaming consumer gets the identical structured hint:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -76,8 +76,8 @@ const fetchPage = stitch({
 });
 
 for await (const ev of fetchPage.stream({ params: { id: '42' } })) {
-    if (ev.type === 'error' && ev.retryAfterMs !== undefined) {
-        outerGate.penalize(ev.retryAfterMs);
+    if (ev.type === 'error' && ev.retryAfter !== undefined) {
+        outerGate.penalize(ev.retryAfter);
     }
 }
 ```

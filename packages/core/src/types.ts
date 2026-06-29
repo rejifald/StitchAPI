@@ -556,10 +556,12 @@ export type StitchEvent<T = unknown> =
           name: string;
           message: string;
           status?: number;
-          // Set only on a delegate-backoff rate-limit outcome (`rateLimit.delegate`): the ms parsed
+          // Set only on a delegate-backoff rate-limit outcome (`throttle.delegate`): the ms parsed
           // from `Retry-After` (delta-seconds OR HTTP-date), so a `.stream()` consumer gets the same
           // structured backoff hint the awaited path gets off the thrown RateLimitError. Additive and
           // optional — every other `error` event omits it (issue #145).
+          retryAfter?: number;
+          /** @deprecated Renamed to `retryAfter` (CONTRACT.md P17). Set alongside `retryAfter` until the 1.0 GA cut. */
           retryAfterMs?: number;
           attempts: number;
           at: number;
@@ -747,8 +749,8 @@ export interface StitchConfig {
      * Delegate backoff to the host (issue #145). When `delegate: true`, a rate-limit response
      * (status in `on`, default `[429]`) is **not** retried internally and the built-in `throttle`
      * is **bypassed** for the call — instead the outcome surfaces as a {@link RateLimitError}
-     * (carrying `status`, the `retryAfterMs` parsed from `Retry-After`, and the raw `response`) on
-     * the awaited path, and as an `error` event with `retryAfterMs` on `.stream()`. Use this when an
+     * (carrying `status`, the `retryAfter` parsed from `Retry-After`, and the raw `response`) on
+     * the awaited path, and as an `error` event with `retryAfter` on `.stream()`. Use this when an
      * OUTER gate/circuit owns the backoff (its own `Retry-After` hook, a DB-persisted budget) and
      * StitchAPI's internal retry+throttle would double-count against it.
      *

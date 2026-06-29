@@ -170,7 +170,7 @@ test("onAuthFailure fires category 'unauthenticated' when the login returns 401 
     expect(refreshes).toEqual([{ ok: false, status: 401 }]);
 });
 
-test("onAuthFailure fires category 'rate-limited' + retryAfterMs when the login returns 429 with Retry-After", async () => {
+test("onAuthFailure fires category 'rate-limited' + retryAfter when the login returns 429 with Retry-After", async () => {
     server.route('POST', '/login', {
         statuses: [429],
         retryAfter: 7, // seconds → 7000ms
@@ -204,6 +204,8 @@ test("onAuthFailure fires category 'rate-limited' + retryAfterMs when the login 
             phase: 'apply',
             status: 429,
             category: 'rate-limited',
+            retryAfter: 7000,
+            // The @deprecated `retryAfterMs` alias is co-set for back-compat (CONTRACT.md P17).
             retryAfterMs: 7000,
         },
     ]);

@@ -25,7 +25,7 @@ try {
 } catch (e) {
     if (e instanceof RateLimitError) {
         console.log(e.status); // 429 (the rate-limit status that was hit)
-        console.log(e.retryAfterMs); // ms parsed from Retry-After, or undefined
+        console.log(e.retryAfter); // ms parsed from Retry-After, or undefined
         console.log(e.response.headers); // the raw response, for other rate headers
     }
 }
@@ -35,7 +35,7 @@ try {
 
 -   **`status`** — the rate-limit status (e.g. `429`, or whatever you listed in
     `throttle.on`).
--   **`retryAfterMs`** — the wait the server asked for, parsed from `Retry-After`
+-   **`retryAfter`** — the wait the server asked for, parsed from `Retry-After`
     (delta-seconds **or** an HTTP-date) into milliseconds; `undefined` when the
     header is absent or unparseable.
 -   **`response`** — the raw `AdapterResponse`, so you can read other rate
@@ -53,16 +53,16 @@ purpose.
 
 ## How to handle it
 
--   **Feed it to your outer gate.** Use `retryAfterMs` (falling back to your own
+-   **Feed it to your outer gate.** Use `retryAfter` (falling back to your own
     default when it's `undefined`) to set the gate's penalty window, then let the
     gate gate the next attempt. That's the whole point of delegating.
 -   **Read it off the stream instead.** If you consume
     [the event stream](/docs/concepts/event-stream) rather than awaiting, the same
-    outcome arrives as an `error` event carrying `status` and `retryAfterMs` — no
+    outcome arrives as an `error` event carrying `status` and `retryAfter` — no
     `try`/`catch` needed.
 -   **Branch without throwing.** `.safe()` returns the failure as a `StitchError`
     whose `.status` is the rate-limit status and whose `.cause` is the original
-    `RateLimitError` (so `retryAfterMs` is still reachable via the cause).
+    `RateLimitError` (so `retryAfter` is still reachable via the cause).
 -   **Reconsider whether to delegate.** If nothing outside StitchAPI actually
     owns the backoff, you probably want internal handling instead — drop
     `throttle.delegate` and use [retry](/docs/guides/resilience/retry) +
