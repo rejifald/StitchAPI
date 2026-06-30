@@ -121,7 +121,7 @@ function emitInto(
     return {
         ...authCtx,
         // The current run (ADR 0007) so a strategy that spawns a sub-call — `cookieSession`'s
-        // login — can run it as a CHILD of this run (parentId = run.runId).
+        // login — can run it as a CHILD of this run (parentSpanId = run.spanId).
         run,
         emit: (topic, detail) =>
             sink.push(
@@ -1028,9 +1028,9 @@ const startEvt = (
         url: baseReq.url,
         input,
         at: now(),
-        runId: run.runId,
+        spanId: run.spanId,
         traceId: run.traceId,
-        parentId: run.parentId,
+        parentSpanId: run.parentSpanId,
     });
 
 const cacheEvt = (detail: string): StitchEvent => ({
@@ -1605,7 +1605,7 @@ export async function* execute(
     input: StitchInput = {},
     // Run identity (ADR 0007). Defaults to a fresh root run; the caller supplies one to make
     // this a CHILD run — `newRunContext(parent)` inherits the parent's `traceId` and sets
-    // `parentId` (a `cookieSession` login, a `linked` step). Stamped on the `start` event and
+    // `parentSpanId` (a `cookieSession` login, a `linked` step). Stamped on the `start` event and
     // carried onto the trace-sink ctx by `tee` (stitch.ts).
     run: RunContext = newRunContext(),
     // Per-call run flags (ADR 0016), set by `.inspect()`: `retainRaw` surfaces the pre-validation
@@ -1728,7 +1728,7 @@ export async function executeRaw(
 /**
  * Like {@link executeRaw}, but TEES the run's events to `sink` as a CHILD run (ADR 0007) and
  * returns the raw response. `cookieSession` uses it to run its login as a traced child of the call
- * that triggered it (`run.parentId` = the caller's runId), so the login is no longer an invisible
+ * that triggered it (`run.parentSpanId` = the caller's spanId), so the login is no longer an invisible
  * side-call. The login's `result` carries only its **status** — never the (sensitive) login body —
  * and any `throttled`/`retry`/`info` events from the login's own attempts are teed through.
  */
@@ -1744,9 +1744,9 @@ export async function executeRawTraced(
     const state = { attempts: 0 };
     const ctx = compact({
         name,
-        runId: run.runId,
+        spanId: run.spanId,
         traceId: run.traceId,
-        parentId: run.parentId,
+        parentSpanId: run.parentSpanId,
     });
     const baseReq = buildRequest(cfg, input);
     sink.handle(startEvt(name, baseReq, input, run), ctx);

@@ -76,16 +76,26 @@ const KB = 1024;
 // since #362). Neither wave can move to a subpath — composition and the renamed
 // result/throttle/circuit surfaces are the core API. The step restores the same
 // tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for the idempotency-misuse nudges + the OTLP-name alignment (23.35→23.55 /
+// 18.80→19.0 KB; measured 23.32 / 18.80). Stacking on the wave above, two more things land on the core
+// path and can't move to a subpath: (1) two construction-time `idempotency` nudges in
+// `makeStitch` — on a read (the key is write-only, so it's silently dropped — almost always a
+// missing `method: 'POST'`) and on a random key with no `retry` (it only dedupes the call's own
+// retries), both silenced by `idempotency.warn = false`; and (2) the run-identity rename to the
+// OTel span names (`runId`→`spanId`, `parentId`→`parentSpanId`, CONTRACT.md P22), whose longer
+// public property names are emitted verbatim on every `start` event / trace ctx and can't be
+// minified. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 23.35 * KB,
+        budget: 23.55 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 18.8 * KB,
+        budget: 19.0 * KB,
     },
 ];
 

@@ -116,7 +116,7 @@ async function getQuote(symbol: string) {
 }
 ```
 
-Read top to bottom, that's a coherent reliability story. Retry absorbs the transient blips — a stray 503, a rate-limited 429 whose `Retry-After` you honor. The layered timeout bounds how long any single attempt and the whole call can take, with real aborts so nothing leaks. And the breaker is the backstop for when the failures stop being transient: once five in a row have failed, retrying is clearly futile, so it stops trying and fast-fails until a probe says otherwise.
+Read top to bottom, that's a coherent reliability story. Retry absorbs the transient blips — a stray 503, a rate-limited 429 whose `Retry-After` you honor. The layered timeout bounds how long any single attempt and the whole call can take, with real aborts so nothing leaks. And the breaker is the backstop for when the failures stop being transient: once five in a row have failed, more retries only add load to a service that is already down, so it stops trying and fast-fails until a probe says otherwise.
 
 Each piece covers a gap the others can't. Retry without a breaker turns a sustained outage into a retry storm. A breaker without timeouts still lets individual slow calls block you right up until the threshold trips. Timeouts without a breaker bound each call but never stop you from re-discovering the same outage, caller after caller. Declared together on the stitch, they cover transient, slow, and sustained failure as one policy — and because it lives on the definition, every front door inherits it: the in-process function, the CLI, the HTTP endpoint, and the agent calling over MCP all get the same behavior, not three slightly different hand-rolled versions.
 
