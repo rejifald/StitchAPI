@@ -1,0 +1,124 @@
+---
+title: 'When a Pipeline Step Needs an Earlier Result'
+description: 'A pipeline feeds each step the previous result — but real chains often need a result from two or three steps back. This shows the hand-threaded workaround, then pipe.step(): a builder that types prev and every named ancestor with no casts, and makes a duplicate name a compile error.'
+author: Oleksandr Zhuravlov
+date: '2026-06-30'
+tags: [pipeline, composition, pipe, context, typescript]
+---
+
+[`pipe()`](/blog/compose-api-calls-into-a-pipeline) feeds each step the result of the one before it: `order → shipment → tracking`, where the tracking call uses the shipment the previous step produced. That covers most chains. It does not cover the one that bites you in production: a step that needs a result from **two or three steps back**, not the one right before it.
+
+You have the order. You fetch its shipment. Now you call the carrier's tracking API — and it needs the shipment's `trackingCode` (from the previous step, fine) **and** the order's `region` (to return events in the right locale). The order is two hops back. A previous-result-only chain can't hand it to you.
+
+## The workaround you write without it
+
+You break the chain open and keep the early result alive in a variable until the call that needs it:
+
+```ts
+const order = await fetchOrder({ params: { id: 1043 } });
+const shipment = await fetchShipment({ params: { id: order.shipmentId } });
+const tracking = await fetchTracking({
+    params: {
+        carrier: shipment.carrier,
+        code: shipment.trackingCode,
+        region: order.region, // ← the order, still in scope two calls later, only for this
+    },
+});
+```
+
+Every call works. But you've given back everything `pipe()` bought you — the chain as one value, one linked trace, fail-fast, each call's own retry and timeout — and `order` now lingers in scope for the sole purpose of feeding the third call. `pipe()` itself can't rescue this: its mapper only sees the **previous** result.
+
+## `pipe.step()`: name what you reach back to
+
+`pipe.step(...)` builds the pipeline fluently — and because each step is added in its own call, it **types everything as it goes**. A later step reads an earlier one through `ctx`, by a name you give it:
+
+```ts
+import { stitch } from 'stitchapi';
+import { pipe } from 'stitchapi/pipe';
+import { z } from 'zod';
+
+const Order = z.object({
+    id: z.number(),
+    shipmentId: z.string(),
+    region: z.string(),
+});
+const Shipment = z.object({ carrier: z.string(), trackingCode: z.string() });
+const Tracking = z.object({ events: z.array(z.string()) });
+
+const fetchOrder = stitch({
+    url: 'https://api.example.com/orders/{id}',
+    output: Order,
+});
+const fetchShipment = stitch({
+    url: 'https://api.example.com/shipments/{id}',
+    output: Shipment,
+});
+const fetchTracking = stitch({
+    url: 'https://api.example.com/tracking/{carrier}/{code}',
+    output: Tracking,
+});
+
+const tracked = pipe
+    .step(fetchOrder, 'order') // name it — a later step reaches back to it
+    .step(fetchShipment, (order) => ({ params: { id: order.shipmentId } }))
+    .step(fetchTracking, (shipment, ctx) => ({
+        params: {
+            carrier: shipment.carrier,
+            code: shipment.trackingCode,
+            region: ctx.order.region, // the order — an ancestor, two hops back
+        },
+    }));
+
+const tracking = await tracked({ params: { id: 1043 } });
+```
+
+What's happening:
+
+-   **Every argument is typed — no `as`.** `order` is `Order`, `shipment` is `Shipment`, `ctx.order` is `Order`. The builder already knows each earlier step's output, so it hands you real types instead of the `unknown` you'd have to cast. That's the whole [resilient-typed-function](/blog/type-safe-api-client-without-codegen) promise holding through a multi-step flow.
+-   **Naming is just an argument to `step`.** Pass a name (`.step(fetchOrder, 'order')`) to file that step's result under `ctx.order` for later steps — no separate method, no wrapper object. You name a step only when something downstream reads it: `fetchShipment` here is anonymous, because nothing reaches back to it.
+-   **The builder _is_ the pipeline.** No `.build()` to call — `tracked` is the runnable function itself, so you `await tracked(input)` directly. It's the same engine as `pipe()` underneath: steps run in order, each a [child run](/docs/concepts/event-stream) of the last, [fail-fast](/blog/typed-errors-without-try-catch) on the first error.
+
+### The initial input, reachable anywhere: `ctx.$input`
+
+`ctx.$input` is the pipe's own initial argument, readable from any depth — for the root value that every call needs but no intermediate step returns:
+
+```ts
+// GitHub: repo → branch → commit, where every call needs owner/repo from the start
+.step(fetchCommit, (branch, ctx) => ({
+    params: { ...ctx.$input?.params, ref: branch.commit.sha },
+}))
+```
+
+No threading `owner` and `repo` through three mappers — they were in `$input` all along.
+
+### Names you don't have to keep unique
+
+Reach back by name, and the obvious worry is keeping names straight. You don't — the compiler does:
+
+```ts
+pipe.step(fetchOrder, 'order').step(fetchShipment, 'order'); // ✗ compile error: 'order' is already taken
+```
+
+Reusing a name — or a reserved `$`-name like `$input` — is a **type error**, caught as you type. And a typo on the reading side (`ctx.oder`, or a name you never declared) is a compile error too, not an `undefined` that silently lands in a URL at runtime.
+
+## Why a builder, and not flat `pipe(a, b, c)` args?
+
+Because the flat form **can't** be typed, and pretending otherwise would be the dishonest version. A later step's input would have to be typed from an earlier argument of the _same_ `pipe(a, b, c)` call that TypeScript is still inferring — and the compiler can't look back into a call it hasn't finished resolving. So on the flat form, `prev` is `unknown` and you cast.
+
+`pipe.step()` sidesteps it by making each `.step()` its own call — its own inference site. By the time you write the third step, the first two are already resolved and typed, so `prev` and every `ctx` ancestor come through fully typed.
+
+The flat [`pipe(...)`](/blog/compose-api-calls-into-a-pipeline) is still there for a simple linear chain where one `prev` cast is no bother. Reach for the builder the moment a step needs an ancestor — or you'd just rather not cast.
+
+## Still not a workflow engine
+
+Letting a step reach back to any ancestor is exactly the feature that _could_ turn a composition tool into an orchestrator — so it's fenced. `ctx` is read-only: you read ancestors, you never write run state through it. And a mapper returns a request input, never a step — it can _shape_ the next call (even with a `ctx.order.region === 'EU' ? … : …` inside) but it can't skip a step, add one, or reorder the chain. The shape of the pipeline is fixed when you write it; `ctx` only changes the data flowing through it. That line is what keeps this [runtime stitching, not a workflow platform](/blog/runtime-stitching-vs-workflow-platforms).
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+`pipe` and `pipe.step()` both live at the `stitchapi/pipe` subpath, so they only enter your bundle when a flow needs them. Each step is a [stitch](/docs/concepts/the-stitch) with its own [validation](/blog/validate-api-response-zod), the chain shows up in the [event stream](/docs/concepts/event-stream), and a failure anywhere rejects with a [typed error](/blog/typed-errors-without-try-catch) carrying the failing call's `.status`, `.attempts`, and `.url`.
+
+Related reading: [sequential and parallel — pipe, all, any, race](/blog/compose-pipe-all-any-race), [compose API calls into one pipeline](/blog/compose-api-calls-into-a-pipeline), and [runtime stitching vs. workflow platforms](/blog/runtime-stitching-vs-workflow-platforms).

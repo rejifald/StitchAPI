@@ -257,3 +257,224 @@ shared helper would make each new framework cheap.
 **Open questions** — Is Express worth a first-party package given how thin the bridge is, or better as
 a docs recipe? Extract the shared backend helper now, or after a 4th framework proves the pattern?
 Elysia priority vs. waiting for a clearer Bun-server adoption signal?
+
+---
+
+## Parallel composition — `all` · `any` · `race`
+
+-   **Status:** IMPLEMENTED + green (2026-06, in branch — not yet released). `all`/`any`/`race` in
+    `packages/core/src/pipe.ts` (subpath `stitchapi/pipe`), returning the shared `Composable` so they
+    NEST. `all` takes EITHER a named object (→ named result, merges into a pipe `ctx`) OR a positional
+    array (→ a `readonly` tuple, the `Promise.all` shape) — additive overloads, `const` type param for
+    tuple inference. Decisions baked in: **no `allSettled`** (no separate combinator, no flag on `all` — for
+    best-effort, compose `.safe()` members by hand); **auto-cancel** losers via a per-group
+    `AbortSignal` (`all` aborts siblings on first failure, `any` on first success, `race` on first
+    settle); the pipe builder gains an **inline parallel bag** `.step({ k: node })` that merges keys
+    into `ctx`. Tests: `test/combinators.spec.ts` + `test-d/combinators.test-d.ts`
+    (tsc/eslint/tsd/1110 unit/bundle-size all pass). Article: blog `compose-pipe-all-any-race`.
+-   **Date:** 2026-06
+-   **Tags:** composition, pipe, parallel, subpath
+-   **Gates:** browser-first ✅ (just `Promise.all`/`race`/`any` over child runs) · bundle-frugal ✅
+    (reached only through a composition subpath, like `stitchapi/pipe`) · contract-not-dependency ✅
+    (members are an ordered/named list of stitches that round-trips — arguably _cleaner_ than `pipe`,
+    which leans on per-step `input` closures).
+
+**Problem / why** — `pipe` (ADR 0008) composes **dependent** calls: step N+1's input is derived from
+step N's result, so it must run sequentially. The complement — **independent** calls you want to run
+**concurrently** — has no primitive today. "Fetch the user, their settings, and their feature flags at
+once" forces users back to a hand-rolled `Promise.all`, which drops the run-identity/trace story and
+the typed-result shape that `pipe` gives a dependent chain.
+
+**Sketch** — a parallel family living alongside `pipe`:
+
+-   **`all`** — run independent stitches concurrently, resolve when all succeed, fail fast on the first
+    rejection (`Promise.all` semantics). Members are **sibling child runs of one parent** (ADR 0007
+    `parentId` already models fan-out), so the trace/DAG draws a fan instead of a line. Proposed shape
+    favours a **named object** over a tuple for ergonomics + JSON-friendliness:
+    `all({ user: fetchUser, settings: fetchSettings })` → `(input) => Promise<{ user, settings }>`.
+    This is the high-value one and composes inside `pipe` (a pipe step could be an `all`).
+-   **`any`** — first to **succeed** wins; collect failures into an `AggregateError` if all fail
+    (`Promise.any`). Use case: cross-_provider_ **failover** (primary → mirror). Distinct from a
+    stitch's built-in retry (which re-hits the _same_ endpoint), so it earns its place — but lower
+    demand than `all`.
+-   **`race`** — first to **settle** (resolve _or_ reject) wins (`Promise.race`). Use case: hedged /
+    fastest-mirror requests. Least justified: a power-user trick that doubles load and overlaps the
+    resilience each stitch already owns.
+
+**Recommendation** — build **`all` first**; design `any`/`race` as a follow-on "first-wins" family
+only if real demand appears, with `any` the more defensible of the two.
+
+**Backed by / builds on** — the `pipe` subpath (`packages/core/src/pipe.ts`) for the combinator +
+child-run pattern (`__runWith` / `newRunContext`), and ADR 0007 run identity for the sibling-fan trace.
+
+**Open questions** — Named-object vs. tuple results (lean named). How does each member receive input —
+the shared pipe input verbatim, or a per-member mapper from it? One subpath (`stitchapi/parallel`) for
+the whole family or one per combinator? Does `any`'s failover overlap enough with per-stitch retry to
+defer it indefinitely?
+
+---
+
+## Nestable composition — combinators that compose, not a `compose` keyword
+
+-   **Status:** IMPLEMENTED + green (2026-06, in branch) — the `Composable` contract + child-run
+    nesting shipped with the parallel family above (combinators and pipe steps both run via `__runWith`
+    under a supplied run); a `pipe` step accepts any `Node` (stitch or combinator), and an inline
+    `{ k: node }` step is the pipe-native parallel fan. No top-level `compose` keyword (as designed).
+-   **Date:** 2026-06
+-   **Tags:** composition, pipe, parallel, algebra, contract-not-dependency
+-   **Gates:** browser-first ✅ · bundle-frugal ✅ (one shared composable contract, reached through the
+    composition subpaths) · contract-not-dependency ⚠️ — **this is where the idea lives or dies** (see
+    open questions): the _tree of nodes_ round-trips as JSON; the per-edge input mappers stay the same
+    acknowledged sugar as `pipe` today.
+
+**Problem / why** — Real flows mix sequential and parallel: fetch the order, then **in parallel** its
+shipment + invoice, then sequentially the tracking for the shipment. Today `pipe` steps must be
+**stitches** — it casts each step to `__runWith` (`pipe.ts`) — and a nested `pipe(...)` / `all(...)`
+returns a plain `(input) => Promise`, which is _not_ a stitch. So the combinators **don't nest**, and
+you can't express a mixed flow as one traced value. That's the actual gap behind "a `compose` that
+mixes `all`/`race`/`any`/`pipe` in one pipeline."
+
+**Sketch** — the answer is **not** a new top-level `compose` keyword (that drifts toward a workflow
+DSL, which StitchAPI explicitly is not — see the [runtime-stitching-vs-workflow-platforms] post).
+Instead, give every combinator a **shared `Composable` contract** so composition is just **nesting**:
+
+-   A `Composable` is a callable `(input?) => Promise<Out>` that _also_ carries the child-run protocol
+    (`__runWith` / `newRunContext`) **and** a serialisable structure descriptor (`{ kind, members }`).
+    A `stitch` is the leaf; `pipe` / `all` / `any` / `race` are nodes; **any node can hold any node.**
+-   Then this Just Works, no new primitive — composition = nesting an algebra of stitches:
+
+    ```ts
+    const flow = pipe(
+        fetchOrder,
+        all({
+            shipment: { stitch: fetchShipment, input: (o) => ... },
+            invoice: { stitch: fetchInvoice, input: (o) => ... },
+        }),
+        { stitch: fetchTracking, input: ({ shipment }) => ... },
+    );
+    ```
+
+-   The trace/DAG falls out for free: the tree of nodes maps onto ADR 0007 run identity (sequential =
+    parent→child line, parallel = sibling fan), so the playground draws the real graph.
+
+**Recommendation** — ship `all` first (its own entry), then make the combinators return a `Composable`
+so they nest. **Do not** add a `compose` keyword. Hold the workflow-engine line hard: **static tree
+only** — no conditionals, loops, dynamic step generation, persistence, or cross-node retry. The shape
+is fixed at definition time; data flows through mappers; fail-fast. Keep that discipline and it's still
+stitching, not Temporal/Inngest.
+
+**Backed by / builds on** — `pipe.ts` (`__runWith`, `newRunContext`, `PipeStep`), the parallel family
+above, and ADR 0007 run identity. Mostly a **refactor of the step contract** (accept any `Composable`,
+not just `Stitch`) plus the structure descriptor, rather than net-new machinery.
+
+**Open questions** — **The threading model is the crux** (now designed — see
+[Ancestor-readable pipe input](#ancestor-readable-pipe-input--frozen-lexical-context)). `pipe` threads
+only the _previous_ result; real DAGs often want an earlier ancestor too (the tracking step wants the
+order _and_ the shipment). The resolved answer is a **fenced** version of path (b): an opt-in,
+**frozen, read-only, lexically-scoped** accumulating context handed as a _second_ mapper argument —
+powerful enough for two-hops-back + initial-input, but append-only/single-pass so it does not become a
+mutable run-state bag. Still open at the composition level: does the structure descriptor stay fully
+serialisable once nodes nest arbitrarily? Where exactly is the line past which this stops being a
+composition primitive and becomes an orchestrator we said we wouldn't build?
+
+---
+
+## Ancestor-readable pipe input — frozen lexical context
+
+-   **Status:** Phase 1 IMPLEMENTED + green (2026-06, in branch — not yet merged). **Ancestors are
+    BUILDER-ONLY** after an API-review pass (the variadic `pipe(...)` reverted to the simple shipped
+    one-arg `(prev) => StitchInput`, no `name`/`ctx`): the typed `pipe.step()` builder in
+    `packages/core/src/pipe.ts` owns ancestor access + full typing + **compile-time unique names**,
+    with `test/pipe-context.spec.ts` + `test-d/pipe-context.test-d.ts` (tsc/eslint/tsd/1103 unit/
+    bundle-size all pass). Phases 0/2/3 still open. Implements the threading model for
+    [Nestable composition](#nestable-composition--combinators-that-compose-not-a-compose-keyword)
+-   **Date:** 2026-06
+-   **Tags:** composition, pipe, context, ancestor, contract-not-dependency
+-   **Gates:** browser-first ✅ · bundle-frugal ✅ · contract-not-dependency ✅ (the new `name` is a
+    serialisable string that joins the structure; the mapper stays acknowledged sugar) · NOT a workflow
+    engine ✅ (frozen / append-only / topology fixed at definition time).
+
+**Problem / why** — `pipe`'s `input` mapper receives only the _immediately-previous_ result
+(`(prev) => StitchInput`). Real chains need an **earlier ancestor**: `order → shipment → tracking`
+where `tracking` needs `order.region` **and** `shipment.carrier`/`trackingCode`; or GitHub
+`repo → branch → commit` where every call needs `owner`/`repo` from the **first** result, not the
+previous one. Today you can't reach back without awkwardly bundling state forward through `all`.
+
+**Decision (as built, after API review)** — ancestor access lives on a **typed fluent builder**, not on
+the variadic form. An API-review pass killed the "second `ctx` arg on `pipe(...)`" idea: it forced
+casts everywhere (`shipment as Shipment`), made the user supply + police `name` strings, and read as
+_more_ complex than the builder — defeating the typed-function promise. So:
+
+-   **Two surfaces, one engine.** `pipe(...)` stays the **simple, shipped** form — one-arg
+    `input?: (prev: unknown) => StitchInput`, previous-only, no `name`/`ctx` (so this is **non-breaking**
+    and the variadic story stays flat). `pipe.step(...)` is the typed builder entry (no `.with()` —
+    the empty call was pure ceremony): a single overloaded `.step(stitch, mapper?)` (unnamed) /
+    `.step(stitch, name, mapper?)` (named — positional string), and the builder is the callable.
+    **No dedicated `.named()`** (naming is an attribute of a step, not a kind of step), **no `{ name }`
+    wrapper** (the object ceremony bought nothing once naming left the mapper return — a plain string
+    arg is terser and gives a cleaner misuse error), and **no `.build()`** — the builder IS the
+    runnable, so you `await tracked(input)` directly (`makeBuilder` returns `Object.assign(run, { step })`).
+-   **Builder types everything — no casts.** Each `.step` is its own inference site, so `prev` AND
+    `ctx.<name>` are fully typed (`OutputOfStitch<S> = Awaited<ReturnType<S>>`), and `ctx.$input` is
+    `StitchInput | undefined`. This is the only surface where typed ancestors are possible (the variadic
+    fold is a TS mirage — see below).
+-   **Names are the compiler's job, not the user's.** The named overload `step<N>(stitch, name:
+    N extends `$${string}` | keyof Ctx ? never : N, mapper?)` makes a **duplicate name OR a reserved
+    `$`-name a COMPILE error** (`name`narrows to`never`) — the user never tracks uniqueness.
+You only name a step a later step reads; anonymous `.step`s run but aren't addressable. `assertNames`stays as a runtime backstop for dynamically-built names. A frozen`{ $input, ...namedSoFar }`snapshot
+is rebuilt before each step; run identity unchanged (step N a child of N-1). Parallel`all`siblings
+(Phase 2): each gets the snapshot from **before**`all`, so a sibling can't read another (structural
+    isolation).
+
+**Rejected** — (1) a **breaking single-`ctx`-arg** API: its dual-arg migration shim is incoherent (a
+migrated `(ctx) => …` mapper would bind the old `prev` slot and crash), so there's no safe gradual
+path — not worth it for a capability we can add additively. (2) a **typed variadic-tuple `ctx` fold**
+(making `ctx.order` infer as `Order`) on the `pipe(a, b, c)` surface: a later step's `ctx` would need
+contextual typing from a _prior element of the same rest-tuple TS is still inferring_, which it cannot
+do — `ctx.order` collapses to `unknown` (sound, cast required) or, if forced, `any` (unsound, defeats
+`--strict`). **Empirically confirmed** (tsc 5.9.3, `--strict`): the variadic form yields
+`TS18046 'ctx.order' is of type 'unknown'`.
+
+**Typed `ctx` IS achievable — on a chained-builder surface** (each `.step`/`.named` is its own
+inference site, so the prior step's output is resolved and folded into an accumulated `Ctx` type
+param). **Empirically verified** (same tsc run): `pipe().named('order', s).step(s, (prev, ctx) => …)`
+types `ctx.order.region` and `prev.shipmentId` with **zero** errors and a `bogus`/undeclared-name
+access **errors** (`TS2339`) — real typing, not `any`. So the two surfaces are a genuine choice over
+**one runtime engine**: `pipe(...)` (loose `ctx`, cast — what's shipped/taught) vs a `pipe.step()`
+builder (typed `ctx`, no casts, typo-proof). Recommendation upgraded from "Phase 3 optional" to **the
+supported path to typed ancestor access**; offer BOTH, not one instead of the other.
+
+**Boundary guarantee** — stays a static composition primitive: (1) topology fixed at definition time —
+a mapper returns `StitchInput`, never a `Composable`, so it can't synthesise/skip/reorder/repeat a
+step; (2) the `ctx` CONTAINER is `Object.freeze`d (no key writes → not a mutable run-state bag) — the
+freeze is **shallow by design**: ancestor _values_ are the user's own result objects passed by
+reference (deep-freezing would also freeze the caller's `$input` and the pipeline's return value, a
+surprising regression), so they are read-only by contract, like `prev`, not by enforcement; (3) no
+persistence, no cross-node retry;
+(4) the only fan-in is `all`/`any`/`race` collapsing at their own node. **The line we hold in review:**
+a mapper may _shape_ the next call's input (even with a ternary on `ctx`), but we **refuse** any
+follow-on that lets it return a skip/`when` sentinel, a fan-out array, or a new node.
+
+**Honest caveat** — `name` makes the dependency **nodes** legible in the trace/DAG, but **which step
+reads which ancestor lives inside the opaque closure and does NOT round-trip**: the `parentId` chain
+stays linear (`order→shipment→tracking`) while the real data graph is a fan-in (`order→tracking`), so
+the DAG _under-represents_ data edges. Mitigation: an optional, serialisable `reads?: readonly
+string[]` hint per step so `stitch diagram`/the playground can draw the real edge. Also note: pipe does
+**not** emit a serialisable structure descriptor today (it returns a bare closure) — introducing
+`{ kind, members }` is real work, costed below.
+
+**Rollout** — **Phase 0** (shared with the parallel family): `Composable` contract +
+`__runWith(input, run, ctx)`, widen `pipe` to return `Composable<Out>`, thread the Frame. **Phase 1**
+(this feature): sequential `ctx` + `name` + `$input`, construction-time name validation, loose
+`PipeContext` typing, `pipe-ctx.spec.ts`, and a `tsd` pin (**1-arg mapper still checks; `ctx.order` is
+`unknown`, not `any`**). **Phase 2** (with `all`): sibling isolation + nested lexical chain + namespaced
+`all` result. **Phase 3** (optional, additive): `reads?` DAG hint and/or the typed chained-builder.
+
+**Top risks** — (1) **DAG dishonesty** — ship the `reads?` hint before marketing the observability
+story. (2) **Memory** — naming pins a result for the whole invocation (bounded by named-step count;
+omit `name` to avoid). (3) **`unknown`-cast footgun** — a `ctx.oder` typo yields `undefined` in a URL
+(the exact failure pipe markets against); mitigate with a dev/test-only `Proxy` that throws on a
+never-declared / not-yet-resolved name, stripped in prod.
+
+**Backed by / builds on** — `packages/core/src/pipe.ts` (the shipped runner this extends), `infer.ts`
+(loose, fail-open typing stance), ADR 0007 run identity, and the parallel/Composable entries above.

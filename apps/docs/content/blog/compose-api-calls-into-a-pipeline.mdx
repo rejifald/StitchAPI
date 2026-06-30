@@ -6,47 +6,47 @@ date: '2026-06-29'
 tags: [pipeline, composition, pipe, typescript, orchestration]
 ---
 
-You need a user, then that user's posts, then each post enriched with its author's name. Three calls, in order, where each one needs the result of the one before it. In most TypeScript codebases this becomes a stack of `await`s glued together with `try/catch`, and when one of them fails at 2am you get a stack trace pointing at a single line with no record of what ran first.
+A customer asks where their order is. You have the order number — nothing else. To answer, you need the order, then the shipment booked against it, then the carrier's live tracking for that shipment. Three calls, in order, where each one needs an id from the one before it. In most TypeScript codebases this becomes a stack of `await`s glued together with `try/catch`, and when one of them fails at 2am you get a stack trace pointing at a single line with no record of what ran first.
 
-`pipe()` declares that chain as one value. Each step feeds the next, a failure anywhere rejects the whole thing, and a trace shows `fetchUser → fetchPosts` as connected steps instead of three unrelated calls.
+`pipe()` declares that chain as one value. Each step feeds the next, a failure anywhere rejects the whole thing, and a trace shows `fetchOrder → fetchShipment` as connected steps instead of three unrelated calls.
 
 ## The honest before
 
 Here is the real multi-step flow, written by hand. It works. It is also where every project quietly accumulates scar tissue.
 
 ```ts
-async function getUserPosts(id: number) {
-    let user;
+async function getOrderShipment(orderId: number) {
+    let order;
     try {
-        const res = await fetch(`https://api.example.com/users/${id}`);
-        if (!res.ok) throw new Error(`user ${id}: ${res.status}`);
-        user = await res.json();
+        const res = await fetch(`https://api.example.com/orders/${orderId}`);
+        if (!res.ok) throw new Error(`order ${orderId}: ${res.status}`);
+        order = await res.json();
     } catch (err) {
         // retry? log? rethrow? every call site decides again
         throw err;
     }
 
-    let posts;
+    let shipment;
     try {
         const res = await fetch(
-            `https://api.example.com/posts?userId=${user.id}`,
+            `https://api.example.com/shipments/${order.shipmentId}`,
         );
-        if (!res.ok) throw new Error(`posts: ${res.status}`);
-        posts = await res.json();
+        if (!res.ok) throw new Error(`shipment: ${res.status}`);
+        shipment = await res.json();
     } catch (err) {
         throw err;
     }
 
-    return posts;
+    return shipment;
 }
 ```
 
 The sharp edges, named:
 
 -   **Each step re-implements error handling.** Two `try/catch` blocks, two status checks, two ways to phrase the same failure. The third step would add a third.
--   **Nothing ties the steps together.** When `fetchPosts` fails, the log shows a posts request. It does not show that a user fetch ran first, succeeded, and produced the `userId` that the failed call used. You reconstruct the sequence by hand.
--   **No types.** `user` is `any`, `user.id` is `any`, `posts` is `any`. A typo in `user.id` surfaces as `undefined` in a query string, not a compile error.
--   **Resilience is missing or copy-pasted.** Want a retry on the user call? Wrap it in a loop. Want a timeout? Race it against a `setTimeout`. Now do it again for posts.
+-   **Nothing ties the steps together.** When `fetchShipment` fails, the log shows a shipment request. It does not show that an order fetch ran first, succeeded, and produced the `shipmentId` that the failed call used. You reconstruct the sequence by hand.
+-   **No types.** `order` is `any`, `order.shipmentId` is `any`, `shipment` is `any`. A typo in `order.shipmentId` surfaces as `undefined` in a URL, not a compile error.
+-   **Resilience is missing or copy-pasted.** Want a retry on the order call? Wrap it in a loop. Want a timeout? Race it against a `setTimeout`. Now do it again for the shipment.
 
 ## The pipeline version
 
@@ -57,41 +57,50 @@ import { stitch } from 'stitchapi';
 import { pipe } from 'stitchapi/pipe';
 import { z } from 'zod';
 
-const User = z.object({ id: z.number(), name: z.string() });
-type User = z.infer<typeof User>;
-const Posts = z.array(z.object({ id: z.number(), title: z.string() }));
-type Posts = z.infer<typeof Posts>;
+const Order = z.object({
+    id: z.number(),
+    shipmentId: z.string(),
+    total: z.number(),
+});
+type Order = z.infer<typeof Order>;
+const Shipment = z.object({
+    id: z.string(),
+    carrier: z.string(),
+    trackingCode: z.string(),
+    status: z.string(),
+});
+type Shipment = z.infer<typeof Shipment>;
 
-const fetchUser = stitch({
-    url: 'https://api.example.com/users/{id}',
-    output: User,
+const fetchOrder = stitch({
+    url: 'https://api.example.com/orders/{id}',
+    output: Order,
     retry: 3,
     timeout: '5s',
 });
 
-const fetchPosts = stitch({
-    url: 'https://api.example.com/posts',
-    output: Posts,
+const fetchShipment = stitch({
+    url: 'https://api.example.com/shipments/{id}',
+    output: Shipment,
     retry: 3,
 });
 
-const userPosts = pipe(
-    fetchUser, // receives the pipe's input
+const orderShipment = pipe(
+    fetchOrder, // receives the pipe's input
     {
-        stitch: fetchPosts,
-        input: (u) => ({ query: { userId: (u as User).id } }),
+        stitch: fetchShipment,
+        input: (o) => ({ params: { id: (o as Order).shipmentId } }),
     },
 );
 
-const posts = await userPosts({ params: { id: 1 } });
+const shipment = await orderShipment({ params: { id: 1043 } });
 ```
 
 What each piece does:
 
 -   `pipe(...steps)` returns a callable, `(input?) => Promise<Out>`. You `await` it like any function. It resolves to the **last** step's result.
 -   A **step** is either a bare stitch or a `{ stitch, input }` object. The `input` function maps the previous result into the next call's input.
--   The **first step** receives the pipe's own input — `{ params: { id: 1 } }` lands on `fetchUser`.
--   The **second step** runs `input(u)` over the user that `fetchUser` returned, building `{ query: { userId: (u as User).id } }` for `fetchPosts`. The mapper receives the previous result as `unknown`, so you cast it to the shape you already declared — `u as User` — and because `fetchUser` validated that response against the `User` schema at runtime, the value behind the cast really is a `User`, not the unchecked `any` a raw `res.json()` hands back.
+-   The **first step** receives the pipe's own input — `{ params: { id: 1043 } }` lands on `fetchOrder`.
+-   The **second step** runs `input(o)` over the order that `fetchOrder` returned, building `{ params: { id: (o as Order).shipmentId } }` for `fetchShipment`. The mapper receives the previous result as `unknown`, so you cast it to the shape you already declared — `o as Order` — and because `fetchOrder` validated that response against the `Order` schema at runtime, the value behind the cast really is an `Order`, not the unchecked `any` a raw `res.json()` hands back.
 -   Omit `input` and the previous result is passed as the next call's `body`. Useful when one step's output is literally the next step's request payload.
 
 The two `try/catch` blocks are gone, and so is the status checking, the manual rethrow, and the untyped intermediate values. Each stitch carries its own `retry`, `timeout`, `output` validation, and `auth` — written once, at the declaration, not re-derived at every call site.
@@ -104,7 +113,7 @@ It also **fails fast, not best-effort.** A stitch throws `StitchError` once it e
 
 ```ts
 try {
-    const posts = await userPosts({ params: { id: 1 } });
+    const shipment = await orderShipment({ params: { id: 1043 } });
 } catch (err) {
     // err is the StitchError from whichever step failed —
     // with .status, .attempts, .body, .url already attached
@@ -122,27 +131,32 @@ The detail that pays off in production: each step runs as a **child run of the p
 | Order               | implicit in code flow    | declared as ordered steps                                         |
 | Error handling      | one `try/catch` per call | one rejection at the boundary                                     |
 | Intermediate values | unchecked `any`          | runtime-validated against each step's `output`, cast to that type |
-| Trace identity      | three unrelated calls    | `fetchUser → fetchPosts`, one chain                               |
+| Trace identity      | three unrelated calls    | `fetchOrder → fetchShipment`, one chain                           |
 | Resilience          | copy-pasted or absent    | each step keeps its own retry/timeout/auth                        |
 
-So when posts come back wrong, the trace (and the playground's call-graph DAG) shows the user fetch that ran first, the value it produced, and the mapped input the posts call received. You read the sequence instead of reassembling it.
+So when the shipment comes back pointing at the wrong address, the trace (and the playground's call-graph DAG) shows the order fetch that ran first, the value it produced, and the mapped input the shipment call received. You read the sequence instead of reassembling it.
 
 The step-to-step `input` mapper is a closure — sugar, the same category as `transform` or `paginate.next`. The structure that round-trips is the **ordered list of member stitches.** The pipe composes stitches you already declared; it does not absorb them or change how any one of them behaves on its own.
 
 ## Where the pipeline takes you
 
-`pipe()` bounds a flow exactly as tightly as you bound a single stitch. One call you `await`; a sequence of dependent calls is the same `await` over a value that happens to contain three. Adding a third enrichment step is one more entry in the list, not another `try/catch` block and another untyped variable:
+`pipe()` bounds a flow exactly as tightly as you bound a single stitch. One call you `await`; a sequence of dependent calls is the same `await` over a value that happens to contain three. Adding a third step — the carrier's live tracking for that shipment — is one more entry in the list, not another `try/catch` block and another untyped variable:
 
 ```ts
-const enriched = pipe(
-    fetchUser,
+const tracked = pipe(
+    fetchOrder,
     {
-        stitch: fetchPosts,
-        input: (u) => ({ query: { userId: (u as User).id } }),
+        stitch: fetchShipment,
+        input: (o) => ({ params: { id: (o as Order).shipmentId } }),
     },
     {
-        stitch: fetchComments,
-        input: (p) => ({ query: { postId: (p as Posts)[0].id } }),
+        stitch: fetchTracking,
+        input: (s) => ({
+            params: {
+                carrier: (s as Shipment).carrier,
+                code: (s as Shipment).trackingCode,
+            },
+        }),
     },
 );
 ```
@@ -157,4 +171,4 @@ stitchapi
 
 `pipe` lives at the `stitchapi/pipe` subpath, so you only pull it into the bundle when a flow needs it. Each step is a [stitch](/docs/concepts/the-stitch) with its own [validation](/docs/guides/validation/validation), and the chain is visible in the [event stream](/docs/concepts/event-stream).
 
-Related reading: [Type-safe pagination](/blog/typescript-pagination), [one definition, four front doors](/blog/one-definition-four-front-doors), and [runtime stitching vs. workflow platforms](/blog/runtime-stitching-vs-workflow-platforms).
+Related reading: [when a step needs an earlier result](/blog/read-earlier-results-in-a-pipeline), [type-safe pagination](/blog/typescript-pagination), [one definition, four front doors](/blog/one-definition-four-front-doors), and [runtime stitching vs. workflow platforms](/blog/runtime-stitching-vs-workflow-platforms).

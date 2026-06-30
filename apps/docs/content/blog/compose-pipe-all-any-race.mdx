@@ -1,0 +1,140 @@
+---
+title: 'Sequential and Parallel: pipe, all, any, race'
+description: 'A stitch is one typed call; composition combines them. pipe runs steps in order and feeds each into the next; all/any/race run independent calls concurrently. They all return the same callable shape, so they nest — a parallel all inside a sequential pipe, a failover any as a single step — and stay fully typed throughout.'
+author: Oleksandr Zhuravlov
+date: '2026-06-30'
+tags: [composition, pipe, parallel, concurrency, typescript]
+---
+
+A [stitch](/docs/concepts/the-stitch) is one endpoint as a typed, validated, resilient function. Real work rarely stops at one call — you chain them, or fan them out. StitchAPI's composition family covers both axes with one idea: **every combinator returns the same thing a stitch does — a callable you `await` — so they all nest inside each other.**
+
+There are two questions any two calls can have between them: _does one depend on the other?_ and _do I need all of them?_ That's the whole family.
+
+| Combinator | Runs members              | Resolves when                         | Result            | For                            |
+| ---------- | ------------------------- | ------------------------------------- | ----------------- | ------------------------------ |
+| `pipe`     | in order, each feeds next | the last step resolves                | the last output   | a **dependent** chain          |
+| `all`      | concurrently              | **all** succeed (fail-fast)           | named obj / tuple | independent **fan-out**        |
+| `any`      | concurrently              | the **first success** (else all fail) | one output        | **failover** across redundancy |
+| `race`     | concurrently              | the **first to settle** (win or lose) | one output        | **hedging** / fastest-wins     |
+
+## `pipe` — dependent, in order
+
+When each call needs the previous one's result, you want a sequence. [`pipe`](/blog/compose-api-calls-into-a-pipeline) runs steps in order, feeds each result to the next, and fails fast. Its builder lets a step [read an earlier ancestor](/blog/read-earlier-results-in-a-pipeline), fully typed:
+
+```ts
+import { pipe } from 'stitchapi/pipe';
+
+const tracked = pipe
+    .step(fetchOrder, 'order')
+    .step(fetchShipment, (order) => ({ params: { id: order.shipmentId } }))
+    .step(fetchTracking, (shipment, ctx) => ({
+        params: { code: shipment.trackingCode, region: ctx.order.region },
+    }));
+
+const events = await tracked({ params: { id: 1043 } });
+```
+
+## `all` — independent, all of them
+
+When calls _don't_ depend on each other, running them in sequence is just wasted latency. `all` runs a **named bag** of stitches concurrently and resolves to a typed object keyed by the names you gave:
+
+```ts
+import { all } from 'stitchapi/pipe';
+
+const dashboard = all({
+    user: fetchUser,
+    settings: fetchSettings,
+    flags: fetchFlags,
+});
+
+const { user, settings, flags } = await dashboard({ params: { id: 1 } });
+// user: User, settings: Settings, flags: Flags — each typed from its stitch
+```
+
+Prefer positional? Pass an **array** and get a tuple back — the exact `Promise.all` shape, with the resilience and cancellation added:
+
+```ts
+const [user, settings, flags] = await all([
+    fetchUser,
+    fetchSettings,
+    fetchFlags,
+])({ params: { id: 1 } });
+```
+
+Both forms are the same combinator — pick whichever reads better. (The named form is the one that merges into a pipe's `ctx` via an inline `.step({...})`; an array nests through `.step(all([...]), 'name')`.)
+
+Either way it's `Promise.all` with the rough edges removed: it's **fail-fast** — the first member to fail rejects the whole `all` with that call's `StitchError` (`.status`, `.url`, …) **and aborts the others** (their in-flight requests are cancelled, not left running) — and each member keeps its own retry, timeout, and validation.
+
+## `any` — the first one that works
+
+`any` runs its members concurrently and resolves with the **first to succeed**, ignoring failures until none are left — then it rejects with an `AggregateError` of every failure. The moment one wins, the **losers are aborted**. That's failover across interchangeable sources:
+
+```ts
+import { any } from 'stitchapi/pipe';
+
+// hit both, take whichever returns first; only fail if BOTH do
+const fetchUser = any([fetchFromPrimary, fetchFromMirror]);
+
+const user = await fetchUser({ params: { id: 1 } });
+```
+
+This is distinct from a stitch's built-in `retry`, which re-hits the **same** endpoint. `any` is for redundancy across **different** endpoints — a primary and a mirror, two regions, two providers of the same shape.
+
+## `race` — the first one to finish, win or lose
+
+`race` resolves with the first member to **settle** — success _or_ failure — and **cancels the rest**. Use it to hedge a latency-sensitive call against a second source and take whichever returns first:
+
+```ts
+import { race } from 'stitchapi/pipe';
+
+const fastest = race([fetchFromUsEast, fetchFromEuWest]);
+```
+
+The difference from `any` is what counts as "done": `any` waits past failures for a success; `race` takes the first result of any kind. Reach for `race` when latency is the enemy and a fast failure is still information; reach for `any` when you want the answer and don't care who provides it.
+
+## They nest — that's the point
+
+Every combinator returns the same callable shape `(input?) => Promise<Out>`, so a combinator is a valid member of any other — and the types flow straight through. Inside the `pipe` builder, an **object-literal step is a parallel fan-out**: each `{ key: node }` runs concurrently and its keys merge straight into `ctx`. Fetch the order, then in parallel its shipment and invoice, then sequentially the tracking:
+
+```ts
+import { pipe } from 'stitchapi/pipe';
+
+const enriched = pipe
+    .step(fetchOrder, 'order')
+    .step({ shipment: fetchShipment, invoice: fetchInvoice }) // parallel; merges into ctx
+    .step(fetchTracking, (details, ctx) => ({
+        params: {
+            code: details.shipment.trackingCode, // `details` = the parallel result, typed
+            total: ctx.invoice.total, // a merged key, readable by name
+            region: ctx.order.region, // an earlier ancestor, still typed
+        },
+    }));
+
+const events = await enriched({ params: { id: 1043 } });
+```
+
+The `{ shipment, invoice }` step fans out in parallel and lands its keys in `ctx` directly (`ctx.shipment`, `ctx.invoice`) — no wrapper name to invent. And a standalone `all` / `any` / `race` nests just as well as a single step, so a failover reads naturally:
+
+```ts
+import { any, pipe } from 'stitchapi/pipe';
+
+const flow = pipe
+    .step(any([fetchOrderPrimary, fetchOrderMirror]), 'order') // failover on the first call
+    .step(fetchShipment, (order) => ({ params: { id: order.shipmentId } }));
+```
+
+An `all` can hold a `pipe`; a `pipe` step can be an `any`; a `race` can hold `all`s. The tree goes as deep as the problem, and every node is typed from the stitches at its leaves.
+
+## Still composition, not orchestration
+
+Nesting combinators is powerful enough to feel like a workflow engine — so it's fenced the same way `pipe` is. The shape is **fixed when you write it**: a step's mapper returns a request input, never a step, so nothing branches, loops, or spawns at runtime. The trace mirrors the structure — `pipe` draws a line, `all` a fan — because each member runs as a child run of its parent ([the run-identity model](/docs/concepts/event-stream)). It composes the stitches you already declared; it never changes how any one of them behaves alone. That's why this stays [runtime stitching, not a workflow platform](/blog/runtime-stitching-vs-workflow-platforms).
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+The composition family lives at the `stitchapi/pipe` subpath, so it only enters your bundle when a flow needs it. Each member is a [stitch](/docs/concepts/the-stitch) with its own [validation](/blog/validate-api-response-zod) and resilience, and the whole tree is visible in the [event stream](/docs/concepts/event-stream).
+
+Related reading: [compose API calls into one pipeline](/blog/compose-api-calls-into-a-pipeline), [when a step needs an earlier result](/blog/read-earlier-results-in-a-pipeline), and [runtime stitching vs. workflow platforms](/blog/runtime-stitching-vs-workflow-platforms).
