@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "tethers": {
+    "release-version": {
+      "baseline": "1.0.0-rc.4",
+      "sites": {
+        "packages/core/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "README.md#pattern:StitchAPI is at `([^`]+)`": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/core/README.md#pattern:StitchAPI is at `([^`]+)`": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        }
+      },
+      "accepted": null
+    }
+  }
+}
