@@ -13,13 +13,17 @@ pre-commit:
         - name: completions
           glob: 'packages/core/src/**/*.ts'
           run: pnpm --filter @stitchapi/docs run gen:completions && git add "apps/docs/app/(home)/playground/playground-completions.generated.ts"
-        # Catch a partial edit to the advertised bundle size before it lands. No
-        # build here, so this runs the consensus check (every quote must agree);
-        # CI's `size` job does the authoritative measured check. Keep this glob in
-        # sync with the FILES list in scripts/check-size-docs.mjs.
-        - name: size-docs
-          glob: '{README.md,packages/core/README.md,apps/docs/**/installation.mdx,apps/docs/**/principles.mdx,apps/docs/**/metrics.tsx,packages/core/scripts/bundle-size.mjs}'
-          run: pnpm check:size-docs
+        # Drift gate (github.com/rejifald/yakir). Pre-commit runs the TOKEN tier
+        # only — literal facts that need no build, like the README version vs the
+        # package source (the `release-version` tether). The `bundle-advertised-size`
+        # tether is executable-tier: it MEASURES the real bundle by running
+        # bundle-size.mjs against built lib, which pre-commit has no build for, so it
+        # runs at pre-push and in CI (.github/workflows/drift.yml) instead — see the
+        # `yakir` jobs there. Vendored tarball; manifest is yakir.json, baseline
+        # yakir.lock.
+        - name: yakir
+          glob: '{README.md,packages/core/README.md,packages/core/package.json,yakir.json,yakir.lock}'
+          run: npx --yes ./tools/yakir.tgz check --tier token
         # README metrics badge block must match the committed snapshot. Tool-free
         # drift guard (renders from scripts/readme-metrics.snapshot.json) — mirrors
         # CI's check:readme step. Refresh the numbers with `pnpm metrics`.
@@ -69,10 +73,10 @@ pre-push:
         # docs app is what actually exercises AutoTypeTable and MDX components.
         - name: build-docs
           run: pnpm --filter @stitchapi/docs build
-        # Authoritative MEASURED advertised-size check. Pre-commit only runs the
-        # build-free consensus fallback, so "every quote agrees but all are stale
-        # vs the real bundle" escapes to CI's `size` job. Build core so
-        # bundle-size.mjs can measure, then assert every quote matches it —
-        # catching the stale-but-consistent case before the push, not after.
-        - name: size-docs
-          run: pnpm --filter stitchapi build && pnpm check:size-docs
+        # Full yakir drift check, MEASURED. Pre-commit runs the token tier only
+        # (no build), so the executable-tier `bundle-advertised-size` tether — which
+        # runs bundle-size.mjs against built lib — is enforced here and in CI. Build
+        # core so the measurement is real, then assert every advertised `~NN kB`
+        # quote matches it, catching the stale-but-consistent case before the push.
+        - name: yakir
+          run: pnpm --filter stitchapi build && npx --yes ./tools/yakir.tgz check

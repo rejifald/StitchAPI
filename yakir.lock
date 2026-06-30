@@ -18,6 +18,36 @@
         }
       },
       "accepted": null
+    },
+    "bundle-advertised-size": {
+      "baseline": "19, 24",
+      "sites": {
+        "command:node packages/core/scripts/bundle-size.mjs --json#regex:\"kb\"\\s*:\\s*(\\d+):all": {
+          "value": "19, 24",
+          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+        },
+        "README.md#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
+          "value": "19, 24",
+          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+        },
+        "packages/core/README.md#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
+          "value": "19, 24",
+          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+        },
+        "apps/docs/content/docs/getting-started/installation.mdx#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
+          "value": "19, 24",
+          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+        },
+        "apps/docs/content/docs/concepts/principles.mdx#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
+          "value": "19, 24",
+          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+        },
+        "apps/docs/app/(home)/components/metrics.tsx#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
+          "value": "19, 24",
+          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+        }
+      },
+      "accepted": null
     }
   }
 }
