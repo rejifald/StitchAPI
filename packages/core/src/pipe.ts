@@ -7,9 +7,13 @@
 // inside one another — and `run` accepts a combinator as a node, so a parallel fan joins the scope.
 //
 //   - `linked(body)` — SEQUENTIAL: plain `await`s through `run`; ancestors are variables (no `ctx`).
-//   - `all({ k: node })` / `all([...])` — resolve when ALL succeed (fail-fast); a named object or tuple.
-//   - `any([...])` — resolve on the FIRST success (else `AggregateError`); failover across mirrors.
-//   - `race([...])` — resolve on the FIRST to settle (win or lose); hedging a slow call against a mirror.
+//   - `all({ k: node })` / `all([...])` / `all(a, b)` — resolve when ALL succeed (fail-fast); object or tuple.
+//   - `any([...])` / `any(a, b)` — resolve on the FIRST success (else `AggregateError`); failover across mirrors.
+//   - `race([...])` / `race(a, b)` — resolve on the FIRST to settle (win or lose); hedging a slow call.
+//
+// The array members and the bare-argument members are the SAME thing — `all([a, b])` and `all(a, b)`
+// build the identical group. The bracketed form is the `Promise.all`/`Promise.any`/`Promise.race`
+// shape; the argument-list form drops the ceremony when you are just listing stitches inline.
 //
 // Every parallel combinator AUTO-CANCELS the members that can no longer affect the result — `all` on
 // the first failure, `any` on the first success, `race` on the first settle — via a per-group
@@ -212,14 +216,32 @@ function makeComposable<Out>(
     return Object.assign(fn, { __composable: true as const });
 }
 
+// Normalize a combinator's arguments to its member list. A single ARRAY argument IS the list (the
+// bracketed `all([a, b])` form); otherwise the arguments themselves are the members (the bare
+// `all(a, b)` argument-list form). A member is always a function — never an array — so a lone array
+// argument is unambiguous.
+function membersFrom(args: readonly unknown[]): readonly Node[] {
+    const lone = args.length === 1 ? args[0] : undefined;
+    return (Array.isArray(lone) ? lone : args) as readonly Node[];
+}
+
+// True for the NAMED-bag argument of `all`: a single plain object of named members. A stitch or
+// composable is a FUNCTION (so `typeof === 'object'` excludes it) and the array form is an array, so a
+// lone non-array object can only be the named-bag form.
+function isBag(x: unknown): x is Record<string, Node> {
+    return typeof x === 'object' && x !== null && !Array.isArray(x);
+}
+
 /**
  * Run nodes CONCURRENTLY and resolve when ALL succeed; fail-fast — the first to reject aborts the rest
- * and rejects the whole `all`. Two interchangeable forms (pick whichever reads better):
+ * and rejects the whole `all`. Three interchangeable forms (pick whichever reads better):
  *
  * - a NAMED object → a typed object keyed by the same names:
  *   `all({ user: fetchUser, prefs: fetchPrefs })` ⇒ `Promise<{ user; prefs }>`.
  * - a positional ARRAY (the `Promise.all` shape) → a typed tuple:
  *   `all([fetchUser, fetchPrefs])` ⇒ `Promise<readonly [User, Prefs]>`.
+ * - the same members as bare ARGUMENTS → the identical tuple, without the brackets:
+ *   `all(fetchUser, fetchPrefs)` ⇒ `Promise<readonly [User, Prefs]>`.
  *
  * Each member keeps its own retry/timeout/validation, runs as a sibling child run (the trace draws a
  * fan), and is auto-cancelled if a sibling fails first.
@@ -230,52 +252,56 @@ export function all<const T extends readonly Member[]>(
 export function all<M extends Record<string, Member>>(
     members: M,
 ): Composable<BagOut<M>>;
-export function all(
-    members: readonly Member[] | Record<string, Member>,
-): Composable<unknown> {
-    return Array.isArray(members)
-        ? makeComposable((input, run) =>
-              runAllArray(members as unknown as readonly Node[], input, run),
-          )
-        : makeComposable((input, run) =>
-              runAll(members as unknown as Record<string, Node>, input, run),
-          );
+export function all<const T extends readonly Member[]>(
+    ...members: T
+): Composable<TupleOut<T>>;
+export function all(...args: readonly unknown[]): Composable<unknown> {
+    // A lone plain-object argument is the NAMED-bag form; a lone array or bare member arguments are the
+    // positional tuple form.
+    const first = args[0];
+    if (args.length === 1 && isBag(first)) {
+        const bag = first;
+        return makeComposable((input, run) => runAll(bag, input, run));
+    }
+    return makeComposable((input, run) =>
+        runAllArray(membersFrom(args), input, run),
+    );
 }
 
 /**
  * Run nodes CONCURRENTLY and resolve with the FIRST to SUCCEED — failover across interchangeable
  * sources. If every member fails, rejects with an `AggregateError`. The losers are auto-cancelled.
  * Distinct from a stitch's built-in `retry` (which re-hits the SAME endpoint): `any` is redundancy
- * across DIFFERENT ones — a primary and a mirror, two regions, two providers of the same shape.
+ * across DIFFERENT ones — a primary and a mirror, two regions, two providers of the same shape. Pass
+ * the members as an ARRAY (`any([a, b])`) or as bare ARGUMENTS (`any(a, b)`) — same combinator.
  */
 export function any<M extends readonly Member[]>(
     members: M,
-): Composable<OutputOf<M[number]>> {
-    return makeComposable(
-        (input, run) =>
-            runAny(
-                members as unknown as readonly Node[],
-                input,
-                run,
-            ) as Promise<OutputOf<M[number]>>,
+): Composable<OutputOf<M[number]>>;
+export function any<M extends readonly Member[]>(
+    ...members: M
+): Composable<OutputOf<M[number]>>;
+export function any(...args: readonly unknown[]): Composable<unknown> {
+    return makeComposable((input, run) =>
+        runAny(membersFrom(args), input, run),
     );
 }
 
 /**
  * Run nodes CONCURRENTLY and resolve/reject with the FIRST to SETTLE (success OR failure) — hedging a
  * latency-sensitive call against a faster mirror. The slower members are auto-cancelled. Where `any`
- * waits past failures for a success, `race` takes the first result of any kind.
+ * waits past failures for a success, `race` takes the first result of any kind. Pass the members as an
+ * ARRAY (`race([a, b])`) or as bare ARGUMENTS (`race(a, b)`) — same combinator.
  */
 export function race<M extends readonly Member[]>(
     members: M,
-): Composable<OutputOf<M[number]>> {
-    return makeComposable(
-        (input, run) =>
-            runRace(
-                members as unknown as readonly Node[],
-                input,
-                run,
-            ) as Promise<OutputOf<M[number]>>,
+): Composable<OutputOf<M[number]>>;
+export function race<M extends readonly Member[]>(
+    ...members: M
+): Composable<OutputOf<M[number]>>;
+export function race(...args: readonly unknown[]): Composable<unknown> {
+    return makeComposable((input, run) =>
+        runRace(membersFrom(args), input, run),
     );
 }
 

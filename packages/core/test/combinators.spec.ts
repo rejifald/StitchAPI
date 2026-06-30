@@ -108,6 +108,17 @@ test('all (array form): resolves to a positional tuple, in order', async () => {
     ]);
 });
 
+test('all (argument-list form): bare members resolve to a positional tuple, in order', async () => {
+    await expect(all(ok({ n: 1 }), ok({ n: 2 }))()).resolves.toEqual([
+        { n: 1 },
+        { n: 2 },
+    ]);
+});
+
+test('all (argument-list form): a single bare member is a one-element tuple, not a bag', async () => {
+    await expect(all(ok({ n: 1 }))()).resolves.toEqual([{ n: 1 }]);
+});
+
 test('all (array form): fail-fast — the first failure rejects and aborts the rest', async () => {
     const slow = blocker();
     await expect(all([boomAfter(10), slow.s])()).rejects.toMatchObject({
@@ -136,6 +147,22 @@ test('any: rejects with an AggregateError when every member fails', async () => 
     await expect(any([boom(), boom()])()).rejects.toBeInstanceOf(
         AggregateError,
     );
+});
+
+test('any (argument-list form): bare members behave like the array form', async () => {
+    const slow = blocker();
+    await expect(any(slow.s, okAfter(10, { ok: true }))()).resolves.toEqual({
+        ok: true,
+    });
+    expect(slow.aborted()).toBe(true);
+});
+
+test('race (argument-list form): bare members behave like the array form', async () => {
+    const slow = blocker();
+    await expect(race(boomAfter(10), slow.s)()).rejects.toMatchObject({
+        status: 400,
+    });
+    expect(slow.aborted()).toBe(true);
 });
 
 test('race: the first to settle wins — even a fast failure — and cancels the rest', async () => {
