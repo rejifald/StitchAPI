@@ -41,7 +41,7 @@ describe('classifyDiff', () => {
         expect(classifyDiff({ a: 1, b: 'x' }, { a: 1, b: 'x' })).toEqual([]);
     });
 
-    test('array element paths collapse to [] and dedupe', () => {
+    test('array element paths collapse to [] — homogeneous: one summary finding with count and sample (ADR 0017)', () => {
         const findings = classifyDiff(
             {
                 items: [
@@ -54,6 +54,130 @@ describe('classifyDiff', () => {
         expect(findings).toHaveLength(1);
         expect(findings[0]?.path).toBe('items[].x');
         expect(findings[0]?.change).toBe('undeclared');
+        expect(findings[0]?.detail).toBe(
+            'all 2 elements: undeclared field (number)',
+        );
+        expect(findings[0]?.sample).toBe('items[0].x');
+    });
+
+    // ADR 0017 — homogeneous array coercion
+    test('homogeneous array coercion: one summary finding + correct count + concrete sample', () => {
+        // All three items have their `id` coerced from string to number.
+        const findings = classifyDiff(
+            { items: [{ id: '1' }, { id: '2' }, { id: '3' }] },
+            { items: [{ id: 1 }, { id: 2 }, { id: 3 }] },
+        );
+        expect(findings).toHaveLength(1);
+        expect(findings[0]).toMatchObject({
+            path: 'items[].id',
+            change: 'coerced',
+            detail: 'all 3 elements: string -> number',
+            sample: 'items[0].id',
+        });
+    });
+
+    // ADR 0017 — heterogeneous array: distinct detail variants each surface
+    test('heterogeneous array coercion: one finding per distinct detail variant, none dropped', () => {
+        // Element 0: string -> number; element 1: boolean -> number. Same [] path, different detail.
+        const findings = classifyDiff(
+            { items: [{ x: '42' }, { x: true }] },
+            { items: [{ x: 42 }, { x: 1 }] },
+        );
+        expect(findings).toHaveLength(2);
+        const details = findings.map((f) => f.detail).sort();
+        expect(details).toEqual([
+            '1 element: boolean -> number',
+            '1 element: string -> number',
+        ]);
+        // Both have samples pointing at concrete indices.
+        const samples = findings.map((f) => f.sample).sort();
+        expect(samples).toEqual(['items[0].x', 'items[1].x']);
+        // All share the same collapsed path and change.
+        for (const f of findings) {
+            expect(f.path).toBe('items[].x');
+            expect(f.change).toBe('coerced');
+        }
+    });
+
+    // ADR 0017 — single outlier in a large array: one summary + one variant, no flood
+    test('single outlier in a large array: summary + variant, no element flood', () => {
+        // 9 elements coerced string->number, 1 coerced boolean->number (the outlier at index 5).
+        const raw = {
+            items: [
+                { v: '1' },
+                { v: '2' },
+                { v: '3' },
+                { v: '4' },
+                { v: '5' },
+                { v: true }, // outlier
+                { v: '7' },
+                { v: '8' },
+                { v: '9' },
+                { v: '10' },
+            ],
+        };
+        const validated = {
+            items: [
+                { v: 1 },
+                { v: 2 },
+                { v: 3 },
+                { v: 4 },
+                { v: 5 },
+                { v: 1 },
+                { v: 7 },
+                { v: 8 },
+                { v: 9 },
+                { v: 10 },
+            ],
+        };
+        const findings = classifyDiff(raw, validated);
+        // Only 2 findings total — no per-element flood.
+        expect(findings).toHaveLength(2);
+        const summary = findings.find((f) =>
+            f.detail?.includes('string -> number'),
+        );
+        const variant = findings.find((f) =>
+            f.detail?.includes('boolean -> number'),
+        );
+        expect(summary).toBeDefined();
+        expect(variant).toBeDefined();
+        expect(summary?.detail).toBe('9 elements: string -> number');
+        expect(variant?.detail).toBe('1 element: boolean -> number');
+        expect(variant?.sample).toBe('items[5].v');
+    });
+
+    // ADR 0017 — scalar-array coercion (the array itself is the coerced value, not an element field)
+    test('scalar-array coercion: one summary finding on the array path', () => {
+        // Each element of `tags` is coerced from number to string.
+        const findings = classifyDiff(
+            { tags: [1, 2, 3] },
+            { tags: ['1', '2', '3'] },
+        );
+        expect(findings).toHaveLength(1);
+        expect(findings[0]).toMatchObject({
+            path: 'tags[]',
+            change: 'coerced',
+            detail: 'all 3 elements: number -> string',
+            sample: 'tags[0]',
+        });
+    });
+
+    // ADR 0017 — a single drifting element in an array reads "1 element:" (grammatical, no "all")
+    test('single drifting array element: "1 element:" detail with concrete sample', () => {
+        // Only items[1].x drifts (undeclared); items[0] is clean.
+        const findings = classifyDiff(
+            {
+                items: [{ a: 1 }, { a: 2, x: 9 }],
+            },
+            { items: [{ a: 1 }, { a: 2 }] },
+        );
+        expect(findings).toHaveLength(1);
+        expect(findings[0]).toMatchObject({
+            path: 'items[].x',
+            change: 'undeclared',
+            detail: '1 element: undeclared field (number)',
+            sample: 'items[1].x',
+        });
     });
 
     test('ignore suppresses a path (prefix grammar)', () => {

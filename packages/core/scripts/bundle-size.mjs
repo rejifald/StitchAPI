@@ -96,16 +96,25 @@ const KB = 1024;
 // `cache` diagnostics drained off the existing event spine (no new engine events). `.report()` is a
 // method on every stitch, so it lifts `import { stitch }` as much as the whole entry — it can't
 // tree-shake away. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for array drift summarization — ADR 0017 (23.95→24.20 / 19.45→19.70 KB; measured
+// 23.99 / 19.48). `classifyDiff` swaps its first-wins `change|path` dedup for group-then-summarize:
+// array groups are kept and branched on `detail` homogeneity (homogeneous → one `all N elements: …`
+// summary with a concrete-index `sample`; heterogeneous → one finding per distinct detail variant).
+// This fixes a real correctness gap — first-wins silently dropped a second, genuinely-different drift
+// at the same collapsed `[]` path — so it isn't optional and sits in the shared drift/classify layer
+// that feeds both the `drift` event and `Inspection.findings`; it can't move to a subpath. It adds
+// ~0.04 / ~0.03 KB gzip. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 23.95 * KB,
+        budget: 24.2 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 19.45 * KB,
+        budget: 19.7 * KB,
     },
 ];
 

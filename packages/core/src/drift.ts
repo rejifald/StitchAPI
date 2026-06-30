@@ -33,6 +33,16 @@ function renderPath(path: (string | number)[]): string {
     return out;
 }
 
+/** Render a diff path keeping concrete numeric indices (e.g. `items[3].x`). Used for `sample` on array summaries (ADR 0017). */
+function renderConcretePath(path: (string | number)[]): string {
+    let out = '';
+    for (const seg of path) {
+        if (typeof seg === 'number') out += `[${seg}]`;
+        else out += out ? `.${seg}` : seg;
+    }
+    return out;
+}
+
 /**
  * A hard validation failure → `error` / `invalid` findings (one per issue). Not leveled or
  * suppressible: a contract violation fails the call. The engine throws on any of these.
@@ -94,6 +104,11 @@ function resolveSeverity(severity: DriftOptions['severity']): {
  * Soft drift: classify the difference between the raw body and the validated value into leveled
  * findings. Array-element paths collapse to the `[]` grammar and dedupe (a stripped field on every
  * element is one finding), `ignore` suppresses acknowledged paths, and `severity` levels/filters.
+ *
+ * ADR 0017: uses group-then-summarize instead of first-wins dedup. Diffs are grouped by
+ * `change|path`; array groups branch on detail homogeneity: homogeneous → one summary finding with
+ * `all N elements: <detail>` and a `sample` coordinate; heterogeneous → one finding per distinct
+ * detail variant (each with its own count and sample).
  */
 export function classifyDiff(
     raw: unknown,
@@ -101,18 +116,83 @@ export function classifyDiff(
     opts: DriftOptions = {},
 ): DriftFinding[] {
     const { levelOf, allow } = resolveSeverity(opts.severity);
-    const findings: DriftFinding[] = [];
-    const seen = new Set<string>();
+
+    // Group diffs by `change|path` (the collapse key).
+    const groups = new Map<
+        string,
+        { change: SoftDriftChange; path: string; diffs: Diff[] }
+    >();
     for (const d of diff(raw, validated)) {
         const change = OP_CHANGE[d.op];
         const path = renderPath(d.path);
         const key = `${change}|${path}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+        let group = groups.get(key);
+        if (!group) {
+            group = { change, path, diffs: [] };
+            groups.set(key, group);
+        }
+        group.diffs.push(d);
+    }
+
+    const findings: DriftFinding[] = [];
+
+    for (const { change, path, diffs } of groups.values()) {
+        // Apply ignore (path-based) after grouping — all elements share the same [] path.
         if (matchAny(opts.ignore, path)) continue;
         const level = levelOf(change);
         if (allow && !allow.has(level)) continue;
-        findings.push({ level, path, change, detail: detailFor(change, d) });
+
+        const isArrayPath = path.includes('[]');
+
+        if (!isArrayPath || diffs.length === 1) {
+            // Scalar path, or a single diff (no collapse needed): emit one finding.
+            // For scalar paths there is no `sample`; for a lone array diff, we still emit `sample`
+            // so a consumer gets the concrete coordinate.
+            const [d] = diffs;
+            if (!d) continue; // a group always has ≥1 diff — this satisfies the type guard
+            const detail = detailFor(change, d);
+            if (isArrayPath) {
+                findings.push({
+                    level,
+                    path,
+                    change,
+                    detail: `1 element: ${detail}`,
+                    sample: renderConcretePath(d.path),
+                });
+            } else {
+                findings.push({ level, path, change, detail });
+            }
+            continue;
+        }
+
+        // Array path with multiple diffs: group by detail string (the homogeneity test).
+        const byDetail = new Map<string, Diff[]>();
+        for (const d of diffs) {
+            const detail = detailFor(change, d);
+            const slot = byDetail.get(detail);
+            if (slot) slot.push(d);
+            else byDetail.set(detail, [d]);
+        }
+
+        // Homogeneous (one distinct detail) → one summary `all N elements: …`; heterogeneous → one
+        // finding per distinct detail variant (`N element(s): …`). Either way `sample` is the concrete
+        // index of the first occurrence, so the per-element value stays recoverable from `raw`.
+        const homogeneous = byDetail.size === 1;
+        for (const [detail, grp] of byDetail) {
+            const [head] = grp;
+            if (!head) continue; // a detail slot always has ≥1 diff — satisfies the type guard
+            const label = homogeneous
+                ? `all ${grp.length} elements`
+                : `${grp.length} element${grp.length === 1 ? '' : 's'}`;
+            findings.push({
+                level,
+                path,
+                change,
+                detail: `${label}: ${detail}`,
+                sample: renderConcretePath(head.path),
+            });
+        }
     }
+
     return findings;
 }
