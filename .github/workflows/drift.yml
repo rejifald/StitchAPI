@@ -9,6 +9,9 @@ on:
         branches: [main]
     pull_request:
 
+permissions:
+    contents: read
+
 jobs:
     yakir:
         runs-on: ubuntu-latest
