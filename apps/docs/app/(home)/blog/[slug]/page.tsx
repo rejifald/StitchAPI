@@ -1,4 +1,5 @@
 import { getMDXComponents } from '@/components/mdx';
+import { Prerequisites } from '@/components/prerequisites';
 import {
     blogSource,
     formatPostDate,
@@ -41,6 +42,7 @@ export default async function BlogPostPage(props: PageProps<'/blog/[slug]'>) {
                         </time>
                     </p>
                 </header>
+                <Prerequisites hrefs={post.data.prerequisites} />
                 <DocsBody>
                     <MDX components={getMDXComponents()} />
                 </DocsBody>

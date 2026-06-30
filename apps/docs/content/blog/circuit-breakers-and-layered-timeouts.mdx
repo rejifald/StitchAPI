@@ -4,6 +4,7 @@ description: When an upstream dependency is already down or crawling, naive retr
 author: Oleksandr Zhuravlov
 date: '2026-06-01'
 tags: [resilience, reliability, timeouts, circuit-breaker, retry]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 An upstream provider starts to crawl. Not down — crawling. Responses that used to land in 80ms now take eight seconds, when they land at all. Your code does the reasonable thing: it has a timeout, so it gives up after thirty seconds and retries. Three attempts, a little backoff between them. Sensible in isolation.

@@ -4,6 +4,7 @@ description: 'A GraphQL endpoint can answer HTTP 200 and still have failed. A gr
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [graphql, typescript, validation, resilience]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You point a `fetch` at a GraphQL endpoint, POST `{ query, variables }`, get back a `200`, read `json.data.user` — and three weeks later that call is silently returning `undefined` because the server moved the failure into a `200`-with-`errors` body instead of a status code. The transport said success; the operation did not. Most GraphQL clients you'd reach for to close that gap — Apollo Client, urql — also bring a normalized cache, a React layer, and a build step you didn't ask for when all you wanted was to call one query and trust the result.

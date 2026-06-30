@@ -4,6 +4,7 @@ description: The same stitch declaration is callable as an in-process function, 
 author: Oleksandr Zhuravlov
 date: '2026-05-28'
 tags: [cli, http, mcp, agents, architecture]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Look at how one integration usually gets consumed. Your app imports a function that calls the API. A CI script needs the same call, so someone writes a thin CLI wrapper around it. Another service can't import your code, so it gets an HTTP handler that does roughly the same thing. Then an agent shows up, and you write a tool definition describing the same endpoint a fourth time.

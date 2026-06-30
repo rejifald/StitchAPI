@@ -4,6 +4,7 @@ description: The reflex when wiring an agent to a service is to stand up a dedic
 author: Oleksandr Zhuravlov
 date: '2026-05-21'
 tags: [mcp, agents, integrations, architecture]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You wire your agent to its first service and it goes well: install (or stand up) an MCP server, point the agent at it, watch the tools light up. Then you add a second service. A third. Now you have three MCP servers to launch, three sets of credentials to inject, three processes whose health you have to watch — and the agent's context window is carrying every tool each of them exposes, on every turn, whether it uses them or not.

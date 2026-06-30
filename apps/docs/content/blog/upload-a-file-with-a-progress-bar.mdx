@@ -4,6 +4,7 @@ description: 'fetch cannot report how many bytes have left the machine, so a 50M
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [upload, progress, xhr, typescript, multipart]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 A user picks a 50MB video, clicks **Upload**, and your UI just sits there. No bar, no percentage, no sign the bytes are even moving — until, a minute later, the response lands and the screen jumps to "done." The user has already refreshed twice. The problem is not your code; it is the transport: `fetch` cannot tell you how many bytes of the request body have left the machine. `XMLHttpRequest` can, through `xhr.upload`. StitchAPI ships `xhrAdapter()` for exactly this case, and an upload built on it is still an ordinary stitch — typed, authenticated, time-bounded.

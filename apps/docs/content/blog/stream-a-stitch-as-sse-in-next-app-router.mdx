@@ -4,6 +4,7 @@ description: Take a streaming stitch and expose it as a text/event-stream Respon
 author: Oleksandr Zhuravlov
 date: '2026-05-14'
 tags: [next, sse, streaming, react]
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/event-stream']
 ---
 
 A long-running call — a model completion, a slow report, a progressive search — produces a result over seconds, not milliseconds. If your route handler `await`s the whole thing and then returns one JSON blob, the user stares at a spinner the entire time, can't see partial output, and can't cancel a run they've already decided they don't want. Streaming fixes all three: you render tokens as they land, show progress before the final answer exists, and tear the upstream call down the moment the client navigates away.
