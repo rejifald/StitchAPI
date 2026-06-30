@@ -172,14 +172,12 @@ function recordFor(
             };
         case 'progress':
             return {
-                obj: {
+                obj: compact({
                     stitch: name,
                     phase: event.phase,
                     attempt: event.attempt,
-                    ...(event.waited !== undefined
-                        ? { waited: event.waited }
-                        : {}),
-                },
+                    waited: event.waited,
+                }),
                 msg: `· ${name} ${event.phase}#${event.attempt}${
                     event.waited !== undefined
                         ? ` waited ${event.waited}ms`
