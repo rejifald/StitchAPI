@@ -1,6 +1,7 @@
 ---
 title: Distributed stores
 description: Attach a Redis, Cloudflare Workers KV, or Deno KV StitchStore so a stitch's throttle, sessions, and cache become fleet-wide — same call site, no backend in core. Includes the atomic-incr trade-off that decides which store fits.
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
 A [`StitchStore`](/docs/guides/state/pluggable-store) is the one seam that turns
@@ -8,7 +9,7 @@ the process-local pieces of a stitch — its
 [rate-limit counters](/docs/guides/state/distributed-throttle), its
 [auth sessions and tokens](/docs/guides/state/shared-sessions), and its response
 cache — into **fleet-wide** state, with **no change to the call site**. Core ships
-no backend; you attach one of these drivers to a [`seam`](/docs/concepts/event-stream)
+no backend; you attach one of these drivers to a [`seam`](/docs/concepts/the-seam)
 and every worker shares the same counters and sessions.
 
 Each driver is a thin peer-dependency (or zero-dependency) package that imports no
@@ -112,8 +113,8 @@ export default {
 </Callout>
 
 KV's `expirationTtl` is in **seconds** with a **60-second minimum**; the store
-reconciles that with the contract's millisecond TTLs (`ttlMs` →
-`max(60, ceil(ttlMs / 1000))` s), so a value asked to live 5s lives 60s (harmless
+reconciles that with the contract's millisecond TTLs (`ttl` →
+`max(60, ceil(ttl / 1000))` s), so a value asked to live 5s lives 60s (harmless
 for caches and sessions). `set(key, undefined)` deletes; `keyPrefix` namespaces.
 
 ## Deno KV — `@stitchapi/deno-kv`

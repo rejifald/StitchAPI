@@ -3,7 +3,10 @@
     "icon": "Lightbulb",
     "pages": [
         "the-stitch",
+        "the-seam",
         "event-stream",
+        "run-identity",
+        "correlation-vs-idempotency",
         "capability-not-credential",
         "principles"
     ]

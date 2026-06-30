@@ -139,3 +139,7 @@ events and log only retries, drift, and errors). A seam built with its own
 | `isStitchError`      | function | Narrow an unknown error to a `StitchError`        |
 
 `stitchapi` and `fastify` are **peer dependencies** — bring your own.
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

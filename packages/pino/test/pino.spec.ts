@@ -73,7 +73,7 @@ describe('pinoSink — event → level mapping', () => {
     it('maps `drift` to the finding level (error / warn / debug)', () => {
         const at = (level: 'error' | 'warn' | 'info'): StitchEvent => ({
             type: 'drift',
-            finding: { level, path: 'data.id', change: 'missing' },
+            finding: { level, path: 'data.id', change: 'invalid' },
             at: 0,
         });
         expect(run(at('error'))[0]!.level).toBe('error');
@@ -110,7 +110,7 @@ describe('pinoSink — event → level mapping', () => {
 
         const result = run({
             type: 'result',
-            value: { id: 1 },
+            data: { id: 1 },
             status: 200,
             attempts: 1,
             at: 0,
@@ -120,7 +120,7 @@ describe('pinoSink — event → level mapping', () => {
         const done = run({
             type: 'done',
             ok: true,
-            ms: 12,
+            elapsed: 12,
             attempts: 1,
             at: 0,
         });
@@ -145,7 +145,7 @@ describe('pinoSink — event → level mapping', () => {
     it('logs in pino structured form: an object plus a short message', () => {
         const calls = run({
             type: 'result',
-            value: { id: 1 },
+            data: { id: 1 },
             status: 200,
             attempts: 1,
             at: 0,
@@ -176,7 +176,7 @@ describe('pinoSink — lifecycle gating', () => {
             run(
                 {
                     type: 'result',
-                    value: { id: 1 },
+                    data: { id: 1 },
                     status: 200,
                     attempts: 1,
                     at: 0,
@@ -185,7 +185,10 @@ describe('pinoSink — lifecycle gating', () => {
             ),
         ).toHaveLength(0);
         expect(
-            run({ type: 'done', ok: true, ms: 12, attempts: 1, at: 0 }, opts),
+            run(
+                { type: 'done', ok: true, elapsed: 12, attempts: 1, at: 0 },
+                opts,
+            ),
         ).toHaveLength(0);
     });
 
@@ -210,7 +213,7 @@ describe('pinoSink — lifecycle gating', () => {
                     finding: {
                         level: 'warn',
                         path: 'data.id',
-                        change: 'missing',
+                        change: 'invalid',
                     },
                     at: 0,
                 },
@@ -271,7 +274,7 @@ describe('pinoSink — secret safety', () => {
     it('never logs the `result.value` response body', () => {
         const calls = run({
             type: 'result',
-            value: { ssn: '123-45-6789', token: 'leak-me' },
+            data: { ssn: '123-45-6789', token: 'leak-me' },
             status: 200,
             attempts: 1,
             at: 0,

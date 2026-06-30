@@ -11,7 +11,7 @@ StitchAPI is agent-native through the [MCP surface](https://stitchapi.dev/docs/s
 ## Install
 
 ```sh
-pnpm add @stitchapi/vercel-ai stitchapi
+pnpm add @stitchapi/vercel-ai@rc stitchapi@rc
 ```
 
 `stitchapi` is the only required peer; bring the `ai` SDK you already run.
@@ -62,3 +62,7 @@ const getUserTool = tool({
 ## License
 
 Apache-2.0
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

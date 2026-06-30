@@ -3,6 +3,7 @@
 // exactly how Svelte's `$store` / `subscribe` would observe them at runtime.
 import {
     queryOptions,
+    stitchQueryOptions,
     stitchStore,
     stitchStreamStore,
     useStitch,
@@ -28,7 +29,7 @@ function unaryStitch<T>(
                     const value = await promise;
                     yield {
                         type: 'result',
-                        value,
+                        data: value,
                         status: 200,
                         attempts: 1,
                         at: 0,
@@ -46,7 +47,7 @@ function streamStitch<T>(events: StitchEvent<T>[]): StitchLike<T> {
         const terminal = events.find((e) => e.type === 'result');
         const value =
             terminal && terminal.type === 'result'
-                ? terminal.value
+                ? terminal.data
                 : (undefined as T);
         const promise = Promise.resolve(value);
         return {
@@ -223,12 +224,12 @@ describe('stitchStreamStore', () => {
             { type: 'delta', chunk: 3, at: 0 },
             {
                 type: 'result',
-                value: [1, 2, 3],
+                data: [1, 2, 3],
                 status: 200,
                 attempts: 1,
                 at: 0,
             },
-            { type: 'done', ok: true, ms: 1, attempts: 1, at: 0 },
+            { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
         ];
         const store = stitchStreamStore(streamStitch(events), undefined);
         const { states, unsubscribe } = collect(store);
@@ -253,7 +254,7 @@ describe('stitchStreamStore', () => {
         const events: StitchEvent<number>[] = [
             { type: 'delta', chunk: 10, at: 0 },
             { type: 'delta', chunk: 20, at: 0 },
-            { type: 'result', value: 20, status: 200, attempts: 1, at: 0 },
+            { type: 'result', data: 20, status: 200, attempts: 1, at: 0 },
         ];
         const store = stitchStreamStore(streamStitch(events), undefined, {
             mode: 'replace',
@@ -271,21 +272,27 @@ describe('stitchStreamStore', () => {
     });
 });
 
-// --- queryOptions ----------------------------------------------------------
+// --- stitchQueryOptions ----------------------------------------------------------
 
-describe('queryOptions', () => {
+describe('stitchQueryOptions', () => {
     test('returns a TanStack-shaped POJO with key + async queryFn', async () => {
         const stitch = unaryStitch(async () => ({ ok: true }), {
             name: 'getThing',
         });
-        const opts = queryOptions(stitch, { params: { id: '7' } });
+        const opts = stitchQueryOptions(stitch, { params: { id: '7' } });
         expect(opts.queryKey).toEqual(['getThing', { params: { id: '7' } }]);
         await expect(opts.queryFn()).resolves.toEqual({ ok: true });
     });
 
     test('falls back to "stitch" when no __config.name', () => {
         const stitch = unaryStitch(async () => 1);
-        const opts = queryOptions(stitch, null);
+        const opts = stitchQueryOptions(stitch, null);
         expect(opts.queryKey[0]).toBe('stitch');
+    });
+});
+
+describe('queryOptions (deprecated alias)', () => {
+    test('queryOptions stays a deprecated alias of stitchQueryOptions (ADR 0012)', () => {
+        expect(queryOptions).toBe(stitchQueryOptions);
     });
 });

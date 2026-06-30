@@ -4,6 +4,7 @@
 // job is the trusted principal boundary: `seam.as(req.user.id)` binds identity in the closure, so
 // a caller can never name another principal (the principal is never in `StitchInput`). Auth is
 // principal-scoped (separate sessions, no bleed); throttle stays shared (one bucket).
+import { compact } from './compact';
 import {
     type SharedRuntime,
     compose,
@@ -39,7 +40,7 @@ let seamCounter = 0;
 /**
  * The seam's shared throttle bucket. Member stitches all acquire it under ONE seam-stable key, so
  * the budget (rate + in-process concurrency) pools across every stitch — "one shared bucket"
- * (ADR 0002 §3). `scope: 'host'` keeps the engine's per-host key instead (pools per host).
+ * (ADR 0002 §3). `pool: 'host'` keeps the engine's per-host key instead (pools per host).
  */
 function seamBucket(
     opts: ThrottleOptions | undefined,
@@ -48,7 +49,8 @@ function seamBucket(
     clock: Clock,
 ): Throttle {
     const inner = createStoreThrottle(opts, store, clock);
-    if (opts?.scope === 'host') return inner; // the host key already pools across the seam
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `scope` is the @deprecated alias of `pool`, read as the back-compat fallback until the GA cut (CONTRACT.md P2)
+    if ((opts?.pool ?? opts?.scope) === 'host') return inner; // host key already pools across the seam
     const key = `seam:${seamId}`;
     return {
         // Re-key every acquire onto the one seam-stable key, forwarding the acquire options (e.g.
@@ -207,15 +209,17 @@ export function seam(options: SeamOptions = {}): Seam {
     const vault = vaultView(secretStore ?? store);
     const trace = resolveTrace(fragment.trace);
     const seamId = `s${(seamCounter += 1)}`;
-    const shared: SharedSeam = {
+    const shared: SharedSeam = compact({
         fragment,
         store,
         clock,
         vault,
         trace,
         throttle: seamBucket(fragment.throttle, store, seamId, clock),
-        stitches: [],
-        ...(secretStore ? { secretStore } : {}),
-    };
+        // `compact`'s `const` generic would freeze `[]` to `readonly []`; SharedSeam.stitches
+        // is mutable, so pin the element type.
+        stitches: [] as Stitch[],
+        secretStore,
+    });
     return rootHandle(shared);
 }

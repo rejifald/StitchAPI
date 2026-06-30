@@ -1,0 +1,87 @@
+---
+title: 'Axios Alternatives in 2026: Match the Tool to Your Actual Problem'
+description: People leave axios for two unrelated reasons — they want a lighter fetch wrapper, or they're tired of maintaining the retry/timeout/auth/validation glue around every call. Those point at different tools. Here's an honest map of the alternatives, and where a stitch fits.
+author: Oleksandr Zhuravlov
+date: '2026-06-28'
+tags: [axios, http, typescript, fetch, comparison, resilience]
+---
+
+You've decided to drop axios from a TypeScript project. Before you reach for the first library on a "best axios alternatives" list, separate the two reasons people make this move, because they point at different tools. Either you want a **smaller, modern fetch wrapper** — the same job axios does, with less weight and a native-`fetch` core — or you've realized the wrapper was never the point, and what you actually maintain is the **interceptor layer around it**: retries, timeouts, rate limiting, the auth token lifecycle, response validation. Pick the wrong category and you'll port your problem instead of solving it.
+
+## If you want a lighter fetch wrapper
+
+This is the common case, and the honest answer is that the field is good. Native `fetch` plus one of a few small libraries covers most of what axios did.
+
+-   **Native `fetch`.** It's everywhere in 2026 — browsers, Node, Deno, Bun, edge runtimes — with no dependency at all. The two gaps people hit: it doesn't reject on a non-2xx status (you check `response.ok` yourself), and retries, timeouts, and base-URL handling are yours to write. `AbortSignal.timeout()` covers the simplest timeout case.
+-   **[ky](https://github.com/sindresorhus/ky).** A tiny `fetch`-based client with retry, timeout, and hooks built in, written in TypeScript. It's the closest "axios feel" in a fraction of the size, and the default pick if you're browser-first and want batteries included.
+-   **[ofetch](https://github.com/unjs/ofetch).** Auto-parses JSON, throws on errors, retries, and runs the same in Node and the browser. It's the `fetch` layer under Nuxt, and a clean choice if you live in that ecosystem.
+
+If a smaller wrapper is genuinely all you need — a couple of well-behaved endpoints, and the reliability story isn't yours to own — one of these is the right move, and it's the floor to start from. The rest of this post is for the moment that story becomes yours: when the glue around `fetch` is the real work.
+
+## If the wrapper was never the point
+
+Open the axios setup in a mature codebase and the `axios.create()` call is usually the small part. The bulk is interceptors: a retry-with-backoff that respects `Retry-After`, a request queue that keeps you under a rate limit, a per-request timeout, a token refresh on 401, and — if the team is careful — a hand-written check that the response actually has the shape the rest of the code assumes. None of the wrappers above remove that. They give you a nicer `fetch`; the glue is still yours to assemble and maintain per project.
+
+A stitch is the alternative for that problem, and it's a different category on purpose. **It isn't a smaller HTTP client — it's a layer above whichever one you keep.** `fetch` and axios become pluggable adapters underneath; a stitch sits on top and turns one endpoint into a typed, validated, resilient function. You declare the call and its policy once, as data:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const Order = z.object({ id: z.number() });
+
+const listOrders = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    output: z.object({ orders: z.array(Order) }),
+    retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
+    throttle: { rate: '1/s', concurrency: 2, scope: 'host' },
+    timeout: { total: '30s', perAttempt: '10s' },
+});
+
+const { orders } = await listOrders(); // typed · validated · retried · throttled
+```
+
+Everything that was an interceptor is now a field. `retry` backs off and honors `Retry-After`. `throttle` is **proactive** — it keeps you under the limit before the 429s arrive, and `scope: 'host'` shares one limiter across every stitch hitting that host, so it stays correct even as you add calls ([proactive throttling beats reacting to 429s](/blog/proactive-throttling-vs-reactive-429s)). `timeout` is layered: a ceiling for the whole call and a separate budget per attempt.
+
+The `output` validator is the part axios never had. A stitch validates the **live** response on every call, so a shape mismatch is caught at the boundary as a typed error instead of surfacing as an `undefined` three layers downstream. Wrap the schema in `drift()` and each response is also diffed against its validated form, with every change leveled by severity — a renamed required field throws, a coercion the schema quietly absorbed surfaces as a `warn` on the event stream ([schema drift is a production bug](/blog/schema-drift-is-a-production-bug)). That's a class of failure an interceptor stack typically ships straight to production.
+
+Auth is a boundary too, not another interceptor: `bearer`, `apiKey`, `basic`, `cookieSession` with auto-login and re-login, and `oauth2` live on the stitch, and the secret resolves at call time. The caller gets data without ever holding the credential.
+
+## On dependency weight
+
+A reason teams cite for leaving axios is the supply-chain surface: it pulls a small tree of transitive dependencies, and every one of them is something you audit and trust. The lighter wrappers shrink that tree; native `fetch` removes it. StitchAPI's core is **zero-dependency** — nothing transitive to vet — and validator-agnostic, so you bring your own Standard Schema or Zod rather than inheriting a fixed one. If reducing what you install is part of why axios is leaving, it's worth weighing the whole tree, not just the top-level package.
+
+## The axis the older clients don't have
+
+If an AI agent is one of the callers, the category gap widens. A wrapper gives an agent importable code; it doesn't give it a front door. The same stitch is reachable four ways from one definition — an in-process function, a CLI command, an HTTP endpoint, and an MCP tool — so an agent calls the exact same validated, observable thing your code does, and gets a **capability, not a credential** ([stop writing `fetch()` in your agents](/blog/stop-writing-fetch-in-your-agents)). No axios alternative offers that, because it wasn't in scope for any of them.
+
+## A side-by-side
+
+| Axis                 | Fetch wrappers (ky, ofetch, native `fetch`) | A stitch (StitchAPI)                                    |
+| -------------------- | ------------------------------------------- | ------------------------------------------------------- |
+| **Category**         | a smaller HTTP client                       | a layer above `fetch`/axios (they're adapters)          |
+| **Retry / throttle** | retry built in; throttle is yours           | declared fields; throttle is proactive, host-scoped     |
+| **Timeouts**         | single timeout (or `AbortSignal`)           | layered — total + per-attempt                           |
+| **Response shape**   | typed by you, unchecked at runtime          | validated live on every call; leveled drift signals     |
+| **Auth**             | an interceptor you write                    | a boundary on the stitch; caller never holds the secret |
+| **Dependencies**     | small (or none, for native `fetch`)         | zero-dependency core, bring-your-own validator          |
+| **Agent surface**    | importable code; no built-in door           | function / CLI / HTTP / MCP from one definition         |
+
+## When a fetch wrapper is the right call
+
+This isn't a piece that ends with "so never use ky." There's a clear lane where a wrapper wins, and it's worth naming:
+
+-   **You call a few well-behaved endpoints.** No rate limits, no flakiness, no shifting shapes — most of a stitch's machinery would sit dormant, and a thin typed wrapper is less ceremony.
+-   **You won't write a schema.** A stitch's runtime guarantees come from its `output` validator. Skip it and you skip validation and drift, at which point a stitch is a fetch wrapper with extra steps — so use the actual wrapper.
+-   **You're already deep in an ecosystem.** If Nuxt gives you ofetch and it's working, switching layers for its own sake is churn, not progress.
+
+A stitch earns its keep on the opposite shape of problem: APIs that rate-limit, flake, or change shape without warning; heterogeneous surfaces — HTTP, GraphQL, SSE, an LLM endpoint — stitched under one model; and anywhere you want resilience, an auth boundary, and an agent front door declared on the primitive instead of assembled around a client per project.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+Declare one endpoint with a `retry` and an `output` schema, and watch the retry, the rate-limit handling, and the shape check that used to be three interceptors collapse into the declaration. The primitive itself is [The stitch](/docs/concepts/the-stitch), the policies live in [Retry](/docs/guides/resilience/retry), [Throttle](/docs/guides/resilience/throttle), and [Validation & drift](/docs/guides/validation/drift), and if you're coming from a generated client instead, there's [stitching vs. codegen](/blog/stitch-vs-codegen-api-clients).

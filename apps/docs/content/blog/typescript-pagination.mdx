@@ -1,0 +1,145 @@
+---
+title: Fetch All Pages of a Paginated API in TypeScript
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+description: Collecting every page of a cursor- or offset-paginated API in TypeScript means a while loop, cursor bookkeeping, and a concat you write by hand. This shows that loop, where it gets fragile under retries and rate limits, and how a stitch declares next and items so one await follows every page with auth, retry, and throttle applied per page.
+tags: [typescript, pagination, fetch, api, cursor]
+---
+
+Fetch all pages of a paginated API when you want every record in a single array and the endpoint hands you one page at a time. You reach for it the moment a list endpoint caps results at 50 or 100 and you need the whole set — every user, every order, every row behind a cursor or a page number.
+
+## The generic way: a while loop over the cursor
+
+The hand-rolled answer is a loop that follows the cursor off each page and concatenates the items. For a cursor API:
+
+```ts twoslash
+// @noErrors
+async function fetchAllUsers(): Promise<unknown[]> {
+    const all: unknown[] = [];
+    let cursor: string | undefined;
+
+    do {
+        const url = new URL('https://api.example.com/users');
+        if (cursor) url.searchParams.set('cursor', cursor);
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const body = (await res.json()) as {
+            results: unknown[];
+            nextCursor?: string;
+        };
+        all.push(...body.results);
+        cursor = body.nextCursor;
+    } while (cursor);
+
+    return all;
+}
+```
+
+An offset or page-number API is the same loop with a counter instead of a cursor — bump `page` until a short page (or an empty one) tells you to stop. For one well-behaved endpoint, this is fine; the logic is small and you can read it.
+
+The fragility shows up under real conditions. The loop fires requests back to back with nothing pacing them, so a rate-limited API answers page seven with a `429` and the whole run throws. Add retry and you're wrapping the `fetch` in backoff code, then a throttle to stay under the limit, then a guard so a misbehaving `nextCursor` can't loop forever — and all of it is now tangled into the pagination loop, re-written for the next paginated endpoint you hit. These are the same fixes one endpoint up: [retrying a failed fetch the right way](/blog/retry-fetch-in-typescript) and [rate-limiting your calls in TypeScript](/blog/rate-limit-api-calls-typescript).
+
+## The stitch way: declare next and items, await once
+
+A [stitch](/docs/concepts/the-stitch) turns the loop into two functions on a `paginate` field: how to find the next page, and which array to collect. You `await` once and get every page aggregated:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const allUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    paginate: {
+        next: (prevBody) => {
+            const cursor = (prevBody as { nextCursor?: string }).nextCursor;
+            return cursor ? { query: { cursor } } : undefined;
+        },
+        items: (value) => (value as { results: unknown[] }).results,
+        pages: 20,
+    },
+});
+
+const users = (await allUsers()) as unknown[]; // every page, one array
+```
+
+`next(prevBody, pagesFetched)` reads the cursor off the previous page's raw body and returns the input for the next page, merged over the original call — set only what changes. Return `undefined` to stop. `items(value)` selects the array to aggregate from each page; it defaults to the value itself when that value is already an array. `max` caps the page count as a safety net (default `50`), so a `next` that never returns `undefined` can't spin forever.
+
+For an offset or page-number API, `next` uses the page count it's handed instead of a cursor:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const allOrders = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    paginate: {
+        // pagesFetched is the count so far; ask for the next page until one is short.
+        next: (prevBody, pagesFetched) => {
+            const page = prevBody as { orders: unknown[] };
+            return page.orders.length === 100
+                ? { query: { page: pagesFetched + 1 } }
+                : undefined;
+        },
+        items: (value) => (value as { orders: unknown[] }).orders,
+    },
+});
+```
+
+### The part the manual loop keeps re-solving: per-page resilience
+
+The reason to declare pagination rather than write it is that the other concerns then apply to every page for free. `retry`, `throttle`, and auth are independent keys on the same stitch, and the page loop runs each page through all of them:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const mirror = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    retry: {
+        attempts: 4,
+        on: [429, 503],
+        backoff: 'expo-jitter',
+        respectRetryAfter: true,
+    },
+    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+    paginate: {
+        next: (prevBody) => {
+            const cursor = (prevBody as { nextCursor?: string }).nextCursor;
+            return cursor ? { query: { cursor } } : undefined;
+        },
+        items: (value) => (value as { results: unknown[] }).results,
+        pages: 100,
+    },
+});
+
+const rows = (await mirror()) as unknown[];
+```
+
+A `429` on page seven now recovers on its own through [retry](/docs/guides/resilience/retry), and [throttle](/docs/guides/resilience/throttle) keeps the whole run under five requests a second — applied **per page**, not once for the run. None of that touches the pagination logic; it's declared next to it. The two recipes go end to end: [loop a cursor API into one array](/docs/recipes/paginate-into-one-array) and [mirror a paginated API to NDJSON](/docs/recipes/mirror-a-paginated-api), the latter adding OAuth2 on the same declaration.
+
+One detail to get right: `next` reads the **raw body**, while `items` reads the value after [unwrap](/docs/guides/data/unwrap) runs. Reach for the cursor in `next` from where it actually lives in the response. And without an [`output` schema](/docs/guides/validation/validation) the aggregated rows arrive as `unknown[]` — hence the cast; add a schema and each row is typed and validated, and the cast goes away.
+
+## Where the hand-rolled loop tops out
+
+The `do/while` over a cursor is a fine floor. A handful of pages from a well-behaved endpoint you control — no rate limit, no flakiness — and the inline loop is exactly right. Start there.
+
+You reach for `paginate` when the loop hits a wall:
+
+-   **Rate limit on page seven.** A `429` mid-run means adding retry logic inside the loop — or pulling it out to a wrapper that now has to know about cursors. With `paginate`, `retry` is a field on the declaration.
+-   **Throttle across pages.** Keeping the whole run under N requests per second means coordinating state across iterations. `throttle` on the stitch applies it per page without touching the pagination logic.
+-   **An auth boundary.** Token refresh mid-run tangles into the loop. On a stitch it's a separate concern, declared beside `paginate`.
+-   **A second paginated endpoint that needs the same handling.** Copy-pasting the loop copies the retry logic too. The stitch's policy is reused across both declarations.
+
+The loop and `paginate` walk the same pages. The difference is where the surrounding concerns live — in the loop body each time, or declared once beside it. Crossing from loop to stitch is a field on a declaration, not a rewrite.
+
+One caveat in the other direction: `paginate` aggregates every page into a single array, so a result set too large to hold in memory is the one case to keep driving the loop yourself (or a generator), processing each page as it lands and discarding it.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+Give a stitch a `paginate` with a `next` and an `items`, and one `await` follows every page into a single array — with `retry` and `throttle` applied per page when you add them. The mechanics are in [Pagination](/docs/guides/data/pagination), the envelope handling in [Unwrap](/docs/guides/data/unwrap), and typed rows in [Validation](/docs/guides/validation/validation).

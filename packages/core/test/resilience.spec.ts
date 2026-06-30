@@ -122,7 +122,7 @@ test('throttle rate spaces sequential calls and emits throttled progress', async
             e.type === 'progress' && e.phase === 'throttled',
     );
     expect(throttled.length).toBeGreaterThanOrEqual(1);
-    expect(throttled.some((e) => (e.waitedMs ?? 0) > 0)).toBe(true);
+    expect(throttled.some((e) => (e.waited ?? 0) > 0)).toBe(true);
 });
 
 // ── 5. Throttle concurrency cap ────────────────────────────────────────────

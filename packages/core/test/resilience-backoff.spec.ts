@@ -12,31 +12,51 @@ import type { RetryOptions } from '../src/types';
 
 describe('backoffDelay', () => {
     test('fixed backoff is constant regardless of attempt', () => {
-        const o: RetryOptions = { backoff: 'fixed', baseMs: 50 };
+        const o: RetryOptions = { backoff: 'fixed', baseDelay: 50 };
         expect(backoffDelay(2, o)).toBe(50);
         expect(backoffDelay(7, o)).toBe(50);
     });
 
-    test('expo backoff doubles from attempt 2 (baseMs * 2^(attempt-2))', () => {
-        const o: RetryOptions = { backoff: 'expo', baseMs: 100 };
+    test('expo backoff doubles from attempt 2 (baseDelay * 2^(attempt-2))', () => {
+        const o: RetryOptions = { backoff: 'expo', baseDelay: 100 };
         expect(backoffDelay(1, o)).toBe(100); // exp clamped to 0
         expect(backoffDelay(2, o)).toBe(100); // 100 * 2^0
         expect(backoffDelay(3, o)).toBe(200); // 100 * 2^1
         expect(backoffDelay(4, o)).toBe(400); // 100 * 2^2
     });
 
-    test('expo backoff is capped at maxMs', () => {
-        const o: RetryOptions = { backoff: 'expo', baseMs: 100, maxMs: 1000 };
+    test('expo backoff is capped at maxDelay', () => {
+        const o: RetryOptions = {
+            backoff: 'expo',
+            baseDelay: 100,
+            maxDelay: 1000,
+        };
         expect(backoffDelay(20, o)).toBe(1000);
     });
 
-    test('expo-jitter (the default) stays within [0, computed) and under maxMs', () => {
+    test('baseDelay/maxDelay accept duration strings (P17 widening)', () => {
+        const o: RetryOptions = {
+            backoff: 'expo',
+            baseDelay: '1s',
+            maxDelay: '3s',
+        };
+        expect(backoffDelay(2, o)).toBe(1000); // '1s' → 1000ms
+        expect(backoffDelay(4, o)).toBe(3000); // 4000 clamped to '3s'
+    });
+
+    test('the @deprecated baseMs/maxMs aliases still pace the curve (P17)', () => {
+        const o: RetryOptions = { backoff: 'expo', baseMs: 100, maxMs: 1000 };
+        expect(backoffDelay(2, o)).toBe(100);
+        expect(backoffDelay(20, o)).toBe(1000);
+    });
+
+    test('expo-jitter (the default) stays within [0, computed) and under maxDelay', () => {
         for (let i = 0; i < 100; i++) {
-            const d = backoffDelay(3); // default baseMs 100 → computed 200
+            const d = backoffDelay(3); // default baseDelay 100 → computed 200
             expect(d).toBeGreaterThanOrEqual(0);
             expect(d).toBeLessThan(200);
         }
-        const capped: RetryOptions = { baseMs: 100, maxMs: 500 };
+        const capped: RetryOptions = { baseDelay: 100, maxDelay: 500 };
         for (let i = 0; i < 100; i++) {
             // attempt 10 → computed 25_600; jitter is large but the cap holds.
             expect(backoffDelay(10, capped)).toBeLessThanOrEqual(500);

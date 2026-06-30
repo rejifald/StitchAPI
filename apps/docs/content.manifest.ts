@@ -200,14 +200,21 @@ export const pages: Page[] = [
         path: 'recipes/catch-a-breaking-api-change',
         title: 'Catch a breaking API change before your users do',
         description:
-            'Wrap output with drift to compare every response against a committed snapshot and flag dropped fields, type flips, and new keys by severity.',
+            'Wrap output with drift to validate every response against the declared schema and catch a dropped required field, a type coercion, or an undeclared new key.',
         kind: 'guide',
     },
     {
         path: 'recipes/catch-a-selector-rename',
         title: 'Catch a silent selector rename in scraped HTML',
         description:
-            'Scrape an HTML page into a structured object with transform, then drift the structured shape so a markup or selector rename becomes a loud contract error instead of a silently missing field.',
+            'Scrape an HTML page into a structured object with transform, then drift the structured shape against its schema so a markup or selector rename becomes a hard contract error instead of a silently missing field.',
+        kind: 'guide',
+    },
+    {
+        path: 'recipes/inspect-what-the-server-sent',
+        title: 'Inspect what the server actually sent',
+        description:
+            'Probe a fresh call with .inspect() to read the unredacted raw body next to the validated value and the drift findings diffed between them — without throwing — when you need to see what changed after the fact.',
         kind: 'guide',
     },
     {
@@ -262,10 +269,31 @@ export const pages: Page[] = [
         kind: 'concept',
     },
     {
+        path: 'concepts/the-seam',
+        title: 'The seam',
+        description:
+            'The shared-runtime primitive a set of stitches belong to — one store, vault, throttle bucket, and trace sink behind a shared base config and a trusted principal boundary.',
+        kind: 'concept',
+    },
+    {
         path: 'concepts/event-stream',
         title: 'The event stream',
         description:
             'Why a stitch returns an async iterable of typed events — start, progress, drift, result, done — instead of Promise<bytes>.',
+        kind: 'concept',
+    },
+    {
+        path: 'concepts/run-identity',
+        title: 'Run identity & the trace tree',
+        description:
+            'How a stitch identifies one call and its place in a tree — a shared traceId, the span id (spanId), and a parentSpanId — so composed runs form one OpenTelemetry span tree, and how that maps onto the traceparent header on the wire.',
+        kind: 'concept',
+    },
+    {
+        path: 'concepts/correlation-vs-idempotency',
+        title: 'Correlation vs idempotency',
+        description:
+            'Two keys that look alike but answer different questions — an idempotency key decides what makes two attempts the same write, a correlation/trace id identifies one request for logs and spans — and why they stay separate fields.',
         kind: 'concept',
     },
     {
@@ -296,6 +324,13 @@ export const pages: Page[] = [
         title: 'extends',
         description:
             'Layer fragments — strings, objects, or other stitches — with deep-merge to compose configuration.',
+        kind: 'guide',
+    },
+    {
+        path: 'guides/authoring/seam',
+        title: 'seam',
+        description:
+            'Group stitches under one shared runtime — store, vault, throttle bucket, and trace sink — behind a shared base config, and bind per-principal sessions with seam.as().',
         kind: 'guide',
     },
     {
@@ -460,9 +495,9 @@ export const pages: Page[] = [
     },
     {
         path: 'guides/validation/drift',
-        title: 'Leveled drift',
+        title: 'Drift detection',
         description:
-            'Detect silent contract changes as leveled findings (error/warn/info) against a committed snapshot.',
+            'Detect silent contract changes as non-fatal findings by diffing the raw response against the validated value.',
         kind: 'guide',
     },
     {
@@ -665,7 +700,7 @@ export const pages: Page[] = [
         path: 'errors/stitch-drift',
         title: 'STITCH_DRIFT',
         description:
-            'An error-level drift finding broke the response contract.',
+            'A required field was missing or incompatible, breaking the response contract.',
         kind: 'error',
         code: 'STITCH_DRIFT',
     },

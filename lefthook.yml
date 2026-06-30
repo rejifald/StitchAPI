@@ -18,7 +18,7 @@ pre-commit:
         # CI's `size` job does the authoritative measured check. Keep this glob in
         # sync with the FILES list in scripts/check-size-docs.mjs.
         - name: size-docs
-          glob: '{README.md,packages/core/README.md,apps/docs/**/installation.mdx,apps/docs/**/principles.mdx,apps/docs/**/metrics.tsx,packages/core/scripts/bundle-size.mjs}'
+          glob: '{README.md,packages/core/README.md,apps/docs/**/installation.mdx,apps/docs/**/principles.mdx,apps/docs/**/metrics.tsx,apps/docs/lib/source.ts,packages/core/scripts/bundle-size.mjs}'
           run: pnpm check:size-docs
         # README metrics badge block must match the committed snapshot. Tool-free
         # drift guard (renders from scripts/readme-metrics.snapshot.json) — mirrors
@@ -51,6 +51,10 @@ pre-push:
           run: pnpm check:format
         - name: lint
           run: pnpm check:lint
+        # API meta-contract ratchet (docs/CONTRACT.md). Cheap source scan, fail-fast before
+        # the expensive test/build jobs. Mirrors CI's check:contract step.
+        - name: contract
+          run: pnpm check:contract
         - name: typecheck
           run: pnpm check:types
         # Type-level tests (tsd) for the inferred public API — builds the package's d.ts and

@@ -13,7 +13,7 @@ A `stitch` is a typed declarative call: invoking it returns a `StitchResult<T>` 
 ## Install
 
 ```sh
-pnpm add @stitchapi/query-core stitchapi
+pnpm add @stitchapi/query-core@rc stitchapi@rc
 ```
 
 `stitchapi` is a peer dependency (`>=0.7.0`).
@@ -95,3 +95,7 @@ const q = createStitchQuery(tokens, undefined, { stream: true });
 ## License
 
 Apache-2.0
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

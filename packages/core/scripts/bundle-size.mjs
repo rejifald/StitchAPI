@@ -45,16 +45,76 @@ const KB = 1024;
 // for custom trace sinks) both sit on the core path; they push the entry to ~22.04 /
 // ~17.78 KB gzip. The +0.25 KB step restores the same tight headroom (~0.2 KB) the
 // gate is meant to keep.
+//
+// Budgets raised for `.inspect()` — ADR 0016 (22.25→22.65 / 18.0→18.30 KB): the
+// never-throwing raw-body + drift-findings probe is baked into the core path by design
+// (ADR 0016 Decision 6 — it reuses 0015's diff/findings, so it ships always, opt-in by
+// call, and cannot move to a subpath). The retainRaw/bypassCache run flags, the
+// `Inspection` wrapper consumer, and the contract-violation raw-pinning add ~0.19 / ~0.12
+// KB gzip (entry ~22.44 / stitch ~18.12). The step restores the same tight ~0.2 KB
+// headroom the gate is meant to hold.
+//
+// Budgets raised for adapter capabilities + the upload-progress teaching note — ADR 0005
+// Decision 9 addendum (22.65→22.95 / 18.30→18.55 KB): the built-in adapters now declare a
+// `capabilities` descriptor (a positive `supports` list) and the engine emits one `info`
+// event when a call asks for upload progress a transport whose `supports` omits it can't
+// give (turning a silent dead bar into a teaching note). Both sit on the core path — the
+// check is in `execute` and the default `fetch` adapter carries the descriptor — so neither
+// can move to a subpath. They add ~0.10 / ~0.04 KB gzip (entry ~22.74 / stitch ~18.34). The
+// step restores the same tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for core composition primitives + the API meta-contract sweep
+// (22.95→23.35 / 18.55→18.80 KB): two waves of intentional, already-merged work
+// landed on the core path since #362. (1) Composition gained parallel all/any/race
+// with auto-cancellation (#368), linked() replacing pipe() as a run scope
+// (#369/#370), and variadic argument lists (#371) — core-entry surface, so it lifts
+// the whole entry more than `import { stitch }`, which tree-shakes it away. (2) The
+// meta-contract sweep (#352, P3–P20) renamed/de-suffixed public fields and co-emits
+// the old names as @deprecated runtime aliases (throttle.scope→pool, key→keyOf;
+// value→data on result envelopes; *Ms duration de-suffixing) — shared code on
+// stitch's own path. Together they reach ~23.13 / ~18.61 KB gzip (+~0.39 / +~0.27
+// since #362). Neither wave can move to a subpath — composition and the renamed
+// result/throttle/circuit surfaces are the core API. The step restores the same
+// tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for the idempotency-misuse nudges + the OTLP-name alignment (23.35→23.55 /
+// 18.80→19.0 KB; measured 23.32 / 18.80). Stacking on the wave above, two more things land on the core
+// path and can't move to a subpath: (1) two construction-time `idempotency` nudges in
+// `makeStitch` — on a read (the key is write-only, so it's silently dropped — almost always a
+// missing `method: 'POST'`) and on a random key with no `retry` (it only dedupes the call's own
+// retries), both silenced by `idempotency.warn = false`; and (2) the run-identity rename to the
+// OTel span names (`runId`→`spanId`, `parentId`→`parentSpanId`, CONTRACT.md P22), whose longer
+// public property names are emitted verbatim on every `start` event / trace ctx and can't be
+// minified. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for the `.inspect()` redaction option + the enhanced result object (23.55→23.95 /
+// 19.0→19.45 KB; measured 23.77 / 19.25). Two more ADR-0016 deferrals land on the core path and
+// can't move to a subpath — both attach to the core Stitch surface: (1) ADR 0018 adds an opt-in
+// `redact` to `.inspect()` (a `redactSecretsDeep` deep-clone scrubber reusing the shared secret-key
+// denylist, wired at the `.inspect()` assembly site); and (2) ADR 0019 adds `.report()` returning
+// `RunReport<T>` — the `source` discriminator on `Inspection`, plus `attempts`/`timing`/`config`/
+// `cache` diagnostics drained off the existing event spine (no new engine events). `.report()` is a
+// method on every stitch, so it lifts `import { stitch }` as much as the whole entry — it can't
+// tree-shake away. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for array drift summarization — ADR 0017 (23.95→24.20 / 19.45→19.70 KB; measured
+// 23.99 / 19.48). `classifyDiff` swaps its first-wins `change|path` dedup for group-then-summarize:
+// array groups are kept and branched on `detail` homogeneity (homogeneous → one `all N elements: …`
+// summary with a concrete-index `sample`; heterogeneous → one finding per distinct detail variant).
+// This fixes a real correctness gap — first-wins silently dropped a second, genuinely-different drift
+// at the same collapsed `[]` path — so it isn't optional and sits in the shared drift/classify layer
+// that feeds both the `drift` event and `Inspection.findings`; it can't move to a subpath. It adds
+// ~0.04 / ~0.03 KB gzip. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 22.25 * KB,
+        budget: 24.2 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 18.0 * KB,
+        budget: 19.7 * KB,
     },
 ];
 

@@ -1,18 +1,21 @@
 ---
 title: 'Catch a breaking API change before your users do'
-description: 'Wrap output with drift to compare every response against a committed snapshot and flag dropped fields, type flips, and new keys by severity.'
+description: 'Wrap output with drift to validate every response against the declared schema and catch a dropped required field, a type coercion, or an undeclared new key.'
+prerequisites: ['/docs/concepts/the-stitch', '/docs/getting-started/quickstart']
 ---
 
 ## Task
 
 A vendor can rename or drop a field without telling you, and a plain type check
-will not notice until something breaks in production. You want to be warned the
-moment the response shape moves — and to triage it by severity, not panic on
-every change.
+will not notice until something breaks in production. You want a hard failure the
+moment a field you depend on disappears, and soft notifications for other
+structural changes — without committing a snapshot or maintaining a baseline.
 
 ## Example
 
-One way: wrap the `output` schema with `drift` and a committed baseline.
+Wrap the `output` schema with `drift`. The schema _is_ the contract. Declare
+the fields you depend on as **required** — their disappearance will throw
+immediately.
 
 ```ts twoslash
 import { drift, stitch } from 'stitchapi';
@@ -21,11 +24,10 @@ import { z } from 'zod';
 const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    output: drift(z.object({ id: z.number(), email: z.string() }), {
-        critical: ['id'],
-        watch: ['email'],
-        snapshotFile: 'users.contract.json',
-    }),
+    output: drift(
+        // `id` and `email` are required: if either disappears the call throws.
+        z.object({ id: z.number(), email: z.string() }),
+    ),
 });
 
 const user = await getUser({ params: { id: 1 } });
@@ -33,21 +35,38 @@ const user = await getUser({ params: { id: 1 } });
 
 ## How it works
 
-The first call records the baseline into `users.contract.json` (check it into
-the repo); every call after compares the response and emits leveled findings.
-`critical` paths change at level `error` — that breaks the contract and throws
-[`STITCH_DRIFT`](/docs/errors/stitch-drift). `watch` paths change at `warn`, and
-brand-new fields default to `info` (`onNew`). `warn` and `info` findings do
-**not** throw — they ride the [event stream](/docs/concepts/event-stream) as
-`drift` events, so you can [watch a field erode](/docs/recipes/watch-a-call-as-it-happens)
-before it breaks. This is the opposite end from plain
-[validation](/docs/guides/validation/validation), which rejects one malformed
-response hard, here and now.
+Every call validates the response against the schema first. If a required field
+is missing or has an incompatible value, validation throws
+[`STITCH_DRIFT`](/docs/errors/stitch-drift) immediately — a `drift` finding with
+`change: 'invalid'` and `level: 'error'`. No soft-level configuration is needed
+to make this fatal; making a field required in the schema is sufficient.
+
+On a clean validation, drift diffs the raw body against the validated value and
+emits any difference as a non-fatal `drift` event on the
+[event stream](/docs/concepts/event-stream):
+
+-   `undeclared` (`info` by default) — a key the schema stripped; the API added
+    something you do not model.
+-   `coerced` (`warn` by default) — a value the schema coerced, e.g. `"42"` → `42`;
+    a wire-type shift that validation hides.
+-   `defaulted` (`verbose` by default) — a `.default()` fired because the field
+    was absent.
+
+These non-fatal findings do not throw — they ride the event stream so you can
+[watch a field erode](/docs/recipes/watch-a-call-as-it-happens) before it
+becomes a hard failure. Declared variance (an optional field absent, a nullable
+null, an empty array) validates clean and produces no finding. Drift sits at the
+opposite end from plain [validation](/docs/guides/validation/validation), which
+rejects one malformed response hard, here and now.
+
+The call returns the **validated value** — defaults applied, unknown keys
+stripped, types coerced — so the result matches the declared TypeScript type
+exactly.
 
 ## See also
 
 <Cards>
-    <Card title="Leveled drift" href="/docs/guides/validation/drift" />
+    <Card title="Drift detection" href="/docs/guides/validation/drift" />
     <Card title="Validation" href="/docs/guides/validation/validation" />
     <Card title="STITCH_DRIFT" href="/docs/errors/stitch-drift" />
     <Card

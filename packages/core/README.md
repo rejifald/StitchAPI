@@ -4,11 +4,9 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.2`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is very welcome.
+> **StitchAPI is at `1.0.0-rc.3`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 **Turn any REST, GraphQL, SSE, or LLM API into a typed, resilient function.** Its one primitive — a **stitch** — takes a single endpoint and hands you back a callable: declare the endpoint's contract once (input, output, auth, resilience) and call it like a local function. No server, no codegen, no config files — only explicit composition. The same definition your code calls, the CLI runs and an AI agent can invoke without ever touching a credential.
-
-The name StitchAPI combines the words “stitch” and “API,” reflecting its core purpose: to “stitch” or seamlessly connect any JSON-based API into your project. The term “stitch” conveys the idea of binding or linking various APIs into a unified system within your project.
 
 **Full documentation, guides, and a live playground live at [stitchapi.dev](https://stitchapi.dev).**
 
@@ -111,7 +109,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 -   **One primitive, scoped to a surface** - `stitch(url | config)` returns a typed, callable function. One endpoint is a bare `stitch`; **a service with more than one endpoint is a `seam`** — declare the shared base, auth, and throttle budget once, add each endpoint with `.stitch()`, and members share config _and_ runtime (one store, throttle bucket, sink) behind a trusted principal boundary. Lighter, runtime-free sharing — a config fragment, or deriving one stitch from another — is `extends`, with `.with()` partial application on top.
 -   **Event-stream core** - every call yields a typed stream (`start → progress → drift → result → done`); `await` is sugar that consumes it and returns the final validated value.
 -   **Bring-your-own validation** - validate `params` / `query` / `body` / `headers` and the response with [Zod](https://zod.dev) or any [Standard Schema](https://standardschema.dev) library (Valibot, ArkType, …); TypeScript types are inferred from the schemas.
--   **Leveled drift detection** - live responses are diffed against a committed contract snapshot; changes surface as `error` / `warn` / `info` findings instead of a silent `undefined`.
+-   **Leveled drift detection** - live responses are validated against the declared schema (the contract); a required field missing/incompatible **throws**, while soft drift (a coercion, an undeclared or defaulted field) surfaces as a non-fatal `warn` / `info` / `verbose` finding instead of a silent `undefined`.
 -   **Declared resilience** - retry with backoff and `Retry-After`, proactive throttle (rate + concurrency, per stitch or per host), total / per-attempt timeouts with real aborts, a circuit breaker, and idempotency keys.
 -   **Read-through caching** - an opt-in response cache with in-process request coalescing, keyed by a derived, principal-scoped key — sound by construction (it refuses to cache a shape it can't fingerprint) and loaded lazily from `stitchapi/cache`.
 -   **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `secretsFile()` and never reach the caller.
@@ -122,7 +120,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 -   **CLI, HTTP & MCP surfaces** - the definition your code imports is also runnable from the shell (`stitch run <name>` streams JSONL events), served over HTTP (`stitch serve`), or exposed to agents over MCP (`stitch mcp`) — the same stitch behind every front door.
 -   **Typed URLs** - full [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates (`{id}`, `{+path}`, `{?q,sort}`, explode `*`, prefix `:n`), and a `qs`-style query builder that serializes nested objects (`a[b]=c`) and arrays — both dependency-free.
 -   **Pluggable transport** - `fetch` by default; drop in the shipped `axiosAdapter`, or any `Adapter` function, to route requests through axios or another HTTP client.
--   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~22 kB min+gzip**; a typical `import { stitch }` trims to **~18 kB** — and with no transitive tree, that is the entire cost.
+-   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~24 kB min+gzip**; a typical `import { stitch }` trims to **~19 kB** — and with no transitive tree, that is the entire cost.
 
 ## Documentation
 
@@ -139,19 +137,19 @@ Design notes and positioning live in the repo:
 Using npm:
 
 ```bash
-$ npm install stitchapi
+$ npm install stitchapi@rc
 ```
 
 Using yarn:
 
 ```bash
-$ yarn add stitchapi
+$ yarn add stitchapi@rc
 ```
 
 Using pnpm:
 
 ```bash
-$ pnpm add stitchapi
+$ pnpm add stitchapi@rc
 ```
 
 Once the package is installed, you can import the library using `import` or `require` approach:
@@ -164,7 +162,7 @@ const { stitch } = require("stitchapi");
 
 The runtime ships with zero dependencies. Schema validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator ([Valibot](https://valibot.dev), [ArkType](https://arktype.io), …); none of them is bundled. The examples below use Zod for familiarity.
 
-**Bundle size.** The whole `stitchapi` entry is **~22 kB minified + gzipped** (~61 kB raw, ~19 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~18 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
+**Bundle size.** The whole `stitchapi` entry is **~24 kB minified + gzipped** (~64 kB raw, ~20 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~19 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
 
 ## Quick start
 
@@ -337,13 +335,14 @@ await adminUsers({ query: { q: 'ada' } }); // → /users?role=admin&q=ada
 
 ## Validation & leveled drift
 
-Validation is not binary pass/fail. Wrap the `output` schema in `drift()` and every live response is compared against the schema **and** a committed contract snapshot, with each difference classified by level:
+Validation is not binary pass/fail. The declared `output` schema **is** the contract. Wrap it in `drift()` and a response is validated (returning the validated value — coerced, defaulted, unknown keys stripped), and the difference between the raw body and that validated value is reported as a leveled, non-fatal signal:
 
-| Level     | Trigger                                            | Behavior                         |
-| --------- | -------------------------------------------------- | -------------------------------- |
-| **error** | a `critical` field went missing or changed type    | fails the call (`error` event)   |
-| **warn**  | a watched / non-critical field changed             | `warn` event; the call succeeds  |
-| **info**  | a brand-new field appeared that the contract lacks | `info` event — “want to use it?” |
+| Change         | What it means                                                              | Default level |
+| -------------- | -------------------------------------------------------------------------- | ------------- |
+| **invalid**    | a required field is missing or incompatible — **throws**                   | `error`       |
+| **coerced**    | the schema coerced a value (`"42"`→`42`): a wire-type shift validation hid | `warn`        |
+| **undeclared** | the response carried a key the schema strips                               | `info`        |
+| **defaulted**  | a `.default()` fired because the field was absent                          | `verbose`     |
 
 ```ts
 import { drift, stitch } from 'stitchapi';
@@ -355,16 +354,14 @@ const listOrders = stitch({
     output: drift(
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
-            critical: ['[].id'], // error when these break — you rely on them
-            watch: ['[].total'], // warn when this changes
-            onNew: 'info', // level for brand-new fields (default 'info')
-            snapshotFile: 'orders.contract.json', // committed baseline
+            ignore: ['[].meta'], // acknowledged, unconsumed fields — don't report them
+            severity: { coerced: 'info' }, // re-level a kind, or pass a level/list to filter
         },
     ),
 });
 ```
 
-The first run records the baseline and reports nothing; later runs emit leveled `drift` events on the stream (array elements are addressed as `[].field`). A silently renamed field — the classic integration breakage — becomes a loud, leveled signal instead of an `undefined` three layers downstream.
+Drift is **schema-anchored** — no snapshot to manage. Severity lives in the schema: a required field that goes missing or turns incompatible is a hard `invalid` that **throws**; everything else is non-fatal drift you read off the event stream. So natural variance is never a false alarm — an optional field absent, a `string | null` that's null, an empty or heterogeneous array all validate clean and report nothing. `ignore` silences fields you know about without bloating the schema; `severity` filters (a level / list) or re-levels (a map) the soft signals. Drift watches the surface you declared; what the provider changes in fields you don't model is, by definition, change you don't consume.
 
 The request side validates too. `input` takes a schema per part, and a mismatch fails fast with a `ValidationError` before any request is sent:
 
@@ -955,3 +952,7 @@ The features once staged here have all shipped — the multi-cookie jar, circuit
 ## License
 
 [Apache-2.0](LICENSE)
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

@@ -22,3 +22,7 @@ registerFingerprinter(zodFingerprinter);
 ```
 
 Compliance is proven against `verifyFingerprintContract` from `stitchapi/testing`.
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

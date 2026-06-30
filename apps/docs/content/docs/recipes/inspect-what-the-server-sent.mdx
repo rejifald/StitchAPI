@@ -1,0 +1,109 @@
+---
+title: 'Inspect what the server actually sent'
+description: 'Probe a fresh call with .inspect() to read the unredacted raw body next to the validated value and the drift findings diffed between them — without throwing — when you need to see what changed after the fact.'
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/event-stream']
+---
+
+## Task
+
+The schema coerced a field, filled a default, or stripped a key — and now you
+want to see what the server _actually_ sent. An `await getUser(...)` hands back
+only the validated value; the raw body and the soft drift findings rode the
+[event stream](/docs/concepts/event-stream) and are gone. You want both, on the
+resolved result, without consuming a stream and without throwing when the
+response breaks the contract.
+
+## Example
+
+`.inspect()` runs one fresh call and resolves to an `Inspection` —
+`{ value, raw, findings, status, error }`. It never throws: a hard contract
+violation comes back as `value: null` with `error` set, and `raw` / `findings` /
+`status` still populated.
+
+```ts twoslash
+// [!code fold:start]
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getUser = stitch({
+    baseUrl: 'https://demo.stitchapi.dev',
+    path: '/users/{id}',
+    unwrap: 'data',
+    output: drift(
+        z.object({ id: z.number(), name: z.string(), role: z.string() }),
+    ),
+});
+// [!code fold:end]
+const result = await getUser.inspect({ params: { id: 1 } });
+
+result.data; // the validated User (coerced/defaulted/stripped) — or null on a hard fail
+result.findings; // every drift finding: undeclared, coerced, defaulted, invalid
+result.status; // the HTTP status, so `raw` is interpretable (a 422 body reads unlike a 200)
+result.error; // a StitchError on a contract violation, else null — value/error are inverse
+
+// `raw` is the pre-validation body the findings are diffed against. Reach for it
+// deliberately (see the caveat below); here, only when something actually drifted.
+if (result.findings.length > 0) {
+    console.log('server sent:', result.raw);
+}
+```
+
+`value` is the same validated value `await getUser(...)` returns; `raw` is the
+body _before_ validation, the coordinate space each `finding.path` is anchored
+to. The pair is self-explaining: a `coerced` finding at `role` plus
+`result.raw.role` tells you exactly which wire value the schema rewrote.
+
+## How it works
+
+`.inspect()` consumes one run with the raw body retained and surfaces it on a
+**non-enumerable** field. The other four fields are ordinary properties; `raw`
+alone is hidden, so it cannot leak into a log by accident.
+
+<Callout type="warn">
+    **Anti-pattern:** don't log the whole wrapper — `raw` is **unredacted**, so
+    a stray token or PII in an undeclared field would land in your logs. Because
+    `raw` is non-enumerable, `JSON.stringify(result)`, `{...result}`, and trace
+    sinks all skip it; that protection only holds if you don't defeat it. Read
+    `result.raw` deliberately, at the one place you mean to.
+</Callout>
+
+<Callout type="warn">
+    **`.inspect()` always hits the network.** It is a fresh probe — it bypasses
+    the cache by default, reading and writing neither — so it is _not_ an observer
+    of what your cached `await` call did. Pass `{ cache: true }` to honour the
+    cache policy instead; on a cache hit the entry stores only `{ value, status }`,
+    so `raw` is then `null`.
+</Callout>
+
+```ts twoslash
+// [!code fold:start]
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://demo.stitchapi.dev',
+    path: '/users/{id}',
+    cache: { ttl: '60s' },
+});
+// [!code fold:end]
+// Honour the cache; on a hit, `raw` is null (the cache holds no raw body).
+const cached = await getUser.inspect({ params: { id: 1 } }, { cache: true });
+```
+
+`raw` is `null` on a [streaming surface](/docs/concepts/event-stream) too — the
+engine refuses to buffer an unbounded delta spine — while `findings` and `status`
+still populate; use `.stream()` for incremental inspection there.
+
+## See also
+
+<Cards>
+    <Card title="Drift detection" href="/docs/guides/validation/drift" />
+    <Card
+        title="Catch a breaking API change before your users do"
+        href="/docs/recipes/catch-a-breaking-api-change"
+    />
+    <Card
+        title="Watch retries and throttling as they happen"
+        href="/docs/recipes/watch-a-call-as-it-happens"
+    />
+    <Card title="STITCH_DRIFT" href="/docs/errors/stitch-drift" />
+</Cards>

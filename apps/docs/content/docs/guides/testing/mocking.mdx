@@ -1,6 +1,7 @@
 ---
 title: 'Testing'
 description: 'Mock the transport to test a stitch definition, or swap in a fake stitch to test code that calls one — from stitchapi/testing.'
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 There are two things to test, and a tool for each. To test a **stitch
@@ -74,13 +75,13 @@ Omit `match` (and `method`) and the route catches every request.
 `respond` is one of three shapes:
 
 -   a single **`MockResponse`** — one fixed reply. Its fields: `status`,
-    `headers`, `body`, `stream`, `delayMs`, `retryAfter`.
+    `headers`, `body`, `stream`, `delay`, `retryAfterSeconds`.
 -   an **array** of them — one per call, the last entry repeating, which is how
     you drive a retry sequence,
 -   a **function** `(call) => MockResponse` that sees `call.index` and
     `call.req` — for pagination.
 
-`body` is the already-decoded body: an object is delivered as-is. `delayMs` is
+`body` is the already-decoded body: an object is delivered as-is. `delay` is
 **abortable**, so a stitch `timeout` cancels it just like a real slow endpoint.
 
 A status sequence drives [retry](/docs/guides/resilience/retry), and the call
@@ -99,7 +100,7 @@ const call = stitch({
     baseUrl: 'https://api.test',
     path: '/flaky',
     adapter: api,
-    retry: { attempts: 3, on: [503], baseMs: 1 },
+    retry: { attempts: 3, on: [503], baseDelay: 1 },
 });
 
 await call(); // { ok: true } — the third reply
@@ -309,7 +310,7 @@ const call = stitch({
     baseUrl: 'https://api.test',
     path: '/flaky',
     adapter: api,
-    retry: { attempts: 2, on: [503], baseMs: 10_000 },
+    retry: { attempts: 2, on: [503], baseDelay: 10_000 },
     clock,
 });
 
@@ -322,7 +323,7 @@ await p; // { ok: true } — with zero real waiting
 `advance(ms)` fires every backoff/pacing/timeout due at or before the new time, in
 order, and `pending()` reports the timers still waiting. The default is the real
 `systemClock` (exported from the main entry), so this changes nothing until you
-inject a clock; you can also supply your own object implementing `Clock`. Note that
+inject a clock; you can also supply your own object implementing `Clock`.
 `timeout.total` and event timestamps stay on wall-clock.
 
 ## See also

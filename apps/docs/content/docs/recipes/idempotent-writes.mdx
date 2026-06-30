@@ -1,6 +1,7 @@
 ---
 title: 'Retry a write without double-charging'
 description: 'Attach an idempotency key so a retried POST settles once, not twice.'
+prerequisites: ['/docs/concepts/the-stitch', '/docs/getting-started/quickstart']
 ---
 
 ## Task
@@ -23,7 +24,7 @@ const createOrder = stitch({
     retry: { attempts: 3, on: [429, 503] },
     idempotency: {
         // body is unknown, so narrow it before reading a property.
-        key: (input) => `order-${(input.body as { ref: string }).ref}`,
+        keyOf: (input) => `order-${(input.body as { ref: string }).ref}`,
     },
 });
 
@@ -35,13 +36,13 @@ const order = await createOrder({ body: { ref: 'inv-1001' } });
 Each logical call carries a stable `Idempotency-Key` header. When
 [`retry`](/docs/guides/resilience/retry) replays the write, the server sees the
 same key and dedupes the side effect instead of running it twice. The default
-key is a random uuid generated once per call — already retry-safe; a custom
-`key` derives a stable value from the
+key is a random uuid generated once per call — already retry-safe; `keyOf` derives a stable value from the
 [input](/docs/reference/config-types) (here the order ref) so the same logical
-write always maps to the same key. Idempotency only pays off alongside retries.
+write always maps to the same key — which collapses two separate submissions
+(a double-click) even with no retry in play.
 
 <Callout type="warn">
-    A derived `key` must be stable for a given logical call and unique across
+    A derived `keyOf` must be stable for a given logical call and unique across
     distinct ones — colliding keys make the server dedupe two different writes
     into one.
 </Callout>

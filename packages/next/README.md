@@ -14,7 +14,7 @@ Built on Web standards only (`Response`, `ReadableStream`, `TextEncoder`) — **
 ## Install
 
 ```sh
-pnpm add @stitchapi/next stitchapi
+pnpm add @stitchapi/next@rc stitchapi@rc
 ```
 
 `stitchapi` is the only peer dependency.
@@ -69,3 +69,7 @@ Pass `request.signal` so a client disconnect tears the stitch down rather than l
 ## License
 
 Apache-2.0
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

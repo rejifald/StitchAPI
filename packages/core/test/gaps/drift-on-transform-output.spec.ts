@@ -1,8 +1,8 @@
 // Pins issue #149: drift runs on the TRANSFORM output, not the raw response body.
 //
 // The engine pipeline is transform → unwrap → validateOutput (engine.ts), so when a stitch
-// scrapes an HTML string into a structured object via `transform`, drift compares the
-// *structured* value against the baseline — exactly the high-value case where a silent
+// scrapes an HTML string into a structured object via `transform`, drift validates the
+// *structured* value against the schema — exactly the high-value case where a silent
 // markup/selector rename must become a loud contract error.
 //
 // The proof is in the drift PATH: `[].score` exists only on the parsed shape, never anywhere
@@ -13,7 +13,6 @@ import type { DriftFinding, StitchEvent } from '../../src';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 
-import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -34,12 +33,6 @@ afterAll(async () => {
 beforeEach(() => {
     server.reset();
 });
-
-const freshSnapshot = (): string =>
-    join(
-        tmpdir(),
-        `stitch-gap-drift-transform-${process.pid}-${Date.now()}.contract.json`,
-    );
 
 // Drain a stream into every event so we can inspect drift findings and ordering.
 async function collect<T>(
@@ -94,69 +87,51 @@ function scrape(html: unknown): { items: Record<string, unknown>[] } {
     return { items };
 }
 
-// The structured contract the rest of the pipeline (and drift) is written for.
+// The structured contract the rest of the pipeline (and drift) is written for. `score` is
+// REQUIRED and critical — a markup rename that drops it must be a loud error, not a silent gap.
 const schema = z.array(
     z.object({
         title: z.string(),
         link: z.string().optional(),
-        score: z.number().optional(),
+        score: z.number(),
     }),
 );
 
-test('drift fires on the TRANSFORM output: a critical scraped field renamed away is an error', async () => {
-    const snapshotFile = freshSnapshot();
-    try {
-        // call #1 has the original markup; call #2 renames the score cell's class.
-        server.route('GET', '/catalog', {
-            body: [page('score'), page('rank')],
-        });
+test('drift fires on the TRANSFORM output: a required scraped field renamed away is an error', async () => {
+    const listings = stitch({
+        baseUrl: server.url,
+        path: '/catalog',
+        transform: scrape, // HTML string -> { items: [...] }
+        unwrap: 'items',
+        // `score` is REQUIRED — losing it is a hard contract violation, validated on the
+        // STRUCTURED shape (`[].score` exists only on the parsed object, not the raw HTML).
+        output: drift(schema),
+    });
 
-        const listings = stitch({
-            baseUrl: server.url,
-            path: '/catalog',
-            transform: scrape, // HTML string -> { items: [...] }
-            unwrap: 'items',
-            output: drift(schema, {
-                // `[].score` is a path on the STRUCTURED shape, not the raw HTML — losing it
-                // silently corrupts ranking, so make it loud.
-                critical: ['[].score'],
-                snapshotFile,
-            }),
-        });
+    // Original markup: the transform yields a complete item — validates clean, no drift.
+    server.route('GET', '/catalog', { body: page('score') });
+    const first = await collect(listings.stream());
+    expect(driftFindings(first)).toHaveLength(0);
+    const firstResult = first.find((e) => e.type === 'result');
+    expect(
+        (firstResult as Extract<StitchEvent, { type: 'result' }>).data,
+    ).toEqual([{ title: 'Item A', link: '/i/1', score: 42 }]);
 
-        // First call: original markup. The transform yields a complete item; this records the
-        // baseline from the *transformed* shape (no drift, file written).
-        const first = await collect(listings.stream());
-        expect(driftFindings(first)).toHaveLength(0);
-        const firstResult = first.find((e) => e.type === 'result');
-        expect(firstResult).toBeDefined();
-        expect(
-            (firstResult as Extract<StitchEvent, { type: 'result' }>).value,
-        ).toEqual([{ title: 'Item A', link: '/i/1', score: 42 }]);
-        expect(existsSync(snapshotFile)).toBe(true);
+    // The score cell renamed `score` -> `rank`. The scraper silently drops `score`; the HTTP
+    // layer is none the wiser. Drift, validating the transformed value, must SHOUT — on a path
+    // (`[].score`) that exists only on the parsed object, proving it inspected the transform
+    // output, not the raw HTML body.
+    server.reset();
+    server.route('GET', '/catalog', { body: page('rank') });
+    const second = await collect(listings.stream());
+    const missing = driftFindings(second).find((f) => f.path.includes('score'));
+    expect(missing?.level).toBe('error');
+    expect(missing?.change).toBe('invalid');
+    expect(missing?.path).toBe('[].score');
 
-        // Second call: the score cell renamed `score` -> `rank`. The scraper silently drops
-        // `score`; the HTTP layer is none the wiser. Drift, seeing the transformed value, must
-        // SHOUT — and on a path (`[].score`) that exists only on the parsed object.
-        const second = await collect(listings.stream());
-        const findings = driftFindings(second);
-        const missing = findings.find((f) => f.path.includes('score'));
-        expect(missing).toBeDefined();
-        expect(missing?.level).toBe('error');
-        expect(missing?.change).toBe('missing');
-        // The path is the structured shape's index path, proving drift inspected the transform
-        // output, not the raw HTML body (which has no `score` field anywhere).
-        expect(missing?.path).toContain('score');
-
-        // A critical-field drift is a contract violation: no `result`, the stream errors, and
-        // the await path rejects (not a silent `undefined`).
-        expect(second.some((e) => e.type === 'result')).toBe(false);
-        expect(second.some((e) => e.type === 'error')).toBe(true);
-
-        server.reset();
-        server.route('GET', '/catalog', { body: page('rank') }); // always drifted now
-        await expect(listings()).rejects.toThrow();
-    } finally {
-        rmSync(snapshotFile, { force: true });
-    }
+    // A required-field violation is a contract break: no `result`, the stream errors, and the
+    // await path rejects (not a silent `undefined`).
+    expect(second.some((e) => e.type === 'result')).toBe(false);
+    expect(second.some((e) => e.type === 'error')).toBe(true);
+    await expect(listings()).rejects.toThrow();
 });

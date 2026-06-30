@@ -1,10 +1,11 @@
 ---
 title: Next.js
 description: Web-standard helpers for Next App Router route handlers — sseResponse streams a stitch as text/event-stream, and stitchErrorResponse maps a StitchError to a Response.
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
 Next App Router route handlers are **Web-standard**: they take a `Request` and return
-a `Response`. So a stitch already runs in one directly — define a [`seam`](/docs/concepts/event-stream)
+a `Response`. So a stitch already runs in one directly — define a [`seam`](/docs/concepts/the-seam)
 once and call it in the handler. `@stitchapi/next` adds the two bits you'd otherwise
 hand-roll on the Web platform: streaming a stitch as Server-Sent Events, and mapping a
 `StitchError` to a `Response`.

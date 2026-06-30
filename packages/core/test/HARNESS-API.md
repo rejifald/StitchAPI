@@ -50,11 +50,11 @@ const s2 = s.with({ query: { role: 'admin' } });   // partial application -> new
 ## Events (each also has `at: number`)
 
 -   `{ type:'start', name, method, url, input }`
--   `{ type:'progress', phase:'auth'|'request'|'throttled'|'retry'|'paginate', attempt, detail?, waitedMs? }`
--   `{ type:'drift', finding:{ level:'error'|'warn'|'info', path, change:'missing'|'type-changed'|'nullable'|'new'|'invalid', detail? } }`
+-   `{ type:'progress', phase:'auth'|'request'|'throttled'|'retry'|'paginate', attempt, detail?, waited? }`
+-   `{ type:'drift', finding:{ level:'error'|'warn'|'info'|'verbose', path, change:'invalid'|'undeclared'|'coerced'|'defaulted', detail? } }`
 -   `{ type:'result', value, status, attempts }`
 -   `{ type:'error', name, message, status?, attempts }`
--   `{ type:'done', ok, ms, attempts }`
+-   `{ type:'done', ok, elapsed, attempts }`
 
 ## Composition (all equivalent — one engine)
 
@@ -71,8 +71,8 @@ Merge: scalars replace, objects deep-merge, `hooks` CHAIN (onRequest base→chil
 
 ## drift(schema, opts)
 
-`opts = { critical?: string[], watch?: string[], onNew?: 'error'|'warn'|'info' (default info), snapshotFile?: string }`.
-Drift needs `snapshotFile`: the FIRST call records a baseline (no findings); later calls diff the unwrapped value vs the snapshot. Paths look like `data[].headline`. Classification: missing/type-changed on a `critical` path → **error**; otherwise → **warn**; a brand-new field → **info** (or `onNew`). A schema-conformance failure → **error** (or **warn** if the path is in `watch` and not `critical`).
+`opts = { ignore?: string[], severity?: DriftSeverity | DriftSeverity[] | Partial<Record<'undeclared'|'coerced'|'defaulted', DriftSeverity>> }` where `DriftSeverity = 'warn'|'info'|'verbose'`.
+Drift is schema-anchored — no snapshot (ADR 0015). Each call validates the unwrapped value against `schema`: a missing-required / incompatible value throws (`change:'invalid'`, **error**), and the call returns the VALIDATED value (coerced/defaulted/stripped). Then it diffs raw-vs-validated for soft drift: a stripped key → `undeclared` (**info**), a coercion → `coerced` (**warn**), a default fired → `defaulted` (**verbose**). Paths look like `data[].headline` (array indices render as `[]`, deduped). `ignore` silences paths; `severity` filters (a level/list) or re-levels (a map). Declared variance (optional absent, nullable null, empty/heterogeneous arrays) validates clean and yields no findings.
 
 ## Auth
 

@@ -106,3 +106,7 @@ against a live Redis:
 ```bash
 REDIS_URL=redis://localhost:6379 pnpm --filter @stitchapi/redis test
 ```
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

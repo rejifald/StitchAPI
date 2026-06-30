@@ -14,7 +14,7 @@ extension point, and the `Logger` sink and `ConfigService` bridge **delegate** t
 dependency and the package forks nothing (contract-not-dependency).
 
 ```sh
-pnpm add @stitchapi/nest stitchapi
+pnpm add @stitchapi/nest@rc stitchapi@rc
 # peers you already have in a Nest app: @nestjs/common, @nestjs/core, rxjs, reflect-metadata
 ```
 
@@ -183,3 +183,7 @@ Swap the transport globally with the seam's `adapter`, or override a stitch prov
 StitchModule.forRoot({ adapter: mockAdapter }); // every stitch hits the mock
 // or: Test.createTestingModule(...).overrideProvider(GetUser.token).useValue(fakeStitch)
 ```
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

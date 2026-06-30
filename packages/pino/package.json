@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/pino",
-    "version": "1.0.0-rc.3",
+    "version": "1.0.0-rc.4",
     "type": "commonjs",
     "description": "Pino TraceSink for StitchAPI — bridge the stitch event stream to a Pino logger as structured, metadata-only log records.",
     "main": "lib/index.js",
@@ -58,7 +58,6 @@
     },
     "devDependencies": {
         "@types/node": "^22.10.0",
-        "pino": "^9.5.0",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",

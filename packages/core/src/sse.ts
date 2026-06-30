@@ -4,7 +4,7 @@
 // `ReadableStream` and yields one parsed event per `delta` chunk. SSE rides the same auth / retry /
 // headers spine as every other surface. Auto-reconnection / `Last-Event-ID` resume is now IN (issue
 // #71), behind the off-by-default `sse.reconnect` option: the surface exposes three generic resume
-// hooks (`resumeToken` → the event `id`, `resumeRetryMs` → the event `retry`, `applyResume` → set
+// hooks (`resumeToken` → the event `id`, `resumeRetry` → the event `retry`, `applyResume` → set
 // the `Last-Event-ID` request header) and the engine drives the reconnect loop surface-agnostically.
 //
 // Bundle-frugal (Decision 10): this module — and the frame parser — is reached only through the
@@ -137,7 +137,7 @@ export const sseSurface: Surface<StitchInput, SseEvent[]> = {
     // `Last-Event-ID` header on the reopened request. Plain reads/writes; no SSE-ism leaks into the
     // engine, which stays surface-agnostic (it only knows "this surface can resume").
     resumeToken: (chunk) => (chunk as SseEvent).id,
-    resumeRetryMs: (chunk) => (chunk as SseEvent).retry,
+    resumeRetry: (chunk) => (chunk as SseEvent).retry,
     applyResume: (req, token) => {
         req.headers['Last-Event-ID'] = token;
     },

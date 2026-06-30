@@ -1,6 +1,7 @@
 ---
 title: Vue
 description: Reactive useStitch and useStitchStream composables backed by Vue 3 reactivity, over the framework-agnostic @stitchapi/query-core store — plus an optional TanStack Query adapter.
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Use `@stitchapi/vue` when you call stitches from Vue 3 components and want the
@@ -23,7 +24,7 @@ Install the composables, the store, core, and Vue:
 ```
 
 `stitchapi` and `vue` (`^3.4`) are peer dependencies; `@tanstack/vue-query` is an
-**optional** peer, needed only for the `queryOptions` adapter below.
+**optional** peer, needed only for the `stitchQueryOptions` adapter below.
 
 ## `useStitch` — request / response
 
@@ -127,13 +128,13 @@ bindings are the same few lines against their own reactive primitive — Vue's i
 ## Optional: TanStack Query
 
 Already on [TanStack Query](/docs/integrations/tanstack-query)?
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
 pass straight to `useQuery` — it imports nothing from `@tanstack/vue-query`, so it
 works even if you never install it:
 
 ```vue
 <script setup lang="ts">
-import { queryOptions } from '@stitchapi/vue';
+import { stitchQueryOptions } from '@stitchapi/vue';
 import { useQuery } from '@tanstack/vue-query';
 import { stitch } from 'stitchapi';
 
@@ -142,13 +143,13 @@ const getUser = stitch({
     path: '/users/{id}',
 });
 
-const { data } = useQuery(queryOptions(getUser, { params: { id: '7' } }));
+const { data } = useQuery(stitchQueryOptions(getUser, { params: { id: '7' } }));
 </script>
 ```
 
 <Callout type="info">
-    Reach for `queryOptions` when TanStack Query already owns your view state
-    and you want a stitch as the `queryFn`; reach for `useStitch` /
+    Reach for `stitchQueryOptions` when TanStack Query already owns your view
+    state and you want a stitch as the `queryFn`; reach for `useStitch` /
     `useStitchStream` when you want StitchAPI to own the lifecycle directly —
     especially for streaming, which `useQuery` does not model. See the [TanStack
     Query guide](/docs/integrations/tanstack-query) for how the two layers

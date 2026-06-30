@@ -46,7 +46,7 @@ test('opens after N consecutive failures, fast-fails without hitting the server,
         baseUrl: server.url,
         path: '/svc',
         // default retry attempts = 1, so each call is exactly one server hit = one failure.
-        circuit: { failureThreshold: 3, cooldownMs: 300 },
+        circuit: { failures: 3, cooldown: 300 },
     });
 
     // Three failing calls trip the breaker.
@@ -82,7 +82,7 @@ test('a success resets the consecutive-failure count', async () => {
     const call = stitch({
         baseUrl: server.url,
         path: '/svc',
-        circuit: { failureThreshold: 3, cooldownMs: 300 },
+        circuit: { failures: 3, cooldown: 300 },
     });
 
     await expect(call()).rejects.toBeDefined(); // failures = 1
@@ -92,4 +92,46 @@ test('a success resets the consecutive-failure count', async () => {
     await expect(call()).rejects.toBeDefined(); // failures = 2
 
     expect(server.callCount('/svc')).toBe(5); // all 5 hit the server → breaker never opened
+});
+
+test('the @deprecated failureThreshold/cooldownMs aliases still trip the breaker (P4/P17)', async () => {
+    server.route('GET', '/svc', {
+        statuses: [500, 500, 200],
+        body: { ok: true },
+    });
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/svc',
+        // Pre-rename spelling — must behave identically to `failures`/`cooldown` until the GA cut.
+        circuit: { failureThreshold: 2, cooldownMs: 300 },
+    });
+
+    for (let i = 0; i < 2; i++) await expect(call()).rejects.toBeDefined();
+    expect(server.callCount('/svc')).toBe(2);
+    // 3rd call: breaker OPEN → fast-fail, server NOT hit.
+    await collect(call());
+    expect(server.callCount('/svc')).toBe(2);
+});
+
+test('cooldown accepts a duration string (P17 widening)', async () => {
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/svc',
+        circuit: { failures: 1, cooldown: '50ms' },
+    });
+    server.route('GET', '/svc', { statuses: [500], body: {} });
+    await expect(call()).rejects.toBeDefined(); // opens immediately (failures: 1)
+    await collect(call()); // fast-fail
+    expect(server.callCount('/svc')).toBe(1);
+});
+
+test('throws when neither failures nor cooldown is set (required-by-design, P15)', async () => {
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/svc',
+        circuit: { key: 'orphan-breaker' },
+    });
+    await expect(call()).rejects.toThrow(
+        /circuit requires `failures` and `cooldown`/,
+    );
 });

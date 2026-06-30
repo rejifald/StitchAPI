@@ -116,7 +116,7 @@ test("a drift event logs at the finding's own level", () => {
     sink.handle(
         {
             type: 'drift',
-            finding: { level: 'error', path: 'id', change: 'missing' },
+            finding: { level: 'error', path: 'id', change: 'invalid' },
             at: 0,
         },
         ctx,
@@ -124,7 +124,7 @@ test("a drift event logs at the finding's own level", () => {
     sink.handle(
         {
             type: 'drift',
-            finding: { level: 'warn', path: 'name', change: 'nullable' },
+            finding: { level: 'warn', path: 'name', change: 'coerced' },
             at: 0,
         },
         ctx,
@@ -132,7 +132,7 @@ test("a drift event logs at the finding's own level", () => {
     sink.handle(
         {
             type: 'drift',
-            finding: { level: 'info', path: 'extra', change: 'new' },
+            finding: { level: 'info', path: 'extra', change: 'undeclared' },
             at: 0,
         },
         ctx,
@@ -140,7 +140,7 @@ test("a drift event logs at the finding's own level", () => {
 
     expect(entries.map((e) => e.level)).toEqual(['error', 'warn', 'info']);
     // The drift line carries the path/change metadata, not any value.
-    expect(entries[0]?.message).toContain('drift[error] id missing');
+    expect(entries[0]?.message).toContain('drift[error] id invalid');
 });
 
 test('a delta event is never logged', () => {
@@ -162,7 +162,7 @@ test('opts.levels overrides the default per event type', () => {
 
     const result: StitchEvent = {
         type: 'result',
-        value: { token: SECRET_BODY },
+        data: { token: SECRET_BODY },
         status: 200,
         attempts: 1,
         at: 0,
@@ -183,7 +183,7 @@ test('opts.levels can override the drift level too', () => {
     sink.handle(
         {
             type: 'drift',
-            finding: { level: 'error', path: 'id', change: 'missing' },
+            finding: { level: 'error', path: 'id', change: 'invalid' },
             at: 0,
         },
         { name: 'users' },
@@ -248,7 +248,7 @@ test('opts.level returning null drops the event', () => {
         { name: 'x' },
     );
     sink.handle(
-        { type: 'result', value: 1, status: 200, attempts: 1, at: 0 },
+        { type: 'result', data: 1, status: 200, attempts: 1, at: 0 },
         { name: 'x' },
     );
     sink.handle(
@@ -287,7 +287,7 @@ test('opts.format overrides the one-liner; null skips the event', () => {
     );
     // a non-start event → format returns null → nothing logged for it
     sink.handle(
-        { type: 'done', ok: true, ms: 5, attempts: 1, at: 0 },
+        { type: 'done', ok: true, elapsed: 5, attempts: 1, at: 0 },
         { name: 'x' },
     );
 

@@ -8,6 +8,10 @@
 >
 > The four open questions are now **resolved** (review of PR #163, recorded below). The guiding principle the review set: **trace richly, for OTLP operators analysing real traffic** — every retry, page, login, and composed step is visible, with per-iteration performance, not just a flat per-call stream. This is FOUNDATIONAL for #7's `pipe()` ([ADR 0008](./0008-non-http-surfaces-and-pipe.md)), so it lands first.
 
+> [!IMPORTANT]
+>
+> **Amendment — `RunContext` field names aligned to OpenTelemetry.** This ADR was written with `runId` / `parentId`; the fields were since renamed to the OTel-canonical **`spanId`** / **`parentSpanId`** (`traceId` was already canonical), so the internal struct, the `start`-event fields, and the OTLP export all use the same names and the exporter's mapping is an identity. Read `runId` as `spanId` and `parentId` as `parentSpanId` throughout the text below. Rationale and the "wire form is a projection, not a replacement" rule live in [ADR 0017 Decision 7](./0017-outbound-trace-context-propagation.md); the reader-facing explainer is [concepts/run-identity](../../apps/docs/content/docs/concepts/run-identity.mdx).
+
 ## Context
 
 A stitch's events are a **flat per-call stream**: `start → progress* → (info|drift|delta)* → result|error → done` (`StitchEvent`, [`types.ts`](../../packages/core/src/types.ts)), drained/teed to the trace sink in `tee()` ([`stitch.ts`](../../packages/core/src/stitch.ts)). Each `execute()` ([`engine.ts`](../../packages/core/src/engine.ts)) is **one logical run**, and the stream carries no notion of one run having spawned another, nor of structure _within_ a run.

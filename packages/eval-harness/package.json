@@ -12,8 +12,7 @@
         "eval:report": "tsx index.ts report"
     },
     "dependencies": {
-        "stitchapi": "workspace:*",
-        "@stitchapi/sandbox-sim": "workspace:*"
+        "stitchapi": "workspace:*"
     },
     "devDependencies": {
         "@types/node": "^22.10.0",

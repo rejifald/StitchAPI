@@ -11,7 +11,7 @@ These composables are a thin layer over [`@stitchapi/query-core`](../query-core)
 ## Install
 
 ```sh
-pnpm add @stitchapi/vue @stitchapi/query-core stitchapi vue
+pnpm add @stitchapi/vue@rc @stitchapi/query-core@rc stitchapi@rc vue
 ```
 
 `stitchapi` (`>=0.7.0`) and `vue` (`^3.4`) are peer dependencies. `@tanstack/vue-query` is **not** required — `queryOptions` returns a plain object.
@@ -102,3 +102,7 @@ const { data } = useQuery(queryOptions(getUser, { params: { id } }));
 ## License
 
 Apache-2.0
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

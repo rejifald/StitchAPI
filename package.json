@@ -22,6 +22,7 @@
         "check:size": "pnpm -r check:size",
         "check:size-docs": "node scripts/check-size-docs.mjs",
         "check:docs-links": "node scripts/check-docs-links.mjs",
+        "check:contract": "node scripts/check-contract.mjs",
         "check:format": "prettier --check .",
         "check:release": "node scripts/check-release.mjs",
         "check:readme": "node scripts/gen-readme-metrics.mjs --check",

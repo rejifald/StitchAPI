@@ -115,3 +115,7 @@ Set `errorHandler: false` to register none and wire your own with
 | `isStitchError`       | function | Narrow an unknown error to a `StitchError`         |
 
 `stitchapi` and `elysia` are **peer dependencies** — bring your own.
+
+## Contributing
+
+Issues and pull requests are welcome — see the [contributing guide](../../CONTRIBUTING.md) for local setup, the verify gate, and how to open a PR against `main`.

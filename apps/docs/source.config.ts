@@ -1,3 +1,4 @@
+import { remarkInstallChannel } from './lib/remark-install-channel';
 import { transformerFold } from './lib/transformer-fold';
 
 import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
@@ -6,12 +7,20 @@ import { defineConfig, defineDocs } from 'fumadocs-mdx/config';
 import { transformerTwoslash } from 'fumadocs-twoslash';
 import { z } from 'zod';
 
+// Optional upstream "Start here" pointers: internal hrefs (`/docs/...` or
+// `/blog/<slug>`) to the foundational pages a page assumes the reader already
+// knows. Rendered as a top-of-page box (the inverse of `See also`) and resolved
+// to real titles from the source; `test/prerequisites.spec.ts` fails the build
+// on a dangling href. Shared by both collections so docs pages and blog posts
+// declare it the same way.
+const prerequisites = z.array(z.string()).optional();
+
 // You can customize Zod schemas for frontmatter and `meta.json` here
 // see https://fumadocs.dev/docs/mdx/collections
 export const docs = defineDocs({
     dir: 'content/docs',
     docs: {
-        schema: pageSchema,
+        schema: pageSchema.extend({ prerequisites }),
         postprocess: {
             includeProcessedMarkdown: true,
         },
@@ -57,6 +66,7 @@ export const blog = defineDocs({
                     ),
             ),
             tags: z.array(z.string()).optional(),
+            prerequisites,
         }),
     },
     meta: {
@@ -72,6 +82,12 @@ export default defineConfig({
         // code-variant tabs persist per `tabGroup` id set on the fence.
         // See AUTHORING.md → "Code variants — tabs".
         remarkNpmOptions: { persist: { id: 'package-manager' } },
+        // Stamp the documented npm dist-tag (e.g. `@rc`) onto bare first-party
+        // specs in ```package-install``` blocks BEFORE fumadocs' remarkNpm expands
+        // them into per-manager tabs. The array form of `remarkPlugins` runs AFTER
+        // remarkNpm; the function form receives the built-in list so we can
+        // prepend and run first. See lib/remark-install-channel.ts.
+        remarkPlugins: (builtin) => [remarkInstallChannel, ...builtin],
         // Twoslash type-checks every ```ts twoslash``` block against the real
         // `stitchapi` types at build time and renders hover tooltips. Spread the
         // defaults so the stock Shiki transformers (tab/title/icon meta) survive;

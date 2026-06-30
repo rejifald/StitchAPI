@@ -39,3 +39,34 @@ export function formatPostDate(date: string): string {
         timeZone: 'UTC',
     });
 }
+
+/**
+ * The automated half of the blog's interlinking (see AUTHORING.md → "Blog
+ * posts"). Inline contextual links are the author's job; this is the safety net
+ * that keeps every post connected even when the prose forgets — ranked by shared
+ * `tags`, newest breaking ties, so a post is never an island.
+ *
+ * Returns up to `limit` other posts sharing at least one tag with `post`. Posts
+ * with more tags in common rank higher; among equal overlap the newer post wins.
+ */
+export function getRelatedPosts(post: BlogPost, limit = 3): BlogPost[] {
+    const tags = new Set(post.data.tags ?? []);
+    if (tags.size === 0) return [];
+
+    return (
+        getSortedPosts()
+            .filter((candidate) => postSlug(candidate) !== postSlug(post))
+            .map((candidate) => ({
+                candidate,
+                overlap: (candidate.data.tags ?? []).filter((tag) =>
+                    tags.has(tag),
+                ).length,
+            }))
+            .filter(({ overlap }) => overlap > 0)
+            // `getSortedPosts` is already newest-first, so a stable sort on overlap
+            // alone keeps date as the tie-breaker.
+            .sort((a, b) => b.overlap - a.overlap)
+            .slice(0, limit)
+            .map(({ candidate }) => candidate)
+    );
+}

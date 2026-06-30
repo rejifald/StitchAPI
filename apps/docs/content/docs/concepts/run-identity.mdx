@@ -1,0 +1,76 @@
+---
+title: 'Run identity & the trace tree'
+description: 'How a stitch identifies one call and its place in a tree — a shared traceId, the span id (spanId), and a parentSpanId — so composed runs form one OpenTelemetry span tree, and how that maps onto the traceparent header on the wire.'
+---
+
+Every stitch call carries a **run identity**: a shared `traceId`, a span id (`spanId`)
+for the call itself, and a `parentSpanId` when one call spawned another. Reach for this
+model when you want a stitch, the login it runs, and the steps it composes to read
+back as **one tree**, not a flat list of unrelated calls.
+
+## Why it's shaped this way
+
+Three ids, in the OpenTelemetry shape — because a run has to answer two questions at
+once, and one id can't:
+
+-   **`traceId`** — a 32-hex id **shared** by every run in one logical operation. It is
+    not parented; it is the same value everywhere in the tree. Filter by it and you get
+    the whole operation.
+-   **`spanId`** — a 16-hex id for **this** call (the OpenTelemetry span id).
+-   **`parentSpanId`** — the **caller's** `spanId`, set only when one run spawned
+    another. Absent on a root run.
+
+The tree comes from **composition**, not configuration. When a stitch spawns another
+run, the child **inherits** the `traceId` and points its `parentSpanId` at the parent's
+`spanId`. Two paths do this today: a `cookieSession` login runs as a child of the call
+that triggered it, and each step of a `pipe()` is a child of the step before it.
+
+```
+traceId = abc…   (shared by every node below)
+
+[spanId A]                         ← root: a getUser call. parentSpanId = none
+   └─ [spanId B]  parentSpanId = A     ← the cookieSession login it triggered
+[spanId C]                         ← a pipe(): step 1. parentSpanId = none
+   └─ [spanId D]  parentSpanId = C     ← step 2, a child of step 1
+```
+
+A single flat per-call id could say "these are different calls" but never "this login
+happened **inside** that request." The `parentSpanId` is what carries that causality, so
+it has to be its own field alongside `spanId`, not folded into it.
+
+The ids are **engine-minted, never caller-supplied** — a caller-named id would let one
+caller spoof another's identity, the same reason a stitch never takes its principal
+from call input.
+
+## How it relates
+
+**To OpenTelemetry.** The field names _are_ the OTel span names — `traceId`, `spanId`,
+`parentSpanId` — so the OTLP exporter writes them straight through, no translation. It
+reads them as fields and builds the tree; it never guesses structure from timing.
+
+**To the wire.** The W3C `traceparent` header is `version-trace-id-parent-id-flags` —
+one `traceId` + **one** span id + flags. A run needs **two** span ids (its own `spanId`
+_and_ its `parentSpanId`), so `traceparent` is a **projection** of the run identity onto a
+single header, not a replacement for it. The spec's middle field (`parent-id`) is
+directional: it carries the sender's `spanId` going out and becomes the receiver's
+`parentSpanId` coming in, so a downstream server's spans become children under the same
+`traceId`. **Today the tree is in-process** — it covers a stitch and the runs it composes;
+carrying it across the wire so a downstream service joins your trace is planned
+trace-context propagation, not a shipped feature.
+
+**To the two keys.** A run identity is for **observability** — "which call is this, and
+what spawned it?" It is not the idempotency key (which answers "is this the same
+write?"). See [Correlation vs idempotency](/docs/concepts/correlation-vs-idempotency)
+for why those stay separate.
+
+## See also
+
+<Cards>
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card
+        title="Correlation vs idempotency"
+        href="/docs/concepts/correlation-vs-idempotency"
+    />
+    <Card title="OTLP export" href="/docs/guides/observability/otlp" />
+    <Card title="Trace sinks" href="/docs/guides/observability/trace-sinks" />
+</Cards>

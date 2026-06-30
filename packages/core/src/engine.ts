@@ -6,7 +6,8 @@
 // The real module is reached via a lazy `import('./cache')` only when a stitch has a `cache`
 // block (bundle-frugal gate — ADR 0003 decision 11).
 import type { CacheController, CacheHit, RequestDescriptor } from './cache';
-import { classifyDrift, loadSnapshot, saveSnapshot } from './drift';
+import { compact } from './compact';
+import { classifyDiff, validationErrors } from './drift';
 import { fetchAdapter } from './http-adapter';
 import {
     CircuitOpenError,
@@ -35,12 +36,12 @@ import type {
     StitchStore,
     TraceSink,
 } from './types';
+import { StitchError } from './types';
 import {
     appendQueryString,
     buildQuery,
     expandPath,
     getPath,
-    matchAny,
     newRunContext,
     now,
     parseDuration,
@@ -67,7 +68,7 @@ export interface Runtime {
         acquire(
             key: string,
             opts?: AcquireOptions,
-        ): Promise<{ waitedMs: number }>;
+        ): Promise<{ waited: number }>;
         release(key: string): void;
     };
     trace: TraceSink;
@@ -120,15 +121,17 @@ function emitInto(
     return {
         ...authCtx,
         // The current run (ADR 0007) so a strategy that spawns a sub-call — `cookieSession`'s
-        // login — can run it as a CHILD of this run (parentId = run.runId).
+        // login — can run it as a CHILD of this run (parentSpanId = run.spanId).
         run,
         emit: (topic, detail) =>
-            sink.push({
-                type: 'info',
-                topic,
-                ...(detail !== undefined ? { detail } : {}),
-                at: now(),
-            }),
+            sink.push(
+                compact({
+                    type: 'info',
+                    topic,
+                    detail,
+                    at: now(),
+                }),
+            ),
     };
 }
 
@@ -163,9 +166,9 @@ function applyIdempotency(
         )
     )
         return;
-    headers[header] = cfg.idempotency.key
-        ? cfg.idempotency.key(input)
-        : randomUUID();
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the @deprecated alias of `keyOf`, read as the back-compat fallback until the GA cut (CONTRACT.md P6)
+    const keyOf = cfg.idempotency.keyOf ?? cfg.idempotency.key;
+    headers[header] = keyOf ? keyOf(input) : randomUUID();
 }
 
 const resolveStr = (v: string | (() => string) | undefined): string =>
@@ -226,17 +229,15 @@ function buildRequest(
     }
     const method = (cfg.method ?? 'GET').toUpperCase();
     const headers = { ...(cfg.headers ?? {}), ...(input.headers ?? {}) };
-    let req: AdapterRequest = {
+    let req: AdapterRequest = compact({
         url,
         method,
         headers,
         body: input.body,
-        ...(cfg.bodyType !== undefined ? { bodyType: cfg.bodyType } : {}),
-        ...(cfg.multipart !== undefined ? { multipart: cfg.multipart } : {}),
-        ...(cfg.responseType !== undefined
-            ? { responseType: cfg.responseType }
-            : {}),
-    };
+        bodyType: cfg.bodyType,
+        multipart: cfg.multipart,
+        responseType: cfg.responseType,
+    });
     // Per-call execution controls (ADR 0005 Decisions 8-9): cancellation + byte progress, threaded
     // BEFORE the surface shapes the request so a surface that spreads `base` (e.g. `download`)
     // keeps them. Runtime-only — they never came from `__config`.
@@ -255,7 +256,8 @@ const cloneReq = (r: AdapterRequest): AdapterRequest => ({
     headers: { ...r.headers },
 });
 const hostKey = (req: AdapterRequest, cfg: ResolvedStitchConfig): string => {
-    if (cfg.throttle?.scope === 'host') {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `scope` is the @deprecated alias of `pool`, read as the back-compat fallback until the GA cut (CONTRACT.md P2)
+    if ((cfg.throttle?.pool ?? cfg.throttle?.scope) === 'host') {
         try {
             return new URL(req.url).host;
         } catch {
@@ -272,6 +274,69 @@ const hostKey = (req: AdapterRequest, cfg: ResolvedStitchConfig): string => {
 // skip it), so the full `response` can't leak into a JSONL/console log. See `drain` in stitch.ts.
 export const ERROR_SOURCE = Symbol('stitch.errorSource');
 
+// A non-enumerable channel for the retained pre-validation body (`.inspect()`, ADR 0016). Like
+// ERROR_SOURCE, non-enumerable means a trace sink (Object.entries / JSON.stringify) never sees it, so
+// the unredacted body can't leak into a JSONL/console log. Rides the `result` event on the success
+// path and the pinned StitchError (via ERROR_SOURCE) on the hard-fail path; read by `.inspect()` only.
+export const RAW_BODY = Symbol('stitch.rawBody');
+
+// Per-call run flags (ADR 0016), threaded into `execute` by `.inspect()`. `retainRaw` retains the
+// pre-validation body and surfaces it on the terminal event; `bypassCache` skips the cache entirely
+// (neither read nor write). Both default off, so the await/safe/stream paths are byte-identical.
+export interface RunFlags {
+    retainRaw?: boolean;
+    bypassCache?: boolean;
+}
+
+// Mutable per-run state threaded through the run functions. `attempts` is the live attempt counter
+// the events stamp; `retainRaw` (ADR 0016) is the per-call request to surface the raw body.
+interface RunState {
+    attempts: number;
+    retainRaw?: boolean;
+}
+
+// Attach the retained raw body to a terminal `result` event on the non-enumerable RAW_BODY channel —
+// only when `.inspect()` asked for it (`state.retainRaw`). A no-op otherwise, so the await/safe path
+// yields a byte-identical event. The body never serialises into a trace sink (non-enumerable).
+function withRaw(ev: StitchEvent, state: RunState, raw: unknown): StitchEvent {
+    if (state.retainRaw)
+        Object.defineProperty(ev, RAW_BODY, { value: raw, enumerable: false });
+    return ev;
+}
+
+// The contract-violation (hard drift) error event. When `.inspect()` asked to retain the raw body,
+// pin a StitchError carrying it (on RAW_BODY) via the ERROR_SOURCE channel, so `.inspect()` recovers
+// the body the failure path would otherwise drop (ADR 0016, required engine change). Without
+// `retainRaw` the event is identical to before — no source pinned — so the await/safe path rebuilds
+// its own StitchError exactly as it did pre-0016.
+function contractViolationEvt(
+    name: string,
+    status: number,
+    state: RunState,
+    raw: unknown,
+): StitchEvent {
+    const evt: Extract<StitchEvent, { type: 'error' }> = {
+        type: 'error',
+        name,
+        message: 'contract violation (drift)',
+        status,
+        attempts: state.attempts,
+        at: now(),
+    };
+    if (state.retainRaw) {
+        const err = new StitchError('contract violation (drift)', {
+            status,
+            attempts: state.attempts,
+        });
+        Object.defineProperty(err, RAW_BODY, { value: raw, enumerable: false });
+        Object.defineProperty(evt, ERROR_SOURCE, {
+            value: err,
+            enumerable: false,
+        });
+    }
+    return evt;
+}
+
 function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     const e = err as { message?: string; status?: number };
     const evt: Extract<StitchEvent, { type: 'error' }> = {
@@ -282,10 +347,14 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
         at: now(),
     };
     if (e.status !== undefined) evt.status = e.status;
-    // Delegate-backoff signal: stamp the structured `retryAfterMs` onto the event (so `.stream()`
+    // Delegate-backoff signal: stamp the structured `retryAfter` onto the event (so `.stream()`
     // consumers get it) and pin the live RateLimitError so the awaited path re-throws it intact.
     if (err instanceof RateLimitError) {
-        if (err.retryAfterMs !== undefined) evt.retryAfterMs = err.retryAfterMs;
+        if (err.retryAfter !== undefined) {
+            evt.retryAfter = err.retryAfter;
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-emit the @deprecated alias for back-compat (CONTRACT.md P17)
+            evt.retryAfterMs = err.retryAfter;
+        }
         Object.defineProperty(evt, ERROR_SOURCE, {
             value: err,
             enumerable: false,
@@ -302,13 +371,22 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     }
     return evt;
 }
-const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
-    type: 'done',
-    ok,
-    ms: now() - t0,
-    attempts,
-    at: now(),
-});
+const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => {
+    const elapsed = now() - t0;
+    // `elapsed` is canonical; `ms` is set alongside it as the @deprecated alias (CONTRACT.md P17).
+    return { type: 'done', ok, elapsed, ms: elapsed, attempts, at: now() };
+};
+
+// Co-emit a `progress` event's @deprecated `waitedMs` alias by ASSIGNMENT (not a literal `waitedMs:`
+// key) so back-compat holds until the GA cut (CONTRACT.md P17/P19) without re-tripping the contract
+// lint's R2, which flags a literal `*Ms:` declaration. The canonical field is `waited`.
+function coemitWaitedMs(
+    evt: Extract<StitchEvent, { type: 'progress' }>,
+): Extract<StitchEvent, { type: 'progress' }> {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- writing the @deprecated alias for back-compat (CONTRACT.md P17/P19)
+    if (evt.waited !== undefined) evt.waitedMs = evt.waited;
+    return evt;
+}
 
 async function validateInput(
     cfg: ResolvedStitchConfig,
@@ -338,84 +416,64 @@ async function validateInput(
     }
 }
 
-// Schema validation + drift leveling for ONE value, without the snapshot step. Shared by the
-// buffered `output` check below and the per-`delta` streaming check (ADR 0005 Addendum): a schema
-// failure on a `watch` (but not `critical`) path is a warning, otherwise an error. A bare validator
-// `output` (no DriftSpec) has empty watch/critical, so every failure is an error.
-async function validateSchema(
+// Validate ONE value against the output schema (ADR 0015). On success returns the PARSED value —
+// coerced, defaulted, stripped — so the result matches the declared contract; on failure returns the
+// hard `error`/`invalid` findings that fail the call. Natural variance an honest schema permits
+// (optional absent, nullable null, empty/heterogeneous arrays) validates clean and yields nothing.
+async function validateValue(
     cfg: ResolvedStitchConfig,
     value: unknown,
-): Promise<DriftFinding[]> {
+): Promise<{ value: unknown; errors: DriftFinding[] }> {
     const out = cfg.output;
-    if (!out) return [];
+    if (!out) return { value, errors: [] };
     // Probe cast keeps `__kind` `unknown`, so this is a real comparison — not an always-true
     // check against the `'drift'` literal (the idiom used by `outputSchemaSource`).
     const isDrift = (out as { __kind?: unknown }).__kind === 'drift';
     const validator: Validator = isDrift
         ? (out as DriftSpec).schema
         : (out as Validator);
-    const opts = isDrift ? (out as DriftSpec).options : {};
     const r = await validator.validate(value);
-    if (r.ok) return [];
-    const findings: DriftFinding[] = [];
-    for (const iss of r.issues) {
-        const path = iss.path.join('.');
-        const level =
-            matchAny(opts.watch, path) && !matchAny(opts.critical, path)
-                ? 'warn'
-                : 'error';
-        findings.push({ level, path, change: 'invalid', detail: iss.message });
-    }
-    return findings;
+    if (r.ok) return { value: r.value, errors: [] };
+    return { value, errors: validationErrors(r.issues) };
 }
 
+// Buffered output check: validate `raw` (→ the parsed value), then — when wrapped in `drift()` — diff
+// the raw body against the validated value for soft drift (undeclared / coerced / defaulted). Returns
+// the VALIDATED value as the result (sound; matches the contract) plus all findings. A validation
+// failure short-circuits with the hard `error` findings and the raw value (the call will fail).
 async function validateOutput(
     cfg: ResolvedStitchConfig,
-    body: unknown,
-): Promise<DriftFinding[]> {
+    raw: unknown,
+): Promise<{ value: unknown; findings: DriftFinding[] }> {
     const out = cfg.output;
-    if (!out) return [];
-    // Schema + leveling first, then the snapshot baseline (whole-body only — see validateSchema).
-    const findings: DriftFinding[] = await validateSchema(cfg, body);
-    if ((out as { __kind?: unknown }).__kind === 'drift') {
-        const opts = (out as DriftSpec).options;
-        if (opts.snapshotFile) {
-            const snap = loadSnapshot(opts.snapshotFile);
-            if (snap === undefined) {
-                // No committed baseline. By default record one (the spike's first-run behaviour);
-                // in `readonly` mode (deployed/prod) never write — surface a `no-baseline` finding
-                // so a drift-guarded call can't write a baseline as a side effect.
-                if (opts.readonly)
-                    findings.push({
-                        level: opts.onMissing ?? 'warn',
-                        path: '',
-                        change: 'no-baseline',
-                        detail: `no committed snapshot at ${opts.snapshotFile}; generate the baseline before enabling readonly drift`,
-                    });
-                else saveSnapshot(opts.snapshotFile, body);
-            } else findings.push(...classifyDrift(body, snap, opts));
-        }
-    }
-    return findings;
+    if (!out) return { value: raw, findings: [] };
+    const { value: validated, errors } = await validateValue(cfg, raw);
+    if (errors.length) return { value: raw, findings: errors };
+    if ((out as { __kind?: unknown }).__kind === 'drift')
+        return {
+            value: validated,
+            findings: classifyDiff(raw, validated, (out as DriftSpec).options),
+        };
+    return { value: validated, findings: [] };
 }
 
 // `timeout.total` is a WALL-CLOCK budget for the whole logical call: every attempt,
 // backoff sleep, and throttle wait counts against one shared deadline (GAP-AUDIT §1.1).
 interface TotalBudget {
     deadline: number; // epoch ms after which the call must fail with a timeout
-    totalMs: number; // configured total, kept for the error message
+    total: number; // configured total (ms), kept for the error message
 }
 
 function totalBudget(
     cfg: ResolvedStitchConfig,
     t0: number,
 ): TotalBudget | undefined {
-    const totalMs = parseDuration(cfg.timeout?.total);
-    return totalMs == null ? undefined : { deadline: t0 + totalMs, totalMs };
+    const total = parseDuration(cfg.timeout?.total);
+    return total == null ? undefined : { deadline: t0 + total, total };
 }
 
 const budgetError = (b: TotalBudget): TimeoutError =>
-    new TimeoutError(`timed out after ${b.totalMs}ms`);
+    new TimeoutError(`timed out after ${b.total}ms`);
 
 // Sleep `ms`, but never past the budget's deadline — when the budget would run out
 // mid-wait, wait only the remainder and fail with the timeout error. The caller's
@@ -447,7 +505,7 @@ async function acquireWithin(
     budget?: TotalBudget,
     opts?: AcquireOptions,
     signal?: AbortSignal,
-): Promise<{ waitedMs: number }> {
+): Promise<{ waited: number }> {
     if (signal?.aborted) throw abortReason(signal);
     if (budget == null && signal === undefined)
         return throttle.acquire(key, opts);
@@ -548,22 +606,27 @@ async function drainErrorBody(body: unknown): Promise<unknown> {
 async function* attemptLoop(
     rt: Runtime,
     baseReq: AdapterRequest,
-    state: { attempts: number },
+    state: RunState,
     run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, AdapterResponse> {
     const { cfg } = rt;
     const max = cfg.retry?.attempts ?? 1;
-    const retryOn = cfg.retry?.on ?? [429, 502, 503, 504];
+    // P7: `retry.on` accepts a status list OR a predicate — normalize to one matcher.
+    const retryMatch = acceptsStatus(cfg.retry?.on ?? [429, 502, 503, 504]);
     const perAttemptMs = parseDuration(cfg.timeout?.perAttempt);
     const key = hostKey(baseReq, cfg);
     let refreshed = false;
     // Delegate-backoff mode (issue #145): the host owns the gate. We bypass the internal throttle
     // for the call (no acquire/release, so `throttle` is inert and no `throttled` event fires) and,
-    // on a response whose status is in `rlOn` (default [429]), surface a RateLimitError instead of
-    // retrying. Everything else — auth, the success path, non-rate-limit failures — is unchanged.
-    const delegate = cfg.rateLimit?.delegate === true;
-    const rlOn = cfg.rateLimit?.on ?? [429];
+    // on a response whose status matches `rlMatch` (default [429]), surface a RateLimitError instead
+    // of retrying. Everything else — auth, the success path, non-rate-limit failures — is unchanged.
+    // P14: `rateLimit` folded into `throttle` — read `throttle.delegate`/`throttle.on`, falling back
+    // to the @deprecated top-level `rateLimit` (read once here) until the GA cut.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `rateLimit` folded into `throttle` (P14); back-compat fallback until GA
+    const legacyRl = cfg.rateLimit;
+    const delegate = (cfg.throttle?.delegate ?? legacyRl?.delegate) === true;
+    const rlMatch = acceptsStatus(cfg.throttle?.on ?? legacyRl?.on ?? [429]);
     // acceptStatus (issue #155): statuses the caller declares NORMAL — an accepted non-2xx returns
     // `res` like a 2xx (flowing through interpret → transform → unwrap → validate) instead of
     // throwing. Checked at the `>= 400` site, i.e. AFTER the retry-on-status path, so `retry.on`
@@ -575,21 +638,21 @@ async function* attemptLoop(
         // Skip the throttle entirely in delegate mode — the outer gate paces the call, so acquiring
         // here would double-count against it (the bug this mode fixes).
         if (!delegate) {
-            const { waitedMs } = await acquireWithin(
+            const { waited } = await acquireWithin(
                 rt.throttle,
                 key,
                 budget,
                 undefined,
                 baseReq.signal,
             );
-            if (waitedMs > 0)
-                yield {
+            if (waited > 0)
+                yield coemitWaitedMs({
                     type: 'progress',
                     phase: 'throttled',
                     attempt,
-                    waitedMs,
+                    waited,
                     at: now(),
-                };
+                });
         }
         try {
             const req = cloneReq(baseReq);
@@ -677,10 +740,10 @@ async function* attemptLoop(
             // gate owns the backoff. Checked BEFORE the internal retry-on-status path so it wins even
             // when the same status is also in `retry.on` (the common `429` overlap). `Retry-After` is
             // parsed with the same helper the internal retry uses, so the host gets an identical hint.
-            if (delegate && rlOn.includes(res.status)) {
+            if (delegate && rlMatch(res.status)) {
                 throw new RateLimitError({
                     status: res.status,
-                    retryAfterMs: parseRetryAfter(
+                    retryAfter: parseRetryAfter(
                         res.headers['retry-after'],
                         rt.clock,
                     ),
@@ -688,7 +751,7 @@ async function* attemptLoop(
                 });
             }
 
-            if (retryOn.includes(res.status) && attempt < max) {
+            if (retryMatch(res.status) && attempt < max) {
                 const ra = cfg.retry?.respectRetryAfter
                     ? parseRetryAfter(res.headers['retry-after'], rt.clock)
                     : undefined;
@@ -735,7 +798,7 @@ async function* attemptLoop(
 async function* attemptWithCircuit(
     rt: Runtime,
     baseReq: AdapterRequest,
-    state: { attempts: number },
+    state: RunState,
     run: RunContext,
     budget?: TotalBudget,
 ): AsyncGenerator<StitchEvent, AdapterResponse> {
@@ -806,7 +869,7 @@ function mergeInput(a: StitchInput, b: StitchInput): StitchInput {
 async function* paginated(
     rt: Runtime,
     input: StitchInput,
-    state: { attempts: number },
+    state: RunState,
     t0: number,
     run: RunContext,
     budget?: TotalBudget,
@@ -814,7 +877,8 @@ async function* paginated(
     const { cfg } = rt;
     const name = nameOf(cfg);
     const pg = cfg.paginate!;
-    const max = pg.max ?? 50;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `max` is the @deprecated alias of `pages`, read for back-compat until the GA cut (CONTRACT.md P4)
+    const max = pg.pages ?? pg.max ?? 50;
     const acc: unknown[] = [];
     let pageInput = input;
     let page = 0;
@@ -868,32 +932,26 @@ async function* paginated(
         pageInput = mergeInput(input, nextPartial);
     }
 
-    const findings = await validateOutput(cfg, acc);
+    // The aggregated pages ARE the raw body the contract validates and drift diffs against (ADR
+    // 0015); `.inspect()` (ADR 0016) surfaces this array as `raw`.
+    const rawBody = acc;
+    const { value: validated, findings } = await validateOutput(cfg, acc);
     let fatal = false;
     for (const finding of findings) {
         yield { type: 'drift', finding, at: now() };
         if (finding.level === 'error') fatal = true;
     }
     if (fatal) {
-        yield {
-            type: 'error',
-            name,
-            message: 'contract violation (drift)',
-            status: lastStatus,
-            attempts: state.attempts,
-            at: now(),
-        };
+        yield contractViolationEvt(name, lastStatus, state, rawBody);
         yield doneEvt(false, t0, state.attempts);
         return;
     }
 
-    yield {
-        type: 'result',
-        value: acc,
-        status: lastStatus,
-        attempts: state.attempts,
-        at: now(),
-    };
+    yield withRaw(
+        resultEvt(validated, lastStatus, state.attempts),
+        state,
+        rawBody,
+    );
     yield doneEvt(true, t0, state.attempts);
 }
 
@@ -906,19 +964,19 @@ async function ensureCache(rt: Runtime): Promise<CacheController | null> {
     const config = cfg.cache;
     if (!config || cfg.sensitive) return null;
     rt.cacheInit ??= import('./cache').then((m) =>
-        m.createCache({
-            config,
-            store: rt.store,
-            stitchId: m.cacheStitchId(cfg),
-            // The RAW output schema (not the Validator wrapper) so the fingerprinter can read its
-            // `~standard.vendor`; transform/unwrap are already raw on the config (ADR 0004 fold).
-            output: outputSchemaSource(cfg),
-            transform: cfg.transform,
-            unwrap: cfg.unwrap,
-            ...(rt.authCtx.principal !== undefined
-                ? { principal: rt.authCtx.principal }
-                : {}),
-        }),
+        m.createCache(
+            compact({
+                config,
+                store: rt.store,
+                stitchId: m.cacheStitchId(cfg),
+                // The RAW output schema (not the Validator wrapper) so the fingerprinter can read its
+                // `~standard.vendor`; transform/unwrap are already raw on the config (ADR 0004 fold).
+                output: outputSchemaSource(cfg),
+                transform: cfg.transform,
+                unwrap: cfg.unwrap,
+                principal: rt.authCtx.principal,
+            }),
+        ),
     );
     return rt.cacheInit;
 }
@@ -962,17 +1020,18 @@ const startEvt = (
     baseReq: AdapterRequest,
     input: StitchInput,
     run: RunContext,
-): StitchEvent => ({
-    type: 'start',
-    name,
-    method: baseReq.method,
-    url: baseReq.url,
-    input,
-    at: now(),
-    runId: run.runId,
-    traceId: run.traceId,
-    ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
-});
+): StitchEvent =>
+    compact({
+        type: 'start',
+        name,
+        method: baseReq.method,
+        url: baseReq.url,
+        input,
+        at: now(),
+        spanId: run.spanId,
+        traceId: run.traceId,
+        parentSpanId: run.parentSpanId,
+    });
 
 const cacheEvt = (detail: string): StitchEvent => ({
     type: 'progress',
@@ -982,11 +1041,47 @@ const cacheEvt = (detail: string): StitchEvent => ({
     at: now(),
 });
 
+// A buffered upload bar that never moves is the quiet trap behind the adapter seam: a call passes
+// `onProgress` with a body expecting bytes-sent, but the default `fetch` reports only
+// `phase: 'download'` — the upload phase stays dark, no error, no events. When the active adapter
+// declares its capabilities and `'uploadProgress'` is NOT among them (ADR 0005 Decision 9), say so
+// once — an `info` event pointing at xhrAdapter — instead of no-op'ing. Deliberately a teaching
+// note, not a throw: a body with `onProgress` can also legitimately want DOWNLOAD progress on a
+// POST, which `fetch` does serve, so erroring would break a working call. Adapters that declare
+// nothing (custom transports) and ADR 0008 surfaces that replace the transport are left alone — the
+// open contract stands.
+function uploadProgressWarning(
+    rt: Runtime,
+    input: StitchInput,
+): StitchEvent | undefined {
+    if (!input.onProgress || input.body === undefined) return undefined;
+    if (rt.cfg.kind?.execute) return undefined; // surface replaces the transport (shell/llm/pipe)
+    const cap = rt.adapter.capabilities;
+    if (!cap || cap.supports.includes('uploadProgress')) return undefined;
+    return {
+        type: 'info',
+        topic: 'adapter.upload-progress-unsupported',
+        detail:
+            `onProgress is set with a request body, but ${cap.name ?? 'the active adapter'} cannot ` +
+            `report upload progress — only 'phase: download' events fire. Use xhrAdapter() to draw ` +
+            `an upload progress bar.`,
+        at: now(),
+    };
+}
+
 const resultEvt = (
-    value: unknown,
+    data: unknown,
     status: number,
     attempts: number,
-): StitchEvent => ({ type: 'result', value, status, attempts, at: now() });
+    // `data` is canonical; `value` is co-set as the @deprecated alias (CONTRACT.md P5).
+): StitchEvent => ({
+    type: 'result',
+    data,
+    value: data,
+    status,
+    attempts,
+    at: now(),
+});
 
 // Interpret a buffered response into a result value via the surface's `interpret` hook (graphql's
 // "200-with-`errors`" failure lives there). No surface / no hook → the body is the value.
@@ -1023,7 +1118,7 @@ async function* runFrom(
     rt: Runtime,
     baseReq: AdapterRequest,
     name: string,
-    state: { attempts: number },
+    state: RunState,
     t0: number,
     run: RunContext,
     budget?: TotalBudget,
@@ -1049,26 +1144,23 @@ async function* runFrom(
     let value: unknown = outcome.value;
     if (cfg.transform) value = await cfg.transform(value);
     if (cfg.unwrap) value = getPath(value, cfg.unwrap);
-    const findings = await validateOutput(cfg, value);
+    // The pre-validation body — the left side of 0015's `diff(raw, validated)`, the coordinate space a
+    // finding's `path` is anchored to. `.inspect()` (ADR 0016) surfaces it; otherwise it's discarded.
+    const rawBody = value;
+    const { value: validated, findings } = await validateOutput(cfg, value);
     let fatal = false;
     for (const finding of findings) {
         yield { type: 'drift', finding, at: now() };
         if (finding.level === 'error') fatal = true;
     }
     if (fatal) {
-        yield {
-            type: 'error',
-            name,
-            message: 'contract violation (drift)',
-            status: res.status,
-            attempts: state.attempts,
-            at: now(),
-        };
+        yield contractViolationEvt(name, res.status, state, rawBody);
         yield doneEvt(false, t0, state.attempts);
         return { ok: false };
     }
 
-    yield resultEvt(value, res.status, state.attempts);
+    value = validated; // serve the validated value — sound, matches the declared contract (ADR 0015)
+    yield withRaw(resultEvt(value, res.status, state.attempts), state, rawBody);
     yield doneEvt(true, t0, state.attempts);
     const vary = res.headers['vary'];
     return vary !== undefined
@@ -1096,7 +1188,7 @@ async function* runStreaming(
     rt: Runtime,
     input: StitchInput,
     name: string,
-    state: { attempts: number },
+    state: RunState,
     t0: number,
     run: RunContext,
     budget?: TotalBudget,
@@ -1110,7 +1202,8 @@ async function* runStreaming(
     // The resume hooks (issue #71) stay optional; the surface is resumable only when both are set.
     const streamHook: NonNullable<Surface['stream']> = surface.stream;
     const resumeToken = surface.resumeToken;
-    const resumeRetryMs = surface.resumeRetryMs;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `resumeRetryMs` is the @deprecated alias of `resumeRetry`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const resumeRetry = surface.resumeRetry ?? surface.resumeRetryMs;
     const applyResume = surface.applyResume;
 
     let baseReq: AdapterRequest;
@@ -1162,7 +1255,7 @@ async function* runStreaming(
         // against the rate budget like any other (Decision 12) — but still take NO concurrency slot.
         let waited: number;
         try {
-            ({ waitedMs: waited } = await acquireWithin(
+            ({ waited } = await acquireWithin(
                 rt.throttle,
                 hostKey(baseReq, cfg),
                 budget,
@@ -1175,13 +1268,13 @@ async function* runStreaming(
             return 'fail';
         }
         if (waited > 0)
-            yield {
+            yield coemitWaitedMs({
                 type: 'progress',
                 phase: 'throttled',
                 attempt,
-                waitedMs: waited,
+                waited,
                 at: now(),
-            };
+            });
 
         let res: AdapterResponse;
         try {
@@ -1218,6 +1311,7 @@ async function* runStreaming(
                 status: res.status,
                 headers: res.headers,
                 body: await drainErrorBody(res.body),
+                // eslint-disable-next-line no-restricted-syntax -- `compact` would optionalize the required `body: unknown`; keep the explicit spread here
                 ...(res.url !== undefined ? { url: res.url } : {}),
             };
             const e = new Error(`HTTP ${res.status}`) as Error & {
@@ -1245,7 +1339,7 @@ async function* runStreaming(
                 // later drop resumes from here. Unchanged when the surface isn't resumable (no hook).
                 const tok = resumeToken?.(chunk);
                 if (tok !== undefined) lastToken = tok;
-                const ret = resumeRetryMs?.(chunk);
+                const ret = resumeRetry?.(chunk);
                 if (ret !== undefined) lastRetryMs = ret;
 
                 if (cfg.output) {
@@ -1253,7 +1347,8 @@ async function* runStreaming(
                         ? cfg.kind.contractValue(chunk)
                         : chunk;
                     let fatal = false;
-                    for (const finding of await validateSchema(cfg, target)) {
+                    const { errors } = await validateValue(cfg, target);
+                    for (const finding of errors) {
                         yield { type: 'drift', finding, at: now() };
                         if (finding.level === 'error') fatal = true;
                     }
@@ -1291,7 +1386,7 @@ async function* runStreaming(
     // The reconnect loop. The first open is mandatory; each subsequent open is gated on a drop
     // (`'closed'`/`'error'`) AND remaining attempts. On a drop we emit a `reconnect` progress event
     // (reusing the `progress` spine — Decision: no new StitchEvent type), wait the backoff (the
-    // server `retry:` seen this run, else `reconnect.backoffMs`, else the `retry` policy), then loop
+    // server `retry:` seen this run, else `reconnect.backoff`, else the `retry` policy), then loop
     // — `openAndDecode` reapplies auth + injects the resume token on the reopened request.
     for (;;) {
         const ended = yield* openAndDecode();
@@ -1311,19 +1406,19 @@ async function* runStreaming(
         }
 
         // Backoff: a server-sent `retry:` (seen on any connection this run) wins; else the explicit
-        // `reconnect.backoffMs`; else the stitch's `retry` backoff math. `attempt` is now the count
+        // `reconnect.backoff`; else the stitch's `retry` backoff math. `attempt` is now the count
         // of opens DONE, so `attempt + 1` is the upcoming reconnect for the expo curve.
         const backoff =
             lastRetryMs ??
-            policy.backoffMs ??
+            policy.backoff ??
             backoffDelay(attempt + 1, cfg.retry);
-        yield {
+        yield coemitWaitedMs({
             type: 'progress',
             phase: 'reconnect',
             attempt,
-            waitedMs: backoff,
+            waited: backoff,
             at: now(),
-        };
+        });
         await sleepWithin(backoff, budget, baseReq.signal, rt.clock);
     }
 
@@ -1334,20 +1429,23 @@ async function* runStreaming(
 // Resolve the resumable-SSE reconnect policy from config (issue #71) — the ONE place the engine
 // reads the `sse` config slot, keeping `runStreaming` free of SSE-isms. `sse.reconnect` is off by
 // default; `true` enables it with sane defaults; the object form tunes the cap / fallback backoff.
-// `backoffMs` stays `undefined` when unset so the caller can fall back to the `retry` policy.
+// `backoff` stays `undefined` when unset so the caller can fall back to the `retry` policy.
 function resolveReconnect(cfg: ResolvedStitchConfig): {
     enabled: boolean;
     maxAttempts: number;
-    backoffMs: number | undefined;
+    backoff: number | undefined;
 } {
     const r = cfg.sse?.reconnect;
-    if (!r) return { enabled: false, maxAttempts: 0, backoffMs: undefined };
+    if (!r) return { enabled: false, maxAttempts: 0, backoff: undefined };
     if (r === true)
-        return { enabled: true, maxAttempts: 3, backoffMs: undefined };
+        return { enabled: true, maxAttempts: 3, backoff: undefined };
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `backoffMs` is the @deprecated alias of `backoff`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const backoff = parseDuration(r.backoff ?? r.backoffMs);
     return {
         enabled: true,
-        maxAttempts: r.maxAttempts ?? 3,
-        backoffMs: r.backoffMs,
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxAttempts` is the @deprecated alias of `attempts`, read for back-compat until the GA cut (CONTRACT.md P4)
+        maxAttempts: r.attempts ?? r.maxAttempts ?? 3,
+        backoff,
     };
 }
 
@@ -1356,7 +1454,7 @@ async function* runOnce(
     rt: Runtime,
     input: StitchInput,
     name: string,
-    state: { attempts: number },
+    state: RunState,
     t0: number,
     run: RunContext,
     budget?: TotalBudget,
@@ -1381,7 +1479,7 @@ async function* runCached(
     ctl: CacheController,
     input: StitchInput,
     name: string,
-    state: { attempts: number },
+    state: RunState,
     t0: number,
     run: RunContext,
     budget?: TotalBudget,
@@ -1441,7 +1539,10 @@ async function* runCached(
         // a hit still short-circuits network/throttle/transform.
         let stale = false;
         if (ctl.revalidateOnHit && cfg.output) {
-            for (const finding of await validateOutput(cfg, found.value)) {
+            // Only the hard validation result matters on a cache hit: a stored value that no longer
+            // satisfies the schema is stale-shaped. Soft drift (raw-vs-validated) is meaningless here.
+            const { errors } = await validateValue(cfg, found.value);
+            for (const finding of errors) {
                 yield { type: 'drift', finding, at: now() };
                 if (finding.level === 'error') stale = true;
             }
@@ -1504,14 +1605,19 @@ export async function* execute(
     input: StitchInput = {},
     // Run identity (ADR 0007). Defaults to a fresh root run; the caller supplies one to make
     // this a CHILD run — `newRunContext(parent)` inherits the parent's `traceId` and sets
-    // `parentId` (a `cookieSession` login, a `pipe()` step). Stamped on the `start` event and
+    // `parentSpanId` (a `cookieSession` login, a `linked` step). Stamped on the `start` event and
     // carried onto the trace-sink ctx by `tee` (stitch.ts).
     run: RunContext = newRunContext(),
+    // Per-call run flags (ADR 0016), set by `.inspect()`: `retainRaw` surfaces the pre-validation
+    // body on the terminal event; `bypassCache` skips the cache entirely (neither read nor write).
+    // Both default off, so every other consumer (await/safe/stream) is byte-identical.
+    flags?: RunFlags,
 ): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
     const name = nameOf(cfg);
     const t0 = now();
-    const state = { attempts: 0 };
+    const state: RunState = { attempts: 0 };
+    if (flags?.retainRaw) state.retainRaw = true;
     const budget = totalBudget(cfg, t0);
 
     try {
@@ -1521,6 +1627,12 @@ export async function* execute(
         yield doneEvt(false, t0, 0);
         return;
     }
+
+    // Teach, don't no-op: an upload progress bar the transport can't draw gets one `info` event,
+    // not silence (and not a throw — see `uploadProgressWarning`). Emitted once per call, before
+    // any surface dispatch, so the same note surfaces for buffered/paginated/cached paths alike.
+    const progressWarning = uploadProgressWarning(rt, input);
+    if (progressWarning) yield progressWarning;
 
     // Streaming surfaces (sse/stream) take a dedicated path: open the live body and emit `delta`
     // chunks (Decisions 4-5). Streaming bypasses pagination and the cache, and is exempt from the
@@ -1537,7 +1649,10 @@ export async function* execute(
 
     // Cache lookup is OUTERMOST over the expensive chain but AFTER input validation, so a hit can
     // never tunnel an invalid call past the boundary and the key mirrors the resolved request.
-    const ctl = await ensureCache(rt);
+    // `.inspect()` bypasses it by default (ADR 0016): a hit stores only `{ value, status }` — no
+    // `raw` — so serving one defeats the probe; bypass runs the uncached path, which neither reads
+    // nor writes the cache and stays out of single-flight coalescing (it runs its own request).
+    const ctl = flags?.bypassCache ? null : await ensureCache(rt);
     if (ctl) {
         yield* runCached(rt, ctl, input, name, state, t0, run, budget);
         return;
@@ -1613,7 +1728,7 @@ export async function executeRaw(
 /**
  * Like {@link executeRaw}, but TEES the run's events to `sink` as a CHILD run (ADR 0007) and
  * returns the raw response. `cookieSession` uses it to run its login as a traced child of the call
- * that triggered it (`run.parentId` = the caller's runId), so the login is no longer an invisible
+ * that triggered it (`run.parentSpanId` = the caller's spanId), so the login is no longer an invisible
  * side-call. The login's `result` carries only its **status** — never the (sensitive) login body —
  * and any `throttled`/`retry`/`info` events from the login's own attempts are teed through.
  */
@@ -1627,12 +1742,12 @@ export async function executeRawTraced(
     const name = nameOf(cfg);
     const t0 = now();
     const state = { attempts: 0 };
-    const ctx = {
+    const ctx = compact({
         name,
-        runId: run.runId,
+        spanId: run.spanId,
         traceId: run.traceId,
-        ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
-    };
+        parentSpanId: run.parentSpanId,
+    });
     const baseReq = buildRequest(cfg, input);
     sink.handle(startEvt(name, baseReq, input, run), ctx);
     try {

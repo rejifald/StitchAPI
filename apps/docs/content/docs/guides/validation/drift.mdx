@@ -1,12 +1,14 @@
 ---
-title: 'Leveled drift'
-description: 'Detect silent contract changes as leveled findings (error/warn/info) against a committed snapshot.'
+title: 'Drift detection'
+description: 'Detect silent contract changes as non-fatal findings by diffing the raw response against the validated value.'
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Wrap a stitch's `output` with `drift` when you want to catch an API quietly
-changing shape — a field dropped, a type flipped, a new key appearing — and
-classify each change as `error`, `warn`, or `info` against a committed
-baseline.
+changing shape and be notified through the event stream. Drift is **schema-anchored
+and diff-based**: the `output` schema you already declare _is_ the contract, and
+drift computes the structural difference between the raw body and the validated
+value to surface what changed.
 
 ## Example
 
@@ -17,42 +19,49 @@ import { z } from 'zod';
 const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    output: drift(z.object({ id: z.number(), email: z.string() }), {
-        critical: ['id'],
-        watch: ['email'],
-        snapshotFile: 'users.contract.json',
-    }),
+    output: drift(z.object({ id: z.number(), email: z.string() })),
 });
 ```
 
-The first call records the baseline; every call after compares the response
-against `users.contract.json` and emits any deltas as leveled findings.
+On every call the engine validates the response against the schema, then diffs
+the raw body against the validated value and emits each difference as a `drift`
+event on the [event stream](/docs/concepts/event-stream).
+
+## Two tiers: validation and drift
+
+These are distinct layers, not options on a dial.
+
+### Validation — the hard contract
+
+Validation runs first. A **missing required field** or **incompatible value**
+throws immediately with error code `STITCH_DRIFT` (a finding with
+`change: 'invalid'`, `level: 'error'`). On success the call **returns the
+validated value** — defaults applied, types coerced, unknown keys stripped — so
+the result matches the declared TypeScript type exactly.
+
+Make a field required in the schema when its absence is a bug. That is all that
+is needed for a hard failure; no extra configuration is required.
+
+### Drift — the soft, non-fatal layer
+
+When validation succeeds, drift diffs the raw body against the validated value.
+The delta is the drift:
+
+| diff op  | meaning                                       | `change`     | default level |
+| -------- | --------------------------------------------- | ------------ | ------------- |
+| `remove` | a key the schema stripped                     | `undeclared` | `info`        |
+| `change` | a value the schema coerced (`"42"` → `42`)    | `coerced`    | `warn`        |
+| `create` | a `.default()` fired because the field absent | `defaulted`  | `verbose`     |
+
+Soft drift findings are **always non-fatal**. To make a change fatal, declare
+the field required in the schema — it will surface as `invalid` / `error` from
+validation, not drift.
 
 ## Options
 
-`critical` lists paths whose change is an `error`; `watch` lists paths whose
-change is a `warn`; everything else that moves is a `warn` too. `onNew` sets the
-level for brand-new fields (default `'info'`). `snapshotFile` names the
-committed baseline — a `<name>.contract.json` you check into the repo.
+`drift(schema, opts?)` accepts an optional `DriftOptions` object with two keys:
 
-Each finding rides the event stream as a `drift` event. An `error`-level finding
-breaks the contract and surfaces as
-[STITCH_DRIFT](/docs/errors/stitch-drift); `warn` and `info` findings are
-reported but do not fail the call, so you watch a field erode before it breaks.
-
-This is the opposite end from plain
-[Validation](/docs/guides/validation/validation): validation rejects a single
-malformed response hard, here and now, while drift watches for the _silent_
-contract change across calls and lets you triage it by severity.
-
-## Read-only drift in production
-
-The first call with no committed snapshot **writes** one and reports nothing — a
-convenience while you develop the contract. In a deployed/prod context that is a
-footgun: the first request silently persists a baseline (possibly to a read-only
-path) and "passes" instead of detecting drift. Set `readonly: true` to make
-drift _detect-but-never-write_ — a missing snapshot surfaces a `no-baseline`
-finding instead of being written as a call side effect:
+### `ignore`
 
 ```ts twoslash
 import { drift, stitch } from 'stitchapi';
@@ -62,88 +71,118 @@ const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     output: drift(z.object({ id: z.number(), email: z.string() }), {
-        readonly: true,
-        // Surface a missing baseline as an error, not the default warn.
-        onMissing: 'error',
-        snapshotFile: 'users.contract.json',
+        // Acknowledge known API surface we intentionally do not consume.
+        ignore: ['meta', '_links'],
     }),
 });
 ```
 
-[Generate the baseline](#generate-baselines-deliberately) once with `stitch
-drift generate`, check the `<name>.contract.json` into the repo, then ship with
-`readonly: true`. `onMissing` levels the `no-baseline` finding (default
-`'warn'`); `'error'` fails the call so a missing baseline can't slip past CI.
+`ignore: string[]` suppresses soft drift findings whose path matches an entry.
+Use it for API fields you know about but have chosen not to model — acknowledged
+but unconsumed surface. The grammar: nested keys join with `.`, array elements
+collapse to `[]` (so `items[].meta` suppresses every element's `meta`), and a
+bare prefix (`meta`) suppresses that key and everything beneath it.
 
-## Generate baselines deliberately
+A stale entry in `ignore` is harmless — you keep ignoring a field that is still
+present.
 
-Letting the first call write the baseline is convenient early on, but it couples
-the contract to whatever the first response happened to be — and under
-`readonly: true` it never writes at all. Produce baselines on purpose in dev/CI
-with `stitch drift generate`:
+### `severity`
 
-```bash
-# Baseline every drift-guarded stitch in the module
-stitch drift generate --module ./stitches.ts
+`severity` controls how soft drift is leveled or filtered. Three shapes:
 
-# Just one, by export name or configured name
-stitch drift generate --name getUser
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
 
-# A parameterized stitch — request inputs map exactly like `stitch run`
-stitch drift generate --name getUser --id 7
+// 1. Single level string — surface only drift at this level (allowlist).
+const a = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/a',
+    output: drift(z.object({ id: z.number() }), {
+        severity: 'warn', // only coerced findings surface; undeclared (info) and defaulted (verbose) are dropped
+    }),
+});
+
+// 2. Array of levels — allowlist of multiple levels.
+const b = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/b',
+    output: drift(z.object({ id: z.number() }), {
+        severity: ['info', 'warn'], // drop verbose (defaulted), surface the rest
+    }),
+});
+
+// 3. Map — re-level a specific kind (all kinds still surface).
+const c = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/c',
+    output: drift(z.object({ id: z.number() }), {
+        severity: { coerced: 'info', defaulted: 'info' },
+    }),
+});
 ```
 
-It loads the module, runs each stitch whose `output` is a
-`drift({ …, snapshotFile })` once against the live API, and writes its
-`<name>.contract.json` — the **same** post-transform/unwrap body a live run
-compares against, so a generated baseline never diverges from what drift
-detection sees. Each path written is printed to stdout.
+Omit `severity` to surface all soft drift at its default level.
 
-Existing snapshots are kept (the stitch is skipped) unless you pass `--force`:
-baseline a newly added stitch without re-fetching the rest, and refresh a
-deliberately changed contract with `--force` when the API moves. A failed run
-never overwrites a committed baseline.
+## Variance is not drift
 
-## `snapshotFile` is resolved from `process.cwd()`
+Because the schema is the contract, normal response variance never reads as
+drift: an optional field that is absent, a `string | null` that is null, an
+empty or heterogeneous array all **satisfy** a well-written schema, so nothing
+is raised. Declare what may vary, and only genuine change is reported.
 
-A relative `snapshotFile` resolves against the **current working directory**, not
-the module that declares the stitch — so running a package's tests or app from a
-different directory writes/reads the snapshot in the wrong place. Pass an
-absolute or caller-relative path. The portable spelling anchors the file to the
-declaring module with `fileURLToPath(new URL(...))`:
-
-```ts
-import { fileURLToPath } from 'node:url';
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
 
 const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    output: drift(userSchema, {
-        readonly: true,
-        snapshotFile: fileURLToPath(
-            new URL('./users.contract.json', import.meta.url),
-        ),
-    }),
+    output: drift(
+        z.object({
+            id: z.number(),
+            avatar: z.string().nullable(), // sometimes null — declared, so never drift
+            badges: z.array(z.string()), // may be empty — declared, so never drift
+            nickname: z.string().optional(), // sometimes absent — declared, so never drift
+        }),
+    ),
 });
 ```
 
+The flip side: drift watches the surface you _declare_. What the provider changes
+in a field you do not model is, by definition, change you do not consume.
+
+## Detecting new fields
+
+A brand-new field the schema does not declare shows up as an `undeclared` finding
+(`change: 'undeclared'`, default level `info`) — the schema strips the key, the
+diff sees the removal, and drift reports it. No `.strict()` is needed: the diff
+catches stripped keys automatically, and the output stays clean.
+
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+// A new field the API adds will show up as an `undeclared` finding at `info` level
+// — no `.strict()` required, and the validated output is still clean.
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: drift(z.object({ id: z.number(), email: z.string() })),
+});
+```
+
+To suppress a known-but-not-consumed field, add it to `ignore` rather than
+expanding the schema — that keeps the typed contract tight.
+
 <Callout type="info">
     Findings arrive as `drift` events on [the event
-    stream](/docs/concepts/event-stream) — subscribe to inspect `warn` and
-    `info` levels that never throw.
+    stream](/docs/concepts/event-stream). Subscribe to inspect `warn`, `info`,
+    and `verbose` levels that never throw.
 </Callout>
 
 See [Reference → Config types](/docs/reference/config-types) for the full
 `DriftOptions` and `DriftFinding` tables.
-
-<Callout type="warn">
-    **Anti-pattern:** don't list every path under `critical` so any change
-    breaks the call — that collapses drift back into hard validation and throws
-    away the early warning. Reserve `critical` for the few paths that must not
-    move, leave the rest to `watch` and `info`, and read those findings off the
-    event stream so you can watch a field erode before it breaks. See [the event
-    stream](/docs/concepts/event-stream).
-</Callout>
 
 ## See also
 

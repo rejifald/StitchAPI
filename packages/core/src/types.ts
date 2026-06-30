@@ -10,6 +10,16 @@ import type {
 import type { Surface } from './surface';
 import type { Validator } from './validator';
 
+/**
+ * A value with **at least one** property of `T` set. The empty object `{}` satisfies none of the
+ * per-key-required variants, so it is a type error — used so an all-optional options envelope's
+ * object form requires real customization while the enable-with-defaults case stays a scalar
+ * (`true`), never the opaque `{}` (CONTRACT.md P20).
+ */
+export type AtLeastOne<T, K extends keyof T = keyof T> = {
+    [P in K]: Required<Pick<T, P>> & Partial<Omit<T, P>>;
+}[K];
+
 export interface StitchInput {
     params?: Record<string, unknown>;
     query?: Record<string, unknown>;
@@ -31,75 +41,64 @@ export interface StitchInput {
 }
 
 // ---- Drift ----------------------------------------------------------------
-export type DriftLevel = 'error' | 'warn' | 'info';
-export type DriftChange =
-    | 'missing'
-    | 'type-changed'
-    | 'nullable'
-    | 'new'
-    | 'no-baseline'
-    | 'invalid';
+/**
+ * Severity of a finding. `error` is reserved for a hard validation failure (`change: 'invalid'`),
+ * which fails the call; soft drift is non-fatal — `warn` / `info` / `verbose` (quietest), see
+ * {@link DriftSeverity}.
+ */
+export type DriftLevel = 'error' | 'warn' | 'info' | 'verbose';
+/**
+ * What a finding reports. The three **soft** kinds come from diffing the raw response against the
+ * validated value (ADR 0015): `undeclared` (a key the schema stripped), `coerced` (a value the
+ * schema coerced — a hidden wire-type shift), `defaulted` (a `.default()` fired because the field
+ * was absent). `invalid` is the **hard** validation failure (missing-required / incompatible) that
+ * throws.
+ */
+export type DriftChange = 'undeclared' | 'coerced' | 'defaulted' | 'invalid';
+/** The soft (diff-derived) drift kinds — the ones whose severity is configurable. */
+export type SoftDriftChange = Exclude<DriftChange, 'invalid'>;
+/** Non-fatal severities a soft drift finding can carry. (Fatality is the schema's job — make the field required.) */
+export type DriftSeverity = 'warn' | 'info' | 'verbose';
 export interface DriftFinding {
     level: DriftLevel;
     path: string;
     change: DriftChange;
     detail?: string;
+    /** Concrete-index path for the first occurrence of this finding within an array summary (e.g. `"items[3].x"`). Present only on array-collapsed findings (ADR 0017). */
+    sample?: string;
 }
 export interface DriftOptions {
     /**
-     * Dotted paths whose disappearance or type change is escalated from the default
-     * `warn` to an `error`. The path grammar mirrors the response-shape walk: nested
-     * keys join with `.`, and an **array element** is addressed with `[]` — so
-     * `items[].id` matches the `id` of every element of the `items` array. A pattern
-     * matches by exact path, by a single-segment `*` wildcard, or as a prefix (`data`
-     * matches `data[].id` and everything beneath it). See `matchPath` for the full grammar.
+     * Paths whose soft drift is suppressed — the acknowledged-but-unconsumed surface of the API, kept
+     * out of the typed schema so the contract stays tight (ADR 0015). A narrow consumer schema means
+     * an undeclared field is usually one you already know about, not a true addition; `ignore` is the
+     * curated, path-only "known surface" (no typed baseline, so no variance false positives).
      *
-     * @example
-     * ```ts
-     * drift(userSchema, {
-     *     critical: [
-     *         'id', // top-level `id` going missing / changing type → error
-     *         'items[].sku', // the `sku` of ANY element of `items` → error
-     *         'meta.*', // any direct child of `meta` (single-segment wildcard)
-     *     ],
-     * });
-     * ```
-     */
-    critical?: string[];
-    /** Paths (same grammar as {@link DriftOptions.critical}, e.g. `items[].field`) whose change is leveled to a `warn`. */
-    watch?: string[];
-    onNew?: DriftLevel; // level for brand-new fields (default 'info')
-    /**
-     * Detect-but-never-write (default `false`). When `true`, a missing snapshot is NOT written;
-     * instead it surfaces a `no-baseline` finding (at {@link DriftOptions.onMissing}). Use in
-     * deployed/prod contexts so a drift-guarded call can never write a baseline as a side effect
-     * (the default first-run behaviour writes one).
-     */
-    readonly?: boolean;
-    /**
-     * Level for the `no-baseline` finding emitted in {@link DriftOptions.readonly} mode when the
-     * snapshot is absent. Default `'warn'`.
-     */
-    onMissing?: DriftLevel;
-    /**
-     * Committed baseline (`<name>.contract.json`). The path is resolved relative to
-     * `process.cwd()` — **not** the declaring module — so running a package's tests/app from a
-     * different working directory writes/reads the snapshot in the wrong place. Prefer an absolute
-     * or caller-relative path; anchor it to the module that declares the stitch with
-     * `fileURLToPath(new URL(...))`:
+     * The grammar mirrors the finding path: nested keys join with `.`, an **array element** is `[]`
+     * (so `items[].meta` matches every element's `meta`), and a pattern matches by exact path, a
+     * single-segment `*` wildcard, or as a prefix (`meta` ignores `meta` and everything beneath it).
      *
-     * @example
-     * ```ts
-     * import { fileURLToPath } from 'node:url';
-     *
-     * drift(userSchema, {
-     *     snapshotFile: fileURLToPath(
-     *         new URL('./users.contract.json', import.meta.url),
-     *     ),
-     * });
-     * ```
+     * @example `ignore: ['meta', '_links', 'debug.*']`
      */
-    snapshotFile?: string;
+    ignore?: string[];
+    /**
+     * How soft drift is leveled / filtered. Three shapes (ADR 0015):
+     * - a **single level** or a **bare list** of levels — an _allowlist_ of which severities to
+     *   surface (others are dropped), keeping the per-kind defaults below. `'warn'` ≡ `['warn']`.
+     * - a **map** of soft-change kind → severity — _re-levels_ a kind (all kinds still surface).
+     *
+     * Per-kind defaults: `undeclared` → `info`, `coerced` → `warn`, `defaulted` → `verbose`.
+     * Omitted ⇒ every soft drift surfaces at its default level. Soft drift is always non-fatal;
+     * to fail on a change, make the field required/strict in the schema (it becomes `invalid`).
+     *
+     * @example severity: 'warn'                         // surface only warn-level drift
+     * @example severity: ['info', 'warn']               // surface info and warn (drop verbose)
+     * @example severity: { coerced: 'info', defaulted: 'info' } // re-level two kinds
+     */
+    severity?:
+        | DriftSeverity
+        | DriftSeverity[]
+        | Partial<Record<SoftDriftChange, DriftSeverity>>;
 }
 export interface DriftSpec<T = unknown> {
     __kind: 'drift';
@@ -155,12 +154,17 @@ export interface ReconnectOptions {
      * Total reconnect attempts after the first connection drops, before the stream gives up and
      * ends/errors exactly as today. Default 3.
      */
+    attempts?: number;
+    /** @deprecated Renamed to {@link ReconnectOptions.attempts} (CONTRACT.md P4). Read until the 1.0 GA cut. */
     maxAttempts?: number;
     /**
-     * Fallback reconnect backoff (ms) when the server has NOT sent a `retry:` field on the dropped
-     * connection. When omitted, the stitch's `retry` (`RetryOptions` — `backoff`/`baseMs`/`maxMs`)
-     * supplies the delay. A server-sent `retry:` on the connection always wins over both.
+     * Fallback reconnect backoff when the server has NOT sent a `retry:` field on the dropped
+     * connection — `1000`, `'1s'`. When omitted, the stitch's `retry` (`RetryOptions` —
+     * `backoff`/`baseDelay`/`maxDelay`) supplies the delay. A server-sent `retry:` on the connection
+     * always wins over both.
      */
+    backoff?: number | string;
+    /** @deprecated Renamed to {@link ReconnectOptions.backoff} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     backoffMs?: number;
 }
 /**
@@ -168,7 +172,7 @@ export interface ReconnectOptions {
  * default**: with no `sse.reconnect` block the engine opens the body exactly once (today's
  * behaviour, byte-identical). When enabled the engine tracks the last `id:` seen and replays it as
  * `Last-Event-ID` on each reconnect, honours a server-sent `retry:` as the backoff (falling back to
- * `reconnect.backoffMs` / the stitch's `retry` policy), and caps reconnects at `maxAttempts`.
+ * `reconnect.backoff` / the stitch's `retry` policy), and caps reconnects at `maxAttempts`.
  *
  * `true` = enabled with sane defaults; the object form tunes the cap / fallback backoff. Plain JSON
  * (the contract gate). Only the `sse` surface acts on this; other surfaces ignore it.
@@ -222,21 +226,82 @@ export interface AdapterResponse {
      */
     url?: string;
 }
-export type Adapter = (req: AdapterRequest) => Promise<AdapterResponse>;
+/**
+ * An optional transport feature an adapter can declare it supports:
+ *
+ * -   `'stream'` — honours {@link AdapterRequest.stream}, handing back a live `ReadableStream`
+ *     instead of rejecting it. `fetch` only among the built-ins (`xhr`/axios buffer and reject it).
+ * -   `'uploadProgress'` — reports `phase: 'upload'` byte progress through
+ *     {@link AdapterRequest.onProgress}. `xhr` and axios can; `fetch` cannot (it leaves the upload
+ *     phase silent).
+ * -   `'downloadProgress'` — reports `phase: 'download'` byte progress through
+ *     {@link AdapterRequest.onProgress} as the response arrives. `fetch`, `xhr`, and axios all can.
+ */
+export type AdapterCapability =
+    | 'stream'
+    | 'uploadProgress'
+    | 'downloadProgress';
+/**
+ * What a transport supports, declared on the adapter itself (ADR 0005 Decision 9). An adapter is
+ * still just a function — this is an OPTIONAL hint hung off it. A descriptor lists the features the
+ * transport HAS in `supports`; anything not listed, it can't do. Built-in adapters declare one so
+ * the engine can turn a silent no-op into a teaching note: a call that asks for `phase: 'upload'`
+ * progress on a transport whose `supports` omits `'uploadProgress'` (`fetch`, axios) gets an `info`
+ * event pointing at `xhrAdapter`, instead of an upload bar that never moves. A custom adapter that
+ * declares nothing is treated as unknown — no checks, the open contract stands.
+ *
+ * Diagnostics only; never part of `__config`, never serialised.
+ */
+export interface AdapterCapabilities {
+    /** Human label for diagnostics, e.g. `'fetchAdapter'`. */
+    name?: string;
+    /** The optional features this transport supports. Anything NOT listed, it cannot do. */
+    supports: AdapterCapability[];
+}
+/**
+ * A transport: take a request, return a response, never throw on a non-2xx (ADR 0005). The optional
+ * {@link AdapterCapabilities} is hung off the function so a plain `(req) => Promise<res>` still
+ * satisfies the type — declaring capabilities is opt-in.
+ */
+export type Adapter = ((req: AdapterRequest) => Promise<AdapterResponse>) & {
+    capabilities?: AdapterCapabilities;
+};
 
 // ---- Resilience options ---------------------------------------------------
 export interface RetryOptions {
     attempts?: number; // total attempts incl. the first (default 1 = no retry)
-    on?: number[]; // status codes that trigger a retry (default [429,502,503,504])
+    on?: number[] | ((status: number) => boolean); // statuses (or a predicate) that trigger a retry (default [429,502,503,504])
     backoff?: 'expo' | 'expo-jitter' | 'fixed';
+    /** Base backoff delay before the first retry — `100`, `'100ms'`, `'1s'`. Default 100ms. */
+    baseDelay?: number | string;
+    /** @deprecated Renamed to {@link RetryOptions.baseDelay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     baseMs?: number;
+    /** Backoff ceiling the computed delay is clamped to — `10_000`, `'10s'`. Default 10s. */
+    maxDelay?: number | string;
+    /** @deprecated Renamed to {@link RetryOptions.maxDelay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     maxMs?: number;
     respectRetryAfter?: boolean;
 }
 export interface ThrottleOptions {
     rate?: string; // "2/s"
     concurrency?: number;
+    /**
+     * Where the limiter's counter is pooled: `'stitch'` (default) keeps a per-stitch
+     * budget; `'host'` shares one budget across every stitch hitting the same host. Renamed
+     * from `scope` (CONTRACT.md P2) so `scope` only ever means principal/app tenancy.
+     */
+    pool?: 'stitch' | 'host';
+    /** @deprecated Renamed to {@link ThrottleOptions.pool} (CONTRACT.md P2). Read until the 1.0 GA cut. */
     scope?: 'stitch' | 'host';
+    /**
+     * Delegate rate-limit handling to the host (folded in from the top-level `rateLimit`,
+     * CONTRACT.md P14). When `true`, a rate-limit response (status matched by `on`, default `[429]`)
+     * is **not** retried or throttled internally — self-pacing (`rate`/`concurrency`) is bypassed and
+     * the outcome surfaces as a {@link RateLimitError}. Use it when an OUTER gate owns the backoff.
+     */
+    delegate?: boolean;
+    /** Statuses that count as a rate-limit signal under `delegate` — a list or a predicate. Default `[429]`. */
+    on?: number[] | ((status: number) => boolean);
 }
 /**
  * Options for one throttle `acquire`. `rateOnly` charges the rate limiter but takes NO concurrency
@@ -251,14 +316,60 @@ export interface TimeoutOptions {
     perAttempt?: number | string;
 }
 export interface CircuitOptions {
-    failureThreshold: number; // consecutive failures that trip the breaker OPEN
-    cooldownMs: number; // fast-fail window after opening, before a half-open trial
-    halfOpenAfterMs?: number; // when to allow a half-open trial (default cooldownMs)
-    key?: string; // store namespace to share a breaker across stitches (default: stitch/host key)
+    /**
+     * Consecutive failures that trip the breaker OPEN. Required by design — a breaker with an
+     * invisible threshold fails silently (CONTRACT.md P15); `createCircuit` throws if neither
+     * `failures` nor the @deprecated `failureThreshold` is set. Optional at the type level only so
+     * the deprecated alias can stand in until the GA cut.
+     */
+    failures?: number;
+    /** @deprecated Renamed to {@link CircuitOptions.failures} (CONTRACT.md P4). Read until the 1.0 GA cut. */
+    failureThreshold?: number;
+    /**
+     * Fast-fail window after opening, before a half-open trial — `30_000`, `'30s'`. Required by
+     * design (P15); `createCircuit` throws if neither `cooldown` nor the @deprecated `cooldownMs`
+     * is set.
+     */
+    cooldown?: number | string;
+    /** @deprecated Renamed to {@link CircuitOptions.cooldown} (CONTRACT.md P17). Read until the 1.0 GA cut. */
+    cooldownMs?: number;
+    /** When to allow a half-open trial — `60_000`, `'1m'`. Default: `cooldown`. */
+    halfOpenAfter?: number | string;
+    /** @deprecated Renamed to {@link CircuitOptions.halfOpenAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
+    halfOpenAfterMs?: number;
+    /** Store namespace to share a breaker across stitches (default: stitch/host key). */
+    key?: string;
 }
+/**
+ * Inject an idempotency token on writes so a server can collapse a duplicate. The default key is a
+ * random uuid minted **once per logical call** and reused across that call's retries — it makes a
+ * {@link RetryOptions | retry} safe to attempt. Because the random key only dedupes a replay of the
+ * *same* request, it pairs with `retry` (the retry is the duplicate it absorbs); declaring it on a
+ * write with **no** `retry` logs a one-time construction nudge, since it usually has nothing to
+ * collapse. It isn't strictly useless without one — a proxy or the transport resending the request
+ * below the stitch carries the same key for a server to dedupe — so the nudge has an out: set
+ * `warn: false` to silence it.
+ *
+ * To collapse two *separate* submissions of the same write — a double-clicked button — give `keyOf`
+ * and derive the token from something the duplicates share. A derived key dedupes submissions
+ * server-side without any retry, so it stands on its own (and is never nudged).
+ *
+ * `header` renames the idempotency key — the value the server *dedupes* on. It is not a place to
+ * set a correlation/trace header like `traceparent` or `X-Request-Id`; those identify a request
+ * for logs and spans and belong to tracing, not dedupe.
+ *
+ * The key is sent on **writes only**; setting `idempotency` on a read (GET/HEAD) drops it and logs
+ * a construction nudge — almost always a missing `method: 'POST'`. Both nudges fire only on the
+ * default HTTP surface and are silenced by `warn: false`.
+ */
 export interface IdempotencyOptions {
     header?: string; // header name (default 'Idempotency-Key')
-    key?: (input: StitchInput) => string; // stable key per logical call (default: a random uuid)
+    /** Derive a stable key per logical call (default: a random uuid). Renamed from `key` (CONTRACT.md P6: `key` is a string, a derivation fn is `keyOf`). */
+    keyOf?: (input: StitchInput) => string;
+    /** @deprecated Renamed to {@link IdempotencyOptions.keyOf} (CONTRACT.md P6). Read until the 1.0 GA cut. */
+    key?: (input: StitchInput) => string;
+    /** false silences the "idempotency without retry" / "idempotency on a read" construction nudge. */
+    warn?: boolean;
 }
 
 // ---- Cache (ADR 0003) -----------------------------------------------------
@@ -270,7 +381,7 @@ export interface IdempotencyOptions {
  *
  * Every field round-trips as JSON; `key` is **sugar** (a function override) that does not.
  */
-export interface CacheConfig {
+export interface CacheOptions {
     /** Time-to-live for a cached entry — `30_000`, `'30s'`, `'5m'`. Bounds staleness/drift. */
     ttl: number | string;
     /**
@@ -293,6 +404,8 @@ export interface CacheConfig {
      */
     methods?: string[];
     /** In-process LRU cap on live entries (the store stays dumb). Default 1000. */
+    entries?: number;
+    /** @deprecated Renamed to {@link CacheOptions.entries} (CONTRACT.md P4). Read until the 1.0 GA cut. */
     maxEntries?: number;
     /**
      * Request coalescing mode. `'process'` (v1 default) collapses concurrent identical in-flight
@@ -306,19 +419,19 @@ export interface CacheConfig {
      * `output`/`transform`/`unwrap` are unchanged for this tag). Leaving it unset hands off to the
      * automatic fingerprint: a registered `@stitchapi/fingerprint-*` strategy makes `output`
      * changes self-invalidate on the fast path; an un-fingerprintable schema falls to
-     * {@link CacheConfig.onUnfingerprintable} (default **refuse-to-cache**, fail-closed).
+     * {@link CacheOptions.onUnfingerprintable} (default **refuse-to-cache**, fail-closed).
      */
     version?: string | number;
     /**
      * Version tag for an opaque `transform` (ADR 0004). A `transform` is a closure that cannot be
      * soundly hashed, so by default a stitch that has one **refuses to cache** (re-validation can't
      * detect a transform change). Set this to make the transform sound and re-enable caching; bump
-     * it whenever the transform's behaviour changes. See also {@link CacheConfig.trustTransform}.
+     * it whenever the transform's behaviour changes. See also {@link CacheOptions.trustTransform}.
      */
     transformVersion?: string | number;
     /**
      * Opt in to caching despite an un-versioned `transform`, trusting that its output is stable for
-     * the `ttl`. Weaker than {@link CacheConfig.transformVersion} (a transform change is invisible,
+     * the `ttl`. Weaker than {@link CacheOptions.transformVersion} (a transform change is invisible,
      * bounded only by TTL); prefer `transformVersion` when you can name a version.
      */
     trustTransform?: boolean;
@@ -331,7 +444,9 @@ export interface CacheConfig {
      * only for pure validators with no coercion/transform inside the schema).
      */
     onUnfingerprintable?: 'refuse' | 'revalidate';
-    /** Sugar: author the key seed from the input instead of deriving it from the request. */
+    /** Sugar: author the key seed from the input instead of deriving it from the request. Renamed from `key` (CONTRACT.md P6). */
+    keyOf?: (input: StitchInput) => string;
+    /** @deprecated Renamed to {@link CacheOptions.keyOf} (CONTRACT.md P6). Read until the 1.0 GA cut. */
     key?: (input: StitchInput) => string;
 }
 
@@ -425,7 +540,7 @@ export type ProgressPhase =
     | 'retry'
     // A resumable-SSE reconnect (issue #71): emitted before the engine waits the backoff and
     // reopens a dropped `text/event-stream` body with the last `id:` replayed as `Last-Event-ID`.
-    // Reuses the `progress` event (its `attempt` is the reconnect count, `waitedMs` the backoff)
+    // Reuses the `progress` event (its `attempt` is the reconnect count, `waited` the backoff)
     // rather than minting a new StitchEvent type — same shape as the `retry` phase.
     | 'reconnect'
     | 'paginate'
@@ -442,15 +557,18 @@ export type StitchEvent<T = unknown> =
           // Run identity (ADR 0007) — also delivered on the {@link TraceContext} ctx. Stamped
           // here too so a non-sink `.stream()` consumer can read a run's identity off its first
           // event. Optional: a `start` event built by hand (tests) may omit them.
-          runId?: string;
+          spanId?: string;
           traceId?: string;
-          parentId?: string;
+          parentSpanId?: string;
       }
     | {
           type: 'progress';
           phase: ProgressPhase;
           attempt: number;
           detail?: string;
+          /** How long the engine waited before this step (ms): throttle pacing or retry/reconnect backoff. */
+          waited?: number;
+          /** @deprecated Renamed to `waited` (CONTRACT.md P17). Set alongside `waited` until the 1.0 GA cut. */
           waitedMs?: number;
           at: number;
       }
@@ -458,21 +576,41 @@ export type StitchEvent<T = unknown> =
     | { type: 'info'; topic: string; detail?: string; at: number }
     | { type: 'drift'; finding: DriftFinding; at: number }
     | { type: 'delta'; chunk: unknown; at: number }
-    | { type: 'result'; value: T; status: number; attempts: number; at: number }
+    | {
+          type: 'result';
+          /** The terminal/aggregated result payload (aligns with `SafeResult.data`; CONTRACT.md P5/D1). */
+          data: T;
+          /** @deprecated Renamed to `data` (CONTRACT.md P5). Set alongside `data` until the 1.0 GA cut. */
+          value?: T;
+          status: number;
+          attempts: number;
+          at: number;
+      }
     | {
           type: 'error';
           name: string;
           message: string;
           status?: number;
-          // Set only on a delegate-backoff rate-limit outcome (`rateLimit.delegate`): the ms parsed
+          // Set only on a delegate-backoff rate-limit outcome (`throttle.delegate`): the ms parsed
           // from `Retry-After` (delta-seconds OR HTTP-date), so a `.stream()` consumer gets the same
           // structured backoff hint the awaited path gets off the thrown RateLimitError. Additive and
           // optional — every other `error` event omits it (issue #145).
+          retryAfter?: number;
+          /** @deprecated Renamed to `retryAfter` (CONTRACT.md P17). Set alongside `retryAfter` until the 1.0 GA cut. */
           retryAfterMs?: number;
           attempts: number;
           at: number;
       }
-    | { type: 'done'; ok: boolean; ms: number; attempts: number; at: number };
+    | {
+          type: 'done';
+          ok: boolean;
+          /** Total wall-clock time for the run (ms). */
+          elapsed: number;
+          /** @deprecated Renamed to `elapsed` (CONTRACT.md P17). Set alongside `elapsed` until the 1.0 GA cut. */
+          ms?: number;
+          attempts: number;
+          at: number;
+      };
 
 // ---- Clock (injectable time, ADR 0010) ------------------------------------
 /** An opaque timer handle returned by {@link Clock.setTimer}. */
@@ -508,6 +646,24 @@ export interface InputSchemas {
     // slots; left undeclared, `variables` stays the loose untyped passthrough it has always been.
     variables?: SchemaLike;
 }
+/**
+ * Auto-pagination: follow pages until {@link PaginateOptions.next} returns `undefined`, aggregating
+ * `items` with auth/retry/throttle applied to every page (CONTRACT.md P14 — extracted from the
+ * inline `paginate` shape so it can be imported and composed).
+ */
+export interface PaginateOptions {
+    /**
+     * Given the previous page's raw body and how many pages were fetched, return the input (merged
+     * over the original) for the next page, or `undefined` to stop.
+     */
+    next: (prevBody: unknown, pagesFetched: number) => StitchInput | undefined;
+    /** Pull the array from each unwrapped page. Default: the value if it is an array. */
+    items?: (value: unknown) => unknown[];
+    /** Safety cap on pages. Default 50. */
+    pages?: number;
+    /** @deprecated Renamed to `pages` (CONTRACT.md P4). Read until the 1.0 GA cut. */
+    max?: number;
+}
 export interface StitchConfig {
     /** Label used in events and traces; defaults to `path` or `'stitch'`. */
     name?: string;
@@ -538,7 +694,7 @@ export interface StitchConfig {
      * Resumable-SSE options (issue #71) — sibling to {@link StitchConfig.stream}, but for the `sse`
      * surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once
      * (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as
-     * `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoffMs` / the `retry`
+     * `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry`
      * policy), capped at `maxAttempts`. Plain JSON (the contract gate). Only the `sse` surface
      * reads it.
      */
@@ -566,6 +722,12 @@ export interface StitchConfig {
     headers?: Record<string, string>;
     /** GraphQL query string (`kind: 'graphql'`). */
     query?: string;
+    /**
+     * GraphQL `operationName` sent alongside `query` + `variables` (`kind: 'graphql'`). Omit to
+     * derive it from the first named operation in `query`; set it explicitly to override (e.g. a
+     * multi-operation document) or pass `''` to suppress the field entirely.
+     */
+    operationName?: string;
     /** Schemas validating params, query, body, headers, and (GraphQL) variables before the request. */
     input?: InputSchemas;
     /**
@@ -583,20 +745,7 @@ export interface StitchConfig {
     /** Reshape the raw body before unwrap and validation (e.g. scrape HTML to structured data). */
     transform?: (body: unknown) => unknown;
     /** Auto-loop pages, aggregating items, with auth/retry/throttle applied to every page. */
-    paginate?: {
-        /**
-         * Given the previous page's raw body and how many pages were fetched, return the
-         * input (merged over the original) for the next page, or `undefined` to stop.
-         */
-        next: (
-            prevBody: unknown,
-            pagesFetched: number,
-        ) => StitchInput | undefined;
-        /** Pull the array from each unwrapped page. Default: the value if it is an array. */
-        items?: (value: unknown) => unknown[];
-        /** Safety cap on pages. Default 50. */
-        max?: number;
-    };
+    paginate?: PaginateOptions;
     /** Auth strategy — the stitch holds the credential; the caller never sees it. */
     auth?: AuthStrategy;
     /**
@@ -623,14 +772,20 @@ export interface StitchConfig {
      * total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`.
      */
     timeout?: number | string | TimeoutOptions;
-    /** Circuit breaker that fast-fails a repeatedly failing dependency. */
-    circuit?: CircuitOptions;
     /**
+     * Circuit breaker that fast-fails a repeatedly failing dependency. `failures` + `cooldown` are
+     * required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`).
+     */
+    circuit?: AtLeastOne<CircuitOptions>;
+    /**
+     * @deprecated Folded into `throttle` (CONTRACT.md P14): use `throttle.delegate` / `throttle.on`.
+     * Read until the 1.0 GA cut.
+     *
      * Delegate backoff to the host (issue #145). When `delegate: true`, a rate-limit response
      * (status in `on`, default `[429]`) is **not** retried internally and the built-in `throttle`
      * is **bypassed** for the call — instead the outcome surfaces as a {@link RateLimitError}
-     * (carrying `status`, the `retryAfterMs` parsed from `Retry-After`, and the raw `response`) on
-     * the awaited path, and as an `error` event with `retryAfterMs` on `.stream()`. Use this when an
+     * (carrying `status`, the `retryAfter` parsed from `Retry-After`, and the raw `response`) on
+     * the awaited path, and as an `error` event with `retryAfter` on `.stream()`. Use this when an
      * OUTER gate/circuit owns the backoff (its own `Retry-After` hook, a DB-persisted budget) and
      * StitchAPI's internal retry+throttle would double-count against it.
      *
@@ -645,8 +800,13 @@ export interface StitchConfig {
         /** Statuses treated as a rate-limit signal. Default `[429]`. */
         on?: number[];
     };
-    /** Inject a stable Idempotency-Key header on writes so safe retries don't duplicate. */
-    idempotency?: IdempotencyOptions;
+    /**
+     * Inject a stable Idempotency-Key header on writes so safe retries don't duplicate.
+     * `true` enables it with defaults (header `Idempotency-Key`, a random uuid per call); the
+     * object form customizes it and **must** set at least one field — the opaque `idempotency: {}`
+     * is rejected (CONTRACT.md P20).
+     */
+    idempotency?: boolean | AtLeastOne<IdempotencyOptions>;
     /**
      * Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine
      * is loaded lazily from the `stitchapi/cache` subpath only when this block is present. A bare
@@ -654,7 +814,7 @@ export interface StitchConfig {
      * `cache: { ttl: '1m' }` (still subject to the fingerprint / `version` rules before an entry is
      * actually stored).
      */
-    cache?: number | string | CacheConfig;
+    cache?: number | string | CacheOptions;
     /**
      * Opt this stitch out of the cache **and** coalescing entirely — never stored, always a live
      * call. The honest "do not persist this response" hatch for one-time tokens or compliance-
@@ -703,11 +863,12 @@ export interface StitchConfig {
  */
 export type ResolvedStitchConfig = Omit<
     StitchConfig,
-    'retry' | 'timeout' | 'cache'
+    'retry' | 'timeout' | 'cache' | 'idempotency'
 > & {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
-    cache?: CacheConfig;
+    cache?: CacheOptions;
+    idempotency?: IdempotencyOptions;
 };
 
 /**
@@ -783,6 +944,113 @@ export type SafeResult<T> =
     | { ok: true; data: T; error: null }
     | { ok: false; data: null; error: StitchError };
 
+/** Options for {@link Stitch.inspect} (ADR 0016 / ADR 0018). */
+export interface InspectOptions {
+    /**
+     * Honour the cache policy instead of bypassing it. Default `false` — `.inspect()` is a fresh
+     * network probe (neither reads nor writes the cache), so `raw` is always live. With `cache: true`
+     * a cache hit is allowed, but the cache stores only `{ value, status }` — so `raw` is `null` on
+     * a hit (it is only populated on a miss, where a live request actually ran).
+     */
+    cache?: boolean;
+    /**
+     * Scrub secret-named fields from `raw` before placing it on the wrapper (ADR 0018). Default
+     * `false` — `raw` is unredacted so the deliberate-use case ("catch a stray token in an
+     * undeclared field") is unimpaired. Set when you want to pipe `wrapper.raw` into a log or
+     * support ticket and need the _known-secret_ fields removed first.
+     *
+     * - `true` — apply the shared secret-key denylist (`isSecretKey` / `registerSecretQueryKey`
+     *   registrations) to every object key in `raw`, depth-first. Returns a deep clone.
+     * - `string[]` — additionally scrub the listed key-name/path patterns on top of the shared
+     *   denylist (reuses the {@link matchPath} grammar: exact, `*` wildcard, or prefix).
+     *
+     * ⚠️ Name-based only — cannot catch a secret in an innocuously-named undeclared field.
+     * `status`/`findings`/`value` are never affected.
+     */
+    redact?: boolean | string[];
+}
+
+/**
+ * The result of {@link Stitch.inspect} (ADR 0016) — the validated value alongside the pre-validation
+ * raw body and the drift {@link DriftFinding}s diffed between them, plus the response `status`. It
+ * **never throws**: a hard contract violation comes back as `{ value: null, error }` with `raw`,
+ * `findings`, and `status` still populated. `value` and `error` are **inverse** — `value` is `null`
+ * iff `error` is set.
+ *
+ * ⚠️ `raw` is the UNREDACTED pre-validation body, exposed on a **non-enumerable** field: `JSON.stringify`,
+ * object spread, and trace walkers all skip it, so it can't leak by accident — reach for `wrapper.raw`
+ * deliberately, and never log the whole wrapper. `raw` is `null` on a streaming surface (no single
+ * buffered body) and on a cache hit — `source` (ADR 0019) disambiguates which.
+ */
+export interface Inspection<T> {
+    /** The validated result payload — coerced/defaulted/stripped per ADR 0015; `null` iff `error` is set. Aligns with `SafeResult.data` (CONTRACT.md P5). */
+    data: T | null;
+    /** @deprecated Renamed to `data` (CONTRACT.md P5). Set alongside `data` until the 1.0 GA cut. */
+    value?: T | null;
+    /**
+     * The pre-validation body the findings are diffed against. Non-enumerable; `null` on
+     * streaming/cache-hit. Unredacted by default — to scrub known-secret fields before
+     * sharing, pass `{ redact: true }` (or `{ redact: ['extra.path'] }`) to `.inspect()`
+     * (ADR 0018). Non-enumerability already prevents accidental leakage via
+     * `JSON.stringify` / spread; `redact` is the deliberate-sharing escape hatch.
+     */
+    raw: unknown;
+    /** Soft + hard drift findings (including those that ride the event stream), in emission order. */
+    findings: DriftFinding[];
+    /** HTTP status of the probed response — makes `raw` interpretable (a `422` body reads unlike a `200`). */
+    status: number;
+    /** The {@link StitchError} on a hard failure; `null` on success. */
+    error: StitchError | null;
+    /**
+     * Why `raw` is what it is (ADR 0019) — the interpretant of `raw`. `'cache'` and `'stream'` are
+     * **structural** nulls: `raw` _can never_ exist there (the cache stores only `{ value, status }`;
+     * a streaming surface has no single buffered body). `'live'` means a real request ran (a miss, or
+     * the default cache-bypassing probe) — so `raw` is populated **except** when a transport error
+     * killed the request before any body arrived (then `raw` is `null` and `source` is still `'live'`).
+     * The contract is "`source` tells you whether `raw` _could_ exist," not "`source === 'live'` ⟹
+     * `raw !== null`."
+     */
+    source: 'live' | 'cache' | 'stream';
+}
+
+/**
+ * Fine-grained cache outcome for one run (ADR 0019) — the detail behind {@link Inspection.source}.
+ * `'hit'` / `'hit (revalidated)'` / `'miss'` mirror the engine's `phase:'cache'` events; `'bypass'`
+ * is a run that skipped the cache (the default `.report()` probe, or a runtime non-cacheable case);
+ * `'disabled'` is a stitch with no `cache` block configured at all.
+ */
+export type CacheOutcome =
+    | 'hit'
+    | 'hit (revalidated)'
+    | 'miss'
+    | 'bypass'
+    | 'disabled';
+
+/**
+ * The result of {@link Stitch.report} (ADR 0019) — an {@link Inspection} **plus** run diagnostics: it
+ * _is_ an inspection (same `value` / `raw` / `findings` / `status` / `error` / `source`, same
+ * never-throws contract and the same non-enumerable `raw`) extended with how the run actually went.
+ * Every added field is secret-free and enumerable — a report is safe to log _except_ don't expand
+ * `raw` (inherited non-enumerable, ADR 0018's `redact` applies). Per-attempt latency is deliberately
+ * **absent** in v1 (deferred — the spine carries no per-attempt request spans).
+ */
+export interface RunReport<T> extends Inspection<T> {
+    /** Total attempts made, including the first (1 = no retry). From the terminal event / `StitchError.attempts`. */
+    attempts: number;
+    /**
+     * Wall-clock timing of the run. `ms` is the total (the `done` event's `ms`); `waited` is the
+     * summed backoff/throttle/reconnect wait (Σ `progress.waitedMs`), **omitted** when nothing waited.
+     */
+    timing: { ms: number; waited?: number };
+    /**
+     * The **resolved, redacted** per-call config (ADR 0019 §5) — the stitch's existing redacted
+     * `__config`, never the secret-bearing `__rawConfig`. Safe to echo into a log or support ticket.
+     */
+    config: RedactedStitchConfig;
+    /** Fine-grained cache outcome — the detail behind {@link Inspection.source}. See {@link CacheOutcome}. */
+    cache: CacheOutcome;
+}
+
 export interface StitchResult<T> extends PromiseLike<T> {
     stream(): AsyncGenerator<StitchEvent<T>, void>;
     /** Consume the call without throwing — resolves to `{ ok, data, error }` (see {@link SafeResult}); shares the one run with `then`/`catch`/`finally`. */
@@ -815,6 +1083,36 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
      * of `.safe()` (and an explicit spelling of the throwing bare call).
      */
     unwrap(...args: Args<TIn>): Promise<TOut>;
+    /**
+     * Probe a fresh call and return an {@link Inspection} — `{ value, raw, findings, status, error }` —
+     * **without throwing** (ADR 0016). Use it after the fact to ask "the schema coerced/stripped this;
+     * what did the server actually send?": `raw` is the pre-validation body, `findings` the soft + hard
+     * drift between it and `value`.
+     *
+     * `.inspect()` **always hits the network and bypasses the cache by default**, so it is a fresh probe
+     * — *not* an observer of what your cached `await` call did. Pass `{ cache: true }` to honour the
+     * cache policy (then `raw` is `null` on a hit). On a streaming surface `raw` is `null` too (no single
+     * buffered body). ⚠️ `raw` is unredacted and non-enumerable — read `wrapper.raw` deliberately; never
+     * log the whole wrapper.
+     */
+    inspect(
+        ...args: [...Args<TIn>, opts?: InspectOptions]
+    ): Promise<Inspection<TOut>>;
+    /**
+     * Probe a fresh call and return a {@link RunReport} — an {@link Inspection} (`{ value, raw,
+     * findings, status, error, source }`) **plus** run diagnostics: `attempts`, `timing`
+     * (`{ ms, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome
+     * (ADR 0019). Like `.inspect()` it **never throws** (a hard contract violation comes back with
+     * `error` set and the diagnostics populated) and is a **network probe**: it always hits the
+     * network and **bypasses the cache by default** — pass `{ cache: true }` to honour the cache
+     * policy (then `cache` reports the real `hit`/`miss` and `raw` is `null`/`source` is `'cache'`
+     * on a hit). Use `.report()` to ask "how did this run go?"; `.inspect()` stays the minimal
+     * "raw + drift" probe. ⚠️ `raw` is inherited unredacted and non-enumerable — the rest of the
+     * report is safe to log.
+     */
+    report(
+        ...args: [...Args<TIn>, opts?: InspectOptions]
+    ): Promise<RunReport<TOut>>;
     with<const P extends Partial<TIn>>(
         partial: P,
     ): Stitch<TOut, RelaxKeys<TIn, keyof P>>;
@@ -852,17 +1150,18 @@ export function isSeam(x: unknown): x is Seam {
 // ---- Run identity (ADR 0007) ----------------------------------------------
 /**
  * OTLP-aligned identity for one logical call ({@link Stitch} run) and its place in a run
- * tree. `runId` is the OTel **spanId**; `traceId` is shared across a whole tree; `parentId`
- * (the OTel **parentSpanId**) is set when one run spawns another — a `cookieSession` login,
- * a `pipe()` step. Minted by the engine (`newRunContext`), never supplied by a caller.
+ * tree. The field names are the OpenTelemetry span names verbatim: `traceId` is shared across a
+ * whole tree, `spanId` identifies this run, and `parentSpanId` is set when one run spawns another —
+ * a `cookieSession` login, a `linked` step. Minted by the engine (`newRunContext`), never supplied
+ * by a caller.
  */
 export interface RunContext {
-    /** 32-hex trace id, shared across every run in a tree. */
+    /** 32-hex trace id, shared across every run in a tree (OTel `traceId`). */
     traceId: string;
-    /** 16-hex id for this run (the OTel spanId). */
-    runId: string;
-    /** The spawning run's `runId` (OTel parentSpanId); absent for a root run. */
-    parentId?: string;
+    /** 16-hex id for this run (OTel `spanId`). */
+    spanId: string;
+    /** The spawning run's `spanId` (OTel `parentSpanId`); absent for a root run. */
+    parentSpanId?: string;
 }
 
 /**
@@ -873,9 +1172,9 @@ export interface RunContext {
  */
 export interface TraceContext {
     name: string;
-    runId?: string;
+    spanId?: string;
     traceId?: string;
-    parentId?: string;
+    parentSpanId?: string;
 }
 
 // A trace sink consumes every event a stitch emits.
@@ -889,8 +1188,8 @@ export interface TraceSink {
 // sessions persistent/shared across workers — see DESIGN.md §13.
 export interface StitchStore {
     get(key: string): Promise<unknown>;
-    set(key: string, value: unknown, ttlMs?: number): Promise<void>;
-    incr(key: string, ttlMs: number): Promise<number>;
+    set(key: string, value: unknown, ttl?: number): Promise<void>;
+    incr(key: string, ttl: number): Promise<number>;
     /**
      * Release any resources (connections, timers) the store holds. Optional — the in-memory
      * default clears its map. A seam's `close()` calls this as the last lifecycle step.
@@ -997,3 +1296,7 @@ export interface Seam {
     readonly __config: RedactedStitchConfig;
     readonly __seam: true;
 }
+
+// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
+/** @deprecated Renamed to {@link CacheOptions} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
+export type CacheConfig = CacheOptions;

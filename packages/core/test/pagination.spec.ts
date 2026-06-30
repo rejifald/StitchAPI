@@ -58,7 +58,7 @@ test('emits a paginate progress event per page', async () => {
     let result: unknown;
     for await (const ev of listAll().stream()) {
         if (ev.type === 'progress' && ev.phase === 'paginate') pages.push(ev);
-        if (ev.type === 'result') result = ev.value;
+        if (ev.type === 'result') result = ev.data;
     }
     expect(pages.length).toBe(3);
     expect(result).toEqual([1, 2, 3, 4, 5]);
@@ -121,7 +121,7 @@ test('max caps the page loop (guards a runaway paginator)', async () => {
         baseUrl: server.url,
         path: '/loop',
         unwrap: 'data',
-        paginate: { next: () => ({}), max: 2 },
+        paginate: { next: () => ({}), pages: 2 },
     });
     await list();
     expect(server.callCount('/loop')).toBe(2); // stopped at the cap, not infinitely

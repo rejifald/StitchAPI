@@ -1,0 +1,75 @@
+---
+title: 'The seam'
+description: 'The shared-runtime primitive a set of stitches belong to — one store, vault, throttle bucket, and trace sink behind a shared base config and a trusted principal boundary.'
+---
+
+A seam is the second primitive StitchAPI is built on: a long-lived surface that stitches _belong to_. Where a stitch is one call, a seam is the shared runtime behind a whole set of them — one store, one auth vault, one throttle bucket, one trace sink — fronted by a shared base config and a trusted principal boundary.
+
+## Why it's shaped this way
+
+A single API is rarely one call. You wrap a handful of endpoints against the same host, with the same auth, the same rate limit, and the same place you want traces to land. The question a seam answers is what those stitches should _share_ — and the answer is more than configuration.
+
+**A fragment shares config; a seam shares runtime.** A plain object folded in through [`extends`](/docs/guides/authoring/extends) is data: every stitch that extends it gets its _own_ copy — its own throttle counter, its own cookie jar, its own cached tokens. That is the right default, but it can't express "these five stitches draw from one rate budget" or "these share a login". A seam can, because it isn't a fragment the stitches copy — it is the live runtime they all _point at_. One throttle bucket pools the budget across every member; one vault lets a session captured by one stitch serve the next call; one trace sink sees the whole surface as a single stream.
+
+```ts twoslash
+import { bearer, env, seam } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({
+    id: z.number(),
+    name: z.string(),
+    email: z.string(),
+    role: z.enum(['admin', 'member', 'viewer']),
+});
+
+// One seam: the shared base every member inherits, and the runtime they share.
+const api = seam({
+    baseUrl: 'https://demo.stitchapi.dev',
+    auth: bearer(env('API_TOKEN')),
+    retry: { attempts: 3, on: [429, 503] },
+});
+
+// Members are stitches that belong to the seam — they extend its config and
+// share its store, throttle bucket, vault, and trace sink.
+const getUser = api.stitch({
+    path: '/users/{id}',
+    unwrap: 'data',
+    output: User,
+});
+const listUsers = api.stitch({
+    path: '/users',
+    unwrap: 'data',
+    output: User.array(),
+});
+```
+
+**The decisive job is the trusted principal boundary.** `seam.as(id)` derives a handle whose members carry that principal — and the principal lives in the _closure_, never in a call's input. A caller invokes a stitch the same way it always does; it cannot name a different principal, because there is no field on the call to name one. Auth is scoped per principal (separate sessions, no bleed between tenants), while the throttle stays shared (one bucket across every principal, so the whole surface still honours one rate limit). That split — isolated identity, pooled budget — is exactly what a multi-tenant server wants, and the seam enforces it by where it holds the principal, not by a check the caller could forget.
+
+**Lifecycle belongs to the root, not the per-request handle.** `flush`, `close`, and `invalidate` act on the runtime _every_ principal shares, so they live on the root seam alone. A handle from `seam.as(...)` is deliberately lifecycle-free: the least-trusted, per-request caller can derive its own identity but can never flush the trace sink, close the shared store, or bust the cache out from under the rest of the surface.
+
+## How it relates
+
+A seam is the surface-scale companion to the per-call [stitch](/docs/concepts/the-stitch): you still author and call stitches the same way, but they now belong to something.
+
+It owns the fragment that [`extends`](/docs/guides/authoring/extends) composes — reach for a plain fragment when stitches share only config, and a seam when they share _runtime_. Building and using one is the job of the [seam guide](/docs/guides/authoring/seam).
+
+Its principal boundary is [capability, not credential](/docs/concepts/capability-not-credential) at surface scale: the secret never leaves the runtime, and now the _identity_ the secret authenticates is bound in the closure too. The shared runtime is also what makes the state features work across a whole surface rather than one call — a [distributed throttle](/docs/guides/state/distributed-throttle) and [shared sessions](/docs/guides/state/shared-sessions) are a seam pointed at a [shared store](/docs/guides/state/pluggable-store).
+
+Because the seam is surface-agnostic, it can [mint members of any surface](/docs/reference/surfaces) — `http`, `graphql`, `sse`, `stream`, `download` — from the one shared runtime. And it is the object the [framework integrations](/docs/integrations) build once per app and bind a principal to per request.
+
+## See also
+
+<Cards>
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+    <Card title="Guide: seam" href="/docs/guides/authoring/seam" />
+    <Card title="extends" href="/docs/guides/authoring/extends" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card
+        title="Distributed throttle"
+        href="/docs/guides/state/distributed-throttle"
+    />
+    <Card title="Shared sessions" href="/docs/guides/state/shared-sessions" />
+</Cards>

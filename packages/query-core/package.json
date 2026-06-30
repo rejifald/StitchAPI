@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/query-core",
-    "version": "1.0.0-rc.3",
+    "version": "1.0.0-rc.4",
     "type": "commonjs",
     "description": "Framework-agnostic reactive query store for StitchAPI — a subscribe/getSnapshot store wrapping a stitch call (unary + streaming deltas). The shared core behind @stitchapi/react and future Vue/Svelte/Solid bindings.",
     "main": "lib/index.js",

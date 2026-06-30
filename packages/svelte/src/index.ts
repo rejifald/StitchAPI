@@ -48,7 +48,7 @@ export type {
  * store's FIRST subscriber — and `destroy()`ed when the last unsubscribes, so an
  * unused store costs nothing and a torn-down scope aborts its run.
  */
-export interface StitchStore<T> extends Readable<StitchQueryState<T>> {
+export interface SvelteStitchStore<T> extends Readable<StitchQueryState<T>> {
     /** Abort the in-flight run and re-run from scratch. */
     refetch: () => void;
     /** Abort the in-flight run, if any. */
@@ -63,7 +63,7 @@ function makeStore<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
     options: CreateStitchQueryOptions<T> & { stream: boolean },
-): StitchStore<T> {
+): SvelteStitchStore<T> {
     // The query is created EAGERLY (so `getSnapshot` has a real handle to seed
     // the store and `refetch`/`cancel` work before the first subscriber), but its
     // run only starts when `enabled` says so, exactly like the core store. We
@@ -126,17 +126,17 @@ export function stitchStore<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: QueryInput<S>,
     options?: CreateStitchQueryOptions<QueryOutput<S>>,
-): StitchStore<QueryOutput<S>>;
+): SvelteStitchStore<QueryOutput<S>>;
 export function stitchStore<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: Input,
     options?: CreateStitchQueryOptions<T>,
-): StitchStore<T>;
+): SvelteStitchStore<T>;
 export function stitchStore<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
     options: CreateStitchQueryOptions<T> = {},
-): StitchStore<T> {
+): SvelteStitchStore<T> {
     return makeStore<T>(stitch, input, { ...options, stream: false });
 }
 
@@ -165,17 +165,17 @@ export function stitchStreamStore<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: QueryInput<S>,
     options?: CreateStitchQueryOptions<QueryOutput<S>>,
-): StitchStore<QueryOutput<S>>;
+): SvelteStitchStore<QueryOutput<S>>;
 export function stitchStreamStore<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: Input,
     options?: CreateStitchQueryOptions<T>,
-): StitchStore<T>;
+): SvelteStitchStore<T>;
 export function stitchStreamStore<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
     options: CreateStitchQueryOptions<T> = {},
-): StitchStore<T> {
+): SvelteStitchStore<T> {
     return makeStore<T>(stitch, input, { ...options, stream: true });
 }
 
@@ -200,7 +200,7 @@ export const useStitchStream = stitchStreamStore;
 // the POJO is framework-neutral and feeds `@tanstack/svelte-query`'s
 // `createQuery` exactly as it feeds React's `useQuery`.
 
-/** The plain object {@link queryOptions} returns — structurally compatible with
+/** The plain object {@link stitchQueryOptions} returns — structurally compatible with
  * TanStack Query's `createQuery(options)` without importing the library. */
 export interface StitchQueryOptions<T> {
     queryKey: readonly unknown[];
@@ -214,23 +214,23 @@ export interface StitchQueryOptions<T> {
  *
  * ```ts
  * import { createQuery } from '@tanstack/svelte-query';
- * import { queryOptions } from '@stitchapi/svelte';
+ * import { stitchQueryOptions } from '@stitchapi/svelte';
  *
- * const query = createQuery(queryOptions(getUser, { params: { id } }));
+ * const query = createQuery(stitchQueryOptions(getUser, { params: { id } }));
  * ```
  *
  * The `queryFn` awaits the stitch (the validated output); the `queryKey` is the
  * stitch's `name` (when present) plus the input, so TanStack caches per call.
  */
-export function queryOptions<S extends StitchLike<unknown, never>>(
+export function stitchQueryOptions<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: QueryInput<S>,
 ): StitchQueryOptions<QueryOutput<S>>;
-export function queryOptions<T, Input = unknown>(
+export function stitchQueryOptions<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: Input,
 ): StitchQueryOptions<T>;
-export function queryOptions<T>(
+export function stitchQueryOptions<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
 ): StitchQueryOptions<T> {
@@ -240,3 +240,11 @@ export function queryOptions<T>(
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }
+
+/**
+ * @deprecated Renamed to {@link stitchQueryOptions} — a bare `queryOptions` collides
+ * with TanStack Query's own `queryOptions` export when both are imported. See
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
+ * `1.0.0-rc` line and removed at the 1.0 GA cut.
+ */
+export const queryOptions = stitchQueryOptions;

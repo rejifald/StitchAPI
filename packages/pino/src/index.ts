@@ -8,6 +8,7 @@
 // plain test double all satisfy it (mirroring core's "contract, not dependency"
 // stance). `pino` is the single peer dependency.
 import type { StitchEvent, TraceContext, TraceSink } from 'stitchapi';
+import { compact } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
 // logger contract
@@ -75,7 +76,7 @@ export interface PinoSinkOptions {
  * built-in sinks), so a `start` event's `input.headers` still holds `authorization` /
  * `cookie` and a `delta`'s `chunk` is raw response data. This sink therefore logs
  * **only metadata** — name, method, redacted URL, status, attempt counts, drift
- * path/level/change, phase, waited timing — never `event.input`, `event.value`, a
+ * path/level/change, phase, waited timing — never `event.input`, `event.data`, a
  * `delta` chunk, or `JSON.stringify(event)`, and it strips the URL query (it can carry
  * `?api_key=…`). That keeps it safe on a secret-bearing seam independent of core's
  * trace redaction.
@@ -153,7 +154,7 @@ function redactUrl(url: string): string {
 // sinks), so a `start` event's `input.headers` still holds `authorization` / `cookie`
 // and a `delta`'s `chunk` is raw response data. It therefore logs **only metadata** —
 // name, method, redacted URL, status, attempt counts, drift path/level/change, phase,
-// waited timing — never `event.input`, `event.value`, a `delta` chunk, or
+// waited timing — never `event.input`, `event.data`, a `delta` chunk, or
 // `JSON.stringify(event)`, and it strips the URL query. `null` ⇒ skip the event.
 function recordFor(
     name: string,
@@ -171,30 +172,28 @@ function recordFor(
             };
         case 'progress':
             return {
-                obj: {
+                obj: compact({
                     stitch: name,
                     phase: event.phase,
                     attempt: event.attempt,
-                    ...(event.waitedMs !== undefined
-                        ? { waitedMs: event.waitedMs }
-                        : {}),
-                },
+                    waited: event.waited,
+                }),
                 msg: `· ${name} ${event.phase}#${event.attempt}${
-                    event.waitedMs !== undefined
-                        ? ` waited ${event.waitedMs}ms`
+                    event.waited !== undefined
+                        ? ` waited ${event.waited}ms`
                         : ''
                 }`,
             };
         case 'drift': {
             const f = event.finding;
             return {
-                obj: {
+                obj: compact({
                     stitch: name,
                     path: f.path,
                     level: f.level,
                     change: f.change,
-                    ...(f.detail !== undefined ? { detail: f.detail } : {}),
-                },
+                    detail: f.detail,
+                }),
                 msg: `drift ${name} ${f.path} ${f.change}${f.detail ? ` (${f.detail})` : ''}`,
             };
         }
@@ -222,10 +221,10 @@ function recordFor(
                 obj: {
                     stitch: name,
                     ok: event.ok,
-                    ms: event.ms,
+                    elapsed: event.elapsed,
                     attempts: event.attempts,
                 },
-                msg: `${name} done ${event.ok ? 'ok' : 'failed'} in ${event.ms}ms (${event.attempts} attempt(s))`,
+                msg: `${name} done ${event.ok ? 'ok' : 'failed'} in ${event.elapsed}ms (${event.attempts} attempt(s))`,
             };
         default:
             return null; // 'info' + 'delta' — never logged

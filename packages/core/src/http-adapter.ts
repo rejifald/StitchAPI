@@ -1,3 +1,4 @@
+import { compact } from './compact';
 import type {
     Adapter,
     AdapterProgress,
@@ -31,7 +32,7 @@ type FetchInitWithDispatcher = RequestInit & { dispatcher?: unknown };
 export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
     // Resolve the fetch implementation once (override wins; else the global).
     const fetchImpl = opts?.fetch ?? fetch;
-    return async function fetchAdapterRequest(
+    const fetchAdapterRequest: Adapter = async function fetchAdapterRequest(
         req: AdapterRequest,
     ): Promise<AdapterResponse> {
         const method = req.method.toUpperCase();
@@ -45,17 +46,15 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
             headers['content-type'] = contentType;
         }
 
-        // Build the init as a typed local so the non-standard `dispatcher` key can be added
-        // when supplied; with no dispatcher the key is omitted entirely (identical to before).
-        const init: FetchInitWithDispatcher = {
+        // Build the init as a typed local; `compact` drops `body`/`dispatcher` when absent,
+        // so the non-standard `dispatcher` key stays off unless a dispatcher is supplied.
+        const init: FetchInitWithDispatcher = compact({
             method,
             headers,
-            ...(body !== undefined ? { body } : {}),
-            ...(req.signal ? { signal: req.signal } : {}),
-            ...(opts?.dispatcher !== undefined
-                ? { dispatcher: opts.dispatcher }
-                : {}),
-        };
+            body,
+            signal: req.signal,
+            dispatcher: opts?.dispatcher,
+        });
 
         // Send the request. Network/abort errors propagate to the caller. The local init type
         // (with the undici-only `dispatcher`) widens cleanly to the RequestInit fetch expects.
@@ -136,6 +135,15 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
             url: response.url,
         };
     };
+    // `fetch` streams a response (so `stream`/`sse` ride it) and reports `phase: 'download'`
+    // progress while reading a buffered body, but cannot report bytes SENT — the upload phase stays
+    // silent, so `'uploadProgress'` is absent from `supports`. Declaring it lets the engine teach
+    // instead of no-op when a call asks for upload progress.
+    fetchAdapterRequest.capabilities = {
+        name: 'fetchAdapter',
+        supports: ['stream', 'downloadProgress'],
+    };
+    return fetchAdapterRequest;
 }
 
 // Read a response body to completion, reporting download progress per chunk (ADR 0005

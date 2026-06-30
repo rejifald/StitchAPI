@@ -24,6 +24,7 @@ import {
 } from '@stitchapi/query-core';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSyncExternalStore } from 'react';
+import { compact } from 'stitchapi';
 
 export type {
     CreateStitchQueryOptions,
@@ -85,10 +86,7 @@ function useStitchInternal<T>(
         onSuccess?: (d: T) => void;
         onError?: (e: unknown) => void;
     }>({});
-    cbRef.current = {
-        ...(onSuccess ? { onSuccess } : {}),
-        ...(onError ? { onError } : {}),
-    };
+    cbRef.current = compact({ onSuccess, onError });
 
     // Hold the latest `stitch` in a ref. A caller who passes an INLINE stitch
     // (`useStitch(() => stitch(...), ...)`) hands us a fresh function identity on
@@ -112,13 +110,17 @@ function useStitchInternal<T>(
 
     const query: StitchQuery<T> = useMemo(
         () =>
-            createStitchQuery<T, unknown>(stableStitch, input, {
-                stream,
-                ...(mode ? { mode } : {}),
-                ...(enabled !== undefined ? { enabled } : {}),
-                onSuccess: (d) => cbRef.current.onSuccess?.(d),
-                onError: (e) => cbRef.current.onError?.(e),
-            }),
+            createStitchQuery<T, unknown>(
+                stableStitch,
+                input,
+                compact({
+                    stream,
+                    mode,
+                    enabled,
+                    onSuccess: (d: T) => cbRef.current.onSuccess?.(d),
+                    onError: (e: unknown) => cbRef.current.onError?.(e),
+                }),
+            ),
         // eslint-disable-next-line react-hooks/exhaustive-deps
         depKey,
     );
