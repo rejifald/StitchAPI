@@ -3,10 +3,10 @@ title: 'Run Independent API Calls in Parallel: all, any, race'
 description: 'When API calls do not depend on each other, running them as a ladder of awaits is wasted latency — and Promise.all drops the trace, the cancellation, and the per-call resilience. all, any, and race run independent stitches concurrently as one traced, fail-fast group, and because each returns the same callable shape a stitch does, they nest.'
 author: Oleksandr Zhuravlov
 date: '2026-06-30'
-tags: [composition, parallel, concurrency, pipe, typescript]
+tags: [composition, parallel, concurrency, linked, typescript]
 ---
 
-A [stitch](/docs/concepts/the-stitch) is one endpoint as a typed, validated, resilient function. When one call needs the result of the one before it, you want a sequence — that is [`pipe`](/blog/compose-api-calls-into-a-pipeline). But just as often the calls are **independent**: a dashboard needs a user, their settings, and their feature flags, and none of them waits on the others. Running those in sequence is latency you are paying for nothing.
+A [stitch](/docs/concepts/the-stitch) is one endpoint as a typed, validated, resilient function. When one call needs the result of the one before it, you want a sequence — that is [`linked`](/blog/compose-api-calls-into-a-pipeline). But just as often the calls are **independent**: a dashboard needs a user, their settings, and their feature flags, and none of them waits on the others. Running those in sequence is latency you are paying for nothing.
 
 `Promise.all` is the reflex, and it gets you the concurrency. What it doesn't get you is everything a stitch already carries: the three calls become three unrelated runs with no shared trace, a failure leaves the other requests running, and you reassemble the error yourself. StitchAPI's parallel family — `all`, `any`, `race` — runs independent stitches concurrently as **one group**: a shared trace, fail-fast with auto-cancellation, and each member keeping its own retry, timeout, and validation.
 
@@ -157,11 +157,11 @@ const dashboard = all({
 const { user, settings } = await dashboard({ params: { id: 1 } });
 ```
 
-An `all` can hold an `any`; an `any` can hold a `race`; and any of them composes with a sequential [`pipe`](/blog/compose-api-calls-into-a-pipeline). The tree goes as deep as the problem, and every node is typed from the stitches at its leaves.
+An `all` can hold an `any`; an `any` can hold a `race`; and a sequential [`linked`](/blog/compose-api-calls-into-a-pipeline) scope can `run` any of them. The tree goes as deep as the problem, and every node is typed from the stitches at its leaves.
 
 ## Still composition, not orchestration
 
-A group of concurrent calls is fenced the same way `pipe` is. The shape is **fixed when you write it** — `all`/`any`/`race` take a list of stitches you already declared; nothing branches, loops, or spawns at runtime. Each member runs as a **child run** of the group, so the trace draws a fan ([the run-identity model](/docs/concepts/event-stream)) instead of three unrelated calls. Composition adds ordering and concurrency around stitches; it never changes how any one of them behaves alone. That's why this stays [runtime stitching, not a workflow platform](/blog/runtime-stitching-vs-workflow-platforms).
+A group of concurrent calls is fenced deliberately. The shape is **fixed when you write it** — `all`/`any`/`race` take a list of stitches you already declared; nothing branches, loops, or spawns at runtime. Each member runs as a **child run** of the group, so the trace draws a fan ([the run-identity model](/docs/concepts/event-stream)) instead of three unrelated calls. Composition adds ordering and concurrency around stitches; it never changes how any one of them behaves alone. That's why this stays [runtime stitching, not a workflow platform](/blog/runtime-stitching-vs-workflow-platforms).
 
 ## Try it
 
@@ -171,4 +171,4 @@ stitchapi
 
 The parallel family lives at the `stitchapi/pipe` subpath, so it only enters your bundle when a flow needs it. Each member is a [stitch](/docs/concepts/the-stitch) with its own [validation](/blog/validate-api-response-zod) and resilience, and the whole group is visible in the [event stream](/docs/concepts/event-stream).
 
-Related reading: [compose API calls into one pipeline](/blog/compose-api-calls-into-a-pipeline), [typed errors without try/catch](/blog/typed-errors-without-try-catch), and [runtime stitching vs. workflow platforms](/blog/runtime-stitching-vs-workflow-platforms).
+Related reading: [compose dependent calls into one flow](/blog/compose-api-calls-into-a-pipeline), [typed errors without try/catch](/blog/typed-errors-without-try-catch), and [runtime stitching vs. workflow platforms](/blog/runtime-stitching-vs-workflow-platforms).
