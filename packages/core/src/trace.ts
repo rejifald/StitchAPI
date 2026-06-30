@@ -59,11 +59,15 @@ export function redactEventForTransport(event: StitchEvent): StitchEvent {
     return {
         ...event,
         url: scrubUrl(event.url),
-        input: {
+        // `compact` drops `headers`/`query` when their redacted values are undefined —
+        // which is exactly when `event.input` lacked them (safeHeaders/safeQuery are derived
+        // from event.input.headers/.query), so it only ever omits the conditional override,
+        // never a key the `...event.input` spread provided.
+        input: compact({
             ...event.input,
-            ...(safeHeaders ? { headers: safeHeaders } : {}),
-            ...(safeQuery ? { query: safeQuery } : {}),
-        },
+            headers: safeHeaders,
+            query: safeQuery,
+        }),
     };
 }
 
