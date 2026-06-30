@@ -79,8 +79,9 @@ export function axiosAdapter(
         const onProgress = req.onProgress;
         const progress = (
             phase: AdapterProgress['phase'],
-        ): ((e: AxiosLikeProgressEvent) => void) => {
-            const cb = onProgress as (p: AdapterProgress) => void;
+        ): ((e: AxiosLikeProgressEvent) => void) | undefined => {
+            if (onProgress === undefined) return undefined;
+            const cb = onProgress;
             return (e) => {
                 cb(
                     e.total !== undefined
@@ -99,12 +100,8 @@ export function axiosAdapter(
                 data: body,
                 responseType: 'arraybuffer',
                 signal: req.signal,
-                ...(onProgress
-                    ? {
-                          onUploadProgress: progress('upload'),
-                          onDownloadProgress: progress('download'),
-                      }
-                    : {}),
+                onUploadProgress: progress('upload'),
+                onDownloadProgress: progress('download'),
                 validateStatus: () => true, // never throw on non-2xx; the engine decides
             }),
         );

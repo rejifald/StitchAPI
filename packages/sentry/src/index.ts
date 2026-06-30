@@ -115,13 +115,11 @@ function breadcrumbFor(
                         ? 'warning'
                         : 'debug',
                 message: `· ${name} ${event.phase}#${event.attempt}`,
-                data: {
+                data: compact({
                     phase: event.phase,
                     attempt: event.attempt,
-                    ...(event.waited !== undefined
-                        ? { waited: event.waited }
-                        : {}),
-                },
+                    waited: event.waited,
+                }),
             };
         case 'drift': {
             const f = event.finding;
@@ -152,12 +150,10 @@ function breadcrumbFor(
                 category: 'stitch',
                 level: 'error',
                 message: `✗ ${name} ${event.name}: ${event.message}`,
-                data: {
-                    ...(event.status !== undefined
-                        ? { status: event.status }
-                        : {}),
+                data: compact({
+                    status: event.status,
                     attempts: event.attempts,
-                },
+                }),
             };
         case 'done':
             return lifecycle
@@ -215,12 +211,10 @@ export function sentrySink(
                     `${ctx.name}: ${event.name} — ${event.message}`,
                     {
                         level: 'error',
-                        tags: {
+                        tags: compact({
                             stitch: ctx.name,
-                            ...(event.status !== undefined
-                                ? { status: event.status }
-                                : {}),
-                        },
+                            status: event.status,
+                        }),
                         extra: {
                             attempts: event.attempts,
                             ...(ctx.runId ? { runId: ctx.runId } : {}),
@@ -237,12 +231,10 @@ export function sentrySink(
                     {
                         level: 'warning',
                         tags: { stitch: ctx.name, drift: event.finding.change },
-                        extra: {
+                        extra: compact({
                             path: event.finding.path,
-                            ...(event.finding.detail !== undefined
-                                ? { detail: event.finding.detail }
-                                : {}),
-                        },
+                            detail: event.finding.detail,
+                        }),
                     },
                 );
             }
