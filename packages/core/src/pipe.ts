@@ -8,11 +8,14 @@
 //   - `all({ k: node })` / `all([...])` — resolve when ALL succeed (fail-fast); a named object or tuple.
 //   - `any([...])` — resolve on the FIRST success (else `AggregateError`); failover across mirrors.
 //   - `race([...])` — resolve on the FIRST to settle (win or lose); hedging a slow call against a mirror.
+//   - `linked(body)` — SEQUENTIAL like `pipe`, but written as plain `await`s in a run scope: each call
+//     chains under the previous (one trace), with earlier results as plain variables, not a `ctx`.
 //
 // Every parallel combinator AUTO-CANCELS the members that can no longer affect the result — `all` on
 // the first failure, `any` on the first success, `race` on the first settle — via a per-group
 // `AbortSignal` linked to the caller's. There is deliberately NO `allSettled` (best-effort) variant;
 // for that, compose `.safe()` members by hand. Bundle-frugal: reached only through this subpath.
+import type { Args } from './infer';
 import type { RunContext, Stitch, StitchInput } from './types';
 import { newRunContext } from './util';
 
@@ -349,4 +352,64 @@ export function pipe<Out = unknown>(
         }
         return value as Out;
     };
+}
+
+// ---- linked: composition as a SCOPE, not a structure ----------------------
+// SEQUENTIAL composition written as ordinary code. Where `pipe(...)` builds the chain as a VALUE,
+// `linked` opens a run SCOPE: you write plain `await`s, and the `run` handed to the body threads each
+// call's run identity so the sequence shares ONE trace tree — the same causal chain `pipe` draws —
+// while earlier results stay plain typed variables (no `ctx`, no builder, no casts).
+
+/**
+ * The scoped caller handed to a {@link linked} body. It runs a node as the NEXT link in the scope — a
+ * child run of the call before it (ADR 0007) — and resolves to its typed value. A {@link Stitch} is
+ * called with its own typed input; a combinator ({@link Composable} — an {@link all}/{@link any}/
+ * {@link race} result) with the shared {@link StitchInput}, so a parallel fan inside a sequential scope
+ * still joins the one trace.
+ */
+export interface ScopedRun {
+    // `NoInfer` on the args pins `I` to the STITCH's own input — otherwise TS also infers `I` from the
+    // input argument, and a narrower literal (`{ params: { id } }`) fights the stitch's full input type.
+    <O, I>(stitch: Stitch<O, I>, ...args: Args<NoInfer<I>>): Promise<O>;
+    <O>(node: Composable<O>, input?: StitchInput): Promise<O>;
+}
+
+/**
+ * Open a run SCOPE and run a body of plain `await`s inside it. Every node called through `run` joins
+ * the scope as a CHILD run of the call before it, so a sequence of awaits draws the same causal chain
+ * `pipe` does (`stepA → stepB → stepC`) — written as ordinary code, with ancestors as plain typed
+ * variables instead of a `ctx`. `linked` resolves to whatever the body returns, and FAILS FAST: a
+ * rejected call rejects the whole scope.
+ *
+ * The trade against {@link pipe}: the flow is imperative, so it is not a value you can pass around or
+ * introspect the way a pipe's member list is; and run-chaining follows CALL ORDER, so for genuinely
+ * concurrent calls inside the body reach for {@link all} (which `run` accepts as a node, keeping the
+ * fan inside the same trace). What it buys: the readability of plain `await`s and typed
+ * ancestors-as-variables, with the linked trace a single stitch already has.
+ *
+ * @example
+ * ```ts
+ * import { linked } from 'stitchapi/pipe';
+ *
+ * const tracking = await linked(async (run) => {
+ *     const order = await run(fetchOrder, { params: { id: 1043 } });
+ *     const shipment = await run(fetchShipment, { params: { id: order.shipmentId } });
+ *     return run(fetchTracking, {
+ *         params: { code: shipment.trackingCode, region: order.region }, // ancestor = a variable
+ *     });
+ * });
+ * ```
+ */
+export function linked<T>(
+    body: (run: ScopedRun) => Promise<T> | T,
+): Promise<T> {
+    // The last run identity minted in this scope; the next call chains under it (ADR 0007). The first
+    // call (prev undefined) is the scope's ROOT run, exactly as a pipe's first step is.
+    let prev: RunContext | undefined;
+    const run = ((node: Stitch | Composable<unknown>, input?: StitchInput) => {
+        const ctx = newRunContext(prev);
+        prev = ctx;
+        return (node as unknown as Runnable).__runWith(input, ctx);
+    }) as unknown as ScopedRun;
+    return Promise.resolve(body(run));
 }
