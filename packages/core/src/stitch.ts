@@ -1,6 +1,7 @@
 // The authoring surface: stitch() + the extends composition facade +
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
+import { compact } from './compact';
 import {
     ERROR_SOURCE,
     RAW_BODY,
@@ -219,11 +220,13 @@ function maxBodyFromEnv(value: string | undefined): number | false | undefined {
 function getTrace(): TraceSink {
     const file = fileFromEnv(readEnv('STITCH_TRACE_FILE'));
     const maxBodyBytes = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
-    const base = createTrace({
-        console: readEnv('STITCH_TRACE_CONSOLE') === '1',
-        file,
-        ...(maxBodyBytes !== undefined ? { maxBodyBytes } : {}),
-    });
+    const base = createTrace(
+        compact({
+            console: readEnv('STITCH_TRACE_CONSOLE') === '1',
+            file,
+            maxBodyBytes,
+        }),
+    );
     if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;
     return multiplex(base, otlpTrace());
 }
@@ -420,12 +423,12 @@ function tee<T>(
     // Run identity (ADR 0007) is per-run-constant, so build the ctx once and hand it to the
     // sink with every event — the OTLP sink and the playground DAG collector read it to build
     // the span tree; a sink that reads only `ctx.name` is unaffected.
-    const ctx = {
+    const ctx = compact({
         name,
         runId: run.runId,
         traceId: run.traceId,
-        ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
-    };
+        parentId: run.parentId,
+    });
     async function* wrapped() {
         for await (const ev of gen) {
             trace.handle(ev, ctx);

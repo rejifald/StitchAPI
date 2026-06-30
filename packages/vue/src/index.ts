@@ -22,6 +22,7 @@ import {
     type StitchQueryState,
     createStitchQuery,
 } from '@stitchapi/query-core';
+import { compact } from 'stitchapi';
 import {
     type ComputedRef,
     type MaybeRefOrGetter,
@@ -116,13 +117,17 @@ function useStitchInternal<T>(
 
         const opts = toValue(options);
         const resolvedInput = toValue(input);
-        query = createStitchQuery<T, unknown>(stitch, resolvedInput, {
-            stream,
-            ...(opts.mode ? { mode: opts.mode } : {}),
-            ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
-            ...(opts.onSuccess ? { onSuccess: opts.onSuccess } : {}),
-            ...(opts.onError ? { onError: opts.onError } : {}),
-        });
+        query = createStitchQuery<T, unknown>(
+            stitch,
+            resolvedInput,
+            compact({
+                stream,
+                ...(opts.mode ? { mode: opts.mode } : {}),
+                enabled: opts.enabled,
+                ...(opts.onSuccess ? { onSuccess: opts.onSuccess } : {}),
+                ...(opts.onError ? { onError: opts.onError } : {}),
+            }),
+        );
 
         // Seed synchronously (the store may already be `pending`), then track.
         snapshot.value = query.getSnapshot();

@@ -18,6 +18,7 @@
 // `event.input` (its headers carry the live `authorization`/`cookie`), `event.data`,
 // or a `delta` chunk. The URL query string is dropped (it can carry `?api_key=…`).
 import type { StitchEvent, TraceContext, TraceSink } from 'stitchapi';
+import { compact } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
 // Sentry contract (structural — any @sentry/* SDK satisfies it)
@@ -128,12 +129,12 @@ function breadcrumbFor(
                 category: 'stitch.drift',
                 level: DRIFT_TO_SENTRY[f.level] ?? 'debug',
                 message: `drift ${name} ${f.path} ${f.change}`,
-                data: {
+                data: compact({
                     path: f.path,
                     level: f.level,
                     change: f.change,
-                    ...(f.detail !== undefined ? { detail: f.detail } : {}),
-                },
+                    detail: f.detail,
+                }),
             };
         }
         case 'result':

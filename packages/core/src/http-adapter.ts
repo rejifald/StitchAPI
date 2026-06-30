@@ -1,3 +1,4 @@
+import { compact } from './compact';
 import type {
     Adapter,
     AdapterProgress,
@@ -45,17 +46,15 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
             headers['content-type'] = contentType;
         }
 
-        // Build the init as a typed local so the non-standard `dispatcher` key can be added
-        // when supplied; with no dispatcher the key is omitted entirely (identical to before).
-        const init: FetchInitWithDispatcher = {
+        // Build the init as a typed local; `compact` drops `body`/`dispatcher` when absent,
+        // so the non-standard `dispatcher` key stays off unless a dispatcher is supplied.
+        const init: FetchInitWithDispatcher = compact({
             method,
             headers,
-            ...(body !== undefined ? { body } : {}),
+            body,
             ...(req.signal ? { signal: req.signal } : {}),
-            ...(opts?.dispatcher !== undefined
-                ? { dispatcher: opts.dispatcher }
-                : {}),
-        };
+            dispatcher: opts?.dispatcher,
+        });
 
         // Send the request. Network/abort errors propagate to the caller. The local init type
         // (with the undici-only `dispatcher`) widens cleanly to the RequestInit fetch expects.

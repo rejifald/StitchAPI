@@ -15,7 +15,7 @@
 //     into a child — pass exactly what's needed (incl. `PATH` for a bare command name, or use an
 //     absolute command path).
 import { execFile } from 'node:child_process';
-import { stitch } from 'stitchapi';
+import { compact, stitch } from 'stitchapi';
 import type {
     AdapterRequest,
     AdapterResponse,
@@ -55,13 +55,13 @@ function runCommand(
         execFile(
             d.command,
             argv,
-            {
-                ...(d.cwd !== undefined ? { cwd: d.cwd } : {}),
+            compact({
+                cwd: d.cwd,
                 env: d.env ?? {}, // FAIL-CLOSED: no inherited process.env
-                ...(req.signal !== undefined ? { signal: req.signal } : {}),
+                signal: req.signal,
                 maxBuffer: d.maxBuffer,
                 encoding: 'utf8',
-            },
+            }),
             (err, stdout, stderr) => {
                 if (err) {
                     // A non-zero EXIT carries a numeric `.code` (the exit status) → a "response".

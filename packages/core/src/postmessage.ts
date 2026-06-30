@@ -27,6 +27,7 @@
 // Browser-first + bundle-frugal + zero-dep: only `postMessage`/`MessageEvent`/`MessagePort`/
 // `ReadableStream`/`globalThis.crypto` — no `node:*`, no `Buffer`. Reached only through this subpath;
 // `import { stitch }` pulls in none of it.
+import { compact } from './compact';
 import type { InputOf, OutputOf, SchemaLike } from './infer';
 import { makeStitch } from './stitch';
 import type { Surface } from './surface';
@@ -465,11 +466,13 @@ function makeChannel(
         }
         if (!(await passes(responder.output, result))) return; // off-contract → never post
         if (closed) return;
-        transport.post({
-            type: responder.reply,
-            ...(env.id !== undefined ? { id: env.id } : {}),
-            payload: result,
-        });
+        transport.post(
+            compact({
+                type: responder.reply,
+                id: env.id,
+                payload: result,
+            }),
+        );
     }
 
     // ---- request: a buffered execute surface --------------------------------
@@ -544,22 +547,21 @@ function makeChannel(
                     transport.post({ type, id, payload: req.body });
                 }),
         };
-        // The assembled config is handed to `makeStitch` as the loose `Partial<StitchConfig>`
-        // Fragment: a generic `const C` keeps each slot's literal optionality (`C['name']` is
-        // `string | undefined`), which `exactOptionalPropertyTypes` rejects against `Fragment`'s
-        // `name?: string` — so widen the spread with `as Partial<StitchConfig>` (the generic
-        // optionality is sound at runtime), then retype the loose result back to the declared
-        // `InputOf<C>` (the sse/stream/graphql `as unknown as` idiom).
-        return makeStitch<OutputOf<C>>({
-            ...rest,
-            ...(input !== undefined ? { input } : {}),
-            ...(output !== undefined ? { output } : {}),
-            kind: surface,
-            url,
-        } as Partial<StitchConfig>) as unknown as Stitch<
-            OutputOf<C>,
-            InputOf<C>
-        >;
+        // `compact` drops the `undefined`-valued slots and yields an optional-keyed shape
+        // (`name?: string`), so the generic `const C`'s `string | undefined` optionality —
+        // which `exactOptionalPropertyTypes` would otherwise reject against `Fragment`'s
+        // `name?: string` — no longer needs a widening `as Partial<StitchConfig>` cast. The
+        // loose result is still retyped to the declared `InputOf<C>` (the sse/stream/graphql
+        // `as unknown as` idiom).
+        return makeStitch<OutputOf<C>>(
+            compact({
+                ...rest,
+                input,
+                output,
+                kind: surface,
+                url,
+            }),
+        ) as unknown as Stitch<OutputOf<C>, InputOf<C>>;
     }
 
     // ---- emit: a buffered execute surface, no reply -------------------------
@@ -591,12 +593,14 @@ function makeChannel(
         };
         // `makeStitch`'s generic can't be `void` (lint: void only valid as a return type) — build it
         // loose and cast the result to the `void`-typed Stitch (emit's call resolves to nothing).
-        return makeStitch({
-            ...rest,
-            ...(input !== undefined ? { input } : {}),
-            kind: surface,
-            url,
-        } as Partial<StitchConfig>) as unknown as Stitch<void, InputOf<C>>;
+        return makeStitch(
+            compact({
+                ...rest,
+                input,
+                kind: surface,
+                url,
+            }) as Partial<StitchConfig>,
+        ) as unknown as Stitch<void, InputOf<C>>;
     }
 
     // ---- events: a streaming surface ----------------------------------------
@@ -683,15 +687,14 @@ function makeChannel(
                 }
             },
         };
-        return makeStitch<OutputOf<C>[]>({
-            ...rest,
-            ...(output !== undefined ? { output } : {}),
-            kind: surface,
-            url,
-        } as Partial<StitchConfig>) as unknown as Stitch<
-            OutputOf<C>[],
-            InputOf<C>
-        >;
+        return makeStitch<OutputOf<C>[]>(
+            compact({
+                ...rest,
+                output,
+                kind: surface,
+                url,
+            }),
+        ) as unknown as Stitch<OutputOf<C>[], InputOf<C>>;
     }
 
     // ---- respond: register an inbound handler (NOT a stitch) -----------------

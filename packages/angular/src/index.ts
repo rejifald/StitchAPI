@@ -42,6 +42,7 @@ import {
 } from '@stitchapi/query-core';
 import { Observable, of } from 'rxjs';
 import { shareReplay, switchMap } from 'rxjs/operators';
+import { compact } from 'stitchapi';
 
 export type {
     CreateStitchQueryOptions,
@@ -145,13 +146,14 @@ function injectStitchInternal<T>(
     const destroyRef = injector.get(DestroyRef);
 
     const { mode, enabled, onSuccess, onError } = options;
-    const coreOptions: CreateStitchQueryOptions<T> & { stream: boolean } = {
-        stream,
-        ...(mode ? { mode } : {}),
-        ...(enabled !== undefined ? { enabled } : {}),
-        ...(onSuccess ? { onSuccess } : {}),
-        ...(onError ? { onError } : {}),
-    };
+    const coreOptions: CreateStitchQueryOptions<T> & { stream: boolean } =
+        compact({
+            stream,
+            ...(mode ? { mode } : {}),
+            enabled,
+            ...(onSuccess ? { onSuccess } : {}),
+            ...(onError ? { onError } : {}),
+        });
 
     // The live query handle, captured for the imperative refetch/cancel. It is
     // reassigned whenever the input changes (switchMap tears down the old one).
