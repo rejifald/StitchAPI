@@ -4,6 +4,7 @@ description: A third-party field quietly changes shape and your code keeps compi
 author: Oleksandr Zhuravlov
 date: '2026-06-11'
 tags: [reliability, drift, validation, types, observability]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 A provider you depend on renames `total` to `total_amount`, or turns a number into a string, or starts returning `null` where it never did before. Nobody told you. Your build is green. Your tests are green. The deploy goes out. And then, hours later, a chart renders `NaN`, an order total comes out `undefined`, and a pager goes off — for a code path you didn't touch.

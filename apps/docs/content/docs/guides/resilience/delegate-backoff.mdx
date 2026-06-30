@@ -1,6 +1,7 @@
 ---
 title: 'Delegate backoff'
 description: 'Surface rate-limit outcomes as a RateLimitError so an outer gate owns the backoff, instead of retrying and throttling them internally.'
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 By default a stitch handles a rate limit _itself_: a `429` listed in

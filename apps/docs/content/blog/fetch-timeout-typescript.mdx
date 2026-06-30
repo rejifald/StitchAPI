@@ -4,6 +4,7 @@ author: Oleksandr Zhuravlov
 date: '2026-06-29'
 description: fetch has no timeout option, so a hung request blocks your caller forever. This shows the AbortSignal.timeout pattern that actually cancels the socket, the Promise.race trap that doesn't, and how a stitch declares total and per-attempt deadlines that compose with retry.
 tags: [fetch, timeout, typescript, abortsignal, resilience]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Add a timeout to `fetch` when a slow or hung response shouldn't be allowed to block your caller indefinitely. `fetch` ships with no timeout option of its own, so a request to a stalled upstream waits as long as the OS lets the socket stay open — which can be minutes. You reach for a timeout the first time a single slow dependency holds up a request you promised would return in seconds.

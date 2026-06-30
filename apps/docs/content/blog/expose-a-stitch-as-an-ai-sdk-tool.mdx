@@ -4,6 +4,7 @@ description: How to hand a model a stitch as a callable tool with @stitchapi/ver
 author: Oleksandr Zhuravlov
 date: '2026-05-11'
 tags: [ai, agents, auth, tools]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Letting a model call your API during generation is a small superpower and a real liability at the same time. The usual way to wire it up — give the model a raw `fetch` wrapper as a tool — leaks two things you'd rather keep separate. It hands the model an opaque blob of bytes to reason over, and it puts the API key on the same side of the boundary as the model that's about to improvise tool arguments.

@@ -4,6 +4,7 @@ description: 'CSV reports, HTML pages, PDFs, and zips do not fit a JSON client. 
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [non-json, csv, html, responsetype, typescript]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 The report endpoint returns CSV. The scraping target returns HTML. The files service hands back a PDF or a zip. Your client was built for JSON, so each of these becomes a one-off: a manual fetch, a `res.text()` here and a `res.arrayBuffer()` there, a parser bolted on, and a return type of `any` that lies to everyone downstream. A stitch reads those bodies too — `responseType` picks how the body is decoded, `transform` reshapes it, and an `output` schema validates the shape you actually use.

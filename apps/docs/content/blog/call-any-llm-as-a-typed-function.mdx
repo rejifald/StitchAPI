@@ -4,6 +4,7 @@ description: 'A model call is just an HTTP request, so wrapping it in an SDK buy
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [llm, ai, anthropic, openai, typescript]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You ship a feature on Claude, then a cost review says move the cheap path to GPT-4o, and now you are threading a second SDK through your codebase: a different client object, a different request shape, a different response shape, a different retry story. The two providers do the same thing — take messages, return text — but each one drags its own library and its own conventions, so "switch the model" turns into "rewrite the call site." A model call is an HTTP POST with an auth header. The SDK is wrapping the same request you could declare once.

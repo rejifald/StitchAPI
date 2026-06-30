@@ -4,6 +4,7 @@ description: How StitchAPI's read-through cache and in-process request coalescin
 author: Oleksandr Zhuravlov
 date: '2026-06-08'
 tags: [caching, coalescing, performance, resilience]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Picture a request that fans out. A page loads, and three components each ask for the current user. An agent kicks off the same lookup across ten parallel branches. A burst of traffic hits an endpoint that returns the same answer for everyone for the next minute. In each case you make N calls upstream where one would have done — and if that upstream is metered, rate-limited, or just slow, you pay for all N.

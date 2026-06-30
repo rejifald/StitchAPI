@@ -4,6 +4,7 @@ description: 'A write can time out after the server committed but before the res
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [idempotency, retry, typescript, resilience, http]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Your charge endpoint times out. The card was charged — the server committed the row — but the response packet never made it back across the wire. Your retry logic does the sensible thing and fires the request again. Now the customer has two charges and you have a support ticket.

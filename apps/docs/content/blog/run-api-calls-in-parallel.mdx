@@ -4,6 +4,7 @@ description: 'When API calls do not depend on each other, running them as a ladd
 author: Oleksandr Zhuravlov
 date: '2026-06-30'
 tags: [composition, parallel, concurrency, linked, typescript]
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
 A [stitch](/docs/concepts/the-stitch) is one endpoint as a typed, validated, resilient function. When one call needs the result of the one before it, you want a sequence — that is [`linked`](/blog/compose-api-calls-into-a-pipeline). But just as often the calls are **independent**: a dashboard needs a user, their settings, and their feature flags, and none of them waits on the others. Running those in sequence is latency you are paying for nothing.

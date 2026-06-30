@@ -4,6 +4,7 @@ description: 'Code that calls APIs you do not own goes slow and flaky in tests. 
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [testing, mocking, typescript, adapter, mockadapter]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You wrote a function that fetches a user, retries on `503`, validates the payload, and your test for it spins up MSW, registers a handler, and still flakes when two specs share the global `fetch`. The code under test calls an API you do not own, so the test has to fake that API somewhere — and the usual place to fake it is the network layer, which is the layer with the most moving parts.

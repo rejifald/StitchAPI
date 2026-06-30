@@ -4,6 +4,7 @@ description: 'The axios.create() is the small part of a mature setup — the bul
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [axios, typescript, migration, interceptors, resilience]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You open the file that configures axios for a real service, and the `axios.create()` at the top is two lines. Below it sit two hundred: a request interceptor that attaches a bearer token, a response interceptor that catches a 401 and refreshes, a retry-with-backoff bolted on by hand, a `validateStatus` override, a `transformResponse` that reshapes the body, and a cast that tells TypeScript the result is `User` without anyone checking. That interceptor stack is what you maintain. Migrating to StitchAPI is migrating _that layer_ — and you can keep axios as the transport while you do it, or drop it.

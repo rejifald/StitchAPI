@@ -4,6 +4,7 @@ description: Most clients only find a rate limit by hitting it. A declared throt
 author: Oleksandr Zhuravlov
 date: '2026-06-04'
 tags: [resilience, throttle, rate-limits, http]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 The usual way to handle a rate limit is to wait for the provider to enforce it. You fire requests as fast as your code produces them, and when one comes back `429 Too Many Requests`, you retry, back off, and honor `Retry-After`. It works, and you should keep it — but notice what it costs. By the time the `429` arrives, you've already spent the request: a round trip out, a round trip back, and a rejection for your trouble. Do that in a loop and the rejections stack up, each one adding latency and, on a metered endpoint, sometimes a charge for the privilege of being told no.

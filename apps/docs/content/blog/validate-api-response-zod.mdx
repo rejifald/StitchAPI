@@ -4,6 +4,7 @@ author: Oleksandr Zhuravlov
 date: '2026-06-29'
 description: The standard way to validate an API response with Zod is to parse the JSON through a schema with safeParse at the call site. This shows that pattern and its rough edges, then how to declare the same schema on a stitch so every call validates its response — and its input — at the boundary with a typed error.
 tags: [zod, validation, typescript, api, fetch]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Validate an API response with Zod when you want a malformed or unexpected shape to fail loudly at the boundary instead of leaking through as an `undefined` three layers downstream. You reach for it the moment you stop trusting that the JSON on the wire matches the type you wrote — which is every third-party API and most internal ones.

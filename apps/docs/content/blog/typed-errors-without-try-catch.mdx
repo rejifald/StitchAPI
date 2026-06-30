@@ -4,6 +4,7 @@ description: 'A thrown error is typed `unknown`, so every catch block re-narrows
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [typescript, error-handling, validation, safe-result, stitcherror]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You write a loader that fetches a user, and the failure path is a `try/catch` whose `catch (err)` binds `err` as `unknown`. To read the HTTP status you re-narrow — `if (err instanceof StitchError)` — every single time, in every loader, because TypeScript cannot prove what `throw` threw. The happy path and the failure path live on opposite sides of a control-flow wall, and the type system has lost track of the error before you ever touch it.

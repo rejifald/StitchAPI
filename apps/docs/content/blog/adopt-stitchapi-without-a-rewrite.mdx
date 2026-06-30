@@ -4,6 +4,7 @@ description: 'Wrap one endpoint as a stitch, leave the rest of your fetch and ax
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [adoption, migration, fetch, axios, architecture]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 A retry policy you added to one `fetch` call last quarter never made it to the other six that hit the same flaky endpoint, and the response shape that broke production last week was the one nobody validated. You don't want to stop shipping for a week to rewrite the data layer — you want to harden the one call that keeps paging you, today, and leave everything else exactly where it is.
