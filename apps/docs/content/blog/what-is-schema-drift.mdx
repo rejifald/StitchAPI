@@ -57,7 +57,7 @@ The generic answers all involve remembering a shape and comparing against it.
 
 A [stitch](/docs/concepts/the-stitch) detects drift by reusing the contract you already wrote. Wrap a stitch's `output` schema in `drift()`, and every live response is validated against the schema and then diffed against the validated value — the difference is the drift:
 
-```ts
+```ts twoslash tab="StitchAPI" tabGroup="approach"
 import { drift, stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -74,24 +74,43 @@ const getOrder = stitch({
 });
 ```
 
+```ts twoslash tab="fetch" tabGroup="approach"
+// @noErrors
+// By hand you validate the required fields yourself — and the soft
+// drift (a coercion, an undeclared key) has nowhere to surface, so it
+// passes silently.
+const getOrder = async (id: number) => {
+    const res = await fetch(`https://api.example.com/orders/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+
+    if (typeof body.id !== 'number') throw new Error('drift: id');
+    if (typeof body.total !== 'number') throw new Error('drift: total');
+    // note is optional; nothing diffs the rest against a contract.
+
+    return body as { id: number; total: number; note?: string };
+};
+```
+
 Two tiers run on every call. Validation comes first: a required field that's missing or incompatible fails the call with [STITCH_DRIFT](/docs/errors/stitch-drift) (`change: 'invalid'`, `level: 'error'`), and on success the call returns the validated value — coerced, defaulted, unknown keys stripped. Then drift diffs the raw body against that validated value and emits each soft difference as a non-fatal finding on the [event stream](/docs/concepts/event-stream): `coerced` at `warn`, `undeclared` at `info`, `defaulted` at `verbose`.
 
 Because the schema _declares_ what may vary, normal variance never reads as drift — `z.string().optional()`, `z.string().nullable()`, and `z.array(...)` all validate clean, so the snapshot problem doesn't arise. A field you know about but don't consume goes in `ignore: ['meta', '_links']` to keep the typed contract tight, and `severity` re-levels or filters the soft kinds. The full grammar is in the [drift detection guide](/docs/guides/validation/drift).
 
-## When you don't need drift tooling
+## When plain `output` is the floor — and when you reach for `drift()`
 
-Drift detection earns its keep against surfaces you don't control: third-party vendors, services owned by another team, anything that ships "minor" response tweaks without telling you. It's overhead you can skip when:
+When you own and version both sides and change them in the same commit, a plain `output` schema is the right floor — there's no out-of-band change to catch. (The mechanics of plain validation are in the [validation guide](/docs/guides/validation/validation).) You reach for `drift()` the moment that assumption breaks: a third-party API, a service owned by another team, or any endpoint you don't deploy in lockstep with your consumer. That's the surface where a shape change arrives without a matching commit on your side, and where `drift()` turns a silent rename into a typed signal — wrapping the same schema you already have, not a rewrite.
 
--   **You own and version the endpoint.** If you change both sides in the same commit, a plain `output` schema is enough — there's no out-of-band change to catch. (The mechanics of plain validation are in the [validation guide](/docs/guides/validation/validation).)
--   **You need exhaustive pre-deploy coverage, not live observation.** Proving every endpoint matches a contract before release is a contract-testing job; drift observes the calls your code actually makes, which is a different question.
--   **You won't write a schema.** Drift's signal comes from diffing against a declared shape. With no schema there's nothing to anchor on, and a stitch is back to being a fetch wrapper.
+Two honest edges, even then:
+
+-   **It observes live calls, not the whole contract.** Proving every endpoint matches a spec before release is a contract-testing job; drift watches the calls your code actually makes, which is a different question.
+-   **It needs a schema to anchor on.** Drift's signal comes from diffing against a declared shape. Write no schema and there's nothing to diff — a stitch is back to being a fetch wrapper.
 
 The trade is the same either way. Without a contract checked on every call, a quietly renamed field is an `undefined` you discover from a production incident; with one, it's either a thrown `STITCH_DRIFT` on the request that actually drifted or a `drift` event on a named path — caught at the boundary, not on the call that finally fell over.
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Wrap an `output` in `drift()`, make the fields you depend on required, and the next upstream rename arrives as a typed signal instead of a downstream `undefined`. The mechanics live in [Drift detection](/docs/guides/validation/drift), the hard-failure error in [STITCH_DRIFT](/docs/errors/stitch-drift), and the broader case in [schema drift is the bug you ship to production](/blog/schema-drift-is-a-production-bug).

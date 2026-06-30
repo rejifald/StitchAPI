@@ -4,6 +4,7 @@ import { jsonLdHtml } from '@/lib/json-ld';
 import { releaseVersion } from '@/lib/release';
 import { appName, gitConfig, siteUrl } from '@/lib/shared';
 
+import { Analytics } from '@vercel/analytics/next';
 import 'fumadocs-twoslash/twoslash.css';
 import { Banner } from 'fumadocs-ui/components/banner';
 import { RootProvider } from 'fumadocs-ui/provider/next';
@@ -164,6 +165,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                     </Banner>
                     {children}
                 </RootProvider>
+                <Analytics />
             </body>
         </html>
     );

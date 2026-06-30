@@ -1,0 +1,298 @@
+---
+title: 'Test API Code Without Hitting the Network'
+description: 'Code that calls APIs you do not own goes slow and flaky in tests. A stitch gives you two clean seams: inject a mock adapter and run the real engine, or stub the stitch when only the caller is under test.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [testing, mocking, typescript, adapter, mockadapter]
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+You wrote a function that fetches a user, retries on `503`, validates the payload, and your test for it spins up MSW, registers a handler, and still flakes when two specs share the global `fetch`. The code under test calls an API you do not own, so the test has to fake that API somewhere — and the usual place to fake it is the network layer, which is the layer with the most moving parts.
+
+A stitch moves the seam. Because a stitch is a function with a transport plugged in underneath, you can swap the transport for canned responses and run the real engine — validation, retry, pagination — against them. Or, when you only care about the code that _calls_ the stitch, you can replace the whole stitch with a stub and skip transport entirely.
+
+## The test most suites end up with
+
+Here is the function and the test you reach for first. The function calls `GET /users/{id}` and the test fakes `fetch`:
+
+```ts twoslash
+// @noErrors
+async function getUser(id: string): Promise<User> {
+    const res = await fetch(`https://api.example.com/users/${id}`);
+    if (!res.ok) throw new Error(`getUser failed: ${res.status}`);
+    return (await res.json()) as User;
+}
+
+// the test
+beforeEach(() => {
+    globalThis.fetch = vi.fn(
+        async () => new Response(JSON.stringify({ id: '1', name: 'Ada' })),
+    );
+});
+
+test('reads a user', async () => {
+    const user = await getUser('1');
+    expect(user.name).toBe('Ada');
+});
+```
+
+The sharp edges are real. The mock is global: every spec sharing this process shares the patched `fetch`, so one suite leaking a mock breaks the next. The fake `Response` is hand-rolled and lies — it answers `.json()` but not `.headers`, so the day your code reads a header the mock diverges from a real one. And if you wanted to test the retry-on-`503` behavior, you'd have to write the retry loop yourself and script the fake `fetch` to fail twice then succeed. `nock` and MSW move this mock to a more faithful HTTP layer, which is better, but it is still a layer below your code and still shared process-wide.
+
+## Layer 1: inject a mock adapter, run the real engine
+
+Declare the call as a stitch. The transport is a config field — `adapter` — that defaults to `fetchAdapter()`. In a test you pass `mockAdapter` instead and the real engine runs against your fixtures:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { mockAdapter } from 'stitchapi/testing';
+import { z } from 'zod';
+
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): {
+    toBe(expected: unknown): void;
+    toHaveLength(n: number): void;
+    not: { toHaveLength(n: number): void };
+};
+// ---cut---
+const User = z.object({ id: z.string(), name: z.string() });
+
+const adapter = mockAdapter({
+    match: '/users/',
+    respond: { body: { id: '1', name: 'Ada' } },
+});
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: User,
+    adapter,
+});
+
+test('validates the user', async () => {
+    const user = await getUser({ params: { id: '1' } });
+    expect(user.name).toBe('Ada');
+    expect(adapter.callCount()).toBe(1);
+});
+```
+
+The fixture is scoped to this stitch, not to a global. `mockAdapter` returns a real adapter — the same contract `fetchAdapter` satisfies — so the engine cannot tell it apart from a socket. That means `output: User` actually validates the canned body, `unwrap` actually unwraps it, and `paginate` actually walks your fixture pages. You are testing the stitch's behavior, not a fake of it.
+
+A `MockRoute` is `{ method?, match?, respond }`. `match` is a URL substring, a `RegExp` against the full URL, or a predicate — first match wins. `respond` is a fixed `MockResponse` (status defaults to `200`), a function of the call, or — the useful one for resilience — an array consumed one per call, last entry repeating. That last form scripts a flaky endpoint, which is how you exercise the real retry path:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { mockAdapter } from 'stitchapi/testing';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string() });
+
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): { toBe(expected: unknown): void };
+
+// ---cut---
+const adapter = mockAdapter({
+    match: '/users/',
+    respond: [
+        { status: 503 },
+        { status: 503 },
+        { body: { id: '1', name: 'Ada' } },
+    ],
+});
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: User,
+    retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 0 },
+    adapter,
+});
+
+test('retries past two 503s', async () => {
+    const user = await getUser({ params: { id: '1' } });
+    expect(user.name).toBe('Ada');
+    expect(adapter.callCount()).toBe(3); // two failures, then success
+});
+```
+
+No retry loop in the test, and none in your code — the stitch's retry did the work, and the array fixture fed it the sequence to retry through. Inspect what hit the wire with `.calls(filter?)` for the recorded requests and `.lastRequest()` for the most recent one; `.reset()` clears the log between assertions.
+
+One default worth knowing: an unmatched request **throws** by default. `opts.onUnmatched` is `'throw'` unless you set it, so a request your test did not plan for fails the test loudly instead of returning `undefined` and slipping through. Pass a number to reply with that status instead.
+
+## Layer 2: stub the stitch when the caller is under test
+
+Sometimes the stitch is not what you are testing — it is a dependency of the function you are testing, and you want to control its output without a transport at all. `stubStitch` and `failStitch`, both from `stitchapi/testing`, stand in for the stitch itself:
+
+```ts twoslash
+import type { Stitch } from 'stitchapi';
+import { failStitch, stubStitch } from 'stitchapi/testing';
+
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): { toBe(expected: unknown): void };
+declare function loadProfile(
+    getUser: Stitch<unknown>,
+): Promise<{ heading?: string; error?: string }>;
+
+// ---cut---
+test('loader renders the user', async () => {
+    const getUser = stubStitch({ id: '1', name: 'Ada' });
+    const view = await loadProfile(getUser);
+    expect(view.heading).toBe('Ada');
+    expect(getUser.callCount).toBe(1);
+});
+
+test('loader renders the error state', async () => {
+    const getUser = failStitch({ status: 500, message: 'upstream down' });
+    const view = await loadProfile(getUser);
+    expect(view.error).toBe('upstream down');
+});
+```
+
+`stubStitch(impl)` gives a `Stitch & StubSpy`: `impl` is a value or a function of the input, awaiting returns it, and `.safe()` / `.unwrap()` / `.stream()` all behave like a real stitch while the spy records every call. `callCount` is a property on the stub — a number, not a method — so you read it as `getUser.callCount`. `failStitch(error)` always fails — `await` and `.unwrap()` reject with a `StitchError`, `.safe()` resolves to `{ ok: false }`, and `.stream()` yields `start` to `error` to `done`. Use `failStitch` to drive the error branch of code that calls a stitch without staging a real failure.
+
+The two layers split cleanly:
+
+| Axis                | Mock adapter                                            | Stub the stitch                       |
+| ------------------- | ------------------------------------------------------- | ------------------------------------- |
+| Subject under test  | the stitch's own behavior                               | the code that calls the stitch        |
+| What runs           | the real engine — validation, retry, pagination         | nothing below your code               |
+| Question it answers | does retry fire, does validation reject the wrong shape | does my loader render the error state |
+| Transport           | a fixture adapter                                       | none at all                           |
+
+Inject a mock adapter when the stitch's own behavior is the subject. Stub the stitch when the caller is the subject — the first runs the engine, the second runs nothing below your code.
+
+## Assert the process, not only the return value
+
+A stitch emits an event stream as it works: `start`, `progress`, `info`, `drift`, `delta`, `result`, `error`, `done`. A retry is not a peer event — it rides a `progress` event whose `phase` is `'retry'`. `collectStitchEvents(source)` drains the stream into its parts so you can assert the process, not only the return value — that it retried twice, or that the response drifted from its schema:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { collectStitchEvents, mockAdapter } from 'stitchapi/testing';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string() });
+const adapter = mockAdapter({
+    match: '/users/',
+    respond: [
+        { status: 503 },
+        { status: 503 },
+        { body: { id: '1', name: 'Ada' } },
+    ],
+});
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: User,
+    retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 0 },
+    adapter,
+});
+
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): {
+    toBe(expected: unknown): void;
+    toHaveLength(n: number): void;
+};
+
+// ---cut---
+test('retries before succeeding', async () => {
+    const events = await collectStitchEvents(getUser({ params: { id: '1' } }));
+
+    const retries = events.events.filter(
+        (e) => e.type === 'progress' && e.phase === 'retry',
+    );
+    expect(retries).toHaveLength(2); // two 503s, two retry phases
+
+    expect(events.result?.name).toBe('Ada');
+});
+```
+
+`collectStitchEvents` returns a `CollectedEvents` object — `{ types, deltas, drifts, result, error, done, events }` — not a bare array. The full ordered list lives at `.events`; the convenience fields surface the common asks, so `events.drifts` collects every `drift` finding when a response no longer matches its validated shape. That is the contract test that fails the moment an upstream API renames a field:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { collectStitchEvents, mockAdapter } from 'stitchapi/testing';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string() });
+const adapter = mockAdapter({
+    match: '/users/',
+    respond: { body: { id: '1', name: 'Ada' } },
+});
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: User,
+    adapter,
+});
+
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): {
+    not: { toHaveLength(n: number): void };
+};
+
+// ---cut---
+test('flags drift when a field is renamed', async () => {
+    const events = await collectStitchEvents(getUser({ params: { id: '1' } }));
+    expect(events.drifts).not.toHaveLength(0);
+});
+```
+
+## Make the clock instant
+
+Retry backoff, throttle pacing, and per-attempt timeouts all wait on a clock. A test that waits on the real clock is slow and timing-dependent — the flake you were trying to delete. Inject `manualClock()` as the stitch's `clock` and advance it yourself:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { mockAdapter } from 'stitchapi/testing';
+// ---cut---
+import { manualClock } from 'stitchapi/testing';
+import { z } from 'zod';
+
+const User = z.object({ id: z.string(), name: z.string() });
+const adapter = mockAdapter({
+    match: '/users/',
+    respond: [{ status: 503 }, { body: { id: '1', name: 'Ada' } }],
+});
+
+declare function test(name: string, fn: () => void | Promise<void>): void;
+declare function expect(value: unknown): { toBe(expected: unknown): void };
+
+const clock = manualClock();
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: User,
+    retry: { attempts: 3, on: [503], baseMs: 1000 },
+    adapter,
+    clock,
+});
+
+test('backoff costs zero real time', async () => {
+    const call = getUser({ params: { id: '1' } });
+    await clock.advance(1000); // a one-second backoff, instantly
+    const user = await call;
+    expect(user.name).toBe('Ada');
+});
+```
+
+The default is the real `systemClock`. Swap in `manualClock` and a one-second backoff costs zero milliseconds — `advance(1000)` moves the clock, the retry fires, the test stays deterministic. The same handle drives throttle windows, timeout deadlines, and circuit cooldowns.
+
+## One declaration, two honest seams
+
+This is the honest contrast, not a dismissal. Network-layer mocks are the right tool when many code paths share one HTTP boundary and you want to fake it once. The trade is that they sit below your code and live in shared process state. A mock adapter is narrower — one stitch, one fixture — and it runs the real engine, so what passes the test is the behavior that ships. A stub is narrower still and runs nothing below your code, which is exactly what you want when the stitch is someone else's dependency.
+
+The same stitch you ship is the one you test. In production it carries `adapter: fetchAdapter()` (the default, so you write nothing) and runs against a real socket. In a test you pass `mockAdapter` for the transport and `manualClock` for the clock — two config fields, same declaration, no second code path. The seam you mock is a seam the engine already has, so the test exercises the production object, not a parallel fake of it. When the next call you add needs the same treatment, it is the same two fields again — no test harness to grow.
+
+## Try it
+
+Install the core package; the testing utilities ride along at the `stitchapi/testing` subpath, which is browser-safe.
+
+```package-install
+stitchapi
+```
+
+Then reach for `mockAdapter`, `stubStitch`, `failStitch`, `collectStitchEvents`, and `manualClock` from `stitchapi/testing`.
+
+-   [Mocking and testing a stitch](/docs/guides/testing/mocking)
+-   [The event stream](/docs/concepts/event-stream)
+-   [Validation](/docs/guides/validation/validation) and [drift](/docs/guides/validation/drift)
+-   [Choosing an HTTP adapter](/blog/choosing-an-http-adapter)

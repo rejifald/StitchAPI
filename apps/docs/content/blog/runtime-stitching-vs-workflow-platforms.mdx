@@ -30,7 +30,7 @@ On a platform, the logic lives in the platform: its editor, its graph, its store
 
 With a stitch, the logic lives in your codebase. The declaration is a value in a `.ts` file:
 
-```ts
+```ts twoslash
 import { seam } from 'stitchapi';
 import { bearer, env } from 'stitchapi';
 
@@ -65,12 +65,34 @@ Those are different grains. A workflow is _composed of_ calls. A stitch _is_ one
 
 Most platforms have a code step — a node where you run your own function. That's the seam where the two meet cleanly. Instead of hand-rolling a `fetch` inside that node, with its own ad-hoc retry and zero validation, you call a stitch:
 
-```ts
-// Inside a platform's code step, or your own orchestrator:
-const order = await getOrder({ params: { id: input.orderId } });
-const customer = await enrich({ params: { id: order.customerId } });
+```ts twoslash
+import { bearer, env, seam } from 'stitchapi';
+import { z } from 'zod';
 
-return { order, customer };
+const orders = seam({
+    baseUrl: 'https://api.example.com',
+    auth: bearer(env('ORDERS_TOKEN')),
+});
+
+const getOrder = orders.stitch({
+    path: '/orders/{id}',
+    output: z.object({ id: z.string(), customerId: z.string() }),
+});
+const enrich = orders.stitch({
+    path: '/customers/{id}',
+    output: z.object({ id: z.string(), name: z.string() }),
+});
+
+declare const input: { orderId: string };
+
+async function step() {
+    // ---cut---
+    // Inside a platform's code step, or your own orchestrator:
+    const order = await getOrder({ params: { id: input.orderId } });
+    const customer = await enrich({ params: { id: order.customerId } });
+
+    return { order, customer };
+}
 ```
 
 The platform still owns the orchestration — the trigger, the schedule, the run history, the steps before and after. The stitch owns the _call_: the auth boundary, the retry, the timeout, the drift check against the declared schema. The platform decides _when_ and _in what order_; the stitch decides _how reliably_ each hop happens. That layering is the point of the comparison — they're stacked, not opposed.
@@ -101,8 +123,8 @@ The useful frame: a platform answers "in what order, and when, do these steps ru
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Declare one endpoint as a stitch, then decide whether it lives in your own code or inside a workflow's code step — the definition is the same either way. The [concepts overview](/docs/concepts/the-stitch) explains the primitive, and [the docs](/docs) cover composition, auth, and resilience in depth.

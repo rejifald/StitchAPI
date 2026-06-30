@@ -1039,6 +1039,34 @@ const cacheEvt = (detail: string): StitchEvent => ({
     at: now(),
 });
 
+// A buffered upload bar that never moves is the quiet trap behind the adapter seam: a call passes
+// `onProgress` with a body expecting bytes-sent, but the default `fetch` reports only
+// `phase: 'download'` — the upload phase stays dark, no error, no events. When the active adapter
+// declares its capabilities and `'uploadProgress'` is NOT among them (ADR 0005 Decision 9), say so
+// once — an `info` event pointing at xhrAdapter — instead of no-op'ing. Deliberately a teaching
+// note, not a throw: a body with `onProgress` can also legitimately want DOWNLOAD progress on a
+// POST, which `fetch` does serve, so erroring would break a working call. Adapters that declare
+// nothing (custom transports) and ADR 0008 surfaces that replace the transport are left alone — the
+// open contract stands.
+function uploadProgressWarning(
+    rt: Runtime,
+    input: StitchInput,
+): StitchEvent | undefined {
+    if (!input.onProgress || input.body === undefined) return undefined;
+    if (rt.cfg.kind?.execute) return undefined; // surface replaces the transport (shell/llm/pipe)
+    const cap = rt.adapter.capabilities;
+    if (!cap || cap.supports.includes('uploadProgress')) return undefined;
+    return {
+        type: 'info',
+        topic: 'adapter.upload-progress-unsupported',
+        detail:
+            `onProgress is set with a request body, but ${cap.name ?? 'the active adapter'} cannot ` +
+            `report upload progress — only 'phase: download' events fire. Use xhrAdapter() to draw ` +
+            `an upload progress bar.`,
+        at: now(),
+    };
+}
+
 const resultEvt = (
     data: unknown,
     status: number,
@@ -1574,7 +1602,7 @@ export async function* execute(
     input: StitchInput = {},
     // Run identity (ADR 0007). Defaults to a fresh root run; the caller supplies one to make
     // this a CHILD run — `newRunContext(parent)` inherits the parent's `traceId` and sets
-    // `parentId` (a `cookieSession` login, a `pipe()` step). Stamped on the `start` event and
+    // `parentId` (a `cookieSession` login, a `linked` step). Stamped on the `start` event and
     // carried onto the trace-sink ctx by `tee` (stitch.ts).
     run: RunContext = newRunContext(),
     // Per-call run flags (ADR 0016), set by `.inspect()`: `retainRaw` surfaces the pre-validation
@@ -1596,6 +1624,12 @@ export async function* execute(
         yield doneEvt(false, t0, 0);
         return;
     }
+
+    // Teach, don't no-op: an upload progress bar the transport can't draw gets one `info` event,
+    // not silence (and not a throw — see `uploadProgressWarning`). Emitted once per call, before
+    // any surface dispatch, so the same note surfaces for buffered/paginated/cached paths alike.
+    const progressWarning = uploadProgressWarning(rt, input);
+    if (progressWarning) yield progressWarning;
 
     // Streaming surfaces (sse/stream) take a dedicated path: open the live body and emit `delta`
     // chunks (Decisions 4-5). Streaming bypasses pagination and the cache, and is exempt from the

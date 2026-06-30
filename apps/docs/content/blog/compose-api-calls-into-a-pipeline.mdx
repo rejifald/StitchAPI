@@ -1,0 +1,155 @@
+---
+title: 'Compose Dependent API Calls Into One Traced Flow'
+description: 'A dependent chain — an order, then its shipment, then the carrier tracking — wants typed intermediate values and one linked trace, not three unrelated calls. linked() opens a run scope so you write the plain awaits you would anyway: ancestors stay typed variables, and the whole sequence shares one trace and fails fast.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [composition, linked, pipeline, trace, typescript]
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+You fetch an order, then the shipment booked against it, then the carrier's live tracking — and the tracking call needs the shipment's code **and** the order's region, two hops back. Three calls, in order, each needing a result from the one before. When one fails at 2am, you want a trace that shows what ran first, not three unrelated calls.
+
+Written as plain `await`s, most of that is already fine. Each call is a [stitch](/docs/concepts/the-stitch) — a typed, validated, resilient function over one endpoint — so the intermediate values are real types and an ancestor two steps back is just a variable still in scope:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const Order = z.object({
+    id: z.number(),
+    shipmentId: z.string(),
+    region: z.string(),
+});
+const Shipment = z.object({ carrier: z.string(), trackingCode: z.string() });
+const Tracking = z.object({ events: z.array(z.string()) });
+
+const fetchOrder = stitch({
+    url: 'https://api.example.com/orders/{id}',
+    output: Order,
+    retry: 3,
+    timeout: '5s',
+});
+const fetchShipment = stitch({
+    url: 'https://api.example.com/shipments/{id}',
+    output: Shipment,
+    retry: 3,
+});
+const fetchTracking = stitch({
+    url: 'https://api.example.com/tracking/{carrier}/{code}',
+    output: Tracking,
+});
+// ---cut---
+const order = await fetchOrder({ params: { id: 1043 } });
+const shipment = await fetchShipment({ params: { id: order.shipmentId } });
+const tracking = await fetchTracking({
+    params: { carrier: shipment.carrier, code: shipment.trackingCode },
+    query: { region: order.region }, // two hops back — just a variable
+});
+```
+
+`order` is `Order`, `shipment` is `Shipment`, no cast. Each stitch carries its own `retry`, `timeout`, and `output` validation. The sharp edge isn't the code — it's the **trace**. Each bare `await` mints its own root run, so those three calls are three _unrelated_ operations in your logs; nothing ties them into one. `linked()` fixes exactly that, and nothing else: it opens a run **scope** and lets you keep writing the same `await`s.
+
+## The scope
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { linked } from 'stitchapi/pipe';
+import { z } from 'zod';
+
+const Order = z.object({
+    id: z.number(),
+    shipmentId: z.string(),
+    region: z.string(),
+});
+const Shipment = z.object({ carrier: z.string(), trackingCode: z.string() });
+const Tracking = z.object({ events: z.array(z.string()) });
+const fetchOrder = stitch({
+    url: 'https://api.example.com/orders/{id}',
+    output: Order,
+});
+const fetchShipment = stitch({
+    url: 'https://api.example.com/shipments/{id}',
+    output: Shipment,
+});
+const fetchTracking = stitch({
+    url: 'https://api.example.com/tracking/{carrier}/{code}',
+    output: Tracking,
+});
+// ---cut---
+const tracking = await linked(async (run) => {
+    const order = await run(fetchOrder, { params: { id: 1043 } });
+    const shipment = await run(fetchShipment, {
+        params: { id: order.shipmentId },
+    });
+    return run(fetchTracking, {
+        params: { carrier: shipment.carrier, code: shipment.trackingCode },
+        query: { region: order.region }, // still just a variable
+    });
+});
+```
+
+`linked(body)` hands your `body` a `run`. Call your stitches through it instead of directly — that's the whole API.
+
+-   **Same types, no casts.** `run(stitch, input)` is typed straight from the stitch: input from its input, result from its output. The two-hops-back ancestor isn't a feature you invoke; it's a variable you already have.
+-   **One trace.** Each `run(...)` chains as a child of the call before it, so the trace draws `fetchOrder → fetchShipment → fetchTracking` as one connected sequence — `order` the root run, `shipment` a child of `order`, `tracking` a child of `shipment`.
+-   **Fails fast.** A rejected call rejects the whole `linked(...)` and the body stops, carrying the failing call's `.status`, `.attempts`, `.body`, and `.url`. You handle one failure at the boundary — the `await` you already wrote.
+
+## Concurrent steps stay in the trace
+
+When two calls inside the scope _don't_ depend on each other, don't `await` them in series — hand `run` an [`all`](/blog/run-api-calls-in-parallel). `run` accepts any combinator as a node, so the parallel fan nests inside the same trace:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { all, linked } from 'stitchapi/pipe';
+import { z } from 'zod';
+
+const Order = z.object({ id: z.number(), shipmentId: z.string() });
+const Shipment = z.object({ carrier: z.string() });
+const Invoice = z.object({ total: z.number() });
+const fetchOrder = stitch({
+    url: 'https://api.example.com/orders/{id}',
+    output: Order,
+});
+const fetchShipment = stitch({
+    url: 'https://api.example.com/shipments/{id}',
+    output: Shipment,
+});
+const fetchInvoice = stitch({
+    url: 'https://api.example.com/invoices/{id}',
+    output: Invoice,
+});
+// ---cut---
+const summary = await linked(async (run) => {
+    const order = await run(fetchOrder, { params: { id: 1043 } });
+    // shipment and invoice are independent — fan them out, still inside the trace
+    const { shipment, invoice } = await run(
+        all({ shipment: fetchShipment, invoice: fetchInvoice }),
+        { params: { id: order.shipmentId } },
+    );
+    return { carrier: shipment.carrier, total: invoice.total };
+});
+```
+
+## The chain shows up in the trace
+
+This is the detail that pays off in production. A hand-written ladder of `await`s and a `linked` scope read almost identically — the difference is entirely in the trace:
+
+|                      | Plain `await`s        | `linked`                       |
+| -------------------- | --------------------- | ------------------------------ |
+| Intermediate types   | ✅ typed variables    | ✅ typed variables             |
+| Fail-fast            | ✅ (`await` throws)   | ✅                             |
+| Per-call resilience  | ✅ each stitch's own  | ✅ each stitch's own           |
+| **One linked trace** | ❌ three root runs    | ✅ one connected chain         |
+| Concurrent sub-steps | `Promise.all` (loose) | `run(all(...))` (in the trace) |
+
+So when tracking comes back pointing at the wrong region, the trace (and the playground's call-graph DAG) shows the order fetch that ran first, the value it produced, and the input the tracking call received. You read the sequence instead of reassembling it — and each stitch in the scope stays a standalone function you can call, test, or [expose through any front door](/blog/one-definition-four-front-doors) on its own.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+`linked` lives at the `stitchapi/pipe` subpath, so you only pull it into the bundle when a flow needs it. Each call is a [stitch](/docs/concepts/the-stitch) with its own [validation](/docs/guides/validation/validation), and the whole scope is visible in the [event stream](/docs/concepts/event-stream).
+
+Related reading: [run independent calls in parallel](/blog/run-api-calls-in-parallel), [type-safe pagination](/blog/typescript-pagination), [one definition, four front doors](/blog/one-definition-four-front-doors), and [runtime stitching vs. workflow platforms](/blog/runtime-stitching-vs-workflow-platforms).

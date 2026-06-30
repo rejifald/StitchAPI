@@ -53,7 +53,9 @@ runtime stays zero-dependency, so you pass _your_ axios (or an `axios.create()`)
 rather than an import inside StitchAPI; body encoding, headers, and parsing match
 `fetchAdapter`, so swapping transports never changes behavior. It is
 **buffered-only** — it throws on a `stream`/`sse` surface; use `fetchAdapter` to
-stream.
+stream. It _does_ report byte progress: the adapter wires axios's native
+`onUploadProgress`/`onDownloadProgress` into `onProgress` (both phases), so an
+upload bar works on a modern axios without leaving your instance.
 
 ```ts twoslash
 import { type AxiosLike, axiosAdapter, stitch } from 'stitchapi';
@@ -82,6 +84,49 @@ const upload = stitch({
     adapter: xhrAdapter(), // defaults to globalThis.XMLHttpRequest
 });
 ```
+
+### Adapter capabilities
+
+Each built-in adapter declares what it **supports** as an optional `capabilities`
+descriptor on the returned function — `{ name?, supports }`, where `supports`
+lists the optional features the transport has (`'stream'`, `'uploadProgress'`,
+`'downloadProgress'`); anything not listed, it can't do.
+
+| adapter        | `stream` | `uploadProgress` | `downloadProgress` |
+| -------------- | :------: | :--------------: | :----------------: |
+| `fetchAdapter` |    ✓     |        —         |         ✓          |
+| `xhrAdapter`   |    —     |        ✓         |         ✓          |
+| `axiosAdapter` |    —     |        ✓         |         ✓          |
+
+Only `fetchAdapter` streams (`xhr`/axios buffer and reject `stream`); only `fetch`
+**cannot** report upload progress. `axiosAdapter` wires axios's native
+`onUploadProgress`/`onDownloadProgress`, so it needs an axios that supports them (v1+).
+
+```ts twoslash
+import { fetchAdapter } from 'stitchapi';
+
+// { name: 'fetchAdapter', supports: ['stream', 'downloadProgress'] }
+const caps = fetchAdapter().capabilities;
+```
+
+Declaring capabilities is **opt-in**: a custom adapter is still just
+`(req) => Promise<AdapterResponse>`, and one that declares nothing is treated as
+unknown — no checks run against it.
+
+The engine checks `supports` for `'uploadProgress'` to turn a silent footgun into a
+teaching note. If a call passes `onProgress` **with a request body** and the active
+adapter's `supports` omits `'uploadProgress'` (only `fetch`, among the built-ins), the stitch emits one
+`info` event — topic `adapter.upload-progress-unsupported` — through your trace
+sink, pointing you at `xhrAdapter`:
+
+> onProgress is set with a request body, but fetchAdapter cannot report upload
+> progress — only 'phase: download' events fire. Use xhrAdapter() to draw an
+> upload progress bar.
+
+It is a **note, not an error**: `fetch` still reports `phase: 'download'`
+progress, so a download bar on a `POST` keeps working — only the upload phase is
+dark. To see the note, attach any `trace` sink (e.g. `consoleSink`); to act on it,
+switch the call to `xhrAdapter()`.
 
 ## Tracing & OTLP
 

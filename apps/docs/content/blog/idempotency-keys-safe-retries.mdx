@@ -1,0 +1,147 @@
+---
+title: 'Idempotency Keys: Make Retries Safe for Writes'
+description: 'A write can time out after the server committed but before the response reaches you, so the retry charges the card twice. An idempotency key lets the server collapse the duplicate.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [idempotency, retry, typescript, resilience, http]
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+Your charge endpoint times out. The card was charged — the server committed the row — but the response packet never made it back across the wire. Your retry logic does the sensible thing and fires the request again. Now the customer has two charges and you have a support ticket.
+
+This is the failure every retry guide warns about and few of them fix. Retrying a `GET` is free: read it twice, you read the same bytes. Retrying a blind `POST` is a second write. The danger lives in the gap between "server committed" and "client received" — a window a timeout lands in precisely when the network is slow, which is precisely when you retry.
+
+An idempotency key closes that gap. The client sends a unique token with the write; the server records "I already processed this token" and, on the replay, returns the original result instead of doing the work twice. The catch is that the same token has to ride every attempt. Generate a fresh one per try and you are back to two charges.
+
+## The before
+
+Here is the honest version with `fetch`. You want a retry, and you want it to be safe, so you mint a key once and thread it through the loop by hand.
+
+```ts twoslash
+// @noErrors
+async function charge(body: { amount: number; ref: string }) {
+    const key = crypto.randomUUID();
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const res = await fetch('https://api.example.com/charges', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Idempotency-Key': key, // same key on every attempt — easy to get wrong
+                },
+                body: JSON.stringify(body),
+            });
+            if (res.ok) return res.json();
+            if (![429, 502, 503, 504].includes(res.status))
+                throw new Error(`HTTP ${res.status}`);
+        } catch (err) {
+            if (attempt === 3) throw err;
+        }
+        await new Promise((r) => setTimeout(r, 200 * attempt));
+    }
+}
+```
+
+The bug is one indentation level away. Move `const key = crypto.randomUUID()` inside the loop — a refactor that looks harmless — and every retry carries a new token. The server sees three distinct writes and the safety you wrote evaporates. The correctness of this code depends on a variable's scope, and nothing in the type system or the test suite guards it.
+
+## The stitch
+
+A stitch is one API endpoint declared as a typed function. The retry policy and the idempotency key are config fields, not control flow, so the key cannot drift out of the loop — there is no loop to drift out of.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const charge = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/charges',
+    retry: { attempts: 3, on: [429, 502, 503, 504], backoff: 'expo-jitter' },
+    idempotency: {},
+});
+
+const result = await charge({ body: { amount: 4200, ref: 'inv_88' } });
+```
+
+`idempotency: {}` does the work the loop did, correctly. It generates a random uuid **once per logical call** and reuses it across that call's retries, sending it as the `Idempotency-Key` header. One `await charge(...)` settles one charge, even when the engine retries it twice under the hood. The server sees one token, dedupes the replay, and returns the committed result.
+
+`retry` and `idempotency` are deliberately separate fields because they answer separate questions. `retry` decides _when to try again_ — which statuses, how many attempts, how to back off. `idempotency` decides _what makes two attempts the same write_. Pair them on every write: a retry without a key double-applies, a key without a retry never gets exercised.
+
+## The default key dedupes retries, not submissions
+
+The random default is scoped to one call. That is exactly right for the timeout-then-retry case and exactly wrong for the case people reach for it next.
+
+A customer double-clicks "Pay." Your handler fires `charge(...)` twice. Each call mints its **own** random key. The server sees two distinct tokens, processes both, and charges the card twice — the default did its job (it deduped each call's retries) but it was never asked to dedupe the second call, because nothing told it the two calls were the same write.
+
+The fix is a stable key derived from something the duplicates share — an order reference, a request id, anything that is identical across the two submissions:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// ---cut---
+const createOrder = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    retry: { attempts: 3 },
+    idempotency: {
+        key: (input) => `order-${(input.body as { ref: string }).ref}`,
+    },
+});
+```
+
+`key` receives the call input and returns the token. `input.body` is typed `unknown` — the engine cannot know your payload shape — so narrow it before reading a property — `(input.body as { ref: string }).ref` casts it inline. Now both clicks produce `order-inv_88`, the server sees one token, and the second submission collapses into the first.
+
+The rule splits cleanly:
+
+| Goal                                                        | Key strategy                                                     |
+| ----------------------------------------------------------- | ---------------------------------------------------------------- |
+| Collapse a retry of one call                                | `idempotency: {}` (random, per-call)                             |
+| Collapse two separate submissions of the same logical write | `idempotency: { key: (input) => ... }` derived from shared input |
+
+If the duplicates have nothing in common to hash, no key can join them — that is a fact about your data, not a gap in the feature.
+
+## A different header
+
+Some APIs expect the token on a header other than `Idempotency-Key`. Name it:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// ---cut---
+const createOrder = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    retry: { attempts: 3 },
+    idempotency: {
+        header: 'X-Request-Id',
+        key: (input) => `order-${(input.body as { ref: string }).ref}`,
+    },
+});
+```
+
+The default is `Idempotency-Key`; `header` overrides it. Everything else is unchanged.
+
+## What it does not do
+
+An idempotency key is a contract, not a guarantee. It works only when the **server** honors the header — records the token, recognizes the replay, and returns the original result. Send a key to an endpoint that ignores it and you get two writes with two headers. The feature makes a retry _safe to attempt_; it does not make a write safe _by itself_. You still need server support, and for the double-submission case you still need a stable key. A stitch attaches the key reliably and reuses it across retries — the half of the job that lives on your side.
+
+## Where this scales
+
+The `charge` stitch with `idempotency: {}` is the smallest safe write you can declare: a method, a URL, a retry policy, a key. When the duplicate you care about stops being a retry and becomes a double-clicked button, you add one field — `key` — and the same declaration now collapses submissions too. Same call site, same `await`, no rewrite of the surrounding handler.
+
+From there the same config object carries `timeout: { total: '30s', perAttempt: '10s' }`, an `output` schema to validate the response, and `auth: bearer(env('API_TOKEN'))` so the token resolves at call time and the caller never holds it. Each is one more field on the write you already have, bounding one more failure mode of the same call.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+Add `idempotency` and `retry` to your write stitches, then derive a stable `key` wherever two submissions can be the same logical write.
+
+-   [Idempotency guide](/docs/guides/resilience/idempotency) — the full field reference and server-contract notes.
+-   [Retry guide](/docs/guides/resilience/retry) and [Timeout guide](/docs/guides/resilience/timeout) — the policies you pair idempotency with on writes.
+-   [Retrying fetch in TypeScript](/blog/retry-fetch-in-typescript) — why the retry is what creates the duplicate in the first place.
+-   [Circuit breakers and layered timeouts](/blog/circuit-breakers-and-layered-timeouts) and [Migrate from fetch to StitchAPI](/blog/migrate-from-fetch-to-stitchapi) — the rest of the resilience surface and how to adopt it.

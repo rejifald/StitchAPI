@@ -21,7 +21,8 @@ They're orthogonal. An upstream that tolerates a steady stream but falls over on
 
 The first version everyone writes is a `setTimeout` between calls or a small promise queue:
 
-```ts
+```ts twoslash
+// @noErrors
 let last = 0;
 
 async function paced<T>(fn: () => Promise<T>): Promise<T> {
@@ -48,7 +49,7 @@ There's a second axis underneath the mechanics: _when_ you find the limit. The r
 
 A stitch is one API call turned into a typed function, and its rate limit is a field on that declaration, not a queue you assemble around the call. You name the pace and the cap; the stitch holds you to them before any request leaves.
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const search = stitch({
@@ -57,7 +58,7 @@ const search = stitch({
     throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
 });
 
-const results = await search({ query: 'shoes' }); // paced and bounded
+const results = await search({ query: { q: 'shoes' } }); // paced and bounded
 ```
 
 `rate` is a string like `'5/s'` — a minimum spacing between successive calls, not a token bucket that lets a burst through. `concurrency` caps simultaneous in-flight calls; set either on its own or both together. When a call has to wait its turn it isn't a silent stall — the stitch emits a `progress` event with phase `throttled`, so a queued call shows up on the event stream instead of looking like a hang.
@@ -68,7 +69,8 @@ const results = await search({ query: 'shoes' }); // paced and bounded
 
 `scope: 'host'` shares a budget across stitches in one process; it does nothing across processes, because the counters live in memory. Run more than one instance against the same upstream budget and you're back to N times your cap. The fix isn't a different limiter — it's a different place to keep the counters. Attach a shared `store` to move them off-box, so every instance pointed at the same store draws from one budget:
 
-```ts
+```ts twoslash
+// @noErrors
 import { fromIoredis, redisStore } from '@stitchapi/redis';
 import Redis from 'ioredis';
 import { seam } from 'stitchapi';
@@ -82,22 +84,24 @@ const api = seam({
 
 The `throttle` declaration is unchanged from the single-process version — only `store` is new. The mechanics, which drivers give you an atomic increment (Redis and Deno KV do; Workers KV doesn't), and what that means at the edge are in [distributed throttle and shared sessions](/blog/distributed-throttle-with-redis-kv).
 
-## When a simple limiter is enough
+## Start with the limiter — reach for `throttle` when you brush the limit
 
-Reaching for any of this when you don't need it is its own mistake. The `setTimeout` version above is correct for the shape of problem it fits, and a declared throttle is dead weight when:
+The `setTimeout` version above is the honest floor. A handful of calls well under the cap, from one place, in one process, don't need anything more — the in-memory counter is correct, and adding a store would introduce a network hop to solve a problem you don't have.
 
--   **You call from one place, in one process.** A CLI run or a single long-lived worker with one call site has nothing to share a budget across — the in-memory limiter counts exactly right, and a store would add a network hop to fix a problem you don't have.
--   **You never brush the limit.** A handful of calls that come nowhere near the cap don't need pacing. The reactive `429` path alone is enough until your volume starts touching the ceiling.
--   **You don't know the real limit.** A proactive throttle paces you to the number you declare, not the provider's actual ceiling. If a provider documents its limit, use it; if not, start conservative and tighten as you watch for `429`s. There's no pacing without a number.
+Reach for `throttle` when you hit the first trigger:
 
-The line is whether the budget is shared wider than the one variable holding it. While it isn't, a few lines of `setTimeout` are honest. The moment it is — a second call site, a second process — a homegrown limiter quietly stops protecting the limit, and declaring `throttle` (with `scope` and, across processes, a `store`) is what keeps the cap you wrote the cap the upstream sees.
+-   **You start brushing the cap.** Reactive `429` handling works until volume approaches the ceiling; proactive pacing keeps you under it. That's the moment a declared rate is worth more than a caught error.
+-   **The budget is shared across call sites or processes.** A second endpoint that draws from the same provider quota, or a second worker process, means the in-memory counter is silently undercounting. `scope: 'host'` and a `store` close that gap — the counter that moves is the one the upstream sees.
+-   **You pair pacing with retry or auth.** A `throttle` alongside `retry` on the same stitch is one declaration; threading both through a hand-rolled limiter wrapping `fetch` is two separate maintenance surfaces.
+
+The line is whether the shared budget has grown past a single variable. While it hasn't, the limiter is fine. When it has — crossing that line is a field on the declaration, not a rewrite. The same call gains `throttle` applied by the engine rather than by convention.
 
 If you're weighing this against the interceptor stack you'd otherwise hand-write around axios, [axios alternatives in 2026](/blog/axios-alternatives) maps where a stitch fits.
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Declare a `throttle` on a stitch, set `scope: 'host'` to share the budget the way the provider counts, and pace under the limit instead of bouncing off it. The full field list and `scope` semantics are in the [Throttle guide](/docs/guides/resilience/throttle).

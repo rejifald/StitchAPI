@@ -20,7 +20,8 @@ npx openapi-typescript ./openapi.yaml -o ./api-types.ts
 
 Then you create a client bound to those types and call paths against them:
 
-```ts
+```ts twoslash
+// @noErrors
 import type { paths } from './api-types';
 
 import createClient from 'openapi-fetch';
@@ -40,7 +41,7 @@ The cost is the part the types can't show you. They describe what the spec _said
 
 A [stitch](/docs/concepts/the-stitch) inverts where the types come from. Instead of generating them from a document, you hand the endpoint a validator and pair it with a generic. The validator runs against real bytes on every call, so the type and the runtime check come from one source:
 
-```ts
+```ts twoslash tab="StitchAPI" tabGroup="approach"
 import { stitch, toValidator } from 'stitchapi';
 import { z } from 'zod';
 
@@ -55,11 +56,33 @@ const getUser = stitch<{ id: number; name: string }>({
 const user = await getUser({ params: { id: 1 } }); // typed · validated
 ```
 
+```ts twoslash tab="fetch" tabGroup="approach"
+// @noErrors
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+
+// No generated client; you wire the fetch, the status check, and the
+// parse yourself — and the schema's inferred type is the only thing
+// keeping the call typed and runtime-validated from one source.
+const getUser = async (id: number) => {
+    const res = await fetch(`https://api.example.com/users/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return User.parse(await res.json()); // typed · validated, by hand
+};
+
+const user = await getUser(1);
+```
+
 `output` takes a `Validator`, and `toValidator()` adapts a Zod schema — or any [Standard Schema](/docs/guides/validation/standard-schema) validator like Valibot or ArkType, or a plain predicate — into one. The `stitch<{ id: number; name: string }>` generic types the resolved value, so `user` is `{ id: number; name: string }` in the editor exactly as a generated type would be. There is no `api-types.ts` to generate, no client to commit, and nothing to regenerate when you add an endpoint — you write the next stitch.
 
 Input is typed and checked the same way, before the request leaves the process:
 
-```ts
+```ts twoslash
+import { stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+// ---cut---
 const createUser = stitch<{ id: number; name: string }>({
     method: 'POST',
     baseUrl: 'https://api.example.com',
@@ -75,7 +98,13 @@ A bad `body` rejects before the POST is sent; a response that doesn't match `out
 
 A strict `output` validator throws when the response stops matching, which is right for a hard break but wrong for an additive change — a new field the provider added shouldn't fail your call. Wrap the schema in `drift()` instead, and each response is validated and then diffed against the validated value, with every difference classified by severity:
 
-```ts
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const OrdersSchema = z.array(z.object({ id: z.number(), total: z.number() }));
+
+// ---cut---
 const listOrders = stitch({
     baseUrl: 'https://api.example.com',
     path: '/orders',
@@ -88,11 +117,11 @@ const listOrders = stitch({
 
 A required field that vanishes or turns incompatible fails loudly; a coercion the schema quietly absorbed or an undeclared key the API added surfaces as a non-fatal signal on the event stream. That `total` → `amount` rename arrives as a typed drift event the moment it happens — a class of change a spec-derived type can't report, because the spec was never told. The reasoning behind treating it that way is in [schema drift is a production bug](/blog/schema-drift-is-a-production-bug).
 
-## When the generated client is enough
+## When a generated client is the better fit
 
-The honest line: if you have a maintained, accurate spec and accurate types are the whole requirement, a generator is less ceremony for that goal.
+The honest line: if you have a maintained, accurate spec and accurate types are the whole requirement, a generator is less ceremony for that goal — and that's the floor you'd start from before reaching for a stitch.
 
--   **The spec is real, current, and owned.** When someone keeps the OpenAPI document honest and you'll touch a large fraction of the surface, generation types everything for the cost of one command. Per-endpoint stitch declarations would be more typing for no gain.
+-   **The spec is real, current, and owned.** When someone keeps the OpenAPI document honest and you'll touch a large fraction of the surface, generation types everything for the cost of one command. Per-endpoint stitch declarations would be more typing for that case.
 -   **You don't want runtime validation.** A stitch's guarantees come from the `output` validator running on every response. If you don't want that work happening at runtime — or won't write a schema — a generated type is the leaner choice, and a stitch without an `output` is a fetch wrapper with extra steps.
 -   **The contract and its spec move together.** When the API and document change on a cadence you control, regenerate-on-change is a feature, not a chore, and you may not need drift signals at all.
 
@@ -100,8 +129,8 @@ A stitch earns its place on the opposite shape of problem: spec-less, partial-sp
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Declare one endpoint, give its `output` a `toValidator()` schema, pair it with the `stitch<T>` generic, and you have a typed, runtime-validated call with no generated file in your tree. The mechanics live in [Validation](/docs/guides/validation/validation), the validator adapter in [Standard Schema](/docs/guides/validation/standard-schema), and the primitive itself in [The stitch](/docs/concepts/the-stitch).
