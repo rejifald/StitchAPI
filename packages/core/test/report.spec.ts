@@ -72,7 +72,7 @@ test('source: a streaming surface is "stream" with raw null', async () => {
     const r = await s.inspect();
     expect(r.source).toBe('stream');
     expect(r.raw).toBeNull();
-    expect(r.value).toEqual(['a', 'b', 'c']);
+    expect(r.data).toEqual(['a', 'b', 'c']);
 });
 
 // ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ test('source: a cache hit is "cache" with raw null', async () => {
     expect(calls()).toBe(1); // no new origin call
     expect(r.source).toBe('cache');
     expect(r.raw).toBeNull();
-    expect(r.value).toEqual({ n: 1 });
+    expect(r.data).toEqual({ n: 1 });
 });
 
 // ===========================================================================
@@ -112,7 +112,7 @@ test('report: inspection fields + attempts + timing.ms (number) + source', async
         output: asValidator(z.object({ n: z.coerce.number() })),
     });
     const r = await s.report();
-    expect(r.value).toEqual({ n: 42 });
+    expect(r.data).toEqual({ n: 42 });
     expect(r.raw).toEqual({ n: '42' });
     expect(r.status).toBe(200);
     expect(r.error).toBeNull();
@@ -222,7 +222,7 @@ test('report: a hard contract violation returns with error + diagnostics', async
         output: asValidator(z.object({ id: z.number() })),
     });
     const r = await s.report();
-    expect(r.value).toBeNull();
+    expect(r.data).toBeNull();
     expect(r.error).toBeInstanceOf(StitchError);
     expect(r.raw).toEqual({ id: '1' }); // raw recovered off the pinned error
     expect(r.status).toBe(200);

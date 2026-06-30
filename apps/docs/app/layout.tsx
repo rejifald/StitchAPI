@@ -5,6 +5,7 @@ import { releaseVersion } from '@/lib/release';
 import { appName, gitConfig, siteUrl } from '@/lib/shared';
 
 import { Analytics } from '@vercel/analytics/next';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 import 'fumadocs-twoslash/twoslash.css';
 import { Banner } from 'fumadocs-ui/components/banner';
 import { RootProvider } from 'fumadocs-ui/provider/next';
@@ -166,6 +167,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                     {children}
                 </RootProvider>
                 <Analytics />
+                <SpeedInsights />
             </body>
         </html>
     );

@@ -4,6 +4,7 @@ description: The one-tool-per-endpoint pattern re-sends every endpoint's JSON sc
 author: Oleksandr Zhuravlov
 date: '2026-06-22'
 tags: [ai, agents, mcp, context, tokens]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You wire forty endpoints into your agent, each as its own tool, and the demo works. Then the bill arrives, and it's bigger than the work the agent actually did. The agent ran a six-step loop; somewhere in those six steps it called three tools. You paid for forty, six times over.
@@ -85,7 +86,7 @@ There's an even cheaper way for an agent to orient, one that doesn't spend a too
 
 Code-mode is not free, and it isn't always the right call. Reach for the flat per-endpoint menu instead when:
 
--   **It needs a sandbox.** `run_stitch` executes a named stitch on the server side of the capability boundary; a setup where the model writes and runs code needs an eval/execution path you trust. One tool per endpoint needs none of that — the model just fills in a schema. If you can't or won't run a sandbox, the per-endpoint pattern is the simpler thing.
+-   **It needs a sandbox.** `run_stitch` executes a named stitch on the server side of the capability boundary; a setup where the model writes and runs code needs an eval/execution path you trust. One tool per endpoint needs none of that — the model just fills in a schema. When running a sandbox isn't an option, the per-endpoint pattern is the simpler thing.
 -   **It leans on the model.** Driving stitches by name — listing, describing, composing a call — asks more of the model than picking from a flat menu of typed tools. A model that's weak at this kind of structured tool use may do better with explicit per-endpoint schemas, paid-per-turn and all.
 -   **Small catalogs see no savings.** The whole win is `catalog × turns` collapsing on the catalog axis. With two endpoints and a single-shot call, there was never a fat menu to re-send — two schemas once is cheaper than standing up code-mode. The savings only show up when the catalog is large, the loops are long, or both.
 

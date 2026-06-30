@@ -1,0 +1,63 @@
+---
+title: 'Correlation vs idempotency'
+description: 'Two keys that look alike but answer different questions — an idempotency key decides what makes two attempts the same write, a correlation/trace id identifies one request for logs and spans — and why they stay separate fields.'
+---
+
+A write can carry two different ids, and they are easy to confuse: an **idempotency
+key** so a server collapses a duplicate, and a **correlation / trace id** so logs and
+spans can find the request. Reach for this distinction whenever you're deciding which
+header carries which — because routing one through the other quietly fails.
+
+## Why it's shaped this way
+
+The two keys answer different questions:
+
+|                                      | **Idempotency key**                | **Correlation / trace id**          |
+| ------------------------------------ | ---------------------------------- | ----------------------------------- |
+| Question                             | "are these the same _write_?"      | "which _operation_ is this?"        |
+| Server does                          | dedupe / collapse the replay       | log it, link spans                  |
+| Stable across retries                | yes (must be)                      | yes (typically)                     |
+| Stable across _separate submissions_ | only if **derived**                | **no** — each call is its own trace |
+| Right value                          | random _or_ derived from the input | the engine's `traceId` / `spanId`   |
+| Standard header                      | `Idempotency-Key`                  | `traceparent`, `X-Request-Id`       |
+
+They share exactly one property — "stable across a call's retries" — which is why a
+random idempotency key _feels_ like a request id. But their semantics diverge the moment
+you look past that:
+
+-   An idempotency key is sometimes **derived** from the input, so two _separate_
+    submissions (a double-clicked button) collapse into one write. A correlation id is the
+    opposite: you want each submission to stay **distinct** in the logs.
+-   A correlation id wants to **be** the trace id, so the line a server logs joins the
+    spans you already export. An idempotency key has no such tie — a random uuid is fine,
+    because all it needs to be is _the same_ across one write's attempts.
+
+So one field can't serve both. The idempotency `header` option renames the key a server
+**dedupes** on — nothing more. A correlation id belongs to tracing, where its value is
+your [run's trace id](/docs/concepts/run-identity).
+
+## How it relates
+
+**The tempting shortcut that breaks.** Setting `idempotency.header` to `X-Request-Id` to
+"also get a request id" pushes a correlation header through the dedupe machinery. It
+looks like tracing without being it: the random idempotency key is unrelated to your
+real `traceId`, so the `X-Request-Id` a server logs can never be joined to the spans you
+export. Keep the idempotency header for dedupe; let tracing own correlation.
+
+**Where each lives.** The idempotency key is a write-safety tool — see
+[Idempotency keys](/docs/guides/resilience/idempotency), which pairs it with retries and
+shows when to derive a stable key. The correlation/trace id is a property of
+[run identity](/docs/concepts/run-identity); carrying it to a downstream service on a
+`traceparent` header is planned trace-context propagation, distinct from anything
+idempotency does.
+
+## See also
+
+<Cards>
+    <Card title="Idempotency keys" href="/docs/guides/resilience/idempotency" />
+    <Card
+        title="Run identity & the trace tree"
+        href="/docs/concepts/run-identity"
+    />
+    <Card title="OTLP export" href="/docs/guides/observability/otlp" />
+</Cards>

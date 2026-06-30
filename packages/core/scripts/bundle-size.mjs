@@ -62,16 +62,50 @@ const KB = 1024;
 // check is in `execute` and the default `fetch` adapter carries the descriptor — so neither
 // can move to a subpath. They add ~0.10 / ~0.04 KB gzip (entry ~22.74 / stitch ~18.34). The
 // step restores the same tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for core composition primitives + the API meta-contract sweep
+// (22.95→23.35 / 18.55→18.80 KB): two waves of intentional, already-merged work
+// landed on the core path since #362. (1) Composition gained parallel all/any/race
+// with auto-cancellation (#368), linked() replacing pipe() as a run scope
+// (#369/#370), and variadic argument lists (#371) — core-entry surface, so it lifts
+// the whole entry more than `import { stitch }`, which tree-shakes it away. (2) The
+// meta-contract sweep (#352, P3–P20) renamed/de-suffixed public fields and co-emits
+// the old names as @deprecated runtime aliases (throttle.scope→pool, key→keyOf;
+// value→data on result envelopes; *Ms duration de-suffixing) — shared code on
+// stitch's own path. Together they reach ~23.13 / ~18.61 KB gzip (+~0.39 / +~0.27
+// since #362). Neither wave can move to a subpath — composition and the renamed
+// result/throttle/circuit surfaces are the core API. The step restores the same
+// tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for the idempotency-misuse nudges + the OTLP-name alignment (23.35→23.55 /
+// 18.80→19.0 KB; measured 23.32 / 18.80). Stacking on the wave above, two more things land on the core
+// path and can't move to a subpath: (1) two construction-time `idempotency` nudges in
+// `makeStitch` — on a read (the key is write-only, so it's silently dropped — almost always a
+// missing `method: 'POST'`) and on a random key with no `retry` (it only dedupes the call's own
+// retries), both silenced by `idempotency.warn = false`; and (2) the run-identity rename to the
+// OTel span names (`runId`→`spanId`, `parentId`→`parentSpanId`, CONTRACT.md P22), whose longer
+// public property names are emitted verbatim on every `start` event / trace ctx and can't be
+// minified. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for the `.inspect()` redaction option + the enhanced result object (23.55→23.95 /
+// 19.0→19.45 KB; measured 23.77 / 19.25). Two more ADR-0016 deferrals land on the core path and
+// can't move to a subpath — both attach to the core Stitch surface: (1) ADR 0018 adds an opt-in
+// `redact` to `.inspect()` (a `redactSecretsDeep` deep-clone scrubber reusing the shared secret-key
+// denylist, wired at the `.inspect()` assembly site); and (2) ADR 0019 adds `.report()` returning
+// `RunReport<T>` — the `source` discriminator on `Inspection`, plus `attempts`/`timing`/`config`/
+// `cache` diagnostics drained off the existing event spine (no new engine events). `.report()` is a
+// method on every stitch, so it lifts `import { stitch }` as much as the whole entry — it can't
+// tree-shake away. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 22.95 * KB,
+        budget: 23.95 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 18.55 * KB,
+        budget: 19.45 * KB,
     },
 ];
 

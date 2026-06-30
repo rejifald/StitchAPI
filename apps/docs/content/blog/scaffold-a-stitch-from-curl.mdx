@@ -4,6 +4,7 @@ description: 'You have a curl line from the API docs and a token in your shell. 
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [cli, scaffolding, auth, agents]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You are reading an API's docs, you copy the example curl, and now you have to translate it by hand: pull the origin out of the URL, find the id buried in the path, decode which header is the credential, and rewrite the whole thing as a typed call. The mechanical part is tedious. The dangerous part is the credential — the curl you copied has a live `Bearer sk_live_…` in it, and the obvious move is to paste it straight into your code.

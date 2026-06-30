@@ -157,7 +157,7 @@ describe('stitchPlugin', () => {
             };
             yield { type: 'delta', chunk: 'hello', at: 1 };
             yield { type: 'delta', chunk: 'world', at: 2 };
-            yield { type: 'done', ok: true, ms: 1, attempts: 1, at: 3 };
+            yield { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 3 };
         }
         const app = Fastify();
         apps.push(app);

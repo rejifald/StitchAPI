@@ -4,6 +4,7 @@ description: The same stitch plugs into each major UI framework via a thin bindi
 author: Oleksandr Zhuravlov
 date: '2026-05-04'
 tags: [ui, react, vue, svelte, solid, angular]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You declared a stitch — typed input, validated output, retries, drift detection — and now a component has to call it. That's where the boilerplate usually creeps back in: a `useState` for the data, another for the loading flag, another for the error, a `useEffect` to fire the call, an `AbortController` to cancel it on unmount, and — if the call streams — a reducer to fold chunks as they arrive. You wrote that once per framework, and you'll write it again the next time, slightly differently, in the next component.

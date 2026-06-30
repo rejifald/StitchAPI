@@ -1,5 +1,5 @@
 import {
-    type StitchError,
+    type StitchErrorLike,
     StitchExceptionFilter,
     isStitchError,
     toHttpException,
@@ -47,7 +47,7 @@ describe('toHttpException', () => {
     });
 
     it('accepts a status function for custom mapping (e.g. propagate the upstream status)', () => {
-        const status = (e: StitchError) => e.status ?? 502;
+        const status = (e: StitchErrorLike) => e.status ?? 502;
         expect(
             toHttpException(stitchError('rate limited', 429), {
                 status,

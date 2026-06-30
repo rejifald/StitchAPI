@@ -1,6 +1,7 @@
 ---
 title: seam
 description: Group stitches under one shared runtime — store, vault, throttle bucket, and trace sink — behind a shared base config, and bind per-principal sessions with seam.as().
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
 Use `seam` when several stitches hit the same API and should share one runtime — one throttle budget, one store, one trace sink, one auth vault — instead of each carrying its own copy of the config. Build it once, then create members with `.stitch()` and `.graphql()`.

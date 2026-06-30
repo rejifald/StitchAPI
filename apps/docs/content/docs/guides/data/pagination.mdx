@@ -1,6 +1,7 @@
 ---
 title: 'Pagination'
 description: 'Auto-loop pages and aggregate items, with auth, retry, and throttle applied to every page.'
+prerequisites: ['/docs/concepts/the-stitch', '/docs/getting-started/quickstart']
 ---
 
 Add `paginate` when one logical call spans many pages and you want the stitch to
@@ -21,7 +22,7 @@ const allUsers = stitch({
             return cursor ? { query: { cursor } } : undefined;
         },
         items: (value) => (value as { results: unknown[] }).results,
-        max: 20,
+        pages: 20,
     },
 });
 ```

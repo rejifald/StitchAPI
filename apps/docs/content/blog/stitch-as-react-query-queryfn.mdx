@@ -4,6 +4,7 @@ description: 'You already run TanStack Query for view state. Drop a stitch in as
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [react, tanstack-query, react-query]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You wired up TanStack Query months ago, and `useQuery` already owns your view state — caching by key, refetch on focus, invalidation after a mutation. What it doesn't own is the call inside `queryFn`: that's still a hand-written `fetch`, a `res.ok` check you keep forgetting, a `res.json()` cast to whatever type you hope came back, and a retry loop you copied between three hooks. The query layer is solid; the function it runs is the soft spot.

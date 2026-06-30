@@ -38,10 +38,10 @@ async function rejectionOf(
 }
 
 // ── A. a 429 throws RateLimitError on the awaited path, with NO internal retry ──
-// `rateLimit: { delegate: true }` turns a 429 into a thrown RateLimitError carrying the parsed
-// `retryAfterMs`, and — crucially — does NOT retry: even with retry.attempts > 1 (and 429 in
+// `throttle: { delegate: true }` turns a 429 into a thrown RateLimitError carrying the parsed
+// `retryAfter`, and — crucially — does NOT retry: even with retry.attempts > 1 (and 429 in
 // retry.on) the adapter must be hit exactly once, because delegate mode short-circuits the loop.
-test('a 429 with Retry-After: 2 throws RateLimitError(retryAfterMs=2000) and is hit exactly once', async () => {
+test('a 429 with Retry-After: 2 throws RateLimitError(retryAfter=2000) and is hit exactly once', async () => {
     server.route('GET', '/rl', {
         statuses: [429],
         retryAfter: 2, // delta-seconds → Retry-After: 2
@@ -52,7 +52,7 @@ test('a 429 with Retry-After: 2 throws RateLimitError(retryAfterMs=2000) and is 
         path: '/rl',
         // retry would normally fire on 429 three times; delegate mode must override it.
         retry: { attempts: 3, on: [429] },
-        rateLimit: { delegate: true },
+        throttle: { delegate: true },
     });
 
     const err = await rejectionOf(call());
@@ -60,7 +60,9 @@ test('a 429 with Retry-After: 2 throws RateLimitError(retryAfterMs=2000) and is 
     expect(err).toBeInstanceOf(RateLimitError);
     expect(err.name).toBe('RateLimitError');
     expect(err.status).toBe(429);
-    expect(err.retryAfterMs).toBe(2000);
+    expect(err.retryAfter).toBe(2000);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- the @deprecated `retryAfterMs` alias is co-set until the GA cut (CONTRACT.md P17)
+    expect(err.retryAfterMs).toBe(2000); // back-compat alias parity
     // The raw response rides along so the host can read other rate headers.
     expect(err.response.status).toBe(429);
     expect(err.response.body).toEqual({ error: 'slow down' });
@@ -68,8 +70,8 @@ test('a 429 with Retry-After: 2 throws RateLimitError(retryAfterMs=2000) and is 
     expect(server.callCount('/rl')).toBe(1);
 });
 
-// ── B. the same outcome surfaces as an `error` event with retryAfterMs on .stream() ──
-test('.stream() surfaces an error event with status 429 and retryAfterMs 2000', async () => {
+// ── B. the same outcome surfaces as an `error` event with retryAfter on .stream() ──
+test('.stream() surfaces an error event with status 429 and retryAfter 2000', async () => {
     server.route('GET', '/rl-stream', {
         statuses: [429],
         retryAfter: 2,
@@ -78,7 +80,7 @@ test('.stream() surfaces an error event with status 429 and retryAfterMs 2000', 
     const call = stitch({
         baseUrl: server.url,
         path: '/rl-stream',
-        rateLimit: { delegate: true },
+        throttle: { delegate: true },
     });
 
     const events: StitchEvent[] = [];
@@ -89,7 +91,7 @@ test('.stream() surfaces an error event with status 429 and retryAfterMs 2000', 
     expect(error).toMatchObject({
         type: 'error',
         status: 429,
-        retryAfterMs: 2000,
+        retryAfter: 2000,
     });
     // The run terminates as a failure — never a `result`.
     expect(events.some((e) => e.type === 'result')).toBe(false);
@@ -109,8 +111,9 @@ test('the configured throttle does not pace the call and emits no throttled even
     const call = stitch({
         baseUrl: server.url,
         path: '/rl-throttle',
-        throttle: { rate: '1/s' }, // would impose ~1000ms spacing if it were active
-        rateLimit: { delegate: true },
+        // delegate bypasses self-pacing within one envelope (P14): the '1/s' rate would impose
+        // ~1000ms spacing if active, but delegate makes it inert.
+        throttle: { rate: '1/s', delegate: true },
     });
 
     // First call arms the limiter's next-grant clock (if it were active).
@@ -131,8 +134,8 @@ test('the configured throttle does not pace the call and emits no throttled even
     });
 });
 
-// ── D. Retry-After as an HTTP-date parses to a positive retryAfterMs ──
-test('Retry-After as an HTTP-date parses to a positive retryAfterMs', async () => {
+// ── D. Retry-After as an HTTP-date parses to a positive retryAfter ──
+test('Retry-After as an HTTP-date parses to a positive retryAfter', async () => {
     const when = new Date(Date.now() + 5000).toUTCString(); // ~5s in the future, RFC 1123
     server.route('GET', '/rl-date', {
         statuses: [429],
@@ -142,20 +145,20 @@ test('Retry-After as an HTTP-date parses to a positive retryAfterMs', async () =
     const call = stitch({
         baseUrl: server.url,
         path: '/rl-date',
-        rateLimit: { delegate: true },
+        throttle: { delegate: true },
     });
 
     const err = await rejectionOf(call());
 
     expect(err).toBeInstanceOf(RateLimitError);
-    expect(err.retryAfterMs).toBeGreaterThan(0);
+    expect(err.retryAfter).toBeGreaterThan(0);
     // ~5s out; allow generous slack for clock/transit but stay well under/over the bounds.
-    expect(err.retryAfterMs).toBeLessThanOrEqual(5000);
-    expect(err.retryAfterMs).toBeGreaterThan(3000);
+    expect(err.retryAfter).toBeLessThanOrEqual(5000);
+    expect(err.retryAfter).toBeGreaterThan(3000);
 });
 
 // ── E. a missing Retry-After yields RateLimitError with retryAfterMs undefined ──
-test('a 429 without Retry-After throws RateLimitError with retryAfterMs undefined', async () => {
+test('a 429 without Retry-After throws RateLimitError with retryAfter undefined', async () => {
     server.route('GET', '/rl-bare', {
         statuses: [429],
         body: { error: 'slow down' },
@@ -163,20 +166,20 @@ test('a 429 without Retry-After throws RateLimitError with retryAfterMs undefine
     const call = stitch({
         baseUrl: server.url,
         path: '/rl-bare',
-        rateLimit: { delegate: true },
+        throttle: { delegate: true },
     });
 
     const err = await rejectionOf(call());
 
     expect(err).toBeInstanceOf(RateLimitError);
     expect(err.status).toBe(429);
-    expect(err.retryAfterMs).toBeUndefined();
+    expect(err.retryAfter).toBeUndefined();
 });
 
 // ── F. a custom `on` list lets a 503 delegate while a 429 retries normally ──
 // `on: [503]` means ONLY 503 is delegated; a 429 is no longer a rate-limit signal and falls through
 // to the ordinary retry path (here retry.on includes 429), proving `on` is honoured both ways.
-test('rateLimit.on selects which statuses delegate (503 delegates, 429 retries)', async () => {
+test('throttle.on selects which statuses delegate (503 delegates, 429 retries)', async () => {
     server.route('GET', '/rl-503', {
         statuses: [503],
         retryAfter: 1,
@@ -185,13 +188,13 @@ test('rateLimit.on selects which statuses delegate (503 delegates, 429 retries)'
     const delegated = stitch({
         baseUrl: server.url,
         path: '/rl-503',
-        rateLimit: { delegate: true, on: [503] },
+        throttle: { delegate: true, on: [503] },
     });
 
     const err = await rejectionOf(delegated());
     expect(err).toBeInstanceOf(RateLimitError);
     expect(err.status).toBe(503);
-    expect(err.retryAfterMs).toBe(1000);
+    expect(err.retryAfter).toBe(1000);
     expect(server.callCount('/rl-503')).toBe(1);
 
     // A 429 under the same `on: [503]` is NOT delegated — it flows through ordinary retry: two 429s
@@ -204,7 +207,7 @@ test('rateLimit.on selects which statuses delegate (503 delegates, 429 retries)'
         baseUrl: server.url,
         path: '/retry-429',
         retry: { attempts: 3, on: [429], backoff: 'fixed', baseMs: 1 },
-        rateLimit: { delegate: true, on: [503] },
+        throttle: { delegate: true, on: [503] },
     });
     await expect(retried()).resolves.toEqual({ ok: true });
     expect(server.callCount('/retry-429')).toBe(3);
@@ -222,7 +225,7 @@ test('a success response still runs transform, unwrap, and output validation', a
     const call = stitch<{ id: number; label: string }>({
         baseUrl: server.url,
         path: '/ok',
-        rateLimit: { delegate: true },
+        throttle: { delegate: true },
         unwrap: 'data',
         transform: (body) => {
             // raw body → reshape: rename `name` to `label`. Runs before unwrap.
@@ -250,7 +253,7 @@ test('.safe() surfaces the rate-limit status as a non-throwing StitchError', asy
     const call = stitch({
         baseUrl: server.url,
         path: '/rl-safe',
-        rateLimit: { delegate: true },
+        throttle: { delegate: true },
     });
 
     const out = await call.safe();
@@ -258,5 +261,53 @@ test('.safe() surfaces the rate-limit status as a non-throwing StitchError', asy
     expect(out.error?.status).toBe(429);
     // The real RateLimitError is preserved as the cause.
     expect(out.error?.cause).toBeInstanceOf(RateLimitError);
-    expect((out.error?.cause as RateLimitError).retryAfterMs).toBe(2000);
+    expect((out.error?.cause as RateLimitError).retryAfter).toBe(2000);
+});
+
+// ── I. back-compat + predicate widening (CONTRACT.md P14 / P7) ──
+test('the @deprecated top-level `rateLimit` still delegates identically (P14)', async () => {
+    server.route('GET', '/rl-legacy', {
+        statuses: [429],
+        retryAfter: 2,
+        body: { error: 'slow down' },
+    });
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/rl-legacy',
+        // Pre-fold spelling — must behave exactly like `throttle: { delegate: true }` until GA.
+        rateLimit: { delegate: true },
+    });
+    const err = await rejectionOf(call());
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect(err.status).toBe(429);
+});
+
+test('throttle.on accepts a predicate (P7): a 503 matched by the predicate delegates', async () => {
+    server.route('GET', '/rl-pred', {
+        statuses: [503],
+        retryAfter: 1,
+        body: { error: 'busy' },
+    });
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/rl-pred',
+        throttle: { delegate: true, on: (s) => s === 503 },
+    });
+    const err = await rejectionOf(call());
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect(err.status).toBe(503);
+});
+
+test('retry.on accepts a predicate (P7): retries while the predicate matches', async () => {
+    server.route('GET', '/retry-pred', {
+        statuses: [503, 200],
+        body: { ok: true },
+    });
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/retry-pred',
+        retry: { attempts: 2, on: (s) => s === 503, baseMs: 1 },
+    });
+    await expect(call()).resolves.toEqual({ ok: true });
+    expect(server.calls('/retry-pred').length).toBe(2); // 503 retried, then 200
 });

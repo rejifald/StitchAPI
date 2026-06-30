@@ -4,6 +4,7 @@ description: 'When API calls do not depend on each other, running them as a ladd
 author: Oleksandr Zhuravlov
 date: '2026-06-30'
 tags: [composition, parallel, concurrency, linked, typescript]
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
 A [stitch](/docs/concepts/the-stitch) is one endpoint as a typed, validated, resilient function. When one call needs the result of the one before it, you want a sequence — that is [`linked`](/blog/compose-api-calls-into-a-pipeline). But just as often the calls are **independent**: a dashboard needs a user, their settings, and their feature flags, and none of them waits on the others. Running those in sequence is latency you are paying for nothing.
@@ -50,7 +51,7 @@ const { user, settings, flags } = await dashboard({ params: { id: 1 } });
 // user, settings, flags — each typed from its own stitch, no casts
 ```
 
-Prefer positional? Pass an **array** and get a tuple back — the exact `Promise.all` shape, with the resilience and cancellation added:
+Prefer positional? Pass an **array** — or just list the stitches as bare arguments — and get a tuple back. The brackets are optional: `all([a, b])` and `all(a, b)` build the identical group, the exact `Promise.all` shape with the resilience and cancellation added:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -66,12 +67,21 @@ const fetchSettings = stitch({
     output: z.object({ theme: z.string() }),
 });
 // ---cut---
+// an array — the exact `Promise.all` shape:
 const [user, settings] = await all([fetchUser, fetchSettings])({
+    params: { id: 1 },
+});
+
+// the same members as bare arguments — identical group, identical tuple:
+const [user2, settings2] = await all(
+    fetchUser,
+    fetchSettings,
+)({
     params: { id: 1 },
 });
 ```
 
-Both forms are the same combinator — pick whichever reads better. Either way it's `Promise.all` with the rough edges removed: it's **fail-fast** — the first member to fail rejects the whole `all` with that call's `StitchError` (`.status`, `.url`, …) **and aborts the others** (their in-flight requests are cancelled, not left running) — and each member keeps its own retry, timeout, and validation.
+Named object, array, or bare arguments — the same combinator; pick whichever reads better. Either way it's `Promise.all` with the rough edges removed: it's **fail-fast** — the first member to fail rejects the whole `all` with that call's `StitchError` (`.status`, `.url`, …) **and aborts the others** (their in-flight requests are cancelled, not left running) — and each member keeps its own retry, timeout, and validation.
 
 ## `any` — the first one that works
 
@@ -97,6 +107,8 @@ const fetchUser = any([fetchFromPrimary, fetchFromMirror]);
 
 const user = await fetchUser({ params: { id: 1 } });
 ```
+
+Like `all`, `any` and `race` take their members either way — an array (`any([a, b])`) or bare arguments (`any(a, b)`).
 
 This is distinct from a stitch's built-in `retry`, which re-hits the **same** endpoint. `any` is for redundancy across **different** endpoints — a primary and a mirror, two regions, two providers of the same shape.
 

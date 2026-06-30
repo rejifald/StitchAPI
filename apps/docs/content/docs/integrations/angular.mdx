@@ -1,6 +1,7 @@
 ---
 title: Angular
 description: injectStitch and injectStitchStream expose a stitch's lifecycle as both Angular signals and an RxJS observable over the framework-agnostic @stitchapi/query-core store — plus an optional TanStack Query adapter.
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Use `@stitchapi/angular` when you call stitches from Angular components and want the
@@ -25,7 +26,7 @@ Install the bindings, the store, core, and Angular:
 
 `stitchapi`, `@angular/core`, and `rxjs` are peer dependencies;
 `@tanstack/angular-query-experimental` is an **optional** peer, needed only for the
-`queryOptions` adapter below.
+`stitchQueryOptions` adapter below.
 
 ## `injectStitch` — request / response
 
@@ -169,27 +170,27 @@ own reactive primitive — Angular's are `toSignal` + `toObservable`.
 ## Optional: TanStack Query
 
 Already on [TanStack Query](/docs/integrations/tanstack-query)?
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object you
 pass straight to `injectQuery` — it imports nothing from
 `@tanstack/angular-query-experimental`, so it works even if you never install it:
 
 ```ts
 import { Component, input } from '@angular/core';
-import { queryOptions } from '@stitchapi/angular';
+import { stitchQueryOptions } from '@stitchapi/angular';
 import { injectQuery } from '@tanstack/angular-query-experimental';
 
 @Component({ selector: 'app-profile', template: `...` })
 export class ProfileComponent {
     readonly id = input.required<string>();
     readonly user = injectQuery(() =>
-        queryOptions(getUser, { params: { id: this.id() } }),
+        stitchQueryOptions(getUser, { params: { id: this.id() } }),
     );
 }
 ```
 
 <Callout type="info">
-    Reach for `queryOptions` when TanStack Query already owns your view state
-    and you want a stitch as the `queryFn`; reach for `injectStitch` /
+    Reach for `stitchQueryOptions` when TanStack Query already owns your view
+    state and you want a stitch as the `queryFn`; reach for `injectStitch` /
     `injectStitchStream` when you want StitchAPI to own the lifecycle directly —
     especially for streaming, which `injectQuery` does not model. See the
     [TanStack Query guide](/docs/integrations/tanstack-query) for how the two

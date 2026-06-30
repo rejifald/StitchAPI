@@ -188,8 +188,8 @@ test('findings are unaffected by redaction', async () => {
     const changes = r.findings.map((f) => f.change);
     expect(changes).toContain('coerced'); // n: string -> number
     expect(changes).toContain('undeclared'); // access_token + extra both undeclared
-    // value is unaffected
-    expect(r.value).toEqual({ n: 42 });
+    // the validated payload is unaffected
+    expect(r.data).toEqual({ n: 42 });
     expect(r.error).toBeNull();
 });
 
@@ -221,7 +221,7 @@ test('redact: true leaves raw null on a streaming surface (no-op)', async () => 
     const r = await s.inspect(undefined, { cache: true, redact: true });
     // raw is null (cache hit) — redaction is a no-op
     expect(r.raw).toBeNull();
-    expect(r.value).toEqual({ n: 1 });
+    expect(r.data).toEqual({ n: 1 });
 });
 
 test('raw remains non-enumerable after redaction', async () => {

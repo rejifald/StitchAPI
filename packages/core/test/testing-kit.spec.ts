@@ -74,10 +74,10 @@ describe('mockAdapter — testing a stitch definition', () => {
         expect(await list()).toEqual({ page: 1 });
     });
 
-    test('delayMs is abortable: a per-attempt timeout cancels the slow response', async () => {
+    test('delay is abortable: a per-attempt timeout cancels the slow response', async () => {
         const api = mockAdapter({
             match: '/slow',
-            respond: { delayMs: 1000, body: { ok: true } },
+            respond: { delay: 1000, body: { ok: true } },
         });
         const call = stitch({
             baseUrl: 'https://api.test',

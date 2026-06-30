@@ -20,7 +20,7 @@
  * guesswork — and the handler never throws.
  *
  * Scope: nodes render from real runs, and runtime-causality EDGES (`dependsOn`) now populate from
- * the `parentId` core stamps on a child run's ctx (ADR 0007) — a cookieSession login (or, later, a
+ * the `parentSpanId` core stamps on a child run's ctx (ADR 0007) — a cookieSession login (or, later, a
  * `pipe()` step) draws a parent → child edge. The STATIC `extends` composition graph is a separate
  * axis core deliberately does not emit (ADR 0007 Q4, out of scope).
  */
@@ -132,16 +132,16 @@ export function createTraceCollector(
     const makeDagSink = (): TraceSink => {
         const open = new Map<string, OpenEntry>();
         const find = (ctx: TraceContext): OpenEntry | undefined =>
-            ctx.runId ? open.get(ctx.runId) : undefined;
+            ctx.spanId ? open.get(ctx.spanId) : undefined;
         return {
             handle(event: StitchEvent, ctx: TraceContext): void {
                 switch (event.type) {
                     case 'start': {
-                        const id = ctx.runId ?? `stitch-${(counter += 1)}`;
+                        const id = ctx.spanId ?? `stitch-${(counter += 1)}`;
                         open.set(id, {
                             id,
-                            ...(ctx.parentId !== undefined
-                                ? { parentId: ctx.parentId }
+                            ...(ctx.parentSpanId !== undefined
+                                ? { parentId: ctx.parentSpanId }
                                 : {}),
                             label: ctx.name,
                             method: event.method,
@@ -186,8 +186,8 @@ export function createTraceCollector(
                     }
                     case 'done': {
                         const e = find(ctx);
-                        if (e && ctx.runId) {
-                            open.delete(ctx.runId);
+                        if (e && ctx.spanId) {
+                            open.delete(ctx.spanId);
                             activeSink?.({
                                 type: 'trace',
                                 entry: finalize(e, event.ok, event.ms),

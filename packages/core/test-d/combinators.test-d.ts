@@ -52,3 +52,21 @@ const fetchUserById = stitch({
 expectType<Promise<{ user: User }>>(all({ user: fetchUserById })());
 expectType<Promise<readonly [User]>>(all([fetchUserById])());
 expectType<Promise<User>>(any([fetchUserById, fetchUserById])());
+
+// Argument-list form: the SAME members passed as bare arguments (no brackets) infer the identical
+// shapes as the array form — a positional tuple for `all`, the common output for `any`/`race`. This
+// is the variadic overload; it must not collide with the array form (a single array argument) or, for
+// `all`, the named-object form (a single plain-object argument), both pinned above.
+expectType<Promise<readonly [Shipment, Invoice]>>(
+    all(fetchShipment, fetchInvoice)(),
+);
+expectType<Promise<Order>>(any(fetchOrder, fetchOrderMirror)());
+expectType<Promise<Order>>(race(fetchOrder, fetchOrderMirror)());
+
+// A single bare member still reads as the variadic tuple form (one-element tuple), distinct from the
+// named-object form — `all(fetchShipment)` is `[Shipment]`, not an object.
+expectType<Promise<readonly [Shipment]>>(all(fetchShipment)());
+
+// Narrow-input (#365) members are accepted in the argument-list form too, output inferred precisely.
+expectType<Promise<readonly [User, User]>>(all(fetchUserById, fetchUserById)());
+expectType<Promise<User>>(any(fetchUserById, fetchUserById)());

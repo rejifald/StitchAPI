@@ -4,6 +4,7 @@ description: 'A dependent chain — an order, then its shipment, then the carrie
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [composition, linked, pipeline, trace, typescript]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You fetch an order, then the shipment booked against it, then the carrier's live tracking — and the tracking call needs the shipment's code **and** the order's region, two hops back. Three calls, in order, each needing a result from the one before. When one fails at 2am, you want a trace that shows what ran first, not three unrelated calls.

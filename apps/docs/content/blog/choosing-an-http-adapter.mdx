@@ -4,6 +4,7 @@ description: A stitch turns one endpoint into a typed resilient function; the ad
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [http, adapter, fetch, axios, typescript]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You're streaming a server-sent-events feed in one corner of the app and uploading a multi-megabyte file with a progress bar in another, and the transport that handles one can't do the other. `fetch` streams a download but can't tell you how many bytes of an upload have left the machine; `XMLHttpRequest` reports that upload progress but can't stream a response; the axios instance you already configured with a corporate proxy and a custom CA can't stream either, but it carries the setup your platform already trusts. Under a stitch, the transport is a swappable seam — you pick the one that fits the call, and the stitch's types, validation, retries, and auth ride on top unchanged.

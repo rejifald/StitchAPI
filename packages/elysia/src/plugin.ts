@@ -18,7 +18,15 @@ import type { PrincipalSeam, Seam } from 'stitchapi';
  * root {@link Seam}. The lifecycle levers (`close`/`flush`/`invalidate`) live on the root seam the
  * app owns — never on the per-request handle.
  */
-export type RequestSeam = PrincipalSeam | Seam;
+export type ElysiaRequestSeam = PrincipalSeam | Seam;
+
+/**
+ * @deprecated Renamed to {@link ElysiaRequestSeam} so the public type is ecosystem-qualified (a bare
+ * `RequestSeam` would collide with any other host adapter's per-request seam type) — see
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the `1.0.0-rc`
+ * line and removed at the 1.0 GA cut.
+ */
+export type RequestSeam = ElysiaRequestSeam;
 
 /**
  * The Elysia instance {@link stitch} returns — a plugin you `.use()`. Its only public contract is

@@ -12,10 +12,10 @@ import {
 import { BaseExceptionFilter } from '@nestjs/core';
 
 /** The error a stitch throws on failure: a branded `Error` with the upstream status. */
-export type StitchError = Error & { status?: number };
+export type StitchErrorLike = Error & { status?: number };
 
 /** True when `err` is the error a stitch throws on failure (`name === 'StitchError'`). */
-export function isStitchError(err: unknown): err is StitchError {
+export function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
 
@@ -28,12 +28,12 @@ export interface ToHttpExceptionOptions {
      * full control: propagate the upstream status with `(e) => e.status ?? 502`, or remap
      * specific codes (`(e) => (e.status === 429 ? 429 : 502)`).
      */
-    status?: number | ((err: StitchError) => number);
+    status?: number | ((err: StitchErrorLike) => number);
 }
 
 /**
  * Map a thrown stitch failure to a Nest {@link HttpException}, or `undefined` when `err`
- * is not a {@link StitchError} (so a caller can rethrow it untouched). The status is
+ * is not a {@link StitchErrorLike} (so a caller can rethrow it untouched). The status is
  * `502` by default; override it via {@link ToHttpExceptionOptions.status}.
  */
 export function toHttpException(
@@ -47,7 +47,7 @@ export function toHttpException(
 }
 
 /**
- * A global exception filter that converts a {@link StitchError} into an
+ * A global exception filter that converts a {@link StitchErrorLike} into an
  * {@link HttpException} (via {@link toHttpException} — `502` by default) and lets Nest
  * render it; every other exception is delegated to Nest's default handling, unchanged.
  * Register it globally so controllers calling stitches need no try/catch:

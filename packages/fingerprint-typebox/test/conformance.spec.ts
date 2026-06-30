@@ -230,7 +230,7 @@ describe('@stitchapi/fingerprint-typebox', () => {
                     .Encode((s) => s) as unknown as TSchema,
             ) as never,
         );
-        expect(base.value).not.toBeNull();
-        expect(transformed.value).toBeNull();
+        expect(base.token).not.toBeNull();
+        expect(transformed.token).toBeNull();
     });
 });

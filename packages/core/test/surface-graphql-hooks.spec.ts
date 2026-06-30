@@ -11,13 +11,13 @@ import { graphqlSurface } from '../src/surface';
 import type {
     AdapterRequest,
     AdapterResponse,
-    StitchConfig,
+    ResolvedStitchConfig,
     StitchInput,
 } from '../src/types';
 
 const cfg = (
     o: { query?: string; method?: string; operationName?: string } = {},
-): StitchConfig => o;
+): ResolvedStitchConfig => o;
 
 const base: AdapterRequest = {
     url: 'https://api.test/graphql',
@@ -26,7 +26,7 @@ const base: AdapterRequest = {
 };
 
 // Call the hooks (wrappers invoke them, so they are never referenced unbound).
-function build(c: StitchConfig, input: StitchInput): AdapterRequest {
+function build(c: ResolvedStitchConfig, input: StitchInput): AdapterRequest {
     return graphqlSurface.buildRequest!(c, input, base);
 }
 function interpret(res: AdapterResponse) {

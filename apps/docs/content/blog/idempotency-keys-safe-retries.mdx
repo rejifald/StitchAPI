@@ -4,6 +4,7 @@ description: 'A write can time out after the server committed but before the res
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [idempotency, retry, typescript, resilience, http]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 Your charge endpoint times out. The card was charged — the server committed the row — but the response packet never made it back across the wire. Your retry logic does the sensible thing and fires the request again. Now the customer has two charges and you have a support ticket.
@@ -56,15 +57,15 @@ const charge = stitch({
     baseUrl: 'https://api.example.com',
     path: '/charges',
     retry: { attempts: 3, on: [429, 502, 503, 504], backoff: 'expo-jitter' },
-    idempotency: {},
+    idempotency: true,
 });
 
 const result = await charge({ body: { amount: 4200, ref: 'inv_88' } });
 ```
 
-`idempotency: {}` does the work the loop did, correctly. It generates a random uuid **once per logical call** and reuses it across that call's retries, sending it as the `Idempotency-Key` header. One `await charge(...)` settles one charge, even when the engine retries it twice under the hood. The server sees one token, dedupes the replay, and returns the committed result.
+`idempotency: true` does the work the loop did, correctly. It generates a random uuid **once per logical call** and reuses it across that call's retries, sending it as the `Idempotency-Key` header. One `await charge(...)` settles one charge, even when the engine retries it twice under the hood. The server sees one token, dedupes the replay, and returns the committed result.
 
-`retry` and `idempotency` are deliberately separate fields because they answer separate questions. `retry` decides _when to try again_ — which statuses, how many attempts, how to back off. `idempotency` decides _what makes two attempts the same write_. Pair them on every write: a retry without a key double-applies, a key without a retry never gets exercised.
+`retry` and `idempotency` are deliberately separate fields because they answer separate questions. `retry` decides _when to try again_ — which statuses, how many attempts, how to back off. `idempotency` decides _what makes two attempts the same write_. Pair them on every write: a retry without a key double-applies, and a key earns its keep most clearly alongside a retry — the retry is the duplicate it absorbs. Declare the random key without a retry and a stitch nudges you at construction, since it usually has nothing to collapse. The key isn't wasted in every such case, though: it also rides any replay the stitch never issued — a proxy or the transport resending the same request — and a server that honors it dedupes that too. If that's the case you're after, `idempotency: { warn: false }` silences the nudge.
 
 ## The default key dedupes retries, not submissions
 
@@ -84,25 +85,25 @@ const createOrder = stitch({
     path: '/orders',
     retry: { attempts: 3 },
     idempotency: {
-        key: (input) => `order-${(input.body as { ref: string }).ref}`,
+        keyOf: (input) => `order-${(input.body as { ref: string }).ref}`,
     },
 });
 ```
 
-`key` receives the call input and returns the token. `input.body` is typed `unknown` — the engine cannot know your payload shape — so narrow it before reading a property — `(input.body as { ref: string }).ref` casts it inline. Now both clicks produce `order-inv_88`, the server sees one token, and the second submission collapses into the first.
+`keyOf` receives the call input and returns the token. `input.body` is typed `unknown` — the engine cannot know your payload shape — so narrow it before reading a property — `(input.body as { ref: string }).ref` casts it inline. Now both clicks produce `order-inv_88`, the server sees one token, and the second submission collapses into the first.
 
 The rule splits cleanly:
 
-| Goal                                                        | Key strategy                                                     |
-| ----------------------------------------------------------- | ---------------------------------------------------------------- |
-| Collapse a retry of one call                                | `idempotency: {}` (random, per-call)                             |
-| Collapse two separate submissions of the same logical write | `idempotency: { key: (input) => ... }` derived from shared input |
+| Goal                                                        | Key strategy                                                       |
+| ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| Collapse a retry of one call                                | `idempotency: true` (random, per-call)                             |
+| Collapse two separate submissions of the same logical write | `idempotency: { keyOf: (input) => ... }` derived from shared input |
 
-If the duplicates have nothing in common to hash, no key can join them — that is a fact about your data, not a gap in the feature.
+If two submissions share nothing stable to derive a key from, no key can join them at this layer — you dedupe them one level down instead, on a unique constraint in the database that rejects the second write.
 
 ## A different header
 
-Some APIs expect the token on a header other than `Idempotency-Key`. Name it:
+Some APIs expect the token on a header other than `Idempotency-Key` — `Idempotency-Token`, say, or a vendor-prefixed `X-Idempotency-Key`. Name it:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -114,13 +115,15 @@ const createOrder = stitch({
     path: '/orders',
     retry: { attempts: 3 },
     idempotency: {
-        header: 'X-Request-Id',
-        key: (input) => `order-${(input.body as { ref: string }).ref}`,
+        header: 'Idempotency-Token',
+        keyOf: (input) => `order-${(input.body as { ref: string }).ref}`,
     },
 });
 ```
 
 The default is `Idempotency-Key`; `header` overrides it. Everything else is unchanged.
+
+`header` renames the idempotency key — the value a server _dedupes_ on. It is **not** the place to set a correlation header like `traceparent` or `X-Request-Id`: those answer a different question — _which request is this?_, for logs and spans — carry your trace id, and belong to tracing, not dedupe. Routing one through `idempotency` would send a fresh per-call value that never lines up with your traces.
 
 ## What it does not do
 
@@ -128,7 +131,7 @@ An idempotency key is a contract, not a guarantee. It works only when the **serv
 
 ## Where this scales
 
-The `charge` stitch with `idempotency: {}` is the smallest safe write you can declare: a method, a URL, a retry policy, a key. When the duplicate you care about stops being a retry and becomes a double-clicked button, you add one field — `key` — and the same declaration now collapses submissions too. Same call site, same `await`, no rewrite of the surrounding handler.
+The `charge` stitch with `idempotency: true` is the smallest safe write you can declare: a method, a URL, a retry policy, a key. When the duplicate you care about stops being a retry and becomes a double-clicked button, you add one field — `keyOf` — and the same declaration now collapses submissions too. Same call site, same `await`, no rewrite of the surrounding handler.
 
 From there the same config object carries `timeout: { total: '30s', perAttempt: '10s' }`, an `output` schema to validate the response, and `auth: bearer(env('API_TOKEN'))` so the token resolves at call time and the caller never holds it. Each is one more field on the write you already have, bounding one more failure mode of the same call.
 
@@ -138,7 +141,7 @@ From there the same config object carries `timeout: { total: '30s', perAttempt: 
 stitchapi
 ```
 
-Add `idempotency` and `retry` to your write stitches, then derive a stable `key` wherever two submissions can be the same logical write.
+Add `idempotency` and `retry` to your write stitches, then derive a stable `keyOf` wherever two submissions can be the same logical write.
 
 -   [Idempotency guide](/docs/guides/resilience/idempotency) — the full field reference and server-contract notes.
 -   [Retry guide](/docs/guides/resilience/retry) and [Timeout guide](/docs/guides/resilience/timeout) — the policies you pair idempotency with on writes.

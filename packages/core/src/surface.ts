@@ -12,7 +12,7 @@ import type {
     Adapter,
     AdapterRequest,
     AdapterResponse,
-    StitchConfig,
+    ResolvedStitchConfig,
     StitchInput,
 } from './types';
 
@@ -35,7 +35,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      * (possibly patched) one. Omitted = the http identity. (Wired for graphql in Stage 4.)
      */
     readonly buildRequest?: (
-        cfg: StitchConfig,
+        cfg: ResolvedStitchConfig,
         input: StitchInput,
         base: AdapterRequest,
     ) => AdapterRequest;
@@ -45,7 +45,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      */
     readonly interpret?: (
         res: AdapterResponse,
-        cfg: StitchConfig,
+        cfg: ResolvedStitchConfig,
     ) => SurfaceOutcome<TResult>;
     /**
      * Decode a live response body into `delta` chunks. Its presence marks a surface as
@@ -53,7 +53,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      */
     readonly stream?: (
         res: AdapterResponse,
-        cfg: StitchConfig,
+        cfg: ResolvedStitchConfig,
     ) => AsyncIterable<unknown>;
     /**
      * Map an emitted `delta` to the value the `output` contract validates (per-`delta`
@@ -74,9 +74,11 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
     /**
      * Read the server-suggested reconnect backoff (ms) off an emitted `delta` chunk (issue #71). The
      * engine tracks the latest value and uses it as the reconnect delay, falling back to the
-     * stitch's `reconnect.backoffMs` / `retry` policy when no value was seen on the dropped
+     * stitch's `reconnect.backoff` / `retry` policy when no value was seen on the dropped
      * connection. `sse` returns the event's `retry` field. Omitted ⇒ always use the fallback backoff.
      */
+    readonly resumeRetry?: (chunk: unknown) => number | undefined;
+    /** @deprecated Renamed to {@link Surface.resumeRetry} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     readonly resumeRetryMs?: (chunk: unknown) => number | undefined;
     /**
      * Inject a resume token into the NEXT request before it is reopened (issue #71) — mutates `req`

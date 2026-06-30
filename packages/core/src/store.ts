@@ -36,21 +36,21 @@ export function memoryStore(): StitchStore {
             }
             return e!.value;
         },
-        async set(key, value, ttlMs) {
+        async set(key, value, ttl) {
             if (value === undefined) {
                 data.delete(key);
                 return;
             }
             sweepExpired();
-            data.set(key, { value, expires: ttlMs ? now() + ttlMs : 0 });
+            data.set(key, { value, expires: ttl ? now() + ttl : 0 });
         },
-        async incr(key, ttlMs) {
+        async incr(key, ttl) {
             const e = data.get(key);
             const n = (live(e) ? (e!.value as number) : 0) + 1;
             sweepExpired();
             data.set(key, {
                 value: n,
-                expires: live(e) ? e!.expires : now() + ttlMs,
+                expires: live(e) ? e!.expires : now() + ttl,
             });
             return n;
         },
@@ -70,8 +70,8 @@ export function memoryStore(): StitchStore {
 export function vaultView(store: StitchStore, prefix = 'vault:'): StitchStore {
     const view: StitchStore = {
         get: (key) => store.get(prefix + key),
-        set: (key, value, ttlMs) => store.set(prefix + key, value, ttlMs),
-        incr: (key, ttlMs) => store.incr(prefix + key, ttlMs),
+        set: (key, value, ttl) => store.set(prefix + key, value, ttl),
+        incr: (key, ttl) => store.incr(prefix + key, ttl),
     };
     // Delegate lifecycle to the backend (bind keeps `this` for stores that need it).
     if (store.close) view.close = store.close.bind(store);
@@ -81,19 +81,19 @@ export function vaultView(store: StitchStore, prefix = 'vault:'): StitchStore {
 /**
  * Compose throttles so EVERY gate must pass — the engine acquires/releases the chain as one
  * (ADR 0002 §5, tighten-only). A seam injects `[sharedBucket, stitchLocal]` so a stitch's local
- * throttle STACKS on the shared budget (intersection) and can never escape it. `waitedMs` sums
+ * throttle STACKS on the shared budget (intersection) and can never escape it. `waited` sums
  * across gates; release unwinds in reverse acquisition order.
  */
 export function chainThrottle(throttles: Throttle[]): Throttle {
     return {
         async acquire(key, opts) {
-            let waitedMs = 0;
+            let waited = 0;
             // Thread the acquire options (e.g. `rateOnly` for streaming) to EVERY gate, so a
             // streaming member skips the concurrency slot on both the seam bucket and its own
             // local throttle while still charging each rate gate (ADR 0005 Decision 12).
             for (const t of throttles)
-                waitedMs += (await t.acquire(key, opts)).waitedMs;
-            return { waitedMs };
+                waited += (await t.acquire(key, opts)).waited;
+            return { waited };
         },
         release(key) {
             // Unwind in reverse acquisition order.
@@ -103,13 +103,13 @@ export function chainThrottle(throttles: Throttle[]): Throttle {
 }
 
 export interface Throttle {
-    acquire(key: string, opts?: AcquireOptions): Promise<{ waitedMs: number }>;
+    acquire(key: string, opts?: AcquireOptions): Promise<{ waited: number }>;
     release(key: string): void;
 }
 
 /**
  * Store-backed throttle. Rate is paced by EVEN-SPACED grants over an atomic per-window counter in
- * the store: the Nth grant in a window is scheduled at `windowStart + (N-1)·(perMs/count)` — the
+ * the store: the Nth grant in a window is scheduled at `windowStart + (N-1)·(per/count)` — the
  * same cadence as the in-process limiter ({@link createThrottle}), so attaching a store no longer
  * silently switches pacing to bursty fixed-window (the spacing even carries across the window
  * boundary). A SHARED store paces calls across the whole fleet; concurrency stays in-process (a
@@ -158,17 +158,17 @@ export function createStoreThrottle(
     async function acquire(
         key: string,
         acqOpts?: AcquireOptions,
-    ): Promise<{ waitedMs: number }> {
-        let waitedMs = 0;
+    ): Promise<{ waited: number }> {
+        let waited = 0;
         // A rate-only acquire (a streaming surface — ADR 0005 Decision 12) takes no concurrency
         // slot (and so is never released); it still charges the rate window below.
         if (!acqOpts?.rateOnly) {
             // Only a real concurrency block counts as "waited" — not incidental store or
-            // scheduling time — so waitedMs (and the 'throttled' event) is deterministic.
+            // scheduling time — so waited (and the 'throttled' event) is deterministic.
             const blocked = limit != null && stateFor(key).inFlight >= limit;
             const blockStart = clock.now();
             await takeSlot(key);
-            if (blocked) waitedMs = clock.now() - blockStart;
+            if (blocked) waited = clock.now() - blockStart;
         }
         if (rate) {
             // Even-spaced pacing over the shared counter (mirrors createThrottle's `spacing`):
@@ -176,9 +176,8 @@ export function createStoreThrottle(
             // scheduled at windowStart + (N-1)·spacing. Slot count+1 lands exactly at the next
             // windowStart, so grants stay one `spacing` apart across the boundary — no fixed-window
             // burst. No re-check loop: each caller owns a distinct, non-colliding slot.
-            const spacing = rate.perMs / rate.count; // ms between grants
-            const windowStart =
-                Math.floor(clock.now() / rate.perMs) * rate.perMs;
+            const spacing = rate.per / rate.count; // ms between grants
+            const windowStart = Math.floor(clock.now() / rate.per) * rate.per;
             // Track the window we minted a key for; when it rolls over, DELETE the previous
             // window's `rl:` key eagerly instead of waiting for its TTL to expire (the store's
             // own sweep is opportunistic). Without this, a long-lived rate-limited seam leaves a
@@ -189,16 +188,16 @@ export function createStoreThrottle(
             s.lastWindow = windowStart;
             const n = await store.incr(
                 `rl:${key}:${windowStart}`,
-                rate.perMs + 100,
+                rate.per + 100,
             );
             const grantAt = windowStart + (n - 1) * spacing;
             const wait = grantAt - clock.now();
             if (wait > 0) {
                 await clock.sleep(wait);
-                waitedMs += wait;
+                waited += wait;
             }
         }
-        return { waitedMs };
+        return { waited };
     }
 
     function release(key: string): void {

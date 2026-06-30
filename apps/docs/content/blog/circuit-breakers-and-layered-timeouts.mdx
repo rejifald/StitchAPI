@@ -4,6 +4,7 @@ description: When an upstream dependency is already down or crawling, naive retr
 author: Oleksandr Zhuravlov
 date: '2026-06-01'
 tags: [resilience, reliability, timeouts, circuit-breaker, retry]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 An upstream provider starts to crawl. Not down — crawling. Responses that used to land in 80ms now take eight seconds, when they land at all. Your code does the reasonable thing: it has a timeout, so it gives up after thirty seconds and retries. Three attempts, a little backoff between them. Sensible in isolation.
@@ -48,7 +49,7 @@ That's the cascading-failure pattern. When a dependency is already failing, ever
 A **circuit breaker** encodes "stop calling for a bit" as state. The mechanics are a small state machine:
 
 -   It starts **closed** — calls pass through normally.
--   After a run of consecutive failures (the `failureThreshold`) it trips **open**. While open, calls **fast-fail** immediately without touching the dependency, for a cooldown window.
+-   After a run of consecutive failures (the `failures`) it trips **open**. While open, calls **fast-fail** immediately without touching the dependency, for a cooldown window.
 -   Once the cooldown elapses it goes **half-open** and lets a single trial call through. If that probe succeeds, the breaker **closes** and normal traffic resumes; if it fails, the breaker re-**opens** for a fresh cooldown.
 
 The fast-fail is the whole point. While the circuit is open, a call returns in microseconds instead of burning a `perAttempt` timeout discovering — again — that the dependency is unreachable. You stop adding load to a struggling upstream, and you stop tying up your own connections and promises waiting on doomed calls. The half-open probe is how you find out it's healthy again without flipping the floodgates open on the first hopeful guess.
@@ -59,11 +60,11 @@ import { stitch } from 'stitchapi';
 const orders = stitch({
     baseUrl: 'https://api.example.com',
     path: '/orders',
-    circuit: { failureThreshold: 5, cooldownMs: 30_000 },
+    circuit: { failures: 5, cooldown: 30_000 },
 });
 ```
 
-After five consecutive failures the breaker opens; for the next 30 seconds calls to `orders()` fast-fail instead of hitting the host. Then one trial call decides whether to close it or wait out another cooldown. (`halfOpenAfterMs` lets you probe on a different clock than the fast-fail window, if you want them decoupled.)
+After five consecutive failures the breaker opens; for the next 30 seconds calls to `orders()` fast-fail instead of hitting the host. Then one trial call decides whether to close it or wait out another cooldown. (`halfOpenAfter` lets you probe on a different clock than the fast-fail window, if you want them decoupled.)
 
 When the breaker is open, the call surfaces a `STITCH_CIRCUIT_OPEN` error — a distinct, catchable signal that means "I didn't even try, the dependency is presumed down," which is exactly the case your fallback logic wants to branch on.
 
@@ -79,7 +80,7 @@ const getQuote = stitch({
     path: '/quote/{symbol}',
     retry: { attempts: 3, on: [429, 502, 503], respectRetryAfter: true },
     timeout: { total: '10s', perAttempt: '3s' },
-    circuit: { failureThreshold: 5, cooldownMs: 30_000 },
+    circuit: { failures: 5, cooldown: 30_000 },
 });
 ```
 
@@ -115,7 +116,7 @@ async function getQuote(symbol: string) {
 }
 ```
 
-Read top to bottom, that's a coherent reliability story. Retry absorbs the transient blips — a stray 503, a rate-limited 429 whose `Retry-After` you honor. The layered timeout bounds how long any single attempt and the whole call can take, with real aborts so nothing leaks. And the breaker is the backstop for when the failures stop being transient: once five in a row have failed, retrying is clearly futile, so it stops trying and fast-fails until a probe says otherwise.
+Read top to bottom, that's a coherent reliability story. Retry absorbs the transient blips — a stray 503, a rate-limited 429 whose `Retry-After` you honor. The layered timeout bounds how long any single attempt and the whole call can take, with real aborts so nothing leaks. And the breaker is the backstop for when the failures stop being transient: once five in a row have failed, more retries only add load to a service that is already down, so it stops trying and fast-fails until a probe says otherwise.
 
 Each piece covers a gap the others can't. Retry without a breaker turns a sustained outage into a retry storm. A breaker without timeouts still lets individual slow calls block you right up until the threshold trips. Timeouts without a breaker bound each call but never stop you from re-discovering the same outage, caller after caller. Declared together on the stitch, they cover transient, slow, and sustained failure as one policy — and because it lives on the definition, every front door inherits it: the in-process function, the CLI, the HTTP endpoint, and the agent calling over MCP all get the same behavior, not three slightly different hand-rolled versions.
 
@@ -123,7 +124,7 @@ Each piece covers a gap the others can't. Retry without a breaker turns a sustai
 
 None of this is free, and the defaults that are right for one dependency are wrong for another.
 
--   **Breaker thresholds need tuning, and the failure modes are symmetric.** Set `failureThreshold` too low or `cooldownMs` too long and the breaker trips on a momentary blip, cutting you off from a dependency that was fine. Set it too high or too short and it never really protects you — the circuit stays closed through an outage you wanted it to short. There's no universal number; it depends on the dependency's normal failure rate and how costly a false trip is. Start conservative and watch the `progress` events the breaker emits with phase `circuit`.
+-   **Breaker thresholds need tuning, and the failure modes are symmetric.** Set `failures` too low or `cooldown` too long and the breaker trips on a momentary blip, cutting you off from a dependency that was fine. Set it too high or too short and it never really protects you — the circuit stays closed through an outage you wanted it to short. There's no universal number; it depends on the dependency's normal failure rate and how costly a false trip is. Start conservative and watch the `progress` events the breaker emits with phase `circuit`.
 
 -   **The default breaker is process-local.** The failure counter lives in memory, so across multiple workers or replicas each one tallies its own failures and trips independently — meaning a failing host can take many times the hits you intended before every process's circuit opens. If you run more than one instance, give the stitches a shared `key` plus a durable store so one breaker spans the fleet — the same [shared-store move that makes a throttle distributed](/blog/distributed-throttle-with-redis-kv).
 

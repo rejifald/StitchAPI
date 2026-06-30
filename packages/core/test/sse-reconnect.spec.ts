@@ -14,7 +14,7 @@ import { z } from 'zod';
 // An adapter that hands back a DIFFERENT scripted body per call and records every request it saw —
 // so a test can assert what header (e.g. Last-Event-ID) rode the Nth open. Bodies past the script
 // fall back to `tail` (default: an immediately-closing empty stream, which a resumable surface
-// treats as another reconnect signal — handy for exercising the maxAttempts cap deterministically).
+// treats as another reconnect signal — handy for exercising the attempts cap deterministically).
 function scriptedAdapter(
     bodies: (() => ReadableStream<Uint8Array>)[],
     init: { status?: number; tail?: () => ReadableStream<Uint8Array> } = {},
@@ -39,7 +39,7 @@ function scriptedAdapter(
 interface Drained {
     types: string[];
     deltas: unknown[];
-    reconnects: { attempt: number; waitedMs: number | undefined }[];
+    reconnects: { attempt: number; waited: number | undefined }[];
     drifts: { level: string }[];
     result: unknown;
     error: { message: string; status: number | undefined } | undefined;
@@ -64,10 +64,10 @@ async function drainAll(
         out.types.push(ev.type);
         if (ev.type === 'delta') out.deltas.push(ev.chunk);
         else if (ev.type === 'progress' && ev.phase === 'reconnect')
-            out.reconnects.push({ attempt: ev.attempt, waitedMs: ev.waitedMs });
+            out.reconnects.push({ attempt: ev.attempt, waited: ev.waited });
         else if (ev.type === 'drift')
             out.drifts.push({ level: ev.finding.level });
-        else if (ev.type === 'result') out.result = ev.value;
+        else if (ev.type === 'result') out.result = ev.data;
         else if (ev.type === 'error')
             out.error = { message: ev.message, status: ev.status };
         else if (ev.type === 'done') out.doneOk = ev.ok;
@@ -117,14 +117,14 @@ describe('sse reconnect is OFF by default (issue #71)', () => {
 describe('sse reconnect replays Last-Event-ID (issue #71)', () => {
     test('the SECOND open carries Last-Event-ID: 2 and its events continue to flow', async () => {
         // First body: id 1, id 2 then closes. Second body: id 3, id 4 then closes. The third open
-        // (an empty tail) closes immediately; cap at maxAttempts so it terminates deterministically.
+        // (an empty tail) closes immediately; cap at attempts so it terminates deterministically.
         const { adapter, requests } = scriptedAdapter([
             () => streamOf(['id: 1\ndata: a\n\n', 'id: 2\ndata: b\n\n']),
             () => streamOf(['id: 3\ndata: c\n\n', 'id: 4\ndata: d\n\n']),
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { maxAttempts: 2, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 2, backoffMs: 1 } },
             adapter,
         });
 
@@ -156,14 +156,14 @@ describe('sse reconnect backoff: server retry: vs fallback (issue #71)', () => {
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { maxAttempts: 1, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 1, backoffMs: 1 } },
             adapter,
         });
 
         const t0 = Date.now();
         const out = await drainAll(s.stream());
         const elapsed = Date.now() - t0;
-        expect(out.reconnects[0]?.waitedMs).toBe(120);
+        expect(out.reconnects[0]?.waited).toBe(120);
         expect(elapsed).toBeGreaterThanOrEqual(110);
         expect(out.doneOk).toBe(true);
     });
@@ -174,14 +174,14 @@ describe('sse reconnect backoff: server retry: vs fallback (issue #71)', () => {
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { maxAttempts: 1, backoffMs: 90 } },
+            sse: { reconnect: { attempts: 1, backoffMs: 90 } },
             adapter,
         });
 
         const t0 = Date.now();
         const out = await drainAll(s.stream());
         const elapsed = Date.now() - t0;
-        expect(out.reconnects[0]?.waitedMs).toBe(90);
+        expect(out.reconnects[0]?.waited).toBe(90);
         expect(elapsed).toBeGreaterThanOrEqual(80);
         expect(out.doneOk).toBe(true);
     });
@@ -193,7 +193,7 @@ describe('sse reconnect backoff: server retry: vs fallback (issue #71)', () => {
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { maxAttempts: 1 } },
+            sse: { reconnect: { attempts: 1 } },
             retry: { backoff: 'fixed', baseMs: 70 },
             adapter,
         });
@@ -201,22 +201,22 @@ describe('sse reconnect backoff: server retry: vs fallback (issue #71)', () => {
         const t0 = Date.now();
         const out = await drainAll(s.stream());
         const elapsed = Date.now() - t0;
-        expect(out.reconnects[0]?.waitedMs).toBe(70);
+        expect(out.reconnects[0]?.waited).toBe(70);
         expect(elapsed).toBeGreaterThanOrEqual(60);
         expect(out.doneOk).toBe(true);
     });
 });
 
-describe('sse reconnect respects the maxAttempts cap (issue #71)', () => {
+describe('sse reconnect respects the attempts cap (issue #71)', () => {
     test('reconnects stop after N attempts; the stream ends with what it collected', async () => {
         // Every body is a single event then closes — a resumable surface treats each close as a
-        // reconnect signal, so this would loop forever without the cap. maxAttempts: 2 ⇒ 3 opens.
+        // reconnect signal, so this would loop forever without the cap. attempts: 2 ⇒ 3 opens.
         const { adapter, requests } = scriptedAdapter([], {
             tail: () => streamOf(['data: tick\n\n']),
         });
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { maxAttempts: 2, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 2, backoffMs: 1 } },
             adapter,
         });
 
@@ -258,7 +258,7 @@ describe('sse reconnect resumes from the last id after a mid-stream ERROR (issue
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { maxAttempts: 1, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 1, backoffMs: 1 } },
             adapter,
         });
 
@@ -273,7 +273,7 @@ describe('sse reconnect resumes from the last id after a mid-stream ERROR (issue
     });
 
     test('when reconnects run out on an ERROR, the real error surfaces as error+done', async () => {
-        // Both opens throw; maxAttempts: 1 ⇒ one reconnect, then the second throw is terminal and
+        // Both opens throw; attempts: 1 ⇒ one reconnect, then the second throw is terminal and
         // its real message is surfaced (not a synthetic placeholder).
         const { adapter, requests } = scriptedAdapter([
             () => streamThenError(['id: 1\ndata: a\n\n'], new Error('drop-1')),
@@ -281,7 +281,7 @@ describe('sse reconnect resumes from the last id after a mid-stream ERROR (issue
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { maxAttempts: 1, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 1, backoffMs: 1 } },
             adapter,
         });
 
@@ -305,7 +305,7 @@ describe('sse per-delta output validation keeps firing across a reconnect (issue
         const s = sse({
             url: 'https://x.test/e',
             output: asValidator(z.object({ tok: z.string() })),
-            sse: { reconnect: { maxAttempts: 2, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 2, backoffMs: 1 } },
             adapter,
         });
 
@@ -328,25 +328,23 @@ describe('sse reconnect config round-trips as JSON (contract-not-dependency gate
         expect(json.sse).toEqual({ reconnect: true });
     });
 
-    test('the object form (maxAttempts + backoffMs) survives the round-trip intact', () => {
+    test('the object form (attempts + backoffMs) survives the round-trip intact', () => {
         const cfg = {
             url: 'https://x.test/e',
-            sse: { reconnect: { maxAttempts: 5, backoffMs: 250 } },
+            sse: { reconnect: { attempts: 5, backoffMs: 250 } },
         };
         const s = sse(cfg);
         const json = JSON.parse(JSON.stringify(s.__config)) as {
-            sse?: { reconnect?: { maxAttempts?: number; backoffMs?: number } };
+            sse?: { reconnect?: { attempts?: number; backoffMs?: number } };
         };
-        expect(json.sse?.reconnect).toEqual({ maxAttempts: 5, backoffMs: 250 });
+        expect(json.sse?.reconnect).toEqual({ attempts: 5, backoffMs: 250 });
     });
 });
 
 describe('sse resume hooks are wired on the surface (issue #71)', () => {
-    test('resumeToken reads id, resumeRetryMs reads retry, applyResume sets Last-Event-ID', () => {
+    test('resumeToken reads id, resumeRetry reads retry, applyResume sets Last-Event-ID', () => {
         expect(sseSurface.resumeToken?.({ data: 'x', id: '7' })).toBe('7');
-        expect(sseSurface.resumeRetryMs?.({ data: 'x', retry: 1500 })).toBe(
-            1500,
-        );
+        expect(sseSurface.resumeRetry?.({ data: 'x', retry: 1500 })).toBe(1500);
         const req: AdapterRequest = {
             url: 'https://x.test/e',
             method: 'GET',

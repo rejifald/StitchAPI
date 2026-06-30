@@ -61,6 +61,10 @@ jobs:
             # to a real page (catches a dead link like the removed fluent-builder page or a section
             # with no index). Static scan — no build needed.
             - run: pnpm check:docs-links
+            # API meta-contract ratchet (docs/CONTRACT.md): fails on a NEW naming/typing/
+            # shorthand/duration violation in the published surface, baselined against
+            # scripts/contract-violations.baseline.json. Tool-free source scan — no build.
+            - run: pnpm check:contract
             # Release coherence: version lockstep + prerelease-aware peer ranges +
             # scoped publishConfig.access, LICENSE/README presence, so a bad bump fails
             # the PR, not the publish.

@@ -4,6 +4,7 @@ description: 'Most HTTP clients drag a node: import that breaks on a Worker. Sti
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [edge, cloudflare, workers, typescript, kv]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You wrote a clean API client, it passes every test on your laptop, and then the Cloudflare deploy fails at build time with `Could not resolve "node:crypto"`. The client you picked reaches for a Node built-in somewhere deep in its transport or its cache, and a Worker has no `node:` to give it. Now you are pinning polyfills, flipping compatibility flags, and hoping the shim behaves the same as the real thing.

@@ -35,7 +35,7 @@ fields. Every event carries an `at` field — a millisecond timestamp.
     `detail?`), `at`.
 -   **`delta`** — a streamed chunk of the response body. Fields: `chunk`
     (`unknown`), `at`.
--   **`result`** — the call succeeded and produced a value. Fields: `value` (the
+-   **`result`** — the call succeeded and produced a value. Fields: `data` (the
     `T`), `status` (HTTP status), `attempts` (how many it took), `at`.
 -   **`error`** — the call failed. Fields: `name`, `message`, `status?`,
     `attempts`, `at`.

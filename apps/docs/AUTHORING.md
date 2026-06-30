@@ -66,10 +66,10 @@ Pick the template by the page's `kind` in the manifest. Copy the skeleton
 verbatim, then fill it. Required sections are marked `(required)` — don't drop
 them; don't add a fifth top-level section without a reason.
 
-> **Frontmatter:** the current schema (`pageSchema`) allows `title`,
-> `description`, and `icon` only. `kind` and `code` live in the manifest, not the
-> frontmatter, until we extend the schema in `source.config.ts` (a tracked
-> tooling task). Keep frontmatter to `title` + `description`.
+> **Frontmatter:** the page schema (`pageSchema`) allows `title`, `description`,
+> and `icon`, plus an optional `prerequisites` list — see
+> [Prerequisites](#prerequisites--the-upstream-pointer). `kind` and `code` live in
+> the manifest, not the frontmatter. Keep the rest to `title` + `description`.
 
 ### Guide — the workhorse (`kind: guide`)
 
@@ -231,6 +231,45 @@ description: Authentication failed, or a soft 200 login wall was hit and could n
     <Card title="Guide: cookieSession" href="/docs/guides/auth/cookie-session" />
 </Cards>
 ````
+
+---
+
+## Prerequisites — the upstream pointer
+
+`See also` and the blog's "Related reading" footer point a reader **onward** — to
+the next page, the sibling argument. Nothing points **back**. A reader who lands
+cold on an advanced page (parallel composition, a distributed throttle, an MCP
+recipe) gets no signal for the foundational concept the prose already assumes.
+
+`prerequisites` is that signal: an **optional** frontmatter list of internal hrefs
+to the foundational pages a page leans on. The renderer resolves each to its real
+title from source — so the link text can't drift — and shows a **"New to stitches?
+Start here"** box at the _top_ of the page. It is the inverse of `See also`: a step
+_back_ before diving in, and it works the same on a docs page and a blog post.
+
+```yaml
+---
+title: Run independent API calls in parallel
+description: When calls do not depend on each other, run them concurrently.
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
+---
+```
+
+-   **Aim at the foundational set, not at siblings.** The usual targets are
+    `/docs/concepts/the-stitch`, `/docs/concepts/the-seam`,
+    `/docs/concepts/event-stream`, `/docs/concepts/capability-not-credential`, and
+    `/docs/getting-started/quickstart`. One or two is plenty — it's a heads-up, not
+    a syllabus.
+-   **Only when the opening assumes prior knowledge.** A page that self-grounds in
+    its first sentence — states its premise, defines its term — needs none, and the
+    foundational pages themselves never declare one.
+-   **Cross-surface is normal.** A blog post pointing at
+    `/docs/concepts/the-stitch` is the common case; a docs page may point at
+    another docs page.
+-   **Every href must resolve.** `test/prerequisites.spec.ts` fails the build on a
+    dangling or self-referential prerequisite — the same no-orphans guarantee the
+    blog's sibling links carry. The box silently drops a broken link at runtime, so
+    that gate is the only thing that flags it. Keep it green.
 
 ---
 
@@ -587,7 +626,10 @@ differences are below.
 
 **Frontmatter.** Posts add `author`, `date` (an ISO `YYYY-MM-DD` string, quoted),
 and an optional `tags` array, on top of the mandatory `title` + `description`.
-The schema lives in `source.config.ts` (the `blog` collection).
+Posts may also declare `prerequisites` — the upstream "Start here" pointer docs
+pages use — most often aimed at a `/docs/concepts/*` page a cold reader needs first
+(see [Prerequisites](#prerequisites--the-upstream-pointer)). The schema lives in
+`source.config.ts` (the `blog` collection).
 
 ```yaml
 ---
@@ -655,6 +697,8 @@ without `See also` strands its reader. Dangling `/blog/<slug>` links fail it too
         `events`), not a one-off domain.
 -   [ ] Reads correctly in isolation (imagine it as a lone `llms.mdx`).
 -   [ ] `See also` links neighbors, the Reference entry, and any catalog pages.
+-   [ ] If the opening assumes a foundational concept, `prerequisites` points
+        upstream to it (hrefs that resolve); foundational pages declare none.
 -   [ ] Any tempting-but-wrong use is flagged with an inline **Anti-pattern**
         `<Callout type="warn">` at the point of temptation, not a separate
         section (rule 10) — omit only when the page has no such pitfall.

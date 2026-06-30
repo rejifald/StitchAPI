@@ -45,7 +45,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "sse",
             type: "property",
             detail: "SseOptions",
-            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoffMs` / the `retry` policy), capped at `maxAttempts`. Plain JSON (the contract gate). Only the `sse` surface reads it.",
+            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry` policy), capped at `maxAttempts`. Plain JSON (the contract gate). Only the `sse` surface reads it.",
         },
         {
             label: "responseType",
@@ -116,7 +116,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "paginate",
             type: "property",
-            detail: "{ /** * Given the previous page's raw body and how many pages were fetched, return the * input (merged over the original) for the next page, or `undefined` to stop. */ next: ( prevBody: unknown, pagesFetched: number, ) => StitchInput | undefined; /** Pull the array from each unwrapped page. Default: the value if it is an array. */ items?: (value: unknown) => unknown[]; /** Safety cap on pages. Default 50. */ max?: number; }",
+            detail: "PaginateOptions",
             info: "Auto-loop pages, aggregating items, with auth/retry/throttle applied to every page.",
         },
         {
@@ -152,25 +152,24 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "circuit",
             type: "property",
-            detail: "CircuitOptions",
-            info: "Circuit breaker that fast-fails a repeatedly failing dependency.",
+            detail: "AtLeastOne<CircuitOptions>",
+            info: "Circuit breaker that fast-fails a repeatedly failing dependency. `failures` + `cooldown` are required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`).",
         },
         {
             label: "rateLimit",
             type: "property",
             detail: "{ /** Surface rate-limit outcomes instead of retrying/throttling them. Default `false`. */ delegate?: boolean; /** Statuses treated as a rate-limit signal. Default `[429]`. */ on?: number[]; }",
-            info: "Delegate backoff to the host (issue #145). When `delegate: true`, a rate-limit response (status in `on`, default `[429]`) is **not** retried internally and the built-in `throttle` is **bypassed** for the call — instead the outcome surfaces as a (carrying `status`, the `retryAfterMs` parsed from `Retry-After`, and the raw `response`) on the awaited path, and as an `error` event with `retryAfterMs` on `.stream()`. Use this when an OUTER gate/circuit owns the backoff (its own `Retry-After` hook, a DB-persisted budget) and StitchAPI's internal retry+throttle would double-count against it. ⚠️ In delegate mode the `throttle` config becomes **inert** for this stitch (the host owns the gate). A `circuit` block, if also set, still applies — the host may layer both. Non-rate-limit failures (5xx, etc.) behave exactly as today unless their status is listed in `on`. Validation, templating, transform/unwrap, and drift on the success path are unchanged.",
         },
         {
             label: "idempotency",
             type: "property",
-            detail: "IdempotencyOptions",
-            info: "Inject a stable Idempotency-Key header on writes so safe retries don't duplicate.",
+            detail: "boolean | AtLeastOne<IdempotencyOptions>",
+            info: "Inject a stable Idempotency-Key header on writes so safe retries don't duplicate. `true` enables it with defaults (header `Idempotency-Key`, a random uuid per call); the object form customizes it and **must** set at least one field — the opaque `idempotency: {}` is rejected (CONTRACT.md P20).",
         },
         {
             label: "cache",
             type: "property",
-            detail: "number | string | CacheConfig",
+            detail: "number | string | CacheOptions",
             info: "Read-through response cache + in-process coalescing (ADR 0003). Off unless set; the engine is loaded lazily from the `stitchapi/cache` subpath only when this block is present. A bare number (ms) or duration string is shorthand for the TTL — `cache: '1m'` ≡ `cache: { ttl: '1m' }` (still subject to the fingerprint / `version` rules before an entry is actually stored).",
         },
         {

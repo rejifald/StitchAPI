@@ -1,6 +1,7 @@
 ---
 title: 'Loop a cursor API into one array'
 description: 'Follow nextCursor across every page and aggregate the items — no manual while-loop, cursor bookkeeping, or concat.'
+prerequisites: ['/docs/concepts/the-stitch', '/docs/getting-started/quickstart']
 ---
 
 ## Task
@@ -26,7 +27,7 @@ const allUsers = stitch({
             return cursor ? { query: { cursor } } : undefined;
         },
         items: (value) => (value as { results: unknown[] }).results,
-        max: 20,
+        pages: 20,
     },
 });
 

@@ -1,5 +1,6 @@
 // Zero-infra observability sink: append every StitchEvent as a JSONL record and,
 // optionally, print a compact colored one-line-per-event summary to stderr. No deps.
+import { compact } from './compact';
 import type { DriftLevel, StitchEvent, TraceContext, TraceSink } from './types';
 import { dirnameOf, isSecretQueryKey, nodeFs, readEnv, scrubUrl } from './util';
 
@@ -58,11 +59,15 @@ export function redactEventForTransport(event: StitchEvent): StitchEvent {
     return {
         ...event,
         url: scrubUrl(event.url),
-        input: {
+        // `compact` drops `headers`/`query` when their redacted values are undefined —
+        // which is exactly when `event.input` lacked them (safeHeaders/safeQuery are derived
+        // from event.input.headers/.query), so it only ever omits the conditional override,
+        // never a key the `...event.input` spread provided.
+        input: compact({
             ...event.input,
-            ...(safeHeaders ? { headers: safeHeaders } : {}),
-            ...(safeQuery ? { query: safeQuery } : {}),
-        },
+            headers: safeHeaders,
+            query: safeQuery,
+        }),
     };
 }
 
@@ -158,7 +163,11 @@ function prepareRecord(
                 );
         }
     } else if (event.type === 'result') {
-        record['value'] = capBody(record['value'], maxBody);
+        record['data'] = capBody(record['data'], maxBody);
+        // The @deprecated `value` alias is co-emitted (CONTRACT.md P5); cap it too so the body is
+        // never written uncapped under either key.
+        if ('value' in record)
+            record['value'] = capBody(record['value'], maxBody);
     } else if (event.type === 'delta') {
         // A streamed chunk is response-body data too — cap it like `result.value`.
         record['chunk'] = capBody(record['chunk'], maxBody);
@@ -192,7 +201,7 @@ function format(name: string, event: StitchEvent): string | null {
             return `${paint(CYAN, '→')} ${name} ${event.method} ${scrubUrl(event.url)}`;
         case 'progress': {
             const waited =
-                event.waitedMs != null ? ` waited ${event.waitedMs}ms` : '';
+                event.waited != null ? ` waited ${event.waited}ms` : '';
             return paint(
                 DIM,
                 `  · ${name} ${event.phase}#${event.attempt}${waited}`,
@@ -217,7 +226,7 @@ function format(name: string, event: StitchEvent): string | null {
             return paint(RED, `✗ ${name} ${event.message}${status}`);
         }
         case 'done':
-            return paint(DIM, `  ${name} done in ${event.ms}ms`);
+            return paint(DIM, `  ${name} done in ${event.elapsed}ms`);
         default:
             return null; // 'delta' and any future events: file-only, no console line
     }
@@ -291,7 +300,7 @@ function summary(name: string, event: StitchEvent): string | null {
             return `${name} ${event.method} ${scrubUrl(event.url)}`;
         case 'progress': {
             const waited =
-                event.waitedMs != null ? ` waited ${event.waitedMs}ms` : '';
+                event.waited != null ? ` waited ${event.waited}ms` : '';
             return `${name} ${event.phase}#${event.attempt}${waited}`;
         }
         case 'info': {
@@ -310,7 +319,7 @@ function summary(name: string, event: StitchEvent): string | null {
             return `${name} ${event.message}${status}`;
         }
         case 'done':
-            return `${name} done in ${event.ms}ms`;
+            return `${name} done in ${event.elapsed}ms`;
         default:
             return null; // 'delta': raw response data — never logged.
     }
@@ -461,11 +470,13 @@ export function fileSink(
     path?: string,
     opts?: Omit<TraceOptions, 'console' | 'file'>,
 ): TraceSink {
-    return createTrace({
-        console: false,
-        ...(path !== undefined ? { file: path } : {}),
-        ...opts,
-    });
+    return createTrace(
+        compact({
+            console: false,
+            file: path,
+            ...opts,
+        }),
+    );
 }
 
 /** Fan every event out to several sinks (e.g. console/JSONL + OTLP) — one event stream, many consumers. */

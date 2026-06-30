@@ -1,6 +1,7 @@
 // The authoring surface: stitch() + the extends composition facade +
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
+import { compact } from './compact';
 import {
     ERROR_SOURCE,
     RAW_BODY,
@@ -28,6 +29,7 @@ import {
     type DriftSpec,
     type HookContext,
     type Hooks,
+    type IdempotencyOptions,
     type InputSchemas,
     type InspectOptions,
     type Inspection,
@@ -144,6 +146,12 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
         cfg.timeout = { total: cfg.timeout };
     if (typeof cfg.cache === 'number' || typeof cfg.cache === 'string')
         cfg.cache = { ttl: cfg.cache };
+    // P20: `idempotency: true` enables it with defaults; `false`/absent is off. Normalize the
+    // boolean toggle to the object form the engine reads (the opaque `idempotency: {}` is a type
+    // error at the slot, so the all-defaults case arrives here as `true`).
+    if (cfg.idempotency === true)
+        (cfg as { idempotency?: IdempotencyOptions }).idempotency = {};
+    else if (cfg.idempotency === false) delete cfg.idempotency;
 }
 
 export function compose(config: Fragment): ResolvedStitchConfig {
@@ -189,6 +197,38 @@ export function compose(config: Fragment): ResolvedStitchConfig {
     return merged as ResolvedStitchConfig;
 }
 
+// Construction-time nudges for `idempotency` misuse — hints with an out, never errors. Two cases,
+// both silenced by `idempotency.warn = false` and both scoped to the **default HTTP surface**: a
+// surface (graphql → POST) can force the method after construction, so its writes aren't knowable
+// here, and we don't guess.
+//   1. On a read (GET/HEAD) the engine drops the key (writes only) — almost always a missing
+//      `method`, so the write protection the author expects silently isn't there.
+//   2. The *random* default key only dedupes a replay of the same request, and `retry` is what
+//      replays it; with no `retry` it usually has nothing to collapse. (Not useless in every case —
+//      a proxy/transport resending the request below the stitch carries the same key for a server
+//      to dedupe — hence a hint, not an error. A *derived* `keyOf` dedupes resubmissions on its own.)
+function warnIdempotency(cfg: ResolvedStitchConfig): void {
+    const idem = cfg.idempotency;
+    if (!idem || idem.warn === false || cfg.kind) return;
+    const name = cfg.name ?? cfg.path ?? 'stitch';
+    const method = (cfg.method ?? 'GET').toUpperCase();
+    if (method === 'GET' || method === 'HEAD') {
+        console.warn(
+            `stitchapi: \`${name}\` sets \`idempotency\` on a ${method}, but the key is sent on ` +
+                `writes only — set \`method: 'POST'\`, or drop \`idempotency\`.`,
+        );
+        return;
+    }
+    // A derived key (either spelling — `keyOf`, or the @deprecated `key` alias) dedupes
+    // resubmissions on its own, so only the random default with no retry is the inert case.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the back-compat alias of `keyOf` (CONTRACT.md P6)
+    if (idem.keyOf || idem.key || cfg.retry) return;
+    console.warn(
+        `stitchapi: \`${name}\` has \`idempotency\` with a random key and no \`retry\`, so it ` +
+            `only dedupes its own retries — add \`retry\`, or set \`idempotency.keyOf\`.`,
+    );
+}
+
 // ---- the trace sink — off by default (a stitch's only effect is its call) ------
 // Nothing is printed or written unless you opt in: STITCH_TRACE_CONSOLE=1 streams a
 // colored line per event to stderr, STITCH_TRACE_FILE=<path> appends JSONL, and
@@ -220,11 +260,13 @@ function maxBodyFromEnv(value: string | undefined): number | false | undefined {
 function getTrace(): TraceSink {
     const file = fileFromEnv(readEnv('STITCH_TRACE_FILE'));
     const maxBodyBytes = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
-    const base = createTrace({
-        console: readEnv('STITCH_TRACE_CONSOLE') === '1',
-        file,
-        ...(maxBodyBytes !== undefined ? { maxBodyBytes } : {}),
-    });
+    const base = createTrace(
+        compact({
+            console: readEnv('STITCH_TRACE_CONSOLE') === '1',
+            file,
+            maxBodyBytes,
+        }),
+    );
     if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;
     return multiplex(base, otlpTrace());
 }
@@ -257,7 +299,7 @@ export function resolveTrace(trace: StitchConfig['trace']): TraceSink {
 // The non-enumerable ERROR_SOURCE key (engine.ts) pins the live error behind the event without
 // leaking its payload into a trace sink. Two kinds ride it:
 //   • a delegate-backoff RateLimitError (issue #145): re-surface THAT instance unchanged, so the
-//     caller keeps the real class identity plus `retryAfterMs`/`response`.
+//     caller keeps the real class identity plus `retryAfter`/`response`.
 //   • a plain HTTP error carrying `.response` (issue #155): flatten into a StitchError, lifting the
 //     response `body`/`url` onto the error so a result-shaped caller can read the API's error
 //     payload (`{ error: "…" }`) it would otherwise never see.
@@ -267,7 +309,7 @@ async function drain<T>(
     let value: T | undefined;
     let error: Error | undefined;
     for await (const ev of gen) {
-        if (ev.type === 'result') value = ev.value;
+        if (ev.type === 'result') value = ev.data;
         else if (ev.type === 'error') error = rebuildError(ev);
     }
     return error ? { error } : { value: value as T };
@@ -275,7 +317,7 @@ async function drain<T>(
 
 // Rebuild the terminal error from an `error` event, honouring the non-enumerable ERROR_SOURCE channel
 // (engine.ts). Three kinds ride it: a delegate-backoff RateLimitError is re-surfaced UNCHANGED (the
-// caller keeps its class identity + `retryAfterMs`/`response`); a plain HTTP error (`.response`, but
+// caller keeps its class identity + `retryAfter`/`response`); a plain HTTP error (`.response`, but
 // not a StitchError/RateLimitError) is flattened into a StitchError carrying the response `body`/`url`;
 // a contract-violation StitchError (pinned by `.inspect()`'s retain path) passes through. Absent a
 // source, build a StitchError from the event's `status`/`attempts`. Shared by `drain` and
@@ -321,7 +363,16 @@ function makeInspection<T>(
     error: StitchError | null,
     source: Inspection<T>['source'],
 ): Inspection<T> {
-    const wrapper = { value, findings, status, error, source } as Inspection<T>;
+    // `data` is canonical; `value` is co-set as the @deprecated alias (CONTRACT.md P5).
+    // `source` (ADR 0019) rides as a normal enumerable field — the interpretant of `raw`.
+    const wrapper = {
+        data: value,
+        value,
+        findings,
+        status,
+        error,
+        source,
+    } as Inspection<T>;
     // `enumerable: false` is the whole point; the other descriptor flags default false (the wrapper
     // is transient — nobody reassigns or reconfigures `raw`).
     Object.defineProperty(wrapper, 'raw', { value: raw, enumerable: false });
@@ -377,13 +428,13 @@ async function drainRun<T>(
             if (ev.type === 'drift') findings.push(ev.finding);
             else if (ev.type === 'delta') streamed = true;
             else if (ev.type === 'progress') {
-                if (typeof ev.waitedMs === 'number') waited += ev.waitedMs;
+                if (typeof ev.waited === 'number') waited += ev.waited;
                 if (ev.phase === 'cache') {
                     cacheDetail = ev.detail;
                     if (ev.detail?.startsWith('hit')) cacheHit = true;
                 }
             } else if (ev.type === 'result') {
-                value = ev.value;
+                value = ev.data;
                 status = ev.status;
                 attempts = ev.attempts;
                 readRaw(ev);
@@ -394,7 +445,7 @@ async function drainRun<T>(
                 error = asStitchError(rebuilt);
                 readRaw(rebuilt);
             } else if (ev.type === 'done') {
-                ms = ev.ms;
+                ms = ev.elapsed;
                 if (ev.attempts) attempts = ev.attempts;
             }
         }
@@ -546,12 +597,12 @@ function tee<T>(
     // Run identity (ADR 0007) is per-run-constant, so build the ctx once and hand it to the
     // sink with every event — the OTLP sink and the playground DAG collector read it to build
     // the span tree; a sink that reads only `ctx.name` is unaffected.
-    const ctx = {
+    const ctx = compact({
         name,
-        runId: run.runId,
+        spanId: run.spanId,
         traceId: run.traceId,
-        ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
-    };
+        parentSpanId: run.parentSpanId,
+    });
     async function* wrapped() {
         for await (const ev of gen) {
             trace.handle(ev, ctx);
@@ -664,6 +715,7 @@ export function makeStitch<T = unknown>(
     shared?: SharedRuntime,
 ): Stitch<T> {
     const cfg = compose(config);
+    warnIdempotency(cfg);
     // A seam injects shared instances; a standalone stitch builds its own (unchanged behaviour:
     // a store-backed throttle only when a `store` is configured, else the in-process limiter).
     const store = shared?.store ?? cfg.store ?? memoryStore();
@@ -684,7 +736,7 @@ export function makeStitch<T = unknown>(
 
     // One traced run for `input` under a given run identity (ADR 0007). `streamFn` mints a fresh
     // ROOT run per consumption; composition (`linked`/`all`, stitchapi/pipe) supplies a CHILD run via
-    // `__runWith`, so a step joins the scope's chain (its events tee with parentId set).
+    // `__runWith`, so a step joins the scope's chain (its events tee with parentSpanId set).
     const streamWith = (
         input: StitchInput,
         run: RunContext,
@@ -809,7 +861,7 @@ export function makeStitch<T = unknown>(
     };
     stitchFn.__raw = (input?: StitchInput) => executeRaw(rt, input ?? {});
     // Traced login child-run (ADR 0007): cookieSession reaches this to run its login under the
-    // caller's run. `newRunContext(parent)` inherits the parent's traceId + sets parentId.
+    // caller's run. `newRunContext(parent)` inherits the parent's traceId + sets parentSpanId.
     stitchFn.__rawTraced = (input, parent) =>
         executeRawTraced(rt, input ?? {}, rt.trace, newRunContext(parent));
     // Run this stitch under a supplied run identity (ADR 0007) and resolve to its value — `linked`

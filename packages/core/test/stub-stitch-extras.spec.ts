@@ -55,7 +55,7 @@ describe('stubStitch options', () => {
         const s = stubStitch('ignored', {
             events: () => [
                 { type: 'info', topic: 'custom', at: 1 },
-                { type: 'done', ok: true, ms: 0, attempts: 1, at: 1 },
+                { type: 'done', ok: true, elapsed: 0, attempts: 1, at: 1 },
             ],
         });
         const types = (await collect(s.stream())).map((e) => e.type);

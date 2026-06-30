@@ -42,6 +42,21 @@ export default tseslint.config(
         files: ['src/**/*.ts'],
         rules: {
             '@typescript-eslint/consistent-type-imports': 'error',
+            // Steer the `...(x !== undefined ? { k: x } : {})` omit-an-undefined-key
+            // idiom toward `compact({ ...obj, k: x })` (util.ts), which drops
+            // undefined-valued keys and types them optional under
+            // exactOptionalPropertyTypes. Truthy spreads (`...(x ? … : {})`) and array
+            // spreads are intentionally NOT matched. Rare sites where compact would
+            // optionalize a REQUIRED `unknown` key keep the spread + an inline disable.
+            'no-restricted-syntax': [
+                'error',
+                {
+                    selector:
+                        "SpreadElement[argument.type='ConditionalExpression'][argument.test.operator='!=='][argument.test.right.type='Identifier'][argument.test.right.name='undefined'][argument.consequent.type='ObjectExpression'][argument.alternate.properties.length=0]",
+                    message:
+                        'Use compact({ ...obj, key: value }) from ./util to omit undefined keys instead of `...(x !== undefined ? { key: x } : {})`.',
+                },
+            ],
             'no-restricted-imports': [
                 'error',
                 {

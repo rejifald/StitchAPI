@@ -14,7 +14,10 @@ export {
     secretsFile,
     secretFrom,
 } from './auth';
-export type { SecretSource, AuthFailureInfo, RefreshResult } from './auth';
+export type { SecretSource, AuthFailureResult, RefreshResult } from './auth';
+// CONTRACT.md P3 — deprecated alias re-export, removed at GA.
+// eslint-disable-next-line @typescript-eslint/no-deprecated -- intentional back-compat re-export of the @deprecated `AuthFailureInfo` (now `AuthFailureResult`) until the GA cut
+export type { AuthFailureInfo } from './auth';
 export { fetchAdapter } from './http-adapter';
 export type { FetchAdapterOptions } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';
@@ -60,6 +63,11 @@ export { memoryStore } from './store';
 // The default Clock (ADR 0010) — wall-clock + global timers. Inject a custom `Clock` (or a
 // `manualClock()` from `stitchapi/testing`) via a stitch/seam `clock` to control time.
 export { systemClock } from './util';
+// `compact({ ...obj, key: value })` — a shallow copy with `undefined`-valued keys removed, typed so
+// undefined-admitting keys come back optional. Pairs with `exactOptionalPropertyTypes`: it omits an
+// absent optional without the `...(key !== undefined ? { key } : {})` spread dance.
+export { compact } from './compact';
+export type { Compact } from './compact';
 // The delegate-backoff error (issue #145): thrown on the awaited path and surfaced as an `error`
 // event when `rateLimit.delegate` is on, so a host's outer gate owns the rate-limit backoff.
 export { RateLimitError } from './resilience';

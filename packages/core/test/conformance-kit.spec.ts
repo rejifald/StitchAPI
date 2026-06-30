@@ -66,7 +66,7 @@ function mountFixture(): Promise<FixtureHost> {
                 res.writeHead(out.status, out.headers);
                 res.end(out.body);
             };
-            if (out.delayMs) setTimeout(respond, out.delayMs);
+            if (out.delay) setTimeout(respond, out.delay);
             else respond();
         });
     });

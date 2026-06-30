@@ -42,7 +42,7 @@ import { stitch } from 'stitchapi';
 const report = stitch({
     baseUrl: 'https://api.example.com',
     path: '/reports/slow',
-    retry: { attempts: 3, baseMs: 200 },
+    retry: { attempts: 3, baseDelay: 200 },
     timeout: {
         // Each attempt gets 5s; the whole call (3 attempts + backoff) gets 20s.
         perAttempt: '5s',

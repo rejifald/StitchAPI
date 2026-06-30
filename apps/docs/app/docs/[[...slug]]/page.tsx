@@ -1,4 +1,5 @@
 import { getMDXComponents } from '@/components/mdx';
+import { Prerequisites } from '@/components/prerequisites';
 import { jsonLdHtml } from '@/lib/json-ld';
 import { appName, gitConfig } from '@/lib/shared';
 import { getPageImage, getPageMarkdownUrl, source } from '@/lib/source';
@@ -46,6 +47,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
                         githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/content/docs/${page.path}`}
                     />
                 </div>
+                <Prerequisites hrefs={page.data.prerequisites} />
                 <DocsBody>
                     <MDX
                         components={getMDXComponents({

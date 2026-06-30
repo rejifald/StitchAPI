@@ -1,6 +1,7 @@
 ---
 title: 'Keep a failing dependency from taking you down'
 description: 'Compose timeout, retry, and a circuit breaker so a degraded upstream fails fast instead of hanging every caller.'
+prerequisites: ['/docs/concepts/the-stitch', '/docs/getting-started/quickstart']
 ---
 
 ## Task
@@ -22,7 +23,7 @@ const orders = stitch({
     path: '/orders',
     timeout: { total: '10s', perAttempt: '3s' },
     retry: { attempts: 3, on: [429, 503], backoff: 'expo-jitter' },
-    circuit: { failureThreshold: 5, cooldownMs: 30_000 },
+    circuit: { failures: 5, cooldown: 30_000 },
 });
 
 const result = await orders();

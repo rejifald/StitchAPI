@@ -7,12 +7,20 @@ import { defineConfig, defineDocs } from 'fumadocs-mdx/config';
 import { transformerTwoslash } from 'fumadocs-twoslash';
 import { z } from 'zod';
 
+// Optional upstream "Start here" pointers: internal hrefs (`/docs/...` or
+// `/blog/<slug>`) to the foundational pages a page assumes the reader already
+// knows. Rendered as a top-of-page box (the inverse of `See also`) and resolved
+// to real titles from the source; `test/prerequisites.spec.ts` fails the build
+// on a dangling href. Shared by both collections so docs pages and blog posts
+// declare it the same way.
+const prerequisites = z.array(z.string()).optional();
+
 // You can customize Zod schemas for frontmatter and `meta.json` here
 // see https://fumadocs.dev/docs/mdx/collections
 export const docs = defineDocs({
     dir: 'content/docs',
     docs: {
-        schema: pageSchema,
+        schema: pageSchema.extend({ prerequisites }),
         postprocess: {
             includeProcessedMarkdown: true,
         },
@@ -58,6 +66,7 @@ export const blog = defineDocs({
                     ),
             ),
             tags: z.array(z.string()).optional(),
+            prerequisites,
         }),
     },
     meta: {

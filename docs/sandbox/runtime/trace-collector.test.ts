@@ -36,7 +36,7 @@ function fakeCore(opts: {
     events: () => any[];
     value?: unknown;
     onConfig?: (config: any) => void;
-    runId?: string;
+    spanId?: string;
 }): (config: unknown) => unknown {
     return (config: any) => {
         opts.onConfig?.(config);
@@ -46,10 +46,10 @@ function fakeCore(opts: {
         const name = config.name ?? config.path ?? 'stitch';
         return (_input?: unknown) => {
             // Mimic the real engine `tee` (ADR 0007): one run identity per call, on the ctx of
-            // EVERY event. The collector keys entries by `ctx.runId`.
+            // EVERY event. The collector keys entries by `ctx.spanId`.
             const ctx = {
                 name,
-                runId: opts.runId ?? 'run-1',
+                spanId: opts.spanId ?? 'run-1',
                 traceId: 'trace-1',
             };
             for (const ev of opts.events()) sink.handle(ev, ctx);
@@ -375,12 +375,12 @@ async function runTests(): Promise<void> {
         );
     }
 
-    /* 9 — a CHILD run (parentId) becomes a dependsOn edge, even interleaved --- */
+    /* 9 — a CHILD run (parentSpanId) becomes a dependsOn edge, even interleaved --- */
     {
         // The cookieSession login case: a child run's events arrive on the SAME sink, NESTED
         // inside the parent's (start parent → start/result/done child → result/done parent). The
         // run-id keying must attribute each event to the right entry (a FIFO would not) and turn
-        // the child's parentId into a `dependsOn` edge (ADR 0007).
+        // the child's parentSpanId into a `dependsOn` edge (ADR 0007).
         const events: RunEvent[] = [];
         let dag!: { handle: (e: any, ctx: any) => void };
         const collector = createTraceCollector(
@@ -388,12 +388,12 @@ async function runTests(): Promise<void> {
         );
         collector.bindProgress((e) => events.push(e));
         collector.stitch({ name: 'parent' }); // realize the dag sink via onConfig
-        const parent = { name: 'parent', runId: 'p1', traceId: 't1' };
+        const parent = { name: 'parent', spanId: 'p1', traceId: 't1' };
         const child = {
             name: 'login',
-            runId: 'c1',
+            spanId: 'c1',
             traceId: 't1',
-            parentId: 'p1',
+            parentSpanId: 'p1',
         };
         dag.handle(startEv({ name: 'parent' }), parent);
         dag.handle(startEv({ name: 'login' }), child); // child opens mid-parent

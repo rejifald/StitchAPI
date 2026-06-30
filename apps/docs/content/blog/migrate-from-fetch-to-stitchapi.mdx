@@ -4,6 +4,7 @@ description: 'Your fetch call works until the API blips: no retry, no timeout, n
 author: Oleksandr Zhuravlov
 date: '2026-06-29'
 tags: [fetch, migration, typescript, validation, resilience]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You have a `fetch` call that reads a user from an internal API. It works on your machine, it works in CI, and then one afternoon the upstream service returns a `503` for ninety seconds, your call surfaces the error straight to the page, and the JSON you parsed turns out to have dropped a field a release ago that nobody caught because `res.json()` is typed `any`. The call did exactly what `fetch` promises — one request, one response, no opinions — and every opinion you needed (retry the blip, bound the wait, check the shape) was yours to hand-write around it. Migrating to a stitch is moving each of those opinions out of glue code and onto the call's declaration.

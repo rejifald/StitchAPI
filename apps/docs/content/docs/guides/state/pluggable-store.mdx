@@ -1,6 +1,7 @@
 ---
 title: 'The pluggable store'
 description: 'Swap the in-memory store for a shared one to back throttle and sessions with get/set/incr + TTL.'
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
 Swap the in-memory store for a shared one when you want throttle counters and
@@ -20,10 +21,10 @@ const sharedStore: StitchStore = {
         /* read from your shared backend */
         return undefined;
     },
-    async set(key, value, ttlMs) {
-        /* write, honoring ttlMs */
+    async set(key, value, ttl) {
+        /* write, honoring ttl */
     },
-    async incr(key, ttlMs) {
+    async incr(key, ttl) {
         /* atomic counter with a TTL window */
         return 1;
     },
@@ -45,8 +46,8 @@ const getUser = stitch({
 ## Options
 
 A store is the `StitchStore` contract — three async methods: `get(key)` returns
-the value or `undefined`, `set(key, value, ttlMs?)` writes with an optional
-expiry, and `incr(key, ttlMs)` is an atomic counter scoped to a TTL window. The
+the value or `undefined`, `set(key, value, ttl?)` writes with an optional
+expiry, and `incr(key, ttl)` is an atomic counter scoped to a TTL window. The
 runtime holds two kinds of state behind this interface: throttle counters (the
 even-spaced rate counter) and auth session/token state (captured cookies and
 refreshed tokens).

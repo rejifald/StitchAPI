@@ -18,6 +18,9 @@ import type { Stitch, StitchEvent } from 'stitchapi';
 // ---------------------------------------------------------------------------
 
 /** A callable returning an awaitable validated output (the unary surface). */
+// The MINIMAL await-only stitch duck-type (CONTRACT.md P9): this adapter never calls `.stream()`,
+// so it accepts any `(input?) => PromiseLike<T>`. The RICH canonical `StitchLike` (awaitable +
+// streamable) lives in `@stitchapi/query-core`; a real stitch satisfies both.
 export type StitchLike<T, Input = unknown> = (input?: Input) => PromiseLike<T>;
 
 /** A callable whose result is also streamable (`sse` / `stream` surfaces). */
