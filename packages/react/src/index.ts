@@ -86,10 +86,7 @@ function useStitchInternal<T>(
         onSuccess?: (d: T) => void;
         onError?: (e: unknown) => void;
     }>({});
-    cbRef.current = {
-        ...(onSuccess ? { onSuccess } : {}),
-        ...(onError ? { onError } : {}),
-    };
+    cbRef.current = compact({ onSuccess, onError });
 
     // Hold the latest `stitch` in a ref. A caller who passes an INLINE stitch
     // (`useStitch(() => stitch(...), ...)`) hands us a fresh function identity on
@@ -118,7 +115,7 @@ function useStitchInternal<T>(
                 input,
                 compact({
                     stream,
-                    ...(mode ? { mode } : {}),
+                    mode,
                     enabled,
                     onSuccess: (d: T) => cbRef.current.onSuccess?.(d),
                     onError: (e: unknown) => cbRef.current.onError?.(e),

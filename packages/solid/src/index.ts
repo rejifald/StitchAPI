@@ -124,10 +124,10 @@ function createStitchInternal<T>(
                     currentInput,
                     compact({
                         stream,
-                        ...(mode ? { mode } : {}),
+                        mode,
                         enabled,
-                        ...(onSuccess ? { onSuccess } : {}),
-                        ...(onError ? { onError } : {}),
+                        onSuccess,
+                        onError,
                     }),
                 );
                 query = handle;

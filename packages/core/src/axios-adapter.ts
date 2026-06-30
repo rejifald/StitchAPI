@@ -98,7 +98,7 @@ export function axiosAdapter(
                 headers,
                 data: body,
                 responseType: 'arraybuffer',
-                ...(req.signal ? { signal: req.signal } : {}),
+                signal: req.signal,
                 ...(onProgress
                     ? {
                           onUploadProgress: progress('upload'),
