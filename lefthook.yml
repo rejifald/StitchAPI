@@ -18,7 +18,7 @@ pre-commit:
         # CI's `size` job does the authoritative measured check. Keep this glob in
         # sync with the FILES list in scripts/check-size-docs.mjs.
         - name: size-docs
-          glob: '{README.md,packages/core/README.md,apps/docs/**/installation.mdx,apps/docs/**/principles.mdx,apps/docs/**/metrics.tsx,packages/core/scripts/bundle-size.mjs}'
+          glob: '{README.md,packages/core/README.md,apps/docs/**/installation.mdx,apps/docs/**/principles.mdx,apps/docs/**/metrics.tsx,apps/docs/lib/source.ts,packages/core/scripts/bundle-size.mjs}'
           run: pnpm check:size-docs
         # README metrics badge block must match the committed snapshot. Tool-free
         # drift guard (renders from scripts/readme-metrics.snapshot.json) — mirrors
