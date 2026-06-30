@@ -69,3 +69,10 @@ pre-push:
         # docs app is what actually exercises AutoTypeTable and MDX components.
         - name: build-docs
           run: pnpm --filter @stitchapi/docs build
+        # Authoritative MEASURED advertised-size check. Pre-commit only runs the
+        # build-free consensus fallback, so "every quote agrees but all are stale
+        # vs the real bundle" escapes to CI's `size` job. Build core so
+        # bundle-size.mjs can measure, then assert every quote matches it —
+        # catching the stale-but-consistent case before the push, not after.
+        - name: size-docs
+          run: pnpm --filter stitchapi build && pnpm check:size-docs
