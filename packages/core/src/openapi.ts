@@ -15,6 +15,7 @@
 // parameters declared via an `input` SCHEMA (rather than the URL template) are still not enumerated.
 // A stitch whose endpoint is a thunk (resolved at call time) cannot be exported statically; it is
 // reported as a warning, never dropped silently.
+import { compact } from './compact';
 import type { StitchRegistry } from './registry';
 import { isStandardSchema } from './standard-schema';
 import type {
@@ -112,12 +113,7 @@ function bodySchema(
     const vendor = isStandardSchema(source)
         ? source['~standard'].vendor
         : undefined;
-    return (
-        convert(source, {
-            slot: where,
-            ...(vendor !== undefined ? { vendor } : {}),
-        }) ?? EMPTY_SCHEMA
-    );
+    return convert(source, compact({ slot: where, vendor })) ?? EMPTY_SCHEMA;
 }
 
 // Convert a `params`/`query` INPUT object schema ONCE, then expose its `properties` map + the set
@@ -136,10 +132,7 @@ function decomposeParamObject(
     const vendor = isStandardSchema(source)
         ? source['~standard'].vendor
         : undefined;
-    const converted = convert(source, {
-        slot: where,
-        ...(vendor !== undefined ? { vendor } : {}),
-    });
+    const converted = convert(source, compact({ slot: where, vendor }));
     if (!converted || typeof converted !== 'object') return empty;
     const props = (converted as { properties?: unknown }).properties;
     const req = (converted as { required?: unknown }).required;

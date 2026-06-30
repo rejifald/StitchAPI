@@ -1,6 +1,7 @@
 // Auth strategies + secret resolvers. The key idea: the stitch holds the credential,
 // resolved at call time — the caller (an agent) never sees it. `cookieSession` performs
 // a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
+import { compact } from './compact';
 import { fetchAdapter } from './http-adapter';
 import { parseRetryAfter } from './resilience';
 import type {
@@ -599,12 +600,12 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
             // Omit `retryAfter` entirely when the header is absent/unparseable —
             // `exactOptionalPropertyTypes` forbids setting an optional prop to `undefined`.
             const retryAfter = parseRetryAfter(headers['retry-after']);
-            const result: AuthFailureResult = {
+            const result: AuthFailureResult = compact({
                 phase,
                 status,
                 category: 'rate-limited',
-                ...(retryAfter !== undefined ? { retryAfter } : {}),
-            };
+                retryAfter,
+            });
             // Co-set the @deprecated `retryAfterMs` alias for back-compat (CONTRACT.md P17/P19), by
             // assignment (not a literal `*Ms:` key) so the contract lint's R2 stays clean.
             // eslint-disable-next-line @typescript-eslint/no-deprecated -- writing the @deprecated alias for back-compat

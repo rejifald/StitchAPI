@@ -10,6 +10,7 @@
 // single slot the buffered llm surface already fills — the `sse`/`stream` surfaces don't compose
 // onto it yet.) Bundle-frugal: reached only through the `llm` subpath; `import { stitch }` pulls in
 // none of it.
+import { compact } from './compact';
 import { makeStitch } from './stitch';
 import type { Surface, SurfaceOutcome } from './surface';
 import type { Stitch, StitchConfig, StitchInput } from './types';
@@ -179,17 +180,15 @@ export const anthropic: LlmProvider = {
                 .filter((m) => m.role === 'system')
                 .map((m) => m.content),
         ].join('\n\n');
-        return {
+        return compact({
             model: req.model,
             max_tokens: req.maxTokens ?? 1024,
             messages: req.messages
                 .filter((m) => m.role !== 'system')
                 .map((m) => ({ role: m.role, content: m.content })),
             ...(system !== '' ? { system } : {}),
-            ...(req.temperature !== undefined
-                ? { temperature: req.temperature }
-                : {}),
-        };
+            temperature: req.temperature,
+        });
     },
     parse: (body) => {
         const b = body as {
@@ -204,14 +203,10 @@ export const anthropic: LlmProvider = {
         };
         if (b.model !== undefined) result.model = b.model;
         if (b.usage)
-            result.usage = {
-                ...(b.usage.input_tokens !== undefined
-                    ? { inputTokens: b.usage.input_tokens }
-                    : {}),
-                ...(b.usage.output_tokens !== undefined
-                    ? { outputTokens: b.usage.output_tokens }
-                    : {}),
-            };
+            result.usage = compact({
+                inputTokens: b.usage.input_tokens,
+                outputTokens: b.usage.output_tokens,
+            });
         if (b.stop_reason) result.finishReason = b.stop_reason;
         return result;
     },
@@ -225,19 +220,21 @@ export const openai: LlmProvider = {
     id: 'openai',
     endpoint: 'https://api.openai.com/v1/chat/completions',
     defaultModel: 'gpt-4o',
-    buildBody: (req) => ({
-        model: req.model,
-        messages: [
-            ...(req.system !== undefined
-                ? [{ role: 'system', content: req.system }]
-                : []),
-            ...req.messages.map((m) => ({ role: m.role, content: m.content })),
-        ],
-        ...(req.maxTokens !== undefined ? { max_tokens: req.maxTokens } : {}),
-        ...(req.temperature !== undefined
-            ? { temperature: req.temperature }
-            : {}),
-    }),
+    buildBody: (req) =>
+        compact({
+            model: req.model,
+            messages: [
+                ...(req.system !== undefined
+                    ? [{ role: 'system', content: req.system }]
+                    : []),
+                ...req.messages.map((m) => ({
+                    role: m.role,
+                    content: m.content,
+                })),
+            ],
+            max_tokens: req.maxTokens,
+            temperature: req.temperature,
+        }),
     parse: (body) => {
         const b = body as {
             choices?: {
@@ -253,14 +250,10 @@ export const openai: LlmProvider = {
         };
         if (b.model !== undefined) result.model = b.model;
         if (b.usage)
-            result.usage = {
-                ...(b.usage.prompt_tokens !== undefined
-                    ? { inputTokens: b.usage.prompt_tokens }
-                    : {}),
-                ...(b.usage.completion_tokens !== undefined
-                    ? { outputTokens: b.usage.completion_tokens }
-                    : {}),
-            };
+            result.usage = compact({
+                inputTokens: b.usage.prompt_tokens,
+                outputTokens: b.usage.completion_tokens,
+            });
         const fr = b.choices?.[0]?.finish_reason;
         if (fr) result.finishReason = fr;
         return result;

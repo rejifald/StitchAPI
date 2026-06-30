@@ -23,6 +23,7 @@ import {
 } from '@stitchapi/query-core';
 import { createEffect, on, onCleanup } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
+import { compact } from 'stitchapi';
 
 export type {
     CreateStitchQueryOptions,
@@ -121,13 +122,13 @@ function createStitchInternal<T>(
                 const handle = createStitchQuery<T, unknown>(
                     stableStitch,
                     currentInput,
-                    {
+                    compact({
                         stream,
                         ...(mode ? { mode } : {}),
-                        ...(enabled !== undefined ? { enabled } : {}),
+                        enabled,
                         ...(onSuccess ? { onSuccess } : {}),
                         ...(onError ? { onError } : {}),
-                    },
+                    }),
                 );
                 query = handle;
 

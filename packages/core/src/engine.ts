@@ -6,6 +6,7 @@
 // The real module is reached via a lazy `import('./cache')` only when a stitch has a `cache`
 // block (bundle-frugal gate — ADR 0003 decision 11).
 import type { CacheController, CacheHit, RequestDescriptor } from './cache';
+import { compact } from './compact';
 import { classifyDiff, validationErrors } from './drift';
 import { fetchAdapter } from './http-adapter';
 import {
@@ -123,12 +124,14 @@ function emitInto(
         // login — can run it as a CHILD of this run (parentId = run.runId).
         run,
         emit: (topic, detail) =>
-            sink.push({
-                type: 'info',
-                topic,
-                ...(detail !== undefined ? { detail } : {}),
-                at: now(),
-            }),
+            sink.push(
+                compact({
+                    type: 'info',
+                    topic,
+                    detail,
+                    at: now(),
+                }),
+            ),
     };
 }
 
@@ -226,17 +229,15 @@ function buildRequest(
     }
     const method = (cfg.method ?? 'GET').toUpperCase();
     const headers = { ...(cfg.headers ?? {}), ...(input.headers ?? {}) };
-    let req: AdapterRequest = {
+    let req: AdapterRequest = compact({
         url,
         method,
         headers,
         body: input.body,
-        ...(cfg.bodyType !== undefined ? { bodyType: cfg.bodyType } : {}),
-        ...(cfg.multipart !== undefined ? { multipart: cfg.multipart } : {}),
-        ...(cfg.responseType !== undefined
-            ? { responseType: cfg.responseType }
-            : {}),
-    };
+        bodyType: cfg.bodyType,
+        multipart: cfg.multipart,
+        responseType: cfg.responseType,
+    });
     // Per-call execution controls (ADR 0005 Decisions 8-9): cancellation + byte progress, threaded
     // BEFORE the surface shapes the request so a surface that spreads `base` (e.g. `download`)
     // keeps them. Runtime-only — they never came from `__config`.
@@ -963,19 +964,19 @@ async function ensureCache(rt: Runtime): Promise<CacheController | null> {
     const config = cfg.cache;
     if (!config || cfg.sensitive) return null;
     rt.cacheInit ??= import('./cache').then((m) =>
-        m.createCache({
-            config,
-            store: rt.store,
-            stitchId: m.cacheStitchId(cfg),
-            // The RAW output schema (not the Validator wrapper) so the fingerprinter can read its
-            // `~standard.vendor`; transform/unwrap are already raw on the config (ADR 0004 fold).
-            output: outputSchemaSource(cfg),
-            transform: cfg.transform,
-            unwrap: cfg.unwrap,
-            ...(rt.authCtx.principal !== undefined
-                ? { principal: rt.authCtx.principal }
-                : {}),
-        }),
+        m.createCache(
+            compact({
+                config,
+                store: rt.store,
+                stitchId: m.cacheStitchId(cfg),
+                // The RAW output schema (not the Validator wrapper) so the fingerprinter can read its
+                // `~standard.vendor`; transform/unwrap are already raw on the config (ADR 0004 fold).
+                output: outputSchemaSource(cfg),
+                transform: cfg.transform,
+                unwrap: cfg.unwrap,
+                principal: rt.authCtx.principal,
+            }),
+        ),
     );
     return rt.cacheInit;
 }
@@ -1019,17 +1020,18 @@ const startEvt = (
     baseReq: AdapterRequest,
     input: StitchInput,
     run: RunContext,
-): StitchEvent => ({
-    type: 'start',
-    name,
-    method: baseReq.method,
-    url: baseReq.url,
-    input,
-    at: now(),
-    runId: run.runId,
-    traceId: run.traceId,
-    ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
-});
+): StitchEvent =>
+    compact({
+        type: 'start',
+        name,
+        method: baseReq.method,
+        url: baseReq.url,
+        input,
+        at: now(),
+        runId: run.runId,
+        traceId: run.traceId,
+        parentId: run.parentId,
+    });
 
 const cacheEvt = (detail: string): StitchEvent => ({
     type: 'progress',
@@ -1309,6 +1311,7 @@ async function* runStreaming(
                 status: res.status,
                 headers: res.headers,
                 body: await drainErrorBody(res.body),
+                // eslint-disable-next-line no-restricted-syntax -- `compact` would optionalize the required `body: unknown`; keep the explicit spread here
                 ...(res.url !== undefined ? { url: res.url } : {}),
             };
             const e = new Error(`HTTP ${res.status}`) as Error & {
@@ -1739,12 +1742,12 @@ export async function executeRawTraced(
     const name = nameOf(cfg);
     const t0 = now();
     const state = { attempts: 0 };
-    const ctx = {
+    const ctx = compact({
         name,
         runId: run.runId,
         traceId: run.traceId,
-        ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
-    };
+        parentId: run.parentId,
+    });
     const baseReq = buildRequest(cfg, input);
     sink.handle(startEvt(name, baseReq, input, run), ctx);
     try {
