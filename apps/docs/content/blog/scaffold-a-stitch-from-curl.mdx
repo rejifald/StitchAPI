@@ -1,0 +1,125 @@
+---
+title: 'Scaffold a Stitch From a curl Command'
+description: 'You have a curl line from the API docs and a token in your shell. Paste it into stitch from-curl and get back a typed stitch declaration with the credential turned into an env() placeholder — never the literal secret.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [cli, scaffolding, auth, agents]
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+You are reading an API's docs, you copy the example curl, and now you have to translate it by hand: pull the origin out of the URL, find the id buried in the path, decode which header is the credential, and rewrite the whole thing as a typed call. The mechanical part is tedious. The dangerous part is the credential — the curl you copied has a live `Bearer sk_live_…` in it, and the obvious move is to paste it straight into your code.
+
+`stitch from-curl` does the mechanical translation and refuses to do the dangerous one. Hand it a curl line and it prints a ready-to-paste `stitch({…})` declaration — origin lifted to `baseUrl`, id-like path segments templated into `{param}` slots, and any recognised credential replaced with an `env('NAME')` placeholder. The token stays in your shell history. It never lands in committed source.
+
+## The curl you copied
+
+Here is a typical line from an API's "try it" panel or your browser's **Copy as cURL**:
+
+```sh
+curl https://api.acme.dev/v1/orders/4821
+```
+
+Translating that by hand means deciding where the origin ends and the path begins, noticing that `4821` is an id and not a fixed route, and writing the declaration. The CLI does it deterministically:
+
+```sh
+stitch from-curl 'curl https://api.acme.dev/v1/orders/4821'
+```
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+export const getOrders = stitch({
+    baseUrl: 'https://api.acme.dev',
+    path: '/v1/orders/{orderId}',
+});
+
+// add an output schema to validate + type the response (rerun with --zod)
+await getOrders({
+    params: {
+        orderId: 4821,
+    },
+});
+```
+
+The origin becomes `baseUrl`; the rest becomes `path`. The all-digit segment `4821` looks like an id, so it is lifted into a `{orderId}` slot — named from the preceding `orders` segment — and surfaces as `params: { orderId }` in the example call. Each lift is reported as a warning so you can revert a false positive. The method line is omitted because `GET` is the default; a `POST` or `DELETE` would print a `method:` line.
+
+## The credential never makes the jump
+
+Add an auth header — the realistic case — and the security behavior is the point:
+
+```sh
+stitch from-curl 'curl https://api.acme.dev/v1/orders/4821 \
+  -H "Authorization: Bearer sk_live_a1b2c3d4e5f6"'
+```
+
+```ts twoslash
+import { bearer, env, stitch } from 'stitchapi';
+
+export const getOrders = stitch({
+    baseUrl: 'https://api.acme.dev',
+    path: '/v1/orders/{orderId}',
+    auth: bearer(env('API_TOKEN')),
+});
+
+// add an output schema to validate + type the response (rerun with --zod)
+await getOrders({
+    params: {
+        orderId: 4821,
+    },
+});
+```
+
+The literal `sk_live_a1b2c3d4e5f6` is gone. The recognised `Authorization: Bearer` header became `auth: bearer(env('API_TOKEN'))` — a capability that resolves the secret from the environment at call time, not a string baked into the file. Only headers the curl actually carried are emitted, so there is no fabricated `Accept` or `User-Agent` cluttering the output. This is the difference between a generated declaration you can commit and a curl you have to scrub by hand before anyone sees it.
+
+The CLI recognises three credential shapes, each from the header (or query param) it actually appears in — `from-curl` reads the request it was given, not flags it was not:
+
+-   **`Authorization: Bearer <token>`** → `auth: bearer(env('API_TOKEN'))`
+-   **`Authorization: Basic <base64>`** → `auth: basic({ user: env('API_USER'), pass: env('API_PASSWORD') })`
+-   **An `X-API-Key` header or an API-key query param** → `auth: apiKey({ value: env('API_KEY') })` for a header, or `auth: apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') })` for a query param
+
+In every case the value is an `env(...)` placeholder, not the captured secret — `basic` and `apiKey` each take a single options object, so the generated call is the real API you would have written. (curl's `-u user:password` flag is a different story: `from-curl` does not parse it and warns it as an unknown flag. Basic auth is recognised from an `Authorization: Basic …` header, the form a browser's **Copy as cURL** actually emits.)
+
+## Type the response when you want it
+
+The declaration above leaves a comment where an `output` schema would go. To generate one from a real response body, pass a sample **and** `--zod`:
+
+```sh
+stitch from-curl 'curl https://api.acme.dev/v1/orders/4821' \
+  --response ./sample.json --zod
+```
+
+`--zod` emits an `output:` Zod schema; `--response <file|->` supplies the sample body its shape is inferred from. The two go together — `--response` is read only when `--zod` is set, and without `--zod` no `output` schema is emitted at all, just the reminder comment. The generated schema is plain text the CLI renders, never an imported validator, so the core stays zero-dependency and validator-agnostic. From there an `output` schema validates and types every response, and `drift` can flag the day the upstream renames a field. See [validating an API response](/docs/guides/validation/validation).
+
+## It is just a starting point
+
+What you get back is an ordinary stitch declaration, not a frozen artifact. The same fields you would reach for on any stitch are one edit away:
+
+```ts twoslash
+import { bearer, env, stitch } from 'stitchapi';
+
+// ---cut---
+export const getOrder = stitch({
+    baseUrl: 'https://api.acme.dev',
+    path: '/v1/orders/{orderId}',
+    auth: bearer(env('API_TOKEN')),
+    retry: 3,
+    timeout: '5s',
+});
+```
+
+`from-curl` bounds the work of getting from a copied curl to a typed call: it lifts the origin, templates the ids, and quarantines the credential. The declaration it prints scales down to that one endpoint and up to a full client as you add `retry`, `timeout`, `output`, and the rest — the same way you would author a stitch from scratch, minus the by-hand translation and the temptation to commit the token.
+
+It is deterministic and offline — no network, no clock, just text in and text out — which makes it as good a fit for an agent scaffolding a tool from API docs as for a human pasting from devtools. The credential it never emits is one less secret for either of them to leak.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+`stitch from-curl '<curl>'` is part of the core CLI. Paste a curl line and commit the result — the token stays in your shell.
+
+-   [The CLI surface](/docs/surfaces/cli)
+-   [Auth as a capability, not a credential](/docs/concepts/capability-not-credential)
+-   [Stop writing fetch() in your agents](/blog/stop-writing-fetch-in-your-agents)
+-   [Choosing an HTTP adapter](/blog/choosing-an-http-adapter)

@@ -9,9 +9,21 @@
 // fetchAdapter, so behavior is identical across transports. The client is asked for raw
 // bytes (responseType 'arraybuffer') and told never to throw on non-2xx — the engine
 // decides what a given status means.
+import { compact } from './compact';
 import { decodeResponseBody, encodeRequestBody } from './http-adapter';
-import type { Adapter, AdapterRequest, AdapterResponse } from './types';
+import type {
+    Adapter,
+    AdapterProgress,
+    AdapterRequest,
+    AdapterResponse,
+} from './types';
 
+/** The byte-progress event axios passes to `onUploadProgress`/`onDownloadProgress` — the subset the
+ *  adapter reads (axios's `AxiosProgressEvent` carries more, e.g. `rate`/`estimated`). */
+export interface AxiosLikeProgressEvent {
+    loaded: number;
+    total?: number;
+}
 /** The minimal surface of an axios instance the adapter needs — structurally satisfied by `axios`. */
 export interface AxiosLikeConfig {
     url: string;
@@ -21,6 +33,8 @@ export interface AxiosLikeConfig {
     responseType?: string;
     signal?: AbortSignal;
     validateStatus?: ((status: number) => boolean) | null;
+    onUploadProgress?: (e: AxiosLikeProgressEvent) => void;
+    onDownloadProgress?: (e: AxiosLikeProgressEvent) => void;
     [key: string]: unknown;
 }
 export interface AxiosLikeResponse {
@@ -41,12 +55,11 @@ export function axiosAdapter(
     client: AxiosLike,
     defaults: Partial<AxiosLikeConfig> = {},
 ): Adapter {
-    return async function axiosAdapterRequest(
+    const axiosAdapterRequest: Adapter = async function axiosAdapterRequest(
         req: AdapterRequest,
     ): Promise<AdapterResponse> {
         // Buffered-only transport (ADR 0005 Decision 9): a streaming surface must use
-        // fetchAdapter. Fail loudly rather than silently buffering a stream. `onProgress` is
-        // simply ignored (not wired) — axios stays the zero-config buffered option.
+        // fetchAdapter. Fail loudly rather than silently buffering a stream.
         if (req.stream) {
             throw new Error(
                 'axiosAdapter does not support streaming responses; use fetchAdapter for `stream`.',
@@ -61,16 +74,37 @@ export function axiosAdapter(
             headers['content-type'] = contentType;
         }
 
-        const res = await client.request({
-            ...defaults,
-            url: req.url,
-            method: req.method.toUpperCase(),
-            headers,
-            ...(body !== undefined ? { data: body } : {}),
-            responseType: 'arraybuffer',
-            ...(req.signal ? { signal: req.signal } : {}),
-            validateStatus: () => true, // never throw on non-2xx; the engine decides
-        });
+        // Byte progress: axios reports both phases natively, so translate its progress events into
+        // the adapter's `{ phase, loaded, total? }` shape and wire them only when the call asked.
+        const onProgress = req.onProgress;
+        const progress = (
+            phase: AdapterProgress['phase'],
+        ): ((e: AxiosLikeProgressEvent) => void) | undefined => {
+            if (onProgress === undefined) return undefined;
+            const cb = onProgress;
+            return (e) => {
+                cb(
+                    e.total !== undefined
+                        ? { phase, loaded: e.loaded, total: e.total }
+                        : { phase, loaded: e.loaded },
+                );
+            };
+        };
+
+        const res = await client.request(
+            compact({
+                ...defaults,
+                url: req.url,
+                method: req.method.toUpperCase(),
+                headers,
+                data: body,
+                responseType: 'arraybuffer',
+                signal: req.signal,
+                onUploadProgress: progress('upload'),
+                onDownloadProgress: progress('download'),
+                validateStatus: () => true, // never throw on non-2xx; the engine decides
+            }),
+        );
 
         const resHeaders = normalizeHeaders(res.headers);
         const contentTypeResp = resHeaders['content-type'] ?? '';
@@ -81,6 +115,14 @@ export function axiosAdapter(
         );
         return { status: res.status, headers: resHeaders, body: parsed };
     };
+    // Buffered-only (it rejects `stream`), but axios reports byte progress for BOTH phases, which
+    // the adapter now wires — so `supports` carries the two progress phases. Requires an axios that
+    // honours `onUploadProgress`/`onDownloadProgress` (v1+); older clients simply never fire them.
+    axiosAdapterRequest.capabilities = {
+        name: 'axiosAdapter',
+        supports: ['uploadProgress', 'downloadProgress'],
+    };
+    return axiosAdapterRequest;
 }
 
 const hasHeader = (headers: Record<string, string>, name: string): boolean =>

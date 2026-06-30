@@ -229,6 +229,67 @@ if (
     );
 }
 
+// 8. README install-channel coherence -----------------------------------------
+// Plain-markdown READMEs (npm package pages + the GitHub landing) ship in the
+// tarball with no build step, so their install commands carry a literal dist-tag.
+// A bare `npm install stitchapi` resolves to the `latest` tag — which, on a
+// prerelease line, is the OLD stable build, not what the docs describe. This
+// check fails when a documented install command for a first-party package omits
+// the channel suffix this version publishes under (`@rc` here), and — once 1.0.0
+// ships stable — when a stale `@rc` lingers on what should be a bare install.
+// The docs *site* is handled separately by lib/remark-install-channel.ts.
+if (canonical) {
+    const expectedTag = deriveDistTag(canonical);
+    const expectedSuffix = expectedTag === 'latest' ? '' : `@${expectedTag}`;
+    // After an optional `$ ` prompt, the line must START with an install command
+    // (so inline-prose backtick mentions are not treated as instructions).
+    const installLine =
+        /^\s*\$?\s*(npm (install|i)|pnpm add|yarn add|bun add)\b/;
+    const readmes = [
+        join(ROOT, 'README.md'),
+        ...pkgs.map(({ path }) => join(dirname(path), 'README.md')),
+    ].filter(existsSync);
+
+    /** The dist-tag portion of a first-party token, or null if it isn't ours. */
+    const channelOf = (token) => {
+        if (token === 'stitchapi' || token.startsWith('stitchapi@')) {
+            return token.slice('stitchapi'.length); // '' | '@rc' | '@1.2.3'
+        }
+        if (token.startsWith('@stitchapi/')) {
+            const at = token.indexOf('@', 1);
+            return at === -1 ? '' : token.slice(at);
+        }
+        return null; // third-party (react, zod, …) — not our concern
+    };
+
+    let installChecks = 0;
+    for (const file of readmes) {
+        const rel = file.replace(ROOT + '/', '');
+        const lines = readFileSync(file, 'utf8').split('\n');
+        lines.forEach((line, i) => {
+            if (!installLine.test(line)) return;
+            for (const token of line.match(/\S+/g) ?? []) {
+                const channel = channelOf(token);
+                if (channel === null) continue;
+                installChecks++;
+                if (channel !== expectedSuffix) {
+                    const base = token.slice(0, token.length - channel.length);
+                    fail(
+                        `${rel}:${i + 1}: install spec "${token}" should be ` +
+                            `"${base}${expectedSuffix}" — ${canonical} publishes under ` +
+                            `"${expectedTag}"; a bare install resolves to "latest".`,
+                    );
+                }
+            }
+        });
+    }
+    if (installChecks && !failures.some((f) => f.includes('install spec'))) {
+        pass(
+            `README install-channel: ${installChecks} first-party install spec(s) target "${expectedTag}"`,
+        );
+    }
+}
+
 // ---- report ------------------------------------------------------------------
 for (const m of ok) console.log(`  ✓ ${m}`);
 for (const m of warnings) console.warn(`  ! ${m}`);

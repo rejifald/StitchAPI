@@ -12,7 +12,7 @@ import type {
     Adapter,
     AdapterRequest,
     AdapterResponse,
-    StitchConfig,
+    ResolvedStitchConfig,
     StitchInput,
 } from './types';
 
@@ -35,7 +35,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      * (possibly patched) one. Omitted = the http identity. (Wired for graphql in Stage 4.)
      */
     readonly buildRequest?: (
-        cfg: StitchConfig,
+        cfg: ResolvedStitchConfig,
         input: StitchInput,
         base: AdapterRequest,
     ) => AdapterRequest;
@@ -45,7 +45,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      */
     readonly interpret?: (
         res: AdapterResponse,
-        cfg: StitchConfig,
+        cfg: ResolvedStitchConfig,
     ) => SurfaceOutcome<TResult>;
     /**
      * Decode a live response body into `delta` chunks. Its presence marks a surface as
@@ -53,7 +53,7 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      */
     readonly stream?: (
         res: AdapterResponse,
-        cfg: StitchConfig,
+        cfg: ResolvedStitchConfig,
     ) => AsyncIterable<unknown>;
     /**
      * Map an emitted `delta` to the value the `output` contract validates (per-`delta`
@@ -74,9 +74,11 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
     /**
      * Read the server-suggested reconnect backoff (ms) off an emitted `delta` chunk (issue #71). The
      * engine tracks the latest value and uses it as the reconnect delay, falling back to the
-     * stitch's `reconnect.backoffMs` / `retry` policy when no value was seen on the dropped
+     * stitch's `reconnect.backoff` / `retry` policy when no value was seen on the dropped
      * connection. `sse` returns the event's `retry` field. Omitted ⇒ always use the fallback backoff.
      */
+    readonly resumeRetry?: (chunk: unknown) => number | undefined;
+    /** @deprecated Renamed to {@link Surface.resumeRetry} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     readonly resumeRetryMs?: (chunk: unknown) => number | undefined;
     /**
      * Inject a resume token into the NEXT request before it is reopened (issue #71) — mutates `req`
@@ -104,21 +106,37 @@ export const httpSurface: Surface = { id: 'http' };
 
 /**
  * GraphQL-over-HTTP. Its behaviour lives entirely in these hooks (ADR 0005 Stage 4): `buildRequest`
- * packs `{ query, variables }` as JSON and forces POST; `interpret` treats a 200 carrying `errors`
- * as a failure. The `data` unwrap is a plain config key the `graphql(...)` helper / `seam.graphql()`
- * set (the engine applies it after `interpret`), as is the `/graphql` default path.
+ * packs `{ query, variables, operationName? }` as JSON and forces POST; `interpret` treats a 200
+ * carrying `errors` as a failure. The `data` unwrap is a plain config key the `graphql(...)` helper
+ * / `seam.graphql()` set (the engine applies it after `interpret`), as is the `/graphql` default
+ * path.
+ *
+ * `operationName` is derived the way graphql clients (e.g. graphql-request) do: the name token of
+ * the first named operation. The keyword must be on a `\b` word boundary and followed by whitespace
+ * and a name (`\w+`), so a field/type that merely starts with a keyword can't match; anonymous
+ * documents (`{ ... }`, or `query ($id: ID) { ... }` with no name) yield no key. Set
+ * `cfg.operationName` to override (a multi-operation document, or `''` to suppress).
  */
 export const graphqlSurface: Surface = {
     id: 'graphql',
-    buildRequest: (cfg, input, base) => ({
-        ...base,
-        method: (cfg.method ?? 'POST').toUpperCase(),
-        bodyType: 'json',
-        body: {
-            query: cfg.query ?? '',
-            variables: input.variables ?? input.body ?? {},
-        },
-    }),
+    buildRequest: (cfg, input, base) => {
+        const query = cfg.query ?? '';
+        const operationName =
+            cfg.operationName ??
+            /\b(?:query|mutation|subscription)\s+(\w+)/.exec(query)?.[1];
+        return {
+            ...base,
+            method: (cfg.method ?? 'POST').toUpperCase(),
+            bodyType: 'json',
+            body: {
+                query,
+                variables: input.variables ?? input.body ?? {},
+                // Only carry the key when a name is known — anonymous documents omit it, matching
+                // graphql-request and keeping the body clean. `cfg.operationName: ''` suppresses it.
+                ...(operationName ? { operationName } : {}),
+            },
+        };
+    },
     interpret: (res) => {
         const errs = (
             res.body as { errors?: { message?: string }[] } | null | undefined

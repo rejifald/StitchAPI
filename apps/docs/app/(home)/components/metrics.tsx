@@ -5,12 +5,12 @@ const metrics = [
         body: 'Built on the platform’s global fetch — nothing to install, nothing to audit, nothing in your transitive tree.',
     },
     {
-        value: '~22 kB',
+        value: '~24 kB',
         unit: 'min + gzip',
         body: 'The whole stitchapi entry, tree-shaken — and it is an enforced budget in CI, not an aspiration.',
     },
     {
-        value: '~18 kB',
+        value: '~19 kB',
         unit: 'import { stitch }',
         body: 'Pay only for what you import: every surface beyond http lives behind its own subpath, so the core trims down.',
     },

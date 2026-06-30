@@ -6,11 +6,19 @@ import { Inject, type InjectionToken } from '@nestjs/common';
 import type { Seam, Stitch, StitchInput } from 'stitchapi';
 
 /** Both `Seam` and `PrincipalSeam` satisfy this — the host a stitch is built from. */
-export type StitchHost = Pick<Seam, 'stitch' | 'graphql'>;
+export type NestRequestSeam = Pick<Seam, 'stitch' | 'graphql'>;
+
+/**
+ * @deprecated Renamed to {@link NestRequestSeam} so the public type is ecosystem-qualified (a bare
+ * `StitchHost` would collide with any other host adapter's per-request seam type) — see
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the `1.0.0-rc`
+ * line and removed at the 1.0 GA cut.
+ */
+export type StitchHost = NestRequestSeam;
 
 export interface StitchDef<TOut = unknown, TIn = StitchInput> {
     token: InjectionToken;
-    build: (host: StitchHost) => Stitch<TOut, TIn>;
+    build: (host: NestRequestSeam) => Stitch<TOut, TIn>;
 }
 
 /**
@@ -41,20 +49,20 @@ export type AnyStitchDef = StitchDef<unknown, never>;
  * ```
  */
 export function defineStitch<TOut = unknown, TIn = StitchInput>(
-    build: (host: StitchHost) => Stitch<TOut, TIn>,
+    build: (host: NestRequestSeam) => Stitch<TOut, TIn>,
 ): StitchDef<TOut, TIn>;
 export function defineStitch<TOut = unknown, TIn = StitchInput>(
     token: InjectionToken,
-    build: (host: StitchHost) => Stitch<TOut, TIn>,
+    build: (host: NestRequestSeam) => Stitch<TOut, TIn>,
 ): StitchDef<TOut, TIn>;
 export function defineStitch<TOut = unknown, TIn = StitchInput>(
-    a: InjectionToken | ((host: StitchHost) => Stitch<TOut, TIn>),
-    b?: (host: StitchHost) => Stitch<TOut, TIn>,
+    a: InjectionToken | ((host: NestRequestSeam) => Stitch<TOut, TIn>),
+    b?: (host: NestRequestSeam) => Stitch<TOut, TIn>,
 ): StitchDef<TOut, TIn> {
     // Disambiguate on whether a second arg was passed — NOT `typeof a`, because an
     // InjectionToken can itself be a function (a class token), which would misread as
     // the builder. Two args → (token, build); one arg → (build) with a generated token.
-    const build = (b ?? a) as (host: StitchHost) => Stitch<TOut, TIn>;
+    const build = (b ?? a) as (host: NestRequestSeam) => Stitch<TOut, TIn>;
     const token: InjectionToken = b ? (a as InjectionToken) : Symbol('stitch');
     return { token, build };
 }

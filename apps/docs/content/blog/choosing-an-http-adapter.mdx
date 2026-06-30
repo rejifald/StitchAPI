@@ -1,0 +1,166 @@
+---
+title: 'Choosing an HTTP Adapter: fetch, axios, or xhr Under a Stitch'
+description: A stitch turns one endpoint into a typed resilient function; the adapter underneath decides how the bytes move. Here's how to pick fetch, axios, or xhr — and when to write your own.
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [http, adapter, fetch, axios, typescript]
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+You're streaming a server-sent-events feed in one corner of the app and uploading a multi-megabyte file with a progress bar in another, and the transport that handles one can't do the other. `fetch` streams a download but can't tell you how many bytes of an upload have left the machine; `XMLHttpRequest` reports that upload progress but can't stream a response; the axios instance you already configured with a corporate proxy and a custom CA can't stream either, but it carries the setup your platform already trusts. Under a stitch, the transport is a swappable seam — you pick the one that fits the call, and the stitch's types, validation, retries, and auth ride on top unchanged.
+
+A stitch turns one endpoint into a typed, validated, resilient function. The **adapter** is the layer it delegates to for the actual round trip: take a request, return a response. Swapping it changes how the bytes move; it never changes what the stitch promises the caller.
+
+## The contract
+
+An adapter is one function:
+
+```ts twoslash
+import type { AdapterRequest, AdapterResponse } from 'stitchapi';
+
+// ---cut---
+type Adapter = (req: AdapterRequest) => Promise<AdapterResponse>;
+```
+
+The request carries everything the transport needs and nothing about policy: `{ url, method, headers, body?, bodyType?, multipart?, responseType?, stream?, onProgress?, signal? }`. The response is `{ status, headers, body, url? }`, where `body` is the parsed value — JSON when the content type allows, otherwise text — or a `ReadableStream<Uint8Array>` when `stream` was set.
+
+One rule separates an adapter from the engine above it: **an adapter never throws on a non-2xx status.** A 500 is a returned `{ status: 500, ... }`, not a rejected promise. Only a genuine network failure or an abort propagates. The stitch decides what a status _means_ — whether 503 triggers a retry, whether 404 is an error or an empty result — so the adapter stays a dumb pipe and the policy stays in one place.
+
+All three built-in adapters share the same body-encoding and response-decoding helpers. JSON, form, and multipart bodies encode identically across them; the same content-type detection decodes the response. **Swapping the transport never changes behavior** — only what the transport itself can and can't do.
+
+## fetch, axios, xhr
+
+The default is `fetchAdapter()`. You rarely name it — the engine wires `cfg.adapter ?? fetchAdapter()` — so a stitch with no `adapter` field is already on `fetch`.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+}); // adapter defaults to fetchAdapter()
+```
+
+You reach for `fetchAdapter(opts?)` explicitly when you need to thread infrastructure through it. It backs onto the global `fetch`, and its `dispatcher` option takes an undici `Agent` — a proxy, a custom CA, a bound network interface — without StitchAPI ever importing undici, so the zero-dependency core stays zero-dependency. It is also the **only** built-in that streams: `stream` and `sse` surfaces and download progress run through `fetch` and nothing else.
+
+```ts twoslash
+// @noErrors
+import { fetchAdapter, stitch } from 'stitchapi';
+import { Agent } from 'undici';
+
+const behindProxy = stitch({
+    baseUrl: 'https://internal.example.com',
+    path: '/reports/{id}',
+    adapter: fetchAdapter({
+        dispatcher: new Agent({
+            /* proxy, CA */
+        }),
+    }),
+});
+```
+
+`axiosAdapter(client, defaults?)` routes the call through an axios instance you supply. axios is never a dependency — you bring the client, the adapter borrows it. Use it when an instance is already configured the way your platform demands: an `httpsAgent`, a proxy, interceptors a team relies on. The `defaults` merge under every request and per-call values override them.
+
+```ts twoslash
+// @noErrors
+import axios from 'axios';
+import { axiosAdapter, stitch } from 'stitchapi';
+
+const legacy = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    adapter: axiosAdapter(axios, { proxy: false, timeout: 0 }),
+});
+```
+
+The honest tradeoff: `axiosAdapter` is **buffered-only**. Point it at a `stream` or `sse` surface and it throws — by design, so the failure is loud at wiring time, not a silent hang. Reach for `fetchAdapter` to stream. It does report byte progress for both phases, though — the adapter wires axios's native `onUploadProgress`/`onDownloadProgress` into `onProgress`, so on a modern axios you get an upload bar without leaving the instance you already trust.
+
+`xhrAdapter(XHR?)` is browser-only and backed by `XMLHttpRequest`. Its one reason to exist over `fetchAdapter` is **upload progress**: `fetch` cannot report bytes sent, `xhr.upload` can. If you're drawing a progress bar for a file going up, this is the adapter.
+
+```ts twoslash
+import { stitch, xhrAdapter } from 'stitchapi';
+
+const upload = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/files',
+    adapter: xhrAdapter(),
+    // onProgress on the call reports bytes sent
+});
+```
+
+It is buffered-only too — it rejects `stream`. Pass it a constructor (`xhrAdapter(FakeXHR)`) to inject a stand-in in tests.
+
+And if you forget — wire up `onProgress` for an upload bar but leave the call on the default `fetch` — the stitch tells you instead of drawing a bar that never moves. Each built-in adapter declares the features it `supports` (`fetch` → `['stream', 'downloadProgress']`, `xhr` and axios → `['uploadProgress', 'downloadProgress']`), and `fetch` is the only one that can't report bytes sent. When a call passes `onProgress` with a request body to an adapter whose `supports` omits `'uploadProgress'`, the engine emits one `info` event through your trace sink:
+
+```
+adapter.upload-progress-unsupported — onProgress is set with a request body, but
+fetchAdapter cannot report upload progress — only 'phase: download' events fire.
+Use xhrAdapter() to draw an upload progress bar.
+```
+
+It's a note, not an error: `fetch` still reports `phase: 'download'` progress, so a download bar on a `POST` keeps working — the silent gap is only the upload phase, and only that gets called out. The fix is the one field this whole article is about: `adapter: xhrAdapter()`.
+
+## Which one
+
+| Need                                                                                   | Before (raw transport)                  | A stitch's adapter                                       |
+| -------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------------------------------------- |
+| **Default request/response**                                                           | `fetch` + your own `response.ok` check  | `fetchAdapter()` (implicit)                              |
+| **Stream a response (`stream`/`sse`)**                                                 | hand-rolled `ReadableStream` plumbing   | `fetchAdapter` (the only one)                            |
+| **Upload progress bar**                                                                | `XMLHttpRequest` by hand                | `xhrAdapter()`                                           |
+| **Reuse a proxy / CA / agent**                                                         | configure undici or axios per call site | `fetchAdapter({ dispatcher })` or `axiosAdapter(client)` |
+| **An axios instance you already trust**                                                | keep the interceptor stack as-is        | `axiosAdapter(axios)`                                    |
+| **Canned responses in a test**                                                         | mock `global.fetch`                     | `mockAdapter([...])`                                     |
+| **Anything bespoke (logging, timing, retry-shim, a transport StitchAPI doesn't ship)** | a wrapper around your client            | a function matching the `Adapter` contract               |
+
+## Writing your own
+
+The contract _is_ the extension point. Take `req`, return `{ status, headers, body }`, never throw on a non-2xx, honor `req.signal`, and reject `req.stream` if you can't stream. That's the whole interface, so a custom adapter is usually a thin wrapper — one that logs and times around another adapter, or one that returns canned responses for a test.
+
+The canned-response case is common enough that it already ships: `mockAdapter(routes, opts?)` from `stitchapi/testing` builds an adapter from one route or a list of them. Each route is `{ method?, match?, respond }` — `method` and `match` decide which requests it answers (a string or `RegExp` against the URL pathname, or a predicate), and `respond` is the reply. The reply can be a fixed `MockResponse`, an array consumed one per call (to script a flaky endpoint), or a function of the call. You pass one route or an **array** of them, and the first whose `method` and `match` accept a request wins:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { mockAdapter } from 'stitchapi/testing';
+import { expect } from 'vitest';
+
+const api = mockAdapter([
+    {
+        method: 'GET',
+        match: '/users/1',
+        respond: { body: { id: 1, name: 'Ada' } },
+    },
+    {
+        method: 'GET',
+        match: '/users/999',
+        respond: { status: 404, body: { error: 'not found' } },
+    },
+    // a sequence: fail twice, then succeed — for retry tests
+    {
+        match: '/flaky',
+        respond: [{ status: 503 }, { status: 503 }, { body: { ok: true } }],
+    },
+]);
+
+const getUser = stitch({
+    baseUrl: 'https://api.test',
+    path: '/users/{id}',
+    adapter: api,
+});
+
+const ada = await getUser({ params: { id: 1 } });
+expect(api.callCount('/users/1')).toBe(1);
+```
+
+Because the adapter is the only thing you swapped, the stitch under test runs its real retry, validation, and auth against your fixtures — the `[{ status: 503 }, { status: 503 }, { body: { ok: true } }]` sequence exercises the same retry path production hits, with no network and no mocked globals. An unmatched request throws by default; pass `{ onUnmatched: 404 }` to return a status instead.
+
+## Start on the default, move when the call asks
+
+Leave the `adapter` field off and the stitch is already on `fetch` — typed, validated, retried, no transport decision to make. The day a call needs more, you change one field: `fetchAdapter({ dispatcher })` to thread a proxy, `xhrAdapter()` to draw an upload bar, `axiosAdapter(axios)` to ride an instance you already trust, or a function of your own when none of those fit. The stitch's promise to the caller doesn't move when the transport does — the same validated, resilient function answers, however the bytes travel.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+Declare one endpoint, leave `adapter` off, and it runs on `fetchAdapter()`; then set the field when a call needs to stream, show upload progress, or reuse an agent. The transport seam is documented in the [helpers reference](/docs/reference/helpers), the canned-response path in the [testing & mocking guide](/docs/guides/testing/mocking), and the primitive everything rides on is [The stitch](/docs/concepts/the-stitch). Coming off axios specifically? See [axios alternatives](/blog/axios-alternatives).

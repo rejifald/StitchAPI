@@ -1,6 +1,7 @@
 // Auth strategies + secret resolvers. The key idea: the stitch holds the credential,
 // resolved at call time — the caller (an agent) never sees it. `cookieSession` performs
 // a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
+import { compact } from './compact';
 import { fetchAdapter } from './http-adapter';
 import { parseRetryAfter } from './resilience';
 import type {
@@ -17,6 +18,7 @@ import {
     buildQuery,
     nodeFs,
     now,
+    parseDuration,
     readEnv,
     registerSecretQueryKey,
 } from './util';
@@ -235,7 +237,7 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
     };
 }
 
-export interface OAuth2Opts {
+export interface OAuth2Options {
     /** The `client_credentials` token endpoint (POST, form-encoded). */
     tokenUrl: string;
     /** OAuth2 client id; resolved at call time (env/secretsFile), never committed. */
@@ -268,7 +270,9 @@ export interface OAuth2Opts {
     headers?: Record<string, string>;
     /** Statuses that mean the token was rejected and should force a refresh. Default [401]. */
     refreshOn?: number[];
-    /** Refresh this many ms BEFORE the token's expiry, so it is never used mid-flight. Default 30_000. */
+    /** Refresh this long BEFORE the token's expiry, so it is never used mid-flight — `30_000`, `'30s'`. Default 30s. */
+    refreshSkew?: number | string;
+    /** @deprecated Renamed to {@link OAuth2Options.refreshSkew} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     refreshSkewMs?: number;
     /** Store namespace — give two stitches the same `key` + a shared `store` to share one token. Default: `tokenUrl`. */
     key?: string;
@@ -276,7 +280,7 @@ export interface OAuth2Opts {
      * Token tenancy (ADR 0002 §3). Default **`'app'`**: one token serves every caller — the right
      * model for `client_credentials`, which authenticates the *application*, not a user. Set
      * `'principal'` to fold the seam-bound principal into the token's cache key (and **throw if no
-     * principal is bound**, mirroring {@link CookieSessionOpts.scope}); each tenant then caches its
+     * principal is bound**, mirroring {@link CookieSessionOptions.scope}); each tenant then caches its
      * own token and one tenant's 401/refresh never disturbs another's in-flight calls. Pair it with
      * per-tenant `clientId`/`clientSecret`/`scope` for full multi-tenant separation.
      */
@@ -309,13 +313,15 @@ function singleFlight<T>(): (key: string, run: () => Promise<T>) => Promise<T> {
 
 /**
  * OAuth2 `client_credentials`: POST the token endpoint, cache the access token in the
- * StitchStore (TTL from `expires_in`), refresh it `refreshSkewMs` before expiry, and attach
+ * StitchStore (TTL from `expires_in`), refresh it `refreshSkew` before expiry, and attach
  * it as `Authorization: Bearer …`. A SHARED store makes one token serve many stitches/workers
  * and survive restarts; a rejected token (status in `refreshOn`) forces a fresh fetch + retry.
  */
-export function oauth2(opts: OAuth2Opts): AuthStrategy {
+export function oauth2(opts: OAuth2Options): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
-    const skew = opts.refreshSkewMs ?? 30_000;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `refreshSkewMs` is the @deprecated alias of `refreshSkew`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const skewInput = opts.refreshSkew ?? opts.refreshSkewMs;
+    const skew = parseDuration(skewInput) ?? 30_000;
     const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const tenancy = opts.tenancy ?? 'app';
     const adapter = opts.adapter ?? fetchAdapter();
@@ -453,27 +459,29 @@ export function oauth2(opts: OAuth2Opts): AuthStrategy {
  * Why an `apply`/`refresh` login attempt failed, categorised so the HOST can drive its OWN
  * durable state machine (wrong-creds vs rate-limited vs network) — StitchAPI keeps doing the
  * mechanical cookie capture/replay, but it can't model a host's external recovery loop, so it
- * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOpts.onAuthFailure}.
+ * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOptions.onAuthFailure}.
  */
-export interface AuthFailureInfo {
+export interface AuthFailureResult {
     /** `'apply'` = cold session had no stored cookie; `'refresh'` = a 401-style wall was hit. */
     phase: 'apply' | 'refresh';
     /** The login response status when the login responded at all (absent when it threw). */
     status?: number;
     /** `Retry-After` parsed to ms when the login was rate-limited (status 429). */
+    retryAfter?: number;
+    /** @deprecated Renamed to {@link AuthFailureResult.retryAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     retryAfterMs?: number;
     /** The thrown value when the login stitch itself threw (network/transport failure). */
     error?: unknown;
     /**
      * - `'unauthenticated'` — login responded with a `refreshOn` status (e.g. 401) and set no cookie (bad/expired creds);
-     * - `'rate-limited'` — login responded `429` (back off, then retry; see `retryAfterMs`);
+     * - `'rate-limited'` — login responded `429` (back off, then retry; see `retryAfter`);
      * - `'network'` — the login stitch threw before any response (DNS/connection/transport);
      * - `'unknown'` — login responded but captured no cookie for some other reason.
      */
     category: 'unauthenticated' | 'rate-limited' | 'network' | 'unknown';
 }
 
-/** Outcome of a single (re)login attempt, surfaced via {@link CookieSessionOpts.onRefresh}. */
+/** Outcome of a single (re)login attempt, surfaced via {@link CookieSessionOptions.onRefresh}. */
 export interface RefreshResult {
     /** A cookie (named, or any jar entry) was captured from the login response. */
     ok: boolean;
@@ -481,7 +489,7 @@ export interface RefreshResult {
     status?: number;
 }
 
-export interface CookieSessionOpts {
+export interface CookieSessionOptions {
     /** The login stitch — its raw response (the Set-Cookie headers) seeds the session. */
     login: Stitch;
     /**
@@ -503,7 +511,9 @@ export interface CookieSessionOpts {
     refreshWhen?: (res: AdapterResponse) => boolean;
     /** Vault namespace — give two stitches the same `key` + a shared seam/store to share one session. */
     key?: string;
-    /** Optional TTL (ms) for the stored session. With `scope: 'principal'`, set this — per-user sessions multiply. */
+    /** Optional TTL for the stored session — `60_000`, `'1m'`. With `scope: 'principal'`, set this — per-user sessions multiply. */
+    ttl?: number | string;
+    /** @deprecated Renamed to {@link CookieSessionOptions.ttl} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     ttlMs?: number;
     /**
      * Who the session belongs to (ADR 0002 §3). **Fail-closed default `'principal'`**: the
@@ -516,11 +526,11 @@ export interface CookieSessionOpts {
     /**
      * Host-owned hook fired once per ACTUAL login attempt that failed to capture a cookie — NOT
      * per coalesced waiter (it runs inside the single-flight-guarded `doRefresh`). The host maps the
-     * categorised {@link AuthFailureInfo} to its own status (active/backoff/failed/unauthenticated)
+     * categorised {@link AuthFailureResult} to its own status (active/backoff/failed/unauthenticated)
      * and owns the external recovery loop that StitchAPI's per-call single-flight can't model. A
      * throwing hook never crashes the call (it is caught and announced on the `auth` trace topic).
      */
-    onAuthFailure?: (info: AuthFailureInfo) => void | Promise<void>;
+    onAuthFailure?: (info: AuthFailureResult) => void | Promise<void>;
     /**
      * Host-owned hook fired once after EVERY (re)login attempt — success or failure — with its
      * {@link RefreshResult}, so the host can persist durable session state and clear/extend its
@@ -530,7 +540,7 @@ export interface CookieSessionOpts {
     onRefresh?: (result: RefreshResult) => void | Promise<void>;
 }
 
-export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
+export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
     const jarMode = opts.jar === true || opts.cookie === '*';
     const scope = opts.scope ?? 'principal';
@@ -585,17 +595,22 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         phase: 'apply' | 'refresh',
         status: number,
         headers: Record<string, string>,
-    ): AuthFailureInfo => {
+    ): AuthFailureResult => {
         if (status === 429) {
-            // Omit `retryAfterMs` entirely when the header is absent/unparseable —
+            // Omit `retryAfter` entirely when the header is absent/unparseable —
             // `exactOptionalPropertyTypes` forbids setting an optional prop to `undefined`.
-            const retryAfterMs = parseRetryAfter(headers['retry-after']);
-            return {
+            const retryAfter = parseRetryAfter(headers['retry-after']);
+            const result: AuthFailureResult = compact({
                 phase,
                 status,
                 category: 'rate-limited',
-                ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
-            };
+                retryAfter,
+            });
+            // Co-set the @deprecated `retryAfterMs` alias for back-compat (CONTRACT.md P17/P19), by
+            // assignment (not a literal `*Ms:` key) so the contract lint's R2 stays clean.
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- writing the @deprecated alias for back-compat
+            if (retryAfter !== undefined) result.retryAfterMs = retryAfter;
+            return result;
         }
         if (refreshOn.includes(status))
             return { phase, status, category: 'unauthenticated' };
@@ -608,7 +623,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         ctx: AuthContext,
         ok: boolean,
         status: number | undefined,
-        failure?: AuthFailureInfo,
+        failure?: AuthFailureResult,
     ): Promise<void> => {
         // Bind into locals so the optional hooks narrow to defined — no non-null assertion needed.
         const onRefresh = opts.onRefresh;
@@ -662,7 +677,7 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
                 response?: AdapterResponse;
             };
             const status = typeof e.status === 'number' ? e.status : undefined;
-            const failure: AuthFailureInfo =
+            const failure: AuthFailureResult =
                 status === undefined
                     ? { phase, category: 'network', error }
                     : classify(phase, status, e.response?.headers ?? {});
@@ -675,17 +690,19 @@ export function cookieSession(opts: CookieSessionOpts): AuthStrategy {
         const setCookie =
             res.headers['set-cookie'] ?? res.headers['Set-Cookie'];
         let captured = false;
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `ttlMs` is the @deprecated alias of `ttl`, read for back-compat until the GA cut (CONTRACT.md P17)
+        const sessionTtl = parseDuration(opts.ttl ?? opts.ttlMs);
         if (jarMode) {
             // Capture the full jar: every name=value pair the login set.
             const jar = parseCookieJar(setCookie);
             if (Object.keys(jar).length > 0) {
-                await ctx.vault.set(key, jar, opts.ttlMs);
+                await ctx.vault.set(key, jar, sessionTtl);
                 captured = true;
             }
         } else {
             const value = parseCookie(setCookie, opts.cookie);
             if (value != null) {
-                await ctx.vault.set(key, `${opts.cookie}=${value}`, opts.ttlMs);
+                await ctx.vault.set(key, `${opts.cookie}=${value}`, sessionTtl);
                 captured = true;
             }
         }
@@ -775,3 +792,7 @@ function serializeJar(jar: Record<string, string> | undefined): string {
         .map(([k, v]) => `${k}=${v}`)
         .join('; ');
 }
+
+// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
+/** @deprecated Renamed to {@link AuthFailureResult} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
+export type AuthFailureInfo = AuthFailureResult;

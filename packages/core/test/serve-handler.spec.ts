@@ -128,7 +128,7 @@ describe('createServeHandler SSE + JSON outcomes', () => {
                         input: {},
                         at: 1,
                     },
-                    { type: 'done', ok: true, ms: 0, attempts: 1, at: 1 },
+                    { type: 'done', ok: true, elapsed: 0, attempts: 1, at: 1 },
                 ],
             }),
         };

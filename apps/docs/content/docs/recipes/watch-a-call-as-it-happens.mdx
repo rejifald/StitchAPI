@@ -1,6 +1,7 @@
 ---
 title: 'Watch retries and throttling as they happen'
 description: "Iterate a stitch's event stream instead of awaiting it, and observe every retry, pause, and drift in real time."
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/event-stream']
 ---
 
 ## Task
@@ -26,7 +27,7 @@ for await (const event of search({ query: { q: 'mango' } }).stream()) {
     if (event.type === 'progress') console.log(event.phase, event.attempt);
     if (event.type === 'drift')
         console.log(event.finding.level, event.finding.path);
-    if (event.type === 'result') console.log(event.value);
+    if (event.type === 'result') console.log(event.data);
 }
 ```
 

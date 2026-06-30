@@ -1,0 +1,118 @@
+---
+title: An Orval Alternative — Runtime Stitching vs. Generated Hooks
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+description: Orval turns an OpenAPI spec into a typed client, TanStack Query hooks, Zod schemas, and MSW mocks in one command. This compares that generate-everything-from-a-spec model against declaring endpoints one at a time and validating the live response — and names exactly when each wins.
+tags: [orval, openapi, react-query, codegen, comparison]
+---
+
+Look for an Orval alternative when the spec Orval needs isn't there to give it — the API is internal, half-documented, or its OpenAPI file was last regenerated two releases ago — or when you don't want the generated client, hooks, and mocks sitting in your tree even though a spec exists. This walks what Orval generates, where that model pinches, and how declaring endpoints at runtime trades the generated artifacts for live validation.
+
+This is the Orval-specific version of a broader comparison. For the general spec-codegen-versus-runtime axis across every generator, see [stitching vs. codegen API clients](/blog/stitch-vs-codegen-api-clients). Here the focus is the thing Orval specifically does that the others don't.
+
+## What Orval generates
+
+Orval's pitch is breadth from one input. Point it at an OpenAPI document and a config, and it emits a typed client plus framework data-fetching hooks, Zod schemas, and MSW mocks — the whole stack, generated:
+
+```ts twoslash
+// @noErrors
+// orval.config.ts
+export default {
+    petstore: {
+        input: './openapi.yaml',
+        output: {
+            target: './src/api/endpoints.ts',
+            client: 'react-query', // or 'swr', 'vue-query', 'axios', 'fetch'
+            schemas: './src/api/model',
+            mock: true, // MSW handlers
+        },
+    },
+};
+```
+
+```bash
+npx orval --config ./orval.config.ts
+```
+
+That one run gives you a `useListPets` hook per operation, request/response models, Zod validators derived from the schema, and MSW handlers for tests — all typed, all covering the entire surface the spec describes. If you have an accurate spec and a TanStack Query app, this is genuinely hard to beat: every endpoint is a ready-made hook and you wrote none of them.
+
+The model has one load-bearing assumption: the spec is the truth. Everything Orval emits is a snapshot of that document, frozen at generation time. Three consequences follow.
+
+-   **It needs a complete, accurate spec first.** Orval can't emit anything until the OpenAPI file exists and is right. Internal services and long-tail vendors that never produced one leave you with nothing to point it at.
+-   **The generated types and Zod schemas are blind to live change.** They describe what the spec _said_. When the provider renames `total` to `amount` next Tuesday, the generated type and the generated validator both still say `total`, the build still passes, and the mismatch is an `undefined` at runtime — until you regenerate, which you'll only think to do once something already broke.
+-   **The generated MSW mocks freeze the old shape too.** They're built from the same spec, so your tests pass against a fixture of a response that may no longer exist on the wire.
+
+None of that is a flaw in Orval — it's the boundary of generating from a spec. The artifacts are exactly as current as the document, and no more.
+
+## The stitch way: declare endpoints, validate the live response
+
+Runtime stitching makes the opposite bet: the only thing you can fully trust is the response on the wire, so validate against it on every call. A [stitch](/docs/concepts/the-stitch) is a per-endpoint declaration — a URL and a schema — with no spec and no generated artifact:
+
+```ts twoslash
+import { stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+const listPets = stitch<{ id: number; name: string }[]>({
+    baseUrl: 'https://api.example.com',
+    path: '/pets',
+    output: toValidator(
+        z.array(z.object({ id: z.number(), name: z.string() })),
+    ),
+});
+
+const pets = await listPets(); // typed · validated against the live response
+```
+
+You declare only the endpoints you call rather than generating the whole surface, and the schema runs against real bytes on every call instead of describing a frozen snapshot. A response that stops matching is caught at the boundary with a typed error — and when you want to notice an _additive_ change without failing the call, wrap the schema in `drift()`, which validates and then reports differences as non-fatal findings ([what is schema drift](/blog/what-is-schema-drift), [schema drift is a production bug](/blog/schema-drift-is-a-production-bug)). That's the class of change Orval's spec-derived types and mocks can't see, because the spec was never told.
+
+The trade is real and cuts both ways: Orval types the whole API from one artifact, while a stitch types only what you declare. With an accurate spec and a broad surface to cover, that's Orval's advantage, not a gap to apologize for.
+
+### Hooks and mocks, without the codegen
+
+Orval's headline is generated hooks, so the honest question is what you give up there. You don't get a hook generated per operation — but you do get hooks. [`@stitchapi/react`](/docs/integrations/react) gives you `useStitch` (request/response) and `useStitchStream` (re-renders as each `delta` chunk arrives), and `stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` you hand straight to TanStack Query's `useQuery`:
+
+```ts twoslash
+// ---cut---
+import { stitchQueryOptions, useStitch } from '@stitchapi/react';
+import { useQuery } from '@tanstack/react-query';
+import { stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+const listPets = stitch<{ id: number; name: string }[]>({
+    baseUrl: 'https://api.example.com',
+    path: '/pets',
+    output: toValidator(
+        z.array(z.object({ id: z.number(), name: z.string() })),
+    ),
+});
+
+// StitchAPI owns the lifecycle — including streaming, which useQuery doesn't model.
+function usePets() {
+    return useStitch(listPets, {});
+}
+
+// Or hand the stitch to TanStack Query as the queryFn.
+function usePetsViaTanstack() {
+    return useQuery(stitchQueryOptions(listPets, {}));
+}
+```
+
+The difference is that you declare the endpoint and wire it once, rather than generating a hook for every operation in a spec. You trade "every hook is generated for me" for "no spec required, and the hook drives a live-validated call" — plus `useStitchStream`, which the generated `useQuery` hooks don't model. Tests use the same idea: instead of generated MSW handlers frozen to the spec, you [mock the stitch](/docs/guides/testing/mocking) directly. The [TanStack Query guide](/docs/integrations/tanstack-query) covers how the two layers split.
+
+## When Orval is the better choice
+
+This isn't a piece that ends with "so never run Orval." There's a clear lane where it wins, and it's worth naming plainly:
+
+-   **You have a maintained, accurate spec.** If the OpenAPI document is real, current, and owned by someone who keeps it honest, Orval gives you the whole surface — client, models, Zod, mocks — for the cost of one command. Per-endpoint stitch declarations would be more typing for that case.
+-   **You'll touch a large fraction of the API.** Building against a big chunk of a known surface? A generated hook per operation, ready in autocomplete, is a real head start a per-endpoint approach won't match.
+-   **Your app is TanStack Query / SWR-centric and you want the hooks generated.** Orval was built for exactly this. If generating one hook per endpoint from a spec is the workflow you want, that's its home turf.
+
+Runtime stitching earns its keep on the opposite shape: spec-less, partial-spec, or internal APIs; providers that change shape without warning; and anywhere you'd rather validate the live response and declare resilience, auth, and an [agent surface](/docs/agents) on the endpoint than generate a client and bolt those on around it. The two aren't really competing for one job — they make opposite bets about how much you can trust your spec.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+Declare the few endpoints you actually call, give each an `output` schema, and drive them from `useStitch` or TanStack Query — no spec, no generated client, and the next upstream rename arrives as a typed signal instead of a stale generated type. The primitive is in [The stitch](/docs/concepts/the-stitch), validation in [Validation](/docs/guides/validation/validation), and the React hooks in [the React integration](/docs/integrations/react).

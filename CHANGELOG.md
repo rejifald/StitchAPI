@@ -11,6 +11,40 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Changed
+
+-   **BREAKING — run-identity fields renamed to the OpenTelemetry names.** The
+    `RunContext` struct and the `start` event now carry **`spanId`** and
+    **`parentSpanId`** instead of `runId` and `parentId` (`traceId` is unchanged).
+    The names now match what the OTLP exporter already emits, so the mapping is an
+    identity and there is no translation seam. Custom trace sinks reading
+    `ctx.runId` / `ctx.parentId` (or `event.runId` / `event.parentId`) must read
+    `ctx.spanId` / `ctx.parentSpanId`. The `@stitchapi/sentry` integration now
+    reports the failing run's id under a `spanId` tag. See
+    [ADR 0017 Decision 7](docs/adr/0017-outbound-trace-context-propagation.md) and
+    the new `concepts/run-identity` page.
+
+### Added
+
+-   **Idempotency misuse nudges.** A stitch now logs a one-time construction
+    warning when `idempotency` is set on a read (the key is sent on writes only —
+    almost always a missing `method: 'POST'`) or with the random default key and no
+    `retry` (it only dedupes the call's own retries). Both are respectful hints with
+    an out — set `idempotency: { warn: false }` to silence them — and fire only on
+    the default HTTP surface. New `IdempotencyOptions.warn` field.
+
+## [1.0.0-rc.4] — 2026-06-29
+
+### Added
+
+-   **GraphQL `operationName`.** The `graphql` surface now sends `operationName`
+    alongside `{ query, variables }`, derived from the first named operation in
+    the document (anonymous documents omit it, matching `graphql-request`). A new
+    `operationName` config key overrides the derived value for multi-operation
+    documents, or suppresses the field entirely with `''`. This restores parity
+    with conventional GraphQL clients so servers, logs, APM, and request mocks
+    that key on the operation name see it again.
+
 ## [1.0.0-rc.3] — 2026-06-21
 
 ### Added — the integration ecosystem

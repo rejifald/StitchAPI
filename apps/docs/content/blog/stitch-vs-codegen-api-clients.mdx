@@ -16,7 +16,7 @@ A generator needs a spec. Point it at an OpenAPI (or GraphQL) document and it em
 
 A stitch needs a URL and one example response. You declare the endpoints you call, and the response shape comes from a validator you write (or generate from a sample):
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
@@ -41,7 +41,13 @@ A generated client gives you **static** types: they describe what the spec _said
 
 A stitch validates the **live** response on every call. The schema runs against real bytes, so a shape mismatch is caught the moment it happens, at the boundary, with a typed error — not swallowed into an `undefined`. On top of plain validation, StitchAPI adds **leveled drift detection** ([schema drift is a production bug](/blog/schema-drift-is-a-production-bug)): the declared schema _is_ the contract — wrap it in `drift()` and each response is validated and then diffed against the validated value, with every difference classified by severity:
 
-```ts
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const OrdersSchema = z.array(z.object({ id: z.number(), total: z.number() }));
+
+// ---cut---
 const listOrders = stitch({
     path: 'https://api.example.com/orders',
     // the schema is the contract; required fields throw, soft drift is leveled
@@ -60,7 +66,10 @@ Generators are, by design, scoped to the request-and-types problem. Most emit th
 
 In a stitch, those concerns are fields on the declaration, uniform across every endpoint:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// ---cut---
 const listUsers = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users',
@@ -72,7 +81,7 @@ const listUsers = stitch({
 
 `throttle` is proactive — it keeps you under a limit before the 429s arrive, and `scope: 'host'` shares one limiter across stitches hitting the same host. Auth is a boundary too: `bearer`, `apiKey`, `basic`, `cookieSession` (with auto-login and re-login), and `oauth2` live on the stitch, secrets resolve at call time, and the caller gets data without ever holding the credential. Observability rides the same event stream every call already emits — off by default, opt in per stitch or via `STITCH_TRACE_*` env vars, with bridges to Pino logs or Sentry breadcrumbs.
 
-The honest framing: you _can_ build all of this around a generated client, and plenty of teams have. The difference is whether it's declared once on a primitive or assembled and maintained per project. If your integration is a single well-behaved internal service that never rate-limits you and never flakes, the resilience layer is weight you don't need — and the generator's leaner output is the better fit.
+The honest framing: you _can_ build all of this around a generated client, and plenty of teams have. The difference is whether it's declared once on a primitive or assembled and maintained per project. If your integration is a single well-behaved internal service that never rate-limits you and never flakes, the resilience layer mostly sits dormant, and a generated client's leaner output can be the better fit there.
 
 ## Agent-friendliness
 
@@ -96,22 +105,18 @@ A stitch is reachable four ways from one definition — an in-process function, 
 
 This isn't a piece that ends with "so never run a generator." There's a clear lane where codegen wins, and it's worth naming plainly:
 
--   **You have a maintained, accurate spec.** If the OpenAPI document is real, current, and owned by someone who keeps it honest, generation gives you the entire surface typed for the cost of one command. A stitch's per-endpoint declarations are simply more typing for that case.
+-   **You have a maintained, accurate spec.** If the OpenAPI document is real, current, and owned by someone who keeps it honest, generation gives you the entire surface typed for the cost of one command. A stitch's per-endpoint declarations are more typing for that case.
 -   **You'll touch a large fraction of the API.** Building a big chunk of a known surface? Having every model and path typed up front, ready in autocomplete, is a genuine head start.
 -   **The contract is stable and you control the cadence.** When the API and its spec move together on a schedule you trust, the regenerate-on-change loop is a feature, not a chore, and you may not need runtime drift signals at all.
 
 Runtime stitching earns its keep on the opposite shape of problem: spec-less, partial-spec, internal, or long-tail APIs; heterogeneous surfaces stitched together (HTTP, GraphQL, SSE, shell, an LLM endpoint) under one model; providers that change shape without warning you; and anywhere you want resilience, an auth boundary, and an agent front door declared on the primitive instead of assembled around it. They're not really competing for the same job — they're tuned for different assumptions about how trustworthy your spec is.
 
-## When stitching isn't worth it
-
--   **You already have a great spec and only need types.** If accurate types are the whole requirement and you don't want runtime validation, drift signals, or built-in resilience, a generator is less ceremony for that narrow goal.
--   **A single, stable, well-behaved endpoint.** If one internal service never rate-limits, never flakes, and never changes shape, most of a stitch's machinery is dormant — a thin typed wrapper is enough, and honesty means saying so.
--   **You won't write or generate a schema.** A stitch's runtime guarantees come from the `output` validator. Skip the schema and you skip validation and drift — at which point a stitch is just a fetch wrapper with extra steps.
+And the honesty runs the other way too: for a single internal endpoint that never rate-limits, never flakes, and never changes shape, most of a stitch's machinery sits dormant and a thin typed wrapper carries the same load. A stitch without an `output` validator is a fetch wrapper with extra steps — skip the schema and you skip the validation and drift that justify it. The line to graduate is the first item on that list you actually need: a flaky upstream, a second front door, or a response shape you don't control.
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Declare one endpoint, wrap its output in `drift()`, and watch the next upstream rename arrive as a typed signal instead of a downstream `undefined`. The mechanics live in [Validation & drift](/docs/guides/validation/drift), the agent surface in [Use from an agent](/docs/agents), and the primitive itself in [The stitch](/docs/concepts/the-stitch).

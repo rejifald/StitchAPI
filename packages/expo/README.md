@@ -12,7 +12,7 @@ Everything else — the `useStitch` / `useStitchStream` hooks, the `asyncStorage
 ## Install
 
 ```sh
-pnpm add @stitchapi/expo @stitchapi/react @stitchapi/query-core stitchapi
+pnpm add @stitchapi/expo@rc @stitchapi/react@rc @stitchapi/query-core@rc stitchapi@rc
 ```
 
 `stitchapi`, `react`, `react-native`, and `expo` are peer dependencies. `expo-secure-store`, `@react-native-async-storage/async-storage`, and `@react-native-community/netinfo` are **optional** peers — install the ones whose helpers you use.

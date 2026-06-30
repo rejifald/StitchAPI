@@ -10,28 +10,30 @@ import type {
     StitchStore,
     ThrottleOptions,
 } from './types';
-import { parseRate, systemClock } from './util';
+import { parseDuration, parseRate, systemClock } from './util';
 
 export class TimeoutError extends Error {}
 
 /**
  * Backoff (ms) BEFORE the given 1-based `attempt` (attempt=2 is the first retry).
- * 'expo' = baseMs * 2^(attempt-2); 'expo-jitter' adds random jitter in [0, computed];
- * 'fixed' = baseMs. Result is clamped to maxMs.
+ * 'expo' = base * 2^(attempt-2); 'expo-jitter' adds random jitter in [0, computed];
+ * 'fixed' = base. Result is clamped to max.
  */
 export function backoffDelay(attempt: number, opts?: RetryOptions): number {
     const kind = opts?.backoff ?? 'expo-jitter';
-    const baseMs = opts?.baseMs ?? 100;
-    const maxMs = opts?.maxMs ?? 10_000;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `baseMs` is the @deprecated alias of `baseDelay`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const base = parseDuration(opts?.baseDelay ?? opts?.baseMs) ?? 100;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxMs` is the @deprecated alias of `maxDelay`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const max = parseDuration(opts?.maxDelay ?? opts?.maxMs) ?? 10_000;
     const exp = Math.max(0, attempt - 2); // attempt 2 -> 2^0
     let delay: number;
     if (kind === 'fixed') {
-        delay = baseMs;
+        delay = base;
     } else {
-        const computed = baseMs * 2 ** exp;
+        const computed = base * 2 ** exp;
         delay = kind === 'expo-jitter' ? Math.random() * computed : computed;
     }
-    return Math.min(delay, maxMs);
+    return Math.min(delay, max);
 }
 
 /** Parse a `Retry-After` header (delta-seconds OR HTTP-date) into ms, or undefined. */
@@ -54,10 +56,10 @@ interface KeyState {
     nextGrantAt: number; // earliest time the next rate-limited acquire may proceed
 }
 
-// In-process registry of host-scoped limiter state. `scope:'host'` must pool the rate
+// In-process registry of host-pooled limiter state. `pool:'host'` must pool the rate
 // budget across SEPARATE stitch() instances hitting the same host even without a shared
 // store (throttle.mdx: "'host' pools the budget across every stitch hitting the same
-// host"). Closure-local maps can't do that, so host-scoped throttles share their KeyState
+// host"). Closure-local maps can't do that, so host-pooled throttles share their KeyState
 // here, keyed by the host. A configured `store` still overrides for cross-process pooling.
 const hostStates = new Map<string, KeyState>();
 
@@ -67,22 +69,23 @@ const hostStates = new Map<string, KeyState>();
  * `acquire` resolves once a slot is free (reporting how long it waited) and MUST be
  * paired with `release`. Concurrency waiters are served FIFO.
  *
- * With `scope:'host'`, per-key state lives in the module-level `hostStates` registry so the
- * budget pools in-process across independent stitch instances; `scope:'stitch'` (default)
+ * With `pool:'host'`, per-key state lives in the module-level `hostStates` registry so the
+ * budget pools in-process across independent stitch instances; `pool:'stitch'` (default)
  * keeps state closure-local to this limiter.
  */
 export function createThrottle(
     opts?: ThrottleOptions,
     clock: Clock = systemClock,
 ): {
-    acquire(key: string, opts?: AcquireOptions): Promise<{ waitedMs: number }>;
+    acquire(key: string, opts?: AcquireOptions): Promise<{ waited: number }>;
     release(key: string): void;
 } {
     const limit = opts?.concurrency;
     const rate = opts?.rate ? parseRate(opts.rate) : undefined;
-    const spacing = rate ? rate.perMs / rate.count : 0; // ms between grants
-    const states =
-        opts?.scope === 'host' ? hostStates : new Map<string, KeyState>();
+    const spacing = rate ? rate.per / rate.count : 0; // ms between grants
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `scope` is the @deprecated alias of `pool`, read as the back-compat fallback until the GA cut (CONTRACT.md P2)
+    const hostPooled = (opts?.pool ?? opts?.scope) === 'host';
+    const states = hostPooled ? hostStates : new Map<string, KeyState>();
 
     const stateFor = (key: string): KeyState => {
         let s = states.get(key);
@@ -107,19 +110,19 @@ export function createThrottle(
     async function acquire(
         key: string,
         acqOpts?: AcquireOptions,
-    ): Promise<{ waitedMs: number }> {
+    ): Promise<{ waited: number }> {
         const s = stateFor(key);
-        let waitedMs = 0;
+        let waited = 0;
         // A rate-only acquire (a streaming surface — ADR 0005 Decision 12) skips the concurrency
         // slot entirely: it never takes (or, lacking a paired release, holds) one. It still paces
         // on the rate budget below, so opening a stream is counted against the rate limiter.
         if (!acqOpts?.rateOnly) {
             // Only a real concurrency block counts as "waited" — not incidental scheduling
-            // jitter — so waitedMs (and the 'throttled' event) is deterministic.
+            // jitter — so `waited` (and the 'throttled' event) is deterministic.
             const blocked = limit != null && s.inFlight >= limit;
             const blockStart = clock.now();
             await takeSlot(s); // gate entry on concurrency first
-            if (blocked) waitedMs = clock.now() - blockStart;
+            if (blocked) waited = clock.now() - blockStart;
         }
         if (spacing > 0) {
             // Then pace within the held slot: reserve the next grant time and wait for it.
@@ -128,10 +131,10 @@ export function createThrottle(
             const wait = at - clock.now();
             if (wait > 0) {
                 await clock.sleep(wait);
-                waitedMs += wait;
+                waited += wait;
             }
         }
-        return { waitedMs };
+        return { waited };
     }
 
     function release(key: string): void {
@@ -239,17 +242,22 @@ export class CircuitOpenError extends Error {
  * (`rateLimit.delegate`) and the response carries a rate-limit status (default `429`). Instead of
  * retrying internally or pacing on the built-in throttle, the engine surfaces the outcome so an
  * OUTER gate/circuit — owned by the host — decides the backoff (issue #145). Carries the structured
- * signal that gate needs: the `status`, the `retryAfterMs` parsed from `Retry-After` (delta-seconds
+ * signal that gate needs: the `status`, the `retryAfter` parsed from `Retry-After` (delta-seconds
  * OR HTTP-date; `undefined` when the header is absent/unparseable), and the raw `response` so the
  * host can read other rate headers (`X-RateLimit-*`, etc.). The full `response` rides on the live
  * instance only — never the serialized `error` event — so it cannot leak into a trace sink.
  */
 export class RateLimitError extends Error {
     readonly status: number;
+    /** `Retry-After` parsed to ms (delta-seconds OR HTTP-date); `undefined` when absent/unparseable. */
+    readonly retryAfter: number | undefined;
+    /** @deprecated Renamed to {@link RateLimitError.retryAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     readonly retryAfterMs: number | undefined;
     readonly response: AdapterResponse;
     constructor(opts: {
         status: number;
+        retryAfter?: number | undefined;
+        /** @deprecated Use `retryAfter` (CONTRACT.md P17). */
         retryAfterMs?: number | undefined;
         response: AdapterResponse;
         message?: string;
@@ -257,7 +265,10 @@ export class RateLimitError extends Error {
         super(opts.message ?? `rate limited (HTTP ${opts.status})`);
         this.name = 'RateLimitError';
         this.status = opts.status;
-        this.retryAfterMs = opts.retryAfterMs;
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- read the @deprecated constructor alias for back-compat (CONTRACT.md P17)
+        this.retryAfter = opts.retryAfter ?? opts.retryAfterMs;
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-set the @deprecated field alias for back-compat (CONTRACT.md P17)
+        this.retryAfterMs = this.retryAfter;
         this.response = opts.response;
     }
 }
@@ -269,10 +280,13 @@ interface CircuitRecord {
 }
 
 /**
- * A store-backed circuit breaker. After `failureThreshold` consecutive failures it OPENS:
- * calls fast-fail for `cooldownMs`, then it goes HALF-OPEN and lets a single trial through —
+ * A store-backed circuit breaker. After `failures` consecutive failures it OPENS:
+ * calls fast-fail for `cooldown`, then it goes HALF-OPEN and lets a single trial through —
  * a success closes it, another failure re-opens it. State lives in the StitchStore, so a shared
  * store gives a breaker shared across workers (DESIGN.md §13).
+ *
+ * `failures` and `cooldown` are required by design (CONTRACT.md P15); this throws if neither they
+ * nor their deprecated `failureThreshold`/`cooldownMs` aliases are set.
  */
 export function createCircuit(
     opts: CircuitOptions,
@@ -284,7 +298,17 @@ export function createCircuit(
     onSuccess(): Promise<void>;
     onFailure(): Promise<boolean>;
 } {
-    const halfOpenAfter = opts.halfOpenAfterMs ?? opts.cooldownMs;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `failureThreshold` is the @deprecated alias of `failures` (CONTRACT.md P4)
+    const failureThreshold = opts.failures ?? opts.failureThreshold;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `cooldownMs` is the @deprecated alias of `cooldown` (CONTRACT.md P17)
+    const cooldown = parseDuration(opts.cooldown ?? opts.cooldownMs);
+    if (failureThreshold == null || cooldown == null)
+        throw new Error(
+            'circuit requires `failures` and `cooldown`. Fix: set both, e.g. `circuit: { failures: 5, cooldown: "30s" }`.',
+        );
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `halfOpenAfterMs` is the @deprecated alias of `halfOpenAfter` (CONTRACT.md P17)
+    const halfOpenInput = opts.halfOpenAfter ?? opts.halfOpenAfterMs;
+    const halfOpenAfter = parseDuration(halfOpenInput) ?? cooldown;
     const nsKey = 'circuit:' + (opts.key ?? fallbackKey);
 
     const read = async (): Promise<CircuitRecord> =>
@@ -311,7 +335,7 @@ export function createCircuit(
             const r = await read();
             const failures = r.failures + 1;
             const wasOpen = r.openedAt !== 0;
-            if (wasOpen || failures >= opts.failureThreshold) {
+            if (wasOpen || failures >= failureThreshold) {
                 // (re)open — arm a fresh cooldown window.
                 await store.set(nsKey, { failures, openedAt: clock.now() });
                 return !wasOpen; // "newly opened" only when it had been closed

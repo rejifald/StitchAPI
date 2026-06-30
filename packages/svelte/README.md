@@ -11,7 +11,7 @@ These stores are a thin layer over [`@stitchapi/query-core`](../query-core), the
 ## Install
 
 ```sh
-pnpm add @stitchapi/svelte @stitchapi/query-core stitchapi svelte
+pnpm add @stitchapi/svelte@rc @stitchapi/query-core@rc stitchapi@rc svelte
 ```
 
 `stitchapi` and `svelte` (`^4 || ^5`) are peer dependencies. `@tanstack/svelte-query` is an **optional** peer — only needed if you use `queryOptions`.

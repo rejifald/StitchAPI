@@ -244,13 +244,11 @@ export const valibotFingerprinter: SchemaFingerprinter = {
         try {
             // `vfp1` tags the descriptor format: bump it to force a one-time,
             // safe re-fingerprint if the descriptor scheme ever changes.
-            return {
-                value: hash(`vfp1|${describe(schema)}`),
-                strength: 'strong',
-            };
+            const token = hash(`vfp1|${describe(schema)}`);
+            return { token, value: token, strength: 'strong' };
         } catch {
             // ABSTAIN sentinel or any unexpected introspection failure → abstain.
-            return { value: null, strength: 'strong' };
+            return { token: null, value: null, strength: 'strong' };
         }
     },
 };

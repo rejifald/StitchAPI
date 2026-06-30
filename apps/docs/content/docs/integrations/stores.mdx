@@ -1,6 +1,7 @@
 ---
 title: Distributed stores
 description: Attach a Redis, Cloudflare Workers KV, or Deno KV StitchStore so a stitch's throttle, sessions, and cache become fleet-wide — same call site, no backend in core. Includes the atomic-incr trade-off that decides which store fits.
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
 A [`StitchStore`](/docs/guides/state/pluggable-store) is the one seam that turns
@@ -112,8 +113,8 @@ export default {
 </Callout>
 
 KV's `expirationTtl` is in **seconds** with a **60-second minimum**; the store
-reconciles that with the contract's millisecond TTLs (`ttlMs` →
-`max(60, ceil(ttlMs / 1000))` s), so a value asked to live 5s lives 60s (harmless
+reconciles that with the contract's millisecond TTLs (`ttl` →
+`max(60, ceil(ttl / 1000))` s), so a value asked to live 5s lives 60s (harmless
 for caches and sessions). `set(key, undefined)` deletes; `keyPrefix` namespaces.
 
 ## Deno KV — `@stitchapi/deno-kv`

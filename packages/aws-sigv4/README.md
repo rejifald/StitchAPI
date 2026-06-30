@@ -11,7 +11,7 @@ Crypto is the platform's **Web Crypto** (`crypto.subtle`), so it runs unchanged 
 ## Install
 
 ```sh
-pnpm add @stitchapi/aws-sigv4 stitchapi
+pnpm add @stitchapi/aws-sigv4@rc stitchapi@rc
 ```
 
 `stitchapi` is the only peer dependency.

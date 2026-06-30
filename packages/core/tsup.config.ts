@@ -1,4 +1,13 @@
+import { version } from './package.json';
+
 import { defineConfig } from 'tsup';
+
+// Inject the canonical package version as a build-time constant so the shipped
+// library never hardcodes it (and never drifts from the published release). Used
+// by src/mcp.ts for the version the MCP server reports; declared for `tsc` in
+// src/version.d.ts and mirrored in vitest.config.ts so the test run sees it too.
+// This stays a literal substitution — package.json is NOT pulled into the bundle.
+const define = { __PKG_VERSION__: JSON.stringify(version) };
 
 // Two bundles from one source tree:
 //   lib/index.{js,mjs} (+ .d.ts) — the library (function surface), dual-format + types
@@ -37,13 +46,17 @@ export default defineConfig([
         dts: true,
         outDir: 'lib',
         clean: true,
+        define,
     },
     {
+        // The CLI bundle pulls in src/mcp.ts (via serveStdio), so it needs the
+        // same version define.
         entry: ['src/cli.ts'],
         format: ['cjs'],
         minify: true,
         dts: false,
         outDir: 'lib',
         clean: false,
+        define,
     },
 ]);

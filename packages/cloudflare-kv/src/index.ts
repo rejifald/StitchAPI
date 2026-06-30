@@ -98,7 +98,7 @@ export interface CloudflareKvStoreOptions {
  * };
  * ```
  *
- * Values round-trip through a JSON envelope. `ttlMs` is converted to KV's
+ * Values round-trip through a JSON envelope. `ttl` is converted to KV's
  * second-resolution `expirationTtl` and floored to KV's 60s minimum. `set(key,
  * undefined)` deletes the key (the cache's delete, ADR 0003 §8).
  *
@@ -128,21 +128,21 @@ export function cloudflareKvStore(
                 return raw;
             }
         },
-        async set(key, value, ttlMs) {
+        async set(key, value, ttl) {
             // `set(key, undefined)` is the cache's delete (ADR 0003 §8) — drop the key.
             if (value === undefined) {
                 await kv.delete(k(key));
                 return;
             }
             const body = JSON.stringify(value);
-            if (ttlMs == null) {
+            if (ttl == null) {
                 await kv.put(k(key), body);
                 return;
             }
             // ms → s, never below KV's 60s floor (and never zero).
             const expirationTtl = Math.max(
                 KV_MIN_TTL_SECONDS,
-                Math.ceil(ttlMs / 1000),
+                Math.ceil(ttl / 1000),
             );
             await kv.put(k(key), body, { expirationTtl });
         },

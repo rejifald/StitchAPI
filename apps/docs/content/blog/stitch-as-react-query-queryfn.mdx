@@ -1,0 +1,154 @@
+---
+title: 'A Stitch Is Your React Query queryFn'
+description: 'You already run TanStack Query for view state. Drop a stitch in as the queryFn and the call gains types, validation, retries, and auth — no glue code.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [react, tanstack-query, react-query]
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+You wired up TanStack Query months ago, and `useQuery` already owns your view state — caching by key, refetch on focus, invalidation after a mutation. What it doesn't own is the call inside `queryFn`: that's still a hand-written `fetch`, a `res.ok` check you keep forgetting, a `res.json()` cast to whatever type you hope came back, and a retry loop you copied between three hooks. The query layer is solid; the function it runs is the soft spot.
+
+A stitch is exactly the function `queryFn` wants. It returns the validated value and throws on failure — the precise contract `useQuery` expects — so it drops in with no adapter, no wrapper, no glue.
+
+## The `queryFn` you have
+
+Here's the typical fetch sitting inside a query: the status check, the cast, and a retry the hook owns by hand.
+
+```tsx twoslash
+// @noErrors
+import { useQuery } from '@tanstack/react-query';
+
+function useUser(id: string) {
+    return useQuery({
+        queryKey: ['user', id],
+        queryFn: async () => {
+            const res = await fetch(`https://api.example.com/users/${id}`, {
+                headers: { Authorization: `Bearer ${process.env.API_TOKEN}` },
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return (await res.json()) as User; // a hope, not a guarantee
+        },
+        retry: 3,
+    });
+}
+```
+
+The sharp edges are all in `queryFn`. The `as User` is a lie the compiler can't catch — if the API drops a field, the cast still passes and the bug surfaces three components downstream. `retry: 3` retries everything, including the 400 that will never succeed and the `POST` you should never replay. The token is read where the component can see it. And the next hook that calls this endpoint copies the whole block again.
+
+## The `queryFn` you want
+
+Declare the call once as a stitch, then hand the stitch to `queryFn`:
+
+```tsx twoslash
+import { bearer, env, stitch, toValidator } from 'stitchapi';
+import { z } from 'zod';
+
+const getUser = stitch<{ id: string; name: string }>({
+    url: 'https://api.example.com/users/{id}',
+    output: toValidator(z.object({ id: z.string(), name: z.string() })),
+    auth: bearer(env('API_TOKEN')),
+    retry: { attempts: 3, on: [429, 502, 503, 504], backoff: 'expo-jitter' },
+});
+```
+
+```tsx twoslash
+// @noErrors
+import { useQuery } from '@tanstack/react-query';
+
+function useUser(id: string) {
+    return useQuery({
+        queryKey: ['user', id],
+        queryFn: () => getUser({ params: { id } }),
+        retry: false, // the stitch owns retries
+    });
+}
+```
+
+Each field replaces a piece of the glue. `output` validates the response against the schema, so `data` is the _checked_ shape — no cast, and a dropped field throws at the boundary instead of leaking downstream. `auth: bearer(env('API_TOKEN'))` resolves the secret at call time; the component never holds it. The `retry` object only replays the status codes worth replaying, honors `Retry-After`, and backs off with jitter. And `getUser` is one value you import wherever the endpoint is called — declared once, not pasted per hook.
+
+Awaiting a stitch returns the validated value and throws `StitchError` on failure. That's the exact contract `queryFn` is built around: resolve with `data`, reject with `error`. So there is no adapter between them — the stitch _is_ the `queryFn`.
+
+## Use the throwing call inside a query — not `.safe()`
+
+A stitch gives you two call shapes. Inside a query, use the bare awaitable (or `.unwrap()`), which throws on failure:
+
+```tsx twoslash
+// @noErrors
+queryFn: () => getUser({ params: { id } });
+```
+
+Do **not** reach for `.safe()` here. `.safe()` resolves to `{ ok, data, error }` and never throws — perfect for a loader or a server action, wrong for a `queryFn`. If you hand `.safe()` to a query, every call looks successful and `data` arrives shaped like an error envelope, so `useQuery`'s `isError` never fires. Throw inside the query; save `.safe()` for the places that want a result object instead of a `try`/`catch`.
+
+## Pick one retry owner
+
+Both layers can retry, and if you let them, the attempts multiply: TanStack's `retry: 3` wrapping the stitch's `attempts: 3` is up to nine round-trips for one failure. Pick one owner.
+
+Let the stitch own it. The query's retry is count-based — it replays any rejection N times. The stitch's retry is status-aware (`on: [429, 502, 503, 504]`), honors `Retry-After`, and backs off with jitter, so it waits out a rate limit instead of hammering through it. Keep that one and set `retry: false` on the query (or on the `QueryClient` default).
+
+| Axis          | TanStack `retry`       | Stitch `retry`                   |
+| ------------- | ---------------------- | -------------------------------- |
+| Trigger       | any rejection          | specific statuses (`on: [...]`)  |
+| `Retry-After` | ignored                | honored                          |
+| Backoff       | fixed-ish, count-based | `expo-jitter` / `expo` / `fixed` |
+| Scope         | this query             | every caller of the stitch       |
+
+The last row is why the stitch is the better owner: resilience lives with the call, so the `loader`, the server action, and the three other components calling `getUser` all inherit the same retry policy — not just the one hook you remembered to configure.
+
+## Writes, options helpers, and streaming
+
+A writing stitch is a `mutationFn` the same way — hand it straight to `useMutation`, then invalidate with `queryClient.invalidateQueries`. One honest caveat: retrying a non-idempotent write can double-submit, so keep `retry: false` on a plain `POST` unless the endpoint is idempotent (or you've set an idempotency key).
+
+If you'd rather not spell out the `queryKey` each time, `@stitchapi/react` ships `stitchQueryOptions` — a typed `{ queryKey, queryFn }` object you spread into `useQuery`:
+
+```tsx twoslash
+// @noErrors
+import { stitchQueryOptions } from '@stitchapi/react';
+import { useQuery } from '@tanstack/react-query';
+
+const { data } = useQuery(stitchQueryOptions(getUser, { params: { id } }));
+```
+
+It returns a plain object, so it needs no import of `@tanstack/react-query` — `@tanstack/react-query` is an optional peer of `@stitchapi/react`, pulled in only when you spread the result into a real `useQuery`.
+
+Streaming surfaces (`sse` / `stream` / `llm`) stay out of `useQuery` — that hook is request/response only. Consume `.stream()` directly, or use the `useStitchStream` hook, which re-renders as each `delta` chunk arrives. Its result carries a `chunks` list and an `isStreaming` flag that stays true until the terminal `result`:
+
+```tsx twoslash
+// @noErrors
+import { useStitchStream } from '@stitchapi/react';
+
+function Answer({ prompt }: { prompt: string }) {
+    const { chunks, isStreaming } = useStitchStream(askLLM, {
+        body: { prompt },
+    });
+    return (
+        <p>
+            {chunks.map((c, i) => (
+                <span key={i}>{String(c)}</span>
+            ))}
+            {isStreaming ? '…' : ''}
+        </p>
+    );
+}
+```
+
+## The layer split — compose, not compete
+
+The query and the stitch own different things, and that's why they fit:
+
+-   **The query owns view state** — caching by key, invalidation, refetch on focus, subscriptions across components.
+-   **The stitch owns the call** — types, validation, auth, retries, timeouts, drift detection.
+
+This isn't a React-Query-only arrangement. The same shape works with **SWR** (`useSWR(key, () => getUser({ params: { id } }))`) and **RTK Query** (a stitch as the endpoint's `queryFn`). Whichever query layer you run, the split holds: it owns the view, the stitch owns the call.
+
+## Start with the call you have
+
+`await getUser({ params: { id } })` is the floor — a typed, validated, resilient call you can run anywhere, no query library in sight. When a component needs to render against loading, error, and refetch state over time, you hand that same stitch to `useQuery` as the `queryFn` and the query layer takes the view. Nothing about the call changes; you've only added a reactive layer on top of it. The stitch you wrote for a one-line `await` is the exact stitch a query runs — it scales up to the cache without a rewrite, and back down to a bare call without one.
+
+## Try it
+
+```package-install
+@stitchapi/react @stitchapi/query-core stitchapi @tanstack/react-query
+```
+
+Hand a stitch to `useQuery` and the call gains types, validation, and resilience with no glue. See the [TanStack Query integration](/docs/integrations/tanstack-query) and the [React bindings](/docs/integrations/react) for the full surface, [retry](/docs/guides/resilience/retry) for the status-aware policy, and [adopt StitchAPI without a rewrite](/blog/adopt-stitchapi-without-a-rewrite) to migrate one `queryFn` at a time.

@@ -11,6 +11,8 @@ export {
     InjectStitch,
     type StitchDef,
     type AnyStitchDef,
+    type NestRequestSeam,
+    // Deprecated alias (kept through 1.0.0-rc, removed at GA) — see ADR 0012.
     type StitchHost,
     type Injected,
 } from './define-stitch';
@@ -33,7 +35,7 @@ export {
     StitchExceptionFilter,
     toHttpException,
     isStitchError,
-    type StitchError,
+    type StitchErrorLike,
     type ToHttpExceptionOptions,
 } from './exception-filter';
 export { stitchSse, type MessageEventLike, type StitchSseOptions } from './sse';

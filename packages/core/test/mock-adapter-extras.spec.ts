@@ -63,14 +63,23 @@ describe('mockAdapter responses', () => {
         expect((await api(req('http://h/a'))).body).toBe(2); // last repeats
     });
 
-    test('defaults status to 200, lowercases headers, maps retryAfter', async () => {
+    test('defaults status to 200, lowercases headers, maps retryAfterSeconds', async () => {
         const api = mockAdapter({
-            respond: { headers: { 'X-Foo': 'Bar' }, retryAfter: 5 },
+            respond: { headers: { 'X-Foo': 'Bar' }, retryAfterSeconds: 5 },
         });
         const res = await api(req('http://h/a'));
         expect(res.status).toBe(200);
         expect(res.headers['x-foo']).toBe('Bar'); // header key lowercased
-        expect(res.headers['retry-after']).toBe('5'); // retryAfter → header
+        expect(res.headers['retry-after']).toBe('5'); // retryAfterSeconds → header
+    });
+
+    test('the @deprecated `retryAfter` alias still maps to the header (P17)', async () => {
+        const api = mockAdapter({
+            // Pre-rename spelling — still drives the `Retry-After` header until the GA cut.
+            respond: { retryAfter: 9 },
+        });
+        const res = await api(req('http://h/a'));
+        expect(res.headers['retry-after']).toBe('9');
     });
 });
 

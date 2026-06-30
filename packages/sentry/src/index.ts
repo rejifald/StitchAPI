@@ -15,9 +15,10 @@
 // SECURITY: a custom TraceSink receives the RAW event — core only redacts inside its
 // own built-in sinks. So this sends **metadata only** (name, method, redacted URL,
 // status, attempt counts, drift path/level/change, phase, timing) and NEVER
-// `event.input` (its headers carry the live `authorization`/`cookie`), `event.value`,
+// `event.input` (its headers carry the live `authorization`/`cookie`), `event.data`,
 // or a `delta` chunk. The URL query string is dropped (it can carry `?api_key=…`).
 import type { StitchEvent, TraceContext, TraceSink } from 'stitchapi';
+import { compact } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
 // Sentry contract (structural — any @sentry/* SDK satisfies it)
@@ -114,13 +115,11 @@ function breadcrumbFor(
                         ? 'warning'
                         : 'debug',
                 message: `· ${name} ${event.phase}#${event.attempt}`,
-                data: {
+                data: compact({
                     phase: event.phase,
                     attempt: event.attempt,
-                    ...(event.waitedMs !== undefined
-                        ? { waitedMs: event.waitedMs }
-                        : {}),
-                },
+                    waited: event.waited,
+                }),
             };
         case 'drift': {
             const f = event.finding;
@@ -128,12 +127,12 @@ function breadcrumbFor(
                 category: 'stitch.drift',
                 level: DRIFT_TO_SENTRY[f.level] ?? 'debug',
                 message: `drift ${name} ${f.path} ${f.change}`,
-                data: {
+                data: compact({
                     path: f.path,
                     level: f.level,
                     change: f.change,
-                    ...(f.detail !== undefined ? { detail: f.detail } : {}),
-                },
+                    detail: f.detail,
+                }),
             };
         }
         case 'result':
@@ -151,22 +150,20 @@ function breadcrumbFor(
                 category: 'stitch',
                 level: 'error',
                 message: `✗ ${name} ${event.name}: ${event.message}`,
-                data: {
-                    ...(event.status !== undefined
-                        ? { status: event.status }
-                        : {}),
+                data: compact({
+                    status: event.status,
                     attempts: event.attempts,
-                },
+                }),
             };
         case 'done':
             return lifecycle
                 ? {
                       category: 'stitch',
                       level: 'debug',
-                      message: `done ${name} (${event.ok ? 'ok' : 'failed'}, ${event.ms}ms)`,
+                      message: `done ${name} (${event.ok ? 'ok' : 'failed'}, ${event.elapsed}ms)`,
                       data: {
                           ok: event.ok,
-                          ms: event.ms,
+                          elapsed: event.elapsed,
                           attempts: event.attempts,
                       },
                   }
@@ -214,15 +211,13 @@ export function sentrySink(
                     `${ctx.name}: ${event.name} — ${event.message}`,
                     {
                         level: 'error',
-                        tags: {
+                        tags: compact({
                             stitch: ctx.name,
-                            ...(event.status !== undefined
-                                ? { status: event.status }
-                                : {}),
-                        },
+                            status: event.status,
+                        }),
                         extra: {
                             attempts: event.attempts,
-                            ...(ctx.runId ? { runId: ctx.runId } : {}),
+                            ...(ctx.spanId ? { spanId: ctx.spanId } : {}),
                         },
                     },
                 );
@@ -236,12 +231,10 @@ export function sentrySink(
                     {
                         level: 'warning',
                         tags: { stitch: ctx.name, drift: event.finding.change },
-                        extra: {
+                        extra: compact({
                             path: event.finding.path,
-                            ...(event.finding.detail !== undefined
-                                ? { detail: event.finding.detail }
-                                : {}),
-                        },
+                            detail: event.finding.detail,
+                        }),
                     },
                 );
             }

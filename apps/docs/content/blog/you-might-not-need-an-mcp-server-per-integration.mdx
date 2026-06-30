@@ -4,6 +4,7 @@ description: The reflex when wiring an agent to a service is to stand up a dedic
 author: Oleksandr Zhuravlov
 date: '2026-05-21'
 tags: [mcp, agents, integrations, architecture]
+prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 You wire your agent to its first service and it goes well: install (or stand up) an MCP server, point the agent at it, watch the tools light up. Then you add a second service. A third. Now you have three MCP servers to launch, three sets of credentials to inject, three processes whose health you have to watch — and the agent's context window is carrying every tool each of them exposes, on every turn, whether it uses them or not.
@@ -32,7 +33,7 @@ The relevant part here is how it reaches an agent. Instead of a server per servi
 
 Adding an integration is adding a stitch, not standing up a server. The MCP surface stays three tools whether you have four stitches or four hundred:
 
-```ts
+```ts twoslash
 import { seam } from 'stitchapi';
 import { bearer, env } from 'stitchapi';
 
@@ -82,7 +83,7 @@ This isn't an argument against MCP servers — code-mode _is_ an MCP surface. It
 
 The honest framing: a dedicated server is right when someone else maintains a good one, when the capability isn't a plain HTTP call, or when the exact tool ergonomics are the point. A single runtime is right when you're otherwise about to stand up your own thin server around a handful of endpoints — and then another, and another.
 
-## When this isn't worth it
+## The honest caveats
 
 If you have exactly one integration, this is a non-decision: stand up the one server (or the one stitch) and move on. The N-versus-one math only bites once N grows.
 
@@ -95,8 +96,8 @@ The decision isn't "MCP servers, yes or no." It's "how many processes, auth boun
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Declare a couple of endpoints, run `stitch mcp`, and point your agent at the three-tool surface. See [Use from an agent](/docs/agents), the [run_stitch & code-mode](/docs/agents/run-stitch-tool) tool, and the [MCP surface](/docs/surfaces/mcp) for starting the server and the transport details.

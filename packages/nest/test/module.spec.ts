@@ -358,7 +358,7 @@ describe('bridges', () => {
                 type: 'progress',
                 phase: 'retry',
                 attempt: 2,
-                waitedMs: 100,
+                waited: 100,
                 at: 0,
             },
             ctx,
@@ -394,7 +394,7 @@ describe('bridges', () => {
         sink.handle(
             {
                 type: 'result',
-                value: { secretField: 'nope' },
+                data: { secretField: 'nope' },
                 status: 200,
                 attempts: 1,
                 at: 0,
@@ -402,7 +402,7 @@ describe('bridges', () => {
             ctx,
         );
         sink.handle(
-            { type: 'done', ok: true, ms: 12, attempts: 1, at: 0 },
+            { type: 'done', ok: true, elapsed: 12, attempts: 1, at: 0 },
             ctx,
         );
         sink.handle(
@@ -471,10 +471,13 @@ describe('bridges', () => {
             ctx,
         );
         sink.handle(
-            { type: 'result', value: 1, status: 200, attempts: 1, at: 0 },
+            { type: 'result', data: 1, status: 200, attempts: 1, at: 0 },
             ctx,
         );
-        sink.handle({ type: 'done', ok: true, ms: 1, attempts: 1, at: 0 }, ctx);
+        sink.handle(
+            { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+            ctx,
+        );
         sink.handle(
             { type: 'progress', phase: 'retry', attempt: 2, at: 0 },
             ctx,

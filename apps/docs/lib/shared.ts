@@ -10,6 +10,8 @@ export const docsContentRoute = '/llms.mdx/docs';
 
 export const blogRoute = '/blog';
 
+export const npmUrl = 'https://www.npmjs.com/package/stitchapi';
+
 // GitHub repository, used for "edit on GitHub" / source links.
 export const gitConfig = {
     user: 'rejifald',

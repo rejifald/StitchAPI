@@ -1,0 +1,140 @@
+---
+title: How to Add a Timeout to fetch in TypeScript
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+description: fetch has no timeout option, so a hung request blocks your caller forever. This shows the AbortSignal.timeout pattern that actually cancels the socket, the Promise.race trap that doesn't, and how a stitch declares total and per-attempt deadlines that compose with retry.
+tags: [fetch, timeout, typescript, abortsignal, resilience]
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+Add a timeout to `fetch` when a slow or hung response shouldn't be allowed to block your caller indefinitely. `fetch` ships with no timeout option of its own, so a request to a stalled upstream waits as long as the OS lets the socket stay open — which can be minutes. You reach for a timeout the first time a single slow dependency holds up a request you promised would return in seconds.
+
+## The generic way: an AbortSignal that cancels the request
+
+The correct primitive is `AbortSignal`. On current runtimes (Node 18+, modern browsers) `AbortSignal.timeout(ms)` gives you one that aborts itself after the deadline — pass it to `fetch` and a breached deadline cancels the in-flight request:
+
+```ts twoslash
+// @noErrors
+async function getReport(): Promise<unknown> {
+    try {
+        const res = await fetch('https://api.example.com/report', {
+            signal: AbortSignal.timeout(3000), // aborts the request after 3s
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } catch (err) {
+        if (err instanceof DOMException && err.name === 'TimeoutError') {
+            throw new Error('report timed out after 3s');
+        }
+        throw err;
+    }
+}
+```
+
+If your runtime predates `AbortSignal.timeout`, build the same thing from an `AbortController` and a timer — and clear the timer on success so it doesn't dangle:
+
+```ts twoslash
+// @noErrors
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(), 3000);
+try {
+  const res = await fetch(url, { signal: controller.signal });
+  return await res.json();
+} finally {
+  clearTimeout(timer);
+}
+```
+
+For a single call this is the right amount of code, and it does the one thing that matters: the `signal` makes the abort real, so the connection is actually cancelled. What it won't do is grow with you — the day the call needs a retry or a second deadline, this shape gets rewritten.
+
+### The trap: racing a Promise doesn't cancel anything
+
+The pattern that looks equivalent but isn't is `Promise.race` against a timer:
+
+```ts twoslash
+// @noErrors
+// Looks like a timeout. Leaks the request.
+const res = await Promise.race([
+    fetch(url),
+    new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 3000),
+    ),
+]);
+```
+
+This rejects _your_ promise after 3 seconds, so the caller unblocks — but the `fetch` is never told. The socket stays open, still consuming a connection-pool slot, and the response body downloads into nothing in the background. Under load this is how a slow upstream quietly exhausts your connection pool. The difference between the two patterns is the whole point of a timeout: a real one cancels the work, a raced one only stops waiting for it.
+
+### Where the hand-rolled version runs out
+
+A single `AbortSignal` answers one question — how long the _whole call_ gets. That's enough until you add retries, and then one deadline can't express what you need. If the timeout is per-attempt, three retries plus backoff can block the caller well past it; if it's the total budget, one slow attempt can eat the whole thing so the retries never fire. You want both bounds, named separately, and threading two timers plus an `AbortController` plus retry logic through every call site is exactly the boilerplate that rots.
+
+## The stitch way: total and per-attempt deadlines on the call
+
+A [stitch](/docs/concepts/the-stitch) makes the timeout a property of the call. You declare both scopes as one `timeout` object, and the engine backs them with a real `AbortSignal` — the same cancellation the manual version did right, without the wiring:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const report = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/report',
+    timeout: { total: '10s', perAttempt: '3s' },
+});
+```
+
+`perAttempt` bounds each individual try; `total` bounds the entire call across every retry and the backoff waits between them. Whichever fires first aborts the request. Both accept a duration string (`'3s'`) or a number of milliseconds (`3000`), so `total: '10s'` and `total: 10000` are the same thing. A breached deadline surfaces as [STITCH_TIMEOUT](/docs/errors/stitch-timeout) — a distinct, catchable error rather than a generic abort you have to sniff with `err.name`.
+
+The two scopes exist because they compose with [retry](/docs/guides/resilience/retry). Each try is gated by `perAttempt`, while `total` caps the sum of all tries plus their waits — so a long enough `total` is what _lets_ a slow attempt be retried at all, and a tight `perAttempt` stops one hung attempt from swallowing the budget:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const getQuote = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/quote/{symbol}',
+    retry: { attempts: 3, on: [429, 502, 503], respectRetryAfter: true },
+    timeout: { total: '10s', perAttempt: '3s' },
+});
+```
+
+Because the timeout lives on the declaration, every front door — the in-process function, the CLI, the HTTP endpoint, the agent over MCP — inherits the same deadline instead of each re-wiring its own `AbortController`.
+
+## Start simple — and keep your options open
+
+If today's job really is one endpoint, one attempt, one deadline, you still don't have to trade simple for extensible. A stitch scales down to the same one line — `timeout` takes a bare duration as shorthand for the total:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const report = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/report',
+    timeout: '3s', // shorthand for { total: '3s' }
+});
+```
+
+That's the whole bound, and it cancels the socket with the same real `AbortSignal` the manual version did right. The difference is what each one is ready for next. The inline `AbortSignal.timeout(3000)` answers exactly one question and stops there: the day the call needs a retry, a per-attempt cap, an auth header, or an `output` validator, you're back at the call site re-wiring an `AbortController` by hand — the boilerplate this article opened with.
+
+The stitch is that same simple call today and one edit away from the rest tomorrow. Growing it to two composing deadlines plus retry is two lines on the declaration, not a rewrite:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// ---cut---
+const report = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/report',
+    timeout: { total: '10s', perAttempt: '3s' },
+    retry: { attempts: 3, on: [429, 502, 503] },
+});
+```
+
+Same call site, same callers, more guarantees. That's the trade: a bare `AbortSignal` bounds the call you have, while a stitch bounds it just as simply and is already shaped for the call it's about to become. When a slow dependency turns into a sustained one and retries start making the outage worse, that's the next deadline on the same declaration — a [circuit breaker plus layered timeouts](/blog/circuit-breakers-and-layered-timeouts) is the tool for it.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+Give a stitch a `timeout: { total, perAttempt }` and a slow upstream is bounded at two scopes with a real abort and a typed error — once, for every caller. The mechanics are in [Timeouts](/docs/guides/resilience/timeout), the error in [STITCH_TIMEOUT](/docs/errors/stitch-timeout), and how it composes with backoff in [Retry](/docs/guides/resilience/retry).

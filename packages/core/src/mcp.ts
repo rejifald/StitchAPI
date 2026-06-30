@@ -16,7 +16,11 @@ import type { Readable, Writable } from 'node:stream';
 
 const PROTOCOL_VERSION = '2025-06-18';
 const SERVER_NAME = 'stitchapi';
-const SERVER_VERSION = '1.0.0-rc.1';
+// Derived at build time from packages/core/package.json `version` via an esbuild
+// `define` (see tsup.config.ts / vitest.config.ts and src/version.d.ts), so the
+// version the MCP server reports can never drift from the published release. An
+// explicit `info.version` from the caller still wins (see `createMcpServer`).
+const SERVER_VERSION = __PKG_VERSION__;
 
 export interface JsonRpcMessage {
     jsonrpc: '2.0';
@@ -129,7 +133,7 @@ export interface McpServer {
     handle(message: JsonRpcMessage): Promise<JsonRpcMessage | null>;
 }
 
-export interface McpServerInfo {
+export interface McpServerOptions {
     name?: string;
     version?: string;
 }
@@ -138,7 +142,7 @@ export interface McpServerInfo {
 // its response (or null for notifications), independent of any transport.
 export function createMcpServer(
     registry: StitchRegistry,
-    info: McpServerInfo = {},
+    info: McpServerOptions = {},
 ): McpServer {
     const serverInfo = {
         name: info.name ?? SERVER_NAME,
@@ -278,7 +282,7 @@ export function createMcpServer(
 export interface StdioOptions {
     input?: Readable;
     output?: Writable;
-    info?: McpServerInfo;
+    info?: McpServerOptions;
 }
 
 // Wire an McpServer to the stdio transport: read newline-delimited JSON-RPC from
@@ -323,3 +327,7 @@ export function serveStdio(
     input.on('data', onData);
     return { server, close: () => input.off('data', onData) };
 }
+
+// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
+/** @deprecated Renamed to {@link McpServerOptions} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
+export type McpServerInfo = McpServerOptions;

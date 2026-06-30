@@ -42,6 +42,7 @@ import {
 } from '@stitchapi/query-core';
 import { Observable, of } from 'rxjs';
 import { shareReplay, switchMap } from 'rxjs/operators';
+import { compact } from 'stitchapi';
 
 export type {
     CreateStitchQueryOptions,
@@ -145,13 +146,14 @@ function injectStitchInternal<T>(
     const destroyRef = injector.get(DestroyRef);
 
     const { mode, enabled, onSuccess, onError } = options;
-    const coreOptions: CreateStitchQueryOptions<T> & { stream: boolean } = {
-        stream,
-        ...(mode ? { mode } : {}),
-        ...(enabled !== undefined ? { enabled } : {}),
-        ...(onSuccess ? { onSuccess } : {}),
-        ...(onError ? { onError } : {}),
-    };
+    const coreOptions: CreateStitchQueryOptions<T> & { stream: boolean } =
+        compact({
+            stream,
+            mode,
+            enabled,
+            onSuccess,
+            onError,
+        });
 
     // The live query handle, captured for the imperative refetch/cancel. It is
     // reassigned whenever the input changes (switchMap tears down the old one).
@@ -288,7 +290,7 @@ export function injectStitchStream<T>(
 // POJO shape `@tanstack/angular-query-experimental`'s `injectQuery(() => ...)`
 // consumes is the same `{ queryKey, queryFn }` TanStack uses everywhere.
 
-/** The plain object {@link queryOptions} returns — structurally compatible with
+/** The plain object {@link stitchQueryOptions} returns — structurally compatible with
  * TanStack Query's options without importing the library. */
 export interface StitchQueryOptions<T> {
     queryKey: readonly unknown[];
@@ -301,23 +303,23 @@ export interface StitchQueryOptions<T> {
  *
  * ```ts
  * import { injectQuery } from '@tanstack/angular-query-experimental';
- * import { queryOptions } from '@stitchapi/angular';
+ * import { stitchQueryOptions } from '@stitchapi/angular';
  *
- * readonly user = injectQuery(() => queryOptions(getUser, { params: { id: this.id() } }));
+ * readonly user = injectQuery(() => stitchQueryOptions(getUser, { params: { id: this.id() } }));
  * ```
  *
  * The `queryFn` awaits the stitch (the validated output); the `queryKey` is the
  * stitch's `name` (when present) plus the input, so TanStack caches per call.
  */
-export function queryOptions<S extends StitchLike<unknown, never>>(
+export function stitchQueryOptions<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: QueryInput<S>,
 ): StitchQueryOptions<QueryOutput<S>>;
-export function queryOptions<T, Input = unknown>(
+export function stitchQueryOptions<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: Input,
 ): StitchQueryOptions<T>;
-export function queryOptions<T>(
+export function stitchQueryOptions<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
 ): StitchQueryOptions<T> {
@@ -327,3 +329,11 @@ export function queryOptions<T>(
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }
+
+/**
+ * @deprecated Renamed to {@link stitchQueryOptions} — a bare `queryOptions` collides
+ * with TanStack Query's own `queryOptions` export when both are imported. See
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
+ * `1.0.0-rc` line and removed at the 1.0 GA cut.
+ */
+export const queryOptions = stitchQueryOptions;

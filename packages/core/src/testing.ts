@@ -155,25 +155,31 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
  *
  * - `set`/`get` round-trips a value; a missing key resolves to `undefined`;
  *   a second `set` overwrites; writes are isolated by key.
- * - `set(key, value, ttlMs)` expires the value after `ttlMs`; a `set` without
- *   `ttlMs` does not expire.
- * - `incr(key, ttlMs)` initializes a missing key to 1, increments an existing
+ * - `set(key, value, ttl)` expires the value after `ttl` ms; a `set` without
+ *   `ttl` does not expire.
+ * - `incr(key, ttl)` initializes a missing key to 1, increments an existing
  *    counter, is ATOMIC within a process (20 concurrent calls return
  *    1..20 exactly), and restarts at 1 once its TTL window lapses.
  *
  * TTL rules use real timers with a small window (default 60ms); raise
- * `opts.ttlMs` for backends with coarser expiry. Keys are namespaced per run,
+ * `opts.ttl` for backends with coarser expiry. Keys are namespaced per run,
  * so reruns against a persistent backend (Redis, Postgres, ...) never collide.
  *
  * @param makeStore Factory for the store under test; awaited, so it may
  *   connect to a real backend.
- * @param opts `ttlMs` — the expiry window the TTL rules use (default 60).
+ * @param opts `ttl` — the expiry window (ms) the TTL rules use (default 60).
  */
 export async function verifyStoreContract(
     makeStore: () => StitchStore | Promise<StitchStore>,
-    opts?: { ttlMs?: number },
+    opts?: {
+        /** Expiry window (ms) the TTL rules use. Default 60. */
+        ttl?: number;
+        /** @deprecated Renamed to `ttl` (CONTRACT.md P17). Read until the 1.0 GA cut. */
+        ttlMs?: number;
+    },
 ): Promise<ContractReport> {
-    const ttlMs = opts?.ttlMs ?? 60;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `ttlMs` is the @deprecated alias of `ttl`, read for back-compat until the GA cut (CONTRACT.md P17)
+    const ttlMs = opts?.ttl ?? opts?.ttlMs ?? 60;
     const store = await makeStore();
     const ns = `stitch-conformance:${Date.now().toString(36)}-${Math.random()
         .toString(36)
@@ -377,6 +383,8 @@ export interface FixtureResponse {
     /** Raw response body text. */
     body: string;
     /** When set, the host MUST delay sending the response by this many ms. */
+    delay?: number;
+    /** @deprecated Renamed to {@link FixtureResponse.delay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     delayMs?: number;
 }
 
@@ -395,11 +403,11 @@ export interface FixtureResponse {
  *   response header `x-stitch-echo: text`.
  * - `GET /json` → 200 `application/json` body
  *   `{"kit":"stitchapi","numbers":[1,2,3]}` with `x-stitch-echo: json`.
- * - `GET /slow` → 200 JSON `{"slow":true}` with `delayMs: 300`.
+ * - `GET /slow` → 200 JSON `{"slow":true}` with `delay: 300`.
  * - anything else → 404 JSON `{"error":"not_found"}`.
  *
  * Host duties: lowercase request header names, hand over the raw request body
- * text, and honor `delayMs` (the in-flight abort rule depends on it).
+ * text, and honor `delay` (the in-flight abort rule depends on it).
  */
 export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
     const path = req.path.split('?', 1)[0] ?? req.path;
@@ -451,7 +459,13 @@ export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
         return json(200, JSON_BODY, { 'x-stitch-echo': 'json' });
     }
     if (path === '/slow' && method === 'GET') {
-        return { ...json(200, { slow: true }), delayMs: SLOW_DELAY_MS };
+        const res: FixtureResponse = {
+            ...json(200, { slow: true }),
+            delay: SLOW_DELAY_MS,
+        };
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-set the @deprecated `delayMs` alias for back-compat (CONTRACT.md P17)
+        res.delayMs = SLOW_DELAY_MS;
+        return res;
     }
     return json(404, { error: 'not_found' });
 }
@@ -606,7 +620,7 @@ export async function verifyAdapterContract(
                 if (outcome === 'resolved') {
                     throw new Error(
                         'adapter resolved a /slow request despite an in-flight abort ' +
-                            '(is the host honoring the fixture delayMs?)',
+                            '(is the host honoring the fixture delay?)',
                     );
                 }
                 if (elapsed > ABORT_PROMPT_MS) {
@@ -643,7 +657,7 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
         phase: 'throttled',
         attempt: 1,
         detail: 'rate',
-        waitedMs: 12,
+        waited: 12,
         at: SINK_AT + 1,
     },
     {
@@ -665,7 +679,7 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
     { type: 'delta', chunk: { partial: true }, at: SINK_AT + 4 },
     {
         type: 'result',
-        value: { users: [] },
+        data: { users: [] },
         status: 200,
         attempts: 1,
         at: SINK_AT + 5,
@@ -678,7 +692,14 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
         attempts: 2,
         at: SINK_AT + 6,
     },
-    { type: 'done', ok: true, ms: 34, attempts: 1, at: SINK_AT + 7 },
+    {
+        type: 'done',
+        ok: true,
+        elapsed: 34,
+        ms: 34,
+        attempts: 1,
+        at: SINK_AT + 7,
+    },
 ];
 
 /**
@@ -797,19 +818,23 @@ function callFingerprint(
         throw new Error(`${label}: fingerprint() must be synchronous`);
     }
     const r = result as
-        | { value?: unknown; strength?: unknown }
+        | { token?: unknown; value?: unknown; strength?: unknown }
         | null
         | undefined;
+    // Accept the canonical `token` or the @deprecated `value` alias (CONTRACT.md P5), and normalize
+    // so downstream rules read `.token` regardless of which spelling the fingerprinter produced. A
+    // presence check (not `??`) preserves the `null` ABSTAIN sentinel — `null ?? value` would drop it.
+    const token = r?.token !== undefined ? r.token : r?.value;
     if (
         !r ||
-        (r.value !== null && typeof r.value !== 'string') ||
+        (token !== null && typeof token !== 'string') ||
         (r.strength !== 'strong' && r.strength !== 'weak')
     ) {
         throw new Error(
-            `${label}: expected { value: string|null, strength: 'strong'|'weak' }, got ${show(result)}`,
+            `${label}: expected { token: string|null, strength: 'strong'|'weak' }, got ${show(result)}`,
         );
     }
-    return r as SchemaFingerprint;
+    return { token, value: token, strength: r.strength };
 }
 
 /**
@@ -866,9 +891,9 @@ export function verifyFingerprintContract(
             for (const { label, schema } of stable) {
                 const a = callFingerprint(fingerprinter, schema(), label);
                 const b = callFingerprint(fingerprinter, schema(), label);
-                if (a.value === null) fails.push(`${label} (abstained)`);
-                else if (a.value !== b.value)
-                    fails.push(`${label} (${a.value} != ${b.value})`);
+                if (a.token === null) fails.push(`${label} (abstained)`);
+                else if (a.token !== b.token)
+                    fails.push(`${label} (${a.token} != ${b.token})`);
             }
             if (fails.length) throw new Error(`unstable: ${fails.join('; ')}`);
         },
@@ -890,10 +915,10 @@ export function verifyFingerprintContract(
                         b(),
                         `${label}.b`,
                     );
-                    if (fa.value === null || fb.value === null)
+                    if (fa.token === null || fb.token === null)
                         fails.push(`${label} (abstained)`);
-                    else if (fa.value !== fb.value)
-                        fails.push(`${label} (${fa.value} != ${fb.value})`);
+                    else if (fa.token !== fb.token)
+                        fails.push(`${label} (${fa.token} != ${fb.token})`);
                 }
                 if (fails.length)
                     throw new Error(`not equivalent: ${fails.join('; ')}`);
@@ -904,18 +929,18 @@ export function verifyFingerprintContract(
     rules.push([
         'distinct: semantically-different schemas → distinct fingerprints',
         () => {
-            const byValue = new Map<string, string>();
+            const byToken = new Map<string, string>();
             const fails: string[] = [];
             for (const { label, schema } of distinct) {
                 const f = callFingerprint(fingerprinter, schema(), label);
-                if (f.value === null) {
+                if (f.token === null) {
                     fails.push(`${label} (abstained — cannot distinguish)`);
                     continue;
                 }
-                const prev = byValue.get(f.value);
+                const prev = byToken.get(f.token);
                 if (prev !== undefined)
-                    fails.push(`${label} collides with ${prev} (${f.value})`);
-                else byValue.set(f.value, label);
+                    fails.push(`${label} collides with ${prev} (${f.token})`);
+                else byToken.set(f.token, label);
             }
             if (fails.length)
                 throw new Error(`collisions: ${fails.join('; ')}`);
@@ -929,9 +954,9 @@ export function verifyFingerprintContract(
                 const fails: string[] = [];
                 for (const { label, schema } of abstain) {
                     const f = callFingerprint(fingerprinter, schema(), label);
-                    if (f.value !== null)
+                    if (f.token !== null)
                         fails.push(
-                            `${label} (returned ${f.value}, expected null)`,
+                            `${label} (returned ${f.token}, expected null)`,
                         );
                 }
                 if (fails.length)
@@ -957,8 +982,8 @@ export function verifyFingerprintContract(
                         continue;
                     }
                     const f = callFingerprint(fingerprinter, thunk(), label);
-                    if (f.value !== expected)
-                        fails.push(`${label} (${f.value} != ${expected})`);
+                    if (f.token !== expected)
+                        fails.push(`${label} (${f.token} != ${expected})`);
                 }
                 if (fails.length)
                     throw new Error(`snapshot drift: ${fails.join('; ')}`);

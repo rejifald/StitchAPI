@@ -3,9 +3,10 @@ title: 'Point an agent at llms.txt'
 description: 'Feed the auto-generated llms.txt and per-page llms.mdx to an agent for context-frugal docs.'
 ---
 
-Point an agent at this site's auto-generated `llms.txt` and per-page `llms.mdx`
-instead of scraping rendered HTML — it discovers the docs from a clean index and
-pulls just the page it needs into context, no markup, no token waste.
+Point an agent at this site's auto-generated `llms.txt`, `llms-full.txt`, and
+per-page `llms.mdx` instead of scraping rendered HTML — it reads clean Markdown
+with no markup and no token waste, whether it grabs the whole corpus at once or
+pulls just the page it needs.
 
 ## Example
 
@@ -25,6 +26,21 @@ curl https://stitchapi.dev/llms-full.txt
 Each page already stands on its own — restating its premise rather than leaning
 on neighbors — so the Markdown the agent pulls reads correctly in isolation. The
 stitch it documents is the same one-source-of-truth definition the runtime uses.
+
+## Default: load the whole corpus
+
+The simplest workflow is also the cheapest correct one: fetch `/llms-full.txt`
+once and drop the entire docs into context. The whole corpus fits inside a
+modern large-context model — Claude's 200k window, for instance — so there is
+nothing to gain from retrieval: no search index to build, no vector store to
+host, no embeddings to keep in sync. The agent reads exactly the Markdown a
+human does, generated from the same source, so it never drifts.
+
+Reach for the frugal path — the per-page `llms.mdx` above, or a dedicated
+docs-search tool — only when one of two things becomes true: the corpus
+outgrows the model's context window, or loading it on every turn costs more
+than a targeted lookup is worth. Until then, `llms-full.txt` wholesale is the
+default.
 
 ## Options
 

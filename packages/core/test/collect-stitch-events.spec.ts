@@ -25,8 +25,8 @@ const fullRun = (): StitchEvent[] => [
     { type: 'delta', chunk: 'a', at: 1 },
     { type: 'delta', chunk: 'b', at: 1 },
     { type: 'drift', finding, at: 1 },
-    { type: 'result', value: 'R', status: 200, attempts: 1, at: 1 },
-    { type: 'done', ok: true, ms: 0, attempts: 1, at: 1 },
+    { type: 'result', data: 'R', status: 200, attempts: 1, at: 1 },
+    { type: 'done', ok: true, elapsed: 0, attempts: 1, at: 1 },
 ];
 
 describe('collectStitchEvents', () => {
@@ -67,7 +67,7 @@ describe('collectStitchEvents', () => {
                     attempts: 1,
                     at: 1,
                 },
-                { type: 'done', ok: false, ms: 0, attempts: 1, at: 1 },
+                { type: 'done', ok: false, elapsed: 0, attempts: 1, at: 1 },
             ),
         );
         expect(withStatus.error).toEqual({ message: 'boom', status: 503 });

@@ -1,8 +1,11 @@
 import './global.css';
 
 import { jsonLdHtml } from '@/lib/json-ld';
+import { releaseVersion } from '@/lib/release';
 import { appName, gitConfig, siteUrl } from '@/lib/shared';
 
+import { Analytics } from '@vercel/analytics/next';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 import 'fumadocs-twoslash/twoslash.css';
 import { Banner } from 'fumadocs-ui/components/banner';
 import { RootProvider } from 'fumadocs-ui/provider/next';
@@ -151,7 +154,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                         />
                         <span>
                             <span className="font-semibold text-stitch-strong">
-                                Release candidate — 1.0.0-rc.1
+                                Release candidate — {releaseVersion}
                             </span>
                             <span className="hidden text-fd-muted-foreground sm:inline">
                                 {' '}
@@ -163,6 +166,8 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                     </Banner>
                     {children}
                 </RootProvider>
+                <Analytics />
+                <SpeedInsights />
             </body>
         </html>
     );

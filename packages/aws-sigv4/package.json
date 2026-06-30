@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/aws-sigv4",
-    "version": "1.0.0-rc.3",
+    "version": "1.0.0-rc.4",
     "type": "commonjs",
     "description": "AWS Signature V4 request signing for StitchAPI — an AuthStrategy that signs each request with SigV4 (Web Crypto, edge-safe), for AWS APIs, S3-compatible stores, and any SigV4-protected endpoint.",
     "main": "lib/index.js",

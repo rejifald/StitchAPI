@@ -6,7 +6,7 @@ export const now = (): number => Date.now();
 // ---- run identity (ADR 0007) ----------------------------------------------
 // Browser-safe random hex ids for the OTLP-aligned span tree: crypto.getRandomValues
 // where available, else Math.random (ids need to be unique-ish, not secret). 16 bytes
-// → a 32-hex traceId, 8 bytes → a 16-hex spanId/runId. The lone minter, shared by the
+// → a 32-hex traceId, 8 bytes → a 16-hex spanId. The lone minter, shared by the
 // engine (run identity) and the OTLP sink (its fallback when fed events by hand).
 export function hex(bytes: number): string {
     const buf = new Uint8Array(bytes);
@@ -20,19 +20,19 @@ export function hex(bytes: number): string {
 
 /**
  * Mint a {@link RunContext} for one logical call (ADR 0007). A root run gets a fresh
- * 32-hex `traceId` and a 16-hex `runId`; a child run (a `cookieSession` login, a `pipe()`
- * step) passes its caller's context to **inherit** the `traceId` and set `parentId` to the
- * caller's `runId`, so runs form one OTLP span tree. Ids are engine-minted, never supplied
+ * 32-hex `traceId` and a 16-hex `spanId`; a child run (a `cookieSession` login, a `linked`
+ * step) passes its caller's context to **inherit** the `traceId` and set `parentSpanId` to the
+ * caller's `spanId`, so runs form one OTLP span tree. Ids are engine-minted, never supplied
  * by a caller (a caller-named id would spoof correlation — ADR 0002 §2 reasoning).
  */
 export function newRunContext(parent?: {
     traceId: string;
-    runId: string;
+    spanId: string;
 }): RunContext {
     return {
         traceId: parent?.traceId ?? hex(16),
-        runId: hex(8),
-        ...(parent ? { parentId: parent.runId } : {}),
+        spanId: hex(8),
+        ...(parent ? { parentSpanId: parent.spanId } : {}),
     };
 }
 
@@ -79,12 +79,12 @@ export function parseDuration(
     return m[2] === 'ms' ? n : m[2] === 's' ? n * 1000 : n * 60000;
 }
 
-/** "2/s" | "10/m" -> { count, perMs }. */
-export function parseRate(r: string): { count: number; perMs: number } {
+/** "2/s" | "10/m" -> { count, per } (window length in ms). */
+export function parseRate(r: string): { count: number; per: number } {
     const m = /^(\d+)\s*\/\s*(ms|s|m)$/.exec(r.trim());
     if (!m) throw new Error(`bad rate: ${r}`);
     const per = m[2] === 'ms' ? 1 : m[2] === 's' ? 1000 : 60000;
-    return { count: parseInt(m[1] ?? '', 10), perMs: per };
+    return { count: parseInt(m[1] ?? '', 10), per };
 }
 
 /**
@@ -484,7 +484,7 @@ const URL_REDACTED = 'REDACTED';
 // every trace sink (the JSONL/console `start.url` via `scrubUrl`, the OTLP `url.full`, and the
 // structured `input.query` via `redactSecretQuery`) without listing every vendor spelling. The
 // default `api_key` already matches a stem; this covers an arbitrary configured name too.
-// Lower-cased on insert so the membership test in `isSecretQueryKey` stays case-insensitive.
+// Lower-cased on insert so the membership test in `isSecretKey` stays case-insensitive.
 const REGISTERED_SECRET_QUERY_KEYS = new Set<string>();
 
 /**
@@ -497,18 +497,71 @@ export function registerSecretQueryKey(name: string): void {
 }
 
 /**
- * True when a query-param name (or any key in the same family — a `start` event's
- * `input.query`) carries a secret value: matched case-insensitively against the
- * secret key set above, by containing one of the secret stems, or because a caller
- * registered it via {@link registerSecretQueryKey} (e.g. `apiKey({ in: 'query', name })`).
+ * True when a key name (a query-param name, a response-body object key, or any
+ * key in the same family — a `start` event's `input.query`) carries a secret value:
+ * matched case-insensitively against the secret key set above, by containing one of
+ * the secret stems, or because a caller registered it via
+ * {@link registerSecretQueryKey} (e.g. `apiKey({ in: 'query', name })`).
  */
-export function isSecretQueryKey(key: string): boolean {
+export function isSecretKey(key: string): boolean {
     const k = key.toLowerCase();
     return (
         SECRET_QUERY_KEYS.has(k) ||
         REGISTERED_SECRET_QUERY_KEYS.has(k) ||
         SECRET_QUERY_STEMS.some((s) => k.includes(s))
     );
+}
+
+/**
+ * Backward-compatible alias for {@link isSecretKey} — the URL scrubbers and any
+ * external code that imported the original name keep working unchanged.
+ */
+export const isSecretQueryKey: (key: string) => boolean = isSecretKey;
+
+/**
+ * Deep-clone `value` and replace any object key that matches {@link isSecretKey}
+ * (or the caller's `extra` name/path patterns via {@link matchPath}) with the
+ * `'REDACTED'` sentinel. Returns a new value — the input is **never mutated**.
+ * Walks arrays and plain objects recursively; leaves primitives as-is unless they
+ * sit under a redacted key. Used by `.inspect({ redact })` to scrub `raw` before
+ * the caller logs or forwards it.
+ *
+ * @param value - the value to deep-clone and scrub.
+ * @param extra - optional extra key-name/path patterns (reuses the {@link matchPath}
+ *   grammar: exact, `*` wildcard, or prefix). Added on top of the shared denylist;
+ *   the denylist is always applied.
+ */
+export function redactSecretsDeep(
+    value: unknown,
+    extra?: string[],
+    _path?: string,
+): unknown {
+    if (Array.isArray(value)) {
+        return value.map((item, i) =>
+            redactSecretsDeep(
+                item,
+                extra,
+                _path !== undefined ? `${_path}[${i}]` : `[${i}]`,
+            ),
+        );
+    }
+    if (value !== null && typeof value === 'object') {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            const childPath = _path !== undefined ? `${_path}.${k}` : k;
+            const secret =
+                isSecretKey(k) ||
+                (extra !== undefined &&
+                    (extra.some((p) => matchPath(p, k)) ||
+                        (_path !== undefined &&
+                            extra.some((p) => matchPath(p, childPath)))));
+            out[k] = secret
+                ? URL_REDACTED
+                : redactSecretsDeep(v, extra, childPath);
+        }
+        return out;
+    }
+    return value;
 }
 
 /**
@@ -529,9 +582,7 @@ export function scrubUrl(url: string): string {
     const hadUserinfo = u.username !== '' || u.password !== '';
     u.username = '';
     u.password = '';
-    const secretKeys = [...new Set(u.searchParams.keys())].filter(
-        isSecretQueryKey,
-    );
+    const secretKeys = [...new Set(u.searchParams.keys())].filter(isSecretKey);
     for (const key of secretKeys) {
         // Preserve a repeated key's arity (e.g. `?k=a&k=b` → two REDACTED values).
         const count = u.searchParams.getAll(key).length;

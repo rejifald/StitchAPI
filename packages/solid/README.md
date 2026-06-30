@@ -11,7 +11,7 @@ These primitives are a thin layer over [`@stitchapi/query-core`](../query-core),
 ## Install
 
 ```sh
-pnpm add @stitchapi/solid @stitchapi/query-core stitchapi solid-js
+pnpm add @stitchapi/solid@rc @stitchapi/query-core@rc stitchapi@rc solid-js
 ```
 
 `stitchapi`, `@stitchapi/query-core`, and `solid-js` (`^1.8`) are peer dependencies. `@tanstack/solid-query` is an **optional** peer — only needed if you use `queryOptions`.

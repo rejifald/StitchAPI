@@ -52,7 +52,7 @@ describe('fastifyLoggerSink — level mapping', () => {
             { type: 'progress', phase: 'throttled', attempt: 1, at: 0 },
             {
                 type: 'result',
-                value: { id: 1 },
+                data: { id: 1 },
                 status: 200,
                 attempts: 1,
                 at: 0,
@@ -65,7 +65,7 @@ describe('fastifyLoggerSink — level mapping', () => {
                 attempts: 3,
                 at: 0,
             },
-            { type: 'done', ok: true, ms: 12, attempts: 1, at: 0 },
+            { type: 'done', ok: true, elapsed: 12, attempts: 1, at: 0 },
         ];
         for (const e of events) sink.handle(e, ctx);
 
@@ -117,10 +117,13 @@ describe('fastifyLoggerSink — level mapping', () => {
 
         sink.handle(startEvent('https://api.test/u'), ctx);
         sink.handle(
-            { type: 'result', value: 1, status: 200, attempts: 1, at: 0 },
+            { type: 'result', data: 1, status: 200, attempts: 1, at: 0 },
             ctx,
         );
-        sink.handle({ type: 'done', ok: true, ms: 1, attempts: 1, at: 0 }, ctx);
+        sink.handle(
+            { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+            ctx,
+        );
         sink.handle(
             {
                 type: 'error',
@@ -146,7 +149,7 @@ describe('fastifyLoggerSink — messages', () => {
         const sink = fastifyLoggerSink(logger);
 
         sink.handle(
-            { type: 'result', value: 1, status: 201, attempts: 2, at: 0 },
+            { type: 'result', data: 1, status: 201, attempts: 2, at: 0 },
             { name: 'createOrder' },
         );
 
@@ -188,7 +191,7 @@ describe('fastifyLoggerSink — security', () => {
         sink.handle(
             {
                 type: 'result',
-                value: { password: 'hunter2', ssn: '123-45-6789' },
+                data: { password: 'hunter2', ssn: '123-45-6789' },
                 status: 200,
                 attempts: 1,
                 at: 0,

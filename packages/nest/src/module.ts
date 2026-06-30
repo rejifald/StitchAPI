@@ -3,7 +3,7 @@
 // registers injectable stitches and, optionally, a per-upstream feature seam built over
 // that shared infrastructure. `SeamRegistry` owns the shutdown lifecycle.
 import { nestBorrowStore, nestLoggerSink } from './bridges';
-import type { AnyStitchDef, StitchHost } from './define-stitch';
+import type { AnyStitchDef, NestRequestSeam } from './define-stitch';
 import { STITCH_SEAM, STITCH_STORE, STITCH_TRACE } from './tokens';
 
 import {
@@ -206,7 +206,7 @@ export class StitchModule {
         for (const d of norm.stitches) {
             providers.push({
                 provide: d.token,
-                useFactory: (host: StitchHost) => d.build(host),
+                useFactory: (host: NestRequestSeam) => d.build(host),
                 inject: [token],
             });
             exported.push(d.token);
@@ -254,7 +254,7 @@ export class StitchModule {
         providers.push({
             provide: principalToken,
             scope: Scope.REQUEST,
-            useFactory: (base: Seam, req: any): StitchHost =>
+            useFactory: (base: Seam, req: any): NestRequestSeam =>
                 base.as(opts.principal(req)),
             inject: [baseToken, REQUEST],
         });
@@ -263,7 +263,7 @@ export class StitchModule {
             providers.push({
                 provide: d.token,
                 scope: Scope.REQUEST,
-                useFactory: (host: StitchHost) => d.build(host),
+                useFactory: (host: NestRequestSeam) => d.build(host),
                 inject: [principalToken],
             });
             exported.push(d.token);

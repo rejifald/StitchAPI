@@ -22,11 +22,11 @@ a page reads well both rendered in a browser and pulled out of context as
 
 ---
 
-## The seven dimensions
+## The nine dimensions
 
 Each dimension has a **rule** (what good looks like), a **tell** (the failure
 smell — most are greppable), and an **example** drawn from a real page. An audit
-scores a page against all seven.
+scores a page against all nine.
 
 ### 1. The lede earns its place in one sentence
 
@@ -102,6 +102,65 @@ use the imperative for steps.
 -   🚩 **Tell:** _we recommend, we built, we think, our library, let's_ — replace
     with the reader's action or the plain fact.
 
+### 8. Don't show the reader the door — frame the on-ramp, not the upsell
+
+A how-to page that ends by listing when _not_ to reach for a stitch sends the
+reader away at the moment they were ready to try it. The stitch is the on-ramp: it
+scales **down** to the same one line the bare primitive needs and **up** without a
+rewrite. Make the contrast directional — the bare tool bounds the call you have; the
+stitch bounds it just as simply and is ready for the call it becomes.
+
+-   ✅ _"A stitch scales down to the same one line — `timeout: '3s'`. The inline
+    `AbortSignal` answers one question and stops there; the stitch is that same call
+    today and one edit from retry, auth, or a validator tomorrow."_ (`fetch-timeout-typescript`)
+-   🚩 **Tell:** a closing section titled "When the plain X is enough" / "When the
+    hand-rolled … is enough", or a sentence that waves the reader off — _stop here,
+    you don't need a stitch, more setup, the inline … is leaner, the loop is the leaner
+    choice, overkill, dead weight, keep them._ Grep: `## When .* is enough`, `stop here`, `\bleaner\b`, `more setup`, `overkill`, `you don'?t need`, `needs none of that`.
+
+**Honesty guardrail — this never licenses a false claim (see `blocker`).** Where the
+bare tool is genuinely the better fit _today_, say so — but as a **trigger**, not a
+dismissal. Convert "you don't need a stitch" into "here's the moment you reach for
+one" by naming the condition that flips the decision: a second call site, a retry, an
+auth boundary, a schema you'll reuse. Never claim the stitch is lighter when it is
+not — a stitch with no `output` validator really is "a fetch wrapper with extra
+steps," and the page must keep saying so. The move from bare tool to stitch is a
+field on a declaration, not a rewrite; say that instead of conceding the case.
+
+**Comparison ("X vs Y") posts are the exception.** A piece whose job is to weigh the
+stitch against codegen, axios, or a workflow platform earns its authority by naming,
+plainly, the lane where the _other_ tool wins — that is dimension 4 doing its job, and
+deleting it turns an honest comparison into an advertisement nobody trusts. Keep the
+concession; reframe only the dead-end phrasing (_"stitching isn't worth it"_ →
+_"when you'd graduate to a stitch"_).
+
+### 9. Respect the reader — diagnose, don't blame
+
+The reader arrived with a problem. Prose names the constraint and points to the fix;
+it never implies the limitation is the reader's fault, their data's fault, or beneath
+the feature to bother with. State a limit as _where the work lives_ — "you handle that
+one layer down" — not as a verdict on the person hitting it. This is the honesty of
+dimension 8 turned toward the reader: a true constraint is fine to state, a true
+constraint stated _at the reader_ is not. Condescension fails here for the same reason —
+"simply", "obviously", "any competent dev" tell a stuck reader the fault is theirs.
+
+-   ✅ _"If two submissions share nothing stable to derive a key from, no key can join
+    them at this layer — you dedupe them one level down, on a unique constraint in the
+    database."_ (`idempotency-keys-safe-retries`) — names the constraint, then the next move.
+-   🚩 **Tell — blame-shifting / dismissive:** a limit pinned on the reader instead of
+    located — _that is a fact about your data not a gap in the feature, not our problem,
+    works as intended, you're doing it wrong, you're holding it wrong, that's on you,
+    nothing we can do, if you'd only._ Grep: `not a (bug|gap|problem|flaw|limitation) in`,
+    `your (data|problem|fault)`, `works as intended`, `(doing|holding) it wrong`, `that'?s on you`.
+-   🚩 **Tell — condescension:** difficulty waved away as if trivial for the reader —
+    _obviously, clearly, of course, any competent, as everyone knows, it should be obvious._
+    Grep: `\bobviously\b`, `\bclearly\b`, `any competent`, `everyone knows`.
+
+The fix is always the same shape: keep the fact, drop the judgment, add the next step.
+"That's a gap in your data, not the feature" → "nothing stable to key on means you dedupe
+a layer down — here's where." The constraint survives; the reader is pointed somewhere,
+not pushed away.
+
 ---
 
 ## A note on terminology (shared with `AUTHORING.md`)
@@ -124,7 +183,10 @@ standard. This file is English-prose only.
    found. Does the lede tell you what and when (dim. 1)? Did anything make you
    re-read (dim. 6)?
 2. **Grep the tells.** The delete-on-sight list (dim. 2), agentless passive
-   (dim. 5), and back-references (dim. 6) are mechanical — find them first.
+   (dim. 5), back-references (dim. 6), door-closing closers (dim. 8 —
+   `## When .* is enough`, `stop here`, `leaner`, `overkill`), and blame /
+   condescension (dim. 9 — `your (data|problem|fault)`, `not a .* in the feature`,
+   `obviously`, `clearly`) are mechanical — find them first.
 3. **Score each dimension** and record findings as
    `file:line · dimension · severity · the rewrite`. A finding is not a flag; it
    is the replacement sentence.
@@ -138,6 +200,9 @@ standard. This file is English-prose only.
     obscure the point.
 -   **`minor`** — violates dimensions 5–7. Polish: a passive that wants an actor, a
     stray "we", an avoidable back-reference.
+-   **Tone (dims. 8–9) is at least `major`.** A door-closing closer or a blaming /
+    condescending line drives the reader off — score it `major`, or `blocker` if the
+    blame also restates something false about what the feature can do.
 
 A page is **done** when it has no `blocker` or `major` findings and reads, start to
 finish, like the exemplar pages this standard was drawn from.
@@ -153,4 +218,8 @@ finish, like the exemplar pages this standard was drawn from.
 -   [ ] No agentless passive or nominalization where an actor + verb fits (dim. 5).
 -   [ ] No back-reference to other pages' position; reads standalone (dim. 6).
 -   [ ] Second person for the reader; no authorial "we" (dim. 7).
+-   [ ] No door-closing closer; the bare tool is framed as the on-ramp's first
+        step, concessions read as graduation triggers, not dismissals (dim. 8).
+-   [ ] No blame or condescension; constraints are located, not pinned on the
+        reader, and difficulty is never waved away as obvious (dim. 9).
 -   [ ] Product vocabulary matches `AUTHORING.md` rule 4 exactly.

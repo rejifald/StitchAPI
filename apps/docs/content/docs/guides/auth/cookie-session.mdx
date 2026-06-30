@@ -1,6 +1,8 @@
 ---
 title: 'cookieSession'
 description: 'Log in once, capture and replay cookies, and refresh the session on a status code or a soft 200 wall.'
+prerequisites:
+    ['/docs/concepts/the-stitch', '/docs/concepts/capability-not-credential']
 ---
 
 Use `cookieSession` when an API authenticates with a login form and a cookie
@@ -68,14 +70,14 @@ never crashes the call.
 -   `onAuthFailure(info)` runs when an attempt captured no cookie, with a
     `category` you map to your own status:
     `'unauthenticated'` (a `refreshOn` status, e.g. `401` — bad/expired creds),
-    `'rate-limited'` (`429`, with `retryAfterMs` parsed from `Retry-After`),
+    `'rate-limited'` (`429`, with `retryAfter` parsed from `Retry-After`),
     `'network'` (the login threw before any response — with the thrown `error`),
     or `'unknown'`. `info.phase` is `'apply'` for a cold session or `'refresh'`
     for a wall that was hit mid-stream.
 
 ```ts twoslash
 import { cookieSession, env, stitch } from 'stitchapi';
-import type { AuthFailureInfo, RefreshResult } from 'stitchapi';
+import type { AuthFailureResult, RefreshResult } from 'stitchapi';
 
 // Your own durable store — a row in a database, a Redis hash, anything.
 declare const sessionState: {
@@ -105,12 +107,12 @@ const me = stitch({
             if (ok) await sessionState.markActive();
         },
         // Categorise a failure and drive your own recovery loop.
-        onAuthFailure: async (info: AuthFailureInfo) => {
+        onAuthFailure: async (info: AuthFailureResult) => {
             switch (info.category) {
                 case 'rate-limited':
                     // Back off until the server says we may retry.
                     await sessionState.backoffUntil(
-                        Date.now() + (info.retryAfterMs ?? 60_000),
+                        Date.now() + (info.retryAfter ?? 60_000),
                     );
                     break;
                 case 'unauthenticated':
