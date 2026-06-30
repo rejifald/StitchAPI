@@ -137,4 +137,9 @@ lib
 # apps/docs/lib/ is Fumadocs source (lib/source.ts, lib/shared.ts, …), not build
 # output — exempt it from the generic `lib` rule above.
 !apps/docs/lib/
+
+# Build-time semantic docs search index (search_docs): regenerated every deploy
+# from the MDX, same source as llms.txt — never committed.
+# See docs/proposals/search-docs.md.
+apps/docs/.search-index/
 .DS_Store

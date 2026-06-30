@@ -58,6 +58,13 @@ const withMDX = createMDX();
 /** @type {import('next').NextConfig} */
 const config = {
     reactStrictMode: true,
+    // Bundle the build-time search index into the /api/search-docs serverless
+    // function so it can restore the Orama dump at runtime. The file is generated
+    // at deploy by scripts/prebuild-search-index.mjs (never committed); runtime
+    // model loading / cold-start is hardened in P3.
+    outputFileTracingIncludes: {
+        '/api/search-docs': ['./.search-index/**'],
+    },
     // The playground consumes the in-repo sandbox engine (@stitchapi/sandbox), a
     // workspace package that ships raw TS/TSX source — Next must transpile it.
     transpilePackages: ['@stitchapi/sandbox'],
