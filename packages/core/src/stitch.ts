@@ -683,8 +683,8 @@ export function makeStitch<T = unknown>(
     const name = cfg.name ?? cfg.path ?? 'stitch';
 
     // One traced run for `input` under a given run identity (ADR 0007). `streamFn` mints a fresh
-    // ROOT run per consumption; `pipe()` (stitchapi/pipe) supplies a CHILD run via `__runWith`, so a
-    // step joins the pipe's chain (its events tee with parentId set).
+    // ROOT run per consumption; composition (`linked`/`all`, stitchapi/pipe) supplies a CHILD run via
+    // `__runWith`, so a step joins the scope's chain (its events tee with parentId set).
     const streamWith = (
         input: StitchInput,
         run: RunContext,
@@ -812,7 +812,7 @@ export function makeStitch<T = unknown>(
     // caller's run. `newRunContext(parent)` inherits the parent's traceId + sets parentId.
     stitchFn.__rawTraced = (input, parent) =>
         executeRawTraced(rt, input ?? {}, rt.trace, newRunContext(parent));
-    // Run this stitch under a supplied run identity (ADR 0007) and resolve to its value — `pipe()`
+    // Run this stitch under a supplied run identity (ADR 0007) and resolve to its value — `linked`
     // mints a chain of run contexts and threads each step's here, so a step is a child of the prior.
     stitchFn.__runWith = (input, run) =>
         consume<T>(streamWith(input ?? {}, run));

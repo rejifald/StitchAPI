@@ -20,7 +20,7 @@ export function hex(bytes: number): string {
 
 /**
  * Mint a {@link RunContext} for one logical call (ADR 0007). A root run gets a fresh
- * 32-hex `traceId` and a 16-hex `runId`; a child run (a `cookieSession` login, a `pipe()`
+ * 32-hex `traceId` and a 16-hex `runId`; a child run (a `cookieSession` login, a `linked`
  * step) passes its caller's context to **inherit** the `traceId` and set `parentId` to the
  * caller's `runId`, so runs form one OTLP span tree. Ids are engine-minted, never supplied
  * by a caller (a caller-named id would spoof correlation — ADR 0002 §2 reasoning).

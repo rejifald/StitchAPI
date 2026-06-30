@@ -14,7 +14,7 @@ Built on Web standards only (`Response`, `ReadableStream`, `TextEncoder`) — **
 ## Install
 
 ```sh
-pnpm add @stitchapi/next stitchapi
+pnpm add @stitchapi/next@rc stitchapi@rc
 ```
 
 `stitchapi` is the only peer dependency.

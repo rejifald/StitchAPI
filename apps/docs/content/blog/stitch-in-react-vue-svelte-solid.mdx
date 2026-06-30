@@ -18,7 +18,7 @@ Query-core owns the lifecycle and nothing else: status transitions, cancellation
 
 That shared core is why the per-framework state shape is the same everywhere:
 
-```ts
+```ts twoslash
 interface StitchQueryState<T> {
     status: 'idle' | 'pending' | 'streaming' | 'success' | 'error';
     data: T | undefined;
@@ -37,7 +37,8 @@ Learn it once and it transfers. The same `isPending` / `isError` / `isStreaming`
 
 The React binding is a pair of hooks built on `useSyncExternalStore`, so they're tearing-free under concurrent rendering. `useStitch` is the request/response case:
 
-```ts
+```ts twoslash
+// @noErrors
 import { useStitch } from '@stitchapi/react';
 
 function Profile({ id }: { id: string }) {
@@ -55,7 +56,8 @@ The query re-creates and re-fetches when the stitch identity or a structural key
 
 For a streaming surface (`sse` / `stream`), `useStitchStream` re-renders as each `delta` chunk arrives — [feed those deltas from a server route](/blog/stream-a-stitch-as-sse-in-next-app-router) and the client just maps over `chunks`. Same result shape; `chunks` is the running list, and `isStreaming` stays true until the terminal `result`:
 
-```ts
+```ts twoslash
+// @noErrors
 import { useStitchStream } from '@stitchapi/react';
 
 function Chat({ prompt }: { prompt: string }) {
@@ -79,7 +81,8 @@ Swap React's hook for the next framework's idiomatic shape and nothing else move
 
 **Angular** is the sharpest illustration of "same state, different primitive": `injectStitch` hands the lifecycle back as _both_ fine-grained signals and an RxJS observable, from one shared execution.
 
-```ts
+```ts twoslash
+// @noErrors
 import { injectStitch } from '@stitchapi/angular';
 
 readonly user = injectStitch(getUser, () => ({ params: { id: this.id() } }));
@@ -99,9 +102,10 @@ If you already run a query/cache layer, the stitch doesn't fight it — it slots
 
 So the decision isn't "stitch bindings _or_ my query library." It's which layer owns view state — and the stitch is the call either way.
 
-## When this isn't worth it
+## Start with a direct call — reach for the binding when the view reacts
 
-Two honest caveats:
+`await stitch(...)` is the floor. A fire-once call outside a reactive view starts there and stays there — no binding needed, no overhead, just the call.
 
--   **If a query library already owns your view state, you may not need the binding's hooks at all.** Going through SWR, RTK Query, or TanStack Query can be the simpler path — let that layer manage state and let the stitch be the `queryFn`.
--   **A one-shot call doesn't need a binding.** For a fire-once call outside a reactive view, `await stitch(...)` is enough; the binding earns its keep only when a component has to react to loading, error, drift, or streaming state over time.
+You reach for the binding the moment a component must render against loading, error, drift, or streaming state over time. That's the trigger: the view reacts, the binding earns its keep.
+
+If a query library already owns your view state, the stitch becomes the `queryFn` and you skip the binding's hooks entirely — SWR, RTK Query, or TanStack Query own the reactive layer, the stitch owns the call. That's not a detour; it's the same graduation applied to a different state layer.

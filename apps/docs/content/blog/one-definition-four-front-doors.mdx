@@ -16,7 +16,7 @@ A stitch collapses that. You declare an endpoint once — its types, auth, and r
 
 Here's the whole thing — a single stitch with its resilience and validation declared on it. Everything below is just a different way to call _this_.
 
-```ts
+```ts twoslash
 // stitches.ts
 import { stitch } from 'stitchapi';
 import { bearer, env } from 'stitchapi';
@@ -40,9 +40,20 @@ Export your stitches by name from a module (the CLI and the servers default to `
 
 The closest door. Import the stitch and call it like any async function; `await` returns the final unwrapped, validated value.
 
-```ts
-import { getUser } from './stitches';
+```ts twoslash
+import { bearer, env, stitch } from 'stitchapi';
+import { z } from 'zod';
 
+// the stitch declared in stitches.ts, imported here as `getUser`
+const getUser = stitch({
+    name: 'getUser',
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+    unwrap: 'data',
+    auth: bearer(env('API_TOKEN')),
+});
+// ---cut---
 const user = await getUser({ params: { id: 1 } }); // typed · validated
 ```
 
@@ -106,20 +117,25 @@ Here's the part that makes four doors worth it rather than four times the work: 
 
 You don't reconcile four policies. You change the stitch, and every front door changes with it.
 
-## When this isn't worth it — and the honest caveats
+## When one front door is plenty — and when you add the others
 
-Two doors are free in the sense that they run nothing extra: the in-process function is just an import, and the CLI is a process you start when you need it and let exit. The other two are not free.
+The in-process function is the floor. One caller, one import — that's all you need until something changes.
 
--   **Serving over HTTP or MCP means operating a process.** `stitch serve` and `stitch mcp` are things you deploy, keep alive, and watch. That's real operational surface — don't stand one up for a call your own code could just import.
--   **The HTTP front door has no auth of its own.** It binds to `127.0.0.1` loopback on purpose. Moving that bind to a public interface turns the registry into an open proxy that runs every stitch for anyone who can reach the port. Put a gateway or reverse proxy that authenticates the caller in front of it; the stitch still holds and resolves its own credential server-side.
--   **Not every stitch should be exposed through every door.** A destructive write you call from one carefully-reviewed code path probably shouldn't be a tool an agent can invoke by name, or a route any HTTP caller can POST to. Scope what each server exposes deliberately — expose the registry an agent _should_ have, not your whole module.
+Reach for the CLI when an ops person needs to trigger the stitch without touching your code. Reach for HTTP when another service needs to call it over the network. Reach for MCP when an agent needs to discover and invoke it by name. Each door is the same definition; adding one is configuration, not a rewrite.
 
-So the win isn't "turn everything on." It's that when a stitch _does_ belong behind several doors, you describe it once and let the doors share it — instead of maintaining a library, a CLI wrapper, an HTTP handler, and an agent tool definition that quietly drift apart.
+Two doors cost almost nothing to run: the function is an import, the CLI exits when it's done. The other two are processes you deploy and keep alive — so open them only when a caller actually needs them.
+
+A few things to wire deliberately when you do:
+
+-   **HTTP has no auth of its own.** It binds to `127.0.0.1` loopback on purpose. A public bind turns the registry into an open proxy. Put a gateway or reverse proxy in front; the stitch resolves its own credentials server-side regardless.
+-   **Scope what each server exposes.** A destructive write that runs through one reviewed code path probably shouldn't be a tool an agent can invoke by name. Expose the registry an agent _should_ have, not your whole module.
+
+The point isn't turning everything on. It's that when a stitch belongs behind several doors, you described it once — and the doors share it instead of drifting apart.
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Declare one stitch, then reach it four ways — the [in-process function](/docs/surfaces/function), the [CLI](/docs/surfaces/cli), [HTTP serve](/docs/surfaces/http-serve), and [MCP](/docs/surfaces/mcp).

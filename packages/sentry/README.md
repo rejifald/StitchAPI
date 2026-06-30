@@ -11,7 +11,7 @@ Routine events become breadcrumbs (category `stitch`); an `error` event is captu
 ## Install
 
 ```sh
-pnpm add @stitchapi/sentry stitchapi
+pnpm add @stitchapi/sentry@rc stitchapi@rc
 ```
 
 `stitchapi` is the only peer dependency. Pass whichever `@sentry/*` SDK your app already runs.

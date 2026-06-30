@@ -25,7 +25,7 @@ You want both bounds, and you want them named separately:
 
 StitchAPI declares them as one `timeout` object:
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const report = stitch({
@@ -53,7 +53,7 @@ A **circuit breaker** encodes "stop calling for a bit" as state. The mechanics a
 
 The fast-fail is the whole point. While the circuit is open, a call returns in microseconds instead of burning a `perAttempt` timeout discovering — again — that the dependency is unreachable. You stop adding load to a struggling upstream, and you stop tying up your own connections and promises waiting on doomed calls. The half-open probe is how you find out it's healthy again without flipping the floodgates open on the first hopeful guess.
 
-```ts
+```ts twoslash
 import { stitch } from 'stitchapi';
 
 const orders = stitch({
@@ -71,7 +71,7 @@ When the breaker is open, the call surfaces a `STITCH_CIRCUIT_OPEN` error — a 
 
 The reason these compose well is that the breaker, the timeouts, and retry/backoff are all configuration on the same stitch — declared together, evaluated together:
 
-```ts
+```ts twoslash tab="StitchAPI" tabGroup="approach"
 import { stitch } from 'stitchapi';
 
 const getQuote = stitch({
@@ -81,6 +81,38 @@ const getQuote = stitch({
     timeout: { total: '10s', perAttempt: '3s' },
     circuit: { failureThreshold: 5, cooldownMs: 30_000 },
 });
+```
+
+```ts twoslash tab="fetch" tabGroup="approach"
+// @noErrors
+// Retry + layered timeouts + a breaker, all by hand — and the breaker
+// state has to live in module scope to span calls.
+let failures = 0;
+let openedAt = 0;
+
+async function getQuote(symbol: string) {
+    if (failures >= 5 && Date.now() - openedAt < 30_000) {
+        throw new Error('circuit open'); // fast-fail, no probe logic
+    }
+
+    const total = AbortSignal.timeout(10_000);
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const perAttempt = AbortSignal.timeout(3_000);
+        try {
+            const res = await fetch(`https://api.example.com/quote/${symbol}`, {
+                signal: AbortSignal.any([total, perAttempt]),
+            });
+            if ([429, 502, 503].includes(res.status)) throw res;
+            failures = 0;
+            return res.json();
+        } catch (err) {
+            failures++;
+            openedAt = Date.now();
+            if (total.aborted || attempt === 2) throw err;
+            await new Promise((r) => setTimeout(r, 200 * 2 ** attempt));
+        }
+    }
+}
 ```
 
 Read top to bottom, that's a coherent reliability story. Retry absorbs the transient blips — a stray 503, a rate-limited 429 whose `Retry-After` you honor. The layered timeout bounds how long any single attempt and the whole call can take, with real aborts so nothing leaks. And the breaker is the backstop for when the failures stop being transient: once five in a row have failed, retrying is clearly futile, so it stops trying and fast-fails until a probe says otherwise.
@@ -103,8 +135,8 @@ The throughline: these tools bound a bad situation, they don't fix it. A depende
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Declare a stitch, give it a `timeout`, a `retry` policy, and a `circuit`, and you've described how it should behave when the upstream misbehaves — once, for every caller. The per-feature guides go deeper:

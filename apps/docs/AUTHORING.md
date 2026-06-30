@@ -53,6 +53,11 @@ subfolders (`authoring`, `auth`, `resilience`, `data`, `validation`,
 one focused `llms.mdx` per feature, so an agent pulls just the `cookieSession`
 page into context, not the whole auth manual.
 
+The **blog** (`content/blog`, served at `/blog`) is a **separate collection** with
+its own rules — flat files, dated frontmatter, prose-first, and its own
+interlinking convention. See [Blog posts](#blog-posts). Everything above this
+line is about the `content/docs` tree.
+
 ---
 
 ## The four templates
@@ -501,6 +506,7 @@ lands on, so make it the recommended form.
 | `module`           | imports differ by module system         | `ESM` · `CommonJS`                                      |
 | `consumption`      | how a stitch's result is consumed       | `await` · `Stream` · `.then()`                          |
 | `runtime`          | the same operation in code vs the shell | `Programmatic` · `CLI`                                  |
+| `approach`         | a stitch snippet vs the hand-rolled way | `StitchAPI` · `fetch`                                   |
 
 Four rules keep it coherent:
 
@@ -510,6 +516,35 @@ Four rules keep it coherent:
     with the config-object tab; it doesn't parade all twelve call styles.
 -   **A new axis is a new row here first.** Don't coin ad-hoc `tabGroup` values
     inline — add the row above, then use it, so persistence stays consistent.
+
+### `approach` — the "peek at the hand-rolled way" axis (blog)
+
+`approach` is the one axis aimed squarely at blog posts. A post that is about a
+**stitch-only feature** — one that has no fetch-vs-stitch prose "before" — stays
+stitch-first, and offers the equivalent raw-`fetch` code as an on-demand second
+tab on its **hero snippet**. The reader lands on `StitchAPI` and can switch to
+`fetch` to see what the same outcome costs by hand; the choice persists site-wide.
+
+Specific to this axis:
+
+-   **`StitchAPI` is always the default (first) tab.** The point is to stay
+    stitch-first; the `fetch` tab is the comparison, not the lede.
+-   **The `fetch` tab must be an _honest_ equivalent of that hero snippet** — the
+    naive hand-rolled version a reader would actually write, so the contrast is
+    real (the boilerplate the stitch folds in is visibly present, or visibly
+    absent). Don't gold-plate it and don't strawman it.
+-   **Hero snippet only, and only where an honest equivalent exists.** Don't tab
+    every block, and skip it where there's no faithful `fetch` form (a `pipe()`
+    composition, a CLI command, a conceptual essay with no single API call).
+-   **Both fences are `twoslash`** (the blog gate requires it — see "Blog
+    posts"). The `StitchAPI` tab type-checks against the real `stitchapi` types
+    like any other snippet. The `fetch` tab is a deliberately hand-rolled
+    baseline that imports no `stitchapi`, so it carries an in-block `// @noErrors`
+    — the gate's sanctioned escape hatch — keeping the fence uniform and the
+    exception explicit:
+    ` ```ts twoslash tab="fetch" tabGroup="approach" ` then `// @noErrors`.
+-   **Posts that already carry a fetch-vs-stitch prose "before" don't need this**
+    — they've made the comparison already.
 
 ## Type tables — AutoTypeTable
 
@@ -538,6 +573,70 @@ Errors & pitfalls is keyed to a registry of stable codes (`STITCH_VALIDATION`,
     new page and redirect the old one.
 -   The registry of codes will live in `packages/core` and be the shared source of
     truth for both the runtime (which throws the code + url) and these pages.
+
+---
+
+## Blog posts
+
+The blog (`content/blog`, served at `/blog`) is a separate fumadocs collection
+from the docs tree — flat `.mdx` files, no `content.manifest.ts`, no `meta.json`,
+no IA drift guard. A post is a dated essay aimed at a search query or a
+positioning argument, not a reference page. Most docs rules above (Twoslash,
+neutral naming, the canonical roster, anti-patterns inline) still apply; the
+differences are below.
+
+**Frontmatter.** Posts add `author`, `date` (an ISO `YYYY-MM-DD` string, quoted),
+and an optional `tags` array, on top of the mandatory `title` + `description`.
+The schema lives in `source.config.ts` (the `blog` collection).
+
+```yaml
+---
+title: 'How to Retry a Failed Fetch in TypeScript (the Right Way)'
+description: A real, search-shaped sentence — the meta description and the agent's relevance signal.
+author: Oleksandr Zhuravlov
+date: '2026-06-28'
+tags: [retry, fetch, typescript, resilience, http]
+---
+```
+
+`tags` are not decorative: the "Related reading" footer under every post is
+generated from tag overlap (`getRelatedPosts` in `lib/blog.ts`). Tag honestly —
+share a tag with the posts a reader of this one should see next.
+
+**Interlink in prose — this is the rule the product sells, applied to the blog.**
+Every post must link to **sibling posts inline**, in the sentence where the
+related idea comes up, with a descriptive anchor — never a bare "click here" and
+never a detached "further reading" dump as the only connection. The automated
+footer is a safety net, not a substitute: it catches the post a reader lands on,
+but inline links are what carry a reader _mid-argument_ to the post that goes
+deeper.
+
+-   **Link down to docs** for the canonical mechanism — the primitive, the guide,
+    the reference, the error. `[the stitch](/docs/concepts/the-stitch)`.
+-   **Link across to sibling posts** for the adjacent argument or the next step —
+    `([schema drift is a production bug](/blog/schema-drift-is-a-production-bug))`.
+-   **Anchor on the idea, not the URL.** The link text reads as part of the
+    sentence: _"…shares one limiter across every stitch hitting that host
+    ([proactive throttling beats reacting to 429s](/blog/proactive-throttling-vs-reactive-429s))."_
+
+A good post threads two-to-four such links through its body and closes by pointing
+at the obvious next read. A post that links to **no** sibling post fails
+`test/blog-interlinking.spec.ts` (the no-orphans gate) — the same way a docs page
+without `See also` strands its reader. Dangling `/blog/<slug>` links fail it too.
+
+**Writing a new post — the interlinking checklist:**
+
+1. Before drafting, skim `content/blog` for the two or three posts nearest your
+   topic. Those are your inbound and outbound links.
+2. As you write, link each sibling post **at the point its idea appears**, not in
+   a trailer.
+3. Add an inline link **back from** at least one of those existing posts to the
+   new one, so the new post isn't a dead end others can't reach. (The footer
+   surfaces it automatically once tags overlap, but an inbound prose link is
+   stronger.)
+4. Give the post `tags` that overlap its true neighbors so the "Related reading"
+   footer resolves to the right posts.
+5. Run `pnpm test` in `apps/docs` — the no-orphans gate must stay green.
 
 ---
 

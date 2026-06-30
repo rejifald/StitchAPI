@@ -1,0 +1,174 @@
+---
+title: 'Run Independent API Calls in Parallel: all, any, race'
+description: 'When API calls do not depend on each other, running them as a ladder of awaits is wasted latency — and Promise.all drops the trace, the cancellation, and the per-call resilience. all, any, and race run independent stitches concurrently as one traced, fail-fast group, and because each returns the same callable shape a stitch does, they nest.'
+author: Oleksandr Zhuravlov
+date: '2026-06-30'
+tags: [composition, parallel, concurrency, linked, typescript]
+---
+
+A [stitch](/docs/concepts/the-stitch) is one endpoint as a typed, validated, resilient function. When one call needs the result of the one before it, you want a sequence — that is [`linked`](/blog/compose-api-calls-into-a-pipeline). But just as often the calls are **independent**: a dashboard needs a user, their settings, and their feature flags, and none of them waits on the others. Running those in sequence is latency you are paying for nothing.
+
+`Promise.all` is the reflex, and it gets you the concurrency. What it doesn't get you is everything a stitch already carries: the three calls become three unrelated runs with no shared trace, a failure leaves the other requests running, and you reassemble the error yourself. StitchAPI's parallel family — `all`, `any`, `race` — runs independent stitches concurrently as **one group**: a shared trace, fail-fast with auto-cancellation, and each member keeping its own retry, timeout, and validation.
+
+The whole family answers two questions any set of calls can have: _do I need all of them, or just one?_ and _does "done" mean a success, or any result at all?_
+
+| Combinator | Resolves when                         | Result               | For                            |
+| ---------- | ------------------------------------- | -------------------- | ------------------------------ |
+| `all`      | **all** succeed (fail-fast)           | named object / tuple | independent **fan-out**        |
+| `any`      | the **first success** (else all fail) | one output           | **failover** across redundancy |
+| `race`     | the **first to settle** (win or lose) | one output           | **hedging** / fastest-wins     |
+
+## `all` — independent, all of them
+
+`all` runs a **named bag** of stitches concurrently and resolves to a typed object keyed by the names you gave:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { all } from 'stitchapi/pipe';
+import { z } from 'zod';
+
+const fetchUser = stitch({
+    url: 'https://api.example.com/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+});
+const fetchSettings = stitch({
+    url: 'https://api.example.com/users/{id}/settings',
+    output: z.object({ theme: z.string() }),
+});
+const fetchFlags = stitch({
+    url: 'https://api.example.com/users/{id}/flags',
+    output: z.object({ beta: z.boolean() }),
+});
+// ---cut---
+const dashboard = all({
+    user: fetchUser,
+    settings: fetchSettings,
+    flags: fetchFlags,
+});
+
+const { user, settings, flags } = await dashboard({ params: { id: 1 } });
+// user, settings, flags — each typed from its own stitch, no casts
+```
+
+Prefer positional? Pass an **array** and get a tuple back — the exact `Promise.all` shape, with the resilience and cancellation added:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { all } from 'stitchapi/pipe';
+import { z } from 'zod';
+
+const fetchUser = stitch({
+    url: 'https://api.example.com/users/{id}',
+    output: z.object({ id: z.number(), name: z.string() }),
+});
+const fetchSettings = stitch({
+    url: 'https://api.example.com/users/{id}/settings',
+    output: z.object({ theme: z.string() }),
+});
+// ---cut---
+const [user, settings] = await all([fetchUser, fetchSettings])({
+    params: { id: 1 },
+});
+```
+
+Both forms are the same combinator — pick whichever reads better. Either way it's `Promise.all` with the rough edges removed: it's **fail-fast** — the first member to fail rejects the whole `all` with that call's `StitchError` (`.status`, `.url`, …) **and aborts the others** (their in-flight requests are cancelled, not left running) — and each member keeps its own retry, timeout, and validation.
+
+## `any` — the first one that works
+
+`any` runs its members concurrently and resolves with the **first to succeed**, ignoring failures until none are left — then it rejects with an `AggregateError` of every failure. The moment one wins, the **losers are aborted**. That's failover across interchangeable sources:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { any } from 'stitchapi/pipe';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+const fetchFromPrimary = stitch({
+    url: 'https://api.example.com/users/{id}',
+    output: User,
+});
+const fetchFromMirror = stitch({
+    url: 'https://mirror.example.com/users/{id}',
+    output: User,
+});
+// ---cut---
+// hit both, take whichever returns first; only fail if BOTH do
+const fetchUser = any([fetchFromPrimary, fetchFromMirror]);
+
+const user = await fetchUser({ params: { id: 1 } });
+```
+
+This is distinct from a stitch's built-in `retry`, which re-hits the **same** endpoint. `any` is for redundancy across **different** endpoints — a primary and a mirror, two regions, two providers of the same shape.
+
+## `race` — the first one to finish, win or lose
+
+`race` resolves or rejects with the first member to **settle** — success _or_ failure — and **cancels the rest**. Use it to hedge a latency-sensitive call against a second source and take whichever returns first:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { race } from 'stitchapi/pipe';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+const fetchFromUsEast = stitch({
+    url: 'https://us-east.example.com/users/{id}',
+    output: User,
+});
+const fetchFromEuWest = stitch({
+    url: 'https://eu-west.example.com/users/{id}',
+    output: User,
+});
+// ---cut---
+const fastest = race([fetchFromUsEast, fetchFromEuWest]);
+
+const user = await fastest({ params: { id: 1 } });
+```
+
+The difference from `any` is what counts as "done": `any` waits past failures for a success; `race` takes the first result of any kind. Reach for `race` when latency is the enemy and a fast failure is still information; reach for `any` when you want the answer and don't care who provides it.
+
+## They nest
+
+Every combinator returns the same callable shape `(input?) => Promise<Out>` that a stitch does, so a combinator is a valid member of any other — and the types flow straight through. A failover _inside_ a fan-out is just an `any` as a member of an `all`:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { all, any } from 'stitchapi/pipe';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+const fetchUserPrimary = stitch({
+    url: 'https://api.example.com/users/{id}',
+    output: User,
+});
+const fetchUserMirror = stitch({
+    url: 'https://mirror.example.com/users/{id}',
+    output: User,
+});
+const fetchSettings = stitch({
+    url: 'https://api.example.com/users/{id}/settings',
+    output: z.object({ theme: z.string() }),
+});
+// ---cut---
+const dashboard = all({
+    user: any([fetchUserPrimary, fetchUserMirror]), // failover, inside the fan
+    settings: fetchSettings,
+});
+
+const { user, settings } = await dashboard({ params: { id: 1 } });
+```
+
+An `all` can hold an `any`; an `any` can hold a `race`; and a sequential [`linked`](/blog/compose-api-calls-into-a-pipeline) scope can `run` any of them. The tree goes as deep as the problem, and every node is typed from the stitches at its leaves.
+
+## Still composition, not orchestration
+
+A group of concurrent calls is fenced deliberately. The shape is **fixed when you write it** — `all`/`any`/`race` take a list of stitches you already declared; nothing branches, loops, or spawns at runtime. Each member runs as a **child run** of the group, so the trace draws a fan ([the run-identity model](/docs/concepts/event-stream)) instead of three unrelated calls. Composition adds ordering and concurrency around stitches; it never changes how any one of them behaves alone. That's why this stays [runtime stitching, not a workflow platform](/blog/runtime-stitching-vs-workflow-platforms).
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+The parallel family lives at the `stitchapi/pipe` subpath, so it only enters your bundle when a flow needs it. Each member is a [stitch](/docs/concepts/the-stitch) with its own [validation](/blog/validate-api-response-zod) and resilience, and the whole group is visible in the [event stream](/docs/concepts/event-stream).
+
+Related reading: [compose dependent calls into one flow](/blog/compose-api-calls-into-a-pipeline), [typed errors without try/catch](/blog/typed-errors-without-try-catch), and [runtime stitching vs. workflow platforms](/blog/runtime-stitching-vs-workflow-platforms).

@@ -1,0 +1,147 @@
+---
+title: Adopt StitchAPI Without a Rewrite
+description: 'Wrap one endpoint as a stitch, leave the rest of your fetch and axios code untouched, and grow the typed-resilient surface one call at a time.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [adoption, migration, fetch, axios, architecture]
+---
+
+A retry policy you added to one `fetch` call last quarter never made it to the other six that hit the same flaky endpoint, and the response shape that broke production last week was the one nobody validated. You don't want to stop shipping for a week to rewrite the data layer — you want to harden the one call that keeps paging you, today, and leave everything else exactly where it is.
+
+That is the whole adoption story: a stitch wraps **one endpoint**, returns a function, and sits next to the `fetch` and axios code you already have. Nothing else has to move. The next call you harden is another stitch; the call after that is another. You convert by the call, not by the codebase.
+
+## The call that keeps paging you
+
+Here is the kind of `fetch` that ends up everywhere — a read that the team has quietly copied, tweaked, and re-tweaked across the app.
+
+```ts twoslash
+// @noErrors
+async function getUser(id: string) {
+    const res = await fetch(`https://api.example.com/users/${id}`, {
+        headers: { Authorization: `Bearer ${process.env.API_TOKEN}` },
+    });
+    if (!res.ok) throw new Error(`getUser ${res.status}`);
+    return res.json() as Promise<{ id: number; name: string }>;
+}
+```
+
+The sharp edges are real, and they are the ones you keep patching by hand:
+
+-   **No retry.** A 503 from the upstream propagates straight to the caller. The fix is a loop with backoff, written once here and forgotten in the next copy.
+-   **No timeout.** A hung connection hangs the request behind it. You reach for `AbortController` and a `setTimeout` you have to clear.
+-   **The cast lies.** `as Promise<{ id: number; name: string }>` is a promise to the compiler, not a check against the bytes. The day the API renames `name`, this code reads `undefined` and keeps going.
+-   **The token is in the function.** `process.env.API_TOKEN` is interpolated inline, so every copy holds the secret and every log line risks leaking it.
+
+## The same call, as a stitch
+
+Wrap that one endpoint. Each field is a sharp edge moved from glue into a declaration.
+
+```ts twoslash
+import { bearer, env, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getUser = stitch({
+    url: 'https://api.example.com/users/{id}',
+    auth: bearer(env('API_TOKEN')),
+    output: z.object({ id: z.number(), name: z.string() }),
+    retry: { attempts: 3, on: [429, 502, 503, 504], backoff: 'expo-jitter' },
+    timeout: { total: '10s', perAttempt: '4s' },
+});
+
+const user = await getUser({ params: { id: '42' } }); // typed · validated
+```
+
+Field by field, against the list above:
+
+-   `retry` replaces the hand-rolled loop — status-aware, capped attempts, jittered backoff, and it honors `Retry-After` on its own.
+-   `timeout` replaces the `AbortController` dance with a layered budget: `total` bounds the whole call, `perAttempt` bounds each try.
+-   `output` replaces the cast with a real check. `await` returns the **validated** value; a renamed `name` throws a `StitchError` at the boundary instead of leaking `undefined` downstream.
+-   `auth: bearer(env('API_TOKEN'))` keeps the secret out of the function — it resolves at call time, and the caller never holds it.
+
+`await getUser(...)` throws `StitchError` (with `.status`, `.attempts`, `.body`, `.url`) after the stitch exhausts its own retries. In a loader or server action, call `getUser.safe({ params: { id } })` instead — it resolves to `{ ok, data, error }` and never throws.
+
+## Coexistence: a stitch is a function
+
+The reason this is a no-rewrite move: a stitch IS an async function. It takes input, it returns a promise, it throws on failure. Anything that already accepts a `fetch`-shaped call accepts a stitch with no adapter in between.
+
+So you swap the call site and stop:
+
+```ts twoslash
+// @noErrors
+// before
+const user = await getUserViaFetch(id);
+// after — same signature, same await, same caller
+const user = await getUser({ params: { id } });
+```
+
+The rest of the file keeps using raw `fetch`. The other twenty endpoints keep using whatever they use today. There is no provider to mount, no client to thread through props, no global to initialize before the first call works. One endpoint becomes typed and resilient; everything around it is untouched. When you _do_ want to convert a whole module wholesale, the mechanical swap goes end to end in [migrating from fetch](/blog/migrate-from-fetch-to-stitchapi) and [from axios](/blog/migrate-from-axios-to-stitchapi).
+
+It drops into the libraries you already run, too. A stitch is the `queryFn` TanStack Query wants — awaiting it returns the validated value and throws on failure, which is exactly the contract ([a stitch as your React Query `queryFn`](/blog/stitch-as-react-query-queryfn) walks through the whole pattern) — so it goes straight in:
+
+```ts twoslash
+import { useQuery } from '@tanstack/react-query';
+import { stitch } from 'stitchapi';
+
+declare const id: string;
+const getUser = stitch({ url: 'https://api.example.com/users/{id}' });
+// ---cut---
+useQuery({
+    queryKey: ['user', id],
+    queryFn: () => getUser({ params: { id } }),
+});
+```
+
+Let the stitch own retries and set `retry: false` on the query so attempts don't multiply across the two layers. The same shape works with SWR and RTK Query: the query owns view state — cache, invalidation, refetch on focus — and the stitch owns the call — types, auth, resilience. They compose, not compete.
+
+## Grow the surface, one call at a time
+
+Once two endpoints share a base URL and an auth scheme, lift those into a `seam` and stop repeating them. The seam declares the shared config once; each stitch inherits it, and an explicit per-stitch field wins.
+
+```ts twoslash
+import { bearer, env, seam } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
+const Orders = z.array(z.object({ id: z.number() }));
+
+const api = seam({
+    baseUrl: 'https://api.example.com',
+    auth: bearer(env('API_TOKEN')),
+    retry: { attempts: 3, on: [429, 503] },
+});
+
+const getUser = api.stitch({ path: '/users/{id}', output: User });
+const listOrders = api.stitch({ path: '/orders', output: Orders });
+```
+
+This is the same incremental move at the next size up: you hardened one call, then a second, and the shared parts converge into one declaration on their own schedule. Nothing forced the seam early; you reached for it when the repetition appeared.
+
+| Axis           | Before (per-call glue)             | A stitch                                          |
+| -------------- | ---------------------------------- | ------------------------------------------------- |
+| Retry          | A loop you copy into the next call | `retry` — status-aware, jittered, `Retry-After`   |
+| Timeout        | `AbortController` + `setTimeout`   | `timeout: { total, perAttempt }`                  |
+| Response shape | A cast the compiler trusts blindly | `output` schema — validated, throws on a mismatch |
+| Secret         | Interpolated inline, held per copy | `auth` — resolved at call time, never held        |
+| Adoption unit  | Rewrite the data layer             | One endpoint, swap the call site                  |
+
+## You can start with no schema at all
+
+The smallest possible stitch is one line, and it already buys you something:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+// ---cut---
+const ping = stitch({ url: 'https://api.example.com/health' });
+const data = await ping();
+```
+
+No `output`, no `retry`, no `auth` — `await` still returns the parsed body, and you've moved the URL into a declaration you can grow. You can start with no schema at all: add `output` the day you want the response checked, add `retry` the day the endpoint flakes, add `auth` the day it needs a token. The bare stitch bounds the call you have today; the configured stitch bounds it just as directly and is one edit from the call it becomes. It scales down to a single line and up to a seam-shared resilience policy without ever asking you to rewrite the calls in between.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+Wrap the one endpoint that keeps paging you, swap its call site, and leave the rest of your code alone. Start with [the stitch concept](/docs/concepts/the-stitch) and the [quickstart](/docs/getting-started/quickstart), then lift shared config into a [seam](/docs/guides/authoring/seam) and pin down responses with [output validation](/docs/guides/validation/validation).

@@ -104,21 +104,37 @@ export const httpSurface: Surface = { id: 'http' };
 
 /**
  * GraphQL-over-HTTP. Its behaviour lives entirely in these hooks (ADR 0005 Stage 4): `buildRequest`
- * packs `{ query, variables }` as JSON and forces POST; `interpret` treats a 200 carrying `errors`
- * as a failure. The `data` unwrap is a plain config key the `graphql(...)` helper / `seam.graphql()`
- * set (the engine applies it after `interpret`), as is the `/graphql` default path.
+ * packs `{ query, variables, operationName? }` as JSON and forces POST; `interpret` treats a 200
+ * carrying `errors` as a failure. The `data` unwrap is a plain config key the `graphql(...)` helper
+ * / `seam.graphql()` set (the engine applies it after `interpret`), as is the `/graphql` default
+ * path.
+ *
+ * `operationName` is derived the way graphql clients (e.g. graphql-request) do: the name token of
+ * the first named operation. The keyword must be on a `\b` word boundary and followed by whitespace
+ * and a name (`\w+`), so a field/type that merely starts with a keyword can't match; anonymous
+ * documents (`{ ... }`, or `query ($id: ID) { ... }` with no name) yield no key. Set
+ * `cfg.operationName` to override (a multi-operation document, or `''` to suppress).
  */
 export const graphqlSurface: Surface = {
     id: 'graphql',
-    buildRequest: (cfg, input, base) => ({
-        ...base,
-        method: (cfg.method ?? 'POST').toUpperCase(),
-        bodyType: 'json',
-        body: {
-            query: cfg.query ?? '',
-            variables: input.variables ?? input.body ?? {},
-        },
-    }),
+    buildRequest: (cfg, input, base) => {
+        const query = cfg.query ?? '';
+        const operationName =
+            cfg.operationName ??
+            /\b(?:query|mutation|subscription)\s+(\w+)/.exec(query)?.[1];
+        return {
+            ...base,
+            method: (cfg.method ?? 'POST').toUpperCase(),
+            bodyType: 'json',
+            body: {
+                query,
+                variables: input.variables ?? input.body ?? {},
+                // Only carry the key when a name is known — anonymous documents omit it, matching
+                // graphql-request and keeping the body clean. `cfg.operationName: ''` suppresses it.
+                ...(operationName ? { operationName } : {}),
+            },
+        };
+    },
     interpret: (res) => {
         const errs = (
             res.body as { errors?: { message?: string }[] } | null | undefined

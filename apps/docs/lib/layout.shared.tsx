@@ -1,5 +1,6 @@
-import { gitConfig } from './shared';
+import { gitConfig, npmUrl } from './shared';
 
+import { NpmIcon } from '@/app/(home)/components/primitives';
 import { Logo } from '@/components/logo';
 
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
@@ -24,8 +25,11 @@ export function baseOptions(): BaseLayoutProps {
                 url: '/playground',
             },
             {
+                type: 'icon',
+                label: 'npm',
+                icon: <NpmIcon />,
                 text: 'npm',
-                url: 'https://www.npmjs.com/package/stitchapi',
+                url: npmUrl,
                 external: true,
             },
         ],

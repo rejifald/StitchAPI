@@ -6,10 +6,21 @@ import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 import { asValidator } from './support/schema';
 
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough, type Readable } from 'node:stream';
 import { z } from 'zod';
+
+// The canonical version, read straight from package.json on disk (NOT the build-time
+// `__PKG_VERSION__` define) so this asserts the reported version actually tracks the
+// published release rather than testing the define against itself. vitest runs with
+// packages/core as the cwd.
+const PKG_VERSION = (
+    JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+        version: string;
+    }
+).version;
 
 process.env['STITCH_TRACE_FILE'] = join(
     tmpdir(),
@@ -65,11 +76,24 @@ test('initialize advertises tools capability and server info', async () => {
     const result = res?.result as {
         protocolVersion: string;
         capabilities: { tools?: unknown };
-        serverInfo: { name: string };
+        serverInfo: { name: string; version: string };
     };
     expect(result.protocolVersion).toBe('x'); // echoes the client's version
     expect(result.capabilities.tools).toBeDefined();
     expect(result.serverInfo.name).toBe('stitchapi');
+    // The reported version is derived from package.json at build time, so it can
+    // never drift from the published release (the bug this guards against).
+    expect(result.serverInfo.version).toBe(PKG_VERSION);
+});
+
+test('an explicit info.version overrides the derived package version', async () => {
+    const custom = createMcpServer({}, { version: '9.9.9-custom' });
+    const res = await custom.handle(
+        req('initialize', { protocolVersion: 'x' }),
+    );
+    const result = res?.result as { serverInfo: { version: string } };
+    expect(result.serverInfo.version).toBe('9.9.9-custom');
+    expect(result.serverInfo.version).not.toBe(PKG_VERSION);
 });
 
 test('tools/list returns the single code-mode tool (+ discovery + describe)', async () => {

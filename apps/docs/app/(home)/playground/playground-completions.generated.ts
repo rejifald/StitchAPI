@@ -84,6 +84,12 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             info: "GraphQL query string (`kind: 'graphql'`).",
         },
         {
+            label: "operationName",
+            type: "property",
+            detail: "string",
+            info: "GraphQL `operationName` sent alongside `query` + `variables` (`kind: 'graphql'`). Omit to derive it from the first named operation in `query`; set it explicitly to override (e.g. a multi-operation document) or pass `''` to suppress the field entirely.",
+        },
+        {
             label: "input",
             type: "property",
             detail: "InputSchemas",

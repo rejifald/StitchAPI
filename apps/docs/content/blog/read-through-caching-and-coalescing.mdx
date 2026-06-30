@@ -24,8 +24,11 @@ The two compose. Coalescing flattens the concurrent spike; the cache absorbs the
 
 Caching is **off by default** and loaded lazily — the cache machinery only enters your bundle when a stitch actually asks for it. The smallest form is a TTL:
 
-```ts
+```ts twoslash tab="StitchAPI" tabGroup="approach"
 import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const User = z.object({ id: z.number(), name: z.string() });
 
 const getUser = stitch({
     path: 'https://api.example.com/users/{id}',
@@ -35,11 +38,40 @@ const getUser = stitch({
 });
 ```
 
+```ts twoslash tab="fetch" tabGroup="approach"
+// @noErrors
+// By hand: a TTL map for the cache, plus an in-flight map for coalescing.
+// Miss the second map and ten concurrent calls all stampede the cold key.
+const cache = new Map<number, { value: unknown; expires: number }>();
+const inFlight = new Map<number, Promise<unknown>>();
+
+async function getUser(id: number) {
+    const hit = cache.get(id);
+    if (hit && hit.expires > Date.now()) return hit.value;
+    if (inFlight.has(id)) return inFlight.get(id); // ride the in-flight call
+
+    const p = fetch(`https://api.example.com/users/${id}`)
+        .then((r) => r.json())
+        .then((body) => {
+            const value = body.data; // no output validation here
+            cache.set(id, { value, expires: Date.now() + 5 * 60_000 });
+            inFlight.delete(id);
+            return value;
+        });
+    inFlight.set(id, p);
+    return p;
+}
+```
+
 That single string opts the stitch into the read-through cache _and_ in-process coalescing. Ten concurrent `getUser({ params: { id: 7 } })` calls collapse to one upstream request; subsequent calls within five minutes are served from the store without touching the upstream at all.
 
 The object form exposes the knobs when you need them:
 
-```ts
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+// ---cut---
 const listAnnouncements = stitch({
     path: 'https://api.example.com/announcements',
     output: z.array(z.object({ id: z.number(), title: z.string() })),
@@ -69,7 +101,10 @@ This is where caching meets [auth as a boundary](/docs/concepts/capability-not-c
 
 When a response genuinely is the same for everyone — a public feed, a shared catalog — you opt out with `scope: 'app'` and the entry is shared across principals. That's a deliberate widening of the blast radius, and reading it in the declaration says exactly that: this data is not user-specific.
 
-```ts
+```ts twoslash
+import { bearer, env, stitch } from 'stitchapi';
+
+// ---cut---
 // Principal-scoped (default): each user gets their own entry.
 const getProfile = stitch({
     path: 'https://api.example.com/me',
@@ -100,21 +135,23 @@ The honest caveat about coalescing: it's **in-process**. The collapse-to-one hap
 
 Run four instances behind a load balancer and a cold key can produce up to four concurrent upstream calls — one per process — not one. Within each process the herd still collapses; across processes it doesn't, because the default in-memory store has no shared coordination point. The same goes for the cache: each instance warms its own copy in memory. For a single long-lived process or a fan-out inside one agent run, that's exactly right and adds no infrastructure. For genuine multi-instance dedup and a shared cache you swap the store — a different article: see [distributed throttle and shared state](/blog/distributed-throttle-with-redis-kv) and the [pluggable store](/docs/guides/state/pluggable-store).
 
-## When this isn't worth it
+## Start uncached — reach for it when reads repeat or pile up
 
-Caching and coalescing are leverage, not free wins, and the leverage is uneven:
+A plain stitch call with no `cache` is the floor you start from. Crossing to cache + coalesce is a field, not a rewrite — and these are the conditions that tell you it's time:
 
--   **No repeats, no benefit.** A request made once, or one whose result legitimately differs every time, gets nothing from a cache. The hit rate is the whole story; near zero, you've added a key derivation and a store lookup for no return.
--   **No concurrency, no coalescing.** If calls are strictly sequential there's never an in-flight request for a second caller to attach to. The win is proportional to how much the _same_ call overlaps itself in time.
--   **A wrong key or scope is worse than no cache.** A key too coarse serves stale data; a scope too wide leaks one principal's data to another — both _silently_, which is harder to catch than slow-but-right. The defaults make the safe path the default one, but widening the scope is a decision you own.
--   **It doesn't make a needed call free.** It removes the calls you didn't need to repeat. The first call, and every genuinely-distinct one, still costs what it costs.
+-   **The same read repeats.** A request made once — or one whose result legitimately differs every time — has a hit rate near zero. Add `cache` the moment you see the same key firing more than once per business operation.
+-   **Calls overlap in time.** Coalescing wins when multiple code paths race to the same endpoint concurrently. Strictly sequential callers never produce an in-flight request to attach to; a fan-out inside a single agent run or a shared route handler is exactly where collapse matters.
+-   **The upstream is slow or rate-limited.** Latency and quota pressure are the clearest signals: cache absorbs the repeat cost, coalescing caps the burst, and neither change your call site.
+-   **The data tolerates a short TTL.** A one-off read with a response that must be live every time genuinely needs no cache — and that's fine. The first call, and every genuinely-distinct one, still costs what it costs; caching removes only the calls you didn't need to repeat.
+
+The one thing to get right when you do reach for it is the key and `scope`: too coarse a key serves stale data, and too wide a scope can leak one principal's data to another — both silently, which is harder to catch than slow-but-right. The defaults make the safe path the default one; widening the scope is a decision you own.
 
 Keep this distinct from [throttling](/blog/proactive-throttling-vs-reactive-429s), the sibling concern: throttling caps the _rate and concurrency_ of calls you do make; caching and coalescing remove calls you didn't need to make at all. They stack well, but they answer different questions.
 
 ## Try it
 
-```bash
-npm i stitchapi
+```package-install
+stitchapi
 ```
 
 Add `cache: '5m'` to one read-heavy stitch, fan a few identical calls at it, and watch them collapse to a single upstream request. The full configuration surface — `ttl`, `scope`, `vary`, `maxEntries`, the stitch-level `sensitive` flag, and the fingerprinting rules — lives in the [docs](/docs).

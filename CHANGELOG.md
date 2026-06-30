@@ -11,6 +11,18 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] — 2026-06-29
+
+### Added
+
+-   **GraphQL `operationName`.** The `graphql` surface now sends `operationName`
+    alongside `{ query, variables }`, derived from the first named operation in
+    the document (anonymous documents omit it, matching `graphql-request`). A new
+    `operationName` config key overrides the derived value for multi-operation
+    documents, or suppresses the field entirely with `''`. This restores parity
+    with conventional GraphQL clients so servers, logs, APM, and request mocks
+    that key on the operation name see it again.
+
 ## [1.0.0-rc.3] — 2026-06-21
 
 ### Added — the integration ecosystem

@@ -16,9 +16,9 @@ A StitchAPI **stitch** declares one endpoint and hands back a typed callable. Th
 
 For genuinely streaming responses there are dedicated request styles — `sse`, `stream`, and `llm` — that read a `text/event-stream` or raw `ReadableStream` from the upstream and surface each chunk as a `delta`. Here's a streaming stitch built on the `sse` surface, pointed at some upstream that emits incremental output:
 
-```ts
+```ts twoslash
 // lib/api.ts
-import { sse } from 'stitchapi';
+import { sse } from 'stitchapi/sse';
 
 // A streaming endpoint: emits incremental chunks as text/event-stream.
 export const chat = sse({
@@ -35,13 +35,14 @@ App Router route handlers are **Web-standard** — they receive a `Request` and 
 
 Install it alongside the core library:
 
-```bash
-npm install @stitchapi/next stitchapi
+```package-install
+@stitchapi/next stitchapi
 ```
 
 Then `sseResponse` takes the stitch's event stream and returns a `text/event-stream` `Response`. Each `delta` becomes one SSE frame; you tell it how to pull the renderable payload out of a chunk with `data`:
 
-```ts
+```ts twoslash
+// @noErrors
 // app/api/chat/route.ts
 import { chat } from '@/lib/api';
 
@@ -77,7 +78,8 @@ The `try/catch` with `isStitchError` / `stitchErrorResponse` handles a stitch th
 
 The natural client for a React app is [`@stitchapi/react`](/docs/integrations/react), whose `useStitchStream` hook is streaming-first: it re-renders as each `delta` arrives, so you get partial output on screen without managing an `EventSource` and its lifecycle by hand.
 
-```ts
+```ts twoslash
+// @noErrors
 import { useStitchStream } from '@stitchapi/react';
 
 import { chat } from '@/lib/api';
@@ -109,8 +111,8 @@ Streaming over HTTP has sharp edges that have nothing to do with StitchAPI, and 
 
 ## Try it
 
-```bash
-npm i stitchapi @stitchapi/next
+```package-install
+stitchapi @stitchapi/next
 ```
 
 Declare a streaming stitch, return `sseResponse(stitch.stream())` from a route handler, and consume the deltas with `useStitchStream`. The full guides: [`@stitchapi/next`](/docs/integrations/next), [`@stitchapi/react`](/docs/integrations/react), and the [event stream](/docs/reference/events) that makes all of it one moving part.

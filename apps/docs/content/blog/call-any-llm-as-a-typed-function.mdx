@@ -1,0 +1,236 @@
+---
+title: 'Call Any LLM as a Typed Function'
+description: 'A model call is just an HTTP request, so wrapping it in an SDK buys you a dependency, a bespoke client, and a rewrite every time you switch providers. Declare the call as a stitch and switching models is a one-line change.'
+author: Oleksandr Zhuravlov
+date: '2026-06-29'
+tags: [llm, ai, anthropic, openai, typescript]
+---
+
+You ship a feature on Claude, then a cost review says move the cheap path to GPT-4o, and now you are threading a second SDK through your codebase: a different client object, a different request shape, a different response shape, a different retry story. The two providers do the same thing — take messages, return text — but each one drags its own library and its own conventions, so "switch the model" turns into "rewrite the call site." A model call is an HTTP POST with an auth header. The SDK is wrapping the same request you could declare once.
+
+## What an SDK call actually is
+
+Strip a chat completion down and it is a request to one endpoint with a JSON body of messages and an `Authorization` header:
+
+```ts twoslash
+// @noErrors
+const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+        model: 'claude-opus-4-8',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: 'Summarize this.' }],
+    }),
+});
+const data = await res.json();
+const text = data.content[0].text; // any — you hope content[0] exists
+```
+
+The vendor SDK hides the URL and the header names, but it does not buy you anything `fetch` cannot: it is the same POST. What it costs you is a dependency you now upgrade, a client object you construct and pass around, and a response shape (`data.content[0].text`) that differs from the next provider's (`data.choices[0].message.content`). Swap providers and every one of those lines changes. And the call is still raw: a `529` overload throws, the token sits in scope where any log line can catch it, and `text` is `any`.
+
+## Declare the call as a stitch
+
+A stitch turns one endpoint into a typed function you call with `await`. The `llm` surface declares a chat call the same way, binding the provider and its defaults to the surface; the messages travel in the call:
+
+```ts twoslash
+import { apiKey, env } from 'stitchapi';
+import { anthropic, llm } from 'stitchapi/llm';
+
+const chat = llm({
+    provider: anthropic,
+    model: 'claude-opus-4-8',
+    auth: apiKey({ header: 'x-api-key', value: env('ANTHROPIC_API_KEY') }),
+});
+
+const { text } = await chat({
+    body: { messages: [{ role: 'user', content: 'Summarize this.' }] },
+});
+```
+
+Each field replaces something the SDK did opaquely or `fetch` did by hand:
+
+| Axis               | Raw fetch / SDK                                                                  | A stitch                                                                                |
+| ------------------ | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Endpoint + headers | Hard-coded in the call, or hidden in the client                                  | `provider: anthropic` carries the `/v1/messages` URL and the `anthropic-version` header |
+| Model              | Re-typed at the call site                                                        | `model` bound to the surface once, overridable per call                                 |
+| Credential         | A token in scope you hope nobody logs                                            | `auth: apiKey(...)` resolves at call time; the caller never holds it                    |
+| Response shape     | `data.content[0].text` (Anthropic) vs `data.choices[0].message.content` (OpenAI) | `result.text` — one normalised shape across providers                                   |
+| Resilience         | Hand-rolled, or absent                                                           | `retry` / `throttle` / `timeout` as fields, because the call is HTTP                    |
+
+`anthropic` is plain config, not an SDK: it declares the endpoint, the non-secret `anthropic-version` header, the default model, and the maps between the normalised request and Anthropic's wire body. The credential is never the provider's — it is the stitch's `auth`, so the same provider object is safe to share. Awaiting `chat(...)` returns an `LlmResult` whose `.text` is the completion and whose `.raw` keeps the provider's full response body when you need a field the normalised shape does not carry.
+
+## Providers are config, so switching is one line
+
+The reason the rewrite goes away is that the provider is a value, not a library. The first-party providers ship as plain `LlmProvider` config — no SDK dependency, the contract-not-dependency gate — so moving from Claude to GPT-4o is a `provider:` change and an `auth:` change, nothing at the call site:
+
+```ts twoslash
+import { bearer, env } from 'stitchapi';
+import { llm, openai } from 'stitchapi/llm';
+
+const chat = llm({
+    provider: openai,
+    model: 'gpt-4o',
+    auth: bearer(env('OPENAI_API_KEY')),
+});
+
+// the call is byte-for-byte the same
+const { text } = await chat({
+    body: { messages: [{ role: 'user', content: 'Summarize this.' }] },
+});
+```
+
+`openai` authenticates with `bearer(env('OPENAI_API_KEY'))`; `anthropic` authenticates with `apiKey({ header: 'x-api-key', value: env('ANTHROPIC_API_KEY') })`. The provider absorbs the wire difference — different URL, different header, different body and response shapes — and `result.text` is the same on both sides. The code that sends messages and reads the completion does not move.
+
+When you need a provider that does not ship first-party, you implement the same contract the built-ins do. An `LlmProvider` declares its `id`, its full completions `endpoint`, optional non-secret `headers`, an optional `defaultModel`, a `buildBody` that maps a normalised `LlmRequest` to that vendor's wire body, and a `parse` that lifts the response back into an `LlmResult`:
+
+```ts twoslash
+import { bearer, env } from 'stitchapi';
+import { type LlmProvider, llm } from 'stitchapi/llm';
+
+// the vendor's wire response — name the shape `parse` reads, no `any`
+interface MistralResponse {
+    choices: { message: { content: string } }[];
+}
+
+const mistral: LlmProvider = {
+    id: 'mistral',
+    endpoint: 'https://api.mistral.ai/v1/chat/completions',
+    defaultModel: 'mistral-large-latest',
+    buildBody: (req) => ({
+        model: req.model,
+        messages: req.messages,
+    }),
+    // lift the provider's response back into an LlmResult
+    parse: (body) => ({
+        text: (body as MistralResponse).choices[0].message.content,
+        raw: body,
+    }),
+};
+
+const chat = llm({ provider: mistral, auth: bearer(env('MISTRAL_API_KEY')) });
+```
+
+The credential stays the stitch's `auth`, never the provider — so a provider you write is config you can commit, with no secret baked in.
+
+## Two stitches, picked per call
+
+Switching at edit time covers the cost review. But the same property — a provider is a value, a stitch is a function — means you can hold both at once and choose between them per call. Declare a cheap stitch and a capable one, then route on whatever condition you have:
+
+```ts twoslash
+import { apiKey, bearer, env } from 'stitchapi';
+import { anthropic, llm, openai } from 'stitchapi/llm';
+
+// ---cut---
+const fast = llm({
+    provider: openai,
+    model: 'gpt-4o-mini',
+    auth: bearer(env('OPENAI_API_KEY')),
+});
+
+const deep = llm({
+    provider: anthropic,
+    model: 'claude-opus-4-8',
+    auth: apiKey({ header: 'x-api-key', value: env('ANTHROPIC_API_KEY') }),
+});
+
+async function summarize(input: string, hard: boolean) {
+    const chat = hard ? deep : fast;
+    const { text } = await chat({
+        body: { messages: [{ role: 'user', content: input }] },
+    });
+    return text;
+}
+```
+
+Both stitches are the same `chat` shape — same call signature, same `result.text` — so the choice is a one-line `hard ? deep : fast` and everything downstream is identical. The condition is yours: prompt length, a feature flag, a per-tenant tier, even a fallback that escalates to the stronger model after the cheap one fails. Because each stitch carries its own provider, model, auth, and resilience, "switch models on the fly" is just picking which function you call.
+
+## An LLM call is HTTP, so resilience comes free
+
+Because the surface sends an HTTP request, every resilience field a stitch has applies to a model call. Provider overloads (`429`, `529`) are exactly what retry is for, and a metered key is exactly what throttle is for:
+
+```ts twoslash
+import { apiKey, env } from 'stitchapi';
+import { anthropic, llm } from 'stitchapi/llm';
+
+// ---cut---
+const chat = llm({
+    provider: anthropic,
+    model: 'claude-opus-4-8',
+    auth: apiKey({ header: 'x-api-key', value: env('ANTHROPIC_API_KEY') }),
+    retry: {
+        attempts: 3,
+        on: [429, 529],
+        backoff: 'expo-jitter',
+        respectRetryAfter: true,
+    },
+    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+    timeout: { total: '60s' },
+});
+```
+
+`retry` backs off with jitter and honors the provider's `Retry-After`; `throttle` keeps you under the rate limit instead of discovering it at `429`; `timeout` bounds a call that hangs. None of that is LLM-specific code — it is the same engine that runs any stitch, applied to a request that happens to carry messages. `trace` works the same way, with the API key kept out of the event stream.
+
+## Reading deltas as they arrive
+
+The `llm` surface is buffered: `await chat(...)` resolves the whole `LlmResult`, it does not hand you the completion token by token. When you want the deltas — render text as it lands, not after the full reply — read them off the **`sse` surface** pointed at the provider's streaming endpoint. Every stitch is an event stream underneath, so a streaming stitch exposes `.stream()`: an async iterable of typed events, one per upstream chunk.
+
+The OpenAI-compatible endpoint streams when the body carries `stream: true`. Declare it as an `sse` stitch and accumulate `choices[0].delta.content` off each frame. `.stream()` yields the run's lifecycle events, so filter for the `delta` ones — each carries one parsed SSE frame as its `chunk`:
+
+```ts twoslash
+// your sink: a socket, the UI, stdout
+// ---cut---
+import { bearer, env } from 'stitchapi';
+import { type SseEvent, sse } from 'stitchapi/sse';
+
+declare function onToken(token: string): void; // your sink: a socket, the UI, stdout
+
+// the wire is untyped JSON; name the one chunk shape we read off it
+interface ChatChunk {
+    choices?: { delta?: { content?: string } }[];
+}
+
+const chatStream = sse({
+    url: 'https://api.openai.com/v1/chat/completions',
+    method: 'POST',
+    auth: bearer(env('OPENAI_API_KEY')),
+});
+
+const stream = chatStream({
+    body: {
+        model: 'gpt-4o',
+        stream: true,
+        messages: [{ role: 'user', content: 'Summarize this.' }],
+    },
+}).stream();
+
+let text = '';
+for await (const event of stream) {
+    if (event.type !== 'delta') continue; // skip start/progress/done
+    // typing the frame as SseEvent<ChatChunk> types `.data` — no `any`
+    const { data } = event.chunk as SseEvent<ChatChunk>;
+    const token = data.choices?.[0]?.delta?.content;
+    if (token) {
+        text += token; // accumulate the full reply
+        onToken(token); // push each token onward as it arrives
+    }
+}
+```
+
+Each `delta` event's `chunk` is one parsed SSE frame; typing it as `SseEvent<ChatChunk>` makes `data` the shape you read — `choices[0].delta.content` is the incremental token, with no `any` in sight. The loop ends when the upstream closes the stream. The same `auth`, `retry`, `throttle`, and `timeout` fields compose here — it is still a stitch, still HTTP, just read as a stream instead of awaited. To forward those deltas to a browser as a `text/event-stream` `Response`, that is the job covered in [streaming a stitch as SSE](/blog/stream-a-stitch-as-sse-in-next-app-router).
+
+## From one call to every model
+
+This `chat` is one declaration that bounds the call you have today: one provider, one model, one typed result. It scales down to a single line — drop the resilience fields and you still have a typed model call that hides the URL and the token, which is less than the SDK's client-construction ceremony it replaces. It scales up without a rewrite — add `retry` for overloads, `throttle` to respect a metered key, `cache` so identical prompts skip the round trip, all as fields on the same object, the call site untouched. And the day a cost review says move to a cheaper model, you change `provider:` and `auth:` and ship — the messages and the `result.text` that reads them do not move.
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+Declare a model call as a stitch, then switch providers without touching the call site. Start with [the stitch concept](/docs/concepts/the-stitch) and [auth as a capability](/docs/concepts/capability-not-credential), then see [cutting LLM costs from both ends](/blog/cut-llm-costs-from-both-ends) for where caching and a cheaper model fit.

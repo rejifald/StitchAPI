@@ -13,7 +13,7 @@ React Native bindings for [StitchAPI](https://stitchapi.dev). The `useStitch` / 
 ## Install
 
 ```sh
-pnpm add @stitchapi/react-native @stitchapi/react @stitchapi/query-core stitchapi
+pnpm add @stitchapi/react-native@rc @stitchapi/react@rc @stitchapi/query-core@rc stitchapi@rc
 ```
 
 `stitchapi`, `react`, and `react-native` are peer dependencies. `@react-native-async-storage/async-storage` and `@react-native-community/netinfo` are **optional** peers — install them only for the store / reconnect helpers.
