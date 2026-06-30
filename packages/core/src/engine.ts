@@ -1570,7 +1570,7 @@ export async function* execute(
     input: StitchInput = {},
     // Run identity (ADR 0007). Defaults to a fresh root run; the caller supplies one to make
     // this a CHILD run — `newRunContext(parent)` inherits the parent's `traceId` and sets
-    // `parentId` (a `cookieSession` login, a `pipe()` step). Stamped on the `start` event and
+    // `parentId` (a `cookieSession` login, a `linked` step). Stamped on the `start` event and
     // carried onto the trace-sink ctx by `tee` (stitch.ts).
     run: RunContext = newRunContext(),
     // Per-call run flags (ADR 0016), set by `.inspect()`: `retainRaw` surfaces the pre-validation

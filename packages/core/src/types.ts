@@ -937,7 +937,7 @@ export function isSeam(x: unknown): x is Seam {
  * OTLP-aligned identity for one logical call ({@link Stitch} run) and its place in a run
  * tree. `runId` is the OTel **spanId**; `traceId` is shared across a whole tree; `parentId`
  * (the OTel **parentSpanId**) is set when one run spawns another — a `cookieSession` login,
- * a `pipe()` step. Minted by the engine (`newRunContext`), never supplied by a caller.
+ * a `linked` step. Minted by the engine (`newRunContext`), never supplied by a caller.
  */
 export interface RunContext {
     /** 32-hex trace id, shared across every run in a tree. */
