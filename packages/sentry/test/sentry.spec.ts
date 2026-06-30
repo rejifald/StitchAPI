@@ -27,7 +27,7 @@ function mockSentry() {
     return { sentry, breadcrumbs, captures };
 }
 
-const ctx: TraceContext = { name: 'getUser', runId: 'run-1' };
+const ctx: TraceContext = { name: 'getUser', spanId: 'run-1' };
 
 const ev = {
     start: {
@@ -80,7 +80,7 @@ describe('sentrySink', () => {
         expect(captures[0]!.context).toMatchObject({
             level: 'error',
             tags: { stitch: 'getUser', status: 500 },
-            extra: { attempts: 2, runId: 'run-1' },
+            extra: { attempts: 2, spanId: 'run-1' },
         });
         // The error is also breadcrumbed so it shows in the trail of any later issue.
         expect(breadcrumbs).toHaveLength(1);

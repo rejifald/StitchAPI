@@ -1,7 +1,7 @@
 // Idempotency keys: on a write, the stitch injects an Idempotency-Key header that is STABLE
 // for one logical call — the same value rides every retry of that call — so a server can
 // dedupe a retried write. A custom key function derives a deterministic key from the input.
-import { stitch } from '../src';
+import { graphql, stitch } from '../src';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -95,7 +95,7 @@ test('separate logical calls get distinct generated keys', async () => {
         method: 'POST',
         baseUrl: server.url,
         path: '/c',
-        idempotency: true,
+        idempotency: { warn: false }, // random key, no retry by design — silence the nudge
     });
 
     await create({ body: {} });
@@ -107,12 +107,91 @@ test('separate logical calls get distinct generated keys', async () => {
     );
 });
 
+test('nudges when a write pairs the random default key with no retry', () => {
+    // A random key only dedupes a replay of the same request, and `retry` is what replays it. On a
+    // write with no retry it usually has nothing to collapse, so the engine nudges at construction.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+        stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/no-retry',
+            idempotency: true,
+        });
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0]![0]).toContain('idempotency');
+        expect(warn.mock.calls[0]![0]).toContain('retry');
+    } finally {
+        warn.mockRestore();
+    }
+});
+
+test('nudges when idempotency is set on a read — the key is dropped, almost always a missing method', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+        // no method → GET; the engine drops the key on reads, so the author's write protection
+        // silently isn't there. Point at the missing `method`.
+        stitch({ baseUrl: server.url, path: '/read-idem', idempotency: true });
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0]![0]).toContain('writes only');
+        expect(warn.mock.calls[0]![0]).toContain('method');
+    } finally {
+        warn.mockRestore();
+    }
+});
+
+test('the nudge is a hint with an out — silenced, and never fired for the cases that earn the key', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+        // `warn: false` opts out of both nudges (e.g. relying on a proxy/transport to dedupe, or
+        // an idempotency block shared on a seam that also feeds reads).
+        stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/silenced',
+            idempotency: { warn: false },
+        });
+        stitch({
+            baseUrl: server.url,
+            path: '/read-silenced',
+            idempotency: { warn: false },
+        });
+        // a retry exercises the key — no nudge.
+        stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/with-retry',
+            retry: { attempts: 2 },
+            idempotency: true,
+        });
+        // a derived key dedupes submissions without a retry — useful on its own, no nudge.
+        stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/derived',
+            idempotency: {
+                keyOf: (input) => `k-${(input.body as { id: number }).id}`,
+            },
+        });
+        // a surface (graphql → POST) owns its method; we don't guess at construction, so no nudge
+        // even though `method` is unset here.
+        graphql({
+            baseUrl: server.url,
+            query: '{ me { id } }',
+            idempotency: true,
+        });
+        expect(warn).not.toHaveBeenCalled();
+    } finally {
+        warn.mockRestore();
+    }
+});
+
 test('does not inject on GET (writes only)', async () => {
     server.route('GET', '/read', { body: { ok: true } });
     const read = stitch({
         baseUrl: server.url,
         path: '/read',
-        idempotency: true,
+        idempotency: { warn: false }, // idempotency-on-read nudge is asserted elsewhere; silence here
     });
 
     await read();

@@ -153,16 +153,16 @@ test('otlp sink: the internal open-span map is empty after a completed run', () 
     });
     const open = probeMap(sink, OPEN_SPANS);
 
-    const ev = (e: StitchEvent, runId: string): void => {
+    const ev = (e: StitchEvent, spanId: string): void => {
         sink.handle(e, {
             name: 'ping',
-            runId,
+            spanId,
             traceId: 'a'.repeat(32),
         });
     };
 
     for (let i = 0; i < 5; i++) {
-        const runId = `run-${i}`;
+        const spanId = `run-${i}`;
         ev(
             {
                 type: 'start',
@@ -172,13 +172,13 @@ test('otlp sink: the internal open-span map is empty after a completed run', () 
                 input: {},
                 at: 0,
             },
-            runId,
+            spanId,
         );
         ev(
             { type: 'result', data: {}, status: 200, attempts: 1, at: 1 },
-            runId,
+            spanId,
         );
-        ev({ type: 'done', ok: true, elapsed: 1, attempts: 1, at: 1 }, runId);
+        ev({ type: 'done', ok: true, elapsed: 1, attempts: 1, at: 1 }, spanId);
     }
 
     expect(open.size).toBe(0);

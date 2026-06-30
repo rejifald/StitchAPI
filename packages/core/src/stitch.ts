@@ -189,6 +189,38 @@ export function compose(config: Fragment): ResolvedStitchConfig {
     return merged as ResolvedStitchConfig;
 }
 
+// Construction-time nudges for `idempotency` misuse — hints with an out, never errors. Two cases,
+// both silenced by `idempotency.warn = false` and both scoped to the **default HTTP surface**: a
+// surface (graphql → POST) can force the method after construction, so its writes aren't knowable
+// here, and we don't guess.
+//   1. On a read (GET/HEAD) the engine drops the key (writes only) — almost always a missing
+//      `method`, so the write protection the author expects silently isn't there.
+//   2. The *random* default key only dedupes a replay of the same request, and `retry` is what
+//      replays it; with no `retry` it usually has nothing to collapse. (Not useless in every case —
+//      a proxy/transport resending the request below the stitch carries the same key for a server
+//      to dedupe — hence a hint, not an error. A *derived* `keyOf` dedupes resubmissions on its own.)
+function warnIdempotency(cfg: ResolvedStitchConfig): void {
+    const idem = cfg.idempotency;
+    if (!idem || idem.warn === false || cfg.kind) return;
+    const name = cfg.name ?? cfg.path ?? 'stitch';
+    const method = (cfg.method ?? 'GET').toUpperCase();
+    if (method === 'GET' || method === 'HEAD') {
+        console.warn(
+            `stitchapi: \`${name}\` sets \`idempotency\` on a ${method}, but the key is sent on ` +
+                `writes only — set \`method: 'POST'\`, or drop \`idempotency\`.`,
+        );
+        return;
+    }
+    // A derived key (either spelling — `keyOf`, or the @deprecated `key` alias) dedupes
+    // resubmissions on its own, so only the random default with no retry is the inert case.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the back-compat alias of `keyOf` (CONTRACT.md P6)
+    if (idem.keyOf || idem.key || cfg.retry) return;
+    console.warn(
+        `stitchapi: \`${name}\` has \`idempotency\` with a random key and no \`retry\`, so it ` +
+            `only dedupes its own retries — add \`retry\`, or set \`idempotency.keyOf\`.`,
+    );
+}
+
 // ---- the trace sink — off by default (a stitch's only effect is its call) ------
 // Nothing is printed or written unless you opt in: STITCH_TRACE_CONSOLE=1 streams a
 // colored line per event to stderr, STITCH_TRACE_FILE=<path> appends JSONL, and
@@ -425,9 +457,9 @@ function tee<T>(
     // the span tree; a sink that reads only `ctx.name` is unaffected.
     const ctx = compact({
         name,
-        runId: run.runId,
+        spanId: run.spanId,
         traceId: run.traceId,
-        parentId: run.parentId,
+        parentSpanId: run.parentSpanId,
     });
     async function* wrapped() {
         for await (const ev of gen) {
@@ -541,6 +573,7 @@ export function makeStitch<T = unknown>(
     shared?: SharedRuntime,
 ): Stitch<T> {
     const cfg = compose(config);
+    warnIdempotency(cfg);
     // A seam injects shared instances; a standalone stitch builds its own (unchanged behaviour:
     // a store-backed throttle only when a `store` is configured, else the in-process limiter).
     const store = shared?.store ?? cfg.store ?? memoryStore();
@@ -561,7 +594,7 @@ export function makeStitch<T = unknown>(
 
     // One traced run for `input` under a given run identity (ADR 0007). `streamFn` mints a fresh
     // ROOT run per consumption; composition (`linked`/`all`, stitchapi/pipe) supplies a CHILD run via
-    // `__runWith`, so a step joins the scope's chain (its events tee with parentId set).
+    // `__runWith`, so a step joins the scope's chain (its events tee with parentSpanId set).
     const streamWith = (
         input: StitchInput,
         run: RunContext,
@@ -667,7 +700,7 @@ export function makeStitch<T = unknown>(
     };
     stitchFn.__raw = (input?: StitchInput) => executeRaw(rt, input ?? {});
     // Traced login child-run (ADR 0007): cookieSession reaches this to run its login under the
-    // caller's run. `newRunContext(parent)` inherits the parent's traceId + sets parentId.
+    // caller's run. `newRunContext(parent)` inherits the parent's traceId + sets parentSpanId.
     stitchFn.__rawTraced = (input, parent) =>
         executeRawTraced(rt, input ?? {}, rt.trace, newRunContext(parent));
     // Run this stitch under a supplied run identity (ADR 0007) and resolve to its value — `linked`

@@ -65,7 +65,7 @@ const result = await charge({ body: { amount: 4200, ref: 'inv_88' } });
 
 `idempotency: true` does the work the loop did, correctly. It generates a random uuid **once per logical call** and reuses it across that call's retries, sending it as the `Idempotency-Key` header. One `await charge(...)` settles one charge, even when the engine retries it twice under the hood. The server sees one token, dedupes the replay, and returns the committed result.
 
-`retry` and `idempotency` are deliberately separate fields because they answer separate questions. `retry` decides _when to try again_ — which statuses, how many attempts, how to back off. `idempotency` decides _what makes two attempts the same write_. Pair them on every write: a retry without a key double-applies, a key without a retry never gets exercised.
+`retry` and `idempotency` are deliberately separate fields because they answer separate questions. `retry` decides _when to try again_ — which statuses, how many attempts, how to back off. `idempotency` decides _what makes two attempts the same write_. Pair them on every write: a retry without a key double-applies, and a key earns its keep most clearly alongside a retry — the retry is the duplicate it absorbs. Declare the random key without a retry and a stitch nudges you at construction, since it usually has nothing to collapse. The key isn't wasted in every such case, though: it also rides any replay the stitch never issued — a proxy or the transport resending the same request — and a server that honors it dedupes that too. If that's the case you're after, `idempotency: { warn: false }` silences the nudge.
 
 ## The default key dedupes retries, not submissions
 
@@ -99,11 +99,11 @@ The rule splits cleanly:
 | Collapse a retry of one call                                | `idempotency: true` (random, per-call)                             |
 | Collapse two separate submissions of the same logical write | `idempotency: { keyOf: (input) => ... }` derived from shared input |
 
-If the duplicates have nothing in common to hash, no key can join them — that is a fact about your data, not a gap in the feature.
+If two submissions share nothing stable to derive a key from, no key can join them at this layer — you dedupe them one level down instead, on a unique constraint in the database that rejects the second write.
 
 ## A different header
 
-Some APIs expect the token on a header other than `Idempotency-Key`. Name it:
+Some APIs expect the token on a header other than `Idempotency-Key` — `Idempotency-Token`, say, or a vendor-prefixed `X-Idempotency-Key`. Name it:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -115,13 +115,15 @@ const createOrder = stitch({
     path: '/orders',
     retry: { attempts: 3 },
     idempotency: {
-        header: 'X-Request-Id',
+        header: 'Idempotency-Token',
         keyOf: (input) => `order-${(input.body as { ref: string }).ref}`,
     },
 });
 ```
 
 The default is `Idempotency-Key`; `header` overrides it. Everything else is unchanged.
+
+`header` renames the idempotency key — the value a server _dedupes_ on. It is **not** the place to set a correlation header like `traceparent` or `X-Request-Id`: those answer a different question — _which request is this?_, for logs and spans — carry your trace id, and belong to tracing, not dedupe. Routing one through `idempotency` would send a fresh per-call value that never lines up with your traces.
 
 ## What it does not do
 
@@ -139,7 +141,7 @@ From there the same config object carries `timeout: { total: '30s', perAttempt: 
 stitchapi
 ```
 
-Add `idempotency` and `retry` to your write stitches, then derive a stable `key` wherever two submissions can be the same logical write.
+Add `idempotency` and `retry` to your write stitches, then derive a stable `keyOf` wherever two submissions can be the same logical write.
 
 -   [Idempotency guide](/docs/guides/resilience/idempotency) — the full field reference and server-contract notes.
 -   [Retry guide](/docs/guides/resilience/retry) and [Timeout guide](/docs/guides/resilience/timeout) — the policies you pair idempotency with on writes.

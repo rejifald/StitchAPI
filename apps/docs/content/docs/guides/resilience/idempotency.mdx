@@ -29,7 +29,7 @@ const createOrder = stitch({
     baseUrl: 'https://api.example.com',
     path: '/orders',
     idempotency: {
-        key: (input) => `order-${(input.body as { ref: string }).ref}`,
+        keyOf: (input) => `order-${(input.body as { ref: string }).ref}`,
     },
 });
 ```
@@ -41,29 +41,41 @@ that call, so a network blip that triggers a retry settles a single charge.
     **Anti-pattern:** don't lean on the default random key to dedupe two
     separate submissions — a double-clicked "Pay" fires two distinct `charge()`
     calls, each with a fresh key, so the server sees two writes and charges
-    twice; derive a stable `key` from something the duplicate submissions share
-    (an order reference, a request id) so both map to one key. See [Reference →
-    Config types](/docs/reference/config-types).
+    twice; derive a stable `keyOf` from something the duplicate submissions
+    share (an order reference, or an id your client mints once per intent) so
+    both map to one key. See [Reference → Config
+    types](/docs/reference/config-types).
 </Callout>
 
 ## Options
 
 `header` is the header name the key rides on, default `'Idempotency-Key'`. Set
-it when the API expects a different header.
+it when the API expects a different name (`'Idempotency-Token'`, a vendor-prefixed
+`'X-Idempotency-Key'`). It renames the idempotency key — the value the server
+_dedupes_ on — not a correlation or trace header like `traceparent`/`X-Request-Id`,
+which identify a request for logs and spans and belong to tracing, not dedupe.
 
-`key` builds the key from the call's [`StitchInput`](/docs/reference/config-types)
+`keyOf` builds the key from the call's [`StitchInput`](/docs/reference/config-types)
 (`params`, `query`, `body`, `headers`, `variables`). The default is a random
-uuid generated once per logical call; a custom `key` lets you derive a stable
+uuid generated once per logical call; a custom `keyOf` lets you derive a stable
 key from the request — for example an order reference — so the same logical
 write maps to the same key. `body` is typed `unknown`, so narrow or cast it
 before reading a property, as the `createOrder` example does.
 
-Why it matters: idempotency only pays off alongside [retries](/docs/guides/resilience/retry).
-A retried write replays the same key, so the server can recognize the duplicate
-and skip the side effect — safe retries don't double-charge.
+Why it matters: idempotency pairs most naturally with [retries](/docs/guides/resilience/retry) —
+a retried write replays the same key, so the server recognizes the duplicate and
+skips the side effect, and safe retries don't double-charge. It isn't only for
+retries, though: the same key also covers a duplicate the stitch never issued (a
+proxy or the transport resending the request), and a derived `keyOf` dedupes two
+separate submissions with no retry at all.
+
+Because the random default key mostly earns its keep alongside a retry, declaring
+it on a write with **no** `retry` logs a one-time construction nudge pointing you
+at `retry` (or a derived `keyOf`). It's a hint, not an error — set `warn: false`
+to silence it when the keyless-retry case (a proxy dedupe, say) is deliberate.
 
 <Callout type="warn">
-    A custom `key` derived from `body` must be stable for a given logical call
+    A custom `keyOf` derived from `body` must be stable for a given logical call
     and unique across distinct ones — colliding keys make the server dedupe two
     different writes into one.
 </Callout>

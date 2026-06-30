@@ -338,12 +338,36 @@ export interface CircuitOptions {
     /** Store namespace to share a breaker across stitches (default: stitch/host key). */
     key?: string;
 }
+/**
+ * Inject an idempotency token on writes so a server can collapse a duplicate. The default key is a
+ * random uuid minted **once per logical call** and reused across that call's retries — it makes a
+ * {@link RetryOptions | retry} safe to attempt. Because the random key only dedupes a replay of the
+ * *same* request, it pairs with `retry` (the retry is the duplicate it absorbs); declaring it on a
+ * write with **no** `retry` logs a one-time construction nudge, since it usually has nothing to
+ * collapse. It isn't strictly useless without one — a proxy or the transport resending the request
+ * below the stitch carries the same key for a server to dedupe — so the nudge has an out: set
+ * `warn: false` to silence it.
+ *
+ * To collapse two *separate* submissions of the same write — a double-clicked button — give `keyOf`
+ * and derive the token from something the duplicates share. A derived key dedupes submissions
+ * server-side without any retry, so it stands on its own (and is never nudged).
+ *
+ * `header` renames the idempotency key — the value the server *dedupes* on. It is not a place to
+ * set a correlation/trace header like `traceparent` or `X-Request-Id`; those identify a request
+ * for logs and spans and belong to tracing, not dedupe.
+ *
+ * The key is sent on **writes only**; setting `idempotency` on a read (GET/HEAD) drops it and logs
+ * a construction nudge — almost always a missing `method: 'POST'`. Both nudges fire only on the
+ * default HTTP surface and are silenced by `warn: false`.
+ */
 export interface IdempotencyOptions {
     header?: string; // header name (default 'Idempotency-Key')
     /** Derive a stable key per logical call (default: a random uuid). Renamed from `key` (CONTRACT.md P6: `key` is a string, a derivation fn is `keyOf`). */
     keyOf?: (input: StitchInput) => string;
     /** @deprecated Renamed to {@link IdempotencyOptions.keyOf} (CONTRACT.md P6). Read until the 1.0 GA cut. */
     key?: (input: StitchInput) => string;
+    /** false silences the "idempotency without retry" / "idempotency on a read" construction nudge. */
+    warn?: boolean;
 }
 
 // ---- Cache (ADR 0003) -----------------------------------------------------
@@ -531,9 +555,9 @@ export type StitchEvent<T = unknown> =
           // Run identity (ADR 0007) — also delivered on the {@link TraceContext} ctx. Stamped
           // here too so a non-sink `.stream()` consumer can read a run's identity off its first
           // event. Optional: a `start` event built by hand (tests) may omit them.
-          runId?: string;
+          spanId?: string;
           traceId?: string;
-          parentId?: string;
+          parentSpanId?: string;
       }
     | {
           type: 'progress';
@@ -1040,17 +1064,18 @@ export function isSeam(x: unknown): x is Seam {
 // ---- Run identity (ADR 0007) ----------------------------------------------
 /**
  * OTLP-aligned identity for one logical call ({@link Stitch} run) and its place in a run
- * tree. `runId` is the OTel **spanId**; `traceId` is shared across a whole tree; `parentId`
- * (the OTel **parentSpanId**) is set when one run spawns another — a `cookieSession` login,
- * a `linked` step. Minted by the engine (`newRunContext`), never supplied by a caller.
+ * tree. The field names are the OpenTelemetry span names verbatim: `traceId` is shared across a
+ * whole tree, `spanId` identifies this run, and `parentSpanId` is set when one run spawns another —
+ * a `cookieSession` login, a `linked` step. Minted by the engine (`newRunContext`), never supplied
+ * by a caller.
  */
 export interface RunContext {
-    /** 32-hex trace id, shared across every run in a tree. */
+    /** 32-hex trace id, shared across every run in a tree (OTel `traceId`). */
     traceId: string;
-    /** 16-hex id for this run (the OTel spanId). */
-    runId: string;
-    /** The spawning run's `runId` (OTel parentSpanId); absent for a root run. */
-    parentId?: string;
+    /** 16-hex id for this run (OTel `spanId`). */
+    spanId: string;
+    /** The spawning run's `spanId` (OTel `parentSpanId`); absent for a root run. */
+    parentSpanId?: string;
 }
 
 /**
@@ -1061,9 +1086,9 @@ export interface RunContext {
  */
 export interface TraceContext {
     name: string;
-    runId?: string;
+    spanId?: string;
     traceId?: string;
-    parentId?: string;
+    parentSpanId?: string;
 }
 
 // A trace sink consumes every event a stitch emits.

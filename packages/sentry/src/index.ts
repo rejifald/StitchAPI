@@ -217,7 +217,7 @@ export function sentrySink(
                         }),
                         extra: {
                             attempts: event.attempts,
-                            ...(ctx.runId ? { runId: ctx.runId } : {}),
+                            ...(ctx.spanId ? { spanId: ctx.spanId } : {}),
                         },
                     },
                 );
