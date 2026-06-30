@@ -1,0 +1,34 @@
+{
+    "ignore": ["CHANGELOG.md"],
+    "tethers": [
+        {
+            "id": "release-version",
+            "tier": "token",
+            "fact": "the documented StitchAPI release version — package source vs. the READMEs that quote it",
+            "policy": { "severity": "block", "mode": "auto" },
+            "sites": [
+                {
+                    "artifact": "packages/core/package.json",
+                    "locator": { "kind": "json-pointer", "path": "/version" },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "README.md",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "StitchAPI is at `([^`]+)`"
+                    },
+                    "write": "managed"
+                },
+                {
+                    "artifact": "packages/core/README.md",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "StitchAPI is at `([^`]+)`"
+                    },
+                    "write": "managed"
+                }
+            ]
+        }
+    ]
+}

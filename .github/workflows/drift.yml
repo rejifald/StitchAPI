@@ -1,0 +1,20 @@
+name: drift
+
+# Fails the build when a tracked fact drifts between artifacts (e.g. the README
+# version quote vs. the package source). Baseline lives in yakir.lock; the manifest
+# is yakir.json. See https://github.com/rejifald/yakir.
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+jobs:
+    yakir:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+            - run: npx --yes ./tools/yakir.tgz check
