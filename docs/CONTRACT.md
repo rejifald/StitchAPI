@@ -497,6 +497,31 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     the `@deprecated` `value` alias, and both the cache-generation deriver and the `verifyFingerprintContract`
     kit read `token` (normalizing either spelling, preserving the `null` ABSTAIN sentinel via a presence
     check, not `??`).
+-   **P9 (`StitchStore`) + P16 (`queryOptions`)** — first R5 pair. The per-framework query store is
+    framework-qualified (ADR 0012 rule 6): `@stitchapi/solid`'s `StitchStore`→`SolidStitchStore`,
+    `@stitchapi/svelte`'s →`SvelteStitchStore` (genuinely incompatible — Solid nests `.state`, Svelte is
+    a `Readable` — and both collided with core's state-store `StitchStore`). The ADR 0012
+    `stitchQueryOptions` rename now covers vue/solid/svelte/angular (was react-only); the bare
+    `queryOptions` survives as a uniform `@deprecated` alias (identity-tested) and is **de-listed from the
+    R5 watch-list** since it is no longer a competing canonical.
+-   **P9 (`StitchError` / `StitchErrorLike`)** — second R5 pair. The host adapters
+    (express/fastify/nest/next) mis-named their error **duck-type** `StitchError`, shadowing core's real
+    `StitchError` **class**. Renamed to `StitchErrorLike` (`Error & { status? }`), matching elysia/hono —
+    so bare `StitchError` is now core-only (R5 clears, watch-list unchanged), and `StitchErrorLike` is one
+    structural contract across all six host adapters (de-listed from R5, the `isStitchError` guard stays).
+-   **P9/P16 (per-request seam)** — third R5 pair. The per-request seam handle is ecosystem-qualified
+    per ADR 0012 (extending hono's `HonoRequestSeam`): express `RequestSeam`→`ExpressRequestSeam`, elysia
+    →`ElysiaRequestSeam`, fastify `StitchHost`→`FastifyRequestSeam`, nest `StitchHost`→`NestRequestSeam`.
+    Each keeps the bare name as a `@deprecated` alias (re-exported with a leading comment in the index
+    block, the codebase's established way to keep an alias off R5's name count). Bare `RequestSeam` /
+    `StitchHost` are no longer a canonical export anywhere, so both R5 findings clear (watch-list unchanged).
+-   **P9 (`StitchLike`)** — final R5. It is two deliberate, compatible tiers, not a clash: the canonical
+    RICH `(input?) => StitchCallResult<T>` (awaitable + streamable) in `@stitchapi/query-core`, re-exported
+    by the five TanStack-family bindings; and an intentional MINIMAL await-only `(input?) => PromiseLike<T>`
+    in the three stream-less adapters (swr/rtk-query/vercel-ai), which never call `.stream()`. query-core's
+    rich shape is assignable to the minimal one (a real stitch satisfies both), so it is **de-listed**.
+    With this, **R5 is fully cleared** — the baseline is now 6, exactly R6's P20 backlog
+    (multipart/stream/sse/throttle/hooks/input → `Scalar | AtLeastOne`).
 
 ## 7. Enforcement
 

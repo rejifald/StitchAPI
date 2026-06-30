@@ -18,6 +18,9 @@ import type { Stitch } from 'stitchapi';
 
 /** A callable returning an awaitable validated output. The real `Stitch` satisfies
  * it; so does a plain fake in a test. */
+// The MINIMAL await-only stitch duck-type (CONTRACT.md P9): this adapter never calls `.stream()`,
+// so it accepts any `(input?) => PromiseLike<T>`. The RICH canonical `StitchLike` (awaitable +
+// streamable) lives in `@stitchapi/query-core`; a real stitch satisfies both.
 export type StitchLike<T, Input = unknown> = (input?: Input) => PromiseLike<T>;
 
 /** The validated output type of a stitch (or `StitchLike`). */

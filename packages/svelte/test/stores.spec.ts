@@ -3,6 +3,7 @@
 // exactly how Svelte's `$store` / `subscribe` would observe them at runtime.
 import {
     queryOptions,
+    stitchQueryOptions,
     stitchStore,
     stitchStreamStore,
     useStitch,
@@ -271,21 +272,27 @@ describe('stitchStreamStore', () => {
     });
 });
 
-// --- queryOptions ----------------------------------------------------------
+// --- stitchQueryOptions ----------------------------------------------------------
 
-describe('queryOptions', () => {
+describe('stitchQueryOptions', () => {
     test('returns a TanStack-shaped POJO with key + async queryFn', async () => {
         const stitch = unaryStitch(async () => ({ ok: true }), {
             name: 'getThing',
         });
-        const opts = queryOptions(stitch, { params: { id: '7' } });
+        const opts = stitchQueryOptions(stitch, { params: { id: '7' } });
         expect(opts.queryKey).toEqual(['getThing', { params: { id: '7' } }]);
         await expect(opts.queryFn()).resolves.toEqual({ ok: true });
     });
 
     test('falls back to "stitch" when no __config.name', () => {
         const stitch = unaryStitch(async () => 1);
-        const opts = queryOptions(stitch, null);
+        const opts = stitchQueryOptions(stitch, null);
         expect(opts.queryKey[0]).toBe('stitch');
+    });
+});
+
+describe('queryOptions (deprecated alias)', () => {
+    test('queryOptions stays a deprecated alias of stitchQueryOptions (ADR 0012)', () => {
+        expect(queryOptions).toBe(stitchQueryOptions);
     });
 });

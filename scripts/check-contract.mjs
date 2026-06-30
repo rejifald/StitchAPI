@@ -178,12 +178,25 @@ const isLike = (n) => /Like/.test(n);
 // full shape-diff is the deferred type-aware phase). Flagged when ≥2 packages export one.
 const UNIQUE_WATCH = new Set([
     'StitchStore',
-    'StitchLike',
     'RequestSeam',
     'StitchHost',
     'StitchError',
-    'StitchErrorLike',
-    'queryOptions', // P16: the bare TanStack alias; canonical is stitchQueryOptions
+    // `StitchLike` de-listed (P9): it is two deliberate, compatible tiers, not a clash. The
+    // canonical RICH shape — `(input?) => StitchCallResult<T>` (awaitable + streamable) — lives in
+    // `@stitchapi/query-core` and is re-exported by the five TanStack-family bindings
+    // (react/vue/solid/svelte/angular). The three stream-LESS adapters (swr/rtk-query/vercel-ai)
+    // intentionally use a MINIMAL await-only `(input?) => PromiseLike<T>` duck-type — they never call
+    // `.stream()`, so requiring `StitchCallResult` would wrongly reject a plain awaitable callable.
+    // query-core's rich shape is assignable to the minimal one, so a real stitch satisfies both; the
+    // by-name R5 proxy can't see that the difference is intentional, hence the de-list.
+    // `StitchErrorLike` de-listed: the host adapters' error duck-type is now uniformly
+    // named `StitchErrorLike` (`Error & { status? }`) across elysia/hono/express/fastify/nest/next —
+    // one structural contract (P9). The mis-named `StitchError` duck-types (which shadowed core's
+    // real `StitchError` class) were renamed here, so bare `StitchError` is now core-only.
+    // `queryOptions` was watch-listed as the bare TanStack alias; the canonical
+    // `stitchQueryOptions` rename (ADR 0012) is now applied to ALL five framework bindings
+    // (react/vue/solid/svelte/angular), and the bare `queryOptions` survives only as a uniform
+    // `@deprecated` re-export of it — no longer a competing canonical, so it is de-listed (P16).
 ]);
 
 function collect() {

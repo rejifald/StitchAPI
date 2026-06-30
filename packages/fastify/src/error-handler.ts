@@ -6,10 +6,10 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 
 /** The error a stitch throws on failure: a branded `Error` with the upstream status. */
-export type StitchError = Error & { status?: number };
+export type StitchErrorLike = Error & { status?: number };
 
 /** True when `err` is the error a stitch throws on failure (`name === 'StitchError'`). */
-export function isStitchError(err: unknown): err is StitchError {
+export function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
 
@@ -22,18 +22,18 @@ export interface StitchErrorHandlerOptions {
      * for full control: propagate the upstream status with `(e) => e.status ?? 502`, or
      * remap specific codes (`(e) => (e.status === 429 ? 429 : 502)`).
      */
-    status?: number | ((err: StitchError) => number);
+    status?: number | ((err: StitchErrorLike) => number);
     /**
      * The JSON body for a mapped stitch failure. Default: `{ error: <message> }`. Override
      * to shape your own error envelope. Receives the mapped status alongside the error.
      */
-    body?: (err: StitchError, status: number) => unknown;
+    body?: (err: StitchErrorLike, status: number) => unknown;
 }
 
 const DEFAULT_STATUS = 502;
 
 function resolveStatus(
-    err: StitchError,
+    err: StitchErrorLike,
     status: StitchErrorHandlerOptions['status'],
 ): number {
     if (status === undefined) return DEFAULT_STATUS;
@@ -41,7 +41,7 @@ function resolveStatus(
 }
 
 /**
- * Build a `setErrorHandler`-compatible function that maps a {@link StitchError} to an HTTP
+ * Build a `setErrorHandler`-compatible function that maps a {@link StitchErrorLike} to an HTTP
  * response (status `502` by default; override via {@link StitchErrorHandlerOptions.status})
  * and **rethrows every other error** so Fastify's default handling — and any error handler
  * registered in an outer scope — stays in charge. Register it on the app or a plugin scope:

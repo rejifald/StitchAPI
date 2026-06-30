@@ -148,10 +148,10 @@ export function sseResponse<T>(
 // ---------------------------------------------------------------------------
 
 /** The error a stitch throws on failure: a branded `Error` with the upstream status. */
-export type StitchError = Error & { status?: number };
+export type StitchErrorLike = Error & { status?: number };
 
 /** True when `err` is the error a stitch throws on failure (`name === 'StitchError'`). */
-export function isStitchError(err: unknown): err is StitchError {
+export function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
 
@@ -162,9 +162,9 @@ export interface ErrorResponseOptions {
      * upstream's `401`/`404` semantics to your client. Override with a number, or a
      * function: propagate the upstream status with `(e) => e.status ?? 502`.
      */
-    status?: number | ((err: StitchError) => number);
+    status?: number | ((err: StitchErrorLike) => number);
     /** Shape the JSON body. Default `{ error: err.message }`. */
-    body?: (err: StitchError, status: number) => unknown;
+    body?: (err: StitchErrorLike, status: number) => unknown;
 }
 
 /**
@@ -183,7 +183,8 @@ export function stitchErrorResponse(
     err: unknown,
     options: ErrorResponseOptions = {},
 ): Response {
-    const e: StitchError = err instanceof Error ? err : new Error(String(err));
+    const e: StitchErrorLike =
+        err instanceof Error ? err : new Error(String(err));
     const fallback = isStitchError(err) ? 502 : 500;
     const status =
         typeof options.status === 'function'

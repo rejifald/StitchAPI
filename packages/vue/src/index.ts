@@ -271,7 +271,7 @@ export function useStitchStream<T>(
 // framework import, so it feeds `@tanstack/vue-query`'s `useQuery(options)`
 // (or any other) just the same.
 
-/** The plain object {@link queryOptions} returns — structurally compatible with
+/** The plain object {@link stitchQueryOptions} returns — structurally compatible with
  * TanStack Query's `useQuery(options)` without importing the library. */
 export interface StitchQueryOptions<T> {
     queryKey: readonly unknown[];
@@ -285,23 +285,23 @@ export interface StitchQueryOptions<T> {
  *
  * ```ts
  * import { useQuery } from '@tanstack/vue-query';
- * import { queryOptions } from '@stitchapi/vue';
+ * import { stitchQueryOptions } from '@stitchapi/vue';
  *
- * const { data } = useQuery(queryOptions(getUser, { params: { id } }));
+ * const { data } = useQuery(stitchQueryOptions(getUser, { params: { id } }));
  * ```
  *
  * The `queryFn` awaits the stitch (the validated output); the `queryKey` is the
  * stitch's `name` (when present) plus the input, so TanStack caches per call.
  */
-export function queryOptions<S extends StitchLike<unknown, never>>(
+export function stitchQueryOptions<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: QueryInput<S>,
 ): StitchQueryOptions<QueryOutput<S>>;
-export function queryOptions<T, Input = unknown>(
+export function stitchQueryOptions<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: Input,
 ): StitchQueryOptions<T>;
-export function queryOptions<T>(
+export function stitchQueryOptions<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
 ): StitchQueryOptions<T> {
@@ -311,3 +311,11 @@ export function queryOptions<T>(
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }
+
+/**
+ * @deprecated Renamed to {@link stitchQueryOptions} — a bare `queryOptions` collides
+ * with TanStack Query's own `queryOptions` export when both are imported. See
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
+ * `1.0.0-rc` line and removed at the 1.0 GA cut.
+ */
+export const queryOptions = stitchQueryOptions;
