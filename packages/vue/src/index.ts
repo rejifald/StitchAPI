@@ -122,10 +122,10 @@ function useStitchInternal<T>(
             resolvedInput,
             compact({
                 stream,
-                ...(opts.mode ? { mode: opts.mode } : {}),
+                mode: opts.mode,
                 enabled: opts.enabled,
-                ...(opts.onSuccess ? { onSuccess: opts.onSuccess } : {}),
-                ...(opts.onError ? { onError: opts.onError } : {}),
+                onSuccess: opts.onSuccess,
+                onError: opts.onError,
             }),
         );
 

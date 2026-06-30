@@ -52,7 +52,7 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
             method,
             headers,
             body,
-            ...(req.signal ? { signal: req.signal } : {}),
+            signal: req.signal,
             dispatcher: opts?.dispatcher,
         });
 

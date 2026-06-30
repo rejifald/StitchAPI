@@ -149,10 +149,10 @@ function injectStitchInternal<T>(
     const coreOptions: CreateStitchQueryOptions<T> & { stream: boolean } =
         compact({
             stream,
-            ...(mode ? { mode } : {}),
+            mode,
             enabled,
-            ...(onSuccess ? { onSuccess } : {}),
-            ...(onError ? { onError } : {}),
+            onSuccess,
+            onError,
         });
 
     // The live query handle, captured for the imperative refetch/cancel. It is
