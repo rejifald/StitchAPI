@@ -942,7 +942,7 @@ export type SafeResult<T> =
     | { ok: true; data: T; error: null }
     | { ok: false; data: null; error: StitchError };
 
-/** Options for {@link Stitch.inspect} (ADR 0016). */
+/** Options for {@link Stitch.inspect} (ADR 0016 / ADR 0018). */
 export interface InspectOptions {
     /**
      * Honour the cache policy instead of bypassing it. Default `false` — `.inspect()` is a fresh
@@ -951,6 +951,21 @@ export interface InspectOptions {
      * a hit (it is only populated on a miss, where a live request actually ran).
      */
     cache?: boolean;
+    /**
+     * Scrub secret-named fields from `raw` before placing it on the wrapper (ADR 0018). Default
+     * `false` — `raw` is unredacted so the deliberate-use case ("catch a stray token in an
+     * undeclared field") is unimpaired. Set when you want to pipe `wrapper.raw` into a log or
+     * support ticket and need the _known-secret_ fields removed first.
+     *
+     * - `true` — apply the shared secret-key denylist (`isSecretKey` / `registerSecretQueryKey`
+     *   registrations) to every object key in `raw`, depth-first. Returns a deep clone.
+     * - `string[]` — additionally scrub the listed key-name/path patterns on top of the shared
+     *   denylist (reuses the {@link matchPath} grammar: exact, `*` wildcard, or prefix).
+     *
+     * ⚠️ Name-based only — cannot catch a secret in an innocuously-named undeclared field.
+     * `status`/`findings`/`value` are never affected.
+     */
+    redact?: boolean | string[];
 }
 
 /**
@@ -963,14 +978,20 @@ export interface InspectOptions {
  * ⚠️ `raw` is the UNREDACTED pre-validation body, exposed on a **non-enumerable** field: `JSON.stringify`,
  * object spread, and trace walkers all skip it, so it can't leak by accident — reach for `wrapper.raw`
  * deliberately, and never log the whole wrapper. `raw` is `null` on a streaming surface (no single
- * buffered body) and on a cache hit.
+ * buffered body) and on a cache hit — `source` (ADR 0019) disambiguates which.
  */
 export interface Inspection<T> {
     /** The validated result payload — coerced/defaulted/stripped per ADR 0015; `null` iff `error` is set. Aligns with `SafeResult.data` (CONTRACT.md P5). */
     data: T | null;
     /** @deprecated Renamed to `data` (CONTRACT.md P5). Set alongside `data` until the 1.0 GA cut. */
     value?: T | null;
-    /** The pre-validation body the findings are diffed against. Non-enumerable; `null` on streaming/cache-hit. */
+    /**
+     * The pre-validation body the findings are diffed against. Non-enumerable; `null` on
+     * streaming/cache-hit. Unredacted by default — to scrub known-secret fields before
+     * sharing, pass `{ redact: true }` (or `{ redact: ['extra.path'] }`) to `.inspect()`
+     * (ADR 0018). Non-enumerability already prevents accidental leakage via
+     * `JSON.stringify` / spread; `redact` is the deliberate-sharing escape hatch.
+     */
     raw: unknown;
     /** Soft + hard drift findings (including those that ride the event stream), in emission order. */
     findings: DriftFinding[];
@@ -978,6 +999,54 @@ export interface Inspection<T> {
     status: number;
     /** The {@link StitchError} on a hard failure; `null` on success. */
     error: StitchError | null;
+    /**
+     * Why `raw` is what it is (ADR 0019) — the interpretant of `raw`. `'cache'` and `'stream'` are
+     * **structural** nulls: `raw` _can never_ exist there (the cache stores only `{ value, status }`;
+     * a streaming surface has no single buffered body). `'live'` means a real request ran (a miss, or
+     * the default cache-bypassing probe) — so `raw` is populated **except** when a transport error
+     * killed the request before any body arrived (then `raw` is `null` and `source` is still `'live'`).
+     * The contract is "`source` tells you whether `raw` _could_ exist," not "`source === 'live'` ⟹
+     * `raw !== null`."
+     */
+    source: 'live' | 'cache' | 'stream';
+}
+
+/**
+ * Fine-grained cache outcome for one run (ADR 0019) — the detail behind {@link Inspection.source}.
+ * `'hit'` / `'hit (revalidated)'` / `'miss'` mirror the engine's `phase:'cache'` events; `'bypass'`
+ * is a run that skipped the cache (the default `.report()` probe, or a runtime non-cacheable case);
+ * `'disabled'` is a stitch with no `cache` block configured at all.
+ */
+export type CacheOutcome =
+    | 'hit'
+    | 'hit (revalidated)'
+    | 'miss'
+    | 'bypass'
+    | 'disabled';
+
+/**
+ * The result of {@link Stitch.report} (ADR 0019) — an {@link Inspection} **plus** run diagnostics: it
+ * _is_ an inspection (same `value` / `raw` / `findings` / `status` / `error` / `source`, same
+ * never-throws contract and the same non-enumerable `raw`) extended with how the run actually went.
+ * Every added field is secret-free and enumerable — a report is safe to log _except_ don't expand
+ * `raw` (inherited non-enumerable, ADR 0018's `redact` applies). Per-attempt latency is deliberately
+ * **absent** in v1 (deferred — the spine carries no per-attempt request spans).
+ */
+export interface RunReport<T> extends Inspection<T> {
+    /** Total attempts made, including the first (1 = no retry). From the terminal event / `StitchError.attempts`. */
+    attempts: number;
+    /**
+     * Wall-clock timing of the run. `ms` is the total (the `done` event's `ms`); `waited` is the
+     * summed backoff/throttle/reconnect wait (Σ `progress.waitedMs`), **omitted** when nothing waited.
+     */
+    timing: { ms: number; waited?: number };
+    /**
+     * The **resolved, redacted** per-call config (ADR 0019 §5) — the stitch's existing redacted
+     * `__config`, never the secret-bearing `__rawConfig`. Safe to echo into a log or support ticket.
+     */
+    config: RedactedStitchConfig;
+    /** Fine-grained cache outcome — the detail behind {@link Inspection.source}. See {@link CacheOutcome}. */
+    cache: CacheOutcome;
 }
 
 export interface StitchResult<T> extends PromiseLike<T> {
@@ -1027,6 +1096,21 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
     inspect(
         ...args: [...Args<TIn>, opts?: InspectOptions]
     ): Promise<Inspection<TOut>>;
+    /**
+     * Probe a fresh call and return a {@link RunReport} — an {@link Inspection} (`{ value, raw,
+     * findings, status, error, source }`) **plus** run diagnostics: `attempts`, `timing`
+     * (`{ ms, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome
+     * (ADR 0019). Like `.inspect()` it **never throws** (a hard contract violation comes back with
+     * `error` set and the diagnostics populated) and is a **network probe**: it always hits the
+     * network and **bypasses the cache by default** — pass `{ cache: true }` to honour the cache
+     * policy (then `cache` reports the real `hit`/`miss` and `raw` is `null`/`source` is `'cache'`
+     * on a hit). Use `.report()` to ask "how did this run go?"; `.inspect()` stays the minimal
+     * "raw + drift" probe. ⚠️ `raw` is inherited unredacted and non-enumerable — the rest of the
+     * report is safe to log.
+     */
+    report(
+        ...args: [...Args<TIn>, opts?: InspectOptions]
+    ): Promise<RunReport<TOut>>;
     with<const P extends Partial<TIn>>(
         partial: P,
     ): Stitch<TOut, RelaxKeys<TIn, keyof P>>;

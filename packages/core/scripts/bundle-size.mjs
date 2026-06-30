@@ -86,16 +86,26 @@ const KB = 1024;
 // OTel span names (`runId`→`spanId`, `parentId`→`parentSpanId`, CONTRACT.md P22), whose longer
 // public property names are emitted verbatim on every `start` event / trace ctx and can't be
 // minified. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for the `.inspect()` redaction option + the enhanced result object (23.55→23.95 /
+// 19.0→19.45 KB; measured 23.77 / 19.25). Two more ADR-0016 deferrals land on the core path and
+// can't move to a subpath — both attach to the core Stitch surface: (1) ADR 0018 adds an opt-in
+// `redact` to `.inspect()` (a `redactSecretsDeep` deep-clone scrubber reusing the shared secret-key
+// denylist, wired at the `.inspect()` assembly site); and (2) ADR 0019 adds `.report()` returning
+// `RunReport<T>` — the `source` discriminator on `Inspection`, plus `attempts`/`timing`/`config`/
+// `cache` diagnostics drained off the existing event spine (no new engine events). `.report()` is a
+// method on every stitch, so it lifts `import { stitch }` as much as the whole entry — it can't
+// tree-shake away. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 23.55 * KB,
+        budget: 23.95 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 19.0 * KB,
+        budget: 19.45 * KB,
     },
 ];
 
