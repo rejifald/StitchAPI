@@ -2,8 +2,9 @@
 // Keep every *advertised* bundle size in sync with the *measured* one.
 //
 // The bundle size is a selling point, so it is quoted in several human-facing
-// places — both READMEs, two docs pages, and the homepage metrics band. Each
-// quote is a hand-typed number, and a hand-typed number drifts: the gate
+// places — both READMEs, two docs pages, the homepage metrics band, and the
+// agent-facing llms.txt preamble. Each quote is a hand-typed number, and a
+// hand-typed number drifts: the gate
 // (packages/core/scripts/bundle-size.mjs) trims the entry to 20.7 kB while a
 // README still brags "~24 kB", or someone bumps the budget and forgets the prose.
 //
@@ -41,6 +42,8 @@ const FILES = [
     },
     { rel: 'apps/docs/content/docs/concepts/principles.mdx', allow: [] },
     { rel: 'apps/docs/app/(home)/components/metrics.tsx', allow: [] },
+    // The llms.txt / llms-full.txt preamble an agent reads before the docs index.
+    { rel: 'apps/docs/lib/source.ts', allow: [] },
 ];
 
 // A bundle-size quote: `~21 kB`. Tolerates the separators used across markdown,
