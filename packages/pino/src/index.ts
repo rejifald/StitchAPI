@@ -8,6 +8,7 @@
 // plain test double all satisfy it (mirroring core's "contract, not dependency"
 // stance). `pino` is the single peer dependency.
 import type { StitchEvent, TraceContext, TraceSink } from 'stitchapi';
+import { compact } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
 // logger contract
@@ -171,14 +172,12 @@ function recordFor(
             };
         case 'progress':
             return {
-                obj: {
+                obj: compact({
                     stitch: name,
                     phase: event.phase,
                     attempt: event.attempt,
-                    ...(event.waited !== undefined
-                        ? { waited: event.waited }
-                        : {}),
-                },
+                    waited: event.waited,
+                }),
                 msg: `· ${name} ${event.phase}#${event.attempt}${
                     event.waited !== undefined
                         ? ` waited ${event.waited}ms`
@@ -188,13 +187,13 @@ function recordFor(
         case 'drift': {
             const f = event.finding;
             return {
-                obj: {
+                obj: compact({
                     stitch: name,
                     path: f.path,
                     level: f.level,
                     change: f.change,
-                    ...(f.detail !== undefined ? { detail: f.detail } : {}),
-                },
+                    detail: f.detail,
+                }),
                 msg: `drift ${name} ${f.path} ${f.change}${f.detail ? ` (${f.detail})` : ''}`,
             };
         }

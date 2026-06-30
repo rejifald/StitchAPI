@@ -72,9 +72,9 @@ test('linked: resolves to the body return and chains the runs into one trace', a
     expect(o.ctx.traceId).toBeDefined();
     expect(s.ctx.traceId).toBe(o.ctx.traceId);
     expect(t.ctx.traceId).toBe(o.ctx.traceId); // one trace tree
-    expect(o.ctx.parentId).toBeUndefined(); // order is the scope root
-    expect(s.ctx.parentId).toBe(o.ctx.runId); // shipment a child of order
-    expect(t.ctx.parentId).toBe(s.ctx.runId); // tracking a child of shipment
+    expect(o.ctx.parentSpanId).toBeUndefined(); // order is the scope root
+    expect(s.ctx.parentSpanId).toBe(o.ctx.spanId); // shipment a child of order
+    expect(t.ctx.parentSpanId).toBe(s.ctx.spanId); // tracking a child of shipment
 });
 
 test('linked: fails fast — a rejected call rejects the scope and stops the body', async () => {
@@ -124,7 +124,7 @@ test('linked: a combinator run through `run` nests its fan inside the scope trac
     expect(sb.ctx.traceId).toBe(o.ctx.traceId);
     // `a` and `b` are siblings under the `all` group (a child of the scope), not direct children of
     // the order — and the chain continues under that same group run for `tracking`.
-    expect(sa.ctx.parentId).toBe(sb.ctx.parentId);
-    expect(sa.ctx.parentId).not.toBe(o.ctx.runId);
-    expect(t.ctx.parentId).toBe(sa.ctx.parentId);
+    expect(sa.ctx.parentSpanId).toBe(sb.ctx.parentSpanId);
+    expect(sa.ctx.parentSpanId).not.toBe(o.ctx.spanId);
+    expect(t.ctx.parentSpanId).toBe(sa.ctx.parentSpanId);
 });

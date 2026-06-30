@@ -32,6 +32,7 @@ import { runProduced } from './score/run';
 import { type EvalTask, TASKS, getTask, taskIds } from './tasks/index';
 
 import { promises as fs } from 'node:fs';
+import { compact } from 'stitchapi';
 
 interface Args {
     command: string;
@@ -99,7 +100,7 @@ async function evalCell(
         error = scored.error;
     }
 
-    return {
+    return compact({
         taskId: task.id,
         family: task.family,
         condition,
@@ -110,8 +111,8 @@ async function evalCell(
         transcriptTurns: run.transcriptTurns,
         tokensIn: run.tokensIn,
         tokensOut: run.tokensOut,
-        ...(error !== undefined ? { error } : {}),
-    };
+        error,
+    });
 }
 
 /** Run the full task × condition matrix. */

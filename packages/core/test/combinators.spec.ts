@@ -194,7 +194,7 @@ test('all: members run as sibling child runs of one parent (trace fan)', async (
         seen.find((s) => s.ctx.name === name && s.ev.type === 'start')!;
     const a = start('a');
     const b = start('b');
-    expect(a.ctx.parentId).toBeDefined();
-    expect(a.ctx.parentId).toBe(b.ctx.parentId); // same parent — the group run
+    expect(a.ctx.parentSpanId).toBeDefined();
+    expect(a.ctx.parentSpanId).toBe(b.ctx.parentSpanId); // same parent — the group run
     expect(a.ctx.traceId).toBe(b.ctx.traceId); // one trace tree
 });

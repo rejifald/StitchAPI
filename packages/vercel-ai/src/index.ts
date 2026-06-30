@@ -151,6 +151,8 @@ export function stitchTool<T>(
     stitch: StitchLike<T, unknown>,
     options: StitchToolOptions<unknown, unknown>,
 ): StitchTool<unknown, T> {
+    // `compact` is the wrong tool here: `parameters`/`inputSchema` are required `unknown`
+    // keys it would optionalize. Keep the explicit spread to omit only `description`.
     return {
         ...(options.description !== undefined
             ? { description: options.description }

@@ -9,6 +9,7 @@
 // fetchAdapter, so behavior is identical across transports. The client is asked for raw
 // bytes (responseType 'arraybuffer') and told never to throw on non-2xx — the engine
 // decides what a given status means.
+import { compact } from './compact';
 import { decodeResponseBody, encodeRequestBody } from './http-adapter';
 import type {
     Adapter,
@@ -78,8 +79,9 @@ export function axiosAdapter(
         const onProgress = req.onProgress;
         const progress = (
             phase: AdapterProgress['phase'],
-        ): ((e: AxiosLikeProgressEvent) => void) => {
-            const cb = onProgress as (p: AdapterProgress) => void;
+        ): ((e: AxiosLikeProgressEvent) => void) | undefined => {
+            if (onProgress === undefined) return undefined;
+            const cb = onProgress;
             return (e) => {
                 cb(
                     e.total !== undefined
@@ -89,22 +91,20 @@ export function axiosAdapter(
             };
         };
 
-        const res = await client.request({
-            ...defaults,
-            url: req.url,
-            method: req.method.toUpperCase(),
-            headers,
-            ...(body !== undefined ? { data: body } : {}),
-            responseType: 'arraybuffer',
-            ...(req.signal ? { signal: req.signal } : {}),
-            ...(onProgress
-                ? {
-                      onUploadProgress: progress('upload'),
-                      onDownloadProgress: progress('download'),
-                  }
-                : {}),
-            validateStatus: () => true, // never throw on non-2xx; the engine decides
-        });
+        const res = await client.request(
+            compact({
+                ...defaults,
+                url: req.url,
+                method: req.method.toUpperCase(),
+                headers,
+                data: body,
+                responseType: 'arraybuffer',
+                signal: req.signal,
+                onUploadProgress: progress('upload'),
+                onDownloadProgress: progress('download'),
+                validateStatus: () => true, // never throw on non-2xx; the engine decides
+            }),
+        );
 
         const resHeaders = normalizeHeaders(res.headers);
         const contentTypeResp = resHeaders['content-type'] ?? '';

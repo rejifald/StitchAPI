@@ -4,6 +4,7 @@
 // job is the trusted principal boundary: `seam.as(req.user.id)` binds identity in the closure, so
 // a caller can never name another principal (the principal is never in `StitchInput`). Auth is
 // principal-scoped (separate sessions, no bleed); throttle stays shared (one bucket).
+import { compact } from './compact';
 import {
     type SharedRuntime,
     compose,
@@ -208,15 +209,17 @@ export function seam(options: SeamOptions = {}): Seam {
     const vault = vaultView(secretStore ?? store);
     const trace = resolveTrace(fragment.trace);
     const seamId = `s${(seamCounter += 1)}`;
-    const shared: SharedSeam = {
+    const shared: SharedSeam = compact({
         fragment,
         store,
         clock,
         vault,
         trace,
         throttle: seamBucket(fragment.throttle, store, seamId, clock),
-        stitches: [],
-        ...(secretStore ? { secretStore } : {}),
-    };
+        // `compact`'s `const` generic would freeze `[]` to `readonly []`; SharedSeam.stitches
+        // is mutable, so pin the element type.
+        stitches: [] as Stitch[],
+        secretStore,
+    });
     return rootHandle(shared);
 }

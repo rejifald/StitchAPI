@@ -4,6 +4,7 @@
 // Flags map onto a stitch's single input object ({ params, query, body, headers });
 // every event the stitch emits is written to stdout as one line of JSON, so the
 // output pipes straight into jq and friends. No app boot required.
+import { compact } from './compact';
 import { endpointLabel, toMermaid } from './diagram';
 import {
     type ParsedRequest,
@@ -641,10 +642,7 @@ async function serveCommand(args: string[], io: CliIO): Promise<number> {
     const registry = await loadRegistryOrReport(modulePath, io);
     if (registry === undefined) return 1;
 
-    const handle = await serve(registry, {
-        ...(port !== undefined ? { port } : {}),
-        ...(host !== undefined ? { host } : {}),
-    });
+    const handle = await serve(registry, compact({ port, host }));
     io.writeErr(
         `stitch serve listening on ${handle.url} — POST /stitch/:name\n`,
     );
@@ -694,9 +692,7 @@ async function diagramCommand(args: string[], io: CliIO): Promise<number> {
     const registry = await loadRegistryOrReport(modulePath, io);
     if (registry === undefined) return 1;
 
-    const { diagram, warnings } = toMermaid(registry, {
-        ...(name !== undefined ? { name } : {}),
-    });
+    const { diagram, warnings } = toMermaid(registry, compact({ name }));
     for (const w of warnings) io.writeErr(`warning: ${w}\n`);
     io.write(diagram);
     return 0;
@@ -752,11 +748,10 @@ async function exportCommand(args: string[], io: CliIO): Promise<number> {
         toJsonSchema = candidate as OpenApiExportOptions['toJsonSchema'];
     }
 
-    const { document, warnings } = toOpenApi(registry, {
-        ...(title !== undefined ? { title } : {}),
-        ...(apiVersion !== undefined ? { version: apiVersion } : {}),
-        ...(toJsonSchema !== undefined ? { toJsonSchema } : {}),
-    });
+    const { document, warnings } = toOpenApi(
+        registry,
+        compact({ title, version: apiVersion, toJsonSchema }),
+    );
     for (const w of warnings) io.writeErr(`warning: ${w}\n`);
     io.write(`${JSON.stringify(document, null, 2)}\n`);
     return 0;
@@ -839,11 +834,10 @@ async function fromCurlCommand(args: string[], io: CliIO): Promise<number> {
         return 1;
     }
 
-    const { source, warnings } = toStitchSource(req, {
-        ...(name !== undefined ? { name } : {}),
-        zod,
-        ...(response !== undefined ? { response } : {}),
-    });
+    const { source, warnings } = toStitchSource(
+        req,
+        compact({ name, zod, response }),
+    );
     for (const w of warnings) io.writeErr(`warning: ${w}\n`);
     io.write(source);
     return 0;

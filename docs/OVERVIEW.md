@@ -228,7 +228,7 @@ v1.0 release candidate, zero runtime deps). Full gate green — eslint, prettier
     backoff).
 -   **Non-HTTP surfaces** — `llm` and `shell` as symmetric kinds, plus `pipe()` to compose
     heterogeneous stitches with one causal trace across the chain (ADR 0008).
--   **Composition causality** — a run-identity OTLP span tree (`runId` / `traceId` / `parentId`):
+-   **Composition causality** — a run-identity OTLP span tree (`spanId` / `traceId` / `parentSpanId`):
     retries and pages are child spans with their own latency/outcome (ADR 0007).
 -   **Observability** — console / JSONL / OTLP, secret redaction, **off by default**.
 -   **Four surfaces, one definition** — in-process function · CLI (`stitch run`/`trace`/`export`/`diagram`) ·

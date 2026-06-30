@@ -6,6 +6,7 @@
 // The real module is reached via a lazy `import('./cache')` only when a stitch has a `cache`
 // block (bundle-frugal gate — ADR 0003 decision 11).
 import type { CacheController, CacheHit, RequestDescriptor } from './cache';
+import { compact } from './compact';
 import { classifyDiff, validationErrors } from './drift';
 import { fetchAdapter } from './http-adapter';
 import {
@@ -120,15 +121,17 @@ function emitInto(
     return {
         ...authCtx,
         // The current run (ADR 0007) so a strategy that spawns a sub-call — `cookieSession`'s
-        // login — can run it as a CHILD of this run (parentId = run.runId).
+        // login — can run it as a CHILD of this run (parentSpanId = run.spanId).
         run,
         emit: (topic, detail) =>
-            sink.push({
-                type: 'info',
-                topic,
-                ...(detail !== undefined ? { detail } : {}),
-                at: now(),
-            }),
+            sink.push(
+                compact({
+                    type: 'info',
+                    topic,
+                    detail,
+                    at: now(),
+                }),
+            ),
     };
 }
 
@@ -226,17 +229,15 @@ function buildRequest(
     }
     const method = (cfg.method ?? 'GET').toUpperCase();
     const headers = { ...(cfg.headers ?? {}), ...(input.headers ?? {}) };
-    let req: AdapterRequest = {
+    let req: AdapterRequest = compact({
         url,
         method,
         headers,
         body: input.body,
-        ...(cfg.bodyType !== undefined ? { bodyType: cfg.bodyType } : {}),
-        ...(cfg.multipart !== undefined ? { multipart: cfg.multipart } : {}),
-        ...(cfg.responseType !== undefined
-            ? { responseType: cfg.responseType }
-            : {}),
-    };
+        bodyType: cfg.bodyType,
+        multipart: cfg.multipart,
+        responseType: cfg.responseType,
+    });
     // Per-call execution controls (ADR 0005 Decisions 8-9): cancellation + byte progress, threaded
     // BEFORE the surface shapes the request so a surface that spreads `base` (e.g. `download`)
     // keeps them. Runtime-only — they never came from `__config`.
@@ -963,19 +964,19 @@ async function ensureCache(rt: Runtime): Promise<CacheController | null> {
     const config = cfg.cache;
     if (!config || cfg.sensitive) return null;
     rt.cacheInit ??= import('./cache').then((m) =>
-        m.createCache({
-            config,
-            store: rt.store,
-            stitchId: m.cacheStitchId(cfg),
-            // The RAW output schema (not the Validator wrapper) so the fingerprinter can read its
-            // `~standard.vendor`; transform/unwrap are already raw on the config (ADR 0004 fold).
-            output: outputSchemaSource(cfg),
-            transform: cfg.transform,
-            unwrap: cfg.unwrap,
-            ...(rt.authCtx.principal !== undefined
-                ? { principal: rt.authCtx.principal }
-                : {}),
-        }),
+        m.createCache(
+            compact({
+                config,
+                store: rt.store,
+                stitchId: m.cacheStitchId(cfg),
+                // The RAW output schema (not the Validator wrapper) so the fingerprinter can read its
+                // `~standard.vendor`; transform/unwrap are already raw on the config (ADR 0004 fold).
+                output: outputSchemaSource(cfg),
+                transform: cfg.transform,
+                unwrap: cfg.unwrap,
+                principal: rt.authCtx.principal,
+            }),
+        ),
     );
     return rt.cacheInit;
 }
@@ -1019,17 +1020,18 @@ const startEvt = (
     baseReq: AdapterRequest,
     input: StitchInput,
     run: RunContext,
-): StitchEvent => ({
-    type: 'start',
-    name,
-    method: baseReq.method,
-    url: baseReq.url,
-    input,
-    at: now(),
-    runId: run.runId,
-    traceId: run.traceId,
-    ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
-});
+): StitchEvent =>
+    compact({
+        type: 'start',
+        name,
+        method: baseReq.method,
+        url: baseReq.url,
+        input,
+        at: now(),
+        spanId: run.spanId,
+        traceId: run.traceId,
+        parentSpanId: run.parentSpanId,
+    });
 
 const cacheEvt = (detail: string): StitchEvent => ({
     type: 'progress',
@@ -1309,6 +1311,7 @@ async function* runStreaming(
                 status: res.status,
                 headers: res.headers,
                 body: await drainErrorBody(res.body),
+                // eslint-disable-next-line no-restricted-syntax -- `compact` would optionalize the required `body: unknown`; keep the explicit spread here
                 ...(res.url !== undefined ? { url: res.url } : {}),
             };
             const e = new Error(`HTTP ${res.status}`) as Error & {
@@ -1602,7 +1605,7 @@ export async function* execute(
     input: StitchInput = {},
     // Run identity (ADR 0007). Defaults to a fresh root run; the caller supplies one to make
     // this a CHILD run — `newRunContext(parent)` inherits the parent's `traceId` and sets
-    // `parentId` (a `cookieSession` login, a `linked` step). Stamped on the `start` event and
+    // `parentSpanId` (a `cookieSession` login, a `linked` step). Stamped on the `start` event and
     // carried onto the trace-sink ctx by `tee` (stitch.ts).
     run: RunContext = newRunContext(),
     // Per-call run flags (ADR 0016), set by `.inspect()`: `retainRaw` surfaces the pre-validation
@@ -1725,7 +1728,7 @@ export async function executeRaw(
 /**
  * Like {@link executeRaw}, but TEES the run's events to `sink` as a CHILD run (ADR 0007) and
  * returns the raw response. `cookieSession` uses it to run its login as a traced child of the call
- * that triggered it (`run.parentId` = the caller's runId), so the login is no longer an invisible
+ * that triggered it (`run.parentSpanId` = the caller's spanId), so the login is no longer an invisible
  * side-call. The login's `result` carries only its **status** — never the (sensitive) login body —
  * and any `throttled`/`retry`/`info` events from the login's own attempts are teed through.
  */
@@ -1739,12 +1742,12 @@ export async function executeRawTraced(
     const name = nameOf(cfg);
     const t0 = now();
     const state = { attempts: 0 };
-    const ctx = {
+    const ctx = compact({
         name,
-        runId: run.runId,
+        spanId: run.spanId,
         traceId: run.traceId,
-        ...(run.parentId !== undefined ? { parentId: run.parentId } : {}),
-    };
+        parentSpanId: run.parentSpanId,
+    });
     const baseReq = buildRequest(cfg, input);
     sink.handle(startEvt(name, baseReq, input, run), ctx);
     try {

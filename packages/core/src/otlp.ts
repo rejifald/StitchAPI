@@ -2,6 +2,7 @@
 // logical call, using OTel HTTP semantic-convention attributes, and hands finished spans to a
 // SpanExporter. The default exporter POSTs OTLP/JSON to a collector; tests inject a stub
 // exporter (no running collector). It is a normal TraceSink, so it tees alongside console/JSONL.
+import { compact } from './compact';
 import type { StitchEvent, TraceContext, TraceSink } from './types';
 import { hex, readEnv, scrubUrl, stripTrailingSlashes } from './util';
 
@@ -104,12 +105,11 @@ function buildChildSpans(run: OtelSpan): OtelSpan[] {
             );
             const detail = retry?.attributes?.['stitch.detail'];
             const status: OtelSpan['status'] = next
-                ? {
+                ? compact({
                       code: 'ERROR',
-                      ...(detail !== undefined
-                          ? { message: String(detail) }
-                          : {}),
-                  }
+                      message:
+                          detail !== undefined ? String(detail) : undefined,
+                  })
                 : run.status;
             return child(
                 `attempt ${attempt}`,
@@ -135,10 +135,12 @@ function buildChildSpans(run: OtelSpan): OtelSpan[] {
 export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
     const exporter =
         opts.exporter ??
-        otlpHttpExporter({
-            ...(opts.endpoint !== undefined ? { endpoint: opts.endpoint } : {}),
-            ...(opts.headers !== undefined ? { headers: opts.headers } : {}),
-        });
+        otlpHttpExporter(
+            compact({
+                endpoint: opts.endpoint,
+                headers: opts.headers,
+            }),
+        );
     const open = new Map<string, OtelSpan[]>();
     const push = (name: string, span: OtelSpan): void => {
         const stack = open.get(name) ?? [];
@@ -167,7 +169,7 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
             const name = ctx.name;
             // Correlate by run id (ADR 0007) — each run is unique, so no name-stack is needed;
             // fall back to the name when a sink is fed events by hand without ids.
-            const key = ctx.runId ?? name;
+            const key = ctx.spanId ?? name;
             switch (event.type) {
                 case 'start': {
                     // url.full is OTLP's only secret-bearing attribute (it never exports
@@ -178,22 +180,25 @@ export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
                     };
                     const host = serverAddress(event.url);
                     if (host) attributes['server.address'] = host;
-                    push(key, {
-                        name: `${event.method} ${name}`,
-                        kind: 'CLIENT',
-                        // Read the engine-minted ids off the ctx (real trace tree); fall back to
-                        // freshly-minted ids for a hand-fed sink with no run identity.
-                        traceId: ctx.traceId ?? hex(16),
-                        spanId: ctx.runId ?? hex(8),
-                        ...(ctx.parentId !== undefined
-                            ? { parentSpanId: ctx.parentId }
-                            : {}),
-                        startUnixMs: event.at,
-                        endUnixMs: event.at,
-                        attributes,
-                        status: { code: 'UNSET' },
-                        events: [],
-                    });
+                    push(
+                        key,
+                        compact({
+                            name: `${event.method} ${name}`,
+                            kind: 'CLIENT',
+                            // Read the engine-minted ids off the ctx (real trace tree); fall back to
+                            // freshly-minted ids for a hand-fed sink with no run identity.
+                            traceId: ctx.traceId ?? hex(16),
+                            spanId: ctx.spanId ?? hex(8),
+                            parentSpanId: ctx.parentSpanId,
+                            startUnixMs: event.at,
+                            endUnixMs: event.at,
+                            attributes,
+                            status: { code: 'UNSET' },
+                            // `compact`'s `const` generic would freeze `[]` to `readonly []`;
+                            // OtelSpan.events is mutable, so pin the element type.
+                            events: [] as OtelSpanEvent[],
+                        }),
+                    );
                     break;
                 }
                 case 'progress': {

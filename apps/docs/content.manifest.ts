@@ -283,6 +283,20 @@ export const pages: Page[] = [
         kind: 'concept',
     },
     {
+        path: 'concepts/run-identity',
+        title: 'Run identity & the trace tree',
+        description:
+            'How a stitch identifies one call and its place in a tree — a shared traceId, the span id (spanId), and a parentSpanId — so composed runs form one OpenTelemetry span tree, and how that maps onto the traceparent header on the wire.',
+        kind: 'concept',
+    },
+    {
+        path: 'concepts/correlation-vs-idempotency',
+        title: 'Correlation vs idempotency',
+        description:
+            'Two keys that look alike but answer different questions — an idempotency key decides what makes two attempts the same write, a correlation/trace id identifies one request for logs and spans — and why they stay separate fields.',
+        kind: 'concept',
+    },
+    {
         path: 'concepts/capability-not-credential',
         title: 'Capability, not credential',
         description:

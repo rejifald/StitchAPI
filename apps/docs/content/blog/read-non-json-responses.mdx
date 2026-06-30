@@ -31,7 +31,7 @@ async function getRevenueReport(month: string) {
 }
 ```
 
-Nothing here is wrong, but nothing here is reusable. You chose `res.text()` by hand because `res.json()` would have thrown on a comma. The return shape is whatever `parseCsv` happens to give you. A flaky gateway is your problem to handle, and the bearer token is captured in the closure. Every non-JSON endpoint in the codebase grows its own copy of this.
+Nothing here is wrong, but nothing here is reusable. You chose `res.text()` by hand because `res.json()` would have thrown on a comma. The return shape is whatever `parseCsv` happens to give you. A flaky gateway is yours to handle by hand, and the bearer token is captured in the closure. Every non-JSON endpoint in the codebase grows its own copy of this.
 
 ## The stitch version
 

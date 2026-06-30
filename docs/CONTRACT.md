@@ -368,6 +368,32 @@ state is a pluggable `StitchStore`; observability is any `TraceSink`; auth is an
 `AuthStrategy`; validation is any Standard-Schema `Validator`; and every stitch composes
 via `extends` fragments. A new capability that exposes none of these is the violation.
 
+### P22 · A standards-interop contract uses the standard's field names
+
+When one of StitchAPI's **own** contracts exists to interoperate with an external standard
+— it round-trips to that standard's wire format or object model — its fields **MUST** use
+that standard's names, not a house alias, even though [P18](#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary)
+would otherwise let a normalized house contract pick its own vocabulary. P18's "house
+vocabulary" exists for one consistent _internal_ language; it does **not** license renaming
+a field whose entire job is to carry that standard's value. Match the standard's token
+(house casing per our convention) so the export is an **identity mapping** with no
+translation seam. As with P18, follow the standard that governs **each** layer and convert
+at the edge — never blend two standards' vocabularies in one place.
+
+_Why:_ a private alias on an interop field is paid for twice — a translation step at the
+boundary where it meets the standard, and a lookup for every reader who knows the standard
+but not our word for it. P18 keeps duck-type mirrors **structurally** matching; P22 keeps
+value-level interop contracts **nominally** matching, for the same reason.
+
+_Canonical case:_ `RunContext` is StitchAPI's run identity, exported verbatim as
+OpenTelemetry spans (ADR 0007). Its fields were `runId`/`parentId` (house aliases) →
+renamed to **`spanId`/`parentSpanId`** (`traceId` already matched), so the `otlp.ts`
+mapping is an identity and `parentId`'s collision with W3C's directional `parent-id` header
+field is gone. The **wire** side still follows its own standard — W3C Trace Context
+(`trace-id`/`parent-id`/`trace-flags`) — translated at the boundary, never blended. See
+[ADR 0017 Decision 7](adr/0017-outbound-trace-context-propagation.md) and the
+`concepts/run-identity` page.
+
 ---
 
 ## 6. Migration backlog (proposed renames — confirm during sweep)

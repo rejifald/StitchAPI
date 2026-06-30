@@ -3,6 +3,7 @@
 // conformant {@link Stitch} — callable, with `.safe`/`.unwrap`/`.stream`/`.with`/`.cache`/
 // `__config`/`__stitch` — so `isStitch()`, a registry, or a Nest `overrideProvider(useValue:…)`
 // accept it. A call spy records every invocation. Browser-safe: no `node:*`.
+import { compact } from './compact';
 import {
     type RedactedStitchConfig,
     type SafeResult,
@@ -76,14 +77,14 @@ function defaultEvents<TOut>(
         at,
     };
     if (error) {
-        const err: StitchEvent<TOut> = {
+        const err: StitchEvent<TOut> = compact({
             type: 'error',
             name: error.name,
             message: error.message,
             attempts: 1,
             at,
-            ...(error.status !== undefined ? { status: error.status } : {}),
-        };
+            status: error.status,
+        });
         return [
             start,
             err,
@@ -242,10 +243,9 @@ export function failStitch<TOut = unknown, TIn = StitchInput>(
             ? error
             : typeof error === 'string'
               ? new StitchError(error)
-              : new StitchError(error.message ?? 'stub failure', {
-                    ...(error.status !== undefined
-                        ? { status: error.status }
-                        : {}),
-                });
+              : new StitchError(
+                    error.message ?? 'stub failure',
+                    compact({ status: error.status }),
+                );
     return assemble<TOut, TIn>(() => Promise.reject(err), opts);
 }

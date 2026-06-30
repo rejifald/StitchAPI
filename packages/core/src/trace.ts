@@ -1,5 +1,6 @@
 // Zero-infra observability sink: append every StitchEvent as a JSONL record and,
 // optionally, print a compact colored one-line-per-event summary to stderr. No deps.
+import { compact } from './compact';
 import type { DriftLevel, StitchEvent, TraceContext, TraceSink } from './types';
 import { dirnameOf, isSecretQueryKey, nodeFs, readEnv, scrubUrl } from './util';
 
@@ -58,11 +59,15 @@ export function redactEventForTransport(event: StitchEvent): StitchEvent {
     return {
         ...event,
         url: scrubUrl(event.url),
-        input: {
+        // `compact` drops `headers`/`query` when their redacted values are undefined —
+        // which is exactly when `event.input` lacked them (safeHeaders/safeQuery are derived
+        // from event.input.headers/.query), so it only ever omits the conditional override,
+        // never a key the `...event.input` spread provided.
+        input: compact({
             ...event.input,
-            ...(safeHeaders ? { headers: safeHeaders } : {}),
-            ...(safeQuery ? { query: safeQuery } : {}),
-        },
+            headers: safeHeaders,
+            query: safeQuery,
+        }),
     };
 }
 
@@ -465,11 +470,13 @@ export function fileSink(
     path?: string,
     opts?: Omit<TraceOptions, 'console' | 'file'>,
 ): TraceSink {
-    return createTrace({
-        console: false,
-        ...(path !== undefined ? { file: path } : {}),
-        ...opts,
-    });
+    return createTrace(
+        compact({
+            console: false,
+            file: path,
+            ...opts,
+        }),
+    );
 }
 
 /** Fan every event out to several sinks (e.g. console/JSONL + OTLP) — one event stream, many consumers. */

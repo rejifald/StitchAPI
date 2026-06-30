@@ -15,6 +15,7 @@
 // `next` import — so the same helpers work in Next route handlers, Remix, SvelteKit
 // endpoints, Bun, Deno, and Workers. `stitchapi` is the only peer dependency.
 import type { StitchEvent } from 'stitchapi';
+import { compact } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
 // SSE Response
@@ -101,13 +102,13 @@ export function sseResponse<T>(
                     } else if (event.type === 'error') {
                         controller.enqueue(
                             encoder.encode(
-                                `event: error\ndata: ${JSON.stringify({
-                                    name: event.name,
-                                    message: event.message,
-                                    ...(event.status !== undefined
-                                        ? { status: event.status }
-                                        : {}),
-                                })}\n\n`,
+                                `event: error\ndata: ${JSON.stringify(
+                                    compact({
+                                        name: event.name,
+                                        message: event.message,
+                                        status: event.status,
+                                    }),
+                                )}\n\n`,
                             ),
                         );
                         break;
