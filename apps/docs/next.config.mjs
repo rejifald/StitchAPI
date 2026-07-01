@@ -75,8 +75,8 @@ const config = {
     outputFileTracingIncludes: {
         '/api/search-docs': ['./.search-index/**'],
         '/api/mcp': ['./.search-index/**'],
-        // Temporary: lets /api/_diag run a real search end-to-end. Remove with it.
-        '/api/_diag': ['./.search-index/**'],
+        // Temporary: lets /api/diag run a real search end-to-end. Remove with it.
+        '/api/diag': ['./.search-index/**'],
     },
     // Keep the runtime embedder OUT of the server bundle. Those same two routes
     // load transformers.js (@huggingface/transformers), whose Node backend is the
