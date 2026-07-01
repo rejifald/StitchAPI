@@ -328,7 +328,11 @@ export function awsSigV4(opts: AwsSigV4Options): AuthStrategy {
                 payloadHash = 'UNSIGNED-PAYLOAD';
             } else {
                 // JSON (`bodyType: 'json'` or unset): core sends `JSON.stringify(body)`,
-                // so the JSON hash matches the wire bytes when signing is requested.
+                // so re-serialising the SAME object with the SAME call here yields the
+                // exact wire bytes. Keep this a literal re-serialisation, NOT a
+                // canonical/sorted "stable" object hash — `x-amz-content-sha256` must be
+                // the SHA-256 of the bytes actually sent (insertion-order JSON), so
+                // sorting keys would itself cause SignatureDoesNotMatch.
                 payloadHash =
                     opts.signBody === true
                         ? await sha256Hex(JSON.stringify(body))
