@@ -4,10 +4,11 @@ description: "Attach idempotency keys to writes so safe retries don't duplicate 
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
-Add `idempotency` to a write stitch so each logical call carries a stable
-`Idempotency-Key` header — when a retry replays the same write, the server sees
-the same key and dedupes the side effect instead of running it twice. Reach for
-it on `POST`/`PUT` where a duplicate would double-charge, double-ship, or
+Make retries on writes safe, so a replayed write settles once and never becomes
+a duplicate. Add `idempotency` to a write stitch and each logical call carries a
+stable `Idempotency-Key` header — when a retry replays the same write, the server
+sees the same key and dedupes the side effect instead of running it twice. Reach
+for it on `POST`/`PUT` where a duplicate would double-charge, double-ship, or
 double-create.
 
 ## Example
