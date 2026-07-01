@@ -80,11 +80,20 @@ Drop a short rule into your repo and any agent working in it reaches for a typed
 API. Hand-copy the rule, or run `npx stitch init` to write it as `AGENTS.md`, a
 Cursor rule, or a `CLAUDE.md` section.
 
+That rule teaches an agent to _write_ stitches. A companion rule teaches it to
+_look up_ how — point it at these docs over MCP so it searches the current API
+before answering instead of guessing from training data.
+
 <Cards>
     <Card
         title="Adopt in your project"
         href="/docs/agents/adopt-in-your-project"
         description="The consumer rule agents follow, plus npx stitch init."
+    />
+    <Card
+        title="Search the docs over MCP"
+        href="/docs/agents/search-over-mcp"
+        description="Give the agent a rule to search_docs before it answers."
     />
 </Cards>
 

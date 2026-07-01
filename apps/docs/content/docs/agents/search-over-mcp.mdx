@@ -69,6 +69,32 @@ or commit it to the project's `.mcp.json`:
 }
 ```
 
+## Tell your agent to use it
+
+Connecting the server is only half of it — an agent won't reach for a tool it
+forgets it has. Give it a standing rule so it searches the docs on its own. Drop
+this into whichever convention your agent reads — `AGENTS.md`, a `CLAUDE.md`
+section, a file under `.cursor/rules/`, or `.windsurfrules`:
+
+```md
+# Using the StitchAPI docs MCP
+
+For any question about StitchAPI — its API, configuration, errors, or runtime
+behavior — use the `stitchapi-docs` MCP server before answering:
+
+-   Call `search_docs` with a natural-language query first, and read the excerpts
+    and links it returns.
+-   Call `get_doc` to read a full page when an excerpt is not enough.
+-   Prefer these tools over prior knowledge. StitchAPI is newer and moves faster
+    than model training data, so the docs are the source of truth — when they
+    disagree with memory, follow the docs.
+```
+
+Keep it short: it names the server, the two tools, and the one judgment call that
+matters — prefer the live docs to a stale guess. It pairs with the [consumer
+rule](/docs/agents/adopt-in-your-project), which teaches the same agent to
+_write_ stitches; this one teaches it to _look up_ how.
+
 ## The two tools
 
 `search_docs` takes a natural-language `query` and an optional `limit` (default
