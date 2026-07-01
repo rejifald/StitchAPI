@@ -83,6 +83,11 @@ web_modules/
 .env.production.local
 .env.local
 
+# Signing keys — e.g. the MCP registry key generated per docs/MCP-PUBLISHING.md.
+# Never commit private keys; they live in GitHub Actions secrets, not the repo.
+*.pem
+*.key
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
