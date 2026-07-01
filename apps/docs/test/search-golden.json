@@ -1,0 +1,102 @@
+[
+    {
+        "query": "stop a stitch hammering a flaky or failing upstream API",
+        "expect": "guides/resilience/circuit-breaker"
+    },
+    {
+        "query": "rate-limit or cap the concurrency of my outgoing API calls",
+        "expect": "guides/resilience/throttle"
+    },
+    {
+        "query": "safe retries for writes without making duplicate writes",
+        "expect": "guides/resilience/idempotency"
+    },
+    {
+        "query": "validate an API response with Zod",
+        "expect": "guides/validation/standard-schema"
+    },
+    {
+        "query": "paginate a cursor endpoint into one array",
+        "expect": "recipes/paginate-into-one-array"
+    },
+    {
+        "query": "what does STITCH_DRIFT mean and how do I fix it",
+        "expect": "errors/stitch-drift"
+    },
+    {
+        "query": "let an agent call my API without ever seeing the secret",
+        "expect": "concepts/capability-not-credential"
+    },
+    {
+        "query": "retry a failed HTTP request with exponential backoff",
+        "expect": "guides/resilience/retry"
+    },
+    {
+        "query": "set a timeout so a slow API call gives up",
+        "expect": "guides/resilience/timeout"
+    },
+    {
+        "query": "call a GraphQL API with typed variables",
+        "expect": "guides/data/graphql"
+    },
+    {
+        "query": "expose a stitch as an MCP tool an agent can call",
+        "expect": "surfaces/mcp"
+    },
+    {
+        "query": "authenticate requests with a bearer token",
+        "expect": "guides/auth/bearer"
+    },
+    {
+        "query": "test API code without hitting the real network",
+        "expect": "guides/testing/mocking"
+    },
+    {
+        "query": "share one rate limit across multiple workers or servers",
+        "expect": "guides/state/distributed-throttle"
+    },
+    {
+        "query": "run a stitch from the command line as a CLI tool",
+        "expect": "surfaces/cli"
+    },
+    {
+        "query": "what does STITCH_TIMEOUT mean and how do I handle it",
+        "expect": "errors/stitch-timeout"
+    },
+    {
+        "query": "authenticate with OAuth2 client credentials",
+        "expect": "guides/auth/oauth2"
+    },
+    {
+        "query": "unwrap the data field out of a JSON envelope response",
+        "expect": "guides/data/unwrap"
+    },
+    {
+        "query": "reshape or transform a response body before it returns",
+        "expect": "guides/data/transform"
+    },
+    {
+        "query": "send traces to an OpenTelemetry OTLP collector",
+        "expect": "guides/observability/otlp"
+    },
+    {
+        "query": "use a stitch as a TanStack Query queryFn in React",
+        "expect": "integrations/tanstack-query"
+    },
+    {
+        "query": "call a stitch from a Next.js route handler",
+        "expect": "integrations/next"
+    },
+    {
+        "query": "what is a stitch",
+        "expect": "concepts/the-stitch"
+    },
+    {
+        "query": "share configuration across stitches with extends",
+        "expect": "guides/authoring/extends"
+    },
+    {
+        "query": "serve a stitch as an HTTP endpoint",
+        "expect": "surfaces/http-serve"
+    }
+]

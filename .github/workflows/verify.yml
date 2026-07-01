@@ -184,3 +184,32 @@ jobs:
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter @stitchapi/docs test:e2e:install
             - run: pnpm --filter @stitchapi/docs test:e2e
+
+    # Docs search-relevance ratchet (apps/docs/scripts/search-eval.mts --assert): builds the
+    # semantic search index the deploy builds, then asserts every natural question in
+    # apps/docs/test/search-golden.json still finds its page within reach (#5) and that the
+    # aggregate Relevance@1 / MRR hold above their floors. This is the regression guard for
+    # search_docs — it catches a content edit that silently drops a page out of its own
+    # question's results (the >8/>30 misranks this ratchet was tuned to fix). It builds the
+    # docs app and loads the local embedding model, so — like size/sandbox/e2e — it runs as
+    # its own job rather than in the fast `verify` gate. Make it a required check once it has
+    # settled in CI.
+    search-relevance:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            # Cache the local embedding model (all-MiniLM-L6-v2, ~23 MB) transformers.js pulls
+            # into node_modules on the first index build, so a HuggingFace CDN hiccup can't flake
+            # a required check. Keyed on the lockfile, so a transformers version bump re-fetches.
+            - uses: actions/cache@v4
+              with:
+                  path: node_modules/.pnpm/@huggingface+transformers@*/node_modules/@huggingface/transformers/.cache
+                  key: transformers-model-${{ hashFiles('pnpm-lock.yaml') }}
+            - run: pnpm --filter @stitchapi/docs check:search-relevance

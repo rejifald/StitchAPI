@@ -3,10 +3,12 @@ title: 'TanStack Query'
 description: 'A stitch is the queryFn. StitchAPI owns the call’s resilience; TanStack Query (or SWR) owns view state — they compose, they do not compete.'
 ---
 
-TanStack Query is not an alternative to StitchAPI — it sits one layer up, and the
-two fit together cleanly. A stitch is a typed, resilient **function**; TanStack
-Query is the thing that calls functions from your components and manages the
-result as view state. So the join is the obvious one:
+Use a stitch as your TanStack Query `queryFn` in React — declare the endpoint
+once, pass it straight to `useQuery`, and there's no glue code. TanStack Query is
+not an alternative to StitchAPI — it sits one layer up, and the two fit together
+cleanly. A stitch is a typed, resilient **function**; TanStack Query is the thing
+that calls functions from your components and manages the result as view state.
+So the join is the obvious one:
 
 <Callout type="info">
     **A stitch _is_ the `queryFn`.** Pass the stitch straight to `useQuery`. The
