@@ -220,8 +220,8 @@ if (failed) {
     process.exit(1);
 }
 
-// Keep --json output pure (it is consumed by scripts/check-size-docs.mjs);
-// the human-readable confirmation is only for the table view.
+// Keep --json output pure (it is consumed by yakir's `bundle-advertised-size`
+// tether); the human-readable confirmation is only for the table view.
 if (!process.argv.includes('--json')) {
     console.log('✓ Core entry within budget.\n');
 }

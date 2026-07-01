@@ -74,11 +74,10 @@ jobs:
             # renders from scripts/readme-metrics.snapshot.json and compares, so it stays in
             # this fast job. Refresh the numbers with `pnpm metrics` (runs fallow + coverage).
             - run: pnpm check:readme
-            # Playground autocomplete is generated from core `src/`; regenerate and fail if the
-            # committed artifact drifted (a new *Config field shipped without a regen). Mirrors the
-            # lefthook pre-commit `completions` job, enforced in CI.
-            - run: pnpm --filter @stitchapi/docs gen:completions
-            - run: git diff --exit-code "apps/docs/app/(home)/playground/playground-completions.generated.ts"
+            # Playground autocomplete drift (the generated artifact vs core `src/`) is now a
+            # yakir tether (`playground-completions`, a whole-file compare against the generator's
+            # --emit output), enforced by the `drift-executable` job in drift.yml. The pre-commit
+            # `completions` job still regenerates + stages so a dev never commits a stale artifact.
             # Docs IA drift guard: content.manifest.ts is the source of truth for the sidebar,
             # but pages get added straight into the per-folder meta.json files, so the manifest
             # silently rots and a stray `gen:docs` would delete real pages. Regenerate and fail
@@ -109,9 +108,9 @@ jobs:
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter stitchapi build
             - run: pnpm --filter stitchapi check:size
-            # Advertised bundle sizes (READMEs, docs, homepage) must match the
-            # measured figure above — fails if any quote has drifted.
-            - run: pnpm check:size-docs
+            # Advertised bundle sizes (READMEs, docs, homepage) matching the measured
+            # figure is now a yakir tether (`bundle-advertised-size`), enforced by the
+            # `drift-size` job in drift.yml (it builds core and measures the same way).
 
     # Coverage gate: core declares coverage thresholds (packages/core/vitest.config.ts), so a drop
     # below them fails here. Runs core's instrumented suite (`test:coverage`) in its own job rather

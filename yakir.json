@@ -4,11 +4,16 @@
         {
             "id": "release-version",
             "tier": "token",
-            "fact": "the documented StitchAPI release version — package source vs. the READMEs that quote it",
+            "fact": "every published package shares one version (lockstep), and the READMEs quote it",
             "policy": { "severity": "block", "mode": "auto" },
             "sites": [
                 {
-                    "artifact": "packages/core/package.json",
+                    "artifact": "packages/*/package.json",
+                    "exclude": [
+                        "packages/completions-plugin/package.json",
+                        "packages/eval-harness/package.json",
+                        "packages/sandbox-sim/package.json"
+                    ],
                     "locator": { "kind": "json-pointer", "path": "/version" },
                     "write": "manual"
                 },
@@ -92,6 +97,76 @@
                         "match": "~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB",
                         "all": true
                     },
+                    "write": "managed"
+                },
+                {
+                    "artifact": "apps/docs/lib/source.ts",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB",
+                        "all": true
+                    },
+                    "write": "managed"
+                }
+            ]
+        },
+        {
+            "id": "node-engines",
+            "tier": "token",
+            "fact": "every published package declares the same minimum Node (engines.node)",
+            "policy": { "severity": "block", "mode": "auto" },
+            "sites": [
+                {
+                    "artifact": "packages/*/package.json",
+                    "exclude": [
+                        "packages/completions-plugin/package.json",
+                        "packages/eval-harness/package.json",
+                        "packages/sandbox-sim/package.json"
+                    ],
+                    "locator": {
+                        "kind": "json-pointer",
+                        "path": "/engines/node"
+                    },
+                    "write": "manual"
+                }
+            ]
+        },
+        {
+            "id": "package-license",
+            "tier": "token",
+            "fact": "every published package declares the same SPDX license",
+            "policy": { "severity": "block", "mode": "auto" },
+            "sites": [
+                {
+                    "artifact": "packages/*/package.json",
+                    "exclude": [
+                        "packages/completions-plugin/package.json",
+                        "packages/eval-harness/package.json",
+                        "packages/sandbox-sim/package.json"
+                    ],
+                    "locator": { "kind": "json-pointer", "path": "/license" },
+                    "write": "manual"
+                }
+            ]
+        },
+        {
+            "id": "playground-completions",
+            "tier": "executable",
+            "fact": "the committed playground completions file matches its generator (core src → codegen)",
+            "policy": { "severity": "block", "mode": "propose" },
+            "origin": "declared",
+            "sites": [
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node apps/docs/scripts/gen-stitch-completions.mjs --emit",
+                        "extract": { "whole": true }
+                    },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "apps/docs/app/(home)/playground/playground-completions.generated.ts",
+                    "locator": { "kind": "file" },
                     "write": "managed"
                 }
             ]

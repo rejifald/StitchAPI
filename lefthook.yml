@@ -14,15 +14,15 @@ pre-commit:
           glob: 'packages/core/src/**/*.ts'
           run: pnpm --filter @stitchapi/docs run gen:completions && git add "apps/docs/app/(home)/playground/playground-completions.generated.ts"
         # Drift gate (github.com/rejifald/yakir). Pre-commit runs the TOKEN tier
-        # only — literal facts that need no build, like the README version vs the
-        # package source (the `release-version` tether). The `bundle-advertised-size`
-        # tether is executable-tier: it MEASURES the real bundle by running
-        # bundle-size.mjs against built lib, which pre-commit has no build for, so it
-        # runs at pre-push and in CI (.github/workflows/drift.yml) instead — see the
-        # `yakir` jobs there. Vendored tarball; manifest is yakir.json, baseline
-        # yakir.lock.
+        # only — literal facts read straight from files, needing no build: the
+        # version lockstep + README quotes, the engines.node floor, and the license,
+        # across every published package.json. The executable-tier tethers
+        # (`bundle-advertised-size` measures the built lib; `playground-completions`
+        # re-runs the generator) can't run build-free, so they run at pre-push and in
+        # CI (.github/workflows/drift.yml). Vendored tarball; manifest yakir.json,
+        # baseline yakir.lock.
         - name: yakir
-          glob: '{README.md,packages/core/README.md,packages/core/package.json,yakir.json,yakir.lock}'
+          glob: '{README.md,packages/core/README.md,packages/*/package.json,yakir.json,yakir.lock}'
           run: npx --yes ./tools/yakir.tgz check --tier token
         # README metrics badge block must match the committed snapshot. Tool-free
         # drift guard (renders from scripts/readme-metrics.snapshot.json) — mirrors

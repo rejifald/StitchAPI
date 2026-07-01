@@ -4,7 +4,123 @@
     "release-version": {
       "baseline": "1.0.0-rc.4",
       "sites": {
+        "packages/angular/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/aws-sigv4/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/cloudflare-kv/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
         "packages/core/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/deno-kv/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/elysia/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/expo/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/express/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/fastify/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/fingerprint-arktype/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/fingerprint-effect/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/fingerprint-typebox/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/fingerprint-valibot/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/fingerprint-zod/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/hono/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/nest/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/next/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/pino/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/query-core/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/react-native/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/react/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/redis/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/rtk-query/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/sentry/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/shell/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/solid/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/svelte/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/swr/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/vercel-ai/package.json#/version": {
+          "value": "1.0.0-rc.4",
+          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+        },
+        "packages/vue/package.json#/version": {
           "value": "1.0.0-rc.4",
           "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
         },
@@ -45,6 +161,276 @@
         "apps/docs/app/(home)/components/metrics.tsx#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
           "value": "19, 24",
           "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+        },
+        "apps/docs/lib/source.ts#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
+          "value": "19, 24",
+          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+        }
+      },
+      "accepted": null
+    },
+    "node-engines": {
+      "baseline": ">=18.18.0",
+      "sites": {
+        "packages/angular/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/aws-sigv4/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/cloudflare-kv/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/core/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/deno-kv/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/elysia/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/expo/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/express/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/fastify/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/fingerprint-arktype/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/fingerprint-effect/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/fingerprint-typebox/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/fingerprint-valibot/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/fingerprint-zod/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/hono/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/nest/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/next/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/pino/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/query-core/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/react-native/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/react/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/redis/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/rtk-query/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/sentry/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/shell/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/solid/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/svelte/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/swr/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/vercel-ai/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/vue/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        }
+      },
+      "accepted": null
+    },
+    "package-license": {
+      "baseline": "Apache-2.0",
+      "sites": {
+        "packages/angular/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/aws-sigv4/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/cloudflare-kv/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/core/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/deno-kv/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/elysia/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/expo/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/express/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/fastify/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/fingerprint-arktype/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/fingerprint-effect/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/fingerprint-typebox/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/fingerprint-valibot/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/fingerprint-zod/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/hono/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/nest/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/next/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/pino/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/query-core/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/react-native/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/react/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/redis/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/rtk-query/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/sentry/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/shell/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/solid/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/svelte/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/swr/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/vercel-ai/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/vue/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        }
+      },
+      "accepted": null
+    },
+    "playground-completions": {
+      "baseline": "sha256:df00eb567515e1b9ef69b3fffaae9d5a4087181d57b00d8f69db68dc7505e773",
+      "sites": {
+        "command:node apps/docs/scripts/gen-stitch-completions.mjs --emit#whole": {
+          "value": "sha256:df00eb567515e1b9ef69b3fffaae9d5a4087181d57b00d8f69db68dc7505e773",
+          "fp": "sha256:3db0a67dee4426a0e25b0d937c5ee4f7057b565a059ad7f5e035887fb9ba0d20"
+        },
+        "apps/docs/app/(home)/playground/playground-completions.generated.ts#file": {
+          "value": "sha256:df00eb567515e1b9ef69b3fffaae9d5a4087181d57b00d8f69db68dc7505e773",
+          "fp": "sha256:3db0a67dee4426a0e25b0d937c5ee4f7057b565a059ad7f5e035887fb9ba0d20"
         }
       },
       "accepted": null

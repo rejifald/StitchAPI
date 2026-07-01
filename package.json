@@ -20,7 +20,6 @@
         "check:exports": "pnpm -r check:exports",
         "check:exports:companions": "node scripts/check-companion-exports.mjs",
         "check:size": "pnpm -r check:size",
-        "check:size-docs": "node scripts/check-size-docs.mjs",
         "check:docs-links": "node scripts/check-docs-links.mjs",
         "check:contract": "node scripts/check-contract.mjs",
         "check:format": "prettier --check .",

@@ -4,11 +4,13 @@ name: drift
 # yakir.lock; the manifest is yakir.json. See https://github.com/rejifald/yakir.
 #
 # Two jobs, mirroring the token/executable tier split:
-#   drift       — token tier: literal facts (the README version vs. the package
-#                 source). Reads files only, so it needs no install or build.
-#   drift-size  — executable tier: the `bundle-advertised-size` tether MEASURES the
-#                 real bundle by running bundle-size.mjs against built lib, so this
-#                 job installs + builds core first (like verify.yml's `size` job).
+#   drift            — token tier: literal facts read straight from files (version
+#                      lockstep + README quotes, engines.node, license across every
+#                      published package.json). No install or build needed.
+#   drift-executable — executable tier: facts that only a command knows. The
+#                      `bundle-advertised-size` tether measures the built lib, and
+#                      `playground-completions` re-runs the generator, so this job
+#                      installs (and builds core) first, like verify.yml's `size` job.
 
 on:
     push:
@@ -28,7 +30,7 @@ jobs:
                   node-version-file: .nvmrc
             - run: npx --yes ./tools/yakir.tgz check --tier token
 
-    drift-size:
+    drift-executable:
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
@@ -38,8 +40,9 @@ jobs:
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
-            # Build core so bundle-size.mjs can measure the real lib; --ignore-scripts
-            # skips the lefthook `prepare` (CI provisions hooks differently).
+            # Install (for the completions generator's typescript dep) and build core
+            # (so bundle-size.mjs can measure the real lib). --ignore-scripts skips the
+            # lefthook `prepare` (CI provisions hooks differently).
             - run: pnpm install --frozen-lockfile --ignore-scripts
             - run: pnpm --filter stitchapi build
-            - run: npx --yes ./tools/yakir.tgz check --only bundle-advertised-size
+            - run: npx --yes ./tools/yakir.tgz check --tier executable
