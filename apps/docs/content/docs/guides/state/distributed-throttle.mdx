@@ -4,12 +4,13 @@ description: 'Share one rate budget across workers by pointing the throttle at a
 prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
-By default a stitch keeps its throttle counters in the in-memory store, so the
-rate budget is per process. With `scope: 'host'` every stitch in that process
-already pools into one budget per host (see [Throttle](/docs/guides/resilience/throttle));
-the in-memory store just keeps that pooling within a single process — each worker
-gets its own. Point the throttle at a shared `store` and one budget spans every
-worker that uses it.
+Share one rate limit across every worker or server by pointing the throttle at a
+shared `store`. By default a stitch keeps its throttle counters in the in-memory
+store, so the rate budget is per process: with `scope: 'host'` every stitch in
+that process already pools into one budget per host (see
+[Throttle](/docs/guides/resilience/throttle)), but the in-memory store keeps that
+pooling within a single process — each worker gets its own. Point the throttle at
+a shared store and one budget spans every worker that uses it.
 
 ## Example
 

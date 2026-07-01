@@ -4,10 +4,11 @@ description: 'Bring any Standard Schema validator — Zod, Valibot, ArkType — 
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
-Reach for this when you already have a schema and want a stitch to validate
-against it — StitchAPI is validator-agnostic, so any [Standard Schema](https://standardschema.dev)
-validator (Zod, Valibot, ArkType), a plain predicate, or a `Validator` works,
-adapted by the single `toValidator()` helper.
+Validate an API response with Zod — or Valibot, ArkType, a plain predicate, or
+any [Standard Schema](https://standardschema.dev) validator. StitchAPI is
+validator-agnostic: bring the schema you already have, wrap it once with the
+single `toValidator()` helper, and the stitch checks each response against it —
+inferring the result type from the same schema.
 
 ## Example
 

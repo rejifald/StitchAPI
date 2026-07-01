@@ -4,10 +4,12 @@ description: 'Stop hammering a failing dependency by opening a circuit after rep
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
-Add `circuit` when a dependency is failing and you want the stitch to stop
-hammering it — after a run of failures the breaker opens and calls fast-fail
-for a cooldown, giving the dependency room to recover before a single trial
-call probes it again.
+Add `circuit` when an upstream API is flaky or failing and you want the stitch
+to **stop hammering it**. After a run of failures the breaker _opens_ and calls
+fast-fail for a cooldown: the stitch backs off, giving the unhealthy dependency
+room to recover before a single trial call probes it again — and shielding your
+app from the slow, cascading failures a dead upstream would otherwise pull it
+into.
 
 ## Example
 
