@@ -1,0 +1,54 @@
+[
+    {
+        "query": "stop a stitch hammering a flaky or failing upstream API",
+        "expect": "guides/resilience/circuit-breaker"
+    },
+    {
+        "query": "rate-limit or cap the concurrency of my outgoing API calls",
+        "expect": "guides/resilience/throttle"
+    },
+    {
+        "query": "safe retries for writes without making duplicate writes",
+        "expect": "guides/resilience/idempotency"
+    },
+    {
+        "query": "validate an API response with Zod",
+        "expect": "guides/validation/standard-schema"
+    },
+    {
+        "query": "paginate a cursor endpoint into one array",
+        "expect": "recipes/paginate-into-one-array"
+    },
+    {
+        "query": "what does STITCH_DRIFT mean and how do I fix it",
+        "expect": "errors/stitch-drift"
+    },
+    {
+        "query": "let an agent call my API without ever seeing the secret",
+        "expect": "concepts/principles"
+    },
+    {
+        "query": "retry a failed HTTP request with exponential backoff",
+        "expect": "guides/resilience/retry"
+    },
+    {
+        "query": "set a timeout so a slow API call gives up",
+        "expect": "guides/resilience/timeout"
+    },
+    {
+        "query": "call a GraphQL API with typed variables",
+        "expect": "guides/data/graphql"
+    },
+    {
+        "query": "expose a stitch as an MCP tool an agent can call",
+        "expect": "surfaces/mcp"
+    },
+    {
+        "query": "authenticate requests with a bearer token",
+        "expect": "guides/auth/bearer"
+    },
+    {
+        "query": "test API code without hitting the real network",
+        "expect": "guides/testing/mocking"
+    }
+]
