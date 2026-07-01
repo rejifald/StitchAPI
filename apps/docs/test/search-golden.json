@@ -50,5 +50,13 @@
     {
         "query": "test API code without hitting the real network",
         "expect": "guides/testing/mocking"
+    },
+    {
+        "query": "share one rate limit across multiple workers or servers",
+        "expect": "guides/state/distributed-throttle"
+    },
+    {
+        "query": "run a stitch from the command line as a CLI tool",
+        "expect": "surfaces/cli"
     }
 ]
