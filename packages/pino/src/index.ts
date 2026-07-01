@@ -77,9 +77,9 @@ export interface PinoSinkOptions {
  * `cookie` and a `delta`'s `chunk` is raw response data. This sink therefore logs
  * **only metadata** — name, method, redacted URL, status, attempt counts, drift
  * path/level/change, phase, waited timing — never `event.input`, `event.data`, a
- * `delta` chunk, or `JSON.stringify(event)`, and it strips the URL query (it can carry
- * `?api_key=…`). That keeps it safe on a secret-bearing seam independent of core's
- * trace redaction.
+ * `delta` chunk, or `JSON.stringify(event)`, and it strips both the URL userinfo
+ * (`user:pass@`) and the query (either can carry a credential — `?api_key=…`). That
+ * keeps it safe on a secret-bearing seam independent of core's trace redaction.
  *
  * @example
  * ```ts
@@ -141,8 +141,21 @@ function levelFor(event: StitchEvent, lifecycle: boolean): PinoLevel | null {
     }
 }
 
-// Drop the query string (it may carry secrets, e.g. `?api_key=…`) before logging.
+// Strip BOTH the URL userinfo (`user:pass@`, e.g. HTTP Basic auth embedded in the
+// baseUrl) and the query string (it may carry secrets, e.g. `?api_key=…`) — either can
+// carry a credential — before logging. Core's own sinks strip userinfo via `scrubUrl`;
+// that helper is internal (not exported from `stitchapi`), so this mirrors it locally.
 function redactUrl(url: string): string {
+    try {
+        const u = new URL(url);
+        if (u.username || u.password) {
+            u.username = '';
+            u.password = '';
+            url = u.toString();
+        }
+    } catch {
+        // not an absolute/parseable URL — fall through to the query-only strip
+    }
     const q = url.indexOf('?');
     return q === -1 ? url : `${url.slice(0, q)}?…`;
 }
@@ -155,7 +168,8 @@ function redactUrl(url: string): string {
 // and a `delta`'s `chunk` is raw response data. It therefore logs **only metadata** —
 // name, method, redacted URL, status, attempt counts, drift path/level/change, phase,
 // waited timing — never `event.input`, `event.data`, a `delta` chunk, or
-// `JSON.stringify(event)`, and it strips the URL query. `null` ⇒ skip the event.
+// `JSON.stringify(event)`, and it strips the URL userinfo + query. `null` ⇒ skip the
+// event.
 function recordFor(
     name: string,
     event: StitchEvent,
