@@ -85,6 +85,13 @@ resolves.
 
 ## Every coded failure
 
+<Callout type="info">
+    Debugging one of these with an agent? Connect the [docs
+    MCP](/docs/agents/search-over-mcp) and it can pull any error page on demand
+    — `search_docs('STITCH_DRIFT')`, `search_docs('rate limit')` — instead of
+    guessing from stale training data.
+</Callout>
+
 <Cards>
     <Card title="STITCH_VALIDATION" href="/docs/errors/stitch-validation">
         A response failed its output schema — the shape you asked for isn't the
