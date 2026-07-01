@@ -72,11 +72,22 @@ const config = {
     // restore the Orama dump at runtime — the human search route (P2) and the MCP
     // server (P3). The file is generated at deploy by scripts/prebuild-search-index.mjs
     // (never committed); runtime model loading / cold-start is the P3 watch-item.
+    // Each function gets the build-time Orama index (restored at runtime) AND
+    // onnxruntime-node's native shared library. Next traces the require'd
+    // `onnxruntime_binding.node` but NOT the `libonnxruntime.so.1` it dlopen's at
+    // load — so the function 500s with "libonnxruntime.so.1: cannot open shared
+    // object file". Ship the whole linux native dir so the .so lands beside the
+    // .node. The package lives in the pnpm store at the workspace root (../../ from
+    // apps/docs; outputFileTracingRoot bounds the trace to that root).
     outputFileTracingIncludes: {
-        '/api/search-docs': ['./.search-index/**'],
-        '/api/mcp': ['./.search-index/**'],
-        // Temporary: lets /api/_diag run a real search end-to-end. Remove with it.
-        '/api/_diag': ['./.search-index/**'],
+        '/api/search-docs': [
+            './.search-index/**',
+            '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/**/*',
+        ],
+        '/api/mcp': [
+            './.search-index/**',
+            '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/**/*',
+        ],
     },
     // Keep the runtime embedder OUT of the server bundle. Those same two routes
     // load transformers.js (@huggingface/transformers), whose Node backend is the
