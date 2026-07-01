@@ -66,6 +66,15 @@ const config = {
         '/api/search-docs': ['./.search-index/**'],
         '/api/mcp': ['./.search-index/**'],
     },
+    // Keep the runtime embedder OUT of the server bundle. Those same two routes
+    // load transformers.js (@huggingface/transformers), whose Node backend is the
+    // native `onnxruntime-node` addon (`.node` binaries). Bundling a native addon
+    // breaks its require at function init, so *importing* the route module throws
+    // — which 500s every request (even paths that never embed, like the MCP
+    // `initialize` handshake or an empty query), not just searches. Marking these
+    // external leaves them as a plain runtime require, resolved from the traced
+    // node_modules, so the binary loads. Next externalizes `sharp` by default.
+    serverExternalPackages: ['@huggingface/transformers', 'onnxruntime-node'],
     // The playground consumes the in-repo sandbox engine (@stitchapi/sandbox), a
     // workspace package that ships raw TS/TSX source — Next must transpile it.
     transpilePackages: ['@stitchapi/sandbox'],
