@@ -434,6 +434,48 @@
         }
       },
       "accepted": null
+    },
+    "readme-badges": {
+      "baseline": "sha256:34fd319e5ecc768c7280da12dd609bea4b81804aa5602d38759e6901d9b93d0f",
+      "sites": {
+        "command:node scripts/gen-readme-metrics.mjs --emit readme-badges#whole": {
+          "value": "sha256:34fd319e5ecc768c7280da12dd609bea4b81804aa5602d38759e6901d9b93d0f",
+          "fp": "sha256:dc9d97a55f5eb1a3e140de27664fd39fd9fad14fa091ba5ec4bedd25c1be9a1e"
+        },
+        "README.md#region:readme-badges:whole": {
+          "value": "sha256:34fd319e5ecc768c7280da12dd609bea4b81804aa5602d38759e6901d9b93d0f",
+          "fp": "sha256:dc9d97a55f5eb1a3e140de27664fd39fd9fad14fa091ba5ec4bedd25c1be9a1e"
+        }
+      },
+      "accepted": null
+    },
+    "readme-packages": {
+      "baseline": "sha256:5b68926a6225ac402b4e8e755f8451ea2aa4d2ddffea43977c8a9b256bf81067",
+      "sites": {
+        "command:node scripts/gen-readme-metrics.mjs --emit readme-packages#whole": {
+          "value": "sha256:5b68926a6225ac402b4e8e755f8451ea2aa4d2ddffea43977c8a9b256bf81067",
+          "fp": "sha256:478cbf205260a0bea210202c81a89bd4e453e7fd870dab5010aefb586d2a6d7f"
+        },
+        "README.md#region:readme-packages:whole": {
+          "value": "sha256:5b68926a6225ac402b4e8e755f8451ea2aa4d2ddffea43977c8a9b256bf81067",
+          "fp": "sha256:478cbf205260a0bea210202c81a89bd4e453e7fd870dab5010aefb586d2a6d7f"
+        }
+      },
+      "accepted": null
+    },
+    "core-integrations": {
+      "baseline": "sha256:c9bfe72200f75748fa0bcf3487a1950d90a11d7e319fe5947356b801a99806df",
+      "sites": {
+        "command:node scripts/gen-readme-metrics.mjs --emit core-integrations#whole": {
+          "value": "sha256:c9bfe72200f75748fa0bcf3487a1950d90a11d7e319fe5947356b801a99806df",
+          "fp": "sha256:d4d5c4acf6d73a4c78634abfde5193a2abd83e225932aa2d2628156000d017ef"
+        },
+        "packages/core/README.md#region:core-integrations:whole": {
+          "value": "sha256:c9bfe72200f75748fa0bcf3487a1950d90a11d7e319fe5947356b801a99806df",
+          "fp": "sha256:d4d5c4acf6d73a4c78634abfde5193a2abd83e225932aa2d2628156000d017ef"
+        }
+      },
+      "accepted": null
     }
   }
 }

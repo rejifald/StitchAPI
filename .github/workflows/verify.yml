@@ -69,11 +69,10 @@ jobs:
             # scoped publishConfig.access, LICENSE/README presence, so a bad bump fails
             # the PR, not the publish.
             - run: pnpm check:release
-            # README metrics drift guard: the generated badge block (code health, coverage,
-            # license + StandWithUkraine) must match the committed snapshot. Tool-free — it
-            # renders from scripts/readme-metrics.snapshot.json and compares, so it stays in
-            # this fast job. Refresh the numbers with `pnpm metrics` (runs fallow + coverage).
-            - run: pnpm check:readme
+            # README badge/table drift (code health, coverage, license, package tables)
+            # is now yakir tethers (readme-badges / readme-packages / core-integrations),
+            # enforced by the `drift-executable` job in drift.yml. Refresh the badge
+            # numbers with `pnpm metrics` (runs fallow + coverage, then --refresh).
             # Playground autocomplete drift (the generated artifact vs core `src/`) is now a
             # yakir tether (`playground-completions`, a whole-file compare against the generator's
             # --emit output), enforced by the `drift-executable` job in drift.yml. The pre-commit
