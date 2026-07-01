@@ -25,7 +25,7 @@
     },
     {
         "query": "let an agent call my API without ever seeing the secret",
-        "expect": "concepts/principles"
+        "expect": "concepts/capability-not-credential"
     },
     {
         "query": "retry a failed HTTP request with exponential backoff",
