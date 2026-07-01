@@ -2,9 +2,22 @@
 // (P1, embeds every chunk) and, later, the retrieval route (P2, embeds the
 // query). The model loads lazily and is reused across calls.
 
-import { pipeline, type FeatureExtractionPipeline } from '@huggingface/transformers';
+import {
+    env,
+    pipeline,
+    type FeatureExtractionPipeline,
+} from '@huggingface/transformers';
 
 import { EMBED_DTYPE, EMBED_MODEL } from './config';
+
+// On Vercel the deployed node_modules (the default model cache dir) is read-only,
+// so point the cache at the function's writable /tmp. The model is then fetched
+// on the first request per warm instance — the cold-start cost the proposal's §6
+// flags as the P3 watch-item (mitigations: bundle the model, a smaller/quantized
+// model, edge runtime, or keep-warm — chosen after a real Vercel measurement).
+if (process.env.VERCEL) {
+    env.cacheDir = '/tmp/.transformers-cache';
+}
 
 // Embed in modest batches: one call per chunk is slow, but one call for the
 // whole corpus builds a single enormous tensor that thrashes memory. 32 balances

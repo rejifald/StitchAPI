@@ -1,0 +1,102 @@
+---
+title: 'Search the docs over MCP'
+description: 'Connect an agent to the hosted docs MCP — search_docs finds the relevant sections, get_doc reads a full page — for context-frugal retrieval when loading the whole corpus is more than you need.'
+prerequisites: ['/docs/agents/llms-txt']
+---
+
+This documentation site is itself a hosted MCP server. Point an agent at it and
+it gets two tools: `search_docs`, which returns the handful of relevant doc
+_sections_ for a query — excerpts plus deep links, not whole pages — and
+`get_doc`, which reads one full page as clean Markdown. The agent connects once
+and pulls in exactly the passage it needs, instead of loading the whole manual on
+every turn.
+
+<Callout type="info">
+    This is **not** the library's [`run_stitch` surface](/docs/surfaces/mcp).
+    That MCP server runs on _your_ machine over stdio and calls _your_ stitches.
+    This one is hosted by us at `stitchapi.dev`, speaks MCP Streamable HTTP, and
+    searches _our_ docs — so an agent can learn StitchAPI before it writes a
+    line. They compose: `search_docs` (learn the API) → `get_doc` (read the
+    page) → `run_stitch` (call it).
+</Callout>
+
+## Connect
+
+The server lives at `https://stitchapi.dev/api/mcp`. It needs no key. Drop one of
+these into your agent's config.
+
+**Claude Code** — add it from the CLI:
+
+```bash
+claude mcp add --transport http stitchapi-docs https://stitchapi.dev/api/mcp
+```
+
+or commit it to the project's `.mcp.json`:
+
+```json
+{
+    "mcpServers": {
+        "stitchapi-docs": {
+            "type": "http",
+            "url": "https://stitchapi.dev/api/mcp"
+        }
+    }
+}
+```
+
+**Cursor** — `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
+
+```json
+{
+    "mcpServers": {
+        "stitchapi-docs": {
+            "url": "https://stitchapi.dev/api/mcp"
+        }
+    }
+}
+```
+
+**VS Code (Copilot)** — `.vscode/mcp.json`; note the top-level key is `servers`:
+
+```json
+{
+    "servers": {
+        "stitchapi-docs": {
+            "type": "http",
+            "url": "https://stitchapi.dev/api/mcp"
+        }
+    }
+}
+```
+
+## The two tools
+
+`search_docs` takes a natural-language `query` and an optional `limit` (default
+5). It runs hybrid retrieval — keyword and semantic together — over the same
+Markdown that feeds `llms.txt`, and returns each hit as `{ title, url, excerpt,
+score }`. The `url` carries the section anchor, so it deep-links straight to the
+passage. It never returns full pages: that frugality is the whole point.
+
+`get_doc` is the escape hatch for when an excerpt isn't enough. Give it the `url`
+from a `search_docs` hit (or a `slug` like `guides/resilience/throttle`) and it
+returns that page as clean Markdown — the same output as its
+[`llms.mdx`](/docs/agents/llms-txt) route.
+
+## When to reach for it
+
+For a corpus this size, [loading the whole
+`llms-full.txt`](/docs/agents/llms-txt) once is still the simplest correct
+default — it fits a modern context window, so there's nothing to gain from
+retrieval. Reach for `search_docs` when one of two things becomes true: the docs
+outgrow the model's window, or reloading them every turn costs more than a
+targeted lookup is worth. The index is rebuilt from the docs on every deploy — the
+same source a human reads — so a search hit never drifts from the page it cites.
+
+## See also
+
+<Cards>
+    <Card title="Point an agent at llms.txt" href="/docs/agents/llms-txt" />
+    <Card title="run_stitch & code-mode" href="/docs/agents/run-stitch-tool" />
+    <Card title="The MCP surface (run_stitch)" href="/docs/surfaces/mcp" />
+    <Card title="For agents" href="/docs/agents" />
+</Cards>

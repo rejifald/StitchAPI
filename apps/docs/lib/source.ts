@@ -18,6 +18,8 @@ export function llmsPreamble() {
     return `# StitchAPI
 > API stitching: turn any API into a typed, resilient function. Declare an endpoint once — its types, auth, and resilience — and call it like a local function, from your code, the CLI, or an AI agent over MCP, without ever touching a credential. fetch/axios are pluggable adapters underneath; a stitch sits above them, it does not replace them.
 
+Search these docs instead of loading the whole file: this site is also a hosted MCP server (search_docs + get_doc) at https://stitchapi.dev/api/mcp — see /docs/agents/search-over-mcp.
+
 ## What an agent needs to know
 - API stitching, not an HTTP client: a **stitch** takes one endpoint (HTTP, GraphQL, SSE, an LLM, even a shell command) and hands back a callable. Keep the fetch/axios you already have — it is the adapter underneath.
 - Capability, not credential: an agent invokes a stitch and gets structured, validated, traceable data; the secret stays behind the boundary.
