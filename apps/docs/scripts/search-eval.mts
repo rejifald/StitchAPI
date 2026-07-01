@@ -42,8 +42,8 @@ const DIAG_LIMIT = 30;
 const ASSERT = process.argv.includes('--assert');
 const TARGET_RANK = 3; // what we tune for; queries past it are reported, not failed
 const HARD_MAX_RANK = 5; // fail if any expected page ranks worse than this (or is missing)
-const MIN_RELEVANCE_AT_1 = 0.78; // floor; current 0.880 (25-query golden)
-const MIN_MRR = 0.85; // floor; current 0.927
+const MIN_RELEVANCE_AT_1 = 0.84; // floor; current 0.920 (25-query golden)
+const MIN_MRR = 0.9; // floor; current 0.953
 
 const here = dirname(fileURLToPath(import.meta.url));
 const golden: GoldenCase[] = JSON.parse(

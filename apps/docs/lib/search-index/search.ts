@@ -14,6 +14,25 @@ import { INDEX_DIR, INDEX_FILE, VECTOR_FIELD } from './config';
 import { embedOne } from './embed';
 import { type DocSearchHit } from './sorted-result';
 
+// Hybrid retrieval knobs, kept as named exports so the search-eval harness can
+// sweep them and the CI ratchet pins the shipped values.
+//
+// Vector-dominant at 0.8: BM25 still adds literal recall (error codes, fn names
+// the small model misses), but at the earlier 0.3 a common token — "API" in a
+// title like `apiKey` — pulled that page to #1 for unrelated resilience/agent
+// queries. Lowering BM25's share demotes that spurious literal match while
+// leaving the boosts (a page *about* a term beats a passing mention) intact.
+// Swept over the golden set: R@1 0.880→0.920, MRR 0.927→0.953, no regressions.
+export const HYBRID_WEIGHTS = { text: 0.2, vector: 0.8 };
+export const FIELD_BOOST = { pageTitle: 3, heading: 2 };
+
+/** Options for {@link searchDocs}. Weights/boosts default to the shipped values. */
+export interface SearchOptions {
+    limit?: number;
+    hybridWeights?: { text: number; vector: number };
+    boost?: { pageTitle: number; heading: number };
+}
+
 let cached: Promise<AnyOrama> | undefined;
 
 function indexPath(): string {
@@ -33,7 +52,11 @@ export function loadIndex(): Promise<AnyOrama> {
 /** Hybrid (BM25 + vector) search; returns the top section hits for a query. */
 export async function searchDocs(
     query: string,
-    { limit = 8 }: { limit?: number } = {},
+    {
+        limit = 8,
+        hybridWeights = HYBRID_WEIGHTS,
+        boost = FIELD_BOOST,
+    }: SearchOptions = {},
 ): Promise<DocSearchHit[]> {
     const term = query.trim();
     if (!term) return [];
@@ -49,9 +72,9 @@ export async function searchDocs(
         // stop-word noise top the results), while BM25 still adds literal-term
         // recall (error codes, fn names) the small model misses. Title/heading
         // are boosted so a page that is *about* the term beats a passing mention
-        // in body text.
-        hybridWeights: { text: 0.3, vector: 0.7 },
-        boost: { pageTitle: 3, heading: 2 },
+        // in body text. See HYBRID_WEIGHTS / FIELD_BOOST for the tuned values.
+        hybridWeights,
+        boost,
         similarity: 0,
         includeVectors: false,
         limit,
