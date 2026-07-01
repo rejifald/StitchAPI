@@ -4,6 +4,13 @@
 pre-commit:
     parallel: false
     jobs:
+        # Hardcoded-secret gate (scripts/check-secrets.mjs) — block a committed
+        # credential literal (the DIAG_KEY class from the closed PRs #391/#392)
+        # before it ever lands. Scans the tracked tree incl. just-staged files;
+        # zero-dep, no build. No glob → always runs. Mirrors CI's check:secrets
+        # step (verify.yml).
+        - name: secrets
+          run: pnpm check:secrets
         # Regenerate the playground autocomplete maps when the core source that
         # feeds the generator changes, then stage the result so the committed
         # *.generated.ts never drifts from the types it mirrors. The generator
@@ -56,6 +63,10 @@ pre-push:
         # the expensive test/build jobs. Mirrors CI's check:contract step.
         - name: contract
           run: pnpm check:contract
+        # Hardcoded-secret gate — cheap source scan, fail-fast before the expensive
+        # test/build jobs. Mirrors CI's check:secrets step (verify.yml).
+        - name: secrets
+          run: pnpm check:secrets
         - name: typecheck
           run: pnpm check:types
         # Type-level tests (tsd) for the inferred public API — builds the package's d.ts and

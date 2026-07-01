@@ -50,6 +50,12 @@ jobs:
             - run: pnpm install --frozen-lockfile
             # Cheap → expensive: a fast failure surfaces first.
             - run: pnpm check:format
+            # Hardcoded-secret gate (scripts/check-secrets.mjs): fails on a committed
+            # credential literal — the DIAG_KEY class from the closed #391/#392 — or an
+            # unambiguous provider token (AWS/GitHub/Slack/Google/Stripe/PEM). Zero-dep
+            # source scan, no build. Tests/docs/examples are intentionally out of scope
+            # (fixture space); see the script header. Layer gitleaks for full coverage.
+            - run: pnpm check:secrets
             - run: pnpm check:lint
             - run: pnpm check:types
             - run: pnpm test
