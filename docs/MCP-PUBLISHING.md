@@ -20,23 +20,40 @@ tracking notes).
 
 ## One-time setup
 
-### 1. Generate a signing key (Ed25519)
+### 1. Generate a signing key
+
+macOS ships **LibreSSL**, which fails Ed25519 with `Algorithm Ed25519 not found`.
+Use OpenSSL 3 (recommended), or the ECDSA fallback if you can't install it.
 
 ```bash
-# Ed25519 needs OpenSSL 3+. macOS ships LibreSSL, which fails on Ed25519 —
-# use `brew install openssl@3` and call it explicitly, e.g.
-#   /opt/homebrew/opt/openssl@3/bin/openssl genpkey ...
-openssl genpkey -algorithm Ed25519 -out key.pem
+brew install openssl@3
+OSSL="$(brew --prefix openssl@3)/bin/openssl" # arch-independent path
 
-# Private key as hex (this is the value for the MCP_PRIVATE_KEY secret):
-openssl pkey -in key.pem -noout -text | grep -A3 "priv:" | tail -n +2 | tr -d ' :\n'; echo
+$OSSL genpkey -algorithm Ed25519 -out key.pem
+
+# Private key as hex → the MCP_PRIVATE_KEY secret:
+$OSSL pkey -in key.pem -noout -text | grep -A3 "priv:" | tail -n +2 | tr -d ' :\n'; echo
 ```
+
+<details>
+<summary>No-install fallback: ECDSA P-384 (works with macOS system LibreSSL)</summary>
+
+```bash
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp384r1 -out key.pem
+
+# Private key as hex → the MCP_PRIVATE_KEY secret:
+openssl ec -in key.pem -noout -text | grep -A4 "priv:" | tail -n +2 | tr -d ' :\n'; echo
+
+# DNS TXT value (note k=ecdsap384) — use this in place of the step-2 command:
+echo "v=MCPv1; k=ecdsap384; p=$(openssl ec -in key.pem -text -noout -conv_form compressed | grep -A4 "pub:" | tail -n +2 | tr -d ' :\n' | xxd -r -p | base64)"
+```
+
+</details>
 
 ### 2. Verify the domain (DNS TXT at the apex)
 
 ```bash
-PUBLIC_KEY="$(openssl pkey -in key.pem -pubout -outform DER | tail -c 32 | base64)"
-echo "v=MCPv1; k=ed25519; p=${PUBLIC_KEY}"
+echo "v=MCPv1; k=ed25519; p=$($OSSL pkey -in key.pem -pubout -outform DER | tail -c 32 | base64)"
 ```
 
 Add that string as a **TXT record on the apex** `stitchapi.dev` — **not** under a
