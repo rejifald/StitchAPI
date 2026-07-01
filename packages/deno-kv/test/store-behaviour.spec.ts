@@ -1,10 +1,12 @@
 // Targeted behaviour tests for @stitchapi/deno-kv that the conformance proof
-// (`conformance.spec.ts`) does not pin down: the sliding-window TTL rule (the
-// counter's expiry is set only when it is CREATED, never extended on later
-// incrs), the compare-and-set retry EXHAUSTION error, the array-key shape (flat
-// vs prefixed), the cache-delete (`set(k, undefined)`), and `close()` delegation.
-// Driven by a recording fake KV that captures every write's `expireIn` and can be
-// forced to lose every atomic commit.
+// (`conformance.spec.ts`) does not pin down: the FIXED-window TTL rule (the
+// counter's window has an absolute deadline pinned at creation — later incrs in
+// the same window neither extend nor clear it, and a fresh window restarts at 1),
+// the compare-and-set retry EXHAUSTION error, the array-key shape (flat vs
+// prefixed), the cache-delete (`set(k, undefined)`), and `close()` delegation.
+// Driven by two fakes: a recording KV that captures every write's `expireIn`, and
+// a time-travel KV that faithfully models Deno KV expiry so a window's reset is
+// observable (the recording fake never expires anything and so can't see it).
 import { denoKvStore } from '../src';
 import type {
     DenoAtomicCheck,
@@ -15,7 +17,7 @@ import type {
     DenoKvLike,
 } from '../src';
 
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 interface Recording {
     kv: DenoKvLike;
@@ -100,8 +102,163 @@ function recordingKv(opts: { failAtomic?: boolean } = {}): Recording {
     return { kv, sets, atomicSets, deletes, closed: () => closedFlag };
 }
 
+// A faithful, time-travellable Deno KV double. Unlike `recordingKv` it models
+// *expiry* exactly the way Deno KV does — which is the whole point of this file:
+//   • `set(key, value, { expireIn })` stamps an absolute `expiresAt`; a `set`
+//     WITHOUT `expireIn` means the key NEVER expires (`expiresAt = Infinity`).
+//     This is the trap: on real Deno KV a bare `set` REPLACES the entry, so it
+//     also clears any expiry the entry had — unlike Redis INCR, which keeps it.
+//   • a key read at/after `expiresAt` comes back as `{ value: null,
+//     versionstamp: null }` (absent), so the next incr sees a fresh window.
+//   • `atomic().check(versionstamp).set(...).commit()` is real optimistic CAS.
+// Virtual time is driven by vitest's fake timers (`vi.setSystemTime`), so the
+// tests never sleep.
+function expiryKv(): DenoKvLike {
+    interface Cell {
+        value: unknown;
+        versionstamp: string;
+        expiresAt: number;
+    }
+    const data = new Map<string, Cell>();
+    let seq = 0;
+    const id = (key: DenoKvKey): string => JSON.stringify(key);
+    // Read-through expiry: a cell past its deadline is indistinguishable from an
+    // absent key (and is dropped), exactly like Deno KV.
+    const live = (key: DenoKvKey): Cell | undefined => {
+        const c = data.get(id(key));
+        if (!c) return undefined;
+        if (c.expiresAt <= Date.now()) {
+            data.delete(id(key));
+            return undefined;
+        }
+        return c;
+    };
+    const write = (
+        key: DenoKvKey,
+        value: unknown,
+        expireIn?: number,
+    ): string => {
+        const versionstamp = String(++seq);
+        // A bare set (no expireIn) => Infinity: the entry is rewritten whole and
+        // any prior expiry is gone. This is the behaviour the bug tripped over.
+        data.set(id(key), {
+            value,
+            versionstamp,
+            expiresAt: expireIn == null ? Infinity : Date.now() + expireIn,
+        });
+        return versionstamp;
+    };
+    return {
+        async get(key): Promise<DenoKvEntryMaybe> {
+            const c = live(key);
+            return c
+                ? { value: c.value, versionstamp: c.versionstamp }
+                : { value: null, versionstamp: null };
+        },
+        async set(key, value, options): Promise<unknown> {
+            return {
+                ok: true,
+                versionstamp: write(key, value, options?.expireIn),
+            };
+        },
+        async delete(key): Promise<void> {
+            data.delete(id(key));
+        },
+        atomic(): DenoAtomicOperation {
+            const checks: DenoAtomicCheck[] = [];
+            let pending:
+                | {
+                      key: DenoKvKey;
+                      value: unknown;
+                      expireIn: number | undefined;
+                  }
+                | undefined;
+            const op: DenoAtomicOperation = {
+                check(...c): DenoAtomicOperation {
+                    checks.push(...c);
+                    return op;
+                },
+                set(key, value, options): DenoAtomicOperation {
+                    pending = { key, value, expireIn: options?.expireIn };
+                    return op;
+                },
+                async commit(): Promise<DenoAtomicCommitResult> {
+                    for (const c of checks) {
+                        const cur = live(c.key)?.versionstamp ?? null;
+                        if (cur !== c.versionstamp) return { ok: false };
+                    }
+                    if (!pending) return { ok: true, versionstamp: '' };
+                    const versionstamp = write(
+                        pending.key,
+                        pending.value,
+                        pending.expireIn,
+                    );
+                    return { ok: true, versionstamp };
+                },
+            };
+            return op;
+        },
+    };
+}
+
 describe('denoKvStore — incr TTL window', () => {
-    test('sets the counter TTL only on creation, never extending it on later incrs', async () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('a fixed window RESETS: after the ttl elapses the next incr restarts at 1', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const store = denoKvStore(expiryKv());
+        const ttl = 200;
+
+        // Two incrs inside one window — the counter must not be permanent.
+        expect(await store.incr('rate', ttl)).toBe(1);
+        expect(await store.incr('rate', ttl)).toBe(2);
+
+        // Advance past the window's absolute deadline (pinned at the FIRST incr).
+        vi.setSystemTime(ttl + 1);
+
+        // The window expired, so the counter starts over. Under the TTL-clearing
+        // bug the 2nd incr wiped the expiry, the key never expired, and this
+        // returned 3 (an ever-growing permanent counter — the rate limit never
+        // reset). It must be 1.
+        expect(await store.incr('rate', ttl)).toBe(1);
+    });
+
+    test('within one window incrs accumulate (1, 2, 3) without any early reset', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const store = denoKvStore(expiryKv());
+        const ttl = 1000;
+
+        expect(await store.incr('rate', ttl)).toBe(1);
+        // Time advances but stays INSIDE the window — no reset, no extension.
+        vi.setSystemTime(400);
+        expect(await store.incr('rate', ttl)).toBe(2);
+        vi.setSystemTime(900);
+        expect(await store.incr('rate', ttl)).toBe(3);
+    });
+
+    test('the window deadline is FIXED, not sliding: later incrs never push it out', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const store = denoKvStore(expiryKv());
+        const ttl = 200;
+
+        expect(await store.incr('rate', ttl)).toBe(1); // deadline pinned at 200
+        vi.setSystemTime(150);
+        expect(await store.incr('rate', ttl)).toBe(2); // must NOT reset to t=350
+        // Cross the ORIGINAL deadline. A sliding window would still be alive here
+        // (150 + 200 = 350); a fixed window has already expired at 200.
+        vi.setSystemTime(210);
+        expect(await store.incr('rate', ttl)).toBe(1);
+    });
+
+    test('every commit carries a positive expireIn so the window can always expire', async () => {
+        // The TTL-clearing bug attached `expireIn` only to the creating commit and
+        // left every later commit with `undefined` (no expiry). Assert instead
+        // that EVERY commit expires the key — the window is never left permanent.
         const rec = recordingKv();
         const store = denoKvStore(rec.kv);
 
@@ -109,13 +266,26 @@ describe('denoKvStore — incr TTL window', () => {
         expect(await store.incr('rate', 1000)).toBe(2);
         expect(await store.incr('rate', 1000)).toBe(3);
 
-        // expireIn only on the first (creating) commit — a busy window must reset,
-        // not slide forever (matches redis's "PEXPIRE only when v == 1" rule).
-        expect(rec.atomicSets.map((s) => s.expireIn)).toEqual([
-            1000,
-            undefined,
-            undefined,
-        ]);
+        // No `undefined` — the entry never loses its expiry on a later write.
+        for (const s of rec.atomicSets) {
+            expect(s.expireIn).toBeTypeOf('number');
+            expect(s.expireIn as number).toBeGreaterThan(0);
+        }
+        expect(rec.atomicSets).toHaveLength(3);
+    });
+
+    test('a legacy bare-number counter (pre-upgrade value) self-heals into a fresh window', async () => {
+        // On a deploy transition an old value could be a bare number with no
+        // window envelope. The store must treat it as a fresh window rather than
+        // crash or read NaN — incr returns 1 and the value is now well-formed.
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const kv = expiryKv();
+        await kv.set(['legacy'], 7); // an old bare counter, no deadline
+        const store = denoKvStore(kv);
+
+        expect(await store.incr('legacy', 200)).toBe(1);
+        expect(await store.incr('legacy', 200)).toBe(2);
     });
 
     test('throws after exhausting maxIncrRetries lost compare-and-set races', async () => {

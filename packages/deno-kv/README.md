@@ -56,11 +56,18 @@ another isolate raced us, the versionstamp moved, the commit returns `ok: false`
 and the loop re-reads and retries — so N concurrent increments net **exactly +N**
 (proven by the store contract's "20 concurrent incrs net +20" rule).
 
-The TTL (`expireIn`, which Deno KV measures in **milliseconds** — the same unit as
-the contract's `ttlMs`, no conversion at the seam) is set **only on the increment
-that creates the counter**, never extending it afterwards, so a busy rate window
-can't slide forever and never reset. `maxIncrRetries` (default `100`) bounds the
-loop under pathological contention.
+The counter is a **fixed window** (matching the Redis adapter): the first increment
+pins an absolute deadline `now + ttl`, and every increment inside that window keeps
+the same deadline — so once the window elapses the next increment restarts at `1`.
+Because Deno KV's `set` **replaces the whole entry, clearing any expiry** (unlike
+Redis `INCR`, which _preserves_ the key's TTL), the counter is stored as a
+`{ n, deadline }` value and each commit re-derives `expireIn` from the pinned
+deadline. That keeps the window's expiry alive across every write instead of a
+later increment silently wiping it and leaking the key forever. (`get` unwraps this
+envelope back to the plain count, so nothing downstream sees the internal shape.)
+The TTL unit is **milliseconds** — the same unit as the contract's `ttl`, and Deno
+KV's own `expireIn` unit, so there's no conversion at the seam. `maxIncrRetries`
+(default `100`) bounds the loop under pathological contention.
 
 The store owns no connection: `store.close()` delegates to the handle, so you
 decide when KV shuts down.
