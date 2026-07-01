@@ -1,0 +1,26 @@
+{
+    "name": "stitchapi-docs",
+    "description": "Hosted MCP server for the StitchAPI documentation. search_docs runs hybrid semantic search and returns the most relevant doc sections as excerpts with deep links; get_doc returns a full page as Markdown. Point an agent at it to learn StitchAPI before writing code.",
+    "version": "1.0.0",
+    "documentation": "https://stitchapi.dev/docs/agents/search-over-mcp",
+    "transport": {
+        "type": "streamable-http",
+        "url": "https://stitchapi.dev/api/mcp"
+    },
+    "tools": [
+        {
+            "name": "search_docs",
+            "description": "Search the StitchAPI docs; returns relevant sections as { title, url, excerpt, score }."
+        },
+        {
+            "name": "get_doc",
+            "description": "Fetch a full StitchAPI doc page as Markdown, by url (from search_docs) or slug."
+        }
+    ],
+    "mcpServers": {
+        "stitchapi-docs": {
+            "type": "http",
+            "url": "https://stitchapi.dev/api/mcp"
+        }
+    }
+}

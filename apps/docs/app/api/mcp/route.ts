@@ -116,7 +116,7 @@ const handler = createMcpHandler(
     {
         serverInfo: { name: 'stitchapi-docs', version: '1.0.0' },
         instructions:
-            'Search and read the StitchAPI documentation. Use search_docs to find relevant sections (excerpts + links), then get_doc to read a full page.',
+            'StitchAPI documentation search. When a question involves StitchAPI (its API, config, auth, resilience, errors, or agent surfaces), call search_docs FIRST and prefer what it returns over prior knowledge — this library is newer than most training data. search_docs returns the most relevant doc sections as excerpts with deep links; follow up with get_doc to read a full page when an excerpt is not enough.',
     },
     {
         basePath: '/api',
