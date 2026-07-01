@@ -32,6 +32,19 @@ interface GoldenCase {
 const METRIC_LIMIT = Number(process.env.LIMIT ?? 8);
 const DIAG_LIMIT = 30;
 
+// --- No-regression ratchet (CI: `--assert`) --------------------------------
+// The gate is deliberately fuzzy-tolerant: embeddings are deterministic in a
+// single build, but the ONNX model can differ by ~1e-6 across architectures
+// (arm64 dev vs the x64 CI runner), enough to flip a borderline rank by one. So
+// the hard gate is generous — it catches a page falling OUT of reach (the
+// >8/>30 regressions this PR fixed), not a ±1 wobble at the edge — while the
+// TARGET below is the standard every query is actually tuned to.
+const ASSERT = process.argv.includes('--assert');
+const TARGET_RANK = 3; // what we tune for; queries past it are reported, not failed
+const HARD_MAX_RANK = 5; // fail if any expected page ranks worse than this (or is missing)
+const MIN_RELEVANCE_AT_1 = 0.78; // floor; current 0.880 (25-query golden)
+const MIN_MRR = 0.85; // floor; current 0.927
+
 const here = dirname(fileURLToPath(import.meta.url));
 const golden: GoldenCase[] = JSON.parse(
     readFileSync(resolve(here, '..', 'test', 'search-golden.json'), 'utf8'),
@@ -110,9 +123,12 @@ async function run(): Promise<void> {
 
     const n = outcomes.length;
     const rel1 = outcomes.filter((o) => o.rank === 1).length;
-    const top3 = outcomes.filter((o) => o.rank >= 1 && o.rank <= 3).length;
+    const topT = outcomes.filter(
+        (o) => o.rank >= 1 && o.rank <= TARGET_RANK,
+    ).length;
     const mrr =
         outcomes.reduce((s, o) => s + (o.rank > 0 ? 1 / o.rank : 0), 0) / n;
+    const rel1Frac = rel1 / n;
 
     // Worst-first, so the loop's "pick the worst query" is a glance away.
     const worst = [...outcomes]
@@ -125,8 +141,8 @@ async function run(): Promise<void> {
 
     console.log(`\n${'─'.repeat(60)}`);
     console.log(
-        `Relevance@1: ${(rel1 / n).toFixed(3)}  (${rel1}/${n})` +
-            `   Top-3: ${(top3 / n).toFixed(3)}  (${top3}/${n})` +
+        `Relevance@1: ${rel1Frac.toFixed(3)}  (${rel1}/${n})` +
+            `   Top-${TARGET_RANK}: ${(topT / n).toFixed(3)}  (${topT}/${n})` +
             `   MRR: ${mrr.toFixed(3)}`,
     );
     if (worst.length) {
@@ -140,6 +156,60 @@ async function run(): Promise<void> {
         console.log(`\nAll queries rank #1. ✓`);
     }
     console.log('');
+
+    if (ASSERT) assertNoRegression(outcomes, rel1Frac, mrr);
+}
+
+/**
+ * Hard no-regression gate for CI (`--assert`). Fails (non-zero exit) when a
+ * documented question can no longer find its page within reach (`HARD_MAX_RANK`),
+ * or when aggregate quality drops below the committed floors. Queries between the
+ * TARGET and the hard bound are reported, not failed — see the constants above.
+ */
+function assertNoRegression(
+    outcomes: Outcome[],
+    rel1Frac: number,
+    mrr: number,
+): void {
+    const failures: string[] = [];
+
+    for (const o of outcomes) {
+        if (o.rank < 1 || o.rank > HARD_MAX_RANK) {
+            failures.push(
+                `rank ${fmtRank(o)} > #${HARD_MAX_RANK}  ${o.expect}  —  “${o.query}”`,
+            );
+        }
+    }
+    if (rel1Frac < MIN_RELEVANCE_AT_1) {
+        failures.push(
+            `Relevance@1 ${rel1Frac.toFixed(3)} < floor ${MIN_RELEVANCE_AT_1}`,
+        );
+    }
+    if (mrr < MIN_MRR) {
+        failures.push(`MRR ${mrr.toFixed(3)} < floor ${MIN_MRR}`);
+    }
+
+    const offTarget = outcomes.filter(
+        (o) => o.rank < 1 || o.rank > TARGET_RANK,
+    ).length;
+    if (offTarget) {
+        console.log(
+            `note: ${offTarget} query(ies) outside top-${TARGET_RANK} but within ` +
+                `the #${HARD_MAX_RANK} gate — tune toward #1 when a natural edit allows.`,
+        );
+    }
+
+    if (failures.length) {
+        console.error('\n✗ search relevance regressed:');
+        for (const f of failures) console.error(`  - ${f}`);
+        console.error('');
+        process.exitCode = 1;
+    } else {
+        console.log(
+            `✓ ratchet OK: every query ≤ #${HARD_MAX_RANK}, ` +
+                `Relevance@1 ≥ ${MIN_RELEVANCE_AT_1}, MRR ≥ ${MIN_MRR}.`,
+        );
+    }
 }
 
 run().catch((err) => {
