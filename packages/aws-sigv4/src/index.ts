@@ -217,10 +217,18 @@ export interface AwsSigV4Options {
     /** Optional STS session token (temporary credentials). */
     sessionToken?: Secret;
     /**
-     * Hash the request body into the signature. A **string** body is hashed by
-     * default (exact bytes). A non-string body is sent `UNSIGNED-PAYLOAD` unless
-     * `signBody: true` (then `JSON.stringify(body)` is hashed — it must match what
-     * the transport sends). `false` forces `UNSIGNED-PAYLOAD` for any body.
+     * Hash the request body into the signature (`x-amz-content-sha256`). A **string**
+     * body is hashed by default (exact bytes); a non-string body is sent
+     * `UNSIGNED-PAYLOAD` unless `signBody: true`. `false` forces `UNSIGNED-PAYLOAD` for
+     * any body.
+     *
+     * When `true`, the hash is taken over the exact bytes the transport sends, chosen by
+     * `bodyType`: a JSON body (`bodyType` `'json'` or unset) hashes `JSON.stringify(body)`;
+     * a `'form'` body hashes its `application/x-www-form-urlencoded` encoding. A
+     * `'multipart'` body **cannot** be payload-signed — the transport generates a
+     * non-deterministic boundary — so `signBody: true` with a multipart body **throws**;
+     * leave it unset (or `false`) to send `UNSIGNED-PAYLOAD`, or pass a pre-serialised
+     * string body to sign it.
      */
     signBody?: boolean;
 }
@@ -230,6 +238,21 @@ function amzDateOf(d: Date): string {
         .toISOString()
         .replace(/[:-]/g, '')
         .replace(/\.\d{3}/, '');
+}
+
+/**
+ * Serialise a non-string `bodyType: 'form'` body to `application/x-www-form-urlencoded`
+ * for payload signing. A byte-for-byte mirror of core's transport — `encodeRequestBody`
+ * in `packages/core/src/http-adapter.ts` (a `URLSearchParams`, `String(v)`, null/undefined
+ * skipped). It MUST stay identical to that encoding, or a signed form payload hash won't
+ * match the bytes the transport actually sends. Only reached with `signBody: true`.
+ */
+function formEncode(body: unknown): string {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
+        if (v !== undefined && v !== null) params.append(k, String(v));
+    }
+    return params.toString();
 }
 
 /**
@@ -274,11 +297,38 @@ export function awsSigV4(opts: AwsSigV4Options): AuthStrategy {
             if (body === undefined || body === null || body === '') {
                 payloadHash = EMPTY_PAYLOAD_SHA256;
             } else if (typeof body === 'string') {
+                // Every transport sends a string body verbatim, so its bytes are
+                // known exactly — hash them unless signing is opted out.
                 payloadHash =
                     opts.signBody === false
                         ? 'UNSIGNED-PAYLOAD'
                         : await sha256Hex(body);
+            } else if (req.bodyType === 'form') {
+                // Core serialises a form body as `application/x-www-form-urlencoded`
+                // (URLSearchParams), NOT JSON. Hashing JSON here would sign bytes the
+                // transport never sends → 403 SignatureDoesNotMatch. Mirror the exact
+                // wire encoding so the signed hash matches (see `formEncode`).
+                payloadHash =
+                    opts.signBody === true
+                        ? await sha256Hex(formEncode(body))
+                        : 'UNSIGNED-PAYLOAD';
+            } else if (req.bodyType === 'multipart') {
+                // A multipart body is sent as FormData; the transport picks the
+                // boundary at send time, so the exact bytes are not knowable here and
+                // the payload cannot be signed. Refuse loudly rather than emit a hash
+                // that is guaranteed not to match (a silent 403 at AWS is worse).
+                if (opts.signBody === true)
+                    throw new Error(
+                        'awsSigV4: signBody:true cannot sign a multipart body — the ' +
+                            'transport generates the multipart boundary at send time, ' +
+                            'so the payload hash can never match the bytes sent. Use ' +
+                            'signBody:false (UNSIGNED-PAYLOAD is accepted over HTTPS) ' +
+                            'or send a pre-serialised string body to sign it.',
+                    );
+                payloadHash = 'UNSIGNED-PAYLOAD';
             } else {
+                // JSON (`bodyType: 'json'` or unset): core sends `JSON.stringify(body)`,
+                // so the JSON hash matches the wire bytes when signing is requested.
                 payloadHash =
                     opts.signBody === true
                         ? await sha256Hex(JSON.stringify(body))
