@@ -170,6 +170,84 @@
                     "write": "managed"
                 }
             ]
+        },
+        {
+            "id": "readme-badges",
+            "tier": "executable",
+            "fact": "the README metrics badge row matches the generator (rendered from the committed snapshot)",
+            "policy": { "severity": "block", "mode": "propose" },
+            "origin": "declared",
+            "sites": [
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node scripts/gen-readme-metrics.mjs --emit readme-badges",
+                        "extract": { "whole": true }
+                    },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "README.md",
+                    "locator": {
+                        "kind": "region",
+                        "name": "readme-badges",
+                        "whole": true
+                    },
+                    "write": "managed"
+                }
+            ]
+        },
+        {
+            "id": "readme-packages",
+            "tier": "executable",
+            "fact": "the README workspace package table matches the generator (rendered from every package.json)",
+            "policy": { "severity": "block", "mode": "propose" },
+            "origin": "declared",
+            "sites": [
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node scripts/gen-readme-metrics.mjs --emit readme-packages",
+                        "extract": { "whole": true }
+                    },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "README.md",
+                    "locator": {
+                        "kind": "region",
+                        "name": "readme-packages",
+                        "whole": true
+                    },
+                    "write": "managed"
+                }
+            ]
+        },
+        {
+            "id": "core-integrations",
+            "tier": "executable",
+            "fact": "the core README integrations table matches the generator (rendered from every package.json)",
+            "policy": { "severity": "block", "mode": "propose" },
+            "origin": "declared",
+            "sites": [
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node scripts/gen-readme-metrics.mjs --emit core-integrations",
+                        "extract": { "whole": true }
+                    },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "packages/core/README.md",
+                    "locator": {
+                        "kind": "region",
+                        "name": "core-integrations",
+                        "whole": true
+                    },
+                    "write": "managed"
+                }
+            ]
         }
     ]
 }

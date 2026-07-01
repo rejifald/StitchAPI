@@ -7,10 +7,12 @@ name: drift
 #   drift            — token tier: literal facts read straight from files (version
 #                      lockstep + README quotes, engines.node, license across every
 #                      published package.json). No install or build needed.
-#   drift-executable — executable tier: facts that only a command knows. The
-#                      `bundle-advertised-size` tether measures the built lib, and
-#                      `playground-completions` re-runs the generator, so this job
-#                      installs (and builds core) first, like verify.yml's `size` job.
+#   drift-executable — executable tier: facts that only a command knows —
+#                      `bundle-advertised-size` (measures the built lib),
+#                      `playground-completions`, and the README badge/table blocks
+#                      (`readme-badges` / `readme-packages` / `core-integrations`,
+#                      each a region vs. its generator's --emit). It installs (and
+#                      builds core) first, like verify.yml's `size` job.
 
 on:
     push:

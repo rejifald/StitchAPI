@@ -24,7 +24,6 @@
         "check:contract": "node scripts/check-contract.mjs",
         "check:format": "prettier --check .",
         "check:release": "node scripts/check-release.mjs",
-        "check:readme": "node scripts/gen-readme-metrics.mjs --check",
         "format": "prettier --write .",
         "gen:readme": "node scripts/gen-readme-metrics.mjs",
         "metrics": "mkdir -p .metrics && pnpm exec fallow --format json --score > .metrics/fallow.json && pnpm --filter stitchapi test:coverage && node scripts/gen-readme-metrics.mjs --refresh",
