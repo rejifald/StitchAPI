@@ -58,6 +58,16 @@ const withMDX = createMDX();
 /** @type {import('next').NextConfig} */
 const config = {
     reactStrictMode: true,
+    // Trace from the pnpm workspace root, not Next's inferred app dir. The search
+    // routes' externalized native deps (transformers.js + onnxruntime-node) are
+    // hoisted to <workspaceRoot>/node_modules/.pnpm, so their trace paths climb
+    // seven levels up to the workspace root. Next only *infers* that root (it warns
+    // when it can't be sure), and on Vercel it can land on a narrower dir — then
+    // those hoisted files fall outside the trace scope and are never copied into
+    // the function, so the runtime require throws at import and the route 500s.
+    // (Works locally only because `next start` runs from the full node_modules.)
+    // Pinning the root makes the deployed function include them.
+    outputFileTracingRoot: repoRoot,
     // Bundle the build-time search index into the serverless functions that
     // restore the Orama dump at runtime — the human search route (P2) and the MCP
     // server (P3). The file is generated at deploy by scripts/prebuild-search-index.mjs
@@ -65,6 +75,8 @@ const config = {
     outputFileTracingIncludes: {
         '/api/search-docs': ['./.search-index/**'],
         '/api/mcp': ['./.search-index/**'],
+        // Temporary: lets /api/_diag run a real search end-to-end. Remove with it.
+        '/api/_diag': ['./.search-index/**'],
     },
     // Keep the runtime embedder OUT of the server bundle. Those same two routes
     // load transformers.js (@huggingface/transformers), whose Node backend is the
