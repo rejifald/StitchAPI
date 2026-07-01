@@ -5,6 +5,7 @@
         "run-stitch-tool",
         "author-from-one-example",
         "adopt-in-your-project",
-        "llms-txt"
+        "llms-txt",
+        "search-over-mcp"
     ]
 }
