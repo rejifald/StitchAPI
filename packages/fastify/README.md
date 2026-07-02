@@ -103,6 +103,18 @@ Each `delta` chunk becomes one SSE frame; an `error` event ends the stream as a
 named `error` frame; stream end closes the response; and a client disconnect
 aborts the upstream stitch generator rather than leaving it running.
 
+By default the `error` frame carries a generic `data: error` token, **not** the raw
+error message — echoing it can disclose internal network topology (a transport
+failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's
+status (`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream
+messages are known safe to expose:
+
+```ts
+sendStitchSse(reply, chat.stream({ query: { q: String(req.query.q) } }), {
+    errorData: (e) => e.message, // opt in to the raw upstream message
+});
+```
+
 ## Error handling
 
 The plugin registers a `setErrorHandler` that maps a `StitchError` to an HTTP

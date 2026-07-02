@@ -7,6 +7,9 @@
 import type { FastifyReply } from 'fastify';
 import type { StitchEvent } from 'stitchapi';
 
+/** The terminal `error` event a stitch stream emits — carries `message`, `status`, `attempts`. */
+type StitchErrorEvent = Extract<StitchEvent, { type: 'error' }>;
+
 export interface SendStitchSseOptions {
     /**
      * Map a `delta` chunk to the SSE frame `data`. Default: the chunk itself (a string is
@@ -24,6 +27,16 @@ export interface SendStitchSseOptions {
      * Receives the chunk and the zero-based frame index.
      */
     id?: (chunk: unknown, index: number) => string;
+    /**
+     * Shape the SSE `data` written for a terminal `error` event. **Default: a generic token
+     * (`data: error`)** — the raw `event.message` is deliberately *not* echoed, because it can
+     * disclose internal network topology (a transport failure reads like
+     * `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`) to
+     * an untrusted client. Opt in with `(e) => e.message` when the upstream messages are known
+     * safe, or return your own payload (e.g. `() => JSON.stringify({ error: 'stream failed' })`).
+     * A multi-line return gets one `data:` line each (SSE spec); the `event: error` name is fixed.
+     */
+    errorData?: (event: StitchErrorEvent) => string;
 }
 
 // One delta chunk → an SSE frame string. A multi-line payload is split so every line gets its
@@ -43,12 +56,27 @@ function frame(
     return `${lines.join('\n')}\n\n`;
 }
 
+// The generic token written as an `error` frame's `data` by default: the raw upstream message is
+// withheld so an internal hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status (`HTTP 401`)
+// never reaches the client. Override with `options.errorData`.
+const DEFAULT_ERROR_DATA = 'error';
+
+// The terminal `error` frame: the fixed `event: error` name plus a (multi-line-safe) data payload —
+// every line of `data` gets its own `data:` prefix so a multi-line opt-in payload can't break the
+// SSE framing.
+function errorFrame(data: string): string {
+    const lines = ['event: error'];
+    for (const dataLine of data.split('\n')) lines.push(`data: ${dataLine}`);
+    return `${lines.join('\n')}\n\n`;
+}
+
 /**
  * Stream a stitch's output to a Fastify {@link FastifyReply} as Server-Sent Events. Pass the
  * stitch's `.stream()` generator (or any `AsyncIterable<StitchEvent>`): each `delta` becomes
- * one SSE frame, an `error` event ends the stream, and stream end closes the response. The
- * non-output events (`start` / `progress` / `drift` / `result` / `done`) are control signals
- * and are not forwarded to the client.
+ * one SSE frame, an `error` event ends the stream with a named `event: error` frame (a generic
+ * `data: error` by default — the raw message is withheld to avoid disclosing internal topology;
+ * opt in via `errorData`), and stream end closes the response. The non-output events (`start` /
+ * `progress` / `drift` / `result` / `done`) are control signals and are not forwarded to the client.
  *
  * Takes over the reply via `reply.hijack()` and writes raw frames, so do **not** also `send()`
  * from the same handler. Resolves once the response is fully written (or the client
@@ -97,8 +125,17 @@ export async function sendStitchSse<T>(
                 res.write(frame(event.chunk, index, options));
                 index += 1;
             } else if (event.type === 'error') {
-                // Surface the failure to the client as a named `error` SSE frame, then stop.
-                res.write(`event: error\ndata: ${event.message}\n\n`);
+                // Surface the failure to the client as a named `error` SSE frame, then stop — but by
+                // default write a generic token, never the raw `event.message`, so an internal
+                // hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status (`HTTP 401`) is not
+                // disclosed. Opt in to the real message via `options.errorData`.
+                res.write(
+                    errorFrame(
+                        options.errorData
+                            ? options.errorData(event)
+                            : DEFAULT_ERROR_DATA,
+                    ),
+                );
                 break;
             }
         }

@@ -56,10 +56,11 @@ mirroring StitchAPI's borrow-don't-own rule.
 
 Stream a streaming/SSE stitch's `.stream()` to `res` as Server-Sent Events, by
 writing `text/event-stream` frames straight to the socket. Each `delta` becomes a
-`data:` frame; a terminal `error` event becomes a final `event: error` frame;
-control events (`start`/`progress`/`result`/`done`/…) are consumed but not
-forwarded. On client disconnect (`res` — or `req`, when passed — emits `close`)
-the upstream stitch stream is aborted.
+`data:` frame; a terminal `error` event becomes a final `event: error` frame (a
+generic `data: error` by default — see below); control events
+(`start`/`progress`/`result`/`done`/…) are consumed but not forwarded. On client
+disconnect (`res` — or `req`, when passed — emits `close`) the upstream stitch
+stream is aborted.
 
 ```ts
 import { sseSurface } from 'stitchapi/sse';
@@ -82,6 +83,18 @@ app.get('/chat', (req, res) => {
 
 Do not also `res.send()`/`res.json()` from the same handler — the helper owns the
 response.
+
+By default the `error` frame carries a generic `data: error` token, **not** the raw
+error message — echoing it can disclose internal network topology (a transport
+failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's
+status (`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream
+messages are known safe to expose:
+
+```ts
+streamStitchSse(res, completion.stream({ body: { prompt: req.query.q } }), {
+    errorData: (e) => e.message, // opt in to the raw upstream message
+});
+```
 
 ## Errors: `stitchErrorHandler(options?)`
 
