@@ -161,6 +161,14 @@ app.useGlobalFilters(new StitchExceptionFilter(app.getHttpAdapter()));
 `status` takes a fixed number or a `(err) => number` function. Outside a filter, use
 `toHttpException(err, { status })` / `isStitchError(err)` directly.
 
+The client-facing **message** is a fixed `'Upstream request failed'` by default — the raw
+`err.message` is withheld, because it can disclose an internal hostname (a transport
+failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status
+(`HTTP 401`). The original error is always attached as the exception's `cause` for
+server-side logging. Opt in to a message when you need one: `{ exposeMessage: true }` for
+the raw message, or `{ message: 'Payment provider unavailable' }` / `{ message: (e) => … }`
+for a curated one.
+
 ## Streaming → SSE — `stitchSse`
 
 Return a stitch's `stream()` from a Nest `@Sse()` endpoint: `delta` chunks become messages,
