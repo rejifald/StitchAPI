@@ -20,7 +20,8 @@ So stop typing across the boundary and validate at it. The model returns argumen
 
 The crawl hands you an OpenAI-compatible JSON Schema. `jsonSchemaValidator` turns it into a [Standard Schema](https://standardschema.dev); `toValidator` gives you one `validate()` that returns a result and never throws.
 
-```ts
+```ts twoslash
+// @noErrors
 import { jsonSchemaValidator } from '@stitchapi/json-schema';
 import { toValidator } from 'stitchapi';
 
@@ -39,7 +40,8 @@ One interface spans both kinds of tool. A tool you hand-wrote and described with
 
 The value isn't the boolean; it's the shape of the failure. `validate()` returns issues as `{ path, message }` — a list you feed straight back to the model, not a `ZodError` you catch, stringify, and hope reads well in a prompt.
 
-```ts
+```ts twoslash
+// @noErrors
 const result = await validate.validate(modelArgs);
 if (!result.ok) {
     // result.issues → [{ path: ['limit'], message: 'must be <= 50' }]
@@ -57,7 +59,8 @@ A per-path rejection is a repair instruction: the model reads that `limit` must 
 
 A crawled form or button submits somewhere, so most discovered tools are endpoints. When the tool is an endpoint, the same schema takes a second job. Run the call as a stitch, anchor its response to the schema, and `inspect()` reports where the live endpoint returned something its own contract never promised — a field that appeared, a number that came back a string, a null where the schema said otherwise.
 
-```ts
+```ts twoslash
+// @noErrors
 import { jsonSchemaValidator } from '@stitchapi/json-schema';
 import { stitch } from 'stitchapi';
 
