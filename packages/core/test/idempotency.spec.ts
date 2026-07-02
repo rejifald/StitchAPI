@@ -200,6 +200,63 @@ test('does not inject on GET (writes only)', async () => {
     ).toBeUndefined();
 });
 
+test('a child `idempotency: false` disables idempotency inherited from a base fragment (P20)', async () => {
+    server.route('POST', '/no-idem', { body: { ok: true } });
+    const base = {
+        idempotency: true,
+        method: 'POST',
+        path: '/no-idem',
+    } as const;
+    const create = stitch({
+        extends: [base],
+        baseUrl: server.url,
+        idempotency: false, // last writer wins: this turns it OFF
+    });
+
+    // The resolved public config must report idempotency OFF, not the inherited `{}` (ON).
+    expect(
+        (create as { __config: { idempotency?: unknown } }).__config
+            .idempotency,
+    ).toBeUndefined();
+
+    // …and end-to-end, no Idempotency-Key header is injected on the write.
+    await expect(create({ body: { x: 1 } })).resolves.toEqual({ ok: true });
+    expect(
+        server.calls('/no-idem')[0]!.headers['idempotency-key'],
+    ).toBeUndefined();
+});
+
+test('a child `idempotency: false` also clears an inherited idempotency *object* (P20)', () => {
+    const base = {
+        idempotency: { header: 'X-Idem' },
+        method: 'POST',
+        path: '/x',
+    } as const;
+    const create = stitch({
+        extends: [base],
+        baseUrl: 'https://x',
+        idempotency: false,
+    });
+    expect(
+        (create as { __config: { idempotency?: unknown } }).__config
+            .idempotency,
+    ).toBeUndefined();
+});
+
+test('a child `idempotency: true` still re-enables it over an inherited `false` (last writer, both directions)', () => {
+    const base = { idempotency: false, method: 'POST', path: '/x' } as const;
+    const create = stitch({
+        extends: [base],
+        baseUrl: 'https://x',
+        idempotency: true,
+    });
+    // `true` normalizes to the all-defaults object form the engine reads.
+    expect(
+        (create as { __config: { idempotency?: unknown } }).__config
+            .idempotency,
+    ).toEqual({});
+});
+
 test('the opaque `idempotency: {}` is a type error — use `true` for defaults (P20)', () => {
     const enableWithDefaults = () =>
         stitch({

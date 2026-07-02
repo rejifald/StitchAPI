@@ -565,9 +565,20 @@ function deriveName(method: string, path: string): string {
 }
 
 // A JS object/string literal renderer for emitted config values. Strings are single-quoted with
-// quotes escaped; this is for short, simple example values (header values, body fields).
+// backslashes and quotes escaped; this is for short, simple example values (header values, body
+// fields). A captured value can contain line terminators (a HAR header, a multiline `-d @body`),
+// which are ILLEGAL inside a single-quoted JS literal and would emit source that doesn't parse — so
+// escape the four ES line terminators too: LF, CR, and U+2028/U+2029 (both are string-literal line
+// terminators pre-ES2019). Every other control char (tab, form-feed, …) is legal inside the literal
+// and left as-is. `\\` is escaped FIRST so the escapes we introduce aren't themselves re-escaped.
 function quote(s: string): string {
-    return `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+    return `'${s
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029')}'`;
 }
 
 // Render a JSON value as TS source, indented. Used for a `-d` JSON body example.

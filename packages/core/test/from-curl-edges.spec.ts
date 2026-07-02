@@ -154,3 +154,93 @@ describe('parseHar — body kind and entry selection', () => {
         expect(req.warnings.some((w) => w.includes('out of range'))).toBe(true);
     });
 });
+
+describe('toStitchSource — emitted string literals stay valid TS', () => {
+    const harWith = (entry: unknown) => ({ log: { entries: [entry] } });
+
+    // The emitted source is an ESM module (`import`/`export`/top-level `await`), which
+    // `new Function` can't host — neutralize just that scaffolding so `new Function` sees the
+    // remaining statements and throws on any *syntax* error (an unterminated string literal being
+    // the bug under test). Semantics are checked separately by the round-trip assertions below.
+    const parses = (source: string): void => {
+        const body = source
+            .replace(/^import .*$/gm, '')
+            .replace(/^export /gm, '')
+            .replace(/^await /gm, '');
+        // Parsing the neutralized module IS the assertion — a syntax error (an unterminated string
+        // literal) throws at construction time.
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        expect(() => new Function(body)).not.toThrow();
+    };
+
+    it('escapes a newline in a header value so the emitted source parses', () => {
+        const { source } = toStitchSource(
+            parseHar(
+                harWith({
+                    request: {
+                        method: 'GET',
+                        url: 'https://api.example.com/x',
+                        headers: [{ name: 'X-Multi', value: 'line1\nline2' }],
+                    },
+                }),
+            ),
+        );
+        // Before the fix this emitted a raw newline inside `'…'` — an unterminated literal.
+        expect(source).toContain("'line1\\nline2'");
+        parses(source);
+    });
+
+    it('escapes a newline in a JSON body value so the emitted source parses', () => {
+        const { source } = toStitchSource(
+            parseHar(
+                harWith({
+                    request: {
+                        method: 'POST',
+                        url: 'https://api.example.com/x',
+                        headers: [],
+                        postData: {
+                            mimeType: 'application/json',
+                            // Valid JSON (the LF is escaped in the wire text) → parsed to an
+                            // object, so the field value rides through `quote()`.
+                            text: JSON.stringify({ note: 'a\nb' }),
+                        },
+                    },
+                }),
+            ),
+        );
+        expect(source).toContain("note: 'a\\nb'");
+        parses(source);
+    });
+
+    it('escapes every ES line terminator (LF, CR, U+2028, U+2029) and round-trips the value', () => {
+        // A backslash and a single quote too, to prove the escape order is right.
+        const value = "a\rb\r\nc\u2028d\u2029e\\f'g";
+        const { source } = toStitchSource(
+            parseHar(
+                harWith({
+                    request: {
+                        method: 'GET',
+                        url: 'https://api.example.com/y',
+                        headers: [{ name: 'X-Nasty', value }],
+                    },
+                }),
+            ),
+        );
+        parses(source);
+        // No raw line terminator survives inside the emitted literal.
+        const literal = /'X-Nasty':\s*('(?:[^'\\]|\\.)*')/.exec(source)?.[1];
+        expect(literal).toBeDefined();
+        expect(literal).not.toMatch(/[\n\r\u2028\u2029]/);
+        // …and it evaluates back to exactly the captured value (semantics preserved).
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        const evalLiteral = new Function(`return ${literal}`) as () => unknown;
+        expect(evalLiteral()).toBe(value);
+    });
+
+    it('leaves the common case single-quoted (no needless escaping)', () => {
+        const { source } = toStitchSource(
+            parseCurl("curl 'https://api.example.com/users/1'"),
+        );
+        expect(source).toContain("baseUrl: 'https://api.example.com'");
+    });
+});
