@@ -54,9 +54,7 @@ const getUser = stitch({
   extends: [api],
   path: '/users/{id}',
   unwrap: 'data',
-  output: toValidator(
-    (u) => !!u && typeof u.id === 'number' && typeof u.email === 'string',
-  ),
+  output: (u) => !!u && typeof u.id === 'number' && typeof u.email === 'string',
 });
 
 // 3 - .with(...) is partial application: bind input now, reuse the call later.
@@ -118,7 +116,7 @@ const getUser = stitch({
   baseUrl: 'https://demo.stitchapi.dev',
   path: '/users/{id}',
   unwrap: 'data', // pull the user out of the { data: ... } envelope
-  // Pass a Zod schema (or any Standard Schema) directly - no toValidator() wrapper.
+  // Pass a Zod schema (or any Standard Schema) directly.
   input: { params: z.object({ id: z.number() }) }, // typed + validated BEFORE the request
   output: z.object({ id: z.number(), email: z.string() }), // typed + validated AFTER
 });
@@ -147,7 +145,7 @@ export const PLAYGROUND_EXAMPLES: PlaygroundExample[] = [
         id: 'validated',
         label: 'Validated',
         description:
-            'Zod schemas on input + output - typed and validated, no toValidator, no codegen.',
+            'Zod schemas on input + output - typed and validated, no codegen.',
         code: VALIDATED_EXAMPLE,
     },
 ];

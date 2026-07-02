@@ -99,7 +99,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "output",
             type: "property",
             detail: "SchemaLike | DriftSpec",
-            info: "Response schema, or a  for leveled drift detection. Accepts any (raw Zod / Standard Schema / Validator / predicate); the stitch infers its result type from it (see `InferOutput`), so a hand-written generic is rarely needed. No `toValidator()` cast is needed — raw Zod is the visible default, but any Standard Schema validator or a `(value) => boolean` predicate works in the same slot.",
+            info: "Response schema, or a  for leveled drift detection. Accepts any — a raw Zod schema, any Standard Schema (Valibot, ArkType), or a `(value) => boolean` predicate — directly; the stitch infers its result type from it (see `InferOutput`), so a hand-written generic is rarely needed.",
         },
         {
             label: "unwrap",

@@ -1,6 +1,6 @@
 ---
 title: 'Helpers'
-description: 'fetchAdapter, axiosAdapter, xhrAdapter, consoleSink, fileSink, createTrace, multiplex, loggerSink, the OTLP exporters, memoryStore, and toValidator.'
+description: 'fetchAdapter, axiosAdapter, xhrAdapter, consoleSink, fileSink, createTrace, multiplex, loggerSink, the OTLP exporters, and memoryStore.'
 ---
 
 The exported helper functions you wire into a stitch: the default transport, the
@@ -260,22 +260,6 @@ distributed and sessions shared across workers, with no change to the call site.
 import { memoryStore } from 'stitchapi';
 
 const store = memoryStore();
-```
-
-## Validation
-
-### toValidator
-
-Coerce a plain predicate, a Zod schema, any Standard Schema, or an existing
-`Validator` into a `Validator` — returning `undefined` when passed `null` or
-`undefined`. `input`/`output` already accept a raw Zod or Standard Schema, so
-reach for this to wrap a hand-rolled predicate or normalize a validator, not to
-satisfy the config type.
-
-```ts twoslash
-import { toValidator } from 'stitchapi';
-
-const validator = toValidator((value: unknown) => typeof value === 'string');
 ```
 
 ## See also

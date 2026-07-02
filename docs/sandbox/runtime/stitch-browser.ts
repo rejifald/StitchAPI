@@ -21,7 +21,7 @@ import type { TraceSink } from 'stitchapi';
  *   Browser-safe (re-exported verbatim from core):
  *     stitch, seam, drift, graphql,
  *     bearer, apiKey, basic, oauth2,
- *     fetchAdapter, toValidator, memoryStore, multiplex, toOtlpJson, + all types
+ *     fetchAdapter, memoryStore, multiplex, toOtlpJson, + all types
  *   Node-only, runs SHIMMED here (with a RunNotice):
  *     keychain, env            → ./shims/node-surfaces  (demo values)
  *     cookieSession            → ./shims/node-surfaces  (in-memory jar)
@@ -42,7 +42,6 @@ export {
     basic,
     oauth2,
     fetchAdapter,
-    toValidator,
     memoryStore,
     // `multiplex` is pure JS (B1-SPIKE §5) — safe to re-export verbatim.
     multiplex,

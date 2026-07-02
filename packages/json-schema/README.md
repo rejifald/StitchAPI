@@ -21,16 +21,15 @@ a plain Standard Schema, usable anywhere Zod is.
 ## Use
 
 ```ts
-import { toValidator } from 'stitchapi';
 import { jsonSchemaValidator } from '@stitchapi/json-schema';
 
 // `discovered` is a JSON Schema you obtained at runtime.
-const validator = toValidator(jsonSchemaValidator(discovered));
+const validator = jsonSchemaValidator(discovered);
 
-const result = await validator.validate(payload);
-if (!result.ok) {
+const result = await validator['~standard'].validate(payload);
+if (result.issues) {
     // Structured, per-path — hand it back to the sender to correct.
-    // [{ path: ['limit'], message: 'must be <= 50' }]
+    // [{ message: 'must be <= 50', path: ['limit'] }]
     return respondWithErrors(result.issues);
 }
 handle(result.value); // `unknown` — a runtime schema carries no static shape
