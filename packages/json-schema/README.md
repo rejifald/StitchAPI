@@ -13,7 +13,7 @@ its tools. You don't type across that boundary — you validate at it.
 ## Install
 
 ```sh
-pnpm add @stitchapi/json-schema stitchapi
+pnpm add @stitchapi/json-schema@rc stitchapi@rc
 ```
 
 `ajv` is the bundled default engine. `stitchapi` is an **optional** peer — the adapter emits
