@@ -39,7 +39,7 @@ const user = await createUser({ body: { name: 'Ada' } });
 network call. `output` is checked **after** the response returns. Either failure
 throws [`STITCH_VALIDATION`](/docs/errors/stitch-validation). The `stitch<T>`
 generic types the resolved value, and the config takes the `z.object(...)`
-schema directly — no `toValidator()` cast. Any [Standard
+schema directly. Any [Standard
 Schema](/docs/guides/validation/standard-schema) validator (Valibot, ArkType)
 works the same way, passed straight to `input`/`output`.
 

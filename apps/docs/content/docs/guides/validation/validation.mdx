@@ -53,13 +53,6 @@ the API would reject.
 ArkType), or a plain predicate. Each slot's type accepts the schema as written,
 and the engine adapts it internally, so there's no cast at the call site.
 
-<Callout type="info">
-    `toValidator()` is an **optional** adapter, not a required wrapper. Reach
-    for it to normalize a hand-rolled validator; a raw Zod or Standard Schema
-    validator goes straight on the config — see [Bring your own
-    validator](/docs/guides/validation/standard-schema).
-</Callout>
-
 See [Reference → Config types](/docs/reference/config-types) for every field on
 `input` and `output`.
 

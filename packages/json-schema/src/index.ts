@@ -17,7 +17,7 @@ import addFormats from 'ajv-formats';
 
 // Minimal local copy of the Standard Schema v1 interface (https://standardschema.dev), so
 // this package imports nothing from stitchapi. Zod, Valibot, ArkType and stitchapi all speak
-// this shape; `toValidator()` in core consumes it directly.
+// this shape; a stitch's `output` accepts it directly.
 export interface StandardSchemaV1<Input = unknown, Output = Input> {
     readonly '~standard': {
         readonly version: 1;
@@ -72,12 +72,11 @@ export interface JsonSchemaValidatorOptions {
  * Turn a JSON Schema into a Standard Schema validator.
  *
  * ```ts
- * import { toValidator } from 'stitchapi';
  * import { jsonSchemaValidator } from '@stitchapi/json-schema';
  *
- * const validator = toValidator(jsonSchemaValidator(discoveredSchema));
- * const result = await validator.validate(payload);
- * if (!result.ok) repair(result.issues); // [{ path: ['limit'], message: 'must be <= 50' }]
+ * const validator = jsonSchemaValidator(discoveredSchema);
+ * const result = await validator['~standard'].validate(payload);
+ * if (result.issues) repair(result.issues); // [{ message: 'must be <= 50', path: ['limit'] }]
  * ```
  *
  * The output type is `T` (default `unknown`): a schema discovered at runtime carries no

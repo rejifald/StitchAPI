@@ -1,8 +1,6 @@
 import { type JsonSchemaCheck, jsonSchemaValidator } from '../src/index';
 
-import { toValidator } from 'stitchapi';
-
-// An OpenAI-compatible tool `parameters` schema — the shape a crawl hands you at runtime.
+// A JSON Schema you obtained at runtime — the shape a discovery hands you.
 const toolSchema = {
     type: 'object',
     properties: {
@@ -15,19 +13,19 @@ const toolSchema = {
 
 describe('jsonSchemaValidator (bundled Ajv engine)', () => {
     it('passes valid args through unchanged', async () => {
-        const validator = toValidator(jsonSchemaValidator(toolSchema));
-        const result = await validator!.validate({ query: 'shoes', limit: 5 });
-        expect(result).toEqual({
-            ok: true,
-            value: { query: 'shoes', limit: 5 },
+        const validator = jsonSchemaValidator(toolSchema);
+        const result = await validator['~standard'].validate({
+            query: 'shoes',
+            limit: 5,
         });
+        expect(result).toEqual({ value: { query: 'shoes', limit: 5 } });
     });
 
     it('maps a type mismatch to an issue with a path', async () => {
-        const validator = toValidator(jsonSchemaValidator(toolSchema));
-        const result = await validator!.validate({ query: 42 });
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
+        const validator = jsonSchemaValidator(toolSchema);
+        const result = await validator['~standard'].validate({ query: 42 });
+        expect(result.issues).toBeDefined();
+        if (result.issues) {
             expect(result.issues).toContainEqual(
                 expect.objectContaining({ path: ['query'] }),
             );
@@ -35,15 +33,18 @@ describe('jsonSchemaValidator (bundled Ajv engine)', () => {
     });
 
     it('reports a missing required argument', async () => {
-        const validator = toValidator(jsonSchemaValidator(toolSchema));
-        const result = await validator!.validate({ limit: 3 });
-        expect(result.ok).toBe(false);
+        const validator = jsonSchemaValidator(toolSchema);
+        const result = await validator['~standard'].validate({ limit: 3 });
+        expect(result.issues).toBeDefined();
     });
 
     it('rejects arguments the schema did not declare', async () => {
-        const validator = toValidator(jsonSchemaValidator(toolSchema));
-        const result = await validator!.validate({ query: 'x', rogue: true });
-        expect(result.ok).toBe(false);
+        const validator = jsonSchemaValidator(toolSchema);
+        const result = await validator['~standard'].validate({
+            query: 'x',
+            rogue: true,
+        });
+        expect(result.issues).toBeDefined();
     });
 
     it('flags a nested array index in the path', async () => {
@@ -51,10 +52,12 @@ describe('jsonSchemaValidator (bundled Ajv engine)', () => {
             type: 'object',
             properties: { tags: { type: 'array', items: { type: 'string' } } },
         };
-        const validator = toValidator(jsonSchemaValidator(listSchema));
-        const result = await validator!.validate({ tags: ['ok', 7] });
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
+        const validator = jsonSchemaValidator(listSchema);
+        const result = await validator['~standard'].validate({
+            tags: ['ok', 7],
+        });
+        expect(result.issues).toBeDefined();
+        if (result.issues) {
             expect(result.issues).toContainEqual(
                 expect.objectContaining({ path: ['tags', 1] }),
             );
@@ -68,22 +71,22 @@ describe('jsonSchemaValidator (bring-your-own check)', () => {
             valid: false,
             issues: [{ pointer: '/limit', message: 'must be <= 50' }],
         });
-        const validator = toValidator(
-            jsonSchemaValidator(toolSchema, { check }),
-        );
-        const result = await validator!.validate({ query: 'x', limit: 99 });
+        const validator = jsonSchemaValidator(toolSchema, { check });
+        const result = await validator['~standard'].validate({
+            query: 'x',
+            limit: 99,
+        });
         expect(result).toEqual({
-            ok: false,
-            issues: [{ path: ['limit'], message: 'must be <= 50' }],
+            issues: [{ message: 'must be <= 50', path: ['limit'] }],
         });
     });
 
     it('passes when the injected check reports valid', async () => {
         const check: JsonSchemaCheck = () => ({ valid: true, issues: [] });
-        const validator = toValidator(
-            jsonSchemaValidator<{ query: string }>(toolSchema, { check }),
-        );
-        const result = await validator!.validate({ query: 'x' });
-        expect(result).toEqual({ ok: true, value: { query: 'x' } });
+        const validator = jsonSchemaValidator<{ query: string }>(toolSchema, {
+            check,
+        });
+        const result = await validator['~standard'].validate({ query: 'x' });
+        expect(result).toEqual({ value: { query: 'x' } });
     });
 });

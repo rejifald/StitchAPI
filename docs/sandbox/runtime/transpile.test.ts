@@ -183,7 +183,7 @@ async function runTests(): Promise<void> {
         const id = (s: string): string => s;
 
         const named = await transpile(
-            `import { stitch, toValidator } from 'stitchapi';\nstitch();`,
+            `import { stitch, drift } from 'stitchapi';\nstitch();`,
             { _transform: id },
         );
         assert('(d) named import → has .js', 'js' in named, named);
@@ -196,7 +196,7 @@ async function runTests(): Promise<void> {
             );
             assert(
                 '(d) destructures the named bindings',
-                /const \{ stitch, toValidator \} =/.test(named.js),
+                /const \{ stitch, drift \} =/.test(named.js),
                 named.js,
             );
         }
