@@ -86,18 +86,16 @@ try {
 `graphql()` returns the same object `stitch()` does, so every resilience and validation field applies. Add an `output` schema and the unwrapped `data` is validated before you touch it — the `as User` cast is gone, replaced by a runtime check the compiler can trust:
 
 ```ts twoslash
-import { bearer, env, graphql, toValidator } from 'stitchapi';
+import { bearer, env, graphql } from 'stitchapi';
 import { z } from 'zod';
 
 const getUser = graphql<{ user: { id: string; name: string } }>({
     baseUrl: 'https://api.example.com',
     path: '/graphql',
     query: `query GetUser($id: ID!) { user(id: $id) { id name } }`,
-    output: toValidator(
-        z.object({
-            user: z.object({ id: z.string(), name: z.string() }),
-        }),
-    ),
+    output: z.object({
+        user: z.object({ id: z.string(), name: z.string() }),
+    }),
     auth: bearer(env('API_TOKEN')),
     retry: 3,
     timeout: '10s',
