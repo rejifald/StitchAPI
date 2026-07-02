@@ -172,7 +172,8 @@ for a curated one.
 ## Streaming → SSE — `stitchSse`
 
 Return a stitch's `stream()` from a Nest `@Sse()` endpoint: `delta` chunks become messages,
-an `error` event errors the stream, and a client disconnect aborts the upstream generator.
+an `error` event errors the stream (a fixed, safe message by default — see below), and a
+client disconnect aborts the upstream generator.
 
 ```ts
 @Sse('chat')
@@ -182,6 +183,14 @@ chat(@Query('q') q: string) {
     });
 }
 ```
+
+Nest renders an errored `@Sse()` observable's message to the client as the final `event: error`
+frame, so the client-facing **message** defaults to a fixed `'Upstream request failed'` — the raw
+`event.message` is withheld, since it can disclose an internal hostname (a transport failure reads
+like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`). The
+original error is always attached as the errored observable's `cause` for server-side logging. Opt
+in when you need a message: `{ exposeMessage: true }` for the raw message, or
+`{ message: 'Stream unavailable' }` / `{ message: (e) => … }` for a curated one.
 
 ## Testing
 
