@@ -130,8 +130,9 @@ async function streamSse(
     const iterator = stream[Symbol.asyncIterator]();
     try {
         while (!res.writableEnded && !res.destroyed) {
-            const { value: ev, done } = await iterator.next();
-            if (done) break;
+            const result = await iterator.next();
+            if (result.done) break;
+            const ev = result.value;
             // `serve` is unauthenticated (loopback by default; DESIGN.md §10) and the SSE consumer
             // is remote, so scrub credential-bearing metadata a `start` frame would otherwise echo
             // — URL credentials and `authorization`/`cookie` headers — before it leaves the
@@ -234,7 +235,9 @@ export function createServeHandler(
         // engine cancels the in-flight upstream call and stops reconnecting — otherwise an infinite
         // SSE stream would run forever, buffering chunks, for a caller that has already left.
         const controller = new AbortController();
-        const onClose = (): void => controller.abort();
+        const onClose = (): void => {
+            controller.abort();
+        };
         req.on('close', onClose);
         res.on('close', onClose);
         try {

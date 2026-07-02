@@ -294,16 +294,11 @@ describe('serve caps the request body (413), so an unauthenticated server cannot
             duplex: 'half',
         }).catch((e: unknown) => e as Error);
         // Either the server answered 413, or it destroyed the socket mid-upload (a client-visible
-        // network error) — both are the cap doing its job (refusing to buffer unbounded). It must
-        // NOT be a 200 (which is what the unbounded pre-fix `readBody` returned).
-        if (res instanceof Error) {
-            expect(res.message).toBeTruthy(); // socket torn down mid-send: body was refused
-        } else {
-            expect(res.status).toBe(413);
-            await expect(res.json()).resolves.toMatchObject({
-                error: expect.stringContaining('exceeds'),
-            });
-        }
+        // network error) — both are the cap doing its job (refusing to buffer unbounded). What it
+        // must never be is a 200 (which is what the unbounded pre-fix `readBody` returned). The
+        // 413 body + `exceeds` message is asserted deterministically by the Content-Length test below.
+        const refused = res instanceof Error || res.status === 413;
+        expect(refused).toBe(true);
     });
 
     test('a truthful Content-Length over the cap is rejected up front with 413', async () => {
@@ -363,7 +358,7 @@ function fakeReqRes(body: string, headers: Record<string, string>) {
     return {
         req: req as unknown as IncomingMessage,
         res: res as unknown as ServerResponse,
-        closeClient() {
+        closeClient: () => {
             res.destroyed = true;
             req.emit('close');
             res.emit('close');
@@ -401,9 +396,7 @@ describe('serve tears down an SSE stream when the client disconnects (no runaway
             },
         } as unknown as Stitch;
 
-        const registry: StitchRegistry = {
-            infinite: infinite as unknown as StitchRegistry[string],
-        };
+        const registry: StitchRegistry = { infinite };
         const handler = createServeHandler(registry);
         const { req, res, closeClient } = fakeReqRes('{}', {
             accept: 'text/event-stream',
