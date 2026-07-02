@@ -23,6 +23,7 @@ import type {
     SecurityScheme,
     StitchConfig,
 } from './types';
+import { scrubUrl } from './util';
 
 export interface OpenApiInfo {
     title: string;
@@ -355,7 +356,12 @@ export function toOpenApi(
             continue;
         }
         const { server, path: rawPath } = splitServer(endpoint.value);
-        if (server) servers.add(server);
+        // Scrub the origin before it lands in `servers[].url`: `splitServer` captures the whole
+        // authority incl. userinfo (`https://user:pass@host`), and this document is often
+        // published/shared, so a URL basic-auth credential must not survive. `scrubUrl` strips
+        // userinfo and redacts secret query values — the same treatment every other url-emitting
+        // sink in core gives a URL (trace.ts, otlp.ts, the console renderer).
+        if (server) servers.add(scrubUrl(server));
         const { path, parameters } = parsePath(rawPath);
         const method = (cfg.method ?? 'get').toLowerCase();
         const item = (paths[path] ??= {});
