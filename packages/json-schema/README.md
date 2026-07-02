@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@stitchapi/json-schema?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/json-schema)
 
-Turn a **runtime-discovered JSON Schema** — one you fetch, receive, or have registered by a
+Adapt a **runtime-discovered JSON Schema** — one you fetch, receive, or have registered by a
 tenant, whatever delivered it — into a [Standard Schema](https://standardschema.dev) validator
 that [StitchAPI](https://stitchapi.dev) (or any Standard-Schema consumer) accepts directly.
 
@@ -12,19 +12,22 @@ type across that boundary — you validate at it.
 ## Install
 
 ```sh
-pnpm add @stitchapi/json-schema@rc stitchapi@rc
+pnpm add @stitchapi/json-schema@rc stitchapi@rc ajv
 ```
 
-`ajv` is the bundled default engine. `stitchapi` is an **optional** peer — the adapter emits
-a plain Standard Schema, usable anywhere Zod is.
+This package ships **no validation engine** — you bring your own. `ajv` is an optional peer (needed
+only for the `{ ajv }` engine); `stitchapi` is a peer. The adapter emits a plain Standard Schema,
+usable anywhere a Standard Schema is — not only with StitchAPI.
 
 ## Use
 
 ```ts
-import { jsonSchemaValidator } from '@stitchapi/json-schema';
+import Ajv from 'ajv';
+import { JsonSchema } from '@stitchapi/json-schema';
 
+const ajv = new Ajv(); // your app's configured engine — formats, keywords, $refs, draft
 // `discovered` is a JSON Schema you obtained at runtime.
-const validator = jsonSchemaValidator(discovered);
+const validator = JsonSchema.adapt(discovered, { ajv });
 
 const result = await validator['~standard'].validate(payload);
 if (result.issues) {
@@ -35,17 +38,26 @@ if (result.issues) {
 handle(result.value); // `unknown` — a runtime schema carries no static shape
 ```
 
-`jsonSchemaValidator<T>()` takes an optional type argument. Leave it `unknown` for a
+`JsonSchema.adapt<T>()` takes an optional type argument. Leave it `unknown` for a
 runtime-obtained schema; pass `T` only when you already know the shape at authoring time.
+
+## Why you pass the engine
+
+Ajv configuration is stateful and app-specific — custom keywords, formats, `$ref` resolvers, the
+draft you target. A vanilla engine this package instantiated itself would **throw or silently
+mis-validate** a schema that relies on your setup: "works everywhere except through the adapter."
+So the engine isn't optional and isn't hidden — you pass the instance you already use, and the
+schema is checked with exactly those semantics. It also keeps `ajv` out of this package's bundle
+and off your dependency tree unless you actually use it.
 
 ## Bring your own engine
 
-The default engine is Ajv (draft-07 and up, lenient about unknown keywords/formats so
-runtime-obtained schemas don't throw). Swap it — a Workers-safe validator, a draft-2020-12 engine, a shared
-instance — through `check`; the issue-path mapping stays identical.
+Not on Ajv? Pass a compiled `check` instead — a Workers-safe validator, a draft-2020-12 engine, a
+shared instance. Return `valid` plus a JSON Pointer + message per failure; the issue-path mapping
+stays identical.
 
 ```ts
-jsonSchemaValidator(discovered, {
+JsonSchema.adapt(discovered, {
     check: (value) => {
         const { valid, errors } = myEngine.validate(value);
         return {

@@ -1,0 +1,121 @@
+---
+title: JSON Schema
+description: JsonSchema.adapt turns a runtime-discovered JSON Schema into a StitchSchema (a Standard Schema) a stitch accepts — validated with an engine you supply, so it ships none of its own.
+prerequisites:
+    ['/docs/concepts/the-stitch', '/docs/guides/validation/standard-schema']
+---
+
+A stitch's `input`/`output` accepts any [Standard Schema](/docs/guides/validation/standard-schema) —
+Zod, Valibot, ArkType — but those describe schemas you **wrote**. Sometimes the schema shows up at
+**runtime**: you fetch it, a tenant registers it, a config push delivers it, as JSON Schema you
+didn't have when you compiled. You can't generate a type for a schema that doesn't exist yet — so
+you don't type across that boundary, you validate at it.
+
+`@stitchapi/json-schema` adapts that JSON Schema into a `StitchSchema` (a Standard Schema) a stitch
+accepts directly. It ships **no validation engine** — you bring your own, so the schema is checked
+with exactly the keywords, formats, `$ref`s, and draft your app already uses.
+
+## Example
+
+```package-install
+@stitchapi/json-schema stitchapi ajv
+```
+
+`stitchapi` is a peer; `ajv` is an optional peer, needed only for the `{ ajv }` engine.
+
+## Adapt a schema
+
+Pass your configured engine as the second argument. With `{ ajv }`, the adapter calls
+`.compile()` on the instance you hand it — reusing all of its configuration:
+
+```ts
+import { JsonSchema } from '@stitchapi/json-schema';
+import Ajv from 'ajv';
+import { stitch } from 'stitchapi';
+
+const ajv = new Ajv(); // your app's engine — formats, keywords, $refs, draft
+
+// `discovered` is a JSON Schema you obtained at runtime.
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    output: JsonSchema.adapt(discovered, { ajv }),
+});
+```
+
+Used standalone, the returned validator exposes the Standard Schema `~standard.validate`, which
+checks a value and returns a result — never throwing:
+
+```ts
+const validator = JsonSchema.adapt(discovered, { ajv });
+
+const result = await validator['~standard'].validate(payload);
+if (result.issues) {
+    // Structured, per-path — hand it back to the sender to correct.
+    // [{ message: 'must be <= 50', path: ['limit'] }]
+    return respondWithErrors(result.issues);
+}
+handle(result.value); // `unknown` — a runtime schema carries no static shape
+```
+
+`JsonSchema.adapt<T>()` takes an optional type argument. Leave it `unknown` for a runtime-obtained
+schema; pass `T` only when you already know the shape at authoring time.
+
+## Why you pass the engine
+
+Ajv configuration is stateful and app-specific — custom keywords, formats, `$ref` resolvers, the
+draft you target. An engine this package instantiated itself would **throw or silently mis-validate**
+a schema that relies on your setup: "works everywhere except through the adapter." So the engine
+isn't hidden — you pass the instance you already use, and the schema is checked with those exact
+semantics. It also keeps `ajv` out of this package's bundle (the adapter is ~800 bytes) and off your
+dependency tree unless you use it.
+
+## Bring your own engine
+
+Not on Ajv? Pass a compiled `check` instead — a Workers-safe validator, a draft-2020-12 engine, a
+shared instance. Return `valid` plus a JSON Pointer + message per failure; the issue-path mapping
+into `{ message, path }` stays identical.
+
+```ts
+JsonSchema.adapt(discovered, {
+    check: (value) => {
+        const { valid, errors } = myEngine.validate(value);
+        return {
+            valid,
+            issues: errors.map((e) => ({
+                pointer: e.instanceLocation, // JSON Pointer, e.g. '/limit'
+                message: e.message,
+            })),
+        };
+    },
+});
+```
+
+<Callout type="info">
+    The output type is `unknown` by design: a schema you only learn at runtime
+    carries no compile-time shape, so the honest result is `unknown` — narrow it
+    where you read it. Anchoring a stitch's `output` to the same schema also
+    lets [`inspect()`](/docs/guides/validation/drift) report where the live
+    service drifts from the contract it handed you.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card
+        title="Standard Schema"
+        href="/docs/guides/validation/standard-schema"
+        description="The one interface a stitch validates through — Zod, Valibot, ArkType, and this adapter all speak it."
+    />
+    <Card
+        title="Validation"
+        href="/docs/guides/validation/validation"
+        description="How input and output validation runs, and the typed error it raises."
+    />
+    <Card
+        title="Schema drift"
+        href="/docs/guides/validation/drift"
+        description="What inspect() surfaces when a live service stops honouring the schema it declared."
+    />
+    <Card title="The stitch primitive" href="/docs/concepts/the-stitch" />
+</Cards>

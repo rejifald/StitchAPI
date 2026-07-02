@@ -1,4 +1,6 @@
-import { type JsonSchemaCheck, jsonSchemaValidator } from '../src/index';
+import { JsonSchema, type JsonSchemaCheck } from '../src/index';
+
+import Ajv from 'ajv';
 
 // A JSON Schema you obtained at runtime — the shape a discovery hands you.
 const toolSchema = {
@@ -11,9 +13,12 @@ const toolSchema = {
     additionalProperties: false,
 };
 
-describe('jsonSchemaValidator (bundled Ajv engine)', () => {
+// The engine is supplied by the caller — this stands in for your app's configured Ajv.
+const ajv = new Ajv({ allErrors: true, strict: false });
+
+describe('JsonSchema.adapt (caller-supplied Ajv instance)', () => {
     it('passes valid args through unchanged', async () => {
-        const validator = jsonSchemaValidator(toolSchema);
+        const validator = JsonSchema.adapt(toolSchema, { ajv });
         const result = await validator['~standard'].validate({
             query: 'shoes',
             limit: 5,
@@ -22,7 +27,7 @@ describe('jsonSchemaValidator (bundled Ajv engine)', () => {
     });
 
     it('maps a type mismatch to an issue with a path', async () => {
-        const validator = jsonSchemaValidator(toolSchema);
+        const validator = JsonSchema.adapt(toolSchema, { ajv });
         const result = await validator['~standard'].validate({ query: 42 });
         expect(result.issues).toBeDefined();
         if (result.issues) {
@@ -33,13 +38,13 @@ describe('jsonSchemaValidator (bundled Ajv engine)', () => {
     });
 
     it('reports a missing required argument', async () => {
-        const validator = jsonSchemaValidator(toolSchema);
+        const validator = JsonSchema.adapt(toolSchema, { ajv });
         const result = await validator['~standard'].validate({ limit: 3 });
         expect(result.issues).toBeDefined();
     });
 
     it('rejects arguments the schema did not declare', async () => {
-        const validator = jsonSchemaValidator(toolSchema);
+        const validator = JsonSchema.adapt(toolSchema, { ajv });
         const result = await validator['~standard'].validate({
             query: 'x',
             rogue: true,
@@ -52,7 +57,7 @@ describe('jsonSchemaValidator (bundled Ajv engine)', () => {
             type: 'object',
             properties: { tags: { type: 'array', items: { type: 'string' } } },
         };
-        const validator = jsonSchemaValidator(listSchema);
+        const validator = JsonSchema.adapt(listSchema, { ajv });
         const result = await validator['~standard'].validate({
             tags: ['ok', 7],
         });
@@ -65,13 +70,13 @@ describe('jsonSchemaValidator (bundled Ajv engine)', () => {
     });
 });
 
-describe('jsonSchemaValidator (bring-your-own check)', () => {
+describe('JsonSchema.adapt (bring-your-own check)', () => {
     it('wraps any engine that yields a JSON Pointer + message', async () => {
         const check: JsonSchemaCheck = () => ({
             valid: false,
             issues: [{ pointer: '/limit', message: 'must be <= 50' }],
         });
-        const validator = jsonSchemaValidator(toolSchema, { check });
+        const validator = JsonSchema.adapt(toolSchema, { check });
         const result = await validator['~standard'].validate({
             query: 'x',
             limit: 99,
@@ -83,7 +88,7 @@ describe('jsonSchemaValidator (bring-your-own check)', () => {
 
     it('passes when the injected check reports valid', async () => {
         const check: JsonSchemaCheck = () => ({ valid: true, issues: [] });
-        const validator = jsonSchemaValidator<{ query: string }>(toolSchema, {
+        const validator = JsonSchema.adapt<{ query: string }>(toolSchema, {
             check,
         });
         const result = await validator['~standard'].validate({ query: 'x' });

@@ -57,6 +57,9 @@ export {
     redactSecretsDeep,
 } from './util';
 export type { Issue, ValidationResult, Validator } from './validator';
+// The canonical schema contract a stitch accepts (a Standard Schema, https://standardschema.dev).
+// Named export so schema adapters like `@stitchapi/json-schema` build against one documented type.
+export type { StitchSchema } from './standard-schema';
 export type { InferInput, InferOutput, SchemaLike } from './infer';
 export { memoryStore } from './store';
 // The default Clock (ADR 0010) — wall-clock + global timers. Inject a custom `Clock` (or a
