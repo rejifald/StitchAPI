@@ -57,6 +57,10 @@ export {
     redactSecretsDeep,
 } from './util';
 export type { Issue, ValidationResult, Validator } from './validator';
+// Standalone validation, uniform with what `input`/`output` consume: `validate(schema, value)`
+// checks a value now; `compile(schema)` coerces once and returns a reusable checker. Both take any
+// `SchemaLike` and return a `ValidationResult` — no reaching into a schema's `['~standard']`.
+export { validate, compile } from './validate';
 // The canonical schema contract a stitch accepts (a Standard Schema, https://standardschema.dev).
 // Named export so schema adapters like `@stitchapi/json-schema` build against one documented type.
 export type { StitchSchema } from './standard-schema';
