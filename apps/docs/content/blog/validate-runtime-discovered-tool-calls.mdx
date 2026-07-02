@@ -1,16 +1,16 @@
 ---
 title: Validate the Tool Calls You Discover at Runtime
-description: When an agent's tools are crawled per-customer at runtime, you can't generate TypeScript types for them — and shouldn't try. Turn the discovered JSON Schema into a validator at the model boundary, then hand the model back structured errors so it repairs its own call.
+description: An agent loads its tools at runtime — from an MCP server, a plugin registry, an OpenAPI spec behind a URL — so their schemas don't exist when you compile. You can't generate types for them; validate the model's arguments at the boundary instead, and hand back structured errors so the model repairs its own call.
 author: Oleksandr Zhuravlov
 date: '2026-07-02'
-tags: [agents, validation, typescript, json-schema, llm]
+tags: [agents, validation, typescript, json-schema, mcp]
 ---
 
-When an agent's tools are discovered at runtime — crawled from a form, a button, an OpenAPI probe, one shape per customer — you reach for TypeScript types and hit a wall: the schema doesn't exist until the crawl finishes, so there's nothing to generate types from.
+An agent rarely knows its full toolset at compile time: it reads an MCP server's `tools/list`, pulls a tenant's enabled plugins, or fetches an OpenAPI spec from a URL — and every tool arrives as JSON Schema you didn't have when you built.
 
 ## The type you're chasing can't exist
 
-Code generation assumes the tools are known when you build. Tools crawled per-customer aren't, so per-tool static types are off the table. The autocomplete you're mourning was never on offer either: an editor can't complete against a schema that isn't present while you write the code. The type assertions pile up because you keep asserting a shape you don't actually know.
+Code generation assumes the tools are known when you build. Tools loaded from a running MCP server or a spec behind a URL aren't, so per-tool static types are off the table. The autocomplete you're mourning was never on offer either: an editor can't complete against a schema that isn't present while you write the code. The type assertions pile up because you keep asserting a shape you don't actually know.
 
 So stop typing across the boundary and validate at it. The model returns arguments as JSON; you hold the tool's JSON Schema; you check one against the other at call time. Past that check the data is `unknown` until you narrow it where you use it — and `unknown` you narrow on purpose beats `any` you cast on reflex.
 
@@ -18,14 +18,14 @@ So stop typing across the boundary and validate at it. The model returns argumen
 
 ## Turn the discovered schema into a validator
 
-The crawl hands you an OpenAI-compatible JSON Schema. `jsonSchemaValidator` turns it into a [Standard Schema](https://standardschema.dev); `toValidator` gives you one `validate()` that returns a result and never throws.
+`tools/list` — or the spec, or the plugin manifest — hands you an OpenAI-compatible JSON Schema. `jsonSchemaValidator` turns it into a [Standard Schema](https://standardschema.dev); `toValidator` gives you one `validate()` that returns a result and never throws.
 
 ```ts twoslash
 // @noErrors
 import { jsonSchemaValidator } from '@stitchapi/json-schema';
 import { toValidator } from 'stitchapi';
 
-// `tool.parameters` is the JSON Schema you crawled — no static shape until now.
+// `tool.parameters` is the JSON Schema you read at runtime — no static shape until now.
 const validate = toValidator(jsonSchemaValidator(tool.parameters));
 
 const result = await validate.validate(modelArgs);
@@ -34,7 +34,7 @@ if (result.ok) {
 }
 ```
 
-One interface spans both kinds of tool. A tool you hand-wrote and described with Zod and a tool you crawled and described with JSON Schema become the same `validate()` call. **Standard Schema, not a Zod lock-in** — Valibot, ArkType, and a raw JSON Schema all arrive through the same door.
+One interface spans every source. A tool you hand-wrote and described with Zod and a tool you read off an MCP server and described with JSON Schema become the same `validate()` call. **Standard Schema, not a Zod lock-in** — Valibot, ArkType, and a raw JSON Schema all arrive through the same door.
 
 ## Hand the model its own mistakes
 
@@ -55,9 +55,9 @@ if (!result.ok) {
 
 A per-path rejection is a repair instruction: the model reads that `limit` must not exceed 50, drops the offending field, and calls again. A thrown exception is a dead end. **Structured feedback the model can act on, not a stack trace it can't.**
 
-## The tool is usually an HTTP call
+## The tool runs a call you didn't write
 
-A crawled form or button submits somewhere, so most discovered tools are endpoints. When the tool is an endpoint, the same schema takes a second job. Run the call as a stitch, anchor its response to the schema, and `inspect()` reports where the live endpoint returned something its own contract never promised — a field that appeared, a number that came back a string, a null where the schema said otherwise.
+A discovered tool almost always fronts a remote call — the MCP server proxies one, the plugin posts to its own API, the OpenAPI operation names an endpoint. When you hold the response schema too (an OpenAPI operation carries both), the same schema takes a second job. Run the call as a stitch, anchor its response to that schema, and `inspect()` reports where the live service returned something its own contract never promised — a field that appeared, a number that came back a string, a null where the schema said otherwise.
 
 ```ts twoslash
 // @noErrors
@@ -78,11 +78,11 @@ for (const finding of inspection.findings) {
 }
 ```
 
-The crawl told you what the tool claims to accept and return. Drift tells you when the running endpoint stops honouring that claim — the failure mode a per-customer, crawled-at-runtime tool has and a hand-written one rarely does.
+The spec told you what the tool claims to accept and return. Drift tells you when the running service stops honouring that claim — the failure mode a tool you discovered, and never compiled against, has and a hand-written one rarely does.
 
 ## Validate where you know, type where you don't
 
-A crawled tool has no compile-time shape, so the compiler can't guard it and pretending it can costs you casts. A validator can guard it: it turns the model's JSON into either data you narrow or errors you return. One Standard Schema interface covers the tools you write and the tools you find; one `validate()` gives you the same result shape for both; the same schema that checks the model's arguments also catches the endpoint drifting underneath them.
+A discovered tool has no compile-time shape, so the compiler can't guard it and pretending it can costs you casts. A validator can guard it: it turns the model's JSON into either data you narrow or errors you return. One Standard Schema interface covers the tools you write and the tools you load; one `validate()` gives you the same result shape for both; the same schema that checks the model's arguments also catches the service drifting underneath them.
 
 ## Try it
 

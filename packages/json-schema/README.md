@@ -3,12 +3,12 @@
 [![npm](https://img.shields.io/npm/v/@stitchapi/json-schema?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/json-schema)
 
 Turn a **runtime-discovered JSON Schema** — the OpenAI-compatible schema an agent tool
-arrives with when you crawl it from a form, a button, or an OpenAPI probe — into a
-[Standard Schema](https://standardschema.dev) validator that
+arrives with from an MCP server's `tools/list`, a plugin registry, or an OpenAPI probe —
+into a [Standard Schema](https://standardschema.dev) validator that
 [StitchAPI](https://stitchapi.dev) (or any Standard-Schema consumer) accepts directly.
 
-You can't generate TypeScript types for a schema that doesn't exist until the crawl
-finishes. You don't type across that boundary — you validate at it.
+You can't generate TypeScript types for a schema that doesn't exist until the agent loads
+its tools. You don't type across that boundary — you validate at it.
 
 ## Install
 

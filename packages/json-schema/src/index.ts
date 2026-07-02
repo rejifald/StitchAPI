@@ -1,9 +1,9 @@
 // @stitchapi/json-schema — turn a runtime-discovered JSON Schema into a Standard Schema
 // validator that stitchapi (or any Standard-Schema consumer) accepts directly.
 //
-// The problem it solves: an agent's tools are discovered at runtime — crawled from a form, a
-// button, an OpenAPI probe — and arrive as OpenAI-compatible JSON Schema, one shape per
-// customer, unknown until the crawl finishes. You can't generate TypeScript types for a
+// The problem it solves: an agent's tools are discovered at runtime — read off an MCP server's
+// `tools/list`, a plugin registry, an OpenAPI probe — and arrive as OpenAI-compatible JSON
+// Schema, unknown until the agent loads its tools. You can't generate TypeScript types for a
 // schema that doesn't exist when you write the code. So you don't type across that boundary;
 // you validate at it. `jsonSchemaValidator(schema)` returns a Standard Schema
 // (https://standardschema.dev) whose `~standard.validate` checks a value and reports
