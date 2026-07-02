@@ -2,13 +2,12 @@
 
 [![npm](https://img.shields.io/npm/v/@stitchapi/json-schema?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/json-schema)
 
-Turn a **runtime-discovered JSON Schema** — the OpenAI-compatible schema an agent tool
-arrives with from an MCP server's `tools/list`, a plugin registry, or an OpenAPI probe —
-into a [Standard Schema](https://standardschema.dev) validator that
-[StitchAPI](https://stitchapi.dev) (or any Standard-Schema consumer) accepts directly.
+Turn a **runtime-discovered JSON Schema** — one you fetch, receive, or have registered by a
+tenant, whatever delivered it — into a [Standard Schema](https://standardschema.dev) validator
+that [StitchAPI](https://stitchapi.dev) (or any Standard-Schema consumer) accepts directly.
 
-You can't generate TypeScript types for a schema that doesn't exist until the agent loads
-its tools. You don't type across that boundary — you validate at it.
+You can't generate TypeScript types for a schema that doesn't exist until runtime. You don't
+type across that boundary — you validate at it.
 
 ## Install
 
@@ -25,25 +24,25 @@ a plain Standard Schema, usable anywhere Zod is.
 import { toValidator } from 'stitchapi';
 import { jsonSchemaValidator } from '@stitchapi/json-schema';
 
-// `discovered` is an OpenAI tool `parameters` schema you crawled at runtime.
+// `discovered` is a JSON Schema you obtained at runtime.
 const validator = toValidator(jsonSchemaValidator(discovered));
 
-const result = await validator.validate(modelArgs);
+const result = await validator.validate(payload);
 if (!result.ok) {
-    // Structured, per-path — hand it back to the model to repair its own call.
+    // Structured, per-path — hand it back to the sender to correct.
     // [{ path: ['limit'], message: 'must be <= 50' }]
-    return repairPrompt(result.issues);
+    return respondWithErrors(result.issues);
 }
-runTool(result.value); // `unknown` — a runtime schema carries no static shape
+handle(result.value); // `unknown` — a runtime schema carries no static shape
 ```
 
-`jsonSchemaValidator<T>()` takes an optional type argument. Leave it `unknown` for a crawled
-schema; pass `T` only when you already know the shape at authoring time.
+`jsonSchemaValidator<T>()` takes an optional type argument. Leave it `unknown` for a
+runtime-obtained schema; pass `T` only when you already know the shape at authoring time.
 
 ## Bring your own engine
 
-The default engine is Ajv (draft-07 and up, lenient about unknown keywords/formats so crawled
-schemas don't throw). Swap it — a Workers-safe validator, a draft-2020-12 engine, a shared
+The default engine is Ajv (draft-07 and up, lenient about unknown keywords/formats so
+runtime-obtained schemas don't throw). Swap it — a Workers-safe validator, a draft-2020-12 engine, a shared
 instance — through `check`; the issue-path mapping stays identical.
 
 ```ts

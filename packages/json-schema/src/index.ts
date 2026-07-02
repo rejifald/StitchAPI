@@ -1,14 +1,13 @@
 // @stitchapi/json-schema — turn a runtime-discovered JSON Schema into a Standard Schema
 // validator that stitchapi (or any Standard-Schema consumer) accepts directly.
 //
-// The problem it solves: an agent's tools are discovered at runtime — read off an MCP server's
-// `tools/list`, a plugin registry, an OpenAPI probe — and arrive as OpenAI-compatible JSON
-// Schema, unknown until the agent loads its tools. You can't generate TypeScript types for a
-// schema that doesn't exist when you write the code. So you don't type across that boundary;
-// you validate at it. `jsonSchemaValidator(schema)` returns a Standard Schema
-// (https://standardschema.dev) whose `~standard.validate` checks a value and reports
-// structured issues (path + message) — the shape you hand back to the model to repair a bad
-// tool call.
+// The problem it solves: a validation schema is discovered at runtime — fetched, received, or
+// registered by a tenant, whatever delivered it — and arrives as JSON Schema, unknown until it
+// reaches you. You can't generate TypeScript types for a schema that doesn't exist when you
+// write the code. So you don't type across that boundary; you validate at it.
+// `jsonSchemaValidator(schema)` returns a Standard Schema (https://standardschema.dev) whose
+// `~standard.validate` checks a value and reports structured issues (path + message) — the
+// shape you hand back to whoever sent the data so they can correct it.
 //
 // The bundled engine is Ajv. Bring your own check — a Workers-safe validator, a shared Ajv
 // instance, a draft-2020-12 engine — through the `check` option; the wrapping and the
@@ -42,7 +41,7 @@ export interface StandardIssue {
     readonly path?: readonly (string | number)[];
 }
 
-/** An OpenAI-compatible tool schema: a JSON Schema object describing the tool's arguments. */
+/** A JSON Schema object describing the data to validate. */
 export type JsonSchema = Record<string, unknown>;
 
 /** One failure from a JSON Schema engine, normalised to a JSON Pointer + a message. */
@@ -76,8 +75,8 @@ export interface JsonSchemaValidatorOptions {
  * import { toValidator } from 'stitchapi';
  * import { jsonSchemaValidator } from '@stitchapi/json-schema';
  *
- * const validator = toValidator(jsonSchemaValidator(discoveredToolSchema));
- * const result = await validator.validate(modelArgs);
+ * const validator = toValidator(jsonSchemaValidator(discoveredSchema));
+ * const result = await validator.validate(payload);
  * if (!result.ok) repair(result.issues); // [{ path: ['limit'], message: 'must be <= 50' }]
  * ```
  *
