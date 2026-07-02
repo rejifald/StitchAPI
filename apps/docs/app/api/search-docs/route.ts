@@ -5,6 +5,7 @@
 // The MCP wrapper (P3) reuses the same searchDocs() engine with its own tool
 // shape. Deploy-time index build + runtime model loading / cold-start are
 // hardened in P3.
+import { MAX_QUERY_LEN } from '@/lib/search-index/config';
 import { searchDocs } from '@/lib/search-index/search';
 import { toSortedResults } from '@/lib/search-index/sorted-result';
 
@@ -13,7 +14,15 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request): Promise<Response> {
-    const query = new URL(request.url).searchParams.get('query')?.trim() ?? '';
+    // Truncate before doing any work: the embedder tokenizes the whole raw
+    // string, so an unbounded `query` param is a CPU/memory DoS. searchDocs caps
+    // again at the shared seam (defense in depth); bounding here also keeps the
+    // huge string from being held for the request's lifetime. See MAX_QUERY_LEN.
+    const query =
+        new URL(request.url).searchParams
+            .get('query')
+            ?.trim()
+            .slice(0, MAX_QUERY_LEN) ?? '';
     if (!query) return Response.json([]);
 
     try {

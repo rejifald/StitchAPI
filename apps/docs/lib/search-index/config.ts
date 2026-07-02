@@ -35,6 +35,15 @@ export const ORAMA_SCHEMA = {
     embedding: 'vector[384]',
 } as const;
 
+// Upper bound on a search query's length. The public retrieval surfaces (the
+// /api/search-docs route and the hosted MCP `search_docs` tool) feed untrusted
+// input straight into the embedder, which tokenizes the whole raw string with
+// no cap. Without a bound a multi-MB query pins CPU/memory and blows the
+// serverless maxDuration, denying search to everyone. 512 chars is generous for
+// a semantic query. Enforced at the shared seam (searchDocs) so every caller is
+// bounded, and mirrored as a schema `.max()` on the callers for early rejection.
+export const MAX_QUERY_LEN = 512;
+
 // Build artifact location, relative to apps/docs. Regenerated every deploy from
 // the MDX (same source as llms.txt) and never committed — see .gitignore.
 export const INDEX_DIR = '.search-index';
