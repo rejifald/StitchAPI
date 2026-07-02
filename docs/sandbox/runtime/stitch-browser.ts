@@ -20,6 +20,7 @@ import type { TraceSink } from 'stitchapi';
  * Surface map (SANDBOX §3 table):
  *   Browser-safe (re-exported verbatim from core):
  *     stitch, seam, drift, graphql,
+ *     validate, compile,
  *     bearer, apiKey, basic, oauth2,
  *     fetchAdapter, memoryStore, multiplex, toOtlpJson, + all types
  *   Node-only, runs SHIMMED here (with a RunNotice):
@@ -37,6 +38,11 @@ export {
     seam,
     drift,
     graphql,
+    // `validate`/`compile` are pure schema-normalisation (validator.ts → toValidator);
+    // no Node touch-points — safe to re-export verbatim. Needed so the blog's
+    // runtime-schema snippets (`compile(JsonSchema.adapt(...))`) run in the playground.
+    validate,
+    compile,
     bearer,
     apiKey,
     basic,
