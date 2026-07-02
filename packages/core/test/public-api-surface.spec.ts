@@ -32,6 +32,8 @@ const FUNCTIONS = [
     'otlpHttpExporter',
     'toOtlpJson',
     'memoryStore',
+    'validate',
+    'compile',
     'isStitch',
     'isSeam',
 ] as const;
