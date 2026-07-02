@@ -148,6 +148,68 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
         expect(raw).toContain('filename="a.bin"');
     });
 
+    // A plain domain object that merely carries a `value` key (e.g. money `{ value, currency }`) is
+    // NOT a file part. The old `isFileLeaf` treated ANY `{ value }` object as a file, so it encoded
+    // `value` as a tiny Blob and silently DROPPED the siblings; it must recurse as a nested object.
+    test('a { value, ... } object without binary/filename is a nested object, not a file (siblings survive)', async () => {
+        server.route('POST', '/u', { body: { ok: true } });
+        const upload = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/u',
+            bodyType: 'multipart',
+        });
+
+        await upload({ body: { amount: { value: 100, currency: 'USD' } } });
+
+        const raw = rawOf('/u');
+        // Both fields survive as normal string parts…
+        expect(raw).toContain('name="amount[value]"');
+        expect(raw).toContain('100');
+        expect(raw).toContain('name="amount[currency]"');
+        expect(raw).toContain('USD');
+        // …and `amount` is NOT a file part (the old bug encoded it as a 3-byte Blob, losing currency).
+        expect(raw).not.toContain('name="amount"');
+        expect(raw).not.toContain('filename=');
+    });
+
+    test('a real { value: <Uint8Array>, filename } wrapper is still a file part', async () => {
+        server.route('POST', '/u', { body: { ok: true } });
+        const upload = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/u',
+            bodyType: 'multipart',
+        });
+
+        await upload({ body: { doc: { value: bytes, filename: 'a.bin' } } });
+
+        const raw = rawOf('/u');
+        expect(raw).toContain('name="doc"');
+        expect(raw).toContain('filename="a.bin"');
+        // it did NOT recurse into value/filename string fields
+        expect(raw).not.toContain('doc[value]');
+        expect(raw).not.toContain('doc[filename]');
+    });
+
+    test('an explicit { value: "text", filename } is a named file part even with a string body', async () => {
+        server.route('POST', '/u', { body: { ok: true } });
+        const upload = stitch({
+            method: 'POST',
+            baseUrl: server.url,
+            path: '/u',
+            bodyType: 'multipart',
+        });
+
+        await upload({ body: { note: { value: 'hello', filename: 'n.txt' } } });
+
+        const raw = rawOf('/u');
+        expect(raw).toContain('name="note"');
+        expect(raw).toContain('filename="n.txt"');
+        expect(raw).toContain('hello');
+        expect(raw).not.toContain('note[value]');
+    });
+
     // contract-not-dependency gate: the capability is a plain config key (not a closure), so a
     // stitch's declaration still serialises losslessly to JSON.
     test('contract gate: multipart.nesting round-trips through __config as JSON', () => {

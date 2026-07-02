@@ -254,14 +254,33 @@ export function decodeResponseBody(
 
 // ---- multipart encoding (ADR 0005 Decision 6) -----------------------------
 // A value that becomes a binary file part: a Blob, a raw byte view, or a
-// { value, filename?, type? } wrapper. Anything else is a scalar field.
+// { value, filename?, type? } file wrapper. Anything else is a nested object/scalar.
+//
+// The wrapper is recognised ONLY when it is actually file-ish: `value` is binary (a Blob /
+// Uint8Array / ArrayBuffer), OR an explicit `filename`/`type` marks it a file part (so
+// `{ value: 'text', filename: 'note.txt' }` is still a named text part). A plain domain object that
+// merely HAPPENS to carry a `value` key — e.g. `{ value: 100, currency: 'USD' }` — is NOT a file:
+// treating it as one encoded `value` as a tiny Blob and silently DROPPED its siblings. Such an
+// object falls through here and recurses as a normal nested object instead.
+function isFileWrapper(v: object): boolean {
+    const w = v as { value?: unknown; filename?: unknown; type?: unknown };
+    return (
+        w.value instanceof Blob ||
+        w.value instanceof Uint8Array ||
+        w.value instanceof ArrayBuffer ||
+        w.filename !== undefined ||
+        w.type !== undefined
+    );
+}
+
 function isFileLeaf(v: unknown): boolean {
     return (
         v instanceof Blob ||
         v instanceof Uint8Array ||
         (typeof v === 'object' &&
             v !== null &&
-            'value' in (v as Record<string, unknown>))
+            'value' in (v as Record<string, unknown>) &&
+            isFileWrapper(v))
     );
 }
 
