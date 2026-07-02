@@ -229,7 +229,54 @@ describe('stitchOnError / stitchErrorResponse map a StitchError to HTTP', () => 
             { status: (e) => e.status ?? 502 },
         );
         expect(mapped?.status).toBe(503);
-        expect(await mapped?.json()).toEqual({ error: 'upstream' });
+        // The default body is a generic phrase — the raw `upstream` message is NOT echoed.
+        expect(await mapped?.json()).toEqual({ error: 'Error' });
+    });
+
+    // Regression: the default response body must not echo the raw upstream/transport message,
+    // which can disclose internal network topology (a transport error names the host it failed
+    // to reach) or the upstream's status semantics to an untrusted client.
+    describe('does not leak the raw error message by default', () => {
+        test('a transport failure with an internal hostname is not disclosed', async () => {
+            // The exact shape core throws for a BYO-adapter/DNS failure: message carries the host.
+            const res = stitchErrorResponse(
+                Object.assign(
+                    new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
+                    { name: 'StitchError' },
+                ),
+            );
+            expect(res?.status).toBe(502); // status stays masked
+            const body = await res!.text();
+            expect(body).not.toContain('payments.internal.corp');
+            expect(body).not.toContain('ENOTFOUND');
+            expect(JSON.parse(body)).toEqual({ error: 'Bad Gateway' });
+        });
+
+        test("an upstream 401 does not surface as 'HTTP 401' in the body", async () => {
+            // core builds `HTTP <status>` (packages/core/src/engine.ts) for an upstream error.
+            const res = stitchErrorResponse(
+                Object.assign(new Error('HTTP 401'), {
+                    name: 'StitchError',
+                    status: 401,
+                }),
+            );
+            expect(res?.status).toBe(502);
+            expect(await res!.text()).not.toContain('HTTP 401');
+        });
+
+        test('the `body` opt-in still includes the raw message', async () => {
+            const res = stitchErrorResponse(
+                Object.assign(
+                    new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
+                    { name: 'StitchError' },
+                ),
+                { body: (e) => ({ error: e.message }) },
+            );
+            // The escape hatch is preserved — callers who want the message can still opt in.
+            expect(await res!.json()).toEqual({
+                error: 'getaddrinfo ENOTFOUND payments.internal.corp',
+            });
+        });
     });
 
     test('isStitchError discriminates by name', () => {

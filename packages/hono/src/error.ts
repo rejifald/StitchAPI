@@ -25,9 +25,26 @@ export interface StitchErrorOptions {
      * `(e) => e.status ?? 502`, or remap specific codes (`(e) => (e.status === 429 ? 429 : 502)`).
      */
     status?: number | ((err: StitchErrorLike) => number);
+    /**
+     * The JSON body for a mapped failure. **Default: a generic, status-tied message**
+     * (`{ error: 'Bad Gateway' }`) — the raw `err.message` is deliberately *not* echoed, because it
+     * can disclose internal network topology (a transport failure reads like
+     * `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`) to an
+     * untrusted client. Override to shape your own error envelope; pass `(e) => ({ error: e.message })`
+     * to opt in to the raw message when the upstream messages are known to be safe to expose.
+     * Receives the mapped status alongside the error.
+     */
+    body?: (err: StitchErrorLike, status: number) => unknown;
 }
 
 const BAD_GATEWAY = 502;
+
+// A small map of the statuses this helper emits → their generic reason phrase, used for
+// the default body so the raw error message is never echoed to the client.
+const STATUS_TEXT: Record<number, string> = {
+    500: 'Internal Server Error',
+    502: 'Bad Gateway',
+};
 
 /**
  * Map a thrown stitch failure to a Hono {@link HTTPException}, or `undefined` when `err` is not a
@@ -49,8 +66,16 @@ export function stitchError(
     if (!isStitchError(err)) return undefined;
     const { status = BAD_GATEWAY } = options;
     const code = typeof status === 'function' ? status(err) : status;
+    // Default body is a generic, status-tied message — the raw `err.message` is deliberately
+    // withheld so an internal hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status
+    // (`HTTP 401`) never reaches the client. Opt in via `options.body`. Carry it on the
+    // exception's `res` so `getResponse()` renders THIS body (a bare `message` would be echoed
+    // verbatim into the response body, which is exactly the leak we're closing).
+    const body = options.body
+        ? options.body(err, code)
+        : { error: STATUS_TEXT[code] ?? 'Error' };
     return new HTTPException(code as ContentfulStatusCode, {
-        message: err.message || 'Upstream request failed',
+        res: Response.json(body, { status: code }),
     });
 }
 

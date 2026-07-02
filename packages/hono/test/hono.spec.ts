@@ -184,6 +184,11 @@ describe('stitchError / stitchOnError map a StitchError to HTTP', () => {
         const res = await app.request('/boom');
         // 502 by default — the upstream 404 is NOT leaked to the client.
         expect(res.status).toBe(502);
+        // The default body is the generic, status-tied phrase — NOT the raw upstream message
+        // (core throws `HTTP 404` for the upstream error; that must not reach the client).
+        const body = await res.text();
+        expect(body).not.toContain('HTTP 404');
+        expect(JSON.parse(body)).toEqual({ error: 'Bad Gateway' });
         await api.close();
     });
 
@@ -215,5 +220,54 @@ describe('stitchError / stitchOnError map a StitchError to HTTP', () => {
             { status: (e) => e.status ?? 502 },
         );
         expect(mapped?.status).toBe(503);
+    });
+
+    // Regression: the rendered response body must not echo the raw upstream/transport message,
+    // which can disclose internal network topology (a transport error names the host it failed
+    // to reach) or the upstream's status semantics to an untrusted client. `stitchError` returns
+    // an `HTTPException`; `.getResponse()` is exactly what Hono sends, so we assert on that body.
+    describe('does not leak the raw error message by default', () => {
+        test('a transport failure with an internal hostname is not disclosed', async () => {
+            // The exact shape core throws for a BYO-adapter/DNS failure: message carries the host.
+            const mapped = stitchError(
+                Object.assign(
+                    new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
+                    { name: 'StitchError' },
+                ),
+            );
+            const res = mapped!.getResponse();
+            expect(res.status).toBe(502); // status stays masked
+            const body = await res.text();
+            expect(body).not.toContain('payments.internal.corp');
+            expect(body).not.toContain('ENOTFOUND');
+            expect(JSON.parse(body)).toEqual({ error: 'Bad Gateway' });
+        });
+
+        test("an upstream 401 does not surface as 'HTTP 401' in the body", async () => {
+            // core builds `HTTP <status>` (packages/core/src/engine.ts) for an upstream error.
+            const mapped = stitchError(
+                Object.assign(new Error('HTTP 401'), {
+                    name: 'StitchError',
+                    status: 401,
+                }),
+            );
+            const res = mapped!.getResponse();
+            expect(res.status).toBe(502);
+            expect(await res.text()).not.toContain('HTTP 401');
+        });
+
+        test('the `body` opt-in still includes the raw message', async () => {
+            const mapped = stitchError(
+                Object.assign(
+                    new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
+                    { name: 'StitchError' },
+                ),
+                { body: (e) => ({ error: e.message }) },
+            );
+            // The escape hatch is preserved — callers who want the message can still opt in.
+            expect(await mapped!.getResponse().json()).toEqual({
+                error: 'getaddrinfo ENOTFOUND payments.internal.corp',
+            });
+        });
     });
 });
