@@ -176,6 +176,80 @@ async function runTests(): Promise<void> {
         }
     }
 
+    /* (d) ESM imports are REBOUND to __stitchImport, never `require` ---------- */
+    {
+        // Identity transform: exercise the shared import-rebinding pass in
+        // isolation (no real transpiler needed) on already-"transpiled" JS.
+        const id = (s: string): string => s;
+
+        const named = await transpile(
+            `import { stitch, toValidator } from 'stitchapi';\nstitch();`,
+            { _transform: id },
+        );
+        assert('(d) named import → has .js', 'js' in named, named);
+        if ('js' in named) {
+            assert(
+                '(d) rewrites to __stitchImport (no require)',
+                named.js.includes('__stitchImport("stitchapi")') &&
+                    !named.js.includes('require('),
+                named.js,
+            );
+            assert(
+                '(d) destructures the named bindings',
+                /const \{ stitch, toValidator \} =/.test(named.js),
+                named.js,
+            );
+        }
+
+        const aliased = await transpile(`import { z as zod } from 'zod';`, {
+            _transform: id,
+        });
+        if ('js' in aliased) {
+            assert(
+                '(d) aliased import → `z: zod`',
+                /const \{ z: zod \} = __stitchImport\("zod"\);/.test(
+                    aliased.js,
+                ),
+                aliased.js,
+            );
+        }
+
+        const ns = await transpile(`import * as z from 'zod';`, {
+            _transform: id,
+        });
+        if ('js' in ns) {
+            assert(
+                '(d) namespace import → whole registry entry',
+                /const z = __stitchImport\("zod"\);/.test(ns.js),
+                ns.js,
+            );
+        }
+
+        const side = await transpile(`import 'stitchapi';`, { _transform: id });
+        if ('js' in side) {
+            assert(
+                '(d) side-effect import → bare registry call',
+                /__stitchImport\("stitchapi"\);/.test(side.js),
+                side.js,
+            );
+        }
+    }
+
+    /* (e) dynamic import() is rejected (SEC-31 module-loader escape) ---------- */
+    {
+        const dyn = await transpile(`const m = await import('node:fs');`, {
+            _transform: (s) => s,
+        });
+        assert('(e) dynamic import → { error }', 'error' in dyn, dyn);
+        if ('error' in dyn) {
+            assert(
+                "(e) error.phase === 'transpile'",
+                dyn.error.phase === 'transpile',
+                dyn.error,
+            );
+        }
+    }
+
     /* Summary --------------------------------------------------------------- */
     console.log(`\n${passed} passed, ${failed} failed\n`);
 

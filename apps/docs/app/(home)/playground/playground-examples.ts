@@ -107,6 +107,28 @@ const res = await getUser();
 console.log(res);
 `;
 
+const VALIDATED_EXAMPLE = `// Validate what you send AND what you receive with a real schema library.
+// Runs in a sandboxed Web Worker against the in-browser fake API - no real
+// network, nothing installed. The imports resolve to the bundled 'stitchapi'
+// and 'zod', so you can paste snippets straight from the docs.
+import { stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const getUser = stitch({
+  baseUrl: 'https://demo.stitchapi.dev',
+  path: '/users/{id}',
+  unwrap: 'data', // pull the user out of the { data: ... } envelope
+  // Pass a Zod schema (or any Standard Schema) directly - no toValidator() wrapper.
+  input: { params: z.object({ id: z.number() }) }, // typed + validated BEFORE the request
+  output: z.object({ id: z.number(), email: z.string() }), // typed + validated AFTER
+});
+
+// The argument is typed from \`input\`; \`user\` is typed { id: number; email: string }
+// straight from \`output\`. No cast, no codegen - both validated at runtime.
+const user = await getUser({ params: { id: 2 } });
+console.log(user);
+`;
+
 export const PLAYGROUND_EXAMPLES: PlaygroundExample[] = [
     {
         id: 'complete',
@@ -120,5 +142,12 @@ export const PLAYGROUND_EXAMPLES: PlaygroundExample[] = [
         label: 'Simple',
         description: 'One URL in, typed data out.',
         code: SIMPLE_EXAMPLE,
+    },
+    {
+        id: 'validated',
+        label: 'Validated',
+        description:
+            'Zod schemas on input + output - typed and validated, no toValidator, no codegen.',
+        code: VALIDATED_EXAMPLE,
     },
 ];
