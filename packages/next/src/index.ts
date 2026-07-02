@@ -155,6 +155,13 @@ export function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
 
+// A small map of the statuses this helper emits → their generic reason phrase, used for
+// the default body so the raw error message is never echoed to the client.
+const STATUS_TEXT: Record<number, string> = {
+    500: 'Internal Server Error',
+    502: 'Bad Gateway',
+};
+
 export interface ErrorResponseOptions {
     /**
      * The HTTP status for the mapped failure. Default `502` for a `StitchError` (an
@@ -163,7 +170,15 @@ export interface ErrorResponseOptions {
      * function: propagate the upstream status with `(e) => e.status ?? 502`.
      */
     status?: number | ((err: StitchErrorLike) => number);
-    /** Shape the JSON body. Default `{ error: err.message }`. */
+    /**
+     * Shape the JSON body. **Default: a generic, status-tied message**
+     * (`{ error: 'Bad Gateway' }`) — the raw `err.message` is deliberately *not* echoed,
+     * because it can disclose internal network topology (a transport failure reads like
+     * `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`)
+     * to an untrusted client. Provide this to shape the body yourself; pass
+     * `(e) => ({ error: e.message })` to opt in to the raw message when the upstream
+     * messages are known to be safe to expose.
+     */
     body?: (err: StitchErrorLike, status: number) => unknown;
 }
 
@@ -178,6 +193,11 @@ export interface ErrorResponseOptions {
  *     throw err;
  * }
  * ```
+ *
+ * The default body is a generic, status-tied message (`{ error: 'Bad Gateway' }`) — the
+ * raw `err.message` is **not** echoed, since it can leak internal hostnames or the
+ * upstream's status to an untrusted client. Opt in to a custom (or the raw) message with
+ * {@link ErrorResponseOptions.body}.
  */
 export function stitchErrorResponse(
     err: unknown,
@@ -190,6 +210,8 @@ export function stitchErrorResponse(
         typeof options.status === 'function'
             ? options.status(e)
             : (options.status ?? fallback);
-    const body = options.body ? options.body(e, status) : { error: e.message };
+    const body = options.body
+        ? options.body(e, status)
+        : { error: STATUS_TEXT[status] ?? 'Error' };
     return Response.json(body, { status });
 }

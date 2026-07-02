@@ -19,6 +19,9 @@ export function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
 
+/** The safe, fixed message the mapped exception carries by default. */
+const SAFE_MESSAGE = 'Upstream request failed';
+
 export interface ToHttpExceptionOptions {
     /**
      * The HTTP status for the mapped exception. Default `502 Bad Gateway` — **every**
@@ -29,21 +32,51 @@ export interface ToHttpExceptionOptions {
      * specific codes (`(e) => (e.status === 429 ? 429 : 502)`).
      */
     status?: number | ((err: StitchErrorLike) => number);
+    /**
+     * Set the client-facing message. **Default: a fixed `'Upstream request failed'`** — the
+     * raw `err.message` is deliberately *not* forwarded, because it can disclose internal
+     * network topology (a transport failure reads like
+     * `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`)
+     * to an untrusted client. The original error is always attached as the exception's
+     * `cause` for server-side logging. Provide a fixed string, or a function for a
+     * per-error message. Prefer this over {@link exposeMessage} when you want a specific,
+     * curated message.
+     */
+    message?: string | ((err: StitchErrorLike) => string);
+    /**
+     * Opt in to forwarding the raw `err.message` as the client-facing message. **Default
+     * `false`** — see {@link message} for why the raw message is withheld by default. Ignored
+     * when {@link message} is set. Only enable this when the upstream messages are known to
+     * be safe to expose to your clients.
+     */
+    exposeMessage?: boolean;
 }
 
 /**
  * Map a thrown stitch failure to a Nest {@link HttpException}, or `undefined` when `err`
  * is not a {@link StitchErrorLike} (so a caller can rethrow it untouched). The status is
  * `502` by default; override it via {@link ToHttpExceptionOptions.status}.
+ *
+ * The client-facing message defaults to a fixed `'Upstream request failed'` — the raw
+ * `err.message` is **not** forwarded, since it can leak internal hostnames or the
+ * upstream's status to an untrusted client. The original error is attached as the
+ * exception's `cause` for server-side logging. Opt in to the raw message with
+ * {@link ToHttpExceptionOptions.exposeMessage}, or set your own with
+ * {@link ToHttpExceptionOptions.message}.
  */
 export function toHttpException(
     err: unknown,
     options: ToHttpExceptionOptions = {},
 ): HttpException | undefined {
     if (!isStitchError(err)) return undefined;
-    const { status = HttpStatus.BAD_GATEWAY } = options;
+    const { status = HttpStatus.BAD_GATEWAY, message, exposeMessage } = options;
     const code = typeof status === 'function' ? status(err) : status;
-    return new HttpException(err.message || 'Upstream request failed', code);
+    const clientMessage =
+        typeof message === 'function'
+            ? message(err)
+            : (message ??
+              (exposeMessage ? err.message || SAFE_MESSAGE : SAFE_MESSAGE));
+    return new HttpException(clientMessage, code, { cause: err });
 }
 
 /**
