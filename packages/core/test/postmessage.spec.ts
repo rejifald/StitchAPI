@@ -12,6 +12,7 @@ import {
     postMessageSurface,
     windowChannel,
 } from '../src/postmessage';
+import { toValidator } from '../src/validator';
 import { asValidator } from './support/schema';
 import { collectEvents } from './support/streams';
 
@@ -280,6 +281,73 @@ describe('validation on both boundaries', () => {
         // The reply correlates, but the buffered `output` contract rejects it → StitchError (drift).
         await expect(call({ body: {} })).rejects.toMatchObject({
             name: 'StitchError',
+        });
+        closeBoth();
+    });
+
+    // A plain `Validator` (from `toValidator(...)`) exposes `.validate()` but neither `~standard`
+    // nor `safeParse` — the same shape a Zod < 3.24 schema has. `respond` must accept it: the old
+    // `passes()` only handled `~standard`, so a Validator threw → was caught → treated as a
+    // failure → EVERY inbound request was silently dropped and the requester timed out.
+    test('a responder accepts a `toValidator(...)` input schema — a valid payload is NOT dropped', async () => {
+        const { parent, iframe, closeBoth } = channelPair();
+        // `toValidator` of a defined predicate always yields a Validator — a `{ validate() }`
+        // object with NO `~standard` and NO `safeParse` (the exact shape the old `passes` dropped).
+        const inputSchema = toValidator(
+            (v: unknown): boolean =>
+                typeof (v as { n?: unknown }).n === 'number',
+        )!;
+        expect('~standard' in inputSchema).toBe(false); // pins the bug's precondition
+        expect('safeParse' in inputSchema).toBe(false);
+        iframe.respond('dbl', (p: { n: number }) => ({ doubled: p.n * 2 }), {
+            input: inputSchema,
+        });
+        const call = parent.request({
+            type: 'dbl',
+            timeout: { perAttempt: 200 },
+        });
+        await expect(call({ body: { n: 21 } })).resolves.toEqual({
+            doubled: 42,
+        });
+        closeBoth();
+    });
+
+    test('a `toValidator(...)` input schema still DROPS an invalid payload (fail-closed preserved)', async () => {
+        const { parent, iframe, closeBoth } = channelPair();
+        const inputSchema = toValidator(
+            (v: unknown): boolean =>
+                typeof (v as { n?: unknown }).n === 'number',
+        )!;
+        iframe.respond('dbl2', (p: { n: number }) => ({ doubled: p.n * 2 }), {
+            input: inputSchema,
+        });
+        const call = parent.request({
+            type: 'dbl2',
+            timeout: { perAttempt: 40 },
+        });
+        await expect(
+            call({ body: { n: 'not-a-number' } }),
+        ).rejects.toMatchObject({ name: 'StitchError' });
+        closeBoth();
+    });
+
+    // `output` rides the same coercion — a `toValidator(...)` responder output that the result
+    // satisfies must let the reply through (before the fix it threw in `passes` → no reply posted).
+    test('a responder accepts a `toValidator(...)` output schema — a valid reply is posted', async () => {
+        const { parent, iframe, closeBoth } = channelPair();
+        const outputSchema = toValidator(
+            (v: unknown): boolean =>
+                typeof (v as { doubled?: unknown }).doubled === 'number',
+        )!;
+        iframe.respond('dbl3', (p: { n: number }) => ({ doubled: p.n * 2 }), {
+            output: outputSchema,
+        });
+        const call = parent.request({
+            type: 'dbl3',
+            timeout: { perAttempt: 200 },
+        });
+        await expect(call({ body: { n: 5 } })).resolves.toEqual({
+            doubled: 10,
         });
         closeBoth();
     });
