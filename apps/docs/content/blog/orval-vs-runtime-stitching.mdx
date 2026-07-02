@@ -49,15 +49,13 @@ None of that is a flaw in Orval — it's the boundary of generating from a spec.
 Runtime stitching makes the opposite bet: the only thing you can fully trust is the response on the wire, so validate against it on every call. A [stitch](/docs/concepts/the-stitch) is a per-endpoint declaration — a URL and a schema — with no spec and no generated artifact:
 
 ```ts twoslash
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const listPets = stitch<{ id: number; name: string }[]>({
     baseUrl: 'https://api.example.com',
     path: '/pets',
-    output: toValidator(
-        z.array(z.object({ id: z.number(), name: z.string() })),
-    ),
+    output: z.array(z.object({ id: z.number(), name: z.string() })),
 });
 
 const pets = await listPets(); // typed · validated against the live response
@@ -75,15 +73,13 @@ Orval's headline is generated hooks, so the honest question is what you give up 
 // ---cut---
 import { stitchQueryOptions, useStitch } from '@stitchapi/react';
 import { useQuery } from '@tanstack/react-query';
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const listPets = stitch<{ id: number; name: string }[]>({
     baseUrl: 'https://api.example.com',
     path: '/pets',
-    output: toValidator(
-        z.array(z.object({ id: z.number(), name: z.string() })),
-    ),
+    output: z.array(z.object({ id: z.number(), name: z.string() })),
 });
 
 // StitchAPI owns the lifecycle — including streaming, which useQuery doesn't model.
