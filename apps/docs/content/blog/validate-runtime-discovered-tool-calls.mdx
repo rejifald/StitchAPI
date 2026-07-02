@@ -1,0 +1,92 @@
+---
+title: Validate the Tool Calls You Discover at Runtime
+description: When an agent's tools are crawled per-customer at runtime, you can't generate TypeScript types for them — and shouldn't try. Turn the discovered JSON Schema into a validator at the model boundary, then hand the model back structured errors so it repairs its own call.
+author: Oleksandr Zhuravlov
+date: '2026-07-02'
+tags: [agents, validation, typescript, json-schema, llm]
+---
+
+When an agent's tools are discovered at runtime — crawled from a form, a button, an OpenAPI probe, one shape per customer — you reach for TypeScript types and hit a wall: the schema doesn't exist until the crawl finishes, so there's nothing to generate types from.
+
+## The type you're chasing can't exist
+
+Code generation assumes the tools are known when you build. Tools crawled per-customer aren't, so per-tool static types are off the table. The autocomplete you're mourning was never on offer either: an editor can't complete against a schema that isn't present while you write the code. The type assertions pile up because you keep asserting a shape you don't actually know.
+
+So stop typing across the boundary and validate at it. The model returns arguments as JSON; you hold the tool's JSON Schema; you check one against the other at call time. Past that check the data is `unknown` until you narrow it where you use it — and `unknown` you narrow on purpose beats `any` you cast on reflex.
+
+**Validate at the boundary, not across it.**
+
+## Turn the discovered schema into a validator
+
+The crawl hands you an OpenAI-compatible JSON Schema. `jsonSchemaValidator` turns it into a [Standard Schema](https://standardschema.dev); `toValidator` gives you one `validate()` that returns a result and never throws.
+
+```ts
+import { jsonSchemaValidator } from '@stitchapi/json-schema';
+import { toValidator } from 'stitchapi';
+
+// `tool.parameters` is the JSON Schema you crawled — no static shape until now.
+const validate = toValidator(jsonSchemaValidator(tool.parameters));
+
+const result = await validate.validate(modelArgs);
+if (result.ok) {
+    runTool(result.value); // `unknown` — narrow it where you read it
+}
+```
+
+One interface spans both kinds of tool. A tool you hand-wrote and described with Zod and a tool you crawled and described with JSON Schema become the same `validate()` call. **Standard Schema, not a Zod lock-in** — Valibot, ArkType, and a raw JSON Schema all arrive through the same door.
+
+## Hand the model its own mistakes
+
+The value isn't the boolean; it's the shape of the failure. `validate()` returns issues as `{ path, message }` — a list you feed straight back to the model, not a `ZodError` you catch, stringify, and hope reads well in a prompt.
+
+```ts
+const result = await validate.validate(modelArgs);
+if (!result.ok) {
+    // result.issues → [{ path: ['limit'], message: 'must be <= 50' }]
+    return toolMessage(
+        result.issues
+            .map((issue) => `- ${issue.path.join('.') || '(root)'}: ${issue.message}`)
+            .join('\n'),
+    );
+}
+```
+
+A per-path rejection is a repair instruction: the model reads that `limit` must not exceed 50, drops the offending field, and calls again. A thrown exception is a dead end. **Structured feedback the model can act on, not a stack trace it can't.**
+
+## The tool is usually an HTTP call
+
+A crawled form or button submits somewhere, so most discovered tools are endpoints. When the tool is an endpoint, the same schema takes a second job. Run the call as a stitch, anchor its response to the schema, and `inspect()` reports where the live endpoint returned something its own contract never promised — a field that appeared, a number that came back a string, a null where the schema said otherwise.
+
+```ts
+import { jsonSchemaValidator } from '@stitchapi/json-schema';
+import { stitch } from 'stitchapi';
+
+const callTool = stitch({
+    url: tool.endpoint,
+    method: 'POST',
+    output: jsonSchemaValidator(tool.responseSchema),
+});
+
+const inspection = await callTool.inspect({ body: modelArgs });
+inspection.value; // validated response, or null on a hard failure
+for (const finding of inspection.findings) {
+    // e.g. { path: 'items[].sku', change: 'undeclared' }
+    log.warn(`response drift at ${finding.path}: ${finding.change}`);
+}
+```
+
+The crawl told you what the tool claims to accept and return. Drift tells you when the running endpoint stops honouring that claim — the failure mode a per-customer, crawled-at-runtime tool has and a hand-written one rarely does.
+
+## Validate where you know, type where you don't
+
+A crawled tool has no compile-time shape, so the compiler can't guard it and pretending it can costs you casts. A validator can guard it: it turns the model's JSON into either data you narrow or errors you return. One Standard Schema interface covers the tools you write and the tools you find; one `validate()` gives you the same result shape for both; the same schema that checks the model's arguments also catches the endpoint drifting underneath them.
+
+## Try it
+
+```sh
+pnpm add @stitchapi/json-schema stitchapi
+```
+
+-   [Stop writing `fetch` in your agents](/blog/stop-writing-fetch-in-your-agents) — why a stitch is the tool boundary an agent should call.
+-   [Schema drift is a production bug](/blog/schema-drift-is-a-production-bug) — what `inspect()` surfaces and how to act on findings.
+-   [Expose a stitch as an AI SDK tool](/blog/expose-a-stitch-as-an-ai-sdk-tool) — hand a validated stitch to a model on the Vercel AI SDK.
