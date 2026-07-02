@@ -645,17 +645,13 @@ importers:
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.19.21)(@vitest/coverage-v8@4.1.8)(jsdom@25.0.1)(vite@8.0.16(@types/node@22.19.21)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/json-schema:
-    dependencies:
-      ajv:
-        specifier: ^8.17.1
-        version: 8.20.0
-      ajv-formats:
-        specifier: ^3.0.1
-        version: 3.0.1(ajv@8.20.0)
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.21
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
       stitchapi:
         specifier: workspace:*
         version: link:../core

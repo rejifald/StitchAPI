@@ -18,14 +18,16 @@ So stop typing across the boundary and validate at it. The data arrives as JSON;
 
 ## Turn the discovered schema into a validator
 
-The schema reaches you as JSON Schema, whatever delivered it. `jsonSchemaValidator` turns it into a [Standard Schema](https://standardschema.dev), and you validate through its `~standard` interface — `validate` checks a value and returns a result, never throwing.
+The schema reaches you as JSON Schema, whatever delivered it. `JsonSchema.adapt` turns it into a [Standard Schema](https://standardschema.dev) using an engine you supply, and you validate through its `~standard` interface — `validate` checks a value and returns a result, never throwing.
 
 ```ts twoslash
 // @noErrors
-import { jsonSchemaValidator } from '@stitchapi/json-schema';
+import { JsonSchema } from '@stitchapi/json-schema';
+import Ajv from 'ajv';
 
+const ajv = new Ajv(); // your app's configured engine — formats, keywords, $refs, draft
 // `schema` is JSON Schema you obtained at runtime — no static shape until now.
-const validator = jsonSchemaValidator(schema);
+const validator = JsonSchema.adapt(schema, { ajv });
 
 const result = await validator['~standard'].validate(payload);
 if (!result.issues) {
@@ -80,13 +82,15 @@ The data you validate often came back from a request you also make. When you hol
 
 ```ts twoslash
 // @noErrors
-import { jsonSchemaValidator } from '@stitchapi/json-schema';
+import { JsonSchema } from '@stitchapi/json-schema';
+import Ajv from 'ajv';
 import { stitch } from 'stitchapi';
 
+const ajv = new Ajv();
 const call = stitch({
     url: endpoint,
     method: 'POST',
-    output: jsonSchemaValidator(responseSchema),
+    output: JsonSchema.adapt(responseSchema, { ajv }),
 });
 
 const inspection = await call.inspect({ body: payload });
