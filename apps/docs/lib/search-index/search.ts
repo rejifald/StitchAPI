@@ -2,17 +2,15 @@
 // Orama dump built by scripts/build-search-index.ts (once, cached), embeds the
 // query with the SAME local model the index used, and runs Orama in hybrid mode.
 // Consumed by app/api/search-docs/route.ts (P2) and the MCP server (P3).
-
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { INDEX_DIR, INDEX_FILE, MAX_QUERY_LEN, VECTOR_FIELD } from './config';
+import { embedOne } from './embed';
+import { type DocSearchHit } from './sorted-result';
 
 import { type AnyOrama, type SearchParams, search } from '@orama/orama';
 import { restore } from '@orama/plugin-data-persistence';
-
-import { INDEX_DIR, INDEX_FILE, VECTOR_FIELD } from './config';
-import { embedOne } from './embed';
-import { type DocSearchHit } from './sorted-result';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Hybrid retrieval knobs, kept as named exports so the search-eval harness can
 // sweep them and the CI ratchet pins the shipped values.
@@ -58,7 +56,11 @@ export async function searchDocs(
         boost = FIELD_BOOST,
     }: SearchOptions = {},
 ): Promise<DocSearchHit[]> {
-    const term = query.trim();
+    // Cap at the shared seam so BOTH public callers (the /api/search-docs route
+    // and the hosted MCP `search_docs` tool) are bounded even if a caller's own
+    // schema guard is missing: the embedder tokenizes the whole raw string with
+    // no cap, so an unbounded query is a CPU/memory DoS. See MAX_QUERY_LEN.
+    const term = query.trim().slice(0, MAX_QUERY_LEN);
     if (!term) return [];
 
     const db = await loadIndex();

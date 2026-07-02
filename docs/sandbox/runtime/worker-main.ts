@@ -22,6 +22,7 @@
 import { createFetchShim } from '../../../packages/sandbox-sim/src/adapters/browser';
 import { allHandlers } from '../../../packages/sandbox-sim/src/handlers';
 import type { SimKnobs } from '../contracts/sim';
+import { hardenWorkerGlobal } from './harden-worker-global';
 import { browserProcess } from './shims/process';
 import * as stitchBuild from './stitch-browser';
 import { createTraceCollector } from './trace-collector';
@@ -31,10 +32,22 @@ import {
     installWorkerEntry,
 } from './worker-entry';
 
+// Bundled so a snippet's `import { z } from 'zod'` resolves (via __stitchImport).
+// zod is pure JS / browser-safe; esbuild bundles it into the Worker (no runtime
+// module loader exists here — SEC-31).
+import * as zod from 'zod';
+
 // Baseline knobs for the current run (the "Response knobs" panel). Mutated by
 // `env.applyKnobs` before each run; the shim reads it on every request so a
 // configured knob shapes the whole run. URL-explicit knobs still win (dispatch).
 let currentKnobs: SimKnobs | undefined;
+
+// SEC-01/04/30/34 — harden the worker's REAL global BEFORE any snippet can run,
+// so the `Function('return this')()` escape (which bypasses worker-entry's
+// parameter shadowing) reaches only inert `undefined`s, not a live `WebSocket` /
+// `XMLHttpRequest` / `EventSource` / `importScripts` / `navigator.sendBeacon`.
+// Runs before the sim-`fetch` shim install below and never touches `fetch`.
+hardenWorkerGlobal();
 
 // The sandbox-sim dispatch shim — the only `fetch` reachable in this Worker. No
 // real socket is ever opened; an unknown route returns the sandbox-404 (SEC-01..04).
@@ -61,6 +74,8 @@ const env: WorkerEnv = {
         ...stitchBuild,
         stitch: traceCollector.stitch,
     } as unknown as Record<string, unknown>,
+    // Modules a snippet may `import` beyond 'stitchapi' (rebound via __stitchImport).
+    modules: { zod },
     // The snippet's `fetch` (cast: createFetchShim is precisely `fetch`-typed,
     // WorkerEnv.fetch is the loose (unknown, unknown) wire shape).
     fetch: simFetch as unknown as WorkerEnv['fetch'],

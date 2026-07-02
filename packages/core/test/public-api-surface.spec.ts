@@ -31,7 +31,6 @@ const FUNCTIONS = [
     'otlpTrace',
     'otlpHttpExporter',
     'toOtlpJson',
-    'toValidator',
     'memoryStore',
     'isStitch',
     'isSeam',

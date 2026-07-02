@@ -42,7 +42,7 @@ The cost is the part the types can't show you. They describe what the spec _said
 A [stitch](/docs/concepts/the-stitch) inverts where the types come from. Instead of generating them from a document, you hand the endpoint a validator and pair it with a generic. The validator runs against real bytes on every call, so the type and the runtime check come from one source:
 
 ```ts twoslash tab="StitchAPI" tabGroup="approach"
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const User = z.object({ id: z.number(), name: z.string() });
@@ -50,7 +50,7 @@ const User = z.object({ id: z.number(), name: z.string() });
 const getUser = stitch<{ id: number; name: string }>({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    output: toValidator(User),
+    output: User,
 });
 
 const user = await getUser({ params: { id: 1 } }); // typed · validated
@@ -74,12 +74,12 @@ const getUser = async (id: number) => {
 const user = await getUser(1);
 ```
 
-`output` takes a `Validator`, and `toValidator()` adapts a Zod schema — or any [Standard Schema](/docs/guides/validation/standard-schema) validator like Valibot or ArkType, or a plain predicate — into one. The `stitch<{ id: number; name: string }>` generic types the resolved value, so `user` is `{ id: number; name: string }` in the editor exactly as a generated type would be. There is no `api-types.ts` to generate, no client to commit, and nothing to regenerate when you add an endpoint — you write the next stitch.
+`output` takes the schema directly — a Zod schema, or any [Standard Schema](/docs/guides/validation/standard-schema) validator like Valibot or ArkType, or a plain predicate. The `stitch<{ id: number; name: string }>` generic types the resolved value, so `user` is `{ id: number; name: string }` in the editor exactly as a generated type would be. There is no `api-types.ts` to generate, no client to commit, and nothing to regenerate when you add an endpoint — you write the next stitch.
 
 Input is typed and checked the same way, before the request leaves the process:
 
 ```ts twoslash
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 // ---cut---
@@ -87,8 +87,8 @@ const createUser = stitch<{ id: number; name: string }>({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/users',
-    input: { body: toValidator(z.object({ name: z.string() })) },
-    output: toValidator(z.object({ id: z.number(), name: z.string() })),
+    input: { body: z.object({ name: z.string() }) },
+    output: z.object({ id: z.number(), name: z.string() }),
 });
 ```
 
@@ -133,4 +133,4 @@ A stitch earns its place on the opposite shape of problem: spec-less, partial-sp
 stitchapi
 ```
 
-Declare one endpoint, give its `output` a `toValidator()` schema, pair it with the `stitch<T>` generic, and you have a typed, runtime-validated call with no generated file in your tree. The mechanics live in [Validation](/docs/guides/validation/validation), the validator adapter in [Standard Schema](/docs/guides/validation/standard-schema), and the primitive itself in [The stitch](/docs/concepts/the-stitch).
+Declare one endpoint, give its `output` a Zod (or Standard Schema) schema, pair it with the `stitch<T>` generic, and you have a typed, runtime-validated call with no generated file in your tree. The mechanics live in [Validation](/docs/guides/validation/validation), the validator adapter in [Standard Schema](/docs/guides/validation/standard-schema), and the primitive itself in [The stitch](/docs/concepts/the-stitch).

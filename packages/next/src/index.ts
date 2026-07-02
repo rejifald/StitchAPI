@@ -15,7 +15,6 @@
 // `next` import — so the same helpers work in Next route handlers, Remix, SvelteKit
 // endpoints, Bun, Deno, and Workers. `stitchapi` is the only peer dependency.
 import type { StitchEvent } from 'stitchapi';
-import { compact } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
 // SSE Response
@@ -26,6 +25,9 @@ import { compact } from 'stitchapi';
 export type StitchEventSource<T> =
     | AsyncIterable<StitchEvent<T>>
     | AsyncGenerator<StitchEvent<T>, void>;
+
+/** The terminal `error` event a stitch stream emits — carries `message`, `status`, `attempts`. */
+type StitchErrorEvent = Extract<StitchEvent, { type: 'error' }>;
 
 export interface SseResponseOptions {
     /**
@@ -38,6 +40,17 @@ export interface SseResponseOptions {
     event?: string;
     /** Provide an `id:` line per frame (the SSE last-event id), for resumable streams. */
     id?: (chunk: unknown, index: number) => string;
+    /**
+     * Shape the SSE `data` written for a terminal `error` event (or an uncaught throw
+     * mid-stream, normalised to an error event). **Default: a generic token (`data: error`)**
+     * — the raw `event.message` is deliberately *not* echoed, because it can disclose internal
+     * network topology (a transport failure reads like
+     * `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`) to
+     * an untrusted client. Opt in with `(e) => e.message` when the upstream messages are known
+     * safe, or return your own payload (e.g. `() => JSON.stringify({ error: 'stream failed' })`).
+     * A multi-line return gets one `data:` line each (SSE spec); the `event: error` name is fixed.
+     */
+    errorData?: (event: StitchErrorEvent) => string;
     /** Extra response headers (merged over the SSE defaults). */
     headers?: Record<string, string>;
     /** Abort the upstream iterator when this fires — pass the route handler's
@@ -64,10 +77,39 @@ function frame(
     return `${out}\n`;
 }
 
+// The generic token written as an `error` frame's `data` by default: the raw upstream message
+// is withheld so an internal hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status
+// (`HTTP 401`) never reaches the client. Override with `options.errorData`.
+const DEFAULT_ERROR_DATA = 'error';
+
+// The terminal `error` frame: the fixed `event: error` name plus a (multi-line-safe) data
+// payload — every line of `data` gets its own `data:` prefix so a multi-line opt-in payload
+// can't break the SSE framing.
+function errorFrame(data: string): string {
+    let out = 'event: error\n';
+    for (const line of data.split('\n')) out += `data: ${line}\n`;
+    return `${out}\n`;
+}
+
+// Normalise a thrown value into the terminal `error` event shape, so an `errorData` opt-in sees
+// a consistent argument whether the failure arrived as a surfaced `error` event or an unexpected
+// throw. `attempts`/`at` are best-effort placeholders — an `errorData` hook keys off `name`/`message`.
+function toErrorEvent(reason: unknown): StitchErrorEvent {
+    const e = reason instanceof Error ? reason : new Error(String(reason));
+    return {
+        type: 'error',
+        name: e.name,
+        message: e.message,
+        attempts: 0,
+        at: 0,
+    };
+}
+
 /**
  * Stream a stitch's events as a `text/event-stream` `Response`. Each `delta` becomes
- * one frame; an `error` event ends the stream with a named `event: error` frame; the
- * terminal `result`/`done` closes it.
+ * one frame; an `error` event ends the stream with a named `event: error` frame (a generic
+ * `data: error` by default — the raw message is withheld to avoid disclosing internal topology;
+ * opt in via `errorData`); the terminal `result`/`done` closes it.
  *
  * ```ts
  * // app/api/chat/route.ts
@@ -100,15 +142,17 @@ export function sseResponse<T>(
                             ),
                         );
                     } else if (event.type === 'error') {
+                        // Surface the failure as a named `error` frame, then stop — but by default
+                        // write a generic token, never the raw `event.message`, so an internal
+                        // hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status (`HTTP 401`)
+                        // is not disclosed. Opt in to the real message via `options.errorData`.
                         controller.enqueue(
                             encoder.encode(
-                                `event: error\ndata: ${JSON.stringify(
-                                    compact({
-                                        name: event.name,
-                                        message: event.message,
-                                        status: event.status,
-                                    }),
-                                )}\n\n`,
+                                errorFrame(
+                                    options.errorData
+                                        ? options.errorData(event)
+                                        : DEFAULT_ERROR_DATA,
+                                ),
                             ),
                         );
                         break;
@@ -117,14 +161,16 @@ export function sseResponse<T>(
                     // ends when the iterator does.
                 }
             } catch (reason) {
+                // A throw (not a surfaced `error` event): still withhold the raw message by
+                // default — normalise it to an error event so an `errorData` opt-in sees a
+                // consistent shape.
                 controller.enqueue(
                     encoder.encode(
-                        `event: error\ndata: ${JSON.stringify({
-                            message:
-                                reason instanceof Error
-                                    ? reason.message
-                                    : String(reason),
-                        })}\n\n`,
+                        errorFrame(
+                            options.errorData
+                                ? options.errorData(toErrorEvent(reason))
+                                : DEFAULT_ERROR_DATA,
+                        ),
                     ),
                 );
             } finally {

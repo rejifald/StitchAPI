@@ -42,7 +42,7 @@ Three sharp edges, all real. The `catch` parameter is `unknown` (TypeScript has 
 Declare the call as a stitch with an `output` schema, then call it with `.safe()`. The result is a `SafeResult<T>` you branch on — no `try`, no `catch`, no re-narrowing:
 
 ```ts twoslash
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const User = z.object({ id: z.string(), name: z.string() });
@@ -50,7 +50,7 @@ const User = z.object({ id: z.string(), name: z.string() });
 const getUser = stitch<{ id: string; name: string }>({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    output: toValidator(User),
+    output: User,
 });
 
 async function loadUser(id: string) {
@@ -89,7 +89,7 @@ Branch on `ok` (or check `error === null`) and the union collapses to one arm. T
 `.safe()` is one of four ways to consume the same single run. The stitch executes once; `then`, `catch`, `finally`, and `safe` all share that run rather than firing it again:
 
 ```ts twoslash
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const User = z.object({ id: z.string(), name: z.string() });
@@ -97,7 +97,7 @@ const User = z.object({ id: z.string(), name: z.string() });
 const getUser = stitch<{ id: string; name: string }>({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    output: toValidator(User),
+    output: User,
 });
 
 const id = '1';

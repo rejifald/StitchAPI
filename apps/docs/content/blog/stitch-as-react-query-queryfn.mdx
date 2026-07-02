@@ -41,12 +41,12 @@ The sharp edges are all in `queryFn`. The `as User` is a lie the compiler can't 
 Declare the call once as a stitch, then hand the stitch to `queryFn`:
 
 ```tsx twoslash
-import { bearer, env, stitch, toValidator } from 'stitchapi';
+import { bearer, env, stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const getUser = stitch<{ id: string; name: string }>({
     url: 'https://api.example.com/users/{id}',
-    output: toValidator(z.object({ id: z.string(), name: z.string() })),
+    output: z.object({ id: z.string(), name: z.string() }),
     auth: bearer(env('API_TOKEN')),
     retry: { attempts: 3, on: [429, 502, 503, 504], backoff: 'expo-jitter' },
 });

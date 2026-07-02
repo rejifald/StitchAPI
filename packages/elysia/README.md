@@ -88,8 +88,11 @@ forwarded.
 ## Error handling
 
 The plugin registers an `.onError` that maps a `StitchError` to an HTTP response
-(`502` by default, so an upstream's status is never leaked) and lets every other
-error fall through to Elysia's default handling:
+and lets every other error fall through to Elysia's default handling. By default
+the status is `502` **and** the body is a generic, status-tied message
+(`{ error: 'Bad Gateway' }`) — the raw `err.message` is withheld, because it can
+leak an internal hostname (`getaddrinfo ENOTFOUND payments.internal.corp`) or the
+upstream's status (`HTTP 401`) to an untrusted client:
 
 ```ts
 new Elysia().use(
@@ -97,6 +100,8 @@ new Elysia().use(
         seam: api,
         // propagate the upstream status instead of the safe 502 default:
         errorHandler: { status: (e) => e.status ?? 502 },
+        // opt in to the raw message (only when upstream messages are safe to expose):
+        // errorHandler: { body: (e) => ({ error: e.message }) },
     }),
 );
 ```

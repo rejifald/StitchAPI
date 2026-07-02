@@ -47,7 +47,7 @@ export async function GET(
 
 ## Streaming with SSE
 
-`sseResponse` streams a stitch's events as `text/event-stream`. Each `delta` becomes one frame; an `error` event ends with a named `event: error` frame:
+`sseResponse` streams a stitch's events as `text/event-stream`. Each `delta` becomes one frame; an `error` event ends with a named `event: error` frame (a generic `data: error` by default — see below):
 
 ```ts
 // app/api/chat/route.ts
@@ -65,6 +65,14 @@ export async function POST(request: Request) {
 ```
 
 Pass `request.signal` so a client disconnect tears the stitch down rather than leaving it running.
+
+By default the `error` frame carries a generic `data: error` token, **not** the raw error message — echoing it can disclose internal network topology (a transport failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream messages are known safe to expose:
+
+```ts
+return sseResponse(chat({ body: { prompt } }).stream(), {
+    errorData: (e) => e.message, // opt in to the raw upstream message
+});
+```
 
 ## License
 

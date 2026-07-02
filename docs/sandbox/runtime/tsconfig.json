@@ -17,6 +17,7 @@
         "browser-runner.ts",
         "worker-entry.ts",
         "worker-protocol.ts",
+        "harden-worker-global.ts",
         "vendor.d.ts",
         "../component/runner.ts"
     ]

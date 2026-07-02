@@ -36,7 +36,7 @@
 <!-- /yakir:readme-badges -->
 
 <p align="center">
-  <strong>Zero runtime dependencies · ~24&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~19&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+  <strong>Zero runtime dependencies · ~24&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~20&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
 > [!NOTE]
@@ -149,7 +149,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 -   **Pluggable state store** — throttle counters and sessions behind a 3-method store; swap in Redis/Postgres to go distributed.
 -   **Zero-infra observability** — tracing is **off by default**; opt in per stitch or via `STITCH_TRACE_*` env vars. No collector, no dashboard.
 -   **Four front doors, one definition** — in-process function, CLI (`stitch run`), HTTP (`stitch serve`), and MCP (`stitch mcp`).
--   **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~24 kB min+gzip** for the whole entry, **~19 kB** for a typical `import { stitch }`.
+-   **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~24 kB min+gzip** for the whole entry, **~20 kB** for a typical `import { stitch }`.
 
 ## Install
 
@@ -433,6 +433,8 @@ This repository is a [pnpm](https://pnpm.io) workspace. The published library is
 <tr><td><a href="packages/fingerprint-typebox"><code>@stitchapi/fingerprint-typebox</code></a></td><td>Cache-fingerprint strategy for TypeBox schemas</td></tr>
 <tr><td><a href="packages/fingerprint-valibot"><code>@stitchapi/fingerprint-valibot</code></a></td><td>Cache-fingerprint strategy for Valibot schemas</td></tr>
 <tr><td><a href="packages/fingerprint-zod"><code>@stitchapi/fingerprint-zod</code></a></td><td>Cache-fingerprint strategy for Zod schemas</td></tr>
+<tr><th colspan="2">Other</th></tr>
+<tr><td><a href="packages/json-schema"><code>@stitchapi/json-schema</code></a></td><td>Turn a runtime-discovered JSON Schema into a Standard Schema validator StitchAPI accepts</td></tr>
 </tbody>
 </table>
 

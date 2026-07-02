@@ -12,15 +12,15 @@ call.
 ## Example
 
 ```ts twoslash
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const createUser = stitch<{ id: number; name: string }>({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/users',
-    input: { body: toValidator(z.object({ name: z.string() })) },
-    output: toValidator(z.object({ id: z.number(), name: z.string() })),
+    input: { body: z.object({ name: z.string() }) },
+    output: z.object({ id: z.number(), name: z.string() }),
 });
 ```
 
@@ -48,16 +48,10 @@ the API would reject.
     [Schema drift detection](/docs/guides/validation/drift).
 </Callout>
 
-The config fields are typed as `Validator`, and a raw Zod, Valibot, or ArkType
-schema is not structurally a `Validator`. Adapt it with `toValidator()`, which
-coerces a Zod schema, any Standard Schema, or a predicate into a `Validator` —
-see [Bring your own validator](/docs/guides/validation/standard-schema) for the
-full story.
-
-<Callout type="warn">
-    Pass `toValidator(z.object({...}))`, not a raw `z.object({...})` — the raw
-    schema won't satisfy the `Validator` type on `input`/`output`.
-</Callout>
+`input` and `output` accept the schema directly — a raw `z.object(...)`, any
+[Standard Schema](/docs/guides/validation/standard-schema) validator (Valibot,
+ArkType), or a plain predicate. Each slot's type accepts the schema as written,
+and the engine adapts it internally, so there's no cast at the call site.
 
 See [Reference → Config types](/docs/reference/config-types) for every field on
 `input` and `output`.

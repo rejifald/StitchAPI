@@ -1,0 +1,114 @@
+---
+title: Validate Calls Against Schemas You Obtain at Runtime
+description: Sometimes the schema you validate against shows up at runtime — you fetch it, a tenant registers it, a config push delivers it — as JSON Schema you didn't have when you compiled. You can't generate types for it; validate the incoming data at the boundary instead, and return structured errors the sender can act on.
+author: Oleksandr Zhuravlov
+date: '2026-07-02'
+tags: [validation, typescript, json-schema, standard-schema, drift]
+---
+
+Sometimes the schema you validate against shows up at runtime — you fetch it, a tenant registers it, a config push delivers it — as JSON Schema you didn't have when you compiled.
+
+## The type you're chasing can't exist
+
+Code generation assumes the schema is known when you build. A schema you fetch, or one a tenant defines after you ship, isn't — so a static type for it is off the table. The autocomplete you're mourning was never on offer either: an editor can't complete against a schema that isn't present while you write the code. The type assertions pile up because you keep asserting a shape you don't actually know.
+
+So stop typing across the boundary and validate at it. The data arrives as JSON; you hold the schema; you check one against the other at call time. Past that check the data is `unknown` until you narrow it where you use it — and `unknown` you narrow on purpose beats `any` you cast on reflex.
+
+**Validate at the boundary, not across it.**
+
+## Turn the discovered schema into a validator
+
+The schema reaches you as JSON Schema, whatever delivered it. `jsonSchemaValidator` turns it into a [Standard Schema](https://standardschema.dev), and you validate through its `~standard` interface — `validate` checks a value and returns a result, never throwing.
+
+```ts twoslash
+// @noErrors
+import { jsonSchemaValidator } from '@stitchapi/json-schema';
+
+// `schema` is JSON Schema you obtained at runtime — no static shape until now.
+const validator = jsonSchemaValidator(schema);
+
+const result = await validator['~standard'].validate(payload);
+if (!result.issues) {
+    handle(result.value); // `unknown` — narrow it where you read it
+}
+```
+
+One interface spans every source. A contract you wrote by hand in Zod and one you received as JSON Schema expose the same `~standard.validate`. **Standard Schema, not a Zod lock-in** — Valibot, ArkType, and a raw JSON Schema all arrive through the same door.
+
+## The compiler settings this pattern needs
+
+A runtime-obtained schema hands you `unknown`. That only helps if the compiler forces you to narrow it instead of letting it decay to `any`. Turn these on in your `tsconfig.json`:
+
+```json
+{
+    "compilerOptions": {
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "exactOptionalPropertyTypes": true
+    }
+}
+```
+
+-   `strict` makes `unknown` unusable until you narrow it — the whole reason the boundary is worth drawing. It also hands you `unknown` in `catch`, so a throwing validator can't smuggle `any` back in.
+-   `noUncheckedIndexedAccess` types `value.items[0]` as possibly `undefined`. You're reading data you never compiled against; the index you assume is there might not be.
+-   `exactOptionalPropertyTypes` keeps a missing field and a field set to `undefined` from collapsing into one type — the distinction the validator just measured.
+
+Then keep `any` out with lint, so nobody casts around the boundary you built: `@typescript-eslint/no-explicit-any` and the `no-unsafe-*` family.
+
+## Return the errors to the sender
+
+The value isn't the boolean; it's the shape of the failure. `~standard.validate` returns issues as `{ message, path }` — a list you hand back to whoever sent the data, not a `ZodError` you catch, stringify, and hope reads well.
+
+```ts twoslash
+// @noErrors
+const result = await validator['~standard'].validate(payload);
+if (result.issues) {
+    // result.issues → [{ message: 'must be <= 50', path: ['limit'] }]
+    return respondWithErrors(
+        result.issues
+            .map((issue) => `- ${(issue.path ?? []).join('.') || '(root)'}: ${issue.message}`)
+            .join('\n'),
+    );
+}
+```
+
+A per-path rejection is a correction the sender can apply: it reads that `limit` must not exceed 50, drops the offending field, and retries. A thrown exception is a dead end. **Structured feedback the caller can act on, not a stack trace it can't.**
+
+## The call fronts a service you didn't write
+
+The data you validate often came back from a request you also make. When you hold the response schema too, the same schema takes a second job. Run the call as a stitch, anchor its response to that schema, and `inspect()` reports where the live service returned something its own contract never promised — a field that appeared, a number that came back a string, a null where the schema said otherwise.
+
+```ts twoslash
+// @noErrors
+import { jsonSchemaValidator } from '@stitchapi/json-schema';
+import { stitch } from 'stitchapi';
+
+const call = stitch({
+    url: endpoint,
+    method: 'POST',
+    output: jsonSchemaValidator(responseSchema),
+});
+
+const inspection = await call.inspect({ body: payload });
+inspection.value; // validated response, or null on a hard failure
+for (const finding of inspection.findings) {
+    // e.g. { path: 'items[].sku', change: 'undeclared' }
+    log.warn(`response drift at ${finding.path}: ${finding.change}`);
+}
+```
+
+The schema told you what the service claims to accept and return. Drift tells you when the running service stops honouring that claim — the failure mode a schema you discovered, and never compiled against, has and a hand-written one rarely does.
+
+## Validate where you know, type where you don't
+
+A runtime-obtained schema has no compile-time shape, so the compiler can't guard it and pretending it can costs you casts. A validator can guard it: it turns the incoming JSON into either data you narrow or errors you return. One Standard Schema interface covers the schemas you write and the schemas you receive; one `validate()` gives you the same result shape for both; the same schema that checks the incoming data also catches the service drifting underneath it.
+
+## Try it
+
+```package-install
+@stitchapi/json-schema stitchapi
+```
+
+-   [Type-safe API clients without codegen](/blog/type-safe-api-client-without-codegen) — the same "no build-time shape" bind, solved at the call.
+-   [Schema drift is a production bug](/blog/schema-drift-is-a-production-bug) — what `inspect()` surfaces and how to act on findings.
+-   [Typed errors without try/catch](/blog/typed-errors-without-try-catch) — return failures as values instead of throwing.
