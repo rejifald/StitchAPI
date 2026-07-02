@@ -10,12 +10,14 @@
 // Bundle-frugal (Decision 10): this module — and the frame parser — is reached only through the
 // `sse` subpath, never from the root entry; `import { stitch }` pulls in no SSE code.
 import type { InputOf, OutputOf } from './infer';
+import { JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES } from './json-stream';
 import { lineReader } from './line-reader';
 import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
 import type { Surface } from './surface';
 import {
     type AdapterResponse,
+    type ResolvedStitchConfig,
     type Seam,
     type SeamOptions,
     type Stitch,
@@ -98,12 +100,21 @@ function dispatchFrame(frame: SseFrame): SseEvent | undefined {
 // `event:` / `data:` / `id:` / `retry:` fields accumulate (multiple `data:` lines join with `\n`);
 // `:`-prefixed lines are comments; exactly one leading space after the field colon is stripped. A
 // trailing event with no terminating blank line is discarded (spec), as is a block with no `data:`.
+//
+// `maxBufferBytes` bounds the accumulated `data:` payload of a SINGLE in-progress frame (a run of
+// `data:` lines with no dispatching blank line): without this an upstream that streams endless
+// `data:` fields — or one giant unterminated line — would grow client memory without limit (an OOM
+// DoS). `lineReader` caps a single un-terminated LINE with the same knob; this caps the frame that
+// spans many terminated lines. Same default (~8 MB) and thrown-error → `error` event contract as the
+// `'json'` decoder (`json-stream.ts` / `runStreaming`). Overridable per-stream via `stream.maxBufferBytes`.
 async function* parseEventStream(
     body: ReadableStream<Uint8Array>,
+    maxBufferBytes: number = JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES,
 ): AsyncGenerator<SseEvent, void> {
     let frame = freshFrame();
+    let frameBytes = 0; // accumulated length of the current frame's data lines (+1 per join `\n`)
 
-    for await (const raw of lineReader(body)) {
+    for await (const raw of lineReader(body, maxBufferBytes)) {
         // lineReader splits on `\n`; strip a trailing `\r` so CRLF streams parse (the SSE plumbing
         // shared with `stream`'s `'lines'` stays a literal `\n` split — Q3).
         const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
@@ -112,8 +123,24 @@ async function* parseEventStream(
             const ev = dispatchFrame(frame);
             if (ev !== undefined) yield ev;
             frame = freshFrame();
+            frameBytes = 0;
         } else if (!line.startsWith(':')) {
+            const before = frame.dataLines.length;
             applyFieldLine(frame, line); // non-comment field line
+            // Track only `data:` growth (the only field that accumulates): the pushed value plus the
+            // `\n` that `dispatchFrame` joins it with. A frame that never sees a blank line can't grow
+            // past the cap.
+            if (frame.dataLines.length > before) {
+                const added = frame.dataLines[frame.dataLines.length - 1] ?? '';
+                frameBytes += added.length + (before > 0 ? 1 : 0);
+                if (frameBytes > maxBufferBytes) {
+                    throw new Error(
+                        `sse parser: un-dispatched event data exceeded maxBufferBytes (${String(
+                            maxBufferBytes,
+                        )}); a frame with no terminating blank line was streamed`,
+                    );
+                }
+            }
         }
     }
 }
@@ -126,10 +153,13 @@ async function* parseEventStream(
  */
 export const sseSurface: Surface<StitchInput, SseEvent[]> = {
     id: 'sse',
-    async *stream(res: AdapterResponse) {
+    async *stream(res: AdapterResponse, cfg: ResolvedStitchConfig) {
         const body = res.body;
         if (body instanceof ReadableStream)
-            yield* parseEventStream(body as ReadableStream<Uint8Array>);
+            yield* parseEventStream(
+                body as ReadableStream<Uint8Array>,
+                cfg.stream?.maxBufferBytes,
+            );
     },
     contractValue: (chunk) => (chunk as SseEvent).data,
     // Resumable-SSE hooks (issue #71). The engine reads the last `id:` and server `retry:` off each
