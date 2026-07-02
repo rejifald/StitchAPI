@@ -1,0 +1,33 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "exactOptionalPropertyTypes": true,
+        "noImplicitOverride": true,
+        "noPropertyAccessFromIndexSignature": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "verbatimModuleSyntax": true,
+        "isolatedModules": true,
+
+        "types": ["node", "vitest/globals"],
+
+        // Resolve the workspace package to its SOURCE so typecheck + tests don't depend on
+        // `stitchapi` being built first (the pre-push gate typechecks before it builds). The
+        // published `exports` map still points at `lib/`.
+        "baseUrl": ".",
+        "paths": {
+            "stitchapi": ["../core/src/index.ts"]
+        }
+    },
+    "include": ["src/**/*.ts", "test/**/*.ts"]
+}
