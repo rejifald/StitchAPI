@@ -48,7 +48,8 @@ mirroring StitchAPI's borrow-don't-own rule.
 
 Stream a streaming/SSE stitch's `.stream()` to the client as Server-Sent Events,
 via Hono's `streamSSE`. Each `delta` becomes a `data:` message; a terminal
-`error` event (or a throw) becomes a final `event: error` message; control events
+`error` event (or a throw) becomes a final `event: error` message (a generic
+`data: error` by default — see below); control events
 (`start`/`progress`/`result`/`done`/…) are consumed but not forwarded. On client
 disconnect the upstream stitch stream is aborted.
 
@@ -69,6 +70,20 @@ app.get('/chat', (c) => {
 });
 ```
 
+By default the `error` message carries a generic `data: error` token, **not** the
+raw error message — echoing it can disclose internal network topology (a transport
+failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's
+status (`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream
+messages are known safe; `onError` still receives the real failure server-side for
+logging:
+
+```ts
+return streamStitchSse(c, completion.stream({ body: { prompt: c.req.query('q') } }), {
+    errorData: (e) => e.message, // opt in to the raw upstream message
+    onError: (err) => c.get('log').error(err), // real failure, server-side only
+});
+```
+
 ## Errors: `stitchError(err)` / `stitchOnError(options?)`
 
 A failed stitch rejects with a `StitchError` carrying the upstream `status`.
@@ -77,10 +92,16 @@ try/catch:
 
 ```ts
 app.onError(stitchOnError());
-// default 502 — an upstream's 401/404/etc. is never leaked to your client.
+// default 502, body `{ error: 'Bad Gateway' }` — neither the upstream's
+// 401/404/etc. status nor the raw error message is leaked to your client (a
+// transport failure would otherwise read like `getaddrinfo ENOTFOUND
+// payments.internal.corp`, disclosing internal topology).
 
 // propagate the upstream status instead:
 app.onError(stitchOnError({ status: (e) => e.status ?? 502 }));
+
+// or shape your own error envelope (this opts in to the raw message):
+app.onError(stitchOnError({ body: (e) => ({ error: e.message }) }));
 ```
 
 Or map a single error by hand — `stitchError` returns a Hono `HTTPException`, or

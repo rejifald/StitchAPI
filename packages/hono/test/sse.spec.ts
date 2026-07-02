@@ -124,7 +124,7 @@ describe('streamStitchSse — control events', () => {
 });
 
 describe('streamStitchSse — error paths', () => {
-    test('an error event writes an event: error frame, invokes onError, and stops forwarding', async () => {
+    test('by default an error event writes a generic event: error frame (raw message withheld), while onError still gets the real failure', async () => {
         let captured: unknown;
         const app = new Hono();
         app.get('/x', (c) =>
@@ -135,7 +135,10 @@ describe('streamStitchSse — error paths', () => {
                     {
                         type: 'error',
                         name: 'StitchError',
-                        message: 'upstream failed',
+                        // Discloses an internal hostname — must NOT reach the client (topology
+                        // disclosure; same class PR #408 fixed on the error-handler surface).
+                        message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                        status: 502,
                         attempts: 1,
                         at: 0,
                     },
@@ -153,17 +156,47 @@ describe('streamStitchSse — error paths', () => {
         const body = await (await app.request('/x')).text();
         expect(body).toContain('data: a');
         expect(body).toContain('event: error');
-        expect(body).toContain('upstream failed');
+        expect(body).toContain('data: error');
+        // The raw message is withheld from the client by default …
+        expect(body).not.toContain('payments.internal.corp');
+        expect(body).not.toContain('ENOTFOUND');
         expect(body).not.toContain('never');
+        // … but onError still observes the real failure server-side (for logging).
         expect(captured).toBeInstanceOf(Error);
-        expect((captured as Error).message).toBe('upstream failed');
+        expect((captured as Error).message).toBe(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
+        );
     });
 
-    test('a throw mid-stream is caught: onError fires and a final event: error frame is written', async () => {
+    test('errorData opts in to the raw message on the error frame', async () => {
+        const app = new Hono();
+        app.get('/x', (c) =>
+            streamStitchSse(
+                c,
+                gen([
+                    { type: 'delta', chunk: 'a', at: 0 },
+                    {
+                        type: 'error',
+                        name: 'StitchError',
+                        message: 'upstream failed',
+                        attempts: 1,
+                        at: 0,
+                    },
+                ]),
+                { errorData: (e) => e.message },
+            ),
+        );
+
+        const body = await (await app.request('/x')).text();
+        expect(body).toContain('event: error');
+        expect(body).toContain('data: upstream failed');
+    });
+
+    test('a throw mid-stream is caught: onError fires and a final generic event: error frame is written (raw message withheld)', async () => {
         let captured: unknown;
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield { type: 'delta', chunk: 'a', at: 0 };
-            throw new Error('stream blew up');
+            throw new Error('getaddrinfo ENOTFOUND payments.internal.corp');
         }
 
         const app = new Hono();
@@ -178,7 +211,28 @@ describe('streamStitchSse — error paths', () => {
         const body = await (await app.request('/x')).text();
         expect(body).toContain('data: a');
         expect(body).toContain('event: error');
-        expect(body).toContain('stream blew up');
-        expect((captured as Error).message).toBe('stream blew up');
+        expect(body).toContain('data: error');
+        expect(body).not.toContain('payments.internal.corp');
+        expect(body).not.toContain('ENOTFOUND');
+        // onError still sees the real thrown error server-side.
+        expect((captured as Error).message).toBe(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
+        );
+    });
+
+    test('errorData opts in on the throw path too (thrown error normalised to an error event)', async () => {
+        async function* boom(): AsyncGenerator<StitchEvent, void> {
+            yield { type: 'delta', chunk: 'a', at: 0 };
+            throw new Error('stream blew up');
+        }
+
+        const app = new Hono();
+        app.get('/x', (c) =>
+            streamStitchSse(c, boom(), { errorData: (e) => e.message }),
+        );
+
+        const body = await (await app.request('/x')).text();
+        expect(body).toContain('event: error');
+        expect(body).toContain('data: stream blew up');
     });
 });

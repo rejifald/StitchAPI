@@ -105,6 +105,85 @@ export interface InjectStitchResult<T> {
 // Shared driver
 // ---------------------------------------------------------------------------
 
+// --- key derivation (shared logic; duplicated in @stitchapi/react) ----------
+// These helpers are intentionally copied verbatim from `@stitchapi/react`'s key
+// derivation: they are separate published packages, so a cross-package import
+// would add a runtime dependency. Keep the copies in lock-step.
+
+/** The `__config` slice a key derives from. Mirrors core's `nameOf`
+ * (`name ?? path ?? 'stitch'`) plus a `url` fallback for URL-configured stitches. */
+type KeyConfig = { name?: string; path?: string; url?: string };
+
+/** A stable, human-meaningful name for the stitch. Mirrors core's `nameOf`
+ * (`packages/core/src/engine.ts`) — `name ?? path ?? url ?? 'stitch'` — so two
+ * DISTINCT nameless stitches (`/users/{id}` vs `/orders/{id}`) don't collapse to
+ * the literal `'stitch'` and collide on one cache entry. */
+function nameOf(stitch: unknown): string {
+    const cfg = (stitch as { __config?: KeyConfig }).__config;
+    return cfg?.name ?? cfg?.path ?? cfg?.url ?? 'stitch';
+}
+
+// Header names whose VALUES are secrets — mirrors core's private `SECRET_HEADERS`
+// trace denylist (`packages/core/src/trace.ts`), which is not exported. We redact
+// the value (rather than dropping the header) so the key stays stable per token
+// AND callers who legitimately vary a response by a non-secret header (e.g.
+// `accept-language`) keep separate cache entries. Compared case-insensitively; the
+// `*-token` / `*-api-key` suffix rules catch vendor spellings without enumerating.
+const SECRET_HEADERS = new Set([
+    'authorization',
+    'proxy-authorization',
+    'cookie',
+    'set-cookie',
+    'x-api-key',
+    'x-auth-token',
+]);
+const REDACTED = '[redacted]';
+
+function isSecretHeader(name: string): boolean {
+    const k = name.toLowerCase();
+    return (
+        SECRET_HEADERS.has(k) || k.endsWith('-token') || k.endsWith('-api-key')
+    );
+}
+
+/**
+ * Build the value that goes into a cache/query key from a stitch's per-call input.
+ * Never puts the raw input in the key:
+ *
+ * - drops `signal` / `onProgress` — runtime-only, never-serialised (CONTRACT.md);
+ *   `onProgress` in particular churns identity every render, which would refetch
+ *   forever if it entered the key;
+ * - redacts the VALUES of secret-bearing headers (`authorization`, `cookie`, …)
+ *   so a bearer token can't leak into a persisted / devtools-visible key, while
+ *   keeping non-secret headers so they still vary the cache;
+ * - keeps every other field (`params` / `query` / `body` / `variables` / …) as-is.
+ *
+ * `null` / `undefined` inputs stay `null`; a primitive input is returned unchanged.
+ */
+function keyInputFor(input: unknown): unknown {
+    if (input === null || input === undefined) return null;
+    if (typeof input !== 'object') return input;
+
+    const {
+        signal: _signal,
+        onProgress: _onProgress,
+        ...rest
+    } = input as {
+        signal?: unknown;
+        onProgress?: unknown;
+        headers?: Record<string, unknown>;
+    } & Record<string, unknown>;
+
+    if (rest.headers && typeof rest.headers === 'object') {
+        const headers: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(rest.headers)) {
+            headers[k] = isSecretHeader(k) ? REDACTED : v;
+        }
+        rest.headers = headers;
+    }
+    return rest;
+}
+
 // The store's seed value, surfaced before the first real snapshot (an instant).
 // It matches core's idle snapshot exactly so the signals are well-formed from the
 // start.
@@ -308,8 +387,10 @@ export interface StitchQueryOptions<T> {
  * readonly user = injectQuery(() => stitchQueryOptions(getUser, { params: { id: this.id() } }));
  * ```
  *
- * The `queryFn` awaits the stitch (the validated output); the `queryKey` is the
- * stitch's `name` (when present) plus the input, so TanStack caches per call.
+ * The `queryFn` awaits the stitch (the validated output); the `queryKey` is a
+ * stable name for the stitch plus a sanitised copy of the input (secret header
+ * values redacted, runtime-only `signal`/`onProgress` dropped), so TanStack caches
+ * per call without leaking a bearer token into the key or refetching every render.
  */
 export function stitchQueryOptions<S extends StitchLike<unknown, never>>(
     stitch: S,
@@ -323,9 +404,8 @@ export function stitchQueryOptions<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
 ): StitchQueryOptions<T> {
-    const name = (stitch as { __config?: { name?: string } }).__config?.name;
     return {
-        queryKey: [name ?? 'stitch', input ?? null],
+        queryKey: [nameOf(stitch), keyInputFor(input)],
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }

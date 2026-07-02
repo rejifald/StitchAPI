@@ -62,21 +62,42 @@ describe('sseResponse', () => {
         expect(await res.text()).toBe('data: hi\n\n');
     });
 
-    test('an error event ends the stream with a named error frame', async () => {
+    test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
         const res = sseResponse(
             events(delta('a'), {
                 type: 'error',
                 name: 'StitchError',
-                message: 'boom',
-                status: 500,
+                // A transport failure whose message discloses an internal hostname — it must NOT
+                // reach the client (topology disclosure; same class PR #407/#408 fixed on the
+                // error-handler surface).
+                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                status: 502,
                 attempts: 1,
                 at: 0,
             }),
         );
         const body = await res.text();
-        expect(body).toContain('data: a\n\n');
-        expect(body).toContain('event: error');
-        expect(body).toContain('"message":"boom"');
+        // The stream still ends with a named `error` frame, but the data is a generic token.
+        expect(body).toBe('data: a\n\nevent: error\ndata: error\n\n');
+        expect(body).not.toContain('payments.internal.corp');
+        expect(body).not.toContain('ENOTFOUND');
+    });
+
+    test('errorData opts in to the raw message on the error frame', async () => {
+        const res = sseResponse(
+            events(delta('a'), {
+                type: 'error',
+                name: 'StitchError',
+                message: 'upstream blew up',
+                attempts: 1,
+                at: 0,
+            }),
+            { errorData: (e) => e.message },
+        );
+        const body = await res.text();
+        expect(body).toBe(
+            'data: a\n\nevent: error\ndata: upstream blew up\n\n',
+        );
     });
 
     test('the event option labels each frame', async () => {
@@ -119,16 +140,27 @@ describe('sseResponse', () => {
         expect(await res.text()).toBe('');
     });
 
-    test('a throw mid-stream ends with an error frame carrying the message', async () => {
+    test('by default a throw mid-stream ends with a generic error frame (raw message withheld)', async () => {
+        async function* boom(): AsyncGenerator<StitchEvent, void> {
+            yield delta('a');
+            // A transport failure disclosing an internal hostname must not reach the client.
+            throw new Error('getaddrinfo ENOTFOUND payments.internal.corp');
+        }
+        const res = sseResponse(boom());
+        const body = await res.text();
+        expect(body).toBe('data: a\n\nevent: error\ndata: error\n\n');
+        expect(body).not.toContain('payments.internal.corp');
+        expect(body).not.toContain('ENOTFOUND');
+    });
+
+    test('errorData opts in to the raw message on the throw path too', async () => {
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield delta('a');
             throw new Error('stream blew up');
         }
-        const res = sseResponse(boom());
+        const res = sseResponse(boom(), { errorData: (e) => e.message });
         const body = await res.text();
-        expect(body).toContain('data: a\n\n');
-        expect(body).toContain('event: error');
-        expect(body).toContain('"message":"stream blew up"');
+        expect(body).toBe('data: a\n\nevent: error\ndata: stream blew up\n\n');
     });
 });
 

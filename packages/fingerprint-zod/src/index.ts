@@ -77,7 +77,7 @@ function v3(def: any): string {
                 def.catchall && def.catchall._def?.typeName !== 'ZodNever'
                     ? describe(def.catchall)
                     : '';
-            return `obj{${fields.join(',')};unk=${String(def.unknownKeys ?? '')};cat=${catchall}}`;
+            return `obj{${fields.join(',')};unk=${String(def.unknownKeys ?? '')};cat=${catchall}}[${v3Checks(def.checks)}]`;
         }
         case 'ZodString':
             return `str[${v3Checks(def.checks)}${def.coerce ? ';coerce' : ''}]`;
@@ -90,30 +90,30 @@ function v3(def: any): string {
         case 'ZodDate':
             return `date[${v3Checks(def.checks)}]`;
         case 'ZodOptional':
-            return `opt(${describe(def.innerType)})`;
+            return `opt(${describe(def.innerType)})[${v3Checks(def.checks)}]`;
         case 'ZodNullable':
-            return `nul(${describe(def.innerType)})`;
+            return `nul(${describe(def.innerType)})[${v3Checks(def.checks)}]`;
         case 'ZodArray':
             return `arr(${describe(def.type)})[min=${str(def.minLength)},max=${str(def.maxLength)},exact=${str(def.exactLength)}]`;
         case 'ZodTuple':
-            return `tup[${(def.items as unknown[]).map(describe).join(',')}${def.rest ? ';rest=' + describe(def.rest) : ''}]`;
+            return `tup[${(def.items as unknown[]).map(describe).join(',')}${def.rest ? ';rest=' + describe(def.rest) : ''}][${v3Checks(def.checks)}]`;
         case 'ZodRecord':
-            return `rec(${describe(def.keyType)},${describe(def.valueType)})`;
+            return `rec(${describe(def.keyType)},${describe(def.valueType)})[${v3Checks(def.checks)}]`;
         case 'ZodMap':
-            return `map(${describe(def.keyType)},${describe(def.valueType)})`;
+            return `map(${describe(def.keyType)},${describe(def.valueType)})[${v3Checks(def.checks)}]`;
         case 'ZodSet':
-            return `set(${describe(def.valueType)})`;
+            return `set(${describe(def.valueType)})[${v3Checks(def.checks)}]`;
         case 'ZodEnum':
-            return `enum{${[...(def.values as unknown[])].map(String).sort().map(key).join(',')}}`;
+            return `enum{${[...(def.values as unknown[])].map(literal).sort().join(',')}}`;
         case 'ZodLiteral':
             return `lit(${literal(def.value)})`;
         case 'ZodUnion':
         case 'ZodDiscriminatedUnion':
-            return `union{${(def.options as unknown[]).map(describe).sort().join('|')}}`;
+            return `union{${(def.options as unknown[]).map(describe).sort().join('|')}}[${v3Checks(def.checks)}]`;
         case 'ZodIntersection':
-            return `and(${describe(def.left)},${describe(def.right)})`;
+            return `and(${describe(def.left)},${describe(def.right)})[${v3Checks(def.checks)}]`;
         case 'ZodReadonly':
-            return `ro(${describe(def.innerType)})`;
+            return `ro(${describe(def.innerType)})[${v3Checks(def.checks)}]`;
         case 'ZodBranded':
             return `brand(${describe(def.type)})`;
         case 'ZodNull':
@@ -158,6 +158,51 @@ function v4Checks(checks: unknown): string {
         .join(',');
 }
 
+// Zod 4 exposes coercion as `def.coerce` on the primitive node (v3 does the
+// same). It changes what inputs are accepted — `z.coerce.number()` parses
+// `"1"`, `z.number()` rejects it — so it MUST fold into the descriptor, matching
+// the v3 branches.
+const v4Coerce = (def: any): string => (def.coerce ? ';coerce' : '');
+
+// Zod 4 lifts string formats to their own nodes: `z.email()` is a `string` node
+// with `def.format` set (and often `def.pattern`, a RegExp), NOT a check in
+// `def.checks`. Reading only `def.checks` collapses `z.email()`/`z.uuid()`/…
+// and plain `z.string()` to the same descriptor. Fold both in — the pattern via
+// the same RegExp encoding `stableJson` uses, so a chained `z.string().regex(re)`
+// and a format that happens to share a source stay comparable.
+function v4StringFormat(def: any): string {
+    if (def.format == null && def.pattern == null) return '';
+    const fmt = def.format == null ? '' : String(def.format);
+    const pat =
+        def.pattern instanceof RegExp
+            ? `re:${def.pattern.source}/${def.pattern.flags}`
+            : def.pattern == null
+              ? ''
+              : stableJson(def.pattern);
+    return `;fmt=${fmt};pat=${pat}`;
+}
+
+// Canonical members of a Zod 4 enum. `def.entries` is a name→value record, but a
+// numeric TS enum is BIDIRECTIONAL (`{0:'Red','Red':0,…}`); the reverse keys must
+// be dropped or `Object.values` double-counts. What validation actually gates on
+// is the set of accepted VALUES, so encode those — type-preservingly (`literal`,
+// not `String`, so `1` and `'1'` differ), which also keeps a string-member enum
+// identical to the v3 value-list form (cross-version stability).
+function enumMembers(entries: AnyRec): string {
+    const reverse = new Set(
+        Object.values(entries).filter((v) => typeof v === 'number'),
+    );
+    const values: unknown[] = [];
+    for (const [k, v] of Object.entries(entries)) {
+        // Skip the reverse-mapping entry a numeric member adds: a numeric-string
+        // key whose value is another member's name.
+        if (reverse.has(Number(k)) && typeof v === 'string' && v in entries)
+            continue;
+        values.push(v);
+    }
+    return values.map(literal).sort().join(',');
+}
+
 function v4(def: any): string {
     switch (def.type) {
         case 'object': {
@@ -166,48 +211,44 @@ function v4(def: any): string {
                 .sort()
                 .map((k) => `${key(k)}:${describe(shape[k])}`);
             const catchall = def.catchall ? describe(def.catchall) : '';
-            return `obj{${fields.join(',')};cat=${catchall}}`;
+            return `obj{${fields.join(',')};cat=${catchall}}[${v4Checks(def.checks)}]`;
         }
         case 'string':
-            return `str[${v4Checks(def.checks)}]`;
+            return `str[${v4Checks(def.checks)}${v4StringFormat(def)}${v4Coerce(def)}]`;
         case 'number':
-            return `num[${v4Checks(def.checks)}]`;
+            return `num[${v4Checks(def.checks)}${v4Coerce(def)}]`;
         case 'bigint':
-            return `bigint[${v4Checks(def.checks)}]`;
+            return `bigint[${v4Checks(def.checks)}${v4Coerce(def)}]`;
         case 'boolean':
-            return `bool[${v4Checks(def.checks)}]`;
+            return `bool[${v4Checks(def.checks)}${v4Coerce(def)}]`;
         case 'date':
-            return `date[${v4Checks(def.checks)}]`;
+            return `date[${v4Checks(def.checks)}${v4Coerce(def)}]`;
         case 'optional':
-            return `opt(${describe(def.innerType)})`;
+            return `opt(${describe(def.innerType)})[${v4Checks(def.checks)}]`;
         case 'nullable':
-            return `nul(${describe(def.innerType)})`;
+            return `nul(${describe(def.innerType)})[${v4Checks(def.checks)}]`;
         case 'nonoptional':
-            return `req(${describe(def.innerType)})`;
+            return `req(${describe(def.innerType)})[${v4Checks(def.checks)}]`;
         case 'array':
             return `arr(${describe(def.element)})[${v4Checks(def.checks)}]`;
         case 'tuple':
-            return `tup[${(def.items as unknown[]).map(describe).join(',')}${def.rest ? ';rest=' + describe(def.rest) : ''}]`;
+            return `tup[${(def.items as unknown[]).map(describe).join(',')}${def.rest ? ';rest=' + describe(def.rest) : ''}][${v4Checks(def.checks)}]`;
         case 'record':
-            return `rec(${describe(def.keyType)},${describe(def.valueType)})`;
+            return `rec(${describe(def.keyType)},${describe(def.valueType)})[${v4Checks(def.checks)}]`;
         case 'map':
-            return `map(${describe(def.keyType)},${describe(def.valueType)})`;
+            return `map(${describe(def.keyType)},${describe(def.valueType)})[${v4Checks(def.checks)}]`;
         case 'set':
-            return `set(${describe(def.valueType)})`;
+            return `set(${describe(def.valueType)})[${v4Checks(def.checks)}]`;
         case 'enum':
-            return `enum{${Object.values(def.entries as AnyRec)
-                .map(String)
-                .sort()
-                .map(key)
-                .join(',')}}`;
+            return `enum{${enumMembers(def.entries as AnyRec)}}`;
         case 'literal':
-            return `lit{${(def.values as unknown[]).map(literal).sort().join('|')}}`;
+            return `lit{${(def.values as unknown[]).map(literal).sort().join('|')}}[${v4Checks(def.checks)}]`;
         case 'union':
-            return `union{${(def.options as unknown[]).map(describe).sort().join('|')}}`;
+            return `union{${(def.options as unknown[]).map(describe).sort().join('|')}}[${v4Checks(def.checks)}]`;
         case 'intersection':
-            return `and(${describe(def.left)},${describe(def.right)})`;
+            return `and(${describe(def.left)},${describe(def.right)})[${v4Checks(def.checks)}]`;
         case 'readonly':
-            return `ro(${describe(def.innerType)})`;
+            return `ro(${describe(def.innerType)})[${v4Checks(def.checks)}]`;
         case 'null':
             return 'null';
         case 'undefined':

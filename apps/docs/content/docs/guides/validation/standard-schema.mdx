@@ -4,16 +4,16 @@ description: 'Bring any Standard Schema validator — Zod, Valibot, ArkType — 
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
-Validate an API response with Zod — or Valibot, ArkType, a plain predicate, or
-any [Standard Schema](https://standardschema.dev) validator. StitchAPI is
-validator-agnostic: bring the schema you already have, wrap it once with the
-single `toValidator()` helper, and the stitch checks each response against it —
-inferring the result type from the same schema.
+Validate an API response with Zod — or Valibot, ArkType, or any [Standard
+Schema](https://standardschema.dev) validator. StitchAPI is validator-agnostic:
+bring the schema you already have, hand it straight to a stitch, and each
+response is checked against it — with the result type inferred from the same
+schema.
 
 ## Example
 
 ```ts twoslash
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const User = z.object({ id: z.number(), name: z.string() });
@@ -21,7 +21,7 @@ const User = z.object({ id: z.number(), name: z.string() });
 const getUser = stitch<{ id: number; name: string }>({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    output: toValidator(User),
+    output: User,
 });
 ```
 
@@ -30,18 +30,18 @@ The `output` schema runs against each response; pairing it with the
 
 ## Options
 
-A config's `input` and `output` fields are typed as `Validator`, so a raw
-`z.object(...)` is not directly assignable — wrap it with `toValidator()`. That
-helper is the single adapter: it coerces Zod (`safeParse`), any Standard Schema
-(`~standard`), or a plain predicate into the `Validator` the config expects.
+A config's `input` and `output` fields accept a raw schema directly — Zod (via
+`safeParse`), any Standard Schema (`~standard`), or a plain predicate
+(`(value) => boolean`). Valibot and ArkType implement Standard Schema, so they
+pass the same way with no special handling.
 
-Valibot and ArkType need no special handling — they implement Standard Schema,
-so they go through the same `toValidator()` call identically. Pass an
-already-built `Validator` straight through.
+For anything the built-in coercions don't cover, expose the
+[Standard Schema](https://standardschema.dev) `~standard` interface on your own
+object — a stitch checks it exactly like a Zod schema, no wrapper in between.
 
 <Callout type="info">
-    Pair `toValidator()` with the `stitch<T>()` generic so the typed result and
-    the runtime check come from one source.
+    Pair the schema with the `stitch<T>()` generic so the typed result and the
+    runtime check come from one source.
 </Callout>
 
 ## See also

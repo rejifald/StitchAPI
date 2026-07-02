@@ -69,12 +69,16 @@ async function* decodeStream(
     const stream = body as ReadableStream<Uint8Array>;
     const decode = cfg.stream?.decode ?? 'bytes';
 
+    // `maxBufferBytes` caps a single un-terminated line for the line-based decoders too (an upstream
+    // that never sends a `\n` would otherwise grow memory without limit); a throw becomes an `error`
+    // event in the engine. Same default (~8 MB) / knob as the `'json'` decoder below.
+    const maxBufferBytes = cfg.stream?.maxBufferBytes;
     if (decode === 'lines') {
-        yield* lineReader(stream);
+        yield* lineReader(stream, maxBufferBytes);
         return;
     }
     if (decode === 'ndjson') {
-        for await (const line of lineReader(stream)) {
+        for await (const line of lineReader(stream, maxBufferBytes)) {
             if (line.trim() === '') continue; // tolerate blank lines between records
             const parsed: unknown = JSON.parse(line);
             yield parsed;

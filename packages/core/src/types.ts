@@ -136,10 +136,13 @@ export interface StreamOptions {
     /** Decoder for a `stream` surface body. Default `'bytes'` (total + lossless). */
     decode?: StreamDecode;
     /**
-     * Max bytes the `'json'` decoder will buffer for a single in-progress value before throwing
-     * (the engine turns the throw into an `error` event). Guards against a malformed / never-closing
-     * value growing without limit. Default ~8 MB (see `json-stream.ts`). Only meaningful for
-     * `decode: 'json'`.
+     * Max bytes a streaming decoder will buffer for a single un-terminated unit before throwing (the
+     * engine turns the throw into an `error` event). Guards every un-framed / never-closing case
+     * against growing client memory without limit (an OOM DoS):
+     *   - `'json'` — a single in-progress value (e.g. an unclosed `[`).
+     *   - `'lines'` / `'ndjson'` — a single un-terminated line (a run of bytes with no `\n`).
+     *   - the `sse` surface — one un-dispatched event's `data:` payload (a frame with no blank line).
+     * Default ~8 MB (see `json-stream.ts`). Not meaningful for `decode: 'bytes'` (raw, unbuffered).
      */
     maxBufferBytes?: number;
 }
@@ -732,10 +735,9 @@ export interface StitchConfig {
     input?: InputSchemas;
     /**
      * Response schema, or a {@link DriftSpec} for leveled drift detection. Accepts any
-     * {@link SchemaLike} (raw Zod / Standard Schema / Validator / predicate); the stitch infers
-     * its result type from it (see `InferOutput`), so a hand-written generic is rarely needed.
-     * No `toValidator()` cast is needed — raw Zod is the visible default, but any Standard Schema
-     * validator or a `(value) => boolean` predicate works in the same slot.
+     * {@link SchemaLike} — a raw Zod schema, any Standard Schema (Valibot, ArkType), or a
+     * `(value) => boolean` predicate — directly; the stitch infers its result type from it
+     * (see `InferOutput`), so a hand-written generic is rarely needed.
      *
      * @example output: z.object({ id: z.number(), name: z.string() })
      */

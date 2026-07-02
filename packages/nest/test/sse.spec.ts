@@ -45,23 +45,101 @@ describe('stitchSse', () => {
         expect(data).toEqual(['a', 'b']); // control events not forwarded
     });
 
-    it('errors the observable on an error event, after any prior deltas', async () => {
+    it('by default errors the observable with a safe message, withholding the raw upstream message', async () => {
         const { data, error } = await collect(
             stitchSse(
                 events(
                     { type: 'delta', chunk: 'a', at: 0 },
                     {
                         type: 'error',
-                        name: 'x',
-                        message: 'boom',
+                        name: 'StitchError',
+                        // Discloses an internal hostname — must NOT reach the client (topology
+                        // disclosure; same class the exception filter fixed on the HTTP surface).
+                        message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                        status: 502,
                         attempts: 1,
                         at: 0,
                     },
                 ),
             ),
         );
+        expect(data).toEqual(['a']); // prior deltas are still delivered
+        // Nest renders an errored observable's `message` to the client, so it must be the safe token.
+        expect(error?.message).toBe('Upstream request failed');
+        expect(error?.message).not.toContain('payments.internal.corp');
+        // …but the raw failure is preserved server-side as the error's `cause`.
+        expect(
+            (error?.cause as { message?: string } | undefined)?.message,
+        ).toBe('getaddrinfo ENOTFOUND payments.internal.corp');
+    });
+
+    it('exposeMessage opts in to forwarding the raw upstream message', async () => {
+        const { data, error } = await collect(
+            stitchSse(
+                events(
+                    { type: 'delta', chunk: 'a', at: 0 },
+                    {
+                        type: 'error',
+                        name: 'StitchError',
+                        message: 'upstream blew up',
+                        attempts: 1,
+                        at: 0,
+                    },
+                ),
+                { exposeMessage: true },
+            ),
+        );
         expect(data).toEqual(['a']);
-        expect(error?.message).toBe('boom');
+        expect(error?.message).toBe('upstream blew up');
+    });
+
+    it('message sets a curated client-facing message (string or function), overriding exposeMessage', async () => {
+        const fixed = await collect(
+            stitchSse(
+                events({
+                    type: 'error',
+                    name: 'StitchError',
+                    message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                    attempts: 1,
+                    at: 0,
+                }),
+                {
+                    message: 'Payment provider unavailable',
+                    exposeMessage: true,
+                },
+            ),
+        );
+        expect(fixed.error?.message).toBe('Payment provider unavailable');
+        expect(fixed.error?.message).not.toContain('payments.internal.corp');
+
+        const dynamic = await collect(
+            stitchSse(
+                events({
+                    type: 'error',
+                    name: 'StitchError',
+                    message: 'boom',
+                    status: 503,
+                    attempts: 1,
+                    at: 0,
+                }),
+                { message: (e) => `upstream ${e.status ?? '???'}` },
+            ),
+        );
+        expect(dynamic.error?.message).toBe('upstream 503');
+    });
+
+    it('by default withholds the raw message on a thrown error too, preserving it as cause', async () => {
+        async function* boom(): AsyncGenerator<StitchEvent, void> {
+            yield { type: 'delta', chunk: 'a', at: 0 };
+            throw new Error('getaddrinfo ENOTFOUND payments.internal.corp');
+        }
+        const { data, error } = await collect(stitchSse(boom()));
+        expect(data).toEqual(['a']);
+        expect(error?.message).toBe('Upstream request failed');
+        expect(error?.message).not.toContain('payments.internal.corp');
+        expect((error?.cause as Error | undefined)?.message).toBe(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
+        );
     });
 
     it('applies the data mapper to each chunk', async () => {

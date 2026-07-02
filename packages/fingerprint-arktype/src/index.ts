@@ -7,9 +7,17 @@
 // the moment it contains something that can't be soundly captured:
 //
 //   - morphs (`.pipe`) surface as `morphs: ["$ark.fn10"]` and narrows (`.narrow`)
-//     as `predicate: ["$ark.fn12"]`. Those `$ark.fn<n>` strings are opaque (the
-//     closure body is invisible) AND non-deterministic (a global counter, so the
-//     number changes per construction). Either property alone forces an abstain.
+//     as `predicate: ["$ark.fn12"]`. But ArkType also references its BUILT-IN
+//     parsers/predicates the same way — `morphs: ["$ark.parseJson"]` for
+//     `string.json.parse`, `morphs: ["$ark.morphs11"]` for `string.numeric.parse`,
+//     `predicate: [{ predicate: "$ark.isParsableDate" }]` for `string.date`, and
+//     so on. Every such `$ark.<name>` string is opaque (the closure body is
+//     invisible) and often non-deterministic (`$ark.fn<n>`/`$ark.morphs<n>` use a
+//     global counter, so the number changes per construction). Its presence
+//     anywhere forces an abstain — matching the whole `$ark.` namespace, not just
+//     the literal `$ark.fn`, so no built-in morph/predicate slips through with a
+//     token. (Scope/type aliases use a bare `$<alias>` — e.g. `"$node"` — WITHOUT
+//     the `ark.` segment, so pure structural references stay fingerprintable.)
 //   - a property `default` (e.g. `'string = "x"'`) silently changes the value the
 //     cache would store, so trusting a token here would under-invalidate. Abstain.
 //
@@ -29,9 +37,16 @@ import { type SchemaFingerprinter, hash } from 'stitchapi/fingerprint';
 // turned into an abstain. A symbol keeps it distinct from real errors.
 const ABSTAIN = Symbol('abstain');
 
-// Non-deterministic + opaque reference emitted by ArkType for `.pipe` morphs and
-// `.narrow`/predicate closures. Its presence anywhere in the JSON is disqualifying.
-const ARK_FN = '$ark.fn';
+// Namespace prefix ArkType uses for EVERY opaque function reference in its JSON:
+// user `.pipe` morphs / `.narrow` predicates (`$ark.fn<n>`) AND built-in
+// morph/predicate keywords (`$ark.parseJson`, `$ark.morphs<n>`,
+// `$ark.isParsableDate`, `$ark.isParsableUrl`, `$ark.isLuhnValid`, …). Any of
+// these is opaque and value-transforming, so its presence anywhere in the JSON is
+// disqualifying. Matching the prefix (not the exact `$ark.fn`) is deliberately
+// broad so no built-in slips through — and it's the SAFE direction: a false
+// abstain merely falls back to the version/revalidate ladder. Scope/type aliases
+// (`$<alias>`, e.g. `$node`) lack the `ark.` segment, so they are unaffected.
+const ARK_REF = '$ark.';
 
 type AnyRec = Record<string, unknown>;
 
@@ -47,7 +62,7 @@ function canon(node: unknown): string {
     if (node === null) return 'null';
     const t = typeof node;
     if (t === 'string') {
-        if ((node as string).includes(ARK_FN)) throw ABSTAIN;
+        if ((node as string).includes(ARK_REF)) throw ABSTAIN;
         return JSON.stringify(node);
     }
     if (t === 'number' || t === 'boolean') return JSON.stringify(node);
@@ -67,7 +82,7 @@ function canon(node: unknown): string {
     const parts = Object.keys(o)
         .sort()
         .map((k) => {
-            if (k.includes(ARK_FN)) throw ABSTAIN;
+            if (k.includes(ARK_REF)) throw ABSTAIN;
             return `${JSON.stringify(k)}:${canon(o[k])}`;
         });
     return `{${parts.join(',')}}`;
@@ -80,9 +95,10 @@ function describe(schema: unknown): string {
         throw ABSTAIN;
     const j = (schema as any).json;
     if (j === undefined) throw ABSTAIN;
-    // Fast disqualifier: any opaque/non-deterministic morph or predicate ref.
+    // Fast disqualifier: any opaque/non-deterministic morph or predicate ref
+    // anywhere in the JSON — user `.pipe`/`.narrow` OR a built-in keyword.
     // (canon also catches these, but this keeps the intent obvious.)
-    if (JSON.stringify(j).includes(ARK_FN)) throw ABSTAIN;
+    if (JSON.stringify(j).includes(ARK_REF)) throw ABSTAIN;
     return canon(j);
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */

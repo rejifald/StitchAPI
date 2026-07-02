@@ -39,7 +39,7 @@ You can animate a CSS bar to 90% and freeze it there, but that is theater. The b
 A stitch turns one endpoint into a typed function you call with `await`. Swap the default transport for `xhrAdapter()` and set `bodyType: 'multipart'`, and you get upload-progress reporting with the rest of the stitch contract intact:
 
 ```ts twoslash
-import { bearer, env, stitch, toValidator, xhrAdapter } from 'stitchapi';
+import { bearer, env, stitch, xhrAdapter } from 'stitchapi';
 import { z } from 'zod';
 
 const uploadVideo = stitch<{ id: string; url: string }>({
@@ -50,7 +50,7 @@ const uploadVideo = stitch<{ id: string; url: string }>({
     adapter: xhrAdapter(),
     auth: bearer(env('API_TOKEN')),
     timeout: '2m',
-    output: toValidator(z.object({ id: z.string(), url: z.string().url() })),
+    output: z.object({ id: z.string(), url: z.string().url() }),
 });
 ```
 
@@ -78,7 +78,7 @@ type AdapterProgress = {
 `loaded` is the number of bytes transferred so far; `total` is the full size when the transport knows it. Tag by `phase` so you only move the upload bar while the request body is going out:
 
 ```ts twoslash
-import { bearer, env, stitch, toValidator, xhrAdapter } from 'stitchapi';
+import { bearer, env, stitch, xhrAdapter } from 'stitchapi';
 import { z } from 'zod';
 
 const uploadVideo = stitch<{ id: string; url: string }>({
@@ -89,7 +89,7 @@ const uploadVideo = stitch<{ id: string; url: string }>({
     adapter: xhrAdapter(),
     auth: bearer(env('API_TOKEN')),
     timeout: '2m',
-    output: toValidator(z.object({ id: z.string(), url: z.string().url() })),
+    output: z.object({ id: z.string(), url: z.string().url() }),
 });
 // ---cut---
 async function send(file: File, onPct: (pct: number) => void) {
@@ -135,7 +135,7 @@ Two controls travel with the call this way, and in both cases **the call argumen
 -   `signal`, an `AbortSignal` — pass `{ body, onProgress, signal }` and a cancel button aborts the in-flight upload.
 
 ```ts twoslash
-import { bearer, env, stitch, toValidator, xhrAdapter } from 'stitchapi';
+import { bearer, env, stitch, xhrAdapter } from 'stitchapi';
 import type { AdapterProgress } from 'stitchapi';
 import { z } from 'zod';
 
@@ -147,7 +147,7 @@ const uploadVideo = stitch<{ id: string; url: string }>({
     adapter: xhrAdapter(),
     auth: bearer(env('API_TOKEN')),
     timeout: '2m',
-    output: toValidator(z.object({ id: z.string(), url: z.string().url() })),
+    output: z.object({ id: z.string(), url: z.string().url() }),
 });
 
 declare const file: File;

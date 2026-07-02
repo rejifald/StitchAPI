@@ -293,8 +293,16 @@ export function awsSigV4(opts: AwsSigV4Options): AuthStrategy {
             const url = new URL(req.url);
 
             const body = req.body;
+            const method = req.method.toUpperCase();
             let payloadHash: string;
-            if (body === undefined || body === null || body === '') {
+            if (method === 'GET' || method === 'HEAD') {
+                // The transport drops the body for GET/HEAD (`encodeRequestBody` in
+                // core's http-adapter.ts short-circuits to no body), so the bytes on the
+                // wire are empty regardless of any `body`/`signBody`. Sign the empty
+                // payload to match — hashing the body here would sign bytes the transport
+                // never sends → 403 SignatureDoesNotMatch.
+                payloadHash = EMPTY_PAYLOAD_SHA256;
+            } else if (body === undefined || body === null || body === '') {
                 payloadHash = EMPTY_PAYLOAD_SHA256;
             } else if (typeof body === 'string') {
                 // Every transport sends a string body verbatim, so its bytes are
@@ -339,21 +347,24 @@ export function awsSigV4(opts: AwsSigV4Options): AuthStrategy {
                         : 'UNSIGNED-PAYLOAD';
             }
 
-            // Attach the SigV4 headers, then sign exactly those.
+            // Attach the SigV4 headers, then sign the request's WHOLE header set.
             req.headers['host'] = url.host;
             req.headers['x-amz-date'] = amzDate;
             req.headers['x-amz-content-sha256'] = payloadHash;
             if (sessionToken)
                 req.headers['x-amz-security-token'] = sessionToken;
 
-            const toSign: Record<string, string> = {
-                host: url.host,
-                'x-amz-date': amzDate,
-                'x-amz-content-sha256': payloadHash,
-                ...(sessionToken
-                    ? { 'x-amz-security-token': sessionToken }
-                    : {}),
-            };
+            // Sign every header on the request, not just the SigV4 ones. AWS requires
+            // `host` AND every `x-amz-*` header to be in SignedHeaders; a request carrying
+            // a custom `x-amz-*` (e.g. `x-amz-acl`, `x-amz-server-side-encryption` —
+            // routine for S3) that sends the header on the wire but leaves it out of the
+            // signature is rejected with 403 SignatureDoesNotMatch. Signing the full set
+            // is safe: the transport (`fetchAdapter`) sends `req.headers` verbatim and only
+            // *adds* a `content-type` when one is absent — a header present on the wire but
+            // unsigned is permitted by AWS; the fatal case (signed-but-absent) can't happen
+            // because everything signed here is sent. `signRequestV4` lower-cases, sorts,
+            // trims, and canonicalises arbitrary headers.
+            const toSign: Record<string, string> = { ...req.headers };
 
             const { authorization } = await signRequestV4({
                 method: req.method,

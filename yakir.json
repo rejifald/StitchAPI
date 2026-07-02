@@ -68,7 +68,7 @@
                         "kind": "pattern",
                         "match": "~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB",
                         "all": true,
-                        "allow": [64, 20]
+                        "allow": [64]
                     },
                     "write": "managed"
                 },

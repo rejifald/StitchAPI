@@ -41,7 +41,7 @@ The rough edges show up once you have more than one endpoint. The `res.ok` check
 A [stitch](/docs/concepts/the-stitch) makes the schema a property of the call instead of code you run after it. You hand the response schema to `output` and pair it with a generic; the validator runs against every response, and the rest of the boilerplate disappears:
 
 ```ts twoslash
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const User = z.object({ id: z.number(), name: z.string() });
@@ -49,28 +49,28 @@ const User = z.object({ id: z.number(), name: z.string() });
 const getUser = stitch<{ id: number; name: string }>({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    output: toValidator(User),
+    output: User,
 });
 
 const user = await getUser({ params: { id: 1 } }); // typed · validated
 ```
 
-`output` is typed as a `Validator`, and a raw `z.object(...)` isn't structurally one — `toValidator()` adapts a Zod schema (or any [Standard Schema](/docs/guides/validation/standard-schema) validator, like Valibot or ArkType, or a plain predicate) into the type the config expects. The `stitch<{ id: number; name: string }>` generic types the resolved value, so `user` is `{ id: number; name: string }` with no `z.infer` call. A response that doesn't match throws [STITCH_VALIDATION](/docs/errors/stitch-validation) at the boundary — the same failure your `safeParse` branch produced, now uniform across every endpoint instead of re-typed at each one.
+`output` takes the `z.object(...)` schema directly; any [Standard Schema](/docs/guides/validation/standard-schema) validator (Valibot, ArkType) or a plain predicate goes on the config the same way. The `stitch<{ id: number; name: string }>` generic types the resolved value, so `user` is `{ id: number; name: string }` with no `z.infer` call. A response that doesn't match throws [STITCH_VALIDATION](/docs/errors/stitch-validation) at the boundary — the same failure your `safeParse` branch produced, now uniform across every endpoint instead of re-typed at each one.
 
 ### Validate the request too
 
 The manual pattern guards the response; the stitch guards both ends. `input` is a map of `{ params, query, body, headers }`, each an optional validator that runs _before_ the request leaves the process — so a bad body fails fast with no wasted network call:
 
 ```ts twoslash
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const createUser = stitch<{ id: number; name: string }>({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/users',
-    input: { body: toValidator(z.object({ name: z.string() })) },
-    output: toValidator(z.object({ id: z.number(), name: z.string() })),
+    input: { body: z.object({ name: z.string() }) },
+    output: z.object({ id: z.number(), name: z.string() }),
 });
 ```
 
@@ -96,4 +96,4 @@ The schema is the same Zod object either way. The only question is whether it ru
 stitchapi
 ```
 
-Move your `safeParse` schema onto a stitch's `output` with `toValidator()`, pair it with the `stitch<T>` generic, and every call validates its response with a typed error and no per-call-site boilerplate. The mechanics are in [Validation](/docs/guides/validation/validation), the validator adapter in [Standard Schema](/docs/guides/validation/standard-schema), and getting types without a codegen step in [a type-safe API client without codegen](/blog/type-safe-api-client-without-codegen).
+Move your `safeParse` schema straight onto a stitch's `output`, pair it with the `stitch<T>` generic, and every call validates its response with a typed error and no per-call-site boilerplate. The mechanics are in [Validation](/docs/guides/validation/validation), the validator adapter in [Standard Schema](/docs/guides/validation/standard-schema), and getting types without a codegen step in [a type-safe API client without codegen](/blog/type-safe-api-client-without-codegen).

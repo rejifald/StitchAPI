@@ -399,7 +399,9 @@ export function createCache(opts: CacheControllerOptions): CacheController {
             const oldest = lru.keys().next().value;
             if (oldest === undefined) break;
             lru.delete(oldest);
-            void store.set(oldest, undefined); // evict from the store (best-effort)
+            // evict from the store (best-effort); a rejecting async store (e.g. Redis) must never
+            // become an unhandled rejection — swallow it (matches pipe.ts / postmessage.ts).
+            void store.set(oldest, undefined).catch(() => undefined);
         }
     };
 
