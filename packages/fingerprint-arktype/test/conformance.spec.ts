@@ -93,6 +93,46 @@ const fixtures: FingerprintFixtures = {
             label: 'default',
             schema: () => type({ name: 'string = "x"' }),
         },
+        // BUILT-IN morph/predicate keywords. ArkType represents these with opaque
+        // `$ark.*` references that are NOT the literal `$ark.fn` — e.g.
+        // `morphs:["$ark.parseJson"]`, `morphs:["$ark.morphs<n>"]`,
+        // `predicate:"$ark.isParsableDate"`. They carry value-transforming /
+        // opaque-closure logic the walker can't faithfully capture, so a stable
+        // token would under-invalidate the cache (ADR 0004). All must abstain.
+        {
+            // morphs: ["$ark.parseJson"] — a named built-in parser.
+            label: 'string.json.parse',
+            schema: () => type('string.json.parse'),
+        },
+        {
+            // morphs: ["$ark.morphs<n>"] — counter-based, non-deterministic.
+            label: 'string.numeric.parse',
+            schema: () => type('string.numeric.parse'),
+        },
+        {
+            label: 'string.integer.parse',
+            schema: () => type('string.integer.parse'),
+        },
+        {
+            // Both a morph AND a `$ark.isParsableDate` predicate.
+            label: 'string.date.parse',
+            schema: () => type('string.date.parse'),
+        },
+        {
+            // predicate: "$ark.isParsableDate" — opaque predicate, no morph.
+            label: 'string.date',
+            schema: () => type('string.date'),
+        },
+        {
+            // predicate: "$ark.isParsableUrl" — opaque predicate.
+            label: 'string.url',
+            schema: () => type('string.url'),
+        },
+        {
+            // morphs: ["$ark.morphs<n>"] — a value-transforming format morph.
+            label: 'string.lower',
+            schema: () => type('string.lower'),
+        },
     ],
 };
 
@@ -121,5 +161,34 @@ describe('@stitchapi/fingerprint-arktype', () => {
         );
         expect(base.token).not.toBeNull();
         expect(morphed.token).toBeNull();
+    });
+
+    it('abstains on BUILT-IN morph/predicate keywords (not just $ark.fn)', () => {
+        // ArkType emits opaque `$ark.*` refs for its built-in parsers/predicates
+        // (e.g. `$ark.parseJson`, `$ark.morphs<n>`, `$ark.isParsableDate`) that
+        // are NOT the literal `$ark.fn`. Each carries value-transforming/opaque
+        // logic the walker can't capture, so a token would under-invalidate the
+        // cache (ADR 0004). All must abstain.
+        const builtins = [
+            'string.json.parse', // morphs: ["$ark.parseJson"]
+            'string.numeric.parse', // morphs: ["$ark.morphs<n>"]
+            'string.integer.parse',
+            'string.date.parse', // morph + "$ark.isParsableDate" predicate
+            'string.date', // predicate: "$ark.isParsableDate"
+            'string.url', // predicate: "$ark.isParsableUrl"
+            'string.lower', // morphs: ["$ark.morphs<n>"] (format morph)
+        ] as const;
+        for (const keyword of builtins) {
+            const f = arktypeFingerprinter.fingerprint(type(keyword) as never);
+            expect(f.token, `${keyword} should abstain`).toBeNull();
+        }
+
+        // A pure structural keyword carrying no opaque logic still fingerprints —
+        // the fix must not over-abstain. (`string.email` is a plain regex pattern;
+        // its JSON contains no `$ark.` reference at all.)
+        const structural = arktypeFingerprinter.fingerprint(
+            type('string.email') as never,
+        );
+        expect(structural.token).not.toBeNull();
     });
 });

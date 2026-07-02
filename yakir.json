@@ -1,0 +1,253 @@
+{
+    "ignore": ["CHANGELOG.md"],
+    "tethers": [
+        {
+            "id": "release-version",
+            "tier": "token",
+            "fact": "every published package shares one version (lockstep), and the READMEs quote it",
+            "policy": { "severity": "block", "mode": "auto" },
+            "sites": [
+                {
+                    "artifact": "packages/*/package.json",
+                    "exclude": [
+                        "packages/completions-plugin/package.json",
+                        "packages/eval-harness/package.json",
+                        "packages/sandbox-sim/package.json"
+                    ],
+                    "locator": { "kind": "json-pointer", "path": "/version" },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "README.md",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "StitchAPI is at `([^`]+)`"
+                    },
+                    "write": "managed"
+                },
+                {
+                    "artifact": "packages/core/README.md",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "StitchAPI is at `([^`]+)`"
+                    },
+                    "write": "managed"
+                }
+            ]
+        },
+        {
+            "id": "bundle-advertised-size",
+            "tier": "executable",
+            "fact": "every advertised gzip bundle size equals the measured one (whole entry + import { stitch })",
+            "policy": { "severity": "block", "mode": "propose" },
+            "origin": "declared",
+            "sites": [
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node packages/core/scripts/bundle-size.mjs --json",
+                        "extract": {
+                            "regex": "\"kb\"\\s*:\\s*(\\d+)",
+                            "all": true
+                        }
+                    },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "README.md",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB",
+                        "all": true
+                    },
+                    "write": "managed"
+                },
+                {
+                    "artifact": "packages/core/README.md",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB",
+                        "all": true,
+                        "allow": [64, 20]
+                    },
+                    "write": "managed"
+                },
+                {
+                    "artifact": "apps/docs/content/docs/getting-started/installation.mdx",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB",
+                        "all": true
+                    },
+                    "write": "managed"
+                },
+                {
+                    "artifact": "apps/docs/content/docs/concepts/principles.mdx",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB",
+                        "all": true
+                    },
+                    "write": "managed"
+                },
+                {
+                    "artifact": "apps/docs/app/(home)/components/metrics.tsx",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB",
+                        "all": true
+                    },
+                    "write": "managed"
+                },
+                {
+                    "artifact": "apps/docs/lib/source.ts",
+                    "locator": {
+                        "kind": "pattern",
+                        "match": "~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB",
+                        "all": true
+                    },
+                    "write": "managed"
+                }
+            ]
+        },
+        {
+            "id": "node-engines",
+            "tier": "token",
+            "fact": "every published package declares the same minimum Node (engines.node)",
+            "policy": { "severity": "block", "mode": "auto" },
+            "sites": [
+                {
+                    "artifact": "packages/*/package.json",
+                    "exclude": [
+                        "packages/completions-plugin/package.json",
+                        "packages/eval-harness/package.json",
+                        "packages/sandbox-sim/package.json"
+                    ],
+                    "locator": {
+                        "kind": "json-pointer",
+                        "path": "/engines/node"
+                    },
+                    "write": "manual"
+                }
+            ]
+        },
+        {
+            "id": "package-license",
+            "tier": "token",
+            "fact": "every published package declares the same SPDX license",
+            "policy": { "severity": "block", "mode": "auto" },
+            "sites": [
+                {
+                    "artifact": "packages/*/package.json",
+                    "exclude": [
+                        "packages/completions-plugin/package.json",
+                        "packages/eval-harness/package.json",
+                        "packages/sandbox-sim/package.json"
+                    ],
+                    "locator": { "kind": "json-pointer", "path": "/license" },
+                    "write": "manual"
+                }
+            ]
+        },
+        {
+            "id": "playground-completions",
+            "tier": "executable",
+            "fact": "the committed playground completions file matches its generator (core src → codegen)",
+            "policy": { "severity": "block", "mode": "propose" },
+            "origin": "declared",
+            "sites": [
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node apps/docs/scripts/gen-stitch-completions.mjs --emit",
+                        "extract": { "whole": true }
+                    },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "apps/docs/app/(home)/playground/playground-completions.generated.ts",
+                    "locator": { "kind": "file" },
+                    "write": "managed"
+                }
+            ]
+        },
+        {
+            "id": "readme-badges",
+            "tier": "executable",
+            "fact": "the README metrics badge row matches the generator (rendered from the committed snapshot)",
+            "policy": { "severity": "block", "mode": "propose" },
+            "origin": "declared",
+            "sites": [
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node scripts/gen-readme-metrics.mjs --emit readme-badges",
+                        "extract": { "whole": true }
+                    },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "README.md",
+                    "locator": {
+                        "kind": "region",
+                        "name": "readme-badges",
+                        "whole": true
+                    },
+                    "write": "managed"
+                }
+            ]
+        },
+        {
+            "id": "readme-packages",
+            "tier": "executable",
+            "fact": "the README workspace package table matches the generator (rendered from every package.json)",
+            "policy": { "severity": "block", "mode": "propose" },
+            "origin": "declared",
+            "sites": [
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node scripts/gen-readme-metrics.mjs --emit readme-packages",
+                        "extract": { "whole": true }
+                    },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "README.md",
+                    "locator": {
+                        "kind": "region",
+                        "name": "readme-packages",
+                        "whole": true
+                    },
+                    "write": "managed"
+                }
+            ]
+        },
+        {
+            "id": "core-integrations",
+            "tier": "executable",
+            "fact": "the core README integrations table matches the generator (rendered from every package.json)",
+            "policy": { "severity": "block", "mode": "propose" },
+            "origin": "declared",
+            "sites": [
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node scripts/gen-readme-metrics.mjs --emit core-integrations",
+                        "extract": { "whole": true }
+                    },
+                    "write": "manual"
+                },
+                {
+                    "artifact": "packages/core/README.md",
+                    "locator": {
+                        "kind": "region",
+                        "name": "core-integrations",
+                        "whole": true
+                    },
+                    "write": "managed"
+                }
+            ]
+        }
+    ]
+}

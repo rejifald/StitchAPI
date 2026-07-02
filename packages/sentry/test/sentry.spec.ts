@@ -166,6 +166,31 @@ describe('sentrySink', () => {
         expect(captures).toHaveLength(0);
     });
 
+    test('never sends URL-embedded HTTP Basic credentials (userinfo, no query)', () => {
+        // `baseUrl: 'https://alice:s3cr3t@api.example.com'` is a legitimate, supported
+        // way to carry HTTP Basic auth. The `start` event's URL then has NO query, so a
+        // query-only strip leaves `alice:s3cr3t@` in the breadcrumb message and data.
+        const startWithUserinfo: StitchEvent = {
+            type: 'start',
+            name: 'getUser',
+            method: 'GET',
+            url: 'https://alice:s3cr3t@api.example.com/users/1',
+            input: {} as never,
+            at: 0,
+        };
+        const { sentry, breadcrumbs, captures } = mockSentry();
+        sentrySink(sentry, { lifecycle: true }).handle(startWithUserinfo, ctx);
+
+        expect(breadcrumbs).toHaveLength(1);
+        const dump = JSON.stringify({ breadcrumbs, captures });
+        expect(dump).not.toContain('s3cr3t');
+        expect(dump).not.toContain('alice:s3cr3t');
+        // the breadcrumb's url data is the userinfo-stripped form
+        expect(breadcrumbs[0]!.data).toMatchObject({
+            url: 'https://api.example.com/users/1',
+        });
+    });
+
     test('metadata only: no secret query, no input/value/chunk reaches Sentry', () => {
         const { sentry, breadcrumbs, captures } = mockSentry();
         const sink = sentrySink(sentry, { lifecycle: true });

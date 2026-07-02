@@ -201,7 +201,8 @@ function scanPackage(ts, packageRoot) {
                 : [],
         });
 
-        console.log(
+        // stderr, so `--emit` stdout stays pure (yakir hashes it against the file).
+        console.error(
             `[completions-plugin] ${fnName}: ${found[found.length - 1].configEntries.length} config, ` +
                 `${found[found.length - 1].instanceEntries.length} instance completions`,
         );
@@ -234,7 +235,12 @@ function renderBlock(map) {
 
 /* ── public API ───────────────────────────────────────────────────────────── */
 
-export async function generatePlaygroundCompletions({ packages, outputFile }) {
+/**
+ * Build the generated-file content from a set of packages, without writing it.
+ * Exposed so a drift check (yakir's `playground-completions` tether) can compare
+ * the canonical output to the committed file without touching disk.
+ */
+export function renderPlaygroundCompletions({ packages }) {
     const ts = req('typescript');
 
     const allFound = packages.flatMap((pkgRoot) => scanPackage(ts, pkgRoot));
@@ -248,7 +254,7 @@ export async function generatePlaygroundCompletions({ packages, outputFile }) {
             .map((r) => [r.functionName, r.instanceEntries]),
     );
 
-    const content = [
+    return [
         `// @generated — do not edit by hand.`,
         `// Regenerate: pnpm --filter @stitchapi/docs run gen:completions`,
         `import type { Completion } from '@codemirror/autocomplete';`,
@@ -264,7 +270,10 @@ export async function generatePlaygroundCompletions({ packages, outputFile }) {
         `};`,
         ``,
     ].join('\n');
+}
 
+export async function generatePlaygroundCompletions({ packages, outputFile }) {
+    const content = renderPlaygroundCompletions({ packages });
     writeFileSync(outputFile, content, 'utf8');
     console.log(`[completions-plugin] wrote → ${outputFile}`);
 }

@@ -12,6 +12,7 @@ import {
 } from '../src';
 
 import Fastify from 'fastify';
+import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import type {
     Adapter,
     AdapterRequest,
@@ -238,7 +239,8 @@ describe('stitchPlugin', () => {
 
         const res = await app.inject({ method: 'GET', url: '/fail' });
         expect(res.statusCode).toBe(502); // gateway default — upstream 503 is not leaked
-        expect(res.json()).toMatchObject({ error: expect.any(String) });
+        // The default body is the generic, status-tied phrase — NOT the raw upstream message.
+        expect(res.json()).toEqual({ error: 'Bad Gateway' });
     });
 
     test('the error handler can propagate the upstream status', async () => {
@@ -306,5 +308,85 @@ describe('isStitchError / stitchErrorHandler unit', () => {
                 } as never,
             ),
         ).toThrow('plain');
+    });
+
+    // A fake reply capturing the `.status(code).send(body)` chain, so the handler can be driven
+    // directly (no Fastify instance) to assert exactly what body leaves the process.
+    function captureReply(): {
+        reply: FastifyReply;
+        statusCode: number | undefined;
+        sent: unknown;
+    } {
+        const captured: { statusCode: number | undefined; sent: unknown } = {
+            statusCode: undefined,
+            sent: undefined,
+        };
+        const reply = {
+            status(code: number) {
+                captured.statusCode = code;
+                return this;
+            },
+            send(body: unknown) {
+                captured.sent = body;
+                return this;
+            },
+        };
+        return {
+            reply: reply as unknown as FastifyReply,
+            get statusCode() {
+                return captured.statusCode;
+            },
+            get sent() {
+                return captured.sent;
+            },
+        };
+    }
+
+    test('does not leak a transport failure message (internal hostname) by default', () => {
+        // The exact shape core throws for a BYO-adapter/DNS failure: message carries the host.
+        const err = Object.assign(
+            new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
+            { name: 'StitchError' },
+        ) as unknown as FastifyError;
+        const cap = captureReply();
+        stitchErrorHandler()(err, {} as FastifyRequest, cap.reply);
+
+        expect(cap.statusCode).toBe(502); // status stays masked
+        const serialized = JSON.stringify(cap.sent);
+        expect(serialized).not.toContain('payments.internal.corp');
+        expect(serialized).not.toContain('ENOTFOUND');
+        expect(cap.sent).toEqual({ error: 'Bad Gateway' });
+    });
+
+    test('does not leak the upstream status message (`HTTP 401`) by default', () => {
+        // core builds `HTTP <status>` (packages/core/src/engine.ts) for an upstream error.
+        const err = Object.assign(new Error('HTTP 401'), {
+            name: 'StitchError',
+            status: 401,
+        }) as unknown as FastifyError;
+        const cap = captureReply();
+        stitchErrorHandler()(err, {} as FastifyRequest, cap.reply);
+
+        expect(cap.statusCode).toBe(502);
+        expect(JSON.stringify(cap.sent)).not.toContain('HTTP 401');
+        expect(cap.sent).toEqual({ error: 'Bad Gateway' });
+    });
+
+    test('the `body` opt-in still includes the raw message', () => {
+        const err = Object.assign(
+            new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
+            { name: 'StitchError' },
+        ) as unknown as FastifyError;
+        const cap = captureReply();
+        stitchErrorHandler({ body: (e) => ({ error: e.message }) })(
+            err,
+            {} as FastifyRequest,
+            cap.reply,
+        );
+
+        // The escape hatch is preserved — callers who want the message can still opt in.
+        expect(cap.sent).toEqual({
+            error: 'getaddrinfo ENOTFOUND payments.internal.corp',
+        });
     });
 });

@@ -1,0 +1,50 @@
+name: drift
+
+# Fails the build when a tracked fact drifts between artifacts. Baseline lives in
+# yakir.lock; the manifest is yakir.json. See https://github.com/rejifald/yakir.
+#
+# Two jobs, mirroring the token/executable tier split:
+#   drift            — token tier: literal facts read straight from files (version
+#                      lockstep + README quotes, engines.node, license across every
+#                      published package.json). No install or build needed.
+#   drift-executable — executable tier: facts that only a command knows —
+#                      `bundle-advertised-size` (measures the built lib),
+#                      `playground-completions`, and the README badge/table blocks
+#                      (`readme-badges` / `readme-packages` / `core-integrations`,
+#                      each a region vs. its generator's --emit). It installs (and
+#                      builds core) first, like verify.yml's `size` job.
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+permissions:
+    contents: read
+
+jobs:
+    drift:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+            - run: npx --yes ./tools/yakir.tgz check --tier token
+
+    drift-executable:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            # Install (for the completions generator's typescript dep) and build core
+            # (so bundle-size.mjs can measure the real lib). --ignore-scripts skips the
+            # lefthook `prepare` (CI provisions hooks differently).
+            - run: pnpm install --frozen-lockfile --ignore-scripts
+            - run: pnpm --filter stitchapi build
+            - run: npx --yes ./tools/yakir.tgz check --tier executable

@@ -28,3 +28,7 @@ docs/sandbox/dist/
 # and fail. The tracked `.claude/launch.json` / `.claude/settings.json` stay in
 # scope. See lefthook.yml's pre-push `format` job.
 .claude/worktrees/
+
+# yakir's baseline lockfile is generated (2-space, written by `yakir fix`); leave
+# its formatting to the tool, like any other lockfile.
+yakir.lock

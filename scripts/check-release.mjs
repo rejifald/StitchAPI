@@ -9,8 +9,11 @@
 //   - each package's `prepublishOnly`   — defense-in-depth on a hand-run publish
 //   - the Publish workflow              — full strict check before `pnpm -r publish`
 //
-// Checks:
-//   1. Version lockstep — every publishable (non-private) package shares one version.
+// Cross-package field consistency (version lockstep, engines.node, license) is owned
+// by yakir — see yakir.json and .github/workflows/drift.yml. This script keeps the
+// checks that are genuinely about a *publish*:
+//
+// Checks (numbered to match the sections below):
 //   2. peerDep coherence — each peerDep/dependency on an in-repo sibling admits the
 //      published version (prerelease-aware, via semver). This is the check that catches
 //      `"stitchapi": ">=0.8.0"` silently rejecting a `1.0.0-rc.1` install.
@@ -96,20 +99,12 @@ const warn = (msg) => warnings.push(msg);
 const ok = [];
 const pass = (msg) => ok.push(msg);
 
-// 1. Version lockstep ----------------------------------------------------------
-const distinct = [...new Set(pkgs.map((p) => p.json.version))];
-if (distinct.length > 1) {
-    const list = pkgs
-        .map((p) => `      ${p.json.name}@${p.json.version}`)
-        .join('\n');
-    fail(
-        `version lockstep: publishable packages disagree on version:\n${list}`,
-    );
-} else {
-    pass(
-        `version lockstep: all ${pkgs.length} publishable packages at ${distinct[0]}`,
-    );
-}
+// 1. Version lockstep — now owned by yakir (yakir.json `release-version` tether, a
+// glob over every published packages/*/package.json #/version). It also covers the
+// engines.node and license fields (`node-engines` / `package-license` tethers), which
+// this script never checked. Run `npx --yes ./tools/yakir.tgz check --tier token`, or
+// see .github/workflows/drift.yml. Kept here: the checks that are genuinely about a
+// *publish*, not cross-package field consistency.
 
 if (!canonical) {
     fail('`stitchapi` core package not found among publishable packages');

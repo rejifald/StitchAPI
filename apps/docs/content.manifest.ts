@@ -627,6 +627,13 @@ export const pages: Page[] = [
             'Feed the auto-generated llms.txt and per-page llms.mdx to an agent for context-frugal docs.',
         kind: 'guide',
     },
+    {
+        path: 'agents/search-over-mcp',
+        title: 'Search the docs over MCP',
+        description:
+            'Connect an agent to the hosted docs MCP — search_docs finds the relevant sections, get_doc reads a full page — for context-frugal retrieval when loading the whole corpus is more than you need.',
+        kind: 'guide',
+    },
 
     // ── Reference ───────────────────────────────────────────────────────────
     {

@@ -246,6 +246,28 @@ describe('pinoSink — URL redaction', () => {
 });
 
 describe('pinoSink — secret safety', () => {
+    it('never logs URL-embedded HTTP Basic credentials (userinfo, no query)', () => {
+        // `baseUrl: 'https://alice:s3cr3t@api.example.com'` is a legitimate, supported
+        // way to carry HTTP Basic auth. The `start` event's URL then has NO query, so a
+        // query-only strip leaves `alice:s3cr3t@` in both the message and the obj.
+        const calls = run({
+            type: 'start',
+            name: 'getUser',
+            method: 'GET',
+            url: 'https://alice:s3cr3t@api.example.com/users/1',
+            input: {},
+            at: 0,
+        });
+        expect(calls).toHaveLength(1);
+        const text = loggedText(calls[0]!);
+        expect(text).not.toContain('s3cr3t');
+        expect(text).not.toContain('alice:s3cr3t');
+        // the obj's url field is the userinfo-stripped form
+        expect((calls[0]!.obj as { url: string }).url).toBe(
+            'https://api.example.com/users/1',
+        );
+    });
+
     it('never logs an `input.headers.authorization` secret', () => {
         const calls = run({
             type: 'start',

@@ -43,7 +43,7 @@ export async function GET(
 }
 ```
 
-`stitchErrorResponse` maps a `StitchError` to `502` by default (never leaking the upstream's status); pass `{ status: (e) => e.status ?? 502 }` to propagate it.
+`stitchErrorResponse` maps a `StitchError` to `502` by default (never leaking the upstream's status); pass `{ status: (e) => e.status ?? 502 }` to propagate it. The body is a generic, status-tied message (`{ error: 'Bad Gateway' }`) — the raw `err.message` is withheld, since it can leak an internal hostname (`getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`). Opt in with `{ body: (e) => ({ error: e.message }) }` when the upstream messages are safe to expose.
 
 ## Streaming with SSE
 

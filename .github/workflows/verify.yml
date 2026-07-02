@@ -69,16 +69,14 @@ jobs:
             # scoped publishConfig.access, LICENSE/README presence, so a bad bump fails
             # the PR, not the publish.
             - run: pnpm check:release
-            # README metrics drift guard: the generated badge block (code health, coverage,
-            # license + StandWithUkraine) must match the committed snapshot. Tool-free — it
-            # renders from scripts/readme-metrics.snapshot.json and compares, so it stays in
-            # this fast job. Refresh the numbers with `pnpm metrics` (runs fallow + coverage).
-            - run: pnpm check:readme
-            # Playground autocomplete is generated from core `src/`; regenerate and fail if the
-            # committed artifact drifted (a new *Config field shipped without a regen). Mirrors the
-            # lefthook pre-commit `completions` job, enforced in CI.
-            - run: pnpm --filter @stitchapi/docs gen:completions
-            - run: git diff --exit-code "apps/docs/app/(home)/playground/playground-completions.generated.ts"
+            # README badge/table drift (code health, coverage, license, package tables)
+            # is now yakir tethers (readme-badges / readme-packages / core-integrations),
+            # enforced by the `drift-executable` job in drift.yml. Refresh the badge
+            # numbers with `pnpm metrics` (runs fallow + coverage, then --refresh).
+            # Playground autocomplete drift (the generated artifact vs core `src/`) is now a
+            # yakir tether (`playground-completions`, a whole-file compare against the generator's
+            # --emit output), enforced by the `drift-executable` job in drift.yml. The pre-commit
+            # `completions` job still regenerates + stages so a dev never commits a stale artifact.
             # Docs IA drift guard: content.manifest.ts is the source of truth for the sidebar,
             # but pages get added straight into the per-folder meta.json files, so the manifest
             # silently rots and a stray `gen:docs` would delete real pages. Regenerate and fail
@@ -109,9 +107,9 @@ jobs:
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter stitchapi build
             - run: pnpm --filter stitchapi check:size
-            # Advertised bundle sizes (READMEs, docs, homepage) must match the
-            # measured figure above — fails if any quote has drifted.
-            - run: pnpm check:size-docs
+            # Advertised bundle sizes (READMEs, docs, homepage) matching the measured
+            # figure is now a yakir tether (`bundle-advertised-size`), enforced by the
+            # `drift-size` job in drift.yml (it builds core and measures the same way).
 
     # Coverage gate: core declares coverage thresholds (packages/core/vitest.config.ts), so a drop
     # below them fails here. Runs core's instrumented suite (`test:coverage`) in its own job rather
@@ -186,3 +184,32 @@ jobs:
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter @stitchapi/docs test:e2e:install
             - run: pnpm --filter @stitchapi/docs test:e2e
+
+    # Docs search-relevance ratchet (apps/docs/scripts/search-eval.mts --assert): builds the
+    # semantic search index the deploy builds, then asserts every natural question in
+    # apps/docs/test/search-golden.json still finds its page within reach (#5) and that the
+    # aggregate Relevance@1 / MRR hold above their floors. This is the regression guard for
+    # search_docs — it catches a content edit that silently drops a page out of its own
+    # question's results (the >8/>30 misranks this ratchet was tuned to fix). It builds the
+    # docs app and loads the local embedding model, so — like size/sandbox/e2e — it runs as
+    # its own job rather than in the fast `verify` gate. Make it a required check once it has
+    # settled in CI.
+    search-relevance:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            # Cache the local embedding model (all-MiniLM-L6-v2, ~23 MB) transformers.js pulls
+            # into node_modules on the first index build, so a HuggingFace CDN hiccup can't flake
+            # a required check. Keyed on the lockfile, so a transformers version bump re-fetches.
+            - uses: actions/cache@v4
+              with:
+                  path: node_modules/.pnpm/@huggingface+transformers@*/node_modules/@huggingface/transformers/.cache
+                  key: transformers-model-${{ hashFiles('pnpm-lock.yaml') }}
+            - run: pnpm --filter @stitchapi/docs check:search-relevance
