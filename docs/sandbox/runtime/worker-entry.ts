@@ -70,6 +70,15 @@ export interface WorkerEnv {
      */
     stitchBuild: Record<string, unknown>;
     /**
+     * OPTIONAL curated module namespaces a snippet may `import` from, keyed by
+     * bare specifier (e.g. `{ zod }`). `stitchapi` is ALWAYS importable (it maps
+     * to {@link stitchBuild}); this adds the rest. transpile rebinds a snippet's
+     * `import { z } from 'zod'` to `__stitchImport('zod')`, which returns this
+     * namespace. An unknown specifier throws — there is no real module loader and
+     * `require` stays `undefined` (SEC-31). Values are in-memory only, never fs.
+     */
+    modules?: Record<string, unknown>;
+    /**
      * The S5 simulator fetch shim — the snippet's ONLY `fetch`. No real socket
      * is reachable (SEC-01..04).
      */
@@ -335,6 +344,33 @@ export async function runSnippetInWorker(
     for (const name of msg.extraScopeNames) {
         if (!(name in scope)) scope[name] = env.stitchBuild[name];
     }
+
+    // Curated module registry (SEC-31). transpile rebinds a snippet's ESM
+    // `import { … } from '<spec>'` to `__stitchImport('<spec>')`; only these
+    // in-memory namespaces resolve — `stitchapi` (the whole build) plus whatever
+    // `env.modules` adds (e.g. `zod`). There is NO real module loader and
+    // `require` stays `undefined` above; an unknown specifier throws a clear
+    // error. Bound LAST so a snippet can't shadow it via `extraScopeNames`.
+    const importable: Record<string, unknown> = {
+        stitchapi: env.stitchBuild,
+        ...(env.modules ?? {}),
+    };
+    scope.__stitchImport = (specifier: unknown): unknown => {
+        if (
+            typeof specifier === 'string' &&
+            Object.prototype.hasOwnProperty.call(importable, specifier)
+        ) {
+            return importable[specifier];
+        }
+        const available = Object.keys(importable)
+            .map((s) => `'${s}'`)
+            .join(', ');
+        throw new Error(
+            `Cannot import from '${String(specifier)}' in the playground. ` +
+                `Available modules: ${available}. Everything exported from ` +
+                `'stitchapi' is also in scope without importing.`,
+        );
+    };
 
     const names = Object.keys(scope);
     const values = names.map((n) => scope[n]);

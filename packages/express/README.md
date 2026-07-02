@@ -93,12 +93,15 @@ charge):
 
 ```ts
 app.use(stitchErrorHandler());
-// default 502 — an upstream's 401/404/etc. is never leaked to your client.
+// default 502, body `{ error: 'Bad Gateway' }` — neither the upstream's
+// 401/404/etc. status nor the raw error message is leaked to your client (a
+// transport failure would otherwise read like `getaddrinfo ENOTFOUND
+// payments.internal.corp`, disclosing internal topology).
 
 // propagate the upstream status instead:
 app.use(stitchErrorHandler({ status: (e) => e.status ?? 502 }));
 
-// or shape your own error envelope:
+// or shape your own error envelope (this opts in to the raw message):
 app.use(
     stitchErrorHandler({
         body: (e, status) => ({ code: status, msg: e.message }),

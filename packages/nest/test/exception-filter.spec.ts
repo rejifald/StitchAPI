@@ -31,7 +31,8 @@ describe('toHttpException', () => {
         const ex = toHttpException(stitchError('rate limited', 429));
         expect(ex).toBeInstanceOf(HttpException);
         expect(ex!.getStatus()).toBe(502);
-        expect(ex!.message).toContain('rate limited'); // message preserved
+        // the raw message is withheld by default (see the leak-regression block below)
+        expect(ex!.message).toBe('Upstream request failed');
         // a network error / timeout (no upstream status) → 502 too
         expect(toHttpException(stitchError('ECONNRESET'))!.getStatus()).toBe(
             502,
@@ -60,6 +61,58 @@ describe('toHttpException', () => {
 
     it('returns undefined for a non-stitch error (so the caller can rethrow)', () => {
         expect(toHttpException(new Error('other'))).toBeUndefined();
+    });
+
+    // Regression: the default response body must not echo the raw upstream/transport
+    // message, which can disclose internal network topology or the upstream's status
+    // semantics to an untrusted client.
+    describe('does not leak the raw error message by default', () => {
+        const bodyOf = (ex: HttpException): string =>
+            JSON.stringify(ex.getResponse());
+
+        it('a transport failure with an internal hostname is not disclosed', () => {
+            const ex = toHttpException(
+                stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+            )!;
+            expect(ex.getStatus()).toBe(502);
+            const body = bodyOf(ex);
+            expect(body).not.toContain('payments.internal.corp');
+            expect(body).not.toContain('ENOTFOUND');
+            expect(ex.message).not.toContain('payments.internal.corp');
+        });
+
+        it("an upstream 401 does not surface as 'HTTP 401' in the body", () => {
+            const ex = toHttpException(stitchError('HTTP 401', 401))!;
+            expect(ex.getStatus()).toBe(502); // remapped, not the upstream 401
+            expect(bodyOf(ex)).not.toContain('HTTP 401');
+        });
+
+        it('still exposes the original error as `cause` for server-side logging', () => {
+            const original = stitchError(
+                'getaddrinfo ENOTFOUND payments.internal.corp',
+            );
+            const ex = toHttpException(original)!;
+            expect(ex.cause).toBe(original);
+        });
+
+        it('opt-in `exposeMessage: true` includes the raw message', () => {
+            const ex = toHttpException(
+                stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+                { exposeMessage: true },
+            )!;
+            expect(bodyOf(ex)).toContain('payments.internal.corp');
+        });
+
+        it('opt-in `message` override sets a caller-chosen message', () => {
+            const fixed = toHttpException(stitchError('HTTP 401', 401), {
+                message: 'Payment provider unavailable',
+            })!;
+            expect(fixed.message).toBe('Payment provider unavailable');
+            const fromFn = toHttpException(stitchError('HTTP 429', 429), {
+                message: (e) => `upstream said ${e.status}`,
+            })!;
+            expect(fromFn.message).toBe('upstream said 429');
+        });
     });
 });
 

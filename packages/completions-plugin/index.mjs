@@ -21,7 +21,10 @@
  */
 import { generatePlaygroundCompletions } from './codegen.mjs';
 
-export { generatePlaygroundCompletions } from './codegen.mjs';
+export {
+    generatePlaygroundCompletions,
+    renderPlaygroundCompletions,
+} from './codegen.mjs';
 
 export class PlaygroundCompletionsPlugin {
     /** @param {PluginOptions} opts */

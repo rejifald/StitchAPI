@@ -16,10 +16,10 @@ StitchAPI-specific schema type.
 
 Your validator already does this. Define the entity with your schema library,
 then derive the request shapes with its own composition methods and hand each
-one to a stitch through [`toValidator()`](/docs/guides/validation/validation).
+one straight to a stitch's [`input`/`output`](/docs/guides/validation/validation).
 
 ```ts twoslash
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 // Define the entity once — one source for the runtime schema and the TS type.
@@ -42,24 +42,24 @@ const listUsers = stitch<User[]>({
     method: 'GET',
     baseUrl,
     path: '/users',
-    input: { query: toValidator(UserFilter) },
-    output: toValidator(z.array(User)),
+    input: { query: UserFilter },
+    output: z.array(User),
 });
 
 const createUser = stitch<User>({
     method: 'POST',
     baseUrl,
     path: '/users',
-    input: { body: toValidator(NewUser) },
-    output: toValidator(User),
+    input: { body: NewUser },
+    output: User,
 });
 
 const updateUser = stitch<User>({
     method: 'PATCH',
     baseUrl,
     path: '/users/{id}',
-    input: { body: toValidator(UserPatch) },
-    output: toValidator(User),
+    input: { body: UserPatch },
+    output: User,
 });
 ```
 
@@ -71,8 +71,8 @@ schema — rename a field there and every derived shape, every stitch, and the
 
 `.omit()`, `.partial()`, and `.pick()` are **your validator's** methods, not
 StitchAPI's. The runtime never sees them — it only ever calls `validate()`
-through the [`Validator`](/docs/reference/config-types) that `toValidator()`
-produces, so each derived schema is just another schema as far as a stitch is
+through the [`Validator`](/docs/reference/config-types) the engine adapts each
+schema into, so each derived schema is just another schema as far as a stitch is
 concerned. One `z.object({...})` definition then feeds three things at once: the
 runtime validation on every slot (`query`, `body`, `output`), and — via
 `z.infer` — the `User` TS type the `stitch<T>` generic uses.
@@ -80,8 +80,8 @@ runtime validation on every slot (`query`, `body`, `output`), and — via
 This is **not** StitchAPI-specific. Valibot, ArkType, and Effect Schema each
 ship their own composition (`v.partial`, `.pick`, `.omit`, `.and`); the recipe
 is identical, only the method names change. Any
-[Standard Schema](/docs/guides/validation/standard-schema) validator goes
-through the same `toValidator()` call.
+[Standard Schema](/docs/guides/validation/standard-schema) validator passes to a
+stitch the same way.
 
 <Callout type="info">
     **Why there's no `pattern` primitive.** StitchAPI deliberately does *not*

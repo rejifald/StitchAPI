@@ -107,13 +107,19 @@ aborts the upstream stitch generator rather than leaving it running.
 
 The plugin registers a `setErrorHandler` that maps a `StitchError` to an HTTP
 response and rethrows everything else (so Fastify's default handler stays in
-charge):
+charge). By default the status is `502` **and** the body is a generic,
+status-tied message (`{ error: 'Bad Gateway' }`) — the raw `error.message` is
+withheld, because it can leak an internal hostname (`getaddrinfo ENOTFOUND
+payments.internal.corp`) or the upstream's status (`HTTP 401`) to an untrusted
+client:
 
 ```ts
 await app.register(stitchPlugin, {
     seamConfig: { baseUrl: '…' },
     // propagate the upstream status instead of the safe 502 default:
     errorHandler: { status: (e) => e.status ?? 502 },
+    // opt in to the raw message (only when upstream messages are safe to expose):
+    // errorHandler: { body: (e) => ({ error: e.message }) },
 });
 ```
 

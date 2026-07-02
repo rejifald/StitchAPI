@@ -53,13 +53,12 @@ hard validation — a single new optional field shouldn't throw. Pass a
 [`drift()`](/docs/guides/validation/drift) spec to `output` instead, which
 reports leveled findings without failing the call.
 
-Config fields are typed as `Validator`, so adapt your schema with `toValidator`
-before assigning it. It coerces a Zod schema, any Standard Schema (Valibot,
-ArkType), or a plain predicate into the `Validator` shape `input`/`output`
-expect:
+Assign the schema straight to `input`/`output` — a Zod schema, any Standard
+Schema (Valibot, ArkType), or a plain predicate goes on the config as written,
+and the engine adapts it internally:
 
 ```ts twoslash
-import { stitch, toValidator } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const createUser = stitch<{ id: number; name: string }>({
@@ -67,15 +66,21 @@ const createUser = stitch<{ id: number; name: string }>({
     baseUrl: 'https://api.example.com',
     path: '/users',
     // Validated before the POST is sent — bad input fails fast.
-    input: { body: toValidator(z.object({ name: z.string() })) },
+    input: { body: z.object({ name: z.string() }) },
     // Validated after the response returns.
-    output: toValidator(z.object({ id: z.number(), name: z.string() })),
+    output: z.object({ id: z.number(), name: z.string() }),
 });
 ```
 
 See [Bring your own validator](/docs/guides/validation/standard-schema) for
 adapting non-Zod schemas, and [Validation](/docs/guides/validation/validation)
 for how `input` and `output` are checked.
+
+<Callout type="info">
+    Stuck, or debugging with an agent? Ask the [docs
+    MCP](/docs/agents/search-over-mcp) — `search_docs('STITCH_VALIDATION')`
+    pulls this page and the related guides straight into context.
+</Callout>
 
 ## Related
 

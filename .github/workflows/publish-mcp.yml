@@ -1,0 +1,102 @@
+# Publishes the StitchAPI docs MCP (dev.stitchapi/docs) to the official MCP
+# registry and — if configured — to Smithery. The registry publish CASCADES to
+# Glama and PulseMCP automatically, so those need no separate step.
+#
+# One-time setup lives in docs/MCP-PUBLISHING.md (generate an Ed25519 key,
+# publish the public half as a DNS TXT record at the stitchapi.dev apex, and
+# store the private key hex as the MCP_PRIVATE_KEY repo secret; optionally mint a
+# Smithery token into SMITHERY_API_KEY).
+#
+# To publish an update: bump "version" in server.json and merge to main — each
+# publish needs a UNIQUE version — or trigger this workflow manually.
+name: Publish MCP server
+
+on:
+    pull_request:
+        paths: ['server.json']
+    push:
+        branches: [main]
+        paths: ['server.json']
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: publish-mcp
+    cancel-in-progress: false
+
+jobs:
+    # Offline schema + semantic validation. Runs on PRs too, so a bad server.json
+    # is caught before merge (no secrets required).
+    validate:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+            - name: Install mcp-publisher
+              run: |
+                  curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+            - name: Validate server.json
+              run: ./mcp-publisher validate ./server.json
+
+    # Publish to the official registry. Never runs on a PR, and stays green/inert
+    # until MCP_PRIVATE_KEY is set. On push it publishes only when the version in
+    # server.json changed (the registry rejects a duplicate version);
+    # workflow_dispatch forces a publish.
+    registry:
+        needs: validate
+        if: github.event_name != 'pull_request'
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+              with:
+                  fetch-depth: 2
+            - name: Decide whether to publish
+              id: ver
+              env:
+                  MCP_PRIVATE_KEY: ${{ secrets.MCP_PRIVATE_KEY }}
+              run: |
+                  NEW=$(jq -r .version server.json)
+                  OLD=$(git show HEAD^:server.json 2>/dev/null | jq -r .version || echo "")
+                  echo "version=$NEW" >> "$GITHUB_OUTPUT"
+                  if [ -z "$MCP_PRIVATE_KEY" ]; then
+                    echo "publish=false" >> "$GITHUB_OUTPUT"
+                    echo "reason=MCP_PRIVATE_KEY is not set — configure it to enable publishing (see docs/MCP-PUBLISHING.md)." >> "$GITHUB_OUTPUT"
+                  elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$NEW" != "$OLD" ]; then
+                    echo "publish=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "publish=false" >> "$GITHUB_OUTPUT"
+                    echo "reason=version $NEW is unchanged — bump server.json to publish." >> "$GITHUB_OUTPUT"
+                  fi
+            - name: Install mcp-publisher
+              if: steps.ver.outputs.publish == 'true'
+              run: |
+                  curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+            - name: Authenticate (DNS domain auth for the dev.stitchapi/* namespace)
+              if: steps.ver.outputs.publish == 'true'
+              run: ./mcp-publisher login dns --domain stitchapi.dev --private-key "${{ secrets.MCP_PRIVATE_KEY }}"
+            - name: Publish to the official MCP registry
+              if: steps.ver.outputs.publish == 'true'
+              run: ./mcp-publisher publish ./server.json
+            - name: Nothing to publish
+              if: steps.ver.outputs.publish != 'true'
+              run: echo "Skipped — ${{ steps.ver.outputs.reason }}"
+
+    # Publish to Smithery (idempotent upsert by name). No-ops until SMITHERY_API_KEY
+    # is set, so it never breaks CI before you opt in. Smithery does NOT cascade
+    # from the official registry, so this is the only way to keep it current.
+    smithery:
+        needs: validate
+        if: github.event_name != 'pull_request'
+        runs-on: ubuntu-latest
+        steps:
+            - name: Publish to Smithery
+              env:
+                  SMITHERY_API_KEY: ${{ secrets.SMITHERY_API_KEY }}
+              run: |
+                  if [ -z "$SMITHERY_API_KEY" ]; then
+                    echo "SMITHERY_API_KEY not set — skipping Smithery publish."
+                    exit 0
+                  fi
+                  # Adjust the -n owner/name to your Smithery namespace (see docs/MCP-PUBLISHING.md).
+                  npx -y @smithery/cli mcp publish https://stitchapi.dev/api/mcp -n rejifald/stitchapi-docs

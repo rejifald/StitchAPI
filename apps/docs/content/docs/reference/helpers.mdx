@@ -266,10 +266,11 @@ const store = memoryStore();
 
 ### toValidator
 
-Coerce a Zod schema, any Standard Schema, an existing `Validator`, or a
-predicate into a `Validator` — returning `undefined` when passed `null` or
-`undefined`. This is how Zod-first projects keep Zod while Valibot/ArkType also
-work.
+Coerce a plain predicate, a Zod schema, any Standard Schema, or an existing
+`Validator` into a `Validator` — returning `undefined` when passed `null` or
+`undefined`. `input`/`output` already accept a raw Zod or Standard Schema, so
+reach for this to wrap a hand-rolled predicate or normalize a validator, not to
+satisfy the config type.
 
 ```ts twoslash
 import { toValidator } from 'stitchapi';

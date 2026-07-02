@@ -16,7 +16,8 @@
 // own built-in sinks. So this sends **metadata only** (name, method, redacted URL,
 // status, attempt counts, drift path/level/change, phase, timing) and NEVER
 // `event.input` (its headers carry the live `authorization`/`cookie`), `event.data`,
-// or a `delta` chunk. The URL query string is dropped (it can carry `?api_key=…`).
+// or a `delta` chunk. Both the URL userinfo (`user:pass@`) and the query string are
+// dropped — either can carry a credential (`?api_key=…`).
 import type { StitchEvent, TraceContext, TraceSink } from 'stitchapi';
 import { compact } from 'stitchapi';
 
@@ -79,8 +80,23 @@ export interface SentrySinkOptions {
 // helpers
 // ---------------------------------------------------------------------------
 
-/** Drop the query string (it may carry secrets, e.g. `?api_key=…`). */
+/**
+ * Strip BOTH the URL userinfo (`user:pass@`, e.g. HTTP Basic auth embedded in the
+ * baseUrl) and the query string (it may carry secrets, e.g. `?api_key=…`) — either can
+ * carry a credential. Core's own sinks strip userinfo via `scrubUrl`; that helper is
+ * internal (not exported from `stitchapi`), so this mirrors it locally.
+ */
 function redactUrl(url: string): string {
+    try {
+        const u = new URL(url);
+        if (u.username || u.password) {
+            u.username = '';
+            u.password = '';
+            url = u.toString();
+        }
+    } catch {
+        // not an absolute/parseable URL — fall through to the query-only strip
+    }
     const q = url.indexOf('?');
     return q === -1 ? url : `${url.slice(0, q)}?…`;
 }

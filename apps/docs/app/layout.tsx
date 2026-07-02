@@ -143,7 +143,14 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                     type="application/ld+json"
                     dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }}
                 />
-                <RootProvider>
+                <RootProvider
+                    search={{
+                        // Semantic site search (search_docs P2): the dialog's
+                        // fetch client queries this hybrid route instead of the
+                        // default keyword /api/search.
+                        options: { api: '/api/search-docs' },
+                    }}
+                >
                     <Banner
                         variant="normal"
                         className="gap-2 border-b border-stitch-border bg-stitch-soft text-fd-foreground"

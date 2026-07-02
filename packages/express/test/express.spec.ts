@@ -324,8 +324,68 @@ describe('stitchErrorHandler maps a StitchError to HTTP', () => {
         );
 
         expect(res.statusCode).toBe(502); // gateway default — upstream 503 is not leaked
-        expect(res.jsonBody).toEqual({ error: 'down' });
+        // The default body is the generic, status-tied phrase — NOT the raw upstream message.
+        expect(res.jsonBody).toEqual({ error: 'Bad Gateway' });
         expect(nextedWith).toBe('untouched'); // mapped, so next() was not called
+    });
+
+    test('does not leak a transport failure message (internal hostname) by default', () => {
+        // The exact shape core throws for a BYO-adapter/DNS failure: message carries the host.
+        const err = Object.assign(
+            new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
+            { name: 'StitchError' },
+        );
+        const res = mockRes();
+        stitchErrorHandler()(
+            err,
+            mockReq() as unknown as Request,
+            res as unknown as Response,
+            () => undefined,
+        );
+
+        expect(res.statusCode).toBe(502); // status stays masked
+        const serialized = JSON.stringify(res.jsonBody);
+        expect(serialized).not.toContain('payments.internal.corp');
+        expect(serialized).not.toContain('ENOTFOUND');
+        expect(res.jsonBody).toEqual({ error: 'Bad Gateway' });
+    });
+
+    test('does not leak the upstream status message (`HTTP 401`) by default', () => {
+        // core builds `HTTP <status>` (packages/core/src/engine.ts) for an upstream error.
+        const err = Object.assign(new Error('HTTP 401'), {
+            name: 'StitchError',
+            status: 401,
+        });
+        const res = mockRes();
+        stitchErrorHandler()(
+            err,
+            mockReq() as unknown as Request,
+            res as unknown as Response,
+            () => undefined,
+        );
+
+        expect(res.statusCode).toBe(502);
+        expect(JSON.stringify(res.jsonBody)).not.toContain('HTTP 401');
+        expect(res.jsonBody).toEqual({ error: 'Bad Gateway' });
+    });
+
+    test('the `body` opt-in still includes the raw message', () => {
+        const err = Object.assign(
+            new Error('getaddrinfo ENOTFOUND payments.internal.corp'),
+            { name: 'StitchError' },
+        );
+        const res = mockRes();
+        stitchErrorHandler({ body: (e) => ({ error: e.message }) })(
+            err,
+            mockReq() as unknown as Request,
+            res as unknown as Response,
+            () => undefined,
+        );
+
+        // The escape hatch is preserved — callers who want the message can still opt in.
+        expect(res.jsonBody).toEqual({
+            error: 'getaddrinfo ENOTFOUND payments.internal.corp',
+        });
     });
 
     test('can propagate the upstream status', () => {

@@ -162,11 +162,16 @@ const failed = rows.some((r) => r.over);
 if (process.argv.includes('--json')) {
     console.log(
         JSON.stringify(
+            // `kb` is the *advertised* figure: the rounded gzip kB the READMEs/docs
+            // quote (`~NN kB`). Emitting it here lets the yakir `bundle-advertised-size`
+            // tether read the measured set straight from this output (it greps `"kb"`),
+            // instead of re-deriving the rounding. See yakir.json.
             rows.map(({ name, min, gzip, brotli, budget, over }) => ({
                 name,
                 min,
                 gzip,
                 brotli,
+                kb: Math.round(gzip / KB),
                 budget,
                 over,
             })),
@@ -215,8 +220,8 @@ if (failed) {
     process.exit(1);
 }
 
-// Keep --json output pure (it is consumed by scripts/check-size-docs.mjs);
-// the human-readable confirmation is only for the table view.
+// Keep --json output pure (it is consumed by yakir's `bundle-advertised-size`
+// tether); the human-readable confirmation is only for the table view.
 if (!process.argv.includes('--json')) {
     console.log('✓ Core entry within budget.\n');
 }

@@ -213,13 +213,16 @@ export function fromUpstash(client: UpstashLike): RedisDriver {
     return {
         async get(key) {
             // The driver contract is "return the raw stored string or null".
-            // Upstash auto-deserializes JSON replies, so a value we wrote as a
-            // JSON envelope can come back already parsed into an object/number;
-            // re-serialize those so `redisStore.get`'s `JSON.parse` round-trips,
-            // and pass strings through untouched (bare counters stay strings).
+            // Upstash auto-deserializes JSON replies, so a value written as a JSON
+            // envelope (or a JSON-parseable string) can come back already parsed.
+            // Re-serialize EVERY non-null reply so `redisStore.get`'s `JSON.parse`
+            // round-trips exactly — including JSON-parseable strings ("null",
+            // "123", '{"x":1}'), which Upstash peels one layer off (the store
+            // wrote '"null"', we get the string `null` back), and bare INCR
+            // counters (Upstash returns 1 -> "1" -> parse -> 1). Passing strings
+            // through untouched would let those cases parse a second time.
             const v = await client.get(key);
-            if (v == null) return null;
-            return typeof v === 'string' ? v : JSON.stringify(v);
+            return v == null ? null : JSON.stringify(v);
         },
         async set(key, value, ttl) {
             if (ttl == null) await client.set(key, value);

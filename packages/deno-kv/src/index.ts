@@ -81,6 +81,32 @@ export interface DenoKvLike {
 }
 
 // ---------------------------------------------------------------------------
+// the counter window
+// ---------------------------------------------------------------------------
+
+/**
+ * What `incr` stores under a counter key: the running count `n` plus the window's
+ * absolute `deadline` (epoch ms). We keep the deadline in the VALUE — rather than
+ * relying on the key's `expireIn` alone — because Deno KV's `set` replaces the
+ * whole entry (clearing any prior expiry) and `get` never exposes the remaining
+ * TTL. Storing the deadline lets each `incr` re-derive the correct `expireIn` on
+ * every write, so a fixed window's expiry survives later increments intact.
+ */
+interface CounterWindow {
+    n: number;
+    deadline: number;
+}
+
+/** A value is a live {@link CounterWindow} iff it's a `{ n, deadline }` object. */
+function asWindow(value: unknown): CounterWindow | null {
+    if (value == null || typeof value !== 'object') return null;
+    const w = value as { n?: unknown; deadline?: unknown };
+    return typeof w.n === 'number' && typeof w.deadline === 'number'
+        ? { n: w.n, deadline: w.deadline }
+        : null;
+}
+
+// ---------------------------------------------------------------------------
 // the store
 // ---------------------------------------------------------------------------
 
@@ -137,8 +163,14 @@ export function denoKvStore(
         async get(key) {
             const { value } = await kv.get(k(key));
             if (value == null) return undefined;
-            // We always write a JSON string; anything else (e.g. a bare counter
-            // written by `incr`) is handed back as-is.
+            // A counter written by `incr` is a `{ n, deadline }` envelope; the
+            // contract's cross-reads of a counter (e.g. core's cache-generation
+            // number) expect the plain count, so unwrap it back to `n`. A legacy
+            // bare-number counter from before this envelope is returned as-is.
+            const window = asWindow(value);
+            if (window) return window.n;
+            // Everything else is the JSON string `set` wrote (or a bare value a
+            // custom writer left behind) — hand it back decoded.
             if (typeof value !== 'string') return value;
             try {
                 return JSON.parse(value) as unknown;
@@ -158,32 +190,45 @@ export function denoKvStore(
             await kv.set(k(key), JSON.stringify(value), options);
         },
         async incr(key, ttl) {
-            // Atomic counter-with-window via compare-and-set. Read the current
-            // value + its versionstamp, then commit `next` guarded by a `check`
-            // on that versionstamp: if another isolate raced us, the versionstamp
-            // moved, the commit returns `ok: false`, and we re-read and retry —
-            // so N concurrent incrs net exactly +N (the contract's rule).
+            // Atomic FIXED-window counter via compare-and-set. Read the current
+            // value + its versionstamp, then commit the next state guarded by a
+            // `check` on that versionstamp: if another isolate raced us, the
+            // versionstamp moved, the commit returns `ok: false`, and we re-read
+            // and retry — so N concurrent incrs net exactly +N (the contract).
             //
-            // The TTL is set ONLY on the increment that creates the counter (when
-            // the prior versionstamp is `null`), never extending it afterwards —
-            // otherwise a busy rate window would slide forever and never reset,
-            // matching the redis adapter's "PEXPIRE only when v == 1" semantics.
+            // The window is a `{ n, deadline }` envelope, NOT a bare number,
+            // because Deno KV's `set` replaces the whole entry — including its
+            // expiry. (This is the opposite of Redis's INCR, which PRESERVES the
+            // key's TTL, so the redis adapter can set PEXPIRE once at creation.
+            // Here a later `set` without `expireIn` would silently CLEAR the
+            // window, making the counter permanent and the rate limit never
+            // reset.) We store an absolute `deadline`, pinned at the window's
+            // FIRST increment and never extended, and re-derive `expireIn` from
+            // it on every commit so the fixed window always expires on time.
             const kk = k(key);
             for (let attempt = 0; attempt <= maxRetries; attempt++) {
                 const entry = await kv.get(kk);
-                const current =
-                    typeof entry.value === 'number' ? entry.value : 0;
-                const next = current + 1;
+                const now = Date.now();
+                const prev = asWindow(entry.value);
+                // A window past its deadline (or an absent / legacy bare-number
+                // value) starts a fresh window at 1; an old bare counter thus
+                // self-heals into the envelope on its next incr.
+                const live = prev != null && prev.deadline > now;
+                const deadline = live ? prev.deadline : now + ttl;
+                const n = (live ? prev.n : 0) + 1;
+                // Deno KV rejects `expireIn` of 0/negative; keep it ≥ 1 while the
+                // deadline is in the future. `ttl <= 0` means "no window" — write
+                // without an expiry (matching `set`'s no-TTL path).
                 const options =
-                    entry.versionstamp === null && ttl > 0
-                        ? { expireIn: ttl }
+                    ttl > 0
+                        ? { expireIn: Math.max(1, deadline - now) }
                         : undefined;
                 const res = await kv
                     .atomic()
                     .check({ key: kk, versionstamp: entry.versionstamp })
-                    .set(kk, next, options)
+                    .set(kk, { n, deadline }, options)
                     .commit();
-                if (res.ok) return next;
+                if (res.ok) return n;
             }
             throw new Error(
                 `@stitchapi/deno-kv: incr(${key}) lost ${maxRetries + 1} compare-and-set races`,

@@ -141,6 +141,36 @@ test('SSE start frame scrubs a secret query param the caller echoed (structured 
     expect(text).not.toContain('SQLEAK'); // the secret never rides the wire (url OR structured input)
 });
 
+test('SSE start frame deep-redacts a secret in the echoed request body & GraphQL variables (serve is unauthenticated)', async () => {
+    api.route('GET', '/ping', { body: { ok: true } });
+    const res = await fetch(`${base}/stitch/ping`, {
+        method: 'POST',
+        headers: { accept: 'text/event-stream' },
+        // An OAuth password-grant-shaped body + a GraphQL login variable: credentials the caller
+        // put in the request input, echoed back in the `start` frame.
+        body: JSON.stringify({
+            body: { password: 'BODYLEAK', client_secret: 'CSLEAK', keep: 'ok' },
+            variables: { password: 'VARLEAK', user: 'alice' },
+        }),
+    });
+    const text = await res.text();
+    const start = parseSse(text).find((f) => f.event === 'start');
+    const echoed = start?.data?.['input'] as
+        | {
+              body?: Record<string, unknown>;
+              variables?: Record<string, unknown>;
+          }
+        | undefined;
+    expect(echoed?.body?.['password']).toBe('REDACTED'); // secret body field scrubbed before it leaves
+    expect(echoed?.body?.['client_secret']).toBe('REDACTED');
+    expect(echoed?.body?.['keep']).toBe('ok'); // benign body field preserved
+    expect(echoed?.variables?.['password']).toBe('REDACTED'); // secret GraphQL variable scrubbed
+    expect(echoed?.variables?.['user']).toBe('alice'); // benign variable preserved
+    expect(text).not.toContain('BODYLEAK'); // no body/variable secret rides the wire
+    expect(text).not.toContain('CSLEAK');
+    expect(text).not.toContain('VARLEAK');
+});
+
 test('an unknown stitch is a 404 with a listing message', async () => {
     const res = await fetch(`${base}/stitch/nope`, {
         method: 'POST',

@@ -9,15 +9,23 @@ import { describe, expect, test } from 'vitest';
 const ACCESS_KEY = 'AKIDEXAMPLE';
 const SECRET_KEY = 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY';
 
-// A minimal request/context to drive the strategy's `apply`.
+// A minimal request/context to drive the strategy's `apply`. `bodyType` mirrors
+// core's `AdapterRequest.bodyType`, which the engine threads onto the request the
+// auth strategy signs (engine.ts) — the signer reads it to match the wire encoding.
 function fakeReq(
-    over: Partial<{ url: string; method: string; body: unknown }> = {},
+    over: Partial<{
+        url: string;
+        method: string;
+        body: unknown;
+        bodyType: 'json' | 'form' | 'multipart';
+    }> = {},
 ) {
     return {
         url: over.url ?? 'https://example.amazonaws.com/',
         method: over.method ?? 'GET',
         headers: {} as Record<string, string>,
         ...(over.body !== undefined ? { body: over.body } : {}),
+        ...(over.bodyType !== undefined ? { bodyType: over.bodyType } : {}),
     };
 }
 const fakeCtx = { emit: (): void => {} };
@@ -233,6 +241,106 @@ describe('awsSigV4 strategy', () => {
         );
         expect(reqObj.headers['x-amz-content-sha256']).toBe(
             reqStr.headers['x-amz-content-sha256'],
+        );
+    });
+
+    // Regression (SignatureDoesNotMatch): with `bodyType: 'form'` the transport sends
+    // `application/x-www-form-urlencoded` bytes (URLSearchParams), NOT JSON. signBody:true
+    // must hash those exact wire bytes — hashing JSON.stringify(body) signs bytes that are
+    // never sent, so AWS returns 403. Assert parity with the equivalent string body.
+    test('signBody:true on a form body signs the URL-encoded wire bytes, not JSON', async () => {
+        const body = { Action: 'SendMessage', MessageBody: 'two words' };
+        // What core's transport actually sends: 'Action=SendMessage&MessageBody=two+words'.
+        const wire = new URLSearchParams(
+            body as Record<string, string>,
+        ).toString();
+
+        const form = awsSigV4({
+            region: 'us-east-1',
+            service: 'sqs',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+            signBody: true,
+        });
+        const reqForm = fakeReq({ method: 'POST', body, bodyType: 'form' });
+        await form.apply(reqForm, fakeCtx as never);
+
+        // A string body is hashed verbatim; the form path must hash the SAME wire bytes.
+        const str = awsSigV4({
+            region: 'us-east-1',
+            service: 'sqs',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+        });
+        const reqStr = fakeReq({ method: 'POST', body: wire });
+        await str.apply(reqStr, fakeCtx as never);
+
+        expect(reqForm.headers['x-amz-content-sha256']).toBe(
+            reqStr.headers['x-amz-content-sha256'],
+        );
+
+        // …and it must NOT be the (buggy) JSON hash the transport never sends.
+        const jsonStrategy = awsSigV4({
+            region: 'us-east-1',
+            service: 'sqs',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+        });
+        const reqJson = fakeReq({ method: 'POST', body: JSON.stringify(body) });
+        await jsonStrategy.apply(reqJson, fakeCtx as never);
+        expect(reqForm.headers['x-amz-content-sha256']).not.toBe(
+            reqJson.headers['x-amz-content-sha256'],
+        );
+    });
+
+    // Regression (SignatureDoesNotMatch): a multipart body is sent as FormData with a
+    // transport-generated boundary, so its exact bytes are unknowable at sign time — the
+    // payload cannot be signed. signBody:true must refuse loudly rather than emit a hash
+    // (JSON of the body) that is guaranteed not to match.
+    test('signBody:true on a multipart body throws (boundary is transport-generated)', async () => {
+        const strategy = awsSigV4({
+            region: 'us-east-1',
+            service: 's3',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+            signBody: true,
+        });
+        const req = fakeReq({
+            method: 'POST',
+            body: { file: 'x' },
+            bodyType: 'multipart',
+        });
+        await expect(strategy.apply(req, fakeCtx as never)).rejects.toThrow(
+            /multipart/i,
+        );
+    });
+
+    // The default (no signBody) is unchanged for form/multipart: UNSIGNED-PAYLOAD, no throw.
+    test('form/multipart bodies without signBody stay UNSIGNED-PAYLOAD', async () => {
+        const strategy = awsSigV4({
+            region: 'us-east-1',
+            service: 's3',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+        });
+        const reqForm = fakeReq({
+            method: 'POST',
+            body: { a: 1 },
+            bodyType: 'form',
+        });
+        await strategy.apply(reqForm, fakeCtx as never);
+        expect(reqForm.headers['x-amz-content-sha256']).toBe(
+            'UNSIGNED-PAYLOAD',
+        );
+
+        const reqMultipart = fakeReq({
+            method: 'POST',
+            body: { file: 'x' },
+            bodyType: 'multipart',
+        });
+        await strategy.apply(reqMultipart, fakeCtx as never);
+        expect(reqMultipart.headers['x-amz-content-sha256']).toBe(
+            'UNSIGNED-PAYLOAD',
         );
     });
 });

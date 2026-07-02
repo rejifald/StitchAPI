@@ -301,6 +301,48 @@ describe('cache — LRU bound', () => {
         await s({ query: { id: 3 } }); // still resident → hit
         expect(calls()).toBe(4);
     });
+
+    test('a rejecting store at eviction does not crash the process (best-effort)', async () => {
+        // A BYO async store (e.g. Redis) can transiently reject. Eviction is fire-and-forget
+        // (`void store.set(oldest, undefined)`); without a `.catch` that rejection is an unhandled
+        // promise rejection → Node ≥15 terminates the process, despite the "best-effort" intent.
+        // Eviction is the only write whose value is `undefined` (a delete) on this call path, so a
+        // store that rejects exactly those calls isolates the eviction hazard while normal
+        // (defined-value) cache writes still succeed.
+        const backing = memoryStore();
+        const rejectingOnEvict: typeof backing = {
+            ...backing,
+            set: (key, value, ttl) =>
+                value === undefined
+                    ? Promise.reject(new Error('store down at eviction'))
+                    : backing.set(key, value, ttl),
+        };
+
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown): void => {
+            unhandled.push(reason);
+        };
+        process.on('unhandledRejection', onUnhandled);
+        try {
+            const { adapter } = counting();
+            const s = stitch({
+                url: URL,
+                adapter,
+                trace: false,
+                store: rejectingOnEvict,
+                cache: { ttl: '60s', scope: 'app', entries: 1 },
+            });
+            // entries:1 → the second distinct key evicts the first via `store.set(oldest, undefined)`.
+            await expect(s({ query: { id: 1 } })).resolves.toEqual({ n: 1 });
+            await expect(s({ query: { id: 2 } })).resolves.toEqual({ n: 2 });
+            // Let the fire-and-forget eviction promise settle so any unhandled rejection can surface.
+            await new Promise((r) => setTimeout(r, 0));
+        } finally {
+            process.off('unhandledRejection', onUnhandled);
+        }
+        // Fails BEFORE the fix (the eviction rejection surfaces here); passes AFTER (`.catch` swallows it).
+        expect(unhandled).toEqual([]);
+    });
 });
 
 describe('cache — sensitive bypass', () => {

@@ -58,6 +58,46 @@ const withMDX = createMDX();
 /** @type {import('next').NextConfig} */
 const config = {
     reactStrictMode: true,
+    // Trace from the pnpm workspace root, not Next's inferred app dir. The search
+    // routes' externalized native deps (transformers.js + onnxruntime-node) are
+    // hoisted to <workspaceRoot>/node_modules/.pnpm, so their trace paths climb
+    // seven levels up to the workspace root. Next only *infers* that root (it warns
+    // when it can't be sure), and on Vercel it can land on a narrower dir — then
+    // those hoisted files fall outside the trace scope and are never copied into
+    // the function, so the runtime require throws at import and the route 500s.
+    // (Works locally only because `next start` runs from the full node_modules.)
+    // Pinning the root makes the deployed function include them.
+    outputFileTracingRoot: repoRoot,
+    // Bundle the build-time search index into the serverless functions that
+    // restore the Orama dump at runtime — the human search route (P2) and the MCP
+    // server (P3). The file is generated at deploy by scripts/prebuild-search-index.mjs
+    // (never committed); runtime model loading / cold-start is the P3 watch-item.
+    // Each function gets the build-time Orama index (restored at runtime) AND
+    // onnxruntime-node's native shared library. Next traces the require'd
+    // `onnxruntime_binding.node` but NOT the `libonnxruntime.so.1` it dlopen's at
+    // load — so the function 500s with "libonnxruntime.so.1: cannot open shared
+    // object file". Ship the whole linux native dir so the .so lands beside the
+    // .node. The package lives in the pnpm store at the workspace root (../../ from
+    // apps/docs; outputFileTracingRoot bounds the trace to that root).
+    outputFileTracingIncludes: {
+        '/api/search-docs': [
+            './.search-index/**',
+            '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/**/*',
+        ],
+        '/api/mcp': [
+            './.search-index/**',
+            '../../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v6/linux/**/*',
+        ],
+    },
+    // Keep the runtime embedder OUT of the server bundle. Those same two routes
+    // load transformers.js (@huggingface/transformers), whose Node backend is the
+    // native `onnxruntime-node` addon (`.node` binaries). Bundling a native addon
+    // breaks its require at function init, so *importing* the route module throws
+    // — which 500s every request (even paths that never embed, like the MCP
+    // `initialize` handshake or an empty query), not just searches. Marking these
+    // external leaves them as a plain runtime require, resolved from the traced
+    // node_modules, so the binary loads. Next externalizes `sharp` by default.
+    serverExternalPackages: ['@huggingface/transformers', 'onnxruntime-node'],
     // The playground consumes the in-repo sandbox engine (@stitchapi/sandbox), a
     // workspace package that ships raw TS/TSX source — Next must transpile it.
     transpilePackages: ['@stitchapi/sandbox'],

@@ -135,11 +135,12 @@ describe('sseResponse', () => {
 // --- stitchErrorResponse ---------------------------------------------------
 
 describe('stitchErrorResponse', () => {
-    test('a StitchError maps to 502 by default with a JSON body', async () => {
+    test('a StitchError maps to 502 by default with a generic JSON body', async () => {
         const res = stitchErrorResponse(stitchError('upstream down', 503));
         expect(res.status).toBe(502);
         expect(res.headers.get('content-type')).toContain('application/json');
-        expect(await res.json()).toEqual({ error: 'upstream down' });
+        // the raw message is withheld by default (see the leak-regression block below)
+        expect(await res.json()).toEqual({ error: 'Bad Gateway' });
     });
 
     test('status can propagate the upstream status', async () => {
@@ -152,6 +153,35 @@ describe('stitchErrorResponse', () => {
     test('a non-StitchError defaults to 500', async () => {
         const res = stitchErrorResponse(new Error('oops'));
         expect(res.status).toBe(500);
+    });
+
+    // Regression: the default body must not echo the raw upstream/transport message,
+    // which can leak internal network topology (a transport error names the host it
+    // failed to reach) or the upstream's status semantics to an untrusted client.
+    describe('does not leak the raw error message by default', () => {
+        test('a transport failure with an internal hostname is not disclosed', async () => {
+            const res = stitchErrorResponse(
+                stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+            );
+            expect(res.status).toBe(502);
+            const body = await res.text();
+            expect(body).not.toContain('payments.internal.corp');
+            expect(body).not.toContain('ENOTFOUND');
+        });
+
+        test("an upstream 401 does not surface as 'HTTP 401' in the body", async () => {
+            const res = stitchErrorResponse(stitchError('HTTP 401', 401));
+            expect(res.status).toBe(502);
+            expect(await res.text()).not.toContain('HTTP 401');
+        });
+
+        test('the `body` opt-in can still include the raw message', async () => {
+            const res = stitchErrorResponse(
+                stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+                { body: (e) => ({ error: e.message }) },
+            );
+            expect(await res.text()).toContain('payments.internal.corp');
+        });
     });
 });
 
