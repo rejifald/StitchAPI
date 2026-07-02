@@ -3,6 +3,7 @@
 // and yields one parsed event per `delta` chunk. Most cases drive the frame parser directly over a
 // fake stream (precise chunk boundaries); the engine spine + a real-fetch case round it out.
 import { seam, stitch } from '../src';
+import { lineReader } from '../src/line-reader';
 import { sse, sseSurface } from '../src/sse';
 import type { SseEvent } from '../src/sse';
 import { startMockServer } from './support/mock-server';
@@ -17,12 +18,17 @@ import {
 
 import { z } from 'zod';
 
-// Run the SSE frame parser over the given chunk boundaries and collect the parsed events.
-async function parse(chunks: string[]): Promise<SseEvent[]> {
+// Run the SSE frame parser over the given chunk boundaries and collect the parsed events. A small
+// `maxBufferBytes` cap can be threaded through `stream.maxBufferBytes` (unbounded-buffer guard).
+async function parse(
+    chunks: string[],
+    cfg: { stream?: { maxBufferBytes?: number } } = {},
+): Promise<SseEvent[]> {
     const res = { status: 200, headers: {}, body: streamOf(chunks) };
     const out: SseEvent[] = [];
-    // `stream` is defined on a streaming surface; tests may assert non-null.
-    for await (const ev of sseSurface.stream!(res, {}))
+    // `stream` is defined on a streaming surface; tests may assert non-null. Only `stream.maxBufferBytes`
+    // is read off `cfg`, so this partial config (a resolved config's fields are all optional) suffices.
+    for await (const ev of sseSurface.stream!(res, cfg))
         out.push(ev as SseEvent);
     return out;
 }
@@ -106,6 +112,56 @@ describe('sse frame parser (Decision 4)', () => {
     });
 });
 
+describe('sse buffer cap — an unbounded body fails instead of OOM-ing (security)', () => {
+    // Parity with the `'json'` decoder's per-value cap (json-stream.ts): a malformed / never-closing
+    // body is bounded and throws a descriptive Error rather than growing client memory without limit.
+    // The engine (runStreaming) turns the throw into an error+done event, so the stream fails cleanly.
+    const CAP = 64; // a tiny cap so the test stays fast; the real default is ~8 MB
+
+    test('a long run with NO newline past the cap throws (line-reader guard)', async () => {
+        // One chunk of bytes with no `\n` at all — lineReader can never split it, so the un-terminated
+        // carry grows past the cap. Without the cap this would buffer the whole (unbounded) body.
+        const noNewline = 'data: ' + 'x'.repeat(CAP * 4); // no trailing "\n\n"
+        await expect(
+            parse([noNewline], { stream: { maxBufferBytes: CAP } }),
+        ).rejects.toThrow(/un-terminated line exceeded maxBufferBytes/);
+    });
+
+    test('endless data: lines with NO dispatching blank line past the cap throws (frame guard)', async () => {
+        // Every line IS newline-terminated (so the line-reader guard never trips), but the frame is
+        // never dispatched (no blank line), so `frame.dataLines` accumulates without bound. The
+        // per-frame guard catches this case the line guard cannot.
+        const manyDataLines =
+            Array.from({ length: 200 }, () => 'data: chunk').join('\n') + '\n'; // no blank line ⇒ never dispatched
+        await expect(
+            parse([manyDataLines], { stream: { maxBufferBytes: CAP } }),
+        ).rejects.toThrow(/un-dispatched event data exceeded maxBufferBytes/);
+    });
+
+    test('a normal stream UNDER the cap still parses (no false positive)', async () => {
+        // Well under 64 bytes of data per frame, each properly blank-line terminated.
+        expect(
+            await parse(['data: {"n":1}\n\ndata: {"n":2}\n\n'], {
+                stream: { maxBufferBytes: CAP },
+            }),
+        ).toEqual([{ data: { n: 1 } }, { data: { n: 2 } }]);
+    });
+
+    test('a frame at the cap boundary across many small lines is bounded', async () => {
+        // Sanity: the frame guard sums data-line bytes (+1 per join), so several small un-dispatched
+        // `data:` lines that together exceed the cap still throw — the attack is many lines, not one.
+        const lines = Array.from(
+            { length: 30 },
+            () => 'data: ' + 'y'.repeat(8),
+        );
+        await expect(
+            parse([lines.join('\n') + '\n'], {
+                stream: { maxBufferBytes: CAP },
+            }),
+        ).rejects.toThrow(/un-dispatched event data exceeded maxBufferBytes/);
+    });
+});
+
 describe('sse over the engine (event spine + await)', () => {
     test('emits start → request → delta-per-event → result (collected) → done', async () => {
         const s = sse({
@@ -172,6 +228,22 @@ describe('sse over the engine (event spine + await)', () => {
         const ev = await collectEvents(s.stream());
         expect(ev.deltas).toEqual([{ data: 1 }, { data: 2 }]);
         expect(ev.types).toContain('error');
+        expect(ev.done?.ok).toBe(false);
+    });
+
+    test('an unbounded body past maxBufferBytes fails the stream with error+done (not OOM)', async () => {
+        // A body that streams a long run with no newline / no dispatching blank line. The parser's
+        // buffer cap throws; runStreaming turns the throw into error+done — a clean failure, not an
+        // unbounded-memory grow. (This is the engine-spine counterpart to the frame-parser unit tests.)
+        const s = sse({
+            url: 'https://x.test/flood',
+            stream: { maxBufferBytes: 64 },
+            adapter: streamAdapter(streamOf(['data: ' + 'x'.repeat(4096)])), // no "\n\n" terminator
+        });
+        const ev = await collectEvents(s.stream());
+        expect(ev.deltas).toEqual([]); // nothing was ever dispatched
+        expect(ev.types).toContain('error');
+        expect(ev.error?.message).toMatch(/maxBufferBytes/);
         expect(ev.done?.ok).toBe(false);
     });
 });
@@ -331,21 +403,27 @@ describe('sse over real fetch + Web Streams (browser-first gate)', () => {
         expect(doneOk).toBe(false);
     });
 
-    test('breaking out of .stream() early stops consumption cleanly', async () => {
-        // Early break releases the reader lock and stops iteration; proactively cancelling the
-        // underlying response body on early break is a tracked follow-up (no reader.cancel() yet).
-        server.route('GET', '/breakable', {
-            headers: { 'content-type': 'text/event-stream' },
-            stream: {
-                chunks: [
-                    'data: {"n":1}\n\n',
-                    'data: {"n":2}\n\n',
-                    'data: {"n":3}\n\n',
-                ],
-                chunkDelayMs: 15,
+    test('breaking out of .stream() early cancels the underlying body (no leak)', async () => {
+        // Early break `.return()`s the generator chain down to lineReader, whose `finally` now
+        // `cancel()`s the underlying stream before releasing the lock — so an abandoned consumer
+        // proactively closes the connection instead of leaking it until GC (previously a tracked
+        // follow-up: only releaseLock() ran, never cancel()). A cancel-recording stream (fed through
+        // streamAdapter) makes the client-side cancel observable, which a real HTTP body can't.
+        let cancelled = false;
+        const body = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                controller.enqueue(
+                    new TextEncoder().encode('data: {"n":1}\n\n'),
+                );
+            },
+            cancel() {
+                cancelled = true;
             },
         });
-        const events = sse({ baseUrl: server.url, path: '/breakable' });
+        const events = sse({
+            url: 'https://x.test/breakable',
+            adapter: streamAdapter(body),
+        });
         const deltas: unknown[] = [];
         for await (const e of events.stream()) {
             if (e.type === 'delta') {
@@ -354,6 +432,52 @@ describe('sse over real fetch + Web Streams (browser-first gate)', () => {
             }
         }
         expect(deltas).toEqual([{ data: { n: 1 } }]);
+        expect(cancelled).toBe(true); // the body was cancelled, not just abandoned
+    });
+});
+
+describe('lineReader teardown + cap (shared streaming plumbing)', () => {
+    // lineReader is the byte→line plumbing shared by `sse` and `stream`'s `'lines'`/`'ndjson'`. The
+    // two hardenings are proven here at the plumbing level too, independent of the sse frame layer.
+
+    test('an early break cancels the underlying stream before releasing the lock', async () => {
+        // A consumer that reads one line then `break`s triggers the generator `.return()`; the
+        // `finally` must cancel() the body (proactively closing the connection), not just releaseLock().
+        let cancelled = false;
+        const stream = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                controller.enqueue(new TextEncoder().encode('line\n'));
+            },
+            cancel() {
+                cancelled = true;
+            },
+        });
+        const lines: string[] = [];
+        for await (const line of lineReader(stream)) {
+            lines.push(line);
+            break; // abandon after the first line
+        }
+        expect(lines).toEqual(['line']);
+        expect(cancelled).toBe(true);
+    });
+
+    test('a normal drain still cancels (a no-op on a closed stream) and yields all lines', async () => {
+        // Cancelling unconditionally in `finally` is safe: cancel() on an already-closed stream is a
+        // spec no-op, so a fully-consumed stream still delivers every line.
+        const lines: string[] = [];
+        for await (const line of lineReader(streamOf(['a\nb\n', 'c']))) {
+            lines.push(line);
+        }
+        expect(lines).toEqual(['a', 'b', 'c']);
+    });
+
+    test('a single un-terminated line past maxBufferBytes throws a descriptive error', async () => {
+        // No `\n` ever arrives, so the carry grows unbounded — the cap turns that into a clean throw.
+        await expect(async () => {
+            for await (const _ of lineReader(streamOf(['x'.repeat(200)]), 64)) {
+                void _;
+            }
+        }).rejects.toThrow(/un-terminated line exceeded maxBufferBytes/);
     });
 });
 
