@@ -47,9 +47,89 @@ export type QueryInput<S> =
 // swrKey
 // ---------------------------------------------------------------------------
 
-/** The SWR cache key a stitch+input maps to: the stitch's `name` (when present)
- * plus the input, so SWR caches and dedupes per call. */
+/** The SWR cache key a stitch+input maps to: a stable name for the stitch plus a
+ * sanitised copy of the input (secret header values redacted, runtime-only fields
+ * dropped), so SWR caches and dedupes per call without leaking or churning. */
 export type StitchSWRKey = readonly [name: string, input: unknown];
+
+// --- key derivation (shared logic; duplicated in @stitchapi/react) ---------
+// These two helpers are intentionally copied verbatim into `@stitchapi/react`'s
+// `stitchQueryOptions`: they are separate published packages, so a cross-package
+// import would add a runtime dependency. Keep the two copies in lock-step.
+
+/** The `__config` slice a key derives from. Mirrors core's `nameOf`
+ * (`name ?? path ?? 'stitch'`) plus a `url` fallback for URL-configured stitches. */
+type KeyConfig = { name?: string; path?: string; url?: string };
+
+/** A stable, human-meaningful name for the stitch. Mirrors core's `nameOf`
+ * (`packages/core/src/engine.ts`) — `name ?? path ?? url ?? 'stitch'` — so two
+ * DISTINCT nameless stitches (`/users/{id}` vs `/orders/{id}`) don't collapse to
+ * the literal `'stitch'` and collide on one cache entry. */
+function nameOf(stitch: unknown): string {
+    const cfg = (stitch as { __config?: KeyConfig }).__config;
+    return cfg?.name ?? cfg?.path ?? cfg?.url ?? 'stitch';
+}
+
+// Header names whose VALUES are secrets — mirrors core's private `SECRET_HEADERS`
+// trace denylist (`packages/core/src/trace.ts`), which is not exported. We redact
+// the value (rather than dropping the header) so the key stays stable per token
+// AND callers who legitimately vary a response by a non-secret header (e.g.
+// `accept-language`) keep separate cache entries. Compared case-insensitively; the
+// `*-token` / `*-api-key` suffix rules catch vendor spellings without enumerating.
+const SECRET_HEADERS = new Set([
+    'authorization',
+    'proxy-authorization',
+    'cookie',
+    'set-cookie',
+    'x-api-key',
+    'x-auth-token',
+]);
+const REDACTED = '[redacted]';
+
+function isSecretHeader(name: string): boolean {
+    const k = name.toLowerCase();
+    return (
+        SECRET_HEADERS.has(k) || k.endsWith('-token') || k.endsWith('-api-key')
+    );
+}
+
+/**
+ * Build the value that goes into the cache key from a stitch's per-call input.
+ * Never puts the raw input in the key:
+ *
+ * - drops `signal` / `onProgress` — runtime-only, never-serialised (CONTRACT.md);
+ *   `onProgress` in particular churns identity every render, which would refetch
+ *   forever if it entered the key;
+ * - redacts the VALUES of secret-bearing headers (`authorization`, `cookie`, …)
+ *   so a bearer token can't leak into a persisted / devtools-visible key, while
+ *   keeping non-secret headers so they still vary the cache;
+ * - keeps every other field (`params` / `query` / `body` / `variables` / …) as-is.
+ *
+ * `null` / `undefined` inputs stay `null`; a primitive input is returned unchanged.
+ */
+function keyInputFor(input: unknown): unknown {
+    if (input === null || input === undefined) return null;
+    if (typeof input !== 'object') return input;
+
+    const {
+        signal: _signal,
+        onProgress: _onProgress,
+        ...rest
+    } = input as {
+        signal?: unknown;
+        onProgress?: unknown;
+        headers?: Record<string, unknown>;
+    } & Record<string, unknown>;
+
+    if (rest.headers && typeof rest.headers === 'object') {
+        const headers: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(rest.headers)) {
+            headers[k] = isSecretHeader(k) ? REDACTED : v;
+        }
+        rest.headers = headers;
+    }
+    return rest;
+}
 
 /**
  * Build the SWR key for a stitch call — use it for conditional fetching or a
@@ -77,8 +157,7 @@ export function swrKey<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
 ): StitchSWRKey {
-    const name = (stitch as { __config?: { name?: string } }).__config?.name;
-    return [name ?? 'stitch', input ?? null];
+    return [nameOf(stitch), keyInputFor(input)];
 }
 
 // ---------------------------------------------------------------------------
