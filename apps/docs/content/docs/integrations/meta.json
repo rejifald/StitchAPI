@@ -23,6 +23,8 @@
         "tanstack-query",
         "---State stores---",
         "stores",
+        "---Validation---",
+        "json-schema",
         "---Auth---",
         "aws-sigv4",
         "---AI---",
