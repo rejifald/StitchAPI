@@ -12,6 +12,7 @@
 // (proposal §6 watch-item). maxDuration covers that; see lib/search-index/embed.ts
 // for the Vercel cache dir. The real cold-start measurement + final mitigation is
 // a deploy step.
+import { MAX_QUERY_LEN } from '@/lib/search-index/config';
 import { getDoc } from '@/lib/search-index/get-doc';
 import { searchDocs } from '@/lib/search-index/search';
 import { siteUrl } from '@/lib/shared';
@@ -39,7 +40,10 @@ const handler = createMcpHandler(
             'search_docs',
             'Search the StitchAPI documentation semantically (hybrid BM25 + vector). Returns the most relevant doc sections as excerpts with deep links — never full pages. Follow up with get_doc to read a full page.',
             {
-                query: z.string().describe('Natural-language search query.'),
+                query: z
+                    .string()
+                    .max(MAX_QUERY_LEN)
+                    .describe('Natural-language search query.'),
                 limit: z
                     .number()
                     .int()
