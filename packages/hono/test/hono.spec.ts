@@ -163,6 +163,9 @@ describe('streamStitchSse bridges a stitch stream to an SSE body', () => {
         const res = await app.request('/events');
         const body = await res.text();
         expect(body).toContain('event: error');
+        // By default the raw upstream message (`HTTP 500`) is withheld — a generic token is sent.
+        expect(body).toContain('data: error');
+        expect(body).not.toContain('HTTP 500');
     });
 });
 

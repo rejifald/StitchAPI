@@ -48,7 +48,8 @@ mirroring StitchAPI's borrow-don't-own rule.
 
 Stream a streaming/SSE stitch's `.stream()` to the client as Server-Sent Events,
 via Hono's `streamSSE`. Each `delta` becomes a `data:` message; a terminal
-`error` event (or a throw) becomes a final `event: error` message; control events
+`error` event (or a throw) becomes a final `event: error` message (a generic
+`data: error` by default — see below); control events
 (`start`/`progress`/`result`/`done`/…) are consumed but not forwarded. On client
 disconnect the upstream stitch stream is aborted.
 
@@ -66,6 +67,20 @@ app.get('/chat', (c) => {
             data: (chunk: any) => chunk.data, // pull the parsed event payload out of each delta
         },
     );
+});
+```
+
+By default the `error` message carries a generic `data: error` token, **not** the
+raw error message — echoing it can disclose internal network topology (a transport
+failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's
+status (`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream
+messages are known safe; `onError` still receives the real failure server-side for
+logging:
+
+```ts
+return streamStitchSse(c, completion.stream({ body: { prompt: c.req.query('q') } }), {
+    errorData: (e) => e.message, // opt in to the raw upstream message
+    onError: (err) => c.get('log').error(err), // real failure, server-side only
 });
 ```
 
