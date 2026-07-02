@@ -52,13 +52,95 @@ export interface UseStitchResult<T> extends StitchQueryState<T> {
 // Shared driver
 // ---------------------------------------------------------------------------
 
+// --- key derivation (shared logic; duplicated in @stitchapi/swr) -----------
+// These helpers are intentionally copied verbatim into `@stitchapi/swr`'s
+// `swrKey`: they are separate published packages, so a cross-package import would
+// add a runtime dependency. Keep the two copies in lock-step.
+
+/** The `__config` slice a key derives from. Mirrors core's `nameOf`
+ * (`name ?? path ?? 'stitch'`) plus a `url` fallback for URL-configured stitches. */
+type KeyConfig = { name?: string; path?: string; url?: string };
+
+/** A stable, human-meaningful name for the stitch. Mirrors core's `nameOf`
+ * (`packages/core/src/engine.ts`) — `name ?? path ?? url ?? 'stitch'` — so two
+ * DISTINCT nameless stitches (`/users/{id}` vs `/orders/{id}`) don't collapse to
+ * the literal `'stitch'` and collide on one cache entry. */
+function nameOf(stitch: unknown): string {
+    const cfg = (stitch as { __config?: KeyConfig }).__config;
+    return cfg?.name ?? cfg?.path ?? cfg?.url ?? 'stitch';
+}
+
+// Header names whose VALUES are secrets — mirrors core's private `SECRET_HEADERS`
+// trace denylist (`packages/core/src/trace.ts`), which is not exported. We redact
+// the value (rather than dropping the header) so the key stays stable per token
+// AND callers who legitimately vary a response by a non-secret header (e.g.
+// `accept-language`) keep separate cache entries. Compared case-insensitively; the
+// `*-token` / `*-api-key` suffix rules catch vendor spellings without enumerating.
+const SECRET_HEADERS = new Set([
+    'authorization',
+    'proxy-authorization',
+    'cookie',
+    'set-cookie',
+    'x-api-key',
+    'x-auth-token',
+]);
+const REDACTED = '[redacted]';
+
+function isSecretHeader(name: string): boolean {
+    const k = name.toLowerCase();
+    return (
+        SECRET_HEADERS.has(k) || k.endsWith('-token') || k.endsWith('-api-key')
+    );
+}
+
+/**
+ * Build the value that goes into a cache/query key from a stitch's per-call input.
+ * Never puts the raw input in the key:
+ *
+ * - drops `signal` / `onProgress` — runtime-only, never-serialised (CONTRACT.md);
+ *   `onProgress` in particular churns identity every render, which would refetch
+ *   forever if it entered the key;
+ * - redacts the VALUES of secret-bearing headers (`authorization`, `cookie`, …)
+ *   so a bearer token can't leak into a persisted / devtools-visible key, while
+ *   keeping non-secret headers so they still vary the cache;
+ * - keeps every other field (`params` / `query` / `body` / `variables` / …) as-is.
+ *
+ * `null` / `undefined` inputs stay `null`; a primitive input is returned unchanged.
+ */
+function keyInputFor(input: unknown): unknown {
+    if (input === null || input === undefined) return null;
+    if (typeof input !== 'object') return input;
+
+    const {
+        signal: _signal,
+        onProgress: _onProgress,
+        ...rest
+    } = input as {
+        signal?: unknown;
+        onProgress?: unknown;
+        headers?: Record<string, unknown>;
+    } & Record<string, unknown>;
+
+    if (rest.headers && typeof rest.headers === 'object') {
+        const headers: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(rest.headers)) {
+            headers[k] = isSecretHeader(k) ? REDACTED : v;
+        }
+        rest.headers = headers;
+    }
+    return rest;
+}
+
 // `deps` lets the caller control when the query handle is re-created. By default
 // we derive a stable identity from the stitch + a structural key of the input, so
 // `{ id: 1 }` !== `{ id: 2 }` re-fetches but a re-render with an equal-shaped
 // literal does not. A caller who keys differently passes explicit `deps`.
 function defaultKey(input: unknown): string {
     try {
-        return JSON.stringify(input ?? null);
+        // Sanitise first: an inline `onProgress` (fresh identity per render) would
+        // otherwise churn the structural key and loop; a per-call `signal` would
+        // add non-deterministic noise. Both are runtime-only, so drop them.
+        return JSON.stringify(keyInputFor(input));
     } catch {
         // Non-serialisable input (a function, a cyclic object) → opt out of
         // structural keying; the caller should pass explicit `deps`.
@@ -101,12 +183,12 @@ function useStitchInternal<T>(
     ).current;
 
     // The dependency list that triggers a fresh handle (and re-fetch). Default: a
-    // structural key of the input + the stitch's stable `__config.name` (NOT its
-    // function identity) + the streaming flags. Pass `options.deps` to override.
-    const name = (stitch as { __config?: { name?: string } }).__config?.name;
+    // structural key of the input + a stable name for the stitch (NOT its function
+    // identity; via `nameOf`, so two nameless stitches on different paths don't
+    // share a dep key) + the streaming flags. Pass `options.deps` to override.
     const depKey = deps
         ? deps
-        : [name ?? '', defaultKey(input), stream, mode, enabled];
+        : [nameOf(stitch), defaultKey(input), stream, mode, enabled];
 
     const query: StitchQuery<T> = useMemo(
         () =>
@@ -241,8 +323,10 @@ export interface StitchQueryOptions<T> {
  * const { data } = useQuery(stitchQueryOptions(getUser, { params: { id } }));
  * ```
  *
- * The `queryFn` awaits the stitch (the validated output); the `queryKey` is the
- * stitch's `name` (when present) plus the input, so TanStack caches per call.
+ * The `queryFn` awaits the stitch (the validated output); the `queryKey` is a
+ * stable name for the stitch plus a sanitised copy of the input (secret header
+ * values redacted, runtime-only `signal`/`onProgress` dropped), so TanStack caches
+ * per call without leaking a bearer token into the key or refetching every render.
  *
  * Named `stitchQueryOptions` (not a bare `queryOptions`) because TanStack Query
  * itself exports a `queryOptions` — the bare name would clash on import. See
@@ -260,9 +344,8 @@ export function stitchQueryOptions<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
 ): StitchQueryOptions<T> {
-    const name = (stitch as { __config?: { name?: string } }).__config?.name;
     return {
-        queryKey: [name ?? 'stitch', input ?? null],
+        queryKey: [nameOf(stitch), keyInputFor(input)],
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }
