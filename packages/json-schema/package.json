@@ -1,0 +1,73 @@
+{
+    "name": "@stitchapi/json-schema",
+    "version": "1.0.0-rc.4",
+    "type": "commonjs",
+    "description": "Turn a runtime-discovered JSON Schema into a Standard Schema validator StitchAPI accepts — validate against schemas you only obtain at runtime, without codegen.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "prepack": "tsup",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/json-schema"
+    },
+    "keywords": [
+        "stitchapi",
+        "json-schema",
+        "standard-schema",
+        "validation",
+        "runtime",
+        "ajv"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "dependencies": {
+        "ajv": "^8.17.1",
+        "ajv-formats": "^3.0.1"
+    },
+    "peerDependencies": {
+        "stitchapi": "^1.0.0-rc.1"
+    },
+    "peerDependenciesMeta": {
+        "stitchapi": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "stitchapi": "workspace:*",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}
