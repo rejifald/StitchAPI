@@ -2,7 +2,14 @@
 // optionally, print a compact colored one-line-per-event summary to stderr. No deps.
 import { compact } from './compact';
 import type { DriftLevel, StitchEvent, TraceContext, TraceSink } from './types';
-import { dirnameOf, isSecretQueryKey, nodeFs, readEnv, scrubUrl } from './util';
+import {
+    dirnameOf,
+    isSecretQueryKey,
+    nodeFs,
+    readEnv,
+    redactSecretsDeep,
+    scrubUrl,
+} from './util';
 
 export interface TraceOptions {
     console?: boolean; // pretty one-line-per-event to stderr (default true)
@@ -36,13 +43,20 @@ const SECRET_HEADERS = [
 const REDACTED = '[REDACTED]';
 
 // Redact an event for delivery over an UNTRUSTED transport — the `stitch serve` SSE stream, which
-// is unauthenticated and may be fronted. Unlike the built-in sinks this PRESERVES the payload
-// (`delta`/`result` — a streaming consumer asked for it); it only scrubs the credential-bearing
-// metadata a `start` frame echoes back: URL credentials + secret query values in the URL string
-// (via `scrubUrl`), the SAME secret query values in the structured `input.query` (via
-// `redactSecretQuery` — `scrubUrl` reaches only the URL string, so the parsed query must be
-// scrubbed too, exactly as the JSONL sink does), and any denylisted header value in `input.headers`
-// (`authorization` / `cookie` / …). Every other event type passes through untouched.
+// is unauthenticated and may be fronted. Unlike the built-in sinks this PRESERVES the response
+// payload (`delta`/`result` — a streaming consumer asked for it); it only scrubs the credential-
+// bearing metadata a `start` frame echoes back from the caller's own request input:
+//   - URL credentials + secret query values in the URL string (via `scrubUrl`);
+//   - the SAME secret query values in the structured `input.query` (via `redactSecretQuery` —
+//     `scrubUrl` reaches only the URL string, so the parsed query must be scrubbed too);
+//   - any denylisted header value in `input.headers` (`authorization` / `cookie` / …);
+//   - secret-named fields anywhere in the request `input.body` and GraphQL `input.variables`
+//     (via `redactSecretsDeep` — the shared deep secret-key redactor, keyed on the same
+//     `isSecretKey` set: `password` / `client_secret` / `token` / `api_key` / …). A `start`
+//     frame echoes the request input verbatim, so an OAuth password-grant body
+//     (`{ grant_type, client_secret, password }`) or a GraphQL `login($password:)` variable
+//     would otherwise ride the unauthenticated stream in the clear.
+// Every other event type passes through untouched.
 export function redactEventForTransport(event: StitchEvent): StitchEvent {
     if (event.type !== 'start') return event;
     const headers = event.input.headers;
@@ -56,17 +70,28 @@ export function redactEventForTransport(event: StitchEvent): StitchEvent {
         : undefined;
     const query = event.input.query;
     const safeQuery = query ? redactSecretQuery(query) : undefined;
+    // Deep-scrub secret-named fields in the echoed request body / GraphQL variables.
+    // `redactSecretsDeep(undefined) === undefined`, so an absent `body`/`variables` yields
+    // `undefined` and is dropped by `compact` below — matching the pre-fix behaviour of the
+    // `...event.input` spread. A present-but-falsy body (`null`/`''`/`0`) redacts to itself and
+    // is kept. `variables` is a plain object; the cast restores its declared shape.
+    const safeBody = redactSecretsDeep(event.input.body);
+    const safeVariables = redactSecretsDeep(event.input.variables) as
+        | Record<string, unknown>
+        | undefined;
     return {
         ...event,
         url: scrubUrl(event.url),
-        // `compact` drops `headers`/`query` when their redacted values are undefined —
-        // which is exactly when `event.input` lacked them (safeHeaders/safeQuery are derived
-        // from event.input.headers/.query), so it only ever omits the conditional override,
-        // never a key the `...event.input` spread provided.
+        // `compact` drops `headers`/`query`/`body`/`variables` when their redacted values are
+        // undefined — which is exactly when `event.input` lacked them (each safe* value is derived
+        // from the corresponding `event.input` field), so it only ever omits the conditional
+        // override, never a key the `...event.input` spread provided.
         input: compact({
             ...event.input,
             headers: safeHeaders,
             query: safeQuery,
+            body: safeBody,
+            variables: safeVariables,
         }),
     };
 }
