@@ -49,6 +49,27 @@ describe('toOpenApi', () => {
         ]);
     });
 
+    test('scrubs userinfo credentials from a baseUrl before emitting servers[].url', () => {
+        // A stitch whose baseUrl carries URL basic-auth (accepted + used by the engine). The
+        // generated OpenAPI document is "often published/shared", so the password must not survive
+        // into servers[].url. The server origin is routed through scrubUrl like every other
+        // url-emitting sink in core.
+        const registry: StitchRegistry = {
+            secretSvc: stitch({
+                baseUrl: 'https://svc:s3cr3t@api.internal/v1',
+                path: '/users/{id}',
+            }),
+        };
+        const { document } = toOpenApi(registry);
+        const serverUrl = document.servers?.[0]?.url ?? '';
+        expect(serverUrl).not.toContain('s3cr3t'); // password
+        expect(serverUrl).not.toContain('svc:'); // username:password userinfo
+        expect(serverUrl).not.toContain('@'); // userinfo delimiter
+        expect(serverUrl).toContain('api.internal'); // host is preserved
+        // And the credential must not leak anywhere else in the serialized document either.
+        expect(JSON.stringify(document)).not.toContain('s3cr3t');
+    });
+
     test('defaults info when no title/version is given', () => {
         const { document } = toOpenApi({});
         expect(document.info).toEqual({
