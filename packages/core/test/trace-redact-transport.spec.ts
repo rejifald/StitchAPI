@@ -97,11 +97,57 @@ describe('redactEventForTransport', () => {
         expect(out.input.headers).toBeUndefined();
     });
 
+    test('deep-redacts secret-named fields in the echoed request body and GraphQL variables, keeping benign ones', () => {
+        // A `start` frame echoes the caller's request input verbatim. On the unauthenticated
+        // `serve` SSE stream a credential-bearing body (OAuth password grant) or GraphQL variable
+        // must not ride the wire in the clear — headers/query redaction alone left this gap.
+        const out = asStart(
+            redactEventForTransport(
+                startEvent({
+                    input: {
+                        body: {
+                            grant_type: 'password',
+                            password: 'hunter2',
+                            client_secret: 's3cr3t',
+                            keep: 'ok',
+                        },
+                        variables: { password: 'hunter2', user: 'alice' },
+                    },
+                }),
+            ),
+        );
+        const body = out.input.body as Record<string, unknown>;
+        expect(body['password']).toBe('REDACTED'); // secret body field scrubbed
+        expect(body['client_secret']).toBe('REDACTED'); // `secret` stem caught
+        expect(body['keep']).toBe('ok'); // benign body field preserved
+        expect(body['grant_type']).toBe('password'); // benign field whose *value* is "password" kept
+        expect(out.input.variables!['password']).toBe('REDACTED'); // secret GraphQL variable scrubbed
+        expect(out.input.variables!['user']).toBe('alice'); // benign variable preserved
+        // Belt-and-braces: the serialized event carries neither plaintext secret anywhere.
+        const serialized = JSON.stringify(out);
+        expect(serialized).not.toContain('hunter2');
+        expect(serialized).not.toContain('s3cr3t');
+    });
+
+    test('does not add a `body`/`variables` key when the caller sent none', () => {
+        const out = asStart(redactEventForTransport(startEvent({ input: {} })));
+        expect('body' in out.input).toBe(false);
+        expect('variables' in out.input).toBe(false);
+    });
+
     test('does not mutate the original event', () => {
         const orig = startEvent({
-            input: { headers: { authorization: 'Bearer tok' } },
+            input: {
+                headers: { authorization: 'Bearer tok' },
+                body: { password: 'hunter2' },
+                variables: { token: 'v-tok' },
+            },
         });
         redactEventForTransport(orig);
         expect(orig.input.headers!['authorization']).toBe('Bearer tok');
+        expect((orig.input.body as Record<string, unknown>)['password']).toBe(
+            'hunter2',
+        ); // engine keeps the real body
+        expect(orig.input.variables!['token']).toBe('v-tok'); // and the real variables
     });
 });
