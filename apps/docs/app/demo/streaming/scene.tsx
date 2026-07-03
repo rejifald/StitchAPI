@@ -16,6 +16,8 @@ import {
     Fingerprint,
     Globe,
     KeyRound,
+    Layers,
+    RefreshCw,
     RotateCw,
     ShieldCheck,
     Sunset,
@@ -263,6 +265,52 @@ await listNews(); // cache — 0 ms`,
         len: 5.0,
     },
     {
+        key: 'auth',
+        label: 'Auth as a boundary',
+        filename: 'order.ts',
+        // Mirrors the README Auth example: header strategies (bearer/
+        // apiKey/basic) + managed oauth2()/cookieSession lifecycles;
+        // secrets resolve at call time via env().
+        code: `const getOrder = stitch({
+  baseUrl: 'https://demo.stitchapi.dev',
+  path: '/orders/{id}',
+  auth: bearer(env('API_TOKEN')),
+});
+
+// callers get data, never the secret
+await getOrder({ params: { id: '7' } });`,
+        chip: `auth: bearer(env('API_TOKEN'))`,
+        chipMono: true,
+        rows: [
+            {
+                at: 0.7,
+                icon: KeyRound,
+                tone: 'brand',
+                text: 'Authorization: Bearer ••••••',
+                mono: true,
+                meta: 'resolved per call',
+            },
+            {
+                at: 1.6,
+                icon: ShieldCheck,
+                tone: 'ok',
+                text: 'capability, not credential',
+                meta: 'no secret shared',
+            },
+            {
+                at: 2.5,
+                icon: RefreshCw,
+                tone: 'brand',
+                text: 'oauth2 / cookieSession auto-renew',
+                meta: 'managed',
+            },
+        ],
+        doing: 'authorizing',
+        done: 'authorized',
+        doneAt: 3.4,
+        len: 5.0,
+    },
+    {
         key: 'agent',
         label: 'Agent-native',
         filename: 'agent.ts',
@@ -295,10 +343,10 @@ await listUsers(); // in-process
             },
             {
                 at: 2.3,
-                icon: KeyRound,
+                icon: Layers,
                 tone: 'ok',
-                text: 'capability, not credential',
-                meta: 'auth on stitch',
+                text: 'context stays flat as tools grow',
+                meta: 'code-mode',
             },
         ],
         doing: 'tool call',
