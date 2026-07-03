@@ -233,6 +233,30 @@ async function runTests(): Promise<void> {
                 side.js,
             );
         }
+
+        // (d') REAL Sucrase path: a snippet using `?.` makes Sucrase prepend an
+        // `_optionalChain` helper glued (no newline) to the first import, which the
+        // line-anchored rewrite used to miss → a live `import` survived and threw
+        // "Cannot use import statement outside a module" at runtime. The first
+        // import MUST still be rebound, and NO `import … from` may remain.
+        const glued = await transpile(
+            `import { stitch } from 'stitchapi';\n` +
+                `const f = (x) => x?.y;\nstitch();\nf({});`,
+        );
+        if ('js' in glued) {
+            assert(
+                "(d') `?.`-helper-glued first import is still rebound",
+                glued.js.includes('__stitchImport("stitchapi")'),
+                glued.js,
+            );
+            assert(
+                "(d') no leftover static `import … from` survives",
+                !/(^|[^\w$."'])import\b[^\n]*\bfrom\b/.test(glued.js),
+                glued.js,
+            );
+        } else {
+            assert("(d') glued-import snippet transpiles", false, glued);
+        }
     }
 
     /* (e) dynamic import() is rejected (SEC-31 module-loader escape) ---------- */
