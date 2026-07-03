@@ -216,16 +216,38 @@ function encodeGif(framesDir, out, work) {
     throw new Error(`GIF exceeds ${GIF_MAX_BYTES} bytes at every ladder step`);
 }
 
-// theme × layout matrix: wide gets mp4 + gif, square gets mp4 only.
+// The full tour ships as mp4 + webp; the GIF is captured from a shorter
+// MARQUEE cut (?chapters=) so it stays under its 2.5 MB budget as the
+// chapter list grows.
+const MARQUEE = 'stream,drift,resilience,agent';
+
+// theme × layout × cut matrix.
 const VARIANTS = [
-    { name: 'streaming-demo', theme: 'light', square: false, gif: true },
-    { name: 'streaming-demo-dark', theme: 'dark', square: false, gif: true },
-    { name: 'streaming-demo-square', theme: 'light', square: true, gif: false },
+    { name: 'streaming-demo', theme: 'light', formats: ['mp4', 'webp'] },
+    { name: 'streaming-demo-dark', theme: 'dark', formats: ['mp4', 'webp'] },
+    {
+        name: 'streaming-demo',
+        theme: 'light',
+        formats: ['gif'],
+        chapters: MARQUEE,
+    },
+    {
+        name: 'streaming-demo-dark',
+        theme: 'dark',
+        formats: ['gif'],
+        chapters: MARQUEE,
+    },
+    {
+        name: 'streaming-demo-square',
+        theme: 'light',
+        square: true,
+        formats: ['mp4'],
+    },
     {
         name: 'streaming-demo-square-dark',
         theme: 'dark',
         square: true,
-        gif: false,
+        formats: ['mp4'],
     },
 ];
 
@@ -234,23 +256,30 @@ mkdirSync(outDir, { recursive: true });
 const server = await startDocsServer();
 const browser = await chromium.launch();
 try {
-    for (const { name, theme, square, gif } of VARIANTS) {
+    for (const [i, variant] of VARIANTS.entries()) {
+        const { name, theme, square, formats, chapters } = variant;
         const size = square ? '1080:1080' : '1280:720';
-        console.log(`capturing ${name} (${size.replace(':', 'x')} ${theme})…`);
-        const dir = join(work, name);
+        const cut = chapters ? ` cut=${chapters}` : '';
+        console.log(
+            `capturing ${name} → ${formats.join('+')} (${size.replace(':', 'x')} ${theme}${cut})…`,
+        );
+        const dir = join(work, `v${i}`);
         mkdirSync(dir);
+        let url = square ? `${PAGE}&layout=square` : PAGE;
+        if (chapters) url += `&chapters=${chapters}`;
         await captureFrames(browser, {
             width: square ? 1080 : 1280,
             height: square ? 1080 : 720,
-            url: square ? `${PAGE}&layout=square` : PAGE,
+            url,
             dir,
             theme,
         });
-        encodeMp4(dir, join(outDir, `${name}.mp4`), size);
-        if (gif) {
+        if (formats.includes('mp4'))
+            encodeMp4(dir, join(outDir, `${name}.mp4`), size);
+        if (formats.includes('webp'))
             encodeWebp(dir, join(outDir, `${name}.webp`));
+        if (formats.includes('gif'))
             encodeGif(dir, join(outDir, `${name}.gif`), work);
-        }
         rmSync(dir, { recursive: true, force: true }); // free frame disk early
     }
 } finally {

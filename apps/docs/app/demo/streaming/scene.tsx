@@ -6,6 +6,7 @@ import { Logo } from '@/components/logo';
 import { cn } from '@/lib/cn';
 
 import {
+    Activity,
     Bot,
     Braces,
     Check,
@@ -13,7 +14,9 @@ import {
     CircleCheck,
     CircleX,
     Coffee,
+    EyeOff,
     Fingerprint,
+    Gauge,
     Globe,
     KeyRound,
     Layers,
@@ -311,6 +314,52 @@ await getOrder({ params: { id: '7' } });`,
         len: 5.0,
     },
     {
+        key: 'trace',
+        label: 'Observability',
+        filename: 'trace.ts',
+        // Mirrors the README Zero-infra observability section: per-stitch
+        // trace sinks ('console' | fileSink | TraceSink), STITCH_TRACE_*
+        // env opt-in, and the `stitch trace` JSONL summarizer.
+        code: `const getUser = stitch({
+  baseUrl: 'https://demo.stitchapi.dev',
+  path: '/users/{id}',
+  trace: 'console', // opt-in, per stitch
+});
+
+// or, without touching code:
+// $ STITCH_TRACE_FILE=run.jsonl node app
+// $ stitch trace run.jsonl — summary`,
+        chip: '$ stitch trace run.jsonl',
+        chipMono: true,
+        rows: [
+            {
+                at: 0.7,
+                icon: Activity,
+                tone: 'brand',
+                text: '124 runs · 3 retried · 1 drift',
+                meta: 'run.jsonl',
+            },
+            {
+                at: 1.6,
+                icon: Gauge,
+                tone: 'brand',
+                text: 'p50 88 ms · p95 231 ms',
+                meta: 'latency',
+            },
+            {
+                at: 2.5,
+                icon: EyeOff,
+                tone: 'ok',
+                text: 'secrets scrubbed at the sink',
+                meta: 'no collector',
+            },
+        ],
+        doing: 'tracing',
+        done: 'zero infra',
+        doneAt: 3.4,
+        len: 5.0,
+    },
+    {
         key: 'agent',
         label: 'Agent-native',
         filename: 'agent.ts',
@@ -356,11 +405,16 @@ await listUsers(); // in-process
     },
 ];
 
-const STARTS = CHAPTERS.reduce<number[]>(
-    (acc, _, i) => [...acc, i === 0 ? 0 : acc[i - 1] + CHAPTERS[i - 1].len],
-    [],
-);
-const TOTAL = STARTS[STARTS.length - 1] + CHAPTERS[CHAPTERS.length - 1].len;
+// Chapter starts/total for a (possibly ?chapters=-filtered) sequence.
+function timelineOf(chapters: Chapter[]) {
+    const starts: number[] = [];
+    let acc = 0;
+    for (const ch of chapters) {
+        starts.push(acc);
+        acc += ch.len;
+    }
+    return { starts, total: acc };
+}
 
 const TONE_ICON: Record<Tone, string> = {
     brand: 'bg-stitch-soft text-stitch',
@@ -382,7 +436,13 @@ const easeOutBack = (p: number) => {
     return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2);
 };
 
-type Mode = { layout: 'wide' | 'square'; capture: boolean };
+type Mode = {
+    layout: 'wide' | 'square';
+    capture: boolean;
+    // ?chapters=stream,agent — subset of chapter keys to run (the GIF is
+    // captured from a shorter marquee cut so it stays under its budget).
+    chapters: string[] | null;
+};
 
 export function StreamingScene() {
     const [mode, setMode] = useState<Mode | null>(null);
@@ -393,23 +453,29 @@ export function StreamingScene() {
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
+        const chapters = params.get('chapters');
         setMode({
             layout: params.get('layout') === 'square' ? 'square' : 'wide',
             capture: params.has('capture'),
+            chapters: chapters ? chapters.split(',') : null,
         });
     }, []);
 
     useEffect(() => {
         if (!mode) return;
         const el = (key: string) => els.current[key];
+        const sel = mode.chapters;
+        const active = sel
+            ? CHAPTERS.filter((c) => sel.includes(c.key))
+            : CHAPTERS;
+        const { starts, total } = timelineOf(active);
 
         const render = (tAbs: number) => {
-            const t = ((tAbs % TOTAL) + TOTAL) % TOTAL;
+            const t = ((tAbs % total) + total) % total;
             let ci = 0;
-            for (let i = 0; i < CHAPTERS.length; i++)
-                if (t >= STARTS[i]) ci = i;
-            const ch = CHAPTERS[ci];
-            const lt = t - STARTS[ci];
+            for (let i = 0; i < active.length; i++) if (t >= starts[i]) ci = i;
+            const ch = active[ci];
+            const lt = t - starts[ci];
             const fade =
                 clamp01(lt / XFADE) *
                 // The out-fade lands at 0 a beat BEFORE the chapter boundary
@@ -417,13 +483,14 @@ export function StreamingScene() {
                 // of the outgoing chapter on the loop's last frame.
                 (1 - clamp01((lt - (ch.len - XFADE - 0.1)) / XFADE));
 
-            CHAPTERS.forEach((chapter, i) => {
+            active.forEach((chapter, i) => {
+                const k = chapter.key;
                 const op = i === ci ? String(fade) : '0';
-                const code = el(`code-${i}`);
-                const panel = el(`panel-${i}`);
+                const code = el(`code-${k}`);
+                const panel = el(`panel-${k}`);
                 if (code) code.style.opacity = op;
                 if (panel) panel.style.opacity = op;
-                const dot = el(`dot-${i}`);
+                const dot = el(`dot-${k}`);
                 if (dot) {
                     dot.style.opacity = i === ci ? '1' : '0.3';
                     dot.style.transform = i === ci ? 'scale(1.3)' : 'scale(1)';
@@ -433,9 +500,9 @@ export function StreamingScene() {
                 const streaming = lt < chapter.doneAt;
 
                 // badge: pulsing brand pill → ok pill with a pop
-                const doing = el(`doing-${i}`);
-                const done = el(`done-${i}`);
-                const pulse = el(`pulse-${i}`);
+                const doing = el(`doing-${k}`);
+                const done = el(`done-${k}`);
+                const pulse = el(`pulse-${k}`);
                 if (doing && done && pulse) {
                     doing.style.display = streaming ? 'inline-flex' : 'none';
                     done.style.display = streaming ? 'none' : 'inline-flex';
@@ -454,8 +521,8 @@ export function StreamingScene() {
 
                 // lead line: chunks whose time has passed + blinking caret
                 if (chapter.lead) {
-                    const lead = el(`lead-${i}`);
-                    const caret = el(`caret-${i}`);
+                    const lead = el(`lead-${k}`);
+                    const caret = el(`caret-${k}`);
                     if (lead) {
                         let text = '';
                         for (const [chunk, at] of chapter.lead)
@@ -473,7 +540,7 @@ export function StreamingScene() {
 
                 // rows: slide-up + fade, one by one
                 chapter.rows.forEach((row, j) => {
-                    const rowEl = el(`row-${i}-${j}`);
+                    const rowEl = el(`row-${k}-${j}`);
                     if (!rowEl) return;
                     const p = easeOut(clamp01((lt - row.at) / 0.3));
                     rowEl.style.opacity = String(p);
@@ -482,13 +549,13 @@ export function StreamingScene() {
             });
         };
 
-        window.__TOTAL = TOTAL;
+        window.__TOTAL = total;
         window.__seek = render;
         render(0);
 
         if (mode.capture) return; // the frame-stepper is the only clock
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            render(CHAPTERS[0].doneAt + 0.6); // static completed state
+            render(active[0].doneAt + 0.6); // static completed state
             return;
         }
         const t0 = performance.now();
@@ -501,6 +568,10 @@ export function StreamingScene() {
 
     if (!mode) return null;
     const square = mode.layout === 'square';
+    const selected = mode.chapters;
+    const active = selected
+        ? CHAPTERS.filter((c) => selected.includes(c.key))
+        : CHAPTERS;
 
     return (
         <div
@@ -533,10 +604,10 @@ export function StreamingScene() {
                 <div
                     className={cn('relative', square ? 'h-[420px]' : 'w-[45%]')}
                 >
-                    {CHAPTERS.map((ch, i) => (
+                    {active.map((ch, i) => (
                         <div
                             key={ch.key}
-                            ref={set(`code-${i}`)}
+                            ref={set(`code-${ch.key}`)}
                             className="absolute inset-0 flex flex-col justify-center"
                             style={{ opacity: i === 0 ? 1 : 0 }}
                         >
@@ -550,10 +621,10 @@ export function StreamingScene() {
                 </div>
 
                 <div className="relative min-h-0 flex-1">
-                    {CHAPTERS.map((ch, i) => (
+                    {active.map((ch, i) => (
                         <div
                             key={ch.key}
-                            ref={set(`panel-${i}`)}
+                            ref={set(`panel-${ch.key}`)}
                             className="absolute inset-0 flex flex-col rounded-xl border border-fd-border bg-fd-card p-7 shadow-lg"
                             style={{ opacity: i === 0 ? 1 : 0 }}
                         >
@@ -563,18 +634,18 @@ export function StreamingScene() {
                                 </span>
                                 <div className="ml-auto grid *:col-start-1 *:row-start-1 *:justify-self-end">
                                     <span
-                                        ref={set(`doing-${i}`)}
+                                        ref={set(`doing-${ch.key}`)}
                                         className="inline-flex items-center gap-2 rounded-full border border-stitch-border bg-stitch-soft px-4 py-1.5 text-[15px] font-medium text-stitch-strong"
                                         style={{ opacity: 0 }}
                                     >
                                         <span
-                                            ref={set(`pulse-${i}`)}
+                                            ref={set(`pulse-${ch.key}`)}
                                             className="size-2.5 rounded-full bg-stitch"
                                         />
                                         {ch.doing}
                                     </span>
                                     <span
-                                        ref={set(`done-${i}`)}
+                                        ref={set(`done-${ch.key}`)}
                                         className="inline-flex items-center gap-1.5 rounded-full border border-ok-line bg-ok-soft px-4 py-1.5 text-[15px] font-medium text-ok"
                                         style={{ display: 'none' }}
                                     >
@@ -595,9 +666,9 @@ export function StreamingScene() {
 
                             {ch.lead && (
                                 <div className="mt-6 min-h-[38px] text-[25px] font-medium tracking-[-0.02em] text-fd-foreground">
-                                    <span ref={set(`lead-${i}`)} />
+                                    <span ref={set(`lead-${ch.key}`)} />
                                     <span
-                                        ref={set(`caret-${i}`)}
+                                        ref={set(`caret-${ch.key}`)}
                                         className="ml-1 inline-block h-[25px] w-[11px] translate-y-[3px] rounded-[3px] bg-stitch"
                                         style={{ opacity: 0 }}
                                     />
@@ -608,7 +679,7 @@ export function StreamingScene() {
                                 {ch.rows.map((row, j) => (
                                     <div
                                         key={row.text}
-                                        ref={set(`row-${i}-${j}`)}
+                                        ref={set(`row-${ch.key}-${j}`)}
                                         className="flex items-center gap-4 rounded-xl border border-fd-border bg-fd-muted/40 px-5 py-3.5"
                                         style={{ opacity: 0 }}
                                     >
@@ -644,10 +715,10 @@ export function StreamingScene() {
             </div>
 
             <div className="relative z-10 mt-5 flex justify-center gap-2.5">
-                {CHAPTERS.map((ch, i) => (
+                {active.map((ch, i) => (
                     <span
                         key={ch.key}
-                        ref={set(`dot-${i}`)}
+                        ref={set(`dot-${ch.key}`)}
                         className="size-2 rounded-full bg-stitch"
                         style={{ opacity: i === 0 ? 1 : 0.3 }}
                     />
