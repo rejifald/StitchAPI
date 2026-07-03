@@ -14,7 +14,7 @@
         "gen:completions": "node scripts/gen-stitch-completions.mjs",
         "build:core": "pnpm --filter stitchapi build",
         "build:typed-deps": "pnpm --filter stitchapi --filter @stitchapi/nest --filter @stitchapi/pino --filter @stitchapi/query-core --filter @stitchapi/react --filter @stitchapi/fastify --filter @stitchapi/hono build",
-        "build:sandbox": "node scripts/gen-stitch-completions.mjs && node ../../docs/sandbox/runtime/build-sandbox-worker.mjs",
+        "build:sandbox": "node scripts/gen-stitch-completions.mjs && node ../../docs/sandbox/runtime/gen-sandbox-modules.mjs && node ../../docs/sandbox/runtime/build-sandbox-worker.mjs",
         "build:search-index": "pnpm run build:typed-deps && fumadocs-mdx && node --import tsx/esm scripts/build-search-index.mjs",
         "check:search-relevance": "pnpm run build:search-index && node --import tsx scripts/search-eval.mts --assert",
         "test": "vitest run",

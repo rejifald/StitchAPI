@@ -37,6 +37,7 @@ import type {
     Stitch,
     StitchConfig,
 } from './types';
+import { type Validator, toValidator } from './validator';
 
 // ---------------------------------------------------------------------------
 // the raw channel (transport) + the typed channel (PostMessageChannel)
@@ -95,42 +96,28 @@ interface EventSub {
 }
 
 // A registered responder (from `respond(...)`): answers inbound requests of `type`. `input`/`output`
-// are optional Standard-Schema-ish validators (validated via the engine's coercer is overkill here —
-// we use the same `~standard` validate the schemas already expose); `reply` is the answer's type.
+// are optional {@link Validator}s — `respond` runs the caller's schema through `toValidator` (the
+// same coercion the rest of the surface uses), so EVERY schema flavour the library accepts (a
+// Standard Schema, a Zod `{ safeParse }` — including Zod < 3.24 that predates `~standard` — a plain
+// `{ validate }` Validator from `toValidator`, or a bare predicate) validates uniformly. Storing the
+// raw schema and only handling `~standard` here silently dropped the others (their branch threw →
+// caught → treated as a failure → every inbound request dropped). `reply` is the answer's type.
 interface Responder {
     handler: (payload: unknown) => unknown;
-    input?: SchemaValidate;
-    output?: SchemaValidate;
+    input?: Validator;
+    output?: Validator;
     reply: string;
 }
 
-// The minimal validate surface we need off a schema: a Standard Schema's `~standard.validate`. We
-// accept anything exposing it (Zod ≥3.24 / Valibot / ArkType / a hand-rolled one) and treat a
-// non-conforming value as a validation failure (drop). Pure structural — no validator dependency.
-type SchemaValidate =
-    | { '~standard': { validate: (v: unknown) => StandardResult } }
-    | ((v: unknown) => boolean);
-
-type StandardResult =
-    | { value: unknown; issues?: undefined }
-    | { issues: readonly unknown[] }
-    | Promise<
-          | { value: unknown; issues?: undefined }
-          | { issues: readonly unknown[] }
-      >;
-
-// Run a schema against a value: `true` ⇒ it validates. A Standard Schema returns `{ issues }` on
-// failure; a plain predicate returns a boolean. Async Standard Schemas are awaited. Anything that
-// throws counts as a failure (fail-closed). No schema ⇒ always passes.
+// Run a validator against a value: `true` ⇒ it validates (drop on `false`). Async validators are
+// awaited. Anything that throws counts as a failure (fail-closed). No validator ⇒ always passes.
 async function passes(
-    schema: SchemaValidate | undefined,
+    validator: Validator | undefined,
     value: unknown,
 ): Promise<boolean> {
-    if (schema === undefined) return true;
+    if (validator === undefined) return true;
     try {
-        if (typeof schema === 'function') return schema(value);
-        const out = await schema['~standard'].validate(value);
-        return (out as { issues?: readonly unknown[] }).issues === undefined;
+        return (await validator.validate(value)).ok;
     } catch {
         return false;
     }
@@ -712,10 +699,13 @@ function makeChannel(
             handler: handler as (payload: unknown) => unknown,
             reply: opts?.reply ?? `${type}-result`,
         };
-        if (opts?.input !== undefined)
-            responder.input = opts.input as SchemaValidate;
-        if (opts?.output !== undefined)
-            responder.output = opts.output as SchemaValidate;
+        // Coerce each schema to a Validator up front (the same path `stitch`'s `input`/`output`
+        // take), so `passes` validates every flavour — Standard Schema, Zod, a `toValidator`
+        // Validator, or a predicate — uniformly instead of only `~standard`.
+        const input = toValidator(opts?.input);
+        if (input !== undefined) responder.input = input;
+        const output = toValidator(opts?.output);
+        if (output !== undefined) responder.output = output;
         responders.set(type, responder);
         return () => {
             // Only delete if it is still THIS responder (a later respond(type, …) replaced it).

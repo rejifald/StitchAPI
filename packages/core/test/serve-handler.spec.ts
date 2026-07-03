@@ -9,12 +9,17 @@ import type { StitchRegistry } from '../src/registry';
 import { createServeHandler } from '../src/serve';
 import { failStitch, stubStitch } from '../src/test-stub';
 
+import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
-class FakeRes {
+// An EventEmitter so the handler can register its client-disconnect 'close' listeners on it (the
+// SSE-teardown path calls `res.on('close', …)` / `res.off(…)` and reads `writableEnded`/`destroyed`).
+class FakeRes extends EventEmitter {
     statusCode = 0;
     headers: Record<string, string | string[]> = {};
+    writableEnded = false;
+    destroyed = false;
     private chunks: string[] = [];
     writeHead(status: number, headers?: Record<string, string>): this {
         this.statusCode = status;
@@ -27,6 +32,7 @@ class FakeRes {
     }
     end(chunk?: string): this {
         if (chunk !== undefined) this.chunks.push(chunk);
+        this.writableEnded = true;
         return this;
     }
     get body(): string {

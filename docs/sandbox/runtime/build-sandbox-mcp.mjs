@@ -16,6 +16,8 @@
  *
  * Usage:  pnpm --filter @stitchapi/sandbox run build:mcp
  */
+import { PLAYGROUND_PACKAGES } from './playground-packages.mjs';
+
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -27,6 +29,15 @@ const pkgRoot = resolve(__dirname, '..'); // docs/sandbox
 const OUTDIR = process.env.OUT ?? resolve(pkgRoot, 'dist');
 const CORE =
     process.env.CORE ?? resolve(repoRoot, 'packages/core/src/index.ts');
+// Alias each workspace `@stitchapi/*` playground package to its source (its published
+// `lib/` isn't built on this path); the node worker bundles them for snippet imports.
+// Derived from the one package list — adding a package needs no edit here.
+const WORKSPACE_ALIASES = Object.fromEntries(
+    PLAYGROUND_PACKAGES.filter((p) => p.src).map((p) => [
+        p.specifier,
+        resolve(repoRoot, p.src),
+    ]),
+);
 
 async function loadEsbuild() {
     try {
@@ -70,7 +81,7 @@ const shared = {
     sourcemap: false,
     // Resolve the real core from source (no build:core needed). Node built-ins
     // stay external automatically under platform:node.
-    alias: { stitchapi: CORE },
+    alias: { stitchapi: CORE, ...WORKSPACE_ALIASES },
     // transpile.ts prefers sucrase (bundled) and only dynamically imports
     // @babel/standalone if sucrase fails to LOAD — never on this path. Keep it
     // external so the build doesn't require the heavy Babel bundle.

@@ -394,6 +394,31 @@ field is gone. The **wire** side still follows its own standard — W3C Trace Co
 [ADR 0017 Decision 7](adr/0017-outbound-trace-context-propagation.md) and the
 `concepts/run-identity` page.
 
+### P23 · One schema intake; foreign formats enter through one adapter
+
+Every place that consumes a validation schema — a stitch's `input`/`output`, and the
+standalone `validate`/`compile` — **MUST** accept the same `SchemaLike` union and yield the
+same `ValidationResult` shape. Standalone validation is the check a stitch runs internally,
+exposed — never a second, differently-shaped path (reaching into a schema's `['~standard']`
+namespace is a protocol detail, not a consumer API). A format that is not already a Standard
+Schema — a JSON Schema obtained at runtime — enters through **one** adapter that mints a
+`SchemaLike` (`JsonSchema.adapt`); no consumer accepts a foreign format directly, and no
+consumer grows a bespoke intake of its own.
+
+_Why:_ [P21](#p21--every-contract-has-an-extension-seam) keeps the validation seam **open**
+(any Standard Schema is accepted); P23 keeps it **uniform** — one intake type and one result
+shape across every consumer, so what a stitch can validate and what you can validate standalone
+are the same set, learned once. A per-consumer intake, or a raw foreign-format path bolted onto
+a single consumer, splits that knowledge and re-introduces the casts the boundary exists to kill.
+The lone adapter is the only ceremony the format genuinely needs — a JSON Schema requires a
+validation engine and core ships none, so the engine is caller-supplied at `adapt` — so that step
+stays visible while everything downstream of it is uniform.
+
+_Canonical case:_ `stitch({ input, output })`, `validate(schema, value)`, and `compile(schema)`
+all take `SchemaLike` and return `ValidationResult`; `JsonSchema.adapt(json, { ajv })` is the sole
+bridge from JSON Schema, producing a `SchemaLike` those consumers treat identically. The standalone
+`validate`/`compile` verbs replaced app-level `schema['~standard'].validate(…)`.
+
 ---
 
 ## 6. Migration backlog (proposed renames — confirm during sweep)

@@ -172,6 +172,11 @@ export function compose(config: Fragment): ResolvedStitchConfig {
         delete rest.hooks;
         delete rest.store;
         delete rest.kind;
+        // Capture the raw `idempotency` toggle BEFORE `expandShorthand` normalizes it away — a
+        // child `idempotency: false` must clear an inherited object (see the reconcile below), but
+        // `expandShorthand` deletes `false` from this layer, so `deepMerge` would never see it and
+        // the inherited value would silently survive (P20 violation).
+        const idempotencyToggle = layer.idempotency;
         expandShorthand(rest);
         merged = deepMerge(merged, rest);
         // Endpoint slot: `url` and `baseUrl`/`path` are two spellings of the same target, and
@@ -184,6 +189,12 @@ export function compose(config: Fragment): ResolvedStitchConfig {
         } else if (rest.baseUrl !== undefined || rest.path !== undefined) {
             delete merged.url;
         }
+        // Idempotency slot (P20): last-writer-wins on the on/off toggle, like the endpoint slot
+        // above. `expandShorthand` turns `true`→`{}` (folded by deepMerge) but drops `false`
+        // entirely, so a child `idempotency: false` can't undo an inherited `idempotency: true`
+        // through the merge alone — reconcile it here, clearing the slot when this layer is the
+        // last to set it and set it off.
+        if (idempotencyToggle === false) delete merged.idempotency;
     }
     const hooks = chainHooks(hookLayers);
     if (hooks) merged.hooks = hooks;

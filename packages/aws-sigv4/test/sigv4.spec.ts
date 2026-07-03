@@ -315,6 +315,96 @@ describe('awsSigV4 strategy', () => {
         );
     });
 
+    // Regression (403 SignatureDoesNotMatch — the S3 headline case): a request carrying a
+    // custom `x-amz-*` header (e.g. `x-amz-acl`, routine for S3 PutObject) must have that
+    // header SIGNED. AWS requires host + every `x-amz-*` header to be in SignedHeaders; a
+    // request that sends `x-amz-acl` on the wire but omits it from the signature is rejected.
+    // The strategy must fold the request's own headers into the signed set.
+    test("signs the request's own x-amz-* headers (SignedHeaders includes x-amz-acl)", async () => {
+        const strategy = awsSigV4({
+            region: 'us-east-1',
+            service: 's3',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+        });
+        const req = fakeReq({ method: 'PUT', body: 'data' });
+        req.headers['x-amz-acl'] = 'public-read';
+        await strategy.apply(req, fakeCtx as never);
+
+        // The header the request carries must appear in SignedHeaders, in canonical
+        // (sorted) position — proof it's inside the signed canonical request, not just
+        // sent unsigned on the wire (which is what triggers 403 SignatureDoesNotMatch).
+        expect(req.headers['authorization']).toContain(
+            'SignedHeaders=host;x-amz-acl;x-amz-content-sha256;x-amz-date',
+        );
+    });
+
+    // Same header-coverage proof, but pinned to a fixed clock via the low-level signer so we
+    // can assert the signature actually CHANGES when the x-amz-acl value changes — the real
+    // guarantee that the header is inside the signed canonical request, not just listed.
+    test('the signature covers the x-amz-acl value (differs when the value differs)', async () => {
+        const base = {
+            method: 'PUT',
+            url: 'https://my-bucket.s3.amazonaws.com/key',
+            payloadHash: EMPTY_PAYLOAD_SHA256,
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+            region: 'us-east-1',
+            service: 's3',
+            dateTime: '20150830T123600Z',
+        } as const;
+        const aclPublic = await signRequestV4({
+            ...base,
+            headers: {
+                host: 'my-bucket.s3.amazonaws.com',
+                'x-amz-acl': 'public-read',
+                'x-amz-date': '20150830T123600Z',
+                'x-amz-content-sha256': EMPTY_PAYLOAD_SHA256,
+            },
+        });
+        const aclPrivate = await signRequestV4({
+            ...base,
+            headers: {
+                host: 'my-bucket.s3.amazonaws.com',
+                'x-amz-acl': 'private',
+                'x-amz-date': '20150830T123600Z',
+                'x-amz-content-sha256': EMPTY_PAYLOAD_SHA256,
+            },
+        });
+        expect(aclPublic.signedHeaders).toContain('x-amz-acl');
+        expect(aclPublic.signature).not.toBe(aclPrivate.signature);
+    });
+
+    // Regression (403 SignatureDoesNotMatch): the transport drops the body for GET/HEAD
+    // (encodeRequestBody short-circuits to no body), so a GET/HEAD stitch that carries a
+    // `body` must still sign the EMPTY-payload hash — signing sha256(body) signs bytes the
+    // transport never sends. Force the empty-payload hash for GET/HEAD regardless of body.
+    test('GET with a body still signs the empty-payload hash (transport sends no body)', async () => {
+        const strategy = awsSigV4({
+            region: 'us-east-1',
+            service: 's3',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+        });
+        const req = fakeReq({ method: 'GET', body: 'hello' });
+        await strategy.apply(req, fakeCtx as never);
+        // NOT sha256('hello') = 2cf24dba… — the transport sends nothing for GET.
+        expect(req.headers['x-amz-content-sha256']).toBe(EMPTY_PAYLOAD_SHA256);
+    });
+
+    test('HEAD with a body still signs the empty-payload hash', async () => {
+        const strategy = awsSigV4({
+            region: 'us-east-1',
+            service: 's3',
+            accessKeyId: ACCESS_KEY,
+            secretAccessKey: SECRET_KEY,
+            signBody: true, // even with signBody:true, GET/HEAD carry no wire body
+        });
+        const req = fakeReq({ method: 'HEAD', body: 'hello' });
+        await strategy.apply(req, fakeCtx as never);
+        expect(req.headers['x-amz-content-sha256']).toBe(EMPTY_PAYLOAD_SHA256);
+    });
+
     // The default (no signBody) is unchanged for form/multipart: UNSIGNED-PAYLOAD, no throw.
     test('form/multipart bodies without signBody stay UNSIGNED-PAYLOAD', async () => {
         const strategy = awsSigV4({

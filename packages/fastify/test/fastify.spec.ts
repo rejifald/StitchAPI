@@ -183,7 +183,47 @@ describe('stitchPlugin', () => {
         expect(res.body).toBe('data: hello\n\ndata: world\n\n');
     });
 
-    test('sendStitchSse surfaces an error event as an SSE error frame', async () => {
+    test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
+            yield {
+                type: 'error',
+                name: 'StitchError',
+                // A transport failure whose message discloses an internal hostname — it must NOT
+                // reach the client (topology disclosure; same class PR #408 fixed on the
+                // error-handler surface).
+                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                status: 502,
+                attempts: 1,
+                at: 2,
+            };
+        }
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seamConfig: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-err', (_request, reply) =>
+            sendStitchSse(reply, events()),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-err' });
+        // The stream still ends with a named `error` frame, but the data is a generic token.
+        expect(res.body).toBe('data: partial\n\nevent: error\ndata: error\n\n');
+        expect(res.body).not.toContain('payments.internal.corp');
+        expect(res.body).not.toContain('ENOTFOUND');
+    });
+
+    test('errorData opts in to the raw message on the error frame', async () => {
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
@@ -208,7 +248,7 @@ describe('stitchPlugin', () => {
             logger: false,
         });
         app.get('/sse-err', (_request, reply) =>
-            sendStitchSse(reply, events()),
+            sendStitchSse(reply, events(), { errorData: (e) => e.message }),
         );
         await app.ready();
 

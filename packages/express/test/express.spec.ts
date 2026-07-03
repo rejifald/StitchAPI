@@ -182,7 +182,35 @@ describe('streamStitchSse writes SSE frames to res', () => {
         expect(res.ended).toBe(true);
     });
 
-    test('an error event ends the stream with a named event: error frame', async () => {
+    test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
+            yield {
+                type: 'error',
+                name: 'StitchError',
+                // A transport failure whose message discloses an internal hostname — it must NOT
+                // reach the client (topology disclosure; same class PR #408 fixed on the
+                // error-handler surface).
+                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                status: 502,
+                attempts: 1,
+                at: 2,
+            };
+            // Never reached: the helper stops on `error`.
+            yield { type: 'delta', chunk: 'unreachable', at: 3 };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, events());
+
+        // The stream still ends with a named `error` frame, but the data is a generic token.
+        expect(res.body()).toBe(
+            'data: partial\n\nevent: error\ndata: error\n\n',
+        );
+        expect(res.body()).not.toContain('payments.internal.corp');
+        expect(res.body()).not.toContain('ENOTFOUND');
+    });
+
+    test('errorData opts in to the raw message on the error frame', async () => {
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
@@ -192,11 +220,11 @@ describe('streamStitchSse writes SSE frames to res', () => {
                 attempts: 1,
                 at: 2,
             };
-            // Never reached: the helper stops on `error`.
-            yield { type: 'delta', chunk: 'unreachable', at: 3 };
         }
         const res = mockRes();
-        await streamStitchSse(res as unknown as Response, events());
+        await streamStitchSse(res as unknown as Response, events(), {
+            errorData: (e) => e.message,
+        });
 
         expect(res.body()).toBe(
             'data: partial\n\nevent: error\ndata: upstream blew up\n\n',

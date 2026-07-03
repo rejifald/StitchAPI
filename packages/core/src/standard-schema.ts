@@ -22,6 +22,17 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
     };
 }
 
+/**
+ * The schema shape a stitch's `input`/`output` accepts — structurally the ecosystem-standard
+ * {@link https://standardschema.dev | Standard Schema} v1 ({@link StandardSchemaV1}). Zod, Valibot,
+ * ArkType and the `@stitchapi/*` schema adapters all speak it. Exported under this name so an
+ * adapter has one canonical, documented target to build against instead of inlining its own copy.
+ */
+export type StitchSchema<Input = unknown, Output = Input> = StandardSchemaV1<
+    Input,
+    Output
+>;
+
 export type StandardResult<Output> =
     | { readonly value: Output; readonly issues?: undefined }
     | { readonly issues: readonly StandardIssue[] };

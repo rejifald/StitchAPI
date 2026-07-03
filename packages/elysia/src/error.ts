@@ -26,13 +26,25 @@ export interface StitchErrorOptions {
      */
     status?: number | ((err: StitchErrorLike) => number);
     /**
-     * The JSON body for a mapped failure. Default: `{ error: <message> }`. Override to shape your
-     * own error envelope. Receives the mapped status alongside the error.
+     * The JSON body for a mapped failure. **Default: a generic, status-tied message**
+     * (`{ error: 'Bad Gateway' }`) — the raw `err.message` is deliberately *not* echoed, because it
+     * can disclose internal network topology (a transport failure reads like
+     * `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`) to an
+     * untrusted client. Override to shape your own error envelope; pass `(e) => ({ error: e.message })`
+     * to opt in to the raw message when the upstream messages are known to be safe to expose.
+     * Receives the mapped status alongside the error.
      */
     body?: (err: StitchErrorLike, status: number) => unknown;
 }
 
 const BAD_GATEWAY = 502;
+
+// A small map of the statuses this helper emits → their generic reason phrase, used for
+// the default body so the raw error message is never echoed to the client.
+const STATUS_TEXT: Record<number, string> = {
+    500: 'Internal Server Error',
+    502: 'Bad Gateway',
+};
 
 function resolveStatus(
     err: StitchErrorLike,
@@ -59,9 +71,12 @@ export function stitchErrorResponse(
 ): Response | undefined {
     if (!isStitchError(err)) return undefined;
     const status = resolveStatus(err, options.status);
+    // Default body is a generic, status-tied message — the raw `err.message` is deliberately
+    // withheld so an internal hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status
+    // (`HTTP 401`) never reaches the client. Opt in via `options.body`.
     const body = options.body
         ? options.body(err, status)
-        : { error: err.message || 'Upstream request failed' };
+        : { error: STATUS_TEXT[status] ?? 'Error' };
     return Response.json(body, { status });
 }
 

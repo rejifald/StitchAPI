@@ -146,6 +146,19 @@ into a shared backend — fleet-wide, with no call-site change.
     />
 </Cards>
 
+## Validation
+
+Adapt a schema you only obtain at runtime — delivered as JSON Schema — into the
+same Standard Schema contract a stitch validates through.
+
+<Cards>
+    <Card
+        title="JSON Schema"
+        href="/docs/integrations/json-schema"
+        description="JsonSchema.adapt turns a runtime-discovered JSON Schema into a StitchSchema — validated with an Ajv instance (or any check) you supply, so it bundles no engine."
+    />
+</Cards>
+
 ## Auth
 
 Core ships bearer / apiKey / basic / cookieSession / oauth2 built in; companions

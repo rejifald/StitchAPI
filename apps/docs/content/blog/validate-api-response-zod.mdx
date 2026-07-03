@@ -55,7 +55,7 @@ const getUser = stitch<{ id: number; name: string }>({
 const user = await getUser({ params: { id: 1 } }); // typed · validated
 ```
 
-`output` takes the `z.object(...)` schema directly — no `toValidator()` cast; any [Standard Schema](/docs/guides/validation/standard-schema) validator (Valibot, ArkType) or a plain predicate goes on the config the same way. The `stitch<{ id: number; name: string }>` generic types the resolved value, so `user` is `{ id: number; name: string }` with no `z.infer` call. A response that doesn't match throws [STITCH_VALIDATION](/docs/errors/stitch-validation) at the boundary — the same failure your `safeParse` branch produced, now uniform across every endpoint instead of re-typed at each one.
+`output` takes the `z.object(...)` schema directly; any [Standard Schema](/docs/guides/validation/standard-schema) validator (Valibot, ArkType) or a plain predicate goes on the config the same way. The `stitch<{ id: number; name: string }>` generic types the resolved value, so `user` is `{ id: number; name: string }` with no `z.infer` call. A response that doesn't match throws [STITCH_VALIDATION](/docs/errors/stitch-validation) at the boundary — the same failure your `safeParse` branch produced, now uniform across every endpoint instead of re-typed at each one.
 
 ### Validate the request too
 
