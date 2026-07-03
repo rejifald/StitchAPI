@@ -39,6 +39,13 @@ const OUT =
     resolve(repoRoot, 'apps/docs/public/sandbox/sandbox-worker.mjs');
 const CORE =
     process.env.CORE ?? resolve(repoRoot, 'packages/core/src/index.ts');
+// Resolve `@stitchapi/json-schema` to its SOURCE too — its published entry is a built
+// `lib/`, which the docs `build:sandbox` flow never builds. The source is a single
+// self-contained file (its only import is a type-only `StitchSchema` from stitchapi,
+// erased at bundle time), so aliasing to src keeps the worker build publish-free.
+const JSON_SCHEMA =
+    process.env.JSON_SCHEMA ??
+    resolve(repoRoot, 'packages/json-schema/src/index.ts');
 
 async function loadEsbuild() {
     // 1. Bare import — works if esbuild sits on a node_modules path above this
@@ -93,6 +100,7 @@ await esbuild.build({
     // shims are required — this is the only alias the bundle needs.
     alias: {
         stitchapi: CORE,
+        '@stitchapi/json-schema': JSON_SCHEMA,
     },
     logLevel: 'info',
 });
