@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 /**
- * Regenerates the hero demo assets from source (`pnpm gen:media`):
+ * Regenerates the hero demo assets from source (`pnpm gen:media`), in
+ * light AND dark (README `<picture>` can serve the matching one):
  *
- *   docs/media/streaming-demo.mp4         1280x720 hero (README/HN/PH/X)
- *   docs/media/streaming-demo.gif         1280-wide fallback, kept < 2.5 MB
- *   docs/media/streaming-demo-square.mp4  1080x1080 crop for social
+ *   docs/media/streaming-demo[-dark].mp4         1280x720 hero
+ *   docs/media/streaming-demo[-dark].gif         1280-wide, < 2.5 MB each
+ *   docs/media/streaming-demo-square[-dark].mp4  1080x1080 for social
  *
  * How: the scene is a real page of the docs app —
  * apps/docs/app/demo/streaming — built on the site's own components and
@@ -100,11 +101,11 @@ const stopServer = (server) => {
     }
 };
 
-async function captureFrames(browser, { width, height, url, dir }) {
+async function captureFrames(browser, { width, height, url, dir, theme }) {
     const page = await browser.newPage({
         viewport: { width, height },
         deviceScaleFactor: 2,
-        colorScheme: 'light',
+        colorScheme: theme,
     });
     await page.goto(url);
     await page.waitForFunction(() => typeof window.__seek === 'function');
@@ -189,39 +190,40 @@ function encodeGif(framesDir, out, work) {
     throw new Error(`GIF exceeds ${GIF_MAX_BYTES} bytes at every ladder step`);
 }
 
+// theme × layout matrix: wide gets mp4 + gif, square gets mp4 only.
+const VARIANTS = [
+    { name: 'streaming-demo', theme: 'light', square: false, gif: true },
+    { name: 'streaming-demo-dark', theme: 'dark', square: false, gif: true },
+    { name: 'streaming-demo-square', theme: 'light', square: true, gif: false },
+    {
+        name: 'streaming-demo-square-dark',
+        theme: 'dark',
+        square: true,
+        gif: false,
+    },
+];
+
 const work = mkdtempSync(join(tmpdir(), 'stitch-demo-'));
 mkdirSync(outDir, { recursive: true });
 const server = await startDocsServer();
 const browser = await chromium.launch();
 try {
-    // ── 1280x720 hero (mp4 + gif) ──────────────────────────────────
-    console.log('capturing 1280x720 scene…');
-    const wideDir = join(work, 'wide');
-    mkdirSync(wideDir);
-    await captureFrames(browser, {
-        width: 1280,
-        height: 720,
-        url: PAGE,
-        dir: wideDir,
-    });
-    encodeMp4(wideDir, join(outDir, 'streaming-demo.mp4'), '1280:720');
-    encodeGif(wideDir, join(outDir, 'streaming-demo.gif'), work);
-
-    // ── 1080x1080 square crop for social (mp4) ─────────────────────
-    console.log('capturing 1080x1080 scene…');
-    const squareDir = join(work, 'square');
-    mkdirSync(squareDir);
-    await captureFrames(browser, {
-        width: 1080,
-        height: 1080,
-        url: `${PAGE}&layout=square`,
-        dir: squareDir,
-    });
-    encodeMp4(
-        squareDir,
-        join(outDir, 'streaming-demo-square.mp4'),
-        '1080:1080',
-    );
+    for (const { name, theme, square, gif } of VARIANTS) {
+        const size = square ? '1080:1080' : '1280:720';
+        console.log(`capturing ${name} (${size.replace(':', 'x')} ${theme})…`);
+        const dir = join(work, name);
+        mkdirSync(dir);
+        await captureFrames(browser, {
+            width: square ? 1080 : 1280,
+            height: square ? 1080 : 720,
+            url: square ? `${PAGE}&layout=square` : PAGE,
+            dir,
+            theme,
+        });
+        encodeMp4(dir, join(outDir, `${name}.mp4`), size);
+        if (gif) encodeGif(dir, join(outDir, `${name}.gif`), work);
+        rmSync(dir, { recursive: true, force: true }); // free frame disk early
+    }
 } finally {
     await browser.close();
     stopServer(server);

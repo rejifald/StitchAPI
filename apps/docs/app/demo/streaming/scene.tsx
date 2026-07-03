@@ -5,13 +5,32 @@ import { CodePanel } from '@/app/(home)/components/code-panel';
 import { Logo } from '@/components/logo';
 import { cn } from '@/lib/cn';
 
-import { Check, Church, Coffee, Sunset } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import {
+    Bot,
+    Braces,
+    Check,
+    Church,
+    CircleCheck,
+    CircleX,
+    Coffee,
+    KeyRound,
+    RotateCw,
+    ShieldCheck,
+    Sunset,
+    TriangleAlert,
+} from 'lucide-react';
+import { type ComponentType, useEffect, useRef, useState } from 'react';
 
 /**
- * The hero streaming-demo scene (`docs/media/streaming-demo.{mp4,gif}`),
- * rebuilt on the site's own components and tokens: CodePanel, Logo,
- * BrandBackdrop, the Signal palette, and the site type stacks.
+ * The hero demo scene (`docs/media/streaming-demo*.{mp4,gif}`), built on
+ * the site's own components and tokens: CodePanel, Logo, BrandBackdrop,
+ * the Signal palette, and the site type stacks.
+ *
+ * The loop runs four CHAPTERS, one per key feature — streaming-first,
+ * validation + drift, resilience, agent-native — each a code snippet on
+ * the left and a live-filling result panel on the right, crossfaded in
+ * sequence. Every snippet is real API usage (shapes match README.md and
+ * packages/react's `useStitchStream` JSDoc example).
  *
  * Everything animated is a pure function of time: `render(t)` mutates
  * inline styles only, and `scripts/gen-streaming-demo.mjs` frame-steps it
@@ -19,43 +38,50 @@ import { useEffect, useRef, useState } from 'react';
  * same t always produces the same frame and the exported assets are
  * reproducible from source. Live visitors get the same `render` driven by
  * a requestAnimationFrame loop instead (static end-state under
- * prefers-reduced-motion).
+ * prefers-reduced-motion). Light/dark follow the site theme; the capture
+ * script records both.
  *
  * URL params: `?layout=square` → 1080×1080 stacked variant for the social
- * crop; `?capture=1` → no self-running loop + CSS animations frozen, so
- * the frame-stepper is the only clock on the page.
+ * crop; `?capture=1` → no self-running loop + CSS animations frozen +
+ * the Next dev indicator hidden, so the frame-stepper is the only clock.
  */
 
-// ── timeline (seconds) ──────────────────────────────────────────────
-const TOTAL = 6.4; // full loop
-const BADGE_IN = 0.15; // "● streaming" fades in
-const DONE_AT = 4.45; // stream completes → "✓ typed · validated"
-const FADE_AT = 5.7; // content fades back to empty
-const FADE_LEN = 0.35; // …over this long (then rest until TOTAL)
+type Tone = 'brand' | 'ok' | 'warn';
 
-// Sentence streams in LLM-ish sub-word chunks, then rows land one by
-// one. Fixed schedule — same frames every render.
-const CHUNKS: [string, number][] = [
-    ['Your', 0.35],
-    [' 3', 0.53],
-    ['-stop', 0.68],
-    [' day', 0.86],
-    [' in', 1.02],
-    [' Ky', 1.2],
-    ['iv', 1.34],
-    [':', 1.5],
-];
+type Row = {
+    at: number; // seconds into the chapter
+    icon: ComponentType<{ className?: string }>;
+    tone: Tone;
+    text: string;
+    mono?: boolean; // render `text` in the code face
+    meta?: string; // right-aligned mono annotation
+};
 
-const ROWS = [
-    { at: 2.05, icon: Coffee, when: '09:00', what: 'Coffee at Podil' },
-    { at: 2.85, icon: Church, when: '12:30', what: 'Saint Sophia Cathedral' },
-    { at: 3.65, icon: Sunset, when: '19:00', what: 'Sunset over the Dnipro' },
-];
+type Chapter = {
+    key: string;
+    label: string; // right-panel kicker
+    filename: string;
+    code: string;
+    chip: string; // static context chip under the header
+    chipMono?: boolean;
+    lead?: [string, number][]; // token-by-token intro line (chunk, at)
+    rows: Row[];
+    doing: string; // in-flight badge text (brand pill, pulsing)
+    done: string; // completed badge text (ok pill)
+    doneAt: number;
+    len: number; // chapter length incl. crossfades
+};
 
-// Real usage — mirrors the `useStitchStream` JSDoc example in
-// packages/react/src/index.ts. If that API changes, update this and
-// regenerate the assets (`pnpm gen:media`).
-const SNIPPET = `const chat = stitch({
+const XFADE = 0.35; // chapter crossfade in/out
+
+const CHAPTERS: Chapter[] = [
+    {
+        key: 'stream',
+        label: 'Streaming-first',
+        filename: 'chat.ts',
+        // Mirrors the `useStitchStream` JSDoc example in
+        // packages/react/src/index.ts.
+        code: `const chat = stitch({
   path: 'https://api.example.com/chat',
   output: Reply,
 });
@@ -63,7 +89,189 @@ const SNIPPET = `const chat = stitch({
 const { chunks, isStreaming } =
   useStitchStream(chat, {
     body: { prompt },
-  });`;
+  });`,
+        chip: 'prompt · “Plan my day in Kyiv”',
+        lead: [
+            ['Your', 0.35],
+            [' 3', 0.53],
+            ['-stop', 0.68],
+            [' day', 0.86],
+            [' in', 1.02],
+            [' Ky', 1.2],
+            ['iv', 1.34],
+            [':', 1.5],
+        ],
+        rows: [
+            {
+                at: 1.9,
+                icon: Coffee,
+                tone: 'brand',
+                text: 'Coffee at Podil',
+                meta: '09:00',
+            },
+            {
+                at: 2.6,
+                icon: Church,
+                tone: 'brand',
+                text: 'Saint Sophia Cathedral',
+                meta: '12:30',
+            },
+            {
+                at: 3.3,
+                icon: Sunset,
+                tone: 'brand',
+                text: 'Sunset over the Dnipro',
+                meta: '19:00',
+            },
+        ],
+        doing: 'streaming',
+        done: 'typed · validated',
+        doneAt: 4.1,
+        len: 5.6,
+    },
+    {
+        key: 'drift',
+        label: 'Validation + drift',
+        filename: 'user.ts',
+        code: `const getUser = stitch({
+  baseUrl: 'https://demo.stitchapi.dev',
+  path: '/users/{id}',
+  output: drift(User),
+});
+
+const user = await getUser({
+  params: { id: '42' },
+});`,
+        chip: `await getUser({ params: { id: '42' } })`,
+        chipMono: true,
+        rows: [
+            {
+                at: 0.7,
+                icon: Braces,
+                tone: 'brand',
+                text: `{ id: 42, name: 'Ada Lovelace' }`,
+                mono: true,
+                meta: '200 OK',
+            },
+            {
+                at: 1.5,
+                icon: ShieldCheck,
+                tone: 'ok',
+                text: 'output matches User',
+                meta: 'typed',
+            },
+            {
+                at: 2.3,
+                icon: TriangleAlert,
+                tone: 'warn',
+                text: 'drift: meta.plan appeared',
+                meta: 'info',
+            },
+        ],
+        doing: 'validating',
+        done: 'validated · drift logged',
+        doneAt: 3.2,
+        len: 4.8,
+    },
+    {
+        key: 'resilience',
+        label: 'Resilience',
+        filename: 'orders.ts',
+        code: `const listOrders = stitch({
+  baseUrl: 'https://demo.stitchapi.dev',
+  path: '/orders',
+  retry: { attempts: 3, on: [429, 502] },
+  throttle: { rate: '10/s' },
+  timeout: '10s',
+  cache: '1m',
+});`,
+        chip: 'await listOrders()',
+        chipMono: true,
+        rows: [
+            {
+                at: 0.7,
+                icon: CircleX,
+                tone: 'warn',
+                text: '502 Bad Gateway',
+                meta: 'attempt 1',
+            },
+            {
+                at: 1.6,
+                icon: RotateCw,
+                tone: 'warn',
+                text: 'backing off 200 ms',
+                meta: 'attempt 2',
+            },
+            {
+                at: 2.5,
+                icon: CircleCheck,
+                tone: 'ok',
+                text: '200 OK — 41 orders',
+                meta: '184 ms',
+            },
+        ],
+        doing: 'retrying',
+        done: 'recovered',
+        doneAt: 3.4,
+        len: 5.0,
+    },
+    {
+        key: 'agent',
+        label: 'Agent-native',
+        filename: 'agent.ts',
+        code: `// One definition, four front doors
+const listUsers = stitch({
+  baseUrl: 'https://demo.stitchapi.dev',
+  path: '/users',
+  output: z.array(User),
+});
+
+await listUsers(); // in-process
+// $ stitch run list-users — CLI
+// $ stitch mcp — agent tool`,
+        chip: '$ stitch mcp',
+        chipMono: true,
+        rows: [
+            {
+                at: 0.7,
+                icon: Bot,
+                tone: 'brand',
+                text: 'agent writes: listUsers()',
+                meta: 'run_stitch',
+            },
+            {
+                at: 1.5,
+                icon: Braces,
+                tone: 'brand',
+                text: '3 users — typed, trimmed',
+                meta: '218 ms',
+            },
+            {
+                at: 2.3,
+                icon: KeyRound,
+                tone: 'ok',
+                text: 'capability, not credential',
+                meta: 'auth on stitch',
+            },
+        ],
+        doing: 'tool call',
+        done: 'typed result',
+        doneAt: 3.2,
+        len: 4.8,
+    },
+];
+
+const STARTS = CHAPTERS.reduce<number[]>(
+    (acc, _, i) => [...acc, i === 0 ? 0 : acc[i - 1] + CHAPTERS[i - 1].len],
+    [],
+);
+const TOTAL = STARTS[STARTS.length - 1] + CHAPTERS[CHAPTERS.length - 1].len;
+
+const TONE_ICON: Record<Tone, string> = {
+    brand: 'bg-stitch-soft text-stitch',
+    ok: 'bg-ok-soft text-ok',
+    warn: 'bg-accent-soft text-accent',
+};
 
 declare global {
     interface Window {
@@ -83,14 +291,10 @@ type Mode = { layout: 'wide' | 'square'; capture: boolean };
 
 export function StreamingScene() {
     const [mode, setMode] = useState<Mode | null>(null);
-
-    const streamBadge = useRef<HTMLSpanElement>(null);
-    const doneBadge = useRef<HTMLSpanElement>(null);
-    const pulse = useRef<HTMLSpanElement>(null);
-    const sentence = useRef<HTMLSpanElement>(null);
-    const caret = useRef<HTMLSpanElement>(null);
-    const content = useRef<HTMLDivElement>(null);
-    const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const els = useRef<Record<string, HTMLElement | null>>({});
+    const set = (key: string) => (el: HTMLElement | null) => {
+        els.current[key] = el;
+    };
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -102,57 +306,85 @@ export function StreamingScene() {
 
     useEffect(() => {
         if (!mode) return;
+        const el = (key: string) => els.current[key];
 
         const render = (tAbs: number) => {
             const t = ((tAbs % TOTAL) + TOTAL) % TOTAL;
-            const streaming = t < DONE_AT;
-            const fade = 1 - clamp01((t - FADE_AT) / FADE_LEN);
+            let ci = 0;
+            for (let i = 0; i < CHAPTERS.length; i++)
+                if (t >= STARTS[i]) ci = i;
+            const ch = CHAPTERS[ci];
+            const lt = t - STARTS[ci];
+            const fade =
+                clamp01(lt / XFADE) *
+                // The out-fade lands at 0 a beat BEFORE the chapter boundary
+                // (not exactly on it), so the frame grid can't leave a ghost
+                // of the outgoing chapter on the loop's last frame.
+                (1 - clamp01((lt - (ch.len - XFADE - 0.1)) / XFADE));
 
-            // badge: in → pulsing brand pill → accent "✓" pop → fades out
-            const badgeIn = clamp01((t - BADGE_IN) / 0.25);
-            if (streamBadge.current && doneBadge.current && pulse.current) {
-                streamBadge.current.style.display = streaming
-                    ? 'inline-flex'
-                    : 'none';
-                doneBadge.current.style.display = streaming
-                    ? 'none'
-                    : 'inline-flex';
-                if (streaming) {
-                    streamBadge.current.style.opacity = String(badgeIn * fade);
-                    const ph = 0.5 + 0.5 * Math.sin(2 * Math.PI * 1.3 * t);
-                    pulse.current.style.opacity = String(0.45 + 0.55 * ph);
-                    pulse.current.style.transform = `scale(${0.8 + 0.35 * ph})`;
-                } else {
-                    doneBadge.current.style.opacity = String(fade);
-                    const pop = clamp01((t - DONE_AT) / 0.3);
-                    doneBadge.current.style.transform = `scale(${0.8 + 0.2 * easeOutBack(pop)})`;
+            CHAPTERS.forEach((chapter, i) => {
+                const op = i === ci ? String(fade) : '0';
+                const code = el(`code-${i}`);
+                const panel = el(`panel-${i}`);
+                if (code) code.style.opacity = op;
+                if (panel) panel.style.opacity = op;
+                const dot = el(`dot-${i}`);
+                if (dot) {
+                    dot.style.opacity = i === ci ? '1' : '0.3';
+                    dot.style.transform = i === ci ? 'scale(1.3)' : 'scale(1)';
                 }
-            }
 
-            // sentence: chunks whose time has passed; caret blinks while
-            // streaming, gone once done
-            if (sentence.current) {
-                let text = '';
-                for (const [chunk, at] of CHUNKS) if (t >= at) text += chunk;
-                sentence.current.textContent = text;
-            }
-            if (caret.current) {
-                const blink = Math.sin(2 * Math.PI * 2 * t) > 0 ? 1 : 0.15;
-                caret.current.style.opacity = String(
-                    streaming && t >= BADGE_IN ? blink : 0,
-                );
-            }
+                if (i !== ci) return;
+                const streaming = lt < chapter.doneAt;
 
-            // rows: slide-up + fade, one by one
-            rowRefs.current.forEach((el, i) => {
-                if (!el) return;
-                const p = easeOut(clamp01((t - ROWS[i].at) / 0.3));
-                el.style.opacity = String(p);
-                el.style.transform = `translateY(${16 * (1 - p)}px)`;
+                // badge: pulsing brand pill → ok pill with a pop
+                const doing = el(`doing-${i}`);
+                const done = el(`done-${i}`);
+                const pulse = el(`pulse-${i}`);
+                if (doing && done && pulse) {
+                    doing.style.display = streaming ? 'inline-flex' : 'none';
+                    done.style.display = streaming ? 'none' : 'inline-flex';
+                    if (streaming) {
+                        doing.style.opacity = String(
+                            clamp01((lt - 0.15) / 0.25),
+                        );
+                        const ph = 0.5 + 0.5 * Math.sin(2 * Math.PI * 1.3 * lt);
+                        pulse.style.opacity = String(0.45 + 0.55 * ph);
+                        pulse.style.transform = `scale(${0.8 + 0.35 * ph})`;
+                    } else {
+                        const pop = clamp01((lt - chapter.doneAt) / 0.3);
+                        done.style.transform = `scale(${0.8 + 0.2 * easeOutBack(pop)})`;
+                    }
+                }
+
+                // lead line: chunks whose time has passed + blinking caret
+                if (chapter.lead) {
+                    const lead = el(`lead-${i}`);
+                    const caret = el(`caret-${i}`);
+                    if (lead) {
+                        let text = '';
+                        for (const [chunk, at] of chapter.lead)
+                            if (lt >= at) text += chunk;
+                        lead.textContent = text;
+                    }
+                    if (caret) {
+                        const blink =
+                            Math.sin(2 * Math.PI * 2 * lt) > 0 ? 1 : 0.15;
+                        caret.style.opacity = String(
+                            streaming && lt >= 0.15 ? blink : 0,
+                        );
+                    }
+                }
+
+                // rows: slide-up + fade, one by one
+                chapter.rows.forEach((row, j) => {
+                    const rowEl = el(`row-${i}-${j}`);
+                    if (!rowEl) return;
+                    const p = easeOut(clamp01((lt - row.at) / 0.3));
+                    rowEl.style.opacity = String(p);
+                    rowEl.style.transform = `translateY(${16 * (1 - p)}px)`;
+                });
             });
-
-            // loop-close: everything fades back to the empty panel
-            if (content.current) content.current.style.opacity = String(fade);
         };
 
         window.__TOTAL = TOTAL;
@@ -161,7 +393,7 @@ export function StreamingScene() {
 
         if (mode.capture) return; // the frame-stepper is the only clock
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            render(DONE_AT + 0.6); // static completed state
+            render(CHAPTERS[0].doneAt + 0.6); // static completed state
             return;
         }
         const t0 = performance.now();
@@ -179,7 +411,7 @@ export function StreamingScene() {
         <div
             className={cn(
                 'fixed inset-0 z-[60] flex flex-col overflow-hidden bg-fd-background',
-                square ? 'px-12 pt-10 pb-12' : 'px-11 pt-8 pb-10',
+                square ? 'px-12 pt-10 pb-10' : 'px-11 pt-8 pb-8',
             )}
         >
             {mode.capture && (
@@ -190,7 +422,7 @@ export function StreamingScene() {
             )}
             <BrandBackdrop variant="hero" />
 
-            <div className="relative z-10 mb-8 flex items-center">
+            <div className="relative z-10 mb-7 flex items-center">
                 <Logo className="origin-left scale-[1.7]" />
                 <span className="ml-auto text-[17px] text-fd-muted-foreground">
                     the streaming-first API client
@@ -204,88 +436,127 @@ export function StreamingScene() {
                 )}
             >
                 <div
-                    className={cn(
-                        'flex flex-col justify-center',
-                        !square && 'w-[45%]',
-                    )}
+                    className={cn('relative', square ? 'h-[420px]' : 'w-[45%]')}
                 >
-                    <CodePanel
-                        filename="chat.ts"
-                        code={SNIPPET}
-                        className="[&_pre]:px-7 [&_pre]:py-6 [&_pre]:text-[19px] [&_pre]:leading-[1.65]"
-                    />
-                </div>
-
-                <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-fd-border bg-fd-card p-7 shadow-lg">
-                    <div className="flex items-center">
-                        <span className="text-[15px] font-semibold tracking-[0.14em] text-fd-muted-foreground uppercase">
-                            Response
-                        </span>
-                        <div className="ml-auto grid *:col-start-1 *:row-start-1 *:justify-self-end">
-                            <span
-                                ref={streamBadge}
-                                className="inline-flex items-center gap-2 rounded-full border border-stitch-border bg-stitch-soft px-4 py-1.5 text-[15px] font-medium text-stitch-strong"
-                                style={{ opacity: 0 }}
-                            >
-                                <span
-                                    ref={pulse}
-                                    className="size-2.5 rounded-full bg-stitch"
-                                />
-                                streaming
-                            </span>
-                            <span
-                                ref={doneBadge}
-                                className="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-accent-soft px-4 py-1.5 text-[15px] font-medium text-accent"
-                                style={{ display: 'none' }}
-                            >
-                                <Check className="size-4" />
-                                typed · validated
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* static — ties the reply to `body: { prompt }` and keeps
-                        the panel alive during the loop's empty phase */}
-                    <div className="mt-6 self-start rounded-full border border-fd-border bg-fd-muted/40 px-4 py-1.5 text-[15px] text-fd-muted-foreground">
-                        prompt ·{' '}
-                        <span className="font-medium text-fd-foreground">
-                            “Plan my day in Kyiv”
-                        </span>
-                    </div>
-
-                    <div ref={content}>
-                        <div className="mt-6 min-h-[40px] text-[26px] font-medium tracking-[-0.02em] text-fd-foreground">
-                            <span ref={sentence} />
-                            <span
-                                ref={caret}
-                                className="ml-1 inline-block h-[26px] w-[11px] translate-y-[3px] rounded-[3px] bg-stitch"
-                                style={{ opacity: 0 }}
+                    {CHAPTERS.map((ch, i) => (
+                        <div
+                            key={ch.key}
+                            ref={set(`code-${i}`)}
+                            className="absolute inset-0 flex flex-col justify-center"
+                            style={{ opacity: i === 0 ? 1 : 0 }}
+                        >
+                            <CodePanel
+                                filename={ch.filename}
+                                code={ch.code}
+                                className="[&_pre]:px-7 [&_pre]:py-6 [&_pre]:text-[19px] [&_pre]:leading-[1.6]"
                             />
                         </div>
-                        <div className="mt-7 flex flex-col gap-4">
-                            {ROWS.map((row, i) => (
-                                <div
-                                    key={row.what}
-                                    ref={(el) => {
-                                        rowRefs.current[i] = el;
-                                    }}
-                                    className="flex items-center gap-4 rounded-xl border border-fd-border bg-fd-muted/40 px-5 py-4"
-                                    style={{ opacity: 0 }}
-                                >
-                                    <span className="flex size-11 items-center justify-center rounded-lg bg-stitch-soft text-stitch">
-                                        <row.icon className="size-[22px]" />
+                    ))}
+                </div>
+
+                <div className="relative min-h-0 flex-1">
+                    {CHAPTERS.map((ch, i) => (
+                        <div
+                            key={ch.key}
+                            ref={set(`panel-${i}`)}
+                            className="absolute inset-0 flex flex-col rounded-xl border border-fd-border bg-fd-card p-7 shadow-lg"
+                            style={{ opacity: i === 0 ? 1 : 0 }}
+                        >
+                            <div className="flex items-center">
+                                <span className="text-[15px] font-semibold tracking-[0.14em] text-fd-muted-foreground uppercase">
+                                    {ch.label}
+                                </span>
+                                <div className="ml-auto grid *:col-start-1 *:row-start-1 *:justify-self-end">
+                                    <span
+                                        ref={set(`doing-${i}`)}
+                                        className="inline-flex items-center gap-2 rounded-full border border-stitch-border bg-stitch-soft px-4 py-1.5 text-[15px] font-medium text-stitch-strong"
+                                        style={{ opacity: 0 }}
+                                    >
+                                        <span
+                                            ref={set(`pulse-${i}`)}
+                                            className="size-2.5 rounded-full bg-stitch"
+                                        />
+                                        {ch.doing}
                                     </span>
-                                    <span className="w-[72px] font-mono text-[16px] text-fd-muted-foreground">
-                                        {row.when}
-                                    </span>
-                                    <span className="text-[20px] font-medium whitespace-nowrap text-fd-foreground">
-                                        {row.what}
+                                    <span
+                                        ref={set(`done-${i}`)}
+                                        className="inline-flex items-center gap-1.5 rounded-full border border-ok-line bg-ok-soft px-4 py-1.5 text-[15px] font-medium text-ok"
+                                        style={{ display: 'none' }}
+                                    >
+                                        <Check className="size-4" />
+                                        {ch.done}
                                     </span>
                                 </div>
-                            ))}
+                            </div>
+
+                            <div
+                                className={cn(
+                                    'mt-6 self-start rounded-full border border-fd-border bg-fd-muted/40 px-4 py-1.5 text-[15px] text-fd-muted-foreground',
+                                    ch.chipMono && 'font-mono text-[14px]',
+                                )}
+                            >
+                                {ch.chip}
+                            </div>
+
+                            {ch.lead && (
+                                <div className="mt-6 min-h-[38px] text-[25px] font-medium tracking-[-0.02em] text-fd-foreground">
+                                    <span ref={set(`lead-${i}`)} />
+                                    <span
+                                        ref={set(`caret-${i}`)}
+                                        className="ml-1 inline-block h-[25px] w-[11px] translate-y-[3px] rounded-[3px] bg-stitch"
+                                        style={{ opacity: 0 }}
+                                    />
+                                </div>
+                            )}
+
+                            <div className="mt-6 flex flex-col gap-3.5">
+                                {ch.rows.map((row, j) => (
+                                    <div
+                                        key={row.text}
+                                        ref={set(`row-${i}-${j}`)}
+                                        className="flex items-center gap-4 rounded-xl border border-fd-border bg-fd-muted/40 px-5 py-3.5"
+                                        style={{ opacity: 0 }}
+                                    >
+                                        <span
+                                            className={cn(
+                                                'flex size-10 shrink-0 items-center justify-center rounded-lg',
+                                                TONE_ICON[row.tone],
+                                            )}
+                                        >
+                                            <row.icon className="size-5" />
+                                        </span>
+                                        <span
+                                            className={cn(
+                                                'font-medium whitespace-nowrap text-fd-foreground',
+                                                row.mono
+                                                    ? 'font-mono text-[17px]'
+                                                    : 'text-[19px]',
+                                            )}
+                                        >
+                                            {row.text}
+                                        </span>
+                                        {row.meta && (
+                                            <span className="ml-auto font-mono text-[14px] whitespace-nowrap text-fd-muted-foreground">
+                                                {row.meta}
+                                            </span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    </div>
+                    ))}
                 </div>
+            </div>
+
+            <div className="relative z-10 mt-5 flex justify-center gap-2.5">
+                {CHAPTERS.map((ch, i) => (
+                    <span
+                        key={ch.key}
+                        ref={set(`dot-${i}`)}
+                        className="size-2 rounded-full bg-stitch"
+                        style={{ opacity: i === 0 ? 1 : 0.3 }}
+                    />
+                ))}
             </div>
         </div>
     );
