@@ -1,0 +1,68 @@
+{
+    "name": "@stitchapi/openapi",
+    "version": "1.0.0-rc.4",
+    "type": "commonjs",
+    "description": "Eject selected operations from an OpenAPI document into ready-to-own StitchAPI source — a build-time code generator, separate from the zero-dep runtime.",
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "bin": {
+        "stitch-openapi": "bin/stitch-openapi"
+    },
+    "sideEffects": false,
+    "files": [
+        "lib",
+        "bin"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsup",
+        "prepack": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/openapi"
+    },
+    "keywords": [
+        "stitchapi",
+        "openapi",
+        "swagger",
+        "codegen",
+        "code-generation",
+        "client-generator",
+        "scaffold",
+        "typescript"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "dependencies": {
+        "yaml": "^2.4.2"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}
