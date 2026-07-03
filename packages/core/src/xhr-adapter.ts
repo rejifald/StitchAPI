@@ -4,6 +4,14 @@
 // behaviour matches fetchAdapter exactly. It is buffered-only — it rejects `req.stream` (use
 // fetchAdapter to stream). Like axiosAdapter takes its client, this takes an optional XHR
 // constructor (default `globalThis.XMLHttpRequest`) so it is testable off-browser.
+//
+// CROSS-ORIGIN REDIRECT credential leak (the fetch/axios adapters guard against this explicitly):
+// xhr needs NO such guard. The browser follows redirects internally and re-applies CORS on the
+// resulting cross-origin request — a custom request header like `x-api-key`/`x-amz-*` is not on
+// the CORS-safelist, so the browser only sends it after a successful preflight the target host
+// opted into (Access-Control-Allow-Headers). It is never silently forwarded to an unintended
+// origin from JS. (JS also can't read Location or intercept the hop here, so there's nothing to
+// strip.) Same protection fetchAdapter reconstructs by hand on Node, where the platform doesn't.
 import { decodeResponseBody, encodeRequestBody } from './http-adapter';
 import type { Adapter, AdapterRequest, AdapterResponse } from './types';
 
