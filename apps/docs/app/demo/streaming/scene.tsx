@@ -13,11 +13,14 @@ import {
     CircleCheck,
     CircleX,
     Coffee,
+    Fingerprint,
+    Globe,
     KeyRound,
     RotateCw,
     ShieldCheck,
     Sunset,
     TriangleAlert,
+    Zap,
 } from 'lucide-react';
 import { type ComponentType, useEffect, useRef, useState } from 'react';
 
@@ -183,7 +186,6 @@ const user = await getUser({
   retry: { attempts: 3, on: [429, 502] },
   throttle: { rate: '10/s' },
   timeout: '10s',
-  cache: '1m',
 });`,
         chip: 'await listOrders()',
         chipMono: true,
@@ -212,6 +214,51 @@ const user = await getUser({
         ],
         doing: 'retrying',
         done: 'recovered',
+        doneAt: 3.4,
+        len: 5.0,
+    },
+    {
+        key: 'cache',
+        label: 'Caching',
+        filename: 'news.ts',
+        // Mirrors the README Caching example (announcements): derived,
+        // principal-scoped keys; object form = { ttl, scope, vary }.
+        code: `const listNews = stitch({
+  baseUrl: 'https://demo.stitchapi.dev',
+  path: '/announcements',
+  output: z.array(Announcement),
+  cache: { ttl: '1h', scope: 'app' },
+});
+
+await listNews(); // network
+await listNews(); // cache — 0 ms`,
+        chip: 'await listNews() × 2',
+        chipMono: true,
+        rows: [
+            {
+                at: 0.7,
+                icon: Globe,
+                tone: 'brand',
+                text: 'GET /announcements — network',
+                meta: 'MISS · 121 ms',
+            },
+            {
+                at: 1.6,
+                icon: Zap,
+                tone: 'ok',
+                text: 'same call — served from cache',
+                meta: 'HIT · 0 ms',
+            },
+            {
+                at: 2.5,
+                icon: Fingerprint,
+                tone: 'brand',
+                text: 'key derived from the request',
+                meta: 'scope: app',
+            },
+        ],
+        doing: 'fetching',
+        done: 'cached · 0 ms',
         doneAt: 3.4,
         len: 5.0,
     },
