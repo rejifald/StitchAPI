@@ -375,6 +375,17 @@ function rebindModuleImports(js: string): TranspileResult {
 
     let out = js;
 
+    // (2·0) Un-glue imports Sucrase pushed mid-line. Sucrase prepends transform
+    // helpers (e.g. `_optionalChain` for `?.`, `_asyncNullishCoalesce`, …) to the
+    // TOP of its output with no trailing newline, so the helper's closing `}` sticks
+    // to the first statement — usually the first `import` (`…return v; }import { x }
+    // from 'y'`). The rewrites below are line-anchored (`^…import`), so that first
+    // import isn't seen, survives into the AsyncFunction body, and throws at runtime
+    // ("Cannot use import statement outside a module" / "import call expects one or
+    // two arguments"). Put any import/export a `}`/`;` glued onto the same line back
+    // on its own line first. (Snippets using `?.` in a hook are the common trigger.)
+    out = out.replace(/([};])[ \t]*(import|export)\b/g, '$1\n$2');
+
     // (2a) `import <clause> from '<spec>';` → const bindings from the registry.
     // The lazy `[\s\S]*?` lets a multi-line clause span newlines up to `from`.
     out = out.replace(
