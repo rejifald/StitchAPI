@@ -164,9 +164,65 @@ function toKebab(s: string): string {
     return w.length ? w.map((x) => x.toLowerCase()).join('-') : 'item';
 }
 
+// ECMAScript reserved words + module keywords. Any of these emitted bare as an export name
+// (`export const delete = …` / `export { delete }`) is a SyntaxError, so they get the same
+// `op`+Pascal prefix as an invalid first char.
+const RESERVED_WORDS = new Set<string>([
+    // reserved words (ES2015+)
+    'break',
+    'case',
+    'catch',
+    'class',
+    'const',
+    'continue',
+    'debugger',
+    'default',
+    'delete',
+    'do',
+    'else',
+    'enum',
+    'export',
+    'extends',
+    'false',
+    'finally',
+    'for',
+    'function',
+    'if',
+    'import',
+    'in',
+    'instanceof',
+    'new',
+    'null',
+    'return',
+    'super',
+    'switch',
+    'this',
+    'throw',
+    'true',
+    'try',
+    'typeof',
+    'var',
+    'void',
+    'while',
+    'with',
+    // strict-mode / contextual reserved
+    'let',
+    'static',
+    'yield',
+    'await',
+    'implements',
+    'interface',
+    'package',
+    'private',
+    'protected',
+    'public',
+]);
+
 function safeIdent(s: string): string {
     const c = toCamel(s);
-    return /^[A-Za-z_$]/.test(c) ? c : `op${toPascal(c)}`;
+    if (!/^[A-Za-z_$]/.test(c) || RESERVED_WORDS.has(c))
+        return `op${toPascal(c)}`;
+    return c;
 }
 
 // Operation name (ADR 0013 Q4): sanitized operationId, else camelCase(method + path).
@@ -280,8 +336,48 @@ function propKey(k: string): string {
 }
 
 // Single-quoted string literal for emitted source (matches the ecosystem's prettier default).
+// Spec text is UNTRUSTED: a raw newline (LF, CR, U+2028, U+2029) inside a `'...'` literal is an
+// unterminated-string SyntaxError (denial-of-build), so every line terminator is escaped too.
 function q(s: string): string {
-    return `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+    return `'${s
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(
+            /[\u2028\u2029]/g,
+            (m) => `\\u${m.charCodeAt(0).toString(16)}`,
+        )}'`;
+}
+
+// Neutralize UNTRUSTED spec text destined for a generated `//` (or `/* */`) comment. A raw newline
+// would end the comment and let the remainder of the string become top-level TS that RUNS when the
+// developer compiles the generated file (build-time RCE). Collapse every line terminator (LF, CR,
+// U+2028, U+2029) to a space and defang the block-comment terminator so text can't escape a comment.
+function comment(s: string): string {
+    return s.replace(/[\r\n\u2028\u2029]+/g, ' ').replace(/\*\//g, '* /');
+}
+
+// Strip HTTP basic-auth userinfo (`user:pass@`) from a URL before it is emitted into a file the
+// user commits — the README promises "the secret is never emitted". Returns the sanitized URL and
+// whether credentials were removed. Falls back to a regex for non-absolute/relative server URLs
+// that `URL` rejects.
+function stripUserinfo(url: string): { url: string; stripped: boolean } {
+    try {
+        const u = new URL(url);
+        if (u.username || u.password) {
+            u.username = '';
+            u.password = '';
+            return { url: u.toString(), stripped: true };
+        }
+        return { url, stripped: false };
+    } catch {
+        // Relative / template server URLs (e.g. `/api`, `{scheme}://…`) aren't absolute URLs.
+        // Match an authority userinfo (`scheme://user:pass@host`) textually and drop it.
+        const m = /^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/@]*@(.*)$/.exec(url);
+        if (m) return { url: `${m[1]}${m[2]}`, stripped: true };
+        return { url, stripped: false };
+    }
 }
 
 // Direct component refs reachable from a schema node (one hop into the doc's component graph).
@@ -323,7 +419,18 @@ export function planGen(doc: OpenApiDoc, opts: GenOptions = {}): GenResult {
 
     const components = doc.components?.schemas ?? {};
     const securitySchemes = doc.components?.securitySchemes ?? {};
-    const baseUrl = doc.servers?.[0]?.url;
+    // Strip any `user:pass@` from the server URL BEFORE it reaches a file the user commits or a
+    // warning message — the secret is never emitted (README contract).
+    const rawBaseUrl = doc.servers?.[0]?.url;
+    let baseUrl = rawBaseUrl;
+    if (rawBaseUrl !== undefined) {
+        const s = stripUserinfo(rawBaseUrl);
+        baseUrl = s.url;
+        if (s.stripped)
+            warnings.push(
+                'stripped embedded credentials from the server URL; set client.ts auth via env() instead of committing them',
+            );
+    }
     if ((doc.servers?.length ?? 0) > 1)
         warnings.push(
             `spec has ${doc.servers?.length} servers; used the first (${baseUrl}). Edit client.ts to switch.`,
@@ -685,8 +792,17 @@ function emitOperation(o: SelectedOp, ctx: EmitOpCtx): GenFile {
     const wantType = (comp: string): void => {
         const p = ctx.placement.get(comp);
         if (ctx.layout === 'flat' && p && !p.shared) {
-            // inline the private component (and its private transitive closure)
-            collectInlinePrivate(comp, ctx, inlinedPrivate, new Set());
+            // inline the private component (and its private transitive closure). Any SHARED
+            // component it transitively references still needs an `import type` in this file,
+            // else the inlined `type` refers to an undeclared name (TS2304).
+            collectInlinePrivate(
+                comp,
+                ctx,
+                inlinedPrivate,
+                new Set(),
+                selfPath,
+                typeImports,
+            );
             return;
         }
         const loc = ctx.fileOfComponent(comp);
@@ -707,15 +823,17 @@ function emitOperation(o: SelectedOp, ctx: EmitOpCtx): GenFile {
         lines.push(...inlinedPrivate);
         lines.push('');
     }
-    if (o.op.summary) lines.push(`// ${o.op.summary}`);
-    lines.push(`// ${o.method} ${o.path}`);
+    if (o.op.summary) lines.push(`// ${comment(o.op.summary)}`);
+    lines.push(`// ${o.method} ${comment(o.path)}`);
 
     const cfg: string[] = [];
     cfg.push(`    path: ${q(o.path)},`);
     if (o.method !== 'GET') cfg.push(`    method: ${q(o.method)},`);
     const queryParams = (o.op.parameters ?? [])
         .filter((p) => p.in === 'query')
-        .map((p) => p.name);
+        .map((p) => p.name)
+        .filter((n): n is string => typeof n === 'string')
+        .map(comment);
     if (queryParams.length)
         cfg.push(
             `    // query params: ${queryParams.join(', ')} — pass them in the call's \`query\``,
@@ -730,12 +848,16 @@ function emitOperation(o: SelectedOp, ctx: EmitOpCtx): GenFile {
 }
 
 // For flat layout: render a private component (and any private components it references) as inline
-// `type` declarations, so deleting the operation file deletes them too.
+// `type` declarations, so deleting the operation file deletes them too. Transitive refs that are
+// NOT inlined here (shared components — and dir-layout private ones) are added to `typeImports`
+// so the inlined `type`s resolve, instead of being silently dropped.
 function collectInlinePrivate(
     comp: string,
     ctx: EmitOpCtx,
     out: string[],
     seen: Set<string>,
+    selfPath: string,
+    typeImports: Map<string, string>,
 ): void {
     if (seen.has(comp)) return;
     seen.add(comp);
@@ -745,9 +867,15 @@ function collectInlinePrivate(
     const expr = tsType(schema, tctx);
     out.push(`type ${toPascal(comp)} = ${expr};`);
     for (const u of tctx.used) {
+        if (u === comp) continue;
         const p = ctx.placement.get(u);
-        if (u !== comp && p && !p.shared)
-            collectInlinePrivate(u, ctx, out, seen);
+        if (p && !p.shared) {
+            collectInlinePrivate(u, ctx, out, seen, selfPath, typeImports);
+        } else {
+            // Shared component (or an unplaced ref → shared file): import it, don't inline.
+            const loc = ctx.fileOfComponent(u);
+            typeImports.set(toPascal(u), relImport(selfPath, loc.import));
+        }
     }
 }
 
