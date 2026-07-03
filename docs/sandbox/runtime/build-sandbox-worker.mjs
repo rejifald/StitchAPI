@@ -26,6 +26,8 @@
  * Usage:
  *   node docs/sandbox/runtime/build-sandbox-worker.mjs
  */
+import { PLAYGROUND_PACKAGES } from './playground-packages.mjs';
+
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -39,13 +41,16 @@ const OUT =
     resolve(repoRoot, 'apps/docs/public/sandbox/sandbox-worker.mjs');
 const CORE =
     process.env.CORE ?? resolve(repoRoot, 'packages/core/src/index.ts');
-// Resolve `@stitchapi/json-schema` to its SOURCE too — its published entry is a built
-// `lib/`, which the docs `build:sandbox` flow never builds. The source is a single
-// self-contained file (its only import is a type-only `StitchSchema` from stitchapi,
-// erased at bundle time), so aliasing to src keeps the worker build publish-free.
-const JSON_SCHEMA =
-    process.env.JSON_SCHEMA ??
-    resolve(repoRoot, 'packages/json-schema/src/index.ts');
+// Alias every workspace `@stitchapi/*` playground package to its SOURCE: its
+// published entry is a built `lib/` the docs `build:sandbox` flow never builds, so
+// resolving src keeps the worker build publish-free (the same trick as `stitchapi`
+// → core). Derived from the ONE package list so adding a package needs no edit here.
+const WORKSPACE_ALIASES = Object.fromEntries(
+    PLAYGROUND_PACKAGES.filter((p) => p.src).map((p) => [
+        p.specifier,
+        resolve(repoRoot, p.src),
+    ]),
+);
 
 async function loadEsbuild() {
     // 1. Bare import — works if esbuild sits on a node_modules path above this
@@ -100,7 +105,7 @@ await esbuild.build({
     // shims are required — this is the only alias the bundle needs.
     alias: {
         stitchapi: CORE,
-        '@stitchapi/json-schema': JSON_SCHEMA,
+        ...WORKSPACE_ALIASES,
     },
     logLevel: 'info',
 });

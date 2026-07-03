@@ -20,21 +20,18 @@ import { createFetchShim } from '../../../packages/sandbox-sim/src/adapters/node
 import { allHandlers } from '../../../packages/sandbox-sim/src/handlers';
 import type { SimKnobs } from '../contracts/sim';
 import { hardenWorkerGlobal } from './harden-worker-global';
+// The curated importable-module registry (zod, ajv, `@stitchapi/json-schema`, …),
+// generated from `playground-packages.mjs` — same set the browser entry exposes,
+// so a snippet runs identically on either tier. See gen-sandbox-modules.mjs.
+import { sandboxModules } from './sandbox-modules.generated';
 import {
     type WorkerEnv,
     type WorkerGlobal,
     installWorkerEntry,
 } from './worker-entry';
 
-// Runtime-schema pair, same as the browser entry: `@stitchapi/json-schema` (pure
-// wrapper, engine passed in) + `ajv` (pure JS) so `JsonSchema.adapt(schema, { ajv })`
-// snippets resolve their imports via __stitchImport.
-import * as jsonSchema from '@stitchapi/json-schema';
-import * as ajv from 'ajv';
 import { parentPort } from 'node:worker_threads';
 import * as stitchBuild from 'stitchapi';
-// Bundled so a snippet's `import { z } from 'zod'` resolves (via __stitchImport).
-import * as zod from 'zod';
 
 // Baseline knobs for the current run, mutated by `env.applyKnobs`; the shim
 // reads it on every request. URL-explicit knobs still win (see dispatch).
@@ -62,7 +59,7 @@ const env: WorkerEnv = {
     // The whole real `stitchapi` surface, exposed name-by-name into the snippet.
     stitchBuild: stitchBuild as unknown as Record<string, unknown>,
     // Modules a snippet may `import` beyond 'stitchapi' (rebound via __stitchImport).
-    modules: { zod, '@stitchapi/json-schema': jsonSchema, ajv },
+    modules: sandboxModules,
     fetch: simFetch as unknown as WorkerEnv['fetch'],
     // A clean `process` shadow for the snippet scope (no host env leakage). Core
     // itself still reads the real `process` in its own module scope.

@@ -13,7 +13,7 @@
         "stitch-sandbox": "./dist/mcp.mjs"
     },
     "scripts": {
-        "build:mcp": "node runtime/build-sandbox-mcp.mjs",
+        "build:mcp": "node runtime/gen-sandbox-modules.mjs && node runtime/build-sandbox-mcp.mjs",
         "test:smoke": "node tests/run-all.mjs",
         "test:mcp": "pnpm run build:mcp && node mcp/smoke.mjs"
     },
