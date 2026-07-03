@@ -23,6 +23,13 @@ import { createFetchShim } from '../../../packages/sandbox-sim/src/adapters/brow
 import { allHandlers } from '../../../packages/sandbox-sim/src/handlers';
 import type { SimKnobs } from '../contracts/sim';
 import { hardenWorkerGlobal } from './harden-worker-global';
+// The curated set of packages a snippet may `import` beyond the core `stitchapi`
+// surface — zod, ajv, `@stitchapi/json-schema`, and any others declared in
+// `playground-packages.mjs`. Each is bundled statically into the Worker (no
+// runtime module loader — SEC-31) and exposed via __stitchImport. The registry
+// (with its static namespace imports) is generated from that list so adding a
+// package is a one-line edit; see gen-sandbox-modules.mjs.
+import { sandboxModules } from './sandbox-modules.generated';
 import { browserProcess } from './shims/process';
 import * as stitchBuild from './stitch-browser';
 import { createTraceCollector } from './trace-collector';
@@ -31,17 +38,6 @@ import {
     type WorkerGlobal,
     installWorkerEntry,
 } from './worker-entry';
-
-// Same deal for the runtime-schema pair the blog's `compile(JsonSchema.adapt(...))`
-// snippet needs: `@stitchapi/json-schema` is a pure wrapper (it takes the engine as an
-// argument — no Node) and `ajv` is pure JS. Bundled so `import { JsonSchema } from
-// '@stitchapi/json-schema'` and `import Ajv from 'ajv'` resolve via __stitchImport.
-import * as jsonSchema from '@stitchapi/json-schema';
-import * as ajv from 'ajv';
-// Bundled so a snippet's `import { z } from 'zod'` resolves (via __stitchImport).
-// zod is pure JS / browser-safe; esbuild bundles it into the Worker (no runtime
-// module loader exists here — SEC-31).
-import * as zod from 'zod';
 
 // Baseline knobs for the current run (the "Response knobs" panel). Mutated by
 // `env.applyKnobs` before each run; the shim reads it on every request so a
@@ -81,7 +77,7 @@ const env: WorkerEnv = {
         stitch: traceCollector.stitch,
     } as unknown as Record<string, unknown>,
     // Modules a snippet may `import` beyond 'stitchapi' (rebound via __stitchImport).
-    modules: { zod, '@stitchapi/json-schema': jsonSchema, ajv },
+    modules: sandboxModules,
     // The snippet's `fetch` (cast: createFetchShim is precisely `fetch`-typed,
     // WorkerEnv.fetch is the loose (unknown, unknown) wire shape).
     fetch: simFetch as unknown as WorkerEnv['fetch'],
