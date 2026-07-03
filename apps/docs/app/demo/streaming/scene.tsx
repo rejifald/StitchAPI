@@ -16,9 +16,11 @@ import {
     CircleCheck,
     CircleX,
     Coffee,
+    Combine,
     EyeOff,
     Fingerprint,
     Gauge,
+    GitFork,
     Globe,
     KeyRound,
     Layers,
@@ -26,6 +28,7 @@ import {
     Network,
     RefreshCw,
     RotateCw,
+    Scale,
     Scissors,
     ShieldCheck,
     Sparkles,
@@ -42,9 +45,9 @@ import { type ComponentType, useEffect, useRef, useState } from 'react';
  *
  * The loop runs one CHAPTER per core feature — streaming-first,
  * validation + drift, data shaping, resilience, caching, auth,
- * observability, request styles, agent-native — each a code snippet on
- * the left and a live-filling result panel on the right, crossfaded in
- * sequence. Every snippet is real API usage (shapes match README.md and
+ * observability, request styles, composition (seam), agent-native —
+ * each a code snippet on the left and a live-filling result panel on
+ * the right, crossfaded in sequence. Every snippet is real API usage (shapes match README.md and
  * the packages' JSDoc examples).
  *
  * Everything animated is a pure function of time: `render(t)` mutates
@@ -458,6 +461,53 @@ const { text } = await ask({
         ],
         doing: 'generating',
         done: '8 styles, one engine',
+        doneAt: 3.4,
+        len: 5.0,
+    },
+    {
+        key: 'seam',
+        label: 'Composition',
+        filename: 'api.ts',
+        // Mirrors the README Composition section: a seam declares the
+        // cross-cutting config (SeamConfig) once; members inherit it and
+        // share one runtime (throttle bucket, store, trace sink).
+        code: `const api = seam({
+  baseUrl: 'https://demo.stitchapi.dev',
+  auth: bearer(env('API_TOKEN')),
+  throttle: { rate: '10/s' },
+});
+
+const listUsers = api.stitch({
+  path: '/users',
+  output: z.array(User),
+});`,
+        chip: 'const getUser = api.stitch({ … })',
+        chipMono: true,
+        rows: [
+            {
+                at: 0.7,
+                icon: Combine,
+                tone: 'brand',
+                text: 'base · auth · budget, declared once',
+                meta: 'seam',
+            },
+            {
+                at: 1.6,
+                icon: GitFork,
+                tone: 'brand',
+                text: 'members inherit the config',
+                meta: 'api.stitch()',
+            },
+            {
+                at: 2.5,
+                icon: Scale,
+                tone: 'ok',
+                text: 'one throttle bucket, shared',
+                meta: 'no global config',
+            },
+        ],
+        doing: 'composing',
+        done: 'one runtime',
         doneAt: 3.4,
         len: 5.0,
     },
