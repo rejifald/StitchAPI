@@ -6,14 +6,22 @@ not hand-recorded** — the scene is a real page of the docs app
 on the site's own components/tokens. One loop cycles a chapter per core
 feature (streaming, drift, shaping, resilience, caching, auth,
 observability, request styles, composition, agent-native — see the scene's
-`CHAPTERS`). Each asset ships in light and dark:
+`CHAPTERS`). Each asset renders in light and dark:
 
-| asset                              | use                                                          |
-| ---------------------------------- | ------------------------------------------------------------ |
-| `streaming-demo[-dark].mp4`        | 1280×720 hero — HN / PH / X                                  |
-| `streaming-demo[-dark].webp`       | README embed (24-bit color, small)                           |
-| `streaming-demo[-dark].gif`        | gif-only channels — 4-chapter marquee cut, not the full tour |
-| `streaming-demo-square[-dark].mp4` | 1:1 crop for social                                          |
+| asset                              | use                                            | tracked?   |
+| ---------------------------------- | ---------------------------------------------- | ---------- |
+| `streaming-demo[-dark]@2x.webp`    | README embed — marquee cut, 2560×1440 lossless | ✅ in git  |
+| `streaming-demo[-dark].mp4`        | full 10-chapter tour, 1280×720 — HN / PH / X   | regenerate |
+| `streaming-demo[-dark]@2x.mp4`     | full tour, 2560×1440 retina                    | regenerate |
+| `streaming-demo[-dark].gif`        | marquee cut — channels that only accept .gif   | regenerate |
+| `streaming-demo-square[-dark].mp4` | 1:1 crop for social                            | regenerate |
+
+**Only the README webp pair is committed** — everything else is
+`.gitignore`d and one `pnpm gen:media` away, so git history doesn't grow
+by ~8 MB per regeneration. Squash-merge branches that regenerate the
+tracked pair. A pre-push gate (`scripts/check-media-freshness.mjs`) fails
+when the scene or generator changes without the committed pair being
+regenerated (`STITCH_MEDIA_STALE_OK=1` defers intentionally).
 
 Regenerate after editing the scene:
 
@@ -21,19 +29,26 @@ Regenerate after editing the scene:
 pnpm gen:media
 ```
 
-README embedding that follows the viewer's theme (GitHub supports both
-`<picture>` media queries and animated WebP):
+README embedding that follows the viewer's theme — the files are 2× so a
+`width` of half their pixel size renders retina-crisp:
 
 ```html
 <picture>
     <source
         media="(prefers-color-scheme: dark)"
-        srcset="docs/media/streaming-demo-dark.webp"
+        srcset="docs/media/streaming-demo-dark@2x.webp"
     />
-    <img src="docs/media/streaming-demo.webp" alt="StitchAPI streaming demo" />
+    <img
+        src="docs/media/streaming-demo@2x.webp"
+        width="1280"
+        alt="StitchAPI demo — a stitch streaming, validating, retrying, and answering an agent"
+    />
 </picture>
 ```
 
 See [scripts/gen-streaming-demo.mjs](../../scripts/gen-streaming-demo.mjs)
-for requirements (ffmpeg + Playwright Chromium) and mechanics. To preview
-the loop while editing, run the docs dev server and open `/demo/streaming`.
+for requirements (ffmpeg with libwebp + Playwright Chromium) and
+mechanics. Outputs are visually reproducible from source; exact bytes vary
+with the Chromium/ffmpeg doing the rendering, so regenerate on one
+canonical machine per release. To preview the loop while editing, run the
+docs dev server and open `/demo/streaming`.

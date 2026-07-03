@@ -90,17 +90,21 @@ type Chapter = {
     len: number; // chapter length incl. crossfades
 };
 
-const XFADE = 0.35; // chapter crossfade in/out
+// Chapter crossfade in/out. Kept SHORT deliberately: every frame of a
+// fade shows translucent content over the patterned backdrop, which
+// reads as ghosting — especially once a GIF/WebP encoder quantizes it.
+const XFADE = 0.22;
 
 const CHAPTERS: Chapter[] = [
     {
         key: 'stream',
         label: 'Streaming-first',
         filename: 'chat.ts',
-        // Mirrors the `useStitchStream` JSDoc example in
-        // packages/react/src/index.ts.
-        code: `const chat = stitch({
-  path: 'https://api.example.com/chat',
+        // Mirrors the sse + useStitchStream example in
+        // apps/docs/content/docs/integrations/react.mdx — only an
+        // sse/stream surface emits the delta chunks the animation shows.
+        code: `const chat = sse({
+  url: 'https://api.example.com/chat',
   output: Reply,
 });
 
@@ -283,13 +287,15 @@ const user = await getUser({
         key: 'cache',
         label: 'Caching',
         filename: 'news.ts',
-        // Mirrors the README Caching example (announcements): derived,
-        // principal-scoped keys; object form = { ttl, scope, vary }.
+        // Mirrors the README Caching example (announcements). `version`
+        // pins the output shape (fingerprint rung 1), so the snippet is
+        // honestly cacheable without registering a zod fingerprinter —
+        // omit both and the cache refuses (fail-closed).
         code: `const listNews = stitch({
   baseUrl: 'https://demo.stitchapi.dev',
   path: '/announcements',
   output: z.array(Announcement),
-  cache: { ttl: '1h', scope: 'app' },
+  cache: { ttl: '1h', version: 1 },
 });
 
 await listNews(); // network
@@ -316,7 +322,7 @@ await listNews(); // cache — 0 ms`,
                 icon: Fingerprint,
                 tone: 'brand',
                 text: 'key derived from the request',
-                meta: 'scope: app',
+                meta: 'principal-scoped',
             },
         ],
         doing: 'fetching',

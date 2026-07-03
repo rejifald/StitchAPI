@@ -292,6 +292,7 @@ const listAnnouncements = stitch({
         scope: 'app',
         vary: ['accept-language'],
         maxEntries: 500,
+        version: 1, // pins the shape — cacheable without a fingerprinter
     },
 });
 ```

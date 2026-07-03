@@ -148,3 +148,10 @@ lib
 # See docs/proposals/search-docs.md.
 apps/docs/.search-index/
 .DS_Store
+# Generated demo media (`pnpm gen:media`) — launch assets regenerate on
+# demand; only the README-embedded webp pair is tracked. Keeping the
+# mp4/gif generations out of git stops history growing ~8 MB per regen
+# (see docs/media/README.md).
+docs/media/streaming-demo*
+!docs/media/streaming-demo@2x.webp
+!docs/media/streaming-demo-dark@2x.webp
