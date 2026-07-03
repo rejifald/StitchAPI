@@ -110,30 +110,38 @@ export const metadata: Metadata = {
 };
 
 /* Structured data — lets search engines model StitchAPI as a developer tool
-   (rich results / knowledge panel) rather than an anonymous docs page. */
-const jsonLd = [
-    {
-        '@context': 'https://schema.org',
-        '@type': 'WebSite',
-        name: appName,
-        url: siteUrl,
-        description: defaultDescription,
-    },
-    {
-        '@context': 'https://schema.org',
-        '@type': 'SoftwareApplication',
-        name: appName,
-        applicationCategory: 'DeveloperApplication',
-        operatingSystem: 'Node.js, Deno, Bun, browsers, edge runtimes',
-        description: defaultDescription,
-        url: siteUrl,
-        downloadUrl: 'https://www.npmjs.com/package/stitchapi',
-        codeRepository: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
-        license: 'https://www.apache.org/licenses/LICENSE-2.0',
-        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-        author: { '@type': 'Person', name: 'Oleksandr Zhuravlov' },
-    },
-];
+   (rich results / knowledge panel) rather than an anonymous docs page.
+
+   Emitted as ONE object with a top-level `@context` + `@graph`, not a bare array
+   of `@context`-bearing nodes. Both are valid JSON-LD, but `@graph` is Google's
+   recommended multi-entity shape AND it keeps a top-level `@context` present: some
+   third-party structured-data readers (SEO extensions, Safari content blockers)
+   do `data['@context'].toLowerCase()` and throw on a top-level array (no
+   `@context` there). Single-context + `@graph` avoids handing them that trap. */
+const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+        {
+            '@type': 'WebSite',
+            name: appName,
+            url: siteUrl,
+            description: defaultDescription,
+        },
+        {
+            '@type': 'SoftwareApplication',
+            name: appName,
+            applicationCategory: 'DeveloperApplication',
+            operatingSystem: 'Node.js, Deno, Bun, browsers, edge runtimes',
+            description: defaultDescription,
+            url: siteUrl,
+            downloadUrl: 'https://www.npmjs.com/package/stitchapi',
+            codeRepository: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
+            license: 'https://www.apache.org/licenses/LICENSE-2.0',
+            offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+            author: { '@type': 'Person', name: 'Oleksandr Zhuravlov' },
+        },
+    ],
+};
 
 export default function Layout({ children }: LayoutProps<'/'>) {
     return (
