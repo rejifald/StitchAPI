@@ -203,6 +203,12 @@ importers:
 
   docs/sandbox:
     dependencies:
+      '@stitchapi/json-schema':
+        specifier: workspace:*
+        version: link:../../packages/json-schema
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
       mermaid:
         specifier: ^11.15.0
         version: 11.15.0

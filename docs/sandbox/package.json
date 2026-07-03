@@ -18,6 +18,8 @@
         "test:mcp": "pnpm run build:mcp && node mcp/smoke.mjs"
     },
     "dependencies": {
+        "@stitchapi/json-schema": "workspace:*",
+        "ajv": "^8.17.1",
         "mermaid": "^11.15.0",
         "stitchapi": "workspace:*",
         "sucrase": "^3.35.1",

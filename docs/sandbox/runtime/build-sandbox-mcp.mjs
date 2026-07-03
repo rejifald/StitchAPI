@@ -27,6 +27,11 @@ const pkgRoot = resolve(__dirname, '..'); // docs/sandbox
 const OUTDIR = process.env.OUT ?? resolve(pkgRoot, 'dist');
 const CORE =
     process.env.CORE ?? resolve(repoRoot, 'packages/core/src/index.ts');
+// Resolve `@stitchapi/json-schema` from source too (its published `lib/` isn't built on
+// this path); the node worker imports it for `JsonSchema.adapt(...)` snippets.
+const JSON_SCHEMA =
+    process.env.JSON_SCHEMA ??
+    resolve(repoRoot, 'packages/json-schema/src/index.ts');
 
 async function loadEsbuild() {
     try {
@@ -70,7 +75,7 @@ const shared = {
     sourcemap: false,
     // Resolve the real core from source (no build:core needed). Node built-ins
     // stay external automatically under platform:node.
-    alias: { stitchapi: CORE },
+    alias: { stitchapi: CORE, '@stitchapi/json-schema': JSON_SCHEMA },
     // transpile.ts prefers sucrase (bundled) and only dynamically imports
     // @babel/standalone if sucrase fails to LOAD — never on this path. Keep it
     // external so the build doesn't require the heavy Babel bundle.

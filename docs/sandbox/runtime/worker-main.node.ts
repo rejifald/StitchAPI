@@ -26,6 +26,11 @@ import {
     installWorkerEntry,
 } from './worker-entry';
 
+// Runtime-schema pair, same as the browser entry: `@stitchapi/json-schema` (pure
+// wrapper, engine passed in) + `ajv` (pure JS) so `JsonSchema.adapt(schema, { ajv })`
+// snippets resolve their imports via __stitchImport.
+import * as jsonSchema from '@stitchapi/json-schema';
+import * as ajv from 'ajv';
 import { parentPort } from 'node:worker_threads';
 import * as stitchBuild from 'stitchapi';
 // Bundled so a snippet's `import { z } from 'zod'` resolves (via __stitchImport).
@@ -57,7 +62,7 @@ const env: WorkerEnv = {
     // The whole real `stitchapi` surface, exposed name-by-name into the snippet.
     stitchBuild: stitchBuild as unknown as Record<string, unknown>,
     // Modules a snippet may `import` beyond 'stitchapi' (rebound via __stitchImport).
-    modules: { zod },
+    modules: { zod, '@stitchapi/json-schema': jsonSchema, ajv },
     fetch: simFetch as unknown as WorkerEnv['fetch'],
     // A clean `process` shadow for the snippet scope (no host env leakage). Core
     // itself still reads the real `process` in its own module scope.
