@@ -5,7 +5,8 @@
  * light AND dark (README `<picture>` can serve the matching one):
  *
  *   docs/media/streaming-demo[-dark].mp4         1280x720 hero
- *   docs/media/streaming-demo[-dark].gif         1280-wide, < 2.5 MB each
+ *   docs/media/streaming-demo[-dark].webp        README embed (24-bit, small)
+ *   docs/media/streaming-demo[-dark].gif         gif-only channels, < 2.5 MB
  *   docs/media/streaming-demo-square[-dark].mp4  1080x1080 for social
  *
  * How: the scene is a real page of the docs app —
@@ -146,6 +147,31 @@ function encodeMp4(framesDir, out, size) {
     console.log(`  ${out} (${(statSync(out).size / 1024).toFixed(0)} KB)`);
 }
 
+// Animated WebP — the README-preferred fallback: 24-bit color (no GIF
+// palette banding) at a fraction of the size. GitHub renders it fine;
+// the GIF stays for channels that require actual .gif uploads.
+function encodeWebp(framesDir, out) {
+    ffmpeg([
+        '-y',
+        '-framerate',
+        String(FPS),
+        '-i',
+        join(framesDir, 'f%04d.png'),
+        '-vf',
+        'fps=15,scale=1280:-2:flags=lanczos',
+        '-c:v',
+        'libwebp_anim',
+        '-q:v',
+        '70',
+        '-compression_level',
+        '6',
+        '-loop',
+        '0',
+        out,
+    ]);
+    console.log(`  ${out} (${(statSync(out).size / 1024).toFixed(0)} KB)`);
+}
+
 // Try progressively cheaper settings until the GIF fits the size budget.
 function encodeGif(framesDir, out, work) {
     const ladder = [
@@ -221,7 +247,10 @@ try {
             theme,
         });
         encodeMp4(dir, join(outDir, `${name}.mp4`), size);
-        if (gif) encodeGif(dir, join(outDir, `${name}.gif`), work);
+        if (gif) {
+            encodeWebp(dir, join(outDir, `${name}.webp`));
+            encodeGif(dir, join(outDir, `${name}.gif`), work);
+        }
         rmSync(dir, { recursive: true, force: true }); // free frame disk early
     }
 } finally {

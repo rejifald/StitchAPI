@@ -7,11 +7,12 @@ on the site's own components/tokens. One loop cycles four chapters, one per
 key feature: streaming-first, validation + drift, resilience, agent-native.
 Each asset ships in light and dark:
 
-| asset                              | use                             |
-| ---------------------------------- | ------------------------------- |
-| `streaming-demo[-dark].mp4`        | 1280×720 hero — HN / PH / X     |
-| `streaming-demo[-dark].gif`        | README fallback via `<picture>` |
-| `streaming-demo-square[-dark].mp4` | 1:1 crop for social             |
+| asset                              | use                                     |
+| ---------------------------------- | --------------------------------------- |
+| `streaming-demo[-dark].mp4`        | 1280×720 hero — HN / PH / X             |
+| `streaming-demo[-dark].webp`       | README embed (24-bit color, small)      |
+| `streaming-demo[-dark].gif`        | channels that require actual .gif files |
+| `streaming-demo-square[-dark].mp4` | 1:1 crop for social                     |
 
 Regenerate after editing the scene:
 
@@ -19,15 +20,16 @@ Regenerate after editing the scene:
 pnpm gen:media
 ```
 
-README embedding that follows the viewer's theme:
+README embedding that follows the viewer's theme (GitHub supports both
+`<picture>` media queries and animated WebP):
 
 ```html
 <picture>
     <source
         media="(prefers-color-scheme: dark)"
-        srcset="docs/media/streaming-demo-dark.gif"
+        srcset="docs/media/streaming-demo-dark.webp"
     />
-    <img src="docs/media/streaming-demo.gif" alt="StitchAPI streaming demo" />
+    <img src="docs/media/streaming-demo.webp" alt="StitchAPI streaming demo" />
 </picture>
 ```
 
