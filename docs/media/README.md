@@ -4,9 +4,9 @@ Brand and marketing assets. The `streaming-demo*` files are **generated,
 not hand-recorded** — the scene is a real page of the docs app
 ([apps/docs/app/demo/streaming](../../apps/docs/app/demo/streaming)), built
 on the site's own components/tokens. One loop cycles a chapter per core
-feature (streaming-first, validation + drift, resilience, caching, auth,
-observability, agent-native — see the scene's `CHAPTERS`). Each asset
-ships in light and dark:
+feature (streaming, drift, shaping, resilience, caching, auth,
+observability, request styles, agent-native — see the scene's `CHAPTERS`).
+Each asset ships in light and dark:
 
 | asset                              | use                                                          |
 | ---------------------------------- | ------------------------------------------------------------ |

@@ -7,7 +7,9 @@ import { cn } from '@/lib/cn';
 
 import {
     Activity,
+    Blocks,
     Bot,
+    Box,
     Braces,
     Check,
     Church,
@@ -20,9 +22,13 @@ import {
     Globe,
     KeyRound,
     Layers,
+    MessageSquare,
+    Network,
     RefreshCw,
     RotateCw,
+    Scissors,
     ShieldCheck,
+    Sparkles,
     Sunset,
     TriangleAlert,
     Zap,
@@ -34,11 +40,12 @@ import { type ComponentType, useEffect, useRef, useState } from 'react';
  * the site's own components and tokens: CodePanel, Logo, BrandBackdrop,
  * the Signal palette, and the site type stacks.
  *
- * The loop runs four CHAPTERS, one per key feature — streaming-first,
- * validation + drift, resilience, agent-native — each a code snippet on
+ * The loop runs one CHAPTER per core feature — streaming-first,
+ * validation + drift, data shaping, resilience, caching, auth,
+ * observability, request styles, agent-native — each a code snippet on
  * the left and a live-filling result panel on the right, crossfaded in
  * sequence. Every snippet is real API usage (shapes match README.md and
- * packages/react's `useStitchStream` JSDoc example).
+ * the packages' JSDoc examples).
  *
  * Everything animated is a pure function of time: `render(t)` mutates
  * inline styles only, and `scripts/gen-streaming-demo.mjs` frame-steps it
@@ -180,6 +187,53 @@ const user = await getUser({
         done: 'validated · drift logged',
         doneAt: 3.2,
         len: 4.8,
+    },
+    {
+        key: 'unwrap',
+        label: 'Data shaping',
+        filename: 'unwrap.ts',
+        // Mirrors the README hero example: unwrap peels the transport
+        // envelope before validation, so callers get the value itself.
+        code: `const getUser = stitch({
+  baseUrl: 'https://demo.stitchapi.dev',
+  path: '/users/{id}',
+  output: User,
+  unwrap: 'data', // peel the envelope
+});
+
+const user = await getUser({
+  params: { id: '42' },
+});`,
+        chip: `unwrap: 'data'`,
+        chipMono: true,
+        rows: [
+            {
+                at: 0.7,
+                icon: Box,
+                tone: 'brand',
+                text: '{ data: { … }, meta: { … } }',
+                mono: true,
+                meta: 'raw envelope',
+            },
+            {
+                at: 1.6,
+                icon: Scissors,
+                tone: 'brand',
+                text: 'envelope peeled before validation',
+                meta: "unwrap: 'data'",
+            },
+            {
+                at: 2.5,
+                icon: Sparkles,
+                tone: 'ok',
+                text: 'callers see User, not plumbing',
+                meta: 'clean shape',
+            },
+        ],
+        doing: 'unwrapping',
+        done: 'just the data',
+        doneAt: 3.4,
+        len: 5.0,
     },
     {
         key: 'resilience',
@@ -356,6 +410,54 @@ await getOrder({ params: { id: '7' } });`,
         ],
         doing: 'tracing',
         done: 'zero infra',
+        doneAt: 3.4,
+        len: 5.0,
+    },
+    {
+        key: 'styles',
+        label: 'Any request style',
+        filename: 'ask.ts',
+        // Mirrors the llm() JSDoc example in packages/core/src/llm.ts;
+        // the surfaces list matches the README Surfaces table.
+        code: `const ask = llm({
+  provider: anthropic,
+  model: 'claude-opus-4-8',
+});
+
+const { text } = await ask({
+  body: { messages },
+});
+
+// graphql · sse · shell · download —
+// same engine, same guarantees`,
+        chip: `import { llm } from 'stitchapi/llm'`,
+        chipMono: true,
+        rows: [
+            {
+                at: 0.7,
+                icon: MessageSquare,
+                tone: 'brand',
+                text: 'llm → { text, usage }',
+                mono: true,
+                meta: 'normalized',
+            },
+            {
+                at: 1.6,
+                icon: Network,
+                tone: 'brand',
+                text: 'graphql → data · sse → events',
+                meta: 'peer surfaces',
+            },
+            {
+                at: 2.5,
+                icon: Blocks,
+                tone: 'ok',
+                text: 'retry · auth · validation compose',
+                meta: 'one engine',
+            },
+        ],
+        doing: 'generating',
+        done: '8 styles, one engine',
         doneAt: 3.4,
         len: 5.0,
     },
