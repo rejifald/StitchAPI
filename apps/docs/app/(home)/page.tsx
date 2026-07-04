@@ -43,10 +43,10 @@ export default function HomePage() {
     return (
         <main className="flex flex-1 flex-col">
             <Hero />
+            <Demo />
             <AgentNative />
             <Metrics />
             <Problem />
-            <Demo />
             <Surfaces />
             <Features />
             <NotThis />

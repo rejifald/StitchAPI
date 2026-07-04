@@ -6,11 +6,12 @@ import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 /**
- * The demo band — the "solution reveal" right after Problem: the pains
- * the table just enumerated, shown handled in one 20-second loop. The
- * media is the generated marquee cut (docs/media, theme- and DPR-aware
- * via DemoMedia); it links to /demo, where the full ten-chapter loop
- * renders live from the same scene the assets are captured from.
+ * The demo band — proof before pitch, directly under the hero: the
+ * promise the headline just made, shown working in one 20-second loop.
+ * The media is the generated marquee cut (docs/media, theme- and
+ * DPR-aware via DemoMedia); it links to /demo, where the full
+ * ten-chapter loop renders live from the same scene the assets are
+ * captured from.
  */
 export function Demo() {
     return (
