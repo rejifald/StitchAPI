@@ -2,15 +2,18 @@
 
 /**
  * Regenerates the hero demo assets from source (`pnpm gen:media`), in
- * light AND dark. Only the README-embedded webp pair is committed —
- * everything else is a launch asset, regenerated on demand (gitignored;
- * see docs/media/README.md):
+ * light AND dark. Only the embed files are committed — the webp pairs
+ * (README) and the -clip mp4 pair (site <video>); everything else is a
+ * launch asset, regenerated on demand (gitignored; see
+ * docs/media/README.md):
  *
- *   docs/media/demo[-dark]@2x.webp   README embed — marquee
- *       cut, 2560x1440 lossless (COMMITTED; render at width=1280 for
- *       retina crispness)
- *   docs/media/demo[-dark][@2x].mp4  full tour, 1x + 2x
- *   docs/media/demo[-dark].gif       marquee cut, < 2.5 MB —
+ *   docs/media/demo[-dark][@2x].webp  README embed — marquee cut,
+ *       lossy q90 @ 12 fps (COMMITTED; lossy so browsers can decode it
+ *       in real time — see encodeWebp)
+ *   docs/media/demo[-dark]-clip.mp4   site embed (<DemoMedia />) + X
+ *       cut — marquee, 1280x720 (COMMITTED)
+ *   docs/media/demo[-dark][@2x].mp4   full tour, 1x + 2x
+ *   docs/media/demo[-dark].gif        marquee cut, < 2.5 MB —
  *       channels that only accept .gif uploads
  *   docs/media/demo-square[-dark].mp4  1080x1080 for social
  *
@@ -162,8 +165,9 @@ async function captureFrames(browser, { width, height, url, dir, theme }) {
 }
 
 // size = 'W:H' to downscale, or null to keep the native 2x capture size
-// (the @2x retina exports). crf 14 is visually lossless for this content.
-function encodeMp4(framesDir, out, size) {
+// (the @2x retina exports). crf 14 is visually lossless for this content;
+// the site-embed clips use a higher crf — they render small and stream.
+function encodeMp4(framesDir, out, size, crf = 14) {
     ffmpeg([
         '-y',
         '-framerate',
@@ -176,7 +180,7 @@ function encodeMp4(framesDir, out, size) {
         '-preset',
         'slow',
         '-crf',
-        '14',
+        String(crf),
         '-pix_fmt',
         'yuv420p',
         '-movflags',
@@ -186,11 +190,14 @@ function encodeMp4(framesDir, out, size) {
     console.log(`  ${out} (${(statSync(out).size / 1024).toFixed(0)} KB)`);
 }
 
-// Animated WebP, LOSSLESS — the README-preferred embed. Counter-
-// intuitively, lossless beats high-quality lossy here (flat UI, sharp
-// edges: prediction wins, DCT loses) — measured 5.9 MB lossless vs
-// 7.9 MB q95 at 2x. width = px to downscale to, or null for native 2x.
-function encodeWebp(framesDir, out, width) {
+// Animated WebP — the README embed (GitHub can't embed repo videos).
+// LOSSY on purpose: animated-webp frames are delta-encoded, so browsers
+// cannot skip frames when decode falls behind — playback lag compounds
+// and the loop turns choppy over time. Lossless decode is the slowest
+// path; q90 at 12 fps decodes several times faster (and looks the same
+// on this flat-UI content), which is what keeps the README smooth.
+// width = px to downscale to, or null for native 2x.
+function encodeWebp(framesDir, out, width, { fps = 12, quality = 90 } = {}) {
     ffmpeg([
         '-y',
         '-framerate',
@@ -198,11 +205,11 @@ function encodeWebp(framesDir, out, width) {
         '-i',
         join(framesDir, 'f%04d.png'),
         '-vf',
-        `fps=15${width ? `,scale=${width}:-2:flags=lanczos` : ''}`,
+        `fps=${fps}${width ? `,scale=${width}:-2:flags=lanczos` : ''}`,
         '-c:v',
         'libwebp_anim',
-        '-lossless',
-        '1',
+        '-q:v',
+        String(quality),
         '-compression_level',
         '6',
         '-loop',
@@ -260,24 +267,27 @@ function encodeGif(framesDir, out, work) {
 }
 
 // The full tour ships as mp4 (1x + @2x retina); the README embed is the
-// shorter MARQUEE cut (?chapters=) as lossless @2x webp, and the GIF is
-// the same cut so it stays under its 2.5 MB budget as chapters grow.
+// shorter MARQUEE cut (?chapters=) as smooth-decode webp, the site embed
+// is the same cut as an mp4 clip (<video> hardware-decodes and can skip
+// frames — animated images can't), and the GIF is the same cut so it
+// stays under its 2.5 MB budget as chapters grow.
 const MARQUEE = 'stream,drift,resilience,agent';
 
-// theme × layout × cut matrix. formats: mp4 | mp4@2x | webp | webp@2x | gif.
+// theme × layout × cut matrix.
+// formats: mp4 | mp4@2x | webp | webp@2x | gif | clip.
 const VARIANTS = [
     { name: 'demo', theme: 'light', formats: ['mp4', 'mp4@2x'] },
     { name: 'demo-dark', theme: 'dark', formats: ['mp4', 'mp4@2x'] },
     {
         name: 'demo',
         theme: 'light',
-        formats: ['webp', 'webp@2x', 'gif'],
+        formats: ['webp', 'webp@2x', 'gif', 'clip'],
         chapters: MARQUEE,
     },
     {
         name: 'demo-dark',
         theme: 'dark',
-        formats: ['webp', 'webp@2x', 'gif'],
+        formats: ['webp', 'webp@2x', 'gif', 'clip'],
         chapters: MARQUEE,
     },
     {
@@ -340,6 +350,8 @@ try {
             encodeWebp(dir, join(staging, `${name}@2x.webp`), null);
         if (formats.includes('gif'))
             encodeGif(dir, join(staging, `${name}.gif`), work);
+        if (formats.includes('clip'))
+            encodeMp4(dir, join(staging, `${name}-clip.mp4`), size, 20);
         rmSync(dir, { recursive: true, force: true }); // free frame disk early
     }
     // publish: every variant succeeded — replace the tracked set atomically-ish
