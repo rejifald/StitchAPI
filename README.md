@@ -49,7 +49,7 @@
 </p>
 
 <p align="center">
-  <sub>20-second cut · <a href="https://stitchapi.dev/demo">watch the full 10-feature tour live</a> — rendered by the docs site itself, <a href="docs/media/README.md">regenerated from source</a></sub>
+  <sub><a href="https://stitchapi.dev/demo">Watch more</a></sub>
 </p>
 
 > [!NOTE]
