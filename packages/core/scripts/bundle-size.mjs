@@ -105,16 +105,31 @@ const KB = 1024;
 // at the same collapsed `[]` path — so it isn't optional and sits in the shared drift/classify layer
 // that feeds both the `drift` event and `Inspection.findings`; it can't move to a subpath. It adds
 // ~0.04 / ~0.03 KB gzip. The step restores the same tight ~0.2 KB headroom the gate is meant to hold.
+//
+// Budgets raised for the cross-origin-redirect credential-leak fix (24.20→24.80 / 19.70→20.00 KB;
+// measured 24.60 / 19.80). SECURITY (HIGH): auth strategies put credentials in CUSTOM request
+// headers (`apiKey` → `x-api-key`; `awsSigV4` → `authorization` + `x-amz-*`). undici (and axios's
+// follow-redirects) strip `authorization`/`cookie` on a cross-origin redirect but NOT custom
+// headers, so those keys leaked to a redirect target on another origin (open-redirect / compromised
+// endpoint) — a "capability, not a credential" break. The fix makes `fetchAdapter` follow redirects
+// itself (`redirect: 'manual'` + a bounded manual-follow loop) and, on a cross-origin hop, drop
+// every non-CORS-safelisted request header (auth/cookie/custom); `axiosAdapter` does the same via a
+// `beforeRedirect` hook. Both share one tiny origin-check + header-strip helper. This sits on the
+// hot request path (fetchAdapter is the default transport, so it lifts `import { stitch }` as much
+// as the whole entry) and is browser-safe (no node:*), so it cannot move to a subpath. It adds ~0.43
+// / ~0.28 KB gzip. The step restores the same tight ~0.2 KB headroom the gate is meant to hold. The
+// cost buys closing a HIGH credential-exfiltration hole — a deliberate trade the maintainer signs off
+// on by merging (see PR body for the exact before/after/Δ).
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.2 * KB,
+        budget: 24.8 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 19.7 * KB,
+        budget: 20.0 * KB,
     },
 ];
 

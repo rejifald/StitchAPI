@@ -21,7 +21,7 @@
   <a href="https://www.npmjs.com/package/stitchapi"><img alt="npm version" src="https://img.shields.io/npm/v/stitchapi?color=2563EB&label=npm" /></a>
   <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
   <img alt="npm bundle size (minified + gzipped)" src="https://img.shields.io/bundlephobia/minzip/stitchapi" />
-  <img alt="Bundle: ~24 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~24%20kB-2563EB" />
+  <img alt="Bundle: ~25 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~25%20kB-2563EB" />
 </p>
 
 <!-- yakir:readme-badges -->
@@ -36,7 +36,7 @@
 <!-- /yakir:readme-badges -->
 
 <p align="center">
-  <strong>Zero runtime dependencies · ~24&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~20&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+  <strong>Zero runtime dependencies · ~25&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~20&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
 <p align="center">
@@ -162,7 +162,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 -   **Pluggable state store** — throttle counters and sessions behind a 3-method store; swap in Redis/Postgres to go distributed.
 -   **Zero-infra observability** — tracing is **off by default**; opt in per stitch or via `STITCH_TRACE_*` env vars. No collector, no dashboard.
 -   **Four front doors, one definition** — in-process function, CLI (`stitch run`), HTTP (`stitch serve`), and MCP (`stitch mcp`).
--   **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~24 kB min+gzip** for the whole entry, **~20 kB** for a typical `import { stitch }`.
+-   **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~25 kB min+gzip** for the whole entry, **~20 kB** for a typical `import { stitch }`.
 
 ## Install
 
