@@ -147,4 +147,9 @@ lib
 # from the MDX, same source as llms.txt — never committed.
 # See docs/proposals/search-docs.md.
 apps/docs/.search-index/
+
+# @stitchapi/docs-mcp's bundled docs snapshot: copied in from apps/docs's
+# .search-index by scripts/copy-bundle.mjs at package build time, not committed —
+# same rationale as apps/docs/.search-index/ above.
+packages/docs-mcp/data/
 .DS_Store

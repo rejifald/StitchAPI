@@ -16,6 +16,8 @@
         "build:typed-deps": "pnpm --filter stitchapi --filter @stitchapi/nest --filter @stitchapi/pino --filter @stitchapi/query-core --filter @stitchapi/react --filter @stitchapi/fastify --filter @stitchapi/hono build",
         "build:sandbox": "node scripts/gen-stitch-completions.mjs && node ../../docs/sandbox/runtime/gen-sandbox-modules.mjs && node ../../docs/sandbox/runtime/build-sandbox-worker.mjs",
         "build:search-index": "pnpm run build:typed-deps && fumadocs-mdx && node --import tsx/esm scripts/build-search-index.mjs",
+        "build:docs-pages": "pnpm run build:typed-deps && fumadocs-mdx && node --import tsx/esm scripts/build-docs-pages.mjs",
+        "build:mcp-bundle": "pnpm run build:search-index && node --import tsx/esm scripts/build-docs-pages.mjs",
         "check:search-relevance": "pnpm run build:search-index && node --import tsx scripts/search-eval.mts --assert",
         "test": "vitest run",
         "test:e2e": "playwright test",
