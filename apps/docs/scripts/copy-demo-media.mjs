@@ -16,6 +16,8 @@ const FILES = [
     'demo@2x.webp',
     'demo-dark.webp',
     'demo-dark@2x.webp',
+    'demo-clip.mp4',
+    'demo-dark-clip.mp4',
 ];
 
 // Missing files are skipped, not fatal: `pnpm gen:media` itself boots this

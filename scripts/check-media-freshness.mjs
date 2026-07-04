@@ -18,6 +18,8 @@ const ASSETS = [
     'docs/media/demo-dark.webp',
     'docs/media/demo@2x.webp',
     'docs/media/demo-dark@2x.webp',
+    'docs/media/demo-clip.mp4',
+    'docs/media/demo-dark-clip.mp4',
 ];
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
