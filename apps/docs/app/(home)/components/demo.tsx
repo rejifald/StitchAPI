@@ -33,7 +33,7 @@ export function Demo() {
                     href="/demo"
                     className="inline-flex items-center gap-1 font-medium text-stitch hover:text-stitch-strong"
                 >
-                    Watch the full ten-feature tour — rendered live by this site
+                    Watch more
                     <ArrowRight className="size-3.5" />
                 </Link>
             </p>
