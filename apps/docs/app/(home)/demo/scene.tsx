@@ -36,7 +36,13 @@ import {
     TriangleAlert,
     Zap,
 } from 'lucide-react';
-import { type ComponentType, useEffect, useRef, useState } from 'react';
+import {
+    type ComponentType,
+    type ReactNode,
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
 
 /**
  * The hero demo scene (`docs/media/demo*.{mp4,gif}`), built on
@@ -602,7 +608,7 @@ type Mode = {
     chapters: string[] | null;
 };
 
-export function StreamingScene() {
+export function DemoScene() {
     const [mode, setMode] = useState<Mode | null>(null);
     const els = useRef<Record<string, HTMLElement | null>>({});
     const set = (key: string) => (el: HTMLElement | null) => {
@@ -731,10 +737,10 @@ export function StreamingScene() {
         ? CHAPTERS.filter((c) => selected.includes(c.key))
         : CHAPTERS;
 
-    return (
+    const stage = (
         <div
             className={cn(
-                'fixed inset-0 z-[60] flex flex-col overflow-hidden bg-fd-background',
+                'flex h-full w-full flex-col overflow-hidden bg-fd-background',
                 square ? 'px-12 pt-10 pb-10' : 'px-11 pt-8 pb-8',
             )}
         >
@@ -881,6 +887,71 @@ export function StreamingScene() {
                         style={{ opacity: i === 0 ? 1 : 0.3 }}
                     />
                 ))}
+            </div>
+        </div>
+    );
+
+    // Capture: the stage IS the viewport — an opaque overlay above the
+    // site chrome, so the generator's pixel contract (1280×720 / 1080²)
+    // never includes the navbar. Visitors instead get the same stage
+    // in-flow, scaled to the page column, with the layout's navbar
+    // available to leave the page.
+    if (mode.capture) {
+        return <div className="fixed inset-0 z-[60]">{stage}</div>;
+    }
+    return <ScaledStage square={square}>{stage}</ScaledStage>;
+}
+
+/**
+ * Renders the fixed-design-size stage (1280×720, or 1080² for the square
+ * variant) scaled to fit its container: the stage keeps its exact
+ * capture layout at every viewport, just zoomed — no reflow, no
+ * per-breakpoint tuning.
+ */
+function ScaledStage({
+    square,
+    children,
+}: {
+    square: boolean;
+    children: ReactNode;
+}) {
+    const design = square
+        ? { width: 1080, height: 1080 }
+        : { width: 1280, height: 720 };
+    const outer = useRef<HTMLDivElement>(null);
+    const [scale, setScale] = useState(0); // 0 = not yet measured
+
+    useEffect(() => {
+        const el = outer.current;
+        if (!el) return;
+        const update = () =>
+            setScale(Math.min(1, el.clientWidth / design.width));
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [design.width]);
+
+    return (
+        <div
+            ref={outer}
+            className="relative w-full"
+            style={{
+                aspectRatio: `${design.width} / ${design.height}`,
+                maxHeight: design.height,
+            }}
+        >
+            <div
+                className="absolute top-0 left-0 overflow-hidden rounded-xl border border-fd-border shadow-lg"
+                style={{
+                    width: design.width,
+                    height: design.height,
+                    transform: `scale(${scale || 1})`,
+                    transformOrigin: 'top left',
+                    visibility: scale ? 'visible' : 'hidden',
+                }}
+            >
+                {children}
             </div>
         </div>
     );

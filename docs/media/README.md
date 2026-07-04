@@ -2,7 +2,7 @@
 
 Brand and marketing assets. The `demo*` files are **generated,
 not hand-recorded** — the scene is a real page of the docs app
-([apps/docs/app/demo](../../apps/docs/app/demo)), built
+([apps/docs/app/(home)/demo](<../../apps/docs/app/(home)/demo>)), built
 on the site's own components/tokens. One loop cycles a chapter per core
 feature (streaming, drift, shaping, resilience, caching, auth,
 observability, request styles, composition, agent-native — see the scene's

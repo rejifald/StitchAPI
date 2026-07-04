@@ -12,7 +12,7 @@
  */
 import { execFileSync } from 'node:child_process';
 
-const SOURCES = ['apps/docs/app/demo/', 'scripts/gen-demo.mjs'];
+const SOURCES = ['apps/docs/app/(home)/demo/', 'scripts/gen-demo.mjs'];
 const ASSETS = [
     'docs/media/demo.webp',
     'docs/media/demo-dark.webp',

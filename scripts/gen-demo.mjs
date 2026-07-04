@@ -15,7 +15,7 @@
  *   docs/media/demo-square[-dark].mp4  1080x1080 for social
  *
  * How: the scene is a real page of the docs app —
- * apps/docs/app/demo — built on the site's own components and
+ * apps/docs/app/(home)/demo — built on the site's own components and
  * tokens, and deterministic: every frame is a pure function of time via
  * window.__seek(t). This script boots the docs dev server, frame-steps
  * the page in headless Chromium at 30 fps (2x DPR for crisp text), then
