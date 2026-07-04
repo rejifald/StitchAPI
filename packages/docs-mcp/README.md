@@ -71,18 +71,27 @@ would reintroduce the network dependency this package exists to avoid.
 ## Keeping this in sync
 
 A handful of files here are deliberately-flagged **mirrors** of
-`apps/docs/lib/search-index/*`, not derivations:
+`apps/docs/lib/search-index/*` and `apps/docs/app/api/mcp/route.ts`, not
+derivations:
 
--   `src/config.ts` — the embedding model/dtype/dim and hybrid-search
-    weights **must** match `apps/docs/lib/search-index/config.ts` exactly, or
-    a query embeds into a different vector space than the bundled index was
-    built in.
+-   `src/config.ts` — the embedding model/dtype/dim, vector field, hybrid-search
+    weights, and query-length cap **must** match `apps/docs/lib/search-index/*`
+    exactly, or a query embeds into a different vector space than the bundled
+    index was built in.
 -   `src/doc-path.ts` — a verbatim copy (that file has no fumadocs
     dependency either, so it's a straight copy, not a re-derivation).
+-   `src/server.ts`'s `SITE_URL`/`EXCERPT_LEN` mirror `apps/docs/lib/shared.ts`'s
+    `siteUrl` and `apps/docs/app/api/mcp/route.ts`'s `EXCERPT_LEN`.
 
 This is the same hand-mirrored-constant tradeoff `@stitchapi/aws-sigv4` flags
-for its `formEncode` helper — update both together, or search silently drifts
-from the hosted server's results.
+for its `formEncode` helper — except here it's not just a comment: the
+`docs-mcp-config-parity` yakir tether (`yakir.json`, measured by
+`scripts/probe-docs-mcp-parity.mjs`) actually **runs both sides** (the config
+constants _and_ `parseDocPath` against a fixed input table) and fails CI the
+moment they disagree, rather than relying on someone noticing a stale
+comment. If it fails, the failure message names which side changed — fix the
+one that's now wrong, or update both together if the divergence was
+intentional.
 
 ## Public API
 
