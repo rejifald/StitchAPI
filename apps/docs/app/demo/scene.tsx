@@ -39,7 +39,7 @@ import {
 import { type ComponentType, useEffect, useRef, useState } from 'react';
 
 /**
- * The hero demo scene (`docs/media/streaming-demo*.{mp4,gif}`), built on
+ * The hero demo scene (`docs/media/demo*.{mp4,gif}`), built on
  * the site's own components and tokens: CodePanel, Logo, BrandBackdrop,
  * the Signal palette, and the site type stacks.
  *
@@ -51,7 +51,7 @@ import { type ComponentType, useEffect, useRef, useState } from 'react';
  * the packages' JSDoc examples).
  *
  * Everything animated is a pure function of time: `render(t)` mutates
- * inline styles only, and `scripts/gen-streaming-demo.mjs` frame-steps it
+ * inline styles only, and `scripts/gen-demo.mjs` frame-steps it
  * via `window.__seek(t)` — no timers, no randomness, so re-rendering the
  * same t always produces the same frame and the exported assets are
  * reproducible from source. Live visitors get the same `render` driven by

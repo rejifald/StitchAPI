@@ -6,16 +6,16 @@
  * everything else is a launch asset, regenerated on demand (gitignored;
  * see docs/media/README.md):
  *
- *   docs/media/streaming-demo[-dark]@2x.webp   README embed — marquee
+ *   docs/media/demo[-dark]@2x.webp   README embed — marquee
  *       cut, 2560x1440 lossless (COMMITTED; render at width=1280 for
  *       retina crispness)
- *   docs/media/streaming-demo[-dark][@2x].mp4  full tour, 1x + 2x
- *   docs/media/streaming-demo[-dark].gif       marquee cut, < 2.5 MB —
+ *   docs/media/demo[-dark][@2x].mp4  full tour, 1x + 2x
+ *   docs/media/demo[-dark].gif       marquee cut, < 2.5 MB —
  *       channels that only accept .gif uploads
- *   docs/media/streaming-demo-square[-dark].mp4  1080x1080 for social
+ *   docs/media/demo-square[-dark].mp4  1080x1080 for social
  *
  * How: the scene is a real page of the docs app —
- * apps/docs/app/demo/streaming — built on the site's own components and
+ * apps/docs/app/demo — built on the site's own components and
  * tokens, and deterministic: every frame is a pure function of time via
  * window.__seek(t). This script boots the docs dev server, frame-steps
  * the page in headless Chromium at 30 fps (2x DPR for crisp text), then
@@ -57,7 +57,7 @@ const FPS = 30;
 const GIF_MAX_BYTES = 2.5 * 1024 * 1024;
 // Dedicated port so we never capture some other checkout's dev server.
 const PORT = 3947;
-const PAGE = `http://localhost:${PORT}/demo/streaming?capture=1`;
+const PAGE = `http://localhost:${PORT}/demo?capture=1`;
 
 // Fail fast on missing tooling — before the multi-minute server boot
 // and capture. The webp encoder is probed too, so an ffmpeg built
@@ -264,30 +264,30 @@ function encodeGif(framesDir, out, work) {
 // the same cut so it stays under its 2.5 MB budget as chapters grow.
 const MARQUEE = 'stream,drift,resilience,agent';
 
-// theme × layout × cut matrix. formats: mp4 | mp4@2x | webp@2x | gif.
+// theme × layout × cut matrix. formats: mp4 | mp4@2x | webp | webp@2x | gif.
 const VARIANTS = [
-    { name: 'streaming-demo', theme: 'light', formats: ['mp4', 'mp4@2x'] },
-    { name: 'streaming-demo-dark', theme: 'dark', formats: ['mp4', 'mp4@2x'] },
+    { name: 'demo', theme: 'light', formats: ['mp4', 'mp4@2x'] },
+    { name: 'demo-dark', theme: 'dark', formats: ['mp4', 'mp4@2x'] },
     {
-        name: 'streaming-demo',
+        name: 'demo',
         theme: 'light',
-        formats: ['webp@2x', 'gif'],
+        formats: ['webp', 'webp@2x', 'gif'],
         chapters: MARQUEE,
     },
     {
-        name: 'streaming-demo-dark',
+        name: 'demo-dark',
         theme: 'dark',
-        formats: ['webp@2x', 'gif'],
+        formats: ['webp', 'webp@2x', 'gif'],
         chapters: MARQUEE,
     },
     {
-        name: 'streaming-demo-square',
+        name: 'demo-square',
         theme: 'light',
         square: true,
         formats: ['mp4'],
     },
     {
-        name: 'streaming-demo-square-dark',
+        name: 'demo-square-dark',
         theme: 'dark',
         square: true,
         formats: ['mp4'],
@@ -334,6 +334,8 @@ try {
             encodeMp4(dir, join(staging, `${name}.mp4`), size);
         if (formats.includes('mp4@2x'))
             encodeMp4(dir, join(staging, `${name}@2x.mp4`), null);
+        if (formats.includes('webp'))
+            encodeWebp(dir, join(staging, `${name}.webp`), 1280);
         if (formats.includes('webp@2x'))
             encodeWebp(dir, join(staging, `${name}@2x.webp`), null);
         if (formats.includes('gif'))

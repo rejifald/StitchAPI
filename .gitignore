@@ -152,6 +152,8 @@ apps/docs/.search-index/
 # demand; only the README-embedded webp pair is tracked. Keeping the
 # mp4/gif generations out of git stops history growing ~8 MB per regen
 # (see docs/media/README.md).
-docs/media/streaming-demo*
-!docs/media/streaming-demo@2x.webp
-!docs/media/streaming-demo-dark@2x.webp
+docs/media/demo*
+!docs/media/demo.webp
+!docs/media/demo-dark.webp
+!docs/media/demo@2x.webp
+!docs/media/demo-dark@2x.webp

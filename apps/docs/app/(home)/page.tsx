@@ -1,5 +1,6 @@
 import { AgentNative } from './components/agent-native';
 import { Cta, Footer } from './components/cta';
+import { Demo } from './components/demo';
 import { Differentiator } from './components/differentiator';
 import { Features } from './components/features';
 import { Hero } from './components/hero';
@@ -45,6 +46,7 @@ export default function HomePage() {
             <AgentNative />
             <Metrics />
             <Problem />
+            <Demo />
             <Surfaces />
             <Features />
             <NotThis />

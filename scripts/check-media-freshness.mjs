@@ -12,13 +12,12 @@
  */
 import { execFileSync } from 'node:child_process';
 
-const SOURCES = [
-    'apps/docs/app/demo/streaming/',
-    'scripts/gen-streaming-demo.mjs',
-];
+const SOURCES = ['apps/docs/app/demo/', 'scripts/gen-demo.mjs'];
 const ASSETS = [
-    'docs/media/streaming-demo@2x.webp',
-    'docs/media/streaming-demo-dark@2x.webp',
+    'docs/media/demo.webp',
+    'docs/media/demo-dark.webp',
+    'docs/media/demo@2x.webp',
+    'docs/media/demo-dark@2x.webp',
 ];
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
