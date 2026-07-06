@@ -929,6 +929,7 @@ StitchAPI ships thin, peer-dependency integration packages — server frameworks
 <tr><td><a href="packages/pino"><code>@stitchapi/pino</code></a></td><td>The stitch event stream as structured Pino logs</td></tr>
 <tr><td><a href="packages/sentry"><code>@stitchapi/sentry</code></a></td><td>Stitch events as Sentry breadcrumbs, with error capture</td></tr>
 <tr><th colspan="2">Surfaces</th></tr>
+<tr><td><a href="packages/download"><code>@stitchapi/download</code></a></td><td>Batch file downloads with FIFO concurrency, cancel, and ETA</td></tr>
 <tr><td><a href="packages/shell"><code>@stitchapi/shell</code></a></td><td>Run a static local command as a stitch (injection-proof)</td></tr>
 <tr><th colspan="2">Cache fingerprint adapters</th></tr>
 <tr><td><a href="packages/fingerprint-arktype"><code>@stitchapi/fingerprint-arktype</code></a></td><td>Cache-fingerprint strategy for ArkType schemas</td></tr>
