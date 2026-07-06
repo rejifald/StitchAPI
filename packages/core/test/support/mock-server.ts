@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
 
 export interface ReqInfo {
     method: string;
@@ -114,6 +115,29 @@ export interface RouteBehavior {
      * expressible.
      */
     redirectTo?: string;
+    /**
+     * Serve `rawBody` COMPRESSED with this content coding (M5): sets `Content-Encoding` and a
+     * `Content-Length` equal to the COMPRESSED size, then sends the compressed bytes. undici's `fetch`
+     * auto-decodes gzip/br, so the client's blob holds the DECOMPRESSED body while byte progress sees a
+     * `total` (the compressed CL) SMALLER than the decoded `loaded` — the "progress lies" trap
+     * (B7/B8). Only on the `rawBody` path; wins over the plain framed send but yields to the fault
+     * paths (reset/stall/chunk), which model transport faults orthogonal to encoding.
+     */
+    contentEncoding?: 'gzip' | 'br';
+    /** Emit an `ETag` validator (C7 / future `If-Range`). M5 resume scaffolding — emittable now. */
+    etag?: string;
+    /** Emit a `Last-Modified` validator (C8 / future `If-Range`). */
+    lastModified?: string;
+    /** Advertise (or refuse) Range support via `Accept-Ranges: bytes|none` (C9). */
+    acceptRanges?: 'bytes' | 'none';
+    /**
+     * When a request carries a `Range` header, FORCE this status regardless of `serveRange` (M5): `416`
+     * (Range Not Satisfiable — emits an unsatisfiable `Content-Range`, empty body) or `200` (ignore the
+     * Range and send the FULL body — the silent-corruption trap R3, where a resuming client that
+     * appends would double the prefix). A request with NO `Range` header is served normally. Only on
+     * the `rawBody` path; takes precedence over `serveRange`.
+     */
+    forceStatusOnRange?: 200 | 416;
 }
 
 export interface MockServer {
@@ -207,6 +231,13 @@ export function startMockServer(): Promise<MockServer> {
     // (`maxOpen() <= k`) from the SERVER's own view of the wire — a real-overlap oracle that a
     // "we decided to be concurrent" client-side counter can't give.
     const inflight = new Map<symbol, string>();
+    // The underlying socket of each IN-FLIGHT request, so `reset()` can destroy exactly the sockets
+    // with an incomplete response (a held `stallAfterBytes` / mid-`ttfbDelayMs` wait) and leave IDLE
+    // keep-alive sockets alone. Destroying an idle keep-alive socket between tests is what made undici
+    // reuse a dead connection on the next test's first request → a spurious ECONNRESET ("fetch failed",
+    // the N12 stale-keep-alive hazard). An idle socket is a valid connection to a still-listening
+    // server, so it must survive `reset()`; only `close()` tears every socket down.
+    const openSockets = new Map<symbol, Socket>();
     const arrivalLog: { path: string; at: number }[] = [];
     let openHigh = 0;
     const openHighByPath = new Map<string, number>();
@@ -243,13 +274,17 @@ export function startMockServer(): Promise<MockServer> {
         // released — a stalled body stays "open" until teardown, which is the truth of the wire.
         const openToken = Symbol();
         inflight.set(openToken, path);
+        if (res.socket) openSockets.set(openToken, res.socket);
         arrivalLog.push({ path, at: Date.now() });
         openHigh = Math.max(openHigh, inflight.size);
         openHighByPath.set(
             path,
             Math.max(openHighByPath.get(path) ?? 0, openForPath(path)),
         );
-        res.once('close', () => inflight.delete(openToken));
+        res.once('close', () => {
+            inflight.delete(openToken);
+            openSockets.delete(openToken);
+        });
 
         const rk = key(method, path);
         const behavior = routes.get(rk);
@@ -272,6 +307,13 @@ export function startMockServer(): Promise<MockServer> {
                 );
             if (extra?.retryAfter !== undefined)
                 out['Retry-After'] = String(extra.retryAfter);
+            // Validators / range-advertising headers (M5 resume scaffolding — emittable now; no client
+            // consumes them until the resume feature lands). Cheap: just header emission.
+            if (extra?.etag !== undefined) out['ETag'] = extra.etag;
+            if (extra?.lastModified !== undefined)
+                out['Last-Modified'] = extra.lastModified;
+            if (extra?.acceptRanges !== undefined)
+                out['Accept-Ranges'] = extra.acceptRanges;
             return out;
         };
         const send = (
@@ -436,6 +478,27 @@ export function startMockServer(): Promise<MockServer> {
             }
             if (!res.writableEnded && !res.destroyed) res.end();
         };
+        // Compress `bytes` with the route's content coding and frame it honestly: `Content-Encoding` +
+        // a `Content-Length` equal to the COMPRESSED size. undici auto-decodes, so the client sees the
+        // full decompressed body but a `total` (compressed CL) below the decoded `loaded` — B7/B8.
+        const sendEncoded = (
+            status: number,
+            bytes: Buffer,
+            extra: RouteBehavior,
+        ): void => {
+            res.on('error', () => {
+                /* client went away mid-write */
+            });
+            const coded =
+                extra.contentEncoding === 'br'
+                    ? brotliCompressSync(bytes)
+                    : gzipSync(bytes);
+            const out = buildHeaders('application/octet-stream', extra);
+            out['content-encoding'] = extra.contentEncoding ?? 'gzip';
+            out['content-length'] = String(coded.length);
+            res.writeHead(status, out);
+            res.end(coded);
+        };
 
         if (!behavior) {
             send(404, { error: 'not_found' });
@@ -505,20 +568,41 @@ export function startMockServer(): Promise<MockServer> {
                 typeof behavior.rawBody === 'string'
                     ? Buffer.from(behavior.rawBody, 'utf8')
                     : Buffer.from(behavior.rawBody);
-            // serveRange short-circuits before any TTFB delay (it's an M1 range case, not a fault).
-            if (behavior.serveRange && serveRangeIf(full, behavior)) return;
+            // A Range request can be FORCED to 416/200 (M5 adversarial resume cases), taking
+            // precedence over `serveRange` — a request with no `Range` header is served normally below.
+            if (
+                behavior.forceStatusOnRange !== undefined &&
+                headers['range'] !== undefined
+            ) {
+                if (behavior.forceStatusOnRange === 416) {
+                    const out = buildHeaders(
+                        'application/octet-stream',
+                        behavior,
+                    );
+                    out['content-range'] = `bytes */${full.length}`;
+                    res.writeHead(416, out);
+                    res.end();
+                    return;
+                }
+                // 200: fall through and serve the FULL body, deliberately ignoring the Range (R3).
+            } else if (behavior.serveRange && serveRangeIf(full, behavior)) {
+                // serveRange short-circuits before any TTFB delay (an M1 range case, not a fault).
+                return;
+            }
             // Slow time-to-first-byte: the request is fully received; hold before writing the status
             // line + headers. The socket is tracked, so teardown can cut a mid-wait hold.
             if (behavior.ttfbDelayMs) await sleep(behavior.ttfbDelayMs);
             if (res.writableEnded || res.destroyed) return; // torn down during the TTFB wait
             // Exactly one fault path wins, in precedence order: abrupt reset, idle stall, steady
-            // throttle (chunked), then the M1 clean-FIN truncation / plain framed send.
+            // throttle (chunked), content-encoding, then the M1 clean-FIN truncation / plain send.
             if (behavior.resetAfterBytes !== undefined)
                 sendReset(status, full, behavior);
             else if (behavior.stallAfterBytes !== undefined)
                 sendStall(status, full, behavior);
             else if (behavior.chunkDelayMs !== undefined)
                 await sendChunked(status, full, behavior);
+            else if (behavior.contentEncoding !== undefined)
+                sendEncoded(status, full, behavior);
             else sendRaw(status, full, behavior);
             return;
         }
@@ -596,10 +680,14 @@ export function startMockServer(): Promise<MockServer> {
                     arrivalLog.length = 0;
                     openHigh = 0;
                     openHighByPath.clear();
-                    // Destroy any socket a prior test left deliberately open (a `stallAfterBytes`
-                    // hold, a mid-`ttfbDelayMs` wait) so it can't leak into the next test or keep the
-                    // loop alive. Each destroy fires the socket's own `close` → removed from the set.
-                    for (const socket of sockets) socket.destroy();
+                    // Destroy ONLY the sockets with an incomplete response a prior test left open (a
+                    // `stallAfterBytes` hold, a mid-`ttfbDelayMs` wait) so they can't leak into the next
+                    // test or keep the loop alive. IDLE keep-alive sockets are deliberately left alive —
+                    // they are valid connections to a still-listening server, and destroying them is
+                    // what made undici reuse a dead connection on the next test's first request (the
+                    // N12 stale-keep-alive "fetch failed"). `close()` still tears every socket down.
+                    for (const socket of openSockets.values()) socket.destroy();
+                    openSockets.clear();
                 },
                 close: () =>
                     new Promise<void>((res) => {
