@@ -362,11 +362,10 @@ function rebuildError(ev: Extract<StitchEvent, { type: 'error' }>): Error {
     // callers can read `err.cause` (and its `.code`) to tell a socket reset from a generic "fetch
     // failed". Absent a source, no cause (unchanged). `cause` is non-enumerable, so it never leaks into
     // a trace sink.
-    return new StitchError(ev.message, {
-        status: ev.status,
-        attempts: ev.attempts,
-        ...(source !== undefined ? { cause: source } : {}),
-    });
+    return new StitchError(
+        ev.message,
+        compact({ status: ev.status, attempts: ev.attempts, cause: source }),
+    );
 }
 
 // Build the `Inspection` wrapper (ADR 0016 / ADR 0019): every field enumerable EXCEPT `raw`, which is
