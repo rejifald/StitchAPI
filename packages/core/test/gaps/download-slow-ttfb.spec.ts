@@ -11,7 +11,7 @@
 // (asserted loosely below); case (b) resolves with the full body once the delayed headers arrive.
 //
 // Real-timer, LOOSE bounds (a socket test): delays and timeouts are milliseconds apart but chosen
-// with wide margins so scheduler jitter can't flip the outcome. `ttfbDelayMs` holds the socket open
+// with wide margins so scheduler jitter can't flip the outcome. `ttfbDelay` holds the socket open
 // during the wait; teardown force-destroys any lingering socket (mock-server tracks live sockets),
 // so the suite exits.
 import { download } from '../../src/download';
@@ -34,7 +34,7 @@ test('a slow TTFB longer than the timeout rejects (TTFB rides the same timeout)'
     server.route('GET', '/slow-headers', {
         statuses: [200],
         rawBody: 'a complete body that the client never gets to see',
-        ttfbDelayMs: 400, // headers held for 400ms…
+        ttfbDelay: 400, // headers held for 400ms…
     });
 
     const getSlow = download({
@@ -56,7 +56,7 @@ test('a slow TTFB shorter than the timeout resolves (a slow start is tolerated)'
     server.route('GET', '/slow-ok', {
         statuses: [200],
         rawBody: payload,
-        ttfbDelayMs: 120, // a 120ms slow start…
+        ttfbDelay: 120, // a 120ms slow start…
         headers: { 'content-disposition': 'attachment; filename=late.bin' },
     });
 

@@ -19,7 +19,7 @@
 //
 // Real-timer, LOOSE bounds (a socket test): chunk cadence (120ms × 8 = ~960ms of streaming) is set
 // well above the 400ms budget so the timeout reliably fires mid-stream after a few progress ticks,
-// with wide margins against scheduler jitter. `chunkDelayMs` streams a real chunked body; teardown
+// with wide margins against scheduler jitter. `chunkDelay` streams a real chunked body; teardown
 // force-destroys any lingering socket (mock-server tracks live sockets), so the suite exits.
 import { download } from '../../src/download';
 import type { AdapterProgress } from '../../src/types';
@@ -46,7 +46,7 @@ test('a healthy-but-slow (steadily progressing) download is killed by the same w
         rawBody:
             'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ012', // 64 bytes
         chunkBytes: 8, // 8 bytes per chunk…
-        chunkDelayMs: 120, // …every 120ms → ~960ms to stream the whole body
+        chunkDelay: 120, // …every 120ms → ~960ms to stream the whole body
     });
 
     const seen: AdapterProgress[] = [];

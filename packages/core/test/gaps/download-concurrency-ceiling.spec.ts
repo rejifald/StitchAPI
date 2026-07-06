@@ -6,7 +6,7 @@
 //
 // N INDEPENDENT download() stitches (a batch of distinct files) share ONE host-keyed concurrency
 // budget via `throttle: { concurrency: k, pool: 'host' }` — P2, the cross-instance pooling substrate
-// (resilience.ts `hostStates`, keyed by URL host). Each route holds its response with `ttfbDelayMs` so
+// (resilience.ts `hostStates`, keyed by URL host). Each route holds its response with `ttfbDelay` so
 // the k admitted slots stay open together long enough to observe the peak.
 //
 // Real-timer, LOOSE bounds (a socket test): the hold (150ms) is wide vs. loopback dispatch jitter
@@ -47,7 +47,7 @@ test('≤ k download requests are open on the wire at once under a shared host t
         server.route('GET', p, {
             statuses: [200],
             rawBody: `contents-of${p}`,
-            ttfbDelayMs: 150, // hold each admitted slot open long enough to observe the overlap
+            ttfbDelay: 150, // hold each admitted slot open long enough to observe the overlap
         });
 
     // N INDEPENDENT download stitches (distinct files), all sharing one host-keyed budget of K.

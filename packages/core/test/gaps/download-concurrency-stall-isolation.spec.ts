@@ -50,7 +50,7 @@ test('a stalled item under concurrency times out ALONE — siblings finish with 
             server.route('GET', it.path, {
                 statuses: [200],
                 rawBody: `well-body${it.path}`,
-                ttfbDelayMs: 40, // brief hold so healthy items genuinely overlap the stall under the gate
+                ttfbDelay: 40, // brief hold so healthy items genuinely overlap the stall under the gate
             });
         else
             server.route('GET', it.path, {

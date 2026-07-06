@@ -50,13 +50,13 @@ test('a saturated host does not stall an independent host’s schedule (per-host
         a.route('GET', p, {
             statuses: [200],
             rawBody: `A${p}`,
-            ttfbDelayMs: 150, // each A item holds its single slot ~150ms → serial ~600ms total
+            ttfbDelay: 150, // each A item holds its single slot ~150ms → serial ~600ms total
         });
     for (const p of bPaths)
         b.route('GET', p, {
             statuses: [200],
             rawBody: `B${p}`,
-            ttfbDelayMs: 50, // B is fast — it finishes well before A drains, a wide margin
+            ttfbDelay: 50, // B is fast — it finishes well before A drains, a wide margin
         });
 
     const aRuns = aPaths.map((p) =>
