@@ -99,6 +99,7 @@ const GROUP_BY_DIR = {
     pino: 'observability',
     sentry: 'observability',
     shell: 'surface',
+    download: 'surface',
 };
 
 function groupFor(dir) {
@@ -352,6 +353,7 @@ const TABLE_DESCRIPTIONS = {
     sentry: 'Stitch events as Sentry breadcrumbs, with error capture',
     // Surfaces
     shell: 'Run a static local command as a stitch (injection-proof)',
+    download: 'Batch file downloads with FIFO concurrency, cancel, and ETA',
     // Cache fingerprint adapters
     'fingerprint-arktype': 'Cache-fingerprint strategy for ArkType schemas',
     'fingerprint-effect': 'Cache-fingerprint strategy for Effect Schema',
