@@ -1,4 +1,4 @@
-import { StitchError } from 'stitchapi';
+import { StitchError, compact } from 'stitchapi';
 
 /**
  * Transport-error codes (undici / Node) a retry might plausibly clear — sockets dropped, connections
@@ -82,7 +82,5 @@ export function classifyFailure(
         /fetch failed|socket|network|terminated|econn|dns|timeout|timed out|aborted/i.test(
             msg,
         );
-    return transportish
-        ? { retryable: true, ...(code !== undefined ? { code } : {}) }
-        : { retryable: false, ...(code !== undefined ? { code } : {}) };
+    return compact({ retryable: transportish, code });
 }
