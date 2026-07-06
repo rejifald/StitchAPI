@@ -121,6 +121,26 @@ export interface MockServer {
     route(method: string, path: string, behavior: RouteBehavior): void;
     calls(path?: string): ReqInfo[];
     callCount(path?: string): number;
+    /**
+     * M4 concurrency probe — how many requests are SIMULTANEOUSLY open on the wire, so a batch/
+     * throttle test asserts ACTUAL on-the-wire overlap, not "we decided to be concurrent". A request
+     * is counted open from receipt until its response finishes OR its socket closes (abort/reset), so
+     * a deliberately-held body (`ttfbDelayMs` / `stallAfterBytes` / `chunkDelayMs`) keeps its slot
+     * visible long enough to observe the peak.
+     *
+     * - `openNow(path?)` — the live count right now.
+     * - `maxOpen(path?)` — the high-water mark (max simultaneously open) since the last `reset()`.
+     *   This is the oracle for the throttle's concurrency ceiling: `expect(maxOpen()).toBeLessThanOrEqual(k)`.
+     * - `arrivals(path?)` — each request's receipt timestamp (`Date.now()`), in arrival order.
+     *
+     * `path` filters to one route; omit it for the WHOLE host (every path on this server) — which,
+     * since one `startMockServer()` binds one origin, is exactly host-level concurrency. Multi-host
+     * fairness uses two servers, each with its own probe. Promotes the ad-hoc `hits.push(Date.now())`
+     * pattern in `throttle-host-pooling.spec.ts` to a first-class observable.
+     */
+    openNow(path?: string): number;
+    maxOpen(path?: string): number;
+    arrivals(path?: string): number[];
     reset(): void;
     close(): Promise<void>;
 }
@@ -180,6 +200,21 @@ export function startMockServer(): Promise<MockServer> {
     // server is deliberately holding open would keep the event loop alive and hang test teardown.
     // `server.closeAllConnections()` only fires on close; `reset()` (per-test) needs this explicit set.
     const sockets = new Set<Socket>();
+    // M4 concurrency probe. `inflight` maps a per-request token to its path while that response is
+    // open on the wire (from handler entry to response `close`); `openHigh` / `openHighByPath` are
+    // the high-water marks (max simultaneously open) since the last `reset()`; `arrivalLog` records
+    // each request's receipt time. Together they let a test pin the throttle's concurrency ceiling
+    // (`maxOpen() <= k`) from the SERVER's own view of the wire — a real-overlap oracle that a
+    // "we decided to be concurrent" client-side counter can't give.
+    const inflight = new Map<symbol, string>();
+    const arrivalLog: { path: string; at: number }[] = [];
+    let openHigh = 0;
+    const openHighByPath = new Map<string, number>();
+    const openForPath = (p: string): number => {
+        let n = 0;
+        for (const v of inflight.values()) if (v === p) n++;
+        return n;
+    };
     const key = (method: string, path: string): string =>
         `${method.toUpperCase()} ${path}`;
 
@@ -202,6 +237,19 @@ export function startMockServer(): Promise<MockServer> {
             body: await readBody(req),
         };
         log.push(info);
+        // Mark this request open on the wire (M4 probe): counted from receipt until its response
+        // completes OR its socket closes. `res.once('close')` fires exactly once for BOTH a clean
+        // finish and an abort/reset (a held socket destroyed at teardown), so the slot is always
+        // released — a stalled body stays "open" until teardown, which is the truth of the wire.
+        const openToken = Symbol();
+        inflight.set(openToken, path);
+        arrivalLog.push({ path, at: Date.now() });
+        openHigh = Math.max(openHigh, inflight.size);
+        openHighByPath.set(
+            path,
+            Math.max(openHighByPath.get(path) ?? 0, openForPath(path)),
+        );
+        res.once('close', () => inflight.delete(openToken));
 
         const rk = key(method, path);
         const behavior = routes.get(rk);
@@ -526,10 +574,28 @@ export function startMockServer(): Promise<MockServer> {
                 },
                 calls: filter,
                 callCount: (path) => filter(path).length,
+                openNow: (path) =>
+                    path === undefined ? inflight.size : openForPath(path),
+                maxOpen: (path) =>
+                    path === undefined
+                        ? openHigh
+                        : (openHighByPath.get(path) ?? 0),
+                arrivals: (path) =>
+                    (path === undefined
+                        ? arrivalLog
+                        : arrivalLog.filter((a) => a.path === path)
+                    ).map((a) => a.at),
                 reset() {
                     routes.clear();
                     counters.clear();
                     log.length = 0;
+                    // M4 probe: clear the concurrency high-water marks + arrival log for the next
+                    // test. Cleared BEFORE the socket sweep below so a late `close` (from a destroyed
+                    // held socket) can only no-op against an already-empty `inflight`, never underflow.
+                    inflight.clear();
+                    arrivalLog.length = 0;
+                    openHigh = 0;
+                    openHighByPath.clear();
                     // Destroy any socket a prior test left deliberately open (a `stallAfterBytes`
                     // hold, a mid-`ttfbDelayMs` wait) so it can't leak into the next test or keep the
                     // loop alive. Each destroy fires the socket's own `close` → removed from the set.
