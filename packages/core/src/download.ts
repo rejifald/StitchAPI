@@ -84,6 +84,25 @@ export const downloadSurface: Surface<StitchInput, DownloadResult> = {
         responseType: 'blob',
     }),
     interpret: (res): SurfaceOutcome<DownloadResult> => {
+        // A buffered download resolves to a WHOLE Blob, so only a complete-body status is a success:
+        // `200 OK`, or `204 No Content` (a legitimately empty body). The engine's attempt loop only
+        // throws on `>= 400` (engine.ts), so every other sub-400 status — most importantly `206
+        // Partial Content` — flows here. `download` never sends a `Range`, so a `206` is a partial
+        // body the server volunteered (a range-serving proxy/CDN, a resumed-and-mismatched cache); if
+        // it were accepted it would hand the caller a truncated file as if it were the whole thing.
+        // Reject anything that is not a complete 2xx.
+        if (res.status !== 200 && res.status !== 204)
+            return {
+                ok: false,
+                message: `download: expected a complete body (200/204) but got HTTP ${res.status}${res.status === 206 ? ' — a partial (206) response was not requested (no Range header is ever sent)' : ''}`,
+                status: res.status,
+            };
+        // No `blob.size` vs `content-length` cross-check here: a truncated body (Content-Length
+        // advertises more bytes than are sent) never reaches this hook. undici HANGS on a clean-FIN
+        // short read until the caller's `timeout` fires, and REJECTS on an abrupt socket close — so a
+        // truncation surfaces as a timeout / transport error, never as a short Blob delivered here. A
+        // length check would be dead code (and a gzip/br body legitimately has `size != content-length`
+        // once decoded — it would be a false positive). See test/gaps/download-truncation.spec.ts.
         const value: DownloadResult = { blob: res.body as Blob };
         const filename =
             filenameFromDisposition(res.headers['content-disposition']) ??
