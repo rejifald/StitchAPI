@@ -9,7 +9,7 @@
 //
 // Proven by the mock server's overlap COUNT (`maxOpen`), NOT a wall-clock gap — so, unlike the old
 // rate-pooling test, this can't inherit a real-timer flake (a count is a hard limiter invariant; a
-// slow runner only ever makes fewer overlap, never more). `ttfbDelayMs` holds every admitted slot open
+// slow runner only ever makes fewer overlap, never more). `ttfbDelay` holds every admitted slot open
 // together so the peak is observable. Real-timer, LOOSE bounds; held sockets destroyed at teardown.
 import { download } from '../../src/download';
 import { startMockServer } from '../support/mock-server';
@@ -35,7 +35,7 @@ test('pool:"host" shares one budget (≤k open) while pool:"stitch" keeps indepe
             server.route('GET', p, {
                 statuses: [200],
                 rawBody: `body${p}`,
-                ttfbDelayMs: 150, // hold admitted slots open together to observe the peak overlap
+                ttfbDelay: 150, // hold admitted slots open together to observe the peak overlap
                 // `Connection: close` so the client keeps NO keep-alive socket: the mid-test
                 // `server.reset()` (below) force-destroys live sockets, and a kept-alive one would be
                 // reused stale in phase 2 → a spurious ECONNRESET ("fetch failed", the spec's N12

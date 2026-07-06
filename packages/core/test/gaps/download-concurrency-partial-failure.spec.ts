@@ -49,7 +49,7 @@ test('a partial-failure batch settles per-item — one bad URL never fails the o
             server.route('GET', it.path, {
                 statuses: [200],
                 rawBody: `ok-body${it.path}`,
-                ttfbDelayMs: 60,
+                ttfbDelay: 60,
             });
         else if (it.kind === 'notfound')
             server.route('GET', it.path, {
