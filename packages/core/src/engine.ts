@@ -368,6 +368,17 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
             value: err,
             enumerable: false,
         });
+    } else if (err instanceof Error && !(err instanceof StitchError)) {
+        // Bare transport / internal error (undici UND_ERR_SOCKET / ECONNRESET / DNS, an AbortError, …):
+        // pin the live instance on the SAME non-enumerable channel so the awaited / `.safe()` path can
+        // carry its `.cause` through as `StitchError.cause` — letting a caller tell a socket reset from
+        // a generic "fetch failed" (previously only the top-level message survived). Non-enumerable ⇒
+        // it never serialises into a trace sink (only the enumerable `status`/`message` do). A thrown
+        // `StitchError` is excluded so it keeps being rebuilt from the event (unchanged behaviour).
+        Object.defineProperty(evt, ERROR_SOURCE, {
+            value: err,
+            enumerable: false,
+        });
     }
     return evt;
 }
