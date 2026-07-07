@@ -12,7 +12,7 @@ progress + ETA, a forward-progress **idle timeout**, and opt-in same-URL **dedup
     / circuit / auth all apply per item — this package only orchestrates the batch.
 
 ```bash
-pnpm add @stitchapi/download stitchapi
+pnpm add @stitchapi/download@rc stitchapi@rc
 ```
 
 ## One-shot: `downloadAll`
@@ -25,7 +25,7 @@ const batch = downloadAll(
     {
         concurrency: 4,
         onProgress: (p) =>
-            console.log(`${p.completed}/${p.count}`, p.etaMs, 'ms left'),
+            console.log(`${p.completed}/${p.count}`, p.eta, 'ms left'),
     },
 );
 
