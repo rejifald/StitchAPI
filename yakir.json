@@ -248,6 +248,31 @@
                     "write": "managed"
                 }
             ]
+        },
+        {
+            "id": "docs-mcp-config-parity",
+            "tier": "executable",
+            "fact": "the local docs-mcp server's hand-mirrored config constants and parseDocPath behavior match the hosted stitchapi.dev/api/mcp server's (packages/docs-mcp/README.md \"Keeping this in sync\")",
+            "policy": { "severity": "block", "mode": "propose" },
+            "origin": "declared",
+            "sites": [
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node --import tsx/esm scripts/probe-docs-mcp-parity.mjs apps-docs",
+                        "extract": { "whole": true }
+                    },
+                    "write": "manual"
+                },
+                {
+                    "locator": {
+                        "kind": "command",
+                        "run": "node --import tsx/esm scripts/probe-docs-mcp-parity.mjs docs-mcp",
+                        "extract": { "whole": true }
+                    },
+                    "write": "manual"
+                }
+            ]
         }
     ]
 }
