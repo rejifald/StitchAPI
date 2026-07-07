@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/elysia",
-    "version": "1.0.0-rc.4",
+    "version": "1.0.0-rc.5",
     "type": "commonjs",
     "description": "Elysia plugin for StitchAPI — put a request-scoped seam on the context, stream a stitch's SSE output, and map Stitch errors to HTTP. Web-standard (Fetch-only, no node:*).",
     "main": "lib/index.js",
