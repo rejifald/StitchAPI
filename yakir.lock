@@ -476,6 +476,20 @@
         }
       },
       "accepted": null
+    },
+    "docs-mcp-config-parity": {
+      "baseline": "sha256:3f0840ded365ee27aef512f95548971c5c8df1035b7bee6f90d2a69dc7a7d6ad",
+      "sites": {
+        "command:node --import tsx/esm scripts/probe-docs-mcp-parity.mjs apps-docs#whole": {
+          "value": "sha256:3f0840ded365ee27aef512f95548971c5c8df1035b7bee6f90d2a69dc7a7d6ad",
+          "fp": "sha256:6f14a1cc8a445237732f7ee4392305501efb4c1b6cc89e335c88c0e10d5c1023"
+        },
+        "command:node --import tsx/esm scripts/probe-docs-mcp-parity.mjs docs-mcp#whole": {
+          "value": "sha256:3f0840ded365ee27aef512f95548971c5c8df1035b7bee6f90d2a69dc7a7d6ad",
+          "fp": "sha256:6f14a1cc8a445237732f7ee4392305501efb4c1b6cc89e335c88c0e10d5c1023"
+        }
+      },
+      "accepted": {}
     }
   }
 }

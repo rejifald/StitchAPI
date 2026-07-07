@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+'use strict';
+
+// Thin shim: the implementation lives in src/cli.ts and is bundled to lib/cli.js
+// by the build. Keep this file dependency-free and logic-free — mirrors
+// packages/core/bin/stitch.
+require('../lib/cli.js')
+    .main(process.argv.slice(2))
+    .then((code) => {
+        process.exitCode = code || 0;
+    })
+    .catch((err) => {
+        process.stderr.write(`${(err && err.stack) || err}\n`);
+        process.exitCode = 1;
+    });
