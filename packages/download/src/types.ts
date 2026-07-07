@@ -42,8 +42,8 @@ export interface BatchProgress {
     count: number;
     /** Smoothed throughput in bytes/sec since the first byte; `undefined` before any bytes arrive. */
     ratePerSec?: number;
-    /** Estimated time to completion in ms; `undefined` when `total` is unknown or the rate is zero. */
-    etaMs?: number;
+    /** Estimated time to completion, in ms; `undefined` when `total` is unknown or the rate is zero. */
+    eta?: number;
 }
 
 /** The phase an item is in, for {@link BatchSnapshot}. */

@@ -16,10 +16,10 @@ export class DownloadCancelledError extends Error {
  * with code `IDLE_TIMEOUT`.
  */
 export class DownloadIdleTimeoutError extends Error {
-    readonly idleMs: number;
-    constructor(idleMs: number) {
-        super(`download stalled: no forward progress for ${idleMs}ms`);
+    readonly idle: number;
+    constructor(idle: number) {
+        super(`download stalled: no forward progress for ${idle}ms`);
         this.name = 'DownloadIdleTimeoutError';
-        this.idleMs = idleMs;
+        this.idle = idle;
     }
 }

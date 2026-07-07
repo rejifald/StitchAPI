@@ -83,7 +83,7 @@ export class ProgressAggregator {
                 progress.ratePerSec = ratePerSec;
                 if (totalKnown && ratePerSec > 0) {
                     const remaining = Math.max(0, total - loaded);
-                    progress.etaMs = (remaining / ratePerSec) * 1000;
+                    progress.eta = (remaining / ratePerSec) * 1000;
                 }
             }
         }
