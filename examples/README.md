@@ -1,6 +1,7 @@
 # StitchAPI examples
 
-Small, self-contained, runnable examples of the `stitchapi` core library.
+Small, self-contained, runnable examples of the `stitchapi` core library and its
+integrations.
 
 ## [`basic-typed-stitch.ts`](basic-typed-stitch.ts)
 
@@ -35,3 +36,20 @@ examples/basic-typed-stitch OK
 > The example imports `stitchapi` from the workspace. If you're running it from a
 > standalone copy outside this monorepo, install the package first
 > (`npm i stitchapi zod`) and run the file with your preferred TypeScript runner.
+
+## [`openharness/`](openharness/) — a stitch as an agent tool
+
+A stitch dropped into an [OpenHarness](https://github.com/MaxGfeller/open-harness)
+agent as a tool, through the
+[`@stitchapi/vercel-ai`](https://stitchapi.dev/docs/integrations/vercel-ai) adapter:
+the model calls a capability and gets back schema-validated data. Runs **offline**
+(mock transport + mock model), so no network and no API key are needed.
+
+Because it depends on two external packages (`@openharness/core`, `ai`), it lives in
+its own directory with its own `package.json` rather than as a loose file:
+
+```sh
+cd openharness && npm install && npm start
+```
+
+See [`openharness/README.md`](openharness/README.md) for the walkthrough.

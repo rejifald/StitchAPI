@@ -1,0 +1,23 @@
+{
+    "name": "stitchapi-openharness-example",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "description": "Use a StitchAPI stitch as a tool inside an OpenHarness agent.",
+    "scripts": {
+        "start": "tsx server.ts",
+        "cli": "tsx index.ts"
+    },
+    "dependencies": {
+        "@openharness/core": "0.7.0",
+        "@stitchapi/vercel-ai": "1.0.0-rc.2",
+        "ai": "^6.0.97",
+        "stitchapi": "1.0.0-rc.4",
+        "zod": "^4.3.6"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "tsx": "^4.19.2",
+        "typescript": "^5.6.2"
+    }
+}
