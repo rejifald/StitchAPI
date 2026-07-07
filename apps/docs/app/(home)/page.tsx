@@ -1,5 +1,6 @@
 import { AgentNative } from './components/agent-native';
 import { Cta, Footer } from './components/cta';
+import { Demo } from './components/demo';
 import { Differentiator } from './components/differentiator';
 import { Features } from './components/features';
 import { Hero } from './components/hero';
@@ -42,6 +43,7 @@ export default function HomePage() {
     return (
         <main className="flex flex-1 flex-col">
             <Hero />
+            <Demo />
             <AgentNative />
             <Metrics />
             <Problem />

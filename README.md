@@ -39,6 +39,19 @@
   <strong>Zero runtime dependencies · ~25&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~20&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
+<p align="center">
+  <a href="https://stitchapi.dev/demo">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/media/demo-dark.webp 1x, docs/media/demo-dark@2x.webp 2x" />
+      <img src="docs/media/demo.webp" srcset="docs/media/demo.webp 1x, docs/media/demo@2x.webp 2x" width="1280" alt="StitchAPI demo — a stitch streaming a reply, validating output, retrying a 502, and answering an agent tool call" />
+    </picture>
+  </a>
+</p>
+
+<p align="center">
+  <sub><a href="https://stitchapi.dev/demo">Watch more</a></sub>
+</p>
+
 > [!NOTE]
 >
 > **StitchAPI is at `1.0.0-rc.4`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
@@ -292,6 +305,7 @@ const listAnnouncements = stitch({
         scope: 'app',
         vary: ['accept-language'],
         maxEntries: 500,
+        version: 1, // pins the shape — cacheable without a fingerprinter
     },
 });
 ```

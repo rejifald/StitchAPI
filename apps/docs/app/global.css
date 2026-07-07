@@ -21,6 +21,12 @@
     --color-accent-soft: var(--accent-soft);
     --color-accent-line: var(--accent-line);
 
+    /* Success status — "it worked" chips and checkmarks. */
+    --color-ok: var(--ok);
+    --color-ok-ink: var(--ok-ink);
+    --color-ok-soft: var(--ok-soft);
+    --color-ok-line: var(--ok-line);
+
     /* Type families (mirror the stacks in tokens.css; the bare --font-*
        vars come from next/font in layout.tsx). */
     --font-display: var(--font-schibsted), 'Schibsted Grotesk', system-ui,

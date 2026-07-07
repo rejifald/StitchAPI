@@ -56,6 +56,11 @@ pre-push:
         # the expensive test/build jobs. Mirrors CI's check:contract step.
         - name: contract
           run: pnpm check:contract
+        # Demo-media drift gate (docs/media/README.md): a branch that edits the
+        # demo scene or its generator must also regenerate the committed README
+        # webp pair. Cheap path diff; STITCH_MEDIA_STALE_OK=1 defers.
+        - name: media-fresh
+          run: pnpm check:media-fresh
         - name: typecheck
           run: pnpm check:types
         # Type-level tests (tsd) for the inferred public API — builds the package's d.ts and
