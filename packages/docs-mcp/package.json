@@ -1,6 +1,7 @@
 {
     "name": "@stitchapi/docs-mcp",
-    "version": "1.0.0-rc.4",
+    "mcpName": "dev.stitchapi/docs",
+    "version": "1.0.0-rc.5",
     "type": "commonjs",
     "description": "StitchAPI documentation search, running locally over MCP stdio. Bundled docs, no network calls per query — the offline/air-gapped counterpart to the hosted stitchapi.dev/api/mcp server.",
     "bin": {

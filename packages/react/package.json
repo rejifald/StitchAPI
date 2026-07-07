@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/react",
-    "version": "1.0.0-rc.4",
+    "version": "1.0.0-rc.5",
     "type": "commonjs",
     "description": "React bindings for StitchAPI — tearing-free useStitch/useStitchStream hooks over useSyncExternalStore, plus an optional TanStack Query queryOptions helper. Streaming-first: re-render as `delta` chunks arrive.",
     "main": "lib/index.js",

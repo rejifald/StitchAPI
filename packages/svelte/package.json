@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/svelte",
-    "version": "1.0.0-rc.4",
+    "version": "1.0.0-rc.5",
     "type": "commonjs",
     "description": "Svelte bindings for StitchAPI — stitchStore/stitchStreamStore Svelte stores over @stitchapi/query-core (unary + streaming deltas), plus an optional TanStack-shaped queryOptions helper. Works on Svelte 4 and 5.",
     "main": "lib/index.js",
