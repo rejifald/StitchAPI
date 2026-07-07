@@ -3,12 +3,22 @@
     "name": "dev.stitchapi/docs",
     "title": "StitchAPI Docs",
     "description": "Search and read the StitchAPI docs: search_docs finds relevant sections, get_doc reads a page.",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "repository": {
         "url": "https://github.com/rejifald/StitchAPI",
         "source": "github"
     },
     "websiteUrl": "https://stitchapi.dev",
+    "packages": [
+        {
+            "registryType": "npm",
+            "identifier": "@stitchapi/docs-mcp",
+            "version": "1.0.0-rc.5",
+            "transport": {
+                "type": "stdio"
+            }
+        }
+    ],
     "remotes": [
         {
             "type": "streamable-http",
