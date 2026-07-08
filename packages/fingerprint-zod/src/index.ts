@@ -4,7 +4,7 @@
 // `type` on Zod 4 — building a canonical structural descriptor that is hashed
 // into an opaque token. The walker is an ALLOWLIST: it only emits a fingerprint
 // for constructs whose validation/shape semantics it fully captures, and ABSTAINS
-// (returns `value: null`) on anything else — opaque `.refine`/`.transform`/
+// (returns `token: null`) on anything else — opaque `.refine`/`.transform`/
 // `.default`/custom checks, unrepresentable literals, or any unknown node. Abstain
 // is sound: the cache falls back to re-validate-on-hit rather than trust a token
 // that might collide across semantically-different schemas.
@@ -298,10 +298,10 @@ export const zodFingerprinter: SchemaFingerprinter = {
             // `zfp1` tags the descriptor format: bump it to force a one-time,
             // safe re-fingerprint if the descriptor scheme ever changes.
             const token = hash(`zfp1|${describe(schema)}`);
-            return { token, value: token, strength: 'strong' };
+            return { token, strength: 'strong' };
         } catch {
             // ABSTAIN sentinel or any unexpected introspection failure → abstain.
-            return { token: null, value: null, strength: 'strong' };
+            return { token: null, strength: 'strong' };
         }
     },
 };

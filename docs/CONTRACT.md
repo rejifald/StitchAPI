@@ -117,7 +117,7 @@ current index.
 
 _Violations:_ `ReconnectOptions.maxAttempts` (→ `attempts`), `CacheConfig.maxEntries`
 (→ `entries`), `CircuitOptions.failureThreshold` (→ `failures`), `paginate.max`
-(→ `pages`), `deno-kv maxIncrRetries`.
+(→ `pages`).
 
 ---
 

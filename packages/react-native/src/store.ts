@@ -28,6 +28,11 @@ export interface AsyncStorageStoreOptions {
      * Prefix applied to every key, for sharing one AsyncStorage with other data.
      * Applied on read and write so the store stays self-consistent. Default
      * `'stitch:'`.
+     *
+     * Deliberate P8 divergence from `redisStore`'s `''` default: AsyncStorage is
+     * the app's single shared device-wide bucket — the app's own data lives right
+     * next to the store's keys — so namespacing by default prevents collisions.
+     * A Redis deployment typically dedicates a database/namespace instead.
      */
     keyPrefix?: string;
     /** Injectable clock (ms epoch) for deterministic TTL tests. Default `Date.now`. */
@@ -103,7 +108,7 @@ export function asyncStorageStore(
         async get(key) {
             return (await readEnvelope(key))?.v;
         },
-        async set(key, value, ttlMs) {
+        async set(key, value, ttl) {
             // `set(key, undefined)` is the cache's delete (ADR 0003 §8).
             if (value === undefined) {
                 await storage.removeItem(k(key));
@@ -111,19 +116,23 @@ export function asyncStorageStore(
             }
             await write(
                 key,
-                ttlMs === undefined
-                    ? { v: value }
-                    : { v: value, e: now() + ttlMs },
+                ttl === undefined ? { v: value } : { v: value, e: now() + ttl },
             );
         },
-        incr(key, ttlMs) {
+        incr(key, ttl) {
             return serialize(async () => {
                 const env = await readEnvelope(key);
                 const current = typeof env?.v === 'number' ? env.v : 0;
                 const next = current + 1;
                 // Set the expiry only when CREATING the counter, never extending it,
                 // so a busy window still resets once it lapses (matches redisStore).
-                const expiry = env === undefined ? now() + ttlMs : env.e;
+                // An absent `ttl` means no window — the counter never expires.
+                const expiry =
+                    env === undefined
+                        ? ttl === undefined
+                            ? undefined
+                            : now() + ttl
+                        : env.e;
                 await write(
                     key,
                     expiry === undefined ? { v: next } : { v: next, e: expiry },

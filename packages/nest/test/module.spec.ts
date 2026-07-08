@@ -2,9 +2,6 @@
 // directly (no Nest DI container needed) and run the resulting stitches against a mock
 // adapter, asserting wire-level effects — the same style as core's tests.
 import {
-    // Deprecated aliases (ADR 0012) — exercised by the alias-guard test below.
-    type ConfigServiceLike,
-    type LoggerLike,
     type NestConfigServiceLike,
     type NestLoggerLike,
     STITCH_SEAM,
@@ -12,11 +9,8 @@ import {
     STITCH_TRACE,
     SeamRegistry,
     StitchModule,
-    borrowStore,
     defineStitch,
-    fromConfig,
     fromNestConfig,
-    loggerSink,
     nestBorrowStore,
     nestLoggerSink,
 } from '../src';
@@ -49,6 +43,7 @@ describe('StitchModule.forRoot', () => {
         const mod = StitchModule.forRoot({
             baseUrl: 'https://api.test',
             adapter: recordingAdapter(calls),
+            logger: false, // keep the default Nest Logger bridge out of the test output
         });
         expect(mod.global).toBe(true);
 
@@ -66,19 +61,37 @@ describe('StitchModule.forRoot', () => {
         await reg.closeAll(); // must not throw
     });
 
-    it('defaults tracing OFF (no STITCH_TRACE sink)', () => {
+    // The `logger` bridge defaults ON — aligned with @stitchapi/fastify's plugin default.
+    it('defaults the Nest Logger bridge ON (STITCH_TRACE is a sink)', () => {
         const providers = StitchModule.forRoot().providers as FProv[];
-        const traceProv = providers.find((p) => p.provide === STITCH_TRACE);
-        expect(traceProv?.useValue).toBe(false);
-    });
-
-    it("expands the 'logger' trace sentinel to a sink", () => {
-        const providers = StitchModule.forRoot({ trace: 'logger' })
-            .providers as FProv[];
         const traceProv = providers.find((p) => p.provide === STITCH_TRACE);
         expect(
             typeof (traceProv?.useValue as { handle?: unknown }).handle,
         ).toBe('function');
+    });
+
+    it('logger: false turns the bridge off (tracing falls back to core’s off default)', () => {
+        const providers = StitchModule.forRoot({ logger: false })
+            .providers as FProv[];
+        const traceProv = providers.find((p) => p.provide === STITCH_TRACE);
+        expect(traceProv?.useValue).toBe(false);
+    });
+
+    it('logger accepts sink options (AtLeastOne envelope) and still yields a sink', () => {
+        const providers = StitchModule.forRoot({
+            logger: { lifecycle: false },
+        }).providers as FProv[];
+        const traceProv = providers.find((p) => p.provide === STITCH_TRACE);
+        expect(
+            typeof (traceProv?.useValue as { handle?: unknown }).handle,
+        ).toBe('function');
+    });
+
+    it('an explicit trace wins over the logger bridge', () => {
+        const providers = StitchModule.forRoot({ trace: false, logger: true })
+            .providers as FProv[];
+        const traceProv = providers.find((p) => p.provide === STITCH_TRACE);
+        expect(traceProv?.useValue).toBe(false);
     });
 });
 
@@ -89,7 +102,7 @@ describe('StitchModule.forFeature', () => {
             h.stitch({ path: '/thing' }),
         );
         const mod = StitchModule.forFeature({
-            seam: {
+            seamConfig: {
                 baseUrl: 'https://feat.test',
                 adapter: recordingAdapter(calls),
             },
@@ -144,7 +157,7 @@ describe('StitchModule.forFeature', () => {
             defineStitch('LIST', (h) => h.stitch({ path: '/users' })),
         ];
         const providers = StitchModule.forFeature({
-            seam: {
+            seamConfig: {
                 baseUrl: 'https://feat.test',
                 adapter: recordingAdapter(calls),
             },
@@ -175,7 +188,7 @@ describe('StitchModule.forFeatureScoped', () => {
         const TENANT = Symbol('tenant');
         const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
         const mod = StitchModule.forFeatureScoped({
-            seam: {
+            seamConfig: {
                 baseUrl: 'https://feat.test',
                 adapter: recordingAdapter(calls),
             },
@@ -245,7 +258,7 @@ describe('defineStitch token', () => {
         const calls: string[] = [];
         const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
         const providers = StitchModule.forFeature({
-            seam: {
+            seamConfig: {
                 baseUrl: 'https://feat.test',
                 adapter: recordingAdapter(calls),
             },
@@ -314,28 +327,6 @@ describe('bridges', () => {
         };
         return { rec, logger };
     };
-
-    it('keeps the pre-ADR-0012 names as deprecated aliases of the ecosystem-qualified ones', () => {
-        // Runtime: each deprecated function export is the very same function object.
-        expect(loggerSink).toBe(nestLoggerSink);
-        expect(fromConfig).toBe(fromNestConfig);
-        expect(borrowStore).toBe(nestBorrowStore);
-        // Type-level: the deprecated type aliases stay interchangeable with the canonical ones.
-        const loggerViaDeprecated: LoggerLike = {
-            log() {},
-            warn() {},
-            error() {},
-        };
-        const loggerViaCanonical: NestLoggerLike = loggerViaDeprecated;
-        expect(typeof loggerViaCanonical.log).toBe('function');
-        const cfgViaDeprecated: ConfigServiceLike = {
-            getOrThrow<T = string>(key: string): T {
-                return key as T;
-            },
-        };
-        const cfgViaCanonical: NestConfigServiceLike = cfgViaDeprecated;
-        expect(typeof cfgViaCanonical.getOrThrow).toBe('function');
-    });
 
     it('nestLoggerSink maps each event to the right level, payload-free, query redacted', () => {
         const { rec, logger } = recordingLogger();

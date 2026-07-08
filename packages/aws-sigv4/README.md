@@ -71,7 +71,7 @@ const { authorization, signature } = await signRequestV4({
     secretAccessKey: '…',
     region: 'us-east-1',
     service: 'service',
-    dateTime: '20150830T123600Z',
+    amzDate: '20150830T123600Z',
 });
 ```
 

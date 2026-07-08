@@ -91,7 +91,7 @@ function mountFixture(): Promise<FixtureHost> {
 // store contract
 // ---------------------------------------------------------------------------
 
-// Deliberately broken store: set() ignores ttlMs (entries never expire) and
+// Deliberately broken store: set() ignores ttl (entries never expire) and
 // incr() awaits between read and write (concurrent calls collide).
 function brokenStore(): StitchStore {
     const data = new Map<string, unknown>();
@@ -129,8 +129,8 @@ describe('verifyStoreContract', () => {
         const report = await verifyStoreContract(brokenStore);
         expect(report.ok).toBe(false);
         const failed = report.violations.map((v) => v.rule);
-        expect(failed).toContain('set: a ttlMs entry expires');
-        expect(failed).toContain('incr: the counter expires after ttlMs');
+        expect(failed).toContain('set: a ttl entry expires');
+        expect(failed).toContain('incr: the counter expires after its ttl');
         expect(failed).toContain('incr: 20 concurrent calls net exactly +20');
         // Independent rules: violations do not mask the healthy behaviors.
         expect(report.passed).toContain('set/get: round-trips a value');
@@ -155,9 +155,8 @@ describe('verifyAdapterContract', () => {
     });
 
     test('fetchAdapter passes the adapter contract against adapterContractFixture', async () => {
-        const report = await verifyAdapterContract(fetchAdapter(), {
-            baseUrl: host.url,
-        });
+        // A bare origin string is the `{ baseUrl }` shorthand.
+        const report = await verifyAdapterContract(fetchAdapter(), host.url);
         expect(report.seam).toBe('adapter');
         expect(report.violations).toEqual([]);
         expect(report.ok).toBe(true);

@@ -7,19 +7,10 @@ import type { RedactedStitchConfig } from './types';
 // A compact "METHOD endpoint" label for the request node. Reused by `stitch init --project` (the
 // consumer rule list) and the MCP `endpoint` field, so the one-line summary stays identical.
 export function endpointLabel(cfg: RedactedStitchConfig): string {
+    // A thunked url/baseUrl is redacted off `__config` entirely (P0 — no functions on the public
+    // view), so a missing endpoint here may simply be a dynamic one.
     const method = (cfg.method ?? 'GET').toUpperCase();
-    let where: string;
-    if (typeof cfg.url === 'string') where = cfg.url;
-    else if (typeof cfg.url === 'function') where = '(dynamic url)';
-    else {
-        const base =
-            typeof cfg.baseUrl === 'string'
-                ? cfg.baseUrl
-                : cfg.baseUrl
-                  ? '(dynamic)'
-                  : '';
-        where = base + (cfg.path ?? '');
-    }
+    const where = cfg.url ?? (cfg.baseUrl ?? '') + (cfg.path ?? '');
     return `${method} ${where || '(no endpoint)'}`;
 }
 
@@ -40,14 +31,13 @@ export function pipelineStages(
         );
     if (kind !== 'http') stages.push(`${kind} interpret`);
     if (cfg.paginate) {
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `max` is the @deprecated alias of `pages`, read for back-compat until the GA cut (CONTRACT.md P4)
-        const pages = cfg.paginate.pages ?? cfg.paginate.max ?? 50;
+        const pages = cfg.paginate.pages ?? 50;
         stages.push(opts.detailed ? `paginate (max ${pages})` : 'paginate');
     }
-    // Post-response order matches the engine (engine.ts): transform → unwrap → validate. The body
-    // is transformed, then the unwrap path is read, then the result is validated against `output`.
-    if (cfg.transform) stages.push('transform');
-    if (cfg.unwrap) stages.push(`unwrap: ${cfg.unwrap}`);
+    // Post-response order matches the engine (engine.ts): pick → validate. The pick path is read,
+    // then the result is validated against `output`. (`transform` is a live closure and lives only
+    // on `__rawConfig` — P0 — so the redacted view can't report it as a stage.)
+    if (cfg.pick) stages.push(`pick: ${cfg.pick}`);
     if (cfg.output) stages.push('validate');
     if (cfg.cache) stages.push('cache');
     stages.push('result');

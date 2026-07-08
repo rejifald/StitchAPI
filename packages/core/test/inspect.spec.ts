@@ -55,8 +55,6 @@ test('primitive T: value + raw are the primitive, no findings', async () => {
     expect(r.status).toBe(200);
     expect(r.error).toBeNull();
     expect(r.findings).toEqual([]);
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- the @deprecated `value` alias is co-set with `data` until the GA cut (CONTRACT.md P5)
-    expect(r.value).toBe(42); // back-compat alias parity
 });
 
 // ---------------------------------------------------------------------------
@@ -139,7 +137,7 @@ test('raw is non-enumerable: JSON.stringify(wrapper) and { ...wrapper } both exc
 
     const json = JSON.parse(JSON.stringify(r)) as Record<string, unknown>;
     expect('raw' in json).toBe(false);
-    expect(json['value']).toEqual({ n: 42 }); // the other fields DO serialise
+    expect(json['data']).toEqual({ n: 42 }); // the other fields DO serialise
 
     const spread = { ...r } as Record<string, unknown>;
     expect('raw' in spread).toBe(false);

@@ -193,18 +193,18 @@ test('opts.levels can override the drift level too', () => {
 });
 
 // ---------------------------------------------------------------------------
-// opts.level resolver + opts.format — the per-instance hooks @stitchapi/nest
+// opts.levelOf resolver + opts.format — the per-instance hooks @stitchapi/nest
 // delegates through (a conditional level rule the per-type map can't express,
 // and a different message house style), kept generic and tested here in core.
 // ---------------------------------------------------------------------------
 
-test('opts.level resolves per instance and takes precedence over levels', () => {
+test('opts.levelOf resolves per instance and takes precedence over levels', () => {
     const { logger, entries } = fakeLogger();
     // A `retry`/`circuit` progress is surfaced at warn; a routine throttle defers
     // (undefined) to `levels` — which the per-type map alone could never split.
     const sink = loggerSink(logger, {
         levels: { progress: 'debug' },
-        level: (event) =>
+        levelOf: (event) =>
             event.type === 'progress' &&
             (event.phase === 'retry' || event.phase === 'circuit')
                 ? 'warn'
@@ -224,11 +224,11 @@ test('opts.level resolves per instance and takes precedence over levels', () => 
     expect(levelsFor(entries, 'throttled#1')).toEqual(['debug']); // deferred to levels
 });
 
-test('opts.level returning null drops the event', () => {
+test('opts.levelOf returning null drops the event', () => {
     const { logger, entries } = fakeLogger();
     // Drop the happy-path lifecycle (start/result/done); keep everything else.
     const sink = loggerSink(logger, {
-        level: (event) =>
+        levelOf: (event) =>
             event.type === 'start' ||
             event.type === 'result' ||
             event.type === 'done'
@@ -295,7 +295,7 @@ test('opts.format overrides the one-liner; null skips the event', () => {
     expect(entries).toEqual([{ level: 'debug', message: 'custom x' }]);
 });
 
-test('a delta event is dropped before opts.level/opts.format ever run', () => {
+test('a delta event is dropped before opts.levelOf/opts.format ever run', () => {
     const { logger, entries } = fakeLogger();
     let sawDelta = false;
     const note = () => {
@@ -303,7 +303,7 @@ test('a delta event is dropped before opts.level/opts.format ever run', () => {
         return undefined;
     };
     const sink = loggerSink(logger, {
-        level: note,
+        levelOf: note,
         format: () => {
             sawDelta = true;
             return 'should-never-log';

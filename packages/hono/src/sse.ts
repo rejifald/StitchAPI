@@ -9,12 +9,11 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { SSEMessage, SSEStreamingApi } from 'hono/streaming';
-import type { StitchEvent } from 'stitchapi';
+import type { StitchEvent, StitchEventSource } from 'stitchapi';
 
-/** Anything `streamStitchSse` can drive: a stitch `.stream()` generator, or any event iterable. */
-export type StitchEventSource<T> =
-    | AsyncIterable<StitchEvent<T>>
-    | AsyncGenerator<StitchEvent<T>, void>;
+// The canonical event-stream intake (core's `StitchEventSource`): the event iterable itself (a
+// `.stream()` generator), or anything that hands one back (a `StitchResult`, a stitch stub).
+export type { StitchEventSource } from 'stitchapi';
 
 /** The terminal `error` event a stitch stream emits — carries `message`, `status`, `attempts`. */
 type StitchErrorEvent = Extract<StitchEvent, { type: 'error' }>;
@@ -31,6 +30,11 @@ export interface StreamStitchSseOptions {
      * messages on the client (`event: 'token'`).
      */
     event?: string;
+    /**
+     * Provide the SSE `id:` field per delta message (the last-event id), e.g. for resumable
+     * streams. Receives the chunk and the zero-based message index.
+     */
+    id?: (chunk: unknown, index: number) => string;
     /**
      * Shape the SSE `data` written for a terminal `error` event (or an uncaught throw mid-stream,
      * normalised to an error event). **Default: a generic token (`data: error`)** — the raw
@@ -100,8 +104,12 @@ export function streamStitchSse<T>(
     options: StreamStitchSseOptions = {},
 ): Response {
     const toData = options.data ?? defaultData;
+    // Core's `StitchEventSource` admits the iterable itself or a `{ stream() }` holder (a
+    // `StitchResult`, a stitch stub) — unwrap the holder once, up front.
+    const iterable: AsyncIterable<StitchEvent<T>> =
+        Symbol.asyncIterator in source ? source : source.stream();
     return streamSSE(c, async (stream: SSEStreamingApi) => {
-        const iterator = source[Symbol.asyncIterator]();
+        const iterator = iterable[Symbol.asyncIterator]();
         // Write the terminal `error` message: a generic token by default so a raw message
         // (`getaddrinfo ENOTFOUND …` / `HTTP 401`) is never disclosed; `errorData` opts in.
         const writeErrorFrame = (event: StitchErrorEvent): Promise<void> =>
@@ -115,6 +123,7 @@ export function streamStitchSse<T>(
         stream.onAbort(() => {
             void iterator.return?.(undefined);
         });
+        let index = 0;
         try {
             while (true) {
                 const { value: event, done } = await iterator.next();
@@ -123,6 +132,8 @@ export function streamStitchSse<T>(
                     const message: SSEMessage = { data: toData(event.chunk) };
                     if (options.event !== undefined)
                         message.event = options.event;
+                    if (options.id) message.id = options.id(event.chunk, index);
+                    index += 1;
                     await stream.writeSSE(message);
                 } else if (event.type === 'error') {
                     // `onError` gets the real failure server-side; the client frame is shaped by

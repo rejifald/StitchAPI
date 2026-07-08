@@ -127,3 +127,18 @@ test('basic() sends Authorization: Basic <base64(user:pass)> header', async () =
     const expected = `Basic ${Buffer.from('alice:s3cret').toString('base64')}`;
     expect(req!.headers['authorization']).toBe(expected);
 });
+
+test('positional basic(user, pass) is the P15 shorthand for basic({ user, pass })', async () => {
+    server.route('GET', '/secure', { body: { ok: true } });
+
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/secure',
+        auth: basic('alice', 's3cret'),
+    });
+
+    await expect(call()).resolves.toEqual({ ok: true });
+
+    const expected = `Basic ${Buffer.from('alice:s3cret').toString('base64')}`;
+    expect(server.calls('/secure')[0]!.headers['authorization']).toBe(expected);
+});

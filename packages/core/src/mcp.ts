@@ -214,7 +214,7 @@ export function createMcpServer(
             },
             output: {
                 validated: cfg.output !== undefined,
-                unwrap: cfg.unwrap ?? null,
+                pick: cfg.pick ?? null,
             },
             auth: authTagOf(cfg),
             policies: {
@@ -282,7 +282,7 @@ export function createMcpServer(
 export interface StdioOptions {
     input?: Readable;
     output?: Writable;
-    info?: McpServerOptions;
+    serverInfo?: McpServerOptions;
 }
 
 // Wire an McpServer to the stdio transport: read newline-delimited JSON-RPC from
@@ -292,7 +292,7 @@ export function serveStdio(
     registry: StitchRegistry,
     opts: StdioOptions = {},
 ): { server: McpServer; close: () => void } {
-    const server = createMcpServer(registry, opts.info);
+    const server = createMcpServer(registry, opts.serverInfo);
     const input = opts.input ?? process.stdin;
     const output = opts.output ?? process.stdout;
     input.setEncoding('utf8');
@@ -327,7 +327,3 @@ export function serveStdio(
     input.on('data', onData);
     return { server, close: () => input.off('data', onData) };
 }
-
-// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
-/** @deprecated Renamed to {@link McpServerOptions} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
-export type McpServerInfo = McpServerOptions;

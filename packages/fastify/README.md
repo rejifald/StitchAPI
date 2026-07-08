@@ -41,7 +41,7 @@ encapsulation and are visible app-wide.
     (default on). It logs **only metadata** (name, method, scrubbed URL, status,
     attempts, timing), never request/response bodies or headers, so it is safe on a
     secret-bearing seam.
--   **SSE bridge.** `sendStitchSse(reply, stream)` streams a stitch's `.stream()`
+-   **SSE bridge.** `streamStitchSse(reply, stream)` streams a stitch's `.stream()`
     output to a `text/event-stream` reply.
 -   **Error bridge.** A thrown `StitchError` is mapped to an HTTP response
     (`502` by default) so handlers need no try/catch.
@@ -90,10 +90,10 @@ back to an explicit seam.
 ## SSE streaming
 
 ```ts
-import { sendStitchSse } from '@stitchapi/fastify';
+import { streamStitchSse } from '@stitchapi/fastify';
 
 app.get('/chat', (req, reply) =>
-    sendStitchSse(reply, chat.stream({ query: { q: String(req.query.q) } }), {
+    streamStitchSse(reply, chat.stream({ query: { q: String(req.query.q) } }), {
         data: (c) => c.text, // pull text out of a structured chunk
     }),
 );
@@ -107,11 +107,13 @@ By default the `error` frame carries a generic `data: error` token, **not** the 
 error message — echoing it can disclose internal network topology (a transport
 failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's
 status (`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream
-messages are known safe to expose:
+messages are known safe to expose, and `onError` to observe/log the real failure
+server-side without exposing it:
 
 ```ts
-sendStitchSse(reply, chat.stream({ query: { q: String(req.query.q) } }), {
+streamStitchSse(reply, chat.stream({ query: { q: String(req.query.q) } }), {
     errorData: (e) => e.message, // opt in to the raw upstream message
+    onError: (err) => req.log.error(err), // the real failure, server-side only
 });
 ```
 
@@ -151,7 +153,7 @@ events and log only retries, drift, and errors). A seam built with its own
 | -------------------- | -------- | ------------------------------------------------- |
 | `stitchPlugin`       | plugin   | `fastify.register(stitchPlugin, options)`         |
 | `currentStitch()`    | function | The request's ambient principal-bound seam        |
-| `sendStitchSse`      | function | Stream a stitch's `.stream()` to an SSE reply     |
+| `streamStitchSse`    | function | Stream a stitch's `.stream()` to an SSE reply     |
 | `stitchErrorHandler` | function | A `setErrorHandler`-compatible StitchError mapper |
 | `fastifyLoggerSink`  | function | `fastify.log` → seam `TraceSink` bridge           |
 | `isStitchError`      | function | Narrow an unknown error to a `StitchError`        |

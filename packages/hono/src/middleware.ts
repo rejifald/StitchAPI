@@ -19,15 +19,10 @@ import type { PrincipalSeam, Seam } from 'stitchapi';
 export type HonoRequestSeam = PrincipalSeam | Seam;
 
 /**
- * @deprecated Renamed to {@link HonoRequestSeam} so the public type is
- * ecosystem-qualified (a bare `RequestSeam` would collide with any other host
- * adapter's per-request seam type) — see
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
- * `1.0.0-rc` line and removed at the 1.0 GA cut.
+ * The key the seam is stored under on `c.var` / via `c.set` / `c.get`. Reading it before the
+ * `stitch()` middleware ran yields `undefined` (Hono's `c.get` never throws on an unset variable)
+ * — guard for it in routes mounted outside the middleware's path.
  */
-export type RequestSeam = HonoRequestSeam;
-
-/** The key the seam is stored under on `c.var` / via `c.set` / `c.get`. */
 export const STITCH_VAR = 'stitch' as const;
 
 /**
@@ -49,7 +44,7 @@ export interface StitchEnv extends Env {
     };
 }
 
-export interface StitchMiddlewareOptions {
+export interface HonoStitchMiddlewareOptions {
     /**
      * The seam this middleware shares across requests. **Borrowed, not owned** — build it once at
      * startup and `seam.close()` it on shutdown yourself; the middleware never closes it (the seam
@@ -83,7 +78,9 @@ export interface StitchMiddlewareOptions {
  * app.get('/me', (c) => c.json(c.get('stitch').stitch('/me')()));
  * ```
  */
-export function stitch(options: StitchMiddlewareOptions): MiddlewareHandler {
+export function stitch(
+    options: HonoStitchMiddlewareOptions,
+): MiddlewareHandler {
     const { seam, principal } = options;
     return createMiddleware<StitchEnv>(async (c, next) => {
         const id = principal?.(c);

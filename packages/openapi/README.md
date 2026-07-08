@@ -79,7 +79,7 @@ The generator is also a pure library:
 ```ts
 import { type OpenApiDoc, planGen } from '@stitchapi/openapi';
 
-const result = planGen(doc as OpenApiDoc, { tags: ['pet'] });
+const result = planGen(doc as OpenApiDoc, { tags: 'pet' }); // or tags: ['pet', 'store']
 for (const f of result.files) console.log(f.path, f.contents);
 ```
 

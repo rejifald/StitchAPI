@@ -45,6 +45,11 @@ retries, drift findings, and errors:
 pinoSink(pino(), { lifecycle: false });
 ```
 
+> [!NOTE]
+> The same `lifecycle` option in `@stitchapi/sentry` defaults to `false` — a
+> **deliberate** divergence: Pino log lines are cheap and level-filtered, while
+> Sentry breadcrumbs/events cost quota.
+
 ## Bring your own logger
 
 This package **imports no logger** — it runs on a small structural
@@ -63,7 +68,7 @@ v8 and v9.
 Concretely, it logs the stitch name, method, **redacted URL** (the query string is
 stripped — it can carry `?api_key=…`), status, attempt counts, drift
 path/level/change, progress phase, and timing. It **never** logs `event.input`
-(headers like `authorization` / `cookie` stay raw on the event), `event.value`
+(headers like `authorization` / `cookie` stay raw on the event), `event.data`
 (the response body), a `delta` chunk, or `JSON.stringify(event)`. That keeps it
 safe on a secret-bearing seam regardless of core's trace redaction — proven by a
 test that feeds a `start` event whose `input.headers.authorization` is set and

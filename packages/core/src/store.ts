@@ -50,7 +50,8 @@ export function memoryStore(): StitchStore {
             sweepExpired();
             data.set(key, {
                 value: n,
-                expires: live(e) ? e!.expires : now() + ttl,
+                // Absent `ttl` = no window: the counter never expires (0 marks "live forever").
+                expires: live(e) ? e!.expires : ttl ? now() + ttl : 0,
             });
             return n;
         },

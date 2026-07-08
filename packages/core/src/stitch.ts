@@ -16,7 +16,7 @@ import {
     makeRuntime,
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
-import { otlpTrace } from './otlp';
+import { otlpSink } from './otlp';
 import { RateLimitError, createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
@@ -75,11 +75,18 @@ function asConfig(f: Fragment): Partial<StitchConfig> {
     return f;
 }
 
+// A single fragment is shorthand for a one-element list (P7); `Stitch` is a function and a bare
+// partial is an object, so `Array.isArray` cleanly separates the two spellings.
+function fragmentList(ext: StitchConfig['extends']): Fragment[] {
+    if (ext === undefined) return [];
+    return Array.isArray(ext) ? ext : [ext];
+}
+
 function flatten(layers: Fragment[]): Partial<StitchConfig>[] {
     const out: Partial<StitchConfig>[] = [];
     for (const layer of layers) {
         const cfg = asConfig(layer);
-        if (cfg.extends) out.push(...flatten(cfg.extends));
+        if (cfg.extends) out.push(...flatten(fragmentList(cfg.extends)));
         const rest = { ...cfg };
         delete (rest as { extends?: unknown }).extends;
         out.push(rest);
@@ -113,7 +120,15 @@ function chainHooks(layers: Hooks[]): Hooks | undefined {
 
 function normalizeOutput(out: StitchConfig['output']): StitchConfig['output'] {
     if (!out) return undefined;
-    if ((out as Partial<DriftSpec>).__kind === 'drift') return out;
+    if ((out as Partial<DriftSpec>).__kind === 'drift') {
+        // P7: `ignore` accepts a bare string — fold it into its list form so the drift
+        // classifier always sees an array (a hand-built DriftSpec normalizes here too).
+        const spec = out as DriftSpec;
+        const { ignore } = spec.options;
+        if (typeof ignore === 'string')
+            return { ...spec, options: { ...spec.options, ignore: [ignore] } };
+        return out;
+    }
     return toValidator(out);
 }
 
@@ -137,21 +152,57 @@ function normalizeInput(
     return out;
 }
 
-// Expand the scalar shorthands (`retry: 3`, `timeout: '5s'`, `cache: '1m'`) to their object form
-// IN PLACE, before the deep-merge, so a literal in one layer folds cleanly into an object in
-// another and the resolved config the engine reads is always the normalised shape.
+// Expand every authoring shorthand to its canonical envelope field (P0/P12/P13) IN PLACE, before
+// the deep-merge, so a literal in one layer folds cleanly into an object in another and the
+// resolved config the engine reads is always the normalised shape. `cfg` is always a per-layer
+// shallow copy; nested objects are cloned before being rewritten so a shared fragment is never
+// mutated.
 function expandShorthand(cfg: Partial<StitchConfig>): void {
     if (typeof cfg.retry === 'number') cfg.retry = { attempts: cfg.retry };
     if (typeof cfg.timeout === 'number' || typeof cfg.timeout === 'string')
         cfg.timeout = { total: cfg.timeout };
     if (typeof cfg.cache === 'number' || typeof cfg.cache === 'string')
         cfg.cache = { ttl: cfg.cache };
+    if (typeof cfg.stream === 'string') cfg.stream = { decode: cfg.stream };
+    if (typeof cfg.multipart === 'string')
+        cfg.multipart = { nesting: cfg.multipart };
+    if (typeof cfg.throttle === 'string') cfg.throttle = { rate: cfg.throttle };
+    // P13: `sse: true` enables reconnection with defaults; `false`/absent is off.
+    if (cfg.sse === true) cfg.sse = { reconnect: true };
+    else if (cfg.sse === false) delete cfg.sse;
+    // P15: the positional circuit names both required fields — `[5, '30s']` ≡
+    // `{ failures: 5, cooldown: '30s' }`.
+    if (Array.isArray(cfg.circuit)) {
+        const [failures, cooldown] = cfg.circuit;
+        cfg.circuit = { failures, cooldown };
+    }
     // P20: `idempotency: true` enables it with defaults; `false`/absent is off. Normalize the
     // boolean toggle to the object form the engine reads (the opaque `idempotency: {}` is a type
     // error at the slot, so the all-defaults case arrives here as `true`).
     if (cfg.idempotency === true)
         (cfg as { idempotency?: IdempotencyOptions }).idempotency = {};
     else if (cfg.idempotency === false) delete cfg.idempotency;
+    // P7: fold every bare scalar of a status-match / list field into its list form, so the engine
+    // and `__config` only ever see `number[]` (or a predicate) / `string[]`.
+    if (typeof cfg.acceptStatus === 'number')
+        cfg.acceptStatus = [cfg.acceptStatus];
+    if (typeof cfg.retry === 'object' && typeof cfg.retry.on === 'number')
+        cfg.retry = { ...cfg.retry, on: [cfg.retry.on] };
+    if (typeof cfg.throttle === 'object' && typeof cfg.throttle.on === 'number')
+        cfg.throttle = { ...cfg.throttle, on: [cfg.throttle.on] };
+    if (typeof cfg.cache === 'object') {
+        const cache = cfg.cache;
+        if (typeof cache.vary === 'string' || typeof cache.methods === 'string')
+            cfg.cache = {
+                ...cache,
+                ...(typeof cache.vary === 'string'
+                    ? { vary: [cache.vary] }
+                    : {}),
+                ...(typeof cache.methods === 'string'
+                    ? { methods: [cache.methods] }
+                    : {}),
+            };
+    }
 }
 
 export function compose(config: Fragment): ResolvedStitchConfig {
@@ -196,16 +247,19 @@ export function compose(config: Fragment): ResolvedStitchConfig {
         // last to set it and set it off.
         if (idempotencyToggle === false) delete merged.idempotency;
     }
+    // The chained hooks / normalized input are the RESOLVED shapes (plain `Hooks`/`InputSchemas`),
+    // past the authoring-side `AtLeastOne` gate — write them through the resolved view.
+    const resolved = merged as ResolvedStitchConfig;
     const hooks = chainHooks(hookLayers);
-    if (hooks) merged.hooks = hooks;
+    if (hooks) resolved.hooks = hooks;
     if (store) merged.store = store;
     if (kind) merged.kind = kind;
     const output = normalizeOutput(merged.output);
     if (output !== undefined) merged.output = output;
     const input = normalizeInput(merged.input);
-    if (input !== undefined) merged.input = input;
-    // `expandShorthand` ran on every layer, so retry/timeout/cache are now their object form.
-    return merged as ResolvedStitchConfig;
+    if (input !== undefined) resolved.input = input;
+    // `expandShorthand` ran on every layer, so every scalar shorthand is now its envelope form.
+    return resolved;
 }
 
 // Construction-time nudges for `idempotency` misuse — hints with an out, never errors. Two cases,
@@ -230,10 +284,9 @@ function warnIdempotency(cfg: ResolvedStitchConfig): void {
         );
         return;
     }
-    // A derived key (either spelling — `keyOf`, or the @deprecated `key` alias) dedupes
-    // resubmissions on its own, so only the random default with no retry is the inert case.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the back-compat alias of `keyOf` (CONTRACT.md P6)
-    if (idem.keyOf || idem.key || cfg.retry) return;
+    // A derived key (`keyOf`) dedupes resubmissions on its own, so only the random default with
+    // no retry is the inert case.
+    if (idem.keyOf || cfg.retry) return;
     console.warn(
         `stitchapi: \`${name}\` has \`idempotency\` with a random key and no \`retry\`, so it ` +
             `only dedupes its own retries — add \`retry\`, or set \`idempotency.keyOf\`.`,
@@ -270,16 +323,16 @@ function maxBodyFromEnv(value: string | undefined): number | false | undefined {
 
 function getTrace(): TraceSink {
     const file = fileFromEnv(readEnv('STITCH_TRACE_FILE'));
-    const maxBodyBytes = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
+    const maxBodyChars = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
     const base = createTrace(
         compact({
             console: readEnv('STITCH_TRACE_CONSOLE') === '1',
             file,
-            maxBodyBytes,
+            maxBodyChars,
         }),
     );
     if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;
-    return multiplex(base, otlpTrace());
+    return multiplex(base, otlpSink());
 }
 
 // A sink that drops every event — `trace: false` forces tracing off even when the
@@ -374,11 +427,9 @@ function makeInspection<T>(
     error: StitchError | null,
     source: Inspection<T>['source'],
 ): Inspection<T> {
-    // `data` is canonical; `value` is co-set as the @deprecated alias (CONTRACT.md P5).
     // `source` (ADR 0019) rides as a normal enumerable field — the interpretant of `raw`.
     const wrapper = {
         data: value,
-        value,
         findings,
         status,
         error,
@@ -401,7 +452,7 @@ interface Drained<T> {
     error: StitchError | null;
     source: Inspection<T>['source'];
     attempts: number;
-    ms: number;
+    elapsed: number;
     waited: number;
     /** The `phase:'cache'` event detail seen this run, if any (e.g. 'hit', 'miss', 'bypass: …'). */
     cacheDetail: string | undefined;
@@ -427,7 +478,7 @@ async function drainRun<T>(
     let streamed = false;
     let cacheHit = false;
     let attempts = 0;
-    let ms = 0;
+    let elapsed = 0;
     let waited = 0;
     let cacheDetail: string | undefined;
     const readRaw = (carrier: object): void => {
@@ -456,7 +507,7 @@ async function drainRun<T>(
                 error = asStitchError(rebuilt);
                 readRaw(rebuilt);
             } else if (ev.type === 'done') {
-                ms = ev.elapsed;
+                elapsed = ev.elapsed;
                 if (ev.attempts) attempts = ev.attempts;
             }
         }
@@ -481,10 +532,20 @@ async function drainRun<T>(
         error,
         source,
         attempts,
-        ms,
+        elapsed,
         waited,
         cacheDetail,
     };
+}
+
+// P13/P20: the probe opts scalar — `true` ≡ `{ cache: true }` (honour the cache policy);
+// `false`/absent is the default fresh, cache-bypassing probe.
+function inspectOptions(
+    opts: boolean | InspectOptions | undefined,
+): InspectOptions | undefined {
+    if (opts === true) return { cache: true };
+    if (opts === false) return undefined;
+    return opts;
 }
 
 // ADR 0018: opt-in redaction of `raw` — applied AFTER findings are computed so the diff runs on the
@@ -531,10 +592,11 @@ function cacheOutcome(
 }
 
 // `.report()` consumer (ADR 0019): the same drained run as `.inspect()`, assembled into a
-// `RunReport` — the `Inspection` fields plus `attempts`, `timing` (`{ ms, waited? }`), the resolved
-// redacted `config`, and the fine-grained `cache` outcome. `config` is the stitch's ALREADY-redacted
-// `__config` (never `__rawConfig`). Never throws. `waited` is omitted entirely when nothing waited
-// (exactOptionalPropertyTypes), so its absence reads as "no backoff/throttle wait".
+// `RunReport` — the `Inspection` fields plus `attempts`, `timing` (`{ elapsed, waited? }`), the
+// resolved redacted `config`, and the fine-grained `cache` outcome. `config` is the stitch's
+// ALREADY-redacted `__config` (never `__rawConfig`). Never throws. `waited` is omitted entirely
+// when nothing waited (exactOptionalPropertyTypes), so its absence reads as "no backoff/throttle
+// wait".
 async function consumeReport<T>(
     gen: AsyncGenerator<StitchEvent<T>, void>,
     config: RedactedStitchConfig,
@@ -550,7 +612,9 @@ async function consumeReport<T>(
         d.source,
     );
     const timing: RunReport<T>['timing'] =
-        d.waited > 0 ? { ms: d.ms, waited: d.waited } : { ms: d.ms };
+        d.waited > 0
+            ? { elapsed: d.elapsed, waited: d.waited }
+            : { elapsed: d.elapsed };
     const report = base as RunReport<T>;
     report.attempts = d.attempts;
     report.timing = timing;
@@ -663,8 +727,12 @@ export interface SharedRuntime {
 }
 
 // `__config` is the PUBLIC view; strip the live secret-bearing handles so the running store,
-// credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest).
-// The full config lives on `__rawConfig` for fragment composition (see `asConfig`).
+// credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest), and
+// strip EVERY function-valued field (deep) so `__config` is plain JSON data (CONTRACT.md P0): the
+// url/baseUrl thunks, `transform`, `hooks`, `paginate.next`/`items`, the predicate forms of
+// `retry.on`/`throttle.on`/`acceptStatus` (a `number[]` stays), `idempotency.keyOf`, and
+// `cache.keyOf`. The engine reads all that sugar off the non-enumerable `__rawConfig` (which also
+// backs fragment composition — see `asConfig`).
 export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     // Split off the live `Surface` so the spread carries no `kind: Surface`; the rest still holds
     // the live store/auth/adapter handles, stripped next.
@@ -674,10 +742,11 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
         auth?: unknown;
         adapter?: unknown;
         clock?: unknown;
+        transform?: unknown;
+        hooks?: unknown;
     };
     // Strip the live, secret-bearing handles so the running store, credential, and transport cannot
-    // be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest). The full config lives on the
-    // non-enumerable `__rawConfig` for fragment composition (see `asConfig`).
+    // be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest).
     delete redacted.store;
     delete redacted.auth;
     delete redacted.adapter;
@@ -691,6 +760,36 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     // Normalise the surface to its id string so __config round-trips as JSON (ADR 0005 Decision 11):
     // never expose the live Surface (its hooks don't serialise), only its identity.
     if (kind) redacted.kind = kind.id;
+    // P0: everything below strips the function-valued sugar. A thunked endpoint has no static
+    // string to expose, so the slot is simply absent on the public view.
+    if (typeof cfg.url === 'function') delete redacted.url;
+    if (typeof cfg.baseUrl === 'function') delete redacted.baseUrl;
+    delete redacted.transform;
+    delete redacted.hooks;
+    if (cfg.paginate)
+        redacted.paginate =
+            cfg.paginate.pages !== undefined
+                ? { pages: cfg.paginate.pages }
+                : {};
+    if (typeof cfg.acceptStatus === 'function') delete redacted.acceptStatus;
+    if (cfg.retry) {
+        const { on, ...retry } = cfg.retry;
+        redacted.retry = Array.isArray(on) ? { ...retry, on } : retry;
+    }
+    if (cfg.throttle) {
+        const { on, ...throttle } = cfg.throttle;
+        redacted.throttle = Array.isArray(on) ? { ...throttle, on } : throttle;
+    }
+    if (cfg.idempotency) {
+        const idempotency = { ...cfg.idempotency };
+        delete idempotency.keyOf;
+        redacted.idempotency = idempotency;
+    }
+    if (cfg.cache) {
+        const cache = { ...cfg.cache };
+        delete cache.keyOf;
+        redacted.cache = cache;
+    }
     return redacted;
 }
 
@@ -716,7 +815,7 @@ function attachCacheSurface(
     Object.defineProperty(target, 'cache', {
         value: {
             invalidate: () => cacheInvalidateBulk(rt),
-            key: (input?: StitchInput) => cacheKeyOf(rt, resolve(input)),
+            keyOf: (input?: StitchInput) => cacheKeyOf(rt, resolve(input)),
         },
     });
 }
@@ -756,22 +855,31 @@ export function makeStitch<T = unknown>(
     const streamFn = (input?: StitchInput) =>
         streamWith(input ?? {}, newRunContext());
     // `.inspect()` (ADR 0016 / ADR 0018): one fresh root run with the raw body retained and the
-    // cache bypassed by default (`{ cache: true }` opts caching back in). Consumed by the
+    // cache bypassed by default (`true` / `{ cache: true }` opts caching back in). Consumed by the
     // never-throwing `consumeInspect`, which also applies opt-in redaction (ADR 0018).
-    const inspectFn = (input: StitchInput, opts?: InspectOptions) =>
-        consumeInspect<T>(
+    const inspectFn = (
+        input: StitchInput,
+        rawOpts?: boolean | InspectOptions,
+    ) => {
+        const opts = inspectOptions(rawOpts);
+        return consumeInspect<T>(
             streamWith(input, newRunContext(), {
                 retainRaw: true,
                 bypassCache: !opts?.cache,
             }),
             opts,
         );
+    };
     // `.report()` (ADR 0019): the same fresh, raw-retaining, cache-bypassing-by-default probe as
     // `.inspect()`, drained by `consumeReport` into a `RunReport` (the Inspection plus run
     // diagnostics). The config echo is the stitch's ALREADY-redacted `__config` — never `__rawConfig`.
     const reportConfig = redactConfig(cfg);
-    const reportFn = (input: StitchInput, opts?: InspectOptions) =>
-        consumeReport<T>(
+    const reportFn = (
+        input: StitchInput,
+        rawOpts?: boolean | InspectOptions,
+    ) => {
+        const opts = inspectOptions(rawOpts);
+        return consumeReport<T>(
             streamWith(input, newRunContext(), {
                 retainRaw: true,
                 bypassCache: !opts?.cache,
@@ -779,6 +887,7 @@ export function makeStitch<T = unknown>(
             reportConfig,
             opts,
         );
+    };
 
     const result = (input?: StitchInput): StitchResult<T> => {
         const make = () => streamFn(input);
@@ -825,9 +934,9 @@ export function makeStitch<T = unknown>(
     stitchFn.stream = streamFn;
     stitchFn.safe = (input?: StitchInput) => consumeSafe<T>(streamFn(input));
     stitchFn.unwrap = (input?: StitchInput) => consume<T>(streamFn(input));
-    stitchFn.inspect = (input?: StitchInput, opts?: InspectOptions) =>
+    stitchFn.inspect = (input?: StitchInput, opts?: boolean | InspectOptions) =>
         inspectFn(input ?? {}, opts);
-    stitchFn.report = (input?: StitchInput, opts?: InspectOptions) =>
+    stitchFn.report = (input?: StitchInput, opts?: boolean | InspectOptions) =>
         reportFn(input ?? {}, opts);
     stitchFn.with = (partial: StitchInput) => {
         // bind partial input; the bound stitch reuses the same runtime (cookies/throttle persist)
@@ -849,9 +958,11 @@ export function makeStitch<T = unknown>(
             consumeSafe<T>(streamFn(mergeInput(partial, input)));
         bound.unwrap = (input?: StitchInput) =>
             consume<T>(streamFn(mergeInput(partial, input)));
-        bound.inspect = (input?: StitchInput, opts?: InspectOptions) =>
-            inspectFn(mergeInput(partial, input), opts);
-        bound.report = (input?: StitchInput, opts?: InspectOptions) =>
+        bound.inspect = (
+            input?: StitchInput,
+            opts?: boolean | InspectOptions,
+        ) => inspectFn(mergeInput(partial, input), opts);
+        bound.report = (input?: StitchInput, opts?: boolean | InspectOptions) =>
             reportFn(mergeInput(partial, input), opts);
         bound.with = (more: StitchInput) =>
             stitchFn.with(mergeInput(partial, more));
@@ -932,20 +1043,25 @@ export function drift<S>(
     schema: S,
     options: DriftOptions = {},
 ): DriftSpec<InferOutput<S>> {
+    // P7: fold a bare `ignore` string into its list form at construction.
+    const normalized =
+        typeof options.ignore === 'string'
+            ? { ...options, ignore: [options.ignore] }
+            : options;
     return {
         __kind: 'drift',
         schema: toValidator(schema) as Validator<InferOutput<S>>,
-        options,
+        options: normalized,
     };
 }
 
-/** graphql(): a stitch preset for GraphQL-over-HTTP — POST { query, variables }, unwrap `data`. */
+/** graphql(): a stitch preset for GraphQL-over-HTTP — POST { query, variables }, picks `data`. */
 export function graphql<
     TExplicit = never,
     const C extends Partial<StitchConfig> & {
-        query: string;
+        document: string;
     } = Partial<StitchConfig> & {
-        query: string;
+        document: string;
     },
 >(config: C): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the
@@ -960,6 +1076,6 @@ export function graphql<
         ...config,
         ...(endpointless ? { path: '/graphql' } : {}),
         kind: graphqlSurface,
-        unwrap: config.unwrap ?? 'data',
+        pick: config.pick ?? 'data',
     }) as unknown as Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
 }

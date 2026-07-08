@@ -2,13 +2,13 @@
 // `adapter` (no network), so every stitch call resolves against canned responses. We drive the
 // app with `fastify.inject()` and assert the four contracts: the seam is decorated, the
 // request-scoped principal binds (a route reads `currentStitch()` and `request.stitch`),
-// `sendStitchSse` streams events, and `stitchErrorHandler` maps a StitchError to a status.
+// `streamStitchSse` streams events, and `stitchErrorHandler` maps a StitchError to a status.
 import {
     currentStitch,
     isStitchError,
-    sendStitchSse,
     stitchErrorHandler,
     stitchPlugin,
+    streamStitchSse,
 } from '../src';
 
 import Fastify from 'fastify';
@@ -145,7 +145,7 @@ describe('stitchPlugin', () => {
         expect(res.json()).toEqual({ isRoot: true });
     });
 
-    test('sendStitchSse streams delta events to the reply', async () => {
+    test('streamStitchSse streams delta events to the reply', async () => {
         // A hand-built event stream — the SSE bridge consumes any AsyncIterable<StitchEvent>.
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield {
@@ -173,7 +173,7 @@ describe('stitchPlugin', () => {
             },
             logger: false,
         });
-        app.get('/sse', (_request, reply) => sendStitchSse(reply, events()));
+        app.get('/sse', (_request, reply) => streamStitchSse(reply, events()));
         await app.ready();
 
         const res = await app.inject({ method: 'GET', url: '/sse' });
@@ -212,7 +212,7 @@ describe('stitchPlugin', () => {
             logger: false,
         });
         app.get('/sse-err', (_request, reply) =>
-            sendStitchSse(reply, events()),
+            streamStitchSse(reply, events()),
         );
         await app.ready();
 
@@ -248,7 +248,7 @@ describe('stitchPlugin', () => {
             logger: false,
         });
         app.get('/sse-err', (_request, reply) =>
-            sendStitchSse(reply, events(), { errorData: (e) => e.message }),
+            streamStitchSse(reply, events(), { errorData: (e) => e.message }),
         );
         await app.ready();
 
@@ -256,6 +256,109 @@ describe('stitchPlugin', () => {
         expect(res.body).toBe(
             'data: partial\n\nevent: error\ndata: upstream blew up\n\n',
         );
+    });
+
+    test('onError observes the real failure server-side while the client frame stays generic', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield {
+                type: 'error',
+                name: 'StitchError',
+                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                status: 502,
+                attempts: 1,
+                at: 1,
+            };
+        }
+        const observed: unknown[] = [];
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seamConfig: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-observe', (_request, reply) =>
+            streamStitchSse(reply, events(), {
+                onError: (err) => observed.push(err),
+            }),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-observe' });
+        // The server-side hook gets the raw failure…
+        expect(observed).toHaveLength(1);
+        expect((observed[0] as Error).message).toContain(
+            'payments.internal.corp',
+        );
+        // …the client still gets only the generic token.
+        expect(res.body).toBe('event: error\ndata: error\n\n');
+    });
+
+    test('a throw mid-stream is normalised: onError fires and the frame stays generic', async () => {
+        // eslint-disable-next-line require-yield
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            throw new Error('getaddrinfo ENOTFOUND payments.internal.corp');
+        }
+        const observed: unknown[] = [];
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seamConfig: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-throw', (_request, reply) =>
+            streamStitchSse(reply, events(), {
+                onError: (err) => observed.push(err),
+            }),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-throw' });
+        expect(observed).toHaveLength(1);
+        expect(res.body).toBe('event: error\ndata: error\n\n');
+        expect(res.body).not.toContain('ENOTFOUND');
+    });
+
+    test('accepts the { stream() } arm of StitchEventSource', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'via-stream()', at: 1 };
+            yield { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 2 };
+        }
+        // Anything with a `.stream()` handing back the iterable — e.g. a StitchResult.
+        const source = { stream: () => events() };
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seamConfig: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-source', (_request, reply) =>
+            streamStitchSse(reply, source),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-source' });
+        expect(res.body).toBe('data: via-stream()\n\n');
     });
 
     test('the registered error handler maps a StitchError to 502 by default', async () => {

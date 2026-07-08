@@ -12,4 +12,35 @@ describe('package public API (src/index.ts barrel)', () => {
         expect(typeof docsMcp.getDoc).toBe('function');
         expect(typeof docsMcp.searchDocs).toBe('function');
     });
+
+    it('re-exports the named option interfaces (CONTRACT P14)', () => {
+        // Types are erased at runtime, so pin them at the type level: if the
+        // barrel drops any of these re-exports, this block stops compiling.
+        const getDocOptions: docsMcp.GetDocOptions = {
+            url: '/docs/guides/resilience/throttle',
+            slug: 'guides/resilience/throttle',
+        };
+        const hybridWeights: docsMcp.HybridWeights = { text: 0.2, vector: 0.8 };
+        const boost: docsMcp.FieldBoost = { pageTitle: 3, heading: 2 };
+        const searchOptions: docsMcp.SearchOptions = {
+            limit: 8,
+            hybridWeights,
+            boost,
+        };
+        const hit: docsMcp.DocSearchHit = {
+            pageUrl: '/docs/guides/x',
+            pageTitle: 'X Guide',
+            heading: 'Retries',
+            anchor: 'retries',
+            text: 'body text',
+            score: 1,
+        };
+        const doc: docsMcp.DocResult = {
+            title: 'X Guide',
+            url: '/docs/guides/x',
+            markdown: '# X Guide',
+        };
+
+        expect({ getDocOptions, searchOptions, hit, doc }).toBeTruthy();
+    });
 });

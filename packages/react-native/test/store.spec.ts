@@ -51,6 +51,14 @@ describe('asyncStorageStore', () => {
         expect(await store.get('k')).toBe('v');
     });
 
+    test('incr without a ttl never expires (no window)', async () => {
+        let t = 0;
+        const store = asyncStorageStore(fakeAsyncStorage(), { now: () => t });
+        expect(await store.incr('c')).toBe(1);
+        t = 10_000_000;
+        expect(await store.incr('c')).toBe(2);
+    });
+
     test('incr resets to 1 once its TTL window lapses', async () => {
         let t = 0;
         const store = asyncStorageStore(fakeAsyncStorage(), { now: () => t });

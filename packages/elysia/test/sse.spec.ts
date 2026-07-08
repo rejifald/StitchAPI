@@ -3,7 +3,8 @@
 // error-event frame. This drives the helper directly with hand-rolled
 // `StitchEvent` generators — it takes just the source and returns a Web-standard
 // `Response`, so no Elysia app is needed — to cover the untested surface: the
-// DEFAULT data mapper, the `event:` label, the `onError` callback, control
+// DEFAULT data mapper, the `event:` label, the `id:` line, the `onError`
+// callback, the generic-by-default error frame (`errorData` opt-in), control
 // events not being forwarded, the throw-mid-stream catch path, the SSE-spec
 // multi-line `data:` framing, and the response headers.
 import { streamStitchSse } from '../src';
@@ -69,6 +70,34 @@ describe('streamStitchSse — delta mapping', () => {
         expect(body).toContain('data: pulled');
     });
 
+    test('the id option writes an id: line with the zero-based frame index', async () => {
+        const res = streamStitchSse(
+            gen([
+                { type: 'delta', chunk: 'a', at: 0 },
+                { type: 'delta', chunk: 'b', at: 0 },
+                { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+            ]),
+            { id: (_chunk, index) => String(index) },
+        );
+
+        const body = await res.text();
+        expect(body).toContain('id: 0\ndata: a');
+        expect(body).toContain('id: 1\ndata: b');
+    });
+
+    test('a {stream()} source (the core StitchEventSource arm) is driven too', async () => {
+        const res = streamStitchSse({
+            stream: () =>
+                gen([
+                    { type: 'delta', chunk: 'via-stream', at: 0 },
+                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+                ]),
+        });
+
+        const body = await res.text();
+        expect(body).toContain('data: via-stream');
+    });
+
     test('a multi-line chunk gets one data: prefix per line (SSE spec)', async () => {
         const res = streamStitchSse(
             gen([
@@ -114,7 +143,7 @@ describe('streamStitchSse — control events', () => {
 });
 
 describe('streamStitchSse — error paths', () => {
-    test('an error event writes an event: error frame, invokes onError, and stops forwarding', async () => {
+    test('an error event writes a GENERIC event: error frame, invokes onError, and stops forwarding', async () => {
         let captured: unknown;
         const res = streamStitchSse(
             gen([
@@ -137,13 +166,57 @@ describe('streamStitchSse — error paths', () => {
 
         const body = await res.text();
         expect(body).toContain('data: a');
-        expect(body).toContain('event: error');
-        expect(body).toContain('upstream failed');
+        expect(body).toContain('event: error\ndata: error');
+        // The raw upstream message reaches onError (server-side) but NEVER the client frame.
+        expect(body).not.toContain('upstream failed');
         expect(body).not.toContain('never');
         expect((captured as Error).message).toBe('upstream failed');
     });
 
-    test('a throw mid-stream is caught: onError fires and a final event: error frame is written', async () => {
+    // Regression: the default error frame must not echo the raw message, which can disclose
+    // internal network topology (a transport failure names the host it failed to reach) or the
+    // upstream's status semantics to an untrusted client.
+    test('a transport failure with an internal hostname is not disclosed by default', async () => {
+        const res = streamStitchSse(
+            gen([
+                {
+                    type: 'error',
+                    name: 'StitchError',
+                    message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                    attempts: 1,
+                    at: 0,
+                },
+            ]),
+        );
+
+        const body = await res.text();
+        expect(body).toContain('event: error\ndata: error');
+        expect(body).not.toContain('payments.internal.corp');
+        expect(body).not.toContain('ENOTFOUND');
+    });
+
+    test('errorData opts in to shaping the client-facing error frame', async () => {
+        const res = streamStitchSse(
+            gen([
+                {
+                    type: 'error',
+                    name: 'StitchError',
+                    message: 'upstream failed',
+                    status: 503,
+                    attempts: 2,
+                    at: 0,
+                },
+            ]),
+            { errorData: (e) => `${e.name}: ${e.message} (${e.status})` },
+        );
+
+        const body = await res.text();
+        expect(body).toContain(
+            'event: error\ndata: StitchError: upstream failed (503)',
+        );
+    });
+
+    test('a throw mid-stream is caught: onError fires and a generic event: error frame is written', async () => {
         let captured: unknown;
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield { type: 'delta', chunk: 'a', at: 0 };
@@ -158,9 +231,25 @@ describe('streamStitchSse — error paths', () => {
 
         const body = await res.text();
         expect(body).toContain('data: a');
-        expect(body).toContain('event: error');
-        expect(body).toContain('stream blew up');
+        expect(body).toContain('event: error\ndata: error');
+        expect(body).not.toContain('stream blew up');
         expect((captured as Error).message).toBe('stream blew up');
+    });
+
+    test('a throw is normalised to an error event so errorData sees a consistent shape', async () => {
+        async function* boom(): AsyncGenerator<StitchEvent, void> {
+            yield { type: 'delta', chunk: 'a', at: 0 };
+            throw new Error('stream blew up');
+        }
+
+        const res = streamStitchSse(boom(), {
+            errorData: (e) => `${e.type}/${e.name}: ${e.message}`,
+        });
+
+        const body = await res.text();
+        expect(body).toContain(
+            'event: error\ndata: error/Error: stream blew up',
+        );
     });
 });
 

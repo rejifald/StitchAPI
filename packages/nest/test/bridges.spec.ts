@@ -1,10 +1,10 @@
 // Unit tests for @stitchapi/nest's three bridges (`bridges.ts`), which no spec
-// touched: `loggerSink` (StitchEvent → Nest log level, delegating to core), the
-// `fromConfig` ConfigService-backed secret resolver, and `borrowStore` (a store
+// touched: `nestLoggerSink` (StitchEvent → Nest log level, delegating to core), the
+// `fromNestConfig` ConfigService-backed secret resolver, and `nestBorrowStore` (a store
 // wrapper that deliberately omits `close`). Pure — no Nest app, no network: we
 // drive recording doubles directly.
-import { borrowStore, fromConfig, loggerSink } from '../src';
-import type { ConfigServiceLike, LoggerLike } from '../src';
+import { fromNestConfig, nestBorrowStore, nestLoggerSink } from '../src';
+import type { NestConfigServiceLike, NestLoggerLike } from '../src';
 
 import type { StitchEvent, StitchStore, TraceContext } from 'stitchapi';
 import { describe, expect, test } from 'vitest';
@@ -16,7 +16,7 @@ type RecordedLevel = 'log' | 'warn' | 'error' | 'debug' | 'verbose';
 // A recording Nest-logger double. `partial` omits debug/verbose to prove the
 // sink guards those optional methods.
 function recorder(partial = false): {
-    logger: LoggerLike;
+    logger: NestLoggerLike;
     calls: Array<{ level: RecordedLevel; message: string }>;
 } {
     const calls: Array<{ level: RecordedLevel; message: string }> = [];
@@ -25,7 +25,7 @@ function recorder(partial = false): {
         (m: string): void => {
             calls.push({ level, message: m });
         };
-    const logger: LoggerLike = partial
+    const logger: NestLoggerLike = partial
         ? { log: push('log'), warn: push('warn'), error: push('error') }
         : {
               log: push('log'),
@@ -48,10 +48,10 @@ const startEvent = (url: string, input = {}): StitchEvent => ({
     at: 0,
 });
 
-describe('loggerSink — level mapping', () => {
+describe('nestLoggerSink — level mapping', () => {
     test('maps each event type to a Nest level (result → verbose, lifecycle → debug)', () => {
         const { logger, calls } = recorder();
-        const sink = loggerSink(logger);
+        const sink = nestLoggerSink(logger);
 
         const events: StitchEvent[] = [
             startEvent('https://api.test/u'),
@@ -90,7 +90,7 @@ describe('loggerSink — level mapping', () => {
 
     test('drift follows its finding level, pinning info-drift to debug', () => {
         const { logger, calls } = recorder();
-        const sink = loggerSink(logger);
+        const sink = nestLoggerSink(logger);
         const drift = (level: 'error' | 'warn' | 'info'): StitchEvent => ({
             type: 'drift',
             finding: { level, path: 'data.id', change: 'coerced' },
@@ -106,7 +106,7 @@ describe('loggerSink — level mapping', () => {
 
     test('delta chunks and info announcements are never logged', () => {
         const { logger, calls } = recorder();
-        const sink = loggerSink(logger);
+        const sink = nestLoggerSink(logger);
 
         sink.handle({ type: 'info', topic: 'auth', detail: 'x', at: 0 }, ctx);
         sink.handle({ type: 'delta', chunk: 'raw-data', at: 0 }, ctx);
@@ -116,7 +116,7 @@ describe('loggerSink — level mapping', () => {
 
     test('lifecycle:false drops start/result/done but keeps errors and retries', () => {
         const { logger, calls } = recorder();
-        const sink = loggerSink(logger, { lifecycle: false });
+        const sink = nestLoggerSink(logger, { lifecycle: false });
 
         sink.handle(startEvent('https://api.test/u'), ctx);
         sink.handle(
@@ -141,7 +141,7 @@ describe('loggerSink — level mapping', () => {
 
     test('a partial logger (no debug/verbose) does not throw — those events are skipped', () => {
         const { logger, calls } = recorder(true);
-        const sink = loggerSink(logger);
+        const sink = nestLoggerSink(logger);
 
         sink.handle(startEvent('https://api.test/u'), ctx); // debug → no-op
         sink.handle(
@@ -157,10 +157,10 @@ describe('loggerSink — level mapping', () => {
     });
 });
 
-describe('loggerSink — messages & security', () => {
+describe('nestLoggerSink — messages & security', () => {
     test('uses the trace-context name in the message', () => {
         const { logger, calls } = recorder();
-        const sink = loggerSink(logger);
+        const sink = nestLoggerSink(logger);
 
         sink.handle(
             { type: 'result', data: 1, status: 201, attempts: 2, at: 0 },
@@ -172,7 +172,7 @@ describe('loggerSink — messages & security', () => {
 
     test('strips the URL query and logs only metadata — never raw input/value/delta', () => {
         const { logger, calls } = recorder();
-        const sink = loggerSink(logger);
+        const sink = nestLoggerSink(logger);
 
         sink.handle(
             startEvent('https://api.test/login?api_key=SECRET', {
@@ -207,11 +207,11 @@ describe('loggerSink — messages & security', () => {
 // --- fromConfig ------------------------------------------------------------
 
 function fakeConfig(map: Record<string, string>): {
-    config: ConfigServiceLike;
+    config: NestConfigServiceLike;
     keys: string[];
 } {
     const keys: string[] = [];
-    const config: ConfigServiceLike = {
+    const config: NestConfigServiceLike = {
         getOrThrow<T = string>(key: string): T {
             keys.push(key);
             if (!(key in map)) {
@@ -223,10 +223,10 @@ function fakeConfig(map: Record<string, string>): {
     return { config, keys };
 }
 
-describe('fromConfig', () => {
+describe('fromNestConfig', () => {
     test('resolves lazily at call time, then returns the value', () => {
         const { config, keys } = fakeConfig({ API_TOKEN: 'tok' });
-        const thunk = fromConfig(config)('API_TOKEN');
+        const thunk = fromNestConfig(config)('API_TOKEN');
 
         // The thunk holds the key but has not touched the config yet — the secret
         // never lands on __config or in a trace.
@@ -237,20 +237,20 @@ describe('fromConfig', () => {
 
     test('propagates a missing-key error from getOrThrow', () => {
         const { config } = fakeConfig({});
-        const resolve = fromConfig(config)('MISSING');
+        const resolve = fromNestConfig(config)('MISSING');
         expect(() => resolve()).toThrow(/Configuration key "MISSING"/);
     });
 
     test('rejects an empty value so a blank credential can never ride along', () => {
         const { config } = fakeConfig({ BLANK: '' });
-        const resolve = fromConfig(config)('BLANK');
+        const resolve = fromNestConfig(config)('BLANK');
         expect(() => resolve()).toThrow(/missing secret BLANK/);
     });
 });
 
 // --- borrowStore -----------------------------------------------------------
 
-describe('borrowStore', () => {
+describe('nestBorrowStore', () => {
     test('delegates get/set/incr but omits close, so a seam cannot dispose the app store', async () => {
         const seen: string[] = [];
         let closed = false;
@@ -271,7 +271,7 @@ describe('borrowStore', () => {
             },
         };
 
-        const borrowed = borrowStore(store);
+        const borrowed = nestBorrowStore(store);
 
         // The borrowed wrapper exposes no close (ADR 0006 Decision 8).
         expect(borrowed.close).toBeUndefined();

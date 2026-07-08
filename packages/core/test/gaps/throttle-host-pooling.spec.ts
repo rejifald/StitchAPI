@@ -1,4 +1,4 @@
-// Pins docs/GAP-AUDIT.md §1.4: throttle scope:'host' must pool the budget across stitch instances in-process, as throttle.mdx documents
+// Pins docs/GAP-AUDIT.md §1.4: throttle pool:'host' must pool the budget across stitch instances in-process, as throttle.mdx documents
 import { stitch } from '../../src';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
@@ -22,7 +22,7 @@ beforeEach(() => {
     server.reset();
 });
 
-describe('GAP-AUDIT §1.4 — throttle scope:"host" pools across instances', () => {
+describe('GAP-AUDIT §1.4 — throttle pool:"host" pools across instances', () => {
     test('two separate stitches (no shared store) hitting the same host share one 2/s budget', async () => {
         // Record the server-side arrival time of each request.
         const hits: number[] = [];
@@ -37,9 +37,6 @@ describe('GAP-AUDIT §1.4 — throttle scope:"host" pools across instances', () 
         // declaring host pooling against the same origin. throttle.mdx says
         // 'host' "pools the budget across every stitch hitting the same host",
         // so the 2/s budget (500ms spacing) must apply across BOTH instances.
-        // `a` uses the canonical `pool` (CONTRACT.md P2); `b` uses the
-        // `@deprecated` `scope` alias — they MUST pool together, proving the
-        // alias is byte-equivalent to the new field.
         const a = stitch({
             baseUrl: server.url,
             path: '/pooled',
@@ -48,7 +45,7 @@ describe('GAP-AUDIT §1.4 — throttle scope:"host" pools across instances', () 
         const b = stitch({
             baseUrl: server.url,
             path: '/pooled',
-            throttle: { rate: '2/s', scope: 'host' },
+            throttle: { rate: '2/s', pool: 'host' },
         });
 
         await Promise.all([a(), b()]);

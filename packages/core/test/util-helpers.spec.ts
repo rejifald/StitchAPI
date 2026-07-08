@@ -25,10 +25,12 @@ describe('parseDuration', () => {
         expect(parseDuration(undefined)).toBeUndefined();
     });
 
-    it('parses ms / s / m suffixes', () => {
+    it('parses ms / s / m / h / d suffixes', () => {
         expect(parseDuration('500ms')).toBe(500);
         expect(parseDuration('30s')).toBe(30_000);
         expect(parseDuration('2m')).toBe(120_000);
+        expect(parseDuration('1h')).toBe(3_600_000);
+        expect(parseDuration('2d')).toBe(172_800_000);
     });
 
     it('accepts a fractional value and surrounding whitespace', () => {

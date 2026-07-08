@@ -100,9 +100,12 @@ export interface GenOptions {
     validator?: 'types-only' | 'valibot' | 'zod';
     /** ADR 0013 Q3: default `dir`. `single` is not implemented in v1. */
     layout?: 'dir' | 'flat';
-    /** Filters (ADR 0013 Decision 2). `all` overrides the others. */
-    only?: string[]; // operationIds (or derived names)
-    tags?: string[];
+    /**
+     * Filters (ADR 0013 Decision 2). `all` overrides the others. The list-shaped filters take a
+     * bare value too — `tags: 'pets'` ≡ `tags: ['pets']` (CONTRACT.md P7).
+     */
+    only?: string | string[]; // operationIds (or derived names)
+    tags?: string | string[];
     grep?: string; // substring match on the path
     all?: boolean;
 }
@@ -660,19 +663,21 @@ export function planGen(doc: OpenApiDoc, opts: GenOptions = {}): GenResult {
 
 // ---- selection ------------------------------------------------------------
 
+// P7 widening: `tags`/`only` accept a bare string or a list — normalize once here.
+function toList(v: string | string[] | undefined): string[] {
+    return v === undefined ? [] : Array.isArray(v) ? v : [v];
+}
+
 function matches(o: SelectedOp, opts: GenOptions): boolean {
     if (opts.all) return true;
+    const tags = toList(opts.tags);
+    const only = toList(opts.only);
     const hasFilter =
-        (opts.tags?.length ?? 0) > 0 ||
-        (opts.only?.length ?? 0) > 0 ||
-        (opts.grep?.length ?? 0) > 0;
+        tags.length > 0 || only.length > 0 || (opts.grep?.length ?? 0) > 0;
     if (!hasFilter) return false; // selective by default: require an explicit selector
-    if (opts.tags?.length && o.tag && opts.tags.includes(o.tag)) return true;
-    if (opts.only?.length) {
-        if (opts.only.includes(o.name)) return true;
-        if (o.op.operationId && opts.only.includes(o.op.operationId))
-            return true;
-    }
+    if (o.tag && tags.includes(o.tag)) return true;
+    if (only.includes(o.name)) return true;
+    if (o.op.operationId && only.includes(o.op.operationId)) return true;
     if (opts.grep && o.path.includes(opts.grep)) return true;
     return false;
 }
@@ -757,7 +762,7 @@ function emitClient(baseUrl: string | undefined, auth: DerivedAuth): GenFile {
     if (auth.expr) lines.push(`    auth: ${auth.expr},`);
     lines.push('    // TODO: tune shared resilience, e.g.');
     lines.push('    // retry: { attempts: 3, on: [429, 502, 503] },');
-    lines.push("    // throttle: { rate: '10/s', scope: 'host' },");
+    lines.push("    // throttle: { rate: '10/s', pool: 'host' },");
     lines.push('});');
     return { path: 'client.ts', contents: `${lines.join('\n')}\n` };
 }
@@ -916,16 +921,28 @@ function deriveAuth(
             expr: `basic({ user: env('API_USER'), pass: env('API_PASSWORD') })`,
             imports: ['basic', 'env'],
         };
-    if (scheme.type === 'apiKey') {
+    if (
+        scheme.type === 'apiKey' &&
+        (scheme.in === 'header' ||
+            scheme.in === 'query' ||
+            scheme.in === undefined)
+    ) {
+        // Core's `ApiKeyOptions` is a union discriminated on `in`, with `name` naming the key's
+        // location in BOTH arms: `{ in?: 'header', name?, value }` | `{ in: 'query', name?, value }`.
+        // Header is the default arm, so `in: 'header'` is never emitted; a query scheme gets the
+        // `in: 'query'` discriminant. `in: 'cookie'` has no arm — it falls through to the
+        // not-auto-mapped warning below instead of silently becoming a header key.
         const where = scheme.in === 'query' ? `in: 'query', ` : '';
-        const nm = scheme.name ? `name: ${JSON.stringify(scheme.name)}, ` : '';
+        const nm = scheme.name ? `name: ${q(scheme.name)}, ` : '';
         return {
             expr: `apiKey({ ${where}${nm}value: env('API_KEY') })`,
             imports: ['apiKey', 'env'],
         };
     }
     warnings.push(
-        `security scheme "${schemeName}" (type ${scheme.type ?? '?'}) not auto-mapped — set client.ts auth manually`,
+        `security scheme "${schemeName}" (type ${scheme.type ?? '?'}${
+            scheme.type === 'apiKey' ? `, in ${scheme.in ?? '?'}` : ''
+        }) not auto-mapped — set client.ts auth manually`,
     );
     return { imports: [] };
 }

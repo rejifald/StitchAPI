@@ -30,10 +30,30 @@ export interface DocSearchHit {
     score: number;
 }
 
+/**
+ * Relative weight of each retrieval mode in hybrid scoring. Identity
+ * pass-through to Orama's `hybridWeights` slot, so the field names are
+ * Orama's, not house vocabulary (CONTRACT P18/P22).
+ */
+export interface HybridWeights {
+    text: number;
+    vector: number;
+}
+
+/**
+ * Per-field full-text score boost. Identity pass-through to Orama's `boost`
+ * slot; the field names are the bundled index's schema fields (CONTRACT
+ * P18/P22).
+ */
+export interface FieldBoost {
+    pageTitle: number;
+    heading: number;
+}
+
 export interface SearchOptions {
     limit?: number;
-    hybridWeights?: { text: number; vector: number };
-    boost?: { pageTitle: number; heading: number };
+    hybridWeights?: HybridWeights;
+    boost?: FieldBoost;
 }
 
 let cached: Promise<AnyOrama> | undefined;
@@ -98,7 +118,11 @@ export async function searchDocs(
         vector: { value: vector, property: VECTOR_FIELD },
         properties: ['pageTitle', 'heading', 'text'],
         hybridWeights,
-        boost,
+        // Fresh object literal, not the interface value: named interfaces get
+        // no implicit index signature (unlike the anonymous type this replaced),
+        // so FieldBoost isn't directly assignable to Orama's
+        // Partial<Record<string, number>>. Same fields, identity pass-through.
+        boost: { ...boost },
         similarity: 0,
         includeVectors: false,
         limit,

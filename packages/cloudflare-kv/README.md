@@ -49,9 +49,9 @@ is the overwhelmingly common edge need.
 KV's `expirationTtl` is in **seconds** and has a **60-second minimum**. The store
 reconciles this with the StitchStore contract's millisecond TTLs for you:
 
--   `ttlMs` → `Math.max(60, Math.ceil(ttlMs / 1000))` seconds.
+-   `ttl` (ms) → `Math.max(60, Math.ceil(ttl / 1000))` seconds.
 -   So a value asked to live for 5s lives for 60s (harmless for caches/sessions).
--   No `ttlMs` → no expiry.
+-   No `ttl` → no expiry (`ttl` is optional on both `set` and `incr`).
 
 `set(key, undefined)` deletes the key (the cache's delete, ADR 0003 §8). The store
 owns no connection, so there is no `close()`.

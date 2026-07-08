@@ -45,8 +45,9 @@ On each request the middleware sets `req.stitch` (and mirrors it on
     argument, so a handler can't impersonate another identity (ADR 0002 §2).
 -   `principal` returns `undefined` (or is omitted) → the **root** seam, unbound.
 
-`currentStitch(req)` reads the same handle back as a typed value (and throws if
-the middleware never ran, so a missing `app.use(stitch(...))` fails loudly).
+`currentStitch(req)` reads the same handle back as a typed value. It returns
+`undefined` (it never throws) when the middleware never ran, so check for it —
+or register `app.use(stitch(...))` ahead of the handler.
 
 **Borrow, don't own.** The middleware never calls `seam.close()` — the seam
 outlives any single request. You build it at startup and close it on shutdown,
@@ -56,8 +57,8 @@ mirroring StitchAPI's borrow-don't-own rule.
 
 Stream a streaming/SSE stitch's `.stream()` to `res` as Server-Sent Events, by
 writing `text/event-stream` frames straight to the socket. Each `delta` becomes a
-`data:` frame; a terminal `error` event becomes a final `event: error` frame (a
-generic `data: error` by default — see below); control events
+`data:` frame; a terminal `error` event (or a throw mid-stream) becomes a final
+`event: error` frame (a generic `data: error` by default — see below); control events
 (`start`/`progress`/`result`/`done`/…) are consumed but not forwarded. On client
 disconnect (`res` — or `req`, when passed — emits `close`) the upstream stitch
 stream is aborted.
@@ -88,11 +89,13 @@ By default the `error` frame carries a generic `data: error` token, **not** the 
 error message — echoing it can disclose internal network topology (a transport
 failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's
 status (`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream
-messages are known safe to expose:
+messages are known safe to expose, and `onError` to observe/log the real failure
+server-side without exposing it:
 
 ```ts
 streamStitchSse(res, completion.stream({ body: { prompt: req.query.q } }), {
     errorData: (e) => e.message, // opt in to the raw upstream message
+    onError: (err) => logger.error(err), // the real failure, server-side only
 });
 ```
 

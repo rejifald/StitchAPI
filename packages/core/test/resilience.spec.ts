@@ -41,7 +41,7 @@ test('retries on 503 then succeeds, reporting attempts and retry progress', asyn
     const call = stitch({
         baseUrl: server.url,
         path: '/flaky',
-        retry: { attempts: 3, on: [503], baseMs: 5 },
+        retry: { attempts: 3, on: [503], baseDelay: 5 },
     });
 
     const events = await collect(call());
@@ -68,7 +68,7 @@ test('rejects with status 503 after exhausting all retry attempts', async () => 
     const call = stitch({
         baseUrl: server.url,
         path: '/down',
-        retry: { attempts: 3, on: [503], baseMs: 5 },
+        retry: { attempts: 3, on: [503], baseDelay: 5 },
     });
 
     await expect(call()).rejects.toMatchObject({ status: 503 });
@@ -79,13 +79,18 @@ test('rejects with status 503 after exhausting all retry attempts', async () => 
 test('honors the Retry-After header instead of the short backoff', async () => {
     server.route('GET', '/limited', {
         statuses: [429, 200],
-        retryAfter: 1,
+        retryAfterSeconds: 1,
         body: { ok: true },
     });
     const call = stitch({
         baseUrl: server.url,
         path: '/limited',
-        retry: { attempts: 2, on: [429], respectRetryAfter: true, baseMs: 5 },
+        retry: {
+            attempts: 2,
+            on: [429],
+            respectRetryAfter: true,
+            baseDelay: 5,
+        },
     });
 
     const t0 = Date.now();
@@ -127,7 +132,7 @@ test('throttle rate spaces sequential calls and emits throttled progress', async
 
 // ── 5. Throttle concurrency cap ────────────────────────────────────────────
 test('throttle concurrency:1 serializes concurrent calls', async () => {
-    server.route('GET', '/serial', { delayMs: 60, body: { ok: true } });
+    server.route('GET', '/serial', { delay: 60, body: { ok: true } });
     const call = stitch({
         baseUrl: server.url,
         path: '/serial',
@@ -144,7 +149,7 @@ test('throttle concurrency:1 serializes concurrent calls', async () => {
 
 // ── 6. Timeout aborts ──────────────────────────────────────────────────────
 test('timeout aborts a slow request instead of waiting it out', async () => {
-    server.route('GET', '/slow', { delayMs: 200, body: { ok: true } });
+    server.route('GET', '/slow', { delay: 200, body: { ok: true } });
     const call = stitch({
         baseUrl: server.url,
         path: '/slow',

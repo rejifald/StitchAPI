@@ -2,7 +2,11 @@
 // Accepts the generator from `someStitch(input).stream()`, OR the `StitchResult` itself (anything
 // with a `.stream()` method), so `await collectStitchEvents(getUser({ params: { id: 1 } }))` works.
 // Browser-safe: no `node:*`, no test framework.
-import type { DriftFinding, StitchEvent } from './types';
+import type { DriftFinding, StitchEvent, StitchEventSource } from './types';
+
+// Hoisted to the core barrel (types.ts) so every event-stream consumer shares one intake type;
+// re-exported here so `stitchapi/testing` keeps its historical import site.
+export type { StitchEventSource } from './types';
 
 /** The parts of a drained event stream, ready to assert on. */
 export interface CollectedEvents<T> {
@@ -22,11 +26,6 @@ export interface CollectedEvents<T> {
     events: StitchEvent<T>[];
 }
 
-/** A stitch event generator, or anything that hands one back (a `StitchResult`). */
-export type StitchEventSource<T> =
-    | AsyncGenerator<StitchEvent<T>, void>
-    | { stream(): AsyncGenerator<StitchEvent<T>, void> };
-
 /**
  * Drain a stitch event stream into its parts: every delta chunk, every drift finding, and the
  * terminal result/error/done — plus the full event list. Replaces the hand-rolled `collect()`
@@ -37,10 +36,8 @@ export async function collectStitchEvents<T = unknown>(
 ): Promise<CollectedEvents<T>> {
     const gen =
         typeof (source as { stream?: unknown }).stream === 'function'
-            ? (
-                  source as { stream(): AsyncGenerator<StitchEvent<T>, void> }
-              ).stream()
-            : (source as AsyncGenerator<StitchEvent<T>, void>);
+            ? (source as { stream(): AsyncIterable<StitchEvent<T>> }).stream()
+            : (source as AsyncIterable<StitchEvent<T>>);
 
     const events: StitchEvent<T>[] = [];
     const types: string[] = [];

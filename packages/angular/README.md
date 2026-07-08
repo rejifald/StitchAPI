@@ -14,7 +14,7 @@ These functions are a thin layer over [`@stitchapi/query-core`](../query-core), 
 pnpm add @stitchapi/angular@rc @stitchapi/query-core@rc stitchapi@rc @angular/core rxjs
 ```
 
-`stitchapi`, `@angular/core` (`>=16`), and `rxjs` (`>=7`) are peer dependencies. `@tanstack/angular-query-experimental` is an **optional** peer — only needed if you use `queryOptions`.
+`stitchapi`, `@angular/core` (`>=16`), and `rxjs` (`>=7`) are peer dependencies. `@tanstack/angular-query-experimental` is an **optional** peer — only needed if you use `stitchQueryOptions`.
 
 ## `injectStitch` — request / response
 
@@ -89,7 +89,7 @@ Every result exposes the same state two ways, from **one shared query execution*
 ```ts
 interface InjectStitchResult<T> {
     // signals
-    state: Signal<StitchQueryState<T>>;
+    state: Signal<StitchQueryResult<T>>;
     data: Signal<T | undefined>;
     error: Signal<unknown>;
     status: Signal<'idle' | 'pending' | 'streaming' | 'success' | 'error'>;
@@ -99,7 +99,7 @@ interface InjectStitchResult<T> {
     isSuccess: Signal<boolean>;
     isStreaming: Signal<boolean>;
     // observable — for the async pipe / RxJS operators
-    state$: Observable<StitchQueryState<T>>;
+    state$: Observable<StitchQueryResult<T>>;
     // imperative
     refetch: () => void;
     cancel: () => void;
@@ -110,14 +110,14 @@ Read `user.data()` in a template, or `user.state$ | async` if you prefer RxJS �
 
 ## Optional: TanStack Query
 
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/angular-query-experimental` required, so it works even if you never install it.
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/angular-query-experimental` required, so it works even if you never install it. (The `stitch` prefix avoids a clash with TanStack's own `queryOptions` export; the implementation is re-exported from [`@stitchapi/query-core`](../query-core), so the key format is identical across every framework binding.)
 
 ```ts
 import { injectQuery } from '@tanstack/angular-query-experimental';
-import { queryOptions } from '@stitchapi/angular';
+import { stitchQueryOptions } from '@stitchapi/angular';
 
 readonly user = injectQuery(() =>
-    queryOptions(getUser, { params: { id: this.id() } }),
+    stitchQueryOptions(getUser, { params: { id: this.id() } }),
 );
 ```
 

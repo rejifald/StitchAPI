@@ -4,15 +4,9 @@
 //     key, extra patterns, input-immutability)
 //   - `.inspect({ redact: true })` redacts secret-named fields in `raw`; default off; findings
 //     are unaffected; `redact: string[]` adds extra patterns
-//   - `isSecretQueryKey` alias still works
 import { drift, stitch } from '../src';
 import type { Adapter } from '../src';
-import {
-    isSecretKey,
-    isSecretQueryKey,
-    redactSecretsDeep,
-    registerSecretQueryKey,
-} from '../src/util';
+import { isSecretKey, redactSecretsDeep, registerSecretKey } from '../src/util';
 
 import { z } from 'zod';
 
@@ -72,8 +66,8 @@ describe('redactSecretsDeep', () => {
         expect(result.users[0]?.['name']).toBe('bob');
     });
 
-    it('redacts a key registered via registerSecretQueryKey', () => {
-        registerSecretQueryKey('x_custom_cred');
+    it('redacts a key registered via registerSecretKey', () => {
+        registerSecretKey('x_custom_cred');
         const result = redactSecretsDeep({
             x_custom_cred: 'val',
             other: 1,
@@ -112,17 +106,13 @@ describe('redactSecretsDeep', () => {
     });
 });
 
-// ---- isSecretQueryKey alias -----------------------------------------------
+// ---- isSecretKey -----------------------------------------------------------
 
-describe('isSecretQueryKey alias', () => {
-    it('is the same function as isSecretKey', () => {
-        expect(isSecretQueryKey).toBe(isSecretKey);
-    });
-
-    it('still matches secret stems correctly', () => {
-        expect(isSecretQueryKey('api_key')).toBe(true);
-        expect(isSecretQueryKey('access_token')).toBe(true);
-        expect(isSecretQueryKey('page')).toBe(false);
+describe('isSecretKey', () => {
+    it('matches secret stems correctly', () => {
+        expect(isSecretKey('api_key')).toBe(true);
+        expect(isSecretKey('access_token')).toBe(true);
+        expect(isSecretKey('page')).toBe(false);
     });
 });
 

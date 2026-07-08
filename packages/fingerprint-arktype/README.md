@@ -8,7 +8,7 @@ Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
 It reads ArkType's canonical `t.json` representation and hashes a canonicalised
 form into an opaque, synchronous token. The token changes iff the schema's
 validation/shape semantics change. It is an **allowlist**: it abstains (returns
-`value: null`, so the cache falls back to re-validate-on-hit) on anything it can't
+`token: null`, so the cache falls back to re-validate-on-hit) on anything it can't
 soundly capture — morphs (`.pipe`) and narrows (`.narrow`), which ArkType emits as
 opaque, non-deterministic `$ark.fn<n>` references, and property defaults.
 

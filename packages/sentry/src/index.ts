@@ -61,6 +61,11 @@ export interface SentrySinkOptions {
      * Breadcrumb the happy-path lifecycle (`start` / `result` / `done`). Default
      * `false` — these are noisy in Sentry, where breadcrumbs matter most just before
      * an error. Retries, circuit trips, and drift findings are always breadcrumbed.
+     *
+     * DELIBERATE DIVERGENCE (contract P8): `@stitchapi/pino`'s same-named
+     * `lifecycle` defaults to `true`. Sentry breadcrumbs/events cost quota, so the
+     * lifecycle is off by default here; pino log lines are cheap and
+     * level-filtered, so it is on by default there.
      */
     lifecycle?: boolean;
     /**

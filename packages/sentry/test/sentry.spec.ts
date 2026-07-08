@@ -191,7 +191,7 @@ describe('sentrySink', () => {
         });
     });
 
-    test('metadata only: no secret query, no input/value/chunk reaches Sentry', () => {
+    test('metadata only: no secret query, no input/data/chunk reaches Sentry', () => {
         const { sentry, breadcrumbs, captures } = mockSentry();
         const sink = sentrySink(sentry, { lifecycle: true });
         for (const e of Object.values(ev)) sink.handle(e, ctx);

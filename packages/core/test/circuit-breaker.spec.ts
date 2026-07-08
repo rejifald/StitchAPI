@@ -94,7 +94,7 @@ test('a success resets the consecutive-failure count', async () => {
     expect(server.callCount('/svc')).toBe(5); // all 5 hit the server → breaker never opened
 });
 
-test('the @deprecated failureThreshold/cooldownMs aliases still trip the breaker (P4/P17)', async () => {
+test('the positional [failures, cooldown] shorthand trips the breaker (P15)', async () => {
     server.route('GET', '/svc', {
         statuses: [500, 500, 200],
         body: { ok: true },
@@ -102,8 +102,8 @@ test('the @deprecated failureThreshold/cooldownMs aliases still trip the breaker
     const call = stitch({
         baseUrl: server.url,
         path: '/svc',
-        // Pre-rename spelling — must behave identically to `failures`/`cooldown` until the GA cut.
-        circuit: { failureThreshold: 2, cooldownMs: 300 },
+        // `[2, 300]` ≡ `{ failures: 2, cooldown: 300 }` — compose expands the tuple.
+        circuit: [2, 300],
     });
 
     for (let i = 0; i < 2; i++) await expect(call()).rejects.toBeDefined();

@@ -14,7 +14,7 @@ These stores are a thin layer over [`@stitchapi/query-core`](../query-core), the
 pnpm add @stitchapi/svelte@rc @stitchapi/query-core@rc stitchapi@rc svelte
 ```
 
-`stitchapi` and `svelte` (`^4 || ^5`) are peer dependencies. `@tanstack/svelte-query` is an **optional** peer — only needed if you use `queryOptions`.
+`stitchapi` and `svelte` (`^4 || ^5`) are peer dependencies. `@tanstack/svelte-query` is an **optional** peer — only needed if you use `stitchQueryOptions`.
 
 ## `stitchStore` — request / response
 
@@ -61,12 +61,10 @@ The run starts on the store's first subscriber (so `$user` fetches when the comp
 
 Same state shape as `stitchStore`. `data` is the accumulated chunks (`mode: 'append'`, default) or the latest chunk (`mode: 'replace'`); `chunks` is the running list; `status` is `'streaming'` until the terminal `result`, then `'success'`.
 
-`useStitch` / `useStitchStream` are aliases of these two, for callers who prefer the `use*` naming.
-
 ## State shape
 
 ```ts
-interface StitchQueryState<T> {
+interface StitchQueryResult<T> {
     status: 'idle' | 'pending' | 'streaming' | 'success' | 'error';
     data: T | undefined;
     error: unknown;
@@ -82,13 +80,13 @@ The store value is this state; `refetch` / `cancel` are attached as methods on t
 
 ## Optional: TanStack Query
 
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/svelte-query` required, so it works even if you never install it.
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/svelte-query` required, so it works even if you never install it. It is re-exported from [`@stitchapi/query-core`](../query-core), the one shared implementation, so a stitch keys identically across every framework binding (secret header values redacted, runtime-only `signal`/`onProgress` kept out of the key).
 
 ```ts
-import { queryOptions } from '@stitchapi/svelte';
+import { stitchQueryOptions } from '@stitchapi/svelte';
 import { createQuery } from '@tanstack/svelte-query';
 
-const query = createQuery(queryOptions(getUser, { params: { id } }));
+const query = createQuery(stitchQueryOptions(getUser, { params: { id } }));
 ```
 
 ## License

@@ -67,16 +67,28 @@ export const systemClock: Clock = {
     },
 };
 
-/** "30s" | "500ms" | "2m" | 1500 -> milliseconds. */
+/**
+ * Parse a duration into milliseconds. Grammar: a number (already ms), a numeric
+ * string (`"1500"` → 1500), or `<number><unit>` with unit `ms` | `s` | `m` | `h` | `d`
+ * (`"500ms"`, `"30s"`, `"2m"`, `"1h"`, `"2d"`; fractions like `"1.5s"` allowed).
+ * Anything else → `undefined`.
+ */
 export function parseDuration(
     d: number | string | undefined,
 ): number | undefined {
     if (d == null) return undefined;
     if (typeof d === 'number') return d;
-    const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m)$/.exec(d.trim());
+    const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$/.exec(d.trim());
     if (!m) return Number(d) || undefined;
     const n = parseFloat(m[1] ?? '');
-    return m[2] === 'ms' ? n : m[2] === 's' ? n * 1000 : n * 60000;
+    const scale: Record<string, number> = {
+        ms: 1,
+        s: 1000,
+        m: 60_000,
+        h: 3_600_000,
+        d: 86_400_000,
+    };
+    return n * (scale[m[2] ?? ''] ?? 1);
 }
 
 /** "2/s" | "10/m" -> { count, per } (window length in ms). */
@@ -485,15 +497,16 @@ const URL_REDACTED = 'REDACTED';
 // structured `input.query` via `redactSecretQuery`) without listing every vendor spelling. The
 // default `api_key` already matches a stem; this covers an arbitrary configured name too.
 // Lower-cased on insert so the membership test in `isSecretKey` stays case-insensitive.
-const REGISTERED_SECRET_QUERY_KEYS = new Set<string>();
+const REGISTERED_SECRET_KEYS = new Set<string>();
 
 /**
- * Register an additional query-param name whose value is a secret, so the trace URL/query
- * scrubbers redact it. Additive and process-wide (mirroring the built-in denylist): names can be
- * widened but never un-redacted. Idempotent — registering the same name twice is a no-op.
+ * Register an additional key name whose value is a secret (a query-param name, a body
+ * field, …), so the trace URL/query scrubbers redact it. Additive and process-wide
+ * (mirroring the built-in denylist): names can be widened but never un-redacted.
+ * Idempotent — registering the same name twice is a no-op.
  */
-export function registerSecretQueryKey(name: string): void {
-    REGISTERED_SECRET_QUERY_KEYS.add(name.toLowerCase());
+export function registerSecretKey(name: string): void {
+    REGISTERED_SECRET_KEYS.add(name.toLowerCase());
 }
 
 /**
@@ -501,22 +514,16 @@ export function registerSecretQueryKey(name: string): void {
  * key in the same family — a `start` event's `input.query`) carries a secret value:
  * matched case-insensitively against the secret key set above, by containing one of
  * the secret stems, or because a caller registered it via
- * {@link registerSecretQueryKey} (e.g. `apiKey({ in: 'query', name })`).
+ * {@link registerSecretKey} (e.g. `apiKey({ in: 'query', name })`).
  */
 export function isSecretKey(key: string): boolean {
     const k = key.toLowerCase();
     return (
         SECRET_QUERY_KEYS.has(k) ||
-        REGISTERED_SECRET_QUERY_KEYS.has(k) ||
+        REGISTERED_SECRET_KEYS.has(k) ||
         SECRET_QUERY_STEMS.some((s) => k.includes(s))
     );
 }
-
-/**
- * Backward-compatible alias for {@link isSecretKey} — the URL scrubbers and any
- * external code that imported the original name keep working unchanged.
- */
-export const isSecretQueryKey: (key: string) => boolean = isSecretKey;
 
 /**
  * Deep-clone `value` and replace any object key that matches {@link isSecretKey}
@@ -531,33 +538,39 @@ export const isSecretQueryKey: (key: string) => boolean = isSecretKey;
  *   grammar: exact, `*` wildcard, or prefix). Added on top of the shared denylist;
  *   the denylist is always applied.
  */
-export function redactSecretsDeep(
+export function redactSecretsDeep(value: unknown, extra?: string[]): unknown {
+    return redactSecretsAt(value, extra, undefined);
+}
+
+// Recursive worker for redactSecretsDeep: `path` tracks where in the tree we are so the
+// caller's `extra` patterns can match full paths, without that state leaking into the export.
+function redactSecretsAt(
     value: unknown,
-    extra?: string[],
-    _path?: string,
+    extra: string[] | undefined,
+    path: string | undefined,
 ): unknown {
     if (Array.isArray(value)) {
         return value.map((item, i) =>
-            redactSecretsDeep(
+            redactSecretsAt(
                 item,
                 extra,
-                _path !== undefined ? `${_path}[${i}]` : `[${i}]`,
+                path !== undefined ? `${path}[${i}]` : `[${i}]`,
             ),
         );
     }
     if (value !== null && typeof value === 'object') {
         const out: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            const childPath = _path !== undefined ? `${_path}.${k}` : k;
+            const childPath = path !== undefined ? `${path}.${k}` : k;
             const secret =
                 isSecretKey(k) ||
                 (extra !== undefined &&
                     (extra.some((p) => matchPath(p, k)) ||
-                        (_path !== undefined &&
+                        (path !== undefined &&
                             extra.some((p) => matchPath(p, childPath)))));
             out[k] = secret
                 ? URL_REDACTED
-                : redactSecretsDeep(v, extra, childPath);
+                : redactSecretsAt(v, extra, childPath);
         }
         return out;
     }

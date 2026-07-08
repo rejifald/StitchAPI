@@ -67,7 +67,7 @@ test('an accepted non-2xx still runs transform, unwrap, and output validation', 
         baseUrl: server.url,
         path: '/accepted-pipeline',
         acceptStatus: [404],
-        unwrap: 'data',
+        pick: 'data',
         transform: (body) => {
             const b = body as { data: { id: number; name: string } };
             return { data: { id: b.data.id, label: b.data.name } };
@@ -124,7 +124,7 @@ test('a status in both retry.on and acceptStatus is retried, then accepted on th
     const call = stitch<{ ok: boolean; last: boolean }>({
         baseUrl: server.url,
         path: '/retry-then-accept',
-        retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 1 },
+        retry: { attempts: 3, on: [503], backoff: 'fixed', baseDelay: 1 },
         acceptStatus: [503],
     });
 

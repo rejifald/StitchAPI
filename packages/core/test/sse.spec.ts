@@ -360,7 +360,7 @@ describe('sse over real fetch + Web Streams (browser-first gate)', () => {
                     'data: {"n":2}\n\n',
                     'data: {"n":3}\n\n',
                 ],
-                chunkDelayMs: 15,
+                chunkDelay: 15,
             },
         });
         const events = sse({ baseUrl: server.url, path: '/ticks' });
@@ -383,7 +383,7 @@ describe('sse over real fetch + Web Streams (browser-first gate)', () => {
                     'data: {"n":2}\n\n',
                     'data: {"n":3}\n\n',
                 ],
-                chunkDelayMs: 40,
+                chunkDelay: 40,
             },
         });
         const events = sse({ baseUrl: server.url, path: '/abortable' });
@@ -489,9 +489,9 @@ describe('sse authoring helpers (Decision 3)', () => {
         expect(a.__config.kind).toBe(b.__config.kind);
     });
 
-    test('sse.seam(existingSeam).stitch(...) creates an sse member of that seam', async () => {
+    test('sse.bind(existingSeam).stitch(...) creates an sse member of that seam', async () => {
         const api = seam({ baseUrl: 'https://x.test' });
-        const events = sse.seam(api).stitch({
+        const events = sse.bind(api).stitch({
             path: '/e',
             adapter: streamAdapter(streamOf(['data: ok\n\n'])),
         });

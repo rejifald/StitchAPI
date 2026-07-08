@@ -44,9 +44,14 @@ The same sink works on a single stitch — `stitch({ trace: sentrySink(Sentry) }
 
 Options: `{ lifecycle?, captureErrors?, captureDrift? }`.
 
+> [!NOTE]
+> The same `lifecycle` option in `@stitchapi/pino` defaults to `true` — a
+> **deliberate** divergence: Sentry breadcrumbs/events cost quota, while Pino log
+> lines are cheap and level-filtered.
+
 ## Safe on a secret-bearing seam
 
-> A custom `TraceSink` receives the **raw** event — core only redacts inside its own built-in sinks. This sink therefore sends **metadata only**: the stitch name, method, **redacted URL** (query stripped — it can carry `?api_key=…`), status, attempt counts, drift path/level/change, phase, and timing. It never sends `event.input` (headers still hold the live `authorization`/`cookie`), the response `value`, or a `delta` chunk.
+> A custom `TraceSink` receives the **raw** event — core only redacts inside its own built-in sinks. This sink therefore sends **metadata only**: the stitch name, method, **redacted URL** (query stripped — it can carry `?api_key=…`), status, attempt counts, drift path/level/change, phase, and timing. It never sends `event.input` (headers still hold the live `authorization`/`cookie`), the response `data`, or a `delta` chunk.
 
 ## License
 

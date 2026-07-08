@@ -37,6 +37,12 @@ import { systemClock } from './util';
 // Per-seam id so the shared bucket's store-counter key never collides across seams sharing a store.
 let seamCounter = 0;
 
+// The seam builds throttles from the RAW authoring config (before `compose` runs for the member),
+// so expand the P12 rate-string shorthand here: `'2/s'` ≡ `{ rate: '2/s' }`.
+const throttleOptions = (
+    t: StitchConfig['throttle'],
+): ThrottleOptions | undefined => (typeof t === 'string' ? { rate: t } : t);
+
 /**
  * The seam's shared throttle bucket. Member stitches all acquire it under ONE seam-stable key, so
  * the budget (rate + in-process concurrency) pools across every stitch — "one shared bucket"
@@ -49,8 +55,7 @@ function seamBucket(
     clock: Clock,
 ): Throttle {
     const inner = createStoreThrottle(opts, store, clock);
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `scope` is the @deprecated alias of `pool`, read as the back-compat fallback until the GA cut (CONTRACT.md P2)
-    if ((opts?.pool ?? opts?.scope) === 'host') return inner; // host key already pools across the seam
+    if (opts?.pool === 'host') return inner; // host key already pools across the seam
     const key = `seam:${seamId}`;
     return {
         // Re-key every acquire onto the one seam-stable key, forwarding the acquire options (e.g.
@@ -89,19 +94,30 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
         // keys it per-stitch, so it limits just this stitch ON TOP OF the shared budget — it can
         // add a stricter gate but never replace or escape the seam's.
         const local = own.throttle
-            ? createStoreThrottle(own.throttle, shared.store, shared.clock)
+            ? createStoreThrottle(
+                  throttleOptions(own.throttle),
+                  shared.store,
+                  shared.clock,
+              )
             : undefined;
         const throttle = local
             ? chainThrottle([shared.throttle, local])
             : shared.throttle;
 
+        // A member's `extends` may be the single-fragment shorthand (P7) — fold it into the list.
+        const ownExtends =
+            own.extends === undefined
+                ? []
+                : Array.isArray(own.extends)
+                  ? own.extends
+                  : [own.extends];
         const cfg: Partial<StitchConfig> = {
             ...own,
-            extends: [shared.fragment, ...(own.extends ?? [])],
+            extends: [shared.fragment, ...ownExtends],
         };
         if (isGql) {
             cfg.kind = graphqlSurface;
-            cfg.unwrap = own.unwrap ?? 'data';
+            cfg.pick = own.pick ?? 'data';
             // Default the endpoint to `/graphql` when the member gives neither `url` nor `path`
             // (method/body shaping is the surface's).
             if (own.url === undefined && own.path === undefined)
@@ -146,7 +162,7 @@ function principalHandle(shared: SharedSeam, principal: string): PrincipalSeam {
         // of that return under an unresolved `C` — so `graphql` needs the `as`. Sound — runtime is
         // identical; only the static call-arg richness is restored.
         stitch: (config: string | Partial<StitchConfig>) => build(config),
-        graphql: ((config: Partial<StitchConfig> & { query: string }) =>
+        graphql: ((config: Partial<StitchConfig> & { document: string }) =>
             build(config, true)) as PrincipalSeam['graphql'],
         as: (p) => principalHandle(shared, p),
         get __config() {
@@ -165,7 +181,7 @@ function rootHandle(shared: SharedSeam): Seam {
         // restore its rich `InputOf<C>` return after #76 widened `InputOf`; `stitch` satisfies its
         // loose fallback overload as-is.
         stitch: (config: string | Partial<StitchConfig>) => build(config),
-        graphql: ((config: Partial<StitchConfig> & { query: string }) =>
+        graphql: ((config: Partial<StitchConfig> & { document: string }) =>
             build(config, true)) as Seam['graphql'],
         as: (p) => principalHandle(shared, p),
         // Bulk cache invalidation over the seam's shared store (ADR 0003 §8). No argument bumps
@@ -215,7 +231,12 @@ export function seam(options: SeamOptions = {}): Seam {
         clock,
         vault,
         trace,
-        throttle: seamBucket(fragment.throttle, store, seamId, clock),
+        throttle: seamBucket(
+            throttleOptions(fragment.throttle),
+            store,
+            seamId,
+            clock,
+        ),
         // `compact`'s `const` generic would freeze `[]` to `readonly []`; SharedSeam.stitches
         // is mutable, so pin the element type.
         stitches: [] as Stitch[],

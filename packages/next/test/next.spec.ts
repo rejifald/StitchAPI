@@ -1,9 +1,9 @@
 // @stitchapi/next behaviour — Web-standard Response helpers driven with fake event
 // sources and errors. No engine, no Next.
-import { isStitchError, sseResponse, stitchErrorResponse } from '../src';
+import { isStitchError, stitchErrorResponse, streamStitchSse } from '../src';
 
 import type { StitchEvent } from 'stitchapi';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 async function* events(
     ...evs: StitchEvent[]
@@ -41,11 +41,11 @@ function stitchError(message: string, status?: number): Error {
     return e;
 }
 
-// --- sseResponse -----------------------------------------------------------
+// --- streamStitchSse ---------------------------------------------------------
 
-describe('sseResponse', () => {
+describe('streamStitchSse', () => {
     test('streams each delta as an SSE frame and sets the content type', async () => {
-        const res = sseResponse(
+        const res = streamStitchSse(
             events(delta('a'), delta('b'), result(['a', 'b']), done),
         );
         expect(res.headers.get('content-type')).toBe(
@@ -55,15 +55,21 @@ describe('sseResponse', () => {
         expect(body).toBe('data: a\n\ndata: b\n\n');
     });
 
+    test('accepts anything with a .stream() (the core StitchEventSource intake)', async () => {
+        const source = { stream: () => events(delta('a'), done) };
+        const res = streamStitchSse(source);
+        expect(await res.text()).toBe('data: a\n\n');
+    });
+
     test('a `data` mapper pulls text out of a structured chunk', async () => {
-        const res = sseResponse(events(delta({ text: 'hi' }), done), {
+        const res = streamStitchSse(events(delta({ text: 'hi' }), done), {
             data: (c) => (c as { text: string }).text,
         });
         expect(await res.text()).toBe('data: hi\n\n');
     });
 
     test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
-        const res = sseResponse(
+        const res = streamStitchSse(
             events(delta('a'), {
                 type: 'error',
                 name: 'StitchError',
@@ -84,7 +90,7 @@ describe('sseResponse', () => {
     });
 
     test('errorData opts in to the raw message on the error frame', async () => {
-        const res = sseResponse(
+        const res = streamStitchSse(
             events(delta('a'), {
                 type: 'error',
                 name: 'StitchError',
@@ -100,13 +106,36 @@ describe('sseResponse', () => {
         );
     });
 
+    test('onError observes the real failure server-side while the client frame stays generic', async () => {
+        const onError = vi.fn();
+        const res = streamStitchSse(
+            events(delta('a'), {
+                type: 'error',
+                name: 'StitchError',
+                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                status: 502,
+                attempts: 1,
+                at: 0,
+            }),
+            { onError },
+        );
+        const body = await res.text();
+        expect(body).toBe('data: a\n\nevent: error\ndata: error\n\n');
+        expect(onError).toHaveBeenCalledTimes(1);
+        expect((onError.mock.calls[0]?.[0] as Error).message).toBe(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
+        );
+    });
+
     test('the event option labels each frame', async () => {
-        const res = sseResponse(events(delta('a'), done), { event: 'token' });
+        const res = streamStitchSse(events(delta('a'), done), {
+            event: 'token',
+        });
         expect(await res.text()).toBe('event: token\ndata: a\n\n');
     });
 
     test('the id option emits an id: line per frame with the zero-based index', async () => {
-        const res = sseResponse(events(delta('a'), delta('b'), done), {
+        const res = streamStitchSse(events(delta('a'), delta('b'), done), {
             id: (chunk, i) => `${String(chunk)}-${i}`,
         });
         expect(await res.text()).toBe(
@@ -115,12 +144,12 @@ describe('sseResponse', () => {
     });
 
     test('a multi-line chunk gets one data: prefix per line (SSE spec)', async () => {
-        const res = sseResponse(events(delta('l1\nl2'), done));
+        const res = streamStitchSse(events(delta('l1\nl2'), done));
         expect(await res.text()).toBe('data: l1\ndata: l2\n\n');
     });
 
     test('extra headers merge over the SSE defaults, with overrides winning', async () => {
-        const res = sseResponse(events(delta('a'), done), {
+        const res = streamStitchSse(events(delta('a'), done), {
             headers: { 'x-custom': '1', 'cache-control': 'no-store' },
         });
         expect(res.headers.get('x-custom')).toBe('1');
@@ -134,7 +163,7 @@ describe('sseResponse', () => {
     });
 
     test('a pre-aborted signal yields no frames', async () => {
-        const res = sseResponse(events(delta('a'), delta('b'), done), {
+        const res = streamStitchSse(events(delta('a'), delta('b'), done), {
             signal: AbortSignal.abort(),
         });
         expect(await res.text()).toBe('');
@@ -146,7 +175,7 @@ describe('sseResponse', () => {
             // A transport failure disclosing an internal hostname must not reach the client.
             throw new Error('getaddrinfo ENOTFOUND payments.internal.corp');
         }
-        const res = sseResponse(boom());
+        const res = streamStitchSse(boom());
         const body = await res.text();
         expect(body).toBe('data: a\n\nevent: error\ndata: error\n\n');
         expect(body).not.toContain('payments.internal.corp');
@@ -158,9 +187,22 @@ describe('sseResponse', () => {
             yield delta('a');
             throw new Error('stream blew up');
         }
-        const res = sseResponse(boom(), { errorData: (e) => e.message });
+        const res = streamStitchSse(boom(), { errorData: (e) => e.message });
         const body = await res.text();
         expect(body).toBe('data: a\n\nevent: error\ndata: stream blew up\n\n');
+    });
+
+    test('onError observes the original thrown value on the throw path', async () => {
+        const thrown = new Error('stream blew up');
+        async function* boom(): AsyncGenerator<StitchEvent, void> {
+            yield delta('a');
+            throw thrown;
+        }
+        const onError = vi.fn();
+        const res = streamStitchSse(boom(), { onError });
+        await res.text();
+        expect(onError).toHaveBeenCalledTimes(1);
+        expect(onError.mock.calls[0]?.[0]).toBe(thrown);
     });
 });
 
@@ -169,22 +211,35 @@ describe('sseResponse', () => {
 describe('stitchErrorResponse', () => {
     test('a StitchError maps to 502 by default with a generic JSON body', async () => {
         const res = stitchErrorResponse(stitchError('upstream down', 503));
-        expect(res.status).toBe(502);
-        expect(res.headers.get('content-type')).toContain('application/json');
+        expect(res).toBeDefined();
+        expect(res?.status).toBe(502);
+        expect(res?.headers.get('content-type')).toContain('application/json');
         // the raw message is withheld by default (see the leak-regression block below)
-        expect(await res.json()).toEqual({ error: 'Bad Gateway' });
+        expect(await res?.json()).toEqual({ error: 'Bad Gateway' });
     });
 
     test('status can propagate the upstream status', async () => {
         const res = stitchErrorResponse(stitchError('rate limited', 429), {
             status: (e) => e.status ?? 502,
         });
-        expect(res.status).toBe(429);
+        expect(res?.status).toBe(429);
     });
 
-    test('a non-StitchError defaults to 500', async () => {
-        const res = stitchErrorResponse(new Error('oops'));
-        expect(res.status).toBe(500);
+    test('a non-StitchError returns undefined so the caller can rethrow it', () => {
+        expect(stitchErrorResponse(new Error('oops'))).toBeUndefined();
+        expect(stitchErrorResponse('oops')).toBeUndefined();
+        expect(stitchErrorResponse(undefined)).toBeUndefined();
+    });
+
+    test('composes with ?? for the map-or-rethrow pattern', () => {
+        const fallthrough = new Error('not a stitch failure');
+        const attempt = (err: unknown): Response => {
+            const mapped = stitchErrorResponse(err);
+            if (mapped) return mapped;
+            throw err;
+        };
+        expect(attempt(stitchError('upstream down'))).toBeInstanceOf(Response);
+        expect(() => attempt(fallthrough)).toThrow(fallthrough);
     });
 
     // Regression: the default body must not echo the raw upstream/transport message,
@@ -195,16 +250,16 @@ describe('stitchErrorResponse', () => {
             const res = stitchErrorResponse(
                 stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
             );
-            expect(res.status).toBe(502);
-            const body = await res.text();
+            expect(res?.status).toBe(502);
+            const body = await res?.text();
             expect(body).not.toContain('payments.internal.corp');
             expect(body).not.toContain('ENOTFOUND');
         });
 
         test("an upstream 401 does not surface as 'HTTP 401' in the body", async () => {
             const res = stitchErrorResponse(stitchError('HTTP 401', 401));
-            expect(res.status).toBe(502);
-            expect(await res.text()).not.toContain('HTTP 401');
+            expect(res?.status).toBe(502);
+            expect(await res?.text()).not.toContain('HTTP 401');
         });
 
         test('the `body` opt-in can still include the raw message', async () => {
@@ -212,7 +267,7 @@ describe('stitchErrorResponse', () => {
                 stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
                 { body: (e) => ({ error: e.message }) },
             );
-            expect(await res.text()).toContain('payments.internal.corp');
+            expect(await res?.text()).toContain('payments.internal.corp');
         });
     });
 });

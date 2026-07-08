@@ -1,6 +1,6 @@
 // The Surface plugin model (ADR 0005 Decisions 1-3, 10, 11): `kind` is a pluggable Surface
 // (not a closed string union), normalised to its id string in __config (JSON round-trip), and
-// each surface exposes monomorphic `.stitch()` / `.seam()` helpers. The seam stays
+// each surface exposes monomorphic `.stitch()` / `.bind()` helpers. The seam stays
 // surface-agnostic. graphql's behaviour still rides the engine's id-keyed handling here (it
 // moves behind the surface hooks in Stage 4).
 import { graphql, httpSurface, seam, stitch } from '../src';
@@ -26,7 +26,7 @@ describe('Surface model (ADR 0005 Decisions 1-2, 11)', () => {
     });
 
     test('kind round-trips through __config as the id STRING, never the live object', () => {
-        const g = graphql({ baseUrl: 'https://x.test', query: '{ a }' });
+        const g = graphql({ baseUrl: 'https://x.test', document: '{ a }' });
         const json = JSON.parse(JSON.stringify(g.__config)) as {
             kind?: unknown;
         };
@@ -52,7 +52,7 @@ describe('generic stitch({ kind }) accepts a Surface (Decision 3)', () => {
             kind: graphqlSurface,
             baseUrl: server.url,
             path: '/gql',
-            query: '{ ok }',
+            document: '{ ok }',
         });
 
         await q({ variables: { x: 1 } });
@@ -73,28 +73,28 @@ describe('graphql surface helper (Decision 3/10)', () => {
         const q = graphql.stitch({
             baseUrl: server.url,
             path: '/g',
-            query: '{ me { id } }',
-            unwrap: 'data.me',
+            document: '{ me { id } }',
+            pick: 'data.me',
         });
         expect(await q()).toEqual({ id: 7 });
     });
 
-    test('graphql.seam(existingSeam).stitch(...) creates a graphql member of that seam', async () => {
+    test('graphql.bind(existingSeam).stitch(...) creates a graphql member of that seam', async () => {
         server.route('POST', '/api', { body: { data: { ping: 'pong' } } });
         const api = seam({ baseUrl: server.url });
-        const ping = graphql.seam(api).stitch({
+        const ping = graphql.bind(api).stitch({
             path: '/api',
-            query: '{ ping }',
-            unwrap: 'data.ping',
+            document: '{ ping }',
+            pick: 'data.ping',
         });
         expect(await ping()).toBe('pong');
     });
 
-    test('graphql.seam(options) makes a new seam whose members are graphql', async () => {
+    test('graphql.bind(options) makes a new seam whose members are graphql', async () => {
         server.route('POST', '/s', { body: { data: { v: 42 } } });
-        const g = graphql.seam({ baseUrl: server.url });
+        const g = graphql.bind({ baseUrl: server.url });
         expect(g.seam.__seam).toBe(true);
-        const v = g.stitch({ path: '/s', query: '{ v }', unwrap: 'data.v' });
+        const v = g.stitch({ path: '/s', document: '{ v }', pick: 'data.v' });
         expect(await v()).toBe(42);
     });
 });

@@ -37,7 +37,7 @@ const listAll = () =>
     stitch<number[]>({
         baseUrl: server.url,
         path: '/list',
-        unwrap: 'data',
+        pick: 'data',
         paginate: {
             next: (body, fetched) =>
                 (body as { hasMore: boolean }).hasMore
@@ -87,8 +87,9 @@ test('paginated GraphQL advances its cursor through the variables slot', async (
     const listUsers = graphql({
         baseUrl: server.url,
         path: '/gql',
-        query: 'query($after: String) { users(after: $after) { nodes pageInfo { endCursor hasNextPage } } }',
-        unwrap: 'data.users.nodes',
+        document:
+            'query($after: String) { users(after: $after) { nodes pageInfo { endCursor hasNextPage } } }',
+        pick: 'data.users.nodes',
         paginate: {
             next: (body) => {
                 const pi = (
@@ -120,7 +121,7 @@ test('max caps the page loop (guards a runaway paginator)', async () => {
     const list = stitch({
         baseUrl: server.url,
         path: '/loop',
-        unwrap: 'data',
+        pick: 'data',
         paginate: { next: () => ({}), pages: 2 },
     });
     await list();

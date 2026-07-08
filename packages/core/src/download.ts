@@ -84,12 +84,12 @@ export const downloadSurface: Surface<StitchInput, DownloadResult> = {
         responseType: 'blob',
     }),
     interpret: (res): SurfaceOutcome<DownloadResult> => {
-        const value: DownloadResult = { blob: res.body as Blob };
+        const data: DownloadResult = { blob: res.body as Blob };
         const filename =
             filenameFromDisposition(res.headers['content-disposition']) ??
             filenameFromUrl(res.url);
-        if (filename !== undefined) value.filename = filename;
-        return { ok: true, value };
+        if (filename !== undefined) data.filename = filename;
+        return { ok: true, data };
     },
 };
 
@@ -108,7 +108,7 @@ export interface DownloadSeamApi {
 // to `{ blob, filename }`. The `as` retypes the loose `makeStitch` result (`Stitch<…, StitchInput>`)
 // to the declared `InputOf<C>` call-arg type: now that `InputOf` reads `extends`-fragment schemas
 // (#76) it is no longer a clean supertype of `StitchInput` under an unresolved `C`, so this loose
-// body needs the same retype `stitch()`/`seam` get for free from their inferring overloads. Sound —
+// body needs the same retype `stitch()`/`bind` get for free from their inferring overloads. Sound —
 // the runtime stitch is byte-identical; only the static call-arg richness is restored (the type
 // tests check every concrete config).
 const downloadStitch = <
@@ -138,13 +138,13 @@ function bindSeam(s: Seam): DownloadSeamApi {
 /**
  * The download surface's authoring helper — callable for the terse form (`download(config)`) plus:
  * - `download.stitch(config)` — a standalone download stitch (alias of the callable).
- * - `download.seam(existingSeam)` — bind download members to an existing seam.
- * - `download.seam(options)` — a new seam whose members default to download.
+ * - `download.bind(existingSeam)` — bind download members to an existing seam.
+ * - `download.bind(options)` — a new seam whose members default to download.
  * - `download.surface` — the download {@link Surface} identity.
  */
 export const download = Object.assign(downloadStitch, {
     surface: downloadSurface,
     stitch: downloadStitch,
-    seam: (arg: Seam | SeamOptions): DownloadSeamApi =>
+    bind: (arg: Seam | SeamOptions): DownloadSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });

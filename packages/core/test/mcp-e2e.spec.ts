@@ -139,7 +139,7 @@ const userSchema = {
 export const getUser = stitch({
     baseUrl: ${JSON.stringify(baseUrl)},
     path: '/users/{id}',
-    unwrap: 'data',
+    pick: 'data',
     output: userSchema,
 });
 

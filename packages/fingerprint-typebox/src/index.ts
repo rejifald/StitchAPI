@@ -11,7 +11,7 @@
 // opaque parts of a schema are INVISIBLE to a naive stringify: a
 // `Type.Transform(Type.String())...` serialises to exactly `{ type: 'string' }`,
 // indistinguishable from a plain string. We therefore walk every nested node and
-// ABSTAIN (return `value: null`) the moment we hit a part we cannot soundly
+// ABSTAIN (return `token: null`) the moment we hit a part we cannot soundly
 // capture: a transform codec (detected by `Symbol(TypeBox.Transform)`), an opaque
 // Kind (`Function`/`Constructor`/`Unsafe`/`Undefined`/`Void`), or a node that
 // carries no JSON-Schema discriminator at all (`Any`/`Unknown`/`Unsafe`, which all
@@ -149,10 +149,10 @@ export const typeboxFingerprinter: SchemaFingerprinter = {
             // `tbfp1` tags the descriptor format: bump it to force a one-time,
             // safe re-fingerprint if the descriptor scheme ever changes.
             const token = hash(`tbfp1|${describeRoot(schema)}`);
-            return { token, value: token, strength: 'strong' };
+            return { token, strength: 'strong' };
         } catch {
             // ABSTAIN sentinel or any unexpected introspection failure → abstain.
-            return { token: null, value: null, strength: 'strong' };
+            return { token: null, strength: 'strong' };
         }
     },
 };

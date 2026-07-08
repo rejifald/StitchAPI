@@ -7,6 +7,7 @@ import type {
     CircuitOptions,
     Clock,
     RetryOptions,
+    StatusMatch,
     StitchStore,
     ThrottleOptions,
 } from './types';
@@ -15,16 +16,29 @@ import { parseDuration, parseRate, systemClock } from './util';
 export class TimeoutError extends Error {}
 
 /**
+ * Normalize a status-match field (a bare number, a number list, a predicate, or unset) into a
+ * single predicate — the shared CONTRACT.md P7 matcher every status-match slot runs through
+ * (`retry.on`, `throttle.on`, `acceptStatus`, the auth strategies' `refreshOn`, …). Unset →
+ * accept nothing.
+ */
+export function acceptsStatus(
+    accept: StatusMatch | undefined,
+): (status: number) => boolean {
+    if (accept === undefined) return () => false;
+    if (typeof accept === 'function') return accept;
+    if (typeof accept === 'number') return (status) => status === accept;
+    return (status) => accept.includes(status);
+}
+
+/**
  * Backoff (ms) BEFORE the given 1-based `attempt` (attempt=2 is the first retry).
  * 'expo' = base * 2^(attempt-2); 'expo-jitter' adds random jitter in [0, computed];
  * 'fixed' = base. Result is clamped to max.
  */
 export function backoffDelay(attempt: number, opts?: RetryOptions): number {
     const kind = opts?.backoff ?? 'expo-jitter';
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `baseMs` is the @deprecated alias of `baseDelay`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const base = parseDuration(opts?.baseDelay ?? opts?.baseMs) ?? 100;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxMs` is the @deprecated alias of `maxDelay`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const max = parseDuration(opts?.maxDelay ?? opts?.maxMs) ?? 10_000;
+    const base = parseDuration(opts?.baseDelay) ?? 100;
+    const max = parseDuration(opts?.maxDelay) ?? 10_000;
     const exp = Math.max(0, attempt - 2); // attempt 2 -> 2^0
     let delay: number;
     if (kind === 'fixed') {
@@ -83,8 +97,7 @@ export function createThrottle(
     const limit = opts?.concurrency;
     const rate = opts?.rate ? parseRate(opts.rate) : undefined;
     const spacing = rate ? rate.per / rate.count : 0; // ms between grants
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `scope` is the @deprecated alias of `pool`, read as the back-compat fallback until the GA cut (CONTRACT.md P2)
-    const hostPooled = (opts?.pool ?? opts?.scope) === 'host';
+    const hostPooled = opts?.pool === 'host';
     const states = hostPooled ? hostStates : new Map<string, KeyState>();
 
     const stateFor = (key: string): KeyState => {
@@ -239,37 +252,44 @@ export class CircuitOpenError extends Error {
 
 /**
  * Thrown (and surfaced as an `error` event) when a stitch runs in **delegate-backoff** mode
- * (`rateLimit.delegate`) and the response carries a rate-limit status (default `429`). Instead of
+ * (`throttle.delegate`) and the response carries a rate-limit status (default `429`). Instead of
  * retrying internally or pacing on the built-in throttle, the engine surfaces the outcome so an
  * OUTER gate/circuit — owned by the host — decides the backoff (issue #145). Carries the structured
  * signal that gate needs: the `status`, the `retryAfter` parsed from `Retry-After` (delta-seconds
  * OR HTTP-date; `undefined` when the header is absent/unparseable), and the raw `response` so the
- * host can read other rate headers (`X-RateLimit-*`, etc.). The full `response` rides on the live
- * instance only — never the serialized `error` event — so it cannot leak into a trace sink.
+ * host can read other rate headers (`X-RateLimit-*`, etc.). `attempts`/`body`/`url` mirror
+ * {@link StitchError}'s field set (CONTRACT.md P10), lifted from the response/run state at
+ * construction. The full `response` rides on the live instance only — never the serialized `error`
+ * event — so it cannot leak into a trace sink.
  */
 export class RateLimitError extends Error {
     readonly status: number;
     /** `Retry-After` parsed to ms (delta-seconds OR HTTP-date); `undefined` when absent/unparseable. */
     readonly retryAfter: number | undefined;
-    /** @deprecated Renamed to {@link RateLimitError.retryAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    readonly retryAfterMs: number | undefined;
+    /** Attempts made before the rate-limit outcome surfaced (1 = the first request). Mirrors `StitchError.attempts` (P10). */
+    readonly attempts: number;
+    /** The parsed body of the rate-limited response, lifted from `response.body` (P10). */
+    readonly body?: unknown;
+    /** The final request URL of the rate-limited response, when the transport exposes it (P10). */
+    readonly url?: string;
     readonly response: AdapterResponse;
     constructor(opts: {
         status: number;
         retryAfter?: number | undefined;
-        /** @deprecated Use `retryAfter` (CONTRACT.md P17). */
-        retryAfterMs?: number | undefined;
         response: AdapterResponse;
+        attempts?: number | undefined;
         message?: string;
     }) {
         super(opts.message ?? `rate limited (HTTP ${opts.status})`);
         this.name = 'RateLimitError';
         this.status = opts.status;
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- read the @deprecated constructor alias for back-compat (CONTRACT.md P17)
-        this.retryAfter = opts.retryAfter ?? opts.retryAfterMs;
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-set the @deprecated field alias for back-compat (CONTRACT.md P17)
-        this.retryAfterMs = this.retryAfter;
+        this.retryAfter = opts.retryAfter;
+        this.attempts = opts.attempts ?? 0;
         this.response = opts.response;
+        // Lift the P10 fields off the response at construction so the error matches StitchError's
+        // shape without the caller reaching into `.response`.
+        if (opts.response.body !== undefined) this.body = opts.response.body;
+        if (opts.response.url !== undefined) this.url = opts.response.url;
     }
 }
 
@@ -285,8 +305,8 @@ interface CircuitRecord {
  * a success closes it, another failure re-opens it. State lives in the StitchStore, so a shared
  * store gives a breaker shared across workers (DESIGN.md §13).
  *
- * `failures` and `cooldown` are required by design (CONTRACT.md P15); this throws if neither they
- * nor their deprecated `failureThreshold`/`cooldownMs` aliases are set.
+ * `failures` and `cooldown` are required by design (CONTRACT.md P15); this throws when either is
+ * missing.
  */
 export function createCircuit(
     opts: CircuitOptions,
@@ -298,17 +318,13 @@ export function createCircuit(
     onSuccess(): Promise<void>;
     onFailure(): Promise<boolean>;
 } {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `failureThreshold` is the @deprecated alias of `failures` (CONTRACT.md P4)
-    const failureThreshold = opts.failures ?? opts.failureThreshold;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `cooldownMs` is the @deprecated alias of `cooldown` (CONTRACT.md P17)
-    const cooldown = parseDuration(opts.cooldown ?? opts.cooldownMs);
+    const failureThreshold = opts.failures;
+    const cooldown = parseDuration(opts.cooldown);
     if (failureThreshold == null || cooldown == null)
         throw new Error(
-            'circuit requires `failures` and `cooldown`. Fix: set both, e.g. `circuit: { failures: 5, cooldown: "30s" }`.',
+            'circuit requires `failures` and `cooldown`. Fix: set both, e.g. `circuit: { failures: 5, cooldown: "30s" }` or `circuit: [5, "30s"]`.',
         );
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `halfOpenAfterMs` is the @deprecated alias of `halfOpenAfter` (CONTRACT.md P17)
-    const halfOpenInput = opts.halfOpenAfter ?? opts.halfOpenAfterMs;
-    const halfOpenAfter = parseDuration(halfOpenInput) ?? cooldown;
+    const halfOpenAfter = parseDuration(opts.halfOpenAfter) ?? cooldown;
     const nsKey = 'circuit:' + (opts.key ?? fallbackKey);
 
     const read = async (): Promise<CircuitRecord> =>

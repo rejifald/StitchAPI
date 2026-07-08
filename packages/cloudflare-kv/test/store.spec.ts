@@ -183,6 +183,9 @@ describe('@stitchapi/cloudflare-kv incr is unsupported', () => {
         await expect(store.incr('rate', 1_000)).rejects.toThrow(
             /not supported on Cloudflare Workers KV/i,
         );
+        // `ttl` is optional on `incr` (StitchStore contract) — the no-window
+        // call shape must typecheck, and still fails loud on KV.
+        await expect(store.incr('rate')).rejects.toThrow(/Durable Object/i);
     });
 
     test('cloudflareKvStore has no close() (it owns no connection)', () => {

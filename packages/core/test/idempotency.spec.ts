@@ -33,7 +33,7 @@ test('injects a stable Idempotency-Key on a write, unchanged across a retry', as
         method: 'POST',
         baseUrl: server.url,
         path: '/create',
-        retry: { attempts: 2, on: [503], baseMs: 5 },
+        retry: { attempts: 2, on: [503], baseDelay: 5 },
         idempotency: true, // default header + random per-call key
     });
 
@@ -55,7 +55,7 @@ test('uses a custom keyOf function derived from the input', async () => {
         method: 'POST',
         baseUrl: server.url,
         path: '/orders',
-        retry: { attempts: 2, on: [503], baseMs: 5 },
+        retry: { attempts: 2, on: [503], baseDelay: 5 },
         idempotency: {
             header: 'X-Idempotency-Key',
             keyOf: (input) => `order-${(input.body as { id: number }).id}`,
@@ -67,26 +67,6 @@ test('uses a custom keyOf function derived from the input', async () => {
     const calls = server.calls('/orders');
     expect(calls[0]!.headers['x-idempotency-key']).toBe('order-42');
     expect(calls[1]!.headers['x-idempotency-key']).toBe('order-42'); // stable + deterministic
-});
-
-test('the @deprecated `key` alias still derives the same idempotency key (P6)', async () => {
-    server.route('POST', '/orders', { body: { ok: true } });
-    const create = stitch({
-        method: 'POST',
-        baseUrl: server.url,
-        path: '/orders',
-        idempotency: {
-            header: 'X-Idempotency-Key',
-            // The pre-rename spelling — must behave identically to `keyOf` until the GA cut.
-            key: (input) => `order-${(input.body as { id: number }).id}`,
-        },
-    });
-
-    await create({ body: { id: 7 } });
-
-    expect(server.calls('/orders')[0]!.headers['x-idempotency-key']).toBe(
-        'order-7',
-    );
 });
 
 test('separate logical calls get distinct generated keys', async () => {
@@ -177,7 +157,7 @@ test('the nudge is a hint with an out — silenced, and never fired for the case
         // even though `method` is unset here.
         graphql({
             baseUrl: server.url,
-            query: '{ me { id } }',
+            document: '{ me { id } }',
             idempotency: true,
         });
         expect(warn).not.toHaveBeenCalled();

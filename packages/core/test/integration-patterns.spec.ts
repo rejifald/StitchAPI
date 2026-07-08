@@ -69,9 +69,9 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
             method: 'POST',
             baseUrl: server.url,
             path: '/graphql',
-            auth: apiKey({ header: 'apikey', value: env('METADATA_API_KEY') }),
-            retry: { attempts: 5, on: [429, 500, 502, 503], baseMs: 5 },
-            unwrap: 'data',
+            auth: apiKey({ name: 'apikey', value: env('METADATA_API_KEY') }),
+            retry: { attempts: 5, on: [429, 500, 502, 503], baseDelay: 5 },
+            pick: 'data',
         });
 
         const out = await query({
@@ -90,7 +90,7 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
             method: 'POST',
             baseUrl: server.url,
             path: '/graphql',
-            auth: apiKey({ header: 'apikey', value: () => 'sk' }),
+            auth: apiKey({ name: 'apikey', value: () => 'sk' }),
             throttle: { rate: '1/s' },
         });
         const start = Date.now();
@@ -127,8 +127,8 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
             auth: cookieSession({
                 login,
                 cookie: 'SID',
-                scope: 'app',
-                refreshOn: [403], // this integration uses 403, not 401
+                tenancy: 'app',
+                refreshOn: 403, // this integration uses 403, not 401 (bare status ≡ [403], CONTRACT.md P7)
                 loginInput: () => ({
                     body: {
                         username: env('CLIENT_USER')(),
@@ -179,7 +179,7 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
             auth: cookieSession({
                 login,
                 cookie: 'session_id',
-                scope: 'app',
+                tenancy: 'app',
                 loginInput: () => ({
                     body: {
                         username: env('SCRAPE_USER')(),
@@ -189,7 +189,7 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
             }),
             throttle: { rate: '5/s' },
             transform: scrapeListings, // HTML -> { items: [...] }
-            unwrap: 'items',
+            pick: 'items',
             // `score` is REQUIRED — the schema is the contract, so a markup rename that drops it
             // is a loud validation error, not a silent gap. No snapshot, no baseline call.
             output: drift(
@@ -245,7 +245,7 @@ describe('Diverse co-located auth (three providers, three header formats)', () =
             baseUrl: server.url,
             path: '/system',
             auth: apiKey({
-                header: 'authorization',
+                name: 'authorization',
                 value: () => `MediaToken token="${env('MEDIA_A_TOKEN')()}"`,
             }),
         });
@@ -253,7 +253,7 @@ describe('Diverse co-located auth (three providers, three header formats)', () =
             baseUrl: server.url,
             path: '/node',
             auth: apiKey({
-                header: 'x-media-token',
+                name: 'x-media-token',
                 value: env('MEDIA_B_TOKEN'),
             }),
             hooks: {

@@ -136,15 +136,14 @@ function freshId(): string {
 // ---------------------------------------------------------------------------
 // per-method options
 // ---------------------------------------------------------------------------
-// Each verb's options extend the shared StitchConfig keys MINUS `kind` (the surface owns it) and
-// `url` (synthesised as a `postmessage:<type>` pseudo-endpoint), plus the verb's own fields. The
-// resilience chain (`retry`/`throttle`/`timeout`/`circuit`/`trace`/`signal`) all apply via the
-// engine, exactly as for every other surface.
+// The message `type` is POSITIONAL on every verb (CONTRACT.md P15 — the one required address goes
+// first, like `stitch(url)`); each verb's options extend the shared StitchConfig keys MINUS `kind`
+// (the surface owns it) and `url` (synthesised as a `postmessage:<type>` pseudo-endpoint), plus the
+// verb's own fields. The resilience chain (`retry`/`throttle`/`timeout`/`circuit`/`trace`/`signal`)
+// all apply via the engine, exactly as for every other surface.
 
 /** Options for {@link PostMessageChannel.request}. */
 export type RequestOptions = Partial<Omit<StitchConfig, 'kind' | 'url'>> & {
-    /** The message `type` posted to the peer. */
-    type: string;
     /** The `type` the correlated reply must carry. Default `` `${type}-result` ``. */
     reply?: string;
     /** Schema validating the outbound `body` payload (the call argument). */
@@ -155,19 +154,27 @@ export type RequestOptions = Partial<Omit<StitchConfig, 'kind' | 'url'>> & {
 
 /** Options for {@link PostMessageChannel.emit}. */
 export type EmitOptions = Partial<Omit<StitchConfig, 'kind' | 'url'>> & {
-    /** The message `type` posted to the peer. */
-    type: string;
     /** Schema validating the outbound `body` payload (the call argument). */
     input?: StitchConfig['input'];
 };
 
 /** Options for {@link PostMessageChannel.events}. */
 export type EventsOptions = Partial<Omit<StitchConfig, 'kind' | 'url'>> & {
-    /** The inbound event `type` to subscribe to. */
-    type: string;
     /** Schema validating each inbound event payload (the collected/streamed value). */
     output?: StitchConfig['output'];
 };
+
+/** Options for {@link PostMessageChannel.respond}. `input`/`output` are BARE schemas validating
+ *  the single inbound payload / the single result (not slotted `InputSchemas` — a responder
+ *  answers one value, not a request with `body`/`query`/… slots). */
+export interface RespondOptions {
+    /** Schema validating the inbound request payload (a failure DROPS the request). */
+    input?: SchemaLike;
+    /** Schema validating the handler result (a failure suppresses the reply). */
+    output?: SchemaLike;
+    /** The `type` the answer is posted under. Default `` `${type}-result` ``. */
+    reply?: string;
+}
 
 /**
  * The typed, validated, observable channel — the entry point this surface exposes. Built by
@@ -182,8 +189,9 @@ export interface PostMessageChannel {
      * `` `${type}-result` ``. The call argument is inferred from `opts.input`; the result tracks
      * `opts.output` (the reply payload schema). Timeout/abort reuse the engine's `timeout`/`signal`.
      */
-    request<const C extends RequestOptions>(
-        opts: C,
+    request<const C extends RequestOptions = RequestOptions>(
+        type: string,
+        opts?: C,
     ): Stitch<OutputOf<C>, InputOf<C>>;
     /**
      * Fire-and-forget send (no reply awaited): post `{ type, payload }` and resolve immediately. A
@@ -195,7 +203,10 @@ export interface PostMessageChannel {
      * `void send(input).catch(() => {})`. A bare `send(input)` whose result is never awaited sends
      * NOTHING.
      */
-    emit<const C extends EmitOptions>(opts: C): Stitch<void, InputOf<C>>;
+    emit<const C extends EmitOptions = EmitOptions>(
+        type: string,
+        opts?: C,
+    ): Stitch<void, InputOf<C>>;
     /**
      * Subscribe to inbound events of `opts.type`. A STREAMING surface (id `'postmessage-event'`):
      * `.stream()` yields live deltas; `await` collects until the stream ends (so prefer `.stream()`
@@ -205,8 +216,9 @@ export interface PostMessageChannel {
      * malformed message should NOT end the subscription, omit `output` and validate each payload in
      * the consumer — drop the bad one, keep listening (an `onInvalid: 'drop'` mode is future work).
      */
-    events<const C extends EventsOptions>(
-        opts: C,
+    events<const C extends EventsOptions = EventsOptions>(
+        type: string,
+        opts?: C,
     ): Stitch<OutputOf<C>[], InputOf<C>>;
     /**
      * Register a handler that ANSWERS inbound requests of `type` (the receiving side — e.g. an
@@ -224,14 +236,10 @@ export interface PostMessageChannel {
     respond<TIn = unknown, TOut = unknown>(
         type: string,
         handler: (payload: TIn) => TOut | Promise<TOut>,
-        opts?: {
-            input?: SchemaLike;
-            output?: SchemaLike;
-            reply?: string;
-        },
+        opts?: RespondOptions,
     ): () => void;
     /** Detach the listener, reject every pending request, close every event stream. */
-    close(): void;
+    close(): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,21 +271,32 @@ export const postMessageEventSurface: Surface = {
 // the channel builder
 // ---------------------------------------------------------------------------
 
+// The shared `T | T[]` list normalisation (CONTRACT.md P7): one origin reads as itself.
+const originList = (v: string | string[] | undefined): string[] =>
+    v === undefined ? [] : Array.isArray(v) ? v : [v];
+
+/** Options for {@link channel}. */
+export interface ChannelOptions {
+    /**
+     * Origin(s) inbound messages may come from. An origin-bearing transport (a Window) drops
+     * anything else BEFORE dispatch/validation; a `MessagePort` (origin `''`) skips the gate (a
+     * port is already private).
+     */
+    allowedOrigins: string | string[];
+}
+
 /**
  * Build a {@link PostMessageChannel} over ANY {@link MessageTransport} — the core builder the other
  * two delegate to (and what the tests drive with a fake transport). Attaches the single demux
  * listener at construction; binds `allowedOrigins` as the security policy.
  *
  * @param transport The raw channel (a Window / port / a fake pair in tests).
- * @param opts.allowedOrigins Origins inbound messages may come from. An origin-bearing transport
- *   (a Window) drops anything else BEFORE dispatch/validation; a `MessagePort` (origin `''`) skips
- *   the gate (a port is already private).
  */
 export function channel(
     transport: MessageTransport,
-    opts: { allowedOrigins: string[] },
+    opts: ChannelOptions,
 ): PostMessageChannel {
-    return makeChannel(transport, opts.allowedOrigins);
+    return makeChannel(transport, originList(opts.allowedOrigins));
 }
 
 /**
@@ -290,11 +309,16 @@ export function channel(
  * wildcard target posts the message to whatever document currently occupies the frame — a classic
  * postMessage data leak. The type forbids it; this catches a `as any` cast too.
  */
-export function windowChannel(opts: {
+export interface WindowChannelOptions {
+    /** The window to post to — or a thunk resolving it lazily (a frame that mounts late). */
     target: Window | (() => Window);
+    /** The concrete (non-wildcard) origin outbound messages are addressed to. */
     targetOrigin: Origin;
-    allowedOrigins?: string[];
-}): PostMessageChannel {
+    /** Origin(s) inbound messages may come from. Default `[targetOrigin]`. */
+    allowedOrigins?: string | string[];
+}
+
+export function windowChannel(opts: WindowChannelOptions): PostMessageChannel {
     if ((opts.targetOrigin as string) === '*')
         throw new Error(
             "postmessage: targetOrigin '*' is forbidden — name the exact origin (e.g. 'https://app.example.com'). A wildcard posts to whatever document occupies the frame.",
@@ -335,7 +359,12 @@ export function windowChannel(opts: {
             };
         },
     };
-    return makeChannel(transport, opts.allowedOrigins ?? [opts.targetOrigin]);
+    return makeChannel(
+        transport,
+        opts.allowedOrigins !== undefined
+            ? originList(opts.allowedOrigins)
+            : [opts.targetOrigin],
+    );
 }
 
 /**
@@ -346,7 +375,7 @@ export function windowChannel(opts: {
  */
 export function portChannel(
     port: MessagePort,
-    opts?: { allowedOrigins?: string[] },
+    opts?: { allowedOrigins?: string | string[] },
 ): PostMessageChannel {
     const transport: MessageTransport = {
         post: (message, transfer) => {
@@ -364,7 +393,7 @@ export function portChannel(
         },
     };
     // A port has no origin, so allowedOrigins is moot; carry whatever was passed for symmetry.
-    return makeChannel(transport, opts?.allowedOrigins ?? []);
+    return makeChannel(transport, originList(opts?.allowedOrigins));
 }
 
 // The single implementation behind all three builders. Holds the per-channel registry (pending
@@ -463,10 +492,12 @@ function makeChannel(
     }
 
     // ---- request: a buffered execute surface --------------------------------
-    function request<const C extends RequestOptions>(
-        opts: C,
+    function request<const C extends RequestOptions = RequestOptions>(
+        type: string,
+        opts?: C,
     ): Stitch<OutputOf<C>, InputOf<C>> {
-        const { type, reply, input, output, ...rest } = opts;
+        const { reply, input, output, ...rest } = (opts ??
+            {}) as RequestOptions;
         const replyType = reply ?? `${type}-result`;
         const url = `postmessage:${type}`;
         // `execute` (ADR 0008) replaces the transport at the engine's adapter call site, INSIDE the
@@ -552,10 +583,11 @@ function makeChannel(
     }
 
     // ---- emit: a buffered execute surface, no reply -------------------------
-    function emit<const C extends EmitOptions>(
-        opts: C,
+    function emit<const C extends EmitOptions = EmitOptions>(
+        type: string,
+        opts?: C,
     ): Stitch<void, InputOf<C>> {
-        const { type, input, ...rest } = opts;
+        const { input, ...rest } = (opts ?? {}) as EmitOptions;
         const url = `postmessage:${type}`;
         const surface: Surface = {
             id: 'postmessage',
@@ -591,10 +623,11 @@ function makeChannel(
     }
 
     // ---- events: a streaming surface ----------------------------------------
-    function events<const C extends EventsOptions>(
-        opts: C,
+    function events<const C extends EventsOptions = EventsOptions>(
+        type: string,
+        opts?: C,
     ): Stitch<OutputOf<C>[], InputOf<C>> {
-        const { type, output, ...rest } = opts;
+        const { output, ...rest } = (opts ?? {}) as EventsOptions;
         const url = `postmessage:${type}`;
         // `execute` returns a live `ReadableStream` of PAYLOADS the channel feeds via an event
         // subscription (the inbound envelope's `payload` is extracted at enqueue), so a `delta` and
@@ -689,11 +722,7 @@ function makeChannel(
     function respond<TIn = unknown, TOut = unknown>(
         type: string,
         handler: (payload: TIn) => TOut | Promise<TOut>,
-        opts?: {
-            input?: SchemaLike;
-            output?: SchemaLike;
-            reply?: string;
-        },
+        opts?: RespondOptions,
     ): () => void {
         const responder: Responder = {
             handler: handler as (payload: unknown) => unknown,
@@ -714,8 +743,10 @@ function makeChannel(
     }
 
     // ---- close: tear everything down ----------------------------------------
-    function close(): void {
-        if (closed) return;
+    // Promise-returning for interface symmetry with the other teardown verbs (`seam.close`);
+    // the teardown itself is synchronous.
+    function close(): Promise<void> {
+        if (closed) return Promise.resolve();
         closed = true;
         detach();
         for (const [id, p] of pending) {
@@ -728,6 +759,7 @@ function makeChannel(
         responders.clear();
         eventSubs.clear();
         liveStreams.clear();
+        return Promise.resolve();
     }
 
     return { request, emit, events, respond, close };

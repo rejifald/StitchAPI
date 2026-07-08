@@ -8,7 +8,7 @@ Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
 It walks Zod's internal representation — `_def`/`typeName` on Zod 3, `_zod.def`/
 `type` on Zod 4 — into a canonical structural descriptor hashed into an opaque,
 synchronous token. The token changes iff the schema's validation/shape semantics
-change. It is an **allowlist**: it abstains (returns `value: null`, so the cache
+change. It is an **allowlist**: it abstains (returns `token: null`, so the cache
 falls back to re-validate-on-hit) on anything it can't soundly capture — opaque
 `.refine`/`.transform`/`.default`/custom checks.
 

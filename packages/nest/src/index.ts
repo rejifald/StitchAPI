@@ -12,8 +12,6 @@ export {
     type StitchDef,
     type AnyStitchDef,
     type NestRequestSeam,
-    // Deprecated alias (kept through 1.0.0-rc, removed at GA) — see ADR 0012.
-    type StitchHost,
     type Injected,
 } from './define-stitch';
 export {
@@ -23,12 +21,6 @@ export {
     type NestConfigServiceLike,
     type NestLoggerLike,
     type NestLoggerSinkOptions,
-    // Deprecated aliases (kept through 1.0.0-rc, removed at GA) — see ADR 0012.
-    loggerSink,
-    fromConfig,
-    borrowStore,
-    type LoggerLike,
-    type ConfigServiceLike,
 } from './bridges';
 export { STITCH_SEAM, STITCH_STORE, STITCH_TRACE } from './tokens';
 export {
@@ -36,6 +28,11 @@ export {
     toHttpException,
     isStitchError,
     type StitchErrorLike,
-    type ToHttpExceptionOptions,
+    type StitchErrorOptions,
 } from './exception-filter';
-export { stitchSse, type MessageEventLike, type StitchSseOptions } from './sse';
+export {
+    streamStitchSse,
+    type MessageEventLike,
+    type StitchEventSource,
+    type StreamStitchSseOptions,
+} from './sse';

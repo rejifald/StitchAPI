@@ -348,7 +348,7 @@ describe('toOpenApi security schemes', () => {
             createThing: stitch({
                 method: 'POST',
                 url: 'https://api.example.com/things',
-                auth: apiKey({ header: 'X-My-Key', value: 'zzz-apikey-cred' }),
+                auth: apiKey({ name: 'X-My-Key', value: 'zzz-apikey-cred' }),
             }),
             grant: stitch({
                 url: 'https://api.example.com/grant',
@@ -422,7 +422,7 @@ describe('toOpenApi security schemes', () => {
                 auth: cookieSession({
                     cookie: 'sid',
                     login: stitch('https://api.example.com/login'),
-                    scope: 'app',
+                    tenancy: 'app',
                 }),
             }),
         };
@@ -442,11 +442,11 @@ describe('toOpenApi security schemes', () => {
         const registry: StitchRegistry = {
             a: stitch({
                 url: 'https://api.example.com/a',
-                auth: apiKey({ header: 'X-Key-A', value: 'k' }),
+                auth: apiKey({ name: 'X-Key-A', value: 'k' }),
             }),
             b: stitch({
                 url: 'https://api.example.com/b',
-                auth: apiKey({ header: 'X-Key-B', value: 'k' }),
+                auth: apiKey({ name: 'X-Key-B', value: 'k' }),
             }),
         };
         const { document } = toOpenApi(registry);

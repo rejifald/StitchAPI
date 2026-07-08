@@ -2,6 +2,7 @@
 // (`conformance.spec.ts`) does not pin down: the FIXED-window TTL rule (the
 // counter's window has an absolute deadline pinned at creation — later incrs in
 // the same window neither extend nor clear it, and a fresh window restarts at 1),
+// the NO-window rule (an incr without a ttl — or with ttl <= 0 — never expires),
 // the compare-and-set retry EXHAUSTION error, the array-key shape (flat vs
 // prefixed), the cache-delete (`set(k, undefined)`), and `close()` delegation.
 // Driven by two fakes: a recording KV that captures every write's `expireIn`, and
@@ -288,12 +289,59 @@ describe('denoKvStore — incr TTL window', () => {
         expect(await store.incr('legacy', 200)).toBe(2);
     });
 
-    test('throws after exhausting maxIncrRetries lost compare-and-set races', async () => {
+    test('throws after exhausting incrRetries lost compare-and-set races', async () => {
         const rec = recordingKv({ failAtomic: true });
-        const store = denoKvStore(rec.kv, { maxIncrRetries: 3 });
+        const store = denoKvStore(rec.kv, { incrRetries: 3 });
         await expect(store.incr('x', 1000)).rejects.toThrow(
             /lost 4 compare-and-set races/,
         );
+    });
+});
+
+describe('denoKvStore — incr without a window', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('absent ttl = no window: the counter accumulates and never expires', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const store = denoKvStore(expiryKv());
+
+        expect(await store.incr('count')).toBe(1);
+        // Arbitrarily far in the future — a windowless counter never resets.
+        vi.setSystemTime(1_000_000_000);
+        expect(await store.incr('count')).toBe(2);
+        expect(await store.incr('count')).toBe(3);
+        // `get` unwraps the envelope to the plain count, windowed or not.
+        expect(await store.get('count')).toBe(3);
+    });
+
+    test('ttl <= 0 unifies with absent: no window, and no commit carries an expireIn', async () => {
+        const rec = recordingKv();
+        const store = denoKvStore(rec.kv);
+
+        expect(await store.incr('count')).toBe(1);
+        expect(await store.incr('count', 0)).toBe(2);
+        expect(await store.incr('count', -5)).toBe(3);
+
+        // A windowless counter is written WITHOUT an expiry, matching `set`'s
+        // no-TTL path — the key must never silently gain a window.
+        expect(rec.atomicSets).toHaveLength(3);
+        for (const s of rec.atomicSets) expect(s.expireIn).toBeUndefined();
+    });
+
+    test('a live windowless counter keeps counting even when a later incr passes a ttl', async () => {
+        // Mirrors memoryStore: a LIVE counter keeps its original (absent) window;
+        // a later ttl neither expires it nor resets the count.
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const store = denoKvStore(expiryKv());
+
+        expect(await store.incr('count')).toBe(1); // windowless
+        expect(await store.incr('count', 200)).toBe(2); // ttl ignored — still live
+        vi.setSystemTime(500); // past the ttl that was ignored
+        expect(await store.incr('count')).toBe(3);
     });
 });
 

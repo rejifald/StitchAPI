@@ -151,10 +151,8 @@ describe('stitch() middleware puts a seam on req', () => {
         await api.close();
     });
 
-    test('currentStitch throws when the middleware did not run', () => {
-        expect(() => currentStitch(mockReq())).toThrow(
-            /req\.stitch is not set/,
-        );
+    test('currentStitch returns undefined (never throws) when the middleware did not run', () => {
+        expect(currentStitch(mockReq())).toBeUndefined();
     });
 });
 
@@ -244,6 +242,86 @@ describe('streamStitchSse writes SSE frames to res', () => {
         expect(res.body()).toBe(
             'event: token\ndata: a\n\nevent: token\ndata: b\n\n',
         );
+    });
+
+    test('the data mapper receives the zero-based frame index', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'a', at: 1 };
+            yield { type: 'delta', chunk: 'b', at: 2 };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, events(), {
+            data: (c, index) => `${String(c)}#${index}`,
+        });
+        expect(res.body()).toBe('data: a#0\n\ndata: b#1\n\n');
+    });
+
+    test('event accepts a function of the chunk for per-frame event names', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: { kind: 'token', text: 'a' }, at: 1 };
+            yield { type: 'delta', chunk: { kind: 'usage', text: 'b' }, at: 2 };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, events(), {
+            event: (c) => (c as { kind: string }).kind,
+            data: (c) => (c as { text: string }).text,
+        });
+        expect(res.body()).toBe(
+            'event: token\ndata: a\n\nevent: usage\ndata: b\n\n',
+        );
+    });
+
+    test('accepts the { stream() } arm of StitchEventSource (e.g. a StitchResult)', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'via-stream', at: 1 };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, {
+            stream: () => events(),
+        });
+        expect(res.body()).toBe('data: via-stream\n\n');
+        expect(res.ended).toBe(true);
+    });
+
+    test('onError observes the real failure server-side while the client frame stays generic', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield {
+                type: 'error',
+                name: 'StitchError',
+                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                attempts: 1,
+                at: 1,
+            };
+        }
+        const res = mockRes();
+        const seenErrors: unknown[] = [];
+        await streamStitchSse(res as unknown as Response, events(), {
+            onError: (err) => seenErrors.push(err),
+        });
+
+        expect(seenErrors).toHaveLength(1);
+        expect((seenErrors[0] as Error).message).toBe(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
+        );
+        // The client still only sees the generic token.
+        expect(res.body()).toBe('event: error\ndata: error\n\n');
+    });
+
+    test('a throw mid-stream becomes a generic error frame and reaches onError', async () => {
+        // eslint-disable-next-line require-yield
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            throw new Error('boom from the iterator');
+        }
+        const res = mockRes();
+        const seenErrors: unknown[] = [];
+        await streamStitchSse(res as unknown as Response, events(), {
+            onError: (err) => seenErrors.push(err),
+        });
+
+        expect((seenErrors[0] as Error).message).toBe('boom from the iterator');
+        expect(res.body()).toBe('event: error\ndata: error\n\n');
+        expect(res.body()).not.toContain('boom');
+        expect(res.ended).toBe(true);
     });
 
     test('the default data mapper sends a string verbatim and JSON-stringifies an object', async () => {

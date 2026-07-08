@@ -69,6 +69,40 @@ describe('streamStitchSse — delta mapping', () => {
         expect(body).toContain('data: t2');
     });
 
+    test('the id option stamps each delta message with a last-event id (chunk + index)', async () => {
+        const app = new Hono();
+        app.get('/x', (c) =>
+            streamStitchSse(
+                c,
+                gen([
+                    { type: 'delta', chunk: 'a', at: 0 },
+                    { type: 'delta', chunk: 'b', at: 0 },
+                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+                ]),
+                { id: (_chunk, index) => `msg-${index}` },
+            ),
+        );
+
+        const body = await (await app.request('/x')).text();
+        expect(body).toContain('id: msg-0');
+        expect(body).toContain('id: msg-1');
+    });
+
+    test('a { stream() } holder (StitchResult-shaped source) is unwrapped and driven', async () => {
+        const app = new Hono();
+        const holder = {
+            stream: () =>
+                gen([
+                    { type: 'delta', chunk: 'held', at: 0 },
+                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+                ]),
+        };
+        app.get('/x', (c) => streamStitchSse(c, holder));
+
+        const body = await (await app.request('/x')).text();
+        expect(dataLines(body)).toEqual(['data: held']);
+    });
+
     test('a custom data mapper pulls text out of a structured chunk', async () => {
         const app = new Hono();
         app.get('/x', (c) =>

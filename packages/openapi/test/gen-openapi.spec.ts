@@ -143,6 +143,21 @@ describe('planGen — selection', () => {
         const r = planGen(doc, { all: true });
         expect(r.selected).toHaveLength(4);
     });
+
+    // CONTRACT.md P7: list-shaped filters take a bare value too.
+    test('P7: bare-string tags ≡ one-element list', () => {
+        const r = planGen(doc, { tags: 'users' });
+        expect(r.selected.map((s) => s.name).sort()).toEqual([
+            'createUser',
+            'getUser',
+            'listUsers',
+        ]);
+    });
+
+    test('P7: bare-string only ≡ one-element list', () => {
+        const r = planGen(doc, { only: 'getUser' });
+        expect(r.selected.map((s) => s.name)).toEqual(['getUser']);
+    });
 });
 
 describe('planGen — ownership (fan-in over the transitive closure)', () => {
@@ -195,10 +210,80 @@ describe('planGen — naming, typing, auth, notice', () => {
         expect(c).toMatch(/import \{ seam, bearer, env \}/);
     });
 
+    test('emitted throttle TODO uses the canonical `pool` (ThrottleOptions.scope is gone)', () => {
+        const r = planGen(doc, { all: true });
+        const c = file(r, 'client.ts') as string;
+        expect(c).toMatch(/pool: 'host'/);
+        expect(c).not.toMatch(/\bscope\b/);
+    });
+
     test('types-only emits the validation-off notice', () => {
         const r = planGen(doc, { all: true });
         expect(r.notices.join('\n')).toMatch(
             /runtime validation \+ drift are OFF/,
+        );
+    });
+});
+
+// Core's `ApiKeyOptions` is a union discriminated on `in`, with `name` naming the key's location
+// in BOTH arms: `{ in?: 'header', name?, value }` | `{ in: 'query', name?, value }`. The emitted
+// call must match that union exactly — header is the default arm (no `in` emitted), query carries
+// the `in: 'query'` discriminant, and cookie has no arm at all.
+describe('planGen — apiKey security-scheme mapping', () => {
+    const authDoc = (
+        scheme: NonNullable<
+            NonNullable<OpenApiDoc['components']>['securitySchemes']
+        >[string],
+    ): OpenApiDoc => ({
+        openapi: '3.0.0',
+        info: { title: 'T', version: '1' },
+        security: [{ keyAuth: [] }],
+        components: { securitySchemes: { keyAuth: scheme } },
+        paths: {
+            '/x': { get: { operationId: 'getX', responses: { '200': {} } } },
+        },
+    });
+
+    test("header scheme → apiKey({ name, value }) — the default arm, no `in: 'header'`", () => {
+        const r = planGen(
+            authDoc({ type: 'apiKey', in: 'header', name: 'X-Api-Key' }),
+            { all: true },
+        );
+        const c = file(r, 'client.ts') as string;
+        expect(c).toContain(
+            "auth: apiKey({ name: 'X-Api-Key', value: env('API_KEY') })",
+        );
+        expect(c).not.toContain("in: 'header'");
+        expect(c).toMatch(/import \{ seam, apiKey, env \} from 'stitchapi';/);
+    });
+
+    test("query scheme → apiKey({ in: 'query', name, value })", () => {
+        const r = planGen(
+            authDoc({ type: 'apiKey', in: 'query', name: 'api-key' }),
+            { all: true },
+        );
+        const c = file(r, 'client.ts') as string;
+        expect(c).toContain(
+            "auth: apiKey({ in: 'query', name: 'api-key', value: env('API_KEY') })",
+        );
+    });
+
+    test('nameless scheme (defensive) still typechecks — name defaults inside core', () => {
+        const r = planGen(authDoc({ type: 'apiKey' }), { all: true });
+        const c = file(r, 'client.ts') as string;
+        expect(c).toContain("auth: apiKey({ value: env('API_KEY') })");
+    });
+
+    test('cookie scheme has no ApiKeyOptions arm → warned, not silently emitted as a header key', () => {
+        const r = planGen(
+            authDoc({ type: 'apiKey', in: 'cookie', name: 'sid' }),
+            { all: true },
+        );
+        const c = file(r, 'client.ts') as string;
+        expect(c).not.toContain('apiKey(');
+        expect(c).not.toContain('auth:');
+        expect(r.warnings.join('\n')).toMatch(
+            /security scheme "keyAuth" \(type apiKey, in cookie\) not auto-mapped/,
         );
     });
 });

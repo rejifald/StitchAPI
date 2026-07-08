@@ -113,7 +113,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 -   **Declared resilience** - retry with backoff and `Retry-After`, proactive throttle (rate + concurrency, per stitch or per host), total / per-attempt timeouts with real aborts, a circuit breaker, and idempotency keys.
 -   **Read-through caching** - an opt-in response cache with in-process request coalescing, keyed by a derived, principal-scoped key — sound by construction (it refuses to cache a shape it can't fingerprint) and loaded lazily from `stitchapi/cache`.
 -   **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `secretsFile()` and never reach the caller.
--   **Data shaping** - `unwrap` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, and `json` / `form` / `multipart` request bodies.
+-   **Data shaping** - `pick` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, and `json` / `form` / `multipart` request bodies.
 -   **Any request style** - `http` is the default; `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` are peer **surfaces**, each a subpath import (`stitchapi/sse`, …) on the same engine — so `import { stitch }` bundles `http` alone.
 -   **Pluggable state store** - throttle counters and sessions/tokens live behind a 3-method store; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
 -   **Zero-infra observability** - tracing is **off by default** (a stitch's only effect is its call); opt in per stitch with `trace: 'console'` / `fileSink(path)` / a `TraceSink`, or globally with `STITCH_TRACE_CONSOLE=1` / `STITCH_TRACE_FILE=<path>` / `STITCH_EXPORT=otlp`. `stitch trace` then summarizes runs, retries, drift, and latency percentiles.
@@ -212,7 +212,7 @@ const User = z.object({
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: User,
-    unwrap: 'data', // the demo sim wraps payloads in a { data } envelope
+    pick: 'data', // the demo sim wraps payloads in a { data } envelope
 });
 
 const user = await getUser({ params: { id: 1 } }); // typed User
@@ -222,7 +222,7 @@ One endpoint is one `stitch`. The moment a service has more than one — sharing
 
 ## The event stream
 
-A stitch does not return `Promise<bytes>`. It yields a typed event stream — `await` is sugar that consumes the stream and returns the final, unwrapped, validated `result` (or throws a `StitchError` carrying `.status`, plus `.body` (the parsed error payload) and `.url` (the final request URL) when the failure came from a response):
+A stitch does not return `Promise<bytes>`. It yields a typed event stream — `await` is sugar that consumes the stream and returns the final, picked, validated `result` (or throws a `StitchError` carrying `.status`, plus `.body` (the parsed error payload) and `.url` (the final request URL) when the failure came from a response):
 
 ```ts
 const users = await getUsers(); // sugar: consume the stream → the result value
@@ -245,15 +245,15 @@ for await (const ev of getUsers.stream()) {
     switch (ev.type) {
         case 'start': // { name, method, url, input }
             break;
-        case 'progress': // { phase: 'auth'|'request'|'throttled'|'retry'|'paginate', attempt, waitedMs? }
+        case 'progress': // { phase: 'auth'|'request'|'throttled'|'retry'|'paginate', attempt, waited? }
             break;
         case 'drift': // { finding: { level: 'error'|'warn'|'info', path, change } }
             break;
-        case 'result': // { value, status, attempts }
+        case 'result': // { data, status, attempts }
             break;
         case 'error': // { message, status?, attempts }
             break;
-        case 'done': // { ok, ms, attempts }
+        case 'done': // { ok, elapsed, attempts }
             break;
     }
 }
@@ -285,12 +285,12 @@ const api = seam({
 const listUsers = api.stitch({
     path: '/users',
     output: User.array(),
-    unwrap: 'data',
+    pick: 'data',
 });
 const getUser = api.stitch({
     path: '/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
 });
 ```
 
@@ -309,7 +309,7 @@ const listUsers = stitch({
     extends: [base],
     path: '/users',
     output: User.array(),
-    unwrap: 'data',
+    pick: 'data',
 });
 ```
 
@@ -317,13 +317,13 @@ A stitch is itself a composable value — extend one and override only the diff:
 
 ```ts
 const getOneUser = stitch({
-    extends: [listUsers], // inherits baseUrl + retry + unwrap
+    extends: [listUsers], // inherits baseUrl + retry + pick
     path: '/users/{id}',
     output: User,
 });
 ```
 
-Merge semantics: scalars (`path`, `method`, `baseUrl`, `unwrap`) replace; objects (`retry`, `throttle`, `timeout`, `input`) deep-merge; `hooks` chain across layers (`onRequest` runs base→child, the rest unwind child→base).
+Merge semantics: scalars (`path`, `method`, `baseUrl`, `pick`) replace; objects (`retry`, `throttle`, `timeout`, `input`) deep-merge; `hooks` chain across layers (`onRequest` runs base→child, the rest unwind child→base).
 
 `.with()` pre-binds part of the input and returns a new stitch that reuses the same runtime — so cookies, tokens, and throttle state persist across the bound and unbound forms:
 
@@ -350,7 +350,7 @@ import { z } from 'zod';
 
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
-    unwrap: 'data',
+    pick: 'data',
     output: drift(
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
@@ -377,7 +377,7 @@ const createUser = stitch({
         }),
     },
     output: User, // { id, name, email, role }
-    unwrap: 'data',
+    pick: 'data',
 });
 ```
 
@@ -392,13 +392,13 @@ const listUsers = stitch({
     baseUrl: 'https://demo.stitchapi.dev',
     path: '/users',
     retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
-    throttle: { rate: '1/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '1/s', concurrency: 2, pool: 'host' },
     timeout: { total: '30s', perAttempt: '10s' },
 });
 ```
 
--   **`throttle` is proactive** - a rate (`'1/s'`) and a concurrency cap that keep you under a vendor's limit before it bites; `scope: 'host'` shares one limiter across every stitch hitting the same host.
--   **`retry` is reactive** - `attempts` is the total including the first; retried statuses default to `[429, 502, 503, 504]`; backoff is `'expo'` / `'expo-jitter'` / `'fixed'` with `baseMs` / `maxMs` clamps; `respectRetryAfter` honors the `Retry-After` header (delta-seconds or HTTP-date).
+-   **`throttle` is proactive** - a rate (`'1/s'`) and a concurrency cap that keep you under a vendor's limit before it bites; `pool: 'host'` shares one limiter across every stitch hitting the same host.
+-   **`retry` is reactive** - `attempts` is the total including the first; retried statuses default to `[429, 502, 503, 504]`; backoff is `'expo'` / `'expo-jitter'` / `'fixed'` with `baseDelay` / `maxDelay` clamps; `respectRetryAfter` honors the `Retry-After` header (delta-seconds or HTTP-date).
 -   **`timeout` aborts** - `total` and/or `perAttempt`, as milliseconds or `'30s'`-style strings, enforced with a real `AbortSignal` instead of a request left hanging.
 
 Throttle waits and retries emit `throttled` / `retry` events on the stream, so the waiting is visible in the trace for free.
@@ -407,27 +407,27 @@ Throttle waits and retries emit `throttled` / `retry` events on the stream, so t
 
 Three more knobs round out the resilience set:
 
--   **`circuit`** fast-fails a dependency that is already down — after `failureThreshold` consecutive failures the breaker opens for `cooldownMs`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
+-   **`circuit`** fast-fails a dependency that is already down — after `failures` consecutive failures the breaker opens for `cooldown`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
 
     ```ts
-    circuit: { failureThreshold: 5, cooldownMs: 30_000 }
+    circuit: { failures: 5, cooldown: '30s' } // or the positional [5, '30s']
     ```
 
 -   **`idempotency`** injects a stable `Idempotency-Key` header on writes, so a safe retry can't duplicate a side effect:
 
     ```ts
     idempotency: {
-        key: (input) => input.body.requestId;
+        keyOf: (input) => input.body.requestId;
     }
     ```
 
--   **`acceptStatus`** treats a non-2xx as a _normal_ result rather than a throw — for endpoints where, say, `404` is expected control flow. The body flows through `transform` → `unwrap` → validate exactly like a `2xx`:
+-   **`acceptStatus`** treats a non-2xx as a _normal_ result rather than a throw — for endpoints where, say, `404` is expected control flow. The body flows through `transform` → `pick` → validate exactly like a `2xx`:
 
     ```ts
     acceptStatus: [404]; // resource-gone → fall back, no try/catch on the happy path
     ```
 
-When an _outer_ gate owns backoff (its own `Retry-After` budget, a DB-persisted limiter), `rateLimit: { delegate: true }` surfaces a `RateLimitError` (carrying `retryAfterMs`) instead of retrying internally — so StitchAPI's retry + throttle don't double-count against it.
+When an _outer_ gate owns backoff (its own `Retry-After` budget, a DB-persisted limiter), `throttle: { delegate: true }` surfaces a `RateLimitError` (carrying `retryAfter`) instead of retrying internally — so StitchAPI's retry + throttle don't double-count against it.
 
 ## Caching
 
@@ -439,7 +439,7 @@ A bare duration is the TTL shorthand:
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
     cache: '5m', // ≡ { ttl: '5m' }
 });
 ```
@@ -450,12 +450,12 @@ Pass a config object for the full control surface:
 const listAnnouncements = stitch({
     path: 'https://demo.stitchapi.dev/announcements',
     output: z.array(z.object({ id: z.number(), title: z.string() })),
-    unwrap: 'data',
+    pick: 'data',
     cache: {
         ttl: '1h',
         scope: 'app', // public, unauthenticated data → share one entry across callers
         vary: ['accept-language'], // request headers that vary the response
-        maxEntries: 500, // in-process LRU cap (default 1000)
+        entries: 500, // in-process LRU cap (default 1000)
     },
 });
 ```
@@ -477,7 +477,7 @@ const getUser = stitch({
 });
 ```
 
-**OAuth2 client credentials** — `oauth2()` POSTs the token endpoint (form-encoded `client_credentials` grant), caches the access token in the [store](#pluggable-state-store) with the TTL from `expires_in`, refreshes it `refreshSkewMs` (default 30s) before expiry, and attaches it as `Authorization: Bearer …`. A rejected token (status in `refreshOn`, default `[401]`) forces a fresh fetch and an uncounted re-run of the attempt:
+**OAuth2 client credentials** — `oauth2()` POSTs the token endpoint (form-encoded `client_credentials` grant), caches the access token in the [store](#pluggable-state-store) with the TTL from `expires_in`, refreshes it `refreshSkew` (default 30s) before expiry, and attaches it as `Authorization: Bearer …`. A rejected token (status in `refreshOn`, default `[401]`) forces a fresh fetch and an uncounted re-run of the attempt:
 
 ```ts
 import { env, oauth2, stitch } from 'stitchapi';
@@ -510,7 +510,7 @@ const signIn = stitch({
 const listUsers = stitch({
     baseUrl: 'https://demo.stitchapi.dev',
     path: '/users',
-    unwrap: 'data',
+    pick: 'data',
     auth: cookieSession({
         login: signIn,
         cookie: 'session_token', // captured from Set-Cookie, replayed each call
@@ -550,8 +550,8 @@ Throttle counters and session/token state live behind one small seam — a `stor
 ```ts
 export interface StitchStore {
     get(key: string): Promise<unknown | undefined>;
-    set(key: string, value: unknown, ttlMs?: number): Promise<void>;
-    incr(key: string, ttlMs: number): Promise<number>; // atomic — rate windows
+    set(key: string, value: unknown, ttl?: number): Promise<void>;
+    incr(key: string, ttl?: number): Promise<number>; // atomic — rate windows
 }
 ```
 
@@ -637,29 +637,29 @@ A **surface** is the request _style_ a stitch speaks. `http` is the default — 
 
 Every non-`http` surface ships as its own **subpath import**, so `import { stitch }` from the root pulls in only the `http` engine; a surface's code loads only when you import it.
 
-| Surface       | Import                        | Shapes                                     | `await` resolves to            |
-| ------------- | ----------------------------- | ------------------------------------------ | ------------------------------ |
-| `http`        | `stitch` (default)            | a JSON-over-HTTP call                      | the validated body             |
-| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, unwrap `data` | the `data` payload             |
-| `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
-| `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader              | every decoded chunk, collected |
-| `download`    | `stitchapi/download`          | a buffered binary GET                      | `{ blob, filename }`           |
-| `llm`         | `stitchapi/llm`               | a chat-completion via a provider contract  | the normalised `{ text, … }`   |
-| `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin              | the command's stdout           |
-| `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call  | the typed RPC response         |
+| Surface       | Import                        | Shapes                                    | `await` resolves to            |
+| ------------- | ----------------------------- | ----------------------------------------- | ------------------------------ |
+| `http`        | `stitch` (default)            | a JSON-over-HTTP call                     | the validated body             |
+| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, pick `data`  | the `data` payload             |
+| `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch) | every parsed event, collected  |
+| `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader             | every decoded chunk, collected |
+| `download`    | `stitchapi/download`          | a buffered binary GET                     | `{ blob, filename }`           |
+| `llm`         | `stitchapi/llm`               | a chat-completion via a provider contract | the normalised `{ text, … }`   |
+| `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin             | the command's stdout           |
+| `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call | the typed RPC response         |
 
 (Distinct from the four _invocation_ surfaces — function, CLI, HTTP, MCP — which are how you _call_ a stitch. A request surface is how a stitch shapes its _request_.)
 
 ### GraphQL
 
-`graphql()` POSTs `{ query, variables }` and unwraps `data`. A `200` carrying `errors[]` is a failure — it will not silently pass:
+`graphql()` POSTs `{ query, variables }` and picks `data`. A `200` carrying `errors[]` is a failure — it will not silently pass:
 
 ```ts
 import { graphql } from 'stitchapi';
 
 const getUser = graphql({
     baseUrl: 'https://demo.stitchapi.dev',
-    query: 'query ($id: ID) { user(id: $id) { name } }',
+    document: 'query ($id: ID) { user(id: $id) { name } }',
 });
 
 const user = await getUser({ variables: { id: 1 } });
@@ -759,12 +759,12 @@ Because every surface is just a stitch underneath, `auth`, `retry`, `throttle`, 
 
 ## Pagination
 
-One logical call follows pages until `next` returns `undefined` (or the `max` safety cap, default 50, is hit), aggregating items into a single result. Each page is a full request — auth, retry, and throttle apply per page — and each page emits a `paginate` progress event:
+One logical call follows pages until `next` returns `undefined` (or the `pages` safety cap, default 50, is hit), aggregating items into a single result. Each page is a full request — auth, retry, and throttle apply per page — and each page emits a `paginate` progress event:
 
 ```ts
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
-    unwrap: 'data',
+    pick: 'data',
     paginate: {
         // previous page's raw body + pages fetched so far → input for the
         // next page (merged over the original), or undefined to stop
@@ -776,17 +776,17 @@ const listOrders = stitch({
 const everything = await listOrders({ params: { id: 1 } }); // [...page1, ...page2, ...] as one array
 ```
 
-When the unwrapped page is not itself the array, pass `items` to pull the array out of each page.
+When the picked page is not itself the array, pass `items` to pull the array out of each page.
 
 ## Transform
 
-`transform` runs before `unwrap` and validation — turn an arbitrary payload (HTML, text, a legacy shape) into structured data, then let `unwrap` + `output` / `drift` treat it like any other contract:
+`transform` runs before `pick` and validation — turn an arbitrary payload (HTML, text, a legacy shape) into structured data, then let `pick` + `output` / `drift` treat it like any other contract:
 
 ```ts
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
     transform: (html) => scrape(html), // your parser: HTML/text → { items: [...] }
-    unwrap: 'items',
+    pick: 'items',
     output: z.array(z.object({ id: z.number(), total: z.number() })),
 });
 ```
@@ -811,7 +811,7 @@ STITCH_EXPORT=otlp node app.js
 STITCH_TRACE_MAX_BODY=full node app.js
 ```
 
-That is per-call latency, status, attempts, throttle waits, and drift findings — recorded for free once you opt in, inspectable with [`stitch trace`](#the-stitch-cli) or plain `jq`. Drift rides the same events, so a leveled drift signal shows up in the trace with no extra wiring. The built-in JSONL and console sinks are safe by default — scrubbing happens at the sink boundary, so the live request is never touched, only the trace copy. Header values on a secret denylist (`authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`; widen it with `redactHeaders`) become `[REDACTED]`; credentials in the resolved URL are scrubbed (userinfo removed, secret query values like `api_key`/`access_token` replaced with `REDACTED`); and request bodies and response values are truncated to 2048 characters, with anything larger replaced by a `{ truncated, bytes, preview }` marker. Opt into full, untruncated capture with `STITCH_TRACE_MAX_BODY=full` (or `fileSink(path, { maxBodyBytes: false })`). Need a custom sink? Consume `.stream()` yourself — the built-in trace is just one consumer of the same events.
+That is per-call latency, status, attempts, throttle waits, and drift findings — recorded for free once you opt in, inspectable with [`stitch trace`](#the-stitch-cli) or plain `jq`. Drift rides the same events, so a leveled drift signal shows up in the trace with no extra wiring. The built-in JSONL and console sinks are safe by default — scrubbing happens at the sink boundary, so the live request is never touched, only the trace copy. Header values on a secret denylist (`authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key`; widen it with `redactHeaders`) become `[REDACTED]`; credentials in the resolved URL are scrubbed (userinfo removed, secret query values like `api_key`/`access_token` replaced with `REDACTED`); and request bodies and response values are truncated to 2048 characters, with anything larger replaced by a `{ truncated, bytes, preview }` marker. Opt into full, untruncated capture with `STITCH_TRACE_MAX_BODY=full` (or `fileSink(path, { maxBodyChars: false })`). Need a custom sink? Consume `.stream()` yourself — the built-in trace is just one consumer of the same events.
 
 ## The stitch CLI
 
@@ -820,8 +820,8 @@ One definition, more than one front door: the same stitch your code imports is c
 ```bash
 $ stitch run getUser --id 7 --query.expand roles
 {"type":"start","name":"getUser","method":"GET","url":"https://demo.stitchapi.dev/users/7?expand=roles",...}
-{"type":"result","value":{"id":7,"name":"Ada"},"status":200,"attempts":1,...}
-{"type":"done","ok":true,"ms":142,...}
+{"type":"result","data":{"id":7,"name":"Ada"},"status":200,"attempts":1,...}
+{"type":"done","ok":true,"elapsed":142,...}
 ```
 
 Flags map onto the stitch's single input object: a bare `--id 7` routes to `params` when `{id}` appears in the path (otherwise to `query`); `--body '<json>'` or `--body.<k> <v>` set the body; `--headers.<k> <v>` sets a header. The exit code is non-zero when an `error` event was seen. (`.ts` modules need a TypeScript-aware runner such as `tsx`; otherwise point `--module` at compiled JS.)

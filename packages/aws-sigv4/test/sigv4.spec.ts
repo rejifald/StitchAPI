@@ -47,7 +47,7 @@ describe('signRequestV4 (AWS official vectors)', () => {
                 secretAccessKey: SECRET_KEY,
                 region: 'us-east-1',
                 service: 'service',
-                dateTime: '20150830T123600Z',
+                amzDate: '20150830T123600Z',
             },
         );
 
@@ -72,7 +72,7 @@ describe('signRequestV4 (AWS official vectors)', () => {
             secretAccessKey: SECRET_KEY,
             region: 'us-east-1',
             service: 'service',
-            dateTime: '20150830T123600Z',
+            amzDate: '20150830T123600Z',
         } as const;
         const a = await signRequestV4({
             ...base,
@@ -94,7 +94,7 @@ describe('signRequestV4 (AWS official vectors)', () => {
             secretAccessKey: SECRET_KEY,
             region: 'us-east-1',
             service: 'service',
-            dateTime: '20150830T123600Z',
+            amzDate: '20150830T123600Z',
         } as const;
         // A mixed-case name and a value with leading/trailing/inner whitespace must
         // canonicalise to the already-clean form → an identical signature.
@@ -122,7 +122,7 @@ describe('signRequestV4 (AWS official vectors)', () => {
             secretAccessKey: SECRET_KEY,
             region: 'us-east-1',
             service: 'service',
-            dateTime: '20150830T123600Z',
+            amzDate: '20150830T123600Z',
         } as const;
         const explicit = await signRequestV4({
             ...base,
@@ -351,7 +351,7 @@ describe('awsSigV4 strategy', () => {
             secretAccessKey: SECRET_KEY,
             region: 'us-east-1',
             service: 's3',
-            dateTime: '20150830T123600Z',
+            amzDate: '20150830T123600Z',
         } as const;
         const aclPublic = await signRequestV4({
             ...base,

@@ -31,6 +31,7 @@ import {
 } from './rules-template';
 import { serve } from './serve';
 import type { Stitch, StitchEvent, StitchInput } from './types';
+import { parseDuration } from './util';
 
 import { existsSync, readFileSync } from 'node:fs';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -234,8 +235,6 @@ interface TraceRecord {
     at?: number;
     ok?: boolean;
     elapsed?: number;
-    /** Pre-rename JSONL still carries `ms`; read it as a fallback (CONTRACT.md P17). */
-    ms?: number;
     phase?: string;
     finding?: { level?: string };
 }
@@ -302,10 +301,7 @@ export function summarizeTrace(records: TraceRecord[]): TraceSummary {
                 e.stats.runs++;
                 if (r.ok) e.stats.ok++;
                 else e.stats.failed++;
-                {
-                    const dur = r.elapsed ?? r.ms;
-                    if (typeof dur === 'number') e.durations.push(dur);
-                }
+                if (typeof r.elapsed === 'number') e.durations.push(r.elapsed);
                 break;
             case 'progress':
                 if (r.phase === 'retry') e.stats.retries++;
@@ -383,16 +379,6 @@ export function formatTraceSummary(summary: TraceSummary): string {
         '',
         `total: ${t.runs} run(s), ${t.ok} ok, ${t.failed} failed`,
     ].join('\n');
-}
-
-// "1h" | "30m" | "45s" | "2d" → milliseconds (trace's --since window).
-function parseSince(s: string): number | undefined {
-    const m = /^(\d+(?:\.\d+)?)\s*(s|m|h|d)$/.exec(s.trim());
-    if (!m) return undefined;
-    const [, num, unitKey] = m;
-    if (num === undefined || unitKey === undefined) return undefined;
-    const units: Record<string, number> = { s: 1e3, m: 6e4, h: 36e5, d: 864e5 };
-    return parseFloat(num) * (units[unitKey] ?? 1);
 }
 
 // ---- process glue ---------------------------------------------------------
@@ -478,7 +464,7 @@ by default (no side effects) — opt in with --trace or the STITCH_TRACE_* env v
 diagram:
   --name <name>   diagram only this stitch (by export name or configured name)
   Emits a Mermaid flowchart of each stitch's configured pipeline (throttle, request,
-  retry, surface, pagination, validation, transform, unwrap, cache). Auth is redacted
+  retry, surface, pagination, validation, transform, pick, cache). Auth is redacted
   from a stitch's public config, so it is not shown.
 
 export:
@@ -588,10 +574,12 @@ function traceCommand(args: string[], io: CliIO): number {
 
     let cutoff: number | undefined;
     if (since !== undefined) {
-        const sinceMs = parseSince(since);
+        // Shared duration grammar (util.parseDuration): "500ms" | "45s" | "30m" | "1h" | "2d",
+        // or a bare number of milliseconds.
+        const sinceMs = parseDuration(since);
         if (sinceMs === undefined) {
             io.writeErr(
-                `invalid --since value: '${since}'; expected a duration like 1h, 30m, 45s, 2d\n`,
+                `invalid --since value: '${since}'; expected a duration like 45s, 30m, 1h, 2d\n`,
             );
             return 2;
         }

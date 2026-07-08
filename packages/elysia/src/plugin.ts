@@ -21,14 +21,6 @@ import type { PrincipalSeam, Seam } from 'stitchapi';
 export type ElysiaRequestSeam = PrincipalSeam | Seam;
 
 /**
- * @deprecated Renamed to {@link ElysiaRequestSeam} so the public type is ecosystem-qualified (a bare
- * `RequestSeam` would collide with any other host adapter's per-request seam type) — see
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the `1.0.0-rc`
- * line and removed at the 1.0 GA cut.
- */
-export type RequestSeam = ElysiaRequestSeam;
-
-/**
  * The Elysia instance {@link stitch} returns — a plugin you `.use()`. Its only public contract is
  * the global `derive` adding {@link StitchContext} (`{ stitch }`) to the context of the app that
  * mounts it; the other Singleton slots are empty. Narrowed to this so the published `.d.ts` stays a
@@ -44,7 +36,7 @@ export type StitchPlugin = Elysia<
     }
 >;
 
-export interface StitchPluginOptions {
+export interface ElysiaStitchPluginOptions {
     /**
      * The seam this plugin shares across requests. **Borrowed, not owned** — build it once at
      * startup and `seam.close()` it on shutdown yourself; the plugin never closes it (the seam
@@ -88,7 +80,7 @@ export interface StitchPluginOptions {
  *
  * The `stitch` context property is typed: a handler reads it off the destructured context.
  */
-export function stitch(options: StitchPluginOptions): StitchPlugin {
+export function stitch(options: ElysiaStitchPluginOptions): StitchPlugin {
     const { seam, principal, errorHandler } = options;
 
     // `.derive` runs per request and merges its return into the context. The principal lives in this

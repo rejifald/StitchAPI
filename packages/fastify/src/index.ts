@@ -1,19 +1,20 @@
 export {
     stitchPlugin,
     currentStitch,
-    type StitchPluginOptions,
-    type StitchPluginSeamOptions,
-    type StitchPluginConfigOptions,
+    type FastifyStitchPluginOptions,
+    type FastifyStitchPluginSeamOptions,
+    type FastifyStitchPluginConfigOptions,
     type FastifyRequestSeam,
-    // Deprecated alias (kept through 1.0.0-rc, removed at GA) — see ADR 0012.
-    type StitchHost,
 } from './plugin';
-export { sendStitchSse, type SendStitchSseOptions } from './sse';
+export { streamStitchSse, type StreamStitchSseOptions } from './sse';
+// The canonical event-stream intake, re-exported from the core barrel (one shared shape
+// across every host adapter — no local unions).
+export type { StitchEventSource } from 'stitchapi';
 export {
     stitchErrorHandler,
     isStitchError,
     type StitchErrorLike,
-    type StitchErrorHandlerOptions,
+    type StitchErrorOptions,
 } from './error-handler';
 export {
     fastifyLoggerSink,

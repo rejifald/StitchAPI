@@ -19,10 +19,8 @@
 export {
     stitch,
     type ElysiaRequestSeam,
-    // Deprecated alias (kept through 1.0.0-rc, removed at GA) — see ADR 0012.
-    type RequestSeam,
+    type ElysiaStitchPluginOptions,
     type StitchPlugin,
-    type StitchPluginOptions,
 } from './plugin';
 
 export {
@@ -39,4 +37,8 @@ export {
     type StitchErrorOptions,
 } from './error';
 
-export type { PrincipalContext, StitchContext, StitchEnvLike } from './context';
+export type {
+    ErrorContextLike,
+    PrincipalContext,
+    StitchContext,
+} from './context';

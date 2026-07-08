@@ -2,7 +2,7 @@
 //
 // The response cache (ADR 0003) stores the post-validation value and skips
 // re-validation on a hit, so a stored value is bound to the `output` schema
-// (plus `transform`/`unwrap`) it was validated against. Ship a changed schema and
+// (plus `transform`/`pick`) it was validated against. Ship a changed schema and
 // a hit would serve an old-shape value for the whole TTL. This module computes a
 // stable FINGERPRINT that folds into the cache GENERATION so a contract change
 // auto-invalidates.
@@ -56,8 +56,6 @@ export function hash(input: string): string {
  */
 export interface SchemaFingerprint {
     readonly token: string | null;
-    /** @deprecated Renamed to {@link SchemaFingerprint.token} (CONTRACT.md P5: `value` is the success payload, not a token). Read until the 1.0 GA cut. */
-    readonly value?: string | null;
     readonly strength: 'strong' | 'weak';
 }
 
@@ -134,8 +132,8 @@ export interface FingerprintInput {
     readonly output?: unknown;
     /** `config.transform` — opaque; cannot be soundly hashed (see ADR 0004 §6). */
     readonly transform?: ((body: unknown) => unknown) | undefined;
-    /** `config.unwrap` — a dot-path string; serialisable, so always sound. */
-    readonly unwrap?: string | undefined;
+    /** `config.pick` — a dot-path string; serialisable, so always sound. */
+    readonly pick?: string | undefined;
     /** Explicit `cache.version` — authoritative override; always wins. */
     readonly version?: string | number | undefined;
     /** A user tag making an opaque `transform` sound. */
@@ -181,12 +179,12 @@ function vendorOf(schema: unknown): string | undefined {
 export function resolveFingerprint(
     input: FingerprintInput,
 ): FingerprintResolution {
-    const unwrap = input.unwrap ?? '';
+    const pick = input.pick ?? '';
 
     // rung 1 — explicit cache.version is authoritative.
     if (input.version != null) {
         return {
-            generation: hash(`v|${input.version}|u|${unwrap}`),
+            generation: hash(`v|${input.version}|u|${pick}`),
             policy: 'fast',
             reason: 'explicit cache.version',
         };
@@ -227,14 +225,12 @@ export function resolveFingerprint(
         };
     }
 
-    // rung 3 — sound structural fingerprint → fast path. Prefer `token`; fall back to the
-    // @deprecated `value` so an external fingerprinter still on the old spelling keeps working.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- back-compat fallback for the renamed `value` alias (CONTRACT.md P5)
-    const token = fp?.token ?? fp?.value;
+    // rung 3 — sound structural fingerprint → fast path.
+    const token = fp?.token;
     if (token != null) {
         return {
             generation: hash(
-                `s|${vendor}|${token}|${fp?.strength}|u|${unwrap}|${xTag}`,
+                `s|${vendor}|${token}|${fp?.strength}|u|${pick}|${xTag}`,
             ),
             policy: 'fast',
             reason: 'sound structural fingerprint',
@@ -242,10 +238,10 @@ export function resolveFingerprint(
     }
 
     // rung 4 — no output schema: the stored value is bound to no shape, so there
-    // is nothing to go stale. Cache fast; `unwrap`/transform tag still fold in.
+    // is nothing to go stale. Cache fast; `pick`/transform tag still fold in.
     if (input.output == null) {
         return {
-            generation: hash(`noschema|u|${unwrap}|${xTag}`),
+            generation: hash(`noschema|u|${pick}|${xTag}`),
             policy: 'fast',
             reason: 'no output schema',
         };

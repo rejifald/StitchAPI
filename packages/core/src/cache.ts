@@ -10,7 +10,7 @@
 import { resolveFingerprint } from './fingerprint';
 import type { CachePolicy } from './fingerprint';
 import { xxh128 } from './hash';
-import type { CacheOptions, StitchInput, StitchStore } from './types';
+import type { ResolvedCacheOptions, StitchInput, StitchStore } from './types';
 import { parseDuration } from './util';
 
 // The 128-bit synchronous non-crypto key hash now lives in the shared `./hash` module so the cache
@@ -186,6 +186,13 @@ interface Inflight<T> {
     onCancel?: () => void;
 }
 
+/** Options for {@link InflightCoalescer.join}: ref-count this participant via `signal`; the
+ *  leader may set `onCancel` to be told when the LAST participant aborts. */
+export interface CoalesceJoinOptions {
+    signal?: AbortSignal;
+    onCancel?: () => void;
+}
+
 export interface LeaderClaim<T> {
     leader: true;
     promise: Promise<T>;
@@ -209,7 +216,7 @@ export class InflightCoalescer<T> {
      *  run is dropped and `onCancel` (set by the leader) is invoked. */
     join(
         key: string,
-        opts?: { signal?: AbortSignal; onCancel?: () => void },
+        opts?: CoalesceJoinOptions,
     ): LeaderClaim<T> | FollowerClaim<T> {
         let entry = this.map.get(key);
         const leading = entry === undefined;
@@ -298,7 +305,7 @@ interface StoredEntry {
 }
 
 export interface CacheHit {
-    value: unknown;
+    data: unknown;
     status: number;
 }
 
@@ -317,8 +324,8 @@ export interface CacheOp {
 export interface CacheController {
     /** Is `method` in the cacheable set (and so eligible for coalescing)? */
     cacheableMethod(method: string): boolean;
-    /** Derive the base key for a resolved request, or `undefined` when it is not hashable. */
-    key(d: RequestDescriptor, input: StitchInput): string | undefined;
+    /** Derive the base key for a resolved request, or `undefined` when it is not hashable (CONTRACT.md P6). */
+    keyOf(d: RequestDescriptor, input: StitchInput): string | undefined;
     /** Open a cache operation for `baseKey` (reads the live generation prefix once). */
     open(baseKey: string, d: RequestDescriptor): Promise<CacheOp>;
     /**
@@ -340,7 +347,8 @@ export interface CacheController {
 }
 
 export interface CacheControllerOptions {
-    config: CacheOptions;
+    /** The stitch's cache block, post-`compose` — list fields are always arrays. */
+    config: ResolvedCacheOptions;
     store: StitchStore;
     stitchId: string;
     principal?: string;
@@ -348,8 +356,8 @@ export interface CacheControllerOptions {
     output?: unknown;
     /** The stitch's `transform` closure — opaque, so it forces a version/trust decision (ADR 0004). */
     transform?: ((body: unknown) => unknown) | undefined;
-    /** The stitch's `unwrap` dot-path — serialisable, always folds soundly into the generation. */
-    unwrap?: string | undefined;
+    /** The stitch's `pick` dot-path — serialisable, always folds soundly into the generation. */
+    pick?: string | undefined;
 }
 
 export function createCache(opts: CacheControllerOptions): CacheController {
@@ -359,8 +367,7 @@ export function createCache(opts: CacheControllerOptions): CacheController {
     const methods = (config.methods ?? ['GET', 'HEAD']).map((m) =>
         m.toUpperCase(),
     );
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxEntries` is the @deprecated alias of `entries`, read for back-compat until the GA cut (CONTRACT.md P4)
-    const maxEntries = config.entries ?? config.maxEntries ?? 1000;
+    const maxEntries = config.entries ?? 1000;
     const explicitVary = config.vary?.length
         ? config.vary
               .map((n) => n.toLowerCase())
@@ -368,15 +375,15 @@ export function createCache(opts: CacheControllerOptions): CacheController {
         : undefined;
     // Fold the Standard Schema fingerprint (ADR 0004) ONCE, here at controller creation (which is
     // once per stitch — `ensureCache` memoises it). It resolves three things from the stitch's
-    // output/transform/unwrap + cache options: the GENERATION token (a changed output schema /
-    // unwrap / versioned transform yields a new token → a new bucket → old entries unreachable),
+    // output/transform/pick + cache options: the GENERATION token (a changed output schema /
+    // pick / versioned transform yields a new token → a new bucket → old entries unreachable),
     // the POLICY (fast / revalidate / refuse), and a human-readable REASON for traces. The token is
     // folded into the namespace ALONGSIDE the per-stitch generation counter (decision 8) — it does
     // not replace it: bulk-invalidate bumps the counter, a schema change bumps this token.
     const fp = resolveFingerprint({
         output: opts.output,
         transform: opts.transform,
-        unwrap: opts.unwrap,
+        pick: opts.pick,
         version: config.version,
         transformVersion: config.transformVersion,
         trustTransform: config.trustTransform,
@@ -436,16 +443,15 @@ export function createCache(opts: CacheControllerOptions): CacheController {
             return methods.includes(method.toUpperCase());
         },
 
-        key(d, input) {
+        keyOf(d, input) {
             // Scope handling lives here: fold the bound principal in under 'principal' scope,
             // omit it under 'app'. The descriptor itself carries no principal (engine concern).
             const scoped: RequestDescriptor =
                 principalForScope !== undefined
                     ? { ...d, principal: principalForScope }
                     : d;
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the @deprecated alias of `keyOf`, read as the back-compat fallback until the GA cut (CONTRACT.md P6)
-            const keyOf = config.keyOf ?? config.key;
-            const userKey = keyOf ? keyOf(input) : undefined;
+            const userKeyOf = config.keyOf;
+            const userKey = userKeyOf ? userKeyOf(input) : undefined;
             return deriveCacheKey(scoped, explicitVary, userKey);
         },
 
@@ -461,7 +467,7 @@ export function createCache(opts: CacheControllerOptions): CacheController {
             const prefix = await genPrefix();
             // The stored key is prefixed with the frozen key-schema version (a derivation change is
             // a mass self-healing miss, never a stale-key hit — ADR 0003 follow-up) and the
-            // fingerprint generation token `fpTag` (an output-schema/unwrap/transform change moves
+            // fingerprint generation token `fpTag` (an output-schema/pick/transform change moves
             // the bucket — ADR 0004). For the 'revalidate' policy the token is empty and freshness
             // comes from re-validation on the hit path instead.
             const valueKey = (suffix = ''): string =>
@@ -473,7 +479,7 @@ export function createCache(opts: CacheControllerOptions): CacheController {
             ): CacheHit | null => {
                 if (entry.v === undefined) return null;
                 remember(k);
-                return { value: entry.v, status: entry.s ?? 200 };
+                return { data: entry.v, status: entry.s ?? 200 };
             };
 
             return {

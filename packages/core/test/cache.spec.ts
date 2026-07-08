@@ -57,13 +57,13 @@ async function cacheTrace(
 function counting(opts?: {
     body?: (callNo: number, req: { url: string; method: string }) => unknown;
     headers?: Record<string, string>;
-    delayMs?: number;
+    delay?: number;
     failCall?: number;
 }): { adapter: Adapter; calls: () => number } {
     let calls = 0;
     const adapter: Adapter = async (req) => {
         const n = (calls += 1);
-        if (opts?.delayMs) await sleep(opts.delayMs);
+        if (opts?.delay) await sleep(opts.delay);
         if (opts?.failCall === n) throw new Error(`origin failed on call ${n}`);
         return {
             status: 200,
@@ -140,7 +140,7 @@ describe('cache — hit / miss', () => {
 
 describe('cache — in-process coalescing', () => {
     test('N concurrent identical callers collapse onto one origin call', async () => {
-        const { adapter, calls } = counting({ delayMs: 40 });
+        const { adapter, calls } = counting({ delay: 40 });
         const s = stitch({
             url: URL,
             adapter,
@@ -155,7 +155,7 @@ describe('cache — in-process coalescing', () => {
     test('a leader failure is NOT shared — each waiter re-runs independently', async () => {
         // Only the first origin call fails; the leader rejects, and the two followers proceed on
         // their own (each making its own call), so failure never fans out to the waiters.
-        const { adapter, calls } = counting({ delayMs: 30, failCall: 1 });
+        const { adapter, calls } = counting({ delay: 30, failCall: 1 });
         const s = stitch({
             url: URL,
             adapter,
@@ -169,7 +169,7 @@ describe('cache — in-process coalescing', () => {
     });
 
     test('coalesce:false disables collapsing (still caches)', async () => {
-        const { adapter, calls } = counting({ delayMs: 40 });
+        const { adapter, calls } = counting({ delay: 40 });
         const s = stitch({
             url: URL,
             adapter,
@@ -265,7 +265,7 @@ describe('cache — invalidation', () => {
         expect(calls()).toBe(3);
     });
 
-    test('cache.key(input) exposes the derived opaque key', async () => {
+    test('cache.keyOf(input) exposes the derived opaque key', async () => {
         const { adapter } = counting();
         const s = stitch({
             url: URL,
@@ -273,9 +273,9 @@ describe('cache — invalidation', () => {
             trace: false,
             cache: { ttl: '60s', scope: 'app' },
         });
-        const k1 = await s.cache.key({ query: { id: 1 } });
-        const k2 = await s.cache.key({ query: { id: 1 } });
-        const k3 = await s.cache.key({ query: { id: 2 } });
+        const k1 = await s.cache.keyOf({ query: { id: 1 } });
+        const k2 = await s.cache.keyOf({ query: { id: 1 } });
+        const k3 = await s.cache.keyOf({ query: { id: 2 } });
         expect(k1).toMatch(/^[0-9a-f]{32}$/);
         expect(k1).toBe(k2);
         expect(k1).not.toBe(k3);
@@ -347,7 +347,7 @@ describe('cache — LRU bound', () => {
 
 describe('cache — sensitive bypass', () => {
     test('sensitive:true never caches and never coalesces', async () => {
-        const { adapter, calls } = counting({ delayMs: 30 });
+        const { adapter, calls } = counting({ delay: 30 });
         const s = stitch({
             url: URL,
             adapter,
@@ -591,7 +591,7 @@ describe('cache — GraphQL opt-in', () => {
         });
         const q = graphql({
             url: 'https://api.test/graphql',
-            query: '{ me { id } }',
+            document: '{ me { id } }',
             adapter,
             trace: false,
             cache: { ttl: '60s', scope: 'app', methods: ['POST'] },
@@ -607,7 +607,7 @@ describe('cache — GraphQL opt-in', () => {
         });
         const q = graphql({
             url: 'https://api.test/graphql',
-            query: '{ me { id } }',
+            document: '{ me { id } }',
             adapter,
             trace: false,
             cache: { ttl: '60s', scope: 'app' }, // default methods GET/HEAD → POST excluded

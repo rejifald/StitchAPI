@@ -1,6 +1,6 @@
 // Resumable SSE (issue #71): the `sse` surface reconnects a dropped `text/event-stream`, replaying
 // the last `id:` as the `Last-Event-ID` request header and honouring a server-sent `retry:` as the
-// reconnect backoff (falling back to `reconnect.backoffMs` / the stitch's `retry` policy). Off by
+// reconnect backoff (falling back to `reconnect.backoff` / the stitch's `retry` policy). Off by
 // default — these specs prove both the unchanged default and the opt-in reconnect loop, driving
 // timing the way the repo's other backoff tests do: small distinct delays + real elapsed bounds
 // (no fake timers anywhere in this package).
@@ -124,7 +124,7 @@ describe('sse reconnect replays Last-Event-ID (issue #71)', () => {
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { attempts: 2, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 2, backoff: 1 } },
             adapter,
         });
 
@@ -156,7 +156,7 @@ describe('sse reconnect backoff: server retry: vs fallback (issue #71)', () => {
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { attempts: 1, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 1, backoff: 1 } },
             adapter,
         });
 
@@ -168,13 +168,13 @@ describe('sse reconnect backoff: server retry: vs fallback (issue #71)', () => {
         expect(out.doneOk).toBe(true);
     });
 
-    test('with no server retry:, the configured reconnect.backoffMs is used', async () => {
+    test('with no server retry:, the configured reconnect.backoff is used', async () => {
         const { adapter } = scriptedAdapter([
             () => streamOf(['id: 1\ndata: a\n\n']),
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { attempts: 1, backoffMs: 90 } },
+            sse: { reconnect: { attempts: 1, backoff: 90 } },
             adapter,
         });
 
@@ -186,15 +186,15 @@ describe('sse reconnect backoff: server retry: vs fallback (issue #71)', () => {
         expect(out.doneOk).toBe(true);
     });
 
-    test('with neither, the stitch retry backoff (fixed baseMs) supplies the delay', async () => {
-        // No server retry:, no reconnect.backoffMs → fall back to the `retry` policy: fixed 70ms.
+    test('with neither, the stitch retry backoff (fixed baseDelay) supplies the delay', async () => {
+        // No server retry:, no reconnect.backoff → fall back to the `retry` policy: fixed 70ms.
         const { adapter } = scriptedAdapter([
             () => streamOf(['id: 1\ndata: a\n\n']),
         ]);
         const s = sse({
             url: 'https://x.test/e',
             sse: { reconnect: { attempts: 1 } },
-            retry: { backoff: 'fixed', baseMs: 70 },
+            retry: { backoff: 'fixed', baseDelay: 70 },
             adapter,
         });
 
@@ -216,7 +216,7 @@ describe('sse reconnect respects the attempts cap (issue #71)', () => {
         });
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { attempts: 2, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 2, backoff: 1 } },
             adapter,
         });
 
@@ -238,7 +238,7 @@ describe('sse reconnect respects the attempts cap (issue #71)', () => {
         const s = sse({
             url: 'https://x.test/e',
             sse: { reconnect: true },
-            retry: { backoff: 'fixed', baseMs: 1 }, // keep the default-attempt fallback fast
+            retry: { backoff: 'fixed', baseDelay: 1 }, // keep the default-attempt fallback fast
             adapter,
         });
 
@@ -258,7 +258,7 @@ describe('sse reconnect resumes from the last id after a mid-stream ERROR (issue
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { attempts: 1, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 1, backoff: 1 } },
             adapter,
         });
 
@@ -281,7 +281,7 @@ describe('sse reconnect resumes from the last id after a mid-stream ERROR (issue
         ]);
         const s = sse({
             url: 'https://x.test/e',
-            sse: { reconnect: { attempts: 1, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 1, backoff: 1 } },
             adapter,
         });
 
@@ -305,7 +305,7 @@ describe('sse per-delta output validation keeps firing across a reconnect (issue
         const s = sse({
             url: 'https://x.test/e',
             output: asValidator(z.object({ tok: z.string() })),
-            sse: { reconnect: { attempts: 2, backoffMs: 1 } },
+            sse: { reconnect: { attempts: 2, backoff: 1 } },
             adapter,
         });
 
@@ -328,16 +328,16 @@ describe('sse reconnect config round-trips as JSON (contract-not-dependency gate
         expect(json.sse).toEqual({ reconnect: true });
     });
 
-    test('the object form (attempts + backoffMs) survives the round-trip intact', () => {
+    test('the object form (attempts + backoff) survives the round-trip intact', () => {
         const cfg = {
             url: 'https://x.test/e',
-            sse: { reconnect: { attempts: 5, backoffMs: 250 } },
+            sse: { reconnect: { attempts: 5, backoff: 250 } },
         };
         const s = sse(cfg);
         const json = JSON.parse(JSON.stringify(s.__config)) as {
-            sse?: { reconnect?: { attempts?: number; backoffMs?: number } };
+            sse?: { reconnect?: { attempts?: number; backoff?: number } };
         };
-        expect(json.sse?.reconnect).toEqual({ attempts: 5, backoffMs: 250 });
+        expect(json.sse?.reconnect).toEqual({ attempts: 5, backoff: 250 });
     });
 });
 
