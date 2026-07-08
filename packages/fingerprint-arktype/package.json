@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/fingerprint-arktype",
-    "version": "1.0.0-rc.4",
+    "version": "1.0.0-rc.5",
     "type": "commonjs",
     "description": "Stable Standard Schema fingerprint strategy for ArkType — StitchAPI ADR 0004 cache invalidation.",
     "main": "lib/index.js",

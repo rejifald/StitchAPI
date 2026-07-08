@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/shell",
-    "version": "1.0.0-rc.4",
+    "version": "1.0.0-rc.5",
     "type": "commonjs",
     "description": "Run a static local command as a StitchAPI surface — Node-only, injection-proof by construction (static binary + argv array + no shell). ADR 0008.",
     "main": "lib/index.js",

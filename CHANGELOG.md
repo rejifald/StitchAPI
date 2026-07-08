@@ -11,6 +11,8 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+## [1.0.0-rc.5] — 2026-07-08
+
 ### Changed
 
 -   **BREAKING — run-identity fields renamed to the OpenTelemetry names.** The
@@ -32,6 +34,12 @@ npm release are grouped under the in-development version that introduced them.
     `retry` (it only dedupes the call's own retries). Both are respectful hints with
     an out — set `idempotency: { warn: false }` to silence them — and fire only on
     the default HTTP surface. New `IdempotencyOptions.warn` field.
+
+-   **`@stitchapi/docs-mcp` — local/offline docs search over MCP stdio.** The
+    offline counterpart to the hosted `stitchapi.dev/api/mcp` server: the same
+    `search_docs`/`get_doc` tools, with the docs corpus and embedding index bundled
+    at build time so there is no per-query network call. For air-gapped or
+    strict-egress environments.
 
 ## [1.0.0-rc.4] — 2026-06-29
 
@@ -268,7 +276,9 @@ causality push:
 -   **Playground:** the browser Worker runner, handler registration, incremental
     streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.3...HEAD
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.5...HEAD
+[1.0.0-rc.5]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.4...v1.0.0-rc.5
+[1.0.0-rc.4]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/rejifald/StitchAPI/compare/v0.7.0...v1.0.0-rc.1

@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/expo",
-    "version": "1.0.0-rc.4",
+    "version": "1.0.0-rc.5",
     "type": "commonjs",
     "description": "Expo bindings for StitchAPI — expoFetchAdapter (streaming over expo/fetch, no polyfills), an expo-secure-store-backed StitchStore for encrypted tokens, and the re-exported useStitch/useStitchStream hooks, AsyncStorage store, and AppState/NetInfo refetch helpers from @stitchapi/react-native.",
     "main": "lib/index.js",
