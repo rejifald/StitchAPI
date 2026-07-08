@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+        "stitchapi-docs": {
+            "command": "npx",
+            "args": ["-y", "@stitchapi/docs-mcp"]
+        }
+    }
+}
