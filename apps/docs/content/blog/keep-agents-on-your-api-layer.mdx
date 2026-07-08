@@ -10,7 +10,7 @@ An agent dropped into your repo does the obvious thing: it reaches for `fetch`. 
 
 ## A convention the model can't see is one it won't follow
 
-Ask an agent to "call the billing API" and it writes the call the way its training data taught it: a raw `fetch`, no validation, the token pasted inline. Not because it's wrong — because your API layer is invisible to it. To discover the pattern on its own it has to grep the source, read a couple of call sites, and infer the shape. That's tokens spent every session on a question you already answered when you designed the layer, and it still might miss and write a fourth variant of the same request.
+Ask an agent to "call the billing API" and it writes the call the way its training data taught it: a raw `fetch`, no validation, the token pasted inline. That's [the default a coding agent falls back to](/blog/stop-writing-fetch-in-your-agents) — not because it's wrong, but because your API layer is invisible to it. To discover the pattern on its own it has to grep the source, read a couple of call sites, and infer the shape. That's tokens spent every session on a question you already answered when you designed the layer, and it still might miss and write a fourth variant of the same request.
 
 The fix isn't a smarter model. It's telling the model, once, the one habit that matters.
 
@@ -128,3 +128,5 @@ stitchapi
 -   [How the rule saves tokens](/docs/agents/token-savings) — the always-on-vs-on-demand math, as reference.
 -   [Search the docs over MCP](/docs/agents/search-over-mcp) — the on-demand escape hatch the rule defers to.
 -   [Point an agent at llms.txt](/docs/agents/llms-txt) — the whole corpus as clean Markdown, when you do want the manual.
+-   [Stop writing fetch in your agents](/blog/stop-writing-fetch-in-your-agents) — the same argument from the agent's side of the keyboard.
+-   [Adopt StitchAPI without a rewrite](/blog/adopt-stitchapi-without-a-rewrite) — introduce stitches into an existing codebase incrementally.
