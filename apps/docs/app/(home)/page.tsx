@@ -3,6 +3,7 @@ import { Cta, Footer } from './components/cta';
 import { Demo } from './components/demo';
 import { Differentiator } from './components/differentiator';
 import { Features } from './components/features';
+import { FromTheBlog } from './components/from-the-blog';
 import { Hero } from './components/hero';
 import { Metrics } from './components/metrics';
 import { NotThis } from './components/not-this';
@@ -51,6 +52,7 @@ export default function HomePage() {
             <Features />
             <NotThis />
             <Differentiator />
+            <FromTheBlog />
             <Cta />
             <Footer />
         </main>
