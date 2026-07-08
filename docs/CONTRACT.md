@@ -20,8 +20,10 @@ things.
 The rules are **normative** (MUST / SHOULD / MUST NOT). The migration they mandated
 is **done**: the 2026-07-08 hard-break sweep
 ([§6](#6-migration-record-2026-07-08-hard-break-sweep)) applied every rename and
-cleared the enforcement baseline to zero. Rule sections keep their worked examples as
-_Resolved_ history so the reasoning survives the renames.
+cleared the enforcement baseline, including the one pre-existing match the
+same-day P24 addition found and initially baselined rather than fixed — now
+converted too (§6, §7). Rule sections keep their worked examples as _Resolved_
+history so the reasoning survives the renames.
 
 ---
 
@@ -474,6 +476,46 @@ all take `SchemaLike` and return `ValidationResult`; `JsonSchema.adapt(json, { a
 bridge from JSON Schema, producing a `SchemaLike` those consumers treat identically. The standalone
 `validate`/`compile` verbs replaced app-level `schema['~standard'].validate(…)`.
 
+### P24 · A shared field-name prefix in a house contract is an envelope
+
+**≥2 public flat fields sharing a leading-word prefix in a house-owned contract MUST** fold into
+**one** envelope: a named, exported `*Options` interface (P14), typed so `{}` is a compile error
+(P20), with a scalar shorthand for the dominant field where one field dominates (P12).
+
+_Carve-outs:_
+
+-   **(a) Foreign mirrors keep the foreign shape.** A contract that exists to structurally or
+    nominally match a foreign SDK, standard, or wire format (P18/P22) keeps **every** field of the
+    pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, RFC
+    6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair (and
+    its React Native mirror), RTK Query's lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`),
+    and Orama's own index-document schema (`DocSearchHit.pageUrl`/`pageTitle`) — all exempt.
+-   **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
+    the pair is a genuine option and the other is a discriminator/tag describing it (not an
+    independent knob), the pair **stays flat** — nesting would turn a scalar-plus-tag into a
+    needless envelope for zero added configurability.
+-   **(c) Conventional prefixes are not groups:** `on*` handlers, `is*` guards, and a percentile
+    family (`p50`/`p95`/`p99`) share a prefix by naming convention, not by being facets of one
+    capability.
+
+_Canonical case (converted 2026-07-08):_ `OAuth2Options.refresh` and
+`CookieSessionOptions.refresh` fold what were `refreshOn`+`refreshSkew` and `refreshOn`+
+`refreshWhen` into `refresh?: StatusMatch | AtLeastOne<…RefreshOptions>` (a bare `StatusMatch` is
+the P12 shorthand for `{ on: … }`); `SentrySinkOptions.capture` folds `captureErrors`+
+`captureDrift` into `capture?: boolean | AtLeastOne<SentryCaptureOptions>`. All three landed as
+hard breaks, no aliases (P19).
+
+_Named exemptions verified against this rule_ (carve-out (a); named explicitly because each is the
+literal shape this rule would otherwise flag): **`StitchQueryOptions.queryKey`/`queryFn`** (the
+TanStack mirror, P3 — note this rule's own motivating example is itself exempt);
+**`OAuth2Options.clientId`/`clientSecret`/`clientAuth`** (RFC 6749); **`DocSearchHit.pageUrl`/
+`pageTitle`** (mirrors the persisted Orama index document schema; maintainer-exempted 2026-07-08).
+
+Enforced by lint **R8** (§7); its allow-list carries the one-line rationale for every verified
+exemption beyond this rule's named list — a discriminated-union pair (mutually exclusive by
+`X?: never`), a derived/internal read-view that is not itself an authored config, or a
+plugin-extension-hook bag, are all real shapes this rule does not reach.
+
 ---
 
 ## 6. Migration record (2026-07-08 hard-break sweep)
@@ -498,8 +540,25 @@ Historical, not normative. The rename backlog this section used to carry was exe
     pinned by a runtime regression spec.
 -   **P20 closed:** every capability slot is `Scalar | AtLeastOne<Options>`, including
     the `circuit` tuple and `inspect(input, true)`.
--   **Baseline: 0.** `scripts/contract-violations.baseline.json` is empty; the ratchet
-    now fails on any violation ([§7](#7-enforcement)).
+-   **P24 added** (same-day follow-up): a new rule — a shared leading-word prefix across
+    ≥2 flat fields is an envelope — landed alongside the sweep. Two pairs matched it
+    immediately and were converted without aliases: `OAuth2Options`/
+    `CookieSessionOptions` `refreshOn`+`refreshSkew`/`refreshWhen` → `refresh`, and
+    `SentrySinkOptions` `captureErrors`+`captureDrift` → `capture`. Three exemptions
+    were named on adoption: `StitchQueryOptions.queryKey`/`queryFn` (TanStack mirror),
+    `OAuth2Options.clientId`/`clientSecret`/`clientAuth` (RFC 6749),
+    `DocSearchHit.pageUrl`/`pageTitle` (Orama index schema). Enforced by lint **R8**,
+    which found one pre-existing, real match P24's landing did **not** fix at the time:
+    `@stitchapi/nest`'s `StitchFeatureOptions.seamConfig`/`seamToken` (a feature seam's
+    build config and its DI exposure token — genuinely two facets of one capability).
+    Initially baselined rather than fixed (folding them ripples through
+    `forFeature`/`forFeatureScoped`/`StitchScopedFeatureOptions`); **since converted**
+    (R8 follow-up) into `StitchFeatureOptions.seam?: AtLeastOne<NestFeatureSeamOptions>`
+    with `NestFeatureSeamOptions { config?: AtLeastOne<SeamConfig>; token?: InjectionToken }`
+    — a hard break, no alias (P19/D5), `forFeature`/`forFeatureScoped` updated to read
+    `opts.seam?.config`/`opts.seam?.token`.
+-   **Baseline: 0.** `scripts/contract-violations.baseline.json` is empty again; the
+    ratchet fails on **any** new violation ([§7](#7-enforcement)).
 
 The blessed carve-outs and deliberate divergences that survive the sweep are recorded
 inline in their rules: [P3](#p3--one-suffix-system) (`StitchQueryOptions`, the TanStack
@@ -520,10 +579,12 @@ frozen independently of core's.
 -   It scans the published packages' public surface and reports contract violations.
 -   The baseline
     ([`scripts/contract-violations.baseline.json`](../scripts/contract-violations.baseline.json))
-    has been **zero since the 2026-07-08 sweep**, so the lint fails on **any**
-    violation. The ratchet mechanics stay (mirroring the repo's ESLint-suppression
-    ratchet) purely as the shrink-only guarantee: the surface can only get more
-    consistent, never less.
+    was **zero from the 2026-07-08 sweep**; the same-day P24 addition
+    ([§6](#6-migration-record-2026-07-08-hard-break-sweep)) briefly carried one
+    pre-existing real match it had not yet fixed, since converted — the baseline is
+    **zero again**, and the lint fails on **any** new violation. The ratchet mechanics
+    stay (mirroring the repo's ESLint-suppression ratchet) purely as the shrink-only
+    guarantee: the surface can only get more consistent, never less.
 -   Rules implemented (high-precision, source-text level): **R1** banned type-name
     suffix (P3) — input-side `*Opts`/`*Info`/`*Params`/`*Config` **and** produced-side
     `*Return`/`*State`; **R2** any `*Ms`-suffixed duration field, input or emitted
@@ -534,10 +595,19 @@ frozen independently of core's.
     nested — typed as a bare all-optional `*Options` bag that accepts `{}` (P20);
     **R7** any `@deprecated` marker on a published surface — the surface is shim-free
     since the sweep, so a post-GA deprecation alias (mandated by P19) enters the
-    baseline **deliberately** for its cycle and is flagged until the major removes it.
+    baseline **deliberately** for its cycle and is flagged until the major removes it;
+    **R8** a shared leading-word prefix across ≥2 flat members of the same exported
+    interface, not on the curated allow-list of verified foreign-mirror,
+    discriminated-union, and P12 dominant-field pairs (P24) — high-precision by
+    construction: the conventional `on*`/`is*`/percentile prefixes are structurally
+    excluded before grouping, and every remaining match is either fixed at the source
+    or gets a one-line-rationale allow-list entry, never silently dropped.
 -   Deferred to a type-aware phase (needs the TS checker, not regex): full
     same-name-different-**shape** detection, duration-type conformance, default-value
-    inversion (P8). Tracked as comments in the lint.
+    inversion (P8). Tracked as comments in the lint. R8 is also source-text-only in a
+    second sense — it scans exported `interface` bodies, not `type`-literal object
+    shapes or class fields; no group was found in either at the 2026-07-08 audit, but
+    a future one wouldn't be caught until it grows an `interface`.
 
 ---
 

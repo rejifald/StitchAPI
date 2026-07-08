@@ -477,7 +477,7 @@ const getUser = stitch({
 });
 ```
 
-**OAuth2 client credentials** — `oauth2()` POSTs the token endpoint (form-encoded `client_credentials` grant), caches the access token in the [store](#pluggable-state-store) with the TTL from `expires_in`, refreshes it `refreshSkew` (default 30s) before expiry, and attaches it as `Authorization: Bearer …`. A rejected token (status in `refreshOn`, default `[401]`) forces a fresh fetch and an uncounted re-run of the attempt:
+**OAuth2 client credentials** — `oauth2()` POSTs the token endpoint (form-encoded `client_credentials` grant), caches the access token in the [store](#pluggable-state-store) with the TTL from `expires_in`, refreshes it `refresh: { skew }` (default 30s) before expiry, and attaches it as `Authorization: Bearer …`. A rejected token (status in `refresh: { on }`, default `[401]`) forces a fresh fetch and an uncounted re-run of the attempt:
 
 ```ts
 import { env, oauth2, stitch } from 'stitchapi';
@@ -520,7 +520,7 @@ const listUsers = stitch({
                 password: secretsFile('APP_PASS')(),
             },
         }),
-        refreshOn: [401], // the wall → re-login, then retry (default)
+        refresh: [401], // the wall → re-login, then retry (default)
     }),
 });
 
@@ -535,8 +535,9 @@ A `200` that is really a login page is a soft wall — catch it with a content p
 auth: cookieSession({
     login: signIn,
     cookie: 'session_token',
-    refreshWhen: (res) =>
-        typeof res.body === 'string' && /log in/i.test(res.body),
+    refresh: {
+        when: (res) => typeof res.body === 'string' && /log in/i.test(res.body),
+    },
 });
 ```
 

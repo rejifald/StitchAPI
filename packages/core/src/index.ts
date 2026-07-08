@@ -21,7 +21,9 @@ export type {
     ApiKeyOptions,
     BasicOptions,
     OAuth2Options,
+    OAuth2RefreshOptions,
     CookieSessionOptions,
+    CookieSessionRefreshOptions,
     AuthFailureResult,
     RefreshResult,
 } from './auth';

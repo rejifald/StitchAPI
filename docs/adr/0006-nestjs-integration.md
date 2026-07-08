@@ -8,6 +8,10 @@
 >
 > The integration is a thin **adapter package**, exactly the class [ADR 0001](./0001-package-naming-and-distribution.md) Decision 2 already anticipated ("framework adapters (e.g. React)… `@stitchapi/<name>`"). It contributes _DI wiring + two bridge helpers + a Logger sink_ over primitives core already exposes — no new capability, so it cannot regress the **contract-not-dependency** gate ([`two-gates`](../DESIGN.md)).
 
+> [!IMPORTANT]
+>
+> **Amendment — `StitchFeatureOptions.seam`/`seamToken` folded into one `seam` envelope.** Decision 4 below shipped its bare `seam?: SeamConfig` renamed to `seamConfig` (to stop reading as the `seam()` function) plus a sibling `seamToken?: InjectionToken`. CONTRACT.md's P24 rule (a shared leading-word prefix across ≥2 flat fields is an envelope) later flagged that `seamConfig`/`seamToken` pair; it is now `seam?: AtLeastOne<NestFeatureSeamOptions>` with `NestFeatureSeamOptions { config?: AtLeastOne<SeamConfig>; token?: InjectionToken }` — a hard break, no alias (P19/D5). Read `seam: cfg` / `seamToken` in the code below as `seam?.config` / `seam?.token`. See [CONTRACT.md §6](../CONTRACT.md#6-migration-record-2026-07-08-hard-break-sweep) (P24) and [`packages/nest/src/module.ts`](../../packages/nest/src/module.ts).
+
 ## Context
 
 A stitch is a plain function: `stitch(config)` returns a callable that runs an HTTP/GraphQL/streaming call ([`stitch.ts`](../../packages/core/src/stitch.ts)). That works in any runtime, but it is **unwired** in a NestJS backend — there is no module to import, no provider to inject, no lifecycle hook, and no idiomatic path from Nest's `ConfigService`/`Logger`/request scope into a stitch. Today a Nest user hand-rolls all of that, and gets three things subtly wrong:

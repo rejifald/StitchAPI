@@ -102,9 +102,11 @@ describe('StitchModule.forFeature', () => {
             h.stitch({ path: '/thing' }),
         );
         const mod = StitchModule.forFeature({
-            seamConfig: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+            seam: {
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
             },
             stitches: [GetThing],
         });
@@ -143,6 +145,39 @@ describe('StitchModule.forFeature', () => {
         expect(providers[0]?.inject).toEqual([STITCH_SEAM]);
     });
 
+    // P20/P24: `seam` is `AtLeastOne<NestFeatureSeamOptions>` — an empty `{}` is
+    // indistinguishable from omitting the envelope entirely, so it must not compile.
+    // `config`/`token` compose freely (each independently satisfies AtLeastOne).
+    it('rejects an empty seam envelope at compile time, but config + token compose', () => {
+        const GetThing = defineStitch('GET_THING_3', (h) =>
+            h.stitch({ path: '/thing' }),
+        );
+        const TOKEN = Symbol('feature-seam-token');
+
+        // @ts-expect-error — `seam: {}` satisfies neither `config` nor `token`; P20/P24.
+        StitchModule.forFeature({ seam: {}, stitches: [GetThing] });
+
+        // Both facets together — config builds the seam, token exposes it under a
+        // caller-chosen DI token (not just the root/default XOR one-of-them cases above).
+        const providers = StitchModule.forFeature({
+            seam: {
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter([]),
+                },
+                token: TOKEN,
+            },
+            stitches: [GetThing],
+        }).providers as FProv[];
+        const seamProv = providers.find((p) => p.provide === TOKEN);
+        expect(seamProv).toBeDefined();
+        expect(seamProv?.inject).toEqual([
+            STITCH_STORE,
+            STITCH_TRACE,
+            SeamRegistry,
+        ]);
+    });
+
     // Regression (path-vars fallout, #114): a templated-path def's call argument now *requires*
     // `params`, so its `StitchDef` has a narrower (contravariant) input than the loose default.
     // The feature registry must still admit it — `stitches` is bound to the any-input
@@ -157,9 +192,11 @@ describe('StitchModule.forFeature', () => {
             defineStitch('LIST', (h) => h.stitch({ path: '/users' })),
         ];
         const providers = StitchModule.forFeature({
-            seamConfig: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+            seam: {
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
             },
             stitches: mixed,
         }).providers as FProv[];
@@ -188,12 +225,16 @@ describe('StitchModule.forFeatureScoped', () => {
         const TENANT = Symbol('tenant');
         const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
         const mod = StitchModule.forFeatureScoped({
-            seamConfig: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+            // Both facets of the envelope together: config builds the feature seam, token
+            // exposes it under a caller-chosen DI token — proving they compose (P24).
+            seam: {
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
+                token: TENANT,
             },
             stitches: [GetThing],
-            seamToken: TENANT,
             principal: (req: { tenantId: string }) => req.tenantId,
         });
         const providers = mod.providers as FProv[];
@@ -258,9 +299,11 @@ describe('defineStitch token', () => {
         const calls: string[] = [];
         const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
         const providers = StitchModule.forFeature({
-            seamConfig: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+            seam: {
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
             },
             stitches: [GetThing],
         }).providers as FProv[];

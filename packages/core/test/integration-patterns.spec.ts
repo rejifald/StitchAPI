@@ -128,7 +128,7 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
                 login,
                 cookie: 'SID',
                 tenancy: 'app',
-                refreshOn: 403, // this integration uses 403, not 401 (bare status ≡ [403], CONTRACT.md P7)
+                refresh: 403, // this integration uses 403, not 401 (bare status ≡ [403], CONTRACT.md P7)
                 loginInput: () => ({
                     body: {
                         username: env('CLIENT_USER')(),

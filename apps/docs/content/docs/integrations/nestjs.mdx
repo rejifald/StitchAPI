@@ -100,9 +100,11 @@ for the validated result, or `.stream()`-ed for the
 `forRoot({ store, trace, ...defaults })` configures the app-wide infrastructure —
 one store, one trace sink — plus the shared config (`baseUrl`, `auth`, `retry`,
 `throttle`, …) every stitch inherits; `forRootAsync` resolves the same options
-from an injected factory. `forFeature({ stitches, seamConfig })` registers
-injectable stitches and, optionally, a per-upstream seam built over the shared
-store and trace — omit `seamConfig` to attach the stitches to the default one.
+from an injected factory. `forFeature({ stitches, seam })` registers injectable
+stitches and, optionally, a per-upstream seam built over the shared store and
+trace via `seam.config` — omit `seam` to attach the stitches to the default one.
+`seam.token` exposes the feature seam under a caller-chosen DI token, for
+multi-tenant `.as(principal)`.
 
 Two bridges connect the framework, and neither changes core:
 

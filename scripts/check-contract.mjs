@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // API meta-contract gate — see docs/CONTRACT.md.
 //
-// A RATCHET, not a hard gate. The pre-contract backlog (docs/CONTRACT.md §6) has been
-// worked down to ZERO by the GA hard-break sweep, so the baseline in
-// scripts/contract-violations.baseline.json is now empty and the gate fails on the FIRST
-// new violation — exactly like the repo's ESLint-suppression ratchet at zero. The
+// A RATCHET, not a hard gate. The pre-contract backlog (docs/CONTRACT.md §6) was worked
+// down to ZERO by the GA hard-break sweep; the same-day P24 addition (§6/§7) then found
+// one pre-existing real match (R8, @stitchapi/nest's seamConfig/seamToken) it did not fix
+// and briefly baselined it. That match has since been converted — folded into
+// `StitchFeatureOptions.seam: AtLeastOne<NestFeatureSeamOptions>` — so
+// scripts/contract-violations.baseline.json is empty again and the gate fails on the
+// FIRST new violation — exactly like the repo's ESLint-suppression ratchet at zero. The
 // mechanism is kept (rather than hard-failing inline) so a deliberate, contract-aligned
 // exception can still be baselined with a committed diff for review.
 //
@@ -211,6 +214,121 @@ const UNIQUE_WATCH = new Set([
     // were deleted from the surface entirely by the hard-break sweep — nothing left to watch.
 ]);
 
+// P24 — a shared leading-word prefix across ≥2 flat members of one exported interface is an
+// envelope candidate. Two carve-outs are STRUCTURAL (excluded before grouping, never guessed at
+// per-symbol): `on*`/`is*` handler/guard verbs, and a percentile family (`…P50`/`…P95`/`…P99`, or
+// a bare `p50`/`p95`/`p99`). Everything else is checked against a curated allow-list below — each
+// entry is a verified non-match (a foreign-SDK/standard mirror, a discriminated-union pair, a
+// derived/internal read-view, or a plugin-extension-hook bag), one rationale per entry, exactly
+// like the R5 UNIQUE_WATCH de-listed names above.
+const CONVENTIONAL_MEMBER = /^(?:on|is)[A-Z]|^[Pp]\d+$/;
+
+// Split on camelCase word boundaries; the group key is the lowercased leading word.
+const splitCamel = (name) =>
+    name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(' ');
+const leadingWord = (name) => splitCamel(name)[0].toLowerCase();
+
+// Keyed `InterfaceName.prefix` — one entry per verified exemption, never a blanket interface- or
+// package-level skip, so a NEW group in an already-allow-listed interface still gets flagged.
+const PREFIX_GROUP_ALLOW = new Map([
+    // (a) Foreign-SDK/standard mirrors (P18/P22) — the pair IS the mirrored contract's own
+    // vocabulary, not house-coined, so there is nothing to fold:
+    [
+        'OAuth2Options.client',
+        'clientId/clientSecret/clientAuth mirror RFC 6749 (P18/P22)',
+    ],
+    [
+        'StitchQueryOptions.query',
+        "queryKey/queryFn mirror TanStack's own queryOptions() vocabulary (P3/P18/P22) — this rule's own motivating example is itself exempt",
+    ],
+    [
+        'DocSearchHit.page',
+        'pageUrl/pageTitle mirror the persisted Orama index document schema (P18)',
+    ],
+    ['XhrLike.response', 'responseType/response mirror the XHR API (P18)'],
+    [
+        'RnStreamingXhr.response',
+        'responseType/responseText mirror the XHR API (P18)',
+    ],
+    [
+        'CacheLifecycleApi.cache',
+        'cacheDataLoaded/cacheEntryRemoved mirror RTK Query lifecycle names (P18)',
+    ],
+    // Discriminated-union pairs — mutually exclusive by `X?: never` on the sibling variant, so
+    // the two never co-exist and there is no envelope to nest:
+    [
+        'FastifyStitchPluginSeamOptions.seam',
+        'seam/seamConfig are an XOR pair (seamConfig?: never) — the prebuilt-seam variant, not two co-options',
+    ],
+    [
+        'FastifyStitchPluginConfigOptions.seam',
+        'seamConfig/seam are the same XOR pair from the build-a-seam variant (seam?: never)',
+    ],
+    // Off the published surface, or a derived/internal read-view rather than an authored config:
+    [
+        'ParsedRequest.body',
+        'body/bodyType is the CLI-internal from-curl parser type — CONTRACT.md P1 records it as explicitly off the published surface',
+    ],
+    [
+        'FingerprintInput.transform',
+        'transform/transformVersion is a derived read-view combining StitchConfig.transform (top-level sugar) and CacheOptions.transformVersion (nested) for the hash — the two are not co-located in any authored config',
+    ],
+    [
+        'CliIO.write',
+        'write/writeErr/writeFile are independent I/O primitives (stdout/stderr/filesystem) on a host-capability interface, not sub-options of one capability',
+    ],
+    [
+        'CliIO.load',
+        'load/loadModule are independent verbs (registry loader vs. generic import), not sub-options of one capability',
+    ],
+    [
+        'Surface.resume',
+        "resumeToken/resumeRetry are independent P21 plugin-extension hooks — resumeToken's documented pairing is with applyResume (a different prefix); nesting only these two would fragment that pairing without simplifying anything",
+    ],
+    // (b) P12 dominant-field carve-out — the second member is a discriminator/tag for the
+    // dominant field, not an independent option:
+    [
+        'AdapterRequest.body',
+        'bodyType is a discriminator tag for the dominant body payload, not a second option — carve-out (b), the canonical case',
+    ],
+    // Coincidental prefix collision — a house field plus an unrelated field that happens to
+    // mirror a foreign standard's naming:
+    [
+        'WindowChannelOptions.target',
+        "targetOrigin mirrors window.postMessage()'s own parameter name (P22); target (the destination handle) is unrelated — coincidental collision, not a group",
+    ],
+    [
+        'CookieSessionOptions.login',
+        'login (the required, dominant login Stitch) and loginInput (an unrelated input-resolver callback) are different value-kinds, not two knobs of one capability',
+    ],
+]);
+
+// Top-level (depth-0) field/method names of an interface body, in source order, deduped by name
+// (an overloaded method — `set(...)` declared twice — is one field, not two).
+function topLevelFieldNames(body) {
+    const out = [];
+    const seen = new Set();
+    let depth = 0;
+    let offset = 0;
+    for (const line of body.split('\n')) {
+        if (depth === 0) {
+            const m = /^\s*(?:readonly\s+)?([A-Za-z_]\w*)\s*\??\s*[:(]/.exec(
+                line,
+            );
+            if (m && !seen.has(m[1])) {
+                seen.add(m[1]);
+                out.push({ name: m[1], index: offset + m.index });
+            }
+        }
+        for (const ch of line) {
+            if (ch === '{' || ch === '(') depth++;
+            else if (ch === '}' || ch === ')') depth--;
+        }
+        offset += line.length + 1;
+    }
+    return out;
+}
+
 function collect() {
     const violations = [];
     const add = (rule, file, symbol, detail, line) =>
@@ -380,6 +498,36 @@ function collect() {
                             `all-optional ${b6[2]} accepts {} → Scalar|AtLeastOne<${b6[2]}> (P20)`,
                             lineOf(src, blk.bodyStart + b6.index),
                         );
+                }
+            }
+
+            // R8 — a shared leading-word prefix across ≥2 flat members of the SAME exported
+            // interface, not on the curated allow-list (P24). The conventional on*/is*/percentile
+            // prefixes are excluded from grouping entirely (never even reach the allow-list); a
+            // deprecated declaration is skipped like R1/R3/R4/R6 (a hypothetical alias is R7's
+            // finding, not double-counted here).
+            for (const blk of blocks) {
+                if (deprecatedBefore(src, blk.index)) continue;
+                const fields = topLevelFieldNames(blk.body).filter(
+                    (f) => !CONVENTIONAL_MEMBER.test(f.name),
+                );
+                const groups = new Map(); // leading word -> field entries
+                for (const f of fields) {
+                    const word = leadingWord(f.name);
+                    (groups.get(word) ?? groups.set(word, []).get(word)).push(
+                        f,
+                    );
+                }
+                for (const [word, members] of groups) {
+                    if (members.length < 2) continue;
+                    if (PREFIX_GROUP_ALLOW.has(`${blk.name}.${word}`)) continue;
+                    add(
+                        'R8',
+                        file,
+                        `${blk.name}.${word}`,
+                        `${members.map((m) => m.name).join('/')} share the "${word}" prefix → fold into one envelope (P24)`,
+                        lineOf(src, blk.bodyStart + members[0].index),
+                    );
                 }
             }
 

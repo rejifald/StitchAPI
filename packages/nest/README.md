@@ -59,8 +59,8 @@ export class AppModule {}
 Declare stitches with `defineStitch(build)` — the injection **token is optional** (a
 unique `Symbol` is generated; pass `defineStitch(token, build)` only when you need a
 stable, well-known token). Register them per feature module, which may also own its
-**own upstream seam** (a `seamConfig` with its `baseUrl`/`auth`), built over the shared
-store + trace — omit `seamConfig` to attach the stitches to the default seam.
+**own upstream seam** (a `seam.config` with its `baseUrl`/`auth`), built over the shared
+store + trace — omit `seam` to attach the stitches to the default seam.
 
 ```ts
 // users.stitches.ts
@@ -71,9 +71,11 @@ export const GetUser = defineStitch((s) =>
 @Module({
     imports: [
         StitchModule.forFeature({
-            seamConfig: {
-                baseUrl: 'https://api.example.com',
-                auth: bearer(env('TOKEN')),
+            seam: {
+                config: {
+                    baseUrl: 'https://api.example.com',
+                    auth: bearer(env('TOKEN')),
+                },
             },
             stitches: [GetUser],
         }),
@@ -104,9 +106,11 @@ the request-scoped `seam.as(principal)` handle and the request-scoped stitches f
 @Module({
     imports: [
         StitchModule.forFeatureScoped({
-            seamConfig: {
-                baseUrl: 'https://api.example.com',
-                auth: bearer(env('TOKEN')),
+            seam: {
+                config: {
+                    baseUrl: 'https://api.example.com',
+                    auth: bearer(env('TOKEN')),
+                },
             },
             stitches: [GetUser],
             principal: (req) => req.user?.tenantId ?? 'anonymous',

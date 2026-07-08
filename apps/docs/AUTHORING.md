@@ -108,7 +108,7 @@ const listUsers = stitch({
         loginInput: () => ({
             body: { email: env('APP_USER')(), password: env('APP_PASS')() },
         }),
-        refreshOn: 401,
+        refresh: 401,
     }),
 });
 ```
@@ -117,8 +117,8 @@ const listUsers = stitch({
 
 {/* Only the options that matter here, with defaults. Link to Reference for the
 exhaustive table — never paste a full type table into a guide (rule 6). */}
-`refreshOn` re-runs the login on a status code; `refreshWhen` re-runs it on a
-content predicate (for soft 200 walls). See
+`refresh` re-runs the login on a status code (bare value or `{ on }`); the
+`{ when }` form re-runs it on a content predicate (for soft 200 walls). See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
 
 <Callout type="warn">

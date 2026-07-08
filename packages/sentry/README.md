@@ -33,16 +33,16 @@ The same sink works on a single stitch — `stitch({ trace: sentrySink(Sentry) }
 
 ## What it sends
 
-| Event                          | Sentry                                                               |
-| ------------------------------ | -------------------------------------------------------------------- |
-| `error`                        | `captureMessage` (level `error`) + an error breadcrumb               |
-| `progress` (`retry`/`circuit`) | breadcrumb, level `warning`                                          |
-| `progress` (throttle/paginate) | breadcrumb, level `debug`                                            |
-| `drift`                        | breadcrumb (level follows the finding); captured with `captureDrift` |
-| `start` / `result` / `done`    | breadcrumb only when `lifecycle: true` (off by default)              |
-| `delta` / `info`               | **never sent** (raw response data / strategy announcements)          |
+| Event                          | Sentry                                                                           |
+| ------------------------------ | -------------------------------------------------------------------------------- |
+| `error`                        | `captureMessage` (level `error`) + an error breadcrumb                           |
+| `progress` (`retry`/`circuit`) | breadcrumb, level `warning`                                                      |
+| `progress` (throttle/paginate) | breadcrumb, level `debug`                                                        |
+| `drift`                        | breadcrumb (level follows the finding); captured with `capture: { drift: true }` |
+| `start` / `result` / `done`    | breadcrumb only when `lifecycle: true` (off by default)                          |
+| `delta` / `info`               | **never sent** (raw response data / strategy announcements)                      |
 
-Options: `{ lifecycle?, captureErrors?, captureDrift? }`.
+Options: `{ lifecycle?, capture?: boolean | { errors?, drift? } }`. `capture: false` disables both `errors` and `drift` capture (breadcrumbs still flow); `capture: true`/omitted resolves to the documented defaults (`errors: true`, `drift: false`); pass the envelope to set them independently.
 
 > [!NOTE]
 > The same `lifecycle` option in `@stitchapi/pino` defaults to `true` — a

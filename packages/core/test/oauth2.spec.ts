@@ -105,7 +105,7 @@ test('refreshes the token after it expires', async () => {
     });
 
     // skew 0 so the token stays usable until its real expiry, isolating the expiry path.
-    const data = protectedStitch('/data', { refreshSkew: 0 });
+    const data = protectedStitch('/data', { refresh: { skew: 0 } });
     await data();
     await sleep(1100); // let the cached token (and its store TTL) expire
     await data();
@@ -116,7 +116,7 @@ test('refreshes the token after it expires', async () => {
     expect(calls[1]!.headers['authorization']).toBe('Bearer T2'); // the refreshed token
 }, 10000);
 
-test('refreshes proactively BEFORE expiry using refreshSkew', async () => {
+test('refreshes proactively BEFORE expiry using refresh.skew', async () => {
     server.route('POST', '/token', {
         body: (i: number) => ({
             access_token: i === 0 ? 'T1' : 'T2',
@@ -130,7 +130,7 @@ test('refreshes proactively BEFORE expiry using refreshSkew', async () => {
     });
 
     // With a 1.5s skew the token is treated as stale ~0.5s in, well before the 2s expiry.
-    const data = protectedStitch('/data', { refreshSkew: 1500 });
+    const data = protectedStitch('/data', { refresh: { skew: 1500 } });
     await data();
     await sleep(600);
     await data();

@@ -5,6 +5,7 @@ export {
     type StitchModuleAsyncOptions,
     type StitchFeatureOptions,
     type StitchScopedFeatureOptions,
+    type NestFeatureSeamOptions,
 } from './module';
 export {
     defineStitch,
