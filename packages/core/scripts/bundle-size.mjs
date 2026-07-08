@@ -120,16 +120,25 @@ const KB = 1024;
 // / ~0.28 KB gzip. The step restores the same tight ~0.2 KB headroom the gate is meant to hold. The
 // cost buys closing a HIGH credential-exfiltration hole — a deliberate trade the maintainer signs off
 // on by merging (see PR body for the exact before/after/Δ).
+// Budgets raised for the 2026-07 contract-freeze sweep (24.80→25.25 / 20.00→20.40 KB; measured
+// 25.02 / 20.19). The sweep DELETED every @deprecated shim (rateLimit fallbacks, alias co-emits,
+// *Ms fields) but added more than it removed on the hot path: every config slot now accepts a
+// scalar shorthand normalized in compose() (stream/multipart/sse/throttle/idempotency/circuit
+// tuple), status fields accept number|number[]|predicate via the shared acceptsStatus matcher,
+// and redactConfig deep-strips every function-valued field so __config is strictly JSON (P0 —
+// the load-bearing introspection invariant). All of it is intake normalization or the redaction
+// gate itself, so none of it can move to a subpath. Net +0.22 / +0.19 KB gzip for the frozen
+// 1.0 surface; the step restores the same tight ~0.2 KB headroom the gate is meant to hold.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.8 * KB,
+        budget: 25.25 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 20.0 * KB,
+        budget: 20.4 * KB,
     },
 ];
 

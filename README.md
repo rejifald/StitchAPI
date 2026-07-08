@@ -331,16 +331,16 @@ const getUser = stitch({
 
 A **surface** is the request _style_ a stitch speaks. `http` is the default; the rest are peer surfaces on the same engine — `auth`, `retry`, `throttle`, `timeout`, validation, and the event stream compose with every one. Each ships as its own subpath import, so `import { stitch }` pulls in `http` alone.
 
-| Surface       | Import                        | Shapes                                     | `await` resolves to            |
-| ------------- | ----------------------------- | ------------------------------------------ | ------------------------------ |
-| `http`        | `stitch` (default)            | a JSON-over-HTTP call                      | the validated body             |
-| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, picks `data`  | the `data` payload             |
-| `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
-| `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader              | every decoded chunk, collected |
-| `download`    | `stitchapi/download`          | a buffered binary GET                      | `{ blob, filename }`           |
-| `llm`         | `stitchapi/llm`               | a chat-completion via a provider contract  | the normalised `{ text, … }`   |
-| `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin              | the command's stdout           |
-| `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call  | the typed RPC response         |
+| Surface       | Import                        | Shapes                                    | `await` resolves to            |
+| ------------- | ----------------------------- | ----------------------------------------- | ------------------------------ |
+| `http`        | `stitch` (default)            | a JSON-over-HTTP call                     | the validated body             |
+| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, picks `data` | the `data` payload             |
+| `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch) | every parsed event, collected  |
+| `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader             | every decoded chunk, collected |
+| `download`    | `stitchapi/download`          | a buffered binary GET                     | `{ blob, filename }`           |
+| `llm`         | `stitchapi/llm`               | a chat-completion via a provider contract | the normalised `{ text, … }`   |
+| `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin             | the command's stdout           |
+| `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call | the typed RPC response         |
 
 Full guide: [Surfaces](https://stitchapi.dev/docs/reference/surfaces).
 
