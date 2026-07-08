@@ -97,7 +97,12 @@ jobs:
     publish-npm:
         needs: [verify, e2e]
         runs-on: ubuntu-latest
-        timeout-minutes: 10
+        # 34 packages publish in one lockstep run, and @stitchapi/docs-mcp rebuilds its
+        # bundled docs (a ~90 MB model download) at pack time — 10 min clipped the tail
+        # in the rc.5 run (everything past `rtk-query` never published, and docs-mcp's own
+        # slow pack pushed it over). 25 gives comfortable headroom; it's a ceiling, not a
+        # target — a healthy run still finishes in ~10-13 min.
+        timeout-minutes: 25
         permissions:
             contents: read
             id-token: write # mint the OIDC token npm exchanges for publish auth (+ provenance)
