@@ -1,0 +1,92 @@
+---
+title: How the rule saves tokens
+description: The stitch init rule is the cheapest layer of the agent stack — a ~300-token file the agent reads when it's relevant, in place of loading the whole docs corpus or exploring your repo to rediscover the pattern every session.
+prerequisites: ['/docs/agents/adopt-in-your-project']
+---
+
+The [rule that `stitch init` writes](/docs/agents/adopt-in-your-project) is a
+few hundred tokens the agent reads once, at the start of a session. It earns its
+place by being the cheapest way to answer a question the agent would otherwise
+pay for every time it touches an endpoint: _how does this project call an
+external API?_
+
+## The always-on cost is tiny
+
+Measured against the site's own machine-readable docs, the rule weighs almost
+nothing:
+
+| What the agent could load                    | Size   | ~Tokens  |
+| -------------------------------------------- | ------ | -------- |
+| The `stitch init` rule (`AGENTS.md`)         | 1.2 KB | **~300** |
+| …with the `--project` inventory (2 stitches) | 1.5 KB | ~390     |
+| `/llms.txt` — the curated docs index         | 21 KB  | ~5,500   |
+| `/llms-full.txt` — the entire docs corpus    | 451 KB | ~115,000 |
+
+<Callout type="info">
+    Token figures are the byte count over four — a rough English/code estimate,
+    not a tokenizer run. The ratios are what matter: the rule is under 0.3% of
+    the full corpus.
+</Callout>
+
+The cost model matches each ecosystem. The `AGENTS.md` and `CLAUDE.md` rules are
+always-on but small; the Cursor (`.cursor/rules/stitchapi.mdc`) and Windsurf
+rules are **glob-scoped to `stitches.ts`**, so the model only spends the tokens
+when it is already working near your API layer.
+
+## What it replaces
+
+The rule is cheap in absolute terms, but the saving is what it lets the agent
+_not_ do:
+
+1. **Load the manual.** [`llms-full.txt`](/docs/agents/llms-txt) is the docs'
+   own "simplest correct default" — the whole corpus (~115k tokens) fits in a
+   modern context window. The rule front-loads the ~300 tokens that resolve the
+   common case (_declare a stitch, reuse these_) and defers the rest to an
+   on-demand [`search_docs`](/docs/agents/search-over-mcp) lookup the agent makes
+   only when it hits an edge.
+2. **Explore the repo.** Without `--project`, an agent that wants to reuse
+   `getUser` has to find it first — open `stitches.ts`, skim the exports, match
+   one to the endpoint. `--project` appends that inventory to the rule for one
+   line per endpoint, so the list is already in context.
+3. **Hand-roll, then fix.** A raw `fetch` with no validation and an inline token
+   is the path the model takes by default. The round-trip of writing it, having
+   it reviewed or failing at runtime, and rewriting it as a stitch costs more
+   than the rule that prevented it.
+
+It is a fixed cost, too. The rule is read once per session and amortises across
+every call the agent makes after it; rediscovery is paid again every session the
+rule is absent.
+
+## Layer it: rule plus retrieval
+
+The rule is the always-on layer, not the only one. Pair it with the docs MCP and
+you get a two-tier budget: the small rule resolves the frequent decisions for
+free, and [`search_docs`](/docs/agents/search-over-mcp) pulls exactly the page
+the agent needs for the rare ones — never the whole corpus, never stale training
+data.
+
+```bash
+# always-on: the habit, in every agent's rules file
+npx stitch init --project
+
+# on-demand: the long tail, one page at a time
+# → connect the docs MCP at https://stitchapi.dev/api/mcp
+```
+
+That frugality is the whole point: adding APIs never floods the model's context
+window, because the rule stays small and the retrieval stays scoped.
+
+## See also
+
+<Cards>
+    <Card
+        title="Adopt in your project"
+        href="/docs/agents/adopt-in-your-project"
+    />
+    <Card
+        title="Search the docs over MCP"
+        href="/docs/agents/search-over-mcp"
+    />
+    <Card title="Point an agent at llms.txt" href="/docs/agents/llms-txt" />
+    <Card title="For agents" href="/docs/agents" />
+</Cards>

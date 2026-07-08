@@ -1,0 +1,130 @@
+---
+title: Keep Coding Agents on Your API Layer
+description: An agent that has never seen StitchAPI hand-rolls fetch and rediscovers your conventions every session. One committed rule — written by npx stitch init — teaches it the habit for the price of a ~300-token file it reads once, instead of the ~115k-token docs corpus or a repo-exploration detour it pays every time.
+author: Oleksandr Zhuravlov
+date: '2026-07-08'
+tags: [agents, ai, dx, cli, tokens]
+---
+
+An agent dropped into your repo does the obvious thing: it reaches for `fetch`. Your codebase already declares typed, resilient stitches, but the model can't see that habit unless something tells it — and StitchAPI is newer than the model's training data, so nothing does.
+
+## A convention the model can't see is one it won't follow
+
+Ask an agent to "call the billing API" and it writes the call the way its training data taught it: a raw `fetch`, no validation, the token pasted inline. Not because it's wrong — because your API layer is invisible to it. To discover the pattern on its own it has to grep the source, read a couple of call sites, and infer the shape. That's tokens spent every session on a question you already answered when you designed the layer, and it still might miss and write a fourth variant of the same request.
+
+The fix isn't a smarter model. It's telling the model, once, the one habit that matters.
+
+**A convention the model can't see is one it won't follow.**
+
+## Tell it once, in the file it already reads
+
+Every coding agent loads a rules file at the start of a session — `AGENTS.md`, a Cursor rule, a `## ` section in `CLAUDE.md`. That file is the cheapest real estate you own: the model reads it before it writes a line. So put the habit there.
+
+```bash
+npx stitch init
+```
+
+`stitch init` writes the canonical consumer rule into whichever convention your agents read (`--format agents,cursor,claude,copilot,windsurf,cline,aider`, or `all`). Here is the `AGENTS.md` it drops in — the whole thing:
+
+````md
+# Using StitchAPI in this project
+
+When this project calls an external API (HTTP, GraphQL, an LLM, or a shell tool),
+do NOT hand-roll `fetch`/`axios`. Declare a typed **stitch** instead.
+
+1. Put declarations in `stitches.ts`.
+2. One canonical pattern — a bare stitch for a single endpoint:
+
+    ```ts
+    import { bearer, env, stitch } from 'stitchapi';
+    import { z } from 'zod';
+
+    export const getUser = stitch({
+        baseUrl: 'https://api.example.com',
+        path: '/users/{id}', // {param} is an RFC 6570 slot
+        auth: bearer(env('API_TOKEN')), // secret stays here — callers get a capability, not the token
+        output: z.object({ id: z.number(), name: z.string() }), // runtime-validated, drift-caught
+    });
+    // await getUser({ params: { id: 1 } })  → typed, validated value
+    ```
+
+3. Reuse a credential / principal / throttle budget across calls? Group the
+   endpoints under a `seam(...)` so they share one runtime; never put the
+   principal in the call input.
+4. Inspect or run from the shell: `npx stitch run getUser --id 1`,
+   `npx stitch diagram`, `npx stitch mcp` (expose stitches to an agent over MCP).
+
+Rule of thumb: a new external endpoint = a new stitch export, not a new fetch.
+````
+
+Roughly three hundred tokens. The next agent in the repo starts from your API layer instead of guessing at it.
+
+**One file, and the model reaches for a stitch before it reaches for `fetch`.**
+
+## Make it about _your_ APIs, not the library
+
+The rule above teaches the pattern. The `--project` flag teaches the _inventory_: it loads your stitches module and appends the endpoints you have already declared, so the agent reuses `getUser` instead of writing a third variant of it.
+
+```bash
+npx stitch init --project
+```
+
+```md
+## Stitches already declared in this project
+
+Reuse these before declaring a new one — call them, compose them under a
+`seam(...)`, or extend an existing one. Add a new stitch only for an endpoint
+not already listed here.
+
+-   `getUser` — GET https://api.example.com/users/{id}
+-   `listOrders` — GET https://api.example.com/orders
+```
+
+That block is the part that replaces repo exploration outright. Without it, an agent that wants to avoid duplicating `getUser` has to go find `getUser` first — open `stitches.ts`, skim the exports, match one to the endpoint. With it, the list is already in the file the agent read at startup, for one line per endpoint.
+
+## Why it's cheap
+
+The rule is the cheapest layer of the whole agent stack, and the numbers say so. Measured against the site's machine-readable docs, the rule the CLI just wrote weighs almost nothing:
+
+| What the agent could load                    | Size   | ~Tokens  |
+| -------------------------------------------- | ------ | -------- |
+| The `stitch init` rule (`AGENTS.md`)         | 1.2 KB | **~300** |
+| …with the `--project` inventory (2 stitches) | 1.5 KB | ~390     |
+| `/llms.txt` — the curated docs index         | 21 KB  | ~5,500   |
+| `/llms-full.txt` — the entire docs corpus    | 451 KB | ~115,000 |
+
+(Token figures are the byte count over four — a rough English/code estimate, not a tokenizer run, but the ratios are the point.)
+
+Loading [`llms-full.txt`](/docs/agents/llms-txt) is the docs' own "simplest correct default" — the whole manual fits in a modern context window, so an agent _can_ just carry it. The rule takes the other road: it front-loads the ~300 tokens that resolve the common case — _declare a stitch, reuse these_ — and defers the remaining ~115k to an on-demand [`search_docs`](/docs/agents/search-over-mcp) call the agent makes only when it hits an edge it doesn't recognise. You pay for the habit, not the manual.
+
+And it's a fixed cost, not a recurring one. The rule is read once at session start and amortises across every call the agent makes after; rediscovery — grepping the source, re-deriving the pattern — is paid again every session you don't have the rule. The CLI even respects each ecosystem's cost model: the `AGENTS.md` and `CLAUDE.md` rules are always-on but tiny, while the Cursor and Windsurf rules are glob-scoped to `stitches.ts`, so the model only spends the tokens when it's already working near your API layer.
+
+**Spend ~300 tokens on the habit; pull the manual only when you reach its edge.**
+
+## Keep the rule honest
+
+A rule that has drifted from the code is worse than no rule — it teaches the agent a pattern you've since moved off. So the same generator checks itself. In CI, `--check` compares each committed rule file against the rule the installed StitchAPI would write now, and exits non-zero when one has fallen behind:
+
+```bash
+npx stitch init --check --project
+```
+
+```text
+stale AGENTS.md (run `stitch init --force` to refresh)
+1 StitchAPI rule file(s) out of date — run `stitch init --force`
+```
+
+An absent rule is reported, never failed — you choose which conventions to adopt — but a _stale_ one breaks the build. The nudge ages with the code instead of rotting next to it.
+
+**CI catches a stale rule the same way it catches a failing test.**
+
+## Try it
+
+```package-install
+stitchapi
+```
+
+-   [Adopt in your project](/docs/agents/adopt-in-your-project) — every `stitch init` flag, and the rule in full.
+-   [How the rule saves tokens](/docs/agents/token-savings) — the always-on-vs-on-demand math, as reference.
+-   [Search the docs over MCP](/docs/agents/search-over-mcp) — the on-demand escape hatch the rule defers to.
+-   [Point an agent at llms.txt](/docs/agents/llms-txt) — the whole corpus as clean Markdown, when you do want the manual.
