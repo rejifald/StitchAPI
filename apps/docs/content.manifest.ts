@@ -621,6 +621,13 @@ export const pages: Page[] = [
         kind: 'guide',
     },
     {
+        path: 'agents/token-savings',
+        title: 'How the rule saves tokens',
+        description:
+            'Why the stitch init rule is the cheapest layer of the agent stack — a ~300-token file the agent reads when relevant, not the whole docs corpus.',
+        kind: 'guide',
+    },
+    {
         path: 'agents/llms-txt',
         title: 'Point an agent at llms.txt',
         description:
