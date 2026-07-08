@@ -19,6 +19,15 @@ WORKDIR /repo
 
 RUN corepack enable
 
+# git is required by the root workspace's `prepare` script (`lefthook install`),
+# which `pnpm install` below triggers — node:24-slim doesn't ship it. The build
+# context intentionally omits .git (see COPY list below), so `lefthook install`
+# has nothing to find; a throwaway `git init` gives it a repo to point hooks at.
+# Both are discarded with this stage — nothing here reaches the runtime image.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    && git init -q
+
 # Workspace manifests first for layer caching.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages ./packages
