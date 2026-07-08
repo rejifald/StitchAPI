@@ -1,6 +1,6 @@
 ---
 title: 'Search the docs over MCP'
-description: 'Connect an agent to the hosted docs MCP — search_docs finds the relevant sections, get_doc reads a full page — for context-frugal retrieval when loading the whole corpus is more than you need.'
+description: 'Connect an agent to the docs MCP — hosted at stitchapi.dev, or run offline from the local @stitchapi/docs-mcp package — so search_docs finds the relevant sections and get_doc reads a full page, without loading the whole corpus.'
 prerequisites: ['/docs/agents/llms-txt']
 ---
 
@@ -9,7 +9,8 @@ it gets two tools: `search_docs`, which returns the handful of relevant doc
 _sections_ for a query — excerpts plus deep links, not whole pages — and
 `get_doc`, which reads one full page as clean Markdown. The agent connects once
 and pulls in exactly the passage it needs, instead of loading the whole manual on
-every turn.
+every turn. Point it at the server we host, or [run the same two tools
+offline](#run-it-offline) from a local package.
 
 <Callout type="info">
     This is **not** the library's [`run_stitch` surface](/docs/surfaces/mcp).
@@ -69,6 +70,41 @@ or commit it to the project's `.mcp.json`:
     }
 }
 ```
+
+## Run it offline
+
+Everything above points at the server we host. When you'd rather nothing leave
+your machine, the same two tools ship as a local package,
+[`@stitchapi/docs-mcp`](https://www.npmjs.com/package/@stitchapi/docs-mcp): the
+docs corpus and its search index are bundled inside it, so `search_docs` and
+`get_doc` run over stdio against local files. Point your agent at the command
+instead of a URL:
+
+```json
+{
+    "mcpServers": {
+        "stitchapi-docs": {
+            "command": "npx",
+            "args": ["-y", "@stitchapi/docs-mcp"]
+        }
+    }
+}
+```
+
+Same schemas and the same responses as the hosted server — only the transport
+(stdio) and the data source (a bundled snapshot) change. Reach for it when:
+
+-   **Privacy matters.** No query and no doc content is transmitted anywhere —
+    not even the shape of what you are asking. The one exception is a one-time
+    download of the embedding model on first use; every call after that is fully
+    offline.
+-   **Egress is locked down.** The docs are bundled at publish time, so there is
+    no bespoke endpoint to allowlist — only the ordinary `npm`/`npx` resolution
+    any dependency needs.
+-   **You want the docs pinned.** `@stitchapi/docs-mcp@X` is a reproducible
+    snapshot, rebuilt from the docs at that release, so you know exactly which
+    docs a version carries. The trade against the hosted server is freshness: the
+    bundle only updates when a new version ships.
 
 ## Tell your agent to use it
 

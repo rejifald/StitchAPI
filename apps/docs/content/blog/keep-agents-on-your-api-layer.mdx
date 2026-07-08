@@ -1,6 +1,6 @@
 ---
 title: Keep Coding Agents on Your API Layer
-description: An agent that has never seen StitchAPI hand-rolls fetch and rediscovers your conventions every session. One committed rule — written by npx stitch init — teaches it the habit for the price of a ~300-token file it reads once, instead of the ~115k-token docs corpus or a repo-exploration detour it pays every time.
+description: An agent that has never seen StitchAPI hand-rolls fetch and rediscovers your conventions every session. One committed rule — written by npx stitch init — teaches it the habit for the price of a ~300-token file it reads once, instead of the ~115k-token docs corpus or a repo-exploration detour it pays every time. And because the rule and the docs MCP are both local, that habit stays private and offline too.
 author: Oleksandr Zhuravlov
 date: '2026-07-08'
 tags: [agents, ai, dx, cli, tokens]
@@ -100,6 +100,18 @@ Loading [`llms-full.txt`](/docs/agents/llms-txt) is the docs' own "simplest corr
 And it's a fixed cost, not a recurring one. The rule is read once at session start and amortises across every call the agent makes after; rediscovery — grepping the source, re-deriving the pattern — is paid again every session you don't have the rule. The CLI even respects each ecosystem's cost model: the `AGENTS.md` and `CLAUDE.md` rules are always-on but tiny, while the Cursor and Windsurf rules are glob-scoped to `stitches.ts`, so the model only spends the tokens when it's already working near your API layer.
 
 **Spend ~300 tokens on the habit; pull the manual only when you reach its edge.**
+
+## Local-first, not just cheap
+
+Tokens are the easy thing to measure, but they fall out of a bigger property: none of this needs the network. The rule is a file committed in your repo. And the on-demand layer it defers to can be local too — [`@stitchapi/docs-mcp`](https://www.npmjs.com/package/@stitchapi/docs-mcp) bundles the docs and their search index inside the package and serves the same `search_docs`/`get_doc` over stdio, so the agent's lookups hit files on your disk instead of a server we host. Run the loop that way and three things follow:
+
+-   **Privacy.** A query is information — "how do I handle `STITCH_DRIFT` on a multipart upload" says what you're building and where it's breaking. A local index answers it without transmitting the query, or the doc content, anywhere. (The one exception is a first-run download of the embedding model; every lookup after that is offline.)
+-   **Reliability, not just speed.** No per-query network hop, no hosted cold start, no rate limit, nothing outside your machine that can be down — the lookup is a local call.
+-   **It works where the network doesn't.** Air-gapped boxes, locked-down CI, a plane. The docs are bundled at publish time, so there's no endpoint to allowlist, and `@stitchapi/docs-mcp@X` is a pinned, auditable snapshot — you know exactly which docs that version carries.
+
+The hosted server is one URL and always current; the local package trades that freshness for privacy and offline. [Same two tools either way.](/docs/agents/search-over-mcp#run-it-offline) The rule already keeps the _habit_ on your machine; the local docs MCP keeps the _lookups_ there too.
+
+**Cheap is the side effect; local-first is the property.**
 
 ## Keep the rule honest
 

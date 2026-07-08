@@ -69,12 +69,18 @@ data.
 # always-on: the habit, in every agent's rules file
 npx stitch init --project
 
-# on-demand: the long tail, one page at a time
-# → connect the docs MCP at https://stitchapi.dev/api/mcp
+# on-demand: the long tail, one page at a time — hosted or fully local
+npx -y @stitchapi/docs-mcp        # local: bundled docs, offline, over stdio
+# or connect the hosted server at https://stitchapi.dev/api/mcp
 ```
 
-That frugality is the whole point: adding APIs never floods the model's context
-window, because the rule stays small and the retrieval stays scoped.
+Both tiers can run entirely on your machine. The rule is a file in your repo, and
+the [local `@stitchapi/docs-mcp`](/docs/agents/search-over-mcp#run-it-offline)
+package answers `search_docs` from a bundled index — so the lookups stay private
+(no query leaves the machine) and dependency-free (no network hop, nothing to be
+down), and keep working air-gapped. That is the whole point of a small, local
+rule plus scoped, local retrieval: adding APIs never floods the model's context
+window, and none of it needs to phone home.
 
 ## See also
 
