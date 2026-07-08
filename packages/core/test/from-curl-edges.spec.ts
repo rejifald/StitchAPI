@@ -135,7 +135,7 @@ describe('parseHar — body kind and entry selection', () => {
                 },
             }),
         );
-        expect(req.bodyKind).toBe('form');
+        expect(req.bodyType).toBe('form');
         expect(req.body).toBe('a=1&b=2');
     });
 

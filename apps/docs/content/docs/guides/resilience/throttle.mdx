@@ -1,6 +1,6 @@
 ---
 title: 'Throttle'
-description: 'Space requests by rate and cap concurrency, scoped per stitch or per host.'
+description: 'Space requests by rate and cap concurrency, pooled per stitch or per host.'
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
@@ -16,7 +16,7 @@ import { stitch } from 'stitchapi';
 const search = stitch({
     baseUrl: 'https://api.example.com',
     path: '/search',
-    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '5/s', concurrency: 2, pool: 'host' },
 });
 ```
 
@@ -29,12 +29,13 @@ silently stalled.
 
 `rate` is a string like `"5/s"` — a minimum spacing between successive calls,
 not a token bucket. `concurrency` caps simultaneous in-flight calls; either may
-be set on its own.
+be set on its own. When rate is all you need, the scalar form reads best:
+`throttle: '2/s'` ≡ `throttle: { rate: '2/s' }`.
 
-`scope` decides what shares the budget: `'stitch'` (the default) gives each
+`pool` decides what shares the budget: `'stitch'` (the default) gives each
 stitch its own budget, while `'host'` pools the budget across every stitch
 hitting the same host — use it when one API publishes a single account-wide
-limit. Host-scoped pooling works in-process out of the box: separate stitches in
+limit. Host pooling works in-process out of the box: separate stitches in
 the same process draw from one budget per host with no extra configuration.
 Giving those stitches a shared
 [store](/docs/guides/state/pluggable-store) extends that single-process budget
@@ -42,7 +43,7 @@ into a [distributed one](/docs/guides/state/distributed-throttle) that spans
 workers.
 
 <Callout type="warn">
-    **Anti-pattern:** don't rely on a host-scoped throttle to honor an
+    **Anti-pattern:** don't rely on a host-pooled throttle to honor an
     account-wide limit once you run more than one process — the budget lives in
     memory and is process-local, so each of N workers keeps its own count and
     together they hit `api.example.com` at up to N times the rate you declared;

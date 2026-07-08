@@ -95,7 +95,7 @@ const call = stitch({
 });
 
 const inspection = await call.inspect({ body: payload });
-inspection.value; // validated response, or null on a hard failure
+inspection.data; // validated response, or null on a hard failure
 for (const finding of inspection.findings) {
     // e.g. { path: 'items[].sku', change: 'undeclared' }
     log.warn(`response drift at ${finding.path}: ${finding.change}`);

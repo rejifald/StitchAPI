@@ -177,6 +177,46 @@ describe('streamStitchSse', () => {
         expect(dataOf(stringified.messages)).toEqual(['{"text":"hi"}']);
     });
 
+    it('the data mapper receives the zero-based message index', async () => {
+        const { messages } = await collect(
+            streamStitchSse(
+                events(
+                    { type: 'delta', chunk: 'a', at: 0 },
+                    { type: 'delta', chunk: 'b', at: 0 },
+                ),
+                { data: (c, index) => `${String(c)}#${index}` },
+            ),
+        );
+        expect(dataOf(messages)).toEqual(['a#0', 'b#1']);
+    });
+
+    it('event accepts a function of the chunk for per-message event names', async () => {
+        const { messages } = await collect(
+            streamStitchSse(
+                events(
+                    {
+                        type: 'delta',
+                        chunk: { kind: 'token', text: 'a' },
+                        at: 0,
+                    },
+                    {
+                        type: 'delta',
+                        chunk: { kind: 'usage', text: 'b' },
+                        at: 0,
+                    },
+                ),
+                {
+                    event: (c) => (c as { kind: string }).kind,
+                    data: (c) => (c as { text: string }).text,
+                },
+            ),
+        );
+        expect(messages).toEqual([
+            { data: 'a', type: 'token' },
+            { data: 'b', type: 'usage' },
+        ]);
+    });
+
     it('event names each message and id stamps the (chunk, index) last-event id', async () => {
         const { messages } = await collect(
             streamStitchSse(

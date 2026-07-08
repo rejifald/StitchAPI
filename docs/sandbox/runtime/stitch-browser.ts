@@ -27,7 +27,7 @@ import type { TraceSink } from 'stitchapi';
  *     keychain, env            → ./shims/node-surfaces  (demo values)
  *     cookieSession            → ./shims/node-surfaces  (in-memory jar)
  *     createTrace              → shimmed below          (JSONL is a no-op)
- *     otlpTrace, otlpHttpExporter → ./shims/otlp-browser (no-op exporter, no egress)
+ *     otlpSink, otlpHttpExporter → ./shims/otlp-browser (no-op exporter, no egress)
  *   Server-tier only, THROWS here:
  *     cli, serve, mcp          → ./shims/server-tier-stubs
  */
@@ -38,7 +38,7 @@ export {
     seam,
     drift,
     graphql,
-    // `validate`/`compile` are pure schema-normalisation (validator.ts → toValidator);
+    // `validate`/`compile` are pure schema-normalisation (validator.ts);
     // no Node touch-points — safe to re-export verbatim. Needed so the blog's
     // runtime-schema snippets (`compile(JsonSchema.adapt(...))`) run in the playground.
     validate,
@@ -69,7 +69,7 @@ export type * from 'stitchapi';
 /* ---- Node-only surfaces, shimmed (emit a RunNotice) ---------------------- */
 export { keychain, env, cookieSession } from './shims/node-surfaces';
 export {
-    otlpTrace,
+    otlpSink,
     otlpHttpExporter,
     noopOtlpExporter,
 } from './shims/otlp-browser';

@@ -68,6 +68,30 @@ describe('streamStitchSse', () => {
         expect(await res.text()).toBe('data: hi\n\n');
     });
 
+    test('the data mapper receives the zero-based frame index', async () => {
+        const res = streamStitchSse(events(delta('a'), delta('b'), done), {
+            data: (c, index) => `${String(c)}#${index}`,
+        });
+        expect(await res.text()).toBe('data: a#0\n\ndata: b#1\n\n');
+    });
+
+    test('event accepts a function of the chunk for per-frame event names', async () => {
+        const res = streamStitchSse(
+            events(
+                delta({ kind: 'token', text: 'a' }),
+                delta({ kind: 'usage', text: 'b' }),
+                done,
+            ),
+            {
+                event: (c) => (c as { kind: string }).kind,
+                data: (c) => (c as { text: string }).text,
+            },
+        );
+        expect(await res.text()).toBe(
+            'event: token\ndata: a\n\nevent: usage\ndata: b\n\n',
+        );
+    });
+
     test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
         const res = streamStitchSse(
             events(delta('a'), {

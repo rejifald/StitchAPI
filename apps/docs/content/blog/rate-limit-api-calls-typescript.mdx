@@ -55,7 +55,7 @@ import { stitch } from 'stitchapi';
 const search = stitch({
     baseUrl: 'https://api.example.com',
     path: '/search',
-    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '5/s', concurrency: 2, pool: 'host' },
 });
 
 const results = await search({ query: { q: 'shoes' } }); // paced and bounded
@@ -63,11 +63,11 @@ const results = await search({ query: { q: 'shoes' } }); // paced and bounded
 
 `rate` is a string like `'5/s'` — a minimum spacing between successive calls, not a token bucket that lets a burst through. `concurrency` caps simultaneous in-flight calls; set either on its own or both together. When a call has to wait its turn it isn't a silent stall — the stitch emits a `progress` event with phase `throttled`, so a queued call shows up on the event stream instead of looking like a hang.
 
-`scope` is the answer to the multiple-call-sites problem. The default `'stitch'` gives each stitch its own budget; `'host'` pools one budget across every stitch hitting the same host — which is how a provider actually counts, since a rate limit is per account or per host, almost never per endpoint. Set `scope: 'host'` and three stitches against `api.example.com` draw from one `5/s` budget no matter which one a caller reaches for. Host-scoped pooling works in-process with no extra setup.
+`pool` is the answer to the multiple-call-sites problem. The default `'stitch'` gives each stitch its own budget; `'host'` pools one budget across every stitch hitting the same host — which is how a provider actually counts, since a rate limit is per account or per host, almost never per endpoint. Set `pool: 'host'` and three stitches against `api.example.com` draw from one `5/s` budget no matter which one a caller reaches for. Host-scoped pooling works in-process with no extra setup.
 
 ## Multiple processes: the distributed story
 
-`scope: 'host'` shares a budget across stitches in one process; it does nothing across processes, because the counters live in memory. Run more than one instance against the same upstream budget and you're back to N times your cap. The fix isn't a different limiter — it's a different place to keep the counters. Attach a shared `store` to move them off-box, so every instance pointed at the same store draws from one budget:
+`pool: 'host'` shares a budget across stitches in one process; it does nothing across processes, because the counters live in memory. Run more than one instance against the same upstream budget and you're back to N times your cap. The fix isn't a different limiter — it's a different place to keep the counters. Attach a shared `store` to move them off-box, so every instance pointed at the same store draws from one budget:
 
 ```ts twoslash
 // @noErrors
@@ -77,7 +77,7 @@ import { seam } from 'stitchapi';
 
 const api = seam({
     baseUrl: 'https://api.example.com',
-    throttle: { rate: '5/s', concurrency: 4, scope: 'host' },
+    throttle: { rate: '5/s', concurrency: 4, pool: 'host' },
     store: redisStore(fromIoredis(new Redis(process.env.REDIS_URL))),
 });
 ```
@@ -91,7 +91,7 @@ The `setTimeout` version above is the honest floor. A handful of calls well unde
 Reach for `throttle` when you hit the first trigger:
 
 -   **You start brushing the cap.** Reactive `429` handling works until volume approaches the ceiling; proactive pacing keeps you under it. That's the moment a declared rate is worth more than a caught error.
--   **The budget is shared across call sites or processes.** A second endpoint that draws from the same provider quota, or a second worker process, means the in-memory counter is silently undercounting. `scope: 'host'` and a `store` close that gap — the counter that moves is the one the upstream sees.
+-   **The budget is shared across call sites or processes.** A second endpoint that draws from the same provider quota, or a second worker process, means the in-memory counter is silently undercounting. `pool: 'host'` and a `store` close that gap — the counter that moves is the one the upstream sees.
 -   **You pair pacing with retry or auth.** A `throttle` alongside `retry` on the same stitch is one declaration; threading both through a hand-rolled limiter wrapping `fetch` is two separate maintenance surfaces.
 
 The line is whether the shared budget has grown past a single variable. While it hasn't, the limiter is fine. When it has — crossing that line is a field on the declaration, not a rewrite. The same call gains `throttle` applied by the engine rather than by convention.
@@ -104,4 +104,4 @@ If you're weighing this against the interceptor stack you'd otherwise hand-write
 stitchapi
 ```
 
-Declare a `throttle` on a stitch, set `scope: 'host'` to share the budget the way the provider counts, and pace under the limit instead of bouncing off it. The full field list and `scope` semantics are in the [Throttle guide](/docs/guides/resilience/throttle).
+Declare a `throttle` on a stitch, set `pool: 'host'` to share the budget the way the provider counts, and pace under the limit instead of bouncing off it. The full field list and `pool` semantics are in the [Throttle guide](/docs/guides/resilience/throttle).

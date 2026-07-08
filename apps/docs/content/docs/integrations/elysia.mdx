@@ -63,9 +63,14 @@ shutdown.
 
 Stream a streaming/SSE stitch's `.stream()` to the client by returning the
 `text/event-stream` `Response` `streamStitchSse` builds. Each `delta` becomes a
-`data:` message; a terminal `error` (or a throw) becomes a final `event: error`
-message; control events are consumed but not forwarded; and a client disconnect
-cancels the body and aborts the upstream stitch stream.
+`data:` message (shape it with `data`, name it with `event`, make the stream
+resumable with `id`); a terminal `error` (or a throw) becomes a final
+`event: error` message whose `data` is a **generic `error` token by default** —
+the raw upstream message (an internal hostname, an `HTTP 401`) never reaches the
+client. Opt in to a client-facing message with `errorData`, and observe the real
+failure server-side with `onError`. Control events are consumed but not
+forwarded, and a client disconnect cancels the body and aborts the upstream
+stitch stream.
 
 ```ts
 import { stitch, streamStitchSse } from '@stitchapi/elysia';

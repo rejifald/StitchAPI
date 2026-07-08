@@ -1,6 +1,6 @@
 ---
 title: Next.js
-description: Web-standard helpers for Next App Router route handlers — sseResponse streams a stitch as text/event-stream, and stitchErrorResponse maps a StitchError to a Response.
+description: Web-standard helpers for Next App Router route handlers — streamStitchSse streams a stitch as text/event-stream, and stitchErrorResponse maps a StitchError to a Response.
 prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
@@ -31,7 +31,7 @@ A non-streaming endpoint is the stitch plus the error helper — no per-route
 // app/api/users/[id]/route.ts
 import { getUser } from '@/lib/api';
 
-import { isStitchError, stitchErrorResponse } from '@stitchapi/next';
+import { stitchErrorResponse } from '@stitchapi/next';
 
 export async function GET(
     _req: Request,
@@ -41,31 +41,35 @@ export async function GET(
     try {
         return Response.json(await getUser({ params: { id } }));
     } catch (err) {
-        if (isStitchError(err)) return stitchErrorResponse(err);
+        const mapped = stitchErrorResponse(err);
+        if (mapped) return mapped;
         throw err;
     }
 }
 ```
 
-`stitchErrorResponse` maps a `StitchError` to `502` by default — the safe choice that
-never leaks the upstream's `401`/`404` semantics. Pass `{ status: (e) => e.status ?? 502 }`
-to propagate the upstream status instead.
+`stitchErrorResponse` returns a `Response` for a `StitchError` and `undefined` for
+anything else — map the stitch failure, rethrow the rest, no `instanceof` dance.
+It maps to `502` by default — the safe choice that never leaks the
+upstream's `401`/`404` semantics. Pass `{ status: (e) => e.status ?? 502 }` to
+propagate the upstream status instead.
 
 ## Streaming with SSE
 
-`sseResponse` streams a stitch's events as `text/event-stream`. Each `delta` becomes
-one frame; an `error` event ends the stream with a named `event: error` frame; the
-terminal `result` closes it:
+`streamStitchSse` streams a stitch's events as `text/event-stream`. Each `delta`
+becomes one frame; an `error` event ends the stream with a named `event: error`
+frame whose `data` is a generic `error` token by default (opt in to a client-facing
+message with `errorData`); the terminal `result` closes it:
 
 ```ts
 // app/api/chat/route.ts
 import { chat } from '@/lib/api';
 
-import { sseResponse } from '@stitchapi/next';
+import { streamStitchSse } from '@stitchapi/next';
 
 export async function POST(request: Request) {
     const { prompt } = await request.json();
-    return sseResponse(chat({ body: { prompt } }).stream(), {
+    return streamStitchSse(chat({ body: { prompt } }).stream(), {
         data: (c) => String(c), // pull text out of each chunk
         signal: request.signal, // abort the upstream if the client leaves
     });

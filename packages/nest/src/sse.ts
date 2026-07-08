@@ -35,14 +35,16 @@ export interface StreamStitchSseOptions {
     /**
      * Map a `delta` chunk to the SSE message `data` string. The default sends a string chunk
      * as-is and `JSON.stringify`-s anything else. Use this to pull the text out of a structured
-     * chunk, e.g. `data: (c) => c.choices[0].delta.content`.
+     * chunk, e.g. `data: (c) => c.choices[0].delta.content`. Receives the zero-based message
+     * index alongside the chunk.
      */
-    data?: (chunk: unknown) => string;
+    data?: (chunk: unknown, index: number) => string;
     /**
-     * Emit an `event:` line per delta message (the SSE event name — Nest's `MessageEvent.type`).
-     * Default: none (an unnamed `message` event, which `EventSource.onmessage` receives).
+     * Emit an `event:` line per delta message (the SSE event name — Nest's `MessageEvent.type`):
+     * a fixed name, or a function of the chunk for per-message names. Default: none (an unnamed
+     * `message` event, which `EventSource.onmessage` receives).
      */
-    event?: string;
+    event?: string | ((chunk: unknown) => string);
     /**
      * Provide an `id:` line per delta message (the SSE last-event id), e.g. for resumable
      * streams. Receives the chunk and the zero-based message index.
@@ -137,7 +139,8 @@ export function streamStitchSse<T>(
     source: StitchEventSource<T>,
     options: StreamStitchSseOptions = {},
 ): Observable<MessageEventLike> {
-    const toData = options.data ?? defaultData;
+    const toData: (chunk: unknown, index: number) => string =
+        options.data ?? defaultData;
     return new Observable<MessageEventLike>((subscriber) => {
         const iterator = toIterable(source)[Symbol.asyncIterator]();
         let active = true;
@@ -149,10 +152,13 @@ export function streamStitchSse<T>(
                     if (done) break;
                     if (event.type === 'delta') {
                         const message: MessageEventLike = {
-                            data: toData(event.chunk),
+                            data: toData(event.chunk, index),
                         };
                         if (options.event !== undefined)
-                            message.type = options.event;
+                            message.type =
+                                typeof options.event === 'function'
+                                    ? options.event(event.chunk)
+                                    : options.event;
                         if (options.id)
                             message.id = options.id(event.chunk, index);
                         subscriber.next(message);

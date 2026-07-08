@@ -35,14 +35,16 @@ export interface StreamStitchSseOptions {
     /**
      * Map a `delta` chunk to the SSE frame `data`. Default: the chunk itself (a
      * string as-is; anything else `JSON.stringify`-ed). Use it to pull text out of a
-     * structured chunk, e.g. `data: (c) => c.choices[0].delta.content`.
+     * structured chunk, e.g. `data: (c) => c.choices[0].delta.content`. Receives the
+     * zero-based frame index alongside the chunk.
      */
-    data?: (chunk: unknown) => string;
+    data?: (chunk: unknown, index: number) => string;
     /**
-     * Emit an `event:` line per delta frame (the SSE event name). Default: none (an
-     * unnamed `message` event, which `EventSource.onmessage` receives).
+     * Emit an `event:` line per delta frame (the SSE event name): a fixed name, or a
+     * function of the chunk for per-frame names. Default: none (an unnamed `message`
+     * event, which `EventSource.onmessage` receives).
      */
-    event?: string;
+    event?: string | ((chunk: unknown) => string);
     /**
      * Provide an `id:` line per delta frame (the SSE last-event id), e.g. for
      * resumable streams. Receives the chunk and the zero-based frame index.
@@ -89,12 +91,18 @@ function frame(
     options: StreamStitchSseOptions,
 ): string {
     const payload = options.data
-        ? options.data(chunk)
+        ? options.data(chunk, index)
         : typeof chunk === 'string'
           ? chunk
           : JSON.stringify(chunk);
     let out = '';
-    if (options.event) out += `event: ${options.event}\n`;
+    if (options.event !== undefined) {
+        const name =
+            typeof options.event === 'function'
+                ? options.event(chunk)
+                : options.event;
+        out += `event: ${name}\n`;
+    }
     if (options.id) out += `id: ${options.id(chunk, index)}\n`;
     for (const line of payload.split('\n')) out += `data: ${line}\n`;
     return `${out}\n`;

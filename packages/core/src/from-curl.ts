@@ -21,7 +21,7 @@ export interface ParsedRequest {
     /** Raw request body (already a string); `bodyType` says how to read it. */
     body?: string;
     /** How the body was supplied: a JSON document, a urlencoded form, or unknown. */
-    bodyKind?: 'json' | 'form';
+    bodyType?: 'json' | 'form';
     /** `-G`/`--get`: fold `-d` data into the query string instead of the body. */
     asQuery?: boolean;
     /** Anything we recognised but could not faithfully map — surfaced, never swallowed. */
@@ -267,7 +267,7 @@ function finalizeRequest(acc: CurlAcc): ParsedRequest {
         const joined = acc.dataParts.map((p) => p.value).join('&');
         req.body = joined;
         const anyUrlencode = acc.dataParts.some((p) => p.urlencode);
-        req.bodyKind = anyUrlencode ? 'form' : sniffBodyKind(joined);
+        req.bodyType = anyUrlencode ? 'form' : sniffBodyType(joined);
     }
     return req;
 }
@@ -303,7 +303,7 @@ export function parseCurl(curl: string | string[]): ParsedRequest {
 
 // Classify a raw `-d` payload: a JSON-parseable document → 'json', else (k=v&… or anything else)
 // → 'form'. Conservative — only valid JSON is treated as JSON.
-function sniffBodyKind(raw: string): 'json' | 'form' {
+function sniffBodyType(raw: string): 'json' | 'form' {
     const trimmed = raw.trim();
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
         try {
@@ -380,11 +380,11 @@ export function parseHar(har: unknown, entryIndex = 0): ParsedRequest {
             typeof request.postData?.mimeType === 'string'
                 ? request.postData.mimeType
                 : '';
-        req.bodyKind = mime.includes('x-www-form-urlencoded')
+        req.bodyType = mime.includes('x-www-form-urlencoded')
             ? 'form'
             : mime.includes('json')
               ? 'json'
-              : sniffBodyKind(text);
+              : sniffBodyType(text);
     }
     return req;
 }
@@ -760,7 +760,7 @@ function analyzeRequest(req: ParsedRequest): AnalyzedRequest {
     // Static headers: drop auth/transport/implied-content-type noise.
     const bodyType: StitchConfig['bodyType'] | undefined =
         !req.asQuery && req.body
-            ? req.bodyKind === 'form'
+            ? req.bodyType === 'form'
                 ? 'form'
                 : 'json'
             : undefined;

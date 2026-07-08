@@ -16,7 +16,7 @@ want that markup rename to surface the moment it happens, as a loud error on the
 
 ## Example
 
-The response pipeline is `transform → unwrap → validation`, so `transform`
+The response pipeline is `transform → pick → validation`, so `transform`
 reshapes the HTML into a structured object **before** drift ever runs — drift
 then validates the _parsed_ value, not the raw markup. Declare `score` as
 **required** in the schema: its loss is the breakage you want caught.
@@ -47,7 +47,7 @@ const catalog = stitch({
     baseUrl: 'https://api.example.com',
     path: '/catalog',
     transform: scrape, // HTML string -> { items: [...] }
-    unwrap: 'items',
+    pick: 'items',
     output: drift(
         // `score` is REQUIRED — its loss is the breakage we want caught.
         // A required field that goes missing throws (`STITCH_DRIFT`, `change: 'invalid'`).

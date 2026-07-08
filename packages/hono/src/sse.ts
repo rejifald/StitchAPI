@@ -22,14 +22,16 @@ export interface StreamStitchSseOptions {
     /**
      * Map a `delta` chunk to the SSE message `data` string. The default JSON-stringifies the chunk
      * (a string chunk is sent verbatim). Pull text out of a structured chunk with, e.g.,
-     * `data: (c) => c.choices[0].delta.content ?? ''`.
+     * `data: (c) => c.choices[0].delta.content ?? ''`. Receives the zero-based message index
+     * alongside the chunk.
      */
-    data?: (chunk: unknown) => string;
+    data?: (chunk: unknown, index: number) => string;
     /**
-     * The SSE `event:` field for each delta message (default none). Set it to label the stream's
-     * messages on the client (`event: 'token'`).
+     * The SSE `event:` field for each delta message (default none): a fixed name, or a function
+     * of the chunk for per-message names. Set it to label the stream's messages on the client
+     * (`event: 'token'`).
      */
-    event?: string;
+    event?: string | ((chunk: unknown) => string);
     /**
      * Provide the SSE `id:` field per delta message (the last-event id), e.g. for resumable
      * streams. Receives the chunk and the zero-based message index.
@@ -103,7 +105,8 @@ export function streamStitchSse<T>(
     source: StitchEventSource<T>,
     options: StreamStitchSseOptions = {},
 ): Response {
-    const toData = options.data ?? defaultData;
+    const toData: (chunk: unknown, index: number) => string =
+        options.data ?? defaultData;
     // Core's `StitchEventSource` admits the iterable itself or a `{ stream() }` holder (a
     // `StitchResult`, a stitch stub) — unwrap the holder once, up front.
     const iterable: AsyncIterable<StitchEvent<T>> =
@@ -129,9 +132,14 @@ export function streamStitchSse<T>(
                 const { value: event, done } = await iterator.next();
                 if (done) break;
                 if (event.type === 'delta') {
-                    const message: SSEMessage = { data: toData(event.chunk) };
+                    const message: SSEMessage = {
+                        data: toData(event.chunk, index),
+                    };
                     if (options.event !== undefined)
-                        message.event = options.event;
+                        message.event =
+                            typeof options.event === 'function'
+                                ? options.event(event.chunk)
+                                : options.event;
                     if (options.id) message.id = options.id(event.chunk, index);
                     index += 1;
                     await stream.writeSSE(message);

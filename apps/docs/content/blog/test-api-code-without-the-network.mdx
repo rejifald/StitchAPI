@@ -75,7 +75,7 @@ test('validates the user', async () => {
 });
 ```
 
-The fixture is scoped to this stitch, not to a global. `mockAdapter` returns a real adapter — the same contract `fetchAdapter` satisfies — so the engine cannot tell it apart from a socket. That means `output: User` actually validates the canned body, `unwrap` actually unwraps it, and `paginate` actually walks your fixture pages. You are testing the stitch's behavior, not a fake of it.
+The fixture is scoped to this stitch, not to a global. `mockAdapter` returns a real adapter — the same contract `fetchAdapter` satisfies — so the engine cannot tell it apart from a socket. That means `output: User` actually validates the canned body, `pick` actually picks it, and `paginate` actually walks your fixture pages. You are testing the stitch's behavior, not a fake of it.
 
 A `MockRoute` is `{ method?, match?, respond }`. `match` is a URL substring, a `RegExp` against the full URL, or a predicate — first match wins. `respond` is a fixed `MockResponse` (status defaults to `200`), a function of the call, or — the useful one for resilience — an array consumed one per call, last entry repeating. That last form scripts a flaky endpoint, which is how you exercise the real retry path:
 
@@ -103,7 +103,7 @@ const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     output: User,
-    retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 0 },
+    retry: { attempts: 3, on: [503], backoff: 'fixed', baseDelay: 0 },
     adapter,
 });
 
@@ -137,7 +137,7 @@ test('loader renders the user', async () => {
     const getUser = stubStitch({ id: '1', name: 'Ada' });
     const view = await loadProfile(getUser);
     expect(view.heading).toBe('Ada');
-    expect(getUser.callCount).toBe(1);
+    expect(getUser.callCount()).toBe(1);
 });
 
 test('loader renders the error state', async () => {
@@ -147,7 +147,7 @@ test('loader renders the error state', async () => {
 });
 ```
 
-`stubStitch(impl)` gives a `Stitch & StubSpy`: `impl` is a value or a function of the input, awaiting returns it, and `.safe()` / `.unwrap()` / `.stream()` all behave like a real stitch while the spy records every call. `callCount` is a property on the stub — a number, not a method — so you read it as `getUser.callCount`. `failStitch(error)` always fails — `await` and `.unwrap()` reject with a `StitchError`, `.safe()` resolves to `{ ok: false }`, and `.stream()` yields `start` to `error` to `done`. Use `failStitch` to drive the error branch of code that calls a stitch without staging a real failure.
+`stubStitch(impl)` gives a `Stitch & StubSpy`: `impl` is a value or a function of the input, awaiting returns it, and `.safe()` / `.unwrap()` / `.stream()` all behave like a real stitch while the spy records every call. The spy exposes `calls(filter?)` and `callCount(filter?)` as methods — the same shapes `mockAdapter` has — so you read it as `getUser.callCount()`, optionally narrowed by a filter. `failStitch(error)` always fails — `await` and `.unwrap()` reject with a `StitchError`, `.safe()` resolves to `{ ok: false }`, and `.stream()` yields `start` to `error` to `done`. Use `failStitch` to drive the error branch of code that calls a stitch without staging a real failure.
 
 The two layers split cleanly:
 
@@ -182,7 +182,7 @@ const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     output: User,
-    retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 0 },
+    retry: { attempts: 3, on: [503], backoff: 'fixed', baseDelay: 0 },
     adapter,
 });
 
@@ -261,7 +261,7 @@ const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     output: User,
-    retry: { attempts: 3, on: [503], baseMs: 1000 },
+    retry: { attempts: 3, on: [503], baseDelay: 1000 },
     adapter,
     clock,
 });

@@ -361,6 +361,69 @@ describe('stitchPlugin', () => {
         expect(res.body).toBe('data: via-stream()\n\n');
     });
 
+    test('the data mapper receives the zero-based frame index', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'a', at: 1 };
+            yield { type: 'delta', chunk: 'b', at: 2 };
+            yield { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 3 };
+        }
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seamConfig: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-index', (_request, reply) =>
+            streamStitchSse(reply, events(), {
+                data: (c, index) => `${String(c)}#${index}`,
+            }),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-index' });
+        expect(res.body).toBe('data: a#0\n\ndata: b#1\n\n');
+    });
+
+    test('event accepts a function of the chunk for per-frame event names', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: { kind: 'token', text: 'a' }, at: 1 };
+            yield { type: 'delta', chunk: { kind: 'usage', text: 'b' }, at: 2 };
+            yield { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 3 };
+        }
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seamConfig: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-event-fn', (_request, reply) =>
+            streamStitchSse(reply, events(), {
+                event: (c) => (c as { kind: string }).kind,
+                data: (c) => (c as { text: string }).text,
+            }),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-event-fn' });
+        expect(res.body).toBe(
+            'event: token\ndata: a\n\nevent: usage\ndata: b\n\n',
+        );
+    });
+
     test('the registered error handler maps a StitchError to 502 by default', async () => {
         // The fake adapter returns 503 → the stitch throws a StitchError with status 503.
         const { adapter } = fakeAdapter(() => ({

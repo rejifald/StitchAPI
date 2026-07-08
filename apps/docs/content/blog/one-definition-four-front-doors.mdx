@@ -28,7 +28,7 @@ export const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     output: z.object({ id: z.number(), name: z.string() }),
-    unwrap: 'data',
+    pick: 'data',
     auth: bearer(env('API_TOKEN')),
     retry: { attempts: 3, on: [429, 503] },
     timeout: { total: '10s' },
@@ -39,7 +39,7 @@ Export your stitches by name from a module (the CLI and the servers default to `
 
 ## Door 1 — the in-process function: your app code
 
-The closest door. Import the stitch and call it like any async function; `await` returns the final unwrapped, validated value.
+The closest door. Import the stitch and call it like any async function; `await` returns the final picked, validated value.
 
 ```ts twoslash
 import { bearer, env, stitch } from 'stitchapi';
@@ -51,7 +51,7 @@ const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     output: z.object({ id: z.number(), name: z.string() }),
-    unwrap: 'data',
+    pick: 'data',
     auth: bearer(env('API_TOKEN')),
 });
 // ---cut---

@@ -57,15 +57,17 @@ never name another identity. **Borrow, don't own:** the middleware never calls
 `seam.close()` — you build the seam at startup and close it on shutdown.
 
 A generic helper that only holds a loosely-typed `Request` can read the same
-handle back with `currentStitch(req)`, which throws if the middleware never ran —
-so a missing `app.use(stitch(...))` fails loudly instead of silently.
+handle back with `currentStitch(req)`, which returns `undefined` if the
+middleware never ran — so a caller can fall back to an explicit seam instead of
+crashing.
 
 ## Streaming — `streamStitchSse`
 
 Stream a streaming/SSE stitch's `.stream()` to the client as Server-Sent Events.
 Each `delta` becomes a `data:` frame; a terminal `error` (or a throw) becomes a
-final `event: error` frame; control events are consumed but not forwarded; and a
-client disconnect aborts the upstream stitch stream.
+final `event: error` frame carrying a generic `error` token by default (opt in
+to a client-facing message with `errorData`); control events are consumed but
+not forwarded; and a client disconnect aborts the upstream stitch stream.
 
 ```ts
 import { stitch, streamStitchSse } from '@stitchapi/express';

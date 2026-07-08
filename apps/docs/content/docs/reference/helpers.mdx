@@ -150,14 +150,14 @@ const sink = consoleSink();
 A file-only sink: append every event as JSONL to `path` (defaults to
 `~/.stitch/runs/proto.jsonl`). Writing to disk is a side effect, so you pass it
 explicitly — a stitch never opens a trace file on its own. An optional second
-argument tunes privacy: `maxBodyBytes` (default `2048`; `false` for full capture)
+argument tunes privacy: `maxBodyChars` (default `2048`; `false` for full capture)
 caps body/result [truncation](/docs/guides/observability/trace-sinks#body-truncation-and-full-capture),
 and `redactHeaders` widens the redaction denylist.
 
 ```ts twoslash
 import { fileSink } from 'stitchapi';
 
-const sink = fileSink('./runs/today.jsonl', { maxBodyBytes: false });
+const sink = fileSink('./runs/today.jsonl', { maxBodyChars: false });
 ```
 
 ### createTrace
@@ -165,7 +165,7 @@ const sink = fileSink('./runs/today.jsonl', { maxBodyBytes: false });
 Build a zero-infra trace sink: a compact one-line-per-event summary on the
 console and/or an appended JSONL record per event. `console` defaults to `true`;
 `file` defaults to a path under `$HOME`, or `false` to disable the JSONL stream;
-`maxBodyBytes` and `redactHeaders` tune the JSONL sink's
+`maxBodyChars` and `redactHeaders` tune the JSONL sink's
 [privacy defaults](/docs/guides/observability/trace-sinks#default-secret-redaction)
 (header/URL redaction and body truncation are always applied to the file stream).
 (This is the low-level builder behind `consoleSink`/`fileSink`; the off-by-default
@@ -183,9 +183,9 @@ Fan one event stream out to several sinks — for example console/JSONL alongsid
 OTLP — flushing each in turn.
 
 ```ts twoslash
-import { createTrace, multiplex, otlpTrace } from 'stitchapi';
+import { createTrace, multiplex, otlpSink } from 'stitchapi';
 
-const sink = multiplex(createTrace(), otlpTrace());
+const sink = multiplex(createTrace(), otlpSink());
 ```
 
 ### loggerSink
@@ -193,7 +193,7 @@ const sink = multiplex(createTrace(), otlpTrace());
 Bridge the event stream to any host logger — pino, winston, the `console`,
 anything with `error` / `warn` / `info` / `debug` methods (`LoggerLike`). It is
 **payload-free** (logs only metadata — name, method, scrubbed URL, status, attempt
-counts, drift path/level, timing — never the body, result value, or a `delta`
+counts, drift path/level, timing — never the body, the result's `data`, or a `delta`
 chunk) and maps each event to a level: `result` → `info`, `error` → `error`,
 `drift` → the finding's level, `start`/`progress`/`info`/`done` → `debug`, and
 `delta` is never logged. Override per type with `levels`. The logger-agnostic core
@@ -206,16 +206,16 @@ import { loggerSink } from 'stitchapi';
 const sink = loggerSink(console, { levels: { result: 'debug' } });
 ```
 
-### otlpTrace
+### otlpSink
 
 An opt-in OpenTelemetry sink: it maps each stitch call's events to a single OTel
 `CLIENT` span and hands finished spans to a `SpanExporter`. With no exporter
 supplied it uses `otlpHttpExporter`. Configured by `OtlpOptions` (below).
 
 ```ts twoslash
-import { otlpTrace } from 'stitchapi';
+import { otlpSink } from 'stitchapi';
 
-const sink = otlpTrace({ endpoint: 'https://api.example.com:4318' });
+const sink = otlpSink({ endpoint: 'https://api.example.com:4318' });
 ```
 
 ### otlpHttpExporter

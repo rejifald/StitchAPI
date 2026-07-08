@@ -69,6 +69,55 @@ describe('streamStitchSse — delta mapping', () => {
         expect(body).toContain('data: t2');
     });
 
+    test('the data mapper receives the zero-based message index', async () => {
+        const app = new Hono();
+        app.get('/x', (c) =>
+            streamStitchSse(
+                c,
+                gen([
+                    { type: 'delta', chunk: 'a', at: 0 },
+                    { type: 'delta', chunk: 'b', at: 0 },
+                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+                ]),
+                { data: (chunk, index) => `${String(chunk)}#${index}` },
+            ),
+        );
+
+        const body = await (await app.request('/x')).text();
+        expect(body).toContain('data: a#0');
+        expect(body).toContain('data: b#1');
+    });
+
+    test('event accepts a function of the chunk for per-message event names', async () => {
+        const app = new Hono();
+        app.get('/x', (c) =>
+            streamStitchSse(
+                c,
+                gen([
+                    {
+                        type: 'delta',
+                        chunk: { kind: 'token', text: 'a' },
+                        at: 0,
+                    },
+                    {
+                        type: 'delta',
+                        chunk: { kind: 'usage', text: 'b' },
+                        at: 0,
+                    },
+                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+                ]),
+                {
+                    event: (chunk) => (chunk as { kind: string }).kind,
+                    data: (chunk) => (chunk as { text: string }).text,
+                },
+            ),
+        );
+
+        const body = await (await app.request('/x')).text();
+        expect(body).toContain('event: token\ndata: a');
+        expect(body).toContain('event: usage\ndata: b');
+    });
+
     test('the id option stamps each delta message with a last-event id (chunk + index)', async () => {
         const app = new Hono();
         app.get('/x', (c) =>

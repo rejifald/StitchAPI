@@ -25,7 +25,7 @@ A stitch is a typed, declarative, composable unit: `input → validated output`,
 
 1. **Progressive disclosure.** Zero-config to start; opt-in depth. `stitch('https://…')` just works. Every capability (validation, auth, retries, observability, streaming) has a sane default and reveals knobs only when you reach for them. _Simple to begin, opportunistic about what's possible._
 2. **Atomic stitches.** A stitch is fully self-contained. It can be exactly one endpoint and nothing else. **No global config is ever required.**
-3. **Composition over configuration.** Cross-cutting concerns (baseUrl, auth, unwrap, retry, throttle, timeout, hooks) are **named, shareable values** you compose — not a central config object far from the call site.
+3. **Composition over configuration.** Cross-cutting concerns (baseUrl, auth, pick, retry, throttle, timeout, hooks) are **named, shareable values** you compose — not a central config object far from the call site.
 4. **The stitch is the boundary.** Auth, validation, and observability live _at_ the stitch. Agents receive **capabilities, not credentials** — they call a stitch and get data without ever seeing the secret.
 5. **One definition, many surfaces.** The same stitch is callable as an in-process function, a CLI command, an HTTP endpoint, and an MCP/agent tool.
 6. **The event stream is the spine.** Streaming output, observability, and drift detection all read the _same_ event stream a stitch emits.
@@ -49,7 +49,7 @@ const listWebsites = stitch({
 
     input: { query: WebsiteQuery }, // schemas for params / query / body / headers
     output: Website.array(), // response contract → types + validation + drift
-    unwrap: 'data', // pluck the payload
+    pick: 'data', // pluck the payload
 
     auth: session, // a co-located auth strategy value (§5)
     retry: { attempts: 3, on: [429, 503] },
@@ -128,7 +128,7 @@ const listWebsites = stitch({
     extends: [base, session], // left→right precedence; own fields win last
     path: '/api/websites',
     output: Website.array(),
-    unwrap: 'data',
+    pick: 'data',
 });
 ```
 
@@ -153,7 +153,7 @@ A stitch is itself a composable value — inherit one and override the diff:
 
 ```ts
 const getWebsite = stitch({
-    extends: [listWebsites], // inherits base + auth + retry + unwrap
+    extends: [listWebsites], // inherits base + auth + retry + pick
     path: '/api/websites/{id}', // override
     output: Website, // override
 });
@@ -161,7 +161,7 @@ const getWebsite = stitch({
 
 ### Merge semantics **[proposed]**
 
--   **Scalars** (`path`, `method`, `baseUrl`, `url`, `unwrap`): replace. The endpoint is one slot: `url` and `baseUrl`/`path` are mutually exclusive, so the last fragment to set either spelling wins it whole — a child `url` clears an inherited `baseUrl`/`path`, and a child `baseUrl`/`path` clears an inherited `url`.
+-   **Scalars** (`path`, `method`, `baseUrl`, `url`, `pick`): replace. The endpoint is one slot: `url` and `baseUrl`/`path` are mutually exclusive, so the last fragment to set either spelling wins it whole — a child `url` clears an inherited `baseUrl`/`path`, and a child `baseUrl`/`path` clears an inherited `url`.
 -   **Objects** (`retry`, `throttle`, `timeout`, `input`, auth options): deep-merge field-wise.
 -   **`hooks`**: **chain**, don't replace — base `onRequest` runs, then child's; `onResponse` unwinds child→base (middleware order). This is what makes a base like "always log + add trace header" actually composable.
 -   **`output` / contracts**: replace (a child declares its own); compose explicitly with `schema.merge(...)` when you want to extend.
@@ -202,12 +202,12 @@ This is a concrete cookie wall (`GET /api/websites` needs a `session_token` cook
 ## 6. Resilience — retry, throttle, timeout
 
 ```ts
-retry:    { attempts: 3, backoff: 'expo+jitter', on: [429, 503], respectRetryAfter: true },
-throttle: { rate: '1/s', concurrency: 2, scope: 'host' },   // proactive limiter
+retry:    { attempts: 3, backoff: 'expo-jitter', on: [429, 503], respectRetryAfter: true },
+throttle: { rate: '1/s', concurrency: 2, pool: 'host' },   // proactive limiter
 timeout:  { total: '30s', perAttempt: '10s' },
 ```
 
--   **`throttle`** is _proactive_ — a token-bucket/concurrency cap to stay _under_ a vendor's limit (replaces the hand-rolled 1/s buckets and per-request delays integrations write by hand). `scope: 'host'` shares one limiter across all stitches hitting the same host.
+-   **`throttle`** is _proactive_ — a token-bucket/concurrency cap to stay _under_ a vendor's limit (replaces the hand-rolled 1/s buckets and per-request delays integrations write by hand). `pool: 'host'` shares one limiter across all stitches hitting the same host.
 -   **`retry`** is _reactive_ — backoff+jitter, honoring `Retry-After`.
 -   All emit events (`retry`, `throttled`) onto the stream → visible in the trace for free.
 
@@ -247,7 +247,7 @@ type StitchEvent<T> =
   | { type: 'progress'; phase: 'auth'|'request'|'throttled'|'retry'|'paginate'; ... }
   | { type: 'delta';    chunk }          // streamed body / LLM tokens (future kinds)
   | { type: 'drift';    level: 'error'|'warn'|'info'; path; change }
-  | { type: 'result';   value: T }        // validated, unwrapped
+  | { type: 'result';   data: T }          // validated, picked
   | { type: 'error';    error }
   | { type: 'done';     timing; usage };
 ```
@@ -305,7 +305,7 @@ await user({ params: { id: 1 }, query: { expand: 'roles' } });
 const users = stitch({
     url: 'https://reqres.in/api/users',
     output: User.array(),
-    unwrap: 'data',
+    pick: 'data',
 });
 const list = await users(); // typed User[]; drift-checked
 ```
@@ -375,7 +375,7 @@ const listWebsites = stitch({
     extends: [api],
     path: '/api/websites',
     output: Website.array(),
-    unwrap: 'data',
+    pick: 'data',
     auth: cookieSession({
         login: signIn,
         cookie: 'session_token',
@@ -403,7 +403,7 @@ const metadata = stitch({
 for await (const ev of listWebsites.stream()) {
     if (ev.type === 'progress' && ev.phase === 'retry') log('retrying…');
     if (ev.type === 'drift' && ev.level === 'info') log('new field:', ev.path);
-    if (ev.type === 'result') render(ev.value);
+    if (ev.type === 'result') render(ev.data);
 }
 ```
 
@@ -486,8 +486,8 @@ The two gaps both audits flagged _critical_ — distributed rate limiting and pe
 ```ts
 interface StitchStore {
     get(key: string): Promise<unknown | undefined>;
-    set(key: string, value: unknown, ttlMs?: number): Promise<void>;
-    incr(key: string, ttlMs: number): Promise<number>; // atomic — for rate windows
+    set(key: string, value: unknown, ttl?: number): Promise<void>;
+    incr(key: string, ttl?: number): Promise<number>; // atomic — for rate windows
 }
 
 const api = seam({

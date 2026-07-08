@@ -28,7 +28,7 @@ import { z } from 'zod';
 const getUser = stitch({
     baseUrl: 'https://demo.stitchapi.dev',
     path: '/users/{id}',
-    unwrap: 'data',
+    pick: 'data',
     output: drift(
         z.object({ id: z.number(), name: z.string(), role: z.string() }),
     ),
@@ -88,6 +88,9 @@ const getUser = stitch({
 // Honour the cache; on a hit, `raw` is null (the cache holds no raw body).
 const cached = await getUser.inspect({ params: { id: 1 } }, { cache: true });
 ```
+
+`true` is shorthand for `{ cache: true }` — `getUser.inspect(input, true)` reads
+the same way at a call site.
 
 `raw` is `null` on a [streaming surface](/docs/concepts/event-stream) too — the
 engine refuses to buffer an unbounded delta spine — while `findings` and `status`

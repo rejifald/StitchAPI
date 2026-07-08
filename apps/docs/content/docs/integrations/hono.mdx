@@ -59,8 +59,10 @@ never name another identity. **Borrow, don't own:** the middleware never calls
 
 Stream a streaming/SSE stitch's `.stream()` to the client as Server-Sent Events,
 via Hono's `streamSSE`. Each `delta` becomes a `data:` message; a terminal `error`
-(or a throw) becomes a final `event: error` message; control events are consumed
-but not forwarded; and a client disconnect aborts the upstream stitch stream.
+(or a throw) becomes a final `event: error` message carrying a generic `error`
+token by default (opt in to a client-facing message with `errorData`); control
+events are consumed but not forwarded; and a client disconnect aborts the upstream
+stitch stream.
 
 ```ts twoslash
 import { type StitchEnv, stitch, streamStitchSse } from '@stitchapi/hono';

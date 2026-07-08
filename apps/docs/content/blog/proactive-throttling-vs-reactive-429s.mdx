@@ -62,7 +62,7 @@ When a call has to wait its turn, it isn't silently stalled — the stitch emits
 
 A provider's rate limit is almost never per-endpoint. It's per account, per token, per host — and your code probably hits that one provider from several different stitches. If each stitch enforces its own budget, three stitches at `5/s` apiece can put `15/s` on a provider that only allows five, and you're back to meeting `429`s in production.
 
-`scope: 'host'` fixes this. It pools one limiter across every stitch that targets the same host, so the budget is shared the way the provider actually counts it.
+`pool: 'host'` fixes this. It pools one limiter across every stitch that targets the same host, so the budget is shared the way the provider actually counts it.
 
 ```ts twoslash
 import { seam } from 'stitchapi';
@@ -70,7 +70,7 @@ import { seam } from 'stitchapi';
 const api = seam({
     baseUrl: 'https://api.example.com',
     // One account-wide budget, shared by every member below.
-    throttle: { rate: '5/s', concurrency: 4, scope: 'host' },
+    throttle: { rate: '5/s', concurrency: 4, pool: 'host' },
 });
 
 const search = api.stitch({ path: '/search' });
@@ -78,7 +78,7 @@ const getItem = api.stitch({ path: '/items/{id}' });
 const listItems = api.stitch({ path: '/items' });
 ```
 
-Now `search`, `getItem`, and `listItems` draw from one `5/s` budget against `api.example.com`, no matter which one a given caller reaches for. This is exactly the case a `seam` is built for — a group of stitches sharing one base, one auth, and one runtime — but `scope: 'host'` pools the budget across separate stitches too, whenever they hit the same host. Host-scoped pooling works in-process with no extra setup.
+Now `search`, `getItem`, and `listItems` draw from one `5/s` budget against `api.example.com`, no matter which one a given caller reaches for. This is exactly the case a `seam` is built for — a group of stitches sharing one base, one auth, and one runtime — but `pool: 'host'` pools the budget across separate stitches too, whenever they hit the same host. Host-scoped pooling works in-process with no extra setup.
 
 ## Proactive and reactive, together
 
@@ -92,7 +92,7 @@ const search = stitch({
     baseUrl: 'https://api.example.com',
     path: '/search',
     // Proactive: stay under the limit so most 429s never happen.
-    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '5/s', concurrency: 2, pool: 'host' },
     // Reactive: if one slips through anyway, back off and honor Retry-After.
     retry: { attempts: 3, on: [429, 503], respectRetryAfter: true },
 });
@@ -108,7 +108,7 @@ Flip on `throttle` — a single field on the same stitch — when:
 
 -   **Your volume brushes the limit.** You're making enough calls that `429`s start appearing in normal traffic, not just spikes. A declared rate gives you smooth pacing instead of a bounce-and-wait cycle.
 -   **You want to stop hammering a shared cap.** Multiple call sites share one account quota. The throttle keeps any one stitch from consuming the whole budget before others get a turn.
--   **Many stitches share one host budget.** Set `scope: 'host'` and the limiter counts across every stitch pointed at that origin — the right control when the ceiling is per-domain, not per-endpoint.
+-   **Many stitches share one host budget.** Set `pool: 'host'` and the limiter counts across every stitch pointed at that origin — the right control when the ceiling is per-domain, not per-endpoint.
 
 Two caveats stay real regardless of volume: you have to declare the actual limit (set it too high and `retry` is still doing the work; set it too low and you've throttled yourself for no reason), and the default limiter is per-process (multiple workers each keep their own count — span them with a shared store, covered in the [distributed throttle](/blog/distributed-throttle-with-redis-kv) write-up).
 
@@ -120,4 +120,4 @@ The reactive path is the floor you start from. `throttle` is the field you add w
 stitchapi
 ```
 
-Declare a `throttle` on a stitch, pair it with `retry` as a backstop, and the next time you brush a provider's rate limit you'll pace under it instead of bouncing off it. The full field list and `scope` semantics are in the [Throttle guide](/docs/guides/resilience/throttle); the reactive side is in [Retry & backoff](/docs/guides/resilience/retry).
+Declare a `throttle` on a stitch, pair it with `retry` as a backstop, and the next time you brush a provider's rate limit you'll pace under it instead of bouncing off it. The full field list and `pool` semantics are in the [Throttle guide](/docs/guides/resilience/throttle); the reactive side is in [Retry & backoff](/docs/guides/resilience/retry).

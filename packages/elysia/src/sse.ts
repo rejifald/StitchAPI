@@ -21,14 +21,16 @@ export interface StreamStitchSseOptions {
     /**
      * Map a `delta` chunk to the SSE message `data` string. The default JSON-stringifies the chunk
      * (a string chunk is sent verbatim). Pull text out of a structured chunk with, e.g.,
-     * `data: (c) => c.choices[0].delta.content ?? ''`.
+     * `data: (c) => c.choices[0].delta.content ?? ''`. Receives the zero-based message index
+     * alongside the chunk.
      */
-    data?: (chunk: unknown) => string;
+    data?: (chunk: unknown, index: number) => string;
     /**
-     * The SSE `event:` field for each delta message (default none). Set it to label the stream's
-     * messages on the client (`event: 'token'`).
+     * The SSE `event:` field for each delta message (default none): a fixed name, or a function
+     * of the chunk for per-message names. Set it to label the stream's messages on the client
+     * (`event: 'token'`).
      */
-    event?: string;
+    event?: string | ((chunk: unknown) => string);
     /**
      * Provide an `id:` line per delta message (the SSE last-event id), e.g. for resumable streams.
      * Receives the chunk and the zero-based frame index.
@@ -120,7 +122,8 @@ export function streamStitchSse<T>(
     source: StitchEventSource<T>,
     options: StreamStitchSseOptions = {},
 ): Response {
-    const toData = options.data ?? defaultData;
+    const toData: (chunk: unknown, index: number) => string =
+        options.data ?? defaultData;
     const enc = new TextEncoder();
     const iterator = toIterable(source)[Symbol.asyncIterator]();
     let index = 0;
@@ -146,8 +149,10 @@ export function streamStitchSse<T>(
                         controller.enqueue(
                             enc.encode(
                                 frame(
-                                    toData(event.chunk),
-                                    options.event,
+                                    toData(event.chunk, index),
+                                    typeof options.event === 'function'
+                                        ? options.event(event.chunk)
+                                        : options.event,
                                     options.id?.(event.chunk, index),
                                 ),
                             ),

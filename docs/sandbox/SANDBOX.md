@@ -73,7 +73,7 @@ Classification of the **develop** core exports ([`packages/core/src/index.ts`](.
 | `drift`, `graphql`                                               | `env` — reads `process.env`                               |
 | `bearer`, `apiKey`, `basic`, `oauth2` (token held in memory)     | `cookieSession` — persistent cookie jar                   |
 | `fetchAdapter` (global `fetch`, shimmed to the simulator)        | `createTrace` / `multiplex` — JSONL trace files (fs)      |
-| `toValidator`, `memoryStore`, resilience (retry/throttle — pure) | `otlpTrace` / `otlpHttpExporter` — real network egress    |
+| `validate`/`compile`, `memoryStore`, resilience (retry/throttle) | `otlpSink` / `otlpHttpExporter` — real network egress     |
 |                                                                  | `cli`, `serve`, `mcp` — process / stdio / server surfaces |
 
 **Detection** is a static scan of the (pre-transpile) source for references to the

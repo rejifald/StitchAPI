@@ -54,15 +54,15 @@ describe('parseCurl', () => {
         expect(req.headers).toEqual([{ name: 'X-A', value: 'b' }]);
     });
 
-    test('-d JSON → bodyKind json; --data-urlencode → form', () => {
+    test('-d JSON → bodyType json; --data-urlencode → form', () => {
         const json = parseCurl(
             `curl -d '{"name":"Ada"}' https://api.example.com/users`,
         );
-        expect(json.bodyKind).toBe('json');
+        expect(json.bodyType).toBe('json');
         const form = parseCurl(
             'curl --data-urlencode q=ada https://api.example.com/s',
         );
-        expect(form.bodyKind).toBe('form');
+        expect(form.bodyType).toBe('form');
     });
 
     test('an unknown flag warns and does not crash', () => {
@@ -207,7 +207,7 @@ describe('parseHar', () => {
         expect(req.url).toBe('https://api.example.com/items');
         // The HTTP/2 pseudo-header is dropped.
         expect(req.headers.some((h) => h.name.startsWith(':'))).toBe(false);
-        expect(req.bodyKind).toBe('json');
+        expect(req.bodyType).toBe('json');
         expect(req.body).toBe('{"sku":"abc"}');
     });
 

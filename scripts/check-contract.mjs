@@ -1,19 +1,23 @@
 #!/usr/bin/env node
 // API meta-contract gate — see docs/CONTRACT.md.
 //
-// A RATCHET, not a hard gate. The current surface predates the contract and violates it
-// in many places (that backlog is docs/CONTRACT.md §6). So this script freezes today's
-// violations in scripts/contract-violations.baseline.json and fails ONLY when a NEW
-// violation appears — exactly like the repo's ESLint-suppression ratchet. The gate never
-// blocks unrelated work, but the surface can only get more consistent, never less.
+// A RATCHET, not a hard gate. The pre-contract backlog (docs/CONTRACT.md §6) has been
+// worked down to ZERO by the GA hard-break sweep, so the baseline in
+// scripts/contract-violations.baseline.json is now empty and the gate fails on the FIRST
+// new violation — exactly like the repo's ESLint-suppression ratchet at zero. The
+// mechanism is kept (rather than hard-failing inline) so a deliberate, contract-aligned
+// exception can still be baselined with a committed diff for review.
 //
 //   pnpm check:contract            # check working tree against the baseline (CI/hook mode)
 //   node scripts/check-contract.mjs --list     # print every current violation, grouped
 //   node scripts/check-contract.mjs --update    # rewrite the baseline to the current set
 //
 // Rules are intentionally HIGH-PRECISION source-text checks (no TS type info), so a flagged
-// line is a real violation, not a guess. Shape-diffing (full P9), duration-type conformance,
-// and default-value inversion (P8) need the TS checker and are deferred to a type-aware phase.
+// line is a real violation, not a guess. Deferred to a type-aware phase (needs the TS
+// checker): shape-diffing (full P9), duration-type conformance, default-value inversion
+// (P8), and cross-FILE envelope resolution for R6 — the nested-toggle check only sees an
+// `*Options` bag declared in the SAME file, so an imported all-optional envelope at a
+// `boolean | X` slot is under-flagged, never guessed at.
 import {
     existsSync,
     readFileSync,
@@ -99,8 +103,9 @@ function interfaceBlocks(src) {
 }
 
 // True when the declaration at `idx` is immediately preceded by a JSDoc block carrying
-// `@deprecated`. A deprecated member is a known, time-boxed migration alias (P19), not an
-// active violation — so the rules skip it, and a rename-under-alias clears the finding.
+// `@deprecated`. Post-GA, a @deprecated marker is itself a violation (R7, amended P19) —
+// R1–R4/R6 still skip deprecated declarations only so a hypothetical alias is reported
+// ONCE (as R7's shim finding), not double-counted under the naming rules too.
 function deprecatedBefore(src, idx) {
     let j = idx;
     while (j > 0 && /[\s{;,(]/.test(src[j - 1])) j--; // skip whitespace + the field anchor
@@ -162,9 +167,16 @@ function indexExports(indexPath) {
 }
 
 // ---- rules ----------------------------------------------------------------
-// P3 — banned consumer-input suffix. Carve-outs: the well-known StitchConfig authoring
-// family, and any *Like* duck-type (P18: an adapter mirror keeps its upstream spelling).
-const BANNED_SUFFIX = /(Opts|Info|Params|Config)$/;
+// P3 — banned type-name suffix. Consumer-input side: *Opts/*Info/*Params/*Config (the
+// envelope suffix is *Options). Produced-shape side: *Return/*State (the result suffix
+// is *Result — this is what would have caught `UseStitchReturn`; *Response/*Info are
+// also banned by P3 but *Response is left to the type-aware phase — too many legitimate
+// mirrors of the platform `Response` family for a source-text check). Carve-outs: the
+// well-known StitchConfig authoring family, and any *Like* duck-type (P18: an adapter
+// mirror keeps its upstream spelling). Verified before adding Return/State: no exported
+// declaration in packages/*/src carries either suffix post-sweep (the only `AppState` is
+// a react-native ambient .d.ts mirror, which tsFiles() already excludes).
+const BANNED_SUFFIX = /(Opts|Info|Params|Config|Return|State)$/;
 const SUFFIX_CARVEOUT = new Set([
     'StitchConfig',
     'ResolvedStitchConfig',
@@ -178,25 +190,25 @@ const isLike = (n) => /Like/.test(n);
 // full shape-diff is the deferred type-aware phase). Flagged when ≥2 packages export one.
 const UNIQUE_WATCH = new Set([
     'StitchStore',
-    'RequestSeam',
-    'StitchHost',
     'StitchError',
-    // `StitchLike` de-listed (P9): it is two deliberate, compatible tiers, not a clash. The
-    // canonical RICH shape — `(input?) => StitchCallResult<T>` (awaitable + streamable) — lives in
-    // `@stitchapi/query-core` and is re-exported by the five TanStack-family bindings
-    // (react/vue/solid/svelte/angular). The three stream-LESS adapters (swr/rtk-query/vercel-ai)
-    // intentionally use a MINIMAL await-only `(input?) => PromiseLike<T>` duck-type — they never call
-    // `.stream()`, so requiring `StitchCallResult` would wrongly reject a plain awaitable callable.
-    // query-core's rich shape is assignable to the minimal one, so a real stitch satisfies both; the
-    // by-name R5 proxy can't see that the difference is intentional, hence the de-list.
-    // `StitchErrorLike` de-listed: the host adapters' error duck-type is now uniformly
-    // named `StitchErrorLike` (`Error & { status? }`) across elysia/hono/express/fastify/nest/next —
-    // one structural contract (P9). The mis-named `StitchError` duck-types (which shadowed core's
-    // real `StitchError` class) were renamed here, so bare `StitchError` is now core-only.
-    // `queryOptions` was watch-listed as the bare TanStack alias; the canonical
-    // `stitchQueryOptions` rename (ADR 0012) is now applied to ALL five framework bindings
-    // (react/vue/solid/svelte/angular), and the bare `queryOptions` survives only as a uniform
-    // `@deprecated` re-export of it — no longer a competing canonical, so it is de-listed (P16).
+    // De-listed names (post-sweep surface — each verified against the real ≥2-package
+    // export map, one line of rationale each):
+    //  - StitchLike + QueryOutput + QueryInput: blessed two-tier duck-types (P9) —
+    //    query-core's RICH canonical (awaitable + streamable), re-exported by the
+    //    TanStack-family bindings, plus a deliberate MINIMAL await-only redeclaration in
+    //    the stream-less adapters (swr/rtk-query/vercel-ai), which never call `.stream()`.
+    //  - StreamableStitchLike: rtk-query's streaming tier of the same blessed family.
+    //  - StreamStitchSseOptions + StitchErrorOptions: intentionally IDENTICAL option
+    //    envelopes declared per host adapter (elysia/hono/express/fastify/nest/next) —
+    //    one structural contract, same-name-same-shape by design (P9).
+    //  - StitchEventSource: core-owned; host adapters re-export core's type verbatim.
+    //  - StitchQueryOptions / stitchQueryOptions / deriveQueryKey / nameOf / keyInputFor
+    //    (and the rest of the query family): query-core-owned canonicals re-exported
+    //    verbatim by the framework bindings — one declaration site, many surfaces.
+    //  - StitchErrorLike: the hosts' uniform error duck-type (`Error & { status? }`) —
+    //    one structural contract across all six adapters (P9).
+    // Stale watch entries removed: bare `RequestSeam`, `StitchHost`, and `queryOptions`
+    // were deleted from the surface entirely by the hard-break sweep — nothing left to watch.
 ]);
 
 function collect() {
@@ -235,7 +247,9 @@ function collect() {
                         'R1',
                         file,
                         name,
-                        `banned suffix on consumer type → *Options (P3)`,
+                        /(Return|State)$/.test(name)
+                            ? `banned suffix on produced shape → *Result (P3)`
+                            : `banned suffix on consumer type → *Options (P3)`,
                         lineOf(src, index),
                     );
                 }
@@ -303,9 +317,16 @@ function collect() {
                 }
             }
 
-            // R6 — a StitchConfig capability slot typed as a bare all-optional `*Options` bag
-            // accepts the opaque empty object `{}` (P20). The fix is `Scalar | AtLeastOne<Options>`
-            // so the all-defaults case is a scalar and `{}` is a compile error.
+            // R6 — a config slot that accepts the opaque empty object `{}` (P20). Two envelope
+            // tiers are covered, both resolved against SAME-FILE declarations only (cross-file
+            // resolution is the deferred type-aware phase — see the header):
+            //   (a) a StitchConfig capability slot typed as a bare all-optional bag
+            //       → fix: `Scalar | AtLeastOne<Options>` so all-defaults is a scalar;
+            //   (b) a NESTED option-envelope toggle (the SseOptions.reconnect class): a member
+            //       of an exported `*Options` interface typed `boolean | X` where X is an
+            //       all-optional bag, or typed as a bare all-optional `*Options` bag
+            //       → fix: `boolean | AtLeastOne<X>` (the AtLeastOne wrapper naturally clears
+            //       the finding — `AtLeastOne` is never an all-optional local interface).
             const allOptional = new Set(
                 blocks.filter((b) => isAllOptional(b.body)).map((b) => b.name),
             );
@@ -323,6 +344,60 @@ function collect() {
                             lineOf(src, cfgBlock.bodyStart),
                         );
                 }
+            }
+            for (const blk of blocks) {
+                if (!/Options$/.test(blk.name)) continue;
+                // (b1) boolean-toggle member: `member?: boolean | X` with X all-optional here
+                const tre =
+                    /(?:^|\n)\s*(?:readonly\s+)?([A-Za-z_]\w*)\s*\??:\s*boolean\s*\|\s*([A-Z]\w*)\s*[;,\n]/g;
+                let t6;
+                while ((t6 = tre.exec(blk.body))) {
+                    if (
+                        allOptional.has(t6[2]) &&
+                        !deprecatedBefore(src, blk.bodyStart + t6.index)
+                    )
+                        add(
+                            'R6',
+                            file,
+                            `${blk.name}.${t6[1]}`,
+                            `toggle admits all-optional ${t6[2]} — {} enables silently → boolean|AtLeastOne<${t6[2]}> (P20)`,
+                            lineOf(src, blk.bodyStart + t6.index),
+                        );
+                }
+                // (b2) bare all-optional *Options member inside an *Options envelope
+                const bre =
+                    /(?:^|\n)\s*(?:readonly\s+)?([A-Za-z_]\w*)\s*\??:\s*([A-Z]\w*Options)\s*;/g;
+                let b6;
+                while ((b6 = bre.exec(blk.body))) {
+                    if (
+                        allOptional.has(b6[2]) &&
+                        !deprecatedBefore(src, blk.bodyStart + b6.index)
+                    )
+                        add(
+                            'R6',
+                            file,
+                            `${blk.name}.${b6[1]}`,
+                            `all-optional ${b6[2]} accepts {} → Scalar|AtLeastOne<${b6[2]}> (P20)`,
+                            lineOf(src, blk.bodyStart + b6.index),
+                        );
+                }
+            }
+
+            // R7 — a `@deprecated` marker anywhere in a published package's src (amended P19).
+            // The GA hard-break sweep removed every pre-GA migration shim; post-GA policy is
+            // that deprecation aliases do not accumulate on the surface — a removal is a
+            // semver-major, not a shim. One finding per file (first occurrence) keeps the
+            // baseline key stable if a stray marker gains siblings before it's purged.
+            {
+                const d = src.indexOf('@deprecated');
+                if (d !== -1)
+                    add(
+                        'R7',
+                        file,
+                        '@deprecated',
+                        `deprecated shim on the published surface — remove, don't alias (amended P19: GA shipped shim-free)`,
+                        lineOf(src, d),
+                    );
             }
         }
 

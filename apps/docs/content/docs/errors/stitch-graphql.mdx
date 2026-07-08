@@ -7,7 +7,7 @@ description: 'A GraphQL 200 response carried an errors array and failed the call
 
 A stitch built with [`graphql()`](/docs/guides/data/graphql) throws a
 `StitchError` even though the HTTP status was `200`. The response body carried a
-non-empty top-level `errors` array, so the stitch refused to unwrap `data` and
+non-empty top-level `errors` array, so the stitch refused to pick `data` and
 surfaced the failure instead. The thrown error carries the GraphQL message(s),
 prefixed `GraphQL:` and joined with `; ` when there is more than one:
 
@@ -17,7 +17,7 @@ import { StitchError, graphql } from 'stitchapi';
 const user = graphql({
     baseUrl: 'https://api.example.com',
     path: '/graphql',
-    query: `query ($id: ID!) { user(id: $id) { name } }`,
+    document: `query ($id: ID!) { user(id: $id) { name } }`,
 });
 
 try {
@@ -38,7 +38,7 @@ throws a `StitchError` today.)
 GraphQL-over-HTTP commonly answers with HTTP `200` even when the operation
 failed, reporting the failure in a top-level `errors` array rather than via the
 status line. A `graphql()` stitch treats a `200` that carries a non-empty
-`errors` array as a failure instead of silently unwrapping `data` — so a request
+`errors` array as a failure instead of silently picking `data` — so a request
 that "looked successful" at the transport layer still throws.
 
 The entries in `errors` come from the GraphQL server: a malformed query or
@@ -63,7 +63,7 @@ own description of what went wrong — and fix the cause:
 Remember that GraphQL signals failure in the response body, not through the HTTP
 status: a `200` is not proof of success. See the
 [GraphQL guide](/docs/guides/data/graphql) for how `graphql()` posts the
-operation and unwraps `data` on the success path.
+operation and picks `data` on the success path.
 
 <Callout type="info">
     Stuck, or debugging with an agent? Ask the [docs

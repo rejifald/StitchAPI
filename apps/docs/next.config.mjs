@@ -101,6 +101,17 @@ const config = {
     // The playground consumes the in-repo sandbox engine (@stitchapi/sandbox), a
     // workspace package that ships raw TS/TSX source — Next must transpile it.
     transpilePackages: ['@stitchapi/sandbox'],
+    // The 2026-07 contract sweep renamed the config key `unwrap` to `pick`; the
+    // guide page moved with it. Permanent redirect keeps published links alive.
+    async redirects() {
+        return [
+            {
+                source: '/docs/guides/data/unwrap',
+                destination: '/docs/guides/data/pick',
+                permanent: true,
+            },
+        ];
+    },
     // CSP backstop for the sandbox Worker (egress confinement + worker-confined
     // eval). See lib/security-headers.mjs; proved by e2e/sandbox-egress.spec.ts.
     async headers() {

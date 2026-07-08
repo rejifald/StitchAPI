@@ -22,8 +22,8 @@ Install the package alongside core:
 
 Configure the shared client once in your root module. `forRootAsync` resolves its
 options from an injected factory, which is how `ConfigService` reaches the base
-URL, secrets, and store. `trace: 'logger'` sends the event stream to the Nest
-`Logger`:
+URL, secrets, and store. The event stream is bridged to the Nest `Logger` by
+default — nothing to switch on:
 
 ```ts twoslash
 // app.module.ts
@@ -40,7 +40,6 @@ import { bearer } from 'stitchapi';
             useFactory: (config: ConfigService) => ({
                 baseUrl: config.getOrThrow('API_BASE_URL'),
                 auth: bearer(fromNestConfig(config)('API_TOKEN')),
-                trace: 'logger',
             }),
         }),
     ],
@@ -101,16 +100,19 @@ for the validated result, or `.stream()`-ed for the
 `forRoot({ store, trace, ...defaults })` configures the app-wide infrastructure —
 one store, one trace sink — plus the shared config (`baseUrl`, `auth`, `retry`,
 `throttle`, …) every stitch inherits; `forRootAsync` resolves the same options
-from an injected factory. `forFeature({ stitches, seam })` registers injectable
-stitches and, optionally, a per-upstream seam built over the shared store and
-trace — omit `seam` to attach the stitches to the default one.
+from an injected factory. `forFeature({ stitches, seamConfig })` registers
+injectable stitches and, optionally, a per-upstream seam built over the shared
+store and trace — omit `seamConfig` to attach the stitches to the default one.
 
 Two bridges connect the framework, and neither changes core:
 
--   **`trace: 'logger'`** forwards a stitch's
-    [event stream](/docs/concepts/event-stream) to the Nest `Logger`. It logs
-    method, URL, and status only, and strips the query string; tracing is
-    otherwise [off by default](/docs/guides/observability/trace-sinks).
+-   **`logger`** bridges a stitch's
+    [event stream](/docs/concepts/event-stream) into the Nest `Logger` as the
+    seam's `TraceSink` — **on by default**, matching the Fastify plugin. It logs
+    only metadata (name, method, scrubbed URL, status, attempts, timing) — never
+    bodies or headers. Disable it with `logger: false`, or drop the happy path
+    with `logger: { lifecycle: false }`; an explicit `trace` wins over the
+    bridge.
 -   **`fromNestConfig(config)('KEY')`** is a `ConfigService`-backed
     [secret resolver](/docs/guides/auth/secret-resolvers) — the `ConfigService`
     twin of `env()`. It resolves synchronously at call time, so the credential

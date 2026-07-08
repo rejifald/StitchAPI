@@ -93,7 +93,7 @@ import { z } from 'zod';
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: z.object({ id: z.number(), name: z.string() }),
-    unwrap: 'data',
+    pick: 'data',
 });
 
 const user = await getUser({ params: { id: 1 } }); // typed · validated
@@ -103,7 +103,7 @@ Keep the `fetch` or axios you already have — it's the adapter underneath. A st
 
 ## Motivation
 
-In almost every project there's a `src/api/` folder of thin functions that fire an HTTP request and unwrap the response. Everything that actually makes an integration reliable — auth lifecycle, retries, rate limits, timeouts, response validation, drift detection, observability — gets re-implemented at every call site, and each wrapper rots independently. `fetch` hands back opaque bytes, and raw bytes aren't what application code (or an AI agent) needs; both want structured, validated, observable results.
+In almost every project there's a `src/api/` folder of thin functions that fire an HTTP request and pull the payload out of the response. Everything that actually makes an integration reliable — auth lifecycle, retries, rate limits, timeouts, response validation, drift detection, observability — gets re-implemented at every call site, and each wrapper rots independently. `fetch` hands back opaque bytes, and raw bytes aren't what application code (or an AI agent) needs; both want structured, validated, observable results.
 
 A stitch folds all of that back into the call:
 
@@ -199,7 +199,7 @@ Reach for the full set of knobs only when you need them — they default off:
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: User, // a validator of your choice
-    unwrap: 'data',
+    pick: 'data',
     retry: 3, // ≡ { attempts: 3 }
     timeout: '5s', // ≡ { total: '5s' }
     cache: '1m', // ≡ { ttl: '1m' }
@@ -227,12 +227,12 @@ const api = seam({
 const listUsers = api.stitch({
     path: '/users',
     output: User.array(),
-    unwrap: 'data',
+    pick: 'data',
 });
 const getUser = api.stitch({
     path: '/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
 });
 ```
 
@@ -255,7 +255,7 @@ import { z } from 'zod';
 
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
-    unwrap: 'data',
+    pick: 'data',
     output: drift(
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
@@ -277,12 +277,12 @@ const listUsers = stitch({
     baseUrl: 'https://demo.stitchapi.dev',
     path: '/users',
     retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
-    throttle: { rate: '1/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '1/s', concurrency: 2, pool: 'host' },
     timeout: { total: '30s', perAttempt: '10s' },
 });
 ```
 
-`throttle` is proactive (keeps you under a limit before it bites; `scope: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`acceptStatus`** treats a non-2xx (e.g. `404`) as a normal result instead of a throw. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry).
+`throttle` is proactive (keeps you under a limit before it bites; `pool: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`acceptStatus`** treats a non-2xx (e.g. `404`) as a normal result instead of a throw. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry).
 
 ## Caching
 
@@ -292,19 +292,19 @@ A read-through response cache with in-process request coalescing — **off by de
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
     cache: '5m',
 });
 
 const listAnnouncements = stitch({
     path: 'https://demo.stitchapi.dev/announcements',
     output: z.array(z.object({ id: z.number(), title: z.string() })),
-    unwrap: 'data',
+    pick: 'data',
     cache: {
         ttl: '1h',
         scope: 'app',
         vary: ['accept-language'],
-        maxEntries: 500,
+        entries: 500,
         version: 1, // pins the shape — cacheable without a fingerprinter
     },
 });
@@ -334,7 +334,7 @@ A **surface** is the request _style_ a stitch speaks. `http` is the default; the
 | Surface       | Import                        | Shapes                                     | `await` resolves to            |
 | ------------- | ----------------------------- | ------------------------------------------ | ------------------------------ |
 | `http`        | `stitch` (default)            | a JSON-over-HTTP call                      | the validated body             |
-| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, unwrap `data` | the `data` payload             |
+| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, picks `data`  | the `data` payload             |
 | `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
 | `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader              | every decoded chunk, collected |
 | `download`    | `stitchapi/download`          | a buffered binary GET                      | `{ blob, filename }`           |

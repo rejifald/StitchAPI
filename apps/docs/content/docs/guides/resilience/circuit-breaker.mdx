@@ -33,7 +33,8 @@ through). After `failures` consecutive failures it trips **open** and
 calls fast-fail for `cooldown`. It then goes **half-open** and lets a single
 trial call through: a success **closes** it and clears the count, another
 failure re-**opens** it for a fresh cooldown. The breaker emits `progress`
-events with phase `circuit`.
+events with phase `circuit`. The positional form names both knobs at once:
+`circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }`.
 
 `failures` and `cooldown` are both required — `failures` is
 the count of consecutive failures that trips the breaker open, and `cooldown`

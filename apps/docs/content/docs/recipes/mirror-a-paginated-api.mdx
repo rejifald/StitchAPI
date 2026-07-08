@@ -33,7 +33,7 @@ const mirror = stitch({
         backoff: 'expo-jitter',
         respectRetryAfter: true,
     },
-    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '5/s', concurrency: 2, pool: 'host' },
     paginate: {
         next: (prevBody) => {
             const cursor = (prevBody as { nextCursor?: string }).nextCursor;
@@ -79,8 +79,8 @@ schema and each row is typed and validated, and the cast goes away. Either way,
 serializing to NDJSON is one `.map()`.
 
 <Callout type="warn">
-    `next` reads the raw body; `items` reads the value after unwrap. Reach for
-    the cursor in `next` from where it actually lives in the response — see
+    `next` reads the raw body; `items` reads the value after pick. Reach for the
+    cursor in `next` from where it actually lives in the response — see
     [Pagination](/docs/guides/data/pagination).
 </Callout>
 

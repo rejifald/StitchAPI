@@ -10,7 +10,12 @@
 import { endpointLabel, pipelineStages } from './config-summary';
 import { toMermaid } from './diagram';
 import { type StitchRegistry, selectStitch } from './registry';
-import type { RedactedStitchConfig, Stitch, StitchInput } from './types';
+import type {
+    AtLeastOne,
+    RedactedStitchConfig,
+    Stitch,
+    StitchInput,
+} from './types';
 
 import type { Readable, Writable } from 'node:stream';
 
@@ -79,7 +84,7 @@ const DESCRIBE_STITCH_TOOL = {
     name: 'describe_stitch',
     description:
         "Describe a named stitch's shape WITHOUT running it: its endpoint, surface, per-slot " +
-        'input presence, output (validated/unwrap), auth scheme (never the credential), the ' +
+        'input presence, output (validated/pick), auth scheme (never the credential), the ' +
         'configured policies (retry/throttle/cache/timeout), the request pipeline in engine ' +
         'order, and a Mermaid flowchart. Call this to learn a stitch before run_stitch.',
     inputSchema: {
@@ -142,11 +147,11 @@ export interface McpServerOptions {
 // its response (or null for notifications), independent of any transport.
 export function createMcpServer(
     registry: StitchRegistry,
-    info: McpServerOptions = {},
+    info?: AtLeastOne<McpServerOptions>,
 ): McpServer {
     const serverInfo = {
-        name: info.name ?? SERVER_NAME,
-        version: info.version ?? SERVER_VERSION,
+        name: info?.name ?? SERVER_NAME,
+        version: info?.version ?? SERVER_VERSION,
     };
 
     async function callRunStitch(args: unknown): Promise<ToolResult> {
@@ -282,7 +287,7 @@ export function createMcpServer(
 export interface StdioOptions {
     input?: Readable;
     output?: Writable;
-    serverInfo?: McpServerOptions;
+    serverInfo?: AtLeastOne<McpServerOptions>;
 }
 
 // Wire an McpServer to the stdio transport: read newline-delimited JSON-RPC from

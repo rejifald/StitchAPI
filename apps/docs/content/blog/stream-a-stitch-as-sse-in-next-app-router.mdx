@@ -40,29 +40,26 @@ Install it alongside the core library:
 @stitchapi/next stitchapi
 ```
 
-Then `sseResponse` takes the stitch's event stream and returns a `text/event-stream` `Response`. Each `delta` becomes one SSE frame; you tell it how to pull the renderable payload out of a chunk with `data`:
+Then `streamStitchSse` takes the stitch's event stream and returns a `text/event-stream` `Response`. Each `delta` becomes one SSE frame; you tell it how to pull the renderable payload out of a chunk with `data`:
 
 ```ts twoslash
 // @noErrors
 // app/api/chat/route.ts
 import { chat } from '@/lib/api';
 
-import {
-    isStitchError,
-    sseResponse,
-    stitchErrorResponse,
-} from '@stitchapi/next';
+import { stitchErrorResponse, streamStitchSse } from '@stitchapi/next';
 
 export async function POST(request: Request) {
     const { prompt } = await request.json();
 
     try {
-        return sseResponse(chat({ body: { prompt } }).stream(), {
+        return streamStitchSse(chat({ body: { prompt } }).stream(), {
             data: (chunk) => String(chunk), // pull text out of each delta
             signal: request.signal, // abort the stitch if the client leaves
         });
     } catch (err) {
-        if (isStitchError(err)) return stitchErrorResponse(err);
+        const mapped = stitchErrorResponse(err);
+        if (mapped) return mapped;
         throw err;
     }
 }
@@ -73,7 +70,7 @@ Two lines carry most of the value:
 -   **`data`** maps each `delta` chunk to the string you actually want to send down the wire — text out of a model chunk, a field off a JSON event, whatever the frame should carry.
 -   **`signal: request.signal`** is the cancellation story. When the browser disconnects — the user closed the tab, hit stop, or navigated away — `request.signal` aborts, and passing it through tears the stitch (and its upstream call) down instead of leaving an orphaned request burning a token budget. That early-cancel is half the reason to stream at all.
 
-The `try/catch` with `isStitchError` / `stitchErrorResponse` handles a stitch that fails _before_ the stream opens (auth wall, timeout, the upstream being down). `stitchErrorResponse` maps a `StitchError` to a safe `502` by default rather than leaking the upstream's status. Confirm the exact options for both helpers in the [`@stitchapi/next` docs](/docs/integrations/next) — the surface is small but it's the source of truth, not this post.
+The `try/catch` with `stitchErrorResponse` handles a stitch that fails _before_ the stream opens (auth wall, timeout, the upstream being down). `stitchErrorResponse` maps a `StitchError` to a safe `502` by default rather than leaking the upstream's status, and returns `undefined` for anything that isn't a stitch failure — which is why the handler rethrows when there's no mapped `Response`. Confirm the exact options for both helpers in the [`@stitchapi/next` docs](/docs/integrations/next) — the surface is small but it's the source of truth, not this post.
 
 ## The client: consuming deltas
 
@@ -107,8 +104,8 @@ Streaming over HTTP has sharp edges that have nothing to do with StitchAPI, and 
 
 -   **Buffering in the middle.** SSE only works if nothing between your server and the browser buffers the response. Reverse proxies (nginx without `proxy_buffering off;` on the route), some CDNs, and corporate proxies will happily collect the whole stream and deliver it as one lump — which silently defeats the entire exercise. Test through your real edge, not just `localhost`.
 -   **Edge vs Node runtime.** App Router handlers run on either runtime. The helpers are Web-standard so they work on both, but your _upstream_ may not — a streaming SDK that needs Node APIs, or a `fetch` quirk on the edge, will surface here. Pick the runtime deliberately (`export const runtime = 'edge' | 'nodejs'`) and test the streaming path on the one you deploy.
--   **It's not always worth it.** If your call returns in a few hundred milliseconds, or the consumer can't use partial results (it needs the whole object validated before it does anything), streaming adds plumbing and failure modes for no user-visible win. A normal JSON route — the stitch plus `stitchErrorResponse`, no `sseResponse` — is the right call there.
--   **Confirm the API surface.** The exact option names on `sseResponse` and `stitchErrorResponse` live in the package docs and may evolve. Treat the snippets above as the shape, and check [`/docs/integrations/next`](/docs/integrations/next) for the current signatures.
+-   **It's not always worth it.** If your call returns in a few hundred milliseconds, or the consumer can't use partial results (it needs the whole object validated before it does anything), streaming adds plumbing and failure modes for no user-visible win. A normal JSON route — the stitch plus `stitchErrorResponse`, no `streamStitchSse` — is the right call there.
+-   **Confirm the API surface.** The exact option names on `streamStitchSse` and `stitchErrorResponse` live in the package docs and may evolve. Treat the snippets above as the shape, and check [`/docs/integrations/next`](/docs/integrations/next) for the current signatures.
 
 ## Try it
 
@@ -116,4 +113,4 @@ Streaming over HTTP has sharp edges that have nothing to do with StitchAPI, and 
 stitchapi @stitchapi/next
 ```
 
-Declare a streaming stitch, return `sseResponse(stitch.stream())` from a route handler, and consume the deltas with `useStitchStream`. The full guides: [`@stitchapi/next`](/docs/integrations/next), [`@stitchapi/react`](/docs/integrations/react), and the [event stream](/docs/reference/events) that makes all of it one moving part.
+Declare a streaming stitch, return `streamStitchSse(stitch.stream())` from a route handler, and consume the deltas with `useStitchStream`. The full guides: [`@stitchapi/next`](/docs/integrations/next), [`@stitchapi/react`](/docs/integrations/react), and the [event stream](/docs/reference/events) that makes all of it one moving part.
