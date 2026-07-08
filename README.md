@@ -36,6 +36,12 @@
 <!-- /yakir:readme-badges -->
 
 <p align="center">
+  <a href="https://glama.ai/mcp/servers/@rejifald/StitchAPI">
+    <img width="380" height="200" src="https://glama.ai/mcp/servers/@rejifald/StitchAPI/badge" alt="StitchAPI Docs — MCP server listed on Glama" />
+  </a>
+</p>
+
+<p align="center">
   <strong>Zero runtime dependencies · ~25&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~20&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
