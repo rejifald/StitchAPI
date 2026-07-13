@@ -47,14 +47,15 @@ Please include, as far as you can:
 
 ## What to expect
 
--   **Acknowledgement** within **3 business days**.
--   An initial assessment (severity + whether we can reproduce it) within about a
-    week.
--   We aim to ship a fix and publish a [GitHub Security Advisory][advisories]
-    (with a CVE where warranted) within **90 days** of triage, coordinating the
-    release timing with you.
--   We will **credit you** in the advisory and release notes unless you ask to
-    remain anonymous.
+-   **Acknowledgement** within **48 hours**.
+-   An initial assessment — severity and whether we can reproduce it — within a
+    few business days.
+-   A fix released as quickly as the severity warrants (critical issues first),
+    published as a [GitHub Security Advisory][advisories] with a CVE where one
+    applies. We'll keep you posted on progress and coordinate public disclosure
+    with you.
+-   **Credit** in the advisory and release notes unless you'd rather stay
+    anonymous.
 
 We ask that you give us reasonable time to release a fix before any public
 disclosure. Acting in good faith under this policy — investigating and reporting
@@ -77,8 +78,8 @@ In scope — vulnerabilities in the published library, for example:
 
 Out of scope:
 
--   vulnerabilities in **your own** backend, API, or application code that merely
-    uses StitchAPI;
+-   vulnerabilities whose root cause is in an application or service that uses
+    StitchAPI, rather than in StitchAPI itself;
 -   issues that require an already-compromised host, a malicious dependency you
     chose to install, or physical/privileged local access;
 -   reports generated solely by an automated scanner with no demonstrated,
