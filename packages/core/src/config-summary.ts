@@ -44,9 +44,9 @@ export function pipelineStages(
         const pages = cfg.paginate.pages ?? cfg.paginate.max ?? 50;
         stages.push(opts.detailed ? `paginate (max ${pages})` : 'paginate');
     }
-    // Post-response order matches the engine (engine.ts): transform → unwrap → validate. The body
-    // is transformed, then the unwrap path is read, then the result is validated against `output`.
-    if (cfg.transform) stages.push('transform');
+    // Post-response order matches the engine (engine.ts): unwrap → validate. The unwrap path is
+    // read, then the result is validated against `output`. (`transform` is a live closure and lives
+    // only on `__rawConfig` — P0 — so the redacted public view can't report it as a stage.)
     if (cfg.unwrap) stages.push(`unwrap: ${cfg.unwrap}`);
     if (cfg.output) stages.push('validate');
     if (cfg.cache) stages.push('cache');

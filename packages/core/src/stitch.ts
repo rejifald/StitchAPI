@@ -662,9 +662,24 @@ export interface SharedRuntime {
     register?: (s: Stitch) => void;
 }
 
+// Return a config slot with every function-valued own field dropped (CONTRACT.md P0): a derivation
+// fn — `paginate.next`/`items`, a predicate `retry.on`/`throttle.on`, the `key`/`keyOf` on
+// `idempotency`/`cache` (canonical or @deprecated alias) — never reaches `__config`, while fn-free
+// data (`pages`, `attempts`, a `number[]` `on`, `ttl`) stays. A scalar-shorthand slot (`cache: '1m'`,
+// `retry: 3`) has no fields to strip and passes through untouched. Shallow (these slots carry their
+// functions at depth 1) and non-mutating — a fresh object is built, so `__rawConfig` is left intact.
+function stripFns(slot: unknown): unknown {
+    if (slot === null || typeof slot !== 'object' || Array.isArray(slot))
+        return slot;
+    return Object.fromEntries(
+        Object.entries(slot).filter(([, v]) => typeof v !== 'function'),
+    );
+}
+
 // `__config` is the PUBLIC view; strip the live secret-bearing handles so the running store,
-// credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest).
-// The full config lives on `__rawConfig` for fragment composition (see `asConfig`).
+// credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest), and
+// strip EVERY function-valued field so it is plain JSON data (CONTRACT.md P0). The full config —
+// handles and function sugar alike — lives on `__rawConfig` for fragment composition (see `asConfig`).
 export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     // Split off the live `Surface` so the spread carries no `kind: Surface`; the rest still holds
     // the live store/auth/adapter handles, stripped next.
@@ -676,8 +691,7 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
         clock?: unknown;
     };
     // Strip the live, secret-bearing handles so the running store, credential, and transport cannot
-    // be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest). The full config lives on the
-    // non-enumerable `__rawConfig` for fragment composition (see `asConfig`).
+    // be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest).
     delete redacted.store;
     delete redacted.auth;
     delete redacted.adapter;
@@ -691,6 +705,43 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     // Normalise the surface to its id string so __config round-trips as JSON (ADR 0005 Decision 11):
     // never expose the live Surface (its hooks don't serialise), only its identity.
     if (kind) redacted.kind = kind.id;
+    // CONTRACT.md P0: strip EVERY function-valued field so the public `__config` is plain JSON — the
+    // url/baseUrl thunks, `transform`, `hooks`, `paginate.next`/`items`, the predicate forms of
+    // `retry.on`/`throttle.on`/`acceptStatus` (a `number[]` stays), `idempotency.keyOf`, and
+    // `cache.key`. The engine reads all that sugar off the non-enumerable `__rawConfig`; nothing
+    // reads it off `__config` (see e.g. `toOpenApi`, which detects a thunked endpoint off the raw
+    // config). Mutate through a plain-data alias: the redacted view drops the fns and several fields
+    // become partial JSON shapes the still-fn-typed resolved fields reject (`__config`'s shape is
+    // pinned by the P0 spec + the JSON-roundtrip contract gate). Each reassignment builds a FRESH
+    // object so `cfg` — i.e. `__rawConfig` — is never mutated. (#470 narrows the types, retiring the
+    // alias.)
+    const data = redacted as {
+        url?: unknown;
+        baseUrl?: unknown;
+        transform?: unknown;
+        hooks?: unknown;
+        acceptStatus?: unknown;
+        paginate?: unknown;
+        retry?: unknown;
+        throttle?: unknown;
+        idempotency?: unknown;
+        cache?: unknown;
+    };
+    if (typeof cfg.url === 'function') delete data.url;
+    if (typeof cfg.baseUrl === 'function') delete data.baseUrl;
+    delete data.transform;
+    delete data.hooks;
+    if (typeof cfg.acceptStatus === 'function') delete data.acceptStatus;
+    // Each nested slot is copied FRESH (so `cfg` — i.e. `__rawConfig` — is never mutated), then has
+    // its function-valued fields dropped: `paginate.next`/`items`, the predicate `retry.on`/
+    // `throttle.on` (a `number[]` stays — only functions go), and the `key`/`keyOf` derivations on
+    // `idempotency`/`cache`. The dynamic strip covers both a canonical name and its @deprecated alias
+    // without naming either (so it neither trips the no-deprecated lint nor rots on a future rename).
+    if (cfg.paginate) data.paginate = stripFns(cfg.paginate);
+    if (cfg.retry) data.retry = stripFns(cfg.retry);
+    if (cfg.throttle) data.throttle = stripFns(cfg.throttle);
+    if (cfg.idempotency) data.idempotency = stripFns(cfg.idempotency);
+    if (cfg.cache) data.cache = stripFns(cfg.cache);
     return redacted;
 }
 

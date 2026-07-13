@@ -68,14 +68,14 @@ describe('pipelineStages', () => {
             output: () => true,
             cache: '1m',
         });
-        // Post-response order is transform → unwrap → validate (engine.ts), bookended by call/result.
+        // Post-response order is unwrap → validate (engine.ts), bookended by call/result. `transform`
+        // is a live closure (P0 — off the public `__config`), so the redacted summary omits it.
         expect(pipelineStages(full, { detailed: true })).toEqual([
             'call',
             'throttle',
             'POST https://api.example.com/widgets',
             'retry ×3',
             'paginate (max 7)',
-            'transform',
             'unwrap: data',
             'validate',
             'cache',
