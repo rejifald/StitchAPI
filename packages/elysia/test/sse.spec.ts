@@ -138,8 +138,11 @@ describe('streamStitchSse — error paths', () => {
         const body = await res.text();
         expect(body).toContain('data: a');
         expect(body).toContain('event: error');
-        expect(body).toContain('upstream failed');
+        // the raw upstream message is withheld from the client by default (leak-regression below)
+        expect(body).not.toContain('upstream failed');
+        expect(body).toContain('data: error');
         expect(body).not.toContain('never');
+        // onError still sees the real failure server-side
         expect((captured as Error).message).toBe('upstream failed');
     });
 
@@ -159,8 +162,68 @@ describe('streamStitchSse — error paths', () => {
         const body = await res.text();
         expect(body).toContain('data: a');
         expect(body).toContain('event: error');
-        expect(body).toContain('stream blew up');
+        // the raw throw message is withheld from the client by default
+        expect(body).not.toContain('stream blew up');
+        expect(body).toContain('data: error');
+        // onError still sees the real failure server-side
         expect((captured as Error).message).toBe('stream blew up');
+    });
+});
+
+describe('streamStitchSse — the error frame does not leak the raw message', () => {
+    // Regression: the default error frame must not echo the raw upstream/transport message, which
+    // can disclose internal network topology (a transport error names the host it failed to reach)
+    // or the upstream's status to an untrusted client — bringing @stitchapi/elysia in line with the
+    // other hosts (express/fastify/hono/nest/next), whose SSE helpers already withhold it.
+    test('an internal hostname in the error message is not disclosed by default', async () => {
+        const res = streamStitchSse(
+            gen([
+                {
+                    type: 'error',
+                    name: 'StitchError',
+                    message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                    status: 502,
+                    attempts: 1,
+                    at: 0,
+                },
+            ]),
+        );
+        const body = await res.text();
+        expect(body).toContain('event: error');
+        expect(body).toContain('data: error');
+        expect(body).not.toContain('payments.internal.corp');
+        expect(body).not.toContain('ENOTFOUND');
+    });
+
+    test('errorData opts in to shaping the client-facing error payload', async () => {
+        const res = streamStitchSse(
+            gen([
+                {
+                    type: 'error',
+                    name: 'StitchError',
+                    message: 'upstream blew up',
+                    attempts: 1,
+                    at: 0,
+                },
+            ]),
+            { errorData: (e) => e.message },
+        );
+        const body = await res.text();
+        expect(body).toContain('event: error');
+        expect(body).toContain('data: upstream blew up');
+    });
+
+    test('errorData shapes the throw path too', async () => {
+        async function* boom(): AsyncGenerator<StitchEvent, void> {
+            yield { type: 'delta', chunk: 'a', at: 0 };
+            throw new Error('stream blew up');
+        }
+        const res = streamStitchSse(boom(), {
+            errorData: (e) => JSON.stringify({ error: e.message }),
+        });
+        const body = await res.text();
+        expect(body).toContain('event: error');
+        expect(body).toContain('data: {"error":"stream blew up"}');
     });
 });
 

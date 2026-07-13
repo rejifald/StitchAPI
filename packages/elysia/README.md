@@ -85,6 +85,13 @@ disconnect cancels the body and aborts the upstream stitch stream rather than
 leaving it running. Control events (`start`/`progress`/`result`/`done`/…) are not
 forwarded.
 
+By default the `error` frame carries a generic `data: error` token, **not** the raw
+error message — echoing it can disclose internal network topology (a transport failure
+reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status
+(`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream messages are
+known safe (`errorData: (e) => e.message`); `onError` still receives the real failure
+server-side.
+
 ## Error handling
 
 The plugin registers an `.onError` that maps a `StitchError` to an HTTP response

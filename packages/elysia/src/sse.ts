@@ -2,7 +2,8 @@
 // (mirrors @stitchapi/hono's sse.ts, adapted to Elysia's Web-standard return model). A streaming/SSE
 // stitch's `.stream()` is an `AsyncIterable<StitchEvent>`; this forwards each `delta` chunk as one
 // SSE message, ends the stream cleanly on `done`, and turns an `error` event into a final
-// `event: error` message. When the client disconnects the `ReadableStream` is cancelled — the helper
+// `event: error` message — a generic `data: error` by default, the raw message withheld (opt in via
+// `errorData`). When the client disconnects the `ReadableStream` is cancelled — the helper
 // calls the iterator's `return()` so the upstream stitch stream is torn down rather than left running.
 //
 // Web-standard: returns a plain `Response` whose body is a `ReadableStream` — no `node:*`, so it runs
@@ -13,6 +14,9 @@ import type { StitchEvent } from 'stitchapi';
 export type StitchEventSource<T> =
     | AsyncIterable<StitchEvent<T>>
     | AsyncGenerator<StitchEvent<T>, void>;
+
+/** The terminal `error` event a stitch stream emits — carries `message`, `status`, `attempts`. */
+type StitchErrorEvent = Extract<StitchEvent, { type: 'error' }>;
 
 export interface StreamStitchSseOptions {
     /**
@@ -27,8 +31,21 @@ export interface StreamStitchSseOptions {
      */
     event?: string;
     /**
-     * Called once if the underlying stream errors (a stitch `error` event, or a throw). After it
-     * runs, an `error`-typed SSE message carrying the error text is written and the stream closes.
+     * Shape the SSE `data` written for a terminal `error` event (or an uncaught throw mid-stream,
+     * normalised to an error event). **Default: a generic token (`data: error`)** — the raw
+     * `event.message` is deliberately *not* echoed, because it can disclose internal network
+     * topology (a transport failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or
+     * the upstream's status (`HTTP 401`) to an untrusted client. Opt in with `(e) => e.message`
+     * when the upstream messages are known safe, or return your own payload
+     * (e.g. `() => JSON.stringify({ error: 'stream failed' })`). A multi-line return gets one
+     * `data:` line each (SSE spec); the `event: error` name is fixed.
+     */
+    errorData?: (event: StitchErrorEvent) => string;
+    /**
+     * Called once, server-side, if the underlying stream errors (a stitch `error` event, or a
+     * throw) — use it to observe/log the real failure. It does **not** shape the client-facing
+     * frame: the SSE `data` sent to the client is controlled by `errorData` (a generic token by
+     * default), so the raw message reaches your logs here but not the client.
      */
     onError?: (err: unknown) => void;
 }
@@ -44,6 +61,25 @@ function frame(data: string, event?: string): string {
     if (event !== undefined) lines.push(`event: ${event}`);
     for (const line of data.split('\n')) lines.push(`data: ${line}`);
     return `${lines.join('\n')}\n\n`;
+}
+
+// The generic token written as an `error` message's `data` by default: the raw upstream message is
+// withheld so an internal hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status (`HTTP 401`)
+// never reaches the client. Override with `options.errorData`.
+const DEFAULT_ERROR_DATA = 'error';
+
+// Normalise a thrown value into the terminal `error` event shape, so an `errorData` opt-in sees a
+// consistent argument whether the failure arrived as a surfaced `error` event or an unexpected
+// throw. `attempts`/`at` are best-effort placeholders — an `errorData` hook keys off `name`/`message`.
+function toErrorEvent(reason: unknown): StitchErrorEvent {
+    const e = reason instanceof Error ? reason : new Error(String(reason));
+    return {
+        type: 'error',
+        name: e.name,
+        message: e.message,
+        attempts: 0,
+        at: 0,
+    };
 }
 
 /**
@@ -62,9 +98,10 @@ function frame(data: string, event?: string): string {
  * ```
  *
  * Each `delta` becomes a `data:` message; a terminal `error` event (or a throw) becomes a final
- * `event: error` message and ends the stream; every control event (`start`/`progress`/`result`/
- * `done`/…) is consumed but not forwarded. On client disconnect the stream is cancelled and the
- * upstream iterator is `return()`-ed so the stitch stream is aborted.
+ * `event: error` message and ends the stream — a generic `data: error` by default, the raw message
+ * withheld to avoid disclosing internal topology (opt in via `errorData`); every control event
+ * (`start`/`progress`/`result`/`done`/…) is consumed but not forwarded. On client disconnect the
+ * stream is cancelled and the upstream iterator is `return()`-ed so the stitch stream is aborted.
  */
 export function streamStitchSse<T>(
     source: StitchEventSource<T>,
@@ -92,9 +129,19 @@ export function streamStitchSse<T>(
                         return; // one frame per pull → precise back-pressure
                     }
                     if (event.type === 'error') {
+                        // `onError` gets the real failure server-side; the client frame is a
+                        // generic token by default (never the raw `event.message`) — `errorData`
+                        // opts in.
                         options.onError?.(new Error(event.message));
                         controller.enqueue(
-                            enc.encode(frame(event.message, 'error')),
+                            enc.encode(
+                                frame(
+                                    options.errorData
+                                        ? options.errorData(event)
+                                        : DEFAULT_ERROR_DATA,
+                                    'error',
+                                ),
+                            ),
                         );
                         controller.close();
                         await iterator.return?.(undefined);
@@ -104,11 +151,15 @@ export function streamStitchSse<T>(
                     // loop on to the next event without emitting a frame.
                 }
             } catch (err) {
+                // A throw (not a surfaced `error` event): still withhold the raw message by
+                // default — normalise it to an error event so `errorData` sees a consistent shape.
                 options.onError?.(err);
                 controller.enqueue(
                     enc.encode(
                         frame(
-                            err instanceof Error ? err.message : String(err),
+                            options.errorData
+                                ? options.errorData(toErrorEvent(err))
+                                : DEFAULT_ERROR_DATA,
                             'error',
                         ),
                     ),
