@@ -31,7 +31,7 @@ A non-streaming endpoint is the stitch plus the error helper — no per-route
 // app/api/users/[id]/route.ts
 import { getUser } from '@/lib/api';
 
-import { isStitchError, stitchErrorResponse } from '@stitchapi/next';
+import { stitchErrorResponse } from '@stitchapi/next';
 
 export async function GET(
     _req: Request,
@@ -41,15 +41,18 @@ export async function GET(
     try {
         return Response.json(await getUser({ params: { id } }));
     } catch (err) {
-        if (isStitchError(err)) return stitchErrorResponse(err);
+        const mapped = stitchErrorResponse(err);
+        if (mapped) return mapped;
         throw err;
     }
 }
 ```
 
-`stitchErrorResponse` maps a `StitchError` to `502` by default — the safe choice that
-never leaks the upstream's `401`/`404` semantics. Pass `{ status: (e) => e.status ?? 502 }`
-to propagate the upstream status instead.
+`stitchErrorResponse` returns a `Response` for a `StitchError` and `undefined` for
+anything else — map the stitch failure, rethrow the rest, no `instanceof` dance. It maps
+to `502` by default — the safe choice that never leaks the upstream's `401`/`404`
+semantics. Pass `{ status: (e) => e.status ?? 502 }` to propagate the upstream status
+instead.
 
 ## Streaming with SSE
 
