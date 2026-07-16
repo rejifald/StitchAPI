@@ -87,12 +87,12 @@ response.
 By default the `error` frame carries a generic `data: error` token, **not** the raw
 error message — echoing it can disclose internal network topology (a transport
 failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's
-status (`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream
+status (`HTTP 401`) to the client. Pass `payload` to opt in when the upstream
 messages are known safe to expose:
 
 ```ts
 streamStitchSse(res, completion.stream({ body: { prompt: req.query.q } }), {
-    errorData: (e) => e.message, // opt in to the raw upstream message
+    payload: (e) => e.message, // opt in to the raw upstream message
 });
 ```
 

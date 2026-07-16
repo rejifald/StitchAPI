@@ -210,7 +210,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
         expect(res.body()).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the error frame', async () => {
+    test('payload opts in to the raw message on the error frame', async () => {
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
@@ -223,7 +223,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
         }
         const res = mockRes();
         await streamStitchSse(res as unknown as Response, events(), {
-            errorData: (e) => e.message,
+            payload: (e) => e.message,
         });
 
         expect(res.body()).toBe(

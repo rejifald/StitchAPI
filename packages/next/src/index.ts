@@ -50,7 +50,7 @@ export interface SseResponseOptions {
      * safe, or return your own payload (e.g. `() => JSON.stringify({ error: 'stream failed' })`).
      * A multi-line return gets one `data:` line each (SSE spec); the `event: error` name is fixed.
      */
-    errorData?: (event: StitchErrorEvent) => string;
+    payload?: (event: StitchErrorEvent) => string;
     /** Extra response headers (merged over the SSE defaults). */
     headers?: Record<string, string>;
     /** Abort the upstream iterator when this fires — pass the route handler's
@@ -79,8 +79,8 @@ function frame(
 
 // The generic token written as an `error` frame's `data` by default: the raw upstream message
 // is withheld so an internal hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status
-// (`HTTP 401`) never reaches the client. Override with `options.errorData`.
-const DEFAULT_ERROR_DATA = 'error';
+// (`HTTP 401`) never reaches the client. Override with `options.payload`.
+const DEFAULT_PAYLOAD = 'error';
 
 // The terminal `error` frame: the fixed `event: error` name plus a (multi-line-safe) data
 // payload — every line of `data` gets its own `data:` prefix so a multi-line opt-in payload
@@ -91,9 +91,9 @@ function errorFrame(data: string): string {
     return `${out}\n`;
 }
 
-// Normalise a thrown value into the terminal `error` event shape, so an `errorData` opt-in sees
+// Normalise a thrown value into the terminal `error` event shape, so a `payload` opt-in sees
 // a consistent argument whether the failure arrived as a surfaced `error` event or an unexpected
-// throw. `attempts`/`at` are best-effort placeholders — an `errorData` hook keys off `name`/`message`.
+// throw. `attempts`/`at` are best-effort placeholders — a `payload` hook keys off `name`/`message`.
 function toErrorEvent(reason: unknown): StitchErrorEvent {
     const e = reason instanceof Error ? reason : new Error(String(reason));
     return {
@@ -109,7 +109,7 @@ function toErrorEvent(reason: unknown): StitchErrorEvent {
  * Stream a stitch's events as a `text/event-stream` `Response`. Each `delta` becomes
  * one frame; an `error` event ends the stream with a named `event: error` frame (a generic
  * `data: error` by default — the raw message is withheld to avoid disclosing internal topology;
- * opt in via `errorData`); the terminal `result`/`done` closes it.
+ * opt in via `payload`); the terminal `result`/`done` closes it.
  *
  * ```ts
  * // app/api/chat/route.ts
@@ -145,13 +145,13 @@ export function sseResponse<T>(
                         // Surface the failure as a named `error` frame, then stop — but by default
                         // write a generic token, never the raw `event.message`, so an internal
                         // hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status (`HTTP 401`)
-                        // is not disclosed. Opt in to the real message via `options.errorData`.
+                        // is not disclosed. Opt in to the real message via `options.payload`.
                         controller.enqueue(
                             encoder.encode(
                                 errorFrame(
-                                    options.errorData
-                                        ? options.errorData(event)
-                                        : DEFAULT_ERROR_DATA,
+                                    options.payload
+                                        ? options.payload(event)
+                                        : DEFAULT_PAYLOAD,
                                 ),
                             ),
                         );
@@ -162,14 +162,14 @@ export function sseResponse<T>(
                 }
             } catch (reason) {
                 // A throw (not a surfaced `error` event): still withhold the raw message by
-                // default — normalise it to an error event so an `errorData` opt-in sees a
+                // default — normalise it to an error event so a `payload` opt-in sees a
                 // consistent shape.
                 controller.enqueue(
                     encoder.encode(
                         errorFrame(
-                            options.errorData
-                                ? options.errorData(toErrorEvent(reason))
-                                : DEFAULT_ERROR_DATA,
+                            options.payload
+                                ? options.payload(toErrorEvent(reason))
+                                : DEFAULT_PAYLOAD,
                         ),
                     ),
                 );

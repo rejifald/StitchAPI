@@ -223,7 +223,7 @@ describe('stitchPlugin', () => {
         expect(res.body).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the error frame', async () => {
+    test('payload opts in to the raw message on the error frame', async () => {
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
@@ -248,7 +248,7 @@ describe('stitchPlugin', () => {
             logger: false,
         });
         app.get('/sse-err', (_request, reply) =>
-            sendStitchSse(reply, events(), { errorData: (e) => e.message }),
+            sendStitchSse(reply, events(), { payload: (e) => e.message }),
         );
         await app.ready();
 

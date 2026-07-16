@@ -168,7 +168,7 @@ describe('streamStitchSse — error paths', () => {
         );
     });
 
-    test('errorData opts in to the raw message on the error frame', async () => {
+    test('payload opts in to the raw message on the error frame', async () => {
         const app = new Hono();
         app.get('/x', (c) =>
             streamStitchSse(
@@ -183,7 +183,7 @@ describe('streamStitchSse — error paths', () => {
                         at: 0,
                     },
                 ]),
-                { errorData: (e) => e.message },
+                { payload: (e) => e.message },
             ),
         );
 
@@ -220,7 +220,7 @@ describe('streamStitchSse — error paths', () => {
         );
     });
 
-    test('errorData opts in on the throw path too (thrown error normalised to an error event)', async () => {
+    test('payload opts in on the throw path too (thrown error normalised to an error event)', async () => {
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield { type: 'delta', chunk: 'a', at: 0 };
             throw new Error('stream blew up');
@@ -228,7 +228,7 @@ describe('streamStitchSse — error paths', () => {
 
         const app = new Hono();
         app.get('/x', (c) =>
-            streamStitchSse(c, boom(), { errorData: (e) => e.message }),
+            streamStitchSse(c, boom(), { payload: (e) => e.message }),
         );
 
         const body = await (await app.request('/x')).text();

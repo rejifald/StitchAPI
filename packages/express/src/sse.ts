@@ -41,7 +41,7 @@ export interface StreamStitchSseOptions {
      * or return your own payload (e.g. `() => JSON.stringify({ error: 'stream failed' })`). A
      * multi-line return gets one `data:` line each (SSE spec); the `event: error` name is fixed.
      */
-    errorData?: (event: StitchErrorEvent) => string;
+    payload?: (event: StitchErrorEvent) => string;
     /**
      * The Express request, when available. Express normally fires `close` on the *response* on
      * disconnect, but passing `req` lets the helper also listen on the request socket for
@@ -69,8 +69,8 @@ function frame(
 
 // The generic token written as an `error` frame's `data` by default: the raw upstream message is
 // withheld so an internal hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status (`HTTP 401`)
-// never reaches the client. Override with `options.errorData`.
-const DEFAULT_ERROR_DATA = 'error';
+// never reaches the client. Override with `options.payload`.
+const DEFAULT_PAYLOAD = 'error';
 
 // The terminal `error` frame: the fixed `event: error` name plus a (multi-line-safe) data payload —
 // every line of `data` gets its own `data:` prefix so a multi-line opt-in payload can't break the
@@ -86,7 +86,7 @@ function errorFrame(data: string): string {
  * `.stream()` generator (or any `AsyncIterable<StitchEvent>`): each `delta` becomes one SSE frame, an
  * `error` event ends the stream with a named `event: error` frame (a generic `data: error` by
  * default — the raw message is withheld to avoid disclosing internal topology; opt in via
- * `errorData`), and stream end closes the response. The non-output events (`start` / `progress` /
+ * `payload`), and stream end closes the response. The non-output events (`start` / `progress` /
  * `drift` / `result` / `done`) are control signals and are not forwarded to the client.
  *
  * Writes raw frames straight to the socket, so do **not** also `res.send()`/`res.json()` from the
@@ -141,12 +141,12 @@ export async function streamStitchSse<T>(
                 // Surface the failure to the client as a named `error` SSE frame, then stop — but by
                 // default write a generic token, never the raw `event.message`, so an internal
                 // hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status (`HTTP 401`) is not
-                // disclosed. Opt in to the real message via `options.errorData`.
+                // disclosed. Opt in to the real message via `options.payload`.
                 res.write(
                     errorFrame(
-                        options.errorData
-                            ? options.errorData(event)
-                            : DEFAULT_ERROR_DATA,
+                        options.payload
+                            ? options.payload(event)
+                            : DEFAULT_PAYLOAD,
                     ),
                 );
                 break;

@@ -83,7 +83,7 @@ describe('sseResponse', () => {
         expect(body).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the error frame', async () => {
+    test('payload opts in to the raw message on the error frame', async () => {
         const res = sseResponse(
             events(delta('a'), {
                 type: 'error',
@@ -92,7 +92,7 @@ describe('sseResponse', () => {
                 attempts: 1,
                 at: 0,
             }),
-            { errorData: (e) => e.message },
+            { payload: (e) => e.message },
         );
         const body = await res.text();
         expect(body).toBe(
@@ -153,12 +153,12 @@ describe('sseResponse', () => {
         expect(body).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the throw path too', async () => {
+    test('payload opts in to the raw message on the throw path too', async () => {
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield delta('a');
             throw new Error('stream blew up');
         }
-        const res = sseResponse(boom(), { errorData: (e) => e.message });
+        const res = sseResponse(boom(), { payload: (e) => e.message });
         const body = await res.text();
         expect(body).toBe('data: a\n\nevent: error\ndata: stream blew up\n\n');
     });

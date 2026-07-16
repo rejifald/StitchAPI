@@ -279,6 +279,11 @@ error-options is `StitchErrorHandlerOptions` / `StitchErrorOptions` /
 result interface is `UseStitchResult` / `UseStitchReturn` / `InjectStitchResult` /
 `StitchStore`; `queryOptions` is still bare in vue/solid/svelte/angular.
 
+_Settled:_ the SSE error-frame shaping callback (default a generic `data: error`
+token; opt in to shape it, e.g. from `event.message`) is named `payload` on every
+SSE-capable host (`express` / `fastify` / `hono` / `next` / `elysia`) — do not
+reintroduce the earlier `errorData` name.
+
 ### P17 · One canonical duration form
 
 Per **D3**, **ms is the single house time unit** and **no duration field carries the

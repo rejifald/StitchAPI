@@ -88,8 +88,8 @@ forwarded.
 By default the `error` frame carries a generic `data: error` token, **not** the raw
 error message — echoing it can disclose internal network topology (a transport failure
 reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status
-(`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream messages are
-known safe (`errorData: (e) => e.message`); `onError` still receives the real failure
+(`HTTP 401`) to the client. Pass `payload` to opt in when the upstream messages are
+known safe (`payload: (e) => e.message`); `onError` still receives the real failure
 server-side.
 
 ## Error handling

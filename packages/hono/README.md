@@ -73,13 +73,13 @@ app.get('/chat', (c) => {
 By default the `error` message carries a generic `data: error` token, **not** the
 raw error message — echoing it can disclose internal network topology (a transport
 failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's
-status (`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream
+status (`HTTP 401`) to the client. Pass `payload` to opt in when the upstream
 messages are known safe; `onError` still receives the real failure server-side for
 logging:
 
 ```ts
 return streamStitchSse(c, completion.stream({ body: { prompt: c.req.query('q') } }), {
-    errorData: (e) => e.message, // opt in to the raw upstream message
+    payload: (e) => e.message, // opt in to the raw upstream message
     onError: (err) => c.get('log').error(err), // real failure, server-side only
 });
 ```

@@ -195,7 +195,7 @@ describe('streamStitchSse — the error frame does not leak the raw message', ()
         expect(body).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to shaping the client-facing error payload', async () => {
+    test('payload opts in to shaping the client-facing error payload', async () => {
         const res = streamStitchSse(
             gen([
                 {
@@ -206,20 +206,20 @@ describe('streamStitchSse — the error frame does not leak the raw message', ()
                     at: 0,
                 },
             ]),
-            { errorData: (e) => e.message },
+            { payload: (e) => e.message },
         );
         const body = await res.text();
         expect(body).toContain('event: error');
         expect(body).toContain('data: upstream blew up');
     });
 
-    test('errorData shapes the throw path too', async () => {
+    test('payload shapes the throw path too', async () => {
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield { type: 'delta', chunk: 'a', at: 0 };
             throw new Error('stream blew up');
         }
         const res = streamStitchSse(boom(), {
-            errorData: (e) => JSON.stringify({ error: e.message }),
+            payload: (e) => JSON.stringify({ error: e.message }),
         });
         const body = await res.text();
         expect(body).toContain('event: error');
