@@ -11,9 +11,10 @@ status: draft
 # apps/docs/test/drafts-twoslash.spec.ts (потрібен збілджений core; у CI його
 # білдить крок `pnpm check:types` перед `pnpm test`).
 #
-# TODO при фіналізації (після v1.0 / #470 — публікуємо саме на тому API):
+# TODO при фіналізації (коли #470 сяде в main — публікуємо саме на тому API):
 #   • `unwrap: 'data'` → `pick: 'data'`
-#   • `throttle: { rate: '1/s' }` → `throttle: '1/s'`  (коротка форма з окремого PR)
+#   • `throttle: { rate: '1/s' }` → `throttle: '1/s'`  (коротка форма)
+# Обидва вже є в #470; НЕ виносимо окремим PR (не фрагментуємо контракт-фриз).
 # Зараз лишаємо поточний ОПУБЛІКОВАНИЙ API, щоб twoslash проходив проти зібраного core.
 #
 # Для публікації на dou.ua зняти twoslash: `sed 's/```ts twoslash/```ts/g'`.
