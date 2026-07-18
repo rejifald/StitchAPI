@@ -42,8 +42,8 @@ const P =
         ? {
               bg: '#fbfbfd',
               text: '#0c1019',
-              brand: '#2563eb',
-              faint: '#8b94a2',
+              brand: '#1d4fd0', // brand-strong — darker text for contrast on near-white
+              faint: '#58616f', // text-muted (not text-faint) — readable footer grey
               ripple: '#2563eb',
               glow: 'radial-gradient(1200px 680px at 72% 35%, #eef2fb 0%, #fbfbfd 58%)',
               // logo keeps its native light palette
