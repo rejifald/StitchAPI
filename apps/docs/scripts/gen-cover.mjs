@@ -58,7 +58,7 @@ const P =
               bg: '#0a0d13',
               text: '#e9edf4',
               brand: '#4c8dff',
-              faint: '#616b7c',
+              faint: '#98a2b3', // text-muted — brighter footer grey for contrast on dark
               ripple: '#4c8dff',
               glow: 'radial-gradient(1200px 680px at 72% 35%, #111b2e 0%, #0a0d13 58%)',
               // logo recolored to the dark palette
@@ -83,7 +83,7 @@ const logo = `data:image/svg+xml;base64,${Buffer.from(logoSvg).toString('base64'
 // ---- brand "ripple" motif — imperfect concentric contours ---------------------
 const CENTER = 500;
 const SAMPLES = 80;
-const RIPPLE_ALPHA = 0.7; // dial the whole motif back a touch on a busy cover
+const RIPPLE_ALPHA = 1.5; // ripple visibility multiplier (× each ring's base opacity)
 const RINGS = [
     { r: 58, o: 0.4, dash: '1 8' },
     { r: 108, o: 0.36, dash: '2 9' },
@@ -130,7 +130,7 @@ const ringPath = (baseR, i) => {
 };
 const ripplePaths = RINGS.map(
     (ring, i) =>
-        `<path d="${ringPath(ring.r, i)}" fill="none" stroke="${P.ripple}" stroke-width="1.25" stroke-opacity="${f2(ring.o * RIPPLE_ALPHA)}" stroke-dasharray="${ring.dash}" stroke-linecap="round"/>`,
+        `<path d="${ringPath(ring.r, i)}" fill="none" stroke="${P.ripple}" stroke-width="1.6" stroke-opacity="${f2(ring.o * RIPPLE_ALPHA)}" stroke-dasharray="${ring.dash}" stroke-linecap="round"/>`,
 ).join('');
 const rippleSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">${ripplePaths}</svg>`;
 const ripple = `data:image/svg+xml;base64,${Buffer.from(rippleSvg).toString('base64')}`;
