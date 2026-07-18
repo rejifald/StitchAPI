@@ -12,6 +12,7 @@
         "check:lint": "eslint .",
         "gen:docs": "node scripts/generate-skeleton.mjs",
         "gen:completions": "node scripts/gen-stitch-completions.mjs",
+        "gen:cover": "node --import tsx/esm scripts/gen-cover.mjs",
         "build:core": "pnpm --filter stitchapi build",
         "build:typed-deps": "pnpm --filter stitchapi --filter @stitchapi/nest --filter @stitchapi/pino --filter @stitchapi/query-core --filter @stitchapi/react --filter @stitchapi/fastify --filter @stitchapi/hono build",
         "build:media": "node scripts/copy-demo-media.mjs",
