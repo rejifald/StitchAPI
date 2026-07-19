@@ -678,51 +678,61 @@ function stripFns<T>(slot: T): T {
     ) as T;
 }
 
+// Return `obj` without `keys`, built FRESH (so the source is never mutated) via an entry filter —
+// no `delete` operator, which the repo's strict config bans on computed keys (no-dynamic-delete).
+// The single `as` is contained here, mirroring `stripFns`.
+function omit<T extends object, K extends keyof T>(
+    obj: T,
+    ...keys: K[]
+): Omit<T, K> {
+    const drop = new Set<PropertyKey>(keys);
+    return Object.fromEntries(
+        Object.entries(obj).filter(([k]) => !drop.has(k)),
+    ) as Omit<T, K>;
+}
+
 // `__config` is the PUBLIC view; strip the live secret-bearing handles so the running store,
 // credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest), and
 // strip EVERY function-valued field so it is plain JSON data (CONTRACT.md P0). The full config —
 // handles and function sugar alike — lives on `__rawConfig` for fragment composition (see `asConfig`).
 export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
-    // Split off the live `Surface` so the spread carries no `kind: Surface`; the rest still holds
-    // the live store/auth/adapter handles, stripped next.
-    const { kind, ...spread } = cfg;
-    const redacted = spread as RedactedStitchConfig & {
-        store?: unknown;
-        auth?: unknown;
-        adapter?: unknown;
-        clock?: unknown;
-    };
-    // Strip the live, secret-bearing handles so the running store, credential, and transport cannot
-    // be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest). Static per-field deletes: the repo's
-    // strict config bans both a keyed `delete` loop (no-dynamic-delete) and destructure-omit (its
-    // discarded rest-siblings trip no-unused-vars), so explicit is the sanctioned form.
-    delete redacted.store;
-    delete redacted.auth;
-    delete redacted.adapter;
-    delete redacted.clock;
+    // Build the public view FRESH (never mutating `cfg` — i.e. `__rawConfig`) by omitting, in one
+    // pass, everything that must not ride onto `__config` (CONTRACT.md P0):
+    //   • the live secret-bearing handles `store`/`auth`/`adapter`/`clock` (ADR 0002 §4/§6,
+    //     exfil-at-rest) and the live `Surface` `kind` (both re-projected to plain data below);
+    //   • the always-fn `transform` (a mapper) and `hooks` (an object of callbacks);
+    //   • whichever of `url`/`baseUrl`/`acceptStatus` are in their function form — a string endpoint
+    //     or a `number[]` status list stays, a thunk/predicate goes.
+    // `omit` filters entries (no `delete` — the repo bans dynamic delete), so this replaces a column
+    // of per-field deletes with a single declarative drop-list.
+    const fnValued = (['url', 'baseUrl', 'acceptStatus'] as const).filter(
+        (k) => typeof cfg[k] === 'function',
+    );
+    const redacted = omit(
+        cfg,
+        'store',
+        'auth',
+        'adapter',
+        'clock',
+        'kind',
+        'transform',
+        'hooks',
+        ...fnValued,
+    ) as RedactedStitchConfig;
     // Project the auth's NON-SECRET scheme onto the public config — always re-derived from the live
-    // `auth`, never trusted from an externally-set `authScheme`. This is the public identity of a
-    // redacted capability: the auth round-trips as JSON (the contract gate) and feeds
-    // `export --openapi`'s `securitySchemes`, while the credential itself stays unreachable.
+    // `auth`, never trusted from an externally-set `authScheme`. The one remaining `delete` is a
+    // defensive reset of that (type-forbidden) stray before re-derivation; the scheme round-trips as
+    // JSON (the contract gate) and feeds `export --openapi`'s `securitySchemes`.
     delete redacted.authScheme;
     if (cfg.auth?.scheme) redacted.authScheme = cfg.auth.scheme;
     // Normalise the surface to its id string so __config round-trips as JSON (ADR 0005 Decision 11):
     // never expose the live Surface (its hooks don't serialise), only its identity.
-    if (kind) redacted.kind = kind.id;
-    // CONTRACT.md P0: strip EVERY function-valued field so the public `__config` is plain JSON.
-    // `transform` (a mapper) and `hooks` (an object of callbacks) are always fn-valued, so they drop
-    // outright; `url`/`baseUrl` (a string endpoint stays, a thunk goes) and `acceptStatus` (a
-    // `number[]` stays, a predicate goes) drop only when function-valued; the resilience slots keep
-    // their data and drop their fn fields via `stripFns` (`paginate.next`/`items`, the predicate
-    // `retry.on`/`throttle.on`, and the `key`/`keyOf` on `idempotency`/`cache` — canonical or
-    // @deprecated alias, dropped by value so a rename can't rot it). `stripFns` rebuilds each slot
-    // FRESH, so `cfg` — i.e. `__rawConfig` — is never mutated. The engine reads all that sugar off the
-    // non-enumerable `__rawConfig`; nothing reads it off `__config` (see e.g. `toOpenApi`).
-    delete redacted.transform;
-    delete redacted.hooks;
-    if (typeof cfg.url === 'function') delete redacted.url;
-    if (typeof cfg.baseUrl === 'function') delete redacted.baseUrl;
-    if (typeof cfg.acceptStatus === 'function') delete redacted.acceptStatus;
+    if (cfg.kind) redacted.kind = cfg.kind.id;
+    // Each nested resilience slot keeps its fn-free data and drops its fn sugar (`paginate.next`/
+    // `items`, the predicate `retry.on`/`throttle.on`, and the `key`/`keyOf` on `idempotency`/`cache`
+    // — canonical or @deprecated alias, dropped by value so a rename can't rot it). `stripFns`
+    // rebuilds each slot FRESH, so `cfg` — i.e. `__rawConfig` — is never mutated. The engine reads all
+    // that sugar off `__rawConfig`; nothing reads it off `__config` (see e.g. `toOpenApi`).
     if (cfg.paginate) redacted.paginate = stripFns(cfg.paginate);
     if (cfg.retry) redacted.retry = stripFns(cfg.retry);
     if (cfg.throttle) redacted.throttle = stripFns(cfg.throttle);
