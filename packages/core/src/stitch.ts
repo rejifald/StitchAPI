@@ -146,6 +146,7 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
         cfg.timeout = { total: cfg.timeout };
     if (typeof cfg.cache === 'number' || typeof cfg.cache === 'string')
         cfg.cache = { ttl: cfg.cache };
+    if (typeof cfg.throttle === 'string') cfg.throttle = { rate: cfg.throttle };
     // P20: `idempotency: true` enables it with defaults; `false`/absent is off. Normalize the
     // boolean toggle to the object form the engine reads (the opaque `idempotency: {}` is a type
     // error at the slot, so the all-defaults case arrives here as `true`).
