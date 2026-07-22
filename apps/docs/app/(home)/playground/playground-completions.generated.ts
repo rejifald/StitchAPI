@@ -140,8 +140,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "throttle",
             type: "property",
-            detail: "ThrottleOptions",
-            info: "Rate and concurrency limits.",
+            detail: "string | ThrottleOptions",
+            info: "Rate and concurrency limits. A bare rate string is shorthand for the rate — `throttle: '1/s'` ≡ `throttle: { rate: '1/s' }`.",
         },
         {
             label: "timeout",
