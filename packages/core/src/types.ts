@@ -767,8 +767,11 @@ export interface StitchConfig {
      * `rateLimit.delegate`, which surfaces a {@link RateLimitError} on rate-limit statuses earlier.
      */
     acceptStatus?: number[] | ((status: number) => boolean);
-    /** Rate and concurrency limits. */
-    throttle?: ThrottleOptions;
+    /**
+     * Rate and concurrency limits. A bare rate string is shorthand for the rate —
+     * `throttle: '1/s'` ≡ `throttle: { rate: '1/s' }`.
+     */
+    throttle?: string | ThrottleOptions;
     /**
      * Total and per-attempt timeouts. A bare number (ms) or duration string is shorthand for the
      * total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`.
@@ -859,18 +862,19 @@ export interface StitchConfig {
 
 /**
  * A {@link StitchConfig} after {@link compose} has run: every authoring shorthand is expanded, so
- * the resilience fields are always their object form (a scalar `retry` / `timeout` / `cache`
- * literal is normalised to `{ attempts }` / `{ total }` / `{ ttl }`). This is the shape the engine
- * and {@link redactConfig} read — never the loose authoring union.
+ * the resilience fields are always their object form (a scalar `retry` / `timeout` / `cache` /
+ * `throttle` literal is normalised to `{ attempts }` / `{ total }` / `{ ttl }` / `{ rate }`). This
+ * is the shape the engine and {@link redactConfig} read — never the loose authoring union.
  */
 export type ResolvedStitchConfig = Omit<
     StitchConfig,
-    'retry' | 'timeout' | 'cache' | 'idempotency'
+    'retry' | 'timeout' | 'cache' | 'idempotency' | 'throttle'
 > & {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
     cache?: CacheOptions;
     idempotency?: IdempotencyOptions;
+    throttle?: ThrottleOptions;
 };
 
 /**
