@@ -40,7 +40,7 @@ const users = (await allUsers()) as unknown[];
 `next(prevBody)` reads the cursor off the previous page's raw body and returns
 the [input](/docs/reference/config-types) for the next page, merged over the
 original call — set only what changes. Return `undefined` to stop. `items`
-selects the array to aggregate from each page (after [unwrap](/docs/guides/data/unwrap)).
+selects the array to aggregate from each page (after [pick](/docs/guides/data/pick)).
 `max` caps the page count as a safety net (default `50`). Auth, retry, and
 throttle apply per page, not once for the whole run. Without an
 [`output` schema](/docs/guides/validation/validation) the aggregated result is
@@ -54,6 +54,6 @@ typed `unknown[]`, hence the cast — add a schema to type the rows.
         title="Mirror a paginated API to NDJSON"
         href="/docs/recipes/mirror-a-paginated-api"
     />
-    <Card title="Unwrap" href="/docs/guides/data/unwrap" />
+    <Card title="pick" href="/docs/guides/data/pick" />
     <Card title="Transform" href="/docs/guides/data/transform" />
 </Cards>

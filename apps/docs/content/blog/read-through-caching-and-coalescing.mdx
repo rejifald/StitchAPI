@@ -34,7 +34,7 @@ const User = z.object({ id: z.number(), name: z.string() });
 const getUser = stitch({
     path: 'https://api.example.com/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
     cache: '5m', // ≡ { ttl: '5m' }
 });
 ```
@@ -76,7 +76,7 @@ import { z } from 'zod';
 const listAnnouncements = stitch({
     path: 'https://api.example.com/announcements',
     output: z.array(z.object({ id: z.number(), title: z.string() })),
-    unwrap: 'data',
+    pick: 'data',
     cache: {
         ttl: '1h',
         scope: 'app', // shared across principals — see below

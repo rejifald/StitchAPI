@@ -419,7 +419,7 @@ export interface CacheOptions {
     /**
      * Opaque schema/version tag — the **authoritative** rung of the fingerprint ladder (ADR 0004):
      * setting it pins the contract and takes the **no-revalidate** fast path (you promise the
-     * `output`/`transform`/`unwrap` are unchanged for this tag). Leaving it unset hands off to the
+     * `output`/`transform`/`pick` are unchanged for this tag). Leaving it unset hands off to the
      * automatic fingerprint: a registered `@stitchapi/fingerprint-*` strategy makes `output`
      * changes self-invalidate on the fast path; an un-fingerprintable schema falls to
      * {@link CacheOptions.onUnfingerprintable} (default **refuse-to-cache**, fail-closed).
@@ -660,7 +660,7 @@ export interface PaginateOptions {
      * over the original) for the next page, or `undefined` to stop.
      */
     next: (prevBody: unknown, pagesFetched: number) => StitchInput | undefined;
-    /** Pull the array from each unwrapped page. Default: the value if it is an array. */
+    /** Pull the array from each picked page. Default: the value if it is an array. */
     items?: (value: unknown) => unknown[];
     /** Safety cap on pages. Default 50. */
     pages?: number;
@@ -743,8 +743,8 @@ export interface StitchConfig {
      */
     output?: SchemaLike | DriftSpec;
     /** Dot-path selecting the part of the response to return. */
-    unwrap?: string;
-    /** Reshape the raw body before unwrap and validation (e.g. scrape HTML to structured data). */
+    pick?: string;
+    /** Reshape the raw body before `pick` and validation (e.g. scrape HTML to structured data). */
     transform?: (body: unknown) => unknown;
     /** Auto-loop pages, aggregating items, with auth/retry/throttle applied to every page. */
     paginate?: PaginateOptions;
@@ -757,7 +757,7 @@ export interface StitchConfig {
     retry?: number | RetryOptions;
     /**
      * Statuses that are a NORMAL result rather than an error — a number list or a predicate.
-     * An accepted non-2xx flows through interpret → transform → unwrap → validate exactly like a
+     * An accepted non-2xx flows through interpret → transform → pick → validate exactly like a
      * 2xx (the response body becomes the result), instead of throwing a {@link StitchError}. Use
      * this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall
      * back to a broader call) so the happy path no longer runs through a `catch`.
@@ -794,7 +794,7 @@ export interface StitchConfig {
      * ⚠️ In delegate mode the `throttle` config becomes **inert** for this stitch (the host owns the
      * gate). A `circuit` block, if also set, still applies — the host may layer both. Non-rate-limit
      * failures (5xx, etc.) behave exactly as today unless their status is listed in `on`. Validation,
-     * templating, transform/unwrap, and drift on the success path are unchanged.
+     * templating, transform/pick, and drift on the success path are unchanged.
      */
     rateLimit?: {
         /** Surface rate-limit outcomes instead of retrying/throttling them. Default `false`. */
@@ -1205,7 +1205,7 @@ export interface StitchStore {
  * that are intrinsically **per-endpoint**: the address (`path` / `url` / `method` / `query`) and
  * the request/response shape (`name` / `input` / `output` / `kind`). Everything cross-cutting —
  * `baseUrl`, `headers`, `auth`, `retry`, `throttle`, `timeout`, `circuit`, `idempotency`,
- * `paginate`, `unwrap`, `transform`, `arrayFormat`, `hooks`, `trace`, `store`, `cache`, `adapter`
+ * `paginate`, `pick`, `transform`, `arrayFormat`, `hooks`, `trace`, `store`, `cache`, `adapter`
  * — belongs here, so the type itself answers "what belongs at the seam". Members set the endpoint
  * keys.
  */
@@ -1264,7 +1264,7 @@ export interface Seam {
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /** Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see {@link StitchFn}). */
     stitch<T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
-    /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, unwrap `data`). */
+    /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, picks `data`). */
     graphql<
         TExplicit = never,
         const C extends Partial<StitchConfig> & {

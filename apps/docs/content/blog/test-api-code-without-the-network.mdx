@@ -75,7 +75,7 @@ test('validates the user', async () => {
 });
 ```
 
-The fixture is scoped to this stitch, not to a global. `mockAdapter` returns a real adapter — the same contract `fetchAdapter` satisfies — so the engine cannot tell it apart from a socket. That means `output: User` actually validates the canned body, `unwrap` actually unwraps it, and `paginate` actually walks your fixture pages. You are testing the stitch's behavior, not a fake of it.
+The fixture is scoped to this stitch, not to a global. `mockAdapter` returns a real adapter — the same contract `fetchAdapter` satisfies — so the engine cannot tell it apart from a socket. That means `output: User` actually validates the canned body, `pick` actually picks it, and `paginate` actually walks your fixture pages. You are testing the stitch's behavior, not a fake of it.
 
 A `MockRoute` is `{ method?, match?, respond }`. `match` is a URL substring, a `RegExp` against the full URL, or a predicate — first match wins. `respond` is a fixed `MockResponse` (status defaults to `200`), a function of the call, or — the useful one for resilience — an array consumed one per call, last entry repeating. That last form scripts a flaky endpoint, which is how you exercise the real retry path:
 

@@ -64,11 +64,11 @@ describe('pipelineStages', () => {
             retry: { attempts: 3 },
             paginate: { pages: 7 },
             transform: () => undefined,
-            unwrap: 'data',
+            pick: 'data',
             output: () => true,
             cache: '1m',
         });
-        // Post-response order is transform → unwrap → validate (engine.ts), bookended by call/result.
+        // Post-response order is transform → pick → validate (engine.ts), bookended by call/result.
         expect(pipelineStages(full, { detailed: true })).toEqual([
             'call',
             'throttle',
@@ -76,7 +76,7 @@ describe('pipelineStages', () => {
             'retry ×3',
             'paginate (max 7)',
             'transform',
-            'unwrap: data',
+            'pick: data',
             'validate',
             'cache',
             'result',

@@ -28,7 +28,7 @@ import { z } from 'zod';
 const getUser = stitch({
     baseUrl: 'https://demo.stitchapi.dev',
     path: '/users/{id}',
-    unwrap: 'data',
+    pick: 'data',
     output: drift(
         z.object({ id: z.number(), name: z.string(), role: z.string() }),
     ),

@@ -23,7 +23,7 @@ import { z } from 'zod';
 const getUser = stitch({
     path: 'https://api.example.com/users/{id}',
     output: z.object({ id: z.number(), name: z.string() }),
-    unwrap: 'data',
+    pick: 'data',
 });
 
 const user = await getUser({ params: { id: 1 } }); // typed · validated

@@ -102,7 +102,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             info: "Response schema, or a  for leveled drift detection. Accepts any — a raw Zod schema, any Standard Schema (Valibot, ArkType), or a `(value) => boolean` predicate — directly; the stitch infers its result type from it (see `InferOutput`), so a hand-written generic is rarely needed.",
         },
         {
-            label: "unwrap",
+            label: "pick",
             type: "property",
             detail: "string",
             info: "Dot-path selecting the part of the response to return.",
@@ -238,7 +238,7 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
             info: "Call without throwing: resolves to a `SafeResult` — `{ ok, data, error }`. The eager shortcut for `stitch(...).safe()`, mirroring `.stream()`.",
         },
         {
-            label: "unwrap",
+            label: "pick",
             type: "method",
             detail: "(...args: Args<TIn>) => Promise<TOut>",
             info: "Call and unwrap to the value, throwing a `StitchError` on failure. The named twin of `.safe()` (and an explicit spelling of the throwing bare call).",

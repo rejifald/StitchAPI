@@ -15,7 +15,7 @@ type mismatch on the response. Where it throws tells you which side failed:
     `params`, `query`, `body`, or `headers`.
 -   **Response, after the request.** When the response doesn't match `output`, the
     error is thrown after the response returns and has been transformed and
-    unwrapped — the request did go out, and the failure describes how the payload
+    picked — the request did go out, and the failure describes how the payload
     diverged from the contract.
 
 <Callout type="warn">

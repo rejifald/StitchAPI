@@ -39,7 +39,7 @@ The sharp edges are real. `res.ok` is `true` for a `200` that carries `{ "errors
 
 ## The same job as a stitch
 
-Declare the operation once. `graphql()` is a thin wrapper over `stitch()` that fixes `kind: 'graphql'`, `method: 'POST'`, and `unwrap: 'data'`:
+Declare the operation once. `graphql()` is a thin wrapper over `stitch()` that fixes `kind: 'graphql'`, `method: 'POST'`, and `pick: 'data'`:
 
 ```ts twoslash
 import { graphql } from 'stitchapi';
@@ -83,7 +83,7 @@ try {
 
 ## It is still a stitch
 
-`graphql()` returns the same object `stitch()` does, so every resilience and validation field applies. Add an `output` schema and the unwrapped `data` is validated before you touch it — the `as User` cast is gone, replaced by a runtime check the compiler can trust:
+`graphql()` returns the same object `stitch()` does, so every resilience and validation field applies. Add an `output` schema and the picked `data` is validated before you touch it — the `as User` cast is gone, replaced by a runtime check the compiler can trust:
 
 ```ts twoslash
 import { bearer, env, graphql } from 'stitchapi';
@@ -114,8 +114,8 @@ The secret resolves at call time from the environment, so the caller never holds
 | The POST + JSON envelope | You write `method`, `content-type`, `JSON.stringify({ query, variables })` every call | `graphql()` fixes them; you supply `path` + `query`                |
 | Variables                | Re-stringified per call site                                                          | Travel in `variables` at call time; one stitch, every argument set |
 | `200` with `errors`      | `res.ok` is `true` — failure slips through as `undefined`                             | A `StitchError` whose message is prefixed `GraphQL:`               |
-| Response shape           | `as User` — unchecked                                                                 | `output` schema validates the unwrapped `data` at runtime          |
-| Unwrapping `data`        | `json.data.user`, by hand                                                             | `unwrap: 'data'` by default; resolved value is `data`              |
+| Response shape           | `as User` — unchecked                                                                 | `output` schema validates the picked `data` at runtime             |
+| Picking `data`           | `json.data.user`, by hand                                                             | `pick: 'data'` by default; resolved value is `data`                |
 | Auth, retry, timeout     | More hand-written loops and headers                                                   | Config fields on the same declaration                              |
 
 The layer split is clean: the GraphQL document describes **what** you're asking for, and the stitch config describes **how** the call behaves — validation, auth, resilience — without a client object owning either. You keep writing GraphQL; you stop writing the POST around it.
@@ -153,7 +153,7 @@ stitchapi zod
 
 `graphql()` wraps `stitch()`, so install the core package, bring your own validator, and point a query at an endpoint.
 
--   [Guide: GraphQL](/docs/guides/data/graphql) — how `graphql()` posts the operation and unwraps `data`
+-   [Guide: GraphQL](/docs/guides/data/graphql) — how `graphql()` posts the operation and picks `data`
 -   [Error: STITCH_GRAPHQL](/docs/errors/stitch-graphql) — what a `200`-with-`errors` failure looks like
 -   [Validate an API response with Zod](/blog/validate-api-response-zod) — wiring an `output` schema
 -   [A type-safe API client without codegen](/blog/type-safe-api-client-without-codegen) — the same idea across REST and GraphQL
