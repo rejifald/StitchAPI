@@ -71,8 +71,11 @@ const P =
           };
 
 // ---- real logo (public/logo.svg) → theme palette, tight viewBox ---------------
+// The source <style> block is deliberately left alone: every `class="stN"` is
+// rewritten to an explicit fill below, so its rules bind to nothing and Satori
+// ignores them. Both covers render byte-identical with or without it — don't
+// re-add a regex strip, it only trips CodeQL's tag-sanitization rule.
 const logoSvg = readFileSync(resolve(HERE, '..', 'public', 'logo.svg'), 'utf8')
-    .replace(/<style[\s\S]*?<\/style>/, '')
     .replace('viewBox="0 0 1600 1200"', 'viewBox="560 548 484 112"')
     .replaceAll('class="st0"', `fill="${P.logo.st0}"`)
     .replaceAll('class="st1"', `fill="${P.logo.st1}"`)
