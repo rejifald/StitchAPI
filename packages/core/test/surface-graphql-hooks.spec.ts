@@ -1,6 +1,6 @@
 // Direct tests for graphqlSurface's pure hooks (src/surface.ts). surface.spec.ts and
 // graphql-and-headers.spec.ts exercise the graphql surface through the ENGINE (observable POST,
-// unwrap data, 200-with-errors fails). The hooks' own branch contracts go unpinned:
+// pick data, 200-with-errors fails). The hooks' own branch contracts go unpinned:
 //   buildRequest — packs { query, variables } as a JSON POST over the base request; variables
 //                  precedence is input.variables → input.body → {}; query defaults to ''; a
 //                  configured method overrides POST and is upper-cased.

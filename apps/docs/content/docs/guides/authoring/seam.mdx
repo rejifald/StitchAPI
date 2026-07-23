@@ -30,12 +30,12 @@ const api = seam({
 // Members are stitches that belong to the seam.
 const getUser = api.stitch({
     path: '/users/{id}',
-    unwrap: 'data',
+    pick: 'data',
     output: User,
 });
 const listUsers = api.stitch({
     path: '/users',
-    unwrap: 'data',
+    pick: 'data',
     output: User.array(),
 });
 
@@ -57,7 +57,7 @@ const api = seam({ baseUrl: 'https://demo.stitchapi.dev' });
 
 // One handle per request — bind the caller's identity, then create members.
 const forTenant = api.as('tenant-42');
-const getUser = forTenant.stitch({ path: '/users/{id}', unwrap: 'data' });
+const getUser = forTenant.stitch({ path: '/users/{id}', pick: 'data' });
 ```
 
 <Callout type="warn">

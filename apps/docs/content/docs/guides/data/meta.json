@@ -1,7 +1,7 @@
 {
     "title": "Data shaping",
     "pages": [
-        "unwrap",
+        "pick",
         "transform",
         "pagination",
         "body-encoding",

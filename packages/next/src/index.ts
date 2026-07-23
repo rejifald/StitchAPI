@@ -9,7 +9,8 @@
 //   `Response` (the Web-standard twin of `@stitchapi/express`'s `streamStitchSse`,
 //   which targets a Node `ServerResponse`).
 // - `stitchErrorResponse(err)` — map a thrown `StitchError` to a `Response` with a
-//   safe status (default 502), so a route handler needs no bespoke error shaping.
+//   safe status (default 502), or `undefined` for anything else so the caller can
+//   rethrow it untouched.
 //
 // Built on Web standards (`Response`, `ReadableStream`, `TextEncoder`) only — no
 // `next` import — so the same helpers work in Next route handlers, Remix, SvelteKit
@@ -229,13 +230,16 @@ export interface ErrorResponseOptions {
 }
 
 /**
- * Map a thrown error to a JSON `Response`. Use it in a route handler's `catch`:
+ * Map a thrown `StitchError` to a JSON `Response`, or `undefined` when `err` is not a Stitch
+ * error — so the caller can rethrow / fall through with `?? throw err`. Use it in a route
+ * handler's `catch`:
  *
  * ```ts
  * try {
  *     return Response.json(await getUser({ params: { id } }));
  * } catch (err) {
- *     if (isStitchError(err)) return stitchErrorResponse(err);
+ *     const mapped = stitchErrorResponse(err);
+ *     if (mapped) return mapped; // undefined → not a StitchError
  *     throw err;
  * }
  * ```
@@ -248,16 +252,14 @@ export interface ErrorResponseOptions {
 export function stitchErrorResponse(
     err: unknown,
     options: ErrorResponseOptions = {},
-): Response {
-    const e: StitchErrorLike =
-        err instanceof Error ? err : new Error(String(err));
-    const fallback = isStitchError(err) ? 502 : 500;
+): Response | undefined {
+    if (!isStitchError(err)) return undefined;
     const status =
         typeof options.status === 'function'
-            ? options.status(e)
-            : (options.status ?? fallback);
+            ? options.status(err)
+            : (options.status ?? 502);
     const body = options.body
-        ? options.body(e, status)
+        ? options.body(err, status)
         : { error: STATUS_TEXT[status] ?? 'Error' };
     return Response.json(body, { status });
 }
