@@ -21,7 +21,7 @@
   <a href="https://www.npmjs.com/package/stitchapi"><img alt="npm version" src="https://img.shields.io/npm/v/stitchapi?color=2563EB&label=npm" /></a>
   <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
   <img alt="npm bundle size (minified + gzipped)" src="https://img.shields.io/bundlephobia/minzip/stitchapi" />
-  <img alt="Bundle: ~24 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~24%20kB-2563EB" />
+  <img alt="Bundle: ~25 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~25%20kB-2563EB" />
 </p>
 
 <!-- yakir:readme-badges -->
@@ -36,12 +36,31 @@
 <!-- /yakir:readme-badges -->
 
 <p align="center">
-  <strong>Zero runtime dependencies · ~24&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~20&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+  <a href="https://glama.ai/mcp/servers/@rejifald/StitchAPI">
+    <img width="380" height="200" src="https://glama.ai/mcp/servers/@rejifald/StitchAPI/badge" alt="StitchAPI Docs — MCP server listed on Glama" />
+  </a>
+</p>
+
+<p align="center">
+  <strong>Zero runtime dependencies · ~25&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~20&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+</p>
+
+<p align="center">
+  <a href="https://stitchapi.dev/demo">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/media/demo-dark.webp 1x, docs/media/demo-dark@2x.webp 2x" />
+      <img src="docs/media/demo.webp" srcset="docs/media/demo.webp 1x, docs/media/demo@2x.webp 2x" width="1280" alt="StitchAPI demo — a stitch streaming a reply, validating output, retrying a 502, and answering an agent tool call" />
+    </picture>
+  </a>
+</p>
+
+<p align="center">
+  <sub><a href="https://stitchapi.dev/demo">Watch more</a></sub>
 </p>
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.4`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
+> **StitchAPI is at `1.0.0-rc.6`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 ---
 
@@ -80,7 +99,7 @@ import { z } from 'zod';
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: z.object({ id: z.number(), name: z.string() }),
-    unwrap: 'data',
+    pick: 'data',
 });
 
 const user = await getUser({ params: { id: 1 } }); // typed · validated
@@ -149,7 +168,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 -   **Pluggable state store** — throttle counters and sessions behind a 3-method store; swap in Redis/Postgres to go distributed.
 -   **Zero-infra observability** — tracing is **off by default**; opt in per stitch or via `STITCH_TRACE_*` env vars. No collector, no dashboard.
 -   **Four front doors, one definition** — in-process function, CLI (`stitch run`), HTTP (`stitch serve`), and MCP (`stitch mcp`).
--   **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~24 kB min+gzip** for the whole entry, **~20 kB** for a typical `import { stitch }`.
+-   **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~25 kB min+gzip** for the whole entry, **~20 kB** for a typical `import { stitch }`.
 
 ## Install
 
@@ -186,7 +205,7 @@ Reach for the full set of knobs only when you need them — they default off:
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: User, // a validator of your choice
-    unwrap: 'data',
+    pick: 'data',
     retry: 3, // ≡ { attempts: 3 }
     timeout: '5s', // ≡ { total: '5s' }
     cache: '1m', // ≡ { ttl: '1m' }
@@ -214,12 +233,12 @@ const api = seam({
 const listUsers = api.stitch({
     path: '/users',
     output: User.array(),
-    unwrap: 'data',
+    pick: 'data',
 });
 const getUser = api.stitch({
     path: '/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
 });
 ```
 
@@ -242,7 +261,7 @@ import { z } from 'zod';
 
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
-    unwrap: 'data',
+    pick: 'data',
     output: drift(
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
@@ -279,19 +298,20 @@ A read-through response cache with in-process request coalescing — **off by de
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
     cache: '5m',
 });
 
 const listAnnouncements = stitch({
     path: 'https://demo.stitchapi.dev/announcements',
     output: z.array(z.object({ id: z.number(), title: z.string() })),
-    unwrap: 'data',
+    pick: 'data',
     cache: {
         ttl: '1h',
         scope: 'app',
         vary: ['accept-language'],
         maxEntries: 500,
+        version: 1, // pins the shape — cacheable without a fingerprinter
     },
 });
 ```
@@ -434,6 +454,7 @@ This repository is a [pnpm](https://pnpm.io) workspace. The published library is
 <tr><td><a href="packages/fingerprint-valibot"><code>@stitchapi/fingerprint-valibot</code></a></td><td>Cache-fingerprint strategy for Valibot schemas</td></tr>
 <tr><td><a href="packages/fingerprint-zod"><code>@stitchapi/fingerprint-zod</code></a></td><td>Cache-fingerprint strategy for Zod schemas</td></tr>
 <tr><th colspan="2">Other</th></tr>
+<tr><td><a href="packages/docs-mcp"><code>@stitchapi/docs-mcp</code></a></td><td>StitchAPI documentation search, running locally over MCP stdio</td></tr>
 <tr><td><a href="packages/json-schema"><code>@stitchapi/json-schema</code></a></td><td>Turn a runtime-discovered JSON Schema into a Standard Schema validator StitchAPI accepts</td></tr>
 <tr><td><a href="packages/openapi"><code>@stitchapi/openapi</code></a></td><td>Eject selected operations from an OpenAPI document into ready-to-own StitchAPI source</td></tr>
 </tbody>

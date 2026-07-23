@@ -31,7 +31,7 @@ const Order = z.object({
 export const getOrder = stitch({
     path: 'https://internal.example.com/orders/{id}',
     output: Order,
-    unwrap: 'data',
+    pick: 'data',
     // The credential resolves at call time and never reaches the caller.
     auth: bearer(env('ORDERS_API_TOKEN')),
     // Resilience is declared once, here — not in the tool, not in the agent.

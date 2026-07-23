@@ -10,7 +10,11 @@
 // bytes (responseType 'arraybuffer') and told never to throw on non-2xx — the engine
 // decides what a given status means.
 import { compact } from './compact';
-import { decodeResponseBody, encodeRequestBody } from './http-adapter';
+import {
+    decodeResponseBody,
+    encodeRequestBody,
+    headersForRedirect,
+} from './http-adapter';
 import type {
     Adapter,
     AdapterProgress,
@@ -103,6 +107,13 @@ export function axiosAdapter(
                 onUploadProgress: progress('upload'),
                 onDownloadProgress: progress('download'),
                 validateStatus: () => true, // never throw on non-2xx; the engine decides
+                // Credential-leak guard on redirects (same policy as fetchAdapter): axios follows
+                // 3xx via follow-redirects, which strips `authorization`/`cookie` cross-origin but
+                // NOT custom auth headers (`x-api-key`, `x-amz-*`) — so a redirect to another host
+                // would leak them. This hook fires before each hop; when the next hop leaves the
+                // ORIGINAL origin we replace the outgoing headers with the CORS-safelisted subset
+                // (headersForRedirect drops everything else). Same-origin hops keep headers intact.
+                beforeRedirect: makeBeforeRedirect(req.url, headers),
             }),
         );
 
@@ -127,6 +138,54 @@ export function axiosAdapter(
 
 const hasHeader = (headers: Record<string, string>, name: string): boolean =>
     Object.keys(headers).some((k) => k.toLowerCase() === name.toLowerCase());
+
+// Build the axios/follow-redirects `beforeRedirect(options)` hook that enforces the
+// cross-origin credential-strip policy shared with fetchAdapter. `options` describes the NEXT
+// request; follow-redirects lets the hook mutate `options.headers` in place. We reconstruct the
+// destination URL from `options` and, when it leaves the ORIGINAL request origin, overwrite the
+// header set with only the CORS-safelisted subset (headersForRedirect) — dropping every
+// credential/custom header. Comparing each hop against the original origin is correct: once a
+// chain leaves the origin, the original credentials must never reappear downstream.
+function makeBeforeRedirect(
+    originalUrl: string,
+    originalHeaders: Record<string, string>,
+): (options: Record<string, unknown>) => void {
+    return (options) => {
+        // follow-redirects carries the next hop's headers on `options.headers`; use them when
+        // present, else the headers we sent. Reassign the whole object (the documented way to
+        // change headers from beforeRedirect) — no dynamic delete, and it replaces the reference
+        // follow-redirects reads. Unknown destination shape → dest '' fails safe (cross-origin).
+        const current = options['headers'];
+        const from: Record<string, string> = isStringRecord(current)
+            ? current
+            : originalHeaders;
+        options['headers'] = headersForRedirect(
+            from,
+            originalUrl,
+            redirectHref(options) ?? '',
+        );
+    };
+}
+
+// Narrow an unknown to a string-keyed header record (a plain object). Used to read the outgoing
+// headers off the follow-redirects `options` bag without an unchecked assertion.
+function isStringRecord(v: unknown): v is Record<string, string> {
+    return typeof v === 'object' && v !== null;
+}
+
+// Reconstruct the absolute destination URL from a follow-redirects `options` bag. It exposes the
+// parsed target as `href`, or as `protocol` + `host`/`hostname`(+`port`) + `path`. Returns
+// undefined if nothing usable is present (caller then fails safe and strips).
+function redirectHref(options: Record<string, unknown>): string | undefined {
+    const href = options['href'];
+    if (typeof href === 'string' && href) return href;
+    const protocol = options['protocol'];
+    const host = options['host'] ?? options['hostname'];
+    if (typeof protocol === 'string' && typeof host === 'string' && host) {
+        return `${protocol}//${host}`;
+    }
+    return undefined;
+}
 
 // Lowercase header keys to match fetchAdapter; join a multi-valued set-cookie with ', '.
 function normalizeHeaders(

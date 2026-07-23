@@ -17,22 +17,22 @@ export const sandboxRegistry: StitchRegistry = {
     /** GET /users/{id} — a single user (ids 1–3). `{ params: { id } }`. */
     getUser: stitch({
         path: 'https://demo.stitchapi.dev/users/{id}',
-        unwrap: 'data',
+        pick: 'data',
     }),
     /** GET /users — the fixed fixture (Alice, Bob, Carol). */
     listUsers: stitch({
         path: 'https://demo.stitchapi.dev/users',
-        unwrap: 'data',
+        pick: 'data',
     }),
     /** POST /users — create a user; echoes the body + an assigned id. */
     createUser: stitch({
         method: 'POST',
         path: 'https://demo.stitchapi.dev/users',
-        unwrap: 'data',
+        pick: 'data',
     }),
     /** GET /users/{id}/orders — a user's orders (ids 1–3). `{ params: { id } }`. */
     listOrders: stitch({
         path: 'https://demo.stitchapi.dev/users/{id}/orders',
-        unwrap: 'data',
+        pick: 'data',
     }),
 };

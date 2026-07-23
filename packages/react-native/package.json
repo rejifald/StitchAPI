@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/react-native",
-    "version": "1.0.0-rc.4",
+    "version": "1.0.0-rc.6",
     "type": "commonjs",
     "description": "React Native bindings for StitchAPI — a streaming-capable XHR transport adapter (the streaming `fetch` bare RN lacks), an AsyncStorage-backed StitchStore for persistent sessions/tokens, AppState/NetInfo refetch helpers, and the re-exported useStitch/useStitchStream hooks.",
     "main": "lib/index.js",

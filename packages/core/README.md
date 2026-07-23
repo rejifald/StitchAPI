@@ -4,7 +4,7 @@
 
 > [!NOTE]
 >
-> **StitchAPI is at `1.0.0-rc.4`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
+> **StitchAPI is at `1.0.0-rc.6`.** The core runtime is feature-complete, zero-dependency, covered by a green test gate, and already running in production in two projects. We're validating in the wild before stamping a stable `1.0.0` — pin an exact version and expect only small, documented changes. Feedback is welcome.
 
 **Turn any REST, GraphQL, SSE, or LLM API into a typed, resilient function.** Its one primitive — a **stitch** — takes a single endpoint and hands you back a callable: declare the endpoint's contract once (input, output, auth, resilience) and call it like a local function. No server, no codegen, no config files — only explicit composition. The same definition your code calls, the CLI runs and an AI agent can invoke without ever touching a credential.
 
@@ -113,14 +113,14 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 -   **Declared resilience** - retry with backoff and `Retry-After`, proactive throttle (rate + concurrency, per stitch or per host), total / per-attempt timeouts with real aborts, a circuit breaker, and idempotency keys.
 -   **Read-through caching** - an opt-in response cache with in-process request coalescing, keyed by a derived, principal-scoped key — sound by construction (it refuses to cache a shape it can't fingerprint) and loaded lazily from `stitchapi/cache`.
 -   **Auth as a boundary** - `bearer`, `apiKey`, `basic`, `cookieSession` (auto-login and re-login), and `oauth2` client credentials; secrets resolve at call time via `env()` / `secretsFile()` and never reach the caller.
--   **Data shaping** - `unwrap` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, and `json` / `form` / `multipart` request bodies.
+-   **Data shaping** - `pick` dot-paths, `transform` (e.g. scrape HTML into structure), auto-looping pagination, and `json` / `form` / `multipart` request bodies.
 -   **Any request style** - `http` is the default; `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` are peer **surfaces**, each a subpath import (`stitchapi/sse`, …) on the same engine — so `import { stitch }` bundles `http` alone.
 -   **Pluggable state store** - throttle counters and sessions/tokens live behind a 3-method store; in-memory by default, a shared store makes throttling distributed and sessions shared across workers.
 -   **Zero-infra observability** - tracing is **off by default** (a stitch's only effect is its call); opt in per stitch with `trace: 'console'` / `fileSink(path)` / a `TraceSink`, or globally with `STITCH_TRACE_CONSOLE=1` / `STITCH_TRACE_FILE=<path>` / `STITCH_EXPORT=otlp`. `stitch trace` then summarizes runs, retries, drift, and latency percentiles.
 -   **CLI, HTTP & MCP surfaces** - the definition your code imports is also runnable from the shell (`stitch run <name>` streams JSONL events), served over HTTP (`stitch serve`), or exposed to agents over MCP (`stitch mcp`) — the same stitch behind every front door.
 -   **Typed URLs** - full [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates (`{id}`, `{+path}`, `{?q,sort}`, explode `*`, prefix `:n`), and a `qs`-style query builder that serializes nested objects (`a[b]=c`) and arrays — both dependency-free.
 -   **Pluggable transport** - `fetch` by default; drop in the shipped `axiosAdapter`, or any `Adapter` function, to route requests through axios or another HTTP client.
--   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~24 kB min+gzip**; a typical `import { stitch }` trims to **~20 kB** — and with no transitive tree, that is the entire cost.
+-   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~25 kB min+gzip**; a typical `import { stitch }` trims to **~20 kB** — and with no transitive tree, that is the entire cost.
 
 ## Documentation
 
@@ -162,7 +162,7 @@ const { stitch } = require("stitchapi");
 
 The runtime ships with zero dependencies. Schema validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator ([Valibot](https://valibot.dev), [ArkType](https://arktype.io), …); none of them is bundled. The examples below use Zod for familiarity.
 
-**Bundle size.** The whole `stitchapi` entry is **~24 kB minified + gzipped** (~64 kB raw, ~20 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~20 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
+**Bundle size.** The whole `stitchapi` entry is **~25 kB minified + gzipped** (~64 kB raw, ~20 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~20 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
 
 ## Quick start
 
@@ -212,7 +212,7 @@ const User = z.object({
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: User,
-    unwrap: 'data', // the demo sim wraps payloads in a { data } envelope
+    pick: 'data', // the demo sim wraps payloads in a { data } envelope
 });
 
 const user = await getUser({ params: { id: 1 } }); // typed User
@@ -222,7 +222,7 @@ One endpoint is one `stitch`. The moment a service has more than one — sharing
 
 ## The event stream
 
-A stitch does not return `Promise<bytes>`. It yields a typed event stream — `await` is sugar that consumes the stream and returns the final, unwrapped, validated `result` (or throws a `StitchError` carrying `.status`, plus `.body` (the parsed error payload) and `.url` (the final request URL) when the failure came from a response):
+A stitch does not return `Promise<bytes>`. It yields a typed event stream — `await` is sugar that consumes the stream and returns the final, picked, validated `result` (or throws a `StitchError` carrying `.status`, plus `.body` (the parsed error payload) and `.url` (the final request URL) when the failure came from a response):
 
 ```ts
 const users = await getUsers(); // sugar: consume the stream → the result value
@@ -285,12 +285,12 @@ const api = seam({
 const listUsers = api.stitch({
     path: '/users',
     output: User.array(),
-    unwrap: 'data',
+    pick: 'data',
 });
 const getUser = api.stitch({
     path: '/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
 });
 ```
 
@@ -309,7 +309,7 @@ const listUsers = stitch({
     extends: [base],
     path: '/users',
     output: User.array(),
-    unwrap: 'data',
+    pick: 'data',
 });
 ```
 
@@ -317,13 +317,13 @@ A stitch is itself a composable value — extend one and override only the diff:
 
 ```ts
 const getOneUser = stitch({
-    extends: [listUsers], // inherits baseUrl + retry + unwrap
+    extends: [listUsers], // inherits baseUrl + retry + pick
     path: '/users/{id}',
     output: User,
 });
 ```
 
-Merge semantics: scalars (`path`, `method`, `baseUrl`, `unwrap`) replace; objects (`retry`, `throttle`, `timeout`, `input`) deep-merge; `hooks` chain across layers (`onRequest` runs base→child, the rest unwind child→base).
+Merge semantics: scalars (`path`, `method`, `baseUrl`, `pick`) replace; objects (`retry`, `throttle`, `timeout`, `input`) deep-merge; `hooks` chain across layers (`onRequest` runs base→child, the rest unwind child→base).
 
 `.with()` pre-binds part of the input and returns a new stitch that reuses the same runtime — so cookies, tokens, and throttle state persist across the bound and unbound forms:
 
@@ -350,7 +350,7 @@ import { z } from 'zod';
 
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
-    unwrap: 'data',
+    pick: 'data',
     output: drift(
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
@@ -377,7 +377,7 @@ const createUser = stitch({
         }),
     },
     output: User, // { id, name, email, role }
-    unwrap: 'data',
+    pick: 'data',
 });
 ```
 
@@ -421,7 +421,7 @@ Three more knobs round out the resilience set:
     }
     ```
 
--   **`acceptStatus`** treats a non-2xx as a _normal_ result rather than a throw — for endpoints where, say, `404` is expected control flow. The body flows through `transform` → `unwrap` → validate exactly like a `2xx`:
+-   **`acceptStatus`** treats a non-2xx as a _normal_ result rather than a throw — for endpoints where, say, `404` is expected control flow. The body flows through `transform` → `pick` → validate exactly like a `2xx`:
 
     ```ts
     acceptStatus: [404]; // resource-gone → fall back, no try/catch on the happy path
@@ -439,7 +439,7 @@ A bare duration is the TTL shorthand:
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
     cache: '5m', // ≡ { ttl: '5m' }
 });
 ```
@@ -450,7 +450,7 @@ Pass a config object for the full control surface:
 const listAnnouncements = stitch({
     path: 'https://demo.stitchapi.dev/announcements',
     output: z.array(z.object({ id: z.number(), title: z.string() })),
-    unwrap: 'data',
+    pick: 'data',
     cache: {
         ttl: '1h',
         scope: 'app', // public, unauthenticated data → share one entry across callers
@@ -510,7 +510,7 @@ const signIn = stitch({
 const listUsers = stitch({
     baseUrl: 'https://demo.stitchapi.dev',
     path: '/users',
-    unwrap: 'data',
+    pick: 'data',
     auth: cookieSession({
         login: signIn,
         cookie: 'session_token', // captured from Set-Cookie, replayed each call
@@ -637,22 +637,22 @@ A **surface** is the request _style_ a stitch speaks. `http` is the default — 
 
 Every non-`http` surface ships as its own **subpath import**, so `import { stitch }` from the root pulls in only the `http` engine; a surface's code loads only when you import it.
 
-| Surface       | Import                        | Shapes                                     | `await` resolves to            |
-| ------------- | ----------------------------- | ------------------------------------------ | ------------------------------ |
-| `http`        | `stitch` (default)            | a JSON-over-HTTP call                      | the validated body             |
-| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, unwrap `data` | the `data` payload             |
-| `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
-| `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader              | every decoded chunk, collected |
-| `download`    | `stitchapi/download`          | a buffered binary GET                      | `{ blob, filename }`           |
-| `llm`         | `stitchapi/llm`               | a chat-completion via a provider contract  | the normalised `{ text, … }`   |
-| `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin              | the command's stdout           |
-| `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call  | the typed RPC response         |
+| Surface       | Import                        | Shapes                                    | `await` resolves to            |
+| ------------- | ----------------------------- | ----------------------------------------- | ------------------------------ |
+| `http`        | `stitch` (default)            | a JSON-over-HTTP call                     | the validated body             |
+| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, pick `data`  | the `data` payload             |
+| `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch) | every parsed event, collected  |
+| `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader             | every decoded chunk, collected |
+| `download`    | `stitchapi/download`          | a buffered binary GET                     | `{ blob, filename }`           |
+| `llm`         | `stitchapi/llm`               | a chat-completion via a provider contract | the normalised `{ text, … }`   |
+| `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin             | the command's stdout           |
+| `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call | the typed RPC response         |
 
 (Distinct from the four _invocation_ surfaces — function, CLI, HTTP, MCP — which are how you _call_ a stitch. A request surface is how a stitch shapes its _request_.)
 
 ### GraphQL
 
-`graphql()` POSTs `{ query, variables }` and unwraps `data`. A `200` carrying `errors[]` is a failure — it will not silently pass:
+`graphql()` POSTs `{ query, variables }` and picks `data`. A `200` carrying `errors[]` is a failure — it will not silently pass:
 
 ```ts
 import { graphql } from 'stitchapi';
@@ -764,7 +764,7 @@ One logical call follows pages until `next` returns `undefined` (or the `max` sa
 ```ts
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
-    unwrap: 'data',
+    pick: 'data',
     paginate: {
         // previous page's raw body + pages fetched so far → input for the
         // next page (merged over the original), or undefined to stop
@@ -776,17 +776,17 @@ const listOrders = stitch({
 const everything = await listOrders({ params: { id: 1 } }); // [...page1, ...page2, ...] as one array
 ```
 
-When the unwrapped page is not itself the array, pass `items` to pull the array out of each page.
+When the picked page is not itself the array, pass `items` to pull the array out of each page.
 
 ## Transform
 
-`transform` runs before `unwrap` and validation — turn an arbitrary payload (HTML, text, a legacy shape) into structured data, then let `unwrap` + `output` / `drift` treat it like any other contract:
+`transform` runs before `pick` and validation — turn an arbitrary payload (HTML, text, a legacy shape) into structured data, then let `pick` + `output` / `drift` treat it like any other contract:
 
 ```ts
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
     transform: (html) => scrape(html), // your parser: HTML/text → { items: [...] }
-    unwrap: 'items',
+    pick: 'items',
     output: z.array(z.object({ id: z.number(), total: z.number() })),
 });
 ```
@@ -937,6 +937,7 @@ StitchAPI ships thin, peer-dependency integration packages — server frameworks
 <tr><td><a href="packages/fingerprint-valibot"><code>@stitchapi/fingerprint-valibot</code></a></td><td>Cache-fingerprint strategy for Valibot schemas</td></tr>
 <tr><td><a href="packages/fingerprint-zod"><code>@stitchapi/fingerprint-zod</code></a></td><td>Cache-fingerprint strategy for Zod schemas</td></tr>
 <tr><th colspan="2">Other</th></tr>
+<tr><td><a href="packages/docs-mcp"><code>@stitchapi/docs-mcp</code></a></td><td>StitchAPI documentation search, running locally over MCP stdio</td></tr>
 <tr><td><a href="packages/json-schema"><code>@stitchapi/json-schema</code></a></td><td>Turn a runtime-discovered JSON Schema into a Standard Schema validator StitchAPI accepts</td></tr>
 <tr><td><a href="packages/openapi"><code>@stitchapi/openapi</code></a></td><td>Eject selected operations from an OpenAPI document into ready-to-own StitchAPI source</td></tr>
 </tbody>

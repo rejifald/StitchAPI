@@ -39,7 +39,7 @@ test('inferred element type flows through `unwrap`', async () => {
     const list = stitch({
         baseUrl: server.url,
         path: '/list',
-        unwrap: 'data',
+        pick: 'data',
         output: z.array(userSchema),
     });
     const users = await list();

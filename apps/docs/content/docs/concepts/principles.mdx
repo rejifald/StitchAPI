@@ -43,7 +43,7 @@ declaration _is_ the runtime; there is nothing to commit, diff, and regenerate.
 
 ### Composition over configuration
 
-Cross-cutting concerns — `baseUrl`, auth, `unwrap`, retry, throttle, timeout —
+Cross-cutting concerns — `baseUrl`, auth, `pick`, retry, throttle, timeout —
 are named, shareable values you compose, not a central config object far from the
 call site. Nothing is inherited implicitly: no config file, no ambient defaults,
 no global a stitch silently reads. Everything that shapes a call was composed into
@@ -63,7 +63,7 @@ const api = {
 };
 
 // Fold the shared fragment into each stitch; it inherits baseUrl + retry.
-const getUser = stitch({ extends: [api], path: '/users/{id}', unwrap: 'data' });
+const getUser = stitch({ extends: [api], path: '/users/{id}', pick: 'data' });
 ```
 
 ### One source of truth
@@ -105,7 +105,7 @@ behind its own import — so an app never ships bytes for a CLI it will not run.
 The same frugality the event stream practices with an agent's context, the
 package practices with your bundle.
 
-Concretely, the whole `stitch` entry is **~24 kB minified + gzipped**
+Concretely, the whole `stitch` entry is **~25 kB minified + gzipped**
 (≈61 kB raw), and because every surface beyond `http` is a separate subpath
 import, a typical `import { stitch }` tree-shakes to **~20 kB**. With zero
 runtime dependencies, that figure is the entire cost — not the tip of a

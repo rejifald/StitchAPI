@@ -147,4 +147,20 @@ lib
 # from the MDX, same source as llms.txt — never committed.
 # See docs/proposals/search-docs.md.
 apps/docs/.search-index/
+
+# @stitchapi/docs-mcp's bundled docs snapshot: copied in from apps/docs's
+# .search-index by scripts/copy-bundle.mjs at package build time, not committed —
+# same rationale as apps/docs/.search-index/ above.
+packages/docs-mcp/data/
 .DS_Store
+# Generated demo media (`pnpm gen:media`) — launch assets regenerate on
+# demand; only the README-embedded webp pair is tracked. Keeping the
+# mp4/gif generations out of git stops history growing ~8 MB per regen
+# (see docs/media/README.md).
+docs/media/demo*
+!docs/media/demo.webp
+!docs/media/demo-dark.webp
+!docs/media/demo@2x.webp
+!docs/media/demo-dark@2x.webp
+!docs/media/demo-clip.mp4
+!docs/media/demo-dark-clip.mp4

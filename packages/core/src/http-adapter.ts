@@ -48,17 +48,26 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
 
         // Build the init as a typed local; `compact` drops `body`/`dispatcher` when absent,
         // so the non-standard `dispatcher` key stays off unless a dispatcher is supplied.
+        // `redirect: 'manual'` — we follow redirects ourselves (see followRedirects) so a
+        // cross-origin hop drops the auth/custom headers instead of leaking them.
         const init: FetchInitWithDispatcher = compact({
             method,
             headers,
             body,
             signal: req.signal,
             dispatcher: opts?.dispatcher,
+            redirect: 'manual',
         });
 
-        // Send the request. Network/abort errors propagate to the caller. The local init type
-        // (with the undici-only `dispatcher`) widens cleanly to the RequestInit fetch expects.
-        const response = await fetchImpl(req.url, init);
+        // Send the request and follow any redirects ourselves, stripping credential/custom
+        // headers on cross-origin hops. Network/abort errors propagate to the caller. The
+        // local init type (with the undici-only `dispatcher`) widens cleanly to RequestInit.
+        const { response, url: finalUrl } = await followRedirects(
+            fetchImpl,
+            req.url,
+            init,
+            headers,
+        );
 
         // Collect response headers with lowercased keys; join multiple set-cookie with ', '.
         const resHeaders: Record<string, string> = {};
@@ -85,7 +94,7 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
                 status: response.status,
                 headers: resHeaders,
                 body: response.body,
-                url: response.url,
+                url: finalUrl,
             };
         }
 
@@ -98,7 +107,7 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
                 status: response.status,
                 headers: resHeaders,
                 body: decodeResponseBody(req.responseType, contentType, bytes),
-                url: response.url,
+                url: finalUrl,
             };
         }
 
@@ -132,7 +141,7 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
             status: response.status,
             headers: resHeaders,
             body: parsed,
-            url: response.url,
+            url: finalUrl,
         };
     };
     // `fetch` streams a response (so `stream`/`sse` ride it) and reports `phase: 'download'`
@@ -187,8 +196,121 @@ async function readWithProgress(
     return out.buffer;
 }
 
+// Hop cap — matches the platform default (Node/undici stop at 20) so a redirect loop can't spin.
+const MAX_REDIRECTS = 20;
+
+// Send a request with `redirect: 'manual'` and follow any redirects OURSELVES, so a cross-origin
+// hop drops the auth/custom headers (headersForRedirect) instead of leaking them — undici/axios
+// only strip `authorization`/`cookie`, never custom headers like `x-api-key`/`x-amz-*`.
+//
+// Browser semantics: with `redirect: 'manual'` a browser returns an OPAQUE-redirect response
+// (`type: 'opaqueredirect'`, status 0, no readable Location) that cannot be followed from JS. We
+// detect that (no `location`) and return it as-is — the browser is already following the redirect
+// under CORS, which itself prevents the cross-origin custom-header leak (preflight). So:
+// manual-follow where the 3xx is readable (Node/undici), platform-safe otherwise. Returns the
+// final response and the URL it came from (for AdapterResponse.url).
+async function followRedirects(
+    fetchImpl: typeof fetch,
+    startUrl: string,
+    init: FetchInitWithDispatcher,
+    startHeaders: Record<string, string>,
+): Promise<{ response: Response; url: string }> {
+    let url = startUrl;
+    let headers = startHeaders;
+    let method = init.method ?? 'GET';
+    let body = init.body;
+    for (let hop = 0; ; hop++) {
+        const response = await fetchImpl(
+            url,
+            compact({ ...init, method, headers, body }),
+        );
+        const status = response.status;
+        const location =
+            status >= 300 && status < 400
+                ? response.headers.get('location')
+                : null;
+        // Not a followable redirect (normal response, an opaque-redirect in the browser, or a
+        // 3xx with no Location) → hand it back. Stop before exceeding the hop cap too.
+        if (location === null || hop >= MAX_REDIRECTS) return { response, url };
+        const next = new URL(location, url).toString();
+        // Strip credential/custom headers when the next hop leaves the origin (the whole point).
+        headers = headersForRedirect(headers, url, next);
+        // Fetch redirect model: 303 (and 301/302 on a non-GET/HEAD) become a bodyless GET; 307/308
+        // keep method and body. Rebuild headers without content-type when the body is dropped —
+        // and always via a fresh object, since a same-origin headersForRedirect aliased the input.
+        if (
+            status === 303 ||
+            (status < 303 && method !== 'GET' && method !== 'HEAD')
+        ) {
+            method = 'GET';
+            body = undefined;
+            const stripped: Record<string, string> = {};
+            for (const [k, v] of Object.entries(headers))
+                if (k.toLowerCase() !== 'content-type') stripped[k] = v;
+            headers = stripped;
+        }
+        url = next;
+    }
+}
+
 const hasHeader = (headers: Record<string, string>, name: string): boolean =>
     Object.keys(headers).some((k) => k.toLowerCase() === name.toLowerCase());
+
+// ---- cross-origin redirect credential guard -------------------------------
+// Auth strategies put credentials in CUSTOM request headers (`apiKey` → `x-api-key`;
+// `awsSigV4` → `authorization` + `x-amz-*`). The default HTTP redirect policy re-sends
+// every request header to the redirect target. undici/axios strip `authorization`/`cookie`
+// on a cross-origin hop but NOT custom headers, so `x-api-key`/`x-amz-*` would leak to an
+// unintended host (open-redirect / compromised endpoint) — the "capability, not a
+// credential" invariant. So on a CROSS-origin hop we keep only the CORS request-header
+// safelist (accept / accept-language / content-language / content-type) and drop the rest
+// — which covers `authorization`, `cookie`, `proxy-authorization`, and every custom auth
+// header at once. Same-origin hops keep headers intact (the common case; auth continues).
+// This is the browser's own fetch redirect model, applied on Node where the platform
+// wouldn't. Shared by both the fetch manual-follow loop and the axios `beforeRedirect` hook
+// so the policy is identical (and to keep the added bundle cost to one tiny function).
+
+// Same origin = same scheme + host + port. `URL.host` includes the port, so comparing
+// protocol + host covers all three (an implicit-vs-explicit default port like :443 is the one
+// edge this over-strips — acceptable, it only ever errs toward dropping credentials). `a` is
+// the current absolute request URL, `b` the resolved (absolute) redirect target.
+const sameOrigin = (a: string, b: string): boolean => {
+    try {
+        const ua = new URL(a);
+        const ub = new URL(b);
+        return ua.protocol === ub.protocol && ua.host === ub.host;
+    } catch {
+        return false; // unparseable → treat as cross-origin (fail safe: strip)
+    }
+};
+
+// The CORS-safelisted request header names — the only ones a browser forwards on a
+// cross-origin redirect. Everything else (auth/cookie/custom) is dropped.
+const CORS_SAFELIST = new Set([
+    'accept',
+    'accept-language',
+    'content-language',
+    'content-type',
+]);
+
+/**
+ * Given the headers for the hop from `from` to `to`, return the headers to actually send:
+ * unchanged when same-origin, or only the CORS-safelisted subset when cross-origin (dropping
+ * every credential/custom header). Exported for the axios adapter's `beforeRedirect` hook and
+ * the fetch manual-follow loop to share one policy.
+ */
+export function headersForRedirect(
+    headers: Record<string, string>,
+    from: string,
+    to: string,
+): Record<string, string> {
+    if (sameOrigin(from, to)) return headers;
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(headers)) {
+        if (CORS_SAFELIST.has(k.toLowerCase())) out[k] = v;
+    }
+    return out;
+}
 
 // Encode a request body per `bodyType` (default 'json'). Shared across transports so
 // form/multipart/json encoding is identical regardless of the underlying HTTP client.

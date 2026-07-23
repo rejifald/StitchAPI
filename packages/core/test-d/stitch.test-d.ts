@@ -31,7 +31,7 @@ expectType<unknown>(output(stitch({ path: '/ping' })));
 expectType<unknown>(output(stitch('/ping')));
 
 // 7) a raw Zod schema flows in WITHOUT `toValidator()` / `as Validator` (the old cast is gone).
-expectType<User>(output(stitch({ output: userSchema, unwrap: 'data' })));
+expectType<User>(output(stitch({ output: userSchema, pick: 'data' })));
 
 // 8) a non-schema `output` is rejected at compile time.
 expectError(stitch({ output: 123 }));

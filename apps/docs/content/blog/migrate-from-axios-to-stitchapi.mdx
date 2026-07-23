@@ -88,7 +88,7 @@ const getUser = stitch({
         respectRetryAfter: true,
     },
     timeout: { total: '30s', perAttempt: '10s' },
-    unwrap: 'data', // the API wraps payloads in { data }
+    pick: 'data', // the API wraps payloads in { data }
     output: drift(User),
 });
 
@@ -106,7 +106,7 @@ const user = await getUser({ params: { id } }); // typed · validated · retried
 | retry interceptor with backoff              | re-issues on 429/502/503/504  | `retry: { attempts, on, backoff: 'expo-jitter', respectRetryAfter: true }` ([retry](/docs/guides/resilience/retry))               |
 | `baseURL`                                   | one host for many calls       | `baseUrl` on the stitch, or once on a `seam()` ([seam](/docs/guides/authoring/seam))                                              |
 | `validateStatus`                            | decide what status throws     | the engine never throws on a non-2xx by itself — you declare which statuses `retry`, and a `StitchError` carries the rest         |
-| `transformResponse` + `as User`             | reshape, then assert the type | `unwrap` plus an `output` schema (wrap in `drift()` to flag shape changes) ([drift](/docs/guides/validation/drift))               |
+| `transformResponse` + `as User`             | reshape, then assert the type | `pick` plus an `output` schema (wrap in `drift()` to flag shape changes) ([drift](/docs/guides/validation/drift))                 |
 
 The last row is the one axios never had. `output` validates the _live_ response on every call, so a mismatch is a typed error at the boundary, not an `undefined` downstream. Wrap it in `drift()` and each response is diffed against its validated form, every change leveled by severity — a renamed required field throws, a coercion the schema absorbed surfaces as a `warn` on the event stream.
 

@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/json-schema",
-    "version": "1.0.0-rc.4",
+    "version": "1.0.0-rc.6",
     "type": "commonjs",
     "description": "Turn a runtime-discovered JSON Schema into a Standard Schema validator StitchAPI accepts — validate against schemas you only obtain at runtime, without codegen.",
     "main": "lib/index.js",

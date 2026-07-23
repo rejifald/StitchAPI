@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/angular",
-    "version": "1.0.0-rc.4",
+    "version": "1.0.0-rc.6",
     "type": "commonjs",
     "description": "Angular bindings for StitchAPI — injectStitch/injectStitchStream expose a stitch's lifecycle as both signals and an RxJS observable over @stitchapi/query-core. Streaming-first: re-render as `delta` chunks arrive. Plus an optional TanStack Query queryOptions helper.",
     "main": "lib/index.js",

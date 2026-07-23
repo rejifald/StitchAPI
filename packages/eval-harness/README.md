@@ -26,7 +26,7 @@ Four seed tasks (plain data in `tasks/`):
 | --------------------------------- | ---------- | ---------------------------------------------------------------------------- |
 | `paginated-list-retries-validate` | pagination | `GET /paged/users` (cursor; flaky 429; validate each user)                   |
 | `oauth2-client-credentials`       | auth       | `POST /oauth/token` + `GET /auth/me` (bearer; credential held by the stitch) |
-| `wrap-graphql-endpoint`           | graphql    | `POST /graphql` (unwrap `data`; `errors[]` ⇒ failure)                        |
+| `wrap-graphql-endpoint`           | graphql    | `POST /graphql` (pick `data`; `errors[]` ⇒ failure)                          |
 | `stream-llm-completion`           | streaming  | `POST /v1/chat/completions` (SSE deltas, `[DONE]`-terminated)                |
 
 Each task is a `{ id, title, family, prompt, expectedShape, endpointHint }`

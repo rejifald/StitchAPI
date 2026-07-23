@@ -46,7 +46,7 @@ beforeAll(async () => {
     const getWidget = stitch({
         baseUrl: api.url,
         path: '/widgets/{id}',
-        unwrap: 'data',
+        pick: 'data',
         output: asValidator(z.object({ id: z.number() })),
     });
     const ping = stitch({ baseUrl: api.url, path: '/ping' });

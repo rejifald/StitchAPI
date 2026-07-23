@@ -37,6 +37,12 @@ import { systemClock } from './util';
 // Per-seam id so the shared bucket's store-counter key never collides across seams sharing a store.
 let seamCounter = 0;
 
+// The seam builds throttles from the RAW authoring config (before `compose` runs for the member),
+// so expand the rate-string shorthand here: `'2/s'` ≡ `{ rate: '2/s' }`.
+const throttleOptions = (
+    t: StitchConfig['throttle'],
+): ThrottleOptions | undefined => (typeof t === 'string' ? { rate: t } : t);
+
 /**
  * The seam's shared throttle bucket. Member stitches all acquire it under ONE seam-stable key, so
  * the budget (rate + in-process concurrency) pools across every stitch — "one shared bucket"
@@ -89,7 +95,11 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
         // keys it per-stitch, so it limits just this stitch ON TOP OF the shared budget — it can
         // add a stricter gate but never replace or escape the seam's.
         const local = own.throttle
-            ? createStoreThrottle(own.throttle, shared.store, shared.clock)
+            ? createStoreThrottle(
+                  throttleOptions(own.throttle),
+                  shared.store,
+                  shared.clock,
+              )
             : undefined;
         const throttle = local
             ? chainThrottle([shared.throttle, local])
@@ -101,7 +111,7 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
         };
         if (isGql) {
             cfg.kind = graphqlSurface;
-            cfg.unwrap = own.unwrap ?? 'data';
+            cfg.pick = own.pick ?? 'data';
             // Default the endpoint to `/graphql` when the member gives neither `url` nor `path`
             // (method/body shaping is the surface's).
             if (own.url === undefined && own.path === undefined)
@@ -215,7 +225,12 @@ export function seam(options: SeamOptions = {}): Seam {
         clock,
         vault,
         trace,
-        throttle: seamBucket(fragment.throttle, store, seamId, clock),
+        throttle: seamBucket(
+            throttleOptions(fragment.throttle),
+            store,
+            seamId,
+            clock,
+        ),
         // `compact`'s `const` generic would freeze `[]` to `readonly []`; SharedSeam.stitches
         // is mutable, so pin the element type.
         stitches: [] as Stitch[],

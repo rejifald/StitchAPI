@@ -2,135 +2,147 @@
   "version": 1,
   "tethers": {
     "release-version": {
-      "baseline": "1.0.0-rc.4",
+      "baseline": "1.0.0-rc.6",
       "sites": {
         "packages/angular/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/aws-sigv4/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/cloudflare-kv/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/core/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/deno-kv/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
+        },
+        "packages/docs-mcp/package.json#/version": {
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/elysia/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/expo/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/express/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/fastify/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/fingerprint-arktype/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/fingerprint-effect/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/fingerprint-typebox/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/fingerprint-valibot/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/fingerprint-zod/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/hono/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
+        },
+        "packages/json-schema/package.json#/version": {
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/nest/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/next/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
+        },
+        "packages/openapi/package.json#/version": {
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/pino/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/query-core/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/react-native/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/react/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/redis/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/rtk-query/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/sentry/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/shell/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/solid/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/svelte/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/swr/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/vercel-ai/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/vue/package.json#/version": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "README.md#pattern:StitchAPI is at `([^`]+)`": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         },
         "packages/core/README.md#pattern:StitchAPI is at `([^`]+)`": {
-          "value": "1.0.0-rc.4",
-          "fp": "sha256:16b76150c382d07b129220bfdf61df45bf049b21aba1096bfe0dd78fa5b47a7d"
+          "value": "1.0.0-rc.6",
+          "fp": "sha256:c476058e11e9fce20e4b9440129a545e26ab96c0e73af45ae0b9adfda45e6828"
         }
       },
       "accepted": null
@@ -192,6 +204,10 @@
           "value": ">=18.18.0",
           "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
         },
+        "packages/docs-mcp/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
         "packages/elysia/package.json#/engines/node": {
           "value": ">=18.18.0",
           "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
@@ -232,11 +248,19 @@
           "value": ">=18.18.0",
           "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
         },
+        "packages/json-schema/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
         "packages/nest/package.json#/engines/node": {
           "value": ">=18.18.0",
           "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
         },
         "packages/next/package.json#/engines/node": {
+          "value": ">=18.18.0",
+          "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
+        },
+        "packages/openapi/package.json#/engines/node": {
           "value": ">=18.18.0",
           "fp": "sha256:d7a6a6d9740b1226c9ca82605970e84d0eef792527e3b1d68073aa4935588b59"
         },
@@ -318,6 +342,10 @@
           "value": "Apache-2.0",
           "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
         },
+        "packages/docs-mcp/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
         "packages/elysia/package.json#/license": {
           "value": "Apache-2.0",
           "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
@@ -358,11 +386,19 @@
           "value": "Apache-2.0",
           "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
         },
+        "packages/json-schema/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
         "packages/nest/package.json#/license": {
           "value": "Apache-2.0",
           "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
         },
         "packages/next/package.json#/license": {
+          "value": "Apache-2.0",
+          "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
+        },
+        "packages/openapi/package.json#/license": {
           "value": "Apache-2.0",
           "fp": "sha256:2af71558e438db0b73a20beab92dc278a94e1bbe974c00c1a33e3ab62d53a608"
         },
@@ -476,6 +512,20 @@
         }
       },
       "accepted": null
+    },
+    "docs-mcp-config-parity": {
+      "baseline": "sha256:3f0840ded365ee27aef512f95548971c5c8df1035b7bee6f90d2a69dc7a7d6ad",
+      "sites": {
+        "command:node --import tsx/esm scripts/probe-docs-mcp-parity.mjs apps-docs#whole": {
+          "value": "sha256:3f0840ded365ee27aef512f95548971c5c8df1035b7bee6f90d2a69dc7a7d6ad",
+          "fp": "sha256:6f14a1cc8a445237732f7ee4392305501efb4c1b6cc89e335c88c0e10d5c1023"
+        },
+        "command:node --import tsx/esm scripts/probe-docs-mcp-parity.mjs docs-mcp#whole": {
+          "value": "sha256:3f0840ded365ee27aef512f95548971c5c8df1035b7bee6f90d2a69dc7a7d6ad",
+          "fp": "sha256:6f14a1cc8a445237732f7ee4392305501efb4c1b6cc89e335c88c0e10d5c1023"
+        }
+      },
+      "accepted": {}
     }
   }
 }

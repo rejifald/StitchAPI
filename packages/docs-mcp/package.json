@@ -1,0 +1,78 @@
+{
+    "name": "@stitchapi/docs-mcp",
+    "mcpName": "dev.stitchapi/docs",
+    "version": "1.0.0-rc.6",
+    "type": "commonjs",
+    "description": "StitchAPI documentation search, running locally over MCP stdio. Bundled docs, no network calls per query — the offline/air-gapped counterpart to the hosted stitchapi.dev/api/mcp server.",
+    "bin": {
+        "stitchapi-docs-mcp": "bin/docs-mcp"
+    },
+    "main": "lib/index.js",
+    "module": "lib/index.mjs",
+    "types": "lib/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./lib/index.d.mts",
+                "default": "./lib/index.mjs"
+            },
+            "require": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "sideEffects": false,
+    "files": [
+        "lib",
+        "bin",
+        "data"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "prebuild": "node scripts/copy-bundle.mjs",
+        "build": "tsup",
+        "test": "vitest run",
+        "check:types": "tsc --noEmit",
+        "prepack": "pnpm run build",
+        "prepublishOnly": "node ../../scripts/check-release.mjs --changelog"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rejifald/StitchAPI.git",
+        "directory": "packages/docs-mcp"
+    },
+    "keywords": [
+        "stitchapi",
+        "mcp",
+        "mcp-server",
+        "model-context-protocol",
+        "documentation",
+        "docs",
+        "search",
+        "offline",
+        "local",
+        "typescript"
+    ],
+    "author": "Oleksandr Zhuravlov (rejifald@gmail.com)",
+    "license": "Apache-2.0",
+    "homepage": "https://stitchapi.dev",
+    "engines": {
+        "node": ">=18.18.0"
+    },
+    "dependencies": {
+        "@huggingface/transformers": "^4.2.0",
+        "@modelcontextprotocol/sdk": "1.26.0",
+        "@orama/orama": "3.1.18",
+        "@orama/plugin-data-persistence": "3.1.18",
+        "zod": "^4.4.3"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "tsup": "^8.3.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.8"
+    }
+}

@@ -31,3 +31,6 @@ yarn-error.log*
 # others
 .env*.local
 next-env.d.ts
+
+# demo media copied from docs/media by scripts/copy-demo-media.mjs
+public/media/

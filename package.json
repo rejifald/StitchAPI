@@ -23,8 +23,10 @@
         "check:docs-links": "node scripts/check-docs-links.mjs",
         "check:contract": "node scripts/check-contract.mjs",
         "check:format": "prettier --check .",
+        "check:media-fresh": "node scripts/check-media-freshness.mjs",
         "check:release": "node scripts/check-release.mjs",
         "format": "prettier --write .",
+        "gen:media": "node scripts/gen-demo.mjs",
         "gen:readme": "node scripts/gen-readme-metrics.mjs",
         "metrics": "mkdir -p .metrics && pnpm exec fallow --format json --score > .metrics/fallow.json && pnpm --filter stitchapi test:coverage && node scripts/gen-readme-metrics.mjs --refresh",
         "prepare": "lefthook install"
