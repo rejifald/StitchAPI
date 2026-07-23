@@ -74,7 +74,7 @@ import { sseSurface } from 'stitchapi/sse';
 app.get('/chat', ({ stitch, query }) => {
     const chat = stitch.stitch({ kind: sseSurface, path: '/v1/messages' });
     return streamStitchSse(chat.stream({ body: { prompt: query.q } }), {
-        data: (chunk: any) => chunk.data, // pull text out of a structured chunk
+        delta: (chunk: any) => chunk.data, // pull text out of a structured chunk
     });
 });
 ```
@@ -88,9 +88,9 @@ forwarded.
 By default the `error` frame carries a generic `data: error` token, **not** the raw
 error message — echoing it can disclose internal network topology (a transport failure
 reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status
-(`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream messages are
-known safe (`errorData: (e) => e.message`); `onError` still receives the real failure
-server-side.
+(`HTTP 401`) to the client. Pass `error` to opt in when the upstream messages are
+known safe (`error: (e) => e.message`); the object form `error: { observe }` still
+receives the real failure server-side while the client gets the generic token.
 
 ## Error handling
 

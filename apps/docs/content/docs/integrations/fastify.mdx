@@ -102,7 +102,7 @@ const app = Fastify();
 
 app.get<{ Querystring: { q: string } }>('/chat', (req, reply) =>
     sendStitchSse(reply, chat.stream({ query: { q: req.query.q } }), {
-        data: (chunk) => (chunk as { data: string }).data, // pull text out
+        delta: (chunk) => (chunk as { data: string }).data, // pull text out
     }),
 );
 ```

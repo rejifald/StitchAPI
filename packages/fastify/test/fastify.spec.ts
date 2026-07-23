@@ -223,7 +223,7 @@ describe('stitchPlugin', () => {
         expect(res.body).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the error frame', async () => {
+    test('error (function shorthand) opts in to the raw message on the error frame', async () => {
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
@@ -248,7 +248,7 @@ describe('stitchPlugin', () => {
             logger: false,
         });
         app.get('/sse-err', (_request, reply) =>
-            sendStitchSse(reply, events(), { errorData: (e) => e.message }),
+            sendStitchSse(reply, events(), { error: (e) => e.message }),
         );
         await app.ready();
 
@@ -256,6 +256,47 @@ describe('stitchPlugin', () => {
         expect(res.body).toBe(
             'data: partial\n\nevent: error\ndata: upstream blew up\n\n',
         );
+    });
+
+    test('error.observe sees the real failure while the client gets the generic token', async () => {
+        const observed: unknown[] = [];
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
+            yield {
+                type: 'error',
+                name: 'StitchError',
+                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                status: 502,
+                attempts: 1,
+                at: 2,
+            };
+        }
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seamConfig: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-err', (_request, reply) =>
+            sendStitchSse(reply, events(), {
+                error: { observe: (err) => observed.push(err) },
+            }),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-err' });
+        // Client still gets the generic token — the raw message is withheld.
+        expect(res.body).toBe('data: partial\n\nevent: error\ndata: error\n\n');
+        expect(res.body).not.toContain('payments.internal.corp');
+        // … but observe got the real failure server-side.
+        expect((observed[0] as Error).message).toContain('ENOTFOUND');
     });
 
     test('the registered error handler maps a StitchError to 502 by default', async () => {
