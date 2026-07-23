@@ -210,7 +210,7 @@ describe('streamStitchSse writes SSE frames to res', () => {
         expect(res.body()).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the error frame', async () => {
+    test('error (function shorthand) opts in to the raw message on the error frame', async () => {
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
@@ -223,12 +223,69 @@ describe('streamStitchSse writes SSE frames to res', () => {
         }
         const res = mockRes();
         await streamStitchSse(res as unknown as Response, events(), {
-            errorData: (e) => e.message,
+            error: (e) => e.message,
         });
 
         expect(res.body()).toBe(
             'data: partial\n\nevent: error\ndata: upstream blew up\n\n',
         );
+    });
+
+    test('error can be the full object: data + a custom event name + observe', async () => {
+        const observed: unknown[] = [];
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
+            yield {
+                type: 'error',
+                name: 'StitchError',
+                message: 'upstream blew up',
+                attempts: 1,
+                at: 2,
+            };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, events(), {
+            error: {
+                data: (e) => e.message,
+                event: 'failure',
+                observe: (err) => observed.push(err),
+            },
+        });
+
+        // The custom event name is used and error.data shapes the payload.
+        expect(res.body()).toBe(
+            'data: partial\n\nevent: failure\ndata: upstream blew up\n\n',
+        );
+        // observe saw the real server-side failure.
+        expect(observed).toHaveLength(1);
+        expect((observed[0] as Error).message).toBe('upstream blew up');
+    });
+
+    test('error.observe sees the real failure even when the client gets the generic token', async () => {
+        const observed: unknown[] = [];
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
+            yield {
+                type: 'error',
+                name: 'StitchError',
+                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                status: 502,
+                attempts: 1,
+                at: 2,
+            };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, events(), {
+            error: { observe: (err) => observed.push(err) },
+        });
+
+        // Client still gets the generic token — the raw message is withheld.
+        expect(res.body()).toBe(
+            'data: partial\n\nevent: error\ndata: error\n\n',
+        );
+        expect(res.body()).not.toContain('payments.internal.corp');
+        // … but observe got the real failure server-side.
+        expect((observed[0] as Error).message).toContain('ENOTFOUND');
     });
 
     test('the data mapper + named event shape each delta frame', async () => {
@@ -238,8 +295,10 @@ describe('streamStitchSse writes SSE frames to res', () => {
         }
         const res = mockRes();
         await streamStitchSse(res as unknown as Response, events(), {
-            event: 'token',
-            data: (c) => (c as { text: string }).text,
+            delta: {
+                event: 'token',
+                data: (c) => (c as { text: string }).text,
+            },
         });
         expect(res.body()).toBe(
             'event: token\ndata: a\n\nevent: token\ndata: b\n\n',
@@ -257,14 +316,26 @@ describe('streamStitchSse writes SSE frames to res', () => {
         expect(res.body()).toBe('data: plain\n\ndata: {"a":1}\n\n');
     });
 
-    test('the id option emits an id: line per frame with the zero-based index', async () => {
+    test('delta as a function is shorthand for { data }', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: { text: 'a' }, at: 1 };
+            yield { type: 'delta', chunk: { text: 'b' }, at: 2 };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, events(), {
+            delta: (c) => (c as { text: string }).text,
+        });
+        expect(res.body()).toBe('data: a\n\ndata: b\n\n');
+    });
+
+    test('the delta.id option emits an id: line per frame with the zero-based index', async () => {
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield { type: 'delta', chunk: 'a', at: 1 };
             yield { type: 'delta', chunk: 'b', at: 2 };
         }
         const res = mockRes();
         await streamStitchSse(res as unknown as Response, events(), {
-            id: (chunk, index) => `${String(chunk)}-${index}`,
+            delta: { id: (chunk, index) => `${String(chunk)}-${index}` },
         });
 
         expect(res.body()).toBe('id: a-0\ndata: a\n\nid: b-1\ndata: b\n\n');

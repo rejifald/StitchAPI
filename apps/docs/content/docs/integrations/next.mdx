@@ -69,7 +69,7 @@ import { sseResponse } from '@stitchapi/next';
 export async function POST(request: Request) {
     const { prompt } = await request.json();
     return sseResponse(chat({ body: { prompt } }).stream(), {
-        data: (c) => String(c), // pull text out of each chunk
+        delta: (c) => String(c), // pull text out of each chunk
         signal: request.signal, // abort the upstream if the client leaves
     });
 }

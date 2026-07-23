@@ -15,13 +15,20 @@ export type StitchEventSource<T> =
 /** The terminal `error` event a stitch stream emits — carries `message`, `status`, `attempts`. */
 type StitchErrorEvent = Extract<StitchEvent, { type: 'error' }>;
 
-export interface StreamStitchSseOptions {
+/** Shape a `delta` chunk into the SSE frame `data`. */
+type DeltaShaper = (chunk: unknown) => string;
+/** Shape a terminal `error` event into the SSE frame `data`. */
+type ErrorShaper = (event: StitchErrorEvent) => string;
+
+// How each `delta` becomes a message frame. The bare {@link DeltaShaper} form (`delta: (c) => …`)
+// is shorthand for `{ data: (c) => … }`.
+interface DeltaFrameOptions {
     /**
      * Map a `delta` chunk to the SSE frame `data`. Default: the chunk itself (a string is sent
-     * as-is; anything else is `JSON.stringify`-ed). Use this to pull the text out of a structured
-     * chunk, e.g. `data: (c) => c.choices[0].delta.content`.
+     * as-is; anything else is `JSON.stringify`-ed). Pull the text out of a structured chunk with,
+     * e.g., `(c) => c.choices[0].delta.content`.
      */
-    data?: (chunk: unknown) => string;
+    data?: DeltaShaper;
     /**
      * Emit an `event:` line per delta frame (the SSE event name). Default: none (an unnamed
      * `message` event, which `EventSource.onmessage` receives).
@@ -32,16 +39,45 @@ export interface StreamStitchSseOptions {
      * Receives the chunk and the zero-based frame index.
      */
     id?: (chunk: unknown, index: number) => string;
+}
+
+// How the terminal `error` becomes the final frame. The bare {@link ErrorShaper} form
+// (`error: (e) => …`) is shorthand for `{ data: (e) => … }`.
+interface ErrorFrameOptions {
     /**
-     * Shape the SSE `data` written for a terminal `error` event. **Default: a generic token
+     * Shape the SSE `data` written for the terminal `error` event. **Default: a generic token
      * (`data: error`)** — the raw `event.message` is deliberately *not* echoed, because it can
      * disclose internal network topology (a transport failure reads like
      * `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`) to an
      * untrusted client. Opt in with `(e) => e.message` when the upstream messages are known safe,
      * or return your own payload (e.g. `() => JSON.stringify({ error: 'stream failed' })`). A
-     * multi-line return gets one `data:` line each (SSE spec); the `event: error` name is fixed.
+     * multi-line return gets one `data:` line each (SSE spec).
      */
-    errorData?: (event: StitchErrorEvent) => string;
+    data?: ErrorShaper;
+    /** The `event:` name of the terminal error frame. Default `'error'`. */
+    event?: string;
+    /**
+     * Observe the real, server-side failure — use it to log/trace. It does **not** shape the
+     * client frame: what the client receives is controlled by {@link ErrorFrameOptions.data} (a
+     * generic token by default), so the raw message reaches your logs here but never the client.
+     */
+    observe?: (err: unknown) => void;
+}
+
+export interface StreamStitchSseOptions {
+    /**
+     * How each `delta` becomes a message frame. Pass a **function** as shorthand for `{ data }`
+     * (`delta: (c) => c.text`), or the full `{ data, event, id }` object to set the SSE
+     * `event:` / `id:` lines too.
+     */
+    delta?: DeltaShaper | DeltaFrameOptions;
+    /**
+     * How the terminal error becomes the final frame. Pass a **function** as shorthand for
+     * `{ data }` (`error: (e) => e.message`), or the full `{ data, event, observe }` object. By
+     * default the client gets a generic `data: error` token — the raw message is withheld to
+     * avoid disclosing internal topology.
+     */
+    error?: ErrorShaper | ErrorFrameOptions;
     /**
      * The Express request, when available. Express normally fires `close` on the *response* on
      * disconnect, but passing `req` lets the helper also listen on the request socket for
@@ -50,33 +86,39 @@ export interface StreamStitchSseOptions {
     req?: Request;
 }
 
+// Expand the function-shorthand form of each frame option to its full config object.
+const asDelta = (o: DeltaShaper | DeltaFrameOptions = {}): DeltaFrameOptions =>
+    typeof o === 'function' ? { data: o } : o;
+const asError = (o: ErrorShaper | ErrorFrameOptions = {}): ErrorFrameOptions =>
+    typeof o === 'function' ? { data: o } : o;
+
 // One delta chunk → an SSE frame string. A multi-line payload is split so every line gets its own
 // `data:` prefix (the SSE spec joins them with `\n`); the frame ends on a blank line.
 function frame(
     chunk: unknown,
     index: number,
-    options: StreamStitchSseOptions,
+    delta: DeltaFrameOptions,
 ): string {
     const raw =
-        options.data?.(chunk) ??
+        delta.data?.(chunk) ??
         (typeof chunk === 'string' ? chunk : JSON.stringify(chunk));
     const lines: string[] = [];
-    if (options.event) lines.push(`event: ${options.event}`);
-    if (options.id) lines.push(`id: ${options.id(chunk, index)}`);
+    if (delta.event) lines.push(`event: ${delta.event}`);
+    if (delta.id) lines.push(`id: ${delta.id(chunk, index)}`);
     for (const dataLine of raw.split('\n')) lines.push(`data: ${dataLine}`);
     return `${lines.join('\n')}\n\n`;
 }
 
 // The generic token written as an `error` frame's `data` by default: the raw upstream message is
 // withheld so an internal hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status (`HTTP 401`)
-// never reaches the client. Override with `options.errorData`.
+// never reaches the client. Override with `error.data`.
 const DEFAULT_ERROR_DATA = 'error';
 
-// The terminal `error` frame: the fixed `event: error` name plus a (multi-line-safe) data payload —
-// every line of `data` gets its own `data:` prefix so a multi-line opt-in payload can't break the
-// SSE framing.
-function errorFrame(data: string): string {
-    const lines = ['event: error'];
+// The terminal `error` frame: the (configurable, default `error`) event name plus a
+// (multi-line-safe) data payload — every line of `data` gets its own `data:` prefix so a multi-line
+// opt-in payload can't break the SSE framing.
+function errorFrame(data: string, event: string): string {
+    const lines = [`event: ${event}`];
     for (const dataLine of data.split('\n')) lines.push(`data: ${dataLine}`);
     return `${lines.join('\n')}\n\n`;
 }
@@ -86,7 +128,7 @@ function errorFrame(data: string): string {
  * `.stream()` generator (or any `AsyncIterable<StitchEvent>`): each `delta` becomes one SSE frame, an
  * `error` event ends the stream with a named `event: error` frame (a generic `data: error` by
  * default — the raw message is withheld to avoid disclosing internal topology; opt in via
- * `errorData`), and stream end closes the response. The non-output events (`start` / `progress` /
+ * `error`), and stream end closes the response. The non-output events (`start` / `progress` /
  * `drift` / `result` / `done`) are control signals and are not forwarded to the client.
  *
  * Writes raw frames straight to the socket, so do **not** also `res.send()`/`res.json()` from the
@@ -97,7 +139,7 @@ function errorFrame(data: string): string {
  * ```ts
  * app.get('/chat', (req, res) =>
  *   streamStitchSse(res, chat.stream({ query: { q: req.query.q } }),
- *                   { data: (c: any) => c.text, req }),
+ *                   { delta: (c: any) => c.text, req }),
  * );
  * ```
  */
@@ -106,6 +148,8 @@ export async function streamStitchSse<T>(
     source: StitchEventSource<T>,
     options: StreamStitchSseOptions = {},
 ): Promise<void> {
+    const delta = asDelta(options.delta);
+    const error = asError(options.error);
     if (!res.headersSent) {
         res.writeHead(200, {
             'content-type': 'text/event-stream',
@@ -135,18 +179,19 @@ export async function streamStitchSse<T>(
             const { value: event, done } = await iterator.next();
             if (done) break;
             if (event.type === 'delta') {
-                res.write(frame(event.chunk, index, options));
+                res.write(frame(event.chunk, index, delta));
                 index += 1;
             } else if (event.type === 'error') {
                 // Surface the failure to the client as a named `error` SSE frame, then stop — but by
                 // default write a generic token, never the raw `event.message`, so an internal
                 // hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status (`HTTP 401`) is not
-                // disclosed. Opt in to the real message via `options.errorData`.
+                // disclosed. Opt in to the real message via `error.data`; `error.observe` sees the
+                // real failure server-side.
+                error.observe?.(new Error(event.message));
                 res.write(
                     errorFrame(
-                        options.errorData
-                            ? options.errorData(event)
-                            : DEFAULT_ERROR_DATA,
+                        error.data ? error.data(event) : DEFAULT_ERROR_DATA,
+                        error.event ?? 'error',
                     ),
                 );
                 break;
