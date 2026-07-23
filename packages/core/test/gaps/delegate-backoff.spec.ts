@@ -213,11 +213,11 @@ test('throttle.on selects which statuses delegate (503 delegates, 429 retries)',
     expect(server.callCount('/retry-429')).toBe(3);
 });
 
-// ── G. the success path still runs transform → unwrap → drift under delegate mode ──
-// Delegate mode only intercepts rate-limit statuses; a 200 must validate/transform/unwrap exactly as
+// ── G. the success path still runs transform → pick → drift under delegate mode ──
+// Delegate mode only intercepts rate-limit statuses; a 200 must validate/transform/pick exactly as
 // it would without the flag — proving the mode is "validate + template + transform + drift, but
 // delegate backoff", not a bare pass-through.
-test('a success response still runs transform, unwrap, and output validation', async () => {
+test('a success response still runs transform, pick, and output validation', async () => {
     server.route('GET', '/ok', {
         statuses: [200],
         body: { data: { id: 7, name: 'widget' } },
@@ -226,9 +226,9 @@ test('a success response still runs transform, unwrap, and output validation', a
         baseUrl: server.url,
         path: '/ok',
         throttle: { delegate: true },
-        unwrap: 'data',
+        pick: 'data',
         transform: (body) => {
-            // raw body → reshape: rename `name` to `label`. Runs before unwrap.
+            // raw body → reshape: rename `name` to `label`. Runs before pick.
             const b = body as { data: { id: number; name: string } };
             return { data: { id: b.data.id, label: b.data.name } };
         },

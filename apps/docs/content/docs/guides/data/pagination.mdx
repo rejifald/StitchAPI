@@ -38,9 +38,9 @@ page count and returns the [`StitchInput`](/docs/reference/config-types) for the
 next page, merged over the original call — set only what changes, like a cursor
 or page number. Return `undefined` to stop.
 
-`items(value)` selects the array to aggregate from each page's unwrapped value;
-it defaults to the value itself when that value is already an array. The unwrap
-runs first, so pair `items` with [`unwrap`](/docs/guides/data/unwrap) when the
+`items(value)` selects the array to aggregate from each page's picked value;
+it defaults to the value itself when that value is already an array. The pick
+runs first, so pair `items` with [`pick`](/docs/guides/data/pick) when the
 array sits under an envelope, and use `items` to dig into a nested shape.
 
 `max` caps the page count as a safety net (default `50`) so a misbehaving
@@ -51,17 +51,17 @@ Auth, retry, and throttle apply per page, not once for the whole run: a
 and a [`retry`](/docs/guides/resilience/retry) recovers each page on its own.
 
 <Callout type="warn">
-    **Anti-pattern:** don't read the next-page cursor in `next` from the
-    unwrapped array, expecting it where `items` looks — `next` receives the raw
-    body and `items` receives the value after `unwrap` runs, so read the cursor
-    in `next` from where it lives in the raw response instead. See
-    [unwrap](/docs/guides/data/unwrap).
+    **Anti-pattern:** don't read the next-page cursor in `next` from the picked
+    array, expecting it where `items` looks — `next` receives the raw body and
+    `items` receives the value after `pick` runs, so read the cursor in `next`
+    from where it lives in the raw response instead. See
+    [pick](/docs/guides/data/pick).
 </Callout>
 
 ## See also
 
 <Cards>
-    <Card title="unwrap" href="/docs/guides/data/unwrap" />
+    <Card title="pick" href="/docs/guides/data/pick" />
     <Card title="throttle" href="/docs/guides/resilience/throttle" />
     <Card title="retry" href="/docs/guides/resilience/retry" />
     <Card title="Reference: Config types" href="/docs/reference/config-types" />

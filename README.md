@@ -99,7 +99,7 @@ import { z } from 'zod';
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: z.object({ id: z.number(), name: z.string() }),
-    unwrap: 'data',
+    pick: 'data',
 });
 
 const user = await getUser({ params: { id: 1 } }); // typed · validated
@@ -205,7 +205,7 @@ Reach for the full set of knobs only when you need them — they default off:
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: User, // a validator of your choice
-    unwrap: 'data',
+    pick: 'data',
     retry: 3, // ≡ { attempts: 3 }
     timeout: '5s', // ≡ { total: '5s' }
     cache: '1m', // ≡ { ttl: '1m' }
@@ -233,12 +233,12 @@ const api = seam({
 const listUsers = api.stitch({
     path: '/users',
     output: User.array(),
-    unwrap: 'data',
+    pick: 'data',
 });
 const getUser = api.stitch({
     path: '/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
 });
 ```
 
@@ -261,7 +261,7 @@ import { z } from 'zod';
 
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
-    unwrap: 'data',
+    pick: 'data',
     output: drift(
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
         {
@@ -298,14 +298,14 @@ A read-through response cache with in-process request coalescing — **off by de
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
     output: User,
-    unwrap: 'data',
+    pick: 'data',
     cache: '5m',
 });
 
 const listAnnouncements = stitch({
     path: 'https://demo.stitchapi.dev/announcements',
     output: z.array(z.object({ id: z.number(), title: z.string() })),
-    unwrap: 'data',
+    pick: 'data',
     cache: {
         ttl: '1h',
         scope: 'app',

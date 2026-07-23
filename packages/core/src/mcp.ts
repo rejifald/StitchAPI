@@ -79,7 +79,7 @@ const DESCRIBE_STITCH_TOOL = {
     name: 'describe_stitch',
     description:
         "Describe a named stitch's shape WITHOUT running it: its endpoint, surface, per-slot " +
-        'input presence, output (validated/unwrap), auth scheme (never the credential), the ' +
+        'input presence, output (validated/pick), auth scheme (never the credential), the ' +
         'configured policies (retry/throttle/cache/timeout), the request pipeline in engine ' +
         'order, and a Mermaid flowchart. Call this to learn a stitch before run_stitch.',
     inputSchema: {
@@ -214,7 +214,7 @@ export function createMcpServer(
             },
             output: {
                 validated: cfg.output !== undefined,
-                unwrap: cfg.unwrap ?? null,
+                pick: cfg.pick ?? null,
             },
             auth: authTagOf(cfg),
             policies: {

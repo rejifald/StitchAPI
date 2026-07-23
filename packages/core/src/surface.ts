@@ -107,7 +107,7 @@ export const httpSurface: Surface = { id: 'http' };
 /**
  * GraphQL-over-HTTP. Its behaviour lives entirely in these hooks (ADR 0005 Stage 4): `buildRequest`
  * packs `{ query, variables, operationName? }` as JSON and forces POST; `interpret` treats a 200
- * carrying `errors` as a failure. The `data` unwrap is a plain config key the `graphql(...)` helper
+ * carrying `errors` as a failure. The `data` pick is a plain config key the `graphql(...)` helper
  * / `seam.graphql()` set (the engine applies it after `interpret`), as is the `/graphql` default
  * path.
  *

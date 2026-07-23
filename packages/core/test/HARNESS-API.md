@@ -27,8 +27,8 @@ import { z } from 'zod';
 
 -   `name`, `method` (default GET), `baseUrl` (string | `() => string`), `path` (may include `{param}` and `?predefined=query`)
 -   `input`: `{ params?, query?, body?, headers? }` — each a Zod/Standard-Schema validator
--   `output`: a schema **or** `drift(schema, opts)` — validated against the **unwrapped** value
--   `unwrap`: dot-path string (e.g. `'data'`)
+-   `output`: a schema **or** `drift(schema, opts)` — validated against the **picked** value
+-   `pick`: dot-path string (e.g. `'data'`)
 -   `auth`: an AuthStrategy (see below)
 -   `retry`: `{ attempts (total incl. first, default 1), on: number[] (default [429,502,503,504]), backoff: 'expo'|'expo-jitter'|'fixed', baseMs, maxMs, respectRetryAfter }`
 -   `throttle`: `{ rate: '2/s', concurrency: number, scope: 'stitch'|'host' }`

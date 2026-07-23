@@ -119,7 +119,7 @@ const rows = (await mirror()) as unknown[];
 
 A `429` on page seven now recovers on its own through [retry](/docs/guides/resilience/retry), and [throttle](/docs/guides/resilience/throttle) keeps the whole run under five requests a second — applied **per page**, not once for the run. None of that touches the pagination logic; it's declared next to it. The two recipes go end to end: [loop a cursor API into one array](/docs/recipes/paginate-into-one-array) and [mirror a paginated API to NDJSON](/docs/recipes/mirror-a-paginated-api), the latter adding OAuth2 on the same declaration.
 
-One detail to get right: `next` reads the **raw body**, while `items` reads the value after [unwrap](/docs/guides/data/unwrap) runs. Reach for the cursor in `next` from where it actually lives in the response. And without an [`output` schema](/docs/guides/validation/validation) the aggregated rows arrive as `unknown[]` — hence the cast; add a schema and each row is typed and validated, and the cast goes away.
+One detail to get right: `next` reads the **raw body**, while `items` reads the value after [pick](/docs/guides/data/pick) runs. Reach for the cursor in `next` from where it actually lives in the response. And without an [`output` schema](/docs/guides/validation/validation) the aggregated rows arrive as `unknown[]` — hence the cast; add a schema and each row is typed and validated, and the cast goes away.
 
 ## Where the hand-rolled loop tops out
 
@@ -142,4 +142,4 @@ One caveat in the other direction: `paginate` aggregates every page into a singl
 stitchapi
 ```
 
-Give a stitch a `paginate` with a `next` and an `items`, and one `await` follows every page into a single array — with `retry` and `throttle` applied per page when you add them. The mechanics are in [Pagination](/docs/guides/data/pagination), the envelope handling in [Unwrap](/docs/guides/data/unwrap), and typed rows in [Validation](/docs/guides/validation/validation).
+Give a stitch a `paginate` with a `next` and an `items`, and one `await` follows every page into a single array — with `retry` and `throttle` applied per page when you add them. The mechanics are in [Pagination](/docs/guides/data/pagination), the envelope handling in [Pick](/docs/guides/data/pick), and typed rows in [Validation](/docs/guides/validation/validation).

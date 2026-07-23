@@ -940,7 +940,7 @@ export function drift<S>(
     };
 }
 
-/** graphql(): a stitch preset for GraphQL-over-HTTP — POST { query, variables }, unwrap `data`. */
+/** graphql(): a stitch preset for GraphQL-over-HTTP — POST { query, variables }, picks `data`. */
 export function graphql<
     TExplicit = never,
     const C extends Partial<StitchConfig> & {
@@ -961,6 +961,6 @@ export function graphql<
         ...config,
         ...(endpointless ? { path: '/graphql' } : {}),
         kind: graphqlSurface,
-        unwrap: config.unwrap ?? 'data',
+        pick: config.pick ?? 'data',
     }) as unknown as Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
 }

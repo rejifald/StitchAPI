@@ -48,7 +48,7 @@ test('extends facade produces the correct result', async () => {
     const schema = asValidator(
         z.array(z.object({ id: z.number(), name: z.string() })),
     );
-    const base = { baseUrl: server.url, unwrap: 'data' };
+    const base = { baseUrl: server.url, pick: 'data' };
 
     const viaExtends = stitch({
         extends: [base],
@@ -71,7 +71,7 @@ test('a seam member is equivalent to the extends facade', async () => {
     const schema = asValidator(
         z.array(z.object({ id: z.number(), name: z.string() })),
     );
-    const base = { baseUrl: server.url, unwrap: 'data' };
+    const base = { baseUrl: server.url, pick: 'data' };
 
     const viaExtends = stitch({
         extends: [base],

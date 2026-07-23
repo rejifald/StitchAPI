@@ -127,10 +127,10 @@ describe('resolveFingerprint — the fallback ladder', () => {
         expect(r.policy).toBe('fast');
     });
 
-    it('rung 1: different version or unwrap → different generation', () => {
+    it('rung 1: different version or pick → different generation', () => {
         const a = resolveFingerprint({ version: 'v1' });
         const b = resolveFingerprint({ version: 'v2' });
-        const c = resolveFingerprint({ version: 'v1', unwrap: 'data' });
+        const c = resolveFingerprint({ version: 'v1', pick: 'data' });
         expect(a.generation).not.toBe(b.generation);
         expect(a.generation).not.toBe(c.generation);
     });
@@ -148,9 +148,9 @@ describe('resolveFingerprint — the fallback ladder', () => {
         expect(changed.generation).not.toBe(r1.generation); // sensitive
     });
 
-    it('rung 2: unwrap is folded into the generation', () => {
+    it('rung 2: pick is folded into the generation', () => {
         const a = resolveFingerprint({ output: userSchema() });
-        const b = resolveFingerprint({ output: userSchema(), unwrap: 'data' });
+        const b = resolveFingerprint({ output: userSchema(), pick: 'data' });
         expect(b.policy).toBe('fast');
         expect(b.generation).not.toBe(a.generation);
     });

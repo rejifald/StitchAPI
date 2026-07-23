@@ -68,8 +68,8 @@
         "expect": "guides/auth/oauth2"
     },
     {
-        "query": "unwrap the data field out of a JSON envelope response",
-        "expect": "guides/data/unwrap"
+        "query": "pick the data field out of a JSON envelope response",
+        "expect": "guides/data/pick"
     },
     {
         "query": "reshape or transform a response body before it returns",
