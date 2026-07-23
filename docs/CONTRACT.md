@@ -78,6 +78,13 @@ document string in `StitchConfig` but URL params in `StitchInput` / `InputSchema
 `on` is retry-trigger statuses **and** rate-limit-signal statuses; `bodyKind`
 (`from-curl`) vs `bodyType` (everywhere else) for one `'json'|'form'` concept.
 
+_Settled (ADR 0020):_ the declarative `AuthDescriptor` discriminant is
+**`strategy`** — its value-space is exactly the five strategy names, mirroring the
+`AuthStrategy` it resolves to. Deliberately **not `type`** (would collide with
+`SecurityScheme.type`'s value-space — a reader seeing intake `type: 'bearer'` and
+scheme `type: 'http'` is misled), not `name` (taken by `apiKey`'s `name`), and not
+`kind` (the surface selector, ADR 0005).
+
 ### P2 · Don't reuse one word for genuinely different concepts — rename one
 
 When two fields legitimately mean **different** things, they **MUST NOT** share a
@@ -106,6 +113,8 @@ _Violations:_ `CacheConfig`, `OAuth2Opts`, `CookieSessionOpts`, `McpServerInfo`,
 _Carve-out:_ `StitchConfig`/`SeamConfig`/`RedactedStitchConfig` keep `*Config` as the
 one well-known top-level authoring type family (the thing you literally call
 `stitch(config)` with); the ban targets the **sibling capability bags**.
+`AuthConfig` (ADR 0020) joins the carve-out: it is the config-slot **union** typing
+`StitchConfig.auth` (`AuthStrategy | AuthDescriptor`), not a `*Options` bag.
 
 ### P4 · One cap vocabulary
 

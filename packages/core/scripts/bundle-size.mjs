@@ -120,16 +120,29 @@ const KB = 1024;
 // / ~0.28 KB gzip. The step restores the same tight ~0.2 KB headroom the gate is meant to hold. The
 // cost buys closing a HIGH credential-exfiltration hole — a deliberate trade the maintainer signs off
 // on by merging (see PR body for the exact before/after/Δ).
+// Budgets raised for declarative auth descriptors — ADR 0020 (24.80→25.30 / 20.00→20.25; measured
+// 25.07 / 20.04). `auth` now accepts an `AuthDescriptor` (`{ strategy: 'oauth2', … }`) beside the
+// factory result. The RESOLUTION machinery — the five strategy factories `fromDescriptor` dispatches
+// to — is deliberately kept OFF core: `auth.ts` installs the resolver into a core seam
+// (`auth-registry.ts`) only when a secret resolver (`env`/`secretsFile`/`secretFrom`) runs, which a
+// real descriptor's credential always does. So `import { stitch }` with no auth still tree-shakes the
+// factories away entirely (that path did NOT gain the ~2.4 KB the factories weigh). What DOES lift
+// both scenarios is the small, unavoidable bits on the core config-intake path, which can't move to a
+// subpath: (1) `normalizeAuth` — the descriptor-vs-strategy detection + resolver routing + two
+// actionable construction errors — runs in `compose` for every stitch (~0.24 KB on `import
+// { stitch }`); and (2) `fromDescriptor` + the new `apiKey` `in: 'cookie'` branch, which sit on the
+// whole entry. The step restores the same tight ~0.2 KB headroom the gate is meant to hold; the PR
+// body carries the exact before/after/Δ.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.8 * KB,
+        budget: 25.3 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 20.0 * KB,
+        budget: 20.25 * KB,
     },
 ];
 

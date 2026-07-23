@@ -1,5 +1,6 @@
 // Shared vocabulary for the prototype. Leaf modules (resilience, trace, http-adapter,
 // auth, mock-server) and the engine all code against these types.
+import type { AuthConfig } from './auth';
 import type {
     Args,
     InputOf,
@@ -748,8 +749,14 @@ export interface StitchConfig {
     transform?: (body: unknown) => unknown;
     /** Auto-loop pages, aggregating items, with auth/retry/throttle applied to every page. */
     paginate?: PaginateOptions;
-    /** Auth strategy — the stitch holds the credential; the caller never sees it. */
-    auth?: AuthStrategy;
+    /**
+     * Auth — the stitch holds the credential; the caller never sees it. Accepts a live
+     * {@link AuthStrategy} (a `bearer()`/`apiKey()`/`basic()`/`oauth2()`/`cookieSession()` factory
+     * result, or a BYO strategy) **or** a declarative {@link AuthDescriptor} (`{ strategy: 'apiKey',
+     * … }`) — the same shape the config already serialises to on `__config.authScheme` (ADR 0020).
+     * Both forms are first-class; a descriptor is normalised to its strategy at construction.
+     */
+    auth?: AuthConfig;
     /**
      * Retry-and-backoff policy. A bare number is shorthand for the attempt count —
      * `retry: 3` ≡ `retry: { attempts: 3 }`.
@@ -868,13 +875,19 @@ export interface StitchConfig {
  */
 export type ResolvedStitchConfig = Omit<
     StitchConfig,
-    'retry' | 'timeout' | 'cache' | 'idempotency' | 'throttle'
+    'retry' | 'timeout' | 'cache' | 'idempotency' | 'throttle' | 'auth'
 > & {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
     cache?: CacheOptions;
     idempotency?: IdempotencyOptions;
     throttle?: ThrottleOptions;
+    /**
+     * Always a live {@link AuthStrategy} here: {@link normalizeAuth} resolves a declarative
+     * {@link AuthDescriptor} intake to its strategy during {@link compose}, before this shape is
+     * read by the engine and {@link redactConfig}.
+     */
+    auth?: AuthStrategy;
 };
 
 /**

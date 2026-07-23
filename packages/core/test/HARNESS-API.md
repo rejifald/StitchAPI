@@ -76,7 +76,9 @@ Drift is schema-anchored — no snapshot (ADR 0015). Each call validates the unw
 
 ## Auth
 
-`bearer(secret)`, `apiKey({ header?, value })`, `basic({ user, pass })`, `cookieSession({ login: <stitch>, cookie: 'sid', loginInput?: () => StitchInput, refreshOn?: [401] })`. Secrets: `env('VAR')` / `secretsFile('name')` return `() => string` resolved at call time. `cookieSession` auto-logs-in when no cookie is stored, replays the captured cookie, and re-logs-in when a response status is in `refreshOn`.
+`bearer(secret)`, `apiKey({ in?: 'header' | 'query' | 'cookie', name?, value })` (symmetric — `name` defaults to `X-API-Key`/`api_key`/`session` per location; legacy `header?` alias still works), `basic({ user, pass })`, `cookieSession({ login: <stitch>, cookie: 'sid', loginInput?: () => StitchInput, refreshOn?: [401] })`. Secrets: `env('VAR')` / `secretsFile('name')` return `() => string` resolved at call time. `cookieSession` auto-logs-in when no cookie is stored, replays the captured cookie, and re-logs-in when a response status is in `refreshOn`.
+
+`auth` also accepts a **declarative descriptor** (ADR 0020) — the same shape without importing the factory: `{ strategy: 'bearer', token }`, `{ strategy: 'apiKey', in?, name?, value }`, `{ strategy: 'basic', user, pass }`, `{ strategy: 'oauth2', …OAuth2Options }`, `{ strategy: 'cookieSession', …CookieSessionOptions }`. Detection: an object with `apply` is a live strategy (wins); else an object with `strategy` is a descriptor; else construction throws.
 
 ## Mock server
 

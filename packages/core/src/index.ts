@@ -14,7 +14,16 @@ export {
     secretsFile,
     secretFrom,
 } from './auth';
-export type { SecretSource, AuthFailureResult, RefreshResult } from './auth';
+export type {
+    SecretSource,
+    AuthFailureResult,
+    RefreshResult,
+    // ADR 0020 — the declarative `auth` intake union + the `AuthStrategy | AuthDescriptor` alias
+    // that is the type of the public `StitchConfig.auth` field (Q9). Option types (ApiKeyOptions,
+    // …) stay local, deliberately not exported.
+    AuthDescriptor,
+    AuthConfig,
+} from './auth';
 // CONTRACT.md P3 — deprecated alias re-export, removed at GA.
 // eslint-disable-next-line @typescript-eslint/no-deprecated -- intentional back-compat re-export of the @deprecated `AuthFailureInfo` (now `AuthFailureResult`) until the GA cut
 export type { AuthFailureInfo } from './auth';

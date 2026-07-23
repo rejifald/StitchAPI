@@ -1,6 +1,9 @@
 // The authoring surface: stitch() + the extends composition facade +
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
+// From the resolver seam, NOT `./auth` — so the strategy factories never enter the lean
+// `import { stitch }` bundle (ADR 0020 bundle gate). The auth module installs the resolver on load.
+import { normalizeAuth } from './auth-registry';
 import { compact } from './compact';
 import {
     ERROR_SOURCE,
@@ -161,18 +164,24 @@ export function compose(config: Fragment): ResolvedStitchConfig {
     const hookLayers: Hooks[] = [];
     let store: StitchStore | undefined;
     let kind: StitchConfig['kind'];
+    let auth: StitchConfig['auth'];
     for (const layer of layers) {
         if (layer.hooks) hookLayers.push(layer.hooks);
         if (layer.store) store = layer.store;
         // The surface is an atomic value (last-writer-wins), never deep-merged — merging two
         // Surface objects would corrupt their hooks/identity (ADR 0005 Decision 2).
         if (layer.kind) kind = layer.kind;
-        // hooks/store/kind are accumulated above; strip them so deepMerge only folds the rest
+        // Auth is an atomic slot too (ADR 0020 Q7): last-writer-wins, never deep-merged. deepMerge
+        // would blend two strategies (or a strategy and a descriptor) field-by-field — a latent bug
+        // — and a descriptor and the strategy it resolves to have different shapes entirely.
+        if (layer.auth) auth = layer.auth;
+        // hooks/store/kind/auth are accumulated above; strip them so deepMerge only folds the rest
         // (exactOptionalPropertyTypes forbids spreading them back in as `undefined`).
         const rest = { ...layer };
         delete rest.hooks;
         delete rest.store;
         delete rest.kind;
+        delete rest.auth;
         // Capture the raw `idempotency` toggle BEFORE `expandShorthand` normalizes it away — a
         // child `idempotency: false` must clear an inherited object (see the reconcile below), but
         // `expandShorthand` deletes `false` from this layer, so `deepMerge` would never see it and
@@ -201,6 +210,10 @@ export function compose(config: Fragment): ResolvedStitchConfig {
     if (hooks) merged.hooks = hooks;
     if (store) merged.store = store;
     if (kind) merged.kind = kind;
+    // Normalise the winning auth ONCE, after `extends` has resolved and before `__config` is built:
+    // a declarative descriptor becomes its live strategy here (ADR 0020), so redaction and the
+    // engine always see an `AuthStrategy`, and a descriptor's secret leaves never reach __config.
+    if (auth) merged.auth = normalizeAuth(auth);
     const output = normalizeOutput(merged.output);
     if (output !== undefined) merged.output = output;
     const input = normalizeInput(merged.input);

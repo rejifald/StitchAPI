@@ -170,6 +170,9 @@ const SUFFIX_CARVEOUT = new Set([
     'ResolvedStitchConfig',
     'RedactedStitchConfig',
     'SeamConfig',
+    // ADR 0020: the config-slot UNION type of `StitchConfig.auth` (`AuthStrategy | AuthDescriptor`),
+    // not a consumer-input `*Options` envelope — same `*Config` family as StitchConfig above.
+    'AuthConfig',
     'OpenApiInfo', // mirrors the OpenAPI spec's InfoObject (P18: keep the upstream spelling)
 ]);
 const isLike = (n) => /Like/.test(n);

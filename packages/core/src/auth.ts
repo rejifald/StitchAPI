@@ -1,6 +1,7 @@
 // Auth strategies + secret resolvers. The key idea: the stitch holds the credential,
 // resolved at call time — the caller (an agent) never sees it. `cookieSession` performs
 // a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
+import { installAuthDescriptorResolver } from './auth-registry';
 import { compact } from './compact';
 import { fetchAdapter } from './http-adapter';
 import { parseRetryAfter } from './resilience';
@@ -62,6 +63,7 @@ function base64(s: string): string {
  * use {@link optionalEnv}.
  */
 export function env(name: string): () => string {
+    armDescriptorResolver(); // a descriptor resolves its credential through here (ADR 0020 seam)
     return () => {
         const v = readEnv(name);
         if (v == null || v === '')
@@ -86,6 +88,7 @@ export type SecretSource =
  * `bearer(secretFrom(configService, 'GITHUB_TOKEN'))`.
  */
 export function secretFrom(source: SecretSource, name: string): () => string {
+    armDescriptorResolver(); // ADR 0020 seam — see env()
     return () => {
         const v =
             typeof source === 'function' ? source(name) : source.get(name);
@@ -107,6 +110,7 @@ export function secretFrom(source: SecretSource, name: string): () => string {
  * so `bearer` simply attaches nothing.
  */
 export function optionalEnv(name: string): OptionalSecret {
+    armDescriptorResolver(); // ADR 0020 seam — see env()
     // An exported-but-empty var (`MY_TOKEN=`) counts as absent — never send `Bearer ` with no token.
     const read = (): string | undefined => {
         const v = readEnv(name);
@@ -127,6 +131,7 @@ export function optionalEnv(name: string): OptionalSecret {
  * permissions (`chmod 600 ~/.stitch/secrets.json`) and never commit it.
  */
 export function secretsFile(name: string): () => string {
+    armDescriptorResolver(); // ADR 0020 seam — see env()
     return () => {
         try {
             // No node:fs (browser): skip the file, fall through to the env var.
@@ -175,14 +180,42 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
 }
 
 /**
- * API-key auth, in a request **header** (the default) or a **query param**. The key is a
- * {@link Secret} resolved at call time — the caller (an agent) never sees it.
+ * Options for {@link apiKey}. Symmetric across the three locations: `in` selects where the key
+ * rides, `name` is the parameter name (with a per-location default), `value` is the secret. Kept
+ * LOCAL — deliberately NOT a public export (ADR 0020 Q9) — so the option shape can evolve without a
+ * surface-area promise; the public declarative form is the `apiKey` arm of {@link AuthDescriptor}.
+ */
+interface ApiKeyOptions {
+    /** Where the key rides: a request `header` (default), a `query` param, or a `cookie`. */
+    in?: 'header' | 'query' | 'cookie';
+    /**
+     * The parameter name. Per-location default when omitted: `X-API-Key` (header), `api_key`
+     * (query), `session` (cookie).
+     */
+    name?: string;
+    /**
+     * Back-compat alias for {@link ApiKeyOptions.name} in header mode (the pre-symmetric spelling,
+     * before `name` covered all three locations). `name` wins when both are set. Prefer `name`.
+     */
+    header?: string;
+    /** The API key — a {@link Secret} resolved at call time, so the caller (an agent) never sees it. */
+    value: Secret;
+}
+
+/**
+ * API-key auth, carried in a request **header** (the default), a **query param**, or a **cookie**.
+ * The key is a {@link Secret} resolved at call time — the caller (an agent) never sees it. `name`
+ * is the parameter name across all three locations (ADR 0020's symmetric shape); `header` is a
+ * back-compat alias for `name` in header mode.
  *
- * - `in: 'header'` (default): writes `header` (default `'x-api-key'`, lower-cased) — byte-for-byte
+ * - `in: 'header'` (default): writes `name` (default `'X-API-Key'`, lower-cased) — byte-for-byte
  *   the original behaviour, so existing stitches are unaffected.
- * - `in: 'query'`: appends `name=<resolved>` (default `'api_key'`) to the request URL,
- *   URL-encoded. The strategy runs in the attempt loop on the fully-built `req` (after
- *   templating/query-building), so it safely appends onto whatever query the URL already carries.
+ * - `in: 'query'`: appends `name=<resolved>` (default `'api_key'`) to the request URL, URL-encoded.
+ *   The strategy runs in the attempt loop on the fully-built `req` (after templating/query-building),
+ *   so it safely appends onto whatever query the URL already carries.
+ * - `in: 'cookie'`: appends `name=<resolved>` (default `'session'`) onto the request's `Cookie`
+ *   header. The whole `Cookie` header is in the trace secret-header denylist, so the key is redacted
+ *   in every sink.
  *
  * SECURITY: a key in the URL leaks wherever URLs go — server access logs, proxies, the browser
  * history, a `Referer` header. Prefer `in: 'header'` when the API accepts it. The key stays out of
@@ -191,12 +224,9 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
  * `name` is registered with the URL-credential scrubber, so if it does surface in a sink (an OTLP
  * `url.full`, the structured `input.query`) it is REDACTED, like `api_key`/`access_token`/… are.
  */
-export function apiKey(
-    opts:
-        | { in?: 'header'; header?: string; value: Secret }
-        | { in: 'query'; name?: string; value: Secret },
-): AuthStrategy {
-    if (opts.in === 'query') {
+export function apiKey(opts: ApiKeyOptions): AuthStrategy {
+    const where = opts.in ?? 'header';
+    if (where === 'query') {
         const name = opts.name ?? 'api_key';
         // Teach the trace scrubber this param name carries a secret, so the key never reaches a
         // sink in the clear — even when `name` is a vendor spelling the built-in stems don't catch.
@@ -215,7 +245,24 @@ export function apiKey(
             },
         };
     }
-    const headerName = opts.header ?? 'X-API-Key';
+    if (where === 'cookie') {
+        // A key carried as a cookie: append `name=value` onto the request's Cookie header (mirroring
+        // how `cookieSession` replays its jar). The whole header is redacted in every trace sink —
+        // `cookie` is in the secret-header denylist — so the key never surfaces.
+        const name = opts.name ?? 'session';
+        return {
+            name: 'apiKey',
+            scheme: { type: 'apiKey', in: 'cookie', name },
+            apply(req) {
+                const pair = `${name}=${resolve(opts.value)}`;
+                req.headers['cookie'] = [req.headers['cookie'], pair]
+                    .filter(Boolean)
+                    .join('; ');
+            },
+        };
+    }
+    // header (default). `name` is the symmetric spelling; `header` is the back-compat alias.
+    const headerName = opts.name ?? opts.header ?? 'X-API-Key';
     const header = headerName.toLowerCase();
     return {
         name: 'apiKey',
@@ -761,6 +808,102 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
             await flight(key, () => doRefresh(ctx, key, principal, 'refresh'));
         },
     };
+}
+
+// ---- declarative descriptors (ADR 0020) -----------------------------------
+
+/**
+ * A declarative, JSON-shaped intake for {@link StitchConfig.auth}: a flat discriminated union on
+ * `strategy` (the strategy name) that resolves, at `stitch()`/`seam()` construction, to the exact
+ * {@link AuthStrategy} the matching factory builds (ADR 0020). It is a **second intake form**
+ * alongside the factories, not a replacement — both are first-class and permanent; the factory form
+ * stays required for custom / BYO strategies (an arbitrary `apply`) a closed union can't express.
+ *
+ * Live leaves (a {@link Secret} thunk, an {@link Adapter}, the `cookieSession` login stitch) are
+ * allowed on the descriptor exactly as `StitchConfig` already allows url thunks / `transform` /
+ * `keyOf`; {@link normalizeAuth} captures them into the strategy closure **before** `__config` is
+ * built, so a descriptor's secret leaves never touch the strict-JSON config (the redaction outcome
+ * is byte-identical to a factory call).
+ *
+ * @example
+ * // no import of the strategy factory — pure data
+ * auth: { strategy: 'apiKey', in: 'cookie', name: 'sid', value: env('API_KEY') }
+ */
+export type AuthDescriptor =
+    | { strategy: 'bearer'; token: Secret }
+    | {
+          strategy: 'apiKey';
+          in?: 'header' | 'query' | 'cookie';
+          name?: string;
+          value: Secret;
+      }
+    | { strategy: 'basic'; user: Secret; pass: Secret }
+    | ({ strategy: 'oauth2' } & OAuth2Options)
+    | ({ strategy: 'cookieSession' } & CookieSessionOptions);
+
+/**
+ * What {@link StitchConfig.auth} accepts (ADR 0020): a live {@link AuthStrategy} — a factory result
+ * or a BYO strategy with a custom `apply` — **or** a declarative {@link AuthDescriptor}. Both are
+ * exported public types because this is the type of the public `auth` field (ADR 0020 Q9).
+ */
+export type AuthConfig = AuthStrategy | AuthDescriptor;
+
+// On ADR 0020 Q1's belt-and-suspenders "add `value`/`token`/`clientSecret` to the trace secret
+// stems": `token` and `secret` (which catches `clientSecret`) are ALREADY stems (util.ts), and
+// `value` is deliberately NOT added — the shared stem set also drives `redactSecretsDeep` over the
+// request body on every `start` frame, so a `value` stem would redact legitimate body fields for no
+// gain: a descriptor is `config.auth`, never request-body data, and `redactConfig` strips `auth`
+// wholesale from `__config` regardless of ordering — the real guarantee, which needs no new stem.
+
+// Map a {@link AuthDescriptor} to the strategy its matching factory builds. The factories are the
+// single source of wire behaviour; the descriptor is sugar that resolves to them (ADR 0020). This
+// references all five factories, so it MUST stay in this (auth) module — never core — or the lean
+// `import { stitch }` bundle would carry every strategy. Core reaches it only through the resolver
+// seam below (`installAuthDescriptorResolver`), which runs when this module loads.
+function fromDescriptor(d: AuthDescriptor): AuthStrategy {
+    switch (d.strategy) {
+        case 'bearer':
+            return bearer(d.token);
+        case 'apiKey': {
+            // Build the option object by hand (not a spread) so `exactOptionalPropertyTypes` is
+            // satisfied — an absent `in`/`name` stays absent rather than becoming `undefined`.
+            const opts: ApiKeyOptions = { value: d.value };
+            if (d.in !== undefined) opts.in = d.in;
+            if (d.name !== undefined) opts.name = d.name;
+            return apiKey(opts);
+        }
+        case 'basic':
+            return basic({ user: d.user, pass: d.pass });
+        // The oauth2 / cookieSession descriptors ARE their options plus a `strategy` tag; the extra
+        // tag is inert (the factories read named fields, never spread), so pass the value straight
+        // through rather than reconstructing the (large) options object.
+        case 'oauth2':
+            return oauth2(d);
+        case 'cookieSession':
+            return cookieSession(d);
+        default: {
+            // Exhaustiveness backstop: only reachable via an unchecked cast (the union forbids it).
+            const bad: never = d;
+            throw new Error(
+                `unknown auth strategy ${JSON.stringify((bad as { strategy?: unknown }).strategy)}. ` +
+                    'Expected one of bearer, apiKey, basic, oauth2, cookieSession.',
+            );
+        }
+    }
+}
+
+// Arm core's descriptor-resolver seam (ADR 0020) — but NOT as a module-top-level side effect, which
+// esbuild would keep, dragging `fromDescriptor` → every factory into the lean `import { stitch }`
+// bundle for all consumers. Instead the SECRET RESOLVERS (env/optionalEnv/secretsFile/secretFrom)
+// call this on first use: a real descriptor resolves its credential through one of them EAGERLY
+// (`token: env('T')` runs while the descriptor literal is built, before `stitch()`), so the resolver
+// is present exactly when a descriptor is. A bare `import { stitch }` that never touches auth calls
+// none of them, so this whole module — factories included — tree-shakes away. Idempotent + cheap.
+let descriptorsArmed = false;
+function armDescriptorResolver(): void {
+    if (descriptorsArmed) return;
+    descriptorsArmed = true;
+    installAuthDescriptorResolver(fromDescriptor);
 }
 
 /**

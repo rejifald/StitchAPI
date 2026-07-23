@@ -122,8 +122,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "auth",
             type: "property",
-            detail: "AuthStrategy",
-            info: "Auth strategy — the stitch holds the credential; the caller never sees it.",
+            detail: "AuthConfig",
+            info: "Auth — the stitch holds the credential; the caller never sees it. Accepts a live (a `bearer()`/`apiKey()`/`basic()`/`oauth2()`/`cookieSession()` factory result, or a BYO strategy) **or** a declarative  (`{ strategy: 'apiKey', … }`) — the same shape the config already serialises to on `__config.authScheme` (ADR 0020). Both forms are first-class; a descriptor is normalised to its strategy at construction.",
         },
         {
             label: "retry",
