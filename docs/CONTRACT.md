@@ -279,6 +279,15 @@ error-options is `StitchErrorHandlerOptions` / `StitchErrorOptions` /
 result interface is `UseStitchResult` / `UseStitchReturn` / `InjectStitchResult` /
 `StitchStore`; `queryOptions` is still bare in vue/solid/svelte/angular.
 
+_Settled:_ the SSE frame options are **`delta`** and **`error`** on every SSE-capable
+host (`express` / `fastify` / `hono` / `next` / `elysia`) — symmetric envelopes, each a
+`{ data, event, … }` config that also accepts a **bare shaper function as shorthand for
+`{ data }`** (`delta: (c) => c.text`, `error: (e) => e.message`). `delta` carries
+`{ data, event, id }`; `error` carries `{ data, event, observe }` (`observe` sees the
+real server-side failure while the client still gets the generic `data: error` token).
+Do **not** reintroduce the flat `data` / `event` / `id` / `errorData` / `onError`
+spellings (nor the interim `payload` name).
+
 ### P17 · One canonical duration form
 
 Per **D3**, **ms is the single house time unit** and **no duration field carries the

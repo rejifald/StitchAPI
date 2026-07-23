@@ -64,7 +64,7 @@ app.get('/chat', (c) => {
         c,
         completion.stream({ body: { prompt: c.req.query('q') } }),
         {
-            data: (chunk: any) => chunk.data, // pull the parsed event payload out of each delta
+            delta: (chunk: any) => chunk.data, // pull the parsed event payload out of each delta
         },
     );
 });
@@ -73,16 +73,22 @@ app.get('/chat', (c) => {
 By default the `error` message carries a generic `data: error` token, **not** the
 raw error message — echoing it can disclose internal network topology (a transport
 failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's
-status (`HTTP 401`) to the client. Pass `errorData` to opt in when the upstream
-messages are known safe; `onError` still receives the real failure server-side for
-logging:
+status (`HTTP 401`) to the client. Pass `error` to opt in when the upstream
+messages are known safe; `error.observe` still receives the real failure
+server-side for logging:
 
 ```ts
 return streamStitchSse(c, completion.stream({ body: { prompt: c.req.query('q') } }), {
-    errorData: (e) => e.message, // opt in to the raw upstream message
-    onError: (err) => c.get('log').error(err), // real failure, server-side only
+    error: {
+        data: (e) => e.message, // opt in to the raw upstream message
+        observe: (err) => c.get('log').error(err), // real failure, server-side only
+    },
 });
 ```
+
+Both `delta` and `error` also accept a bare function as shorthand for `{ data }` —
+`delta: (c) => c.text`, `error: (e) => e.message` — plus `delta.event` / `delta.id`
+and `error.event` for the SSE `event:` / `id:` lines.
 
 ## Errors: `stitchError(err)` / `stitchOnError(options?)`
 
