@@ -38,7 +38,7 @@ capability boundary. The agent never sees the credential.
 Before running a name, an agent can ask for its shape. `describe_stitch` takes
 `{ name }` and returns one text result — a JSON description built from the
 stitch's public `__config`: its endpoint and surface, which input slots it
-takes, whether the output is validated and where it unwraps, the auth **scheme**
+takes, whether the output is validated and what it picks, the auth **scheme**
 (never the token), which policies are on, the pipeline of steps a call runs
 through, and a Mermaid `diagram`.
 
@@ -59,7 +59,7 @@ returns one text result whose body is JSON like:
         "body": false,
         "headers": false
     },
-    "output": { "validated": true, "unwrap": "data" },
+    "output": { "validated": true, "pick": "data" },
     "auth": "bearer",
     "policies": {
         "retry": true,
@@ -72,7 +72,7 @@ returns one text result whose body is JSON like:
         "GET /widgets/{id}",
         "retry",
         "validate",
-        "unwrap: data",
+        "pick: data",
         "result"
     ],
     "diagram": "flowchart TD\n  subgraph ..."

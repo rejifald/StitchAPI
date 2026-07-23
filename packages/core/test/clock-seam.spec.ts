@@ -1,7 +1,7 @@
 // ADR 0010 — the injectable Clock. A `manualClock()` injected as `clock` makes retry backoff,
 // throttle pacing, and the per-attempt timeout deterministic with zero real waiting: `advance(ms)`
 // drives them. Verified against the REAL engine via the published mock adapter.
-import { stitch } from '../src';
+import { seam, stitch } from '../src';
 import { manualClock, mockAdapter } from '../src/testing';
 import type { Adapter } from '../src/types';
 
@@ -81,6 +81,32 @@ describe('manualClock drives throttle rate spacing (ADR 0010)', () => {
         expect(api.callCount()).toBe(1);
 
         await clock.advance(500); // release the second grant
+        await Promise.all([a, b]);
+        expect(api.callCount()).toBe(2);
+    });
+
+    // A seam builds its SHARED bucket from the raw authoring fragment, before `compose` normalizes
+    // any member — so the rate-string shorthand has to be expanded on that path too. Miss it and
+    // the bucket is built with an undefined rate: both members would fire at `advance(0)`.
+    test('a seam-level `throttle: "2/s"` shorthand paces two DIFFERENT members on one bucket', async () => {
+        const clock = manualClock();
+        const api = mockAdapter({ respond: { body: { ok: true } } });
+        const shared = seam({
+            baseUrl: 'https://api.test',
+            adapter: api,
+            throttle: '2/s', // ≡ { rate: '2/s' } — 500ms between grants
+            clock,
+        });
+        const x = shared.stitch('/x');
+        const y = shared.stitch('/y');
+
+        const a = x.safe();
+        const b = y.safe();
+
+        await clock.advance(0); // the seam pools one bucket, so the second member is paced
+        expect(api.callCount()).toBe(1);
+
+        await clock.advance(500);
         await Promise.all([a, b]);
         expect(api.callCount()).toBe(2);
     });

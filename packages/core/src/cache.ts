@@ -348,8 +348,8 @@ export interface CacheControllerOptions {
     output?: unknown;
     /** The stitch's `transform` closure — opaque, so it forces a version/trust decision (ADR 0004). */
     transform?: ((body: unknown) => unknown) | undefined;
-    /** The stitch's `unwrap` dot-path — serialisable, always folds soundly into the generation. */
-    unwrap?: string | undefined;
+    /** The stitch's `pick` dot-path — serialisable, always folds soundly into the generation. */
+    pick?: string | undefined;
 }
 
 export function createCache(opts: CacheControllerOptions): CacheController {
@@ -368,15 +368,15 @@ export function createCache(opts: CacheControllerOptions): CacheController {
         : undefined;
     // Fold the Standard Schema fingerprint (ADR 0004) ONCE, here at controller creation (which is
     // once per stitch — `ensureCache` memoises it). It resolves three things from the stitch's
-    // output/transform/unwrap + cache options: the GENERATION token (a changed output schema /
-    // unwrap / versioned transform yields a new token → a new bucket → old entries unreachable),
+    // output/transform/pick + cache options: the GENERATION token (a changed output schema /
+    // pick / versioned transform yields a new token → a new bucket → old entries unreachable),
     // the POLICY (fast / revalidate / refuse), and a human-readable REASON for traces. The token is
     // folded into the namespace ALONGSIDE the per-stitch generation counter (decision 8) — it does
     // not replace it: bulk-invalidate bumps the counter, a schema change bumps this token.
     const fp = resolveFingerprint({
         output: opts.output,
         transform: opts.transform,
-        unwrap: opts.unwrap,
+        pick: opts.pick,
         version: config.version,
         transformVersion: config.transformVersion,
         trustTransform: config.trustTransform,
@@ -461,7 +461,7 @@ export function createCache(opts: CacheControllerOptions): CacheController {
             const prefix = await genPrefix();
             // The stored key is prefixed with the frozen key-schema version (a derivation change is
             // a mass self-healing miss, never a stale-key hit — ADR 0003 follow-up) and the
-            // fingerprint generation token `fpTag` (an output-schema/unwrap/transform change moves
+            // fingerprint generation token `fpTag` (an output-schema/pick/transform change moves
             // the bucket — ADR 0004). For the 'revalidate' policy the token is empty and freshness
             // comes from re-validation on the hit path instead.
             const valueKey = (suffix = ''): string =>

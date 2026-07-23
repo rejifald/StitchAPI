@@ -44,10 +44,10 @@ export function pipelineStages(
         const pages = cfg.paginate.pages ?? cfg.paginate.max ?? 50;
         stages.push(opts.detailed ? `paginate (max ${pages})` : 'paginate');
     }
-    // Post-response order matches the engine (engine.ts): transform → unwrap → validate. The body
-    // is transformed, then the unwrap path is read, then the result is validated against `output`.
+    // Post-response order matches the engine (engine.ts): transform → pick → validate. The body
+    // is transformed, then the pick path is read, then the result is validated against `output`.
     if (cfg.transform) stages.push('transform');
-    if (cfg.unwrap) stages.push(`unwrap: ${cfg.unwrap}`);
+    if (cfg.pick) stages.push(`pick: ${cfg.pick}`);
     if (cfg.output) stages.push('validate');
     if (cfg.cache) stages.push('cache');
     stages.push('result');

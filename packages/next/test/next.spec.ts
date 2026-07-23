@@ -167,8 +167,18 @@ describe('sseResponse', () => {
 // --- stitchErrorResponse ---------------------------------------------------
 
 describe('stitchErrorResponse', () => {
+    // The helper now returns `Response | undefined` (undefined ⇒ not a StitchError, so the
+    // caller can rethrow). The cases below all pass a StitchError, so a Response is
+    // guaranteed — narrow it once here.
+    const mustRespond = (res: Response | undefined): Response => {
+        if (!res) throw new Error('expected a Response');
+        return res;
+    };
+
     test('a StitchError maps to 502 by default with a generic JSON body', async () => {
-        const res = stitchErrorResponse(stitchError('upstream down', 503));
+        const res = mustRespond(
+            stitchErrorResponse(stitchError('upstream down', 503)),
+        );
         expect(res.status).toBe(502);
         expect(res.headers.get('content-type')).toContain('application/json');
         // the raw message is withheld by default (see the leak-regression block below)
@@ -176,15 +186,17 @@ describe('stitchErrorResponse', () => {
     });
 
     test('status can propagate the upstream status', async () => {
-        const res = stitchErrorResponse(stitchError('rate limited', 429), {
-            status: (e) => e.status ?? 502,
-        });
+        const res = mustRespond(
+            stitchErrorResponse(stitchError('rate limited', 429), {
+                status: (e) => e.status ?? 502,
+            }),
+        );
         expect(res.status).toBe(429);
     });
 
-    test('a non-StitchError defaults to 500', async () => {
-        const res = stitchErrorResponse(new Error('oops'));
-        expect(res.status).toBe(500);
+    test('a non-StitchError returns undefined so the caller can rethrow', () => {
+        expect(stitchErrorResponse(new Error('oops'))).toBeUndefined();
+        expect(stitchErrorResponse('not even an error')).toBeUndefined();
     });
 
     // Regression: the default body must not echo the raw upstream/transport message,
@@ -192,8 +204,10 @@ describe('stitchErrorResponse', () => {
     // failed to reach) or the upstream's status semantics to an untrusted client.
     describe('does not leak the raw error message by default', () => {
         test('a transport failure with an internal hostname is not disclosed', async () => {
-            const res = stitchErrorResponse(
-                stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+            const res = mustRespond(
+                stitchErrorResponse(
+                    stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+                ),
             );
             expect(res.status).toBe(502);
             const body = await res.text();
@@ -202,15 +216,19 @@ describe('stitchErrorResponse', () => {
         });
 
         test("an upstream 401 does not surface as 'HTTP 401' in the body", async () => {
-            const res = stitchErrorResponse(stitchError('HTTP 401', 401));
+            const res = mustRespond(
+                stitchErrorResponse(stitchError('HTTP 401', 401)),
+            );
             expect(res.status).toBe(502);
             expect(await res.text()).not.toContain('HTTP 401');
         });
 
         test('the `body` opt-in can still include the raw message', async () => {
-            const res = stitchErrorResponse(
-                stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
-                { body: (e) => ({ error: e.message }) },
+            const res = mustRespond(
+                stitchErrorResponse(
+                    stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+                    { body: (e) => ({ error: e.message }) },
+                ),
             );
             expect(await res.text()).toContain('payments.internal.corp');
         });

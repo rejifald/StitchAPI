@@ -102,7 +102,7 @@ test('drift fires on the TRANSFORM output: a required scraped field renamed away
         baseUrl: server.url,
         path: '/catalog',
         transform: scrape, // HTML string -> { items: [...] }
-        unwrap: 'items',
+        pick: 'items',
         // `score` is REQUIRED — losing it is a hard contract violation, validated on the
         // STRUCTURED shape (`[].score` exists only on the parsed object, not the raw HTML).
         output: drift(schema),

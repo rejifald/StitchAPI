@@ -197,7 +197,7 @@ describe('runStitch (arg → input → JSONL)', () => {
         const listWidgets = stitch({
             baseUrl: server.url,
             path: '/widgets',
-            unwrap: 'data',
+            pick: 'data',
             output: asValidator(
                 z.array(z.object({ id: z.number(), name: z.string() })),
             ),

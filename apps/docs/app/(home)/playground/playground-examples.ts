@@ -47,22 +47,22 @@ const api = stitch({
 });
 
 // 2 - Derive endpoint clients with extends: each inherits everything above.
-//     unwrap pulls a value out of an envelope ({ data: ... } -> ...), and
+//     pick pulls a value out of an envelope ({ data: ... } -> ...), and
 //     output validates what you actually receive (pass a Zod / Standard
 //     Schema validator in real code; a plain predicate works too).
 const getUser = stitch({
   extends: [api],
   path: '/users/{id}',
-  unwrap: 'data',
+  pick: 'data',
   output: (u) => !!u && typeof u.id === 'number' && typeof u.email === 'string',
 });
 
 // 3 - .with(...) is partial application: bind input now, reuse the call later.
 const user = await getUser.with({ params: { id: 2 } })();
-console.log('1) validated + unwrapped user:');
+console.log('1) validated + picked user:');
 console.log(user);
 
-// 4 - transform reshapes the raw body before unwrap and validation run.
+// 4 - transform reshapes the raw body before pick and validation run.
 const listNames = stitch({
   extends: [api],
   path: '/users',
@@ -80,7 +80,7 @@ console.log('3) whoami:', me);
 //     succeeds; the retry policy + onRetry hook recover it. .stream() yields
 //     every lifecycle event (start -> progress -> result -> done) so you can
 //     watch the recovery happen instead of just awaiting a value.
-const flaky = stitch({ extends: [api], path: '/users', unwrap: 'data' });
+const flaky = stitch({ extends: [api], path: '/users', pick: 'data' });
 let recovered, attempts;
 for await (const event of flaky.stream({ query: { __flaky: 2 } })) {
   if (event.type === 'result') recovered = event.value;
@@ -115,7 +115,7 @@ import { z } from 'zod';
 const getUser = stitch({
   baseUrl: 'https://demo.stitchapi.dev',
   path: '/users/{id}',
-  unwrap: 'data', // pull the user out of the { data: ... } envelope
+  pick: 'data', // pull the user out of the { data: ... } envelope
   // Pass a Zod schema (or any Standard Schema) directly.
   input: { params: z.object({ id: z.number() }) }, // typed + validated BEFORE the request
   output: z.object({ id: z.number(), email: z.string() }), // typed + validated AFTER
