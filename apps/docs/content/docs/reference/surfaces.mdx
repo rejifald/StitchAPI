@@ -19,13 +19,13 @@ Every non-`http` surface ships as its own **subpath import**, so
 `import { stitch }` from the root pulls in only the `http` engine — a surface's
 code (and its parser/decoder) loads only when you import it.
 
-| Surface    | Import               | Shapes                                     | `await` resolves to            |
-| ---------- | -------------------- | ------------------------------------------ | ------------------------------ |
-| `http`     | `stitch` (default)   | a JSON-over-HTTP call                      | the validated body             |
-| `graphql`  | `stitchapi/graphql`  | POST `{ query, variables }`, unwrap `data` | the `data` payload             |
-| `sse`      | `stitchapi/sse`      | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
-| `stream`   | `stitchapi/stream`   | a raw `ReadableStream` reader              | every decoded chunk, collected |
-| `download` | `stitchapi/download` | a buffered binary GET                      | `{ blob, filename }`           |
+| Surface    | Import               | Shapes                                    | `await` resolves to            |
+| ---------- | -------------------- | ----------------------------------------- | ------------------------------ |
+| `http`     | `stitch` (default)   | a JSON-over-HTTP call                     | the validated body             |
+| `graphql`  | `stitchapi/graphql`  | POST `{ query, variables }`, pick `data`  | the `data` payload             |
+| `sse`      | `stitchapi/sse`      | a `text/event-stream` reader (over fetch) | every parsed event, collected  |
+| `stream`   | `stitchapi/stream`   | a raw `ReadableStream` reader             | every decoded chunk, collected |
+| `download` | `stitchapi/download` | a buffered binary GET                     | `{ blob, filename }`           |
 
 ## http — the default
 
@@ -40,7 +40,7 @@ const getUser = stitch('https://api.example.com/users/{id}');
 
 ## graphql
 
-`graphql()` POSTs `{ query, variables }` and unwraps `data`; a `200` carrying
+`graphql()` POSTs `{ query, variables }` and picks `data`; a `200` carrying
 `errors[]` is treated as a failure, never silently passed.
 
 ```ts
@@ -120,7 +120,7 @@ const logs = stream({
 ```
 
 For `sse` the contract describes the event's `data` payload, not the
-`{ event, data, id, retry }` envelope. `transform` and `unwrap` reshape a whole
+`{ event, data, id, retry }` envelope. `transform` and `pick` reshape a whole
 buffered body and aren't applied to the delta path, and drift **snapshots** are
 a whole-body concept — not taken per-`delta`.
 

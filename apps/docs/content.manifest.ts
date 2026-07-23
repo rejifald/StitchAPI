@@ -404,7 +404,7 @@ export const pages: Page[] = [
         path: 'guides/resilience/accept-status',
         title: 'Accept status',
         description:
-            'Declare statuses that are a normal result, not an error — an accepted non-2xx flows through transform/unwrap/validate instead of throwing.',
+            'Declare statuses that are a normal result, not an error — an accepted non-2xx flows through transform/pick/validate instead of throwing.',
         kind: 'guide',
     },
     {
@@ -445,8 +445,8 @@ export const pages: Page[] = [
 
     // ── Guides · Data shaping ───────────────────────────────────────────────
     {
-        path: 'guides/data/unwrap',
-        title: 'unwrap',
+        path: 'guides/data/pick',
+        title: 'pick',
         description: 'Pull just the part of the response you want by dot-path.',
         kind: 'guide',
     },
@@ -454,7 +454,7 @@ export const pages: Page[] = [
         path: 'guides/data/transform',
         title: 'transform',
         description:
-            'Reshape a response before unwrap and validation — for example, scrape HTML into structured data.',
+            'Reshape a response before pick and validation — for example, scrape HTML into structured data.',
         kind: 'guide',
     },
     {
@@ -481,7 +481,7 @@ export const pages: Page[] = [
         path: 'guides/data/graphql',
         title: 'GraphQL',
         description:
-            'Call a GraphQL endpoint with variables, unwrap data, and treat a 200 carrying errors as a failure.',
+            'Call a GraphQL endpoint with variables, pick data, and treat a 200 carrying errors as a failure.',
         kind: 'guide',
     },
 

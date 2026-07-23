@@ -21,7 +21,7 @@ const sampleRegistry = (): StitchRegistry => ({
         path: '/users/{id}',
         retry: { attempts: 3 },
         output: z.object({ id: z.number() }),
-        unwrap: 'data',
+        pick: 'data',
     }),
     ping: stitch('https://api.example.com/ping'),
 });
@@ -36,17 +36,17 @@ describe('toMermaid', () => {
 
     test('a stitch chains its configured pipeline stages in order', () => {
         const { diagram } = toMermaid(sampleRegistry());
-        // getUser: call -> request -> retry -> unwrap -> validate -> result (no throttle/cache).
+        // getUser: call -> request -> retry -> pick -> validate -> result (no throttle/cache).
         expect(diagram).toContain('(["call"]) -->');
         expect(diagram).toContain('GET https://api.example.com/users/{id}');
         expect(diagram).toContain('retry');
         expect(diagram).toContain('validate');
-        expect(diagram).toContain('unwrap: data');
+        expect(diagram).toContain('pick: data');
         expect(diagram).toContain('(["result"])');
     });
 
-    test('post-response stages render in engine order: transform -> unwrap -> validate', () => {
-        // The engine processes the response body transform → unwrap → validate (engine.ts), and the
+    test('post-response stages render in engine order: transform -> pick -> validate', () => {
+        // The engine processes the response body transform → pick → validate (engine.ts), and the
         // diagram's contract is "the configured request pipeline … in engine order". So the diagram
         // must place validate LAST of the three, not first.
         const { diagram } = toMermaid({
@@ -54,16 +54,16 @@ describe('toMermaid', () => {
                 baseUrl: 'https://api.example.com',
                 path: '/x',
                 transform: (b) => b,
-                unwrap: 'data',
+                pick: 'data',
                 output: z.object({ id: z.number() }),
             }),
         });
         const iTransform = diagram.indexOf('transform');
-        const iUnwrap = diagram.indexOf('unwrap: data');
+        const iPick = diagram.indexOf('pick: data');
         const iValidate = diagram.indexOf('validate');
         expect(iTransform).toBeGreaterThanOrEqual(0);
-        expect(iUnwrap).toBeGreaterThan(iTransform); // unwrap after transform
-        expect(iValidate).toBeGreaterThan(iUnwrap); // validate after unwrap
+        expect(iPick).toBeGreaterThan(iTransform); // pick after transform
+        expect(iValidate).toBeGreaterThan(iPick); // validate after pick
     });
 
     test('a bare stitch is just call -> request -> result', () => {

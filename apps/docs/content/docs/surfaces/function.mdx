@@ -5,7 +5,7 @@ prerequisites: ['/docs/concepts/the-stitch']
 ---
 
 A stitch is a typed async function — no server, no transport. `await` it for the
-final unwrapped, validated value, or iterate its event stream for everything that
+final picked, validated value, or iterate its event stream for everything that
 happened on the way there. This is the closest of the four surfaces: the same
 definition you call here also runs from the CLI, over HTTP, and through MCP.
 
@@ -31,7 +31,7 @@ for await (const event of getUser.stream({ params: { id: 1 } })) {
 ## Options
 
 **Awaited vs streamed.** `await getUser(input)` resolves to the final value,
-already unwrapped and validated. `getUser.stream(input)` yields the typed
+already picked and validated. `getUser.stream(input)` yields the typed
 [event stream](/docs/concepts/event-stream) — `start → progress → drift →
 result → done` — so you can observe retries, throttling, and drift as they
 happen. Same call, two altitudes.

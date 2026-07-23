@@ -1,6 +1,6 @@
 // Edge rungs of resolveFingerprint (src/fingerprint.ts) that fingerprint.spec.ts leaves open. That
 // suite walks the ladder thoroughly, but three precedence/folding details go unpinned:
-//   - the no-output (rung 4) generation FOLDS `unwrap` and a versioned `transform`, so two
+//   - the no-output (rung 4) generation FOLDS `pick` and a versioned `transform`, so two
 //     no-schema stitches that differ only in those get DISTINCT cache generations (the existing
 //     test only checks the policy is fast + the generation is non-empty);
 //   - an opaque transform with no output still REFUSES — the transform gate (rung 2) outranks the
@@ -23,10 +23,10 @@ beforeEach(() => {
     clearFingerprinters();
 });
 
-describe('resolveFingerprint: no-output (rung 4) folds unwrap + transform', () => {
-    it('distinct unwrap → distinct no-schema generation (still fast)', () => {
-        const a = resolveFingerprint({ unwrap: 'data' });
-        const b = resolveFingerprint({ unwrap: 'meta' });
+describe('resolveFingerprint: no-output (rung 4) folds pick + transform', () => {
+    it('distinct pick → distinct no-schema generation (still fast)', () => {
+        const a = resolveFingerprint({ pick: 'data' });
+        const b = resolveFingerprint({ pick: 'meta' });
         expect(a.policy).toBe('fast');
         expect(b.policy).toBe('fast');
         expect(a.generation).not.toBe(b.generation);

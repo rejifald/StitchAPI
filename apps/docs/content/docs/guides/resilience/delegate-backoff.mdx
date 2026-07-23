@@ -85,7 +85,7 @@ for await (const ev of fetchPage.stream({ params: { id: '42' } })) {
 ## What still runs
 
 Delegate mode changes _only_ how a rate-limit status is handled. Everything else
-on a stitch is untouched: input validation, templating, `transform`, `unwrap`,
+on a stitch is untouched: input validation, templating, `transform`, `pick`,
 and [drift](/docs/guides/validation/drift) all still run on a successful response,
 and non-rate-limit failures (a `500`, a transport error) behave exactly as they
 do without the flag. A [`circuit`](/docs/guides/resilience/circuit-breaker)

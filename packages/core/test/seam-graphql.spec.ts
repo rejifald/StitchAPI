@@ -1,7 +1,7 @@
 // seam.graphql() — the seam's GraphQL member builder (src/seam.ts, the makeBuild `isGql` branch).
 // seam.spec.ts covers regular `.stitch()` members (fragment inheritance, throttle pooling, principal
 // sessions, redaction, lifecycle) but NEVER exercises `.graphql()`. This pins the graphql member's
-// defaults — the graphql surface, a default POST /graphql endpoint, `unwrap: 'data'` — plus that it
+// defaults — the graphql surface, a default POST /graphql endpoint, `pick: 'data'` — plus that it
 // inherits the seam fragment, honours an explicit path, and is also buildable off a principal handle.
 import { seam } from '../src';
 import { startMockServer } from './support/mock-server';

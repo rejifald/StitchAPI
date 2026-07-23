@@ -628,7 +628,7 @@ async function* attemptLoop(
     const delegate = (cfg.throttle?.delegate ?? legacyRl?.delegate) === true;
     const rlMatch = acceptsStatus(cfg.throttle?.on ?? legacyRl?.on ?? [429]);
     // acceptStatus (issue #155): statuses the caller declares NORMAL — an accepted non-2xx returns
-    // `res` like a 2xx (flowing through interpret → transform → unwrap → validate) instead of
+    // `res` like a 2xx (flowing through interpret → transform → pick → validate) instead of
     // throwing. Checked at the `>= 400` site, i.e. AFTER the retry-on-status path, so `retry.on`
     // still wins while attempts remain (retried, then accepted on the final attempt).
     const accepts = acceptsStatus(cfg.acceptStatus);
@@ -910,7 +910,7 @@ async function* paginated(
 
         let value: unknown = outcome.value;
         if (cfg.transform) value = await cfg.transform(value);
-        if (cfg.unwrap) value = getPath(value, cfg.unwrap);
+        if (cfg.pick) value = getPath(value, cfg.pick);
         const items = pg.items
             ? pg.items(value)
             : Array.isArray(value)
@@ -970,10 +970,10 @@ async function ensureCache(rt: Runtime): Promise<CacheController | null> {
                 store: rt.store,
                 stitchId: m.cacheStitchId(cfg),
                 // The RAW output schema (not the Validator wrapper) so the fingerprinter can read its
-                // `~standard.vendor`; transform/unwrap are already raw on the config (ADR 0004 fold).
+                // `~standard.vendor`; transform/pick are already raw on the config (ADR 0004 fold).
                 output: outputSchemaSource(cfg),
                 transform: cfg.transform,
-                unwrap: cfg.unwrap,
+                pick: cfg.pick,
                 principal: rt.authCtx.principal,
             }),
         ),
@@ -1134,7 +1134,7 @@ async function* runFrom(
     }
 
     // The surface interprets the response (graphql's "200-with-`errors`-is-a-failure" lives in
-    // its interpret hook); with no hook the body is the value. Then transform → unwrap → validate.
+    // its interpret hook); with no hook the body is the value. Then transform → pick → validate.
     const outcome = interpretResponse(cfg, res);
     if (!outcome.ok) {
         yield surfaceErrEvt(outcome, name, state.attempts);
@@ -1143,7 +1143,7 @@ async function* runFrom(
     }
     let value: unknown = outcome.value;
     if (cfg.transform) value = await cfg.transform(value);
-    if (cfg.unwrap) value = getPath(value, cfg.unwrap);
+    if (cfg.pick) value = getPath(value, cfg.pick);
     // The pre-validation body — the left side of 0015's `diff(raw, validated)`, the coordinate space a
     // finding's `path` is anchored to. `.inspect()` (ADR 0016) surfaces it; otherwise it's discarded.
     const rawBody = value;
@@ -1180,7 +1180,7 @@ async function* runFrom(
 // slot (a rate-only acquire, never released), so a long-lived connection can never pin a seam's
 // concurrency budget (Decision 12). The await/`consume` path resolves to the COLLECTED array of
 // every emitted chunk ACROSS reconnects — the terminal `result` mirrors the whole delta spine (Stage
-// 5 sub-decision); `.stream()` yields the chunks incrementally and buffers nothing. transform/unwrap
+// 5 sub-decision); `.stream()` yields the chunks incrementally and buffers nothing. transform/pick
 // reshape a whole buffered body and are NOT applied here; the `output` contract, by contrast,
 // validates each chunk before its `delta` is emitted (per-`delta`, via the surface's `contractValue`
 // hook — ADR 0005 Addendum) and keeps firing across reconnects, snapshot-drift omitted.

@@ -28,7 +28,7 @@ test('await sugar returns the unwrapped, validated result', async () => {
     const users = stitch({
         baseUrl: server.url,
         path: '/users',
-        unwrap: 'data',
+        pick: 'data',
         // raw Zod schema — inference removes the old `asValidator()` cast.
         output: z.array(z.object({ id: z.number(), name: z.string() })),
     });
