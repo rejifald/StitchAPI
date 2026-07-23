@@ -53,12 +53,12 @@ stitch from-curl 'curl https://api.acme.dev/v1/orders/4821 \
 ```
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
 
 export const getOrders = stitch({
     baseUrl: 'https://api.acme.dev',
     path: '/v1/orders/{orderId}',
-    auth: bearer(env('API_TOKEN')),
+    auth: { strategy: 'bearer', token: env('API_TOKEN') },
 });
 
 // add an output schema to validate + type the response (rerun with --zod)
@@ -69,15 +69,15 @@ await getOrders({
 });
 ```
 
-The literal `sk_live_a1b2c3d4e5f6` is gone. The recognised `Authorization: Bearer` header became `auth: bearer(env('API_TOKEN'))` — a capability that resolves the secret from the environment at call time, not a string baked into the file. Only headers the curl actually carried are emitted, so there is no fabricated `Accept` or `User-Agent` cluttering the output. This is the difference between a generated declaration you can commit and a curl you have to scrub by hand before anyone sees it.
+The literal `sk_live_a1b2c3d4e5f6` is gone. The recognised `Authorization: Bearer` header became `auth: { strategy: 'bearer', token: env('API_TOKEN') }` — a declarative descriptor (ADR 0020) that resolves the secret from the environment at call time, not a string baked into the file. It is pure config data, so the ejected client imports only `stitch` and `env`, no strategy factory. Only headers the curl actually carried are emitted, so there is no fabricated `Accept` or `User-Agent` cluttering the output. This is the difference between a generated declaration you can commit and a curl you have to scrub by hand before anyone sees it.
 
 The CLI recognises three credential shapes, each from the header (or query param) it actually appears in — `from-curl` reads the request it was given, not flags it was not:
 
--   **`Authorization: Bearer <token>`** → `auth: bearer(env('API_TOKEN'))`
--   **`Authorization: Basic <base64>`** → `auth: basic({ user: env('API_USER'), pass: env('API_PASSWORD') })`
--   **An `X-API-Key` header or an API-key query param** → `auth: apiKey({ value: env('API_KEY') })` for a header, or `auth: apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') })` for a query param
+-   **`Authorization: Bearer <token>`** → `auth: { strategy: 'bearer', token: env('API_TOKEN') }`
+-   **`Authorization: Basic <base64>`** → `auth: { strategy: 'basic', user: env('API_USER'), pass: env('API_PASSWORD') }`
+-   **An `X-API-Key` header or an API-key query param** → `auth: { strategy: 'apiKey', value: env('API_KEY') }` for a header, or `auth: { strategy: 'apiKey', in: 'query', name: 'api_key', value: env('API_KEY') }` for a query param
 
-In every case the value is an `env(...)` placeholder, not the captured secret — `basic` and `apiKey` each take a single options object, so the generated call is the real API you would have written. (curl's `-u user:password` flag is a different story: `from-curl` does not parse it and warns it as an unknown flag. Basic auth is recognised from an `Authorization: Basic …` header, the form a browser's **Copy as cURL** actually emits.)
+In every case the value is an `env(...)` placeholder, not the captured secret — each `auth` is a plain descriptor object, so the generated config is data you can commit as-is, with no strategy import to wire up. (curl's `-u user:password` flag is a different story: `from-curl` does not parse it and warns it as an unknown flag. Basic auth is recognised from an `Authorization: Basic …` header, the form a browser's **Copy as cURL** actually emits.)
 
 ## Type the response when you want it
 
@@ -95,13 +95,13 @@ stitch from-curl 'curl https://api.acme.dev/v1/orders/4821' \
 What you get back is an ordinary stitch declaration, not a frozen artifact. The same fields you would reach for on any stitch are one edit away:
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
 
 // ---cut---
 export const getOrder = stitch({
     baseUrl: 'https://api.acme.dev',
     path: '/v1/orders/{orderId}',
-    auth: bearer(env('API_TOKEN')),
+    auth: { strategy: 'bearer', token: env('API_TOKEN') },
     retry: 3,
     timeout: '5s',
 });

@@ -10,7 +10,7 @@
 import { parseCurl, parseHar, toStitchSource } from '../src/from-curl';
 
 describe('toStitchSource — auth recognition (untested strategies)', () => {
-    it('maps Basic auth to basic(env(...)) and never emits the credential', () => {
+    it('maps Basic auth to a basic descriptor and never emits the credential', () => {
         const cred = 'dXNlcjpzdXBlci1zZWNyZXQ='; // base64 user:super-secret
         const { source } = toStitchSource(
             parseCurl(
@@ -18,15 +18,14 @@ describe('toStitchSource — auth recognition (untested strategies)', () => {
             ),
         );
         expect(source).not.toContain(cred);
+        // ADR 0020: declarative descriptor, no strategy import (only `stitch` + `env`).
         expect(source).toContain(
-            "basic({ user: env('API_USER'), pass: env('API_PASSWORD') })",
+            "{ strategy: 'basic', user: env('API_USER'), pass: env('API_PASSWORD') }",
         );
-        expect(source).toContain(
-            "import { stitch, basic, env } from 'stitchapi'",
-        );
+        expect(source).toContain("import { stitch, env } from 'stitchapi'");
     });
 
-    it('maps an ?api_key= query param to apiKey({ in: query }) and strips the secret', () => {
+    it('maps an ?api_key= query param to an apiKey query descriptor and strips the secret', () => {
         const { source } = toStitchSource(
             parseCurl(
                 'curl "https://api.example.com/data?api_key=secret-123&page=2"',
@@ -34,11 +33,9 @@ describe('toStitchSource — auth recognition (untested strategies)', () => {
         );
         expect(source).not.toContain('secret-123');
         expect(source).toContain(
-            "apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') })",
+            "{ strategy: 'apiKey', in: 'query', name: 'api_key', value: env('API_KEY') }",
         );
-        expect(source).toContain(
-            "import { stitch, apiKey, env } from 'stitchapi'",
-        );
+        expect(source).toContain("import { stitch, env } from 'stitchapi'");
         // the non-auth query param survives; the auth one is removed from the call query.
         expect(source).toContain('page: 2');
         expect(source).not.toMatch(/query:\s*{[^}]*api_key/);
@@ -52,7 +49,7 @@ describe('toStitchSource — auth recognition (untested strategies)', () => {
         );
         expect(source).not.toContain('tok-xyz');
         expect(source).toContain(
-            "apiKey({ in: 'query', name: 'access_token', value: env('API_KEY') })",
+            "{ strategy: 'apiKey', in: 'query', name: 'access_token', value: env('API_KEY') }",
         );
     });
 });

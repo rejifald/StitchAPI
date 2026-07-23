@@ -91,7 +91,7 @@ describe('toStitchSource', () => {
         );
     });
 
-    test('a Bearer token never appears in the source; bearer(env(...)) does', () => {
+    test('a Bearer token never appears in the source; a bearer descriptor does', () => {
         const secret = 'sk-super-secret-token-zzz';
         const { source } = toStitchSource(
             parseCurl(
@@ -99,11 +99,13 @@ describe('toStitchSource', () => {
             ),
         );
         expect(source).not.toContain(secret);
-        expect(source).toContain("bearer(env('API_TOKEN'))");
-        // The import line carries exactly the symbols used.
+        // ADR 0020: auth is emitted as a declarative descriptor — pure data, no strategy import.
         expect(source).toContain(
-            "import { stitch, bearer, env } from 'stitchapi'",
+            "{ strategy: 'bearer', token: env('API_TOKEN') }",
         );
+        // The import line carries exactly the symbols used — `stitch` + `env`, NOT the `bearer`
+        // factory (the descriptor form imports no strategy).
+        expect(source).toContain("import { stitch, env } from 'stitchapi'");
         // The Authorization header is consumed by auth, not echoed into static headers.
         expect(source).not.toMatch(/headers:\s*{[^}]*authorization/i);
     });
@@ -144,7 +146,7 @@ describe('toStitchSource', () => {
         expect(source).toContain('limit: 10');
     });
 
-    test('an x-api-key header → apiKey({ value: env(API_KEY) }), secret stripped', () => {
+    test('an x-api-key header → an apiKey descriptor, secret stripped', () => {
         const key = 'apikey-zzz-1234567890';
         const { source } = toStitchSource(
             parseCurl(
@@ -152,10 +154,11 @@ describe('toStitchSource', () => {
             ),
         );
         expect(source).not.toContain(key);
-        expect(source).toContain("apiKey({ value: env('API_KEY') })");
+        // ADR 0020: a declarative descriptor, no `apiKey` factory import.
         expect(source).toContain(
-            "import { stitch, apiKey, env } from 'stitchapi'",
+            "{ strategy: 'apiKey', value: env('API_KEY') }",
         );
+        expect(source).toContain("import { stitch, env } from 'stitchapi'");
     });
 
     test('--zod emits an output schema inferred from a sample response', () => {
@@ -214,7 +217,9 @@ describe('parseHar', () => {
     test('toStitchSource on the HAR request strips the Bearer secret', () => {
         const { source } = toStitchSource(parseHar(har));
         expect(source).not.toContain('har-tok');
-        expect(source).toContain("bearer(env('API_TOKEN'))");
+        expect(source).toContain(
+            "{ strategy: 'bearer', token: env('API_TOKEN') }",
+        );
         expect(source).toContain("bodyType: 'json'");
     });
 

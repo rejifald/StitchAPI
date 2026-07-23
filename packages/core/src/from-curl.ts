@@ -932,31 +932,30 @@ function renderBody(raw: string, bodyType: 'json' | 'form'): string {
     return `{\n${inner},\n    }`;
 }
 
-// Render the `auth:` value for a recognised strategy. The credential is ALWAYS an env() placeholder.
+// Render the `auth:` value for a recognised strategy as a declarative descriptor (ADR 0020 Q8) —
+// pure data, so the ejected client needs NO strategy-factory import. The credential is ALWAYS an
+// env() placeholder.
 function renderAuth(auth: AuthEmit): string {
     switch (auth.kind) {
         case 'bearer':
-            return `bearer(env('${auth.envName}'))`;
+            return `{ strategy: 'bearer', token: env('${auth.envName}') }`;
         case 'apiKey':
             return auth.queryName
-                ? `apiKey({ in: 'query', name: '${auth.queryName}', value: env('${auth.envName}') })`
+                ? `{ strategy: 'apiKey', in: 'query', name: '${auth.queryName}', value: env('${auth.envName}') }`
                 : auth.header && auth.header.toLowerCase() !== 'x-api-key'
-                  ? `apiKey({ header: '${auth.header}', value: env('${auth.envName}') })`
-                  : `apiKey({ value: env('${auth.envName}') })`;
+                  ? `{ strategy: 'apiKey', name: '${auth.header}', value: env('${auth.envName}') }`
+                  : `{ strategy: 'apiKey', value: env('${auth.envName}') }`;
         case 'basic':
-            return `basic({ user: env('${auth.userEnv}'), pass: env('${auth.passEnv}') })`;
+            return `{ strategy: 'basic', user: env('${auth.userEnv}'), pass: env('${auth.passEnv}') }`;
     }
 }
 
-// The import line: only the symbols the emitted code actually uses (stitch always; an auth helper
-// when present; env when auth is present; z is imported separately under --zod).
+// The import line: only the symbols the emitted code actually uses. `stitch` always; `env` when auth
+// is present (for the secret placeholder). The declarative descriptor form (ADR 0020 Q8) means NO
+// strategy factory (bearer/apiKey/basic) is imported — the ejected client's `auth:` is pure data.
+// `z` is imported separately under --zod.
 function buildImport(auth: AuthEmit | undefined): string {
     const named = ['stitch'];
-    if (auth) {
-        if (auth.kind === 'bearer') named.push('bearer');
-        else if (auth.kind === 'apiKey') named.push('apiKey');
-        else named.push('basic');
-        named.push('env');
-    }
+    if (auth) named.push('env');
     return `import { ${named.join(', ')} } from 'stitchapi';`;
 }
