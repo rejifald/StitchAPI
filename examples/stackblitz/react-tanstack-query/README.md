@@ -16,9 +16,9 @@ npm run dev
 
 ## What to look at
 
--   **`src/api.ts`** — one `stitch()` declaration, identical to the plain quick start.
--   **`src/App.tsx`** — `useQuery(stitchQueryOptions(getUsers, {}))`. No `@tanstack/react-query`
-    import is needed inside StitchAPI: `stitchQueryOptions` returns a POJO, so it stays an
-    optional peer.
+- **`src/api.ts`** — one `stitch()` declaration, identical to the plain quick start.
+- **`src/App.tsx`** — `useQuery(stitchQueryOptions(getUsers, {}))`. No `@tanstack/react-query`
+  import is needed inside StitchAPI: `stitchQueryOptions` returns a POJO, so it stays an
+  optional peer.
 
 More: <https://stitchapi.dev>.
