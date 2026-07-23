@@ -31,6 +31,27 @@ token in the stitch store (TTL from `expires_in`), and attaches it as
 `Authorization: Bearer …`; later calls reuse the cached token until it nears
 expiry, all behind the capability boundary.
 
+## As a descriptor
+
+`auth` also accepts a declarative descriptor (ADR 0020) — every `oauth2` option
+rides on the descriptor beside `strategy: 'oauth2'`, with no `oauth2` import:
+
+```ts twoslash
+import { env, stitch } from 'stitchapi';
+
+const orders = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders',
+    auth: {
+        strategy: 'oauth2',
+        tokenUrl: 'https://api.example.com/oauth/token',
+        clientId: env('CLIENT_ID'),
+        clientSecret: env('CLIENT_SECRET'),
+        scope: 'orders.read',
+    },
+});
+```
+
 ## Options
 
 `tokenUrl` is the `client_credentials` token endpoint. Pass `clientId` and

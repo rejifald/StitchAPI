@@ -17,9 +17,11 @@ import { bearer } from 'stitchapi';
 
 ## apiKey
 
-Sends a secret in a header (`x-api-key` by default), or — with `in: 'query'` — as
-a URL query parameter (`api_key` by default), resolved and URL-encoded at call
-time.
+Sends a secret in a **header** (`x-api-key` by default), a URL **query** parameter
+(`api_key` by default), or a **cookie** (`session` by default) — picked with
+`in: 'header' | 'query' | 'cookie'`. `name` is the parameter name in every
+location (the legacy `header` alias still names the header); the value is resolved
+at call time, and URL-encoded for a query key.
 
 ```ts twoslash
 import { apiKey } from 'stitchapi';
@@ -49,6 +51,53 @@ Performs the `client_credentials` grant, caches the access token, refreshes it
 before expiry, and attaches it as `Authorization: Bearer …`.
 
 <AutoTypeTable path="../../packages/core/src/auth.ts" name="OAuth2Options" />
+
+## Declarative descriptors
+
+Every strategy above also has a **declarative form** (ADR 0020): `auth` accepts an
+`AuthDescriptor` — a flat object tagged with `strategy` — as an alternative to the
+factory result. It resolves to the exact same strategy at construction, so the
+wire behaviour is identical; it just needs no factory import, which keeps
+generated / ejected clients pure data. `AuthConfig`, the type of
+`StitchConfig.auth`, is `AuthStrategy | AuthDescriptor`.
+
+```ts twoslash
+import { env, stitch } from 'stitchapi';
+
+const gh = stitch({
+    url: 'https://api.github.com/user',
+    // ↓ no `bearer` import — the descriptor is pure data
+    auth: { strategy: 'bearer', token: env('GH_TOKEN') },
+});
+```
+
+The five shapes, one per strategy:
+
+```ts twoslash
+import { env } from 'stitchapi';
+import type { AuthDescriptor, Stitch } from 'stitchapi';
+
+declare const login: Stitch;
+
+const forms: AuthDescriptor[] = [
+    { strategy: 'bearer', token: env('TOKEN') },
+    { strategy: 'apiKey', in: 'cookie', name: 'sid', value: env('KEY') },
+    { strategy: 'basic', user: env('USER'), pass: env('PASS') },
+    {
+        strategy: 'oauth2',
+        tokenUrl: 'https://id.example.com/token',
+        clientId: env('CLIENT_ID'),
+        clientSecret: env('CLIENT_SECRET'),
+    },
+    { strategy: 'cookieSession', login, cookie: 'sid' },
+];
+```
+
+Detection is unambiguous: an object with an `apply` function is a live strategy
+(and wins even if it also carries a `strategy` key); an object with `strategy` is
+a descriptor; anything else throws at construction. The factory form stays
+first-class — it is required for a custom / BYO `apply` a closed union can't
+express, and stays terser for `bearer`.
 
 ## env
 

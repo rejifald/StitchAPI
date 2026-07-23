@@ -25,6 +25,21 @@ Each call to `report()` resolves `API_USER` and `API_PASS`, encodes them, and
 attaches the header — behind the capability boundary, so the credential is never
 passed in by the caller.
 
+## As a descriptor
+
+`auth` also accepts a declarative descriptor (ADR 0020) — the same strategy
+without importing `basic`:
+
+```ts twoslash
+import { env, stitch } from 'stitchapi';
+
+const report = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/report',
+    auth: { strategy: 'basic', user: env('API_USER'), pass: env('API_PASS') },
+});
+```
+
 ## Options
 
 `user` and `pass` each take a string or a resolver. Prefer a resolver like

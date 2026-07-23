@@ -40,6 +40,37 @@ The first call to `me()` runs `login` once, captures its cookies, and replays
 them; a `401` afterward re-runs the login and retries, all behind the
 capability boundary.
 
+## As a descriptor
+
+`auth` also accepts a declarative descriptor (ADR 0020) — the `login` stitch and
+every option ride on it beside `strategy: 'cookieSession'`, with no
+`cookieSession` import:
+
+```ts twoslash
+import { env, stitch } from 'stitchapi';
+
+const login = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/login',
+    bodyType: 'form',
+});
+
+const me = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/me',
+    auth: {
+        strategy: 'cookieSession',
+        login,
+        cookie: '*',
+        loginInput: () => ({
+            body: { user: env('USER')(), pass: env('PASS')() },
+        }),
+        refreshOn: [401],
+    },
+});
+```
+
 ## Options
 
 Point `login` at the stitch that authenticates, and pass `loginInput` to supply

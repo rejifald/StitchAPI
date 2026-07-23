@@ -24,6 +24,25 @@ const me = stitch({
 The token is read each time `me()` runs, so a rotated secret takes effect on the
 next call with no rewiring.
 
+## As a descriptor
+
+`auth` also accepts a declarative descriptor (ADR 0020) — the same strategy
+without importing `bearer`:
+
+```ts twoslash
+import { env, stitch } from 'stitchapi';
+
+const me = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/me',
+    auth: { strategy: 'bearer', token: env('API_TOKEN') },
+});
+```
+
+The factory form stays first-class and is terser (`bearer(env('API_TOKEN'))`);
+the descriptor earns its keep when you'd rather write pure config data — for
+example in a generated client, where it needs no strategy import.
+
 ## Options
 
 `bearer` accepts either a literal string or a resolver thunk (`() => string`).

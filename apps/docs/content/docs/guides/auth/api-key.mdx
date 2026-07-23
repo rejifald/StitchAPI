@@ -30,13 +30,15 @@ the capability boundary.
 [`env('API_KEY')`](/docs/guides/auth/secret-resolvers) so the secret is read at
 call time and never committed.
 
-`in` chooses where the key goes: `'header'` (the default) or `'query'`.
+`in` chooses where the key goes: `'header'` (the default), `'query'`, or
+`'cookie'`.
 
-`header` overrides the header name (default `x-api-key`, lowercased) when
-`in: 'header'`: pass `apiKey({ header: 'X-My-Key', value: env('API_KEY') })` to
-send the key under a custom header. The name goes on the wire **lowercased**
-(`x-my-key`) — case-insensitive per HTTP, but worth knowing if a fixture asserts
-the original casing. See [Migration notes](/docs/getting-started/migration-notes).
+`name` is the parameter name in every location — it defaults to `x-api-key`
+(header), `api_key` (query), or `session` (cookie). In header mode the name goes
+on the wire **lowercased** (`x-my-key`) — case-insensitive per HTTP, but worth
+knowing if a fixture asserts the original casing. The pre-symmetric `header`
+alias still names the header (`apiKey({ header: 'X-My-Key', value })`); prefer
+`name`. See [Migration notes](/docs/getting-started/migration-notes).
 
 ## In a query parameter
 
@@ -68,6 +70,26 @@ Every call appends `&api_key=<resolved>` to the URL. `name` is the parameter nam
     `input.query`) it is redacted to `REDACTED`, exactly like
     `api_key`/`access_token`. None of that protects the upstream server's logs.
 </Callout>
+
+## As a descriptor
+
+`auth` also takes a declarative descriptor (ADR 0020) — the same key placement
+without importing `apiKey`. Here the key rides in a cookie:
+
+```ts twoslash
+import { env, stitch } from 'stitchapi';
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    auth: {
+        strategy: 'apiKey',
+        in: 'cookie',
+        name: 'sid',
+        value: env('API_KEY'),
+    },
+});
+```
 
 See [Reference → Auth strategies](/docs/reference/auth-strategies) for every
 field.
