@@ -11,6 +11,37 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+## [1.0.0-rc.6] — 2026-07-23
+
+### Changed
+
+-   **BREAKING — the `unwrap` config key is renamed to `pick`.** The response-shaping
+    key that pulls a nested payload out of an envelope (`{ data: … }` → the value it
+    wraps) is now spelled `pick`, the verb the guides already used for it, leaving
+    `unwrap` to mean only the throwing call twin (`stitch.unwrap()`). Rename
+    `unwrap: '<path>'` to `pick: '<path>'` in every stitch config — there is no
+    deprecated alias. (#481)
+
+-   **BREAKING — `@stitchapi/next`'s `stitchErrorResponse` now returns
+    `Response | undefined`.** It returns `undefined` for anything that is not a
+    `StitchError` (previously it always produced a `Response`), so it composes inside
+    a `catch` that must also rethrow non-stitch failures untouched:
+
+    ```ts
+    const mapped = stitchErrorResponse(err); // default status 502
+    if (mapped) return mapped; // undefined → not a StitchError
+    throw err;
+    ```
+
+    Callers that assumed a non-null `Response` must handle the `undefined` branch. (#475)
+
+### Added
+
+-   **`throttle` string shorthand.** `throttle: '1/s'` is now accepted as shorthand for
+    `throttle: { rate: '1/s' }`, matching the ergonomics of the other rate-shaped
+    options. The object form is unchanged and is still required when you also set a
+    `pool` (or any other throttle field). (#480)
+
 ## [1.0.0-rc.5] — 2026-07-08
 
 ### Changed
@@ -276,7 +307,8 @@ causality push:
 -   **Playground:** the browser Worker runner, handler registration, incremental
     streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.5...HEAD
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.6...HEAD
+[1.0.0-rc.6]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.2...v1.0.0-rc.3
