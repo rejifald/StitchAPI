@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/next",
-    "version": "1.0.0-rc.5",
+    "version": "1.0.0-rc.6",
     "type": "commonjs",
     "description": "Next.js helpers for StitchAPI — stream a stitch as an SSE Response and map a StitchError to a Response, for App Router route handlers (and any Web-standard fetch handler).",
     "main": "lib/index.js",
