@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/express",
-    "version": "1.0.0-rc.5",
+    "version": "1.0.0-rc.6",
     "type": "commonjs",
     "description": "Express middleware for StitchAPI — attach a request-scoped seam to req, stream a stitch's SSE output, and map Stitch errors to HTTP. Express 4 & 5.",
     "main": "lib/index.js",
