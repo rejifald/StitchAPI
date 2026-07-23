@@ -11,11 +11,10 @@ status: draft
 # apps/docs/test/drafts-twoslash.spec.ts (потрібен збілджений core; у CI його
 # білдить крок `pnpm check:types` перед `pnpm test`).
 #
-# TODO при фіналізації (коли #470 сяде в main — публікуємо саме на тому API):
-#   • `unwrap: 'data'` → `pick: 'data'`
-#   • `throttle: { rate: '1/s' }` → `throttle: '1/s'`  (коротка форма)
-# Обидва вже є в #470; НЕ виносимо окремим PR (не фрагментуємо контракт-фриз).
-# Зараз лишаємо поточний ОПУБЛІКОВАНИЙ API, щоб twoslash проходив проти зібраного core.
+# API: приклади вже на контракті після #481 — `pick` замість `unwrap` і коротка
+# форма `throttle: '1/s'`. Ключ перейменовано в #481 без аліаса, тож `unwrap`
+# завалив би twoslash проти зібраного core. Цей контракт виходить у
+# `stitchapi@1.0.0-rc.6`; щоб запустити приклади, читач ставить `npm i stitchapi@rc`.
 #
 # Для публікації на dou.ua зняти twoslash: `sed 's/```ts twoslash/```ts/g'`.
 ---
@@ -353,7 +352,7 @@ const listUsers = stitch({
     path: 'https://api.example.com/users',
     output: User.array(),
     retry: 3,
-    throttle: { rate: '1/s' },
+    throttle: '1/s',
     timeout: '30s',
 });
 ```
@@ -410,7 +409,7 @@ const getUser = api.stitch({ path: '/users/{id}', output: drift(User) });
 const listUsers = api.stitch({
     path: '/users',
     output: User.array(),
-    unwrap: 'data',
+    pick: 'data',
 });
 const createUser = api.stitch({
     method: 'POST',
@@ -420,7 +419,7 @@ const createUser = api.stitch({
 });
 ```
 
-(`unwrap: 'data'` дістає корисне навантаження з обгортки `{ data: … }`, яку
+(`pick: 'data'` дістає корисне навантаження з обгортки `{ data: … }`, яку
 люблять віддавати REST-API.) Ось і весь наш монстр-модуль: один `seam` зі
 спільною політикою плюс рядок-два на ендпоінт. Без власного циклу повторів, без
 мʼютексу, без `as T`.
