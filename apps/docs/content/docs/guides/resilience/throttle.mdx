@@ -31,6 +31,22 @@ silently stalled.
 not a token bucket. `concurrency` caps simultaneous in-flight calls; either may
 be set on its own.
 
+When the rate is all you need, pass it directly — a bare string is shorthand for
+`rate`, exactly like `timeout: '5s'` is shorthand for `timeout: { total: '5s' }`:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const ping = stitch({
+    url: 'https://api.example.com/ping',
+    throttle: '1/s', // ≡ { rate: '1/s' }
+});
+```
+
+The shorthand expands at compose time, so `__config.throttle` always reads back
+as the object form, and a `throttle: '1/s'` layered over an inherited
+`{ rate: '5/s', concurrency: 2 }` replaces only the rate.
+
 `scope` decides what shares the budget: `'stitch'` (the default) gives each
 stitch its own budget, while `'host'` pools the budget across every stitch
 hitting the same host — use it when one API publishes a single account-wide

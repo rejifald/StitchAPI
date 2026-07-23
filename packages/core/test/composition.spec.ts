@@ -48,7 +48,7 @@ test('extends facade produces the correct result', async () => {
     const schema = asValidator(
         z.array(z.object({ id: z.number(), name: z.string() })),
     );
-    const base = { baseUrl: server.url, unwrap: 'data' };
+    const base = { baseUrl: server.url, pick: 'data' };
 
     const viaExtends = stitch({
         extends: [base],
@@ -71,7 +71,7 @@ test('a seam member is equivalent to the extends facade', async () => {
     const schema = asValidator(
         z.array(z.object({ id: z.number(), name: z.string() })),
     );
-    const base = { baseUrl: server.url, unwrap: 'data' };
+    const base = { baseUrl: server.url, pick: 'data' };
 
     const viaExtends = stitch({
         extends: [base],
@@ -265,16 +265,18 @@ test('.with() partial application sends bound query alongside call-time query', 
 });
 
 // 6) Scalar shorthands expand to their option objects at compose time.
-test('scalar shorthands (retry/timeout/cache) expand to option objects', () => {
+test('scalar shorthands (retry/timeout/cache/throttle) expand to option objects', () => {
     const resolved = compose({
         path: 'https://api.example.com/x',
         retry: 3,
         timeout: '5s',
         cache: '1m',
+        throttle: '1/s',
     });
     expect(resolved.retry).toEqual({ attempts: 3 });
     expect(resolved.timeout).toEqual({ total: '5s' });
     expect(resolved.cache).toEqual({ ttl: '1m' });
+    expect(resolved.throttle).toEqual({ rate: '1/s' });
 });
 
 // 6b) A scalar shorthand folds over an inherited object via extends, preserving the siblings the
@@ -283,15 +285,18 @@ test('a scalar shorthand merges over an inherited object, preserving siblings', 
     const base = {
         retry: { attempts: 2, on: [429, 503] },
         timeout: { total: '30s', perAttempt: '10s' },
+        throttle: { rate: '2/s', concurrency: 4 },
     };
     const resolved = compose({
         extends: [base],
         path: '/x',
         retry: 5,
         timeout: '5s',
+        throttle: '1/s',
     });
     expect(resolved.retry).toEqual({ attempts: 5, on: [429, 503] });
     expect(resolved.timeout).toEqual({ total: '5s', perAttempt: '10s' });
+    expect(resolved.throttle).toEqual({ rate: '1/s', concurrency: 4 });
 });
 
 // 6c) The shorthand survives end-to-end: a stitch's public __config shows the normalized objects.
@@ -300,7 +305,9 @@ test('a stitch built from shorthand exposes the normalized objects on __config',
         path: 'https://api.example.com/x',
         retry: 4,
         timeout: 2000,
+        throttle: '1/s',
     });
     expect(s.__config.retry).toEqual({ attempts: 4 });
     expect(s.__config.timeout).toEqual({ total: 2000 });
+    expect(s.__config.throttle).toEqual({ rate: '1/s' });
 });

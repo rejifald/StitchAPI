@@ -478,7 +478,7 @@ by default (no side effects) — opt in with --trace or the STITCH_TRACE_* env v
 diagram:
   --name <name>   diagram only this stitch (by export name or configured name)
   Emits a Mermaid flowchart of each stitch's configured pipeline (throttle, request,
-  retry, surface, pagination, validation, transform, unwrap, cache). Auth is redacted
+  retry, surface, pagination, validation, transform, pick, cache). Auth is redacted
   from a stitch's public config, so it is not shown.
 
 export:

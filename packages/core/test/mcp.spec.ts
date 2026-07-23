@@ -50,7 +50,7 @@ beforeEach(() => {
     const getWidget = stitch({
         baseUrl: api.url,
         path: '/widgets/{id}',
-        unwrap: 'data',
+        pick: 'data',
         auth: bearer('s3cr3t-token'),
         retry: { attempts: 3 },
         timeout: { perAttempt: 1000 },
@@ -192,7 +192,7 @@ test('tools/call describe_stitch teaches a stitch shape without running it', asy
         endpoint: string;
         surface: string;
         input: { params: boolean; query: boolean; body: boolean };
-        output: { validated: boolean; unwrap: string | null };
+        output: { validated: boolean; pick: string | null };
         auth: string | null;
         policies: Record<string, boolean>;
         pipeline: string[];
@@ -207,11 +207,11 @@ test('tools/call describe_stitch teaches a stitch shape without running it', asy
         query: false,
         body: false,
     });
-    expect(shape.output).toMatchObject({ validated: true, unwrap: 'data' });
-    // the pipeline lists stages in engine order: the engine unwraps THEN validates, so the
-    // 'unwrap' stage must precede 'validate' (not the reverse).
-    expect(shape.pipeline.indexOf('unwrap: data')).toBeGreaterThanOrEqual(0);
-    expect(shape.pipeline.indexOf('unwrap: data')).toBeLessThan(
+    expect(shape.output).toMatchObject({ validated: true, pick: 'data' });
+    // the pipeline lists stages in engine order: the engine picks THEN validates, so the
+    // 'pick' stage must precede 'validate' (not the reverse).
+    expect(shape.pipeline.indexOf('pick: data')).toBeGreaterThanOrEqual(0);
+    expect(shape.pipeline.indexOf('pick: data')).toBeLessThan(
         shape.pipeline.indexOf('validate'),
     );
     // a Mermaid flowchart string is included for the diagram view

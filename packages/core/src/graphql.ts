@@ -2,7 +2,7 @@
 // monomorphic authoring helpers. `graphql(config)` stays the terse callable form; `graphql.stitch`
 // is its alias, `graphql.seam(...)` binds graphql members to a seam, and `graphql.surface` is the
 // Surface identity. The seam stays surface-agnostic — graphql members are created through the
-// seam's own `graphql()` method (in Stage 4 graphql's shaping/unwrap move behind the surface
+// seam's own `graphql()` method (in Stage 4 graphql's shaping/pick move behind the surface
 // hooks; today they ride the engine's id-keyed handling + this helper).
 import { seam as makeSeam } from './seam';
 import { graphql as graphqlStitch } from './stitch';

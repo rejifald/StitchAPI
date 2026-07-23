@@ -1,6 +1,6 @@
 ---
 title: 'Accept status'
-description: 'Declare statuses that are a normal result, not an error — an accepted non-2xx flows through transform/unwrap/validate instead of throwing.'
+description: 'Declare statuses that are a normal result, not an error — an accepted non-2xx flows through transform/pick/validate instead of throwing.'
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
@@ -11,7 +11,7 @@ ordinary control flow into exception handling.
 
 `acceptStatus` lets you declare which non-2xx statuses are a **normal result**. An
 accepted status no longer throws: its response body becomes the result and flows
-through the same pipeline a `2xx` does — `interpret` → `transform` → `unwrap` →
+through the same pipeline a `2xx` does — `interpret` → `transform` → `pick` →
 `output` validation — so the happy path stays on the happy path.
 
 ## Example

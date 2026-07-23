@@ -71,7 +71,7 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
             path: '/graphql',
             auth: apiKey({ header: 'apikey', value: env('METADATA_API_KEY') }),
             retry: { attempts: 5, on: [429, 500, 502, 503], baseMs: 5 },
-            unwrap: 'data',
+            pick: 'data',
         });
 
         const out = await query({
@@ -189,7 +189,7 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
             }),
             throttle: { rate: '5/s' },
             transform: scrapeListings, // HTML -> { items: [...] }
-            unwrap: 'items',
+            pick: 'items',
             // `score` is REQUIRED — the schema is the contract, so a markup rename that drops it
             // is a loud validation error, not a silent gap. No snapshot, no baseline call.
             output: drift(

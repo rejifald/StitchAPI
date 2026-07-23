@@ -88,7 +88,7 @@ export async function run(fetchImpl: typeof fetch): Promise<User> {
         adapter: fetchAdapter({ fetch: fetchImpl }),
         query: 'query { user { id name email } }',
         // The graphql surface unwraps 'data' and treats a non-empty errors[] as a failure.
-        unwrap: 'data.user',
+        pick: 'data.user',
         output: (v: unknown): v is User =>
             !!v && typeof v === 'object' &&
             typeof (v as any).id === 'number' &&

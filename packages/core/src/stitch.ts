@@ -146,6 +146,7 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
         cfg.timeout = { total: cfg.timeout };
     if (typeof cfg.cache === 'number' || typeof cfg.cache === 'string')
         cfg.cache = { ttl: cfg.cache };
+    if (typeof cfg.throttle === 'string') cfg.throttle = { rate: cfg.throttle };
     // P20: `idempotency: true` enables it with defaults; `false`/absent is off. Normalize the
     // boolean toggle to the object form the engine reads (the opaque `idempotency: {}` is a type
     // error at the slot, so the all-defaults case arrives here as `true`).
@@ -986,7 +987,7 @@ export function drift<S>(
     };
 }
 
-/** graphql(): a stitch preset for GraphQL-over-HTTP — POST { query, variables }, unwrap `data`. */
+/** graphql(): a stitch preset for GraphQL-over-HTTP — POST { query, variables }, picks `data`. */
 export function graphql<
     TExplicit = never,
     const C extends Partial<StitchConfig> & {
@@ -1007,6 +1008,6 @@ export function graphql<
         ...config,
         ...(endpointless ? { path: '/graphql' } : {}),
         kind: graphqlSurface,
-        unwrap: config.unwrap ?? 'data',
+        pick: config.pick ?? 'data',
     }) as unknown as Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
 }

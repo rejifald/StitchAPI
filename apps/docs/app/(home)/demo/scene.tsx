@@ -202,22 +202,22 @@ const user = await getUser({
         len: 4.8,
     },
     {
-        key: 'unwrap',
+        key: 'pick',
         label: 'Data shaping',
-        filename: 'unwrap.ts',
-        // Mirrors the README hero example: unwrap peels the transport
+        filename: 'pick.ts',
+        // Mirrors the README hero example: pick peels the transport
         // envelope before validation, so callers get the value itself.
         code: `const getUser = stitch({
   baseUrl: 'https://demo.stitchapi.dev',
   path: '/users/{id}',
   output: User,
-  unwrap: 'data', // peel the envelope
+  pick: 'data', // peel the envelope
 });
 
 const user = await getUser({
   params: { id: '42' },
 });`,
-        chip: `unwrap: 'data'`,
+        chip: `pick: 'data'`,
         chipMono: true,
         rows: [
             {
@@ -233,7 +233,7 @@ const user = await getUser({
                 icon: Scissors,
                 tone: 'brand',
                 text: 'envelope peeled before validation',
-                meta: "unwrap: 'data'",
+                meta: "pick: 'data'",
             },
             {
                 at: 2.5,
@@ -243,7 +243,7 @@ const user = await getUser({
                 meta: 'clean shape',
             },
         ],
-        doing: 'unwrapping',
+        doing: 'picking',
         done: 'just the data',
         doneAt: 3.4,
         len: 5.0,

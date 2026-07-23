@@ -74,7 +74,7 @@ describe('graphql surface helper (Decision 3/10)', () => {
             baseUrl: server.url,
             path: '/g',
             query: '{ me { id } }',
-            unwrap: 'data.me',
+            pick: 'data.me',
         });
         expect(await q()).toEqual({ id: 7 });
     });
@@ -85,7 +85,7 @@ describe('graphql surface helper (Decision 3/10)', () => {
         const ping = graphql.seam(api).stitch({
             path: '/api',
             query: '{ ping }',
-            unwrap: 'data.ping',
+            pick: 'data.ping',
         });
         expect(await ping()).toBe('pong');
     });
@@ -94,7 +94,7 @@ describe('graphql surface helper (Decision 3/10)', () => {
         server.route('POST', '/s', { body: { data: { v: 42 } } });
         const g = graphql.seam({ baseUrl: server.url });
         expect(g.seam.__seam).toBe(true);
-        const v = g.stitch({ path: '/s', query: '{ v }', unwrap: 'data.v' });
+        const v = g.stitch({ path: '/s', query: '{ v }', pick: 'data.v' });
         expect(await v()).toBe(42);
     });
 });

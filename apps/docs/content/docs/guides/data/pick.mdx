@@ -1,10 +1,10 @@
 ---
-title: 'unwrap'
+title: 'pick'
 description: 'Pull just the part of the response you want by dot-path.'
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
-Use `unwrap` when an API wraps the value you want in an envelope and you want
+Use `pick` when an API wraps the value you want in an envelope and you want
 the stitch to hand back the inner field directly — give it a dot-path and the
 caller never sees the wrapper.
 
@@ -16,7 +16,7 @@ import { stitch } from 'stitchapi';
 const getUser = stitch<{ id: number; name: string }>({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
-    unwrap: 'data.user',
+    pick: 'data.user',
 });
 
 // `user` is the inner { id, name } object, not the { data: { user } } envelope.
@@ -25,28 +25,28 @@ const user = await getUser({ params: { id: 1 } });
 
 ## Options
 
-`unwrap` takes a **dot-path** — each segment selects a nested key, so
+`pick` takes a **dot-path** — each segment selects a nested key, so
 `'data.user'` reaches into `{ data: { user: ... } }` and returns the inner
 object.
 
 It sits late in the pipeline: a response is reshaped by
-[`transform`](/docs/guides/data/transform) first, then `unwrap` selects the
+[`transform`](/docs/guides/data/transform) first, then `pick` selects the
 slice, and only then does [validation](/docs/guides/validation/validation) run —
-so a schema sees the unwrapped value, not the envelope. For paged calls, each
-page is unwrapped before its items are collected; see
+so a schema sees the picked value, not the envelope. For paged calls, each
+page is picked before its items are collected; see
 [Pagination](/docs/guides/data/pagination).
 
-Pair `unwrap` with the generic on `stitch<T>()` to type the result: the stitch
-returns `T` (the unwrapped value), not the envelope. See
+Pair `pick` with the generic on `stitch<T>()` to type the result: the stitch
+returns `T` (the picked value), not the envelope. See
 [Reference → Config types](/docs/reference/config-types) for the full config
 shape.
 
 <Callout type="warn">
     **Anti-pattern:** don't reach for the dot-path to reshape, rename, or merge
-    fields — `unwrap` only _selects_ one already-nested slice, so anything
-    beyond picking an existing branch belongs in a reshape step that runs first.
-    Do the restructuring in `transform` instead, then point `unwrap` at the
-    slice it produces. See [transform](/docs/guides/data/transform).
+    fields — `pick` only _selects_ one already-nested slice, so anything beyond
+    picking an existing branch belongs in a reshape step that runs first. Do the
+    restructuring in `transform` instead, then point `pick` at the slice it
+    produces. See [transform](/docs/guides/data/transform).
 </Callout>
 
 ## See also
