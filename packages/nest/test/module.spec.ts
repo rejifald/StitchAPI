@@ -84,8 +84,10 @@ describe('StitchModule.forFeature', () => {
         );
         const mod = StitchModule.forFeature({
             seam: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
             },
             stitches: [GetThing],
         });
@@ -139,8 +141,10 @@ describe('StitchModule.forFeature', () => {
         ];
         const providers = StitchModule.forFeature({
             seam: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
             },
             stitches: mixed,
         }).providers as FProv[];
@@ -170,11 +174,13 @@ describe('StitchModule.forFeatureScoped', () => {
         const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
         const mod = StitchModule.forFeatureScoped({
             seam: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
+                token: TENANT,
             },
             stitches: [GetThing],
-            seamToken: TENANT,
             principal: (req: { tenantId: string }) => req.tenantId,
         });
         const providers = mod.providers as FProv[];
@@ -240,8 +246,10 @@ describe('defineStitch token', () => {
         const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
         const providers = StitchModule.forFeature({
             seam: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
             },
             stitches: [GetThing],
         }).providers as FProv[];
