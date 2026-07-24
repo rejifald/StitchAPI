@@ -540,6 +540,11 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     rich shape is assignable to the minimal one (a real stitch satisfies both), so it is **de-listed**.
     With this, **R5 is fully cleared** — the baseline is now 6, exactly R6's P20 backlog
     (multipart/stream/sse/throttle/hooks/input → `Scalar | AtLeastOne`).
+-   **P24 (nest seam)** `@stitchapi/nest`'s `StitchFeatureOptions` feature-seam facets (the `seam`
+    config slot + `seamToken`, sharing the "seam" prefix) fold into
+    `seam?: AtLeastOne<NestFeatureSeamOptions>` (`{ config?: AtLeastOne<SeamConfig>, token? }`).
+    `forFeature`/`forFeatureScoped` read `seam.config` / `seam.token`. Genuine breaking
+    flat→envelope, no alias.
 -   **P20/P12/P13 (empty-object rejection)** the five bare all-optional `StitchConfig` slots R6 flagged
     now type their object form so `{}` is a **compile error**: `hooks?: AtLeastOne<Hooks>` and
     `input?: AtLeastOne<InputSchemas>` (no scalar); `multipart?: MultipartNesting | AtLeastOne<MultipartOptions>`

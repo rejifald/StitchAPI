@@ -19,6 +19,7 @@ import {
 } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import {
+    type AtLeastOne,
     type Seam,
     type SeamConfig,
     type SeamOptions,
@@ -47,16 +48,29 @@ export interface StitchModuleAsyncOptions {
     isGlobal?: boolean;
 }
 
+/**
+ * The feature seam's build config and its DI exposure token — two facets of one capability
+ * folded into a single envelope (CONTRACT.md P24; `seam`/`seamToken` shared the "seam" prefix).
+ * Naming the envelope `seam` while it carries a `config` member is intentional: `config` is what
+ * carries the P1 clarity the original `seam` config slot was for, so nesting it here loses nothing.
+ */
+export interface NestFeatureSeamOptions {
+    /** The `SeamConfig` for this feature's own seam (its `baseUrl`/`auth`/…), built over the
+     *  shared store + trace. Omit to attach the stitches to the root/default seam. At least one
+     *  member is required — an empty `{}` is indistinguishable from omitting it (P20). */
+    config?: AtLeastOne<SeamConfig>;
+    /** Token to expose the feature seam under, for `.as(principal)` multi-tenant. */
+    token?: InjectionToken;
+}
+
 /** forFeature options — a feature's injectable stitches and, optionally, its own upstream seam. */
 export interface StitchFeatureOptions {
     // Any-input element: a feature registry is heterogeneous, so it must admit templated-path defs
     // whose call argument *requires* `params` (see `AnyStitchDef`). Per-def inference is unaffected.
     stitches: AnyStitchDef[];
-    /** This feature's own seam (its `baseUrl`/`auth`/…), built over the shared store + trace.
-     *  Omit to attach the stitches to the root/default seam. */
-    seam?: SeamConfig;
-    /** Token to expose the feature seam under, for `.as(principal)` multi-tenant. */
-    seamToken?: InjectionToken;
+    /** The feature's own seam config and/or its DI exposure token. At least one member is
+     *  required — an empty `{}` is indistinguishable from omitting it (P20). */
+    seam?: AtLeastOne<NestFeatureSeamOptions>;
 }
 
 /** forFeatureScoped options — {@link StitchFeatureOptions} plus a `principal` derived
@@ -183,11 +197,11 @@ export class StitchModule {
         const norm: StitchFeatureOptions = Array.isArray(opts)
             ? { stitches: opts }
             : opts;
-        const cfg = norm.seam;
+        const cfg = norm.seam?.config;
         // A feature seam gets its own token (or the caller's, for multi-tenant `.as()`);
         // with no feature seam, stitches bind to the root/default seam.
         const token: InjectionToken =
-            norm.seamToken ??
+            norm.seam?.token ??
             (cfg ? Symbol('stitch-feature-seam') : STITCH_SEAM);
         const providers: Provider[] = [];
         const exported: InjectionToken[] = [];
@@ -226,14 +240,14 @@ export class StitchModule {
      * singleton seam and bind explicitly instead: `seam.as(job.data.tenantId)`.
      */
     static forFeatureScoped(opts: StitchScopedFeatureOptions): DynamicModule {
-        const cfg = opts.seam;
+        const cfg = opts.seam?.config;
         // The singleton base seam each per-request handle derives from: a feature seam over
-        // shared infra (if `seam` given) or the root/default seam.
+        // shared infra (if `seam.config` given) or the root/default seam.
         const baseToken: InjectionToken = cfg
             ? Symbol('stitch-scoped-base-seam')
             : STITCH_SEAM;
         const principalToken: InjectionToken =
-            opts.seamToken ?? Symbol('stitch-principal-seam');
+            opts.seam?.token ?? Symbol('stitch-principal-seam');
         const providers: Provider[] = [];
         const exported: InjectionToken[] = [principalToken];
 
