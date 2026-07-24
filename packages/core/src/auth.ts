@@ -796,7 +796,3 @@ function serializeJar(jar: Record<string, string> | undefined): string {
         .map(([k, v]) => `${k}=${v}`)
         .join('; ');
 }
-
-// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
-/** @deprecated Renamed to {@link AuthFailureResult} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
-export type AuthFailureInfo = AuthFailureResult;

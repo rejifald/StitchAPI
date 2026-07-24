@@ -8,14 +8,6 @@ import type { Seam, Stitch, StitchInput } from 'stitchapi';
 /** Both `Seam` and `PrincipalSeam` satisfy this — the host a stitch is built from. */
 export type NestRequestSeam = Pick<Seam, 'stitch' | 'graphql'>;
 
-/**
- * @deprecated Renamed to {@link NestRequestSeam} so the public type is ecosystem-qualified (a bare
- * `StitchHost` would collide with any other host adapter's per-request seam type) — see
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the `1.0.0-rc`
- * line and removed at the 1.0 GA cut.
- */
-export type StitchHost = NestRequestSeam;
-
 export interface StitchDef<TOut = unknown, TIn = StitchInput> {
     token: InjectionToken;
     build: (host: NestRequestSeam) => Stitch<TOut, TIn>;

@@ -19,8 +19,6 @@
 export {
     stitch,
     type ElysiaRequestSeam,
-    // Deprecated alias (kept through 1.0.0-rc, removed at GA) — see ADR 0012.
-    type RequestSeam,
     type StitchPlugin,
     type StitchPluginOptions,
 } from './plugin';

@@ -21,14 +21,6 @@ import type { PrincipalSeam, Seam } from 'stitchapi';
 export type ElysiaRequestSeam = PrincipalSeam | Seam;
 
 /**
- * @deprecated Renamed to {@link ElysiaRequestSeam} so the public type is ecosystem-qualified (a bare
- * `RequestSeam` would collide with any other host adapter's per-request seam type) — see
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the `1.0.0-rc`
- * line and removed at the 1.0 GA cut.
- */
-export type RequestSeam = ElysiaRequestSeam;
-
-/**
  * The Elysia instance {@link stitch} returns — a plugin you `.use()`. Its only public contract is
  * the global `derive` adding {@link StitchContext} (`{ stitch }`) to the context of the app that
  * mounts it; the other Singleton slots are empty. Narrowed to this so the published `.d.ts` stays a
