@@ -38,7 +38,7 @@ describe('createCache learned Vary (response-driven)', () => {
         await (await cache.open(baseKey, en)).set('EN', 200, 'accept-language');
 
         // same accept-language → hit
-        expect((await (await cache.open(baseKey, en)).get())?.value).toBe('EN');
+        expect((await (await cache.open(baseKey, en)).get())?.data).toBe('EN');
         // different accept-language → miss (a separate learned-vary entry)
         expect(await (await cache.open(baseKey, de)).get()).toBeNull();
     });

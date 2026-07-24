@@ -907,7 +907,7 @@ async function* paginated(
             return;
         }
 
-        let value: unknown = outcome.value;
+        let value: unknown = outcome.data;
         if (cfg.transform) value = await cfg.transform(value);
         if (cfg.pick) value = getPath(value, cfg.pick);
         const items = pg.items
@@ -1072,11 +1072,9 @@ const resultEvt = (
     data: unknown,
     status: number,
     attempts: number,
-    // `data` is canonical; `value` is co-set as the @deprecated alias (CONTRACT.md P5).
 ): StitchEvent => ({
     type: 'result',
     data,
-    value: data,
     status,
     attempts,
     at: now(),
@@ -1090,7 +1088,7 @@ function interpretResponse(
 ): SurfaceOutcome {
     return cfg.kind?.interpret
         ? cfg.kind.interpret(res, cfg)
-        : { ok: true, value: res.body };
+        : { ok: true, data: res.body };
 }
 
 // Build the `error` event for a surface that interpreted the response as a failure.
@@ -1140,7 +1138,7 @@ async function* runFrom(
         yield doneEvt(false, t0, state.attempts);
         return { ok: false };
     }
-    let value: unknown = outcome.value;
+    let value: unknown = outcome.data;
     if (cfg.transform) value = await cfg.transform(value);
     if (cfg.pick) value = getPath(value, cfg.pick);
     // The pre-validation body — the left side of 0015's `diff(raw, validated)`, the coordinate space a
@@ -1540,7 +1538,7 @@ async function* runCached(
         if (ctl.revalidateOnHit && cfg.output) {
             // Only the hard validation result matters on a cache hit: a stored value that no longer
             // satisfies the schema is stale-shaped. Soft drift (raw-vs-validated) is meaningless here.
-            const { errors } = await validateValue(cfg, found.value);
+            const { errors } = await validateValue(cfg, found.data);
             for (const finding of errors) {
                 yield { type: 'drift', finding, at: now() };
                 if (finding.level === 'error') stale = true;
@@ -1548,7 +1546,7 @@ async function* runCached(
         }
         if (!stale) {
             yield cacheEvt(ctl.revalidateOnHit ? 'hit (revalidated)' : 'hit');
-            yield resultEvt(found.value, found.status, 0);
+            yield resultEvt(found.data, found.status, 0);
             yield doneEvt(true, t0, 0);
             return;
         }
@@ -1578,7 +1576,7 @@ async function* runCached(
         }
         if (out.ok) {
             await store(out);
-            claim.settle({ value: out.value, status: out.status });
+            claim.settle({ data: out.value, status: out.status });
         } else {
             // Failure is not shared — waiters re-run on their own.
             claim.fail(new Error('cache: leader run failed'));
@@ -1595,7 +1593,7 @@ async function* runCached(
         return;
     }
     yield cacheEvt('coalesced');
-    yield resultEvt(shared.value, shared.status, 0);
+    yield resultEvt(shared.data, shared.status, 0);
     yield doneEvt(true, t0, 0);
 }
 

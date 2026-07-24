@@ -249,7 +249,7 @@ for await (const ev of getUsers.stream()) {
             break;
         case 'drift': // { finding: { level: 'error'|'warn'|'info', path, change } }
             break;
-        case 'result': // { value, status, attempts }
+        case 'result': // { data, status, attempts }
             break;
         case 'error': // { message, status?, attempts }
             break;
@@ -820,7 +820,7 @@ One definition, more than one front door: the same stitch your code imports is c
 ```bash
 $ stitch run getUser --id 7 --query.expand roles
 {"type":"start","name":"getUser","method":"GET","url":"https://demo.stitchapi.dev/users/7?expand=roles",...}
-{"type":"result","value":{"id":7,"name":"Ada"},"status":200,"attempts":1,...}
+{"type":"result","data":{"id":7,"name":"Ada"},"status":200,"attempts":1,...}
 {"type":"done","ok":true,"ms":142,...}
 ```
 

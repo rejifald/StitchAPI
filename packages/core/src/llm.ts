@@ -108,7 +108,7 @@ function llmSurface(d: LlmDefaults): Surface<StitchInput, LlmResult> {
         // successful body. A provider's "200 with an error envelope" can be handled in its `parse`.
         interpret: (res): SurfaceOutcome<LlmResult> => ({
             ok: true,
-            value: provider.parse(res.body),
+            data: provider.parse(res.body),
         }),
     };
 }

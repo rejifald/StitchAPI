@@ -162,7 +162,7 @@ describe('graphqlSurface.interpret', () => {
     test('a body without errors passes through as the value', () => {
         expect(interpret(res({ data: { x: 1 } }))).toEqual({
             ok: true,
-            value: { data: { x: 1 } },
+            data: { data: { x: 1 } },
         });
     });
 
@@ -183,11 +183,11 @@ describe('graphqlSurface.interpret', () => {
     test('an empty errors array is NOT a failure', () => {
         expect(interpret(res({ errors: [] }))).toEqual({
             ok: true,
-            value: { errors: [] },
+            data: { errors: [] },
         });
     });
 
     test('a null body is not a failure', () => {
-        expect(interpret(res(null))).toEqual({ ok: true, value: null });
+        expect(interpret(res(null))).toEqual({ ok: true, data: null });
     });
 });

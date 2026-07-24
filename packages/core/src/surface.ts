@@ -16,9 +16,9 @@ import type {
     StitchInput,
 } from './types';
 
-/** The result a surface's {@link Surface.interpret} produces from a buffered response. */
+/** The result a surface's {@link Surface.interpret} produces from a buffered response. The success arm carries `data` (CONTRACT.md P5). */
 export type SurfaceOutcome<T = unknown> =
-    | { ok: true; value: T }
+    | { ok: true; data: T }
     | { ok: false; message: string; status?: number };
 
 /**
@@ -150,6 +150,6 @@ export const graphqlSurface: Surface = {
                 message: `GraphQL: ${errs.map((e) => e.message ?? 'error').join('; ')}`,
                 status: res.status,
             };
-        return { ok: true, value: res.body };
+        return { ok: true, data: res.body };
     },
 };

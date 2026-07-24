@@ -580,8 +580,6 @@ export type StitchEvent<T = unknown> =
           type: 'result';
           /** The terminal/aggregated result payload (aligns with `SafeResult.data`; CONTRACT.md P5/D1). */
           data: T;
-          /** @deprecated Renamed to `data` (CONTRACT.md P5). Set alongside `data` until the 1.0 GA cut. */
-          value?: T;
           status: number;
           attempts: number;
           at: number;
@@ -976,8 +974,8 @@ export interface InspectOptions {
 /**
  * The result of {@link Stitch.inspect} (ADR 0016) — the validated value alongside the pre-validation
  * raw body and the drift {@link DriftFinding}s diffed between them, plus the response `status`. It
- * **never throws**: a hard contract violation comes back as `{ value: null, error }` with `raw`,
- * `findings`, and `status` still populated. `value` and `error` are **inverse** — `value` is `null`
+ * **never throws**: a hard contract violation comes back as `{ data: null, error }` with `raw`,
+ * `findings`, and `status` still populated. `data` and `error` are **inverse** — `data` is `null`
  * iff `error` is set.
  *
  * ⚠️ `raw` is the UNREDACTED pre-validation body, exposed on a **non-enumerable** field: `JSON.stringify`,
@@ -988,8 +986,6 @@ export interface InspectOptions {
 export interface Inspection<T> {
     /** The validated result payload — coerced/defaulted/stripped per ADR 0015; `null` iff `error` is set. Aligns with `SafeResult.data` (CONTRACT.md P5). */
     data: T | null;
-    /** @deprecated Renamed to `data` (CONTRACT.md P5). Set alongside `data` until the 1.0 GA cut. */
-    value?: T | null;
     /**
      * The pre-validation body the findings are diffed against. Non-enumerable; `null` on
      * streaming/cache-hit. Unredacted by default — to scrub known-secret fields before
@@ -1031,7 +1027,7 @@ export type CacheOutcome =
 
 /**
  * The result of {@link Stitch.report} (ADR 0019) — an {@link Inspection} **plus** run diagnostics: it
- * _is_ an inspection (same `value` / `raw` / `findings` / `status` / `error` / `source`, same
+ * _is_ an inspection (same `data` / `raw` / `findings` / `status` / `error` / `source`, same
  * never-throws contract and the same non-enumerable `raw`) extended with how the run actually went.
  * Every added field is secret-free and enumerable — a report is safe to log _except_ don't expand
  * `raw` (inherited non-enumerable, ADR 0018's `redact` applies). Per-attempt latency is deliberately
@@ -1087,10 +1083,10 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
      */
     unwrap(...args: Args<TIn>): Promise<TOut>;
     /**
-     * Probe a fresh call and return an {@link Inspection} — `{ value, raw, findings, status, error }` —
+     * Probe a fresh call and return an {@link Inspection} — `{ data, raw, findings, status, error }` —
      * **without throwing** (ADR 0016). Use it after the fact to ask "the schema coerced/stripped this;
      * what did the server actually send?": `raw` is the pre-validation body, `findings` the soft + hard
-     * drift between it and `value`.
+     * drift between it and `data`.
      *
      * `.inspect()` **always hits the network and bypasses the cache by default**, so it is a fresh probe
      * — *not* an observer of what your cached `await` call did. Pass `{ cache: true }` to honour the
@@ -1102,7 +1098,7 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
         ...args: [...Args<TIn>, opts?: InspectOptions]
     ): Promise<Inspection<TOut>>;
     /**
-     * Probe a fresh call and return a {@link RunReport} — an {@link Inspection} (`{ value, raw,
+     * Probe a fresh call and return a {@link RunReport} — an {@link Inspection} (`{ data, raw,
      * findings, status, error, source }`) **plus** run diagnostics: `attempts`, `timing`
      * (`{ ms, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome
      * (ADR 0019). Like `.inspect()` it **never throws** (a hard contract violation comes back with

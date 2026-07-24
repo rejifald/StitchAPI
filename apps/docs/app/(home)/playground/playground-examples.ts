@@ -83,7 +83,7 @@ console.log('3) whoami:', me);
 const flaky = stitch({ extends: [api], path: '/users', pick: 'data' });
 let recovered, attempts;
 for await (const event of flaky.stream({ query: { __flaky: 2 } })) {
-  if (event.type === 'result') recovered = event.value;
+  if (event.type === 'result') recovered = event.data;
   if (event.type === 'done') attempts = event.attempts;
 }
 console.log(
