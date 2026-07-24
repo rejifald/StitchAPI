@@ -75,7 +75,8 @@ test('paginated GraphQL rejects when a page body carries errors[]', async () => 
 
     const query = graphql({
         baseUrl: server.url,
-        query: 'query($after: String) { users(after: $after) { nodes { id name } pageInfo { endCursor hasNextPage } } }',
+        document:
+            'query($after: String) { users(after: $after) { nodes { id name } pageInfo { endCursor hasNextPage } } }',
         ...paginateConfig,
     });
 

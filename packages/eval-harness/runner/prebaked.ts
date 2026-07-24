@@ -86,7 +86,7 @@ export async function run(fetchImpl: typeof fetch): Promise<User> {
         baseUrl: '${SNIPPET_BASE}',
         path: '/graphql',
         adapter: fetchAdapter({ fetch: fetchImpl }),
-        query: 'query { user { id name email } }',
+        document: 'query { user { id name email } }',
         // The graphql surface unwraps 'data' and treats a non-empty errors[] as a failure.
         pick: 'data.user',
         output: (v: unknown): v is User =>

@@ -156,7 +156,7 @@ function principalHandle(shared: SharedSeam, principal: string): PrincipalSeam {
         // of that return under an unresolved `C` — so `graphql` needs the `as`. Sound — runtime is
         // identical; only the static call-arg richness is restored.
         stitch: (config: string | Partial<StitchConfig>) => build(config),
-        graphql: ((config: Partial<StitchConfig> & { query: string }) =>
+        graphql: ((config: Partial<StitchConfig> & { document: string }) =>
             build(config, true)) as PrincipalSeam['graphql'],
         as: (p) => principalHandle(shared, p),
         get __config() {
@@ -175,7 +175,7 @@ function rootHandle(shared: SharedSeam): Seam {
         // restore its rich `InputOf<C>` return after #76 widened `InputOf`; `stitch` satisfies its
         // loose fallback overload as-is.
         stitch: (config: string | Partial<StitchConfig>) => build(config),
-        graphql: ((config: Partial<StitchConfig> & { query: string }) =>
+        graphql: ((config: Partial<StitchConfig> & { document: string }) =>
             build(config, true)) as Seam['graphql'],
         as: (p) => principalHandle(shared, p),
         // Bulk cache invalidation over the seam's shared store (ADR 0003 §8). No argument bumps

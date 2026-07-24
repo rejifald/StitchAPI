@@ -73,8 +73,7 @@ A public field or symbol **MUST** be the shortest unambiguous token for its conc
 value-space across the entire surface.
 
 _Current violations:_ `key` is a `string` namespace in `CircuitOptions` but a
-`(input) => string` in `IdempotencyOptions` / `CacheConfig`; `query` is a GraphQL
-document string in `StitchConfig` but URL params in `StitchInput` / `InputSchemas`;
+`(input) => string` in `IdempotencyOptions` / `CacheConfig`;
 `on` is retry-trigger statuses **and** rate-limit-signal statuses; `bodyKind`
 (`from-curl`) vs `bodyType` (everywhere else) for one `'json'|'form'` concept.
 

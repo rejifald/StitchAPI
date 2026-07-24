@@ -106,9 +106,10 @@ export const httpSurface: Surface = { id: 'http' };
 
 /**
  * GraphQL-over-HTTP. Its behaviour lives entirely in these hooks (ADR 0005 Stage 4): `buildRequest`
- * packs `{ query, variables, operationName? }` as JSON and forces POST; `interpret` treats a 200
- * carrying `errors` as a failure. The `data` pick is a plain config key the `graphql(...)` helper
- * / `seam.graphql()` set (the engine applies it after `interpret`), as is the `/graphql` default
+ * packs the `document` as the wire body's `query` field (`{ query, variables, operationName? }`,
+ * the GraphQL-over-HTTP protocol shape) as JSON and forces POST; `interpret` treats a 200 carrying
+ * `errors` as a failure. The `data` pick is a plain config key the `graphql(...)` helper /
+ * `seam.graphql()` set (the engine applies it after `interpret`), as is the `/graphql` default
  * path.
  *
  * `operationName` is derived the way graphql clients (e.g. graphql-request) do: the name token of
@@ -120,16 +121,18 @@ export const httpSurface: Surface = { id: 'http' };
 export const graphqlSurface: Surface = {
     id: 'graphql',
     buildRequest: (cfg, input, base) => {
-        const query = cfg.query ?? '';
+        const document = cfg.document ?? '';
         const operationName =
             cfg.operationName ??
-            /\b(?:query|mutation|subscription)\s+(\w+)/.exec(query)?.[1];
+            /\b(?:query|mutation|subscription)\s+(\w+)/.exec(document)?.[1];
         return {
             ...base,
             method: (cfg.method ?? 'POST').toUpperCase(),
             bodyType: 'json',
             body: {
-                query,
+                // `query` is the GraphQL-over-HTTP wire field for the document — protocol shape,
+                // not the config spelling.
+                query: document,
                 variables: input.variables ?? input.body ?? {},
                 // Only carry the key when a name is known — anonymous documents omit it, matching
                 // graphql-request and keeping the body clean. `cfg.operationName: ''` suppresses it.
