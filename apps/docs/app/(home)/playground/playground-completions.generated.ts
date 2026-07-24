@@ -135,7 +135,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "acceptStatus",
             type: "property",
             detail: "number[] | ((status: number) => boolean)",
-            info: "Statuses that are a NORMAL result rather than an error — a number list or a predicate. An accepted non-2xx flows through interpret → transform → pick → validate exactly like a 2xx (the response body becomes the result), instead of throwing a . Use this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a `catch`. `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts are exhausted, then accepted (returned) on the final attempt. Orthogonal to `rateLimit.delegate`, which surfaces a  on rate-limit statuses earlier.",
+            info: "Statuses that are a NORMAL result rather than an error — a number list or a predicate. An accepted non-2xx flows through interpret → transform → pick → validate exactly like a 2xx (the response body becomes the result), instead of throwing a . Use this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a `catch`. `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts are exhausted, then accepted (returned) on the final attempt. Orthogonal to `throttle.delegate`, which surfaces a  on rate-limit statuses earlier.",
         },
         {
             label: "throttle",
@@ -154,11 +154,6 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             type: "property",
             detail: "AtLeastOne<CircuitOptions>",
             info: "Circuit breaker that fast-fails a repeatedly failing dependency. `failures` + `cooldown` are required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`).",
-        },
-        {
-            label: "rateLimit",
-            type: "property",
-            detail: "{ /** Surface rate-limit outcomes instead of retrying/throttling them. Default `false`. */ delegate?: boolean; /** Statuses treated as a rate-limit signal. Default `[429]`. */ on?: number[]; }",
         },
         {
             label: "idempotency",

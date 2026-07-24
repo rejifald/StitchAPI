@@ -67,6 +67,6 @@ export { systemClock } from './util';
 export { compact } from './compact';
 export type { Compact } from './compact';
 // The delegate-backoff error (issue #145): thrown on the awaited path and surfaced as an `error`
-// event when `rateLimit.delegate` is on, so a host's outer gate owns the rate-limit backoff.
+// event when `throttle.delegate` is on, so a host's outer gate owns the rate-limit backoff.
 export { RateLimitError } from './resilience';
 export * from './types';

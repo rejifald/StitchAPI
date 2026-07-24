@@ -1,5 +1,5 @@
 // Pins issue #145: an opt-in delegate-backoff mode that SURFACES a rate-limit outcome (status in
-// `rateLimit.on`, default [429]) as a RateLimitError instead of retrying it internally, and bypasses
+// `throttle.on`, default [429]) as a RateLimitError instead of retrying it internally, and bypasses
 // the built-in throttle so an OUTER gate (owned by the host) — not StitchAPI — paces the backoff.
 import { RateLimitError, type StitchEvent, stitch } from '../../src';
 import { startMockServer } from '../support/mock-server';
@@ -262,24 +262,7 @@ test('.safe() surfaces the rate-limit status as a non-throwing StitchError', asy
     expect((out.error?.cause as RateLimitError).retryAfter).toBe(2000);
 });
 
-// ── I. back-compat + predicate widening (CONTRACT.md P14 / P7) ──
-test('the @deprecated top-level `rateLimit` still delegates identically (P14)', async () => {
-    server.route('GET', '/rl-legacy', {
-        statuses: [429],
-        retryAfterSeconds: 2,
-        body: { error: 'slow down' },
-    });
-    const call = stitch({
-        baseUrl: server.url,
-        path: '/rl-legacy',
-        // Pre-fold spelling — must behave exactly like `throttle: { delegate: true }` until GA.
-        rateLimit: { delegate: true },
-    });
-    const err = await rejectionOf(call());
-    expect(err).toBeInstanceOf(RateLimitError);
-    expect(err.status).toBe(429);
-});
-
+// ── I. predicate widening (CONTRACT.md P7) ──
 test('throttle.on accepts a predicate (P7): a 503 matched by the predicate delegates', async () => {
     server.route('GET', '/rl-pred', {
         statuses: [503],
