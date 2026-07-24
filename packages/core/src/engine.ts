@@ -730,6 +730,7 @@ async function* attemptLoop(
                         rt.clock,
                     ),
                     response: res,
+                    attempts: attempt,
                 });
             }
 
