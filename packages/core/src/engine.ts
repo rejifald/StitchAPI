@@ -875,8 +875,7 @@ async function* paginated(
     const { cfg } = rt;
     const name = nameOf(cfg);
     const pg = cfg.paginate!;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `max` is the @deprecated alias of `pages`, read for back-compat until the GA cut (CONTRACT.md P4)
-    const max = pg.pages ?? pg.max ?? 50;
+    const max = pg.pages ?? 50;
     const acc: unknown[] = [];
     let pageInput = input;
     let page = 0;
@@ -1169,7 +1168,7 @@ async function* runFrom(
 // the cache), but resumable when the surface opts in: a surface that exposes the resume hooks
 // (`resumeToken`/`applyResume`) AND a stitch that set `sse.reconnect` (off by default — issue #71)
 // reconnect a dropped body, replaying the last resume token (sse → `Last-Event-ID`) and honouring a
-// server-sent backoff (sse → the `retry:` field), capped at `maxAttempts`. The engine stays
+// server-sent backoff (sse → the `retry:` field), capped at `reconnect.attempts`. The engine stays
 // surface-agnostic: it never branches on `kind.id === 'sse'`; it reads the resume token / server
 // backoff through the surface's generic hooks and the reconnect policy through one config accessor.
 // It charges the rate gate at every open (each reconnect is a fresh request) but takes NO concurrency
@@ -1439,8 +1438,7 @@ function resolveReconnect(cfg: ResolvedStitchConfig): {
     const backoff = parseDuration(r.backoff ?? r.backoffMs);
     return {
         enabled: true,
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxAttempts` is the @deprecated alias of `attempts`, read for back-compat until the GA cut (CONTRACT.md P4)
-        maxAttempts: r.attempts ?? r.maxAttempts ?? 3,
+        maxAttempts: r.attempts ?? 3,
         backoff,
     };
 }

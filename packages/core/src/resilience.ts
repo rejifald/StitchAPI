@@ -284,8 +284,8 @@ interface CircuitRecord {
  * a success closes it, another failure re-opens it. State lives in the StitchStore, so a shared
  * store gives a breaker shared across workers (DESIGN.md §13).
  *
- * `failures` and `cooldown` are required by design (CONTRACT.md P15); this throws if neither they
- * nor their deprecated `failureThreshold`/`cooldownMs` aliases are set.
+ * `failures` and `cooldown` are required by design (CONTRACT.md P15); this throws if `failures` is
+ * not set, or if neither `cooldown` nor its deprecated `cooldownMs` alias is set.
  */
 export function createCircuit(
     opts: CircuitOptions,
@@ -297,8 +297,7 @@ export function createCircuit(
     onSuccess(): Promise<void>;
     onFailure(): Promise<boolean>;
 } {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `failureThreshold` is the @deprecated alias of `failures` (CONTRACT.md P4)
-    const failureThreshold = opts.failures ?? opts.failureThreshold;
+    const failureThreshold = opts.failures;
     // eslint-disable-next-line @typescript-eslint/no-deprecated -- `cooldownMs` is the @deprecated alias of `cooldown` (CONTRACT.md P17)
     const cooldown = parseDuration(opts.cooldown ?? opts.cooldownMs);
     if (failureThreshold == null || cooldown == null)

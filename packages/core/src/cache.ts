@@ -359,8 +359,7 @@ export function createCache(opts: CacheControllerOptions): CacheController {
     const methods = (config.methods ?? ['GET', 'HEAD']).map((m) =>
         m.toUpperCase(),
     );
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxEntries` is the @deprecated alias of `entries`, read for back-compat until the GA cut (CONTRACT.md P4)
-    const maxEntries = config.entries ?? config.maxEntries ?? 1000;
+    const maxEntries = config.entries ?? 1000;
     const explicitVary = config.vary?.length
         ? config.vary
               .map((n) => n.toLowerCase())

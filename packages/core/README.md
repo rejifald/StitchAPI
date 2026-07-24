@@ -407,10 +407,10 @@ Throttle waits and retries emit `throttled` / `retry` events on the stream, so t
 
 Three more knobs round out the resilience set:
 
--   **`circuit`** fast-fails a dependency that is already down — after `failureThreshold` consecutive failures the breaker opens for `cooldownMs`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
+-   **`circuit`** fast-fails a dependency that is already down — after `failures` consecutive failures the breaker opens for `cooldownMs`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
 
     ```ts
-    circuit: { failureThreshold: 5, cooldownMs: 30_000 }
+    circuit: { failures: 5, cooldownMs: 30_000 }
     ```
 
 -   **`idempotency`** injects a stable `Idempotency-Key` header on writes, so a safe retry can't duplicate a side effect:
@@ -455,7 +455,7 @@ const listAnnouncements = stitch({
         ttl: '1h',
         scope: 'app', // public, unauthenticated data → share one entry across callers
         vary: ['accept-language'], // request headers that vary the response
-        maxEntries: 500, // in-process LRU cap (default 1000)
+        entries: 500, // in-process LRU cap (default 1000)
     },
 });
 ```
@@ -759,7 +759,7 @@ Because every surface is just a stitch underneath, `auth`, `retry`, `throttle`, 
 
 ## Pagination
 
-One logical call follows pages until `next` returns `undefined` (or the `max` safety cap, default 50, is hit), aggregating items into a single result. Each page is a full request — auth, retry, and throttle apply per page — and each page emits a `paginate` progress event:
+One logical call follows pages until `next` returns `undefined` (or the `pages` safety cap, default 50, is hit), aggregating items into a single result. Each page is a full request — auth, retry, and throttle apply per page — and each page emits a `paginate` progress event:
 
 ```ts
 const listOrders = stitch({
