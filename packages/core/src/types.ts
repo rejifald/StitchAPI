@@ -960,7 +960,7 @@ export interface InspectOptions {
      * undeclared field") is unimpaired. Set when you want to pipe `wrapper.raw` into a log or
      * support ticket and need the _known-secret_ fields removed first.
      *
-     * - `true` — apply the shared secret-key denylist (`isSecretKey` / `registerSecretQueryKey`
+     * - `true` — apply the shared secret-key denylist (`isSecretKey` / `registerSecretKey`
      *   registrations) to every object key in `raw`, depth-first. Returns a deep clone.
      * - `string[]` — additionally scrub the listed key-name/path patterns on top of the shared
      *   denylist (reuses the {@link matchPath} grammar: exact, `*` wildcard, or prefix).

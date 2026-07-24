@@ -4,7 +4,7 @@ import { compact } from './compact';
 import type { DriftLevel, StitchEvent, TraceContext, TraceSink } from './types';
 import {
     dirnameOf,
-    isSecretQueryKey,
+    isSecretKey,
     nodeFs,
     readEnv,
     redactSecretsDeep,
@@ -155,7 +155,7 @@ function redactSecretQuery(
 ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(query))
-        out[k] = isSecretQueryKey(k) ? REDACTED : v;
+        out[k] = isSecretKey(k) ? REDACTED : v;
     return out;
 }
 

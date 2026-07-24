@@ -20,7 +20,7 @@ import {
     now,
     parseDuration,
     readEnv,
-    registerSecretQueryKey,
+    registerSecretKey,
 } from './util';
 
 export type Secret = string | (() => string);
@@ -200,7 +200,7 @@ export function apiKey(
         const name = opts.name ?? 'api_key';
         // Teach the trace scrubber this param name carries a secret, so the key never reaches a
         // sink in the clear — even when `name` is a vendor spelling the built-in stems don't catch.
-        registerSecretQueryKey(name);
+        registerSecretKey(name);
         return {
             name: 'apiKey',
             scheme: { type: 'apiKey', in: 'query', name },
