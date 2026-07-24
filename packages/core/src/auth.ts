@@ -7,6 +7,7 @@ import { acceptsStatus, parseRetryAfter } from './resilience';
 import type {
     Adapter,
     AdapterResponse,
+    AtLeastOne,
     AuthContext,
     AuthStrategy,
     RunContext,
@@ -238,6 +239,21 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
     };
 }
 
+/**
+ * Envelope for {@link OAuth2Options.refresh} (CONTRACT.md P24: `refreshOn` + `refreshSkew` shared
+ * the `refresh` prefix, so they fold into one envelope; a bare {@link StatusMatch} is the P12
+ * dominant-field shorthand for `{ on }`).
+ */
+export interface OAuth2RefreshOptions {
+    /**
+     * Status(es) — or a predicate — that mean the token was rejected and should force a refresh
+     * (CONTRACT.md P7: `401` ≡ `[401]`). Default `[401]`.
+     */
+    on?: StatusMatch;
+    /** Refresh this long BEFORE the token's expiry, so it is never used mid-flight — `30_000`, `'30s'`. Default 30s. */
+    skew?: number | string;
+}
+
 export interface OAuth2Options {
     /** The `client_credentials` token endpoint (POST, form-encoded). */
     tokenUrl: string;
@@ -269,10 +285,14 @@ export interface OAuth2Options {
      * cannot override the `Authorization` header that `clientAuth: 'basic'` sets.
      */
     headers?: Record<string, string>;
-    /** Status(es) — a number, list, or predicate — that mean the token was rejected and should force a refresh (CONTRACT.md P7: `401` ≡ `[401]`). Default [401]. */
-    refreshOn?: StatusMatch;
-    /** Refresh this long BEFORE the token's expiry, so it is never used mid-flight — `30_000`, `'30s'`. Default 30s. */
-    refreshSkew?: number | string;
+    /**
+     * When to force a fresh token (CONTRACT.md P24 envelope). A bare {@link StatusMatch} — a
+     * number, a list, or a predicate — is shorthand for `{ on }` (P12): the status(es) that mean
+     * the token was rejected (CONTRACT.md P7: `401` ≡ `[401]`). Default `[401]`. Reach `skew` —
+     * how long BEFORE the token's expiry to refresh it, so it is never used mid-flight (`30_000`,
+     * `'30s'`; default 30s) — through the envelope form: `refresh: { skew: '1m' }`.
+     */
+    refresh?: StatusMatch | AtLeastOne<OAuth2RefreshOptions>;
     /** Store namespace — give two stitches the same `key` + a shared `store` to share one token. Default: `tokenUrl`. */
     key?: string;
     /**
@@ -311,14 +331,36 @@ function singleFlight<T>(): (key: string, run: () => Promise<T>) => Promise<T> {
 }
 
 /**
+ * Normalize a `refresh` slot (CONTRACT.md P24) to its envelope form, ONCE, at strategy
+ * construction — every internal read then goes through the normalized object, never the raw
+ * union. A bare {@link StatusMatch} (number, list, or predicate) is the P12 dominant-field
+ * shorthand for `{ on: <value> }`; an object is already the envelope (possibly `undefined`,
+ * meaning "use the caller's defaults").
+ */
+function normalizeRefresh<T extends { on?: StatusMatch }>(
+    refresh: StatusMatch | AtLeastOne<T> | undefined,
+): Partial<T> {
+    if (refresh === undefined) return {};
+    if (
+        typeof refresh === 'number' ||
+        typeof refresh === 'function' ||
+        Array.isArray(refresh)
+    )
+        return { on: refresh } as Partial<T>;
+    return refresh;
+}
+
+/**
  * OAuth2 `client_credentials`: POST the token endpoint, cache the access token in the
- * StitchStore (TTL from `expires_in`), refresh it `refreshSkew` before expiry, and attach
+ * StitchStore (TTL from `expires_in`), refresh it `refresh.skew` before expiry, and attach
  * it as `Authorization: Bearer …`. A SHARED store makes one token serve many stitches/workers
- * and survive restarts; a rejected token (status in `refreshOn`) forces a fresh fetch + retry.
+ * and survive restarts; a rejected token (status matched by `refresh`/`refresh.on`) forces a
+ * fresh fetch + retry.
  */
 export function oauth2(opts: OAuth2Options): AuthStrategy {
-    const matchRefresh = acceptsStatus(opts.refreshOn ?? [401]);
-    const skew = parseDuration(opts.refreshSkew) ?? 30_000;
+    const refreshOpts = normalizeRefresh<OAuth2RefreshOptions>(opts.refresh);
+    const refreshMatch = acceptsStatus(refreshOpts.on ?? [401]);
+    const skew = parseDuration(refreshOpts.skew) ?? 30_000;
     const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const tenancy = opts.tenancy ?? 'app';
     const adapter = opts.adapter ?? fetchAdapter();
@@ -441,7 +483,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
             req.headers['authorization'] = `Bearer ${await tokenFor(ctx)}`;
         },
         shouldRefresh(res) {
-            return matchRefresh(res.status);
+            return refreshMatch(res.status);
         },
         async refresh(ctx) {
             // Force a fresh token, ignoring the cache — but simultaneous 401s
@@ -468,7 +510,7 @@ export interface AuthFailureResult {
     /** The thrown value when the login stitch itself threw (network/transport failure). */
     error?: unknown;
     /**
-     * - `'unauthenticated'` — login responded with a `refreshOn` status (e.g. 401) and set no cookie (bad/expired creds);
+     * - `'unauthenticated'` — login responded with a status matched by `refresh` (e.g. 401) and set no cookie (bad/expired creds);
      * - `'rate-limited'` — login responded `429` (back off, then retry; see `retryAfter`);
      * - `'network'` — the login stitch threw before any response (DNS/connection/transport);
      * - `'unknown'` — login responded but captured no cookie for some other reason.
@@ -482,6 +524,22 @@ export interface RefreshResult {
     ok: boolean;
     /** The login response status when the login responded (absent when it threw). */
     status?: number;
+}
+
+/**
+ * Envelope for {@link CookieSessionOptions.refresh} (CONTRACT.md P24: `refreshOn` + `refreshWhen`
+ * shared the `refresh` prefix, so they fold into one envelope; a bare {@link StatusMatch} — incl.
+ * a bare function, which is the STATUS predicate — is the P12 dominant-field shorthand for
+ * `{ on }`; reaching `when` requires the envelope form).
+ */
+export interface CookieSessionRefreshOptions {
+    /**
+     * Status(es) — or a predicate — that mean "the wall" and should trigger a re-login
+     * (CONTRACT.md P7: `401` ≡ `[401]`). Default `[401]`.
+     */
+    on?: StatusMatch;
+    /** Inspect the response (status + body) for a soft wall — e.g. a 200 that is actually a login page. */
+    when?: (res: AdapterResponse) => boolean;
 }
 
 export interface CookieSessionOptions {
@@ -500,10 +558,15 @@ export interface CookieSessionOptions {
      * identity to that user's credentials — credentials still never originate from the caller.
      */
     loginInput?: (principal?: string) => StitchInput;
-    /** Status(es) — a number, list, or predicate — that mean "the wall" and should trigger a re-login (CONTRACT.md P7: `401` ≡ `[401]`). Default [401]. */
-    refreshOn?: StatusMatch;
-    /** Inspect the response (status + body) for a soft wall — e.g. a 200 that is actually a login page. */
-    refreshWhen?: (res: AdapterResponse) => boolean;
+    /**
+     * When to trigger a re-login (CONTRACT.md P24 envelope). A bare function is the P12
+     * dominant-field shorthand for `{ on: <fn> }` — a {@link StatusMatch} predicate over the
+     * response STATUS; likewise a bare number/list is `{ on: <value> }`: status(es) that mean
+     * "the wall" (CONTRACT.md P7: `401` ≡ `[401]`). Default `[401]`. Reach `when` — inspecting the
+     * full response (status + body) for a SOFT wall, e.g. a 200 that is actually a login page —
+     * only through the envelope form: `refresh: { when: (res) => … }`.
+     */
+    refresh?: StatusMatch | AtLeastOne<CookieSessionRefreshOptions>;
     /** Vault namespace — give two stitches the same `key` + a shared seam/store to share one session. */
     key?: string;
     /** Optional TTL for the stored session — `60_000`, `'1m'`. With `tenancy: 'principal'`, set this — per-user sessions multiply. */
@@ -538,7 +601,10 @@ export interface CookieSessionOptions {
 }
 
 export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
-    const matchRefresh = acceptsStatus(opts.refreshOn ?? [401]);
+    const refreshOpts = normalizeRefresh<CookieSessionRefreshOptions>(
+        opts.refresh,
+    );
+    const refreshMatch = acceptsStatus(refreshOpts.on ?? [401]);
     const jarMode = opts.jar === true || opts.cookie === '*';
     const tenancy = opts.tenancy ?? 'principal';
     const baseKey = (jarMode ? 'jar:' : 'cookie:') + (opts.key ?? opts.cookie);
@@ -586,8 +652,8 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     };
 
     // Categorise a login response that captured no cookie, given its status + headers. A 429 means
-    // rate-limited (back off per `Retry-After`); a `refreshOn` status (e.g. 401) means the creds were
-    // rejected; anything else — including a soft 200 wall that set no cookie — is `unknown`.
+    // rate-limited (back off per `Retry-After`); a status matched by `refresh` (e.g. 401) means the
+    // creds were rejected; anything else — including a soft 200 wall that set no cookie — is `unknown`.
     const classify = (
         phase: 'apply' | 'refresh',
         status: number,
@@ -603,7 +669,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
                 retryAfter: parseRetryAfter(headers['retry-after']),
             });
         }
-        if (matchRefresh(status))
+        if (refreshMatch(status))
             return { phase, status, category: 'unauthenticated' };
         return { phase, status, category: 'unknown' };
     };
@@ -743,7 +809,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
             }
         },
         shouldRefresh(res) {
-            return matchRefresh(res.status) || !!opts.refreshWhen?.(res);
+            return refreshMatch(res.status) || !!refreshOpts.when?.(res);
         },
         async refresh(ctx) {
             const { key, principal } = sessionFor(ctx);

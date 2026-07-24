@@ -544,6 +544,14 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     rich shape is assignable to the minimal one (a real stitch satisfies both), so it is **de-listed**.
     With this, **R5 is fully cleared** — the baseline is now 6, exactly R6's P20 backlog
     (multipart/stream/sse/throttle/hooks/input → `Scalar | AtLeastOne`).
+-   **P24 (refresh envelope)** the auth strategies' `refresh`-prefixed flat members fold into one
+    envelope (genuine breaking flat→envelope, no alias): `OAuth2Options.refreshOn`/`refreshSkew` →
+    `refresh?: StatusMatch | AtLeastOne<OAuth2RefreshOptions>` (`{ on, skew }`), and
+    `CookieSessionOptions.refreshOn`/`refreshWhen` → `refresh?: StatusMatch | AtLeastOne<CookieSessionRefreshOptions>`
+    (`{ on, when }`). A bare `StatusMatch` is the P12 dominant-field shorthand for `{ on }`
+    (`refresh: 401` ≡ `refresh: { on: [401] }`); a shared `normalizeRefresh` collapses the union to
+    the envelope once at construction, and every internal read goes through `refresh.on` (via the
+    shared `acceptsStatus` matcher) / `refresh.skew` / `refresh.when`.
 
 ## 7. Enforcement
 
