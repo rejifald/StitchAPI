@@ -1298,7 +1298,3 @@ export interface Seam {
     readonly __config: RedactedStitchConfig;
     readonly __seam: true;
 }
-
-// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
-/** @deprecated Renamed to {@link CacheOptions} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
-export type CacheConfig = CacheOptions;

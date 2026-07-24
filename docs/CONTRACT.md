@@ -440,9 +440,7 @@ will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 | High | `retry.on` + rate-limit `on` (`number[]`)                          | `number[] ｜ (status)=>boolean`                                | P7     |
 | High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes         | hoist or qualify                                               | P9     |
 | High | `queryOptions` bare in vue/solid/svelte/angular                    | `stitchQueryOptions`                                           | P16    |
-| Med  | `CacheConfig` →                                                    | `CacheOptions`                                                 | P3     |
 | Med  | `OAuth2Opts`, `CookieSessionOpts`                                  | `OAuth2Options`, `CookieSessionOptions`                        | P3     |
-| Med  | `McpServerInfo`, `SignV4Params`                                    | `…Options`                                                     | P3     |
 | Med  | `StitchQueryOptions` (a result)                                    | `StitchQueryResult`                                            | P3     |
 | Med  | `ReconnectOptions.maxAttempts`                                     | `attempts`                                                     | P4     |
 | Med  | `CacheConfig.maxEntries`                                           | `entries`                                                      | P4     |

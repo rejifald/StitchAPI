@@ -15,9 +15,6 @@ export {
     secretFrom,
 } from './auth';
 export type { SecretSource, AuthFailureResult, RefreshResult } from './auth';
-// CONTRACT.md P3 — deprecated alias re-export, removed at GA.
-// eslint-disable-next-line @typescript-eslint/no-deprecated -- intentional back-compat re-export of the @deprecated `AuthFailureInfo` (now `AuthFailureResult`) until the GA cut
-export type { AuthFailureInfo } from './auth';
 export { fetchAdapter } from './http-adapter';
 export type { FetchAdapterOptions } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';
