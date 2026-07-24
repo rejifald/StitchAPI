@@ -436,24 +436,16 @@ will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 
 | Sev  | Current                                                            | Proposed                                                       | Rule   |
 | ---- | ------------------------------------------------------------------ | -------------------------------------------------------------- | ------ |
-| High | `IdempotencyOptions.key`, `CacheConfig.key` (fn)                   | `keyOf`                                                        | P6     |
 | High | `rateLimit` (separate top-level key) vs `throttle`                 | fold into one `throttle` envelope (`delegate` / `on` as modes) | P2/P14 |
 | High | `retry.on` + rate-limit `on` (`number[]`)                          | `number[] ｜ (status)=>boolean`                                | P7     |
 | High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes         | hoist or qualify                                               | P9     |
 | High | `queryOptions` bare in vue/solid/svelte/angular                    | `stitchQueryOptions`                                           | P16    |
-| Med  | `CacheConfig` →                                                    | `CacheOptions`                                                 | P3     |
 | Med  | `OAuth2Opts`, `CookieSessionOpts`                                  | `OAuth2Options`, `CookieSessionOptions`                        | P3     |
-| Med  | `McpServerInfo`, `SignV4Params`                                    | `…Options`                                                     | P3     |
 | Med  | `StitchQueryOptions` (a result)                                    | `StitchQueryResult`                                            | P3     |
-| Med  | `ReconnectOptions.maxAttempts`                                     | `attempts`                                                     | P4     |
-| Med  | `CacheConfig.maxEntries`                                           | `entries`                                                      | P4     |
-| Med  | `CircuitOptions.failureThreshold`                                  | `failures`                                                     | P4     |
-| Med  | `paginate.max`                                                     | `pages`                                                        | P4     |
 | Med  | `paginate` inline shape                                            | `PaginateOptions`                                              | P14    |
 | Med  | SSE helper `sendStitchSse`/`stitchSse`                             | `streamStitchSse`                                              | P16    |
 | Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions` | `StitchErrorOptions` (+ `body`)                                | P16    |
 | Low  | `RedisDriver.del`, `…quit`, sync `close`                           | `delete`, async `close`                                        | P18    |
-| Low  | `SchemaFingerprint.value`                                          | `token`                                                        | P5     |
 | Low  | `bodyKind` (from-curl)                                             | `bodyType`                                                     | P1     |
 
 New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multipart`,

@@ -78,7 +78,7 @@ describe('Pluggable store — sessions', () => {
                 cookie: 'SID',
                 key: 'svc',
                 loginInput,
-                scope: 'app', // standalone shared session (no principal bound)
+                tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
         const b = stitch({
@@ -90,7 +90,7 @@ describe('Pluggable store — sessions', () => {
                 cookie: 'SID',
                 key: 'svc',
                 loginInput,
-                scope: 'app', // standalone shared session (no principal bound)
+                tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
 
@@ -129,7 +129,7 @@ describe('Pluggable store — sessions', () => {
                 cookie: 'SID',
                 key: 'svc',
                 loginInput,
-                scope: 'app', // standalone shared session (no principal bound)
+                tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
         const b = stitch({
@@ -140,7 +140,7 @@ describe('Pluggable store — sessions', () => {
                 cookie: 'SID',
                 key: 'svc',
                 loginInput,
-                scope: 'app', // standalone shared session (no principal bound)
+                tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
 

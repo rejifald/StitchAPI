@@ -45,7 +45,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "sse",
             type: "property",
             detail: "SseOptions",
-            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry` policy), capped at `maxAttempts`. Plain JSON (the contract gate). Only the `sse` surface reads it.",
+            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry` policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse` surface reads it.",
         },
         {
             label: "responseType",
@@ -264,12 +264,12 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
             label: "invalidate",
             type: "method",
             detail: "(input?: StitchInput) => Promise<void>",
-            info: "Cache surface (ADR 0003). A no-op unless this stitch has a `cache` block. - `invalidate(input)` — **exact** eviction of the one entry that `input` would hit. - `cache.invalidate()` — **bulk** eviction of every entry this stitch produced (a per-stitch generation bump; prior entries become unreachable and TTL out). - `cache.key(input)` — the derived opaque key, for introspection.",
+            info: "Cache surface (ADR 0003). A no-op unless this stitch has a `cache` block. - `invalidate(input)` — **exact** eviction of the one entry that `input` would hit. - `cache.invalidate()` — **bulk** eviction of every entry this stitch produced (a per-stitch generation bump; prior entries become unreachable and TTL out). - `cache.keyOf(input)` — the derived opaque key, for introspection (CONTRACT.md P6).",
         },
         {
             label: "cache",
             type: "property",
-            detail: "{ invalidate(): Promise<void>; key(input?: StitchInput): Promise<string | undefined>; }",
+            detail: "{ invalidate(): Promise<void>; keyOf(input?: StitchInput): Promise<string | undefined>; }",
         },
         {
             label: "__config",

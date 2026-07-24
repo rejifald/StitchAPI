@@ -21,14 +21,14 @@ STITCH_EXPORT=otlp OTEL_EXPORTER_OTLP_ENDPOINT=https://api.example.com node app.
 ```
 
 To wire it yourself — to set headers, or to tee OTLP next to your own sink —
-build the sink with `otlpTrace()` and combine sinks with `multiplex`:
+build the sink with `otlpSink()` and combine sinks with `multiplex`:
 
 ```ts twoslash
-import { createTrace, multiplex, otlpTrace } from 'stitchapi';
+import { createTrace, multiplex, otlpSink } from 'stitchapi';
 
 const trace = multiplex(
     createTrace({ console: true }),
-    otlpTrace({
+    otlpSink({
         endpoint: 'https://api.example.com',
         headers: { authorization: 'Bearer token' },
     }),
@@ -40,7 +40,7 @@ const trace = multiplex(
 `STITCH_EXPORT=otlp` is the toggle (a comma list, e.g. `console,otlp`);
 `OTEL_EXPORTER_OTLP_ENDPOINT` sets the collector base URL.
 
-`otlpTrace(opts?)` returns a sink. `OtlpOptions` carries `endpoint` (OTLP/HTTP
+`otlpSink(opts?)` returns a sink. `OtlpOptions` carries `endpoint` (OTLP/HTTP
 base URL), `headers` (extra headers on the POST, e.g. auth), and `exporter` (a
 custom `SpanExporter` destination, defaulting to the built-in HTTP exporter).
 

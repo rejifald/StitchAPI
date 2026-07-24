@@ -288,8 +288,7 @@ export function createCircuit(
     onSuccess(): Promise<void>;
     onFailure(): Promise<boolean>;
 } {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `failureThreshold` is the @deprecated alias of `failures` (CONTRACT.md P4)
-    const failureThreshold = opts.failures ?? opts.failureThreshold;
+    const failureThreshold = opts.failures;
     const cooldown = parseDuration(opts.cooldown);
     if (failureThreshold == null || cooldown == null)
         throw new Error(

@@ -191,7 +191,7 @@ function assemble<TOut, TIn>(
     Object.defineProperty(stub, 'cache', {
         value: {
             invalidate: () => Promise.resolve(),
-            key: () => Promise.resolve(undefined),
+            keyOf: () => Promise.resolve(undefined),
         },
     });
 

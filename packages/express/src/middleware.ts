@@ -18,14 +18,6 @@ import type { PrincipalSeam, Seam } from 'stitchapi';
  */
 export type ExpressRequestSeam = PrincipalSeam | Seam;
 
-/**
- * @deprecated Renamed to {@link ExpressRequestSeam} so the public type is ecosystem-qualified (a bare
- * `RequestSeam` would collide with any other host adapter's per-request seam type) — see
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the `1.0.0-rc`
- * line and removed at the 1.0 GA cut.
- */
-export type RequestSeam = ExpressRequestSeam;
-
 export interface StitchMiddlewareOptions {
     /**
      * The seam this middleware shares across requests. **Borrowed, not owned** — build it once at

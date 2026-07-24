@@ -10,7 +10,7 @@
 // into output MUST be registered as a case below. A future config-exporter — `stitch gen` /
 // client publishing (ADR 0013/0014) — that forgets to scrub will fail THIS test instead of baking
 // a password into a shared document. Add the surface here in the same PR that adds the surface.
-import { otlpTrace, stitch } from '../src';
+import { otlpSink, stitch } from '../src';
 import type { OtelSpan, SpanExporter, StitchEvent } from '../src';
 import { toOpenApi } from '../src/openapi';
 import type { StitchRegistry } from '../src/registry';
@@ -63,7 +63,7 @@ function otlpSpans(): OtelSpan[] {
             spans.push(...batch);
         },
     };
-    const sink = otlpTrace({ exporter });
+    const sink = otlpSink({ exporter });
     const name = 'getUser';
     sink.handle(startEvent(), { name });
     sink.handle(
@@ -110,7 +110,7 @@ const SURFACES: Surface[] = [
     },
     {
         // OTLP export — `url.full` / `server.address` on the exported CLIENT span.
-        name: 'otlpTrace → span url.full',
+        name: 'otlpSink → span url.full',
         serialize: () => JSON.stringify(otlpSpans()),
         emitsHost: true,
     },

@@ -8,7 +8,7 @@ Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
 A TypeBox schema _is_ a JSON Schema object, so this strategy canonical-hashes it
 (recursively sorted keys; the `required` set sorted) into an opaque, synchronous
 token. The token changes iff the schema's validation/shape semantics change. It is
-an **allowlist**: it abstains (returns `value: null`, so the cache falls back to
+an **allowlist**: it abstains (returns `token: null`, so the cache falls back to
 re-validate-on-hit) on anything it can't soundly capture — a `Type.Transform`
 codec (detected via its symbol, recursively, since it is invisible to
 `JSON.stringify`) and opaque kinds (`Function`/`Constructor`/`Unsafe`/…).

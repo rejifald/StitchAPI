@@ -327,7 +327,3 @@ export function serveStdio(
     input.on('data', onData);
     return { server, close: () => input.off('data', onData) };
 }
-
-// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
-/** @deprecated Renamed to {@link McpServerOptions} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
-export type McpServerInfo = McpServerOptions;

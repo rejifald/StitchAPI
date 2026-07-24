@@ -15,9 +15,6 @@ export {
     secretFrom,
 } from './auth';
 export type { SecretSource, AuthFailureResult, RefreshResult } from './auth';
-// CONTRACT.md P3 — deprecated alias re-export, removed at GA.
-// eslint-disable-next-line @typescript-eslint/no-deprecated -- intentional back-compat re-export of the @deprecated `AuthFailureInfo` (now `AuthFailureResult`) until the GA cut
-export type { AuthFailureInfo } from './auth';
 export { fetchAdapter } from './http-adapter';
 export type { FetchAdapterOptions } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';
@@ -36,7 +33,7 @@ export {
     loggerSink,
 } from './trace';
 export type { LoggerLike, LoggerSinkOptions, LogLevel } from './trace';
-export { otlpTrace, otlpHttpExporter, toOtlpJson } from './otlp';
+export { otlpSink, otlpHttpExporter, toOtlpJson } from './otlp';
 export type {
     SpanExporter,
     OtelSpan,
@@ -47,15 +44,10 @@ export type {
 // Trace-redaction escape hatch: widen the secret-key denylist so a host's custom credential
 // param name is scrubbed in every trace sink (start.url, OTLP url.full, input.query). `apiKey({ in:
 // 'query', name })` registers its name here automatically; this is the manual hook for a credential
-// the built-in set/stems don't catch. `isSecretKey` is the matching predicate (alias:
-// `isSecretQueryKey`), exposed so a host can audit which of its query params / body keys the
-// scrubbers already cover. `redactSecretsDeep` walks a plain value and replaces secret-named keys.
-export {
-    registerSecretQueryKey,
-    isSecretKey,
-    isSecretQueryKey,
-    redactSecretsDeep,
-} from './util';
+// the built-in set/stems don't catch. `isSecretKey` is the matching predicate, exposed so a host
+// can audit which of its query params / body keys the scrubbers already cover. `redactSecretsDeep`
+// walks a plain value and replaces secret-named keys.
+export { registerSecretKey, isSecretKey, redactSecretsDeep } from './util';
 export type { Issue, ValidationResult, Validator } from './validator';
 // Standalone validation, uniform with what `input`/`output` consume: `validate(schema, value)`
 // checks a value now; `compile(schema)` coerces once and returns a reusable checker. Both take any

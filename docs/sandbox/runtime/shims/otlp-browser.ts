@@ -6,19 +6,19 @@
  * but the spike was explicit: don't rely on CSP alone (B1-SPIKE §7 / SANDBOX §7) —
  * make the browser build's default OTLP exporter a no-op.
  *
- * `otlpTrace()` and `otlpHttpExporter()` are NODE_ONLY_SURFACES, so a snippet that
+ * `otlpSink()` and `otlpHttpExporter()` are NODE_ONLY_SURFACES, so a snippet that
  * names them routes to the server tier when it exists; pre-server it runs shimmed.
  * The browser entry re-exports THESE in place of core's versions:
  *   - `otlpHttpExporter()` → a no-op SpanExporter (no network), + a shim notice.
- *   - `otlpTrace()`        → core's real otlpTrace, but defaulted to this no-op
+ *   - `otlpSink()`        → core's real otlpSink, but defaulted to this no-op
  *     exporter so no egress is ever attempted, + a shim notice.
  *
- * The `node:crypto` alias already covers `otlpTrace`'s `randomBytes` span ids, so
+ * The `node:crypto` alias already covers `otlpSink`'s `randomBytes` span ids, so
  * the trace mapping itself still works — it just exports nowhere.
  */
 import { emitShimNotice } from './notices';
 
-import { otlpTrace as coreOtlpTrace } from 'stitchapi';
+import { otlpSink as coreOtlpSink } from 'stitchapi';
 import type { OtelSpan, OtlpOptions, SpanExporter, TraceSink } from 'stitchapi';
 
 const OTLP_NOTICE =
@@ -42,10 +42,10 @@ export function otlpHttpExporter(
     return noopOtlpExporter();
 }
 
-/** Drop-in for core `otlpTrace` — builds spans, exports to the no-op exporter. */
-export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
-    emitShimNotice('otlpTrace', OTLP_NOTICE);
-    return coreOtlpTrace({
+/** Drop-in for core `otlpSink` — builds spans, exports to the no-op exporter. */
+export function otlpSink(opts: OtlpOptions = {}): TraceSink {
+    emitShimNotice('otlpSink', OTLP_NOTICE);
+    return coreOtlpSink({
         ...opts,
         exporter: opts.exporter ?? noopOtlpExporter(),
     });

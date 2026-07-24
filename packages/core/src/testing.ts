@@ -807,13 +807,12 @@ function callFingerprint(
         throw new Error(`${label}: fingerprint() must be synchronous`);
     }
     const r = result as
-        | { token?: unknown; value?: unknown; strength?: unknown }
+        | { token?: unknown; strength?: unknown }
         | null
         | undefined;
-    // Accept the canonical `token` or the @deprecated `value` alias (CONTRACT.md P5), and normalize
-    // so downstream rules read `.token` regardless of which spelling the fingerprinter produced. A
-    // presence check (not `??`) preserves the `null` ABSTAIN sentinel — `null ?? value` would drop it.
-    const token = r?.token !== undefined ? r.token : r?.value;
+    // `null` is the ABSTAIN sentinel, so the shape check below is a presence check on `token`
+    // (missing/`undefined` fails, `null` passes) rather than a truthiness one.
+    const token = r?.token;
     if (
         !r ||
         (token !== null && typeof token !== 'string') ||
@@ -823,7 +822,7 @@ function callFingerprint(
             `${label}: expected { token: string|null, strength: 'strong'|'weak' }, got ${show(result)}`,
         );
     }
-    return { token, value: token, strength: r.strength };
+    return { token, strength: r.strength };
 }
 
 /**

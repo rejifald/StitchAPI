@@ -17,6 +17,18 @@
 > work: "revisit with a `redact` option if an incident or demand justifies it."
 > This is that option.
 
+> [!IMPORTANT]
+>
+> **Amendment — the query-scoped compat alias was later removed.** This ADR
+> designed the `isSecretKey` promotion with the original query-scoped predicate
+> name kept as a backward-compatible alias, and the original query-scoped
+> registrar name unchanged. Both were pre-GA, no-alias renames: the registrar
+> is now **`registerSecretKey`**, and the alias predicate was deleted outright
+> (no replacement export — call `isSecretKey` directly). The prose below is
+> worded to avoid the removed spellings; where it says "the query-scoped
+> predicate/registrar" it means the pre-rename name of `isSecretKey` /
+> `registerSecretKey` respectively.
+
 ## Context
 
 0016 §5 makes `raw` the **unredacted** pre-validation body on a **non-enumerable**
@@ -60,8 +72,9 @@ stray-token case). Per-call keeps any blinding **local and visible**.
 
 Redaction reuses the curated trace-redaction denylist already in
 [`util.ts`](../../packages/core/src/util.ts) — the `SECRET_QUERY_KEYS` /
-`SECRET_QUERY_STEMS` predicate (`isSecretQueryKey`) plus any caller
-`registerSecretQueryKey` registrations — rather than inventing a parallel list
+`SECRET_QUERY_STEMS` predicate (originally under a query-scoped name, later
+`isSecretKey`) plus any caller registrations on the matching query-scoped
+registrar (later `registerSecretKey`) — rather than inventing a parallel list
 that would drift out of sync. A credential param name registered for URL
 scrubbing is then also caught when it echoes in a response body.
 
@@ -69,7 +82,8 @@ The denylist is **query-key-named** today; the body case needs the same matcher
 under a body-neutral name:
 
 -   Promote the predicate to **`isSecretKey(name)`** in `util.ts`, keeping
-    `isSecretQueryKey` as an alias (the URL scrubbers keep their name).
+    the original query-scoped name as a compat alias (the URL scrubbers keep
+    their name).
 -   Add **`redactSecretsDeep(value, extra?)`** in `util.ts`: walk a plain value,
     replace any object key matching `isSecretKey` (or the caller's `extra`
     name/path patterns via the existing `matchPath`) with the existing
@@ -112,8 +126,8 @@ on `wrapper.raw` and drops the unredacted body (otherwise redaction is pointless
     false confidence, and a name-based redactor can't catch the stray-token case
     anyway — so a default-on net protects least where it matters most.
 -   **A new, body-specific secret denylist.** Rejected: duplicates the curated
-    `isSecretKey` list, would drift, and caller `registerSecretQueryKey`
-    registrations wouldn't carry over.
+    `isSecretKey` list, would drift, and caller registrations on the
+    query-scoped registrar (later `registerSecretKey`) wouldn't carry over.
 -   **Value-shape (regex) redaction.** Rejected for v1: heuristic, false-positive
     prone, and still cannot guarantee catching the field manual inspection exists
     for. Could be a future additive `redact` mode if demand appears.
@@ -140,8 +154,8 @@ on `wrapper.raw` and drops the unredacted body (otherwise redaction is pointless
     `redact?: boolean | string[]`. Update the `Inspection.raw` JSDoc to mention
     the escape hatch.
 -   [`util.ts`](../../packages/core/src/util.ts) — rename the predicate to
-    `isSecretKey` (alias `isSecretQueryKey`); add `redactSecretsDeep(value, extra?)`
-    reusing it + `URL_REDACTED`.
+    `isSecretKey` (alias: the original query-scoped name); add
+    `redactSecretsDeep(value, extra?)` reusing it + `URL_REDACTED`.
 -   [`stitch.ts`](../../packages/core/src/stitch.ts) — the `.inspect()` consumer:
     after recovering `raw` (`RAW_BODY`) and computing `findings`, if `redact` is
     set, place `redactSecretsDeep(...)` on `wrapper.raw` instead of the raw body.

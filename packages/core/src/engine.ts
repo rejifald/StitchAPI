@@ -166,8 +166,7 @@ function applyIdempotency(
         )
     )
         return;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the @deprecated alias of `keyOf`, read as the back-compat fallback until the GA cut (CONTRACT.md P6)
-    const keyOf = cfg.idempotency.keyOf ?? cfg.idempotency.key;
+    const keyOf = cfg.idempotency.keyOf;
     headers[header] = keyOf ? keyOf(input) : randomUUID();
 }
 
@@ -863,8 +862,7 @@ async function* paginated(
     const { cfg } = rt;
     const name = nameOf(cfg);
     const pg = cfg.paginate!;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `max` is the @deprecated alias of `pages`, read for back-compat until the GA cut (CONTRACT.md P4)
-    const max = pg.pages ?? pg.max ?? 50;
+    const max = pg.pages ?? 50;
     const acc: unknown[] = [];
     let pageInput = input;
     let page = 0;
@@ -1157,7 +1155,7 @@ async function* runFrom(
 // the cache), but resumable when the surface opts in: a surface that exposes the resume hooks
 // (`resumeToken`/`applyResume`) AND a stitch that set `sse.reconnect` (off by default — issue #71)
 // reconnect a dropped body, replaying the last resume token (sse → `Last-Event-ID`) and honouring a
-// server-sent backoff (sse → the `retry:` field), capped at `maxAttempts`. The engine stays
+// server-sent backoff (sse → the `retry:` field), capped at `reconnect.attempts`. The engine stays
 // surface-agnostic: it never branches on `kind.id === 'sse'`; it reads the resume token / server
 // backoff through the surface's generic hooks and the reconnect policy through one config accessor.
 // It charges the rate gate at every open (each reconnect is a fresh request) but takes NO concurrency
@@ -1425,8 +1423,7 @@ function resolveReconnect(cfg: ResolvedStitchConfig): {
     const backoff = parseDuration(r.backoff);
     return {
         enabled: true,
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxAttempts` is the @deprecated alias of `attempts`, read for back-compat until the GA cut (CONTRACT.md P4)
-        maxAttempts: r.attempts ?? r.maxAttempts ?? 3,
+        maxAttempts: r.attempts ?? 3,
         backoff,
     };
 }
@@ -1504,7 +1501,7 @@ async function* runCached(
     }
 
     const d = describe(baseReq);
-    const key = ctl.key(d, input);
+    const key = ctl.keyOf(d, input);
     if (key === undefined) {
         yield cacheEvt('bypass: unhashable request');
         yield* runFrom(rt, baseReq, name, state, t0, run, budget);
@@ -1660,7 +1657,7 @@ export async function cacheInvalidateExact(
     }
     if (!ctl.cacheableMethod(baseReq.method)) return;
     const d = describe(baseReq);
-    const key = ctl.key(d, input);
+    const key = ctl.keyOf(d, input);
     if (key === undefined) return;
     await (await ctl.open(key, d)).delete();
 }
@@ -1673,7 +1670,7 @@ export async function cacheInvalidateBulk(rt: Runtime): Promise<void> {
     await ctl.invalidate();
 }
 
-/** The derived opaque key for `input`, for introspection. Backs `stitch.cache.key(input)`. */
+/** The derived opaque key for `input`, for introspection. Backs `stitch.cache.keyOf(input)`. */
 export async function cacheKeyOf(
     rt: Runtime,
     input: StitchInput = {},
@@ -1686,7 +1683,7 @@ export async function cacheKeyOf(
     } catch {
         return undefined;
     }
-    return ctl.key(describe(baseReq), input);
+    return ctl.keyOf(describe(baseReq), input);
 }
 
 export async function executeRaw(

@@ -259,7 +259,3 @@ export const openai: LlmProvider = {
         return result;
     },
 };
-
-// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
-/** @deprecated Renamed to {@link LlmOptions} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
-export type LlmConfig = LlmOptions;

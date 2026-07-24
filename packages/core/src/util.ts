@@ -504,7 +504,7 @@ const REGISTERED_SECRET_QUERY_KEYS = new Set<string>();
  * scrubbers redact it. Additive and process-wide (mirroring the built-in denylist): names can be
  * widened but never un-redacted. Idempotent — registering the same name twice is a no-op.
  */
-export function registerSecretQueryKey(name: string): void {
+export function registerSecretKey(name: string): void {
     REGISTERED_SECRET_QUERY_KEYS.add(name.toLowerCase());
 }
 
@@ -513,7 +513,7 @@ export function registerSecretQueryKey(name: string): void {
  * key in the same family — a `start` event's `input.query`) carries a secret value:
  * matched case-insensitively against the secret key set above, by containing one of
  * the secret stems, or because a caller registered it via
- * {@link registerSecretQueryKey} (e.g. `apiKey({ in: 'query', name })`).
+ * {@link registerSecretKey} (e.g. `apiKey({ in: 'query', name })`).
  */
 export function isSecretKey(key: string): boolean {
     const k = key.toLowerCase();
@@ -523,12 +523,6 @@ export function isSecretKey(key: string): boolean {
         SECRET_QUERY_STEMS.some((s) => k.includes(s))
     );
 }
-
-/**
- * Backward-compatible alias for {@link isSecretKey} — the URL scrubbers and any
- * external code that imported the original name keep working unchanged.
- */
-export const isSecretQueryKey: (key: string) => boolean = isSecretKey;
 
 /**
  * Deep-clone `value` and replace any object key that matches {@link isSecretKey}

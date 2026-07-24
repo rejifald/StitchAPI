@@ -18,8 +18,6 @@ export {
     stitch,
     currentStitch,
     type ExpressRequestSeam,
-    // Deprecated alias (kept through 1.0.0-rc, removed at GA) — see ADR 0012.
-    type RequestSeam,
     type StitchMiddlewareOptions,
 } from './middleware';
 
