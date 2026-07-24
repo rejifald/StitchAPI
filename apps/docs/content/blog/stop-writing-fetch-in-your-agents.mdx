@@ -55,7 +55,7 @@ export const getOrders = stitch({
     output: z.array(z.object({ id: z.number(), total: z.number() })),
     pick: 'data',
     retry: { attempts: 3, on: [429, 503], respectRetryAfter: true },
-    throttle: { rate: '10/s', concurrency: 4, scope: 'host' },
+    throttle: { rate: '10/s', concurrency: 4, pool: 'host' },
     timeout: { total: '10s' },
 });
 ```

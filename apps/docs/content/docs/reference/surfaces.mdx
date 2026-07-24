@@ -48,7 +48,7 @@ import { graphql } from 'stitchapi/graphql';
 
 const getThing = graphql({
     baseUrl: 'https://api.example.com',
-    query: 'query ($id: ID) { thing(id: $id) { name } }',
+    document: 'query ($id: ID) { thing(id: $id) { name } }',
 });
 
 const thing = await getThing({ variables: { id: 1 } });

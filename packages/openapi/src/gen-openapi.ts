@@ -757,7 +757,7 @@ function emitClient(baseUrl: string | undefined, auth: DerivedAuth): GenFile {
     if (auth.expr) lines.push(`    auth: ${auth.expr},`);
     lines.push('    // TODO: tune shared resilience, e.g.');
     lines.push('    // retry: { attempts: 3, on: [429, 502, 503] },');
-    lines.push("    // throttle: { rate: '10/s', scope: 'host' },");
+    lines.push("    // throttle: { rate: '10/s', pool: 'host' },");
     lines.push('});');
     return { path: 'client.ts', contents: `${lines.join('\n')}\n` };
 }

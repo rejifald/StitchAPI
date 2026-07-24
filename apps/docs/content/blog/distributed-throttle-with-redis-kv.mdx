@@ -38,7 +38,7 @@ import { seam } from 'stitchapi';
 
 const api = seam({
     baseUrl: 'https://api.example.com',
-    throttle: { rate: '2/s', concurrency: 4, scope: 'host' },
+    throttle: { rate: '2/s', concurrency: 4, pool: 'host' },
     // The one line that makes it fleet-wide:
     store: redisStore(fromIoredis(new Redis(process.env.REDIS_URL))),
 });

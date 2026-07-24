@@ -942,9 +942,9 @@ export function drift<S>(
 export function graphql<
     TExplicit = never,
     const C extends Partial<StitchConfig> & {
-        query: string;
+        document: string;
     } = Partial<StitchConfig> & {
-        query: string;
+        document: string;
     },
 >(config: C): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the

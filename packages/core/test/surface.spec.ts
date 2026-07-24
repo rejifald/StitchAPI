@@ -26,7 +26,7 @@ describe('Surface model (ADR 0005 Decisions 1-2, 11)', () => {
     });
 
     test('kind round-trips through __config as the id STRING, never the live object', () => {
-        const g = graphql({ baseUrl: 'https://x.test', query: '{ a }' });
+        const g = graphql({ baseUrl: 'https://x.test', document: '{ a }' });
         const json = JSON.parse(JSON.stringify(g.__config)) as {
             kind?: unknown;
         };
@@ -52,7 +52,7 @@ describe('generic stitch({ kind }) accepts a Surface (Decision 3)', () => {
             kind: graphqlSurface,
             baseUrl: server.url,
             path: '/gql',
-            query: '{ ok }',
+            document: '{ ok }',
         });
 
         await q({ variables: { x: 1 } });
@@ -73,7 +73,7 @@ describe('graphql surface helper (Decision 3/10)', () => {
         const q = graphql.stitch({
             baseUrl: server.url,
             path: '/g',
-            query: '{ me { id } }',
+            document: '{ me { id } }',
             pick: 'data.me',
         });
         expect(await q()).toEqual({ id: 7 });
@@ -84,7 +84,7 @@ describe('graphql surface helper (Decision 3/10)', () => {
         const api = seam({ baseUrl: server.url });
         const ping = graphql.seam(api).stitch({
             path: '/api',
-            query: '{ ping }',
+            document: '{ ping }',
             pick: 'data.ping',
         });
         expect(await ping()).toBe('pong');
@@ -94,7 +94,7 @@ describe('graphql surface helper (Decision 3/10)', () => {
         server.route('POST', '/s', { body: { data: { v: 42 } } });
         const g = graphql.seam({ baseUrl: server.url });
         expect(g.seam.__seam).toBe(true);
-        const v = g.stitch({ path: '/s', query: '{ v }', pick: 'data.v' });
+        const v = g.stitch({ path: '/s', document: '{ v }', pick: 'data.v' });
         expect(await v()).toBe(42);
     });
 });
