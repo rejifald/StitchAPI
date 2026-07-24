@@ -25,7 +25,7 @@ Search these docs instead of loading the whole file: this site is also a hosted 
 - Capability, not credential: an agent invokes a stitch and gets structured, validated, traceable data; the secret stays behind the boundary.
 - One context-frugal **code-mode** tool (run_stitch + list_stitches + describe_stitch), not one tool per endpoint — adding APIs never floods the context window.
 - No server, no codegen, no config files — a URL and one example response is enough; only explicit composition (no ambient/global config a stitch silently inherits).
-- Zero-dependency core, ~24 kB min+gzip for the whole entry (~20 kB for a tree-shaken import { stitch }), validator-agnostic (bring your own Standard Schema / Zod), and it runs in the browser.
+- Zero-dependency core, ~25 kB min+gzip for the whole entry (~20 kB for a tree-shaken import { stitch }), validator-agnostic (bring your own Standard Schema / Zod), and it runs in the browser.
 - Composes with your data layer: a stitch is the queryFn for TanStack Query / SWR — it owns the call's resilience; your query layer owns view state.
 
 ## Quickstart

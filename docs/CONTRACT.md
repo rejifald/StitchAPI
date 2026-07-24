@@ -447,9 +447,8 @@ will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 | Low  | `RedisDriver.del`, `…quit`, sync `close`                           | `delete`, async `close`                 | P18  |
 | Low  | `bodyKind` (from-curl)                                             | `bodyType`                              | P1   |
 
-New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multipart`,
-`sse`, `.inspect()` scalars (P12); `idempotency` boolean (P13-toggle);
-`throttle` string (P14).
+New shorthand/toggle slots to **add** (additive, non-breaking): `.inspect()`
+scalars (P12); `idempotency` boolean (P13-toggle); `throttle` string (P14).
 
 **Shipped (migration in progress)** — all under `@deprecated` aliases read until the GA
 cut; the lint skips the deprecated members so each rename ratchets the baseline down:
@@ -546,6 +545,14 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `seam?: AtLeastOne<NestFeatureSeamOptions>` (`{ config?: AtLeastOne<SeamConfig>, token? }`).
     `forFeature`/`forFeatureScoped` read `seam.config` / `seam.token`. Genuine breaking
     flat→envelope, no alias.
+-   **P20/P12/P13 (empty-object rejection)** the five bare all-optional `StitchConfig` slots R6 flagged
+    now type their object form so `{}` is a **compile error**: `hooks?: AtLeastOne<Hooks>` and
+    `input?: AtLeastOne<InputSchemas>` (no scalar); `multipart?: MultipartNesting | AtLeastOne<MultipartOptions>`
+    and `stream?: StreamDecode | AtLeastOne<StreamOptions>` (P12 dominant-field scalar); and
+    `sse?: boolean | AtLeastOne<SseOptions>` (P13 toggle). `expandShorthand` folds each scalar into its
+    envelope at compose time (`multipart: 'dot'` → `{ nesting }`, `stream: 'ndjson'` → `{ decode }`,
+    `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
+    only ever see the object form. **R6 clears** — the baseline is now **0**.
 
 ## 7. Enforcement
 
