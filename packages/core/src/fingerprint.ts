@@ -56,8 +56,6 @@ export function hash(input: string): string {
  */
 export interface SchemaFingerprint {
     readonly token: string | null;
-    /** @deprecated Renamed to {@link SchemaFingerprint.token} (CONTRACT.md P5: `value` is the success payload, not a token). Read until the 1.0 GA cut. */
-    readonly value?: string | null;
     readonly strength: 'strong' | 'weak';
 }
 
@@ -227,10 +225,8 @@ export function resolveFingerprint(
         };
     }
 
-    // rung 3 — sound structural fingerprint → fast path. Prefer `token`; fall back to the
-    // @deprecated `value` so an external fingerprinter still on the old spelling keeps working.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- back-compat fallback for the renamed `value` alias (CONTRACT.md P5)
-    const token = fp?.token ?? fp?.value;
+    // rung 3 — sound structural fingerprint → fast path.
+    const token = fp?.token;
     if (token != null) {
         return {
             generation: hash(

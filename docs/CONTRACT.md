@@ -454,7 +454,6 @@ will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 | Med  | SSE helper `sendStitchSse`/`stitchSse`                             | `streamStitchSse`                                              | P16    |
 | Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions` | `StitchErrorOptions` (+ `body`)                                | P16    |
 | Low  | `RedisDriver.del`, `…quit`, sync `close`                           | `delete`, async `close`                                        | P18    |
-| Low  | `SchemaFingerprint.value`                                          | `token`                                                        | P5     |
 | Low  | `bodyKind` (from-curl)                                             | `bodyType`                                                     | P1     |
 | Low  | emitted `*Ms` (`waitedMs`, `retryAfterMs`, done `ms`)              | de-suffix (`waited`, `retryAfter`, `elapsed`); units → JSDoc   | P17    |
 
