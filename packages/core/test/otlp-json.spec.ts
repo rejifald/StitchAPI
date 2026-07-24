@@ -1,5 +1,5 @@
 // Direct tests for toOtlpJson (src/otlp.ts) — the OTLP/JSON `ResourceSpans` serializer a collector
-// ingests on /v1/traces. otlp-export.spec.ts asserts the SPAN objects (OtelSpan) an otlpTrace sink
+// ingests on /v1/traces. otlp-export.spec.ts asserts the SPAN objects (OtelSpan) an otlpSink sink
 // produces; run-identity.spec.ts checks only that parentSpanId is serialized. The wire-shape itself
 // — the resource/scope envelope, attribute value TYPING (int vs double vs bool vs string), the
 // nanosecond timestamps, the status-code mapping, and event serialization — was unpinned. A drift

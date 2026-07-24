@@ -16,7 +16,7 @@ import {
     makeRuntime,
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
-import { otlpTrace } from './otlp';
+import { otlpSink } from './otlp';
 import { RateLimitError, createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
@@ -280,7 +280,7 @@ function getTrace(): TraceSink {
         }),
     );
     if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;
-    return multiplex(base, otlpTrace());
+    return multiplex(base, otlpSink());
 }
 
 // A sink that drops every event — `trace: false` forces tracing off even when the

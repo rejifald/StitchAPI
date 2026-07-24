@@ -63,7 +63,7 @@ export const NODE_ONLY_SURFACES = [
     'cookieSession',
     'createTrace',
     'multiplex',
-    'otlpTrace',
+    'otlpSink',
     'otlpHttpExporter',
     'cli',
     'serve',

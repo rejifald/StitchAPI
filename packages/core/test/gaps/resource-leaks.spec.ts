@@ -2,7 +2,7 @@
 // `open` map, and prompt abort during retry/reconnect backoff + throttle waits. These are leak
 // regressions, not behaviour changes — each test asserts a bound or a prompt cancellation that the
 // pre-fix code violated (an ever-growing Map, or a backoff sleep that ignored the caller signal).
-import { otlpTrace, stitch } from '../../src';
+import { otlpSink, stitch } from '../../src';
 import { OPEN_SPANS } from '../../src/otlp';
 import { THROTTLE_STATES, createThrottle } from '../../src/resilience';
 import {
@@ -140,11 +140,11 @@ test('in-process throttle: a key with a queued waiter is not dropped early', asy
 });
 
 // ── 2. OTLP sink drains its `open` map after a completed run ─────────────────
-// otlpTrace stacks an in-flight span per run key; on `done` it popped the span but left the empty
+// otlpSink stacks an in-flight span per run key; on `done` it popped the span but left the empty
 // stack as a Map entry, leaking one entry per unique run id. The fix deletes the entry when the
 // stack empties.
 test('otlp sink: the internal open-span map is empty after a completed run', () => {
-    const sink = otlpTrace({
+    const sink = otlpSink({
         exporter: {
             export() {
                 /* drop spans — the test only inspects the internal map */

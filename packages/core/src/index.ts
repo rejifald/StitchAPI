@@ -36,7 +36,7 @@ export {
     loggerSink,
 } from './trace';
 export type { LoggerLike, LoggerSinkOptions, LogLevel } from './trace';
-export { otlpTrace, otlpHttpExporter, toOtlpJson } from './otlp';
+export { otlpSink, otlpHttpExporter, toOtlpJson } from './otlp';
 export type {
     SpanExporter,
     OtelSpan,
