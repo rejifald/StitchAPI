@@ -19,8 +19,6 @@ export {
     type HonoRequestSeam,
     type StitchEnv,
     type StitchMiddlewareOptions,
-    // Deprecated alias (kept through 1.0.0-rc, removed at GA) — see ADR 0012.
-    type RequestSeam,
 } from './middleware';
 
 export {
