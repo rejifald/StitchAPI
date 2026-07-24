@@ -310,7 +310,7 @@ const listAnnouncements = stitch({
         ttl: '1h',
         scope: 'app',
         vary: ['accept-language'],
-        maxEntries: 500,
+        entries: 500,
         version: 1, // pins the shape — cacheable without a fingerprinter
     },
 });

@@ -45,7 +45,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "sse",
             type: "property",
             detail: "SseOptions",
-            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry` policy), capped at `maxAttempts`. Plain JSON (the contract gate). Only the `sse` surface reads it.",
+            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry` policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse` surface reads it.",
         },
         {
             label: "responseType",

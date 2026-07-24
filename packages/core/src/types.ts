@@ -158,8 +158,6 @@ export interface ReconnectOptions {
      * ends/errors exactly as today. Default 3.
      */
     attempts?: number;
-    /** @deprecated Renamed to {@link ReconnectOptions.attempts} (CONTRACT.md P4). Read until the 1.0 GA cut. */
-    maxAttempts?: number;
     /**
      * Fallback reconnect backoff when the server has NOT sent a `retry:` field on the dropped
      * connection — `1000`, `'1s'`. When omitted, the stitch's `retry` (`RetryOptions` —
@@ -175,7 +173,7 @@ export interface ReconnectOptions {
  * default**: with no `sse.reconnect` block the engine opens the body exactly once (today's
  * behaviour, byte-identical). When enabled the engine tracks the last `id:` seen and replays it as
  * `Last-Event-ID` on each reconnect, honours a server-sent `retry:` as the backoff (falling back to
- * `reconnect.backoff` / the stitch's `retry` policy), and caps reconnects at `maxAttempts`.
+ * `reconnect.backoff` / the stitch's `retry` policy), and caps reconnects at `attempts`.
  *
  * `true` = enabled with sane defaults; the object form tunes the cap / fallback backoff. Plain JSON
  * (the contract gate). Only the `sse` surface acts on this; other surfaces ignore it.
@@ -318,13 +316,10 @@ export interface TimeoutOptions {
 export interface CircuitOptions {
     /**
      * Consecutive failures that trip the breaker OPEN. Required by design — a breaker with an
-     * invisible threshold fails silently (CONTRACT.md P15); `createCircuit` throws if neither
-     * `failures` nor the @deprecated `failureThreshold` is set. Optional at the type level only so
-     * the deprecated alias can stand in until the GA cut.
+     * invisible threshold fails silently (CONTRACT.md P15); `createCircuit` throws if `failures`
+     * is not set.
      */
     failures?: number;
-    /** @deprecated Renamed to {@link CircuitOptions.failures} (CONTRACT.md P4). Read until the 1.0 GA cut. */
-    failureThreshold?: number;
     /**
      * Fast-fail window after opening, before a half-open trial — `30_000`, `'30s'`. Required by
      * design (P15); `createCircuit` throws if neither `cooldown` nor the @deprecated `cooldownMs`
@@ -403,8 +398,6 @@ export interface CacheOptions {
     methods?: string[];
     /** In-process LRU cap on live entries (the store stays dumb). Default 1000. */
     entries?: number;
-    /** @deprecated Renamed to {@link CacheOptions.entries} (CONTRACT.md P4). Read until the 1.0 GA cut. */
-    maxEntries?: number;
     /**
      * Request coalescing mode. `'process'` (v1 default) collapses concurrent identical in-flight
      * callers in one process onto a single shared run; `false` disables it. `'cluster'` is
@@ -655,8 +648,6 @@ export interface PaginateOptions {
     items?: (value: unknown) => unknown[];
     /** Safety cap on pages. Default 50. */
     pages?: number;
-    /** @deprecated Renamed to `pages` (CONTRACT.md P4). Read until the 1.0 GA cut. */
-    max?: number;
 }
 export interface StitchConfig {
     /** Label used in events and traces; defaults to `path` or `'stitch'`. */
@@ -689,8 +680,8 @@ export interface StitchConfig {
      * surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once
      * (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as
      * `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry`
-     * policy), capped at `maxAttempts`. Plain JSON (the contract gate). Only the `sse` surface
-     * reads it.
+     * policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse`
+     * surface reads it.
      */
     sse?: SseOptions;
     /** How to read the response body. Default: auto by content-type. */
