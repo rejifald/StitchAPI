@@ -138,10 +138,9 @@ seam and bind explicitly — `seam.as(job.data.tenantId)`.
 > [!NOTE]
 >
 > `nestLoggerSink` / `fromNestConfig` / `nestBorrowStore` / `NestConfigServiceLike` are
-> the ecosystem-qualified names introduced by
-> [ADR 0012](../../docs/adr/0012-integration-symbol-naming.md). The former bare names
-> (`loggerSink`, `fromConfig`, `borrowStore`, `ConfigServiceLike`) remain as
-> `@deprecated` aliases through the `1.0.0-rc` line and are removed at the 1.0 GA cut.
+> the ecosystem-qualified names required by
+> [ADR 0012](../../docs/adr/0012-integration-symbol-naming.md) — the former bare names
+> were removed at the 1.0 GA cut.
 
 ## Errors → HTTP — `StitchExceptionFilter`
 

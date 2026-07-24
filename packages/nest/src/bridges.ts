@@ -72,22 +72,6 @@ export function nestLoggerSink(
     });
 }
 
-/**
- * @deprecated Renamed to {@link nestLoggerSink}. The bare name collided with core's
- * generic `loggerSink` (you had to alias one at every shared import site), so the
- * cross-package logger-sink family is now ecosystem-qualified — see
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). This alias is kept
- * through the `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export const loggerSink = nestLoggerSink;
-
-/**
- * @deprecated Renamed to {@link NestLoggerLike} (it was indistinguishable from core's
- * `LoggerLike`) — see [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md).
- * Kept through the `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export type LoggerLike = NestLoggerLike;
-
 // Adapt a Nest `Logger` to core's `LoggerLike`. Core's level vocabulary is
 // error|warn|info|debug; Nest's is error|warn|log|debug|verbose. We route core `info` →
 // Nest `verbose` (the level `result` lands on) and guard `debug`/`verbose`, which a partial
@@ -210,28 +194,3 @@ export function nestBorrowStore(store: StitchStore): StitchStore {
         incr: (key, ttlMs) => store.incr(key, ttlMs),
     };
 }
-
-/**
- * @deprecated Renamed to {@link fromNestConfig} so the adapter's secret-source
- * constructor is ecosystem-qualified (a bare `fromConfig` would collide with any
- * other framework's config bridge) — see
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
- * `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export const fromConfig = fromNestConfig;
-
-/**
- * @deprecated Renamed to {@link nestBorrowStore} so the helper is ecosystem-qualified
- * (a bare `borrowStore` would collide with any other adapter's store wrapper) — see
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
- * `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export const borrowStore = nestBorrowStore;
-
-/**
- * @deprecated Renamed to {@link NestConfigServiceLike} so the duck-type is
- * ecosystem-qualified — see
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
- * `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export type ConfigServiceLike = NestConfigServiceLike;
