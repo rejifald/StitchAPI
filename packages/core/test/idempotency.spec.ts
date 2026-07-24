@@ -33,7 +33,7 @@ test('injects a stable Idempotency-Key on a write, unchanged across a retry', as
         method: 'POST',
         baseUrl: server.url,
         path: '/create',
-        retry: { attempts: 2, on: [503], baseMs: 5 },
+        retry: { attempts: 2, on: [503], baseDelay: 5 },
         idempotency: true, // default header + random per-call key
     });
 
@@ -55,7 +55,7 @@ test('uses a custom keyOf function derived from the input', async () => {
         method: 'POST',
         baseUrl: server.url,
         path: '/orders',
-        retry: { attempts: 2, on: [503], baseMs: 5 },
+        retry: { attempts: 2, on: [503], baseDelay: 5 },
         idempotency: {
             header: 'X-Idempotency-Key',
             keyOf: (input) => `order-${(input.body as { id: number }).id}`,

@@ -360,7 +360,7 @@ describe('sse over real fetch + Web Streams (browser-first gate)', () => {
                     'data: {"n":2}\n\n',
                     'data: {"n":3}\n\n',
                 ],
-                chunkDelayMs: 15,
+                chunkDelay: 15,
             },
         });
         const events = sse({ baseUrl: server.url, path: '/ticks' });
@@ -383,7 +383,7 @@ describe('sse over real fetch + Web Streams (browser-first gate)', () => {
                     'data: {"n":2}\n\n',
                     'data: {"n":3}\n\n',
                 ],
-                chunkDelayMs: 40,
+                chunkDelay: 40,
             },
         });
         const events = sse({ baseUrl: server.url, path: '/abortable' });

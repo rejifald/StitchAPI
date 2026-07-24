@@ -165,8 +165,6 @@ export interface ReconnectOptions {
      * always wins over both.
      */
     backoff?: number | string;
-    /** @deprecated Renamed to {@link ReconnectOptions.backoff} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    backoffMs?: number;
 }
 /**
  * Resumable SSE (issue #71) — how the `sse` surface recovers from a dropped stream. **Off by
@@ -275,12 +273,8 @@ export interface RetryOptions {
     backoff?: 'expo' | 'expo-jitter' | 'fixed';
     /** Base backoff delay before the first retry — `100`, `'100ms'`, `'1s'`. Default 100ms. */
     baseDelay?: number | string;
-    /** @deprecated Renamed to {@link RetryOptions.baseDelay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    baseMs?: number;
     /** Backoff ceiling the computed delay is clamped to — `10_000`, `'10s'`. Default 10s. */
     maxDelay?: number | string;
-    /** @deprecated Renamed to {@link RetryOptions.maxDelay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    maxMs?: number;
     respectRetryAfter?: boolean;
 }
 export interface ThrottleOptions {
@@ -292,10 +286,10 @@ export interface ThrottleOptions {
      */
     pool?: 'stitch' | 'host';
     /**
-     * Delegate rate-limit handling to the host (folded in from the top-level `rateLimit`,
-     * CONTRACT.md P14). When `true`, a rate-limit response (status matched by `on`, default `[429]`)
-     * is **not** retried or throttled internally — self-pacing (`rate`/`concurrency`) is bypassed and
-     * the outcome surfaces as a {@link RateLimitError}. Use it when an OUTER gate owns the backoff.
+     * Delegate rate-limit handling to the host (CONTRACT.md P14). When `true`, a rate-limit
+     * response (status matched by `on`, default `[429]`) is **not** retried or throttled
+     * internally — self-pacing (`rate`/`concurrency`) is bypassed and the outcome surfaces as a
+     * {@link RateLimitError}. Use it when an OUTER gate owns the backoff.
      */
     delegate?: boolean;
     /** Statuses that count as a rate-limit signal under `delegate` — a list or a predicate. Default `[429]`. */
@@ -322,16 +316,11 @@ export interface CircuitOptions {
     failures?: number;
     /**
      * Fast-fail window after opening, before a half-open trial — `30_000`, `'30s'`. Required by
-     * design (P15); `createCircuit` throws if neither `cooldown` nor the @deprecated `cooldownMs`
-     * is set.
+     * design (P15); `createCircuit` throws when it is missing.
      */
     cooldown?: number | string;
-    /** @deprecated Renamed to {@link CircuitOptions.cooldown} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    cooldownMs?: number;
     /** When to allow a half-open trial — `60_000`, `'1m'`. Default: `cooldown`. */
     halfOpenAfter?: number | string;
-    /** @deprecated Renamed to {@link CircuitOptions.halfOpenAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    halfOpenAfterMs?: number;
     /** Store namespace to share a breaker across stitches (default: stitch/host key). */
     key?: string;
 }
@@ -557,8 +546,6 @@ export type StitchEvent<T = unknown> =
           detail?: string;
           /** How long the engine waited before this step (ms): throttle pacing or retry/reconnect backoff. */
           waited?: number;
-          /** @deprecated Renamed to `waited` (CONTRACT.md P17). Set alongside `waited` until the 1.0 GA cut. */
-          waitedMs?: number;
           at: number;
       }
     // A strategy-level announcement (auth decisions, inference). Non-progress; carries no secret.
@@ -583,8 +570,6 @@ export type StitchEvent<T = unknown> =
           // structured backoff hint the awaited path gets off the thrown RateLimitError. Additive and
           // optional — every other `error` event omits it (issue #145).
           retryAfter?: number;
-          /** @deprecated Renamed to `retryAfter` (CONTRACT.md P17). Set alongside `retryAfter` until the 1.0 GA cut. */
-          retryAfterMs?: number;
           attempts: number;
           at: number;
       }
@@ -593,8 +578,6 @@ export type StitchEvent<T = unknown> =
           ok: boolean;
           /** Total wall-clock time for the run (ms). */
           elapsed: number;
-          /** @deprecated Renamed to `elapsed` (CONTRACT.md P17). Set alongside `elapsed` until the 1.0 GA cut. */
-          ms?: number;
           attempts: number;
           at: number;
       };
@@ -607,7 +590,7 @@ export type TimerHandle = unknown;
  * timeout, circuit cooldown, and `Retry-After` HTTP-dates — so a test can drive them deterministically
  * with no real waiting. Defaults to the system clock (wall-clock + global timers); inject a
  * `manualClock()` (from `stitchapi/testing`) to control time by hand. NOTE: `timeout.total` and the
- * `at`/`ms` fields on events stay on wall-clock and are not driven by the clock.
+ * `at`/`elapsed` fields on events stay on wall-clock and are not driven by the clock.
  */
 export interface Clock {
     /** Current time in epoch ms. */
@@ -746,7 +729,7 @@ export interface StitchConfig {
      *
      * `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts
      * are exhausted, then accepted (returned) on the final attempt. Orthogonal to
-     * `rateLimit.delegate`, which surfaces a {@link RateLimitError} on rate-limit statuses earlier.
+     * `throttle.delegate`, which surfaces a {@link RateLimitError} on rate-limit statuses earlier.
      */
     acceptStatus?: number[] | ((status: number) => boolean);
     /**
@@ -764,29 +747,6 @@ export interface StitchConfig {
      * required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`).
      */
     circuit?: AtLeastOne<CircuitOptions>;
-    /**
-     * @deprecated Folded into `throttle` (CONTRACT.md P14): use `throttle.delegate` / `throttle.on`.
-     * Read until the 1.0 GA cut.
-     *
-     * Delegate backoff to the host (issue #145). When `delegate: true`, a rate-limit response
-     * (status in `on`, default `[429]`) is **not** retried internally and the built-in `throttle`
-     * is **bypassed** for the call — instead the outcome surfaces as a {@link RateLimitError}
-     * (carrying `status`, the `retryAfter` parsed from `Retry-After`, and the raw `response`) on
-     * the awaited path, and as an `error` event with `retryAfter` on `.stream()`. Use this when an
-     * OUTER gate/circuit owns the backoff (its own `Retry-After` hook, a DB-persisted budget) and
-     * StitchAPI's internal retry+throttle would double-count against it.
-     *
-     * ⚠️ In delegate mode the `throttle` config becomes **inert** for this stitch (the host owns the
-     * gate). A `circuit` block, if also set, still applies — the host may layer both. Non-rate-limit
-     * failures (5xx, etc.) behave exactly as today unless their status is listed in `on`. Validation,
-     * templating, transform/pick, and drift on the success path are unchanged.
-     */
-    rateLimit?: {
-        /** Surface rate-limit outcomes instead of retrying/throttling them. Default `false`. */
-        delegate?: boolean;
-        /** Statuses treated as a rate-limit signal. Default `[429]`. */
-        on?: number[];
-    };
     /**
      * Inject a stable Idempotency-Key header on writes so safe retries don't duplicate.
      * `true` enables it with defaults (header `Idempotency-Key`, a random uuid per call); the
@@ -1024,10 +984,10 @@ export interface RunReport<T> extends Inspection<T> {
     /** Total attempts made, including the first (1 = no retry). From the terminal event / `StitchError.attempts`. */
     attempts: number;
     /**
-     * Wall-clock timing of the run. `ms` is the total (the `done` event's `ms`); `waited` is the
-     * summed backoff/throttle/reconnect wait (Σ `progress.waitedMs`), **omitted** when nothing waited.
+     * Wall-clock timing of the run. `elapsed` is the total (the `done` event's `elapsed`); `waited` is the
+     * summed backoff/throttle/reconnect wait (Σ `progress.waited`), **omitted** when nothing waited.
      */
-    timing: { ms: number; waited?: number };
+    timing: { elapsed: number; waited?: number };
     /**
      * The **resolved, redacted** per-call config (ADR 0019 §5) — the stitch's existing redacted
      * `__config`, never the secret-bearing `__rawConfig`. Safe to echo into a log or support ticket.
@@ -1087,7 +1047,7 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
     /**
      * Probe a fresh call and return a {@link RunReport} — an {@link Inspection} (`{ data, raw,
      * findings, status, error, source }`) **plus** run diagnostics: `attempts`, `timing`
-     * (`{ ms, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome
+     * (`{ elapsed, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome
      * (ADR 0019). Like `.inspect()` it **never throws** (a hard contract violation comes back with
      * `error` set and the diagnostics populated) and is a **network probe**: it always hits the
      * network and **bypasses the cache by default** — pass `{ cache: true }` to honour the cache

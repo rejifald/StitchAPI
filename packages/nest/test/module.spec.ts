@@ -2,9 +2,6 @@
 // directly (no Nest DI container needed) and run the resulting stitches against a mock
 // adapter, asserting wire-level effects — the same style as core's tests.
 import {
-    // Deprecated aliases (ADR 0012) — exercised by the alias-guard test below.
-    type ConfigServiceLike,
-    type LoggerLike,
     type NestConfigServiceLike,
     type NestLoggerLike,
     STITCH_SEAM,
@@ -12,11 +9,8 @@ import {
     STITCH_TRACE,
     SeamRegistry,
     StitchModule,
-    borrowStore,
     defineStitch,
-    fromConfig,
     fromNestConfig,
-    loggerSink,
     nestBorrowStore,
     nestLoggerSink,
 } from '../src';
@@ -314,28 +308,6 @@ describe('bridges', () => {
         };
         return { rec, logger };
     };
-
-    it('keeps the pre-ADR-0012 names as deprecated aliases of the ecosystem-qualified ones', () => {
-        // Runtime: each deprecated function export is the very same function object.
-        expect(loggerSink).toBe(nestLoggerSink);
-        expect(fromConfig).toBe(fromNestConfig);
-        expect(borrowStore).toBe(nestBorrowStore);
-        // Type-level: the deprecated type aliases stay interchangeable with the canonical ones.
-        const loggerViaDeprecated: LoggerLike = {
-            log() {},
-            warn() {},
-            error() {},
-        };
-        const loggerViaCanonical: NestLoggerLike = loggerViaDeprecated;
-        expect(typeof loggerViaCanonical.log).toBe('function');
-        const cfgViaDeprecated: ConfigServiceLike = {
-            getOrThrow<T = string>(key: string): T {
-                return key as T;
-            },
-        };
-        const cfgViaCanonical: NestConfigServiceLike = cfgViaDeprecated;
-        expect(typeof cfgViaCanonical.getOrThrow).toBe('function');
-    });
 
     it('nestLoggerSink maps each event to the right level, payload-free, query redacted', () => {
         const { rec, logger } = recordingLogger();

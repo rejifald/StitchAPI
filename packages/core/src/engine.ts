@@ -348,11 +348,7 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     // Delegate-backoff signal: stamp the structured `retryAfter` onto the event (so `.stream()`
     // consumers get it) and pin the live RateLimitError so the awaited path re-throws it intact.
     if (err instanceof RateLimitError) {
-        if (err.retryAfter !== undefined) {
-            evt.retryAfter = err.retryAfter;
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-emit the @deprecated alias for back-compat (CONTRACT.md P17)
-            evt.retryAfterMs = err.retryAfter;
-        }
+        if (err.retryAfter !== undefined) evt.retryAfter = err.retryAfter;
         Object.defineProperty(evt, ERROR_SOURCE, {
             value: err,
             enumerable: false,
@@ -369,22 +365,13 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     }
     return evt;
 }
-const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => {
-    const elapsed = now() - t0;
-    // `elapsed` is canonical; `ms` is set alongside it as the @deprecated alias (CONTRACT.md P17).
-    return { type: 'done', ok, elapsed, ms: elapsed, attempts, at: now() };
-};
-
-// Co-emit a `progress` event's @deprecated `waitedMs` alias by ASSIGNMENT (not a literal `waitedMs:`
-// key) so back-compat holds until the GA cut (CONTRACT.md P17/P19) without re-tripping the contract
-// lint's R2, which flags a literal `*Ms:` declaration. The canonical field is `waited`.
-function coemitWaitedMs(
-    evt: Extract<StitchEvent, { type: 'progress' }>,
-): Extract<StitchEvent, { type: 'progress' }> {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- writing the @deprecated alias for back-compat (CONTRACT.md P17/P19)
-    if (evt.waited !== undefined) evt.waitedMs = evt.waited;
-    return evt;
-}
+const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
+    type: 'done',
+    ok,
+    elapsed: now() - t0,
+    attempts,
+    at: now(),
+});
 
 async function validateInput(
     cfg: ResolvedStitchConfig,
@@ -615,16 +602,13 @@ async function* attemptLoop(
     const perAttemptMs = parseDuration(cfg.timeout?.perAttempt);
     const key = hostKey(baseReq, cfg);
     let refreshed = false;
-    // Delegate-backoff mode (issue #145): the host owns the gate. We bypass the internal throttle
-    // for the call (no acquire/release, so `throttle` is inert and no `throttled` event fires) and,
-    // on a response whose status matches `rlMatch` (default [429]), surface a RateLimitError instead
-    // of retrying. Everything else — auth, the success path, non-rate-limit failures — is unchanged.
-    // P14: `rateLimit` folded into `throttle` — read `throttle.delegate`/`throttle.on`, falling back
-    // to the @deprecated top-level `rateLimit` (read once here) until the GA cut.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `rateLimit` folded into `throttle` (P14); back-compat fallback until GA
-    const legacyRl = cfg.rateLimit;
-    const delegate = (cfg.throttle?.delegate ?? legacyRl?.delegate) === true;
-    const rlMatch = acceptsStatus(cfg.throttle?.on ?? legacyRl?.on ?? [429]);
+    // Delegate-backoff mode (issue #145, folded into `throttle` — P14): the host owns the gate. We
+    // bypass the internal throttle for the call (no acquire/release, so `throttle` is inert and no
+    // `throttled` event fires) and, on a response whose status matches `rlMatch` (default [429]),
+    // surface a RateLimitError instead of retrying. Everything else — auth, the success path,
+    // non-rate-limit failures — is unchanged.
+    const delegate = cfg.throttle?.delegate === true;
+    const rlMatch = acceptsStatus(cfg.throttle?.on ?? [429]);
     // acceptStatus (issue #155): statuses the caller declares NORMAL — an accepted non-2xx returns
     // `res` like a 2xx (flowing through interpret → transform → pick → validate) instead of
     // throwing. Checked at the `>= 400` site, i.e. AFTER the retry-on-status path, so `retry.on`
@@ -644,13 +628,13 @@ async function* attemptLoop(
                 baseReq.signal,
             );
             if (waited > 0)
-                yield coemitWaitedMs({
+                yield {
                     type: 'progress',
                     phase: 'throttled',
                     attempt,
                     waited,
                     at: now(),
-                });
+                };
         }
         try {
             const req = cloneReq(baseReq);
@@ -1197,8 +1181,7 @@ async function* runStreaming(
     // The resume hooks (issue #71) stay optional; the surface is resumable only when both are set.
     const streamHook: NonNullable<Surface['stream']> = surface.stream;
     const resumeToken = surface.resumeToken;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `resumeRetryMs` is the @deprecated alias of `resumeRetry`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const resumeRetry = surface.resumeRetry ?? surface.resumeRetryMs;
+    const resumeRetry = surface.resumeRetry;
     const applyResume = surface.applyResume;
 
     let baseReq: AdapterRequest;
@@ -1263,13 +1246,13 @@ async function* runStreaming(
             return 'fail';
         }
         if (waited > 0)
-            yield coemitWaitedMs({
+            yield {
                 type: 'progress',
                 phase: 'throttled',
                 attempt,
                 waited,
                 at: now(),
-            });
+            };
 
         let res: AdapterResponse;
         try {
@@ -1407,13 +1390,13 @@ async function* runStreaming(
             lastRetryMs ??
             policy.backoff ??
             backoffDelay(attempt + 1, cfg.retry);
-        yield coemitWaitedMs({
+        yield {
             type: 'progress',
             phase: 'reconnect',
             attempt,
             waited: backoff,
             at: now(),
-        });
+        };
         await sleepWithin(backoff, budget, baseReq.signal, rt.clock);
     }
 
@@ -1434,8 +1417,7 @@ function resolveReconnect(cfg: ResolvedStitchConfig): {
     if (!r) return { enabled: false, maxAttempts: 0, backoff: undefined };
     if (r === true)
         return { enabled: true, maxAttempts: 3, backoff: undefined };
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `backoffMs` is the @deprecated alias of `backoff`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const backoff = parseDuration(r.backoff ?? r.backoffMs);
+    const backoff = parseDuration(r.backoff);
     return {
         enabled: true,
         maxAttempts: r.attempts ?? 3,

@@ -12,22 +12,24 @@ export interface ReqInfo {
 
 export interface RouteBehavior {
     statuses?: number[];
-    delayMs?: number | number[];
+    /** Pause (ms) before responding — a number, or a per-call sequence (last repeats). */
+    delay?: number | number[];
     body?: unknown | unknown[] | ((callIndex: number, req: ReqInfo) => unknown);
     requireCookie?: { name: string; value?: string };
     requireHeader?: { name: string; value?: string };
     setCookie?: { name: string; value: string };
     setCookies?: { name: string; value: string }[];
-    retryAfter?: number;
+    /** Emit a `Retry-After` header with this many delta-seconds (the header's native unit). */
+    retryAfterSeconds?: number;
     headers?: Record<string, string>;
     /**
      * Stream the body as a real chunked HTTP response (no `content-length`) instead of one buffered
      * send — for the `sse`/`stream` surfaces. Each chunk is written separately, with an optional
-     * `chunkDelayMs` pause *before* each, so a test can observe cross-chunk boundaries over a real
-     * socket, abort mid-stream, or break early. Set `headers['content-type']` (e.g.
+     * `chunkDelay` pause (ms) *before* each, so a test can observe cross-chunk boundaries over a
+     * real socket, abort mid-stream, or break early. Set `headers['content-type']` (e.g.
      * `'text/event-stream'`); the loop stops as soon as the client goes away.
      */
-    stream?: { chunks: (string | Uint8Array)[]; chunkDelayMs?: number };
+    stream?: { chunks: (string | Uint8Array)[]; chunkDelay?: number };
 }
 
 export interface MockServer {
@@ -131,8 +133,8 @@ export function startMockServer(): Promise<MockServer> {
                 out['Set-Cookie'] = extra.setCookies.map(
                     (c) => `${c.name}=${c.value}`,
                 );
-            if (extra?.retryAfter !== undefined)
-                out['Retry-After'] = String(extra.retryAfter);
+            if (extra?.retryAfterSeconds !== undefined)
+                out['Retry-After'] = String(extra.retryAfterSeconds);
             return out;
         };
         const send = (
@@ -174,7 +176,7 @@ export function startMockServer(): Promise<MockServer> {
                 buildHeaders('application/octet-stream', extra),
             );
             for (const chunk of spec.chunks) {
-                if (spec.chunkDelayMs) await sleep(spec.chunkDelayMs);
+                if (spec.chunkDelay) await sleep(spec.chunkDelay);
                 if (res.writableEnded || res.destroyed) break;
                 res.write(
                     typeof chunk === 'string'
@@ -237,9 +239,9 @@ export function startMockServer(): Promise<MockServer> {
         }
 
         let delay = 0;
-        if (Array.isArray(behavior.delayMs))
-            delay = (at(behavior.delayMs, idx) as number) ?? 0;
-        else if (typeof behavior.delayMs === 'number') delay = behavior.delayMs;
+        if (Array.isArray(behavior.delay))
+            delay = (at(behavior.delay, idx) as number) ?? 0;
+        else if (typeof behavior.delay === 'number') delay = behavior.delay;
 
         const respond = (): void => {
             send(status, body, behavior);
