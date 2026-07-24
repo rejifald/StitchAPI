@@ -1,10 +1,10 @@
 // mockAdapter behaviours (src/test-mock.ts) beyond testing-kit.spec.ts's coverage (method+path
-// routing, status sequence, function responder, delayMs, unmatched). Driven at the Adapter layer
+// routing, status sequence, function responder, delay, unmatched). Driven at the Adapter layer
 // directly — no stitch needed. Pins:
 //   - match as a RegExp, a predicate, and the string-substring fallback (beyond exact pathname);
 //   - first matching route wins;
 //   - a response sequence repeats its LAST entry once exhausted;
-//   - build() defaults status to 200, lowercases headers, and maps retryAfter → retry-after;
+//   - build() defaults status to 200, lowercases headers, and maps retryAfterSeconds → retry-after;
 //   - the spy: lastRequest(), filtered calls()/callCount(), and reset() (clears the log AND restarts
 //     each route's per-call counter).
 import { mockAdapter } from '../src/test-mock';
@@ -71,15 +71,6 @@ describe('mockAdapter responses', () => {
         expect(res.status).toBe(200);
         expect(res.headers['x-foo']).toBe('Bar'); // header key lowercased
         expect(res.headers['retry-after']).toBe('5'); // retryAfterSeconds → header
-    });
-
-    test('the @deprecated `retryAfter` alias still maps to the header (P17)', async () => {
-        const api = mockAdapter({
-            // Pre-rename spelling — still drives the `Retry-After` header until the GA cut.
-            respond: { retryAfter: 9 },
-        });
-        const res = await api(req('http://h/a'));
-        expect(res.headers['retry-after']).toBe('9');
     });
 });
 

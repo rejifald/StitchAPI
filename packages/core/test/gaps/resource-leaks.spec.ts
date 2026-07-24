@@ -201,7 +201,7 @@ test('abort during a retry backoff rejects promptly (well under the backoff dela
         baseUrl: 'http://test',
         path: '/always-503',
         adapter: always503,
-        retry: { attempts: 5, on: [503], backoff: 'fixed', baseMs: 1000 },
+        retry: { attempts: 5, on: [503], backoff: 'fixed', baseDelay: 1000 },
     });
 
     const ac = new AbortController();
@@ -235,7 +235,7 @@ test('an already-aborted signal rejects without sleeping the backoff', async () 
         baseUrl: 'http://test',
         path: '/x',
         adapter: always503,
-        retry: { attempts: 5, on: [503], backoff: 'fixed', baseMs: 1000 },
+        retry: { attempts: 5, on: [503], backoff: 'fixed', baseDelay: 1000 },
     });
 
     const ac = new AbortController();

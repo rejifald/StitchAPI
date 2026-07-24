@@ -188,21 +188,21 @@ test('predefined query merges with call-time query (input wins on conflict)', as
     expect(call?.query).toEqual({ sort: 'name', type: 'user' });
 });
 
-// 3) Objects deep-merge across layers: base retry {attempts,on} survives a child adding {baseMs}.
-test('deep-merge keeps base retry.attempts/on when child adds retry.baseMs', async () => {
+// 3) Objects deep-merge across layers: base retry {attempts,on} survives a child adding {baseDelay}.
+test('deep-merge keeps base retry.attempts/on when child adds retry.baseDelay', async () => {
     server.route('GET', '/flaky', {
         statuses: [503, 503, 200],
         body: { ok: true },
     });
 
     const retryPreset = { retry: { attempts: 3, on: [503] } };
-    // Child only sets baseMs; if merge replaced the object wholesale, attempts/on would be lost
+    // Child only sets baseDelay; if merge replaced the object wholesale, attempts/on would be lost
     // and the stitch would NOT retry the two 503s.
     const flaky = stitch({
         baseUrl: server.url,
         path: '/flaky',
         extends: [retryPreset],
-        retry: { baseMs: 5 },
+        retry: { baseDelay: 5 },
     });
 
     const events = await collect(flaky.stream());

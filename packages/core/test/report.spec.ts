@@ -2,7 +2,7 @@
 // Two surfaces under test:
 //   - `source` on `Inspection<T>` (also returned by `.inspect()`): 'live' for a default probe,
 //     'stream' for a streaming surface (raw null), 'cache' for a warmed cache hit (raw null).
-//   - `.report()`: a `RunReport<T>` (an Inspection plus run diagnostics) — `attempts`, `timing.ms`,
+//   - `.report()`: a `RunReport<T>` (an Inspection plus run diagnostics) — `attempts`, `timing.elapsed`,
 //     the REDACTED `config` (never `__rawConfig`), and the fine-grained `cache` outcome
 //     (bypass / miss / hit / disabled). Like `.inspect()` it never throws on a hard contract
 //     violation — it returns with `error` set and the diagnostics populated.
@@ -101,9 +101,9 @@ test('source: a cache hit is "cache" with raw null', async () => {
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// 4. A report carries the Inspection fields PLUS diagnostics; timing.ms is a number.
+// 4. A report carries the Inspection fields PLUS diagnostics; timing.elapsed is a number.
 // ---------------------------------------------------------------------------
-test('report: inspection fields + attempts + timing.ms (number) + source', async () => {
+test('report: inspection fields + attempts + timing.elapsed (number) + source', async () => {
     const { adapter } = counting({ n: '42' });
     const s = stitch({
         url: URL,
@@ -118,7 +118,7 @@ test('report: inspection fields + attempts + timing.ms (number) + source', async
     expect(r.error).toBeNull();
     expect(r.source).toBe('live');
     expect(r.attempts).toBe(1);
-    expect(typeof r.timing.ms).toBe('number');
+    expect(typeof r.timing.elapsed).toBe('number');
 });
 
 // ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ test('report: attempts reflects retries', async () => {
         url: URL,
         adapter,
         trace: false,
-        retry: { attempts: 3, baseMs: 0 },
+        retry: { attempts: 3, baseDelay: 0 },
     });
     const r = await s.report();
     expect(r.error).toBeNull();
@@ -228,7 +228,7 @@ test('report: a hard contract violation returns with error + diagnostics', async
     expect(r.status).toBe(200);
     expect(r.source).toBe('live');
     expect(r.attempts).toBe(1);
-    expect(typeof r.timing.ms).toBe('number');
+    expect(typeof r.timing.elapsed).toBe('number');
     expect(r.cache).toBe('disabled');
     expect(
         r.findings.some((f) => f.change === 'invalid' && f.level === 'error'),

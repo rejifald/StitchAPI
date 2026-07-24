@@ -52,7 +52,7 @@ test('5 concurrent cold calls coalesce into exactly ONE token-endpoint POST', as
         // The 50ms delay holds the first token fetch in flight long enough that
         // every concurrent cold caller has already taken the cache-miss branch —
         // making the race deterministic instead of timing-dependent.
-        delayMs: 50,
+        delay: 50,
         body: { access_token: 'T1', token_type: 'Bearer', expires_in: 3600 },
     });
     server.route('GET', '/data', {

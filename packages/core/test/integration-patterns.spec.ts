@@ -70,7 +70,7 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
             baseUrl: server.url,
             path: '/graphql',
             auth: apiKey({ header: 'apikey', value: env('METADATA_API_KEY') }),
-            retry: { attempts: 5, on: [429, 500, 502, 503], baseMs: 5 },
+            retry: { attempts: 5, on: [429, 500, 502, 503], baseDelay: 5 },
             pick: 'data',
         });
 

@@ -26,7 +26,7 @@ import type {
     StitchStore,
     TraceSink,
 } from './types';
-import { stripTrailingSlashes } from './util';
+import { parseDuration, stripTrailingSlashes } from './util';
 
 /**
  * The outcome of one `verify*Contract` run.
@@ -167,19 +167,17 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
  *
  * @param makeStore Factory for the store under test; awaited, so it may
  *   connect to a real backend.
- * @param opts `ttl` — the expiry window (ms) the TTL rules use (default 60).
+ * @param opts `ttl` — the expiry window the TTL rules use, as ms or a
+ *   duration string (`'250ms'`, `'1s'`). Default 60ms.
  */
 export async function verifyStoreContract(
     makeStore: () => StitchStore | Promise<StitchStore>,
     opts?: {
-        /** Expiry window (ms) the TTL rules use. Default 60. */
-        ttl?: number;
-        /** @deprecated Renamed to `ttl` (CONTRACT.md P17). Read until the 1.0 GA cut. */
-        ttlMs?: number;
+        /** Expiry window the TTL rules use — ms, or a duration string. Default 60ms. */
+        ttl?: number | string;
     },
 ): Promise<ContractReport> {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `ttlMs` is the @deprecated alias of `ttl`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const ttlMs = opts?.ttl ?? opts?.ttlMs ?? 60;
+    const ttlMs = parseDuration(opts?.ttl) ?? 60;
     const store = await makeStore();
     const ns = `stitch-conformance:${Date.now().toString(36)}-${Math.random()
         .toString(36)
@@ -241,7 +239,7 @@ export async function verifyStoreContract(
             },
         ],
         [
-            'set: a ttlMs entry expires',
+            'set: a ttl entry expires',
             async () => {
                 await store.set(k('ttl'), 'soon-gone', ttlMs);
                 expectDeepEqual(
@@ -259,7 +257,7 @@ export async function verifyStoreContract(
             },
         ],
         [
-            'set: no ttlMs means no expiry',
+            'set: no ttl means no expiry',
             async () => {
                 await store.set(k('keep'), 'kept');
                 await sleep(ttlMs + 50);
@@ -307,7 +305,7 @@ export async function verifyStoreContract(
             },
         ],
         [
-            'incr: the counter expires after ttlMs',
+            'incr: the counter expires after its ttl',
             async () => {
                 await store.incr(k('window'), ttlMs);
                 await sleep(ttlMs + 50);
@@ -384,8 +382,6 @@ export interface FixtureResponse {
     body: string;
     /** When set, the host MUST delay sending the response by this many ms. */
     delay?: number;
-    /** @deprecated Renamed to {@link FixtureResponse.delay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    delayMs?: number;
 }
 
 /**
@@ -459,13 +455,7 @@ export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
         return json(200, JSON_BODY, { 'x-stitch-echo': 'json' });
     }
     if (path === '/slow' && method === 'GET') {
-        const res: FixtureResponse = {
-            ...json(200, { slow: true }),
-            delay: SLOW_DELAY_MS,
-        };
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-set the @deprecated `delayMs` alias for back-compat (CONTRACT.md P17)
-        res.delayMs = SLOW_DELAY_MS;
-        return res;
+        return { ...json(200, { slow: true }), delay: SLOW_DELAY_MS };
     }
     return json(404, { error: 'not_found' });
 }
@@ -696,7 +686,6 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
         type: 'done',
         ok: true,
         elapsed: 34,
-        ms: 34,
         attempts: 1,
         at: SINK_AT + 7,
     },

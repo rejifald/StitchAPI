@@ -21,10 +21,8 @@ export class TimeoutError extends Error {}
  */
 export function backoffDelay(attempt: number, opts?: RetryOptions): number {
     const kind = opts?.backoff ?? 'expo-jitter';
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `baseMs` is the @deprecated alias of `baseDelay`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const base = parseDuration(opts?.baseDelay ?? opts?.baseMs) ?? 100;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxMs` is the @deprecated alias of `maxDelay`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const max = parseDuration(opts?.maxDelay ?? opts?.maxMs) ?? 10_000;
+    const base = parseDuration(opts?.baseDelay) ?? 100;
+    const max = parseDuration(opts?.maxDelay) ?? 10_000;
     const exp = Math.max(0, attempt - 2); // attempt 2 -> 2^0
     let delay: number;
     if (kind === 'fixed') {
@@ -250,24 +248,17 @@ export class RateLimitError extends Error {
     readonly status: number;
     /** `Retry-After` parsed to ms (delta-seconds OR HTTP-date); `undefined` when absent/unparseable. */
     readonly retryAfter: number | undefined;
-    /** @deprecated Renamed to {@link RateLimitError.retryAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    readonly retryAfterMs: number | undefined;
     readonly response: AdapterResponse;
     constructor(opts: {
         status: number;
         retryAfter?: number | undefined;
-        /** @deprecated Use `retryAfter` (CONTRACT.md P17). */
-        retryAfterMs?: number | undefined;
         response: AdapterResponse;
         message?: string;
     }) {
         super(opts.message ?? `rate limited (HTTP ${opts.status})`);
         this.name = 'RateLimitError';
         this.status = opts.status;
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- read the @deprecated constructor alias for back-compat (CONTRACT.md P17)
-        this.retryAfter = opts.retryAfter ?? opts.retryAfterMs;
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-set the @deprecated field alias for back-compat (CONTRACT.md P17)
-        this.retryAfterMs = this.retryAfter;
+        this.retryAfter = opts.retryAfter;
         this.response = opts.response;
     }
 }
@@ -284,8 +275,8 @@ interface CircuitRecord {
  * a success closes it, another failure re-opens it. State lives in the StitchStore, so a shared
  * store gives a breaker shared across workers (DESIGN.md §13).
  *
- * `failures` and `cooldown` are required by design (CONTRACT.md P15); this throws if `failures` is
- * not set, or if neither `cooldown` nor its deprecated `cooldownMs` alias is set.
+ * `failures` and `cooldown` are required by design (CONTRACT.md P15); this throws when either is
+ * missing.
  */
 export function createCircuit(
     opts: CircuitOptions,
@@ -298,15 +289,12 @@ export function createCircuit(
     onFailure(): Promise<boolean>;
 } {
     const failureThreshold = opts.failures;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `cooldownMs` is the @deprecated alias of `cooldown` (CONTRACT.md P17)
-    const cooldown = parseDuration(opts.cooldown ?? opts.cooldownMs);
+    const cooldown = parseDuration(opts.cooldown);
     if (failureThreshold == null || cooldown == null)
         throw new Error(
             'circuit requires `failures` and `cooldown`. Fix: set both, e.g. `circuit: { failures: 5, cooldown: "30s" }`.',
         );
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `halfOpenAfterMs` is the @deprecated alias of `halfOpenAfter` (CONTRACT.md P17)
-    const halfOpenInput = opts.halfOpenAfter ?? opts.halfOpenAfterMs;
-    const halfOpenAfter = parseDuration(halfOpenInput) ?? cooldown;
+    const halfOpenAfter = parseDuration(opts.halfOpenAfter) ?? cooldown;
     const nsKey = 'circuit:' + (opts.key ?? fallbackKey);
 
     const read = async (): Promise<CircuitRecord> =>

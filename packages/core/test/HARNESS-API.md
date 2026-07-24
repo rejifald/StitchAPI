@@ -30,7 +30,7 @@ import { z } from 'zod';
 -   `output`: a schema **or** `drift(schema, opts)` — validated against the **picked** value
 -   `pick`: dot-path string (e.g. `'data'`)
 -   `auth`: an AuthStrategy (see below)
--   `retry`: `{ attempts (total incl. first, default 1), on: number[] (default [429,502,503,504]), backoff: 'expo'|'expo-jitter'|'fixed', baseMs, maxMs, respectRetryAfter }`
+-   `retry`: `{ attempts (total incl. first, default 1), on: number[] (default [429,502,503,504]), backoff: 'expo'|'expo-jitter'|'fixed', baseDelay, maxDelay, respectRetryAfter }`
 -   `throttle`: `{ rate: '2/s', concurrency: number, pool: 'stitch'|'host' }`
 -   `timeout`: `{ total: number|string, perAttempt: number|string }` (ms or '30s')
 -   `hooks`: `{ onRequest, onResponse, onError, onRetry }` — `(ctx) => void|Promise<void>`, `ctx = { name, attempt, req?, res?, error? }`
@@ -89,10 +89,10 @@ server.reset();
 await server.close();
 ```
 
-`behavior`: `{ statuses?: number[] (successive; last repeats), delayMs?: number|number[], body?: value | array(per-call sequence) | (callIndex, req) => body, requireCookie?: {name,value?}, requireHeader?: {name,value?}, setCookie?: {name,value}, retryAfter?: number(sec), headers? }`.
+`behavior`: `{ statuses?: number[] (successive; last repeats), delay?: number|number[] (ms), body?: value | array(per-call sequence) | (callIndex, req) => body, requireCookie?: {name,value?}, requireHeader?: {name,value?}, setCookie?: {name,value}, retryAfterSeconds?: number, headers?, stream?: { chunks, chunkDelay? (ms) } }`.
 
 ## Test conventions
 
 -   Put `process.env.STITCH_TRACE_FILE = join(tmpdir(), 'stitch-<suite>-'+process.pid+'.jsonl')` at the **very top, before importing `../src`**, to capture/quiet the JSONL trace.
 -   One `startMockServer()` per file in `beforeAll`; `server.reset()` in `beforeEach`; `server.close()` in `afterAll`.
--   Keep retries fast: `retry: { baseMs: 5 }`. Backoff jitter is random — assert attempt COUNTS and event PRESENCE, not exact delays. Use `delayMs` to create timing for throttle/timeout assertions.
+-   Keep retries fast: `retry: { baseDelay: 5 }`. Backoff jitter is random — assert attempt COUNTS and event PRESENCE, not exact delays. Use `delay` to create timing for throttle/timeout assertions.

@@ -1,8 +1,8 @@
 // Direct unit tests for the pure retry helpers in src/resilience.ts. resilience.spec.ts exercises
 // retry/Retry-After through the ENGINE; the formula and the header parser themselves are never
 // asserted directly. These pin them:
-//   backoffDelay   — fixed (constant), expo (2^(attempt-2), clamped at attempt 1), the maxMs cap,
-//                    and expo-jitter (the default) staying within [0, computed) and under maxMs.
+//   backoffDelay   — fixed (constant), expo (2^(attempt-2), clamped at attempt 1), the maxDelay cap,
+//                    and expo-jitter (the default) staying within [0, computed) and under maxDelay.
 //   parseRetryAfter— nullish/empty → undefined, delta-seconds → ms (whitespace tolerated), an
 //                    HTTP-date → ms-until-then against the clock, a past date clamped to 0, and an
 //                    unparseable value → undefined.
@@ -42,12 +42,6 @@ describe('backoffDelay', () => {
         };
         expect(backoffDelay(2, o)).toBe(1000); // '1s' → 1000ms
         expect(backoffDelay(4, o)).toBe(3000); // 4000 clamped to '3s'
-    });
-
-    test('the @deprecated baseMs/maxMs aliases still pace the curve (P17)', () => {
-        const o: RetryOptions = { backoff: 'expo', baseMs: 100, maxMs: 1000 };
-        expect(backoffDelay(2, o)).toBe(100);
-        expect(backoffDelay(20, o)).toBe(1000);
     });
 
     test('expo-jitter (the default) stays within [0, computed) and under maxDelay', () => {

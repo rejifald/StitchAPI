@@ -67,16 +67,28 @@ export const systemClock: Clock = {
     },
 };
 
-/** "30s" | "500ms" | "2m" | 1500 -> milliseconds. */
+/**
+ * Parse a duration into milliseconds. Grammar: a number (already ms), a numeric
+ * string (`"1500"` → 1500), or `<number><unit>` with unit `ms` | `s` | `m` | `h` | `d`
+ * (`"500ms"`, `"30s"`, `"2m"`, `"1h"`, `"2d"`; fractions like `"1.5s"` allowed).
+ * Anything else → `undefined`.
+ */
 export function parseDuration(
     d: number | string | undefined,
 ): number | undefined {
     if (d == null) return undefined;
     if (typeof d === 'number') return d;
-    const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m)$/.exec(d.trim());
+    const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$/.exec(d.trim());
     if (!m) return Number(d) || undefined;
     const n = parseFloat(m[1] ?? '');
-    return m[2] === 'ms' ? n : m[2] === 's' ? n * 1000 : n * 60000;
+    const scale: Record<string, number> = {
+        ms: 1,
+        s: 1000,
+        m: 60_000,
+        h: 3_600_000,
+        d: 86_400_000,
+    };
+    return n * (scale[m[2] ?? ''] ?? 1);
 }
 
 /** "2/s" | "10/m" -> { count, per } (window length in ms). */
