@@ -195,6 +195,13 @@ describe('planGen — naming, typing, auth, notice', () => {
         expect(c).toMatch(/import \{ seam, bearer, env \}/);
     });
 
+    test('emitted throttle TODO uses the canonical `pool` (ThrottleOptions.scope is gone)', () => {
+        const r = planGen(doc, { all: true });
+        const c = file(r, 'client.ts') as string;
+        expect(c).toMatch(/pool: 'host'/);
+        expect(c).not.toMatch(/\bscope\b/);
+    });
+
     test('types-only emits the validation-off notice', () => {
         const r = planGen(doc, { all: true });
         expect(r.notices.join('\n')).toMatch(

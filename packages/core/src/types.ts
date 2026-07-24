@@ -290,12 +290,9 @@ export interface ThrottleOptions {
     concurrency?: number;
     /**
      * Where the limiter's counter is pooled: `'stitch'` (default) keeps a per-stitch
-     * budget; `'host'` shares one budget across every stitch hitting the same host. Renamed
-     * from `scope` (CONTRACT.md P2) so `scope` only ever means principal/app tenancy.
+     * budget; `'host'` shares one budget across every stitch hitting the same host.
      */
     pool?: 'stitch' | 'host';
-    /** @deprecated Renamed to {@link ThrottleOptions.pool} (CONTRACT.md P2). Read until the 1.0 GA cut. */
-    scope?: 'stitch' | 'host';
     /**
      * Delegate rate-limit handling to the host (folded in from the top-level `rateLimit`,
      * CONTRACT.md P14). When `true`, a rate-limit response (status matched by `on`, default `[429]`)
