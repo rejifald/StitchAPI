@@ -317,8 +317,8 @@ export interface CacheOp {
 export interface CacheController {
     /** Is `method` in the cacheable set (and so eligible for coalescing)? */
     cacheableMethod(method: string): boolean;
-    /** Derive the base key for a resolved request, or `undefined` when it is not hashable. */
-    key(d: RequestDescriptor, input: StitchInput): string | undefined;
+    /** Derive the base key for a resolved request, or `undefined` when it is not hashable (CONTRACT.md P6). */
+    keyOf(d: RequestDescriptor, input: StitchInput): string | undefined;
     /** Open a cache operation for `baseKey` (reads the live generation prefix once). */
     open(baseKey: string, d: RequestDescriptor): Promise<CacheOp>;
     /**
@@ -436,16 +436,15 @@ export function createCache(opts: CacheControllerOptions): CacheController {
             return methods.includes(method.toUpperCase());
         },
 
-        key(d, input) {
+        keyOf(d, input) {
             // Scope handling lives here: fold the bound principal in under 'principal' scope,
             // omit it under 'app'. The descriptor itself carries no principal (engine concern).
             const scoped: RequestDescriptor =
                 principalForScope !== undefined
                     ? { ...d, principal: principalForScope }
                     : d;
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the @deprecated alias of `keyOf`, read as the back-compat fallback until the GA cut (CONTRACT.md P6)
-            const keyOf = config.keyOf ?? config.key;
-            const userKey = keyOf ? keyOf(input) : undefined;
+            const userKeyOf = config.keyOf;
+            const userKey = userKeyOf ? userKeyOf(input) : undefined;
             return deriveCacheKey(scoped, explicitVary, userKey);
         },
 

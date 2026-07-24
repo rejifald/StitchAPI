@@ -166,8 +166,7 @@ function applyIdempotency(
         )
     )
         return;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the @deprecated alias of `keyOf`, read as the back-compat fallback until the GA cut (CONTRACT.md P6)
-    const keyOf = cfg.idempotency.keyOf ?? cfg.idempotency.key;
+    const keyOf = cfg.idempotency.keyOf;
     headers[header] = keyOf ? keyOf(input) : randomUUID();
 }
 
@@ -1519,7 +1518,7 @@ async function* runCached(
     }
 
     const d = describe(baseReq);
-    const key = ctl.key(d, input);
+    const key = ctl.keyOf(d, input);
     if (key === undefined) {
         yield cacheEvt('bypass: unhashable request');
         yield* runFrom(rt, baseReq, name, state, t0, run, budget);
@@ -1675,7 +1674,7 @@ export async function cacheInvalidateExact(
     }
     if (!ctl.cacheableMethod(baseReq.method)) return;
     const d = describe(baseReq);
-    const key = ctl.key(d, input);
+    const key = ctl.keyOf(d, input);
     if (key === undefined) return;
     await (await ctl.open(key, d)).delete();
 }
@@ -1688,7 +1687,7 @@ export async function cacheInvalidateBulk(rt: Runtime): Promise<void> {
     await ctl.invalidate();
 }
 
-/** The derived opaque key for `input`, for introspection. Backs `stitch.cache.key(input)`. */
+/** The derived opaque key for `input`, for introspection. Backs `stitch.cache.keyOf(input)`. */
 export async function cacheKeyOf(
     rt: Runtime,
     input: StitchInput = {},
@@ -1701,7 +1700,7 @@ export async function cacheKeyOf(
     } catch {
         return undefined;
     }
-    return ctl.key(describe(baseReq), input);
+    return ctl.keyOf(describe(baseReq), input);
 }
 
 export async function executeRaw(

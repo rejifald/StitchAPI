@@ -417,7 +417,7 @@ Three more knobs round out the resilience set:
 
     ```ts
     idempotency: {
-        key: (input) => input.body.requestId;
+        keyOf: (input) => input.body.requestId;
     }
     ```
 

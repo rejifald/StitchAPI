@@ -364,10 +364,8 @@ export interface CircuitOptions {
  */
 export interface IdempotencyOptions {
     header?: string; // header name (default 'Idempotency-Key')
-    /** Derive a stable key per logical call (default: a random uuid). Renamed from `key` (CONTRACT.md P6: `key` is a string, a derivation fn is `keyOf`). */
+    /** Derive a stable key per logical call (default: a random uuid). CONTRACT.md P6: `key` is a string; a derivation fn is `keyOf`. */
     keyOf?: (input: StitchInput) => string;
-    /** @deprecated Renamed to {@link IdempotencyOptions.keyOf} (CONTRACT.md P6). Read until the 1.0 GA cut. */
-    key?: (input: StitchInput) => string;
     /** false silences the "idempotency without retry" / "idempotency on a read" construction nudge. */
     warn?: boolean;
 }
@@ -444,10 +442,8 @@ export interface CacheOptions {
      * only for pure validators with no coercion/transform inside the schema).
      */
     onUnfingerprintable?: 'refuse' | 'revalidate';
-    /** Sugar: author the key seed from the input instead of deriving it from the request. Renamed from `key` (CONTRACT.md P6). */
+    /** Sugar: author the key seed from the input instead of deriving it from the request (CONTRACT.md P6). */
     keyOf?: (input: StitchInput) => string;
-    /** @deprecated Renamed to {@link CacheOptions.keyOf} (CONTRACT.md P6). Read until the 1.0 GA cut. */
-    key?: (input: StitchInput) => string;
 }
 
 // ---- Auth -----------------------------------------------------------------
@@ -1120,12 +1116,12 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
      * - `invalidate(input)` — **exact** eviction of the one entry that `input` would hit.
      * - `cache.invalidate()` — **bulk** eviction of every entry this stitch produced (a
      *   per-stitch generation bump; prior entries become unreachable and TTL out).
-     * - `cache.key(input)` — the derived opaque key, for introspection.
+     * - `cache.keyOf(input)` — the derived opaque key, for introspection (CONTRACT.md P6).
      */
     invalidate(input?: StitchInput): Promise<void>;
     readonly cache: {
         invalidate(): Promise<void>;
-        key(input?: StitchInput): Promise<string | undefined>;
+        keyOf(input?: StitchInput): Promise<string | undefined>;
     };
     readonly __config: RedactedStitchConfig;
     readonly __stitch: true;
