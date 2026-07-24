@@ -132,7 +132,7 @@ function buildChildSpans(run: OtelSpan): OtelSpan[] {
  * `traceId`/`spanId`/`parentSpanId` tree — falling back to the stitch name (a tolerant stack) only
  * when a sink is fed events by hand without ids (e.g. synthetic test events).
  */
-export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
+export function otlpSink(opts: OtlpOptions = {}): TraceSink {
     const exporter =
         opts.exporter ??
         otlpHttpExporter(

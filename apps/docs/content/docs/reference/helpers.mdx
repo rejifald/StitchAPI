@@ -183,9 +183,9 @@ Fan one event stream out to several sinks — for example console/JSONL alongsid
 OTLP — flushing each in turn.
 
 ```ts twoslash
-import { createTrace, multiplex, otlpTrace } from 'stitchapi';
+import { createTrace, multiplex, otlpSink } from 'stitchapi';
 
-const sink = multiplex(createTrace(), otlpTrace());
+const sink = multiplex(createTrace(), otlpSink());
 ```
 
 ### loggerSink
@@ -206,16 +206,16 @@ import { loggerSink } from 'stitchapi';
 const sink = loggerSink(console, { levels: { result: 'debug' } });
 ```
 
-### otlpTrace
+### otlpSink
 
 An opt-in OpenTelemetry sink: it maps each stitch call's events to a single OTel
 `CLIENT` span and hands finished spans to a `SpanExporter`. With no exporter
 supplied it uses `otlpHttpExporter`. Configured by `OtlpOptions` (below).
 
 ```ts twoslash
-import { otlpTrace } from 'stitchapi';
+import { otlpSink } from 'stitchapi';
 
-const sink = otlpTrace({ endpoint: 'https://api.example.com:4318' });
+const sink = otlpSink({ endpoint: 'https://api.example.com:4318' });
 ```
 
 ### otlpHttpExporter

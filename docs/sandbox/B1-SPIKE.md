@@ -24,14 +24,14 @@ Entry = [`packages/core/src/index.ts`](../../packages/core/src/index.ts). The ba
 **only** browser-safe + shimmable surfaces; it does **not** re-export `cli`/`serve`/`mcp`. Every
 Node-only import reachable from the barrel, with the surface that pulls it in:
 
-| Module           | Node built-in (import)                                            | Pulled in via barrel by                                                | Reachable from browser-safe surface? | Hot path?                                                                  |
-| ---------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------- |
-| `engine.ts:38`   | `node:crypto` (`randomUUID`)                                      | `stitch`/`defineStitch`/`graphql` → `engine`                           | **YES**                              | **YES** — `applyIdempotency()` on writes                                   |
-| `stitch.ts:118`  | _(no import)_ `process.env` ×3 read at runtime                    | `stitch` → `getTrace()`                                                | **YES**                              | **YES** — runs on every `makeStitch()`                                     |
-| `trace.ts:5-6`   | `node:fs` (`appendFileSync`,`mkdirSync`), `node:path` (`dirname`) | `createTrace`/`multiplex`; also `stitch`→`getTrace()`                  | **YES**                              | Indirect — only if a JSONL `path` is set; default reads `process.env.HOME` |
-| `otlp.ts:7,249`  | `node:crypto` (`randomBytes`); `process.env`                      | `otlpTrace`/`otlpHttpExporter`; also `stitch`→`getTrace()` import-time | **YES**                              | No (export is lazy) but **imported** on the `stitch` path                  |
-| `auth.ts:15`     | `node:fs` (`existsSync`,`readFileSync`); `process.env`; `Buffer`  | `keychain`/`env`/`basic`/`cookieSession`/`oauth2`/`bearer`/`apiKey`    | **YES**                              | No — all call-time inside returned closures                                |
-| `drift.ts:11-12` | `node:fs` (4 fns), `node:path` (`dirname`)                        | `drift` (and `engine`→`drift` for snapshot mode)                       | **YES**                              | No — only when `drift({snapshotFile})` is used                             |
+| Module           | Node built-in (import)                                            | Pulled in via barrel by                                               | Reachable from browser-safe surface? | Hot path?                                                                  |
+| ---------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------- |
+| `engine.ts:38`   | `node:crypto` (`randomUUID`)                                      | `stitch`/`defineStitch`/`graphql` → `engine`                          | **YES**                              | **YES** — `applyIdempotency()` on writes                                   |
+| `stitch.ts:118`  | _(no import)_ `process.env` ×3 read at runtime                    | `stitch` → `getTrace()`                                               | **YES**                              | **YES** — runs on every `makeStitch()`                                     |
+| `trace.ts:5-6`   | `node:fs` (`appendFileSync`,`mkdirSync`), `node:path` (`dirname`) | `createTrace`/`multiplex`; also `stitch`→`getTrace()`                 | **YES**                              | Indirect — only if a JSONL `path` is set; default reads `process.env.HOME` |
+| `otlp.ts:7,249`  | `node:crypto` (`randomBytes`); `process.env`                      | `otlpSink`/`otlpHttpExporter`; also `stitch`→`getTrace()` import-time | **YES**                              | No (export is lazy) but **imported** on the `stitch` path                  |
+| `auth.ts:15`     | `node:fs` (`existsSync`,`readFileSync`); `process.env`; `Buffer`  | `keychain`/`env`/`basic`/`cookieSession`/`oauth2`/`bearer`/`apiKey`   | **YES**                              | No — all call-time inside returned closures                                |
+| `drift.ts:11-12` | `node:fs` (4 fns), `node:path` (`dirname`)                        | `drift` (and `engine`→`drift` for snapshot mode)                      | **YES**                              | No — only when `drift({snapshotFile})` is used                             |
 
 **Browser-clean modules (no Node, confirmed):** `http-adapter.ts` (pure `fetch`/`FormData`/`Blob`),
 `util.ts`, `resilience.ts`, `store.ts`, `validator.ts`, `standard-schema.ts`, `types.ts`.
@@ -57,7 +57,7 @@ The design (SANDBOX §3, REQUIREMENTS §6) assumes the Tier-1 call path
    bundle even for a read-only `stitch()`.
 2. **`stitch.ts:118-127` `getTrace()`** reads `process.env.STITCH_TRACE_FILE` /
    `STITCH_TRACE_CONSOLE` / `STITCH_EXPORT` **on every `makeStitch()`**, and statically imports
-   `otlpTrace` (→`node:crypto`) and `createTrace`/`multiplex` (→`node:fs`). So constructing _any_
+   `otlpSink` (→`node:crypto`) and `createTrace`/`multiplex` (→`node:fs`). So constructing _any_
    stitch transitively loads three Node modules and reads `process.env` at runtime. `trace.ts`'s
    default path also dereferences `process.env.HOME`.
 
@@ -131,7 +131,7 @@ So: naive bundle fails predictably; **shim+define bundle succeeds and runs.**
 | `process.env` reads (`stitch.ts` getTrace, `trace.ts` HOME, `otlp.ts` endpoint) | **Trivial**          | Bundler `define:process={"env":{}}` (or inject a `process` stub global in the Worker).                                                                                           |
 | `createTrace` + `multiplex` (JSONL/fs)                                          | **Trivial**          | `node:fs` aliased to no-op writes; trace already surfaces via `StitchTraceEntry` (SANDBOX §5.7). `multiplex` is pure JS — keep as-is.                                            |
 | `cookieSession`                                                                 | **Moderate**         | In-memory cookie jar (the strategy logic is already pure JS in `auth.ts`; only the `node:fs` co-import in the module needs the fs stub). Browser jar reimpl per REQUIREMENTS §6. |
-| `otlpTrace` / `otlpHttpExporter`                                                | **Trivial-Moderate** | `randomBytes`→Web Crypto (trivial); real OTLP egress is blocked by CSP `connect-src` anyway — make the default exporter a no-op/sim-routed in browser.                           |
+| `otlpSink` / `otlpHttpExporter`                                                 | **Trivial-Moderate** | `randomBytes`→Web Crypto (trivial); real OTLP egress is blocked by CSP `connect-src` anyway — make the default exporter a no-op/sim-routed in browser.                           |
 | `cli` / `serve` / `mcp`                                                         | **Out-of-scope**     | Server tier only (REQUIREMENTS §7 Tier-3). Already not in the barrel — nothing to do for the browser build.                                                                      |
 
 No surface is harder than **Moderate**. The "Moderate" ones (`cookieSession`, real OTLP) are
@@ -145,7 +145,7 @@ behaviour reimpls, not build blockers — the build itself is unblocked by the t
 
 1. **New entry `stitch-browser.ts`** (in the docs/playground build, not `packages/core`): re-export
    the browser-safe surface from `packages/core/src/index.ts`, and re-export _shimmed_ versions of
-   `keychain`/`env`/`cookieSession`/`createTrace`/`otlpTrace` that emit a `RunNotice` (SANDBOX §5.7).
+   `keychain`/`env`/`cookieSession`/`createTrace`/`otlpSink` that emit a `RunNotice` (SANDBOX §5.7).
 2. **Bundler config** (esbuild/Vite, whatever R1's Worker build uses), three knobs, all proven above:
     - `alias`: `node:fs`/`node:path`/`node:crypto` → 3 tiny browser shim modules (fs no-op,
       path.dirname regex, crypto via Web Crypto). ~30 lines total.
@@ -174,7 +174,7 @@ Tier-1 examples need it. The risk is retired: the bundle builds and the call pat
 -   **R1:** `engine.ts` `randomUUID` is on the hot path (write idempotency). The Web Crypto shim covers
     it; just don't forget it when listing aliases.
 -   **D1 (dispatcher):** `NODE_ONLY_SURFACES` in [`contracts/dispatch.ts`](./contracts/dispatch.ts) is
-    accurate for _routing_, but note for the browser-shim path: `env`/`keychain`/`createTrace`/`otlpTrace`
+    accurate for _routing_, but note for the browser-shim path: `env`/`keychain`/`createTrace`/`otlpSink`
     load fine once aliased and run shimmed-with-notice; `cli`/`serve`/`mcp` genuinely cannot run in the
     browser (server-tier only). The scan list needs no change.
 -   **CSP (SANDBOX §7):** the OTLP default exporter does a real `fetch` to a collector. With
