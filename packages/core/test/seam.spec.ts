@@ -51,8 +51,8 @@ test('member stitches inherit the seam fragment (baseUrl + default headers)', as
 });
 
 test('the seam pools ONE throttle bucket across its different member stitches', async () => {
-    server.route('GET', '/x', { delayMs: 150, body: { r: 'x' } });
-    server.route('GET', '/y', { delayMs: 150, body: { r: 'y' } });
+    server.route('GET', '/x', { delay: 150, body: { r: 'x' } });
+    server.route('GET', '/y', { delay: 150, body: { r: 'y' } });
     const api = seam({ baseUrl: server.url, throttle: { concurrency: 1 } });
     const x = api.stitch('/x');
     const y = api.stitch('/y');
@@ -66,7 +66,7 @@ test('the seam pools ONE throttle bucket across its different member stitches', 
 });
 
 test('a per-stitch throttle can only TIGHTEN — it cannot escape the seam budget', async () => {
-    server.route('GET', '/z', { delayMs: 150, body: { r: 'z' } });
+    server.route('GET', '/z', { delay: 150, body: { r: 'z' } });
     const api = seam({ baseUrl: server.url, throttle: { concurrency: 1 } });
     // The member asks for a LOOSER limit (5); the seam's concurrency=1 still gates, so two
     // concurrent calls serialize — the local throttle stacks, it does not replace the shared one.

@@ -124,7 +124,7 @@ test('a status in both retry.on and acceptStatus is retried, then accepted on th
     const call = stitch<{ ok: boolean; last: boolean }>({
         baseUrl: server.url,
         path: '/retry-then-accept',
-        retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 1 },
+        retry: { attempts: 3, on: [503], backoff: 'fixed', baseDelay: 1 },
         acceptStatus: [503],
     });
 

@@ -400,7 +400,7 @@ interface Drained<T> {
     error: StitchError | null;
     source: Inspection<T>['source'];
     attempts: number;
-    ms: number;
+    elapsed: number;
     waited: number;
     /** The `phase:'cache'` event detail seen this run, if any (e.g. 'hit', 'miss', 'bypass: …'). */
     cacheDetail: string | undefined;
@@ -426,7 +426,7 @@ async function drainRun<T>(
     let streamed = false;
     let cacheHit = false;
     let attempts = 0;
-    let ms = 0;
+    let elapsed = 0;
     let waited = 0;
     let cacheDetail: string | undefined;
     const readRaw = (carrier: object): void => {
@@ -455,7 +455,7 @@ async function drainRun<T>(
                 error = asStitchError(rebuilt);
                 readRaw(rebuilt);
             } else if (ev.type === 'done') {
-                ms = ev.elapsed;
+                elapsed = ev.elapsed;
                 if (ev.attempts) attempts = ev.attempts;
             }
         }
@@ -480,7 +480,7 @@ async function drainRun<T>(
         error,
         source,
         attempts,
-        ms,
+        elapsed,
         waited,
         cacheDetail,
     };
@@ -530,7 +530,7 @@ function cacheOutcome(
 }
 
 // `.report()` consumer (ADR 0019): the same drained run as `.inspect()`, assembled into a
-// `RunReport` — the `Inspection` fields plus `attempts`, `timing` (`{ ms, waited? }`), the resolved
+// `RunReport` — the `Inspection` fields plus `attempts`, `timing` (`{ elapsed, waited? }`), the resolved
 // redacted `config`, and the fine-grained `cache` outcome. `config` is the stitch's ALREADY-redacted
 // `__config` (never `__rawConfig`). Never throws. `waited` is omitted entirely when nothing waited
 // (exactOptionalPropertyTypes), so its absence reads as "no backoff/throttle wait".
@@ -549,7 +549,9 @@ async function consumeReport<T>(
         d.source,
     );
     const timing: RunReport<T>['timing'] =
-        d.waited > 0 ? { ms: d.ms, waited: d.waited } : { ms: d.ms };
+        d.waited > 0
+            ? { elapsed: d.elapsed, waited: d.waited }
+            : { elapsed: d.elapsed };
     const report = base as RunReport<T>;
     report.attempts = d.attempts;
     report.timing = timing;

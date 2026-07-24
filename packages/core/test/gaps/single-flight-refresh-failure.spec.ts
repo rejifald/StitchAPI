@@ -62,11 +62,11 @@ afterEach(() => {
  */
 test('a rejected single-flight token fetch does not poison the slot; recovery succeeds', async () => {
     server.route('POST', '/token', {
-        // First POST 500s; the `delayMs` holds it in flight long enough that
+        // First POST 500s; the `delay` holds it in flight long enough that
         // every concurrent cold caller takes the cache-miss branch before it
         // settles — making the coalescing deterministic, not timing-dependent.
         // Subsequent POSTs (after the burst rejects) clamp to status 200.
-        delayMs: 50,
+        delay: 50,
         statuses: [500, 200],
         body: [
             { error: 'temporarily_unavailable' },

@@ -272,8 +272,6 @@ export interface OAuth2Options {
     refreshOn?: number[];
     /** Refresh this long BEFORE the token's expiry, so it is never used mid-flight — `30_000`, `'30s'`. Default 30s. */
     refreshSkew?: number | string;
-    /** @deprecated Renamed to {@link OAuth2Options.refreshSkew} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    refreshSkewMs?: number;
     /** Store namespace — give two stitches the same `key` + a shared `store` to share one token. Default: `tokenUrl`. */
     key?: string;
     /**
@@ -319,9 +317,7 @@ function singleFlight<T>(): (key: string, run: () => Promise<T>) => Promise<T> {
  */
 export function oauth2(opts: OAuth2Options): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `refreshSkewMs` is the @deprecated alias of `refreshSkew`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const skewInput = opts.refreshSkew ?? opts.refreshSkewMs;
-    const skew = parseDuration(skewInput) ?? 30_000;
+    const skew = parseDuration(opts.refreshSkew) ?? 30_000;
     const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const tenancy = opts.tenancy ?? 'app';
     const adapter = opts.adapter ?? fetchAdapter();
@@ -468,8 +464,6 @@ export interface AuthFailureResult {
     status?: number;
     /** `Retry-After` parsed to ms when the login was rate-limited (status 429). */
     retryAfter?: number;
-    /** @deprecated Renamed to {@link AuthFailureResult.retryAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    retryAfterMs?: number;
     /** The thrown value when the login stitch itself threw (network/transport failure). */
     error?: unknown;
     /**
@@ -513,8 +507,6 @@ export interface CookieSessionOptions {
     key?: string;
     /** Optional TTL for the stored session — `60_000`, `'1m'`. With `scope: 'principal'`, set this — per-user sessions multiply. */
     ttl?: number | string;
-    /** @deprecated Renamed to {@link CookieSessionOptions.ttl} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    ttlMs?: number;
     /**
      * Who the session belongs to (ADR 0002 §3). **Fail-closed default `'principal'`**: the
      * session is keyed by the seam-bound principal and the call **throws if no principal is
@@ -599,18 +591,12 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
         if (status === 429) {
             // Omit `retryAfter` entirely when the header is absent/unparseable —
             // `exactOptionalPropertyTypes` forbids setting an optional prop to `undefined`.
-            const retryAfter = parseRetryAfter(headers['retry-after']);
-            const result: AuthFailureResult = compact({
+            return compact({
                 phase,
                 status,
                 category: 'rate-limited',
-                retryAfter,
+                retryAfter: parseRetryAfter(headers['retry-after']),
             });
-            // Co-set the @deprecated `retryAfterMs` alias for back-compat (CONTRACT.md P17/P19), by
-            // assignment (not a literal `*Ms:` key) so the contract lint's R2 stays clean.
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- writing the @deprecated alias for back-compat
-            if (retryAfter !== undefined) result.retryAfterMs = retryAfter;
-            return result;
         }
         if (refreshOn.includes(status))
             return { phase, status, category: 'unauthenticated' };
@@ -690,8 +676,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
         const setCookie =
             res.headers['set-cookie'] ?? res.headers['Set-Cookie'];
         let captured = false;
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `ttlMs` is the @deprecated alias of `ttl`, read for back-compat until the GA cut (CONTRACT.md P17)
-        const sessionTtl = parseDuration(opts.ttl ?? opts.ttlMs);
+        const sessionTtl = parseDuration(opts.ttl);
         if (jarMode) {
             // Capture the full jar: every name=value pair the login set.
             const jar = parseCookieJar(setCookie);

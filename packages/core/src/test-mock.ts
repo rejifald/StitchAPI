@@ -23,14 +23,10 @@ export interface MockResponse {
     /** Wait this long before responding — `100`, `'100ms'`, `'1s'`; abortable, so a stitch `timeout`
      *  cancels it like a real slow endpoint. Drives timeout / `Retry-After` pacing tests. */
     delay?: number | string;
-    /** @deprecated Renamed to {@link MockResponse.delay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    delayMs?: number;
     /** Sets the `Retry-After` header in SECONDS (or an HTTP-date string) — for `429`/`503` retry and
      *  `throttle.delegate` tests. Named with its true unit per CONTRACT.md P17 (a wire format speaks
      *  seconds, not the house ms). */
     retryAfterSeconds?: number | string;
-    /** @deprecated Renamed to {@link MockResponse.retryAfterSeconds} (CONTRACT.md P17 unit-hazard). Read until the 1.0 GA cut. */
-    retryAfter?: number | string;
 }
 
 /** One call's context, passed to a function responder. */
@@ -144,10 +140,8 @@ export function mockAdapter(
         const headers: Record<string, string> = {};
         for (const [k, v] of Object.entries(r.headers ?? {}))
             headers[k.toLowerCase()] = v;
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `retryAfter` is the @deprecated alias of `retryAfterSeconds`, read for back-compat until the GA cut (CONTRACT.md P17)
-        const retryAfterSeconds = r.retryAfterSeconds ?? r.retryAfter;
-        if (retryAfterSeconds !== undefined)
-            headers['retry-after'] = String(retryAfterSeconds);
+        if (r.retryAfterSeconds !== undefined)
+            headers['retry-after'] = String(r.retryAfterSeconds);
         const body = r.stream
             ? Array.isArray(r.stream)
                 ? streamOf(r.stream)
@@ -181,8 +175,7 @@ export function mockAdapter(
               ? await route.respond({ index: callIndex, req })
               : route.respond;
 
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `delayMs` is the @deprecated alias of `delay`, read for back-compat until the GA cut (CONTRACT.md P17)
-        const delay = parseDuration(r.delay ?? r.delayMs);
+        const delay = parseDuration(r.delay);
         if (delay && delay > 0) await sleep(delay, req.signal);
         return build(r);
     }) as MockAdapter;

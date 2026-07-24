@@ -449,14 +449,12 @@ will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 | Med  | `CacheConfig.maxEntries`                                           | `entries`                                                      | P4     |
 | Med  | `CircuitOptions.failureThreshold`                                  | `failures`                                                     | P4     |
 | Med  | `paginate.max`                                                     | `pages`                                                        | P4     |
-| Med  | `*Ms` duration inputs (`cooldownMs`, `backoffMs`, `ttlMs`, …)      | de-suffix + `number｜string`                                   | P17    |
 | Med  | `paginate` inline shape                                            | `PaginateOptions`                                              | P14    |
 | Med  | SSE helper `sendStitchSse`/`stitchSse`                             | `streamStitchSse`                                              | P16    |
 | Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions` | `StitchErrorOptions` (+ `body`)                                | P16    |
 | Low  | `RedisDriver.del`, `…quit`, sync `close`                           | `delete`, async `close`                                        | P18    |
 | Low  | `SchemaFingerprint.value`                                          | `token`                                                        | P5     |
 | Low  | `bodyKind` (from-curl)                                             | `bodyType`                                                     | P1     |
-| Low  | emitted `*Ms` (`waitedMs`, `retryAfterMs`, done `ms`)              | de-suffix (`waited`, `retryAfter`, `elapsed`); units → JSDoc   | P17    |
 
 New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multipart`,
 `sse`, `.inspect()` scalars (P12); `idempotency` boolean (P13-toggle);

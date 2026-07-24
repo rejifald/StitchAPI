@@ -94,7 +94,7 @@ test('onRefresh fires ONCE (not per-waiter) under concurrent cold callers sharin
         // Hold the first login in flight long enough that every concurrent cold
         // caller has already taken the cache-miss branch — making the race
         // deterministic, the same trick the single-flight token test uses.
-        delayMs: 50,
+        delay: 50,
         setCookie: { name: 'sid', value: 'ABC' },
         body: { ok: true },
     });
@@ -173,7 +173,7 @@ test("onAuthFailure fires category 'unauthenticated' when the login returns 401 
 test("onAuthFailure fires category 'rate-limited' + retryAfter when the login returns 429 with Retry-After", async () => {
     server.route('POST', '/login', {
         statuses: [429],
-        retryAfter: 7, // seconds → 7000ms
+        retryAfterSeconds: 7, // seconds → 7000ms
         body: { error: 'slow down' },
     });
     server.route('GET', '/data', {
@@ -205,8 +205,6 @@ test("onAuthFailure fires category 'rate-limited' + retryAfter when the login re
             status: 429,
             category: 'rate-limited',
             retryAfter: 7000,
-            // The @deprecated `retryAfterMs` alias is co-set for back-compat (CONTRACT.md P17).
-            retryAfterMs: 7000,
         },
     ]);
 });

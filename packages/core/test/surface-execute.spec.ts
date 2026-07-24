@@ -47,7 +47,7 @@ test('the resilience chain wraps execute — a retry-on-status re-runs it', asyn
         name: 'flaky-exec',
         url: 'exec://x',
         kind: execSurface(execute),
-        retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 1 },
+        retry: { attempts: 3, on: [503], backoff: 'fixed', baseDelay: 1 },
     });
 
     await expect(s()).resolves.toEqual({ ok: true });

@@ -120,7 +120,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 -   **CLI, HTTP & MCP surfaces** - the definition your code imports is also runnable from the shell (`stitch run <name>` streams JSONL events), served over HTTP (`stitch serve`), or exposed to agents over MCP (`stitch mcp`) — the same stitch behind every front door.
 -   **Typed URLs** - full [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates (`{id}`, `{+path}`, `{?q,sort}`, explode `*`, prefix `:n`), and a `qs`-style query builder that serializes nested objects (`a[b]=c`) and arrays — both dependency-free.
 -   **Pluggable transport** - `fetch` by default; drop in the shipped `axiosAdapter`, or any `Adapter` function, to route requests through axios or another HTTP client.
--   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~25 kB min+gzip**; a typical `import { stitch }` trims to **~20 kB** — and with no transitive tree, that is the entire cost.
+-   **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~24 kB min+gzip**; a typical `import { stitch }` trims to **~20 kB** — and with no transitive tree, that is the entire cost.
 
 ## Documentation
 
@@ -162,7 +162,7 @@ const { stitch } = require("stitchapi");
 
 The runtime ships with zero dependencies. Schema validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator ([Valibot](https://valibot.dev), [ArkType](https://arktype.io), …); none of them is bundled. The examples below use Zod for familiarity.
 
-**Bundle size.** The whole `stitchapi` entry is **~25 kB minified + gzipped** (~64 kB raw, ~20 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~20 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
+**Bundle size.** The whole `stitchapi` entry is **~24 kB minified + gzipped** (~64 kB raw, ~20 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~20 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
 
 ## Quick start
 
@@ -245,7 +245,7 @@ for await (const ev of getUsers.stream()) {
     switch (ev.type) {
         case 'start': // { name, method, url, input }
             break;
-        case 'progress': // { phase: 'auth'|'request'|'throttled'|'retry'|'paginate', attempt, waitedMs? }
+        case 'progress': // { phase: 'auth'|'request'|'throttled'|'retry'|'paginate', attempt, waited? }
             break;
         case 'drift': // { finding: { level: 'error'|'warn'|'info', path, change } }
             break;
@@ -253,7 +253,7 @@ for await (const ev of getUsers.stream()) {
             break;
         case 'error': // { message, status?, attempts }
             break;
-        case 'done': // { ok, ms, attempts }
+        case 'done': // { ok, elapsed, attempts }
             break;
     }
 }
@@ -398,7 +398,7 @@ const listUsers = stitch({
 ```
 
 -   **`throttle` is proactive** - a rate (`'1/s'`) and a concurrency cap that keep you under a vendor's limit before it bites; `pool: 'host'` shares one limiter across every stitch hitting the same host.
--   **`retry` is reactive** - `attempts` is the total including the first; retried statuses default to `[429, 502, 503, 504]`; backoff is `'expo'` / `'expo-jitter'` / `'fixed'` with `baseMs` / `maxMs` clamps; `respectRetryAfter` honors the `Retry-After` header (delta-seconds or HTTP-date).
+-   **`retry` is reactive** - `attempts` is the total including the first; retried statuses default to `[429, 502, 503, 504]`; backoff is `'expo'` / `'expo-jitter'` / `'fixed'` with `baseDelay` / `maxDelay` clamps; `respectRetryAfter` honors the `Retry-After` header (delta-seconds or HTTP-date).
 -   **`timeout` aborts** - `total` and/or `perAttempt`, as milliseconds or `'30s'`-style strings, enforced with a real `AbortSignal` instead of a request left hanging.
 
 Throttle waits and retries emit `throttled` / `retry` events on the stream, so the waiting is visible in the trace for free.
@@ -407,10 +407,10 @@ Throttle waits and retries emit `throttled` / `retry` events on the stream, so t
 
 Three more knobs round out the resilience set:
 
--   **`circuit`** fast-fails a dependency that is already down — after `failureThreshold` consecutive failures the breaker opens for `cooldownMs`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
+-   **`circuit`** fast-fails a dependency that is already down — after `failureThreshold` consecutive failures the breaker opens for `cooldown`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
 
     ```ts
-    circuit: { failureThreshold: 5, cooldownMs: 30_000 }
+    circuit: { failureThreshold: 5, cooldown: 30_000 }
     ```
 
 -   **`idempotency`** injects a stable `Idempotency-Key` header on writes, so a safe retry can't duplicate a side effect:
@@ -427,7 +427,7 @@ Three more knobs round out the resilience set:
     acceptStatus: [404]; // resource-gone → fall back, no try/catch on the happy path
     ```
 
-When an _outer_ gate owns backoff (its own `Retry-After` budget, a DB-persisted limiter), `rateLimit: { delegate: true }` surfaces a `RateLimitError` (carrying `retryAfterMs`) instead of retrying internally — so StitchAPI's retry + throttle don't double-count against it.
+When an _outer_ gate owns backoff (its own `Retry-After` budget, a DB-persisted limiter), `rateLimit: { delegate: true }` surfaces a `RateLimitError` (carrying `retryAfter`) instead of retrying internally — so StitchAPI's retry + throttle don't double-count against it.
 
 ## Caching
 
@@ -477,7 +477,7 @@ const getUser = stitch({
 });
 ```
 
-**OAuth2 client credentials** — `oauth2()` POSTs the token endpoint (form-encoded `client_credentials` grant), caches the access token in the [store](#pluggable-state-store) with the TTL from `expires_in`, refreshes it `refreshSkewMs` (default 30s) before expiry, and attaches it as `Authorization: Bearer …`. A rejected token (status in `refreshOn`, default `[401]`) forces a fresh fetch and an uncounted re-run of the attempt:
+**OAuth2 client credentials** — `oauth2()` POSTs the token endpoint (form-encoded `client_credentials` grant), caches the access token in the [store](#pluggable-state-store) with the TTL from `expires_in`, refreshes it `refreshSkew` (default 30s) before expiry, and attaches it as `Authorization: Bearer …`. A rejected token (status in `refreshOn`, default `[401]`) forces a fresh fetch and an uncounted re-run of the attempt:
 
 ```ts
 import { env, oauth2, stitch } from 'stitchapi';
@@ -550,8 +550,8 @@ Throttle counters and session/token state live behind one small seam — a `stor
 ```ts
 export interface StitchStore {
     get(key: string): Promise<unknown | undefined>;
-    set(key: string, value: unknown, ttlMs?: number): Promise<void>;
-    incr(key: string, ttlMs: number): Promise<number>; // atomic — rate windows
+    set(key: string, value: unknown, ttl?: number): Promise<void>;
+    incr(key: string, ttl: number): Promise<number>; // atomic — rate windows
 }
 ```
 
@@ -821,7 +821,7 @@ One definition, more than one front door: the same stitch your code imports is c
 $ stitch run getUser --id 7 --query.expand roles
 {"type":"start","name":"getUser","method":"GET","url":"https://demo.stitchapi.dev/users/7?expand=roles",...}
 {"type":"result","data":{"id":7,"name":"Ada"},"status":200,"attempts":1,...}
-{"type":"done","ok":true,"ms":142,...}
+{"type":"done","ok":true,"elapsed":142,...}
 ```
 
 Flags map onto the stitch's single input object: a bare `--id 7` routes to `params` when `{id}` appears in the path (otherwise to `query`); `--body '<json>'` or `--body.<k> <v>` set the body; `--headers.<k> <v>` sets a header. The exit code is non-zero when an `error` event was seen. (`.ts` modules need a TypeScript-aware runner such as `tsx`; otherwise point `--module` at compiled JS.)
