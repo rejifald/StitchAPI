@@ -146,7 +146,16 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
         cfg.timeout = { total: cfg.timeout };
     if (typeof cfg.cache === 'number' || typeof cfg.cache === 'string')
         cfg.cache = { ttl: cfg.cache };
+    // P12: the dominant-field scalar of `stream`/`multipart` folds into its envelope, so the opaque
+    // `{}` never reaches the slot (P20) and the engine only ever sees the object form.
+    if (typeof cfg.stream === 'string') cfg.stream = { decode: cfg.stream };
+    if (typeof cfg.multipart === 'string')
+        cfg.multipart = { nesting: cfg.multipart };
     if (typeof cfg.throttle === 'string') cfg.throttle = { rate: cfg.throttle };
+    // P13: `sse: true` enables reconnection with defaults; `false`/absent is off (the opaque
+    // `sse: {}` is a type error at the slot, so the all-defaults case arrives here as `true`).
+    if (cfg.sse === true) cfg.sse = { reconnect: true };
+    else if (cfg.sse === false) delete cfg.sse;
     // P20: `idempotency: true` enables it with defaults; `false`/absent is off. Normalize the
     // boolean toggle to the object form the engine reads (the opaque `idempotency: {}` is a type
     // error at the slot, so the all-defaults case arrives here as `true`).
@@ -197,16 +206,19 @@ export function compose(config: Fragment): ResolvedStitchConfig {
         // last to set it and set it off.
         if (idempotencyToggle === false) delete merged.idempotency;
     }
+    // The chained hooks / normalized input are the RESOLVED shapes (plain `Hooks`/`InputSchemas`),
+    // past the authoring-side `AtLeastOne` gate (P20) — write them through the resolved view.
+    const resolved = merged as ResolvedStitchConfig;
     const hooks = chainHooks(hookLayers);
-    if (hooks) merged.hooks = hooks;
+    if (hooks) resolved.hooks = hooks;
     if (store) merged.store = store;
     if (kind) merged.kind = kind;
     const output = normalizeOutput(merged.output);
     if (output !== undefined) merged.output = output;
     const input = normalizeInput(merged.input);
-    if (input !== undefined) merged.input = input;
-    // `expandShorthand` ran on every layer, so retry/timeout/cache are now their object form.
-    return merged as ResolvedStitchConfig;
+    if (input !== undefined) resolved.input = input;
+    // `expandShorthand` ran on every layer, so every scalar shorthand is now its envelope form.
+    return resolved;
 }
 
 // Construction-time nudges for `idempotency` misuse — hints with an out, never errors. Two cases,
