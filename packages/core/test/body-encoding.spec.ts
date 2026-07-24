@@ -118,7 +118,7 @@ describe('cookieSession content-aware refresh (soft wall)', () => {
             auth: cookieSession({
                 login,
                 cookie: 'SID',
-                scope: 'app',
+                tenancy: 'app',
                 // status is 200, so only a content predicate can catch this wall:
                 refreshWhen: (res) =>
                     typeof res.body === 'string' && /log in/i.test(res.body),

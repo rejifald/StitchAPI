@@ -247,7 +247,7 @@ test('cookieSession runs its login as a traced CHILD of the call that triggered 
         baseUrl: server.url,
         path: '/me',
         trace: sink,
-        auth: cookieSession({ login: signIn, cookie: 'sid', scope: 'app' }),
+        auth: cookieSession({ login: signIn, cookie: 'sid', tenancy: 'app' }),
     });
 
     await expect(me()).resolves.toEqual({ user: 'ada' });

@@ -280,7 +280,7 @@ export interface OAuth2Options {
      * Token tenancy (ADR 0002 §3). Default **`'app'`**: one token serves every caller — the right
      * model for `client_credentials`, which authenticates the *application*, not a user. Set
      * `'principal'` to fold the seam-bound principal into the token's cache key (and **throw if no
-     * principal is bound**, mirroring {@link CookieSessionOptions.scope}); each tenant then caches its
+     * principal is bound**, mirroring {@link CookieSessionOptions.tenancy}); each tenant then caches its
      * own token and one tenant's 401/refresh never disturbs another's in-flight calls. Pair it with
      * per-tenant `clientId`/`clientSecret`/`scope` for full multi-tenant separation.
      */
@@ -330,7 +330,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
 
     // The vault key for THIS call. Default 'app' shares one token across all callers (correct for
     // client_credentials — the token authenticates the application, not a user). 'principal' folds
-    // the seam-bound principal in (fail-closed if none, mirroring cookieSession's scope), so each
+    // the seam-bound principal in (fail-closed if none, mirroring cookieSession's tenancy), so each
     // tenant caches its own token and one tenant's 401/refresh never disturbs another's.
     const keyFor = (ctx: AuthContext): string => {
         if (tenancy === 'app') return baseKey;
@@ -511,7 +511,7 @@ export interface CookieSessionOptions {
     refreshWhen?: (res: AdapterResponse) => boolean;
     /** Vault namespace — give two stitches the same `key` + a shared seam/store to share one session. */
     key?: string;
-    /** Optional TTL for the stored session — `60_000`, `'1m'`. With `scope: 'principal'`, set this — per-user sessions multiply. */
+    /** Optional TTL for the stored session — `60_000`, `'1m'`. With `tenancy: 'principal'`, set this — per-user sessions multiply. */
     ttl?: number | string;
     /** @deprecated Renamed to {@link CookieSessionOptions.ttl} (CONTRACT.md P17). Read until the 1.0 GA cut. */
     ttlMs?: number;
@@ -521,8 +521,12 @@ export interface CookieSessionOptions {
      * bound** — per-user auth can never silently run app-wide. `'app'` is the explicit opt-in to
      * sharing ONE session across all callers (the only safe choice for a standalone `stitch()`,
      * which never has a principal). Sessions always live in the {@link AuthContext.vault}.
+     *
+     * The two defaults deliberately diverge (CONTRACT.md P8): a cookie session belongs to a user,
+     * so it fails closed to `'principal'`, while {@link OAuth2Options.tenancy} defaults to `'app'`
+     * because a client-credentials token belongs to the application.
      */
-    scope?: 'principal' | 'app';
+    tenancy?: 'principal' | 'app';
     /**
      * Host-owned hook fired once per ACTUAL login attempt that failed to capture a cookie — NOT
      * per coalesced waiter (it runs inside the single-flight-guarded `doRefresh`). The host maps the
@@ -543,7 +547,7 @@ export interface CookieSessionOptions {
 export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     const refreshOn = opts.refreshOn ?? [401];
     const jarMode = opts.jar === true || opts.cookie === '*';
-    const scope = opts.scope ?? 'principal';
+    const tenancy = opts.tenancy ?? 'principal';
     const baseKey = (jarMode ? 'jar:' : 'cookie:') + (opts.key ?? opts.cookie);
     const flight = singleFlight<unknown>();
 
@@ -554,13 +558,13 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     const sessionFor = (
         ctx: AuthContext,
     ): { key: string; principal?: string } => {
-        if (scope === 'app') return { key: baseKey };
+        if (tenancy === 'app') return { key: baseKey };
         const principal = ctx.principal;
         if (principal == null || principal === '') {
             const e = new Error(
-                "cookieSession with scope 'principal' (the default) requires a bound principal: " +
+                "cookieSession with tenancy 'principal' (the default) requires a bound principal: " +
                     'create the stitch through a seam and call `seam.as(principalId)`, or set ' +
-                    "`scope: 'app'` to deliberately share one session across all callers.",
+                    "`tenancy: 'app'` to deliberately share one session across all callers.",
             );
             e.name = 'StitchAuthError';
             throw e;
