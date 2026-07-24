@@ -436,7 +436,6 @@ will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 
 | Sev  | Current                                                            | Proposed                                                       | Rule   |
 | ---- | ------------------------------------------------------------------ | -------------------------------------------------------------- | ------ |
-| High | `IdempotencyOptions.key`, `CacheConfig.key` (fn)                   | `keyOf`                                                        | P6     |
 | High | `rateLimit` (separate top-level key) vs `throttle`                 | fold into one `throttle` envelope (`delegate` / `on` as modes) | P2/P14 |
 | High | `retry.on` + rate-limit `on` (`number[]`)                          | `number[] ｜ (status)=>boolean`                                | P7     |
 | High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes         | hoist or qualify                                               | P9     |

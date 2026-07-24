@@ -265,7 +265,7 @@ describe('cache — invalidation', () => {
         expect(calls()).toBe(3);
     });
 
-    test('cache.key(input) exposes the derived opaque key', async () => {
+    test('cache.keyOf(input) exposes the derived opaque key', async () => {
         const { adapter } = counting();
         const s = stitch({
             url: URL,
@@ -273,9 +273,9 @@ describe('cache — invalidation', () => {
             trace: false,
             cache: { ttl: '60s', scope: 'app' },
         });
-        const k1 = await s.cache.key({ query: { id: 1 } });
-        const k2 = await s.cache.key({ query: { id: 1 } });
-        const k3 = await s.cache.key({ query: { id: 2 } });
+        const k1 = await s.cache.keyOf({ query: { id: 1 } });
+        const k2 = await s.cache.keyOf({ query: { id: 1 } });
+        const k3 = await s.cache.keyOf({ query: { id: 2 } });
         expect(k1).toMatch(/^[0-9a-f]{32}$/);
         expect(k1).toBe(k2);
         expect(k1).not.toBe(k3);

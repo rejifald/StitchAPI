@@ -231,10 +231,9 @@ function warnIdempotency(cfg: ResolvedStitchConfig): void {
         );
         return;
     }
-    // A derived key (either spelling — `keyOf`, or the @deprecated `key` alias) dedupes
-    // resubmissions on its own, so only the random default with no retry is the inert case.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the back-compat alias of `keyOf` (CONTRACT.md P6)
-    if (idem.keyOf || idem.key || cfg.retry) return;
+    // A derived `keyOf` dedupes resubmissions on its own, so only the random default with no
+    // retry is the inert case.
+    if (idem.keyOf || cfg.retry) return;
     console.warn(
         `stitchapi: \`${name}\` has \`idempotency\` with a random key and no \`retry\`, so it ` +
             `only dedupes its own retries — add \`retry\`, or set \`idempotency.keyOf\`.`,
@@ -715,7 +714,7 @@ function attachCacheSurface(
     Object.defineProperty(target, 'cache', {
         value: {
             invalidate: () => cacheInvalidateBulk(rt),
-            key: (input?: StitchInput) => cacheKeyOf(rt, resolve(input)),
+            keyOf: (input?: StitchInput) => cacheKeyOf(rt, resolve(input)),
         },
     });
 }
