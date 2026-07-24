@@ -32,7 +32,7 @@ import type {
     ThrottleOptions,
     TraceSink,
 } from './types';
-import { systemClock } from './util';
+import { envelope, systemClock } from './util';
 
 // Per-seam id so the shared bucket's store-counter key never collides across seams sharing a store.
 let seamCounter = 0;
@@ -41,7 +41,7 @@ let seamCounter = 0;
 // so expand the rate-string shorthand here: `'2/s'` ≡ `{ rate: '2/s' }`.
 const throttleOptions = (
     t: StitchConfig['throttle'],
-): ThrottleOptions | undefined => (typeof t === 'string' ? { rate: t } : t);
+): ThrottleOptions | undefined => envelope(t, 'rate');
 
 /**
  * The seam's shared throttle bucket. Member stitches all acquire it under ONE seam-stable key, so
@@ -88,8 +88,9 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
         config: string | Partial<StitchConfig>,
         isGql = false,
     ): Stitch<T> => {
-        const own: Partial<StitchConfig> =
-            typeof config === 'string' ? { path: config } : { ...config };
+        // A bare string is the `path` shorthand; either way copy, so the mutations below never
+        // reach into the caller's own config object.
+        const own: Partial<StitchConfig> = { ...envelope(config, 'path') };
         // A member's OWN throttle STACKS on the seam bucket (tighten-only, ADR 0002 §5): the engine
         // keys it per-stitch, so it limits just this stitch ON TOP OF the shared budget — it can
         // add a stricter gate but never replace or escape the seam's.
