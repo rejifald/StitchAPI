@@ -78,16 +78,16 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             info: "Static default headers merged into every request.",
         },
         {
-            label: "query",
+            label: "document",
             type: "property",
             detail: "string",
-            info: "GraphQL query string (`kind: 'graphql'`).",
+            info: "GraphQL document string (`kind: 'graphql'`) — sent as the request body's `query` field.",
         },
         {
             label: "operationName",
             type: "property",
             detail: "string",
-            info: "GraphQL `operationName` sent alongside `query` + `variables` (`kind: 'graphql'`). Omit to derive it from the first named operation in `query`; set it explicitly to override (e.g. a multi-operation document) or pass `''` to suppress the field entirely.",
+            info: "GraphQL `operationName` sent alongside the document + `variables` (`kind: 'graphql'`). Omit to derive it from the first named operation in `document`; set it explicitly to override (e.g. a multi-operation document) or pass `''` to suppress the field entirely.",
         },
         {
             label: "input",

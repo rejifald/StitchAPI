@@ -591,7 +591,7 @@ describe('cache — GraphQL opt-in', () => {
         });
         const q = graphql({
             url: 'https://api.test/graphql',
-            query: '{ me { id } }',
+            document: '{ me { id } }',
             adapter,
             trace: false,
             cache: { ttl: '60s', scope: 'app', methods: ['POST'] },
@@ -607,7 +607,7 @@ describe('cache — GraphQL opt-in', () => {
         });
         const q = graphql({
             url: 'https://api.test/graphql',
-            query: '{ me { id } }',
+            document: '{ me { id } }',
             adapter,
             trace: false,
             cache: { ttl: '60s', scope: 'app' }, // default methods GET/HEAD → POST excluded

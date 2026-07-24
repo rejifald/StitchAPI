@@ -659,7 +659,7 @@ import { graphql } from 'stitchapi';
 
 const getUser = graphql({
     baseUrl: 'https://demo.stitchapi.dev',
-    query: 'query ($id: ID) { user(id: $id) { name } }',
+    document: 'query ($id: ID) { user(id: $id) { name } }',
 });
 
 const user = await getUser({ variables: { id: 1 } });
