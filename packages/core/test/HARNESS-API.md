@@ -31,7 +31,7 @@ import { z } from 'zod';
 -   `pick`: dot-path string (e.g. `'data'`)
 -   `auth`: an AuthStrategy (see below)
 -   `retry`: `{ attempts (total incl. first, default 1), on: number[] (default [429,502,503,504]), backoff: 'expo'|'expo-jitter'|'fixed', baseMs, maxMs, respectRetryAfter }`
--   `throttle`: `{ rate: '2/s', concurrency: number, scope: 'stitch'|'host' }`
+-   `throttle`: `{ rate: '2/s', concurrency: number, pool: 'stitch'|'host' }`
 -   `timeout`: `{ total: number|string, perAttempt: number|string }` (ms or '30s')
 -   `hooks`: `{ onRequest, onResponse, onError, onRetry }` — `(ctx) => void|Promise<void>`, `ctx = { name, attempt, req?, res?, error? }`
 -   `extends`: `Array<fragment | stitch>`

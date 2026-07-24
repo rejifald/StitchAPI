@@ -438,7 +438,6 @@ will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 | ---- | --------------------------------------------------------------------- | -------------------------------------------------------------- | ------ |
 | High | `SafeResult.data` ↔ `Inspection.value` ↔ `StitchEvent.result.value` | `data` everywhere                                              | P5     |
 | High | `IdempotencyOptions.key`, `CacheConfig.key` (fn)                      | `keyOf`                                                        | P6     |
-| High | `ThrottleOptions.scope` (`'stitch'｜'host'`)                          | `pool`                                                         | P2     |
 | High | `rateLimit` (separate top-level key) vs `throttle`                    | fold into one `throttle` envelope (`delegate` / `on` as modes) | P2/P14 |
 | High | `retry.on` + rate-limit `on` (`number[]`)                             | `number[] ｜ (status)=>boolean`                                | P7     |
 | High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes            | hoist or qualify                                               | P9     |
@@ -467,7 +466,6 @@ New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multi
 **Shipped (migration in progress)** — all under `@deprecated` aliases read until the GA
 cut; the lint skips the deprecated members so each rename ratchets the baseline down:
 
--   **P2** `ThrottleOptions.scope`→`pool`; runtime prefers `pool ?? scope`.
 -   **P6** `IdempotencyOptions.key`/`CacheOptions.key`→`keyOf`; runtime prefers `keyOf ?? key`.
 -   **P3** suffix renames (type-only, zero runtime): `CacheConfig`→`CacheOptions`,
     `OAuth2Opts`→`OAuth2Options`, `CookieSessionOpts`→`CookieSessionOptions`,

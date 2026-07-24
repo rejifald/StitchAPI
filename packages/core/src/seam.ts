@@ -55,8 +55,7 @@ function seamBucket(
     clock: Clock,
 ): Throttle {
     const inner = createStoreThrottle(opts, store, clock);
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `scope` is the @deprecated alias of `pool`, read as the back-compat fallback until the GA cut (CONTRACT.md P2)
-    if ((opts?.pool ?? opts?.scope) === 'host') return inner; // host key already pools across the seam
+    if (opts?.pool === 'host') return inner; // host key already pools across the seam
     const key = `seam:${seamId}`;
     return {
         // Re-key every acquire onto the one seam-stable key, forwarding the acquire options (e.g.
