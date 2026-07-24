@@ -18,7 +18,7 @@ export class TimeoutError extends Error {}
 /**
  * Normalize a status-match field (a bare number, a number list, a predicate, or unset) into a
  * single predicate — the shared CONTRACT.md P7 matcher every status-match slot runs through
- * (`retry.on`, `throttle.on`, `acceptStatus`, the auth strategies' `refreshOn`, …). Unset →
+ * (`retry.on`, `throttle.on`, `acceptStatus`, the auth strategies' `refresh`/`refresh.on`, …). Unset →
  * accept nothing.
  */
 export function acceptsStatus(

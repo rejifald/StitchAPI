@@ -103,7 +103,7 @@ test('refresh on the 401 wall re-logs-in and retries the request', async () => {
         auth: cookieSession({
             login: signIn,
             cookie: 'sid',
-            refreshOn: [401],
+            refresh: [401],
             tenancy: 'app',
         }),
     });

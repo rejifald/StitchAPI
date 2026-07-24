@@ -1,6 +1,6 @@
 // Unit tests for the shared `acceptsStatus` matcher (src/resilience.ts) — the CONTRACT.md P7
 // normalizer every status-classification slot runs through (`retry.on`, `throttle.on`,
-// `acceptStatus`, the auth strategies' `refreshOn`). It collapses the four `StatusMatch` spellings
+// `acceptStatus`, the auth strategies' `refresh`). It collapses the four `StatusMatch` spellings
 // (a bare number, a number list, a predicate, or unset) into one `(status) => boolean` predicate,
 // so `on: 429` ≡ `on: [429]` at every reader.
 import type { StatusMatch } from '../src';

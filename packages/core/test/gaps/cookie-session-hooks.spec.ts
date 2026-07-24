@@ -129,7 +129,7 @@ test('onRefresh fires ONCE (not per-waiter) under concurrent cold callers sharin
 
 test("onAuthFailure fires category 'unauthenticated' when the login returns 401 and sets no cookie", async () => {
     // No setCookie + a 401 status: the login responded but captured nothing, and 401 is a
-    // `refreshOn` status → the host hears "the creds were rejected".
+    // `refresh` (`refresh.on`) status → the host hears "the creds were rejected".
     server.route('POST', '/login', {
         statuses: [401],
         body: { error: 'bad creds' },
