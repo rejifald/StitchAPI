@@ -15,15 +15,15 @@
 //                         request/response query libraries.
 // - `useStitch` / `useStitchStream` — hook-style aliases for the two above, for
 //                         callers who prefer the `use*` naming.
-// - `queryOptions`     — an OPTIONAL TanStack Query adapter (returns a plain POJO,
-//                         so it needs no import of `@tanstack/svelte-query`).
+// - `stitchQueryOptions` — an OPTIONAL TanStack Query adapter (returns a plain
+//                         POJO, so it needs no import of `@tanstack/svelte-query`).
 import {
     type CreateStitchQueryOptions,
     type QueryInput,
     type QueryOutput,
     type StitchLike,
     type StitchQuery,
-    type StitchQueryState,
+    type StitchQueryResult,
     createStitchQuery,
 } from '@stitchapi/query-core';
 import { type Readable, readable } from 'svelte/store';
@@ -34,7 +34,7 @@ export type {
     QueryOutput,
     StitchLike,
     StitchQuery,
-    StitchQueryState,
+    StitchQueryResult,
 } from '@stitchapi/query-core';
 
 // ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ export type {
  * store's FIRST subscriber — and `destroy()`ed when the last unsubscribes, so an
  * unused store costs nothing and a torn-down scope aborts its run.
  */
-export interface SvelteStitchStore<T> extends Readable<StitchQueryState<T>> {
+export interface SvelteStitchStore<T> extends Readable<StitchQueryResult<T>> {
     /** Abort the in-flight run and re-run from scratch. */
     refetch: () => void;
     /** Abort the in-flight run, if any. */
@@ -80,7 +80,7 @@ function makeStore<T>(
     // returns a `stop` callback invoked when the last subscriber leaves. We seed
     // with the current snapshot, push every notification through `set`, fire the
     // deferred fetch, and tear the query down on stop.
-    const store = readable<StitchQueryState<T>>(query.getSnapshot(), (set) => {
+    const store = readable<StitchQueryResult<T>>(query.getSnapshot(), (set) => {
         const unsubscribe = query.subscribe(() => set(query.getSnapshot()));
         // Sync once in case state advanced between creation and subscription,
         // then start the run if the caller didn't opt out.
@@ -193,11 +193,11 @@ export const useStitch = stitchStore;
 export const useStitchStream = stitchStreamStore;
 
 // ---------------------------------------------------------------------------
-// queryOptions — optional TanStack Query adapter
+// stitchQueryOptions — optional TanStack Query adapter
 // ---------------------------------------------------------------------------
 
-// IDENTICAL to `@stitchapi/react`'s `queryOptions` — it imports no framework, so
-// the POJO is framework-neutral and feeds `@tanstack/svelte-query`'s
+// IDENTICAL to `@stitchapi/react`'s `stitchQueryOptions` — it imports no
+// framework, so the POJO is framework-neutral and feeds `@tanstack/svelte-query`'s
 // `createQuery` exactly as it feeds React's `useQuery`.
 
 // --- key derivation (shared logic; duplicated in @stitchapi/react + swr) ----
@@ -321,11 +321,3 @@ export function stitchQueryOptions<T>(
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }
-
-/**
- * @deprecated Renamed to {@link stitchQueryOptions} — a bare `queryOptions` collides
- * with TanStack Query's own `queryOptions` export when both are imported. See
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
- * `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export const queryOptions = stitchQueryOptions;

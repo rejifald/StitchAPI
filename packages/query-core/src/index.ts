@@ -36,7 +36,7 @@ export type StitchQueryStatus =
  * actually changed, so `useSyncExternalStore` (and `===` checks elsewhere) never
  * tear or loop.
  */
-export interface StitchQueryState<T> {
+export interface StitchQueryResult<T> {
     readonly status: StitchQueryStatus;
     /** The validated output (unary) or the latest streamed value (streaming). */
     readonly data: T | undefined;
@@ -85,7 +85,7 @@ export interface StitchQuery<T> {
     /** Register a listener; returns an unsubscribe function. */
     subscribe(listener: () => void): () => void;
     /** The current immutable state. Identity-stable between real changes. */
-    getSnapshot(): StitchQueryState<T>;
+    getSnapshot(): StitchQueryResult<T>;
     /** Abort the in-flight run (if any) and re-run from scratch. */
     refetch(): void;
     /** Abort the in-flight run, if any. Leaves the last state in place; the run
@@ -152,16 +152,16 @@ type Core<T> = {
     chunks: readonly unknown[];
 };
 
-const IDLE: StitchQueryState<never> = freeze<never>({
+const IDLE: StitchQueryResult<never> = freeze<never>({
     status: 'idle',
     data: undefined,
     error: undefined,
     chunks: [],
 });
 
-function freeze<T>(partial: Core<T>): StitchQueryState<T> {
+function freeze<T>(partial: Core<T>): StitchQueryResult<T> {
     const { status } = partial;
-    const state: StitchQueryState<T> = {
+    const state: StitchQueryResult<T> = {
         status,
         data: partial.data,
         error: partial.error,
@@ -205,7 +205,7 @@ export function createStitchQuery<T>(
     } = options;
 
     const listeners = new Set<() => void>();
-    let state = IDLE as StitchQueryState<T>;
+    let state = IDLE as StitchQueryResult<T>;
     let controller: AbortController | undefined;
     // A token guards against a stale run resolving after a newer refetch/cancel:
     // every run captures the token live at start, and only the current run may
@@ -213,7 +213,7 @@ export function createStitchQuery<T>(
     let runToken = 0;
     let destroyed = false;
 
-    function setState(next: StitchQueryState<T>): void {
+    function setState(next: StitchQueryResult<T>): void {
         state = next;
         for (const l of listeners) l();
     }

@@ -2,7 +2,6 @@
 // we subscribe to the readable store and assert the emitted state transitions —
 // exactly how Svelte's `$store` / `subscribe` would observe them at runtime.
 import {
-    queryOptions,
     stitchQueryOptions,
     stitchStore,
     stitchStreamStore,
@@ -294,12 +293,6 @@ describe('stitchQueryOptions', () => {
         const stitch = unaryStitch(async () => 1, { name: 'getThing' });
         const opts = stitchQueryOptions(stitch, { params: { id: '7' } });
         expect(opts.queryKey[1]).toEqual({ params: { id: '7' } });
-    });
-});
-
-describe('queryOptions (deprecated alias)', () => {
-    test('queryOptions stays a deprecated alias of stitchQueryOptions (ADR 0012)', () => {
-        expect(queryOptions).toBe(stitchQueryOptions);
     });
 });
 

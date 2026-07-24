@@ -11,7 +11,7 @@
 // - `injectStitchStream` — the streaming primitive: emits as `delta` chunks
 //                          arrive. This is the differentiator over plain
 //                          request/response query libraries.
-// - `queryOptions`       — an OPTIONAL TanStack Query adapter (returns a plain
+// - `stitchQueryOptions` — an OPTIONAL TanStack Query adapter (returns a plain
 //                          POJO, so it needs no import of the Angular adapter).
 //
 // The observable is the bridge off the store; the signal is derived from it via
@@ -36,7 +36,7 @@ import {
     type QueryOutput,
     type StitchLike,
     type StitchQuery,
-    type StitchQueryState,
+    type StitchQueryResult,
     type StitchQueryStatus,
     createStitchQuery,
 } from '@stitchapi/query-core';
@@ -50,7 +50,7 @@ export type {
     QueryOutput,
     StitchLike,
     StitchQuery,
-    StitchQueryState,
+    StitchQueryResult,
     StitchQueryStatus,
 } from '@stitchapi/query-core';
 
@@ -75,7 +75,7 @@ export interface InjectStitchOptions<T> extends CreateStitchQueryOptions<T> {
 export interface InjectStitchResult<T> {
     /** The whole snapshot as a signal — read `state().data` etc. in a template or
      * `computed`. */
-    readonly state: Signal<StitchQueryState<T>>;
+    readonly state: Signal<StitchQueryResult<T>>;
     /** The validated output (unary) or the latest streamed value (streaming). */
     readonly data: Signal<T | undefined>;
     /** The thrown reason on failure. */
@@ -94,7 +94,7 @@ export interface InjectStitchResult<T> {
     readonly isStreaming: Signal<boolean>;
     /** The same state as an observable — for the `async` pipe / RxJS consumers.
      * Multicast: it shares the one query execution with the signals above. */
-    readonly state$: Observable<StitchQueryState<T>>;
+    readonly state$: Observable<StitchQueryResult<T>>;
     /** Abort the in-flight run and re-run from scratch. */
     refetch: () => void;
     /** Abort the in-flight run, if any. */
@@ -187,7 +187,7 @@ function keyInputFor(input: unknown): unknown {
 // The store's seed value, surfaced before the first real snapshot (an instant).
 // It matches core's idle snapshot exactly so the signals are well-formed from the
 // start.
-const IDLE_STATE: StitchQueryState<unknown> = {
+const IDLE_STATE: StitchQueryResult<unknown> = {
     status: 'idle',
     data: undefined,
     error: undefined,
@@ -243,7 +243,7 @@ function injectStitchInternal<T>(
         // store subscription and tears the handle down on unsubscribe.
         switchMap(
             (value) =>
-                new Observable<StitchQueryState<T>>((subscriber) => {
+                new Observable<StitchQueryResult<T>>((subscriber) => {
                     const handle = createStitchQuery<T, unknown>(
                         stitch,
                         value,
@@ -268,7 +268,7 @@ function injectStitchInternal<T>(
     );
 
     const state = toSignal(state$, {
-        initialValue: IDLE_STATE as StitchQueryState<T>,
+        initialValue: IDLE_STATE as StitchQueryResult<T>,
         injector,
     });
 
@@ -362,11 +362,11 @@ export function injectStitchStream<T>(
 }
 
 // ---------------------------------------------------------------------------
-// queryOptions — optional TanStack Query adapter
+// stitchQueryOptions — optional TanStack Query adapter
 // ---------------------------------------------------------------------------
 
-// IDENTICAL to the other bindings' `queryOptions` (no framework import) — the
-// POJO shape `@tanstack/angular-query-experimental`'s `injectQuery(() => ...)`
+// IDENTICAL to the other bindings' `stitchQueryOptions` (no framework import) —
+// the POJO shape `@tanstack/angular-query-experimental`'s `injectQuery(() => ...)`
 // consumes is the same `{ queryKey, queryFn }` TanStack uses everywhere.
 
 /** The plain object {@link stitchQueryOptions} returns — structurally compatible with
@@ -409,11 +409,3 @@ export function stitchQueryOptions<T>(
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }
-
-/**
- * @deprecated Renamed to {@link stitchQueryOptions} — a bare `queryOptions` collides
- * with TanStack Query's own `queryOptions` export when both are imported. See
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
- * `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export const queryOptions = stitchQueryOptions;

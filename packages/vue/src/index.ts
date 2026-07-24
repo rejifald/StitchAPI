@@ -11,15 +11,15 @@
 // - `useStitchStream` — the streaming composable: re-renders as `delta` chunks
 //                       arrive. This is the differentiator over plain
 //                       request/response query libraries.
-// - `queryOptions`    — an OPTIONAL TanStack Query adapter (returns a plain POJO,
-//                       so it needs no import of `@tanstack/vue-query`).
+// - `stitchQueryOptions` — an OPTIONAL TanStack Query adapter (returns a plain
+//                       POJO, so it needs no import of `@tanstack/vue-query`).
 import {
     type CreateStitchQueryOptions,
     type QueryInput,
     type QueryOutput,
     type StitchLike,
     type StitchQuery,
-    type StitchQueryState,
+    type StitchQueryResult,
     createStitchQuery,
 } from '@stitchapi/query-core';
 import { compact } from 'stitchapi';
@@ -39,7 +39,7 @@ export type {
     QueryOutput,
     StitchLike,
     StitchQuery,
-    StitchQueryState,
+    StitchQueryResult,
 } from '@stitchapi/query-core';
 
 // ---------------------------------------------------------------------------
@@ -51,8 +51,8 @@ export type {
  * own `ComputedRef` (so the object stays destructurable WITHOUT losing
  * reactivity, the Vue idiom) plus the imperative `refetch` / `cancel` handles.
  */
-export interface UseStitchReturn<T> {
-    readonly status: ComputedRef<StitchQueryState<T>['status']>;
+export interface UseStitchResult<T> {
+    readonly status: ComputedRef<StitchQueryResult<T>['status']>;
     /** The validated output (unary) or the latest streamed value (streaming). */
     readonly data: ComputedRef<T | undefined>;
     /** The thrown reason on failure. */
@@ -179,15 +179,15 @@ function useStitchInternal<T>(
     input: MaybeRefOrGetter<unknown>,
     options: MaybeRefOrGetter<UseStitchOptions<T>>,
     stream: boolean,
-): UseStitchReturn<T> {
+): UseStitchResult<T> {
     // The single reactive cell every consumer reads through. The core hands out a
     // NEW frozen snapshot only on a real change, so swapping the ref is cheap and
     // never tears. `shallowRef` is deliberate: the snapshot is already immutable,
     // so deep reactivity would only add overhead.
-    const snapshot = shallowRef<StitchQueryState<T>>(
+    const snapshot = shallowRef<StitchQueryResult<T>>(
         // Seed with a synchronous read below once the first handle exists; this
         // placeholder is replaced before any consumer can observe it.
-        undefined as unknown as StitchQueryState<T>,
+        undefined as unknown as StitchQueryResult<T>,
     );
 
     let query: StitchQuery<T> | undefined;
@@ -249,9 +249,10 @@ function useStitchInternal<T>(
         query?.destroy();
     });
 
-    const field = <K extends keyof StitchQueryState<T>>(
+    const field = <K extends keyof StitchQueryResult<T>>(
         k: K,
-    ): ComputedRef<StitchQueryState<T>[K]> => computed(() => snapshot.value[k]);
+    ): ComputedRef<StitchQueryResult<T>[K]> =>
+        computed(() => snapshot.value[k]);
 
     return {
         status: field('status'),
@@ -297,17 +298,17 @@ export function useStitch<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: MaybeRefOrGetter<QueryInput<S>>,
     options?: MaybeRefOrGetter<UseStitchOptions<QueryOutput<S>>>,
-): UseStitchReturn<QueryOutput<S>>;
+): UseStitchResult<QueryOutput<S>>;
 export function useStitch<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: MaybeRefOrGetter<Input>,
     options?: MaybeRefOrGetter<UseStitchOptions<T>>,
-): UseStitchReturn<T>;
+): UseStitchResult<T>;
 export function useStitch<T>(
     stitch: StitchLike<T, unknown>,
     input: MaybeRefOrGetter<unknown>,
     options: MaybeRefOrGetter<UseStitchOptions<T>> = {},
-): UseStitchReturn<T> {
+): UseStitchResult<T> {
     return useStitchInternal<T>(stitch, input, options, false);
 }
 
@@ -335,25 +336,25 @@ export function useStitchStream<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: MaybeRefOrGetter<QueryInput<S>>,
     options?: MaybeRefOrGetter<UseStitchOptions<QueryOutput<S>>>,
-): UseStitchReturn<QueryOutput<S>>;
+): UseStitchResult<QueryOutput<S>>;
 export function useStitchStream<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: MaybeRefOrGetter<Input>,
     options?: MaybeRefOrGetter<UseStitchOptions<T>>,
-): UseStitchReturn<T>;
+): UseStitchResult<T>;
 export function useStitchStream<T>(
     stitch: StitchLike<T, unknown>,
     input: MaybeRefOrGetter<unknown>,
     options: MaybeRefOrGetter<UseStitchOptions<T>> = {},
-): UseStitchReturn<T> {
+): UseStitchResult<T> {
     return useStitchInternal<T>(stitch, input, options, true);
 }
 
 // ---------------------------------------------------------------------------
-// queryOptions — optional TanStack Query adapter
+// stitchQueryOptions — optional TanStack Query adapter
 // ---------------------------------------------------------------------------
 
-// IDENTICAL to `@stitchapi/react`'s `queryOptions` — a plain POJO with no
+// IDENTICAL to `@stitchapi/react`'s `stitchQueryOptions` — a plain POJO with no
 // framework import, so it feeds `@tanstack/vue-query`'s `useQuery(options)`
 // (or any other) just the same.
 
@@ -398,11 +399,3 @@ export function stitchQueryOptions<T>(
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }
-
-/**
- * @deprecated Renamed to {@link stitchQueryOptions} — a bare `queryOptions` collides
- * with TanStack Query's own `queryOptions` export when both are imported. See
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
- * `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export const queryOptions = stitchQueryOptions;

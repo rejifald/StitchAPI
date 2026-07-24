@@ -6,7 +6,6 @@ import {
     type SolidStitchStore,
     createStitch,
     createStitchStream,
-    queryOptions,
     stitchQueryOptions,
 } from '../src';
 
@@ -356,12 +355,6 @@ describe('stitchQueryOptions', () => {
         const stitch = unaryStitch(async () => 1);
         const opts = stitchQueryOptions(stitch, null);
         expect(opts.queryKey[0]).toBe('stitch');
-    });
-});
-
-describe('queryOptions (deprecated alias)', () => {
-    test('queryOptions stays a deprecated alias of stitchQueryOptions (ADR 0012)', () => {
-        expect(queryOptions).toBe(stitchQueryOptions);
     });
 });
 

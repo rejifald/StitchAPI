@@ -27,17 +27,17 @@ Returns a `StitchQuery<T>`:
 ```ts
 interface StitchQuery<T> {
     subscribe(listener: () => void): () => void;
-    getSnapshot(): StitchQueryState<T>;
+    getSnapshot(): StitchQueryResult<T>;
     refetch(): void;
     cancel(): void;
     destroy(): void;
 }
 ```
 
-### `StitchQueryState<T>`
+### `StitchQueryResult<T>`
 
 ```ts
-interface StitchQueryState<T> {
+interface StitchQueryResult<T> {
     status: 'idle' | 'pending' | 'streaming' | 'success' | 'error';
     data: T | undefined;
     error: unknown;

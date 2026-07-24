@@ -19,7 +19,7 @@ import {
     type QueryOutput,
     type StitchLike,
     type StitchQuery,
-    type StitchQueryState,
+    type StitchQueryResult,
     createStitchQuery,
 } from '@stitchapi/query-core';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -32,7 +32,7 @@ export type {
     QueryOutput,
     StitchLike,
     StitchQuery,
-    StitchQueryState,
+    StitchQueryResult,
 } from '@stitchapi/query-core';
 
 // ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ export type {
 
 /** What `useStitch` / `useStitchStream` return: the reactive state plus the
  * imperative `refetch` / `cancel` handles. */
-export interface UseStitchResult<T> extends StitchQueryState<T> {
+export interface UseStitchResult<T> extends StitchQueryResult<T> {
     /** Abort the in-flight run and re-run from scratch. */
     refetch: () => void;
     /** Abort the in-flight run, if any. */
@@ -349,11 +349,3 @@ export function stitchQueryOptions<T>(
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }
-
-/**
- * @deprecated Renamed to {@link stitchQueryOptions} — a bare `queryOptions` collides
- * with TanStack Query's own `queryOptions` export when both are imported. See
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
- * `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export const queryOptions = stitchQueryOptions;

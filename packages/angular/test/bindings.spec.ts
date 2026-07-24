@@ -2,12 +2,7 @@
 // in a jsdom env. Driven by FAKE stitches — no engine, no network. Each binding is
 // created in `TestBed.runInInjectionContext`, and the module is reset between tests
 // to exercise context teardown.
-import {
-    injectStitch,
-    injectStitchStream,
-    queryOptions,
-    stitchQueryOptions,
-} from '../src';
+import { injectStitch, injectStitchStream, stitchQueryOptions } from '../src';
 
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -321,12 +316,6 @@ describe('stitchQueryOptions', () => {
         const stitch = unaryStitch(async () => 1);
         const opts = stitchQueryOptions(stitch, null);
         expect(opts.queryKey[0]).toBe('stitch');
-    });
-});
-
-describe('queryOptions (deprecated alias)', () => {
-    test('queryOptions stays a deprecated alias of stitchQueryOptions (ADR 0012)', () => {
-        expect(queryOptions).toBe(stitchQueryOptions);
     });
 });
 

@@ -3,12 +3,7 @@
 // and the core publishes synchronously on each transition, so a `flush()` (one
 // awaited microtask) is enough to settle the fake stitch's resolved promises.
 // Driven by FAKE stitches — no engine, no network.
-import {
-    queryOptions,
-    stitchQueryOptions,
-    useStitch,
-    useStitchStream,
-} from '../src';
+import { stitchQueryOptions, useStitch, useStitchStream } from '../src';
 
 import type { StitchCallResult, StitchLike } from '@stitchapi/query-core';
 import type { StitchEvent } from 'stitchapi';
@@ -290,12 +285,6 @@ describe('stitchQueryOptions', () => {
         const stitch = unaryStitch(async () => 1);
         const opts = stitchQueryOptions(stitch, null);
         expect(opts.queryKey[0]).toBe('stitch');
-    });
-});
-
-describe('queryOptions (deprecated alias)', () => {
-    test('queryOptions stays a deprecated alias of stitchQueryOptions (ADR 0012)', () => {
-        expect(queryOptions).toBe(stitchQueryOptions);
     });
 });
 

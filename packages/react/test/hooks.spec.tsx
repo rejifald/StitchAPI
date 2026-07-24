@@ -1,12 +1,6 @@
 // @stitchapi/react hook behaviour, rendered into jsdom with @testing-library.
 // Driven by FAKE stitches — no engine, no network.
-import {
-    // Deprecated alias (ADR 0012) — exercised by the alias-guard test below.
-    queryOptions,
-    stitchQueryOptions,
-    useStitch,
-    useStitchStream,
-} from '../src';
+import { stitchQueryOptions, useStitch, useStitchStream } from '../src';
 
 import type { StitchCallResult, StitchLike } from '@stitchapi/query-core';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -304,10 +298,6 @@ describe('stitchQueryOptions', () => {
         const stitch = unaryStitch(async () => 1);
         const opts = stitchQueryOptions(stitch, null);
         expect(opts.queryKey[0]).toBe('stitch');
-    });
-
-    test('queryOptions stays a deprecated alias of stitchQueryOptions (ADR 0012)', () => {
-        expect(queryOptions).toBe(stitchQueryOptions);
     });
 });
 

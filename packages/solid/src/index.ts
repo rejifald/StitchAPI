@@ -10,7 +10,7 @@
 // - `createStitchStream` — the streaming primitive: re-renders as `delta` chunks
 //                          arrive. This is the differentiator over plain
 //                          request/response query libraries.
-// - `queryOptions`       — an OPTIONAL TanStack Query adapter (returns a plain
+// - `stitchQueryOptions` — an OPTIONAL TanStack Query adapter (returns a plain
 //                          POJO, so it needs no import of `@tanstack/solid-query`).
 import {
     type CreateStitchQueryOptions,
@@ -18,7 +18,7 @@ import {
     type QueryOutput,
     type StitchLike,
     type StitchQuery,
-    type StitchQueryState,
+    type StitchQueryResult,
     createStitchQuery,
 } from '@stitchapi/query-core';
 import { createEffect, on, onCleanup } from 'solid-js';
@@ -31,7 +31,7 @@ export type {
     QueryOutput,
     StitchLike,
     StitchQuery,
-    StitchQueryState,
+    StitchQueryResult,
 } from '@stitchapi/query-core';
 
 // ---------------------------------------------------------------------------
@@ -44,7 +44,7 @@ export type {
 export interface SolidStitchStore<T> {
     /** The reactive state — a Solid store proxy. Read fields inside tracking
      * scopes (effects, JSX) to re-run on change. */
-    readonly state: StitchQueryState<T>;
+    readonly state: StitchQueryResult<T>;
     /** Abort the in-flight run and re-run from scratch. */
     refetch: () => void;
     /** Abort the in-flight run, if any. */
@@ -152,7 +152,7 @@ function keyInputFor(input: unknown): unknown {
 // The store's seed value, read before the effect mirrors the first real snapshot
 // (the effect is non-deferred, so this is only ever visible for an instant). It
 // matches core's idle snapshot exactly so `state` is well-formed from the start.
-const IDLE_STATE: StitchQueryState<unknown> = {
+const IDLE_STATE: StitchQueryResult<unknown> = {
     status: 'idle',
     data: undefined,
     error: undefined,
@@ -172,8 +172,8 @@ function createStitchInternal<T>(
     // The Solid store we reconcile from the core query's snapshots. `reconcile`
     // does a structural diff so only the fields that actually changed notify
     // their dependents (mirrors core's identity-stable snapshots, fine-grained).
-    const [state, setState] = createStore<StitchQueryState<T>>(
-        IDLE_STATE as StitchQueryState<T>,
+    const [state, setState] = createStore<StitchQueryResult<T>>(
+        IDLE_STATE as StitchQueryResult<T>,
     );
 
     // Hold the latest `stitch` in a ref-like closure. A caller who passes an
@@ -315,12 +315,12 @@ export function createStitchStream<T>(
 }
 
 // ---------------------------------------------------------------------------
-// queryOptions — optional TanStack Query adapter
+// stitchQueryOptions — optional TanStack Query adapter
 // ---------------------------------------------------------------------------
 
-// IDENTICAL to `@stitchapi/react`'s `queryOptions` (no framework import) — the
-// POJO shape `@tanstack/solid-query`'s `createQuery(options)` consumes is the same
-// `{ queryKey, queryFn }` TanStack uses everywhere.
+// IDENTICAL to `@stitchapi/react`'s `stitchQueryOptions` (no framework import) —
+// the POJO shape `@tanstack/solid-query`'s `createQuery(options)` consumes is the
+// same `{ queryKey, queryFn }` TanStack uses everywhere.
 
 /** The plain object {@link stitchQueryOptions} returns — structurally compatible with
  * TanStack Query's `createQuery(options)` without importing the library. */
@@ -363,11 +363,3 @@ export function stitchQueryOptions<T>(
         queryFn: () => Promise.resolve(stitch(input)),
     };
 }
-
-/**
- * @deprecated Renamed to {@link stitchQueryOptions} — a bare `queryOptions` collides
- * with TanStack Query's own `queryOptions` export when both are imported. See
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
- * `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export const queryOptions = stitchQueryOptions;
