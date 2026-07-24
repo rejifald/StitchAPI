@@ -7,7 +7,7 @@ Stable [Standard Schema](https://standardschema.dev) fingerprint strategy for
 
 It walks Effect's `.ast` into a canonical structural descriptor hashed into an
 opaque, synchronous token. The token changes iff the schema's validation/shape
-semantics change. It is an **allowlist**: it abstains (returns `value: null`, so
+semantics change. It is an **allowlist**: it abstains (returns `token: null`, so
 the cache falls back to re-validate-on-hit) on anything it can't soundly capture —
 `Transformation`, `Refinement`, `Suspend`, and `Declaration` AST nodes.
 

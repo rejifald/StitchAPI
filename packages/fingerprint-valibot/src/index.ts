@@ -7,7 +7,7 @@
 // `[baseSchema, ...actions]`, each action a `{ kind, type, requirement }` record.
 //
 // The walker is an ALLOWLIST: it only emits a fingerprint for constructs whose
-// validation/shape semantics it fully captures, and ABSTAINS (`value: null`) on
+// validation/shape semantics it fully captures, and ABSTAINS (`token: null`) on
 // anything else — opaque `check`/`custom`/`transform`/`brand` pipe actions, any
 // action whose `requirement` is a function (hidden, unserialisable logic), an
 // injected `default`, or any unknown node. Abstain is sound: the cache falls
@@ -245,10 +245,10 @@ export const valibotFingerprinter: SchemaFingerprinter = {
             // `vfp1` tags the descriptor format: bump it to force a one-time,
             // safe re-fingerprint if the descriptor scheme ever changes.
             const token = hash(`vfp1|${describe(schema)}`);
-            return { token, value: token, strength: 'strong' };
+            return { token, strength: 'strong' };
         } catch {
             // ABSTAIN sentinel or any unexpected introspection failure → abstain.
-            return { token: null, value: null, strength: 'strong' };
+            return { token: null, strength: 'strong' };
         }
     },
 };

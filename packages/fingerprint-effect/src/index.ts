@@ -8,7 +8,7 @@
 //
 // The walker is an ALLOWLIST: it only emits a fingerprint for AST nodes whose
 // validation/shape semantics it fully captures, and ABSTAINS (returns
-// `value: null`) on anything else — `Transformation` (`.transform`/applied
+// `token: null`) on anything else — `Transformation` (`.transform`/applied
 // defaults), `Refinement` (an opaque predicate), `Suspend` (lazy/recursive),
 // `Declaration`, or any unknown `_tag`. Abstain is sound: the cache falls back to
 // re-validate-on-hit rather than trust a token that might collide across
@@ -155,10 +155,10 @@ export const effectFingerprinter: SchemaFingerprinter = {
             // `efp1` tags the descriptor format: bump it to force a one-time,
             // safe re-fingerprint if the descriptor scheme ever changes.
             const token = hash(`efp1|${describeAst(ast)}`);
-            return { token, value: token, strength: 'strong' };
+            return { token, strength: 'strong' };
         } catch {
             // ABSTAIN sentinel or any unexpected introspection failure → abstain.
-            return { token: null, value: null, strength: 'strong' };
+            return { token: null, strength: 'strong' };
         }
     },
 };
