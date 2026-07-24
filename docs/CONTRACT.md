@@ -541,6 +541,10 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     rich shape is assignable to the minimal one (a real stitch satisfies both), so it is **de-listed**.
     With this, **R5 is fully cleared** — the baseline is now 6, exactly R6's P20 backlog
     (multipart/stream/sse/throttle/hooks/input → `Scalar | AtLeastOne`).
+-   **P24 (Sentry capture)** `@stitchapi/sentry`'s `SentrySinkOptions.captureErrors`+`captureDrift`
+    (shared `capture` prefix) fold into `capture?: boolean | AtLeastOne<SentryCaptureOptions>` —
+    `capture: true`/omitted keeps the defaults (errors on, drift off), `false` disables both, and the
+    `{ errors, drift }` envelope sets them independently. Genuine breaking flat→envelope, no alias.
 
 ## 7. Enforcement
 
