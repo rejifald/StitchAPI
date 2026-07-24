@@ -162,3 +162,28 @@ test('re-fetches the token when the resource server rejects it (401)', async () 
     expect(calls[0]!.headers['authorization']).toBe('Bearer STALE');
     expect(calls[1]!.headers['authorization']).toBe('Bearer FRESH');
 });
+
+test('refreshOn accepts a bare status number (P7): a 419 wall forces one refresh', async () => {
+    server.route('POST', '/token', {
+        body: (i: number) => ({
+            access_token: i === 0 ? 'STALE' : 'FRESH',
+            token_type: 'Bearer',
+            expires_in: 3600,
+        }),
+    });
+    // The resource rejects the stale token with 419 (not the default 401). `refreshOn: 419` — a bare
+    // `StatusMatch` number (CONTRACT.md P7, `419` ≡ `[419]`) — classifies it as the wall, so the
+    // strategy forces exactly one refresh and the retry succeeds.
+    server.route('GET', '/data', {
+        statuses: [419, 200],
+        body: { ok: true },
+    });
+
+    const data = protectedStitch('/data', { refreshOn: 419 });
+    await expect(data()).resolves.toEqual({ ok: true });
+
+    expect(server.callCount('/token')).toBe(2); // initial fetch + forced refresh on the 419 wall
+    const calls = server.calls('/data');
+    expect(calls[0]!.headers['authorization']).toBe('Bearer STALE');
+    expect(calls[1]!.headers['authorization']).toBe('Bearer FRESH');
+});

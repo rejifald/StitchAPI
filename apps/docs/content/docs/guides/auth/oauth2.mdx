@@ -40,8 +40,9 @@ committed. `scope` is an optional space-delimited scope string.
 
 The token is cached and auto-refreshed: `refreshSkew` (default `30_000`)
 refreshes it that many milliseconds before expiry, so it is never used
-mid-flight, and `refreshOn` (default `[401]`) lists the statuses that mean the
-token was rejected and force a fresh fetch plus retry.
+mid-flight, and `refreshOn` (default `[401]`) is the `StatusMatch` — a status, a
+list, or a predicate — that means the token was rejected and forces a fresh fetch
+plus retry (`refreshOn: 419` ≡ `refreshOn: [419]`).
 
 Give two stitches the same `key` plus a shared `store` and one token serves them
 all — across stitches and across workers, surviving restarts. See

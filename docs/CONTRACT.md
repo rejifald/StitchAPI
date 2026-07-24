@@ -436,7 +436,6 @@ will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 
 | Sev  | Current                                                            | Proposed                                | Rule |
 | ---- | ------------------------------------------------------------------ | --------------------------------------- | ---- |
-| High | `retry.on` + rate-limit `on` (`number[]`)                          | `number[] ｜ (status)=>boolean`         | P7   |
 | High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes         | hoist or qualify                        | P9   |
 | High | `queryOptions` bare in vue/solid/svelte/angular                    | `stitchQueryOptions`                    | P16  |
 | Med  | `OAuth2Opts`, `CookieSessionOpts`                                  | `OAuth2Options`, `CookieSessionOptions` | P3   |
@@ -464,9 +463,13 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `CacheOptions.maxEntries`→`entries`, `paginate.max`→`pages`; runtime prefers the new
     field. (`CircuitOptions.failureThreshold`→`failures` is deferred to the P17 CircuitOptions
     overhaul, where its required-ness + `cooldownMs`/`halfOpenAfterMs` are handled together.)
--   **P7** `RetryOptions.on` (and the folded `throttle.on`) now accept
-    `number[] | (status) => boolean` — additive widening, no alias. The engine normalizes via the
-    shared `acceptsStatus` matcher.
+-   **P7** the exported `StatusMatch` (`number | number[] | (status) => boolean`) is the one shape
+    for every status-classification slot: `RetryOptions.on`, `throttle.on`, `StitchConfig.acceptStatus`,
+    and the auth strategies' `refreshOn` (oauth2 + cookieSession). A bare status is shorthand for its
+    one-element list (`404` ≡ `[404]`); additive widening, no alias. Every reader normalizes through the
+    shared `acceptsStatus` matcher, hoisted from the engine into `resilience.ts` so `auth` shares it. The
+    `T | T[]` list-widening is uniform too — `DriftOptions.ignore` and `CacheOptions.vary` now accept a
+    bare string (`'x'` ≡ `['x']`), matching `DriftOptions.severity`; each consumer normalizes to the array.
 -   **P14** `rateLimit` folded into `throttle` (`throttle.delegate` / `throttle.on`); the top-level
     `rateLimit` is `@deprecated` (runtime prefers `throttle.* ?? rateLimit.*`). `PaginateOptions`
     extracted from the inline `paginate` shape (named + exported). `throttle: { rate, delegate }` is

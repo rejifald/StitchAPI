@@ -48,9 +48,10 @@ its credentials, resolved at call time with [`env()`](/docs/guides/auth/secret-r
 `cookie` selects what to keep: a single cookie name, or `'*'` (equivalently
 `jar: true`) to capture and replay the whole Set-Cookie jar.
 
-`refreshOn` re-runs the login on a status code (default `[401]`); `refreshWhen`
-re-runs it on a content predicate, for soft 200 walls where a login page is
-served with a `200`. Give two stitches the same `key` plus a shared `store` to
+`refreshOn` re-runs the login on a matched status — a `StatusMatch`: a number, a
+list, or a predicate (default `[401]`, and `refreshOn: 401` ≡ `refreshOn: [401]`);
+`refreshWhen` re-runs it on a content predicate, for soft 200 walls where a login
+page is served with a `200`. Give two stitches the same `key` plus a shared `store` to
 share one session. See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
 

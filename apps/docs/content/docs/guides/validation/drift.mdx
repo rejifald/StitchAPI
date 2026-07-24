@@ -77,11 +77,12 @@ const getUser = stitch({
 });
 ```
 
-`ignore: string[]` suppresses soft drift findings whose path matches an entry.
-Use it for API fields you know about but have chosen not to model — acknowledged
-but unconsumed surface. The grammar: nested keys join with `.`, array elements
-collapse to `[]` (so `items[].meta` suppresses every element's `meta`), and a
-bare prefix (`meta`) suppresses that key and everything beneath it.
+`ignore: string | string[]` suppresses soft drift findings whose path matches an
+entry — a bare string is shorthand for a one-element list (`ignore: 'meta'` ≡
+`ignore: ['meta']`). Use it for API fields you know about but have chosen not to
+model — acknowledged but unconsumed surface. The grammar: nested keys join with
+`.`, array elements collapse to `[]` (so `items[].meta` suppresses every element's
+`meta`), and a bare prefix (`meta`) suppresses that key and everything beneath it.
 
 A stale entry in `ignore` is harmless — you keep ignoring a field that is still
 present.

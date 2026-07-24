@@ -3,13 +3,14 @@
 // a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
 import { compact } from './compact';
 import { fetchAdapter } from './http-adapter';
-import { parseRetryAfter } from './resilience';
+import { acceptsStatus, parseRetryAfter } from './resilience';
 import type {
     Adapter,
     AdapterResponse,
     AuthContext,
     AuthStrategy,
     RunContext,
+    StatusMatch,
     Stitch,
     StitchInput,
 } from './types';
@@ -268,8 +269,8 @@ export interface OAuth2Options {
      * cannot override the `Authorization` header that `clientAuth: 'basic'` sets.
      */
     headers?: Record<string, string>;
-    /** Statuses that mean the token was rejected and should force a refresh. Default [401]. */
-    refreshOn?: number[];
+    /** Status(es) — a number, list, or predicate — that mean the token was rejected and should force a refresh (CONTRACT.md P7: `401` ≡ `[401]`). Default [401]. */
+    refreshOn?: StatusMatch;
     /** Refresh this long BEFORE the token's expiry, so it is never used mid-flight — `30_000`, `'30s'`. Default 30s. */
     refreshSkew?: number | string;
     /** Store namespace — give two stitches the same `key` + a shared `store` to share one token. Default: `tokenUrl`. */
@@ -316,7 +317,7 @@ function singleFlight<T>(): (key: string, run: () => Promise<T>) => Promise<T> {
  * and survive restarts; a rejected token (status in `refreshOn`) forces a fresh fetch + retry.
  */
 export function oauth2(opts: OAuth2Options): AuthStrategy {
-    const refreshOn = opts.refreshOn ?? [401];
+    const matchRefresh = acceptsStatus(opts.refreshOn ?? [401]);
     const skew = parseDuration(opts.refreshSkew) ?? 30_000;
     const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const tenancy = opts.tenancy ?? 'app';
@@ -440,7 +441,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
             req.headers['authorization'] = `Bearer ${await tokenFor(ctx)}`;
         },
         shouldRefresh(res) {
-            return refreshOn.includes(res.status);
+            return matchRefresh(res.status);
         },
         async refresh(ctx) {
             // Force a fresh token, ignoring the cache — but simultaneous 401s
@@ -499,8 +500,8 @@ export interface CookieSessionOptions {
      * identity to that user's credentials — credentials still never originate from the caller.
      */
     loginInput?: (principal?: string) => StitchInput;
-    /** Statuses that mean "the wall" and should trigger a re-login. Default [401]. */
-    refreshOn?: number[];
+    /** Status(es) — a number, list, or predicate — that mean "the wall" and should trigger a re-login (CONTRACT.md P7: `401` ≡ `[401]`). Default [401]. */
+    refreshOn?: StatusMatch;
     /** Inspect the response (status + body) for a soft wall — e.g. a 200 that is actually a login page. */
     refreshWhen?: (res: AdapterResponse) => boolean;
     /** Vault namespace — give two stitches the same `key` + a shared seam/store to share one session. */
@@ -537,7 +538,7 @@ export interface CookieSessionOptions {
 }
 
 export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
-    const refreshOn = opts.refreshOn ?? [401];
+    const matchRefresh = acceptsStatus(opts.refreshOn ?? [401]);
     const jarMode = opts.jar === true || opts.cookie === '*';
     const tenancy = opts.tenancy ?? 'principal';
     const baseKey = (jarMode ? 'jar:' : 'cookie:') + (opts.key ?? opts.cookie);
@@ -602,7 +603,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
                 retryAfter: parseRetryAfter(headers['retry-after']),
             });
         }
-        if (refreshOn.includes(status))
+        if (matchRefresh(status))
             return { phase, status, category: 'unauthenticated' };
         return { phase, status, category: 'unknown' };
     };
@@ -742,7 +743,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
             }
         },
         shouldRefresh(res) {
-            return refreshOn.includes(res.status) || !!opts.refreshWhen?.(res);
+            return matchRefresh(res.status) || !!opts.refreshWhen?.(res);
         },
         async refresh(ctx) {
             const { key, principal } = sessionFor(ctx);

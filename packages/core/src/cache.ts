@@ -360,10 +360,11 @@ export function createCache(opts: CacheControllerOptions): CacheController {
         m.toUpperCase(),
     );
     const maxEntries = config.entries ?? 1000;
-    const explicitVary = config.vary?.length
-        ? config.vary
-              .map((n) => n.toLowerCase())
-              .filter((n) => !NEVER_VARY.has(n))
+    // P7: a bare `vary` string is shorthand for a one-element list — normalize before keying.
+    const varyList =
+        typeof config.vary === 'string' ? [config.vary] : config.vary;
+    const explicitVary = varyList?.length
+        ? varyList.map((n) => n.toLowerCase()).filter((n) => !NEVER_VARY.has(n))
         : undefined;
     // Fold the Standard Schema fingerprint (ADR 0004) ONCE, here at controller creation (which is
     // once per stitch — `ensureCache` memoises it). It resolves three things from the stitch's

@@ -32,9 +32,10 @@ const getUser = stitch({
 `attempts: 3` means up to two retries; the default is `1`, which disables
 retrying.
 
-`on` lists the response status codes that trigger a retry. It defaults to
-`[429, 502, 503, 504]` — the usual transient set — and you narrow or widen it
-per stitch.
+`on` selects the response status codes that trigger a retry — a `StatusMatch`: a
+single status, a list, or a predicate `(status) => boolean` (`on: 429` ≡
+`on: [429]`). It defaults to `[429, 502, 503, 504]` — the usual transient set —
+and you narrow or widen it per stitch.
 
 `backoff` chooses how long to wait between attempts, paced from `baseDelay` and
 clamped to `maxDelay`: `'expo'` doubles the delay each attempt, `'expo-jitter'`

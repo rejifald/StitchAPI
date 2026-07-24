@@ -13,6 +13,7 @@ import {
     CircuitOpenError,
     RateLimitError,
     TimeoutError,
+    acceptsStatus,
     backoffDelay,
     createCircuit,
     parseRetryAfter,
@@ -541,17 +542,6 @@ function abortReason(signal: AbortSignal): Error {
     return reason instanceof Error
         ? reason
         : new Error('the operation was aborted');
-}
-
-// Normalize `acceptStatus` (a number list, a predicate, or unset) into a single predicate. Unset →
-// accept nothing (every `>= 400` still throws). Shared by the buffered/paginated `attemptLoop` and
-// the streaming path so both honour the same per-stitch policy.
-function acceptsStatus(
-    accept: number[] | ((status: number) => boolean) | undefined,
-): (status: number) => boolean {
-    if (accept === undefined) return () => false;
-    if (typeof accept === 'function') return accept;
-    return (status) => accept.includes(status);
 }
 
 // Materialize a streaming-path error body for StitchError.body. A streaming adapter hands back the

@@ -7,12 +7,28 @@ import type {
     CircuitOptions,
     Clock,
     RetryOptions,
+    StatusMatch,
     StitchStore,
     ThrottleOptions,
 } from './types';
 import { parseDuration, parseRate, systemClock } from './util';
 
 export class TimeoutError extends Error {}
+
+/**
+ * Normalize a status-match field (a bare number, a number list, a predicate, or unset) into a
+ * single predicate — the shared CONTRACT.md P7 matcher every status-match slot runs through
+ * (`retry.on`, `throttle.on`, `acceptStatus`, the auth strategies' `refreshOn`, …). Unset →
+ * accept nothing.
+ */
+export function acceptsStatus(
+    accept: StatusMatch | undefined,
+): (status: number) => boolean {
+    if (accept === undefined) return () => false;
+    if (typeof accept === 'function') return accept;
+    if (typeof accept === 'number') return (status) => status === accept;
+    return (status) => accept.includes(status);
+}
 
 /**
  * Backoff (ms) BEFORE the given 1-based `attempt` (attempt=2 is the first retry).
