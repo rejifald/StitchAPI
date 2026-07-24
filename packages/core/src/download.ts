@@ -84,12 +84,12 @@ export const downloadSurface: Surface<StitchInput, DownloadResult> = {
         responseType: 'blob',
     }),
     interpret: (res): SurfaceOutcome<DownloadResult> => {
-        const value: DownloadResult = { blob: res.body as Blob };
+        const data: DownloadResult = { blob: res.body as Blob };
         const filename =
             filenameFromDisposition(res.headers['content-disposition']) ??
             filenameFromUrl(res.url);
-        if (filename !== undefined) value.filename = filename;
-        return { ok: true, value };
+        if (filename !== undefined) data.filename = filename;
+        return { ok: true, data };
     },
 };
 

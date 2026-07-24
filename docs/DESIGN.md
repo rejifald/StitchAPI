@@ -247,7 +247,7 @@ type StitchEvent<T> =
   | { type: 'progress'; phase: 'auth'|'request'|'throttled'|'retry'|'paginate'; ... }
   | { type: 'delta';    chunk }          // streamed body / LLM tokens (future kinds)
   | { type: 'drift';    level: 'error'|'warn'|'info'; path; change }
-  | { type: 'result';   value: T }        // validated, unwrapped
+  | { type: 'result';   data: T }         // validated, unwrapped
   | { type: 'error';    error }
   | { type: 'done';     timing; usage };
 ```
@@ -403,7 +403,7 @@ const metadata = stitch({
 for await (const ev of listWebsites.stream()) {
     if (ev.type === 'progress' && ev.phase === 'retry') log('retrying…');
     if (ev.type === 'drift' && ev.level === 'info') log('new field:', ev.path);
-    if (ev.type === 'result') render(ev.value);
+    if (ev.type === 'result') render(ev.data);
 }
 ```
 

@@ -375,11 +375,9 @@ function makeInspection<T>(
     error: StitchError | null,
     source: Inspection<T>['source'],
 ): Inspection<T> {
-    // `data` is canonical; `value` is co-set as the @deprecated alias (CONTRACT.md P5).
     // `source` (ADR 0019) rides as a normal enumerable field — the interpretant of `raw`.
     const wrapper = {
         data: value,
-        value,
         findings,
         status,
         error,

@@ -298,7 +298,7 @@ interface StoredEntry {
 }
 
 export interface CacheHit {
-    value: unknown;
+    data: unknown;
     status: number;
 }
 
@@ -473,7 +473,7 @@ export function createCache(opts: CacheControllerOptions): CacheController {
             ): CacheHit | null => {
                 if (entry.v === undefined) return null;
                 remember(k);
-                return { value: entry.v, status: entry.s ?? 200 };
+                return { data: entry.v, status: entry.s ?? 200 };
             };
 
             return {

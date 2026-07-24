@@ -157,7 +157,7 @@ describe('Surface dispatch — graphql is no longer special-cased', () => {
             id: 'upper',
             interpret: (res) => ({
                 ok: true,
-                value: (res.body as { msg: string }).msg.toUpperCase(),
+                data: (res.body as { msg: string }).msg.toUpperCase(),
             }),
         };
         const s = stitch({ kind: upper, url: server.url + '/u' });

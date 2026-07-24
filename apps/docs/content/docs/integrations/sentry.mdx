@@ -64,7 +64,7 @@ Options: `{ lifecycle?, captureErrors?, captureDrift? }`.
     — it can carry `?api_key=…`), status, attempt counts, drift
     path/level/change, phase, and timing. It never sends `event.input` (its
     headers still hold the live `authorization` / `cookie`), the response
-    `value`, or a `delta` chunk — safe on a secret-bearing seam regardless of
+    `data`, or a `delta` chunk — safe on a secret-bearing seam regardless of
     core's trace redaction.
 </Callout>
 
