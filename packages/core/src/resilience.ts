@@ -241,25 +241,39 @@ export class CircuitOpenError extends Error {
  * OUTER gate/circuit — owned by the host — decides the backoff (issue #145). Carries the structured
  * signal that gate needs: the `status`, the `retryAfter` parsed from `Retry-After` (delta-seconds
  * OR HTTP-date; `undefined` when the header is absent/unparseable), and the raw `response` so the
- * host can read other rate headers (`X-RateLimit-*`, etc.). The full `response` rides on the live
- * instance only — never the serialized `error` event — so it cannot leak into a trace sink.
+ * host can read other rate headers (`X-RateLimit-*`, etc.). `attempts`/`body`/`url` mirror
+ * {@link StitchError}'s field set (CONTRACT.md P10), lifted from the response/run state at
+ * construction. The full `response` rides on the live instance only — never the serialized `error`
+ * event — so it cannot leak into a trace sink.
  */
 export class RateLimitError extends Error {
     readonly status: number;
     /** `Retry-After` parsed to ms (delta-seconds OR HTTP-date); `undefined` when absent/unparseable. */
     readonly retryAfter: number | undefined;
+    /** Attempts made before the rate-limit outcome surfaced (1 = the first request). Mirrors `StitchError.attempts` (P10). */
+    readonly attempts: number;
+    /** The parsed body of the rate-limited response, lifted from `response.body` (P10). */
+    readonly body?: unknown;
+    /** The final request URL of the rate-limited response, when the transport exposes it (P10). */
+    readonly url?: string;
     readonly response: AdapterResponse;
     constructor(opts: {
         status: number;
         retryAfter?: number | undefined;
         response: AdapterResponse;
+        attempts?: number | undefined;
         message?: string;
     }) {
         super(opts.message ?? `rate limited (HTTP ${opts.status})`);
         this.name = 'RateLimitError';
         this.status = opts.status;
         this.retryAfter = opts.retryAfter;
+        this.attempts = opts.attempts ?? 0;
         this.response = opts.response;
+        // Lift the P10 fields off the response at construction so the error matches StitchError's
+        // shape without the caller reaching into `.response`.
+        if (opts.response.body !== undefined) this.body = opts.response.body;
+        if (opts.response.url !== undefined) this.url = opts.response.url;
     }
 }
 
