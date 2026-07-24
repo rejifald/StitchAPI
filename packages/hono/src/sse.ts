@@ -5,114 +5,28 @@
 // client disconnects, Hono aborts the response — the helper calls the iterator's `return()` so the
 // upstream stitch stream is torn down rather than left running.
 //
+// The frame types, the `delta`/`error` shorthand folds, and the secure-by-default error framing are
+// shared with every other HTTP adapter via `stitchapi/sse-emit`; this file keeps only Hono's driver.
+//
 // Edge-safe: built entirely on Hono's `streamSSE` (Fetch/Web Streams) — no `node:*`.
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { SSEMessage, SSEStreamingApi } from 'hono/streaming';
-import type { StitchEvent } from 'stitchapi';
+import {
+    DEFAULT_ERROR_DATA,
+    type SseEmitOptions,
+    type StitchErrorEvent,
+    type StitchEventSource,
+    defaultData,
+    resolveDelta,
+    resolveError,
+    toErrorEvent,
+} from 'stitchapi/sse-emit';
 
-/** Anything `streamStitchSse` can drive: a stitch `.stream()` generator, or any event iterable. */
-export type StitchEventSource<T> =
-    | AsyncIterable<StitchEvent<T>>
-    | AsyncGenerator<StitchEvent<T>, void>;
+export type { StitchEventSource };
 
-/** The terminal `error` event a stitch stream emits — carries `message`, `status`, `attempts`. */
-type StitchErrorEvent = Extract<StitchEvent, { type: 'error' }>;
-
-/** Shape a `delta` chunk into the SSE frame `data`. */
-type DeltaShaper = (chunk: unknown) => string;
-/** Shape a terminal `error` event into the SSE frame `data`. */
-type ErrorShaper = (event: StitchErrorEvent) => string;
-
-// How each `delta` becomes a message. The bare {@link DeltaShaper} form (`delta: (c) => …`) is
-// shorthand for `{ data: (c) => … }`.
-interface DeltaFrameOptions {
-    /**
-     * Map a `delta` chunk to the SSE message `data` string. The default JSON-stringifies the chunk
-     * (a string chunk is sent verbatim). Pull text out of a structured chunk with, e.g.,
-     * `(c) => c.choices[0].delta.content ?? ''`.
-     */
-    data?: DeltaShaper;
-    /**
-     * The SSE `event:` field for each delta message (default none). Set it to label the stream's
-     * messages on the client (`event: 'token'`).
-     */
-    event?: string;
-    /**
-     * Provide an `id:` line per delta message (the SSE last-event id), e.g. for resumable streams.
-     * Receives the chunk and the zero-based frame index.
-     */
-    id?: (chunk: unknown, index: number) => string;
-}
-
-// How the terminal `error` becomes the final message. The bare {@link ErrorShaper} form
-// (`error: (e) => …`) is shorthand for `{ data: (e) => … }`.
-interface ErrorFrameOptions {
-    /**
-     * Shape the SSE `data` written for a terminal `error` event (or an uncaught throw mid-stream,
-     * normalised to an error event). **Default: a generic token (`data: error`)** — the raw
-     * `event.message` is deliberately *not* echoed, because it can disclose internal network
-     * topology (a transport failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or
-     * the upstream's status (`HTTP 401`) to an untrusted client. Opt in with `(e) => e.message`
-     * when the upstream messages are known safe, or return your own payload
-     * (e.g. `() => JSON.stringify({ error: 'stream failed' })`).
-     */
-    data?: ErrorShaper;
-    /** The `event:` name of the terminal error message. Default `'error'`. */
-    event?: string;
-    /**
-     * Observe the real failure, server-side (a stitch `error` event, or a throw) — use it to
-     * log/trace. It does **not** shape the client-facing frame: the SSE `data` sent to the client
-     * is controlled by {@link ErrorFrameOptions.data} (a generic token by default), so the raw
-     * message reaches your logs here but not the client.
-     */
-    observe?: (err: unknown) => void;
-}
-
-export interface StreamStitchSseOptions {
-    /**
-     * How each `delta` becomes a message. Pass a **function** as shorthand for `{ data }`
-     * (`delta: (c) => c.text`), or the full `{ data, event, id }` object to set the SSE
-     * `event:` / `id:` lines too.
-     */
-    delta?: DeltaShaper | DeltaFrameOptions;
-    /**
-     * How the terminal error becomes the final message. Pass a **function** as shorthand for
-     * `{ data }` (`error: (e) => e.message`), or the full `{ data, event, observe }` object. By
-     * default the client gets a generic `data: error` token — the raw message is withheld to
-     * avoid disclosing internal topology.
-     */
-    error?: ErrorShaper | ErrorFrameOptions;
-}
-
-// Expand the function-shorthand form of each frame option to its full config object.
-const asDelta = (o: DeltaShaper | DeltaFrameOptions = {}): DeltaFrameOptions =>
-    typeof o === 'function' ? { data: o } : o;
-const asError = (o: ErrorShaper | ErrorFrameOptions = {}): ErrorFrameOptions =>
-    typeof o === 'function' ? { data: o } : o;
-
-function defaultData(chunk: unknown): string {
-    return typeof chunk === 'string' ? chunk : JSON.stringify(chunk);
-}
-
-// The generic token written as an `error` message's `data` by default: the raw upstream message is
-// withheld so an internal hostname (`getaddrinfo ENOTFOUND …`) or the upstream's status (`HTTP 401`)
-// never reaches the client. Override with `error.data`.
-const DEFAULT_ERROR_DATA = 'error';
-
-// Normalise a thrown value into the terminal `error` event shape, so an `error.data` opt-in sees a
-// consistent argument whether the failure arrived as a surfaced `error` event or an unexpected
-// throw. `attempts`/`at` are best-effort placeholders — an `error.data` hook keys off `name`/`message`.
-function toErrorEvent(err: unknown): StitchErrorEvent {
-    const e = err instanceof Error ? err : new Error(String(err));
-    return {
-        type: 'error',
-        name: e.name,
-        message: e.message,
-        attempts: 0,
-        at: 0,
-    };
-}
+/** How each `delta` / terminal `error` becomes an SSE message (see {@link SseEmitOptions}). */
+export type StreamStitchSseOptions = SseEmitOptions;
 
 /**
  * Stream a stitch's events to the client as SSE. Returns the `Response` produced by Hono's
@@ -140,8 +54,8 @@ export function streamStitchSse<T>(
     source: StitchEventSource<T>,
     options: StreamStitchSseOptions = {},
 ): Response {
-    const delta = asDelta(options.delta);
-    const error = asError(options.error);
+    const delta = resolveDelta(options.delta);
+    const error = resolveError(options.error);
     const toData = delta.data ?? defaultData;
     const errorEvent = error.event ?? 'error';
     return streamSSE(c, async (stream: SSEStreamingApi) => {
