@@ -31,7 +31,7 @@ describe('seam.graphql() member', () => {
         server.route('POST', '/graphql', { body: { data: { thing: 42 } } });
         const api = seam({ baseUrl: server.url, headers: { 'x-seam': 'yes' } });
 
-        const q = api.graphql({ query: '{ thing }' });
+        const q = api.graphql({ document: '{ thing }' });
 
         // kind round-trips as the graphql surface id.
         const json = JSON.parse(JSON.stringify(q.__config)) as {
@@ -52,7 +52,7 @@ describe('seam.graphql() member', () => {
         server.route('POST', '/gql', { body: { data: { ok: true } } });
         const api = seam({ baseUrl: server.url });
 
-        const q = api.graphql({ query: '{ ok }', path: '/gql' });
+        const q = api.graphql({ document: '{ ok }', path: '/gql' });
         await expect(q()).resolves.toEqual({ ok: true });
         expect(server.callCount('/gql')).toBe(1);
         expect(server.callCount('/graphql')).toBe(0);
@@ -62,7 +62,7 @@ describe('seam.graphql() member', () => {
         server.route('POST', '/graphql', { body: { data: { who: 'me' } } });
         const api = seam({ baseUrl: server.url });
 
-        const scoped = api.as('user-1').graphql({ query: '{ who }' });
+        const scoped = api.as('user-1').graphql({ document: '{ who }' });
         await expect(scoped()).resolves.toEqual({ who: 'me' });
         expect(server.callCount('/graphql')).toBe(1);
     });

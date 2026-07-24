@@ -16,7 +16,7 @@ import type {
 } from '../src/types';
 
 const cfg = (
-    o: { query?: string; method?: string; operationName?: string } = {},
+    o: { document?: string; method?: string; operationName?: string } = {},
 ): ResolvedStitchConfig => o;
 
 const base: AdapterRequest = {
@@ -40,7 +40,7 @@ const res = (body: unknown, status = 200): AdapterResponse => ({
 
 describe('graphqlSurface.buildRequest', () => {
     test('packs { query, variables } as a JSON POST, preserving the base request', () => {
-        const req = build(cfg({ query: '{ thing }' }), {
+        const req = build(cfg({ document: '{ thing }' }), {
             variables: { id: 1 },
         });
         expect(req.method).toBe('POST');
@@ -51,16 +51,16 @@ describe('graphqlSurface.buildRequest', () => {
     });
 
     test('variables fall back to input.body, then to {}', () => {
-        const fromBody = build(cfg({ query: 'q' }), { body: { a: 1 } });
+        const fromBody = build(cfg({ document: 'q' }), { body: { a: 1 } });
         expect((fromBody.body as { variables: unknown }).variables).toEqual({
             a: 1,
         });
-        const none = build(cfg({ query: 'q' }), {});
+        const none = build(cfg({ document: 'q' }), {});
         expect((none.body as { variables: unknown }).variables).toEqual({});
     });
 
     test('input.variables wins over input.body', () => {
-        const req = build(cfg({ query: 'q' }), {
+        const req = build(cfg({ document: 'q' }), {
             variables: { v: 1 },
             body: { b: 2 },
         });
@@ -75,14 +75,14 @@ describe('graphqlSurface.buildRequest', () => {
     });
 
     test('honours and upper-cases a configured method', () => {
-        const req = build(cfg({ query: 'q', method: 'put' }), {});
+        const req = build(cfg({ document: 'q', method: 'put' }), {});
         expect(req.method).toBe('PUT');
     });
 
     test('derives operationName from the first named operation in the query', () => {
         const req = build(
             cfg({
-                query: 'query findScene($id: ID!) { scene(id: $id) { id } }',
+                document: 'query findScene($id: ID!) { scene(id: $id) { id } }',
             }),
             { variables: { id: 's1' } },
         );
@@ -97,7 +97,9 @@ describe('graphqlSurface.buildRequest', () => {
         expect(
             (
                 build(
-                    cfg({ query: 'mutation Login($p: P!) { login(p: $p) }' }),
+                    cfg({
+                        document: 'mutation Login($p: P!) { login(p: $p) }',
+                    }),
                     {},
                 ).body as {
                     operationName?: string;
@@ -106,7 +108,7 @@ describe('graphqlSurface.buildRequest', () => {
         ).toBe('Login');
         expect(
             (
-                build(cfg({ query: 'subscription OnTick { tick }' }), {})
+                build(cfg({ document: 'subscription OnTick { tick }' }), {})
                     .body as {
                     operationName?: string;
                 }
@@ -115,11 +117,11 @@ describe('graphqlSurface.buildRequest', () => {
     });
 
     test('omits operationName for an anonymous document (shorthand or unnamed query)', () => {
-        for (const query of [
+        for (const document of [
             '{ thing }',
             'query($id: ID) { thing(id: $id) }',
         ]) {
-            const body = build(cfg({ query }), {}).body as Record<
+            const body = build(cfg({ document }), {}).body as Record<
                 string,
                 unknown
             >;
@@ -129,7 +131,10 @@ describe('graphqlSurface.buildRequest', () => {
 
     test('an explicit cfg.operationName overrides the derived name', () => {
         const body = build(
-            cfg({ query: 'query A { a } query B { b }', operationName: 'B' }),
+            cfg({
+                document: 'query A { a } query B { b }',
+                operationName: 'B',
+            }),
             {},
         ).body as { operationName?: string };
         expect(body.operationName).toBe('B');
@@ -137,7 +142,7 @@ describe('graphqlSurface.buildRequest', () => {
 
     test('cfg.operationName of "" suppresses the field even for a named query', () => {
         const body = build(
-            cfg({ query: 'query Named { x }', operationName: '' }),
+            cfg({ document: 'query Named { x }', operationName: '' }),
             {},
         ).body as Record<string, unknown>;
         expect('operationName' in body).toBe(false);
@@ -146,7 +151,7 @@ describe('graphqlSurface.buildRequest', () => {
     test('does not mistake a field or type named like a keyword for the operation', () => {
         // `queryStatus` field + `query` keyword: only the real operation `Dash` is picked up.
         const body = build(
-            cfg({ query: 'query Dash { queryStatus mutationCount }' }),
+            cfg({ document: 'query Dash { queryStatus mutationCount }' }),
             {},
         ).body as { operationName?: string };
         expect(body.operationName).toBe('Dash');

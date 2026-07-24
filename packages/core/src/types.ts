@@ -723,12 +723,12 @@ export interface StitchConfig {
     path?: string;
     /** Static default headers merged into every request. */
     headers?: Record<string, string>;
-    /** GraphQL query string (`kind: 'graphql'`). */
-    query?: string;
+    /** GraphQL document string (`kind: 'graphql'`) — sent as the request body's `query` field. */
+    document?: string;
     /**
-     * GraphQL `operationName` sent alongside `query` + `variables` (`kind: 'graphql'`). Omit to
-     * derive it from the first named operation in `query`; set it explicitly to override (e.g. a
-     * multi-operation document) or pass `''` to suppress the field entirely.
+     * GraphQL `operationName` sent alongside the document + `variables` (`kind: 'graphql'`). Omit
+     * to derive it from the first named operation in `document`; set it explicitly to override
+     * (e.g. a multi-operation document) or pass `''` to suppress the field entirely.
      */
     operationName?: string;
     /** Schemas validating params, query, body, headers, and (GraphQL) variables before the request. */
@@ -1206,16 +1206,23 @@ export interface StitchStore {
 // ---- Seam (a primitive stitches belong to) --------------------------------
 /**
  * The config a seam shares with every member as a fragment — {@link StitchConfig} minus the keys
- * that are intrinsically **per-endpoint**: the address (`path` / `url` / `method` / `query`) and
- * the request/response shape (`name` / `input` / `output` / `kind`). Everything cross-cutting —
- * `baseUrl`, `headers`, `auth`, `retry`, `throttle`, `timeout`, `circuit`, `idempotency`,
+ * that are intrinsically **per-endpoint**: the address (`path` / `url` / `method` / `document`)
+ * and the request/response shape (`name` / `input` / `output` / `kind`). Everything cross-cutting
+ * — `baseUrl`, `headers`, `auth`, `retry`, `throttle`, `timeout`, `circuit`, `idempotency`,
  * `paginate`, `pick`, `transform`, `arrayFormat`, `hooks`, `trace`, `store`, `cache`, `adapter`
  * — belongs here, so the type itself answers "what belongs at the seam". Members set the endpoint
  * keys.
  */
 export type SeamConfig = Omit<
     StitchConfig,
-    'path' | 'url' | 'method' | 'query' | 'name' | 'input' | 'output' | 'kind'
+    | 'path'
+    | 'url'
+    | 'method'
+    | 'document'
+    | 'name'
+    | 'input'
+    | 'output'
+    | 'kind'
 >;
 
 /**
@@ -1272,9 +1279,9 @@ export interface Seam {
     graphql<
         TExplicit = never,
         const C extends Partial<StitchConfig> & {
-            query: string;
+            document: string;
         } = Partial<StitchConfig> & {
-            query: string;
+            document: string;
         },
     >(
         config: C,

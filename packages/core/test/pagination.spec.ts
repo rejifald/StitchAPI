@@ -87,7 +87,8 @@ test('paginated GraphQL advances its cursor through the variables slot', async (
     const listUsers = graphql({
         baseUrl: server.url,
         path: '/gql',
-        query: 'query($after: String) { users(after: $after) { nodes pageInfo { endCursor hasNextPage } } }',
+        document:
+            'query($after: String) { users(after: $after) { nodes pageInfo { endCursor hasNextPage } } }',
         pick: 'data.users.nodes',
         paginate: {
             next: (body) => {

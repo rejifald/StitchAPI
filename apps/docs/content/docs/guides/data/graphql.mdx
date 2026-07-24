@@ -17,7 +17,7 @@ import { graphql } from 'stitchapi';
 const getUser = graphql<{ user: { id: string; name: string } }>({
     baseUrl: 'https://api.example.com',
     path: '/graphql',
-    query: `query GetUser($id: ID!) { user(id: $id) { id name } }`,
+    document: `query GetUser($id: ID!) { user(id: $id) { id name } }`,
 });
 
 // Variables travel in the input; the result is already picked from `data`.
@@ -28,7 +28,7 @@ const data = await getUser({ variables: { id: '1' } });
 
 `graphql()` is a thin wrapper over `stitch()`: it fixes `kind: 'graphql'`,
 `method: 'POST'`, and `pick: 'data'` for you. You supply the GraphQL document
-as `query`, plus a `baseUrl`/`path` pointing at the endpoint.
+as `document`, plus a `baseUrl`/`path` pointing at the endpoint.
 
 Pass GraphQL variables through the input's `variables` field at call time —
 `getUser({ variables: { id: '1' } })` — so one stitch serves every set of

@@ -177,7 +177,7 @@ test('the nudge is a hint with an out — silenced, and never fired for the case
         // even though `method` is unset here.
         graphql({
             baseUrl: server.url,
-            query: '{ me { id } }',
+            document: '{ me { id } }',
             idempotency: true,
         });
         expect(warn).not.toHaveBeenCalled();
