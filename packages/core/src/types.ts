@@ -647,26 +647,32 @@ export interface StitchConfig {
     bodyType?: 'json' | 'form' | 'multipart';
     /**
      * Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become
-     * field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`.
+     * field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`. A
+     * bare {@link MultipartNesting} string is shorthand for the object form —
+     * `multipart: 'dot'` ≡ `multipart: { nesting: 'dot' }` (CONTRACT.md P12); the opaque
+     * `multipart: {}` is rejected (P20).
      */
-    multipart?: MultipartOptions;
+    multipart?: MultipartNesting | AtLeastOne<MultipartOptions>;
     /**
      * Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body
      * (`'bytes'` default / `'lines'` / `'ndjson'` / `'json'`). `'json'` is the structural,
      * unframed streaming-JSON decoder (issue #111): one `delta` per complete value / top-level
      * array element, tolerant of internal newlines and concatenated values. Only meaningful for
-     * the `stream` surface.
+     * the `stream` surface. A bare {@link StreamDecode} string is shorthand for the object form —
+     * `stream: 'ndjson'` ≡ `stream: { decode: 'ndjson' }` (CONTRACT.md P12); the opaque
+     * `stream: {}` is rejected (P20).
      */
-    stream?: StreamOptions;
+    stream?: StreamDecode | AtLeastOne<StreamOptions>;
     /**
      * Resumable-SSE options (issue #71) — sibling to {@link StitchConfig.stream}, but for the `sse`
-     * surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once
+     * surface. **Off by default**: with no `sse` block the engine opens the live body once
      * (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as
      * `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry`
      * policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse`
-     * surface reads it.
+     * surface reads it. `true` is shorthand for `{ reconnect: true }` (CONTRACT.md P13); the
+     * object form must set at least one field (P20).
      */
-    sse?: SseOptions;
+    sse?: boolean | AtLeastOne<SseOptions>;
     /** How to read the response body. Default: auto by content-type. */
     responseType?: ResponseType;
     /**
@@ -696,8 +702,11 @@ export interface StitchConfig {
      * (e.g. a multi-operation document) or pass `''` to suppress the field entirely.
      */
     operationName?: string;
-    /** Schemas validating params, query, body, headers, and (GraphQL) variables before the request. */
-    input?: InputSchemas;
+    /**
+     * Schemas validating params, query, body, headers, and (GraphQL) variables before the request.
+     * At least one slot must be set — the opaque `input: {}` is rejected (CONTRACT.md P20).
+     */
+    input?: AtLeastOne<InputSchemas>;
     /**
      * Response schema, or a {@link DriftSpec} for leveled drift detection. Accepts any
      * {@link SchemaLike} — a raw Zod schema, any Standard Schema (Valibot, ArkType), or a
@@ -776,8 +785,8 @@ export interface StitchConfig {
      * - `'repeat'`            — `ids=1&ids=2`
      */
     arrayFormat?: 'indices' | 'brackets' | 'repeat';
-    /** Request/response/error/retry lifecycle hooks. */
-    hooks?: Hooks;
+    /** Request/response/error/retry lifecycle hooks. At least one — the opaque `hooks: {}` is rejected (CONTRACT.md P20). */
+    hooks?: AtLeastOne<Hooks>;
     /** Fragments to deep-merge under this config — strings, partials, or other stitches. */
     extends?: (Partial<StitchConfig> | Stitch | string)[];
     /** Test seam / custom transport. */
@@ -804,19 +813,35 @@ export interface StitchConfig {
 
 /**
  * A {@link StitchConfig} after {@link compose} has run: every authoring shorthand is expanded, so
- * the resilience fields are always their object form (a scalar `retry` / `timeout` / `cache` /
- * `throttle` literal is normalised to `{ attempts }` / `{ total }` / `{ ttl }` / `{ rate }`). This
- * is the shape the engine and {@link redactConfig} read — never the loose authoring union.
+ * the fields are always their object form (a scalar `retry` / `timeout` / `cache` / `throttle` /
+ * `stream` / `multipart` literal is normalised to `{ attempts }` / `{ total }` / `{ ttl }` /
+ * `{ rate }` / `{ decode }` / `{ nesting }`, the `sse: true` toggle to `{ reconnect: true }`, and
+ * the `hooks` / `input` envelopes to their chained/normalized object). This is the shape the engine
+ * and {@link redactConfig} read — never the loose authoring union.
  */
 export type ResolvedStitchConfig = Omit<
     StitchConfig,
-    'retry' | 'timeout' | 'cache' | 'idempotency' | 'throttle'
+    | 'retry'
+    | 'timeout'
+    | 'cache'
+    | 'idempotency'
+    | 'throttle'
+    | 'stream'
+    | 'multipart'
+    | 'sse'
+    | 'hooks'
+    | 'input'
 > & {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
     cache?: CacheOptions;
     idempotency?: IdempotencyOptions;
     throttle?: ThrottleOptions;
+    stream?: StreamOptions;
+    multipart?: MultipartOptions;
+    sse?: SseOptions;
+    hooks?: Hooks;
+    input?: InputSchemas;
 };
 
 /**
