@@ -8,7 +8,7 @@
 // its own status. The hooks fire ONCE per actual login attempt (inside the single-flight-guarded
 // `doRefresh`), never per coalesced waiter, and a throwing hook never crashes the call.
 //
-// These standalone stitches share ONE session across all callers, so they pass `scope: 'app'`
+// These standalone stitches share ONE session across all callers, so they pass `tenancy: 'app'`
 // explicitly — the fail-closed default `'principal'` would throw (no seam binds a principal).
 import {
     type AuthFailureResult,
@@ -73,7 +73,7 @@ test('onRefresh fires with { ok: true, status: 200 } after a successful cold log
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onRefresh: (r) => {
                 refreshes.push(r);
             },
@@ -112,7 +112,7 @@ test('onRefresh fires ONCE (not per-waiter) under concurrent cold callers sharin
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onRefresh: () => {
                 refreshCount++;
             },
@@ -149,7 +149,7 @@ test("onAuthFailure fires category 'unauthenticated' when the login returns 401 
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onAuthFailure: (f) => {
                 failures.push(f);
             },
@@ -190,7 +190,7 @@ test("onAuthFailure fires category 'rate-limited' + retryAfter when the login re
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onAuthFailure: (f) => {
                 failures.push(f);
             },
@@ -231,7 +231,7 @@ test("onAuthFailure fires category 'network' + error when the login stitch throw
             login: loginStitch(deadUrl),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onAuthFailure: (f) => {
                 failures.push(f);
             },
@@ -270,7 +270,7 @@ test('a throwing hook does not crash the stitch call', async () => {
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onRefresh: () => {
                 throw new Error('host bookkeeping blew up');
             },
@@ -300,7 +300,7 @@ test('hooks are absent → cookieSession behaves exactly as before (additive, no
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
         }),
     });
 

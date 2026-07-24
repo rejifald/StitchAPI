@@ -109,7 +109,7 @@ test('seam.as(principal) gives each principal its OWN session — no cross-princ
     expect((logins[1]!.body as { u: string }).u).toBe('B');
 });
 
-test('cookieSession fails closed: default scope throws when no principal is bound', async () => {
+test('cookieSession fails closed: default tenancy throws when no principal is bound', async () => {
     server.route('POST', '/login', {
         setCookie: { name: 'sid', value: 'OK' },
         body: { ok: true },
@@ -129,7 +129,7 @@ test('cookieSession fails closed: default scope throws when no principal is boun
     expect(server.callCount('/login')).toBe(0); // failed closed before any login
 });
 
-test("scope: 'app' is the explicit opt-in to ONE session shared across all callers", async () => {
+test("tenancy: 'app' is the explicit opt-in to ONE session shared across all callers", async () => {
     server.route('POST', '/login', {
         setCookie: { name: 'sid', value: 'OK' },
         body: { ok: true },
@@ -144,7 +144,7 @@ test("scope: 'app' is the explicit opt-in to ONE session shared across all calle
         auth: cookieSession({
             login: loginStitch(),
             cookie: 'sid',
-            scope: 'app',
+            tenancy: 'app',
             loginInput: (principal) => ({ body: { u: principal ?? 'app' } }),
         }),
     });
