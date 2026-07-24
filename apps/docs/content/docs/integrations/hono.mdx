@@ -60,7 +60,7 @@ never name another identity. **Borrow, don't own:** the middleware never calls
 Stream a streaming/SSE stitch's `.stream()` to the client as Server-Sent Events,
 via Hono's `streamSSE`. Each `delta` becomes a `data:` message; a terminal `error`
 (or a throw) becomes a final `event: error` message carrying a generic `error`
-token by default (opt in to a client-facing message with `errorData`); control
+token by default (opt in to a client-facing message with `error`); control
 events are consumed but not forwarded; and a client disconnect aborts the upstream
 stitch stream.
 
@@ -82,7 +82,7 @@ app.get('/chat', (c) => {
     return streamStitchSse(
         c,
         completion.stream({ body: { prompt: c.req.query('q') } }),
-        { data: (chunk) => (chunk as { data: string }).data },
+        { delta: (chunk) => (chunk as { data: string }).data },
     );
 });
 ```

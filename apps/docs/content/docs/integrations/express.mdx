@@ -66,7 +66,7 @@ crashing.
 Stream a streaming/SSE stitch's `.stream()` to the client as Server-Sent Events.
 Each `delta` becomes a `data:` frame; a terminal `error` (or a throw) becomes a
 final `event: error` frame carrying a generic `error` token by default (opt in
-to a client-facing message with `errorData`); control events are consumed but
+to a client-facing message with `error`); control events are consumed but
 not forwarded; and a client disconnect aborts the upstream stitch stream.
 
 ```ts
@@ -89,7 +89,7 @@ app.get('/chat', async (req, res) => {
         res,
         completion.stream({ body: { prompt: String(req.query.q ?? '') } }),
         {
-            data: (chunk) => (chunk as { data: string }).data,
+            delta: (chunk) => (chunk as { data: string }).data,
             req, // also tear down if the request socket signals disconnect
         },
     );

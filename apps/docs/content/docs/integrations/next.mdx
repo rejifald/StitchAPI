@@ -59,7 +59,7 @@ propagate the upstream status instead.
 `streamStitchSse` streams a stitch's events as `text/event-stream`. Each `delta`
 becomes one frame; an `error` event ends the stream with a named `event: error`
 frame whose `data` is a generic `error` token by default (opt in to a client-facing
-message with `errorData`); the terminal `result` closes it:
+message with `error`); the terminal `result` closes it:
 
 ```ts
 // app/api/chat/route.ts
@@ -70,7 +70,7 @@ import { streamStitchSse } from '@stitchapi/next';
 export async function POST(request: Request) {
     const { prompt } = await request.json();
     return streamStitchSse(chat({ body: { prompt } }).stream(), {
-        data: (c) => String(c), // pull text out of each chunk
+        delta: (c) => String(c), // pull text out of each chunk
         signal: request.signal, // abort the upstream if the client leaves
     });
 }

@@ -3,7 +3,7 @@
 import { isStitchError, stitchErrorResponse, streamStitchSse } from '../src';
 
 import type { StitchEvent } from 'stitchapi';
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 async function* events(
     ...evs: StitchEvent[]
@@ -41,7 +41,7 @@ function stitchError(message: string, status?: number): Error {
     return e;
 }
 
-// --- streamStitchSse ---------------------------------------------------------
+// --- streamStitchSse -----------------------------------------------------------
 
 describe('streamStitchSse', () => {
     test('streams each delta as an SSE frame and sets the content type', async () => {
@@ -61,35 +61,11 @@ describe('streamStitchSse', () => {
         expect(await res.text()).toBe('data: a\n\n');
     });
 
-    test('a `data` mapper pulls text out of a structured chunk', async () => {
+    test('a `delta` function shorthand pulls text out of a structured chunk', async () => {
         const res = streamStitchSse(events(delta({ text: 'hi' }), done), {
-            data: (c) => (c as { text: string }).text,
+            delta: (c) => (c as { text: string }).text,
         });
         expect(await res.text()).toBe('data: hi\n\n');
-    });
-
-    test('the data mapper receives the zero-based frame index', async () => {
-        const res = streamStitchSse(events(delta('a'), delta('b'), done), {
-            data: (c, index) => `${String(c)}#${index}`,
-        });
-        expect(await res.text()).toBe('data: a#0\n\ndata: b#1\n\n');
-    });
-
-    test('event accepts a function of the chunk for per-frame event names', async () => {
-        const res = streamStitchSse(
-            events(
-                delta({ kind: 'token', text: 'a' }),
-                delta({ kind: 'usage', text: 'b' }),
-                done,
-            ),
-            {
-                event: (c) => (c as { kind: string }).kind,
-                data: (c) => (c as { text: string }).text,
-            },
-        );
-        expect(await res.text()).toBe(
-            'event: token\ndata: a\n\nevent: usage\ndata: b\n\n',
-        );
     });
 
     test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
@@ -113,7 +89,7 @@ describe('streamStitchSse', () => {
         expect(body).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the error frame', async () => {
+    test('error (function shorthand) opts in to the raw message on the error frame', async () => {
         const res = streamStitchSse(
             events(delta('a'), {
                 type: 'error',
@@ -122,7 +98,7 @@ describe('streamStitchSse', () => {
                 attempts: 1,
                 at: 0,
             }),
-            { errorData: (e) => e.message },
+            { error: (e) => e.message },
         );
         const body = await res.text();
         expect(body).toBe(
@@ -130,37 +106,16 @@ describe('streamStitchSse', () => {
         );
     });
 
-    test('onError observes the real failure server-side while the client frame stays generic', async () => {
-        const onError = vi.fn();
-        const res = streamStitchSse(
-            events(delta('a'), {
-                type: 'error',
-                name: 'StitchError',
-                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
-                status: 502,
-                attempts: 1,
-                at: 0,
-            }),
-            { onError },
-        );
-        const body = await res.text();
-        expect(body).toBe('data: a\n\nevent: error\ndata: error\n\n');
-        expect(onError).toHaveBeenCalledTimes(1);
-        expect((onError.mock.calls[0]?.[0] as Error).message).toBe(
-            'getaddrinfo ENOTFOUND payments.internal.corp',
-        );
-    });
-
-    test('the event option labels each frame', async () => {
+    test('the delta.event option labels each frame', async () => {
         const res = streamStitchSse(events(delta('a'), done), {
-            event: 'token',
+            delta: { event: 'token' },
         });
         expect(await res.text()).toBe('event: token\ndata: a\n\n');
     });
 
-    test('the id option emits an id: line per frame with the zero-based index', async () => {
+    test('the delta.id option emits an id: line per frame with the zero-based index', async () => {
         const res = streamStitchSse(events(delta('a'), delta('b'), done), {
-            id: (chunk, i) => `${String(chunk)}-${i}`,
+            delta: { id: (chunk, i) => `${String(chunk)}-${i}` },
         });
         expect(await res.text()).toBe(
             'id: a-0\ndata: a\n\nid: b-1\ndata: b\n\n',
@@ -206,64 +161,87 @@ describe('streamStitchSse', () => {
         expect(body).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the throw path too', async () => {
+    test('error opts in to the raw message on the throw path too', async () => {
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield delta('a');
             throw new Error('stream blew up');
         }
-        const res = streamStitchSse(boom(), { errorData: (e) => e.message });
+        const res = streamStitchSse(boom(), { error: (e) => e.message });
         const body = await res.text();
         expect(body).toBe('data: a\n\nevent: error\ndata: stream blew up\n\n');
     });
 
-    test('onError observes the original thrown value on the throw path', async () => {
-        const thrown = new Error('stream blew up');
-        async function* boom(): AsyncGenerator<StitchEvent, void> {
-            yield delta('a');
-            throw thrown;
-        }
-        const onError = vi.fn();
-        const res = streamStitchSse(boom(), { onError });
-        await res.text();
-        expect(onError).toHaveBeenCalledTimes(1);
-        expect(onError.mock.calls[0]?.[0]).toBe(thrown);
+    test('error.observe sees the real failure even when the client gets the generic token', async () => {
+        const observed: unknown[] = [];
+        const res = streamStitchSse(
+            events(delta('a'), {
+                type: 'error',
+                name: 'StitchError',
+                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                status: 502,
+                attempts: 1,
+                at: 0,
+            }),
+            { error: { observe: (err) => observed.push(err) } },
+        );
+        const body = await res.text();
+        // Client still gets the generic token — the raw message is withheld.
+        expect(body).toBe('data: a\n\nevent: error\ndata: error\n\n');
+        expect(body).not.toContain('payments.internal.corp');
+        // … but observe got the real failure server-side.
+        expect((observed[0] as Error).message).toContain('ENOTFOUND');
+    });
+
+    test('error can be the full object with a custom event name', async () => {
+        const res = streamStitchSse(
+            events(delta('a'), {
+                type: 'error',
+                name: 'StitchError',
+                message: 'upstream blew up',
+                attempts: 1,
+                at: 0,
+            }),
+            { error: { data: (e) => e.message, event: 'failure' } },
+        );
+        expect(await res.text()).toBe(
+            'data: a\n\nevent: failure\ndata: upstream blew up\n\n',
+        );
     });
 });
 
 // --- stitchErrorResponse ---------------------------------------------------
 
 describe('stitchErrorResponse', () => {
+    // The helper now returns `Response | undefined` (undefined ⇒ not a StitchError, so the
+    // caller can rethrow). The cases below all pass a StitchError, so a Response is
+    // guaranteed — narrow it once here.
+    const mustRespond = (res: Response | undefined): Response => {
+        if (!res) throw new Error('expected a Response');
+        return res;
+    };
+
     test('a StitchError maps to 502 by default with a generic JSON body', async () => {
-        const res = stitchErrorResponse(stitchError('upstream down', 503));
-        expect(res).toBeDefined();
-        expect(res?.status).toBe(502);
-        expect(res?.headers.get('content-type')).toContain('application/json');
+        const res = mustRespond(
+            stitchErrorResponse(stitchError('upstream down', 503)),
+        );
+        expect(res.status).toBe(502);
+        expect(res.headers.get('content-type')).toContain('application/json');
         // the raw message is withheld by default (see the leak-regression block below)
-        expect(await res?.json()).toEqual({ error: 'Bad Gateway' });
+        expect(await res.json()).toEqual({ error: 'Bad Gateway' });
     });
 
     test('status can propagate the upstream status', async () => {
-        const res = stitchErrorResponse(stitchError('rate limited', 429), {
-            status: (e) => e.status ?? 502,
-        });
-        expect(res?.status).toBe(429);
+        const res = mustRespond(
+            stitchErrorResponse(stitchError('rate limited', 429), {
+                status: (e) => e.status ?? 502,
+            }),
+        );
+        expect(res.status).toBe(429);
     });
 
-    test('a non-StitchError returns undefined so the caller can rethrow it', () => {
+    test('a non-StitchError returns undefined so the caller can rethrow', () => {
         expect(stitchErrorResponse(new Error('oops'))).toBeUndefined();
-        expect(stitchErrorResponse('oops')).toBeUndefined();
-        expect(stitchErrorResponse(undefined)).toBeUndefined();
-    });
-
-    test('composes with ?? for the map-or-rethrow pattern', () => {
-        const fallthrough = new Error('not a stitch failure');
-        const attempt = (err: unknown): Response => {
-            const mapped = stitchErrorResponse(err);
-            if (mapped) return mapped;
-            throw err;
-        };
-        expect(attempt(stitchError('upstream down'))).toBeInstanceOf(Response);
-        expect(() => attempt(fallthrough)).toThrow(fallthrough);
+        expect(stitchErrorResponse('not even an error')).toBeUndefined();
     });
 
     // Regression: the default body must not echo the raw upstream/transport message,
@@ -271,27 +249,33 @@ describe('stitchErrorResponse', () => {
     // failed to reach) or the upstream's status semantics to an untrusted client.
     describe('does not leak the raw error message by default', () => {
         test('a transport failure with an internal hostname is not disclosed', async () => {
-            const res = stitchErrorResponse(
-                stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+            const res = mustRespond(
+                stitchErrorResponse(
+                    stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+                ),
             );
-            expect(res?.status).toBe(502);
-            const body = await res?.text();
+            expect(res.status).toBe(502);
+            const body = await res.text();
             expect(body).not.toContain('payments.internal.corp');
             expect(body).not.toContain('ENOTFOUND');
         });
 
         test("an upstream 401 does not surface as 'HTTP 401' in the body", async () => {
-            const res = stitchErrorResponse(stitchError('HTTP 401', 401));
-            expect(res?.status).toBe(502);
-            expect(await res?.text()).not.toContain('HTTP 401');
+            const res = mustRespond(
+                stitchErrorResponse(stitchError('HTTP 401', 401)),
+            );
+            expect(res.status).toBe(502);
+            expect(await res.text()).not.toContain('HTTP 401');
         });
 
         test('the `body` opt-in can still include the raw message', async () => {
-            const res = stitchErrorResponse(
-                stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
-                { body: (e) => ({ error: e.message }) },
+            const res = mustRespond(
+                stitchErrorResponse(
+                    stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
+                    { body: (e) => ({ error: e.message }) },
+                ),
             );
-            expect(await res?.text()).toContain('payments.internal.corp');
+            expect(await res.text()).toContain('payments.internal.corp');
         });
     });
 });

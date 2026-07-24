@@ -66,7 +66,7 @@ interface FakeApi {
 
 // ---- the hermetic fake API (node:http, no external network) ---------------
 
-// GET /users/{id} → { data: { id, name } } (so a stitch's unwrap:'data' has something to peel);
+// GET /users/{id} → { data: { id, name } } (so a stitch's pick:'data' has something to peel);
 // GET /health → { ok: true }. Every response is `Connection: close` so no keep-alive socket
 // lingers in the child and wedges its exit — that is what makes the "no hang" assertion sound.
 function startFakeApi(): Promise<FakeApi> {

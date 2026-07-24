@@ -67,8 +67,8 @@ Stream a streaming/SSE stitch's `.stream()` to the client by returning the
 resumable with `id`); a terminal `error` (or a throw) becomes a final
 `event: error` message whose `data` is a **generic `error` token by default** —
 the raw upstream message (an internal hostname, an `HTTP 401`) never reaches the
-client. Opt in to a client-facing message with `errorData`, and observe the real
-failure server-side with `onError`. Control events are consumed but not
+client. Opt in to a client-facing message with `error`, and observe the real
+failure server-side with `error.observe`. Control events are consumed but not
 forwarded, and a client disconnect cancels the body and aborts the upstream
 stitch stream.
 
@@ -85,10 +85,18 @@ const app = new Elysia()
     .get('/chat', ({ stitch, query }) => {
         const chat = stitch.stitch({ kind: sseSurface, path: '/v1/messages' });
         return streamStitchSse(chat.stream({ body: { prompt: query.q } }), {
-            data: (chunk) => (chunk as { data: string }).data,
+            delta: (chunk) => (chunk as { data: string }).data,
         });
     });
 ```
+
+By default the terminal `error` frame carries a generic `data: error` token — the raw
+`event.message` is **not** echoed, since it can disclose internal network topology (a
+transport failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the
+upstream's status (`HTTP 401`) to the client. Pass `error` to opt in when the upstream
+messages are known safe (`error: (e) => e.message`); the object form `error: { observe }`
+still receives the real failure server-side for logging. Both `delta` and `error` also take
+a full object (`delta: { data, event, id }`, `error: { data, event, observe }`).
 
 <Callout type="warn">
     **Anti-pattern:** return the `streamStitchSse` `Response` as the handler's

@@ -6,6 +6,7 @@ import {
     getRelatedPosts,
     postSlug,
 } from '@/lib/blog';
+import { jsonLdHtml } from '@/lib/json-ld';
 import { appName, siteUrl } from '@/lib/shared';
 
 import { DocsBody } from 'fumadocs-ui/layouts/docs/page';
@@ -21,63 +22,96 @@ export default async function BlogPostPage(props: PageProps<'/blog/[slug]'>) {
     const MDX = post.data.body;
     const related = getRelatedPosts(post);
 
-    return (
-        <main className="container mx-auto max-w-3xl px-4 py-16">
-            <Link
-                href="/blog"
-                className="text-fd-muted-foreground hover:text-fd-foreground mb-8 inline-block text-sm transition-colors"
-            >
-                ← Back to blog
-            </Link>
-            <article>
-                <header className="mb-10">
-                    <h1 className="mb-3 text-4xl font-semibold tracking-tight">
-                        {post.data.title}
-                    </h1>
-                    <p className="text-fd-muted-foreground text-sm">
-                        <span>{post.data.author}</span>
-                        <span aria-hidden> · </span>
-                        <time dateTime={post.data.date}>
-                            {formatPostDate(post.data.date)}
-                        </time>
-                    </p>
-                </header>
-                <Prerequisites hrefs={post.data.prerequisites} />
-                <DocsBody>
-                    <MDX components={getMDXComponents()} />
-                </DocsBody>
-            </article>
+    // Per-post structured data. The root layout emits site-wide WebSite +
+    // SoftwareApplication nodes; this classifies each post as an Article so a
+    // crawler can model author, publish date, and headline instead of guessing —
+    // the content-quality signal that helps Google prioritize a young blog's URLs
+    // for indexing (and unlocks Article rich results). `image`/`url` must resolve,
+    // so they mirror the OG route and canonical exactly.
+    const canonical = `${siteUrl}/blog/${slug}`;
+    const jsonLd = {
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: post.data.title,
+        ...(post.data.description
+            ? { description: post.data.description }
+            : {}),
+        datePublished: post.data.date,
+        dateModified: post.data.date,
+        author: { '@type': 'Person', name: post.data.author },
+        publisher: { '@type': 'Organization', name: appName, url: siteUrl },
+        image: `${siteUrl}/og/blog/${slug}`,
+        mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
+        url: canonical,
+        ...(post.data.tags?.length
+            ? { keywords: post.data.tags.join(', ') }
+            : {}),
+        inLanguage: 'en-US',
+    };
 
-            {related.length > 0 ? (
-                <aside
-                    aria-label="Related posts"
-                    className="border-fd-border mt-16 border-t pt-10"
+    return (
+        <>
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }}
+            />
+            <main className="container mx-auto max-w-3xl px-4 py-16">
+                <Link
+                    href="/blog"
+                    className="text-fd-muted-foreground hover:text-fd-foreground mb-8 inline-block text-sm transition-colors"
                 >
-                    <h2 className="mb-6 text-sm font-semibold tracking-wide uppercase">
-                        Related reading
-                    </h2>
-                    <ul className="flex flex-col gap-6">
-                        {related.map((other) => (
-                            <li key={other.url}>
-                                <Link
-                                    href={`/blog/${postSlug(other)}`}
-                                    className="group block"
-                                >
-                                    <h3 className="group-hover:text-fd-primary text-lg font-medium tracking-tight transition-colors">
-                                        {other.data.title}
-                                    </h3>
-                                    {other.data.description ? (
-                                        <p className="text-fd-muted-foreground mt-1 text-sm">
-                                            {other.data.description}
-                                        </p>
-                                    ) : null}
-                                </Link>
-                            </li>
-                        ))}
-                    </ul>
-                </aside>
-            ) : null}
-        </main>
+                    ← Back to blog
+                </Link>
+                <article>
+                    <header className="mb-10">
+                        <h1 className="mb-3 text-4xl font-semibold tracking-tight">
+                            {post.data.title}
+                        </h1>
+                        <p className="text-fd-muted-foreground text-sm">
+                            <span>{post.data.author}</span>
+                            <span aria-hidden> · </span>
+                            <time dateTime={post.data.date}>
+                                {formatPostDate(post.data.date)}
+                            </time>
+                        </p>
+                    </header>
+                    <Prerequisites hrefs={post.data.prerequisites} />
+                    <DocsBody>
+                        <MDX components={getMDXComponents()} />
+                    </DocsBody>
+                </article>
+
+                {related.length > 0 ? (
+                    <aside
+                        aria-label="Related posts"
+                        className="border-fd-border mt-16 border-t pt-10"
+                    >
+                        <h2 className="mb-6 text-sm font-semibold tracking-wide uppercase">
+                            Related reading
+                        </h2>
+                        <ul className="flex flex-col gap-6">
+                            {related.map((other) => (
+                                <li key={other.url}>
+                                    <Link
+                                        href={`/blog/${postSlug(other)}`}
+                                        className="group block"
+                                    >
+                                        <h3 className="group-hover:text-fd-primary text-lg font-medium tracking-tight transition-colors">
+                                            {other.data.title}
+                                        </h3>
+                                        {other.data.description ? (
+                                            <p className="text-fd-muted-foreground mt-1 text-sm">
+                                                {other.data.description}
+                                            </p>
+                                        ) : null}
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    </aside>
+                ) : null}
+            </main>
+        </>
     );
 }
 
@@ -97,6 +131,7 @@ export async function generateMetadata(
     if (!post) notFound();
 
     const canonical = `${siteUrl}/blog/${slug}`;
+    const ogImage = `/og/blog/${slug}`;
 
     return {
         title: post.data.title,
@@ -110,11 +145,13 @@ export async function generateMetadata(
             description: post.data.description,
             authors: [post.data.author],
             publishedTime: post.data.date,
+            images: ogImage,
         },
         twitter: {
             card: 'summary_large_image',
             title: post.data.title,
             description: post.data.description,
+            images: ogImage,
         },
     };
 }

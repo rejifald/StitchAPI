@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/solid",
-    "version": "1.0.0-rc.5",
+    "version": "1.0.0-rc.6",
     "type": "commonjs",
     "description": "Solid bindings for StitchAPI — createStitch/createStitchStream primitives that reconcile a Solid store from the query-core reactive store. Streaming-first: re-render as `delta` chunks arrive. Plus an optional TanStack Query stitchQueryOptions helper.",
     "main": "lib/index.js",

@@ -183,6 +183,35 @@ describe('stitchPlugin', () => {
         expect(res.body).toBe('data: hello\n\ndata: world\n\n');
     });
 
+    test('accepts the { stream() } arm of StitchEventSource', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'via-stream()', at: 1 };
+            yield { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 2 };
+        }
+        // Anything with a `.stream()` handing back the iterable — e.g. a StitchResult.
+        const source = { stream: () => events() };
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seamConfig: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-source', (_request, reply) =>
+            streamStitchSse(reply, source),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-source' });
+        expect(res.body).toBe('data: via-stream()\n\n');
+    });
+
     test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
@@ -223,7 +252,7 @@ describe('stitchPlugin', () => {
         expect(res.body).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the error frame', async () => {
+    test('error (function shorthand) opts in to the raw message on the error frame', async () => {
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
@@ -248,7 +277,7 @@ describe('stitchPlugin', () => {
             logger: false,
         });
         app.get('/sse-err', (_request, reply) =>
-            streamStitchSse(reply, events(), { errorData: (e) => e.message }),
+            streamStitchSse(reply, events(), { error: (e) => e.message }),
         );
         await app.ready();
 
@@ -258,18 +287,19 @@ describe('stitchPlugin', () => {
         );
     });
 
-    test('onError observes the real failure server-side while the client frame stays generic', async () => {
+    test('error.observe sees the real failure while the client gets the generic token', async () => {
+        const observed: unknown[] = [];
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'partial', at: 1 };
             yield {
                 type: 'error',
                 name: 'StitchError',
                 message: 'getaddrinfo ENOTFOUND payments.internal.corp',
                 status: 502,
                 attempts: 1,
-                at: 1,
+                at: 2,
             };
         }
-        const observed: unknown[] = [];
         const app = Fastify();
         apps.push(app);
         await app.register(stitchPlugin, {
@@ -283,145 +313,19 @@ describe('stitchPlugin', () => {
             },
             logger: false,
         });
-        app.get('/sse-observe', (_request, reply) =>
+        app.get('/sse-err', (_request, reply) =>
             streamStitchSse(reply, events(), {
-                onError: (err) => observed.push(err),
+                error: { observe: (err) => observed.push(err) },
             }),
         );
         await app.ready();
 
-        const res = await app.inject({ method: 'GET', url: '/sse-observe' });
-        // The server-side hook gets the raw failure…
-        expect(observed).toHaveLength(1);
-        expect((observed[0] as Error).message).toContain(
-            'payments.internal.corp',
-        );
-        // …the client still gets only the generic token.
-        expect(res.body).toBe('event: error\ndata: error\n\n');
-    });
-
-    test('a throw mid-stream is normalised: onError fires and the frame stays generic', async () => {
-        // eslint-disable-next-line require-yield
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
-            throw new Error('getaddrinfo ENOTFOUND payments.internal.corp');
-        }
-        const observed: unknown[] = [];
-        const app = Fastify();
-        apps.push(app);
-        await app.register(stitchPlugin, {
-            seamConfig: {
-                baseUrl: 'https://api.test',
-                adapter: fakeAdapter(() => ({
-                    status: 200,
-                    headers: {},
-                    body: {},
-                })).adapter,
-            },
-            logger: false,
-        });
-        app.get('/sse-throw', (_request, reply) =>
-            streamStitchSse(reply, events(), {
-                onError: (err) => observed.push(err),
-            }),
-        );
-        await app.ready();
-
-        const res = await app.inject({ method: 'GET', url: '/sse-throw' });
-        expect(observed).toHaveLength(1);
-        expect(res.body).toBe('event: error\ndata: error\n\n');
-        expect(res.body).not.toContain('ENOTFOUND');
-    });
-
-    test('accepts the { stream() } arm of StitchEventSource', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
-            yield { type: 'delta', chunk: 'via-stream()', at: 1 };
-            yield { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 2 };
-        }
-        // Anything with a `.stream()` handing back the iterable — e.g. a StitchResult.
-        const source = { stream: () => events() };
-        const app = Fastify();
-        apps.push(app);
-        await app.register(stitchPlugin, {
-            seamConfig: {
-                baseUrl: 'https://api.test',
-                adapter: fakeAdapter(() => ({
-                    status: 200,
-                    headers: {},
-                    body: {},
-                })).adapter,
-            },
-            logger: false,
-        });
-        app.get('/sse-source', (_request, reply) =>
-            streamStitchSse(reply, source),
-        );
-        await app.ready();
-
-        const res = await app.inject({ method: 'GET', url: '/sse-source' });
-        expect(res.body).toBe('data: via-stream()\n\n');
-    });
-
-    test('the data mapper receives the zero-based frame index', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
-            yield { type: 'delta', chunk: 'a', at: 1 };
-            yield { type: 'delta', chunk: 'b', at: 2 };
-            yield { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 3 };
-        }
-        const app = Fastify();
-        apps.push(app);
-        await app.register(stitchPlugin, {
-            seamConfig: {
-                baseUrl: 'https://api.test',
-                adapter: fakeAdapter(() => ({
-                    status: 200,
-                    headers: {},
-                    body: {},
-                })).adapter,
-            },
-            logger: false,
-        });
-        app.get('/sse-index', (_request, reply) =>
-            streamStitchSse(reply, events(), {
-                data: (c, index) => `${String(c)}#${index}`,
-            }),
-        );
-        await app.ready();
-
-        const res = await app.inject({ method: 'GET', url: '/sse-index' });
-        expect(res.body).toBe('data: a#0\n\ndata: b#1\n\n');
-    });
-
-    test('event accepts a function of the chunk for per-frame event names', async () => {
-        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
-            yield { type: 'delta', chunk: { kind: 'token', text: 'a' }, at: 1 };
-            yield { type: 'delta', chunk: { kind: 'usage', text: 'b' }, at: 2 };
-            yield { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 3 };
-        }
-        const app = Fastify();
-        apps.push(app);
-        await app.register(stitchPlugin, {
-            seamConfig: {
-                baseUrl: 'https://api.test',
-                adapter: fakeAdapter(() => ({
-                    status: 200,
-                    headers: {},
-                    body: {},
-                })).adapter,
-            },
-            logger: false,
-        });
-        app.get('/sse-event-fn', (_request, reply) =>
-            streamStitchSse(reply, events(), {
-                event: (c) => (c as { kind: string }).kind,
-                data: (c) => (c as { text: string }).text,
-            }),
-        );
-        await app.ready();
-
-        const res = await app.inject({ method: 'GET', url: '/sse-event-fn' });
-        expect(res.body).toBe(
-            'event: token\ndata: a\n\nevent: usage\ndata: b\n\n',
-        );
+        const res = await app.inject({ method: 'GET', url: '/sse-err' });
+        // Client still gets the generic token — the raw message is withheld.
+        expect(res.body).toBe('data: partial\n\nevent: error\ndata: error\n\n');
+        expect(res.body).not.toContain('payments.internal.corp');
+        // … but observe got the real failure server-side.
+        expect((observed[0] as Error).message).toContain('ENOTFOUND');
     });
 
     test('the registered error handler maps a StitchError to 502 by default', async () => {

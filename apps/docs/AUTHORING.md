@@ -101,7 +101,7 @@ const signIn = stitch({
 
 const listUsers = stitch({
     path: 'https://demo.stitchapi.dev/users',
-    unwrap: 'data',
+    pick: 'data',
     auth: cookieSession({
         login: signIn,
         cookie: 'session_token',
@@ -360,11 +360,11 @@ stitch `unwrap`s it.)
 
 <!-- prettier-ignore -->
 ```ts
-const getUser    = api.stitch({ path: '/users/{id}', unwrap: 'data', output: User });
-const listUsers  = api.stitch({ path: '/users', unwrap: 'data', output: User.array() });
+const getUser    = api.stitch({ path: '/users/{id}', pick: 'data', output: User });
+const listUsers  = api.stitch({ path: '/users', pick: 'data', output: User.array() });
 const createUser = api.stitch({ method: 'POST', path: '/users', input: { body: User.omit({ id: true }) },
-                               unwrap: 'data', output: User });
-const listOrders = api.stitch({ path: '/users/{id}/orders', unwrap: 'data', output: Order.array() });
+                               pick: 'data', output: User });
+const listOrders = api.stitch({ path: '/users/{id}/orders', pick: 'data', output: Order.array() });
 ```
 
 | Stitch       | Endpoint                             | The canonical demo of                                                                                  |

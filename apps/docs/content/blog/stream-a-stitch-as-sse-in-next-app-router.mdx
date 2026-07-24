@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 
     try {
         return streamStitchSse(chat({ body: { prompt } }).stream(), {
-            data: (chunk) => String(chunk), // pull text out of each delta
+            delta: (chunk) => String(chunk), // pull text out of each delta
             signal: request.signal, // abort the stitch if the client leaves
         });
     } catch (err) {

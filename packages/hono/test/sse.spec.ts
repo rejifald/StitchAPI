@@ -59,7 +59,7 @@ describe('streamStitchSse — delta mapping', () => {
                     { type: 'delta', chunk: 't2', at: 0 },
                     { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
                 ]),
-                { event: 'token' },
+                { delta: { event: 'token' } },
             ),
         );
 
@@ -67,74 +67,6 @@ describe('streamStitchSse — delta mapping', () => {
         expect(body).toContain('event: token');
         expect(body).toContain('data: t1');
         expect(body).toContain('data: t2');
-    });
-
-    test('the data mapper receives the zero-based message index', async () => {
-        const app = new Hono();
-        app.get('/x', (c) =>
-            streamStitchSse(
-                c,
-                gen([
-                    { type: 'delta', chunk: 'a', at: 0 },
-                    { type: 'delta', chunk: 'b', at: 0 },
-                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
-                ]),
-                { data: (chunk, index) => `${String(chunk)}#${index}` },
-            ),
-        );
-
-        const body = await (await app.request('/x')).text();
-        expect(body).toContain('data: a#0');
-        expect(body).toContain('data: b#1');
-    });
-
-    test('event accepts a function of the chunk for per-message event names', async () => {
-        const app = new Hono();
-        app.get('/x', (c) =>
-            streamStitchSse(
-                c,
-                gen([
-                    {
-                        type: 'delta',
-                        chunk: { kind: 'token', text: 'a' },
-                        at: 0,
-                    },
-                    {
-                        type: 'delta',
-                        chunk: { kind: 'usage', text: 'b' },
-                        at: 0,
-                    },
-                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
-                ]),
-                {
-                    event: (chunk) => (chunk as { kind: string }).kind,
-                    data: (chunk) => (chunk as { text: string }).text,
-                },
-            ),
-        );
-
-        const body = await (await app.request('/x')).text();
-        expect(body).toContain('event: token\ndata: a');
-        expect(body).toContain('event: usage\ndata: b');
-    });
-
-    test('the id option stamps each delta message with a last-event id (chunk + index)', async () => {
-        const app = new Hono();
-        app.get('/x', (c) =>
-            streamStitchSse(
-                c,
-                gen([
-                    { type: 'delta', chunk: 'a', at: 0 },
-                    { type: 'delta', chunk: 'b', at: 0 },
-                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
-                ]),
-                { id: (_chunk, index) => `msg-${index}` },
-            ),
-        );
-
-        const body = await (await app.request('/x')).text();
-        expect(body).toContain('id: msg-0');
-        expect(body).toContain('id: msg-1');
     });
 
     test('a { stream() } holder (StitchResult-shaped source) is unwrapped and driven', async () => {
@@ -161,12 +93,35 @@ describe('streamStitchSse — delta mapping', () => {
                     { type: 'delta', chunk: { text: 'pulled' }, at: 0 },
                     { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
                 ]),
-                { data: (chunk) => (chunk as { text: string }).text },
+                { delta: (chunk) => (chunk as { text: string }).text },
             ),
         );
 
         const body = await (await app.request('/x')).text();
         expect(body).toContain('data: pulled');
+    });
+
+    test('delta.id emits an id: line per message with the zero-based index', async () => {
+        const app = new Hono();
+        app.get('/x', (c) =>
+            streamStitchSse(
+                c,
+                gen([
+                    { type: 'delta', chunk: 'a', at: 0 },
+                    { type: 'delta', chunk: 'b', at: 0 },
+                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+                ]),
+                {
+                    delta: {
+                        id: (chunk, index) => `${String(chunk)}-${index}`,
+                    },
+                },
+            ),
+        );
+
+        const body = await (await app.request('/x')).text();
+        expect(body).toContain('id: a-0');
+        expect(body).toContain('id: b-1');
     });
 });
 
@@ -207,7 +162,7 @@ describe('streamStitchSse — control events', () => {
 });
 
 describe('streamStitchSse — error paths', () => {
-    test('by default an error event writes a generic event: error frame (raw message withheld), while onError still gets the real failure', async () => {
+    test('by default an error event writes a generic event: error frame (raw message withheld), while error.observe still gets the real failure', async () => {
         let captured: unknown;
         const app = new Hono();
         app.get('/x', (c) =>
@@ -229,8 +184,10 @@ describe('streamStitchSse — error paths', () => {
                     { type: 'delta', chunk: 'never', at: 0 },
                 ]),
                 {
-                    onError: (e) => {
-                        captured = e;
+                    error: {
+                        observe: (e) => {
+                            captured = e;
+                        },
                     },
                 },
             ),
@@ -244,14 +201,14 @@ describe('streamStitchSse — error paths', () => {
         expect(body).not.toContain('payments.internal.corp');
         expect(body).not.toContain('ENOTFOUND');
         expect(body).not.toContain('never');
-        // … but onError still observes the real failure server-side (for logging).
+        // … but error.observe still sees the real failure server-side (for logging).
         expect(captured).toBeInstanceOf(Error);
         expect((captured as Error).message).toBe(
             'getaddrinfo ENOTFOUND payments.internal.corp',
         );
     });
 
-    test('errorData opts in to the raw message on the error frame', async () => {
+    test('error (function shorthand) opts in to the raw message on the error frame', async () => {
         const app = new Hono();
         app.get('/x', (c) =>
             streamStitchSse(
@@ -266,7 +223,7 @@ describe('streamStitchSse — error paths', () => {
                         at: 0,
                     },
                 ]),
-                { errorData: (e) => e.message },
+                { error: (e) => e.message },
             ),
         );
 
@@ -275,7 +232,7 @@ describe('streamStitchSse — error paths', () => {
         expect(body).toContain('data: upstream failed');
     });
 
-    test('a throw mid-stream is caught: onError fires and a final generic event: error frame is written (raw message withheld)', async () => {
+    test('a throw mid-stream is caught: error.observe fires and a final generic event: error frame is written (raw message withheld)', async () => {
         let captured: unknown;
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield { type: 'delta', chunk: 'a', at: 0 };
@@ -285,8 +242,10 @@ describe('streamStitchSse — error paths', () => {
         const app = new Hono();
         app.get('/x', (c) =>
             streamStitchSse(c, boom(), {
-                onError: (e) => {
-                    captured = e;
+                error: {
+                    observe: (e) => {
+                        captured = e;
+                    },
                 },
             }),
         );
@@ -297,13 +256,13 @@ describe('streamStitchSse — error paths', () => {
         expect(body).toContain('data: error');
         expect(body).not.toContain('payments.internal.corp');
         expect(body).not.toContain('ENOTFOUND');
-        // onError still sees the real thrown error server-side.
+        // error.observe still sees the real thrown error server-side.
         expect((captured as Error).message).toBe(
             'getaddrinfo ENOTFOUND payments.internal.corp',
         );
     });
 
-    test('errorData opts in on the throw path too (thrown error normalised to an error event)', async () => {
+    test('error opts in on the throw path too (thrown error normalised to an error event)', async () => {
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield { type: 'delta', chunk: 'a', at: 0 };
             throw new Error('stream blew up');
@@ -311,7 +270,7 @@ describe('streamStitchSse — error paths', () => {
 
         const app = new Hono();
         app.get('/x', (c) =>
-            streamStitchSse(c, boom(), { errorData: (e) => e.message }),
+            streamStitchSse(c, boom(), { error: (e) => e.message }),
         );
 
         const body = await (await app.request('/x')).text();
