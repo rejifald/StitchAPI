@@ -1134,8 +1134,10 @@ export interface TraceSink {
 // sessions persistent/shared across workers — see DESIGN.md §13.
 export interface StitchStore {
     get(key: string): Promise<unknown>;
+    /** Set a value. `ttl` (ms) is optional on both verbs — absent means no expiry. */
     set(key: string, value: unknown, ttl?: number): Promise<void>;
-    incr(key: string, ttl: number): Promise<number>;
+    /** Atomically increment a counter. Absent `ttl` means no window — the counter never expires. */
+    incr(key: string, ttl?: number): Promise<number>;
     /**
      * Release any resources (connections, timers) the store holds. Optional — the in-memory
      * default clears its map. A seam's `close()` calls this as the last lifecycle step.

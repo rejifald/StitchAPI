@@ -19,16 +19,16 @@ function recordingDriver(over: { close?: () => Promise<void> } = {}): {
             calls.push(['get', key]);
             return data.get(key) ?? null;
         },
-        async set(key, value, ttlMs) {
-            calls.push(['set', key, value, ttlMs]);
+        async set(key, value, ttl) {
+            calls.push(['set', key, value, ttl]);
             data.set(key, value);
         },
-        async del(key) {
-            calls.push(['del', key]);
+        async delete(key) {
+            calls.push(['delete', key]);
             data.delete(key);
         },
-        async incr(key, ttlMs) {
-            calls.push(['incr', key, ttlMs]);
+        async incr(key, ttl) {
+            calls.push(['incr', key, ttl]);
             return 1;
         },
         ...(over.close ? { close: over.close } : {}),
@@ -57,6 +57,19 @@ describe('redisStore — key mapping', () => {
         await redisStore(driver).set('k', 'v');
         expect(calls[0]).toEqual(['set', 'k', JSON.stringify('v'), undefined]);
     });
+
+    test('an absent ttl passes through as absent on set and incr (no expiry / no window)', async () => {
+        const { driver, calls } = recordingDriver();
+        const store = redisStore(driver);
+
+        await store.set('k', 'v');
+        await store.incr('c');
+
+        expect(calls).toEqual([
+            ['set', 'k', JSON.stringify('v'), undefined],
+            ['incr', 'c', undefined],
+        ]);
+    });
 });
 
 describe('redisStore — values & delete', () => {
@@ -71,7 +84,7 @@ describe('redisStore — values & delete', () => {
     test('set(key, undefined) deletes the prefixed key (cache delete) and writes nothing', async () => {
         const { driver, calls } = recordingDriver();
         await redisStore(driver, { keyPrefix: 'app:' }).set('k', undefined);
-        expect(calls).toEqual([['del', 'app:k']]);
+        expect(calls).toEqual([['delete', 'app:k']]);
     });
 });
 

@@ -33,11 +33,12 @@ import type { StitchStore } from 'stitchapi';
  * primitives only. `redisStore` layers the JSON envelope and key prefixing on
  * top; a driver only moves opaque strings and one atomic counter.
  *
- * `incr(key, ttl)` MUST be atomic and set the key's expiry **only when it
- * creates the counter** (the first increment), never extending it afterwards —
- * otherwise a busy rate window would slide forever and never reset. {@link
- * fromIoredis} / {@link fromNodeRedis} guarantee this with a Lua `EVAL`; a custom
- * driver must do the same.
+ * `incr(key, ttl)` MUST be atomic and, when `ttl` is given, set the key's
+ * expiry **only when it creates the counter** (the first increment), never
+ * extending it afterwards — otherwise a busy rate window would slide forever
+ * and never reset. An absent `ttl` means **no window**: a plain atomic `INCR`,
+ * the counter never expires. {@link fromIoredis} / {@link fromNodeRedis}
+ * guarantee this with a Lua `EVAL`; a custom driver must do the same.
  */
 export interface RedisDriver {
     /** `GET key` — the raw stored string, or `null` when absent. */
@@ -45,20 +46,27 @@ export interface RedisDriver {
     /** `SET key value` (no TTL) or `SET key value PX ttl` when `ttl` is set. */
     set(key: string, value: string, ttl?: number): Promise<void>;
     /** `DEL key`. */
-    del(key: string): Promise<void>;
-    /** Atomic `INCR key` + first-time `PEXPIRE key ttl`; resolves to the new count. */
-    incr(key: string, ttl: number): Promise<number>;
+    delete(key: string): Promise<void>;
+    /**
+     * Atomic `INCR key`; resolves to the new count. When `ttl` (ms) is set, a
+     * first-time `PEXPIRE key ttl` is bound to the creating increment; absent
+     * `ttl` = no expiry.
+     */
+    incr(key: string, ttl?: number): Promise<number>;
     /** Release the connection (optional — `redisStore().close()` delegates here). */
     close?(): Promise<void>;
 }
 
-// Atomic counter-with-window. INCR is atomic on its own; the EXPIRE is bound to
-// it in one server-side script so the TTL is set exactly once — on the increment
-// that creates the window (`v == 1`) — and a crash can never leave an immortal
-// counter. Redis caches the script body after the first EVAL, so re-sending it is
-// cheap; EVALSHA would shave the bytes but isn't worth the dialect surface here.
-const INCR_WITH_TTL = `local v = redis.call('INCR', KEYS[1])
-if v == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
+// Atomic counter-with-optional-window. INCR is atomic on its own; the EXPIRE is
+// bound to it in one server-side script so the TTL is set exactly once — on the
+// increment that creates the window (`v == 1`) — and a crash can never leave an
+// immortal counter. ARGV[1] = 0 encodes an absent `ttl` (a deliberate no-window
+// counter: plain INCR, no expiry — the adapters send `ttl ?? 0`). Redis caches
+// the script body after the first EVAL, so re-sending it is cheap; EVALSHA would
+// shave the bytes but isn't worth the dialect surface here.
+const INCR_SCRIPT = `local v = redis.call('INCR', KEYS[1])
+local ttl = tonumber(ARGV[1]) or 0
+if v == 1 and ttl > 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
 return v`;
 
 // ---------------------------------------------------------------------------
@@ -142,12 +150,12 @@ export function fromIoredis(client: IoredisLike): RedisDriver {
             if (ttl == null) await client.set(key, value);
             else await client.set(key, value, 'PX', ttl);
         },
-        async del(key) {
+        async delete(key) {
             await client.del(key);
         },
         async incr(key, ttl) {
-            // ioredis: eval(script, numKeys, ...keysThenArgs).
-            return Number(await client.eval(INCR_WITH_TTL, 1, key, ttl));
+            // ioredis: eval(script, numKeys, ...keysThenArgs). 0 = no window.
+            return Number(await client.eval(INCR_SCRIPT, 1, key, ttl ?? 0));
         },
         async close() {
             await client.quit?.();
@@ -175,15 +183,16 @@ export function fromNodeRedis(client: NodeRedisLike): RedisDriver {
             if (ttl == null) await client.set(key, value);
             else await client.set(key, value, { PX: ttl });
         },
-        async del(key) {
+        async delete(key) {
             await client.del(key);
         },
         async incr(key, ttl) {
             // node-redis: eval(script, { keys, arguments }); ARGV are strings.
+            // '0' = no window.
             return Number(
-                await client.eval(INCR_WITH_TTL, {
+                await client.eval(INCR_SCRIPT, {
                     keys: [key],
-                    arguments: [String(ttl)],
+                    arguments: [String(ttl ?? 0)],
                 }),
             );
         },
@@ -228,13 +237,13 @@ export function fromUpstash(client: UpstashLike): RedisDriver {
             if (ttl == null) await client.set(key, value);
             else await client.set(key, value, { px: ttl });
         },
-        async del(key) {
+        async delete(key) {
             await client.del(key);
         },
         async incr(key, ttl) {
-            // Upstash: eval(script, keys[], args[]); ARGV are strings.
+            // Upstash: eval(script, keys[], args[]); ARGV are strings. '0' = no window.
             return Number(
-                await client.eval(INCR_WITH_TTL, [key], [String(ttl)]),
+                await client.eval(INCR_SCRIPT, [key], [String(ttl ?? 0)]),
             );
         },
     };
@@ -291,7 +300,7 @@ export function redisStore(
         async set(key, value, ttl) {
             // `set(key, undefined)` is the cache's delete (ADR 0003 §8) — drop the key.
             if (value === undefined) {
-                await driver.del(k(key));
+                await driver.delete(k(key));
                 return;
             }
             await driver.set(k(key), JSON.stringify(value), ttl);

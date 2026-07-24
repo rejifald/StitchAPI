@@ -66,8 +66,11 @@ deadline. That keeps the window's expiry alive across every write instead of a
 later increment silently wiping it and leaking the key forever. (`get` unwraps this
 envelope back to the plain count, so nothing downstream sees the internal shape.)
 The TTL unit is **milliseconds** — the same unit as the contract's `ttl`, and Deno
-KV's own `expireIn` unit, so there's no conversion at the seam. `maxIncrRetries`
-(default `100`) bounds the loop under pathological contention.
+KV's own `expireIn` unit, so there's no conversion at the seam. An `incr` without
+a `ttl` (or with `ttl <= 0`) has **no window**: the counter accumulates forever
+and the key never expires — the same "absent `ttl` = no expiry" rule `set`
+follows. `maxIncrRetries` (default `100`) bounds the loop under pathological
+contention.
 
 The store owns no connection: `store.close()` delegates to the handle, so you
 decide when KV shuts down.
