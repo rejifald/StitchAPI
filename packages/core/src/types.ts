@@ -286,10 +286,10 @@ export interface ThrottleOptions {
      */
     pool?: 'stitch' | 'host';
     /**
-     * Delegate rate-limit handling to the host (folded in from the top-level `rateLimit`,
-     * CONTRACT.md P14). When `true`, a rate-limit response (status matched by `on`, default `[429]`)
-     * is **not** retried or throttled internally — self-pacing (`rate`/`concurrency`) is bypassed and
-     * the outcome surfaces as a {@link RateLimitError}. Use it when an OUTER gate owns the backoff.
+     * Delegate rate-limit handling to the host (CONTRACT.md P14). When `true`, a rate-limit
+     * response (status matched by `on`, default `[429]`) is **not** retried or throttled
+     * internally — self-pacing (`rate`/`concurrency`) is bypassed and the outcome surfaces as a
+     * {@link RateLimitError}. Use it when an OUTER gate owns the backoff.
      */
     delegate?: boolean;
     /** Statuses that count as a rate-limit signal under `delegate` — a list or a predicate. Default `[429]`. */
@@ -729,7 +729,7 @@ export interface StitchConfig {
      *
      * `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts
      * are exhausted, then accepted (returned) on the final attempt. Orthogonal to
-     * `rateLimit.delegate`, which surfaces a {@link RateLimitError} on rate-limit statuses earlier.
+     * `throttle.delegate`, which surfaces a {@link RateLimitError} on rate-limit statuses earlier.
      */
     acceptStatus?: number[] | ((status: number) => boolean);
     /**
@@ -747,29 +747,6 @@ export interface StitchConfig {
      * required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`).
      */
     circuit?: AtLeastOne<CircuitOptions>;
-    /**
-     * @deprecated Folded into `throttle` (CONTRACT.md P14): use `throttle.delegate` / `throttle.on`.
-     * Read until the 1.0 GA cut.
-     *
-     * Delegate backoff to the host (issue #145). When `delegate: true`, a rate-limit response
-     * (status in `on`, default `[429]`) is **not** retried internally and the built-in `throttle`
-     * is **bypassed** for the call — instead the outcome surfaces as a {@link RateLimitError}
-     * (carrying `status`, the `retryAfter` parsed from `Retry-After`, and the raw `response`) on
-     * the awaited path, and as an `error` event with `retryAfter` on `.stream()`. Use this when an
-     * OUTER gate/circuit owns the backoff (its own `Retry-After` hook, a DB-persisted budget) and
-     * StitchAPI's internal retry+throttle would double-count against it.
-     *
-     * ⚠️ In delegate mode the `throttle` config becomes **inert** for this stitch (the host owns the
-     * gate). A `circuit` block, if also set, still applies — the host may layer both. Non-rate-limit
-     * failures (5xx, etc.) behave exactly as today unless their status is listed in `on`. Validation,
-     * templating, transform/pick, and drift on the success path are unchanged.
-     */
-    rateLimit?: {
-        /** Surface rate-limit outcomes instead of retrying/throttling them. Default `false`. */
-        delegate?: boolean;
-        /** Statuses treated as a rate-limit signal. Default `[429]`. */
-        on?: number[];
-    };
     /**
      * Inject a stable Idempotency-Key header on writes so safe retries don't duplicate.
      * `true` enables it with defaults (header `Idempotency-Key`, a random uuid per call); the

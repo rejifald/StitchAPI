@@ -236,7 +236,7 @@ export class CircuitOpenError extends Error {
 
 /**
  * Thrown (and surfaced as an `error` event) when a stitch runs in **delegate-backoff** mode
- * (`rateLimit.delegate`) and the response carries a rate-limit status (default `429`). Instead of
+ * (`throttle.delegate`) and the response carries a rate-limit status (default `429`). Instead of
  * retrying internally or pacing on the built-in throttle, the engine surfaces the outcome so an
  * OUTER gate/circuit — owned by the host — decides the backoff (issue #145). Carries the structured
  * signal that gate needs: the `status`, the `retryAfter` parsed from `Retry-After` (delta-seconds

@@ -602,16 +602,13 @@ async function* attemptLoop(
     const perAttemptMs = parseDuration(cfg.timeout?.perAttempt);
     const key = hostKey(baseReq, cfg);
     let refreshed = false;
-    // Delegate-backoff mode (issue #145): the host owns the gate. We bypass the internal throttle
-    // for the call (no acquire/release, so `throttle` is inert and no `throttled` event fires) and,
-    // on a response whose status matches `rlMatch` (default [429]), surface a RateLimitError instead
-    // of retrying. Everything else — auth, the success path, non-rate-limit failures — is unchanged.
-    // P14: `rateLimit` folded into `throttle` — read `throttle.delegate`/`throttle.on`, falling back
-    // to the @deprecated top-level `rateLimit` (read once here) until the GA cut.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `rateLimit` folded into `throttle` (P14); back-compat fallback until GA
-    const legacyRl = cfg.rateLimit;
-    const delegate = (cfg.throttle?.delegate ?? legacyRl?.delegate) === true;
-    const rlMatch = acceptsStatus(cfg.throttle?.on ?? legacyRl?.on ?? [429]);
+    // Delegate-backoff mode (issue #145, folded into `throttle` — P14): the host owns the gate. We
+    // bypass the internal throttle for the call (no acquire/release, so `throttle` is inert and no
+    // `throttled` event fires) and, on a response whose status matches `rlMatch` (default [429]),
+    // surface a RateLimitError instead of retrying. Everything else — auth, the success path,
+    // non-rate-limit failures — is unchanged.
+    const delegate = cfg.throttle?.delegate === true;
+    const rlMatch = acceptsStatus(cfg.throttle?.on ?? [429]);
     // acceptStatus (issue #155): statuses the caller declares NORMAL — an accepted non-2xx returns
     // `res` like a 2xx (flowing through interpret → transform → pick → validate) instead of
     // throwing. Checked at the `>= 400` site, i.e. AFTER the retry-on-status path, so `retry.on`
