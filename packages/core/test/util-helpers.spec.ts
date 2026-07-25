@@ -7,6 +7,7 @@
 import {
     deepMerge,
     dirnameOf,
+    envelope,
     getPath,
     isObj,
     matchAny,
@@ -201,5 +202,54 @@ describe('dirnameOf', () => {
 
     it('handles Windows-style backslash separators', () => {
         expect(dirnameOf('a\\b\\c')).toBe('a\\b');
+    });
+});
+
+// `envelope` is the one place CONTRACT.md P12/P14's scalar shorthand is folded — every slot
+// (`retry: 3`, `throttle: '2/s'`) and every adapter frame option routes through it, so its edges
+// are pinned head-on rather than only through the compose-level shorthand tests.
+describe('envelope', () => {
+    interface RetryOptions {
+        attempts?: number;
+        backoff?: string;
+    }
+
+    it('folds a bare scalar into its dominant field', () => {
+        const v: number | RetryOptions = 3;
+        expect(envelope(v, 'attempts')).toEqual({ attempts: 3 });
+    });
+
+    it('passes an envelope through by reference, not a copy', () => {
+        const opts: RetryOptions = { attempts: 2, backoff: 'expo' };
+        const v: number | RetryOptions = opts;
+        expect(envelope(v, 'attempts')).toBe(opts);
+    });
+
+    it('keeps undefined as undefined, so an absent slot stays absent', () => {
+        const v = undefined as number | RetryOptions | undefined;
+        expect(envelope(v, 'attempts')).toBeUndefined();
+    });
+
+    it('treats every non-object bare form alike — string, number, boolean', () => {
+        expect(envelope('2/s' as string | { rate?: string }, 'rate')).toEqual({
+            rate: '2/s',
+        });
+        expect(envelope(0 as number | RetryOptions, 'attempts')).toEqual({
+            attempts: 0,
+        });
+        const flag: boolean | { on?: boolean } = false;
+        expect(envelope(flag, 'on')).toEqual({ on: false });
+    });
+
+    it('folds a function shorthand — the adapter frame-option form', () => {
+        const shaper = (c: unknown): string => String(c);
+        type Shaper = typeof shaper;
+        const v: Shaper | { data?: Shaper } = shaper;
+        expect(envelope(v, 'data')).toEqual({ data: shaper });
+    });
+
+    it('folds an array as a bare value rather than mistaking it for the envelope', () => {
+        const v: number[] | { on?: number[] } = [429, 503];
+        expect(envelope(v, 'on')).toEqual({ on: [429, 503] });
     });
 });

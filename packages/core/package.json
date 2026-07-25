@@ -121,6 +121,20 @@
                 "default": "./lib/sse.js"
             }
         },
+        "./sse-emit": {
+            "browser": {
+                "types": "./lib/sse-emit.d.mts",
+                "default": "./lib/sse-emit.mjs"
+            },
+            "import": {
+                "types": "./lib/sse-emit.d.mts",
+                "default": "./lib/sse-emit.mjs"
+            },
+            "require": {
+                "types": "./lib/sse-emit.d.ts",
+                "default": "./lib/sse-emit.js"
+            }
+        },
         "./stream": {
             "browser": {
                 "types": "./lib/stream.d.mts",
