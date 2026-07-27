@@ -11,6 +11,35 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Changed
+
+-   **BREAKING — the store contract speaks whole words: `incr` is now `increment`, and
+    `RedisDriver.del` is now `delete`.** `StitchStore` — the interface every store
+    implements — renames its atomic counter to `increment(key, ttl?)`, and
+    `@stitchapi/redis`'s `RedisDriver` follows for both verbs. The house contracts are
+    the vocabulary a consumer implements against, not bytes on a socket, so they use
+    whole words (CONTRACT.md P18); the Redis **commands** are untouched — the Lua still
+    calls `INCR`, and the `IoredisLike`/`NodeRedisLike`/`UpstashLike` mirrors still
+    expose `del`, because a mirror keeps its SDK's spelling. Shipped **without
+    `@deprecated` aliases** — CONTRACT.md P19 scopes the alias obligation to the GA
+    channel, and this lands on `rc`. (They could not have carried one anyway: on an
+    interface the consumer implements and core calls, an alias means typing both
+    spellings optional forever and letting a store satisfy the type while implementing
+    neither verb.)
+
+    _Migration:_ rename the method on any custom store or driver — `incr` → `increment`,
+    and on a `RedisDriver`, `del` → `delete`. The bundled stores (`memoryStore`,
+    `@stitchapi/redis`, `@stitchapi/deno-kv`, `@stitchapi/cloudflare-kv`,
+    `@stitchapi/react-native`, `@stitchapi/expo`) are already updated, so you only act
+    if you hand-rolled one. TypeScript names every site.
+
+-   **BREAKING — `ttl` is now optional on `increment`.** `StitchStore.increment(key, ttl?)`
+    and `RedisDriver.increment(key, ttl?)` match `set`: an absent `ttl` means **no
+    window**, so the counter accumulates and never expires. Previously `ttl` was
+    required on the counter but optional on `set` — the same parameter with two
+    optionalities. Widening, so existing call sites are unaffected; an implementor whose
+    signature typed `ttl` as required should relax it and handle the absent case.
+
 ## [1.0.0-rc.6] — 2026-07-23
 
 ### Changed

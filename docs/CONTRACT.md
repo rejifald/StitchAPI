@@ -145,7 +145,7 @@ function **MUST** be named **`keyOf`** (a `(input) => string`) and **MUST NOT** 
 called `key`.
 
 _Violations:_ `IdempotencyOptions.key`, `CacheConfig.key` (both `(input) => string`)
-→ `keyOf`. `CircuitOptions.key` and `StitchStore.get/set/incr(key)` are correct as-is.
+→ `keyOf`. `CircuitOptions.key` and `StitchStore.get/set/increment(key)` are correct as-is.
 
 ### P7 · Status-classification parity
 
@@ -319,16 +319,49 @@ at the adapter edge and is named with its true unit (`expirationSeconds`,
 A duck-type that mirrors a foreign SDK **MUST** keep that SDK's spelling (so it
 structurally matches). StitchAPI's **own normalized** contracts (`StitchStore`,
 `RedisDriver`) **MUST** use one house vocabulary: `ttl` (ms — the house unit, no suffix
-per P17; convert foreign units at the edge), `delete` (not `del`),
+per P17; convert foreign units at the edge), **whole words — never a wire
+abbreviation** (`delete` not `del`, `increment` not `incr`),
 `close(): Promise<void>` (async, per P11), with one optionality per parameter (`ttl`
-MUST NOT be optional on `set` but required on `incr`).
+MUST NOT be optional on `set` but required on `increment`).
 
-### P19 · No pre-GA hard break
+_Why whole words:_ the house verbs are the vocabulary a **consumer** implements against,
+not the bytes a server parses. `DEL`/`INCR` are terse because they cross a socket
+millions of times a second; a TypeScript method name is read, not transmitted. The rule
+is all-or-nothing by construction — a contract that spells `delete` but keeps `incr`
+teaches neither convention, and the reader has to memorize which verbs got the
+abbreviation. The Redis **command** names stay verbatim wherever the code speaks Redis
+(the Lua `INCR`, the `IoredisLike`/`NodeRedisLike`/`UpstashLike` mirrors' `del`) — that
+is the first half of this rule doing its job, not an exception to the second.
 
-Every rename, narrowing, or removal mandated here **MUST** ship a `@deprecated`
-re-export/field alias pinned by an identity test, removed at the **1.0 GA cut**
-(extending ADR 0012's precedent from symbols to fields). Widening
-(`number → number | string`, P17) is non-breaking and needs no alias.
+### P19 · The alias obligation is scoped to the GA channel
+
+The `@deprecated`-alias requirement binds the **general-availability** channel. On a
+pre-release channel (`rc`, `beta`, `canary` — anything published under a prerelease tag),
+a rename, narrowing, or removal mandated here **MAY** ship as a **hard break**: no alias,
+declared under **BREAKING CHANGE** with a one-line migration in `CHANGELOG.md`. Once
+**1.0 GA** ships, the obligation is in force — every such change **MUST** carry a
+`@deprecated` re-export/field alias pinned by an identity test (extending ADR 0012's
+precedent from symbols to fields), retired only on the next major. Widening
+(`number → number | string`, P17) is non-breaking and needs no alias in either channel.
+
+_Why the channel, not the change:_ a prerelease is the window the semver contract sets
+aside for exactly this. Paying alias tax during it buys back-compat for a population that
+has accepted breakage by installing an `rc`, and the aliases accumulate into a second
+vocabulary the GA cut then has to delete — every one a field a reader must learn is dead.
+The clean surface at 1.0 is worth more than continuity between two release candidates.
+
+_Aliases already shipped stay._ Relaxing the rule forward does not retroactively demand
+their removal: the `*Ms` duration aliases, `keyOf`, `StatusMatch`, and the rest listed in
+[§6](#6-migration-backlog) remain, pinned by their identity tests, until the GA cut
+removes them together. Removing one now would itself be a break, for no gain.
+
+_Corollary — some contracts cannot alias at all._ Where the consumer **implements** an
+interface and core **calls** it (`StitchStore`, `RedisDriver`, `Adapter`, `TraceSink`,
+`AuthStrategy`), there is no `new ?? old` to read: an "alias" means typing **both**
+spellings optional forever and dispatching on whichever is present, which erases the
+contract the rename exists to state and lets an implementation satisfy the type while
+providing neither. For these, a rename is a hard break in **any** channel — post-GA it is
+a major-version change, not an aliasable one.
 
 ### P20 · No empty-object config; enable-with-defaults is a scalar
 
@@ -432,7 +465,9 @@ bridge from JSON Schema, producing a `SchemaLike` those consumers treat identica
 ## 6. Migration backlog (proposed renames — confirm during sweep)
 
 Not normative. The rule is the law; these are the proposed target spellings the sweep
-will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
+will apply. While the line is pre-GA, each may land as a hard break or under a
+`@deprecated` alias — [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes
+the obligation to the GA channel. Severity = consumer blast radius.
 
 | Sev  | Current                                                            | Proposed                                | Rule |
 | ---- | ------------------------------------------------------------------ | --------------------------------------- | ---- |
@@ -444,7 +479,8 @@ will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 | Med  | `paginate` inline shape                                            | `PaginateOptions`                       | P14  |
 | Med  | SSE helper `sendStitchSse`/`stitchSse`                             | `streamStitchSse`                       | P16  |
 | Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions` | `StitchErrorOptions` (+ `body`)         | P16  |
-| Low  | `RedisDriver.del`, `…quit`, sync `close`                           | `delete`, async `close`                 | P18  |
+| Low  | `RedisDriver…quit`, sync `close`                                   | async `close`                           | P18  |
+| Low  | `deno-kv maxIncrRetries`                                           | `incrementRetries`                      | P4   |
 | Low  | `bodyKind` (from-curl)                                             | `bodyType`                              | P1   |
 
 New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multipart`,
@@ -476,7 +512,7 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `ReconnectOptions.backoffMs`→`backoff`; `OAuth2Options.refreshSkewMs`→`refreshSkew`;
     `CookieSessionOptions.ttlMs`→`ttl`. Each keeps a `@deprecated` `*Ms` alias (runtime prefers
     `new ?? old`). House store contracts use the bare `ttl` param (ms, no suffix): `StitchStore` /
-    `RedisDriver` `set`/`incr` and the redis/deno-kv/cloudflare-kv drivers; `verifyStoreContract`'s
+    `RedisDriver` `set`/`increment` and the redis/deno-kv/cloudflare-kv drivers; `verifyStoreContract`'s
     knob is `ttl` (deprecated `ttlMs` alias).
 -   **P17 (circuit) + P4** `CircuitOptions` overhaul: `failureThreshold`→`failures` (P4),
     `cooldownMs`→`cooldown`, `halfOpenAfterMs`→`halfOpenAfter` (P17, widened to `number | string`).
@@ -541,6 +577,19 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     rich shape is assignable to the minimal one (a real stitch satisfies both), so it is **de-listed**.
     With this, **R5 is fully cleared** — the baseline is now 6, exactly R6's P20 backlog
     (multipart/stream/sse/throttle/hooks/input → `Scalar | AtLeastOne`).
+-   **P18 (store verbs) + P17 (`ttl`)** the house store contracts speak whole words:
+    `RedisDriver.del`→`delete` and `StitchStore`/`RedisDriver` `incr`→**`increment`**, across
+    core `memoryStore`/`vaultView`, `@stitchapi/redis` (all three adapters), `@stitchapi/deno-kv`,
+    `@stitchapi/cloudflare-kv`, `@stitchapi/react-native` (and `@stitchapi/expo`, which reuses it),
+    the `nestBorrowStore` bridge, and `verifyStoreContract`. `ttl` (ms) is now optional on
+    **both** verbs — absent means no expiry / no window — so the parameter's optionality no
+    longer differs between `set` and `increment`. The upstream mirrors (`IoredisLike`,
+    `NodeRedisLike`, `UpstashLike`) keep `del`, and the Lua keeps `INCR`, per P18's first half.
+    **No `@deprecated` aliases** — a deliberate hard break on the `rc` channel, where
+    [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) does not impose one; and
+    both are consumer-implemented contracts, which could not have carried an alias in any
+    case. (`deno-kv`'s `maxIncrRetries` is untouched here; it is a P4 `max`-prefix
+    violation and renames in that slice.)
 
 ## 7. Enforcement
 

@@ -55,7 +55,7 @@ interface Envelope {
  * const api = seam({ store: asyncStorageStore(AsyncStorage) });
  * ```
  *
- * `incr` is serialized through an in-process queue so concurrent increments stay
+ * `increment` is serialized through an in-process queue so concurrent increments stay
  * atomic (RN is single-threaded, and a device-local store has one writer) — the
  * throttle counter behaves exactly as it does on Redis.
  */
@@ -86,7 +86,7 @@ export function asyncStorageStore(
     const write = (key: string, env: Envelope): Promise<void> =>
         storage.setItem(k(key), JSON.stringify(env));
 
-    // Serialize read-modify-write increments so 20 concurrent `incr` calls return
+    // Serialize read-modify-write increments so 20 concurrent `increment` calls return
     // 1..20 exactly (the store contract's atomicity rule). AsyncStorage has no
     // atomic INCR, but a single-threaded JS queue gives the same guarantee.
     let tail: Promise<unknown> = Promise.resolve();
@@ -114,7 +114,7 @@ export function asyncStorageStore(
                 ttl === undefined ? { v: value } : { v: value, e: now() + ttl },
             );
         },
-        incr(key, ttl) {
+        increment(key, ttl) {
             return serialize(async () => {
                 const env = await readEnvelope(key);
                 const current = typeof env?.v === 'number' ? env.v : 0;

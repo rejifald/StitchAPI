@@ -5,7 +5,7 @@
 //
 // Browser-first: no `node:*`, no WebCrypto (`crypto.subtle.digest` is async and a JS crypto
 // hash is bundle weight). The key is a 128-bit SYNCHRONOUS non-cryptographic digest. It reuses
-// the `StitchStore` get/set/incr contract — no new vendor surface — exactly like throttle and
+// the `StitchStore` get/set/increment contract — no new vendor surface — exactly like throttle and
 // the circuit breaker, so a shared store makes the cache distributed for free.
 import { resolveFingerprint } from './fingerprint';
 import type { CachePolicy } from './fingerprint';
@@ -280,7 +280,7 @@ export async function bumpCacheGeneration(
     store: StitchStore,
     stitchId?: string,
 ): Promise<void> {
-    await store.incr(
+    await store.increment(
         stitchId ? stitchGenKey(stitchId) : cacheGenKey,
         GEN_TTL_MS,
     );

@@ -27,8 +27,8 @@ function recordingDriver(over: { close?: () => Promise<void> } = {}): {
             calls.push(['delete', key]);
             data.delete(key);
         },
-        async incr(key, ttl) {
-            calls.push(['incr', key, ttl]);
+        async increment(key, ttl) {
+            calls.push(['increment', key, ttl]);
             return 1;
         },
         ...(over.close ? { close: over.close } : {}),
@@ -37,18 +37,18 @@ function recordingDriver(over: { close?: () => Promise<void> } = {}): {
 }
 
 describe('redisStore — key mapping', () => {
-    test('applies keyPrefix to every key on get / set / incr', async () => {
+    test('applies keyPrefix to every key on get / set / increment', async () => {
         const { driver, calls } = recordingDriver();
         const store = redisStore(driver, { keyPrefix: 'app:' });
 
         await store.set('k', 'v', 1000);
         await store.get('k');
-        await store.incr('c', 2000);
+        await store.increment('c', 2000);
 
         expect(calls).toEqual([
             ['set', 'app:k', JSON.stringify('v'), 1000],
             ['get', 'app:k'],
-            ['incr', 'app:c', 2000],
+            ['increment', 'app:c', 2000],
         ]);
     });
 
@@ -58,16 +58,16 @@ describe('redisStore — key mapping', () => {
         expect(calls[0]).toEqual(['set', 'k', JSON.stringify('v'), undefined]);
     });
 
-    test('an absent ttl passes through as absent on set and incr (no expiry / no window)', async () => {
+    test('an absent ttl passes through as absent on set and increment (no expiry / no window)', async () => {
         const { driver, calls } = recordingDriver();
         const store = redisStore(driver);
 
         await store.set('k', 'v');
-        await store.incr('c');
+        await store.increment('c');
 
         expect(calls).toEqual([
             ['set', 'k', JSON.stringify('v'), undefined],
-            ['incr', 'c', undefined],
+            ['increment', 'c', undefined],
         ]);
     });
 });

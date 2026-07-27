@@ -88,7 +88,7 @@ Both subscriptions are also available as plain functions — `onAppActive(appSta
 
 ## The persistent store
 
-`asyncStorageStore(storage, options?)` accepts any client matching `{ getItem, setItem, removeItem }` (the community AsyncStorage module, an MMKV shim, a test double). Values ride in a JSON envelope with an absolute expiry (AsyncStorage has no native TTL); `incr` is serialized so concurrent increments stay atomic — the throttle counter behaves exactly as it does on Redis. Pass `keyPrefix` to namespace, `now` to inject a clock in tests.
+`asyncStorageStore(storage, options?)` accepts any client matching `{ getItem, setItem, removeItem }` (the community AsyncStorage module, an MMKV shim, a test double). Values ride in a JSON envelope with an absolute expiry (AsyncStorage has no native TTL); `increment` is serialized so concurrent increments stay atomic — the throttle counter behaves exactly as it does on Redis. Pass `keyPrefix` to namespace, `now` to inject a clock in tests.
 
 ## License
 

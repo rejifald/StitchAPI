@@ -1,11 +1,11 @@
 // Behaviour proof for @stitchapi/cloudflare-kv.
 //
 // We deliberately do NOT run `verifyStoreContract` from `stitchapi/testing`: that
-// kit asserts the atomic-incr rule ("20 concurrent incrs net +20"), and Workers KV
-// has no atomic counter, so `incr` throws by design (see src/index.ts). The
+// kit asserts the atomic-increment rule ("20 concurrent increments net +20"), and Workers KV
+// has no atomic counter, so `increment` throws by design (see src/index.ts). The
 // contract would fail — correctly — so instead we prove the half KV *does* support
 // (get/set/delete/TTL) against a faithful in-memory KVNamespace, and assert that
-// `incr` rejects with the documented Durable-Object pointer.
+// `increment` rejects with the documented Durable-Object pointer.
 import { cloudflareKvStore } from '../src';
 import type { KVNamespaceLike } from '../src';
 
@@ -172,20 +172,22 @@ describe('@stitchapi/cloudflare-kv keyPrefix', () => {
     });
 });
 
-// --- the atomic-incr gap ---------------------------------------------------
+// --- the atomic-increment gap ---------------------------------------------------
 
-describe('@stitchapi/cloudflare-kv incr is unsupported', () => {
-    test('incr rejects with a documented Durable-Object pointer', async () => {
+describe('@stitchapi/cloudflare-kv increment is unsupported', () => {
+    test('increment rejects with a documented Durable-Object pointer', async () => {
         const store = cloudflareKvStore(new FakeKvNamespace());
-        await expect(store.incr('rate', 1_000)).rejects.toThrow(
+        await expect(store.increment('rate', 1_000)).rejects.toThrow(
             /Durable Object/i,
         );
-        await expect(store.incr('rate', 1_000)).rejects.toThrow(
+        await expect(store.increment('rate', 1_000)).rejects.toThrow(
             /not supported on Cloudflare Workers KV/i,
         );
-        // `ttl` is optional on `incr` (StitchStore contract) — the no-window
+        // `ttl` is optional on `increment` (StitchStore contract) — the no-window
         // call shape must typecheck, and still fails loud on KV.
-        await expect(store.incr('rate')).rejects.toThrow(/Durable Object/i);
+        await expect(store.increment('rate')).rejects.toThrow(
+            /Durable Object/i,
+        );
     });
 
     test('cloudflareKvStore has no close() (it owns no connection)', () => {

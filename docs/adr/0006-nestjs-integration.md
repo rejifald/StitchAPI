@@ -8,6 +8,8 @@
 >
 > The integration is a thin **adapter package**, exactly the class [ADR 0001](./0001-package-naming-and-distribution.md) Decision 2 already anticipated ("framework adapters (e.g. React)… `@stitchapi/<name>`"). It contributes _DI wiring + two bridge helpers + a Logger sink_ over primitives core already exposes — no new capability, so it cannot regress the **contract-not-dependency** gate ([`two-gates`](../DESIGN.md)).
 
+> **Amendment — the store contract's counter verb is `increment`.** The `StitchStore` shape quoted below as `get`/`set`/`incr`/`close?` (and the `nestBorrowStore` sample that delegates it) now spells the atomic counter **`increment`**, per [CONTRACT.md P18](../CONTRACT.md#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary). Read `incr` as `increment` throughout; the bridge's behaviour (delegate `get`/`set`/`increment`, never `close`) is unchanged.
+
 ## Context
 
 A stitch is a plain function: `stitch(config)` returns a callable that runs an HTTP/GraphQL/streaming call ([`stitch.ts`](../../packages/core/src/stitch.ts)). That works in any runtime, but it is **unwired** in a NestJS backend — there is no module to import, no provider to inject, no lifecycle hook, and no idiomatic path from Nest's `ConfigService`/`Logger`/request scope into a stitch. Today a Nest user hand-rolls all of that, and gets three things subtly wrong:

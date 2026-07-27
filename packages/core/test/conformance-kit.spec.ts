@@ -92,7 +92,7 @@ function mountFixture(): Promise<FixtureHost> {
 // ---------------------------------------------------------------------------
 
 // Deliberately broken store: set() ignores ttl (entries never expire) and
-// incr() awaits between read and write (concurrent calls collide).
+// increment() awaits between read and write (concurrent calls collide).
 function brokenStore(): StitchStore {
     const data = new Map<string, unknown>();
     return {
@@ -102,7 +102,7 @@ function brokenStore(): StitchStore {
         async set(key, value) {
             data.set(key, value);
         },
-        async incr(key) {
+        async increment(key) {
             const base = (data.get(key) as number | undefined) ?? 0;
             await new Promise((resolve) => setTimeout(resolve, 1));
             data.set(key, base + 1);
@@ -118,7 +118,7 @@ describe('verifyStoreContract', () => {
         expect(report.violations).toEqual([]);
         expect(report.ok).toBe(true);
         expect(report.passed).toContain(
-            'incr: 20 concurrent calls net exactly +20',
+            'increment: 20 concurrent calls net exactly +20',
         );
         expect(() => {
             assertConformance(report);
@@ -130,14 +130,20 @@ describe('verifyStoreContract', () => {
         expect(report.ok).toBe(false);
         const failed = report.violations.map((v) => v.rule);
         expect(failed).toContain('set: a ttl entry expires');
-        expect(failed).toContain('incr: the counter expires after its ttl');
-        expect(failed).toContain('incr: 20 concurrent calls net exactly +20');
+        expect(failed).toContain(
+            'increment: the counter expires after its ttl',
+        );
+        expect(failed).toContain(
+            'increment: 20 concurrent calls net exactly +20',
+        );
         // Independent rules: violations do not mask the healthy behaviors.
         expect(report.passed).toContain('set/get: round-trips a value');
         expect(report.passed).toContain(
             'get: a missing key resolves to undefined',
         );
-        expect(report.passed).toContain('incr: increments an existing counter');
+        expect(report.passed).toContain(
+            'increment: increments an existing counter',
+        );
     });
 });
 

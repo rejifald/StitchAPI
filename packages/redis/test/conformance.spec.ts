@@ -7,7 +7,7 @@
 // an ioredis-shaped, a node-redis-shaped and an Upstash-shaped facade, so each
 // adapter's dialect translation is exercised without a server. Single-threaded JS
 // makes the engine atomic, which is exactly what the real `EVAL` guarantees — so
-// the contract's "20 concurrent incrs net +20" rule holds here, on real Redis,
+// the contract's "20 concurrent increments net +20" rule holds here, on real Redis,
 // and on Upstash's edge HTTP Redis alike.
 //
 // Set REDIS_URL to additionally run the SAME verifier against a live Redis via a
@@ -190,14 +190,14 @@ describe('@stitchapi/redis store contract', () => {
     });
 });
 
-// --- no-window incr (absent ttl) -------------------------------------------
+// --- no-window increment (absent ttl) -------------------------------------------
 //
-// `StitchStore.incr(key)` without a ttl means "no window": the counter never
+// `StitchStore.increment(key)` without a ttl means "no window": the counter never
 // expires. The adapters encode the absent ttl as ARGV[1] = 0 and the script
 // skips the PEXPIRE; the fake engine mirrors that (0 → no expiry), so this
 // pins each dialect's translation of the sentinel end to end.
 
-describe('incr without a ttl never expires (no window)', () => {
+describe('increment without a ttl never expires (no window)', () => {
     const stores = [
         [
             'fromIoredis',
@@ -221,11 +221,11 @@ describe('incr without a ttl never expires (no window)', () => {
     test.each(stores)('%s', async (_name, makeStore) => {
         const store = makeStore();
         // A windowed counter alongside proves the wait outlives a real window.
-        await store.incr('windowed', 40);
-        expect(await store.incr('unwindowed')).toBe(1);
+        await store.increment('windowed', 40);
+        expect(await store.increment('unwindowed')).toBe(1);
         await new Promise((resolve) => setTimeout(resolve, 90));
-        expect(await store.incr('windowed', 40)).toBe(1); // window expired → restart
-        expect(await store.incr('unwindowed')).toBe(2); // no window → still counting
+        expect(await store.increment('windowed', 40)).toBe(1); // window expired → restart
+        expect(await store.increment('unwindowed')).toBe(2); // no window → still counting
     });
 });
 
@@ -254,7 +254,7 @@ describe.skipIf(!REDIS_URL)('against a real Redis (REDIS_URL)', () => {
         }
     });
 
-    test('incr without a ttl never expires (the real Lua skips PEXPIRE on 0)', async () => {
+    test('increment without a ttl never expires (the real Lua skips PEXPIRE on 0)', async () => {
         const mod = (await import('ioredis')) as unknown as {
             default: new (url: string) => IoredisLike & {
                 quit(): Promise<unknown>;
@@ -264,9 +264,9 @@ describe.skipIf(!REDIS_URL)('against a real Redis (REDIS_URL)', () => {
         const store = redisStore(fromIoredis(client));
         const key = `stitch-conformance:no-window-${Date.now().toString(36)}`;
         try {
-            await store.incr(key);
+            await store.increment(key);
             await new Promise((resolve) => setTimeout(resolve, 90));
-            expect(await store.incr(key)).toBe(2); // no window → still counting
+            expect(await store.increment(key)).toBe(2); // no window → still counting
         } finally {
             await store.set(key, undefined); // drop the immortal counter
             await client.quit();

@@ -33,7 +33,7 @@ import type { StitchStore } from 'stitchapi';
  * primitives only. `redisStore` layers the JSON envelope and key prefixing on
  * top; a driver only moves opaque strings and one atomic counter.
  *
- * `incr(key, ttl)` MUST be atomic and, when `ttl` is given, set the key's
+ * `increment(key, ttl)` MUST be atomic and, when `ttl` is given, set the key's
  * expiry **only when it creates the counter** (the first increment), never
  * extending it afterwards — otherwise a busy rate window would slide forever
  * and never reset. An absent `ttl` means **no window**: a plain atomic `INCR`,
@@ -52,7 +52,7 @@ export interface RedisDriver {
      * first-time `PEXPIRE key ttl` is bound to the creating increment; absent
      * `ttl` = no expiry.
      */
-    incr(key: string, ttl?: number): Promise<number>;
+    increment(key: string, ttl?: number): Promise<number>;
     /** Release the connection (optional — `redisStore().close()` delegates here). */
     close?(): Promise<void>;
 }
@@ -153,7 +153,7 @@ export function fromIoredis(client: IoredisLike): RedisDriver {
         async delete(key) {
             await client.del(key);
         },
-        async incr(key, ttl) {
+        async increment(key, ttl) {
             // ioredis: eval(script, numKeys, ...keysThenArgs). 0 = no window.
             return Number(await client.eval(INCR_SCRIPT, 1, key, ttl ?? 0));
         },
@@ -186,7 +186,7 @@ export function fromNodeRedis(client: NodeRedisLike): RedisDriver {
         async delete(key) {
             await client.del(key);
         },
-        async incr(key, ttl) {
+        async increment(key, ttl) {
             // node-redis: eval(script, { keys, arguments }); ARGV are strings.
             // '0' = no window.
             return Number(
@@ -240,7 +240,7 @@ export function fromUpstash(client: UpstashLike): RedisDriver {
         async delete(key) {
             await client.del(key);
         },
-        async incr(key, ttl) {
+        async increment(key, ttl) {
             // Upstash: eval(script, keys[], args[]); ARGV are strings. '0' = no window.
             return Number(
                 await client.eval(INCR_SCRIPT, [key], [String(ttl ?? 0)]),
@@ -276,7 +276,7 @@ export interface RedisStoreOptions {
  * ```
  *
  * Values round-trip through a JSON envelope; the throttle's atomic counters use
- * the driver's native `incr`. The store owns no connection — `close()` delegates
+ * the driver's native `increment`. The store owns no connection — `close()` delegates
  * to the driver, so the caller decides when the client shuts down.
  */
 export function redisStore(
@@ -305,8 +305,8 @@ export function redisStore(
             }
             await driver.set(k(key), JSON.stringify(value), ttl);
         },
-        incr(key, ttl) {
-            return driver.incr(k(key), ttl);
+        increment(key, ttl) {
+            return driver.increment(k(key), ttl);
         },
     };
     if (driver.close) {

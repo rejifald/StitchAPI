@@ -67,12 +67,12 @@ const store = redisStore({
     get: (k) => myClient.get(k),
     set: (k, v, ttl) => myClient.set(k, v, ttl),
     delete: (k) => myClient.del(k),
-    incr: (k, ttl) => myClient.incrWithWindow(k, ttl), // atomic INCR + first-time PEXPIRE
+    increment: (k, ttl) => myClient.incrWithWindow(k, ttl), // atomic INCR + first-time PEXPIRE
 });
 ```
 
-`ttl` (ms) is optional on both `set` and `incr` — absent means no expiry / no
-window. When a `ttl` is given, `incr` must be **atomic** and set it **only when
+`ttl` (ms) is optional on both `set` and `increment` — absent means no expiry / no
+window. When a `ttl` is given, `increment` must be **atomic** and set it **only when
 it creates the counter** — `fromIoredis` / `fromNodeRedis` do this with a single
 Lua `EVAL` (`INCR`, then `PEXPIRE` only when the value is `1`), so a window
 can't slide forever and a crash can't strand an immortal counter.
