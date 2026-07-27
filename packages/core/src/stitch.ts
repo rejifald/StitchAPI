@@ -50,6 +50,7 @@ import {
 } from './types';
 import {
     deepMerge,
+    envelope,
     newRunContext,
     readEnv,
     redactSecretsDeep,
@@ -141,12 +142,21 @@ function normalizeInput(
 // IN PLACE, before the deep-merge, so a literal in one layer folds cleanly into an object in
 // another and the resolved config the engine reads is always the normalised shape.
 function expandShorthand(cfg: Partial<StitchConfig>): void {
-    if (typeof cfg.retry === 'number') cfg.retry = { attempts: cfg.retry };
-    if (typeof cfg.timeout === 'number' || typeof cfg.timeout === 'string')
-        cfg.timeout = { total: cfg.timeout };
-    if (typeof cfg.cache === 'number' || typeof cfg.cache === 'string')
-        cfg.cache = { ttl: cfg.cache };
-    if (typeof cfg.throttle === 'string') cfg.throttle = { rate: cfg.throttle };
+    // P12/P14: each slot's dominant-field scalar folds into its envelope, so the opaque `{}` never
+    // reaches the slot (P20) and the engine only ever sees the object form. One `envelope` call per
+    // slot — the slot and its dominant field, nothing else to keep in sync.
+    if (cfg.retry !== undefined) cfg.retry = envelope(cfg.retry, 'attempts');
+    if (cfg.timeout !== undefined) cfg.timeout = envelope(cfg.timeout, 'total');
+    if (cfg.cache !== undefined) cfg.cache = envelope(cfg.cache, 'ttl');
+    if (cfg.stream !== undefined) cfg.stream = envelope(cfg.stream, 'decode');
+    if (cfg.multipart !== undefined)
+        cfg.multipart = envelope(cfg.multipart, 'nesting');
+    if (cfg.throttle !== undefined)
+        cfg.throttle = envelope(cfg.throttle, 'rate');
+    // P13: `sse: true` enables reconnection with defaults; `false`/absent is off (the opaque
+    // `sse: {}` is a type error at the slot, so the all-defaults case arrives here as `true`).
+    if (cfg.sse === true) cfg.sse = { reconnect: true };
+    else if (cfg.sse === false) delete cfg.sse;
     // P20: `idempotency: true` enables it with defaults; `false`/absent is off. Normalize the
     // boolean toggle to the object form the engine reads (the opaque `idempotency: {}` is a type
     // error at the slot, so the all-defaults case arrives here as `true`).
@@ -197,16 +207,19 @@ export function compose(config: Fragment): ResolvedStitchConfig {
         // last to set it and set it off.
         if (idempotencyToggle === false) delete merged.idempotency;
     }
+    // The chained hooks / normalized input are the RESOLVED shapes (plain `Hooks`/`InputSchemas`),
+    // past the authoring-side `AtLeastOne` gate (P20) — write them through the resolved view.
+    const resolved = merged as ResolvedStitchConfig;
     const hooks = chainHooks(hookLayers);
-    if (hooks) merged.hooks = hooks;
+    if (hooks) resolved.hooks = hooks;
     if (store) merged.store = store;
     if (kind) merged.kind = kind;
     const output = normalizeOutput(merged.output);
     if (output !== undefined) merged.output = output;
     const input = normalizeInput(merged.input);
-    if (input !== undefined) merged.input = input;
-    // `expandShorthand` ran on every layer, so retry/timeout/cache are now their object form.
-    return merged as ResolvedStitchConfig;
+    if (input !== undefined) resolved.input = input;
+    // `expandShorthand` ran on every layer, so every scalar shorthand is now its envelope form.
+    return resolved;
 }
 
 // Construction-time nudges for `idempotency` misuse — hints with an out, never errors. Two cases,

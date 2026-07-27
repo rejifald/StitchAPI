@@ -107,6 +107,24 @@ describe('cache — hit / miss', () => {
         expect(calls()).toBe(2);
     });
 
+    test('vary accepts a bare string as a one-element list (P7)', async () => {
+        // `vary: 'accept-language'` ≡ `vary: ['accept-language']` — the `T | T[]` widening
+        // (CONTRACT.md P7). The named header is folded into the key, so two languages are distinct
+        // entries (two origin calls) while a repeat of the first is a hit.
+        const { adapter, calls } = counting();
+        const s = stitch({
+            url: URL,
+            adapter,
+            trace: false,
+            cache: { ttl: '60s', scope: 'app', vary: 'accept-language' },
+        });
+        await s({ headers: { 'accept-language': 'en' } });
+        await s({ headers: { 'accept-language': 'fr' } });
+        expect(calls()).toBe(2); // different vary value → distinct keys
+        await s({ headers: { 'accept-language': 'en' } }); // hit on the 'en' entry
+        expect(calls()).toBe(2);
+    });
+
     test('an entry expires after its ttl', async () => {
         const { adapter, calls } = counting();
         const s = stitch({

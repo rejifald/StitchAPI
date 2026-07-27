@@ -55,7 +55,7 @@ existing or proposed — passes through all three before it ships.
 -   Secret resolvers — `env()` and `secretsFile()`, resolved at **call time**
 -   The caller gets a capability, not a credential — the stitch holds the secret; an agent
     invoking it never sees the token
--   Session handling — cookie capture + replay, TTL, refresh on `refreshOn` / `refreshWhen`,
+-   Session handling — cookie capture + replay, TTL, refresh on `refresh` (`refresh.on` / `refresh.when`),
     sessions shareable across stitches via a `key` + shared store
 
 ### Performance & scale

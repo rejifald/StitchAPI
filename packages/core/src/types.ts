@@ -77,10 +77,11 @@ export interface DriftOptions {
      * The grammar mirrors the finding path: nested keys join with `.`, an **array element** is `[]`
      * (so `items[].meta` matches every element's `meta`), and a pattern matches by exact path, a
      * single-segment `*` wildcard, or as a prefix (`meta` ignores `meta` and everything beneath it).
+     * A bare string is shorthand for a one-element list (CONTRACT.md P7).
      *
      * @example `ignore: ['meta', '_links', 'debug.*']`
      */
-    ignore?: string[];
+    ignore?: string | string[];
     /**
      * How soft drift is leveled / filtered. Three shapes (ADR 0015):
      * - a **single level** or a **bare list** of levels — an _allowlist_ of which severities to
@@ -267,9 +268,15 @@ export type Adapter = ((req: AdapterRequest) => Promise<AdapterResponse>) & {
 };
 
 // ---- Resilience options ---------------------------------------------------
+/**
+ * A status-match field (CONTRACT.md P7): a single status, a list, or a predicate. Every reader
+ * normalizes through the shared `acceptsStatus` matcher, so the three spellings are equivalent
+ * (`on: 429` ≡ `on: [429]`).
+ */
+export type StatusMatch = number | number[] | ((status: number) => boolean);
 export interface RetryOptions {
     attempts?: number; // total attempts incl. the first (default 1 = no retry)
-    on?: number[] | ((status: number) => boolean); // statuses (or a predicate) that trigger a retry (default [429,502,503,504])
+    on?: StatusMatch; // status(es) (or a predicate) that trigger a retry (default [429,502,503,504])
     backoff?: 'expo' | 'expo-jitter' | 'fixed';
     /** Base backoff delay before the first retry — `100`, `'100ms'`, `'1s'`. Default 100ms. */
     baseDelay?: number | string;
@@ -292,8 +299,8 @@ export interface ThrottleOptions {
      * {@link RateLimitError}. Use it when an OUTER gate owns the backoff.
      */
     delegate?: boolean;
-    /** Statuses that count as a rate-limit signal under `delegate` — a list or a predicate. Default `[429]`. */
-    on?: number[] | ((status: number) => boolean);
+    /** Status(es) that count as a rate-limit signal under `delegate` — a number, list, or predicate. Default `[429]`. */
+    on?: StatusMatch;
 }
 /**
  * Options for one throttle `acquire`. `rateOnly` charges the rate limiter but takes NO concurrency
@@ -373,12 +380,12 @@ export interface CacheOptions {
      */
     scope?: 'principal' | 'app';
     /**
-     * Request headers whose values vary the response and so must be part of the key (e.g.
-     * `['accept-language']`). An explicit allowlist **overrides** the default of honouring the
-     * response's `Vary`. Volatile/secret headers (authorization, cookie, traceparent, …) are
-     * never keyed.
+     * Request header(s) whose values vary the response and so must be part of the key (e.g.
+     * `'accept-language'` or a list). An explicit allowlist **overrides** the default of honouring
+     * the response's `Vary`. Volatile/secret headers (authorization, cookie, traceparent, …) are
+     * never keyed. A bare string is shorthand for a one-element list (CONTRACT.md P7).
      */
-    vary?: string[];
+    vary?: string | string[];
     /**
      * Cacheable HTTP methods. Default `['GET','HEAD']`. A GraphQL **query** opts in by listing
      * its method (`['POST']`) — a POST's read-vs-mutate intent cannot be inferred, so it is
@@ -647,26 +654,32 @@ export interface StitchConfig {
     bodyType?: 'json' | 'form' | 'multipart';
     /**
      * Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become
-     * field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`.
+     * field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`. A
+     * bare {@link MultipartNesting} string is shorthand for the object form —
+     * `multipart: 'dot'` ≡ `multipart: { nesting: 'dot' }` (CONTRACT.md P12); the opaque
+     * `multipart: {}` is rejected (P20).
      */
-    multipart?: MultipartOptions;
+    multipart?: MultipartNesting | AtLeastOne<MultipartOptions>;
     /**
      * Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body
      * (`'bytes'` default / `'lines'` / `'ndjson'` / `'json'`). `'json'` is the structural,
      * unframed streaming-JSON decoder (issue #111): one `delta` per complete value / top-level
      * array element, tolerant of internal newlines and concatenated values. Only meaningful for
-     * the `stream` surface.
+     * the `stream` surface. A bare {@link StreamDecode} string is shorthand for the object form —
+     * `stream: 'ndjson'` ≡ `stream: { decode: 'ndjson' }` (CONTRACT.md P12); the opaque
+     * `stream: {}` is rejected (P20).
      */
-    stream?: StreamOptions;
+    stream?: StreamDecode | AtLeastOne<StreamOptions>;
     /**
      * Resumable-SSE options (issue #71) — sibling to {@link StitchConfig.stream}, but for the `sse`
-     * surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once
+     * surface. **Off by default**: with no `sse` block the engine opens the live body once
      * (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as
      * `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry`
      * policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse`
-     * surface reads it.
+     * surface reads it. `true` is shorthand for `{ reconnect: true }` (CONTRACT.md P13); the
+     * object form must set at least one field (P20).
      */
-    sse?: SseOptions;
+    sse?: boolean | AtLeastOne<SseOptions>;
     /** How to read the response body. Default: auto by content-type. */
     responseType?: ResponseType;
     /**
@@ -696,8 +709,11 @@ export interface StitchConfig {
      * (e.g. a multi-operation document) or pass `''` to suppress the field entirely.
      */
     operationName?: string;
-    /** Schemas validating params, query, body, headers, and (GraphQL) variables before the request. */
-    input?: InputSchemas;
+    /**
+     * Schemas validating params, query, body, headers, and (GraphQL) variables before the request.
+     * At least one slot must be set — the opaque `input: {}` is rejected (CONTRACT.md P20).
+     */
+    input?: AtLeastOne<InputSchemas>;
     /**
      * Response schema, or a {@link DriftSpec} for leveled drift detection. Accepts any
      * {@link SchemaLike} — a raw Zod schema, any Standard Schema (Valibot, ArkType), or a
@@ -721,17 +737,18 @@ export interface StitchConfig {
      */
     retry?: number | RetryOptions;
     /**
-     * Statuses that are a NORMAL result rather than an error — a number list or a predicate.
-     * An accepted non-2xx flows through interpret → transform → pick → validate exactly like a
-     * 2xx (the response body becomes the result), instead of throwing a {@link StitchError}. Use
-     * this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall
-     * back to a broader call) so the happy path no longer runs through a `catch`.
+     * Status(es) that are a NORMAL result rather than an error — a number, a list, or a predicate
+     * (CONTRACT.md P7). An accepted non-2xx flows through interpret → transform → pick → validate
+     * exactly like a 2xx (the response body becomes the result), instead of throwing a
+     * {@link StitchError}. Use this when an endpoint treats e.g. `404`/`400` as expected control
+     * flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a
+     * `catch`.
      *
      * `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts
      * are exhausted, then accepted (returned) on the final attempt. Orthogonal to
      * `throttle.delegate`, which surfaces a {@link RateLimitError} on rate-limit statuses earlier.
      */
-    acceptStatus?: number[] | ((status: number) => boolean);
+    acceptStatus?: StatusMatch;
     /**
      * Rate and concurrency limits. A bare rate string is shorthand for the rate —
      * `throttle: '1/s'` ≡ `throttle: { rate: '1/s' }`.
@@ -776,8 +793,8 @@ export interface StitchConfig {
      * - `'repeat'`            — `ids=1&ids=2`
      */
     arrayFormat?: 'indices' | 'brackets' | 'repeat';
-    /** Request/response/error/retry lifecycle hooks. */
-    hooks?: Hooks;
+    /** Request/response/error/retry lifecycle hooks. At least one — the opaque `hooks: {}` is rejected (CONTRACT.md P20). */
+    hooks?: AtLeastOne<Hooks>;
     /** Fragments to deep-merge under this config — strings, partials, or other stitches. */
     extends?: (Partial<StitchConfig> | Stitch | string)[];
     /** Test seam / custom transport. */
@@ -804,19 +821,35 @@ export interface StitchConfig {
 
 /**
  * A {@link StitchConfig} after {@link compose} has run: every authoring shorthand is expanded, so
- * the resilience fields are always their object form (a scalar `retry` / `timeout` / `cache` /
- * `throttle` literal is normalised to `{ attempts }` / `{ total }` / `{ ttl }` / `{ rate }`). This
- * is the shape the engine and {@link redactConfig} read — never the loose authoring union.
+ * the fields are always their object form (a scalar `retry` / `timeout` / `cache` / `throttle` /
+ * `stream` / `multipart` literal is normalised to `{ attempts }` / `{ total }` / `{ ttl }` /
+ * `{ rate }` / `{ decode }` / `{ nesting }`, the `sse: true` toggle to `{ reconnect: true }`, and
+ * the `hooks` / `input` envelopes to their chained/normalized object). This is the shape the engine
+ * and {@link redactConfig} read — never the loose authoring union.
  */
 export type ResolvedStitchConfig = Omit<
     StitchConfig,
-    'retry' | 'timeout' | 'cache' | 'idempotency' | 'throttle'
+    | 'retry'
+    | 'timeout'
+    | 'cache'
+    | 'idempotency'
+    | 'throttle'
+    | 'stream'
+    | 'multipart'
+    | 'sse'
+    | 'hooks'
+    | 'input'
 > & {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
     cache?: CacheOptions;
     idempotency?: IdempotencyOptions;
     throttle?: ThrottleOptions;
+    stream?: StreamOptions;
+    multipart?: MultipartOptions;
+    sse?: SseOptions;
+    hooks?: Hooks;
+    input?: InputSchemas;
 };
 
 /**

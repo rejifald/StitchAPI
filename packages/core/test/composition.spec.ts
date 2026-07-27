@@ -279,6 +279,23 @@ test('scalar shorthands (retry/timeout/cache/throttle) expand to option objects'
     expect(resolved.throttle).toEqual({ rate: '1/s' });
 });
 
+// 6a) P20/P12/P13: the stream/multipart dominant-field scalars and the `sse` toggle fold to their
+// envelope at compose time (the opaque `{}` is rejected at the slot, so all-defaults arrives as the
+// scalar). `sse: false` clears the slot.
+test('stream/multipart scalars and the sse toggle expand to option objects', () => {
+    const resolved = compose({
+        path: 'https://api.example.com/x',
+        stream: 'ndjson',
+        multipart: 'dot',
+        sse: true,
+    });
+    expect(resolved.stream).toEqual({ decode: 'ndjson' });
+    expect(resolved.multipart).toEqual({ nesting: 'dot' });
+    expect(resolved.sse).toEqual({ reconnect: true });
+
+    expect(compose({ path: '/x', sse: false }).sse).toBeUndefined();
+});
+
 // 6b) A scalar shorthand folds over an inherited object via extends, preserving the siblings the
 // scalar doesn't name (deep-merge runs AFTER each layer is normalized).
 test('a scalar shorthand merges over an inherited object, preserving siblings', () => {

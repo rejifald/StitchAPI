@@ -117,7 +117,7 @@ const session = cookieSession({
     login: signIn, // ← another stitch
     cookie: 'session_token',
     secret: keychain('app'),
-    refreshOn: [401],
+    refresh: [401],
 });
 ```
 
@@ -380,7 +380,7 @@ const listWebsites = stitch({
         login: signIn,
         cookie: 'session_token',
         secret: secretsFile('app'),
-        refreshOn: [401],
+        refresh: [401],
     }),
 });
 await listWebsites(); // logs in, manages cookie, retries wall, returns Website[]

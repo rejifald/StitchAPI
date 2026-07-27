@@ -113,6 +113,71 @@ export function stripTrailingSlashes(s: string): string {
 export const isObj = (x: unknown): x is Record<string, unknown> =>
     !!x && typeof x === 'object' && !Array.isArray(x);
 
+/**
+ * The envelope member of a shorthand union — the plain-object form, with every bare spelling
+ * (scalar, function, array) removed. `EnvelopeOf<number | RetryOptions>` is `RetryOptions`.
+ */
+export type EnvelopeOf<T> = Exclude<
+    T,
+    | string
+    | number
+    | boolean
+    | bigint
+    | symbol
+    | null
+    | undefined
+    | ((...a: never[]) => unknown)
+    | readonly unknown[]
+>;
+
+/** The bare (shorthand) member of the union — everything `EnvelopeOf` took out. */
+type ShorthandOf<T> = Exclude<T, EnvelopeOf<T> | undefined>;
+
+/**
+ * The envelope's fields the bare form could fold into: those whose type the shorthand actually
+ * has. This is CONTRACT.md P12/P14's "dominant field" as a type — `number | RetryOptions` may
+ * fold into `attempts` (a `number`) but not `backoff` (a `string`), so a mis-picked key is a
+ * compile error rather than a slot the engine silently never reads.
+ *
+ * One gap to know about: in an in-place `cfg.x = envelope(cfg.x, 'k')` the assignment's own
+ * contextual type steers `T`, and the *field-type* half of the check stops biting (a key that
+ * isn't on the envelope at all is still rejected). In every contextless position — the adapter
+ * `const o = envelope(opts.delta, 'data')` form — both halves hold.
+ */
+type DominantKey<T> = {
+    [K in keyof EnvelopeOf<T>]-?: [ShorthandOf<T>] extends [
+        NonNullable<EnvelopeOf<T>[K]>,
+    ]
+        ? K
+        : never;
+}[keyof EnvelopeOf<T>];
+
+/**
+ * Fold a bare dominant-field value into its envelope — CONTRACT.md P12/P14's scalar shorthand,
+ * in one place instead of one hand-written ternary per slot: `retry: 3` ≡ `{ attempts: 3 }`,
+ * `throttle: '2/s'` ≡ `{ rate: '2/s' }`, `delta: (c) => …` ≡ `{ data: (c) => … }`.
+ *
+ * The test is "is it already the envelope?", not a list of the scalar types a slot happens to
+ * accept today: anything that is not a plain object IS the bare form (every shorthand we offer is
+ * a scalar or a function), so widening a slot's shorthand — `timeout: 5000` gaining `'5s'` — needs
+ * no change here. A plain object passes through **by reference**; `undefined` stays `undefined`,
+ * so an absent slot stays absent under `exactOptionalPropertyTypes`.
+ */
+export function envelope<T extends NonNullable<unknown>>(
+    value: T,
+    key: DominantKey<T> & string,
+): EnvelopeOf<T>;
+export function envelope<T>(
+    value: T,
+    key: DominantKey<T> & string,
+): EnvelopeOf<T> | undefined;
+export function envelope<T>(value: T, key: string): EnvelopeOf<T> | undefined {
+    if (value === undefined) return undefined;
+    return isObj(value)
+        ? (value as EnvelopeOf<T>)
+        : ({ [key]: value } as EnvelopeOf<T>);
+}
+
 export function deepMerge<T>(a: T, b: T): T {
     if (b === undefined) return a;
     if (a === undefined) return b;

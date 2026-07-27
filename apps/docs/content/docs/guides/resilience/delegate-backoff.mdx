@@ -52,9 +52,10 @@ internal throttle is bypassed for the call, so it adds no pacing of its own.
 `delegate` switches the mode on; it defaults to `false`, so a stitch behaves
 exactly as before until you opt in.
 
-`on` is the set of statuses treated as a rate-limit signal — it defaults to
-`[429]`. Widen it when an API signals back-pressure with another status (for
-example `{ delegate: true, on: [429, 503] }`); a status _not_ in `on` is left to
+`on` is the `StatusMatch` treated as a rate-limit signal — a status, a list, or a
+predicate — defaulting to `[429]` (`on: 429` ≡ `on: [429]`). Widen it when an API
+signals back-pressure with another status (for example
+`{ delegate: true, on: [429, 503] }`); a status _not_ matched by `on` is left to
 the ordinary [retry](/docs/guides/resilience/retry) path.
 
 ## Reading it off the stream

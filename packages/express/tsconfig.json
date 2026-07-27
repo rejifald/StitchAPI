@@ -27,6 +27,7 @@
         "baseUrl": ".",
         "paths": {
             "stitchapi/testing": ["../core/src/testing.ts"],
+            "stitchapi/sse-emit": ["../core/src/sse-emit.ts"],
             "stitchapi": ["../core/src/index.ts"]
         }
     },

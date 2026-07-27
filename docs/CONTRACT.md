@@ -471,7 +471,6 @@ the obligation to the GA channel. Severity = consumer blast radius.
 
 | Sev  | Current                                                            | Proposed                                | Rule |
 | ---- | ------------------------------------------------------------------ | --------------------------------------- | ---- |
-| High | `retry.on` + rate-limit `on` (`number[]`)                          | `number[] ｜ (status)=>boolean`         | P7   |
 | High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes         | hoist or qualify                        | P9   |
 | High | `queryOptions` bare in vue/solid/svelte/angular                    | `stitchQueryOptions`                    | P16  |
 | Med  | `OAuth2Opts`, `CookieSessionOpts`                                  | `OAuth2Options`, `CookieSessionOptions` | P3   |
@@ -483,9 +482,8 @@ the obligation to the GA channel. Severity = consumer blast radius.
 | Low  | `deno-kv maxIncrRetries`                                           | `incrementRetries`                      | P4   |
 | Low  | `bodyKind` (from-curl)                                             | `bodyType`                              | P1   |
 
-New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multipart`,
-`sse`, `.inspect()` scalars (P12); `idempotency` boolean (P13-toggle);
-`throttle` string (P14).
+New shorthand/toggle slots to **add** (additive, non-breaking): `.inspect()`
+scalars (P12); `idempotency` boolean (P13-toggle); `throttle` string (P14).
 
 **Shipped (migration in progress)** — all under `@deprecated` aliases read until the GA
 cut; the lint skips the deprecated members so each rename ratchets the baseline down:
@@ -500,9 +498,13 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `CacheOptions.maxEntries`→`entries`, `paginate.max`→`pages`; runtime prefers the new
     field. (`CircuitOptions.failureThreshold`→`failures` is deferred to the P17 CircuitOptions
     overhaul, where its required-ness + `cooldownMs`/`halfOpenAfterMs` are handled together.)
--   **P7** `RetryOptions.on` (and the folded `throttle.on`) now accept
-    `number[] | (status) => boolean` — additive widening, no alias. The engine normalizes via the
-    shared `acceptsStatus` matcher.
+-   **P7** the exported `StatusMatch` (`number | number[] | (status) => boolean`) is the one shape
+    for every status-classification slot: `RetryOptions.on`, `throttle.on`, `StitchConfig.acceptStatus`,
+    and the auth strategies' `refreshOn` (oauth2 + cookieSession). A bare status is shorthand for its
+    one-element list (`404` ≡ `[404]`); additive widening, no alias. Every reader normalizes through the
+    shared `acceptsStatus` matcher, hoisted from the engine into `resilience.ts` so `auth` shares it. The
+    `T | T[]` list-widening is uniform too — `DriftOptions.ignore` and `CacheOptions.vary` now accept a
+    bare string (`'x'` ≡ `['x']`), matching `DriftOptions.severity`; each consumer normalizes to the array.
 -   **P14** `rateLimit` folded into `throttle` (`throttle.delegate` / `throttle.on`); the top-level
     `rateLimit` is `@deprecated` (runtime prefers `throttle.* ?? rateLimit.*`). `PaginateOptions`
     extracted from the inline `paginate` shape (named + exported). `throttle: { rate, delegate }` is
@@ -590,6 +592,31 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     both are consumer-implemented contracts, which could not have carried an alias in any
     case. (`deno-kv`'s `maxIncrRetries` is untouched here; it is a P4 `max`-prefix
     violation and renames in that slice.)
+-   **P24 (refresh envelope)** the auth strategies' `refresh`-prefixed flat members fold into one
+    envelope (genuine breaking flat→envelope, no alias): `OAuth2Options.refreshOn`/`refreshSkew` →
+    `refresh?: StatusMatch | AtLeastOne<OAuth2RefreshOptions>` (`{ on, skew }`), and
+    `CookieSessionOptions.refreshOn`/`refreshWhen` → `refresh?: StatusMatch | AtLeastOne<CookieSessionRefreshOptions>`
+    (`{ on, when }`). A bare `StatusMatch` is the P12 dominant-field shorthand for `{ on }`
+    (`refresh: 401` ≡ `refresh: { on: [401] }`); a shared `normalizeRefresh` collapses the union to
+    the envelope once at construction, and every internal read goes through `refresh.on` (via the
+    shared `acceptsStatus` matcher) / `refresh.skew` / `refresh.when`.
+-   **P24 (Sentry capture)** `@stitchapi/sentry`'s `SentrySinkOptions.captureErrors`+`captureDrift`
+    (shared `capture` prefix) fold into `capture?: boolean | AtLeastOne<SentryCaptureOptions>` —
+    `capture: true`/omitted keeps the defaults (errors on, drift off), `false` disables both, and the
+    `{ errors, drift }` envelope sets them independently. Genuine breaking flat→envelope, no alias.
+-   **P24 (nest seam)** `@stitchapi/nest`'s `StitchFeatureOptions` feature-seam facets (the `seam`
+    config slot + `seamToken`, sharing the "seam" prefix) fold into
+    `seam?: AtLeastOne<NestFeatureSeamOptions>` (`{ config?: AtLeastOne<SeamConfig>, token? }`).
+    `forFeature`/`forFeatureScoped` read `seam.config` / `seam.token`. Genuine breaking
+    flat→envelope, no alias.
+-   **P20/P12/P13 (empty-object rejection)** the five bare all-optional `StitchConfig` slots R6 flagged
+    now type their object form so `{}` is a **compile error**: `hooks?: AtLeastOne<Hooks>` and
+    `input?: AtLeastOne<InputSchemas>` (no scalar); `multipart?: MultipartNesting | AtLeastOne<MultipartOptions>`
+    and `stream?: StreamDecode | AtLeastOne<StreamOptions>` (P12 dominant-field scalar); and
+    `sse?: boolean | AtLeastOne<SseOptions>` (P13 toggle). `expandShorthand` folds each scalar into its
+    envelope at compose time (`multipart: 'dot'` → `{ nesting }`, `stream: 'ndjson'` → `{ decode }`,
+    `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
+    only ever see the object form. **R6 clears** — the baseline is now **0**.
 
 ## 7. Enforcement
 
