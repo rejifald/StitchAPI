@@ -446,9 +446,8 @@ will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
 | Low  | `RedisDriver.del`, `…quit`, sync `close`                           | `delete`, async `close`                 | P18  |
 | Low  | `bodyKind` (from-curl)                                             | `bodyType`                              | P1   |
 
-New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multipart`,
-`sse`, `.inspect()` scalars (P12); `idempotency` boolean (P13-toggle);
-`throttle` string (P14).
+New shorthand/toggle slots to **add** (additive, non-breaking): `.inspect()`
+scalars (P12); `idempotency` boolean (P13-toggle); `throttle` string (P14).
 
 **Shipped (migration in progress)** — all under `@deprecated` aliases read until the GA
 cut; the lint skips the deprecated members so each rename ratchets the baseline down:
@@ -552,6 +551,23 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     (`refresh: 401` ≡ `refresh: { on: [401] }`); a shared `normalizeRefresh` collapses the union to
     the envelope once at construction, and every internal read goes through `refresh.on` (via the
     shared `acceptsStatus` matcher) / `refresh.skew` / `refresh.when`.
+-   **P24 (Sentry capture)** `@stitchapi/sentry`'s `SentrySinkOptions.captureErrors`+`captureDrift`
+    (shared `capture` prefix) fold into `capture?: boolean | AtLeastOne<SentryCaptureOptions>` —
+    `capture: true`/omitted keeps the defaults (errors on, drift off), `false` disables both, and the
+    `{ errors, drift }` envelope sets them independently. Genuine breaking flat→envelope, no alias.
+-   **P24 (nest seam)** `@stitchapi/nest`'s `StitchFeatureOptions` feature-seam facets (the `seam`
+    config slot + `seamToken`, sharing the "seam" prefix) fold into
+    `seam?: AtLeastOne<NestFeatureSeamOptions>` (`{ config?: AtLeastOne<SeamConfig>, token? }`).
+    `forFeature`/`forFeatureScoped` read `seam.config` / `seam.token`. Genuine breaking
+    flat→envelope, no alias.
+-   **P20/P12/P13 (empty-object rejection)** the five bare all-optional `StitchConfig` slots R6 flagged
+    now type their object form so `{}` is a **compile error**: `hooks?: AtLeastOne<Hooks>` and
+    `input?: AtLeastOne<InputSchemas>` (no scalar); `multipart?: MultipartNesting | AtLeastOne<MultipartOptions>`
+    and `stream?: StreamDecode | AtLeastOne<StreamOptions>` (P12 dominant-field scalar); and
+    `sse?: boolean | AtLeastOne<SseOptions>` (P13 toggle). `expandShorthand` folds each scalar into its
+    envelope at compose time (`multipart: 'dot'` → `{ nesting }`, `stream: 'ndjson'` → `{ decode }`,
+    `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
+    only ever see the object form. **R6 clears** — the baseline is now **0**.
 
 ## 7. Enforcement
 

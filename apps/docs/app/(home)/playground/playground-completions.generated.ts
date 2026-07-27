@@ -32,20 +32,20 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "multipart",
             type: "property",
-            detail: "MultipartOptions",
-            info: "Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`.",
+            detail: "MultipartNesting | AtLeastOne<MultipartOptions>",
+            info: "Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`. A bare  string is shorthand for the object form — `multipart: 'dot'` ≡ `multipart: { nesting: 'dot' }` (CONTRACT.md P12); the opaque `multipart: {}` is rejected (P20).",
         },
         {
             label: "stream",
             type: "property",
-            detail: "StreamOptions",
-            info: "Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body (`'bytes'` default / `'lines'` / `'ndjson'` / `'json'`). `'json'` is the structural, unframed streaming-JSON decoder (issue #111): one `delta` per complete value / top-level array element, tolerant of internal newlines and concatenated values. Only meaningful for the `stream` surface.",
+            detail: "StreamDecode | AtLeastOne<StreamOptions>",
+            info: "Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body (`'bytes'` default / `'lines'` / `'ndjson'` / `'json'`). `'json'` is the structural, unframed streaming-JSON decoder (issue #111): one `delta` per complete value / top-level array element, tolerant of internal newlines and concatenated values. Only meaningful for the `stream` surface. A bare  string is shorthand for the object form — `stream: 'ndjson'` ≡ `stream: { decode: 'ndjson' }` (CONTRACT.md P12); the opaque `stream: {}` is rejected (P20).",
         },
         {
             label: "sse",
             type: "property",
-            detail: "SseOptions",
-            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse.reconnect` the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry` policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse` surface reads it.",
+            detail: "boolean | AtLeastOne<SseOptions>",
+            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse` block the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry` policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse` surface reads it. `true` is shorthand for `{ reconnect: true }` (CONTRACT.md P13); the object form must set at least one field (P20).",
         },
         {
             label: "responseType",
@@ -92,8 +92,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "input",
             type: "property",
-            detail: "InputSchemas",
-            info: "Schemas validating params, query, body, headers, and (GraphQL) variables before the request.",
+            detail: "AtLeastOne<InputSchemas>",
+            info: "Schemas validating params, query, body, headers, and (GraphQL) variables before the request. At least one slot must be set — the opaque `input: {}` is rejected (CONTRACT.md P20).",
         },
         {
             label: "output",
@@ -182,8 +182,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "hooks",
             type: "property",
-            detail: "Hooks",
-            info: "Request/response/error/retry lifecycle hooks.",
+            detail: "AtLeastOne<Hooks>",
+            info: "Request/response/error/retry lifecycle hooks. At least one — the opaque `hooks: {}` is rejected (CONTRACT.md P20).",
         },
         {
             label: "extends",

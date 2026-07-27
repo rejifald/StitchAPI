@@ -110,7 +110,7 @@ describe('sentrySink', () => {
         expect(on.breadcrumbs).toHaveLength(1);
     });
 
-    test('error-level drift is breadcrumbed; captured only with captureDrift', () => {
+    test('error-level drift is breadcrumbed; captured only with capture.drift', () => {
         const a = mockSentry();
         sentrySink(a.sentry).handle(ev.driftError, ctx);
         expect(a.breadcrumbs).toHaveLength(1);
@@ -121,13 +121,19 @@ describe('sentrySink', () => {
         expect(a.captures).toHaveLength(0);
 
         const b = mockSentry();
-        sentrySink(b.sentry, { captureDrift: true }).handle(ev.driftError, ctx);
+        sentrySink(b.sentry, { capture: { drift: true } }).handle(
+            ev.driftError,
+            ctx,
+        );
         expect(b.captures).toHaveLength(1);
     });
 
-    test('captureErrors:false still breadcrumbs the error but does not capture it as an issue', () => {
+    test('capture.errors:false still breadcrumbs the error but does not capture it as an issue', () => {
         const { sentry, breadcrumbs, captures } = mockSentry();
-        sentrySink(sentry, { captureErrors: false }).handle(ev.error, ctx);
+        sentrySink(sentry, { capture: { errors: false } }).handle(
+            ev.error,
+            ctx,
+        );
 
         // The error trail is preserved, but the framework owns the issue.
         expect(captures).toHaveLength(0);
@@ -135,7 +141,7 @@ describe('sentrySink', () => {
         expect(breadcrumbs[0]!.level).toBe('error');
     });
 
-    test('captureDrift only captures an error-level finding — a warn-level drift is breadcrumbed only', () => {
+    test('capture.drift only captures an error-level finding — a warn-level drift is breadcrumbed only', () => {
         const driftWarn: StitchEvent = {
             type: 'drift',
             finding: {
@@ -146,15 +152,25 @@ describe('sentrySink', () => {
             at: 0,
         };
         const { sentry, breadcrumbs, captures } = mockSentry();
-        sentrySink(sentry, { captureDrift: true }).handle(driftWarn, ctx);
+        sentrySink(sentry, { capture: { drift: true } }).handle(driftWarn, ctx);
 
-        // captureDrift is gated on an error-level finding; a warn drift only crumbs.
+        // capture.drift is gated on an error-level finding; a warn drift only crumbs.
         expect(captures).toHaveLength(0);
         expect(breadcrumbs).toHaveLength(1);
         expect(breadcrumbs[0]).toMatchObject({
             category: 'stitch.drift',
             level: 'warning',
         });
+    });
+
+    test('capture:false disables both errors and drift — only breadcrumbs (P24 toggle)', () => {
+        const { sentry, breadcrumbs, captures } = mockSentry();
+        const sink = sentrySink(sentry, { capture: false });
+        sink.handle(ev.error, ctx);
+        sink.handle(ev.driftError, ctx);
+        // Both the error and the error-level drift are trailed but never captured as issues.
+        expect(captures).toHaveLength(0);
+        expect(breadcrumbs).toHaveLength(2);
     });
 
     test('delta and info events are never sent (raw data / announcements)', () => {

@@ -83,6 +83,7 @@ const BROWSER_LEGIT = [
     'src/index.ts',
     'src/graphql.ts',
     'src/sse.ts',
+    'src/sse-emit.ts',
     'src/stream.ts',
     'src/download.ts',
     'src/postmessage.ts',

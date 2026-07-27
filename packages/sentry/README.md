@@ -33,16 +33,16 @@ The same sink works on a single stitch — `stitch({ trace: sentrySink(Sentry) }
 
 ## What it sends
 
-| Event                          | Sentry                                                               |
-| ------------------------------ | -------------------------------------------------------------------- |
-| `error`                        | `captureMessage` (level `error`) + an error breadcrumb               |
-| `progress` (`retry`/`circuit`) | breadcrumb, level `warning`                                          |
-| `progress` (throttle/paginate) | breadcrumb, level `debug`                                            |
-| `drift`                        | breadcrumb (level follows the finding); captured with `captureDrift` |
-| `start` / `result` / `done`    | breadcrumb only when `lifecycle: true` (off by default)              |
-| `delta` / `info`               | **never sent** (raw response data / strategy announcements)          |
+| Event                          | Sentry                                                                |
+| ------------------------------ | --------------------------------------------------------------------- |
+| `error`                        | `captureMessage` (level `error`) + an error breadcrumb                |
+| `progress` (`retry`/`circuit`) | breadcrumb, level `warning`                                           |
+| `progress` (throttle/paginate) | breadcrumb, level `debug`                                             |
+| `drift`                        | breadcrumb (level follows the finding); captured with `capture.drift` |
+| `start` / `result` / `done`    | breadcrumb only when `lifecycle: true` (off by default)               |
+| `delta` / `info`               | **never sent** (raw response data / strategy announcements)           |
 
-Options: `{ lifecycle?, captureErrors?, captureDrift? }`.
+Options: `{ lifecycle?, capture? }` — `capture` is `boolean | { errors?, drift? }`: `true`/omitted captures errors (not drift), `false` disables both, or set `errors`/`drift` independently.
 
 ## Safe on a secret-bearing seam
 

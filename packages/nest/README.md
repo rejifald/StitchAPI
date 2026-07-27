@@ -69,8 +69,10 @@ export const GetUser = defineStitch((s) =>
     imports: [
         StitchModule.forFeature({
             seam: {
-                baseUrl: 'https://api.example.com',
-                auth: bearer(env('TOKEN')),
+                config: {
+                    baseUrl: 'https://api.example.com',
+                    auth: bearer(env('TOKEN')),
+                },
             },
             stitches: [GetUser],
         }),
@@ -102,8 +104,10 @@ the request-scoped `seam.as(principal)` handle and the request-scoped stitches f
     imports: [
         StitchModule.forFeatureScoped({
             seam: {
-                baseUrl: 'https://api.example.com',
-                auth: bearer(env('TOKEN')),
+                config: {
+                    baseUrl: 'https://api.example.com',
+                    auth: bearer(env('TOKEN')),
+                },
             },
             stitches: [GetUser],
             principal: (req) => req.user?.tenantId ?? 'anonymous',

@@ -680,14 +680,14 @@ for await (const ev of events.stream()) {
 }
 ```
 
-`stream` is the raw sibling — `decode: 'bytes'` (default), `'lines'`, or `'ndjson'`:
+`stream` is the raw sibling — `decode: 'bytes'` (default), `'lines'`, or `'ndjson'`; the bare decoder is shorthand for the object (`stream: 'ndjson'` ≡ `stream: { decode: 'ndjson' }`):
 
 ```ts
 import { stream } from 'stitchapi/stream';
 
 const logs = stream({
     url: 'https://demo.stitchapi.dev/logs',
-    stream: { decode: 'ndjson' },
+    stream: 'ndjson',
 });
 
 for await (const ev of logs.stream()) {
