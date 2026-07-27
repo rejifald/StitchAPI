@@ -76,7 +76,7 @@ Drift is schema-anchored — no snapshot (ADR 0015). Each call validates the unw
 
 ## Auth
 
-`bearer(secret)`, `apiKey({ header?, value })`, `basic({ user, pass })`, `cookieSession({ login: <stitch>, cookie: 'sid', loginInput?: () => StitchInput, refreshOn?: [401] })`. Secrets: `env('VAR')` / `secretsFile('name')` return `() => string` resolved at call time. `cookieSession` auto-logs-in when no cookie is stored, replays the captured cookie, and re-logs-in when a response status is in `refreshOn`.
+`bearer(secret)`, `apiKey({ header?, value })`, `basic({ user, pass })`, `cookieSession({ login: <stitch>, cookie: 'sid', loginInput?: () => StitchInput, refresh?: [401] })`. Secrets: `env('VAR')` / `secretsFile('name')` return `() => string` resolved at call time. `cookieSession` auto-logs-in when no cookie is stored, replays the captured cookie, and re-logs-in when a response status is matched by `refresh`.
 
 ## Mock server
 

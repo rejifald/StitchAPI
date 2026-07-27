@@ -134,8 +134,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "acceptStatus",
             type: "property",
-            detail: "number[] | ((status: number) => boolean)",
-            info: "Statuses that are a NORMAL result rather than an error — a number list or a predicate. An accepted non-2xx flows through interpret → transform → pick → validate exactly like a 2xx (the response body becomes the result), instead of throwing a . Use this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a `catch`. `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts are exhausted, then accepted (returned) on the final attempt. Orthogonal to `throttle.delegate`, which surfaces a  on rate-limit statuses earlier.",
+            detail: "StatusMatch",
+            info: "Status(es) that are a NORMAL result rather than an error — a number, a list, or a predicate (CONTRACT.md P7). An accepted non-2xx flows through interpret → transform → pick → validate exactly like a 2xx (the response body becomes the result), instead of throwing a . Use this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a `catch`. `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts are exhausted, then accepted (returned) on the final attempt. Orthogonal to `throttle.delegate`, which surfaces a  on rate-limit statuses earlier.",
         },
         {
             label: "throttle",
