@@ -94,6 +94,25 @@ test('a success resets the consecutive-failure count', async () => {
     expect(server.callCount('/svc')).toBe(5); // all 5 hit the server → breaker never opened
 });
 
+test('the positional [failures, cooldown] shorthand trips the breaker (P15)', async () => {
+    server.route('GET', '/svc', {
+        statuses: [500, 500, 200],
+        body: { ok: true },
+    });
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/svc',
+        // `[2, 300]` ≡ `{ failures: 2, cooldown: 300 }` — compose expands the tuple.
+        circuit: [2, 300],
+    });
+
+    for (let i = 0; i < 2; i++) await expect(call()).rejects.toBeDefined();
+    expect(server.callCount('/svc')).toBe(2);
+    // 3rd call: breaker OPEN → fast-fail, server NOT hit.
+    await collect(call());
+    expect(server.callCount('/svc')).toBe(2);
+});
+
 test('cooldown accepts a duration string (P17 widening)', async () => {
     const call = stitch({
         baseUrl: server.url,

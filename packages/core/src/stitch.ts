@@ -76,11 +76,18 @@ function asConfig(f: Fragment): Partial<StitchConfig> {
     return f;
 }
 
+// A single fragment is shorthand for a one-element list (P7); `Stitch` is a function and a bare
+// partial is an object, so `Array.isArray` cleanly separates the two spellings.
+function fragmentList(ext: StitchConfig['extends']): Fragment[] {
+    if (ext === undefined) return [];
+    return Array.isArray(ext) ? ext : [ext];
+}
+
 function flatten(layers: Fragment[]): Partial<StitchConfig>[] {
     const out: Partial<StitchConfig>[] = [];
     for (const layer of layers) {
         const cfg = asConfig(layer);
-        if (cfg.extends) out.push(...flatten(cfg.extends));
+        if (cfg.extends) out.push(...flatten(fragmentList(cfg.extends)));
         const rest = { ...cfg };
         delete (rest as { extends?: unknown }).extends;
         out.push(rest);
@@ -166,6 +173,12 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
     // `sse: {}` is a type error at the slot, so the all-defaults case arrives here as `true`).
     if (cfg.sse === true) cfg.sse = { reconnect: true };
     else if (cfg.sse === false) delete cfg.sse;
+    // P15: the positional circuit names both required fields — `[5, '30s']` ≡
+    // `{ failures: 5, cooldown: '30s' }`.
+    if (Array.isArray(cfg.circuit)) {
+        const [failures, cooldown] = cfg.circuit;
+        cfg.circuit = { failures, cooldown };
+    }
     // P20: `idempotency: true` enables it with defaults; `false`/absent is off. Normalize the
     // boolean toggle to the object form the engine reads (the opaque `idempotency: {}` is a type
     // error at the slot, so the all-defaults case arrives here as `true`).
@@ -507,6 +520,16 @@ async function drainRun<T>(
     };
 }
 
+// P13/P20: the probe opts scalar — `true` ≡ `{ cache: true }` (honour the cache policy);
+// `false`/absent is the default fresh, cache-bypassing probe.
+function inspectOptions(
+    opts: boolean | InspectOptions | undefined,
+): InspectOptions | undefined {
+    if (opts === true) return { cache: true };
+    if (opts === false) return undefined;
+    return opts;
+}
+
 // ADR 0018: opt-in redaction of `raw` — applied AFTER findings are computed so the diff runs on the
 // unredacted body. `raw` is only non-null when a live request ran (streaming / cache hits stay
 // null, so redaction is a no-op on null).
@@ -778,22 +801,31 @@ export function makeStitch<T = unknown>(
     const streamFn = (input?: StitchInput) =>
         streamWith(input ?? {}, newRunContext());
     // `.inspect()` (ADR 0016 / ADR 0018): one fresh root run with the raw body retained and the
-    // cache bypassed by default (`{ cache: true }` opts caching back in). Consumed by the
+    // cache bypassed by default (`true` / `{ cache: true }` opts caching back in). Consumed by the
     // never-throwing `consumeInspect`, which also applies opt-in redaction (ADR 0018).
-    const inspectFn = (input: StitchInput, opts?: InspectOptions) =>
-        consumeInspect<T>(
+    const inspectFn = (
+        input: StitchInput,
+        rawOpts?: boolean | InspectOptions,
+    ) => {
+        const opts = inspectOptions(rawOpts);
+        return consumeInspect<T>(
             streamWith(input, newRunContext(), {
                 retainRaw: true,
                 bypassCache: !opts?.cache,
             }),
             opts,
         );
+    };
     // `.report()` (ADR 0019): the same fresh, raw-retaining, cache-bypassing-by-default probe as
     // `.inspect()`, drained by `consumeReport` into a `RunReport` (the Inspection plus run
     // diagnostics). The config echo is the stitch's ALREADY-redacted `__config` — never `__rawConfig`.
     const reportConfig = redactConfig(cfg);
-    const reportFn = (input: StitchInput, opts?: InspectOptions) =>
-        consumeReport<T>(
+    const reportFn = (
+        input: StitchInput,
+        rawOpts?: boolean | InspectOptions,
+    ) => {
+        const opts = inspectOptions(rawOpts);
+        return consumeReport<T>(
             streamWith(input, newRunContext(), {
                 retainRaw: true,
                 bypassCache: !opts?.cache,
@@ -801,6 +833,7 @@ export function makeStitch<T = unknown>(
             reportConfig,
             opts,
         );
+    };
 
     const result = (input?: StitchInput): StitchResult<T> => {
         const make = () => streamFn(input);
@@ -847,9 +880,9 @@ export function makeStitch<T = unknown>(
     stitchFn.stream = streamFn;
     stitchFn.safe = (input?: StitchInput) => consumeSafe<T>(streamFn(input));
     stitchFn.unwrap = (input?: StitchInput) => consume<T>(streamFn(input));
-    stitchFn.inspect = (input?: StitchInput, opts?: InspectOptions) =>
+    stitchFn.inspect = (input?: StitchInput, opts?: boolean | InspectOptions) =>
         inspectFn(input ?? {}, opts);
-    stitchFn.report = (input?: StitchInput, opts?: InspectOptions) =>
+    stitchFn.report = (input?: StitchInput, opts?: boolean | InspectOptions) =>
         reportFn(input ?? {}, opts);
     stitchFn.with = (partial: StitchInput) => {
         // bind partial input; the bound stitch reuses the same runtime (cookies/throttle persist)
@@ -871,9 +904,11 @@ export function makeStitch<T = unknown>(
             consumeSafe<T>(streamFn(mergeInput(partial, input)));
         bound.unwrap = (input?: StitchInput) =>
             consume<T>(streamFn(mergeInput(partial, input)));
-        bound.inspect = (input?: StitchInput, opts?: InspectOptions) =>
-            inspectFn(mergeInput(partial, input), opts);
-        bound.report = (input?: StitchInput, opts?: InspectOptions) =>
+        bound.inspect = (
+            input?: StitchInput,
+            opts?: boolean | InspectOptions,
+        ) => inspectFn(mergeInput(partial, input), opts);
+        bound.report = (input?: StitchInput, opts?: boolean | InspectOptions) =>
             reportFn(mergeInput(partial, input), opts);
         bound.with = (more: StitchInput) =>
             stitchFn.with(mergeInput(partial, more));

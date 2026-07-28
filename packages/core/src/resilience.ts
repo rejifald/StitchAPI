@@ -328,7 +328,7 @@ export function createCircuit(
     const cooldown = parseDuration(opts.cooldown);
     if (failureThreshold == null || cooldown == null)
         throw new Error(
-            'circuit requires `failures` and `cooldown`. Fix: set both, e.g. `circuit: { failures: 5, cooldown: "30s" }`.',
+            'circuit requires `failures` and `cooldown`. Fix: set both, e.g. `circuit: { failures: 5, cooldown: "30s" }` or `circuit: [5, "30s"]`.',
         );
     const halfOpenAfter = parseDuration(opts.halfOpenAfter) ?? cooldown;
     const nsKey = 'circuit:' + (opts.key ?? fallbackKey);
