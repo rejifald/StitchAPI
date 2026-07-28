@@ -29,16 +29,14 @@ describe('endpointLabel', () => {
         );
     });
 
-    it('marks a dynamic (function) url', () => {
-        expect(endpointLabel(cfg({ url: () => 'https://x' }))).toBe(
-            'GET (dynamic url)',
-        );
+    it('a redacted-away (dynamic) url reads as no endpoint', () => {
+        // A url thunk never survives redaction (P0 — no functions on `__config`), so the
+        // redacted view simply has no url and the label falls back.
+        expect(endpointLabel(cfg({}))).toBe('GET (no endpoint)');
     });
 
-    it('marks a dynamic baseUrl while keeping the path', () => {
-        expect(
-            endpointLabel(cfg({ baseUrl: () => 'https://x', path: '/y' })),
-        ).toBe('GET (dynamic)/y');
+    it('keeps the path when a dynamic baseUrl was redacted away', () => {
+        expect(endpointLabel(cfg({ path: '/y' }))).toBe('GET /y');
     });
 
     it('falls back to "(no endpoint)" when nothing is configured', () => {
@@ -63,19 +61,18 @@ describe('pipelineStages', () => {
             throttle: { concurrency: 2 },
             retry: { attempts: 3 },
             paginate: { pages: 7 },
-            transform: () => undefined,
             pick: 'data',
             output: () => true,
-            cache: '1m',
+            cache: { ttl: '1m' },
         });
-        // Post-response order is transform → pick → validate (engine.ts), bookended by call/result.
+        // Post-response order is pick → validate (engine.ts), bookended by call/result. (`transform`
+        // is a live closure and never survives redaction — P0 — so it cannot appear as a stage.)
         expect(pipelineStages(full, { detailed: true })).toEqual([
             'call',
             'throttle',
             'POST https://api.example.com/widgets',
             'retry ×3',
             'paginate (max 7)',
-            'transform',
             'pick: data',
             'validate',
             'cache',

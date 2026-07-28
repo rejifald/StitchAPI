@@ -11,7 +11,7 @@
 // - `stitchStreamUpdater` — fold a streaming stitch's `delta` chunks into the cache
 //                          via an endpoint `onCacheEntryAdded` — RTK Query is the one
 //                          cache lib here that models streaming.
-import type { Stitch, StitchEvent } from 'stitchapi';
+import type { AtLeastOne, Stitch, StitchEvent } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
 // The structural call contract
@@ -24,6 +24,11 @@ import type { Stitch, StitchEvent } from 'stitchapi';
 export type StitchLike<T, Input = unknown> = (input?: Input) => PromiseLike<T>;
 
 /** A callable whose result is also streamable (`sse` / `stream` surfaces). */
+// The INTENTIONAL rich tier, restated locally (CONTRACT.md P9 de-list): this is the same
+// awaitable-plus-`stream()` shape as `@stitchapi/query-core`'s canonical `StitchLike`, deliberately
+// under a DISTINCT name — two named tiers, not a unique-by-shape clash. It is restated rather than
+// imported because this package takes no `@stitchapi/query-core` dependency by design (RTK Query is
+// the store); a real stitch satisfies both tiers.
 export type StreamableStitchLike<T, Input = unknown> = (
     input?: Input,
 ) => PromiseLike<T> & { stream(): AsyncIterable<StitchEvent<T>> };
@@ -49,11 +54,21 @@ export type QueryInput<S> =
 // ---------------------------------------------------------------------------
 
 /** A serialisable representation of a thrown reason, safe to hold in Redux state:
- * the error's `name` and `message` plus any primitive own fields (e.g. a
- * `StitchError`'s `status`). */
+ * the error's `name` (the stable discriminator) and `message` plus every
+ * JSON-survivable own field. For a `StitchError` / `RateLimitError` that means the
+ * whole CONTRACT.md P10 field set — `status?`, `attempts`, `body?`, `url?` — survives
+ * into Redux state (`body` is the parsed response payload, plain JSON data), so a
+ * consumer can branch on a stored error exactly as on the thrown one. Fields that
+ * would not survive `JSON.stringify` intact (functions, class instances, cycles) are
+ * dropped, as is `RateLimitError.response`: core documents the raw `AdapterResponse`
+ * as riding on the live instance only, never a serialized surface. */
 export interface StitchQueryFnError {
     readonly name: string;
     readonly message: string;
+    readonly status?: number;
+    readonly attempts?: number;
+    readonly body?: unknown;
+    readonly url?: string;
     readonly [key: string]: unknown;
 }
 
@@ -63,14 +78,32 @@ export type QueryFnResult<Data> =
     | { data: Data; error?: undefined }
     | { data?: undefined; error: StitchQueryFnError };
 
-function isPrimitive(v: unknown): boolean {
-    return (
-        v === null ||
-        v === undefined ||
-        typeof v === 'string' ||
-        typeof v === 'number' ||
-        typeof v === 'boolean'
-    );
+/** Does `value` come back from a `JSON.stringify`/`parse` round trip intact? Plain
+ * data only: primitives (finite numbers — `NaN`/`Infinity` degrade to `null`),
+ * arrays, and plain objects. Class instances (a raw `Response`, a nested `Error`),
+ * functions, symbols, bigints, and cyclic structures do not survive, so their
+ * fields are dropped rather than mangled. `undefined` INSIDE a container is fine
+ * (JSON omits the key / nulls the array slot without throwing). */
+function isJsonSurvivable(value: unknown, seen: Set<object>): boolean {
+    if (value === null || value === undefined) return true;
+    const t = typeof value;
+    if (t === 'string' || t === 'boolean') return true;
+    if (t === 'number') return Number.isFinite(value as number);
+    if (t !== 'object') return false; // function | symbol | bigint
+    const obj = value as object;
+    if (seen.has(obj)) return false; // cycle — JSON.stringify would throw
+    seen.add(obj);
+    let ok: boolean;
+    if (Array.isArray(obj)) {
+        ok = obj.every((v) => isJsonSurvivable(v, seen));
+    } else {
+        const proto: unknown = Object.getPrototypeOf(obj);
+        ok =
+            (proto === Object.prototype || proto === null) &&
+            Object.values(obj).every((v) => isJsonSurvivable(v, seen));
+    }
+    seen.delete(obj); // path-scoped: shared (DAG) substructure is not a cycle
+    return ok;
 }
 
 function serializeError(reason: unknown): StitchQueryFnError {
@@ -78,8 +111,16 @@ function serializeError(reason: unknown): StitchQueryFnError {
         const extra: Record<string, unknown> = {};
         const own = reason as unknown as Record<string, unknown>;
         for (const key of Object.keys(reason)) {
+            // The raw response carrier stays behind: core documents
+            // `RateLimitError.response` (the full `AdapterResponse`, headers and all)
+            // as living on the thrown instance ONLY — it must never serialise into a
+            // sink, and Redux state (devtools, persistence) is exactly such a sink.
+            // The P10 projection of it (`status`/`body`/`url`) is already lifted onto
+            // the error's own fields and survives below.
+            if (key === 'response') continue;
             const value = own[key];
-            if (isPrimitive(value)) extra[key] = value;
+            if (value !== undefined && isJsonSurvivable(value, new Set()))
+                extra[key] = value;
         }
         return { name: reason.name, message: reason.message, ...extra };
     }
@@ -127,10 +168,18 @@ export function stitchQueryFn<T>(
 // stitchStreamUpdater
 // ---------------------------------------------------------------------------
 
-/** How a streaming endpoint folds `delta` chunks into its cached array. */
+/** How a streaming endpoint folds `delta` chunks into its cached array:
+ * `'append'` (default) pushes every chunk; `'replace'` keeps only the latest. */
+export type StreamUpdaterMode = 'append' | 'replace';
+
+/** The {@link stitchStreamUpdater} options envelope. At the parameter the mode is
+ * the dominant field, so its scalar is accepted directly (`'replace'` ≡
+ * `{ mode: 'replace' }`, CONTRACT.md P12) and the object form requires at least one
+ * field — `{}` is a compile error, the all-defaults case is omitting the argument
+ * (P20). */
 export interface StreamUpdaterOptions {
     /** `'append'` (default) pushes every chunk; `'replace'` keeps only the latest. */
-    readonly mode?: 'append' | 'replace';
+    readonly mode?: StreamUpdaterMode;
 }
 
 /** The slice of RTK Query's cache-lifecycle API that {@link stitchStreamUpdater}
@@ -153,18 +202,21 @@ export interface CacheLifecycleApi<Data> {
  * }),
  * ```
  *
- * The cached data is the accumulated chunks (`mode: 'append'`, default) or the
- * latest chunk (`mode: 'replace'`). Streaming stops when the cache entry is removed.
+ * The cached data is the accumulated chunks (`'append'`, default) or the latest
+ * chunk (`'replace'`): pass the mode scalar — `stitchStreamUpdater(chat, 'replace')`
+ * ≡ `{ mode: 'replace' }`. Streaming stops when the cache entry is removed.
  */
 export function stitchStreamUpdater<Chunk, Input = unknown>(
     stitch: StreamableStitchLike<unknown, Input>,
-    options?: StreamUpdaterOptions,
+    options?: StreamUpdaterMode | AtLeastOne<StreamUpdaterOptions>,
 ): (input: Input, api: CacheLifecycleApi<Chunk[]>) => Promise<void>;
 export function stitchStreamUpdater<Chunk>(
     stitch: StreamableStitchLike<unknown, unknown>,
-    options: StreamUpdaterOptions = {},
+    options?: StreamUpdaterMode | AtLeastOne<StreamUpdaterOptions>,
 ): (input: unknown, api: CacheLifecycleApi<Chunk[]>) => Promise<void> {
-    const mode = options.mode ?? 'append';
+    // The scalar shorthand normalises to the canonical `mode` field (CONTRACT.md P0/P12).
+    const mode: StreamUpdaterMode =
+        typeof options === 'string' ? options : (options?.mode ?? 'append');
     return async (
         input: unknown,
         api: CacheLifecycleApi<Chunk[]>,

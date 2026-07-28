@@ -79,11 +79,25 @@ app.get('/chat', ({ stitch, query }) => {
 });
 ```
 
-Each `delta` chunk becomes one SSE message; an `error` event ends the stream as a
-named `event: error` message; stream end closes the response; and a client
-disconnect cancels the body and aborts the upstream stitch stream rather than
-leaving it running. Control events (`start`/`progress`/`result`/`done`/…) are not
-forwarded.
+Each `delta` chunk becomes one SSE message (label it with `event`, add a
+last-event id with `id: (chunk, index) => string`); an `error` event ends the
+stream as a named `event: error` message; stream end closes the response; and a
+client disconnect cancels the body and aborts the upstream stitch stream rather
+than leaving it running. Control events (`start`/`progress`/`result`/`done`/…)
+are not forwarded.
+
+The error message's `data` is a **generic `error` token by default** — the raw
+upstream message is withheld, because it can disclose internal network topology
+(`getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status
+(`HTTP 401`) to an untrusted client. Observe the real failure server-side with
+`onError`, and opt in to shaping the client-facing frame with `errorData`:
+
+```ts
+return streamStitchSse(chat.stream(), {
+    onError: (err) => log.error(err), // the raw failure, server-side only
+    // errorData: (e) => e.message,   // opt-in: only when upstream messages are safe
+});
+```
 
 By default the `error` frame carries a generic `data: error` token, **not** the raw
 error message — echoing it can disclose internal network topology (a transport failure

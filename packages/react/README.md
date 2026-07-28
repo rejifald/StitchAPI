@@ -14,7 +14,7 @@ These hooks are a thin layer over [`@stitchapi/query-core`](../query-core), the 
 pnpm add @stitchapi/react@rc @stitchapi/query-core@rc stitchapi@rc react
 ```
 
-`stitchapi` (`>=0.7.0`) and `react` (`^18 || ^19`) are peer dependencies. `@tanstack/react-query` is an **optional** peer — only needed if you use `stitchQueryOptions`.
+`stitchapi` (`^1.0.0-rc.1`), `@stitchapi/query-core` (`^1.0.0-rc.2`) and `react` (`^18 || ^19`) are peer dependencies. `@tanstack/react-query` is an **optional** peer — only needed if you use `stitchQueryOptions`.
 
 ## `useStitch` — request / response
 
@@ -91,12 +91,13 @@ import { useQuery } from '@tanstack/react-query';
 const { data } = useQuery(stitchQueryOptions(getUser, { params: { id } }));
 ```
 
+The adapter (and its key derivation — `deriveQueryKey`, `nameOf`, `keyInputFor`) is the single shared implementation from [`@stitchapi/query-core`](../query-core), re-exported here, so a stitch keys identically across every framework binding and secret header values never enter the key.
+
 > [!NOTE]
 >
 > It is `stitchQueryOptions`, not a bare `queryOptions`, because TanStack Query
 > exports its own `queryOptions` — the bare name would clash on import
-> ([ADR 0012](../../docs/adr/0012-integration-symbol-naming.md)). `queryOptions`
-> remains a `@deprecated` alias through `1.0.0-rc`, removed at the 1.0 GA cut.
+> ([ADR 0012](../../docs/adr/0012-integration-symbol-naming.md)).
 
 ## License
 

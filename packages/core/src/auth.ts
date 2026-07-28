@@ -177,11 +177,30 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
 }
 
 /**
+ * Where {@link apiKey} puts the key, discriminated on `in`. Either arm names the key's location
+ * with the same field — `name` is the header name in the header arm and the query-param name in
+ * the query arm.
+ */
+export type ApiKeyOptions =
+    | {
+          in?: 'header';
+          /** Header name the key is written to (sent lower-cased). Default `'X-API-Key'`. */
+          name?: string;
+          value: Secret;
+      }
+    | {
+          in: 'query';
+          /** Query-param name the key is appended as. Default `'api_key'`. */
+          name?: string;
+          value: Secret;
+      };
+
+/**
  * API-key auth, in a request **header** (the default) or a **query param**. The key is a
  * {@link Secret} resolved at call time — the caller (an agent) never sees it.
  *
- * - `in: 'header'` (default): writes `header` (default `'x-api-key'`, lower-cased) — byte-for-byte
- *   the original behaviour, so existing stitches are unaffected.
+ * - `in: 'header'` (default): writes the `name` header (default `'X-API-Key'`, lower-cased on
+ *   the wire).
  * - `in: 'query'`: appends `name=<resolved>` (default `'api_key'`) to the request URL,
  *   URL-encoded. The strategy runs in the attempt loop on the fully-built `req` (after
  *   templating/query-building), so it safely appends onto whatever query the URL already carries.
@@ -193,11 +212,7 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
  * `name` is registered with the URL-credential scrubber, so if it does surface in a sink (an OTLP
  * `url.full`, the structured `input.query`) it is REDACTED, like `api_key`/`access_token`/… are.
  */
-export function apiKey(
-    opts:
-        | { in?: 'header'; header?: string; value: Secret }
-        | { in: 'query'; name?: string; value: Secret },
-): AuthStrategy {
+export function apiKey(opts: ApiKeyOptions): AuthStrategy {
     if (opts.in === 'query') {
         const name = opts.name ?? 'api_key';
         // Teach the trace scrubber this param name carries a secret, so the key never reaches a
@@ -217,7 +232,7 @@ export function apiKey(
             },
         };
     }
-    const headerName = opts.header ?? 'X-API-Key';
+    const headerName = opts.name ?? 'X-API-Key';
     const header = headerName.toLowerCase();
     return {
         name: 'apiKey',
@@ -228,7 +243,23 @@ export function apiKey(
     };
 }
 
-export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
+export interface BasicOptions {
+    user: Secret;
+    pass: Secret;
+}
+
+/** HTTP Basic auth. Positional `basic(user, pass)` ≡ `basic({ user, pass })` (CONTRACT.md P15). */
+export function basic(user: Secret, pass: Secret): AuthStrategy;
+export function basic(opts: BasicOptions): AuthStrategy;
+export function basic(
+    userOrOpts: Secret | BasicOptions,
+    pass?: Secret,
+): AuthStrategy {
+    // A Secret is a string or a thunk, never a plain object — so an object IS the options form.
+    const opts: BasicOptions =
+        typeof userOrOpts === 'string' || typeof userOrOpts === 'function'
+            ? { user: userOrOpts, pass: pass as Secret }
+            : userOrOpts;
     return {
         name: 'basic',
         scheme: { type: 'http', scheme: 'basic' },
@@ -299,9 +330,13 @@ export interface OAuth2Options {
      * Token tenancy (ADR 0002 §3). Default **`'app'`**: one token serves every caller — the right
      * model for `client_credentials`, which authenticates the *application*, not a user. Set
      * `'principal'` to fold the seam-bound principal into the token's cache key (and **throw if no
-     * principal is bound**, mirroring {@link CookieSessionOptions.tenancy}); each tenant then caches its
-     * own token and one tenant's 401/refresh never disturbs another's in-flight calls. Pair it with
-     * per-tenant `clientId`/`clientSecret`/`scope` for full multi-tenant separation.
+     * principal is bound**, mirroring {@link CookieSessionOptions.tenancy}); each tenant then caches
+     * its own token and one tenant's 401/refresh never disturbs another's in-flight calls. Pair it
+     * with per-tenant `clientId`/`clientSecret`/`scope` for full multi-tenant separation.
+     *
+     * The two defaults deliberately diverge (CONTRACT.md P8): `oauth2` defaults to `'app'` because
+     * a client-credentials token belongs to the application, while {@link CookieSessionOptions.tenancy}
+     * defaults fail-closed to `'principal'` because a cookie session belongs to a user.
      */
     tenancy?: 'principal' | 'app';
     /** Test seam / custom transport for the token request (default `fetchAdapter()`). */

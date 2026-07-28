@@ -71,7 +71,7 @@ export function streamThenError(
 }
 
 /** One Server-Sent Event for {@link sseStream}. A bare string is shorthand for `{ data }`. */
-export interface SseEvent {
+export interface SseFixtureEvent {
     /** The `data:` payload — a string is sent verbatim (split across `data:` lines on `\n`); any
      *  other value is `JSON.stringify`'d. */
     data: unknown;
@@ -91,12 +91,12 @@ export interface SseEvent {
  * {@link streamAdapter}) to drive the `sse` surface, including `id:`/`retry:` for reconnect tests.
  */
 export function sseStream(
-    events: (SseEvent | string)[],
+    events: (SseFixtureEvent | string)[],
 ): ReadableStream<Uint8Array> {
     return streamOf(events.map(frameSse));
 }
 
-function frameSse(ev: SseEvent | string): string {
+function frameSse(ev: SseFixtureEvent | string): string {
     if (typeof ev === 'string') return `data: ${ev}\n\n`;
     const lines: string[] = [];
     if (ev.comment !== undefined) lines.push(`: ${ev.comment}`);
@@ -109,6 +109,14 @@ function frameSse(ev: SseEvent | string): string {
     return `${lines.join('\n')}\n\n`;
 }
 
+/** Options for {@link streamAdapter}. */
+export interface StreamAdapterOptions {
+    /** HTTP status of the streaming response. Default `200`. */
+    status?: number;
+    /** Response headers (lowercased names, like a real adapter). */
+    headers?: Record<string, string>;
+}
+
 /**
  * An adapter that requires a streaming request (`req.stream`) and returns `body` as the live
  * response body. The minimal transport for a single streaming call; for routing, status sequences,
@@ -116,14 +124,14 @@ function frameSse(ev: SseEvent | string): string {
  */
 export function streamAdapter(
     body: ReadableStream<Uint8Array>,
-    init: { status?: number; headers?: Record<string, string> } = {},
+    opts: StreamAdapterOptions = {},
 ): Adapter {
     return (req: AdapterRequest): Promise<AdapterResponse> => {
         if (!req.stream)
             return Promise.reject(new Error('expected req.stream to be set'));
         return Promise.resolve({
-            status: init.status ?? 200,
-            headers: init.headers ?? {},
+            status: opts.status ?? 200,
+            headers: opts.headers ?? {},
             body,
         });
     };

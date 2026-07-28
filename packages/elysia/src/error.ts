@@ -6,7 +6,7 @@
 //
 // Web-standard: builds a plain `Response` (Fetch) — no `node:*`, so it runs under Bun, Node,
 // Deno and the edge alike.
-import type { StitchEnvLike } from './context';
+import type { ErrorContextLike } from './context';
 
 /** The error a stitch rejects with on failure: a branded `Error` carrying the upstream status. */
 export type StitchErrorLike = Error & { status?: number };
@@ -96,9 +96,9 @@ export function stitchErrorResponse(
  */
 export function stitchOnError(
     options: StitchErrorOptions = {},
-): (ctx: StitchEnvLike) => Response | undefined {
+): (ctx: ErrorContextLike) => Response | undefined {
     // Elysia calls `.onError` with a rich context; we only read `.error`. Returning a value short-
     // circuits the response; returning `undefined` lets Elysia's default error handling proceed.
-    return (ctx: StitchEnvLike): Response | undefined =>
+    return (ctx: ErrorContextLike): Response | undefined =>
         stitchErrorResponse(ctx.error, options);
 }

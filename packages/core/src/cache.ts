@@ -10,7 +10,7 @@
 import { resolveFingerprint } from './fingerprint';
 import type { CachePolicy } from './fingerprint';
 import { xxh128 } from './hash';
-import type { CacheOptions, StitchInput, StitchStore } from './types';
+import type { ResolvedCacheOptions, StitchInput, StitchStore } from './types';
 import { parseDuration } from './util';
 
 // The 128-bit synchronous non-crypto key hash now lives in the shared `./hash` module so the cache
@@ -186,6 +186,13 @@ interface Inflight<T> {
     onCancel?: () => void;
 }
 
+/** Options for {@link InflightCoalescer.join}: ref-count this participant via `signal`; the
+ *  leader may set `onCancel` to be told when the LAST participant aborts. */
+export interface CoalesceJoinOptions {
+    signal?: AbortSignal;
+    onCancel?: () => void;
+}
+
 export interface LeaderClaim<T> {
     leader: true;
     promise: Promise<T>;
@@ -209,7 +216,7 @@ export class InflightCoalescer<T> {
      *  run is dropped and `onCancel` (set by the leader) is invoked. */
     join(
         key: string,
-        opts?: { signal?: AbortSignal; onCancel?: () => void },
+        opts?: CoalesceJoinOptions,
     ): LeaderClaim<T> | FollowerClaim<T> {
         let entry = this.map.get(key);
         const leading = entry === undefined;
@@ -340,7 +347,8 @@ export interface CacheController {
 }
 
 export interface CacheControllerOptions {
-    config: CacheOptions;
+    /** The stitch's cache block, post-`compose` — list fields are always arrays. */
+    config: ResolvedCacheOptions;
     store: StitchStore;
     stitchId: string;
     principal?: string;

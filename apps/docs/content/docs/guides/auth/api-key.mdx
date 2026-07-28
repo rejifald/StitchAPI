@@ -32,8 +32,8 @@ call time and never committed.
 
 `in` chooses where the key goes: `'header'` (the default) or `'query'`.
 
-`header` overrides the header name (default `x-api-key`, lowercased) when
-`in: 'header'`: pass `apiKey({ header: 'X-My-Key', value: env('API_KEY') })` to
+`name` overrides the header name (default `x-api-key`, lowercased) when
+`in: 'header'`: pass `apiKey({ name: 'X-My-Key', value: env('API_KEY') })` to
 send the key under a custom header. The name goes on the wire **lowercased**
 (`x-my-key`) — case-insensitive per HTTP, but worth knowing if a fixture asserts
 the original casing. See [Migration notes](/docs/getting-started/migration-notes).

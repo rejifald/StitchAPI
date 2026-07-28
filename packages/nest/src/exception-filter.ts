@@ -22,7 +22,7 @@ export function isStitchError(err: unknown): err is StitchErrorLike {
 /** The safe, fixed message the mapped exception carries by default. */
 const SAFE_MESSAGE = 'Upstream request failed';
 
-export interface ToHttpExceptionOptions {
+export interface StitchErrorOptions {
     /**
      * The HTTP status for the mapped exception. Default `502 Bad Gateway` — **every**
      * upstream failure is reported as a gateway error, regardless of the upstream's own
@@ -33,50 +33,45 @@ export interface ToHttpExceptionOptions {
      */
     status?: number | ((err: StitchErrorLike) => number);
     /**
-     * Set the client-facing message. **Default: a fixed `'Upstream request failed'`** — the
-     * raw `err.message` is deliberately *not* forwarded, because it can disclose internal
-     * network topology (a transport failure reads like
-     * `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`)
-     * to an untrusted client. The original error is always attached as the exception's
-     * `cause` for server-side logging. Provide a fixed string, or a function for a
-     * per-error message. Prefer this over {@link exposeMessage} when you want a specific,
-     * curated message.
+     * The response body for a mapped failure. **Default: Nest's rendering of a fixed, generic
+     * message** (`{ statusCode, message: 'Upstream request failed' }`) — the raw `err.message`
+     * is deliberately *not* echoed, because it can disclose internal network topology (a
+     * transport failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the
+     * upstream's status (`HTTP 401`) to an untrusted client. Override to shape your own error
+     * envelope; pass `(e) => ({ error: e.message })` to opt in to the raw message when the
+     * upstream messages are known to be safe to expose. Receives the mapped status alongside
+     * the error. The original error is always attached as the exception's `cause` for
+     * server-side logging.
      */
-    message?: string | ((err: StitchErrorLike) => string);
-    /**
-     * Opt in to forwarding the raw `err.message` as the client-facing message. **Default
-     * `false`** — see {@link message} for why the raw message is withheld by default. Ignored
-     * when {@link message} is set. Only enable this when the upstream messages are known to
-     * be safe to expose to your clients.
-     */
-    exposeMessage?: boolean;
+    body?: (err: StitchErrorLike, status: number) => unknown;
 }
 
 /**
  * Map a thrown stitch failure to a Nest {@link HttpException}, or `undefined` when `err`
  * is not a {@link StitchErrorLike} (so a caller can rethrow it untouched). The status is
- * `502` by default; override it via {@link ToHttpExceptionOptions.status}.
+ * `502` by default; override it via {@link StitchErrorOptions.status}.
  *
- * The client-facing message defaults to a fixed `'Upstream request failed'` — the raw
- * `err.message` is **not** forwarded, since it can leak internal hostnames or the
- * upstream's status to an untrusted client. The original error is attached as the
- * exception's `cause` for server-side logging. Opt in to the raw message with
- * {@link ToHttpExceptionOptions.exposeMessage}, or set your own with
- * {@link ToHttpExceptionOptions.message}.
+ * The client-facing body defaults to Nest's rendering of a fixed
+ * `'Upstream request failed'` — the raw `err.message` is **not** forwarded, since it can
+ * leak internal hostnames or the upstream's status to an untrusted client. The original
+ * error is attached as the exception's `cause` for server-side logging. Shape your own
+ * envelope (or opt in to the raw message) with {@link StitchErrorOptions.body}.
  */
 export function toHttpException(
     err: unknown,
-    options: ToHttpExceptionOptions = {},
+    options: StitchErrorOptions = {},
 ): HttpException | undefined {
     if (!isStitchError(err)) return undefined;
-    const { status = HttpStatus.BAD_GATEWAY, message, exposeMessage } = options;
+    const { status = HttpStatus.BAD_GATEWAY } = options;
     const code = typeof status === 'function' ? status(err) : status;
-    const clientMessage =
-        typeof message === 'function'
-            ? message(err)
-            : (message ??
-              (exposeMessage ? err.message || SAFE_MESSAGE : SAFE_MESSAGE));
-    return new HttpException(clientMessage, code, { cause: err });
+    // The default body is Nest's own rendering of the safe, fixed message — the raw
+    // `err.message` is deliberately withheld so an internal hostname (`getaddrinfo
+    // ENOTFOUND …`) or the upstream's status (`HTTP 401`) never reaches the client.
+    // Opt in / shape the envelope via `options.body`.
+    const response = options.body
+        ? (options.body(err, code) as string | Record<string, unknown>)
+        : SAFE_MESSAGE;
+    return new HttpException(response, code, { cause: err });
 }
 
 /**
@@ -98,7 +93,7 @@ export function toHttpException(
 export class StitchExceptionFilter extends BaseExceptionFilter {
     constructor(
         applicationRef?: HttpServer,
-        private readonly options: ToHttpExceptionOptions = {},
+        private readonly options: StitchErrorOptions = {},
     ) {
         super(applicationRef);
     }

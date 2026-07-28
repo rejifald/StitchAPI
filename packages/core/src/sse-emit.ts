@@ -14,10 +14,29 @@
 import type { StitchEvent } from './types';
 import { envelope } from './util';
 
-/** Anything an SSE emitter can drive: a stitch `.stream()` generator, or any event iterable. */
+/**
+ * Anything an SSE emitter can drive: an event iterable (a `.stream()` generator), or anything
+ * that hands one back (a `StitchResult`, a stitch stub). Mirrors core's public
+ * {@link StitchEventSource} in `types.ts` — the two arms must stay in step, so an adapter accepts
+ * exactly what the barrel says a source is.
+ */
 export type StitchEventSource<T> =
     | AsyncIterable<StitchEvent<T>>
-    | AsyncGenerator<StitchEvent<T>, void>;
+    | AsyncGenerator<StitchEvent<T>, void>
+    | { stream(): AsyncIterable<StitchEvent<T>> };
+
+/**
+ * Resolve the canonical intake to the event iterable itself: a `.stream()`-bearing source (a
+ * `StitchResult`, a stitch stub) is asked for its stream; an iterable is used as-is. Every
+ * adapter's driver starts here, so the two arms are unwrapped in exactly one place.
+ */
+export function toIterable<T>(
+    source: StitchEventSource<T>,
+): AsyncIterable<StitchEvent<T>> {
+    return Symbol.asyncIterator in source
+        ? (source as AsyncIterable<StitchEvent<T>>)
+        : source.stream();
+}
 
 /** The terminal `error` event a stitch stream emits — carries `message`, `status`, `attempts`. */
 export type StitchErrorEvent = Extract<StitchEvent, { type: 'error' }>;

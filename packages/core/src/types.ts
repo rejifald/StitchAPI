@@ -176,11 +176,12 @@ export interface ReconnectOptions {
  * `Last-Event-ID` on each reconnect, honours a server-sent `retry:` as the backoff (falling back to
  * `reconnect.delay` / the stitch's `retry` policy), and caps reconnects at `attempts`.
  *
- * `true` = enabled with sane defaults; the object form tunes the cap / fallback backoff. Plain JSON
- * (the contract gate). Only the `sse` surface acts on this; other surfaces ignore it.
+ * `true` = enabled with sane defaults; the object form tunes the cap / fallback backoff (the opaque
+ * `{}` is rejected — CONTRACT.md P20). Plain JSON (the contract gate). Only the `sse` surface acts
+ * on this; other surfaces ignore it.
  */
 export interface SseOptions {
-    reconnect?: boolean | ReconnectOptions;
+    reconnect?: boolean | AtLeastOne<ReconnectOptions>;
 }
 /**
  * Byte-transfer progress for a single request (ADR 0005 Decision 9). Reported through
@@ -336,8 +337,9 @@ export interface TimeoutOptions {
 export interface CircuitOptions {
     /**
      * Consecutive failures that trip the breaker OPEN. Required by design — a breaker with an
-     * invisible threshold fails silently (CONTRACT.md P15); `createCircuit` throws if `failures`
-     * is not set.
+     * invisible threshold fails silently (CONTRACT.md P15); `createCircuit` throws when `failures`
+     * or `cooldown` is missing. Optional at the type level only so the object form can be built up
+     * incrementally; the positional `[failures, cooldown]` shorthand supplies both.
      */
     failures?: number;
     /**
@@ -387,7 +389,8 @@ export interface IdempotencyOptions {
  * what it names. Off by default: no `cache` block ⇒ no caching and no hot-path cost. The engine
  * ships behind its own `stitchapi/cache` subpath, so `import { stitch }` pulls none of it.
  *
- * Every field round-trips as JSON; `key` is **sugar** (a function override) that does not.
+ * Every field round-trips as JSON; `keyOf` is **sugar** (a function override) that does not — it
+ * lives on the non-enumerable `__rawConfig` only (CONTRACT.md P0).
  */
 export interface CacheOptions {
     /** Time-to-live for a cached entry — `30_000`, `'30s'`, `'5m'`. Bounds staleness/drift. */
@@ -406,11 +409,12 @@ export interface CacheOptions {
      */
     vary?: string | string[];
     /**
-     * Cacheable HTTP methods. Default `['GET','HEAD']`. A GraphQL **query** opts in by listing
-     * its method (`['POST']`) — a POST's read-vs-mutate intent cannot be inferred, so it is
-     * explicit. Coalescing applies to exactly this set; mutations are never cached.
+     * Cacheable HTTP method(s). Default `['GET','HEAD']`. A GraphQL **query** opts in by listing
+     * its method (`'POST'`) — a POST's read-vs-mutate intent cannot be inferred, so it is
+     * explicit. Coalescing applies to exactly this set; mutations are never cached. A bare string
+     * is shorthand for a one-element list (CONTRACT.md P7).
      */
-    methods?: string[];
+    methods?: string | string[];
     /** In-process LRU cap on live entries (the store stays dumb). Default 1000. */
     entries?: number;
     /**
@@ -482,7 +486,6 @@ export interface AuthContext {
      * during `apply`/`refresh` and yields them; outside a run it is a no-op.
      */
     emit: (topic: string, detail?: string) => void;
-    runLogin?: () => Promise<AdapterResponse>; // for cookieSession: invoke the login stitch
 }
 /**
  * A non-secret, declarative description of an auth strategy's wire shape — the OpenAPI 3.1
@@ -608,6 +611,16 @@ export type StitchEvent<T = unknown> =
           at: number;
       };
 
+/**
+ * Anything that produces a stitch event stream: the event iterable itself (a `.stream()`
+ * generator), or anything that hands one back (a {@link StitchResult}, a stitch stub). The
+ * canonical intake for event-stream consumers — `collectStitchEvents` in `stitchapi/testing`
+ * accepts exactly this.
+ */
+export type StitchEventSource<T = unknown> =
+    | AsyncIterable<StitchEvent<T>>
+    | { stream(): AsyncIterable<StitchEvent<T>> };
+
 // ---- Clock (injectable time, ADR 0010) ------------------------------------
 /** An opaque timer handle returned by {@link Clock.setTimer}. */
 export type TimerHandle = unknown;
@@ -693,7 +706,7 @@ export interface StitchConfig {
      * Resumable-SSE options (issue #71) — sibling to {@link StitchConfig.stream}, but for the `sse`
      * surface. **Off by default**: with no `sse` block the engine opens the live body once
      * (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as
-     * `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry`
+     * `Last-Event-ID` and honouring a server `retry:` (else `reconnect.delay` / the `retry`
      * policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse`
      * surface reads it. `true` is shorthand for `{ reconnect: true }` (CONTRACT.md P13); the
      * object form must set at least one field (P20).
@@ -742,7 +755,7 @@ export interface StitchConfig {
      * @example output: z.object({ id: z.number(), name: z.string() })
      */
     output?: SchemaLike | DriftSpec;
-    /** Dot-path selecting the part of the response to return. */
+    /** Dot-path picking the part of the response to return (e.g. `'data.items'`). */
     pick?: string;
     /** Reshape the raw body before `pick` and validation (e.g. scrape HTML to structured data). */
     transform?: (body: unknown) => unknown;
@@ -752,9 +765,9 @@ export interface StitchConfig {
     auth?: AuthStrategy;
     /**
      * Retry-and-backoff policy. A bare number is shorthand for the attempt count —
-     * `retry: 3` ≡ `retry: { attempts: 3 }`.
+     * `retry: 3` ≡ `retry: { attempts: 3 }`; the opaque `retry: {}` is rejected (CONTRACT.md P20).
      */
-    retry?: number | RetryOptions;
+    retry?: number | AtLeastOne<RetryOptions>;
     /**
      * Status(es) that are a NORMAL result rather than an error — a number, a list, or a predicate
      * (CONTRACT.md P7). An accepted non-2xx flows through interpret → transform → pick → validate
@@ -769,20 +782,26 @@ export interface StitchConfig {
      */
     acceptStatus?: StatusMatch;
     /**
-     * Rate and concurrency limits. A bare rate string is shorthand for the rate —
-     * `throttle: '1/s'` ≡ `throttle: { rate: '1/s' }`.
+     * Rate and concurrency limits. A bare rate string is shorthand —
+     * `throttle: '2/s'` ≡ `throttle: { rate: '2/s' }` (CONTRACT.md P12); the opaque `throttle: {}`
+     * is rejected (P20).
      */
-    throttle?: string | ThrottleOptions;
+    throttle?: string | AtLeastOne<ThrottleOptions>;
     /**
      * Total and per-attempt timeouts. A bare number (ms) or duration string is shorthand for the
-     * total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`.
+     * total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`; the opaque `timeout: {}` is rejected
+     * (CONTRACT.md P20).
      */
-    timeout?: number | string | TimeoutOptions;
+    timeout?: number | string | AtLeastOne<TimeoutOptions>;
     /**
      * Circuit breaker that fast-fails a repeatedly failing dependency. `failures` + `cooldown` are
-     * required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`).
+     * required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`). The
+     * positional form names both at once — `circuit: [5, '30s']` ≡
+     * `circuit: { failures: 5, cooldown: '30s' }`.
      */
-    circuit?: AtLeastOne<CircuitOptions>;
+    circuit?:
+        | [failures: number, cooldown: number | string]
+        | AtLeastOne<CircuitOptions>;
     /**
      * Inject a stable Idempotency-Key header on writes so safe retries don't duplicate.
      * `true` enables it with defaults (header `Idempotency-Key`, a random uuid per call); the
@@ -814,8 +833,15 @@ export interface StitchConfig {
     arrayFormat?: 'indices' | 'brackets' | 'repeat';
     /** Request/response/error/retry lifecycle hooks. At least one — the opaque `hooks: {}` is rejected (CONTRACT.md P20). */
     hooks?: AtLeastOne<Hooks>;
-    /** Fragments to deep-merge under this config — strings, partials, or other stitches. */
-    extends?: (Partial<StitchConfig> | Stitch | string)[];
+    /**
+     * Fragment(s) to deep-merge under this config — strings, partials, or other stitches. A single
+     * fragment is shorthand for a one-element list (CONTRACT.md P7).
+     */
+    extends?:
+        | Partial<StitchConfig>
+        | Stitch
+        | string
+        | (Partial<StitchConfig> | Stitch | string)[];
     /** Test seam / custom transport. */
     adapter?: Adapter;
     /**
@@ -838,13 +864,20 @@ export interface StitchConfig {
     trace?: TraceSink | 'console' | false;
 }
 
+/** {@link CacheOptions} after {@link compose}: the `T | T[]` list fields are always arrays. */
+export type ResolvedCacheOptions = Omit<CacheOptions, 'vary' | 'methods'> & {
+    vary?: string[];
+    methods?: string[];
+};
+
 /**
- * A {@link StitchConfig} after {@link compose} has run: every authoring shorthand is expanded, so
- * the fields are always their object form (a scalar `retry` / `timeout` / `cache` / `throttle` /
- * `stream` / `multipart` literal is normalised to `{ attempts }` / `{ total }` / `{ ttl }` /
- * `{ rate }` / `{ decode }` / `{ nesting }`, the `sse: true` toggle to `{ reconnect: true }`, and
- * the `hooks` / `input` envelopes to their chained/normalized object). This is the shape the engine
- * and {@link redactConfig} read — never the loose authoring union.
+ * A {@link StitchConfig} after {@link compose} has run: every authoring shorthand is expanded to
+ * its canonical envelope field (P0) — scalar `retry` / `timeout` / `cache` / `throttle` / `stream`
+ * / `multipart` literals become `{ attempts }` / `{ total }` / `{ ttl }` / `{ rate }` /
+ * `{ decode }` / `{ nesting }`, the `sse: true` toggle becomes `{ reconnect: true }`, the
+ * positional `circuit` tuple becomes `{ failures, cooldown }`, the `hooks` / `input` envelopes
+ * become their chained/normalized object, and every `T | T[]` list field is an array. This is the
+ * shape the engine and {@link redactConfig} read — never the loose authoring union.
  */
 export type ResolvedStitchConfig = Omit<
     StitchConfig,
@@ -856,42 +889,76 @@ export type ResolvedStitchConfig = Omit<
     | 'stream'
     | 'multipart'
     | 'sse'
+    | 'circuit'
     | 'hooks'
     | 'input'
+    | 'acceptStatus'
 > & {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
-    cache?: CacheOptions;
+    cache?: ResolvedCacheOptions;
     idempotency?: IdempotencyOptions;
-    throttle?: ThrottleOptions;
     stream?: StreamOptions;
     multipart?: MultipartOptions;
     sse?: SseOptions;
+    throttle?: ThrottleOptions;
+    circuit?: CircuitOptions;
     hooks?: Hooks;
     input?: InputSchemas;
+    /** Post-compose a bare number is folded into its list form; predicates pass through. */
+    acceptStatus?: number[] | ((status: number) => boolean);
 };
 
 /**
  * The PUBLIC, redacted projection of a {@link StitchConfig} that a stitch exposes as `__config`
  * (and a seam as its shared `__config`). {@link redactConfig} produces it: the live, secret-bearing
- * handles are stripped (`auth`, `store`, `adapter`), the surface is normalised to its `id` string
- * (`kind`), and the auth's non-secret {@link SecurityScheme} is projected onto `authScheme`. It
- * therefore round-trips as JSON (ADR 0005 Decision 11 — the contract gate) and is what `mcp` /
- * `diagram` / `stitch export --openapi` read.
+ * handles are stripped (`auth`, `store`, `adapter`), **every function-valued field moves to the
+ * non-enumerable `__rawConfig`** (CONTRACT.md P0 — `url`/`baseUrl` thunks, `transform`, `hooks`,
+ * `paginate.next`/`items`, predicate forms of `retry.on`/`throttle.on`/`acceptStatus`,
+ * `idempotency.keyOf`, `cache.keyOf`), the surface is normalised to its `id` string (`kind`), and
+ * the auth's non-secret {@link SecurityScheme} is projected onto `authScheme`. It therefore
+ * round-trips as JSON (ADR 0005 Decision 11 — the contract gate) and is what `mcp` / `diagram` /
+ * `stitch export --openapi` read.
  *
  * This is the HONEST runtime shape: `__config.auth` / `.store` / `.adapter` are always absent, and
  * `__config.kind` is the surface's `id` string — never a live {@link Surface}. (The full,
- * secret-bearing config lives on the non-enumerable `__rawConfig`, used only for fragment
- * composition.)
+ * secret-bearing config lives on the non-enumerable `__rawConfig`, used by fragment composition
+ * and the engine.)
  */
 export type RedactedStitchConfig = Omit<
     ResolvedStitchConfig,
-    'auth' | 'store' | 'adapter' | 'clock' | 'kind'
+    | 'auth'
+    | 'store'
+    | 'adapter'
+    | 'clock'
+    | 'kind'
+    | 'url'
+    | 'baseUrl'
+    | 'transform'
+    | 'hooks'
+    | 'paginate'
+    | 'acceptStatus'
+    | 'retry'
+    | 'throttle'
+    | 'idempotency'
+    | 'cache'
 > & {
     /** The surface's `id` string (never the live {@link Surface}); absent for the default `http`. */
     kind?: string;
     /** Non-secret auth scheme projected from the (stripped) live `auth`; feeds `export --openapi`. */
     authScheme?: SecurityScheme;
+    /** The endpoint when statically known; a thunk (`() => string`) is redacted away (P0). */
+    url?: string;
+    /** The base origin when statically known; a thunk is redacted away (P0). */
+    baseUrl?: string;
+    /** Function-free projection: only the `pages` cap survives redaction (P0). */
+    paginate?: { pages?: number };
+    /** List form only; a predicate is redacted away (P0). */
+    acceptStatus?: number[];
+    retry?: Omit<RetryOptions, 'on'> & { on?: number[] };
+    throttle?: Omit<ThrottleOptions, 'on'> & { on?: number[] };
+    idempotency?: Omit<IdempotencyOptions, 'keyOf'>;
+    cache?: Omit<ResolvedCacheOptions, 'keyOf'>;
 };
 
 /**
@@ -1088,13 +1155,13 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
      * drift between it and `data`.
      *
      * `.inspect()` **always hits the network and bypasses the cache by default**, so it is a fresh probe
-     * — *not* an observer of what your cached `await` call did. Pass `{ cache: true }` to honour the
-     * cache policy (then `raw` is `null` on a hit). On a streaming surface `raw` is `null` too (no single
-     * buffered body). ⚠️ `raw` is unredacted and non-enumerable — read `wrapper.raw` deliberately; never
-     * log the whole wrapper.
+     * — *not* an observer of what your cached `await` call did. Pass `true` (≡ `{ cache: true }`) to
+     * honour the cache policy (then `raw` is `null` on a hit). On a streaming surface `raw` is `null`
+     * too (no single buffered body). ⚠️ `raw` is unredacted and non-enumerable — read `wrapper.raw`
+     * deliberately; never log the whole wrapper.
      */
     inspect(
-        ...args: [...Args<TIn>, opts?: InspectOptions]
+        ...args: [...Args<TIn>, opts?: boolean | AtLeastOne<InspectOptions>]
     ): Promise<Inspection<TOut>>;
     /**
      * Probe a fresh call and return a {@link RunReport} — an {@link Inspection} (`{ data, raw,
@@ -1102,14 +1169,14 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
      * (`{ elapsed, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome
      * (ADR 0019). Like `.inspect()` it **never throws** (a hard contract violation comes back with
      * `error` set and the diagnostics populated) and is a **network probe**: it always hits the
-     * network and **bypasses the cache by default** — pass `{ cache: true }` to honour the cache
-     * policy (then `cache` reports the real `hit`/`miss` and `raw` is `null`/`source` is `'cache'`
-     * on a hit). Use `.report()` to ask "how did this run go?"; `.inspect()` stays the minimal
-     * "raw + drift" probe. ⚠️ `raw` is inherited unredacted and non-enumerable — the rest of the
-     * report is safe to log.
+     * network and **bypasses the cache by default** — pass `true` (≡ `{ cache: true }`) to honour
+     * the cache policy (then `cache` reports the real `hit`/`miss` and `raw` is `null`/`source` is
+     * `'cache'` on a hit). Use `.report()` to ask "how did this run go?"; `.inspect()` stays the
+     * minimal "raw + drift" probe. ⚠️ `raw` is inherited unredacted and non-enumerable — the rest
+     * of the report is safe to log.
      */
     report(
-        ...args: [...Args<TIn>, opts?: InspectOptions]
+        ...args: [...Args<TIn>, opts?: boolean | AtLeastOne<InspectOptions>]
     ): Promise<RunReport<TOut>>;
     with<const P extends Partial<TIn>>(
         partial: P,

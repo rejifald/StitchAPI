@@ -95,4 +95,42 @@ describe('stitchTool', () => {
         );
         expect('description' in tool).toBe(false);
     });
+
+    // --- positional shorthand (P15): stitchTool(stitch, schema) -------------
+
+    test('positional shorthand ≡ stitchTool(stitch, { inputSchema: schema })', async () => {
+        let seen: unknown;
+        const stitch = unaryStitch(async (input) => {
+            seen = input;
+            return { name: 'Ada' };
+        });
+        const tool = stitchTool(stitch, schema);
+
+        expect(tool.parameters).toBe(schema);
+        expect(tool.inputSchema).toBe(schema);
+        expect('description' in tool).toBe(false);
+        // The args ARE the stitch input — no toInput in the shorthand.
+        await expect(tool.execute({ params: { id: '7' } })).resolves.toEqual({
+            name: 'Ada',
+        });
+        expect(seen).toEqual({ params: { id: '7' } });
+    });
+
+    test('the two forms are told apart by the inputSchema key, not shape', () => {
+        const stitch = unaryStitch(async () => 1);
+        // A schema-like arg WITHOUT an inputSchema key is the schema itself —
+        // even one carrying envelope-sounding keys like `description`.
+        const schemaWithDescription: { description: string; type: string } = {
+            description: 'a JSON-schema description field',
+            type: 'object',
+        };
+        const positional = stitchTool(stitch, schemaWithDescription);
+        expect(positional.inputSchema).toBe(schemaWithDescription);
+        expect(positional.parameters).toBe(schemaWithDescription);
+        expect('description' in positional).toBe(false);
+
+        // An arg WITH an inputSchema key is the options envelope.
+        const envelope = stitchTool(stitch, { inputSchema: schema });
+        expect(envelope.inputSchema).toBe(schema);
+    });
 });

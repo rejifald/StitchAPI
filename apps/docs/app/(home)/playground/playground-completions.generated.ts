@@ -45,7 +45,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "sse",
             type: "property",
             detail: "boolean | AtLeastOne<SseOptions>",
-            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse` block the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.backoff` / the `retry` policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse` surface reads it. `true` is shorthand for `{ reconnect: true }` (CONTRACT.md P13); the object form must set at least one field (P20).",
+            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse` block the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.delay` / the `retry` policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse` surface reads it. `true` is shorthand for `{ reconnect: true }` (CONTRACT.md P13); the object form must set at least one field (P20).",
         },
         {
             label: "responseType",
@@ -105,7 +105,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "pick",
             type: "property",
             detail: "string",
-            info: "Dot-path selecting the part of the response to return.",
+            info: "Dot-path picking the part of the response to return (e.g. `'data.items'`).",
         },
         {
             label: "transform",
@@ -128,8 +128,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "retry",
             type: "property",
-            detail: "number | RetryOptions",
-            info: "Retry-and-backoff policy. A bare number is shorthand for the attempt count — `retry: 3` ≡ `retry: { attempts: 3 }`.",
+            detail: "number | AtLeastOne<RetryOptions>",
+            info: "Retry-and-backoff policy. A bare number is shorthand for the attempt count — `retry: 3` ≡ `retry: { attempts: 3 }`; the opaque `retry: {}` is rejected (CONTRACT.md P20).",
         },
         {
             label: "acceptStatus",
@@ -140,20 +140,20 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "throttle",
             type: "property",
-            detail: "string | ThrottleOptions",
-            info: "Rate and concurrency limits. A bare rate string is shorthand for the rate — `throttle: '1/s'` ≡ `throttle: { rate: '1/s' }`.",
+            detail: "string | AtLeastOne<ThrottleOptions>",
+            info: "Rate and concurrency limits. A bare rate string is shorthand — `throttle: '2/s'` ≡ `throttle: { rate: '2/s' }` (CONTRACT.md P12); the opaque `throttle: {}` is rejected (P20).",
         },
         {
             label: "timeout",
             type: "property",
-            detail: "number | string | TimeoutOptions",
-            info: "Total and per-attempt timeouts. A bare number (ms) or duration string is shorthand for the total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`.",
+            detail: "number | string | AtLeastOne<TimeoutOptions>",
+            info: "Total and per-attempt timeouts. A bare number (ms) or duration string is shorthand for the total — `timeout: '5s'` ≡ `timeout: { total: '5s' }`; the opaque `timeout: {}` is rejected (CONTRACT.md P20).",
         },
         {
             label: "circuit",
             type: "property",
-            detail: "AtLeastOne<CircuitOptions>",
-            info: "Circuit breaker that fast-fails a repeatedly failing dependency. `failures` + `cooldown` are required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`).",
+            detail: "| [failures: number, cooldown: number | string] | AtLeastOne<CircuitOptions>",
+            info: "Circuit breaker that fast-fails a repeatedly failing dependency. `failures` + `cooldown` are required by design (P15), so the empty object is rejected (P20 — `AtLeastOne`). The positional form names both at once — `circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }`.",
         },
         {
             label: "idempotency",
@@ -188,8 +188,8 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "extends",
             type: "property",
-            detail: "(Partial<StitchConfig> | Stitch | string)[]",
-            info: "Fragments to deep-merge under this config — strings, partials, or other stitches.",
+            detail: "| Partial<StitchConfig> | Stitch | string | (Partial<StitchConfig> | Stitch | string)[]",
+            info: "Fragment(s) to deep-merge under this config — strings, partials, or other stitches. A single fragment is shorthand for a one-element list (CONTRACT.md P7).",
         },
         {
             label: "adapter",
@@ -241,14 +241,14 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
         {
             label: "inspect",
             type: "method",
-            detail: "(...args: [...Args<TIn>, opts?: InspectOptions]) => Promise<Inspection<TOut>>",
-            info: "Probe a fresh call and return an  — `{ data, raw, findings, status, error }` — **without throwing** (ADR 0016). Use it after the fact to ask \"the schema coerced/stripped this; what did the server actually send?\": `raw` is the pre-validation body, `findings` the soft + hard drift between it and `data`. `.inspect()` **always hits the network and bypasses the cache by default**, so it is a fresh probe — *not* an observer of what your cached `await` call did. Pass `{ cache: true }` to honour the cache policy (then `raw` is `null` on a hit). On a streaming surface `raw` is `null` too (no single buffered body). ⚠️ `raw` is unredacted and non-enumerable — read `wrapper.raw` deliberately; never log the whole wrapper.",
+            detail: "(...args: [...Args<TIn>, opts?: boolean | AtLeastOne<InspectOptions>]) => Promise<Inspection<TOut>>",
+            info: "Probe a fresh call and return an  — `{ data, raw, findings, status, error }` — **without throwing** (ADR 0016). Use it after the fact to ask \"the schema coerced/stripped this; what did the server actually send?\": `raw` is the pre-validation body, `findings` the soft + hard drift between it and `data`. `.inspect()` **always hits the network and bypasses the cache by default**, so it is a fresh probe — *not* an observer of what your cached `await` call did. Pass `true` (≡ `{ cache: true }`) to honour the cache policy (then `raw` is `null` on a hit). On a streaming surface `raw` is `null` too (no single buffered body). ⚠️ `raw` is unredacted and non-enumerable — read `wrapper.raw` deliberately; never log the whole wrapper.",
         },
         {
             label: "report",
             type: "method",
-            detail: "(...args: [...Args<TIn>, opts?: InspectOptions]) => Promise<RunReport<TOut>>",
-            info: "Probe a fresh call and return a  — an  (`{ data, raw, findings, status, error, source }`) **plus** run diagnostics: `attempts`, `timing` (`{ elapsed, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome (ADR 0019). Like `.inspect()` it **never throws** (a hard contract violation comes back with `error` set and the diagnostics populated) and is a **network probe**: it always hits the network and **bypasses the cache by default** — pass `{ cache: true }` to honour the cache policy (then `cache` reports the real `hit`/`miss` and `raw` is `null`/`source` is `'cache'` on a hit). Use `.report()` to ask \"how did this run go?\"; `.inspect()` stays the minimal \"raw + drift\" probe. ⚠️ `raw` is inherited unredacted and non-enumerable — the rest of the report is safe to log.",
+            detail: "(...args: [...Args<TIn>, opts?: boolean | AtLeastOne<InspectOptions>]) => Promise<RunReport<TOut>>",
+            info: "Probe a fresh call and return a  — an  (`{ data, raw, findings, status, error, source }`) **plus** run diagnostics: `attempts`, `timing` (`{ elapsed, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome (ADR 0019). Like `.inspect()` it **never throws** (a hard contract violation comes back with `error` set and the diagnostics populated) and is a **network probe**: it always hits the network and **bypasses the cache by default** — pass `true` (≡ `{ cache: true }`) to honour the cache policy (then `cache` reports the real `hit`/`miss` and `raw` is `null`/`source` is `'cache'` on a hit). Use `.report()` to ask \"how did this run go?\"; `.inspect()` stays the minimal \"raw + drift\" probe. ⚠️ `raw` is inherited unredacted and non-enumerable — the rest of the report is safe to log.",
         },
         {
             label: "with",

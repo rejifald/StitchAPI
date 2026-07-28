@@ -14,7 +14,19 @@ export {
     secretsFile,
     secretFrom,
 } from './auth';
-export type { SecretSource, AuthFailureResult, RefreshResult } from './auth';
+export type {
+    Secret,
+    OptionalSecret,
+    SecretSource,
+    ApiKeyOptions,
+    BasicOptions,
+    OAuth2Options,
+    OAuth2RefreshOptions,
+    CookieSessionOptions,
+    CookieSessionRefreshOptions,
+    AuthFailureResult,
+    RefreshResult,
+} from './auth';
 export { fetchAdapter } from './http-adapter';
 export type { FetchAdapterOptions } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';
@@ -32,7 +44,12 @@ export {
     multiplex,
     loggerSink,
 } from './trace';
-export type { LoggerLike, LoggerSinkOptions, LogLevel } from './trace';
+export type {
+    LoggerLike,
+    LoggerSinkOptions,
+    LogLevel,
+    TraceOptions,
+} from './trace';
 export { otlpSink, otlpHttpExporter, toOtlpJson } from './otlp';
 export type {
     SpanExporter,
@@ -40,6 +57,7 @@ export type {
     OtelSpanEvent,
     SpanAttributes,
     OtlpOptions,
+    OtlpExporterOptions,
 } from './otlp';
 // Trace-redaction escape hatch: widen the secret-key denylist so a host's custom credential
 // param name is scrubbed in every trace sink (start.url, OTLP url.full, input.query). `apiKey({ in:

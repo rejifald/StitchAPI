@@ -64,7 +64,7 @@ function parseRetryAfter(res: Response): number | null {
 
 async function fetchWithRetry(
     url: string,
-    { attempts = 3, baseMs = 200, maxMs = 10_000 } = {},
+    { attempts = 3, baseDelay = 200, maxDelay = 10_000 } = {},
 ): Promise<Response> {
     let lastError: unknown;
     for (let i = 0; i < attempts; i++) {
@@ -76,7 +76,7 @@ async function fetchWithRetry(
 
             if (i < attempts - 1) {
                 const serverWait = parseRetryAfter(res);
-                const expo = Math.min(maxMs, baseMs * 2 ** i);
+                const expo = Math.min(maxDelay, baseDelay * 2 ** i);
                 const jittered = Math.random() * expo;
                 await new Promise((r) => setTimeout(r, serverWait ?? jittered));
             }
@@ -86,7 +86,7 @@ async function fetchWithRetry(
                 await new Promise((r) =>
                     setTimeout(
                         r,
-                        Math.random() * Math.min(maxMs, baseMs * 2 ** i),
+                        Math.random() * Math.min(maxDelay, baseDelay * 2 ** i),
                     ),
                 );
             }

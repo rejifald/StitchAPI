@@ -20,7 +20,7 @@ server exposing items behind an API key.
 
 ## Header names go on the wire lowercase
 
-You configure `apiKey({ header: 'X-Catalog-Token', ... })` and your fixture
+You configure `apiKey({ name: 'X-Catalog-Token', ... })` and your fixture
 asserts the request carried a header literally named `X-Catalog-Token`.
 
 A stitch lowercases the header name: it sends `x-catalog-token`. The default
@@ -33,7 +33,7 @@ import { apiKey, env, stitch } from 'stitchapi';
 const getItem = stitch({
     baseUrl: 'https://api.example.com',
     path: '/items/{id}',
-    auth: apiKey({ header: 'X-Catalog-Token', value: env('CATALOG_TOKEN') }),
+    auth: apiKey({ name: 'X-Catalog-Token', value: env('CATALOG_TOKEN') }),
 });
 // On the wire, the request header is `x-catalog-token`, not `X-Catalog-Token`.
 ```

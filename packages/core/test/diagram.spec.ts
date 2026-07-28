@@ -45,10 +45,11 @@ describe('toMermaid', () => {
         expect(diagram).toContain('(["result"])');
     });
 
-    test('post-response stages render in engine order: transform -> pick -> validate', () => {
-        // The engine processes the response body transform → pick → validate (engine.ts), and the
-        // diagram's contract is "the configured request pipeline … in engine order". So the diagram
-        // must place validate LAST of the three, not first.
+    test('post-response stages render in engine order: pick -> validate', () => {
+        // The engine reads the pick path then validates (engine.ts), and the diagram's contract is
+        // "the configured request pipeline … in engine order" — validate LAST of the two. The
+        // `transform` closure lives only on `__rawConfig` (P0), so the redacted view (and hence the
+        // diagram) never shows a transform stage.
         const { diagram } = toMermaid({
             proc: stitch({
                 baseUrl: 'https://api.example.com',
@@ -58,11 +59,10 @@ describe('toMermaid', () => {
                 output: z.object({ id: z.number() }),
             }),
         });
-        const iTransform = diagram.indexOf('transform');
+        expect(diagram).not.toContain('transform');
         const iPick = diagram.indexOf('pick: data');
         const iValidate = diagram.indexOf('validate');
-        expect(iTransform).toBeGreaterThanOrEqual(0);
-        expect(iPick).toBeGreaterThan(iTransform); // pick after transform
+        expect(iPick).toBeGreaterThanOrEqual(0);
         expect(iValidate).toBeGreaterThan(iPick); // validate after pick
     });
 
