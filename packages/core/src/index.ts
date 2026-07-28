@@ -61,6 +61,10 @@ export { memoryStore } from './store';
 // The default Clock (ADR 0010) — wall-clock + global timers. Inject a custom `Clock` (or a
 // `manualClock()` from `stitchapi/testing`) via a stitch/seam `clock` to control time.
 export { systemClock } from './util';
+// The one shared duration parser (CONTRACT.md P17): `5_000`, `'5s'`, `'1m'` → ms.
+// Exported so a peer package that takes a consumer-authored duration parses it the
+// same way core does, instead of mirroring the grammar and drifting from it.
+export { parseDuration } from './util';
 // `compact({ ...obj, key: value })` — a shallow copy with `undefined`-valued keys removed, typed so
 // undefined-admitting keys come back optional. Pairs with `exactOptionalPropertyTypes`: it omits an
 // absent optional without the `...(key !== undefined ? { key } : {})` spread dance.
