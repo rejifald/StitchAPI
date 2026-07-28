@@ -427,6 +427,53 @@ describe('denoKvStore — increment without a window', () => {
     });
 });
 
+describe('denoKvStore — increment without a window', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('absent ttl = no window: the counter accumulates and never expires', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const store = denoKvStore(expiryKv());
+
+        expect(await store.increment('count')).toBe(1);
+        // Arbitrarily far in the future — a windowless counter never resets.
+        vi.setSystemTime(1_000_000_000);
+        expect(await store.increment('count')).toBe(2);
+        expect(await store.increment('count')).toBe(3);
+        // `get` unwraps the envelope to the plain count, windowed or not.
+        expect(await store.get('count')).toBe(3);
+    });
+
+    test('ttl <= 0 unifies with absent: no window, and no commit carries an expireIn', async () => {
+        const rec = recordingKv();
+        const store = denoKvStore(rec.kv);
+
+        expect(await store.increment('count')).toBe(1);
+        expect(await store.increment('count', 0)).toBe(2);
+        expect(await store.increment('count', -5)).toBe(3);
+
+        // A windowless counter is written WITHOUT an expiry, matching `set`'s
+        // no-TTL path — the key must never silently gain a window.
+        expect(rec.atomicSets).toHaveLength(3);
+        for (const s of rec.atomicSets) expect(s.expireIn).toBeUndefined();
+    });
+
+    test('a live windowless counter keeps counting even when a later increment passes a ttl', async () => {
+        // Mirrors memoryStore: a LIVE counter keeps its original (absent) window;
+        // a later ttl neither expires it nor resets the count.
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const store = denoKvStore(expiryKv());
+
+        expect(await store.increment('count')).toBe(1); // windowless
+        expect(await store.increment('count', 200)).toBe(2); // ttl ignored — still live
+        vi.setSystemTime(500); // past the ttl that was ignored
+        expect(await store.increment('count')).toBe(3);
+    });
+});
+
 describe('denoKvStore — keys & lifecycle', () => {
     test('maps a string key to a flat one-segment array key by default', async () => {
         const rec = recordingKv();

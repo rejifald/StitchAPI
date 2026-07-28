@@ -28,6 +28,11 @@ export interface AsyncStorageStoreOptions {
      * Prefix applied to every key, for sharing one AsyncStorage with other data.
      * Applied on read and write so the store stays self-consistent. Default
      * `'stitch:'`.
+     *
+     * Deliberate P8 divergence from `redisStore`'s `''` default: AsyncStorage is
+     * the app's single shared device-wide bucket — the app's own data lives right
+     * next to the store's keys — so namespacing by default prevents collisions.
+     * A Redis deployment typically dedicates a database/namespace instead.
      */
     keyPrefix?: string;
     /** Injectable clock (ms epoch) for deterministic TTL tests. Default `Date.now`. */

@@ -70,8 +70,9 @@ chat: build.query<number[], { prompt: string }>({
 ```
 
 The cached data is the accumulated chunks (`mode: 'append'`, default) or the latest
-chunk (`mode: 'replace'`). Streaming stops when the cache entry is removed (the last
-subscriber leaves).
+chunk — pass the mode as a scalar shorthand:
+`stitchStreamUpdater(chat, 'replace')` ≡ `stitchStreamUpdater(chat, { mode: 'replace' })`.
+Streaming stops when the cache entry is removed (the last subscriber leaves).
 
 <Callout type="info">
     Reach for these adapters when RTK Query already owns your view state and you

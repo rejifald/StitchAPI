@@ -143,8 +143,9 @@ export interface SignV4Options {
     sessionToken?: string;
     region: string;
     service: string;
-    /** Amz datetime, `YYYYMMDDTHHMMSSZ`. */
-    dateTime: string;
+    /** Amz datetime, `YYYYMMDDTHHMMSSZ` — echoed back as `SignV4Result.amzDate`
+     * and sent as the `x-amz-date` header. */
+    amzDate: string;
 }
 
 export interface SignV4Result {
@@ -156,14 +157,14 @@ export interface SignV4Result {
 }
 
 /**
- * Compute a SigV4 signature for a request. Pure (given `dateTime`), so it is
+ * Compute a SigV4 signature for a request. Pure (given `amzDate`), so it is
  * verifiable against the official AWS `aws-sig-v4-test-suite` vectors. The
  * {@link awsSigV4} strategy wraps this with timestamping, payload hashing, and
  * header attachment.
  */
 export async function signRequestV4(p: SignV4Options): Promise<SignV4Result> {
     const u = new URL(p.url);
-    const amzDate = p.dateTime;
+    const amzDate = p.amzDate;
     const dateStamp = amzDate.slice(0, 8);
 
     const headers: Record<string, string> = {};
@@ -376,7 +377,7 @@ export function awsSigV4(opts: AwsSigV4Options): AuthStrategy {
                 ...(sessionToken ? { sessionToken } : {}),
                 region: opts.region,
                 service: opts.service,
-                dateTime: amzDate,
+                amzDate,
             });
 
             req.headers['authorization'] = authorization;
