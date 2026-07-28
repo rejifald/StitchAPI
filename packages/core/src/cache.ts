@@ -186,6 +186,13 @@ interface Inflight<T> {
     onCancel?: () => void;
 }
 
+/** Options for {@link InflightCoalescer.join}: ref-count this participant via `signal`; the
+ *  leader may set `onCancel` to be told when the LAST participant aborts. */
+export interface CoalesceJoinOptions {
+    signal?: AbortSignal;
+    onCancel?: () => void;
+}
+
 export interface LeaderClaim<T> {
     leader: true;
     promise: Promise<T>;
@@ -209,7 +216,7 @@ export class InflightCoalescer<T> {
      *  run is dropped and `onCancel` (set by the leader) is invoked. */
     join(
         key: string,
-        opts?: { signal?: AbortSignal; onCancel?: () => void },
+        opts?: CoalesceJoinOptions,
     ): LeaderClaim<T> | FollowerClaim<T> {
         let entry = this.map.get(key);
         const leading = entry === undefined;
