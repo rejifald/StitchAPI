@@ -53,7 +53,7 @@ test('anthropic: builds the Messages API body (system out of messages) and parse
     expect(body.messages).toEqual([{ role: 'user', content: 'hi' }]);
     expect(calls[0]!.headers['anthropic-version']).toBe('2023-06-01');
     expect(calls[0]!.method).toBe('POST');
-    expect(calls[0]!.url).toBe('https://api.anthropic.com/v1/messages'); // default endpoint
+    expect(calls[0]!.url).toBe('https://api.anthropic.com/v1/messages'); // provider default url
 
     expect(out).toMatchObject({
         text: 'hello',
@@ -97,7 +97,7 @@ test('llm requires a model (none on config, call, or provider default) — fail 
     const { adapter } = captureAdapter({});
     const bare: LlmProvider = {
         id: 'bare',
-        endpoint: 'https://example.test/v1',
+        url: 'https://example.test/v1',
         buildBody: anthropic.buildBody,
         parse: anthropic.parse,
     };
@@ -134,7 +134,7 @@ test('anthropic folds a system-role MESSAGE into the top-level `system` (never d
     expect(body.messages).toEqual([{ role: 'user', content: 'hi' }]);
 });
 
-test('llm honours an explicit endpoint over the provider default', async () => {
+test('llm honours an explicit url over the provider default', async () => {
     const { adapter, calls } = captureAdapter({ content: [{ text: 'x' }] });
     const chat = llm({
         provider: anthropic,

@@ -489,9 +489,9 @@ describe('sse authoring helpers (Decision 3)', () => {
         expect(a.__config.kind).toBe(b.__config.kind);
     });
 
-    test('sse.seam(existingSeam).stitch(...) creates an sse member of that seam', async () => {
+    test('sse.bind(existingSeam).stitch(...) creates an sse member of that seam', async () => {
         const api = seam({ baseUrl: 'https://x.test' });
-        const events = sse.seam(api).stitch({
+        const events = sse.bind(api).stitch({
             path: '/e',
             adapter: streamAdapter(streamOf(['data: ok\n\n'])),
         });

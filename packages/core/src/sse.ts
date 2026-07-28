@@ -190,7 +190,7 @@ export interface SseSeamApi {
 // keeping `SseEvent<unknown>[]` identical to the old `SseEvent[]`. The `as` retypes the loose
 // `makeStitch` result to the declared `InputOf<C>`/`SseEvent<OutputOf<C>>[]`: now that `InputOf` reads
 // `extends`-fragment schemas (#76) it is no longer a clean supertype of `StitchInput` under an
-// unresolved `C`, so this loose body needs the same retype `stitch()`/`seam` get from their
+// unresolved `C`, so this loose body needs the same retype `stitch()`/`bind` get from their
 // inferring overloads. Sound — the runtime stitch is byte-identical (the type tests cover it).
 const sseStitch = <
     const C extends Partial<StitchConfig> = Partial<StitchConfig>,
@@ -220,13 +220,13 @@ function bindSeam(s: Seam): SseSeamApi {
 /**
  * The sse surface's authoring helper — callable for the terse form (`sse(config)`) plus:
  * - `sse.stitch(config)` — a standalone sse stitch (alias of the callable).
- * - `sse.seam(existingSeam)` — bind sse members to an existing seam.
- * - `sse.seam(options)` — a new seam whose members default to sse.
+ * - `sse.bind(existingSeam)` — bind sse members to an existing seam.
+ * - `sse.bind(options)` — a new seam whose members default to sse.
  * - `sse.surface` — the sse {@link Surface} identity.
  */
 export const sse = Object.assign(sseStitch, {
     surface: sseSurface,
     stitch: sseStitch,
-    seam: (arg: Seam | SeamOptions): SseSeamApi =>
+    bind: (arg: Seam | SeamOptions): SseSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });
