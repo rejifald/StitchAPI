@@ -74,17 +74,18 @@ const ORIGIN_B = 'https://iframe.example.com';
 function channelPair(): {
     parent: PostMessageChannel;
     iframe: PostMessageChannel;
-    closeBoth: () => void;
+    closeBoth: () => Promise<void>;
 } {
     const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
     const parent = channel(a, { allowedOrigins: [ORIGIN_B] });
-    const iframe = channel(b, { allowedOrigins: [ORIGIN_A] });
+    // A single origin passes as a bare string (`T | T[]` — CONTRACT.md P7).
+    const iframe = channel(b, { allowedOrigins: ORIGIN_A });
     return {
         parent,
         iframe,
-        closeBoth: () => {
-            parent.close();
-            iframe.close();
+        closeBoth: async () => {
+            await parent.close();
+            await iframe.close();
         },
     };
 }
@@ -99,27 +100,27 @@ describe('postmessage surface identities (ADR 0005 Decision 11)', () => {
         expect(postMessageEventSurface.id).toBe('postmessage-event');
     });
 
-    test('request/emit kind round-trips through __config as "postmessage"', () => {
+    test('request/emit kind round-trips through __config as "postmessage"', async () => {
         const { parent, closeBoth } = channelPair();
-        const req = parent.request({ type: 'focus' });
-        const ev = parent.emit({ type: 'ping' });
+        const req = parent.request('focus');
+        const ev = parent.emit('ping');
         for (const s of [req, ev]) {
             const json = JSON.parse(JSON.stringify(s.__config)) as {
                 kind?: unknown;
             };
             expect(json.kind).toBe('postmessage');
         }
-        closeBoth();
+        await closeBoth();
     });
 
-    test('events kind round-trips as "postmessage-event"', () => {
+    test('events kind round-trips as "postmessage-event"', async () => {
         const { parent, closeBoth } = channelPair();
-        const sub = parent.events({ type: 'tick' });
+        const sub = parent.events('tick');
         const json = JSON.parse(JSON.stringify(sub.__config)) as {
             kind?: unknown;
         };
         expect(json.kind).toBe('postmessage-event');
-        closeBoth();
+        await closeBoth();
     });
 });
 
@@ -139,8 +140,7 @@ describe('request → response (correlated RPC)', () => {
                 output: asValidator(z.object({ total: z.number() })),
             },
         );
-        const sum = parent.request({
-            type: 'sum',
+        const sum = parent.request('sum', {
             input: { body: z.object({ a: z.number(), b: z.number() }) },
             output: asValidator(z.object({ total: z.number() })),
         });
@@ -148,18 +148,15 @@ describe('request → response (correlated RPC)', () => {
             total: 5,
         });
         off();
-        closeBoth();
+        await closeBoth();
     });
 
     test('a custom `reply` type correlates the answer', async () => {
         const { parent, iframe, closeBoth } = channelPair();
         iframe.respond('q', () => 'answered', { reply: 'q-answer' });
-        const ask = parent.request<{
-            type: 'q';
-            reply: 'q-answer';
-        }>({ type: 'q', reply: 'q-answer' });
+        const ask = parent.request('q', { reply: 'q-answer' });
         await expect(ask()).resolves.toBe('answered');
-        closeBoth();
+        await closeBoth();
     });
 
     test('the reply must match BOTH id and type — a same-type unsolicited message does not resolve it', async () => {
@@ -168,18 +165,17 @@ describe('request → response (correlated RPC)', () => {
         const iframe = channel(b, { allowedOrigins: [ORIGIN_A] });
         // The iframe emits an UNSOLICITED `sum-result` (no id) BEFORE any responder — it must NOT
         // resolve the pending request (whose reply correlates on the minted id too).
-        const sum = parent.request({
-            type: 'sum',
+        const sum = parent.request('sum', {
             timeout: { perAttempt: 60 },
         });
         const p = sum({ body: { a: 1, b: 1 } });
         // fire a bare {type:'sum-result'} with no id from the iframe side
         iframe
-            .emit({ type: 'sum-result' })()
+            .emit('sum-result')()
             .catch(() => undefined);
         await expect(p).rejects.toThrow(); // never correlated → times out
-        parent.close();
-        iframe.close();
+        await parent.close();
+        await iframe.close();
     });
 });
 
@@ -190,14 +186,13 @@ describe('request → response (correlated RPC)', () => {
 describe('request timeout reuses the engine resilience chain', () => {
     test('no responder → the engine `timeout` rejects with a StitchError', async () => {
         const { parent, closeBoth } = channelPair();
-        const lonely = parent.request({
-            type: 'noone-home',
+        const lonely = parent.request('noone-home', {
             timeout: { perAttempt: 40 },
         });
         await expect(lonely({ body: { x: 1 } })).rejects.toMatchObject({
             name: 'StitchError',
         });
-        closeBoth();
+        await closeBoth();
     });
 });
 
@@ -213,22 +208,21 @@ describe('origin gate (structural, gate-before-validation)', () => {
         const parent = channel(a, { allowedOrigins: [ORIGIN_B] }); // only the REAL iframe origin
         const evil = channel(b, { allowedOrigins: [ORIGIN_A] });
         evil.respond('sum', () => ({ total: 999 }));
-        const sum = parent.request({
-            type: 'sum',
+        const sum = parent.request('sum', {
             timeout: { perAttempt: 40 },
         });
         await expect(sum({ body: { a: 1, b: 2 } })).rejects.toMatchObject({
             name: 'StitchError',
         });
-        parent.close();
-        evil.close();
+        await parent.close();
+        await evil.close();
     });
 
     test('an event from a disallowed origin is never delivered', async () => {
         const { a, b } = linkedPair(ORIGIN_A, 'https://evil.example.com');
         const parent = channel(a, { allowedOrigins: [ORIGIN_B] });
         const evil = channel(b, { allowedOrigins: [ORIGIN_A] });
-        const events = parent.events({ type: 'tick' });
+        const events = parent.events('tick');
         const ctl = new AbortController();
         const collected: unknown[] = [];
         const drain = (async () => {
@@ -237,15 +231,13 @@ describe('origin gate (structural, gate-before-validation)', () => {
             }
         })();
         // The evil frame emits a `tick`; the parent's gate drops it (wrong origin).
-        evil.emit({ type: 'tick' as const })({ body: { n: 1 } }).catch(
-            () => undefined,
-        );
+        evil.emit('tick')({ body: { n: 1 } }).catch(() => undefined);
         await new Promise((r) => setTimeout(r, 30));
         ctl.abort();
         await drain.catch(() => undefined);
         expect(collected).toEqual([]); // nothing crossed the gate
-        parent.close();
-        evil.close();
+        await parent.close();
+        await evil.close();
     });
 });
 
@@ -260,29 +252,27 @@ describe('validation on both boundaries', () => {
             input: asValidator(z.object({ n: z.number() })),
         });
         // Send a string where a number is required → the responder validates-and-drops → no reply.
-        const call = parent.request({
-            type: 'strict',
+        const call = parent.request('strict', {
             timeout: { perAttempt: 40 },
         });
         await expect(
             call({ body: { n: 'not-a-number' } }),
         ).rejects.toMatchObject({ name: 'StitchError' });
-        closeBoth();
+        await closeBoth();
     });
 
     test('a reply that fails the request `output` schema surfaces as drift/error', async () => {
         const { parent, iframe, closeBoth } = channelPair();
         // The responder replies with the WRONG shape (no `output` guard on its side).
         iframe.respond('mismatch', () => ({ wrong: true }));
-        const call = parent.request({
-            type: 'mismatch',
+        const call = parent.request('mismatch', {
             output: asValidator(z.object({ ok: z.boolean() })),
         });
         // The reply correlates, but the buffered `output` contract rejects it → StitchError (drift).
         await expect(call({ body: {} })).rejects.toMatchObject({
             name: 'StitchError',
         });
-        closeBoth();
+        await closeBoth();
     });
 
     // A plain `Validator` (from `toValidator(...)`) exposes `.validate()` but neither `~standard`
@@ -302,14 +292,13 @@ describe('validation on both boundaries', () => {
         iframe.respond('dbl', (p: { n: number }) => ({ doubled: p.n * 2 }), {
             input: inputSchema,
         });
-        const call = parent.request({
-            type: 'dbl',
+        const call = parent.request('dbl', {
             timeout: { perAttempt: 200 },
         });
         await expect(call({ body: { n: 21 } })).resolves.toEqual({
             doubled: 42,
         });
-        closeBoth();
+        await closeBoth();
     });
 
     test('a `toValidator(...)` input schema still DROPS an invalid payload (fail-closed preserved)', async () => {
@@ -321,14 +310,13 @@ describe('validation on both boundaries', () => {
         iframe.respond('dbl2', (p: { n: number }) => ({ doubled: p.n * 2 }), {
             input: inputSchema,
         });
-        const call = parent.request({
-            type: 'dbl2',
+        const call = parent.request('dbl2', {
             timeout: { perAttempt: 40 },
         });
         await expect(
             call({ body: { n: 'not-a-number' } }),
         ).rejects.toMatchObject({ name: 'StitchError' });
-        closeBoth();
+        await closeBoth();
     });
 
     // `output` rides the same coercion — a `toValidator(...)` responder output that the result
@@ -342,14 +330,13 @@ describe('validation on both boundaries', () => {
         iframe.respond('dbl3', (p: { n: number }) => ({ doubled: p.n * 2 }), {
             output: outputSchema,
         });
-        const call = parent.request({
-            type: 'dbl3',
+        const call = parent.request('dbl3', {
             timeout: { perAttempt: 200 },
         });
         await expect(call({ body: { n: 5 } })).resolves.toEqual({
             doubled: 10,
         });
-        closeBoth();
+        await closeBoth();
     });
 });
 
@@ -360,8 +347,7 @@ describe('validation on both boundaries', () => {
 describe('events (a streaming surface, validated payloads)', () => {
     test('await collects the payloads; ordering is preserved over .stream()', async () => {
         const { parent, iframe, closeBoth } = channelPair();
-        const events = parent.events({
-            type: 'tick',
+        const events = parent.events('tick', {
             output: asValidator(z.object({ n: z.number() })),
         });
 
@@ -380,17 +366,17 @@ describe('events (a streaming surface, validated payloads)', () => {
         await new Promise((r) => setTimeout(r, 5));
         for (const n of [1, 2, 3])
             iframe
-                .emit({ type: 'tick' as const })({ body: { n } })
+                .emit('tick')({ body: { n } })
                 .catch(() => undefined);
 
         await drain.catch(() => undefined);
         expect(seen).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]); // contractValue → the payload, in order
-        closeBoth();
+        await closeBoth();
     });
 
     test('await resolves to the collected payload array when the channel closes the stream', async () => {
         const { parent, iframe } = channelPair();
-        const events = parent.events({ type: 'evt' });
+        const events = parent.events('evt');
         // Kick off consumption NOW (`.then` starts the run and registers the subscription via
         // `execute`); the same shared run is what we assert on below. A bare `events()` is lazy.
         const settled = events().then((v) => v);
@@ -398,36 +384,35 @@ describe('events (a streaming surface, validated payloads)', () => {
         await new Promise((r) => setTimeout(r, 5));
         for (const v of ['x', 'y'])
             iframe
-                .emit({ type: 'evt' as const })({ body: v })
+                .emit('evt')({ body: v })
                 .catch(() => undefined);
         await new Promise((r) => setTimeout(r, 20));
         // Closing the parent ends its live event streams GRACEFULLY → the await resolves to the
         // payloads collected so far (vs. an abort, which errors the stream — tested separately).
-        parent.close();
-        iframe.close();
+        await parent.close();
+        await iframe.close();
 
         await expect(settled).resolves.toEqual(['x', 'y']);
     });
 
     test('a payload failing the `output` schema fails the stream (the bad event is not delivered)', async () => {
         const { parent, iframe, closeBoth } = channelPair();
-        const events = parent.events({
-            type: 'num',
+        const events = parent.events('num', {
             output: asValidator(z.object({ n: z.number() })),
         });
         const ev = collectEvents(events.stream());
         await new Promise((r) => setTimeout(r, 5));
         iframe
-            .emit({ type: 'num' as const })({ body: { n: 1 } })
+            .emit('num')({ body: { n: 1 } })
             .catch(() => undefined);
         iframe
-            .emit({ type: 'num' as const })({ body: { bad: true } })
+            .emit('num')({ body: { bad: true } })
             .catch(() => undefined);
         const collected = await ev;
         expect(collected.deltas).toEqual([{ n: 1 }]);
         expect(collected.drifts[0]?.level).toBe('error');
         expect(collected.done?.ok).toBe(false);
-        closeBoth();
+        await closeBoth();
     });
 });
 
@@ -443,17 +428,17 @@ describe('emit (fire-and-forget)', () => {
             received = p;
             return null; // a reply nobody is waiting for
         });
-        const log = parent.emit({ type: 'log' });
+        const log = parent.emit('log');
         await expect(log({ body: { msg: 'hello' } })).resolves.toBeUndefined();
         // give the microtask hop time to deliver to the iframe
         await new Promise((r) => setTimeout(r, 5));
         expect(received).toEqual({ msg: 'hello' });
-        closeBoth();
+        await closeBoth();
     });
 
     test('emit is also observable as an inbound event on the peer', async () => {
         const { parent, iframe, closeBoth } = channelPair();
-        const events = iframe.events({ type: 'beacon' });
+        const events = iframe.events('beacon');
         const ctl = new AbortController();
         const seen: unknown[] = [];
         const drain = (async () => {
@@ -465,10 +450,10 @@ describe('emit (fire-and-forget)', () => {
             }
         })();
         await new Promise((r) => setTimeout(r, 5));
-        await parent.emit({ type: 'beacon' })({ body: { hit: 1 } });
+        await parent.emit('beacon')({ body: { hit: 1 } });
         await drain.catch(() => undefined);
         expect(seen).toEqual([{ hit: 1 }]);
-        closeBoth();
+        await closeBoth();
     });
 });
 
@@ -479,7 +464,7 @@ describe('emit (fire-and-forget)', () => {
 describe('abort + close', () => {
     test('aborting the call signal rejects the pending request and leaves no dangling entry', async () => {
         const { parent, closeBoth } = channelPair();
-        const call = parent.request({ type: 'never-answered' });
+        const call = parent.request('never-answered');
         const ctl = new AbortController();
         const p = call({ body: {}, signal: ctl.signal });
         ctl.abort();
@@ -489,7 +474,7 @@ describe('abort + close', () => {
         const p2 = call({ body: {}, signal: ctl2.signal });
         ctl2.abort();
         await expect(p2).rejects.toMatchObject({ name: 'StitchError' });
-        closeBoth();
+        await closeBoth();
     });
 
     test('close() rejects in-flight pending requests and detaches the listener', async () => {
@@ -506,14 +491,14 @@ describe('abort + close', () => {
             },
         };
         const ch = channel(transport, { allowedOrigins: [ORIGIN_B] });
-        const call = ch.request({ type: 'pending' });
+        const call = ch.request('pending');
         // A stitch is lazy — start consuming so `execute` actually posts and registers the pending
         // entry, then let the resilience chain reach the transport before closing.
         const p = call({ body: {} });
         p.catch(() => undefined); // begin the run
         await new Promise((r) => setTimeout(r, 10));
         expect(delivered).toBe(1); // the request was posted once before close
-        ch.close();
+        await ch.close();
         await expect(p).rejects.toThrow(/closed/);
         expect(detached).toBe(true); // close() detached the demux listener
     });
@@ -550,11 +535,11 @@ describe('windowChannel guards', () => {
             targetOrigin: 'https://app.example.com',
         });
         // Fire-and-forget so no reply is awaited; we only assert the post shape.
-        await ch.emit({ type: 'hi' })({ body: { a: 1 } });
+        await ch.emit('hi')({ body: { a: 1 } });
         expect(posts).toHaveLength(1);
         expect(posts[0]?.origin).toBe('https://app.example.com');
         expect(posts[0]?.msg).toMatchObject({ type: 'hi', payload: { a: 1 } });
-        ch.close();
+        await ch.close();
     });
 });
 
@@ -566,10 +551,10 @@ describe('portChannel (origin gating bypassed for ports)', () => {
         worker.respond<{ x: number }, { y: number }>('double', ({ x }) => ({
             y: x * 2,
         }));
-        const dbl = parent.request<{ type: 'double' }>({ type: 'double' });
+        const dbl = parent.request('double');
         await expect(dbl({ body: { x: 21 } })).resolves.toEqual({ y: 42 });
-        parent.close();
-        worker.close();
+        await parent.close();
+        await worker.close();
     });
 });
 
@@ -583,12 +568,12 @@ describe('channel() over an arbitrary transport', () => {
         const parent = channel(a, { allowedOrigins: [] }); // allow NOTHING
         const iframe = channel(b, { allowedOrigins: [ORIGIN_A] });
         iframe.respond('x', () => 'ok');
-        const call = parent.request({ type: 'x', timeout: { perAttempt: 40 } });
+        const call = parent.request('x', { timeout: { perAttempt: 40 } });
         // The iframe's reply carries origin ORIGIN_B, which is not in [] → dropped → times out.
         await expect(call({ body: {} })).rejects.toMatchObject({
             name: 'StitchError',
         });
-        parent.close();
-        iframe.close();
+        await parent.close();
+        await iframe.close();
     });
 });
