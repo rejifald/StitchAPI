@@ -6,7 +6,8 @@
 //
 // SECURITY — injection is impossible by CONSTRUCTION, not by escaping (the "structural, not
 // advisory" bar that rejected host-inferred bearer tokens in #6):
-//   • the executable is STATIC, bound in `shell({ command })`, NEVER taken from call input;
+//   • the executable is STATIC, bound at construction (`shell(command)` / `shell({ command })`),
+//     NEVER taken from call input;
 //   • arguments are an ARRAY of strings passed straight to `execFile` — there is NO shell
 //     (`shell: true` is never set, no `/bin/sh -c`), so `;` `|` `$()` backticks `*` `>` are inert
 //     data, never interpreted;
@@ -19,6 +20,7 @@ import { compact, stitch } from 'stitchapi';
 import type {
     AdapterRequest,
     AdapterResponse,
+    AtLeastOne,
     Stitch,
     StitchConfig,
     Surface,
@@ -29,8 +31,7 @@ interface ShellDefaults {
     command: string;
     cwd?: string;
     env?: Record<string, string>;
-    decode: 'text' | 'json';
-    maxBuffer: number;
+    maxBufferBytes: number;
 }
 
 // Run the static command with the call's argv. The ONLY input is the argv array (`req.body`);
@@ -59,7 +60,7 @@ function runCommand(
                 cwd: d.cwd,
                 env: d.env ?? {}, // FAIL-CLOSED: no inherited process.env
                 signal: req.signal,
-                maxBuffer: d.maxBuffer,
+                maxBuffer: d.maxBufferBytes,
                 encoding: 'utf8',
             }),
             (err, stdout, stderr) => {
@@ -80,8 +81,11 @@ function runCommand(
                     reject(err);
                     return;
                 }
+                // Honour the shared StitchConfig.responseType slot (narrowed to 'json' | 'text'
+                // in ShellOptions): the engine threads it onto the request, the surface reads it
+                // here. Absent → 'text' (stdout is the value, verbatim).
                 let body: unknown = stdout;
-                if (d.decode === 'json') {
+                if (req.responseType === 'json') {
                     try {
                         body = JSON.parse(stdout);
                     } catch {
@@ -106,10 +110,15 @@ function shellSurface(d: ShellDefaults): Surface {
     };
 }
 
-/** Options for {@link shell}: the static `command` + run controls, plus the shared StitchConfig keys
- *  (`retry` / `throttle` / `timeout` / `circuit` / `trace` all apply via the resilience chain). */
-export type ShellOptions = Partial<Omit<StitchConfig, 'kind'>> & {
-    /** The executable — STATIC, bound here at construction, NEVER from call input. An absolute path
+/**
+ * Options for {@link shell}: the static `command` + run controls, plus the shared StitchConfig keys
+ * (`retry` / `throttle` / `timeout` / `circuit` / `trace` all apply via the resilience chain).
+ * `command` is required by design (CONTRACT.md P15) — the positional `shell(command, options?)`
+ * shorthand names it, so the options bag there is `Omit<ShellOptions, 'command'>`.
+ */
+export interface ShellOptions
+    extends Partial<Omit<StitchConfig, 'kind' | 'responseType'>> {
+    /** The executable — STATIC, bound at construction, NEVER from call input. An absolute path
      *  needs no `PATH`; a bare name (`'git'`) needs `env: { PATH: process.env.PATH }`. */
     command: string;
     /** Working directory for the subprocess (default: the process cwd). */
@@ -117,35 +126,54 @@ export type ShellOptions = Partial<Omit<StitchConfig, 'kind'>> & {
     /** Subprocess environment. FAIL-CLOSED: empty by default — pass exactly what's needed; nothing
      *  from `process.env` leaks in unless you put it here. */
     env?: Record<string, string>;
-    /** How to read stdout: `'text'` (default — the value is the string) or `'json'` (JSON.parse it). */
-    decode?: 'text' | 'json';
+    /** How to read stdout — the shared {@link StitchConfig.responseType} slot, narrowed to what a
+     *  subprocess can yield: `'text'` (default — the value is the stdout string) or `'json'`
+     *  (`JSON.parse` it, falling back to the raw text). Honoured by the shell surface directly. */
+    responseType?: 'json' | 'text';
     /** Max stdout/stderr bytes buffered (default 10 MiB); exceeding it fails the call. */
-    maxBuffer?: number;
-};
+    maxBufferBytes?: number;
+}
 
 /**
- * `shell({ command })` — a stitch that runs a static local command, its `stdout` the result. The
- * call supplies the argument vector as a `string[]` `body`; everything else (retry/throttle/
- * timeout/trace) is the usual StitchConfig. `T` is the result type (`string` for `decode: 'text'`,
- * your shape for `'json'`).
+ * `shell(command, options?)` — a stitch that runs a static local command, its `stdout` the result.
+ * The call supplies the argument vector as a `string[]` `body`; everything else (retry/throttle/
+ * timeout/trace) is the usual StitchConfig. `T` is the result type (`string` for the default
+ * `responseType: 'text'`, your shape for `'json'`).
+ *
+ * Two spellings (CONTRACT.md P15): the positional shorthand names the required `command`, or pass
+ * the full {@link ShellOptions} envelope. The positional options bag must set at least one field —
+ * all-defaults is spelled by omitting it, never `{}` (P20).
  *
  * @example
  * ```ts
  * import { shell } from '@stitchapi/shell';
  *
- * const git = shell({ command: 'git', env: { PATH: process.env.PATH! } });
+ * const git = shell('git', { env: { PATH: process.env.PATH! } });
  * const status = await git({ body: ['status', '--porcelain'] }); // stdout string
  * ```
  */
-export function shell<T = string>(opts: ShellOptions): Stitch<T> {
-    const { command, cwd, env, decode, maxBuffer, ...rest } = opts;
+export function shell<T = string>(
+    command: string,
+    options?: AtLeastOne<Omit<ShellOptions, 'command'>>,
+): Stitch<T>;
+export function shell<T = string>(options: ShellOptions): Stitch<T>;
+export function shell<T = string>(
+    commandOrOptions: string | ShellOptions,
+    positionalOptions?: AtLeastOne<Omit<ShellOptions, 'command'>>,
+): Stitch<T> {
+    const opts: ShellOptions =
+        typeof commandOrOptions === 'string'
+            ? { ...positionalOptions, command: commandOrOptions }
+            : commandOrOptions;
+    const { command, cwd, env, maxBufferBytes, ...rest } = opts;
     const d: ShellDefaults = {
         command,
-        decode: decode ?? 'text',
-        maxBuffer: maxBuffer ?? 10 * 1024 * 1024,
+        maxBufferBytes: maxBufferBytes ?? 10 * 1024 * 1024,
     };
     if (cwd !== undefined) d.cwd = cwd;
     if (env !== undefined) d.env = env;
+    // `responseType` stays in `rest` — it is a shared StitchConfig key, so it rides the config
+    // into the engine's base request, where the surface honours it (see runCommand).
     return stitch({
         ...rest,
         kind: shellSurface(d),
