@@ -245,10 +245,10 @@ encoding passes a character cap. The oversized value is replaced with a compact
 marker:
 
 ```json
-{ "truncated": true, "bytes": 51234, "preview": "{\"items\":[{\"id\":1,…" }
+{ "truncated": true, "chars": 51234, "preview": "{\"items\":[{\"id\":1,…" }
 ```
 
-`preview` is the first `maxBodyBytes` characters of the (already header-redacted)
+`preview` is the first `maxBodyChars` characters of the (already header-redacted)
 JSON, so you keep a readable head of the payload without storing all of it. The
 default cap is **2048 characters**; `0` keeps only the marker, no preview.
 
@@ -257,7 +257,7 @@ still contain a body-embedded secret. Header and URL secrets are redacted (above
 regardless of the cap.
 
 Opt into **full capture** — the whole body, untruncated — when you need it, with
-`maxBodyBytes: false` on the file sink:
+`maxBodyChars: false` on the file sink:
 
 ```ts twoslash
 import { fileSink, stitch } from 'stitchapi';
@@ -266,7 +266,7 @@ const report = stitch({
     baseUrl: 'https://api.example.com',
     path: '/report',
     // false = capture the whole body; a number sets a custom character cap.
-    trace: fileSink('./runs/today.jsonl', { maxBodyBytes: false }),
+    trace: fileSink('./runs/today.jsonl', { maxBodyChars: false }),
 });
 ```
 
@@ -287,7 +287,7 @@ STITCH_TRACE_MAX_BODY=8192 node run.js
     values scrubbed. No API changed shape and nothing was removed — if a tool or
     `stitch trace` workflow relied on whole bodies on disk, restore the old
     behaviour with `STITCH_TRACE_MAX_BODY=full` (or
-    `fileSink(path, { maxBodyBytes: false })`). A custom `TraceSink` is unaffected:
+    `fileSink(path, { maxBodyChars: false })`). A custom `TraceSink` is unaffected:
     it receives the live events and decides for itself.
 </Callout>
 

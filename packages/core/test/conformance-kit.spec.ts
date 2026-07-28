@@ -161,9 +161,8 @@ describe('verifyAdapterContract', () => {
     });
 
     test('fetchAdapter passes the adapter contract against adapterContractFixture', async () => {
-        const report = await verifyAdapterContract(fetchAdapter(), {
-            baseUrl: host.url,
-        });
+        // A bare origin string is the `{ baseUrl }` shorthand.
+        const report = await verifyAdapterContract(fetchAdapter(), host.url);
         expect(report.seam).toBe('adapter');
         expect(report.violations).toEqual([]);
         expect(report.ok).toBe(true);

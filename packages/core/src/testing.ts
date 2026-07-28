@@ -476,14 +476,16 @@ export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
  *   rejects promptly instead of waiting out the response.
  *
  * @param adapter The transport under test.
- * @param opts `baseUrl` — origin of a server mounting the fixture, e.g.
- *   `http://127.0.0.1:4123`.
+ * @param opts Origin of a server mounting the fixture — a bare string, or
+ *   `{ baseUrl }`, e.g. `'http://127.0.0.1:4123'`.
  */
 export async function verifyAdapterContract(
     adapter: Adapter,
-    opts: { baseUrl: string },
+    opts: string | { baseUrl: string },
 ): Promise<ContractReport> {
-    const base = stripTrailingSlashes(opts.baseUrl);
+    const base = stripTrailingSlashes(
+        typeof opts === 'string' ? opts : opts.baseUrl,
+    );
     const request = (
         method: string,
         path: string,
@@ -699,13 +701,13 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
  * conforming sink must already tolerate it), and the optional `flush()` must
  * settle without throwing when present.
  *
- * @param makeSink Factory for the sink under test; one sink instance receives
- *   the whole sequence in order.
+ * @param makeSink Factory for the sink under test; awaited, so it may set up
+ *   async state. One sink instance receives the whole sequence in order.
  */
-export function verifySinkContract(
-    makeSink: () => TraceSink,
+export async function verifySinkContract(
+    makeSink: () => TraceSink | Promise<TraceSink>,
 ): Promise<ContractReport> {
-    const sink = makeSink();
+    const sink = await makeSink();
     const ctx = { name: 'conformance' };
     const rules: Rule[] = SINK_EVENT_FIXTURES.map(
         (event): Rule => [
@@ -747,16 +749,23 @@ function runRulesSync(seam: string, rules: SyncRule[]): ContractReport {
 }
 
 /** One labelled schema fixture; the thunk builds a fresh instance per call. */
-interface SchemaFixture {
+export interface SchemaFixture {
     readonly label: string;
     readonly schema: () => unknown;
+}
+
+/** One labelled pair of independently-built schemas that must share a fingerprint. */
+export interface EquivalentSchemaPair {
+    readonly label: string;
+    readonly a: () => unknown;
+    readonly b: () => unknown;
 }
 
 /** Fixtures a vendor package supplies to prove its fingerprint strategy. */
 export interface FingerprintFixtures {
     /**
      * Schemas that must each produce a STABLE, non-null fingerprint: building the
-     * schema twice (via the thunk) and fingerprinting both yields the same value.
+     * schema twice (via the thunk) and fingerprinting both yields the same token.
      * Covers determinism + construction-independence.
      */
     readonly stable: readonly SchemaFixture[];
@@ -764,13 +773,9 @@ export interface FingerprintFixtures {
      * Pairs of independently-built but structurally-IDENTICAL schemas (e.g. the
      * same object with permuted key order) that must share a fingerprint.
      */
-    readonly equivalent?: readonly {
-        readonly label: string;
-        readonly a: () => unknown;
-        readonly b: () => unknown;
-    }[];
+    readonly equivalent?: readonly EquivalentSchemaPair[];
     /**
-     * Schemas that must all fingerprint to PAIRWISE-DISTINCT, non-null values —
+     * Schemas that must all fingerprint to PAIRWISE-DISTINCT, non-null tokens —
      * typically a base schema plus one mutation each (field added, type changed,
      * constraint changed, …). Proves sensitivity to real semantic changes.
      */
@@ -778,11 +783,11 @@ export interface FingerprintFixtures {
     /**
      * Schemas containing parts the strategy cannot soundly capture (opaque
      * `.refine`/`.transform`/`.brand`, unrepresentable types). The strategy MUST
-     * ABSTAIN (`value === null`) rather than emit a possibly-colliding token.
+     * ABSTAIN (`token === null`) rather than emit a possibly-colliding token.
      */
     readonly abstain?: readonly SchemaFixture[];
     /**
-     * Optional committed snapshots (`label` → expected `value`) for schemas in
+     * Optional committed snapshots (`label` → expected `token`) for schemas in
      * `stable`/`distinct`. Re-run under a new validator minor version in CI, a
      * drift means the introspection surface moved — the cross-version guard.
      */
@@ -1004,8 +1009,9 @@ export {
 export {
     gatedStream,
     sseStream,
-    type SseEvent,
+    type SseFixtureEvent,
     streamAdapter,
+    type StreamAdapterOptions,
     streamOf,
     streamThenError,
 } from './test-stream';
@@ -1018,6 +1024,7 @@ export {
     failStitch,
     stubStitch,
     type StubImpl,
+    type StubMatch,
     type StubSpy,
     type StubStitchOptions,
 } from './test-stub';

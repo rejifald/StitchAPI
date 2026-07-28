@@ -5,7 +5,7 @@
 // apps/docs/scripts/build-docs-pages.ts at build:mcp-bundle time), so it needs
 // no fumadocs machinery at runtime.
 import { DATA_DIR, PAGES_FILE } from './config';
-import { parseDocPath } from './doc-path';
+import { type GetDocOptions, parseDocPath } from './doc-path';
 
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -63,10 +63,7 @@ function loadPages(): Map<string, BundledPage> {
     return cached;
 }
 
-export function getDoc(input: {
-    url?: string | undefined;
-    slug?: string | undefined;
-}): DocResult | null {
+export function getDoc(input: GetDocOptions): DocResult | null {
     const slug = parseDocPath(input);
     if (slug === null) return null;
 

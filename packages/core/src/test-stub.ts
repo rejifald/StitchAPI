@@ -15,12 +15,15 @@ import {
 } from './types';
 import { now } from './util';
 
-/** The call spy attached to every stub. */
+/** How a spy filter selects recorded calls: a predicate over the call input. */
+export type StubMatch = (input: StitchInput) => boolean;
+
+/** The call spy attached to every stub — same shape as {@link MockAdapter}'s spy surface. */
 export interface StubSpy {
-    /** The input passed to each invocation, in order (`{}` when called with no argument). */
-    readonly calls: StitchInput[];
-    /** How many times the stub was invoked. */
-    readonly callCount: number;
+    /** Every call's input, in order (`{}` when called with no argument), optionally filtered. */
+    calls(filter?: StubMatch): StitchInput[];
+    /** How many times the stub was invoked (optionally counting only matching inputs). */
+    callCount(filter?: StubMatch): number;
     /** Forget all recorded calls. */
     reset(): void;
 }
@@ -202,8 +205,10 @@ function assemble<TOut, TIn>(
     };
     Object.defineProperty(stub, '__config', { value: config });
     Object.defineProperty(stub, '__stitch', { value: true });
-    Object.defineProperty(stub, 'calls', { get: () => calls });
-    Object.defineProperty(stub, 'callCount', { get: () => calls.length });
+    const filter = (f?: StubMatch): StitchInput[] =>
+        f === undefined ? calls.slice() : calls.filter(f);
+    stub.calls = filter;
+    stub.callCount = (f) => filter(f).length;
     stub.reset = () => {
         calls.length = 0;
     };
@@ -218,8 +223,8 @@ function assemble<TOut, TIn>(
  * ```ts
  * const getUser = stubStitch({ id: 42, name: 'Ada' });
  * await loadProfile(getUser);            // your code under test
- * expect(getUser.callCount).toBe(1);
- * expect(getUser.calls[0]).toEqual({ params: { id: 42 } });
+ * expect(getUser.callCount()).toBe(1);
+ * expect(getUser.calls()[0]).toEqual({ params: { id: 42 } });
  * ```
  */
 export function stubStitch<TOut = unknown, TIn = StitchInput>(
