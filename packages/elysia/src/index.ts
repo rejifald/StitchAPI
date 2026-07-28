@@ -19,8 +19,8 @@
 export {
     stitch,
     type ElysiaRequestSeam,
+    type ElysiaStitchPluginOptions,
     type StitchPlugin,
-    type StitchPluginOptions,
 } from './plugin';
 
 export {
@@ -37,4 +37,8 @@ export {
     type StitchErrorOptions,
 } from './error';
 
-export type { PrincipalContext, StitchContext, StitchEnvLike } from './context';
+export type {
+    ErrorContextLike,
+    PrincipalContext,
+    StitchContext,
+} from './context';

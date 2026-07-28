@@ -29,6 +29,11 @@ export {
     toHttpException,
     isStitchError,
     type StitchErrorLike,
-    type ToHttpExceptionOptions,
+    type StitchErrorOptions,
 } from './exception-filter';
-export { stitchSse, type MessageEventLike, type StitchSseOptions } from './sse';
+export {
+    streamStitchSse,
+    type MessageEventLike,
+    type StitchEventSource,
+    type StreamStitchSseOptions,
+} from './sse';

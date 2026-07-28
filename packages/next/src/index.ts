@@ -5,7 +5,7 @@
 // then call it in the handler. What's worth a helper is the two bits you'd otherwise
 // hand-roll on the Web platform:
 //
-// - `sseResponse(stitch.stream())` — turn a streaming stitch into a `text/event-stream`
+// - `streamStitchSse(stitch.stream())` — turn a streaming stitch into a `text/event-stream`
 //   `Response` (the Web-standard twin of `@stitchapi/express`'s `streamStitchSse`,
 //   which targets a Node `ServerResponse`).
 // - `stitchErrorResponse(err)` — map a thrown `StitchError` to a `Response` with a
@@ -24,6 +24,7 @@ import {
     resolveError,
     sseFrame,
     toErrorEvent,
+    toIterable,
 } from 'stitchapi/sse-emit';
 
 // ---------------------------------------------------------------------------
@@ -51,18 +52,18 @@ export interface SseResponseOptions extends SseEmitOptions {
  *
  * ```ts
  * // app/api/chat/route.ts
- * import { sseResponse } from '@stitchapi/next';
+ * import { streamStitchSse } from '@stitchapi/next';
  *
  * export async function POST(request: Request) {
  *     const { prompt } = await request.json();
- *     return sseResponse(chat({ body: { prompt } }).stream(), {
+ *     return streamStitchSse(chat({ body: { prompt } }).stream(), {
  *         delta: (c) => String(c),
  *         signal: request.signal, // abort the upstream if the client leaves
  *     });
  * }
  * ```
  */
-export function sseResponse<T>(
+export function streamStitchSse<T>(
     source: StitchEventSource<T>,
     options: SseResponseOptions = {},
 ): Response {
@@ -73,7 +74,7 @@ export function sseResponse<T>(
     const stream = new ReadableStream<Uint8Array>({
         async start(controller) {
             try {
-                for await (const event of source) {
+                for await (const event of toIterable(source)) {
                     if (options.signal?.aborted) break;
                     if (event.type === 'delta') {
                         controller.enqueue(
@@ -153,7 +154,7 @@ const STATUS_TEXT: Record<number, string> = {
     502: 'Bad Gateway',
 };
 
-export interface ErrorResponseOptions {
+export interface StitchErrorOptions {
     /**
      * The HTTP status for the mapped failure. Default `502` for a `StitchError` (an
      * upstream gateway failure) and `500` otherwise — the safe default never leaks an
@@ -191,11 +192,11 @@ export interface ErrorResponseOptions {
  * The default body is a generic, status-tied message (`{ error: 'Bad Gateway' }`) — the
  * raw `err.message` is **not** echoed, since it can leak internal hostnames or the
  * upstream's status to an untrusted client. Opt in to a custom (or the raw) message with
- * {@link ErrorResponseOptions.body}.
+ * {@link StitchErrorOptions.body}.
  */
 export function stitchErrorResponse(
     err: unknown,
-    options: ErrorResponseOptions = {},
+    options: StitchErrorOptions = {},
 ): Response | undefined {
     if (!isStitchError(err)) return undefined;
     const status =

@@ -1,20 +1,24 @@
-import { stitchSse } from '../src';
+import { streamStitchSse } from '../src';
+import type { MessageEventLike } from '../src';
 
 import type { StitchEvent } from 'stitchapi';
 import { describe, expect, it } from 'vitest';
 
-// Subscribe and collect message data until the observable terminates.
+// Subscribe and collect messages until the observable terminates.
 const collect = (
-    obs: ReturnType<typeof stitchSse>,
-): Promise<{ data: unknown[]; error?: Error }> =>
+    obs: ReturnType<typeof streamStitchSse>,
+): Promise<{ messages: MessageEventLike[]; error?: Error }> =>
     new Promise((resolve) => {
-        const data: unknown[] = [];
+        const messages: MessageEventLike[] = [];
         obs.subscribe({
-            next: (m) => data.push(m.data),
-            error: (error: Error) => resolve({ data, error }),
-            complete: () => resolve({ data }),
+            next: (m) => messages.push(m),
+            error: (error: Error) => resolve({ messages, error }),
+            complete: () => resolve({ messages }),
         });
     });
+
+const dataOf = (messages: MessageEventLike[]): unknown[] =>
+    messages.map((m) => m.data);
 
 async function* events(
     ...evs: StitchEvent[]
@@ -22,10 +26,10 @@ async function* events(
     for (const e of evs) yield e;
 }
 
-describe('stitchSse', () => {
+describe('streamStitchSse', () => {
     it('forwards delta chunks as messages and completes at stream end', async () => {
-        const { data, error } = await collect(
-            stitchSse(
+        const { messages, error } = await collect(
+            streamStitchSse(
                 events(
                     {
                         type: 'start',
@@ -42,12 +46,21 @@ describe('stitchSse', () => {
             ),
         );
         expect(error).toBeUndefined();
-        expect(data).toEqual(['a', 'b']); // control events not forwarded
+        expect(dataOf(messages)).toEqual(['a', 'b']); // control events not forwarded
     });
 
-    it('by default errors the observable with a safe message, withholding the raw upstream message', async () => {
-        const { data, error } = await collect(
-            stitchSse(
+    it('accepts a { stream() } source (the core StitchEventSource intake)', async () => {
+        const source = {
+            stream: () => events({ type: 'delta', chunk: 'a', at: 0 }),
+        };
+        const { messages, error } = await collect(streamStitchSse(source));
+        expect(error).toBeUndefined();
+        expect(dataOf(messages)).toEqual(['a']);
+    });
+
+    it('by default errors the observable with the generic token, withholding the raw upstream message', async () => {
+        const { messages, error } = await collect(
+            streamStitchSse(
                 events(
                     { type: 'delta', chunk: 'a', at: 0 },
                     {
@@ -63,9 +76,10 @@ describe('stitchSse', () => {
                 ),
             ),
         );
-        expect(data).toEqual(['a']); // prior deltas are still delivered
-        // Nest renders an errored observable's `message` to the client, so it must be the safe token.
-        expect(error?.message).toBe('Upstream request failed');
+        expect(dataOf(messages)).toEqual(['a']); // prior deltas are still delivered
+        // Nest renders an errored observable's `message` to the client, so it must be the
+        // generic token — the same default `data: error` the express/hono helpers write.
+        expect(error?.message).toBe('error');
         expect(error?.message).not.toContain('payments.internal.corp');
         // …but the raw failure is preserved server-side as the error's `cause`.
         expect(
@@ -73,47 +87,23 @@ describe('stitchSse', () => {
         ).toBe('getaddrinfo ENOTFOUND payments.internal.corp');
     });
 
-    it('exposeMessage opts in to forwarding the raw upstream message', async () => {
-        const { data, error } = await collect(
-            stitchSse(
-                events(
-                    { type: 'delta', chunk: 'a', at: 0 },
-                    {
-                        type: 'error',
-                        name: 'StitchError',
-                        message: 'upstream blew up',
-                        attempts: 1,
-                        at: 0,
-                    },
-                ),
-                { exposeMessage: true },
-            ),
-        );
-        expect(data).toEqual(['a']);
-        expect(error?.message).toBe('upstream blew up');
-    });
-
-    it('message sets a curated client-facing message (string or function), overriding exposeMessage', async () => {
-        const fixed = await collect(
-            stitchSse(
+    it('errorData shapes the client-facing error frame (raw message opt-in)', async () => {
+        const raw = await collect(
+            streamStitchSse(
                 events({
                     type: 'error',
                     name: 'StitchError',
-                    message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                    message: 'upstream blew up',
                     attempts: 1,
                     at: 0,
                 }),
-                {
-                    message: 'Payment provider unavailable',
-                    exposeMessage: true,
-                },
+                { errorData: (e) => e.message },
             ),
         );
-        expect(fixed.error?.message).toBe('Payment provider unavailable');
-        expect(fixed.error?.message).not.toContain('payments.internal.corp');
+        expect(raw.error?.message).toBe('upstream blew up');
 
-        const dynamic = await collect(
-            stitchSse(
+        const curated = await collect(
+            streamStitchSse(
                 events({
                     type: 'error',
                     name: 'StitchError',
@@ -122,33 +112,125 @@ describe('stitchSse', () => {
                     attempts: 1,
                     at: 0,
                 }),
-                { message: (e) => `upstream ${e.status ?? '???'}` },
+                { errorData: (e) => `upstream ${e.status ?? '???'}` },
             ),
         );
-        expect(dynamic.error?.message).toBe('upstream 503');
+        expect(curated.error?.message).toBe('upstream 503');
     });
 
-    it('by default withholds the raw message on a thrown error too, preserving it as cause', async () => {
+    it('onError observes the real failure server-side without shaping the client frame', async () => {
+        const seen: unknown[] = [];
+        const { error } = await collect(
+            streamStitchSse(
+                events({
+                    type: 'error',
+                    name: 'StitchError',
+                    message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                    attempts: 1,
+                    at: 0,
+                }),
+                { onError: (err) => seen.push(err) },
+            ),
+        );
+        expect(seen).toHaveLength(1);
+        expect((seen[0] as Error).message).toBe(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
+        );
+        // The client frame stays generic — onError is observation only.
+        expect(error?.message).toBe('error');
+    });
+
+    it('by default withholds the raw message on a thrown error too, preserving it as cause and reporting via onError', async () => {
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield { type: 'delta', chunk: 'a', at: 0 };
             throw new Error('getaddrinfo ENOTFOUND payments.internal.corp');
         }
-        const { data, error } = await collect(stitchSse(boom()));
-        expect(data).toEqual(['a']);
-        expect(error?.message).toBe('Upstream request failed');
+        const seen: unknown[] = [];
+        const { messages, error } = await collect(
+            streamStitchSse(boom(), { onError: (err) => seen.push(err) }),
+        );
+        expect(dataOf(messages)).toEqual(['a']);
+        expect(error?.message).toBe('error');
         expect(error?.message).not.toContain('payments.internal.corp');
         expect((error?.cause as Error | undefined)?.message).toBe(
             'getaddrinfo ENOTFOUND payments.internal.corp',
         );
+        expect((seen[0] as Error).message).toBe(
+            'getaddrinfo ENOTFOUND payments.internal.corp',
+        );
     });
 
-    it('applies the data mapper to each chunk', async () => {
-        const { data } = await collect(
-            stitchSse(events({ type: 'delta', chunk: { text: 'hi' }, at: 0 }), {
-                data: (c) => (c as { text: string }).text,
-            }),
+    it('applies the data mapper to each chunk; the default JSON-stringifies non-strings', async () => {
+        const mapped = await collect(
+            streamStitchSse(
+                events({ type: 'delta', chunk: { text: 'hi' }, at: 0 }),
+                { data: (c) => (c as { text: string }).text },
+            ),
         );
-        expect(data).toEqual(['hi']);
+        expect(dataOf(mapped.messages)).toEqual(['hi']);
+
+        const stringified = await collect(
+            streamStitchSse(
+                events({ type: 'delta', chunk: { text: 'hi' }, at: 0 }),
+            ),
+        );
+        expect(dataOf(stringified.messages)).toEqual(['{"text":"hi"}']);
+    });
+
+    it('the data mapper receives the zero-based message index', async () => {
+        const { messages } = await collect(
+            streamStitchSse(
+                events(
+                    { type: 'delta', chunk: 'a', at: 0 },
+                    { type: 'delta', chunk: 'b', at: 0 },
+                ),
+                { data: (c, index) => `${String(c)}#${index}` },
+            ),
+        );
+        expect(dataOf(messages)).toEqual(['a#0', 'b#1']);
+    });
+
+    it('event accepts a function of the chunk for per-message event names', async () => {
+        const { messages } = await collect(
+            streamStitchSse(
+                events(
+                    {
+                        type: 'delta',
+                        chunk: { kind: 'token', text: 'a' },
+                        at: 0,
+                    },
+                    {
+                        type: 'delta',
+                        chunk: { kind: 'usage', text: 'b' },
+                        at: 0,
+                    },
+                ),
+                {
+                    event: (c) => (c as { kind: string }).kind,
+                    data: (c) => (c as { text: string }).text,
+                },
+            ),
+        );
+        expect(messages).toEqual([
+            { data: 'a', type: 'token' },
+            { data: 'b', type: 'usage' },
+        ]);
+    });
+
+    it('event names each message and id stamps the (chunk, index) last-event id', async () => {
+        const { messages } = await collect(
+            streamStitchSse(
+                events(
+                    { type: 'delta', chunk: 'a', at: 0 },
+                    { type: 'delta', chunk: 'b', at: 0 },
+                ),
+                { event: 'token', id: (_chunk, index) => `#${index}` },
+            ),
+        );
+        expect(messages).toEqual([
+            { data: 'a', type: 'token', id: '#0' },
+            { data: 'b', type: 'token', id: '#1' },
+        ]);
     });
 
     it('aborts the upstream generator when the subscription tears down', async () => {
@@ -170,7 +252,7 @@ describe('stitchSse', () => {
                 };
             },
         };
-        const sub = stitchSse(gen).subscribe({ next: () => {} });
+        const sub = streamStitchSse(gen).subscribe({ next: () => {} });
         sub.unsubscribe();
         expect(returned).toBe(true); // teardown called iterator.return()
     });
