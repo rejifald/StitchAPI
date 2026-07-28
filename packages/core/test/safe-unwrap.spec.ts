@@ -37,7 +37,7 @@ test('safe() returns { ok: false, data: null, error } instead of throwing', asyn
     const call = stitch({
         baseUrl: server.url,
         path: '/down',
-        retry: { attempts: 3, on: [503], baseDelay: 5 },
+        retry: { attempts: 3, on: [503], backoff: { base: 5 } },
     });
 
     const res = await call.safe();

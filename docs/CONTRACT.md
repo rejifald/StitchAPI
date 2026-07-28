@@ -89,6 +89,12 @@ These are real, distinct concepts → **`throttle.scope` is renamed to `pool`**,
 `scope` to mean tenancy everywhere. (This is a rename, **not** an assertion that they
 were the same concept.)
 
+_Second case:_ `backoff` was a **curve policy** (`'expo'|'expo-jitter'|'fixed'`) in
+`RetryOptions` and a flat **duration** (`number | string`) in `ReconnectOptions` — one token,
+two value-spaces, and both accept strings, so `backoff: 'expo'` and `backoff: '1s'` were
+indistinguishable by shape. → **`reconnect.backoff` is renamed to `delay`**, leaving `backoff`
+to mean "the curve policy" everywhere.
+
 ### P3 · One suffix system
 
 A type's role **MUST** be predictable from its suffix:
@@ -594,13 +600,23 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
 -   **P4 + P12/P14/P20 (`deno-kv` CAS retries)** `maxIncrRetries` — the last `max`-prefixed
     count cap — becomes `retry?: number | AtLeastOne<DenoKvRetryOptions>`, reusing core's
     `retry` vocabulary for the same concept instead of a second private spelling:
-    `attempts` (P4 bare noun, total incl. the first), plus `backoff`/`baseDelay`/`maxDelay`
-    for a curve the loop never had. A bare number is the P12 dominant-field shorthand
+    `attempts` (P4 bare noun, total incl. the first), plus a `backoff` envelope for a curve
+    the loop never had (folded to `{ curve, base, max }` in the same sweep as core's). A bare number is the P12 dominant-field shorthand
     (`retry: 20` ≡ `{ attempts: 20 }`), and the object form is `AtLeastOne`, so `{}` is a
     compile error (P20). No `on`: a CAS loop retries exactly one condition. Durations parse
     through core's `parseDuration`, now **exported** so a peer package satisfies P17's "one
     shared parser" instead of mirroring the grammar. Backoff stays **off by default** — the
     hot re-read is today's behaviour and flipping it is a separate call.
+-   **P24 (backoff envelope) + P2 (`backoff` disambiguated)** `RetryOptions`'
+    `backoff`/`baseDelay`/`maxDelay` — three flat members configuring one concept, two of them
+    sharing a `Delay` suffix — fold into `backoff?: BackoffCurve | AtLeastOne<BackoffOptions>`
+    (`{ curve, base, max }`). A bare curve is the P12 dominant-field shorthand
+    (`backoff: 'fixed'` ≡ `{ curve: 'fixed' }`), folded by a **nested** `envelope()` call in
+    `expandShorthand` so the string never reaches `__config` (P0); `{}` is a compile error (P20).
+    Inside the envelope the bounds need no suffix (P1), and `max` bounds a **magnitude**, the case
+    P4 leaves it. In the same pass `ReconnectOptions.backoff` — a flat duration, not a curve —
+    becomes **`delay`**, so `backoff` names one concept with one value-space across the surface.
+    Genuine breaking flat→envelope, no alias (P19, `rc` channel).
 -   **P24 (refresh envelope)** the auth strategies' `refresh`-prefixed flat members fold into one
     envelope (genuine breaking flat→envelope, no alias): `OAuth2Options.refreshOn`/`refreshSkew` →
     `refresh?: StatusMatch | AtLeastOne<OAuth2RefreshOptions>` (`{ on, skew }`), and

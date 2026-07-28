@@ -130,7 +130,7 @@ test('report: attempts reflects retries', async () => {
         url: URL,
         adapter,
         trace: false,
-        retry: { attempts: 3, baseDelay: 0 },
+        retry: { attempts: 3, backoff: { base: 0 } },
     });
     const r = await s.report();
     expect(r.error).toBeNull();

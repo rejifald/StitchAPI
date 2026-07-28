@@ -41,7 +41,7 @@ test('retries on 503 then succeeds, reporting attempts and retry progress', asyn
     const call = stitch({
         baseUrl: server.url,
         path: '/flaky',
-        retry: { attempts: 3, on: [503], baseDelay: 5 },
+        retry: { attempts: 3, on: [503], backoff: { base: 5 } },
     });
 
     const events = await collect(call());
@@ -68,7 +68,7 @@ test('rejects with status 503 after exhausting all retry attempts', async () => 
     const call = stitch({
         baseUrl: server.url,
         path: '/down',
-        retry: { attempts: 3, on: [503], baseDelay: 5 },
+        retry: { attempts: 3, on: [503], backoff: { base: 5 } },
     });
 
     await expect(call()).rejects.toMatchObject({ status: 503 });
@@ -89,7 +89,7 @@ test('honors the Retry-After header instead of the short backoff', async () => {
             attempts: 2,
             on: [429],
             respectRetryAfter: true,
-            baseDelay: 5,
+            backoff: { base: 5 },
         },
     });
 

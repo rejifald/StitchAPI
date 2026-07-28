@@ -328,7 +328,7 @@ describe('denoKvStore — increment TTL window', () => {
         spy.mockRestore();
     });
 
-    test('a fixed curve sleeps baseDelay between attempts, but not after the last', async () => {
+    test('a fixed curve sleeps backoff.base between attempts, but not after the last', async () => {
         const delays: number[] = [];
         const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
             fn: () => void,
@@ -340,7 +340,7 @@ describe('denoKvStore — increment TTL window', () => {
         }) as unknown as typeof setTimeout);
         const rec = recordingKv({ failAtomic: true });
         const store = denoKvStore(rec.kv, {
-            retry: { attempts: 4, backoff: 'fixed', baseDelay: '20ms' },
+            retry: { attempts: 4, backoff: { curve: 'fixed', base: '20ms' } },
         });
         await expect(store.increment('x', 1000)).rejects.toThrow(
             /lost 4 compare-and-set races/,
@@ -350,7 +350,7 @@ describe('denoKvStore — increment TTL window', () => {
         spy.mockRestore();
     });
 
-    test('an expo curve doubles and clamps at maxDelay', async () => {
+    test('an expo curve doubles and clamps at backoff.max', async () => {
         const delays: number[] = [];
         const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
             fn: () => void,
@@ -364,9 +364,7 @@ describe('denoKvStore — increment TTL window', () => {
         const store = denoKvStore(rec.kv, {
             retry: {
                 attempts: 5,
-                backoff: 'expo',
-                baseDelay: 10,
-                maxDelay: 30,
+                backoff: { curve: 'expo', base: 10, max: 30 },
             },
         });
         await expect(store.increment('x', 1000)).rejects.toThrow(

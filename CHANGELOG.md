@@ -21,6 +21,42 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+-   **BREAKING — `retry`'s backoff fields fold into one `backoff` envelope.**
+    `RetryOptions.backoff` / `baseDelay` / `maxDelay` were three flat members configuring a
+    single concept, two of them sharing a `Delay` suffix. They are now one envelope:
+
+    ```ts
+    // before
+    retry: { attempts: 3, backoff: 'expo', baseDelay: 200, maxDelay: '10s' }
+    // after
+    retry: { attempts: 3, backoff: { curve: 'expo', base: 200, max: '10s' } }
+    ```
+
+    `backoff: 'expo-jitter'` still works — a bare curve is the shorthand for `{ curve }`, so
+    the common case is unchanged. Only configs that set `baseDelay` or `maxDelay` need editing:
+    move them under `backoff` as `base` / `max`. Inside the envelope the `Delay` suffix is
+    redundant — there is only one thing there to measure. `backoff: {}` is a compile error;
+    pass a curve, or set at least one bound.
+
+    `@stitchapi/deno-kv`'s `retry.backoff` folds identically in the same release, so the
+    store's compare-and-set policy and a stitch's retry policy keep spelling the same
+    concept the same way.
+
+-   **BREAKING — `sse.reconnect.backoff` is renamed to `delay`.** It is a flat fallback
+    duration, while `retry.backoff` is a curve policy — one token meaning two things, and since
+    both accept strings, `backoff: 'expo'` and `backoff: '1s'` were indistinguishable by shape.
+    `backoff` now means "the curve policy" everywhere; the reconnect fallback is a `delay`:
+
+    ```ts
+    sse: { reconnect: { attempts: 5, delay: '1s' } }
+    ```
+
+    Behaviour is unchanged — a server-sent `retry:` still wins, and with no `delay` the stitch's
+    `retry.backoff` still supplies the wait.
+
+    Neither carries a `@deprecated` alias: P19 scopes that obligation to the GA channel and this
+    lands on `rc`.
+
 -   **BREAKING — `@stitchapi/deno-kv`'s `maxIncrRetries` becomes `retry`.** The
     compare-and-set budget for `increment` is now `retry?: number | AtLeastOne<DenoKvRetryOptions>`,
     speaking core's `retry` vocabulary rather than a second private spelling. A bare number
@@ -42,8 +78,9 @@ npm release are grouped under the in-development version that introduced them.
         rejected; write `retry: 100` for the all-defaults case.
 
     `backoff` is **off by default**, preserving today's behaviour — the loop re-reads
-    immediately on a lost race. Set `'expo'`, `'expo-jitter'` or `'fixed'` (with `baseDelay`
-    5ms, `maxDelay` 250ms) when many isolates contend on one key. No `@deprecated` alias:
+    immediately on a lost race. Set `'expo'`, `'expo-jitter'` or `'fixed'` — or the
+    `{ curve, base, max }` envelope, `base` 5ms and `max` 250ms — when many isolates contend
+    on one key. No `@deprecated` alias:
     P19 scopes that obligation to the GA channel and this lands on `rc`.
 
 -   **BREAKING — the store contract speaks whole words: `incr` is now `increment`, and

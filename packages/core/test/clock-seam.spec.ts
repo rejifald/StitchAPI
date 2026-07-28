@@ -19,8 +19,7 @@ describe('manualClock drives retry backoff (ADR 0010)', () => {
             retry: {
                 attempts: 3,
                 on: [503],
-                backoff: 'fixed',
-                baseDelay: 10_000,
+                backoff: { curve: 'fixed', base: 10_000 },
             },
             clock,
         });
@@ -55,8 +54,7 @@ describe('manualClock drives retry backoff (ADR 0010)', () => {
             retry: {
                 attempts: 2,
                 on: [503],
-                backoff: 'fixed',
-                baseDelay: 10_000,
+                backoff: { curve: 'fixed', base: 10_000 },
             },
             clock,
         });

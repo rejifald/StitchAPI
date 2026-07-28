@@ -160,19 +160,21 @@ export interface ReconnectOptions {
      */
     attempts?: number;
     /**
-     * Fallback reconnect backoff when the server has NOT sent a `retry:` field on the dropped
-     * connection — `1000`, `'1s'`. When omitted, the stitch's `retry` (`RetryOptions` —
-     * `backoff`/`baseDelay`/`maxDelay`) supplies the delay. A server-sent `retry:` on the connection
-     * always wins over both.
+     * Fallback reconnect delay when the server has NOT sent a `retry:` field on the dropped
+     * connection — `1000`, `'1s'`. When omitted, the stitch's `retry.backoff` supplies it. A
+     * server-sent `retry:` on the connection always wins over both.
+     *
+     * Named `delay`, not `backoff`: this is a flat duration, while `retry.backoff` is a curve
+     * policy. One token, one value-space (P1/P2).
      */
-    backoff?: number | string;
+    delay?: number | string;
 }
 /**
  * Resumable SSE (issue #71) — how the `sse` surface recovers from a dropped stream. **Off by
  * default**: with no `sse.reconnect` block the engine opens the body exactly once (today's
  * behaviour, byte-identical). When enabled the engine tracks the last `id:` seen and replays it as
  * `Last-Event-ID` on each reconnect, honours a server-sent `retry:` as the backoff (falling back to
- * `reconnect.backoff` / the stitch's `retry` policy), and caps reconnects at `attempts`.
+ * `reconnect.delay` / the stitch's `retry` policy), and caps reconnects at `attempts`.
  *
  * `true` = enabled with sane defaults; the object form tunes the cap / fallback backoff. Plain JSON
  * (the contract gate). Only the `sse` surface acts on this; other surfaces ignore it.
@@ -274,14 +276,31 @@ export type Adapter = ((req: AdapterRequest) => Promise<AdapterResponse>) & {
  * (`on: 429` ≡ `on: [429]`).
  */
 export type StatusMatch = number | number[] | ((status: number) => boolean);
+/** The delay curve a backoff walks. The dominant field of {@link BackoffOptions} (P12). */
+export type BackoffCurve = 'expo' | 'expo-jitter' | 'fixed';
+/**
+ * How the wait between attempts grows (CONTRACT.md P24). The curve and the two bounds
+ * that shape it are one concept, so they are one envelope rather than three sibling
+ * fields sharing a `Delay` suffix. Inside it `base` and `max` need no suffix — there is
+ * only one thing here to measure (P1), and `max` bounds a **magnitude**, which is the
+ * case P4 leaves it.
+ */
+export interface BackoffOptions {
+    /** Delay curve. Default `'expo-jitter'`. */
+    curve?: BackoffCurve;
+    /** Delay before the first retry — `100`, `'100ms'`, `'1s'`. Default 100ms. */
+    base?: number | string;
+    /** Ceiling the computed delay is clamped to — `10_000`, `'10s'`. Default 10s. */
+    max?: number | string;
+}
 export interface RetryOptions {
     attempts?: number; // total attempts incl. the first (default 1 = no retry)
     on?: StatusMatch; // status(es) (or a predicate) that trigger a retry (default [429,502,503,504])
-    backoff?: 'expo' | 'expo-jitter' | 'fixed';
-    /** Base backoff delay before the first retry — `100`, `'100ms'`, `'1s'`. Default 100ms. */
-    baseDelay?: number | string;
-    /** Backoff ceiling the computed delay is clamped to — `10_000`, `'10s'`. Default 10s. */
-    maxDelay?: number | string;
+    /**
+     * Backoff policy. A bare curve is the P12 shorthand for `{ curve }`
+     * (`backoff: 'fixed'` ≡ `backoff: { curve: 'fixed' }`); the envelope adds `base`/`max`.
+     */
+    backoff?: BackoffCurve | AtLeastOne<BackoffOptions>;
     respectRetryAfter?: boolean;
 }
 export interface ThrottleOptions {

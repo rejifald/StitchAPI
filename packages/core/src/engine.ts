@@ -1375,12 +1375,10 @@ async function* runStreaming(
         }
 
         // Backoff: a server-sent `retry:` (seen on any connection this run) wins; else the explicit
-        // `reconnect.backoff`; else the stitch's `retry` backoff math. `attempt` is now the count
+        // `reconnect.delay`; else the stitch's `retry` backoff math. `attempt` is now the count
         // of opens DONE, so `attempt + 1` is the upcoming reconnect for the expo curve.
         const backoff =
-            lastRetryMs ??
-            policy.backoff ??
-            backoffDelay(attempt + 1, cfg.retry);
+            lastRetryMs ?? policy.delay ?? backoffDelay(attempt + 1, cfg.retry);
         yield {
             type: 'progress',
             phase: 'reconnect',
@@ -1397,22 +1395,20 @@ async function* runStreaming(
 
 // Resolve the resumable-SSE reconnect policy from config (issue #71) — the ONE place the engine
 // reads the `sse` config slot, keeping `runStreaming` free of SSE-isms. `sse.reconnect` is off by
-// default; `true` enables it with sane defaults; the object form tunes the cap / fallback backoff.
-// `backoff` stays `undefined` when unset so the caller can fall back to the `retry` policy.
+// default; `true` enables it with sane defaults; the object form tunes the cap / fallback delay.
+// `delay` stays `undefined` when unset so the caller can fall back to the `retry` policy.
 function resolveReconnect(cfg: ResolvedStitchConfig): {
     enabled: boolean;
     maxAttempts: number;
-    backoff: number | undefined;
+    delay: number | undefined;
 } {
     const r = cfg.sse?.reconnect;
-    if (!r) return { enabled: false, maxAttempts: 0, backoff: undefined };
-    if (r === true)
-        return { enabled: true, maxAttempts: 3, backoff: undefined };
-    const backoff = parseDuration(r.backoff);
+    if (!r) return { enabled: false, maxAttempts: 0, delay: undefined };
+    if (r === true) return { enabled: true, maxAttempts: 3, delay: undefined };
     return {
         enabled: true,
         maxAttempts: r.attempts ?? 3,
-        backoff,
+        delay: parseDuration(r.delay),
     };
 }
 

@@ -87,7 +87,7 @@ isolate committed first — so there is nothing to match against.
 
 `backoff` is **off by default**: the loop re-reads immediately, which is the tightest
 path to a win when contention is brief. Set a curve (`'expo'`, `'expo-jitter'`,
-`'fixed'`, with `baseDelay` 5ms and `maxDelay` 250ms) when many isolates hammer one
+`'fixed'`, or the envelope `{ curve, base, max }` with `base` 5ms and `max` 250ms) when many isolates hammer one
 key and the hot spin costs more KV reads than it saves — `'expo-jitter'` is the one to
 reach for there, since full jitter stops a thundering herd re-colliding in lockstep.
 

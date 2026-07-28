@@ -398,7 +398,7 @@ const listUsers = stitch({
 ```
 
 -   **`throttle` is proactive** - a rate (`'1/s'`) and a concurrency cap that keep you under a vendor's limit before it bites; `pool: 'host'` shares one limiter across every stitch hitting the same host.
--   **`retry` is reactive** - `attempts` is the total including the first; retried statuses default to `[429, 502, 503, 504]`; backoff is `'expo'` / `'expo-jitter'` / `'fixed'` with `baseDelay` / `maxDelay` clamps; `respectRetryAfter` honors the `Retry-After` header (delta-seconds or HTTP-date).
+-   **`retry` is reactive** - `attempts` is the total including the first; retried statuses default to `[429, 502, 503, 504]`; backoff is `'expo'` / `'expo-jitter'` / `'fixed'`, with `backoff.base` / `backoff.max` bounds; `respectRetryAfter` honors the `Retry-After` header (delta-seconds or HTTP-date).
 -   **`timeout` aborts** - `total` and/or `perAttempt`, as milliseconds or `'30s'`-style strings, enforced with a real `AbortSignal` instead of a request left hanging.
 
 Throttle waits and retries emit `throttled` / `retry` events on the stream, so the waiting is visible in the trace for free.
