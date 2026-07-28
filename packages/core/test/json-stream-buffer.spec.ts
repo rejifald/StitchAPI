@@ -1,6 +1,6 @@
 // Two behaviours of the `'json'` streaming tokenizer (src/json-stream.ts) that json-stream.spec.ts
 // leaves open. That suite proves chunk-split correctness exhaustively and that a *single*
-// never-closing value trips the maxBufferBytes guard — but not:
+// never-closing value trips the maxBufferChars guard — but not:
 //   1. that the cap is PER-VALUE, not cumulative: the sliding-window compaction drops each emitted
 //      value, so a long run of small complete values whose TOTAL dwarfs the cap streams fine. This
 //      is the whole reason compact()/base exist; without them this stream would false-trip the guard.
@@ -26,16 +26,16 @@ function streamOfBytes(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
 
 async function decode(
     chunks: Uint8Array[],
-    maxBufferBytes?: number,
+    maxBufferChars?: number,
 ): Promise<unknown[]> {
     const out: unknown[] = [];
-    for await (const v of jsonStream(streamOfBytes(chunks), maxBufferBytes))
+    for await (const v of jsonStream(streamOfBytes(chunks), maxBufferChars))
         out.push(v);
     return out;
 }
 
 describe('json-stream: the buffer cap bounds a VALUE, not the whole stream', () => {
-    test('many small complete values whose total dwarfs maxBufferBytes all stream (compaction works)', async () => {
+    test('many small complete values whose total dwarfs maxBufferChars all stream (compaction works)', async () => {
         const COUNT = 500;
         const cap = 1024; // each value is ~12 bytes; the total (~6 KB) is far over the cap.
         // One object per chunk forces cross-read compaction (each read appends, emits, compacts).

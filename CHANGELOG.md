@@ -21,6 +21,27 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+-   **BREAKING — `stream.maxBufferBytes` is renamed to `maxBufferChars`.** The cap never
+    counted bytes. Every guard it feeds compares `.length` on a string the `TextDecoder` has
+    already produced (`line-reader.ts`, `json-stream.ts`, `sse.ts`), so it measures characters
+    of the decoded text — UTF-16 code units — not bytes off the socket:
+
+    ```ts
+    // before
+    stream: { decode: 'json', maxBufferBytes: 8 * 1024 * 1024 }
+    // after
+    stream: { decode: 'json', maxBufferChars: 8 * 1024 * 1024 }
+    ```
+
+    Default and behaviour are unchanged; the name, its JSDoc, and the thrown error text
+    (`… exceeded maxBufferChars (…)`) are all that move. The old name mattered because it
+    understated the guard it exists to be: 8M code units of CJK is ~24 MB of UTF-8 on the wire
+    and ~16 MB of string memory, so an OOM bound that read as "8 MB" was 2–3× looser than it
+    looked. Per P1, `Bytes` already denotes bytes elsewhere on the surface (`ServeOptions.maxBodyBytes`,
+    byte progress) and cannot also denote code units.
+
+    No `@deprecated` alias: P19 scopes that obligation to the GA channel and this lands on `rc`.
+
 -   **BREAKING — `retry`'s backoff fields fold into one `backoff` envelope.**
     `RetryOptions.backoff` / `baseDelay` / `maxDelay` were three flat members configuring a
     single concept, two of them sharing a `Delay` suffix. They are now one envelope:
