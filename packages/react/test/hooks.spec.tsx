@@ -282,6 +282,24 @@ describe('useStitchStream', () => {
     });
 });
 
+// --- UseStitchOptions surface ------------------------------------------------
+
+describe('UseStitchOptions', () => {
+    test("the store's 'streaming' flag cannot be passed to the hooks", () => {
+        const stitch = unaryStitch(async () => 1);
+        // Never executed — compile-time assertions only: each hook hard-sets
+        // `streaming`, so passing it must be a TYPE ERROR rather than being
+        // silently ignored.
+        void function TypeOnly(): void {
+            // @ts-expect-error — 'streaming' is omitted from UseStitchOptions
+            useStitch(stitch, {}, { streaming: true });
+            // @ts-expect-error — 'streaming' is omitted from UseStitchOptions
+            useStitchStream(stitch, {}, { streaming: false });
+        };
+        expect(true).toBe(true);
+    });
+});
+
 // --- stitchQueryOptions ----------------------------------------------------------
 
 describe('stitchQueryOptions', () => {
@@ -302,8 +320,10 @@ describe('stitchQueryOptions', () => {
 });
 
 // --- stitchQueryOptions: cache-key derivation regressions ------------------
-// The `queryKey` derivation shared the same three bugs as `@stitchapi/swr`'s
-// `swrKey`. Each of these FAILED before the fix.
+// The derivation now lives in `@stitchapi/query-core` (`deriveQueryKey`) and is
+// re-exported here; these regressions stay to guard the re-export wiring. Each
+// of these FAILED before the original fix (the local copy shared the same three
+// bugs as `@stitchapi/swr`'s `swrKey`).
 
 describe('stitchQueryOptions — no cache collision between nameless stitches', () => {
     // Bug 1 (correctness): `name ?? 'stitch'` keyed every nameless stitch as the
