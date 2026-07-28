@@ -85,12 +85,14 @@ export interface DenoKvLike {
 // ---------------------------------------------------------------------------
 
 /**
- * What `incr` stores under a counter key: the running count `n` plus the window's
- * absolute `deadline` (epoch ms). We keep the deadline in the VALUE — rather than
- * relying on the key's `expireIn` alone — because Deno KV's `set` replaces the
- * whole entry (clearing any prior expiry) and `get` never exposes the remaining
- * TTL. Storing the deadline lets each `incr` re-derive the correct `expireIn` on
- * every write, so a fixed window's expiry survives later increments intact.
+ * What `increment` stores under a counter key: the running count `n` plus the window's
+ * absolute `deadline` (epoch ms; `0` = no window — the counter never expires,
+ * mirroring `memoryStore`'s "0 marks live forever"). We keep the deadline in the
+ * VALUE — rather than relying on the key's `expireIn` alone — because Deno KV's
+ * `set` replaces the whole entry (clearing any prior expiry) and `get` never
+ * exposes the remaining TTL. Storing the deadline lets each `increment` re-derive the
+ * correct `expireIn` on every write, so a fixed window's expiry survives later
+ * increments intact.
  */
 interface CounterWindow {
     n: number;
@@ -120,7 +122,7 @@ export interface DenoKvStoreOptions {
      */
     keyPrefix?: string;
     /**
-     * How many times {@link StitchStore.incr} retries a lost compare-and-set race
+     * How many times {@link StitchStore.increment} retries a lost compare-and-set race
      * before giving up. Each retry re-reads the current value, so the loop only
      * spins under genuine contention. With N callers racing one counter, the
      * unluckiest needs up to N−1 retries (each round exactly one commit wins, so
@@ -144,7 +146,7 @@ export interface DenoKvStoreOptions {
  * Values round-trip through a JSON envelope so the store never wrestles with Deno
  * KV's structured-clone edge cases (BigInt, undefined-vs-null) — it persists the
  * exact bytes the contract handed it. The throttle's counter uses an atomic
- * compare-and-set loop (see {@link StitchStore.incr}). The store owns no
+ * compare-and-set loop (see {@link StitchStore.increment}). The store owns no
  * connection — `close()` delegates to the handle, so the caller decides when KV
  * shuts down.
  */
@@ -163,7 +165,7 @@ export function denoKvStore(
         async get(key) {
             const { value } = await kv.get(k(key));
             if (value == null) return undefined;
-            // A counter written by `incr` is a `{ n, deadline }` envelope; the
+            // A counter written by `increment` is a `{ n, deadline }` envelope; the
             // contract's cross-reads of a counter (e.g. core's cache-generation
             // number) expect the plain count, so unwrap it back to `n`. A legacy
             // bare-number counter from before this envelope is returned as-is.
@@ -189,12 +191,12 @@ export function denoKvStore(
                 ttl != null && ttl > 0 ? { expireIn: ttl } : undefined;
             await kv.set(k(key), JSON.stringify(value), options);
         },
-        async incr(key, ttl) {
+        async increment(key, ttl) {
             // Atomic FIXED-window counter via compare-and-set. Read the current
             // value + its versionstamp, then commit the next state guarded by a
             // `check` on that versionstamp: if another isolate raced us, the
             // versionstamp moved, the commit returns `ok: false`, and we re-read
-            // and retry — so N concurrent incrs net exactly +N (the contract).
+            // and retry — so N concurrent increments net exactly +N (the contract).
             //
             // The window is a `{ n, deadline }` envelope, NOT a bare number,
             // because Deno KV's `set` replaces the whole entry — including its
@@ -212,15 +214,27 @@ export function denoKvStore(
                 const prev = asWindow(entry.value);
                 // A window past its deadline (or an absent / legacy bare-number
                 // value) starts a fresh window at 1; an old bare counter thus
-                // self-heals into the envelope on its next incr.
-                const live = prev != null && prev.deadline > now;
-                const deadline = live ? prev.deadline : now + ttl;
+                // self-heals into the envelope on its next increment. A `deadline` of
+                // 0 marks a windowless counter — live forever.
+                const live =
+                    prev != null &&
+                    (prev.deadline === 0 || prev.deadline > now);
+                // Absent (or non-positive) `ttl` = no window: the counter never
+                // expires — `deadline: 0`, the same "live forever" marker
+                // `memoryStore` uses. A live counter keeps its original
+                // deadline, windowed or not, regardless of this call's `ttl`.
+                const windowed = ttl != null && ttl > 0;
+                const deadline = live
+                    ? prev.deadline
+                    : windowed
+                      ? now + ttl
+                      : 0;
                 const n = (live ? prev.n : 0) + 1;
                 // Deno KV rejects `expireIn` of 0/negative; keep it ≥ 1 while the
-                // deadline is in the future. `ttl <= 0` means "no window" — write
-                // without an expiry (matching `set`'s no-TTL path).
+                // deadline is in the future. A windowless counter (deadline 0)
+                // writes without an expiry (matching `set`'s no-TTL path).
                 const options =
-                    ttl > 0
+                    deadline > 0
                         ? { expireIn: Math.max(1, deadline - now) }
                         : undefined;
                 const res = await kv
@@ -231,7 +245,7 @@ export function denoKvStore(
                 if (res.ok) return n;
             }
             throw new Error(
-                `@stitchapi/deno-kv: incr(${key}) lost ${maxRetries + 1} compare-and-set races`,
+                `@stitchapi/deno-kv: increment(${key}) lost ${maxRetries + 1} compare-and-set races`,
             );
         },
     };

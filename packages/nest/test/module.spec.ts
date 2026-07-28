@@ -272,7 +272,7 @@ describe('defineStitch token', () => {
 });
 
 describe('bridges', () => {
-    it('nestBorrowStore delegates get/set/incr but omits close', async () => {
+    it('nestBorrowStore delegates get/set/increment but omits close', async () => {
         const calls: string[] = [];
         const backing: StitchStore = {
             get: async () => {
@@ -282,8 +282,8 @@ describe('bridges', () => {
             set: async () => {
                 calls.push('set');
             },
-            incr: async () => {
-                calls.push('incr');
+            increment: async () => {
+                calls.push('increment');
                 return 2;
             },
             close: async () => {
@@ -294,8 +294,8 @@ describe('bridges', () => {
         expect(borrowed.close).toBeUndefined();
         expect(await borrowed.get('k')).toBe(1);
         await borrowed.set('k', 'v');
-        expect(await borrowed.incr('k', 1)).toBe(2);
-        expect(calls).toEqual(['get', 'set', 'incr']); // close is never delegated
+        expect(await borrowed.increment('k', 1)).toBe(2);
+        expect(calls).toEqual(['get', 'set', 'increment']); // close is never delegated
     });
 
     // A NestLoggerLike that records messages per level.

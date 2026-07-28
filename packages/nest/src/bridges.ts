@@ -183,14 +183,14 @@ export function fromNestConfig(
 }
 
 /**
- * Wrap a store the package does **not** own: `get`/`set`/`incr` delegate, but `close` is
+ * Wrap a store the package does **not** own: `get`/`set`/`increment` delegate, but `close` is
  * omitted, so a seam's `close()` never tears down a store the app passed in (ADR 0006
  * Decision 8). The app — not the package — disposes a store it provides.
  */
 export function nestBorrowStore(store: StitchStore): StitchStore {
     return {
         get: (key) => store.get(key),
-        set: (key, value, ttlMs) => store.set(key, value, ttlMs),
-        incr: (key, ttlMs) => store.incr(key, ttlMs),
+        set: (key, value, ttl) => store.set(key, value, ttl),
+        increment: (key, ttl) => store.increment(key, ttl),
     };
 }

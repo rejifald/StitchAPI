@@ -486,8 +486,8 @@ The two gaps both audits flagged _critical_ — distributed rate limiting and pe
 ```ts
 interface StitchStore {
     get(key: string): Promise<unknown | undefined>;
-    set(key: string, value: unknown, ttlMs?: number): Promise<void>;
-    incr(key: string, ttlMs: number): Promise<number>; // atomic — for rate windows
+    set(key: string, value: unknown, ttl?: number): Promise<void>;
+    increment(key: string, ttl?: number): Promise<number>; // atomic — for rate windows
 }
 
 const api = seam({

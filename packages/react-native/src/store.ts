@@ -55,7 +55,7 @@ interface Envelope {
  * const api = seam({ store: asyncStorageStore(AsyncStorage) });
  * ```
  *
- * `incr` is serialized through an in-process queue so concurrent increments stay
+ * `increment` is serialized through an in-process queue so concurrent increments stay
  * atomic (RN is single-threaded, and a device-local store has one writer) — the
  * throttle counter behaves exactly as it does on Redis.
  */
@@ -86,7 +86,7 @@ export function asyncStorageStore(
     const write = (key: string, env: Envelope): Promise<void> =>
         storage.setItem(k(key), JSON.stringify(env));
 
-    // Serialize read-modify-write increments so 20 concurrent `incr` calls return
+    // Serialize read-modify-write increments so 20 concurrent `increment` calls return
     // 1..20 exactly (the store contract's atomicity rule). AsyncStorage has no
     // atomic INCR, but a single-threaded JS queue gives the same guarantee.
     let tail: Promise<unknown> = Promise.resolve();
@@ -103,7 +103,7 @@ export function asyncStorageStore(
         async get(key) {
             return (await readEnvelope(key))?.v;
         },
-        async set(key, value, ttlMs) {
+        async set(key, value, ttl) {
             // `set(key, undefined)` is the cache's delete (ADR 0003 §8).
             if (value === undefined) {
                 await storage.removeItem(k(key));
@@ -111,19 +111,23 @@ export function asyncStorageStore(
             }
             await write(
                 key,
-                ttlMs === undefined
-                    ? { v: value }
-                    : { v: value, e: now() + ttlMs },
+                ttl === undefined ? { v: value } : { v: value, e: now() + ttl },
             );
         },
-        incr(key, ttlMs) {
+        increment(key, ttl) {
             return serialize(async () => {
                 const env = await readEnvelope(key);
                 const current = typeof env?.v === 'number' ? env.v : 0;
                 const next = current + 1;
                 // Set the expiry only when CREATING the counter, never extending it,
                 // so a busy window still resets once it lapses (matches redisStore).
-                const expiry = env === undefined ? now() + ttlMs : env.e;
+                // An absent `ttl` means no window — the counter never expires.
+                const expiry =
+                    env === undefined
+                        ? ttl === undefined
+                            ? undefined
+                            : now() + ttl
+                        : env.e;
                 await write(
                     key,
                     expiry === undefined ? { v: next } : { v: next, e: expiry },

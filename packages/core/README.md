@@ -552,7 +552,7 @@ Throttle counters and session/token state live behind one small seam — a `stor
 export interface StitchStore {
     get(key: string): Promise<unknown | undefined>;
     set(key: string, value: unknown, ttl?: number): Promise<void>;
-    incr(key: string, ttl: number): Promise<number>; // atomic — rate windows
+    increment(key: string, ttl: number): Promise<number>; // atomic — rate windows
 }
 ```
 

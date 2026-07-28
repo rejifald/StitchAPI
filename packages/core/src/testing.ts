@@ -157,7 +157,7 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
  *   a second `set` overwrites; writes are isolated by key.
  * - `set(key, value, ttl)` expires the value after `ttl` ms; a `set` without
  *   `ttl` does not expire.
- * - `incr(key, ttl)` initializes a missing key to 1, increments an existing
+ * - `increment(key, ttl)` initializes a missing key to 1, increments an existing
  *    counter, is ATOMIC within a process (20 concurrent calls return
  *    1..20 exactly), and restarts at 1 once its TTL window lapses.
  *
@@ -269,30 +269,30 @@ export async function verifyStoreContract(
             },
         ],
         [
-            'incr: initializes a missing key to 1',
+            'increment: initializes a missing key to 1',
             async () => {
-                const first = await store.incr(k('init'), 5_000);
+                const first = await store.increment(k('init'), 5_000);
                 if (first !== 1) {
                     throw new Error(`expected 1, got ${show(first)}`);
                 }
             },
         ],
         [
-            'incr: increments an existing counter',
+            'increment: increments an existing counter',
             async () => {
-                await store.incr(k('seq'), 5_000);
-                const second = await store.incr(k('seq'), 5_000);
+                await store.increment(k('seq'), 5_000);
+                const second = await store.increment(k('seq'), 5_000);
                 if (second !== 2) {
                     throw new Error(`expected 2, got ${show(second)}`);
                 }
             },
         ],
         [
-            'incr: 20 concurrent calls net exactly +20',
+            'increment: 20 concurrent calls net exactly +20',
             async () => {
                 const results = await Promise.all(
                     Array.from({ length: 20 }, () =>
-                        store.incr(k('atomic'), 5_000),
+                        store.increment(k('atomic'), 5_000),
                     ),
                 );
                 const sorted = [...results].sort((a, b) => a - b);
@@ -300,16 +300,16 @@ export async function verifyStoreContract(
                 expectDeepEqual(
                     sorted,
                     wanted,
-                    'sorted results of 20 concurrent incrs (non-atomic stores collide)',
+                    'sorted results of 20 concurrent increments (non-atomic stores collide)',
                 );
             },
         ],
         [
-            'incr: the counter expires after its ttl',
+            'increment: the counter expires after its ttl',
             async () => {
-                await store.incr(k('window'), ttlMs);
+                await store.increment(k('window'), ttlMs);
                 await sleep(ttlMs + 50);
-                const restarted = await store.incr(k('window'), ttlMs);
+                const restarted = await store.increment(k('window'), ttlMs);
                 if (restarted !== 1) {
                     throw new Error(
                         `expected a fresh window to restart at 1, got ${show(restarted)}`,
@@ -323,24 +323,24 @@ export async function verifyStoreContract(
                 await store.set(k('iso-a'), 'a');
                 await store.set(k('iso-b'), 'b');
                 // Counters live under their own keys, never a shared one:
-                // iso-n's first incr lands at 1, an incr on a different
-                // key (iso-m) must not advance it, so iso-n's next incr is 2.
-                const isoN = await store.incr(k('iso-n'), 5_000);
+                // iso-n's first increment lands at 1, an increment on a different
+                // key (iso-m) must not advance it, so iso-n's next increment is 2.
+                const isoN = await store.increment(k('iso-n'), 5_000);
                 if (isoN !== 1) {
                     throw new Error(
                         `expected iso-n to start at 1, got ${show(isoN)}`,
                     );
                 }
-                const isoM = await store.incr(k('iso-m'), 5_000);
+                const isoM = await store.increment(k('iso-m'), 5_000);
                 if (isoM !== 1) {
                     throw new Error(
                         `expected iso-m to start at 1, got ${show(isoM)}`,
                     );
                 }
-                const isoNAgain = await store.incr(k('iso-n'), 5_000);
+                const isoNAgain = await store.increment(k('iso-n'), 5_000);
                 if (isoNAgain !== 2) {
                     throw new Error(
-                        `incr on iso-m leaked into iso-n: expected 2, got ${show(isoNAgain)}`,
+                        `increment on iso-m leaked into iso-n: expected 2, got ${show(isoNAgain)}`,
                     );
                 }
                 expectDeepEqual(await store.get(k('iso-a')), 'a', 'iso-a');

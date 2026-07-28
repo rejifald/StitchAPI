@@ -7,7 +7,7 @@
 // an ioredis-shaped, a node-redis-shaped and an Upstash-shaped facade, so each
 // adapter's dialect translation is exercised without a server. Single-threaded JS
 // makes the engine atomic, which is exactly what the real `EVAL` guarantees — so
-// the contract's "20 concurrent incrs net +20" rule holds here, on real Redis,
+// the contract's "20 concurrent increments net +20" rule holds here, on real Redis,
 // and on Upstash's edge HTTP Redis alike.
 //
 // Set REDIS_URL to additionally run the SAME verifier against a live Redis via a
@@ -16,7 +16,7 @@ import { fromIoredis, fromNodeRedis, fromUpstash, redisStore } from '../src';
 import type { IoredisLike, NodeRedisLike, UpstashLike } from '../src';
 
 import { assertConformance, verifyStoreContract } from 'stitchapi/testing';
-import { describe, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 // --- a faithful in-memory Redis engine ------------------------------------
 
@@ -57,10 +57,15 @@ class FakeRedisEngine {
 
     // The INCR + first-time-PEXPIRE script, run atomically (no await between read
     // and write — the JS event loop can't interleave it, just as Redis can't).
-    incrWithTtl(key: string, ttlMs: number): number {
+    // Mirrors the Lua exactly: ARGV[1] = 0 means no window — the counter is
+    // created without an expiry (the adapters send `ttl ?? 0`).
+    incrScript(key: string, ttlMs: number): number {
         const e = this.live(key);
         if (!e) {
-            this.data.set(key, { value: '1', expiresAt: Date.now() + ttlMs });
+            this.data.set(key, {
+                value: '1',
+                expiresAt: ttlMs > 0 ? Date.now() + ttlMs : Infinity,
+            });
             return 1;
         }
         const v = Number(e.value) + 1;
@@ -91,7 +96,7 @@ function ioredisFacade(engine: FakeRedisEngine): IoredisLike {
         },
         async eval(_script, _numKeys, ...args) {
             const [key, ttlMs] = args;
-            return engine.incrWithTtl(String(key), Number(ttlMs));
+            return engine.incrScript(String(key), Number(ttlMs));
         },
         async quit() {
             return 'OK';
@@ -115,7 +120,7 @@ function nodeRedisFacade(engine: FakeRedisEngine): NodeRedisLike {
         async eval(_script, options) {
             const key = options.keys[0] ?? '';
             const ttlMs = Number(options.arguments[0]);
-            return engine.incrWithTtl(key, ttlMs);
+            return engine.incrScript(key, ttlMs);
         },
         async quit() {
             return 'OK';
@@ -150,7 +155,7 @@ function upstashFacade(engine: FakeRedisEngine): UpstashLike {
         async eval(_script, keys, args) {
             const key = keys[0] ?? '';
             const ttlMs = Number(args[0]);
-            return engine.incrWithTtl(key, ttlMs);
+            return engine.incrScript(key, ttlMs);
         },
     };
 }
@@ -185,6 +190,45 @@ describe('@stitchapi/redis store contract', () => {
     });
 });
 
+// --- no-window increment (absent ttl) -------------------------------------------
+//
+// `StitchStore.increment(key)` without a ttl means "no window": the counter never
+// expires. The adapters encode the absent ttl as ARGV[1] = 0 and the script
+// skips the PEXPIRE; the fake engine mirrors that (0 → no expiry), so this
+// pins each dialect's translation of the sentinel end to end.
+
+describe('increment without a ttl never expires (no window)', () => {
+    const stores = [
+        [
+            'fromIoredis',
+            (): ReturnType<typeof redisStore> =>
+                redisStore(fromIoredis(ioredisFacade(new FakeRedisEngine()))),
+        ],
+        [
+            'fromNodeRedis',
+            (): ReturnType<typeof redisStore> =>
+                redisStore(
+                    fromNodeRedis(nodeRedisFacade(new FakeRedisEngine())),
+                ),
+        ],
+        [
+            'fromUpstash',
+            (): ReturnType<typeof redisStore> =>
+                redisStore(fromUpstash(upstashFacade(new FakeRedisEngine()))),
+        ],
+    ] as const;
+
+    test.each(stores)('%s', async (_name, makeStore) => {
+        const store = makeStore();
+        // A windowed counter alongside proves the wait outlives a real window.
+        await store.increment('windowed', 40);
+        expect(await store.increment('unwindowed')).toBe(1);
+        await new Promise((resolve) => setTimeout(resolve, 90));
+        expect(await store.increment('windowed', 40)).toBe(1); // window expired → restart
+        expect(await store.increment('unwindowed')).toBe(2); // no window → still counting
+    });
+});
+
 // --- opt-in: against a real Redis -----------------------------------------
 
 const REDIS_URL = process.env['REDIS_URL'];
@@ -206,6 +250,25 @@ describe.skipIf(!REDIS_URL)('against a real Redis (REDIS_URL)', () => {
                 ),
             );
         } finally {
+            await client.quit();
+        }
+    });
+
+    test('increment without a ttl never expires (the real Lua skips PEXPIRE on 0)', async () => {
+        const mod = (await import('ioredis')) as unknown as {
+            default: new (url: string) => IoredisLike & {
+                quit(): Promise<unknown>;
+            };
+        };
+        const client = new mod.default(REDIS_URL as string);
+        const store = redisStore(fromIoredis(client));
+        const key = `stitch-conformance:no-window-${Date.now().toString(36)}`;
+        try {
+            await store.increment(key);
+            await new Promise((resolve) => setTimeout(resolve, 90));
+            expect(await store.increment(key)).toBe(2); // no window → still counting
+        } finally {
+            await store.set(key, undefined); // drop the immortal counter
             await client.quit();
         }
     });

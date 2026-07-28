@@ -52,13 +52,13 @@ test('myStore implements the StitchStore contract', async () => {
 ## verifyStoreContract
 
 `verifyStoreContract(makeStore, opts?)` verifies a [pluggable
-store](/docs/guides/state/pluggable-store) — the `get`/`set`/`incr` + TTL
+store](/docs/guides/state/pluggable-store) — the `get`/`set`/`increment` + TTL
 surface the engine uses for throttle counters and auth/session state:
 
 -   `set`/`get` round-trips a value; a missing key resolves to `undefined`;
     a second `set` overwrites; writes are isolated by key.
 -   A `set` with `ttl` expires; a `set` without `ttl` does not.
--   `incr` initializes a missing key to 1, increments an existing counter,
+-   `increment` initializes a missing key to 1, increments an existing counter,
     restarts at 1 once its TTL window lapses, and is atomic within a process:
     20 concurrent calls must return 1..20 exactly.
 
@@ -170,7 +170,7 @@ fails with every broken rule named:
 ```
 Error: StitchAPI store contract: 2 violation(s), 8 rule(s) passed
   - set: a ttlMs entry expires: value survived its 250ms TTL: got "soon-gone"
-  - incr: 20 concurrent calls net exactly +20: sorted results of 20 concurrent incrs ...
+  - increment: 20 concurrent calls net exactly +20: sorted results of 20 concurrent increments ...
 ```
 
 Passing the kit is the compatibility claim: a store that passes can back

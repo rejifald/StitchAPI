@@ -103,7 +103,7 @@ teardown order + GC. Dropped along the way: request dedup, abandoned-request can
 -   **Tags:** caching, performance, resilience, multi-tenant, agents, runtime
 -   **Gates:** browser-first — sync browser-safe body hash, no `node:*`; uncacheable (stream)
     calls warn-and-pass-through, never crash. · bundle-frugal — subpath export, off until a
-    `cache` block exists; reuses the `StitchStore` `get/set/incr` contract, grows no new backend.
+    `cache` block exists; reuses the `StitchStore` `get/set/increment` contract, grows no new backend.
     · declarative — `cache: { ttl, scope, vary?, methods?, maxEntries? }` round-trips as JSON;
     `key()` is sugar over the derived default.
 
@@ -117,13 +117,13 @@ caller never authors (and never mis-authors) one. This also revives the **reques
 **Sketch** — Opaque **derived** key (method + URL + canonicalised body/GraphQL variables + vary
 headers + principal), **exact-match only** (no hierarchy). Cache only **validated** responses;
 hits skip re-validation. **Principal-scoped, fail-closed**; `scope: 'app'` opts into sharing.
-**Coalescing** is full cross-process via an `incr`-based lease lock — retries serialised, failures
+**Coalescing** is full cross-process via an `increment`-based lease lock — retries serialised, failures
 not shared, aborts ref-counted. Placement is **outermost** (a hit short-circuits
 throttle/circuit/network). **Invalidation**: exact = `set(key, undefined)` delete; bulk =
 generation-counter bump (no enumeration). LRU/max-entries live in the **cache layer**. Works on a
 bare `stitch()`; the seam just provisions the shared store. Subpath export, off by default.
 
-**Backed by / builds on** — `StitchStore` `get/set/incr` + TTL, ADR 0002 principal-keying, the
+**Backed by / builds on** — `StitchStore` `get/set/increment` + TTL, ADR 0002 principal-keying, the
 shared-store-makes-it-distributed pattern (throttle/circuit), the trace event stream, output
 validation + drift. Net-new runtime dependency count stays zero.
 
@@ -131,7 +131,7 @@ validation + drift. Net-new runtime dependency count stays zero.
 deploy); pick a sync browser-safe body hash + collision stance (oversized/stream bodies
 warn-and-skip); the cross-process lock protocol (lease TTL, poll backoff, leader-finished-without-
 cache signal); GraphQL query-vs-mutation opt-in classification; conformance-kit addendum for
-`incr`-as-lock correctness; `__config`/trace redaction of cached values + lock keys (extends ADR
+`increment`-as-lock correctness; `__config`/trace redaction of cached values + lock keys (extends ADR
 0002 §6). Dropped: hierarchy, SWR/background refresh, mutation-driven cross-stitch invalidation
 (= app-level cache policy, out of scope — see ADR 0003 §12).
 
@@ -216,9 +216,9 @@ demonstrable, but it's Node/TCP. The edge story (Workers / Deno / Vercel + `@sti
 HTTP/Web-API-native store so distributed throttle + shared sessions/cache work where there is no TCP
 socket. "Edge caching is eating Redis's lunch" — Upstash (HTTP Redis), Cloudflare Workers KV, Deno KV.
 
-**Sketch** — Thin `StitchStore` implementations (`get`/`set`/`incr`/`close?`) over each driver, same
-shape as `@stitchapi/redis`: `upstashStore(redis)` (Redis-command-compatible — `incr` is atomic),
-`cloudflareKvStore(KVNamespace)` (CF-KV has **no atomic `incr`** → rate-limiting needs Durable Objects;
+**Sketch** — Thin `StitchStore` implementations (`get`/`set`/`increment`/`close?`) over each driver, same
+shape as `@stitchapi/redis`: `upstashStore(redis)` (Redis-command-compatible — `increment` is atomic),
+`cloudflareKvStore(KVNamespace)` (CF-KV has **no atomic `increment`** → rate-limiting needs Durable Objects;
 document the gap or expose a DO-backed variant), `denoKvStore(kv)` (atomic ops available). Each ships
 against the `stitchapi/testing` store conformance kit.
 
@@ -226,7 +226,7 @@ against the `stitchapi/testing` store conformance kit.
 (driver-adapter + conformance pattern), and `@stitchapi/hono` (the edge backend they pair with).
 
 **Open questions** — `@stitchapi/redis` already takes any Redis-shaped driver — does Upstash just need
-a `fromUpstash` adapter there, or a dedicated package? How to expose the CF-KV `incr` gap without a
+a `fromUpstash` adapter there, or a dedicated package? How to expose the CF-KV `increment` gap without a
 footgun? **Postgres-as-KV is explicitly rejected** — KV-on-RDBMS is an anti-pattern and Redis already
 covers the `StitchStore` contract; it is not the storage gap worth filling.
 

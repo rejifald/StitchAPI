@@ -251,7 +251,7 @@ describe('fromNestConfig', () => {
 // --- borrowStore -----------------------------------------------------------
 
 describe('nestBorrowStore', () => {
-    test('delegates get/set/incr but omits close, so a seam cannot dispose the app store', async () => {
+    test('delegates get/set/increment but omits close, so a seam cannot dispose the app store', async () => {
         const seen: string[] = [];
         let closed = false;
         const store: StitchStore = {
@@ -262,8 +262,8 @@ describe('nestBorrowStore', () => {
             set: async (k, v, ttl) => {
                 seen.push(`set:${k}=${String(v)}@${String(ttl)}`);
             },
-            incr: async (k, ttl) => {
-                seen.push(`incr:${k}@${ttl}`);
+            increment: async (k, ttl) => {
+                seen.push(`increment:${k}@${ttl}`);
                 return 7;
             },
             close: async () => {
@@ -278,9 +278,9 @@ describe('nestBorrowStore', () => {
 
         expect(await borrowed.get('a')).toBe('v');
         await borrowed.set('b', 'x', 1000);
-        expect(await borrowed.incr('c', 2000)).toBe(7);
+        expect(await borrowed.increment('c', 2000)).toBe(7);
 
-        expect(seen).toEqual(['get:a', 'set:b=x@1000', 'incr:c@2000']);
+        expect(seen).toEqual(['get:a', 'set:b=x@1000', 'increment:c@2000']);
         expect(closed).toBe(false);
     });
 });

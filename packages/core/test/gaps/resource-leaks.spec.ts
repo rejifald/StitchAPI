@@ -49,10 +49,10 @@ test('store throttle: old rate-window keys do not accumulate over many windows',
             }
             return inner.set(k, v, ttl);
         },
-        async incr(k: string, ttl: number): Promise<number> {
+        async increment(k: string, ttl: number): Promise<number> {
             liveKeys.add(k);
             seen.add(k);
-            return inner.incr(k, ttl);
+            return inner.increment(k, ttl);
         },
     };
 
@@ -73,7 +73,7 @@ test('store throttle: old rate-window keys do not accumulate over many windows',
 });
 
 // ── 1a'. memoryStore sweeps expired entries on write (no unbounded growth) ───
-// The default store evicts a key lazily only on a get/incr of THAT key. Many short-TTL keys that
+// The default store evicts a key lazily only on a get/increment of THAT key. Many short-TTL keys that
 // are never read again must still be reclaimed: a write triggers a bounded opportunistic sweep.
 test('memoryStore sweeps expired keys on write so it stays bounded', async () => {
     const store = memoryStore();

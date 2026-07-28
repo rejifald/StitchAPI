@@ -63,7 +63,7 @@ existing or proposed — passes through all three before it ships.
 -   Proactive throttle — `rate` (e.g. `"2/s"`) spacing **+** `concurrency` cap (FIFO),
     scoped per-stitch or per-`host` — [`src/resilience.ts`](../src/resilience.ts)
 -   Streaming delivers early instead of blocking for the whole body
--   Pluggable state store (`get` / `set` / `incr` + TTL) turns throttle **distributed** and
+-   Pluggable state store (`get` / `set` / `increment` + TTL) turns throttle **distributed** and
     sessions **persistent / shared across workers** — [`src/store.ts`](../src/store.ts)
 -   Zero runtime dependencies, tree-shakeable
 

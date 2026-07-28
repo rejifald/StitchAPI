@@ -211,7 +211,7 @@ test('close() flushes the sink and closes the shared store', async () => {
     const spyStore: StitchStore = {
         get: (k) => base.get(k),
         set: (k, v, ttl) => base.set(k, v, ttl),
-        incr: (k, ttl) => base.incr(k, ttl),
+        increment: (k, ttl) => base.increment(k, ttl),
         close: async () => {
             closed = true;
             await base.close?.();

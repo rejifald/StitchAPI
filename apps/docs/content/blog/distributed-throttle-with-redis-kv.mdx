@@ -73,7 +73,7 @@ The drivers aren't interchangeable, and the line that separates them is one oper
 
 That single requirement decides the fit:
 
-| Driver                     | Best for                            | Atomic `incr` → distributed throttle                |
+| Driver                     | Best for                            | Atomic `increment` → distributed throttle           |
 | -------------------------- | ----------------------------------- | --------------------------------------------------- |
 | `@stitchapi/redis`         | Node servers; edge via Upstash HTTP | Yes — a single Lua `INCR` + `PEXPIRE`               |
 | `@stitchapi/deno-kv`       | Deno Deploy, Node, or Bun           | Yes — an atomic compare-and-set loop                |
@@ -81,13 +81,13 @@ That single requirement decides the fit:
 
 For a fleet of **servers**, reach for Redis: it has a real atomic `INCR`, so the counters increment exactly once and the limiter paces evenly across the fleet. Deno KV gives the same guarantee through a compare-and-set loop, and on Deno Deploy the same handle is replicated globally — a natural fit at the edge.
 
-**Workers KV is the honest exception.** It's last-write-wins `get`/`put` with no atomic increment, so a throttle counter on it would undercount under concurrency and silently break the cap. Rather than pretend, `cloudflareKvStore(...).incr(...)` throws a documented error. KV stays the right backend for the read-heavy halves — **cache and shared sessions** — which is usually exactly what an edge handler needs. For a distributed _throttle_ at the edge, pair KV with a Cloudflare Durable Object (the single-writer counter an atomic increment requires) or run the Redis driver over Upstash's HTTP API.
+**Workers KV is the honest exception.** It's last-write-wins `get`/`put` with no atomic increment, so a throttle counter on it would undercount under concurrency and silently break the cap. Rather than pretend, `cloudflareKvStore(...).increment(...)` throws a documented error. KV stays the right backend for the read-heavy halves — **cache and shared sessions** — which is usually exactly what an edge handler needs. For a distributed _throttle_ at the edge, pair KV with a Cloudflare Durable Object (the single-writer counter an atomic increment requires) or run the Redis driver over Upstash's HTTP API.
 
 <Callout type="info">
     The deciding question isn't "server or edge" — it's "do I need a shared
     *throttle*, or just shared cache and sessions?" Cache and sessions work on
-    any of the three; a distributed throttle needs atomic `incr`, which is what
-    splits Workers KV off from the other two.
+    any of the three; a distributed throttle needs atomic `increment`, which is
+    what splits Workers KV off from the other two.
 </Callout>
 
 ## Start in-memory — reach for a shared store when you scale out
@@ -100,7 +100,7 @@ Reach for a shared store the moment any of these are true:
 -   **You autoscale.** Ephemeral instances spin up with no memory of what the others have already sent. The store is the one line that turns N independent limiters back into one.
 -   **The upstream enforces per-account, not per-IP.** One account, many servers — the limit applies across all of them, so the counter has to live somewhere they all reach.
 
-A few trade-offs to account for when you cross that line: the store adds a network hop on every throttle check (latency on the hot path), and under contention the cap is "close to N/s across the fleet" rather than exact — keep a little headroom below the upstream's real ceiling. Workers KV is looser still (eventually-consistent reads, 60-second TTL floor), which is why `incr` throws there. And namespace staging vs. production with `keyPrefix` — one store, no collision.
+A few trade-offs to account for when you cross that line: the store adds a network hop on every throttle check (latency on the hot path), and under contention the cap is "close to N/s across the fleet" rather than exact — keep a little headroom below the upstream's real ceiling. Workers KV is looser still (eventually-consistent reads, 60-second TTL floor), which is why `increment` throws there. And namespace staging vs. production with `keyPrefix` — one store, no collision.
 
 It's a config change, not a rewrite. The call sites don't move.
 
@@ -112,7 +112,7 @@ stitchapi
 
 Then attach a driver and your throttle and sessions go fleet-wide without touching a call site:
 
--   [Distributed stores](/docs/integrations/stores) — the Redis, Workers KV, and Deno KV drivers, with the atomic-`incr` trade-off in full.
+-   [Distributed stores](/docs/integrations/stores) — the Redis, Workers KV, and Deno KV drivers, with the atomic-`increment` trade-off in full.
 -   [Pluggable store](/docs/guides/state/pluggable-store) — the `StitchStore` interface the drivers implement.
 -   [Distributed throttle](/docs/guides/state/distributed-throttle) and [Shared sessions](/docs/guides/state/shared-sessions) — the exact pacing and session-sharing semantics.
 

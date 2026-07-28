@@ -41,7 +41,7 @@ budget by origin, so every stitch hitting the host pools into it; workers share
 only when they point at the same store and resolve to the same key. (Concurrency
 stays in-process; only the rate limit is distributed.) A
 [`StitchStore`](/docs/guides/state/pluggable-store) is three async methods —
-`get` / `set` / `incr` with TTL — backed by anything; the same store also gives
+`get` / `set` / `increment` with TTL — backed by anything; the same store also gives
 you [shared auth sessions](/docs/guides/state/shared-sessions).
 
 ## See also

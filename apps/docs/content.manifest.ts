@@ -529,7 +529,7 @@ export const pages: Page[] = [
         path: 'guides/state/pluggable-store',
         title: 'The pluggable store',
         description:
-            'Swap the in-memory store for a shared one to back throttle and sessions with get/set/incr + TTL.',
+            'Swap the in-memory store for a shared one to back throttle and sessions with get/set/increment + TTL.',
         kind: 'guide',
     },
     {

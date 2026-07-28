@@ -1,6 +1,6 @@
 ---
 title: Distributed stores
-description: Attach a Redis, Cloudflare Workers KV, or Deno KV StitchStore so a stitch's throttle, sessions, and cache become fleet-wide — same call site, no backend in core. Includes the atomic-incr trade-off that decides which store fits.
+description: Attach a Redis, Cloudflare Workers KV, or Deno KV StitchStore so a stitch's throttle, sessions, and cache become fleet-wide — same call site, no backend in core. Includes the atomic-increment trade-off that decides which store fits.
 prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 
@@ -19,11 +19,11 @@ the same `verifyStoreContract` from `stitchapi/testing`.
 
 ## Which store?
 
-The deciding axis is **atomic `incr`**: a distributed _throttle_ needs it (rate
+The deciding axis is **atomic `increment`**: a distributed _throttle_ needs it (rate
 counters must increment exactly once under concurrency), while shared _cache_ and
 _sessions_ need only `get` / `set`.
 
-| Package                    | Runtime                                        | Atomic `incr` → distributed throttle      | Shared cache & sessions | TTL unit    |
+| Package                    | Runtime                                        | Atomic `increment` → distributed throttle | Shared cache & sessions | TTL unit    |
 | -------------------------- | ---------------------------------------------- | ----------------------------------------- | ----------------------- | ----------- |
 | `@stitchapi/redis`         | Node (TCP) **and** edge (Upstash HTTP)         | ✅ Lua `INCR` + `PEXPIRE`                 | ✅                      | ms          |
 | `@stitchapi/deno-kv`       | Deno / Deno Deploy · Node & Bun via `@deno/kv` | ✅ atomic compare-and-set                 | ✅                      | ms          |
@@ -66,7 +66,7 @@ import { Redis } from '@upstash/redis';
 const store = redisStore(fromUpstash(Redis.fromEnv()));
 ```
 
-`incr` must be **atomic** and set the key's TTL only when it _creates_ the counter
+`increment` must be **atomic** and set the key's TTL only when it _creates_ the counter
 — the bundled adapters do this in a single Lua `EVAL` (`INCR`, then `PEXPIRE` only
 when the value is `1`), so a rate window can't slide forever and a crash can't
 strand an immortal counter. With a shared store the rate limiter is
@@ -105,11 +105,11 @@ export default {
     **Workers KV has no atomic increment.** It is last-write-wins `get` / `put`
     / `delete` only, so a throttle counter built on it would undercount under
     concurrency and silently break rate limiting. Rather than do that,
-    `cloudflareKvStore(...).incr(...)` **throws** a documented error. For a
+    `cloudflareKvStore(...).increment(...)` **throws** a documented error. For a
     distributed throttle, back it with a [Durable
     Object](https://developers.cloudflare.com/durable-objects/) — the
-    single-writer, strongly-consistent counter an atomic `incr` requires. KV
-    remains the right backend for cache and sessions, the common edge need.
+    single-writer, strongly-consistent counter an atomic `increment` requires.
+    KV remains the right backend for cache and sessions, the common edge need.
 </Callout>
 
 KV's `expirationTtl` is in **seconds** with a **60-second minimum**; the store
@@ -146,7 +146,7 @@ import { seam } from 'stitchapi';
 const api = seam({ store: denoKvStore(await openKv(process.env.DENO_KV_URL)) });
 ```
 
-Deno KV has no native `INCR`, so `incr` is an **atomic compare-and-set loop**
+Deno KV has no native `INCR`, so `increment` is an **atomic compare-and-set loop**
 (read value + `versionstamp`, then `atomic().check(...).set(...).commit()`,
 retrying if another isolate raced) — N concurrent increments net exactly +N. The
 TTL (`expireIn`, already in milliseconds) is set only on the increment that

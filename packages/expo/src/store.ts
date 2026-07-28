@@ -3,7 +3,7 @@
 // jars are stored encrypted at rest rather than in plaintext AsyncStorage.
 //
 // It REUSES @stitchapi/react-native's `asyncStorageStore` for all the store logic
-// (JSON envelope, TTL, serialized atomic incr); only two things differ from
+// (JSON envelope, TTL, serialized atomic increment); only two things differ from
 // AsyncStorage and live here: the `*Async` method names, and SecureStore's
 // restricted key charset (keys allow only `[A-Za-z0-9._-]`), which we satisfy by
 // hex-encoding every engine key.

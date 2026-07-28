@@ -49,12 +49,12 @@ Anything that satisfies `DenoKvLike` (a test double, a proxy) is a drop-in.
 
 ## Atomic counters
 
-Deno KV has no `INCR`, so `incr` is implemented as an **atomic compare-and-set
+Deno KV has no `INCR`, so `increment` is implemented as an **atomic compare-and-set
 loop**: read the current value + its `versionstamp`, then
 `atomic().check({ key, versionstamp }).set(key, next, { expireIn }).commit()`. If
 another isolate raced us, the versionstamp moved, the commit returns `ok: false`,
 and the loop re-reads and retries — so N concurrent increments net **exactly +N**
-(proven by the store contract's "20 concurrent incrs net +20" rule).
+(proven by the store contract's "20 concurrent increments net +20" rule).
 
 The counter is a **fixed window** (matching the Redis adapter): the first increment
 pins an absolute deadline `now + ttl`, and every increment inside that window keeps
@@ -66,8 +66,11 @@ deadline. That keeps the window's expiry alive across every write instead of a
 later increment silently wiping it and leaking the key forever. (`get` unwraps this
 envelope back to the plain count, so nothing downstream sees the internal shape.)
 The TTL unit is **milliseconds** — the same unit as the contract's `ttl`, and Deno
-KV's own `expireIn` unit, so there's no conversion at the seam. `maxIncrRetries`
-(default `100`) bounds the loop under pathological contention.
+KV's own `expireIn` unit, so there's no conversion at the seam. An `increment` without
+a `ttl` (or with `ttl <= 0`) has **no window**: the counter accumulates forever
+and the key never expires — the same "absent `ttl` = no expiry" rule `set`
+follows. `maxIncrRetries` (default `100`) bounds the loop under pathological
+contention.
 
 The store owns no connection: `store.close()` delegates to the handle, so you
 decide when KV shuts down.
