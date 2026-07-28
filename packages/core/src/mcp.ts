@@ -10,7 +10,12 @@
 import { endpointLabel, pipelineStages } from './config-summary';
 import { toMermaid } from './diagram';
 import { type StitchRegistry, selectStitch } from './registry';
-import type { RedactedStitchConfig, Stitch, StitchInput } from './types';
+import type {
+    AtLeastOne,
+    RedactedStitchConfig,
+    Stitch,
+    StitchInput,
+} from './types';
 
 import type { Readable, Writable } from 'node:stream';
 
@@ -142,11 +147,11 @@ export interface McpServerOptions {
 // its response (or null for notifications), independent of any transport.
 export function createMcpServer(
     registry: StitchRegistry,
-    info: McpServerOptions = {},
+    info?: AtLeastOne<McpServerOptions>,
 ): McpServer {
     const serverInfo = {
-        name: info.name ?? SERVER_NAME,
-        version: info.version ?? SERVER_VERSION,
+        name: info?.name ?? SERVER_NAME,
+        version: info?.version ?? SERVER_VERSION,
     };
 
     async function callRunStitch(args: unknown): Promise<ToolResult> {
@@ -282,7 +287,7 @@ export function createMcpServer(
 export interface StdioOptions {
     input?: Readable;
     output?: Writable;
-    info?: McpServerOptions;
+    serverInfo?: AtLeastOne<McpServerOptions>;
 }
 
 // Wire an McpServer to the stdio transport: read newline-delimited JSON-RPC from
@@ -292,7 +297,7 @@ export function serveStdio(
     registry: StitchRegistry,
     opts: StdioOptions = {},
 ): { server: McpServer; close: () => void } {
-    const server = createMcpServer(registry, opts.info);
+    const server = createMcpServer(registry, opts.serverInfo);
     const input = opts.input ?? process.stdin;
     const output = opts.output ?? process.stdout;
     input.setEncoding('utf8');
