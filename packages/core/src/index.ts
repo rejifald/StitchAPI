@@ -14,7 +14,12 @@ export {
     secretsFile,
     secretFrom,
 } from './auth';
-export type { SecretSource, AuthFailureResult, RefreshResult } from './auth';
+export type {
+    BasicOptions,
+    SecretSource,
+    AuthFailureResult,
+    RefreshResult,
+} from './auth';
 export { fetchAdapter } from './http-adapter';
 export type { FetchAdapterOptions } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';
