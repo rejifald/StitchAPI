@@ -2,12 +2,7 @@
 // in a jsdom env. Driven by FAKE stitches — no engine, no network. Each binding is
 // created in `TestBed.runInInjectionContext`, and the module is reset between tests
 // to exercise context teardown.
-import {
-    injectStitch,
-    injectStitchStream,
-    queryOptions,
-    stitchQueryOptions,
-} from '../src';
+import { injectStitch, injectStitchStream, stitchQueryOptions } from '../src';
 
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -305,6 +300,24 @@ describe('state$', () => {
     });
 });
 
+// --- InjectStitchOptions surface ---------------------------------------------
+
+describe('InjectStitchOptions', () => {
+    test("the store's 'streaming' flag cannot be passed to the injectors", () => {
+        const stitch = unaryStitch(async () => 1);
+        // Never executed — compile-time assertions only: each injector hard-sets
+        // `streaming`, so passing it must be a TYPE ERROR rather than being
+        // silently ignored.
+        void function TypeOnly(): void {
+            // @ts-expect-error — 'streaming' is omitted from InjectStitchOptions
+            injectStitch(stitch, {}, { streaming: true });
+            // @ts-expect-error — 'streaming' is omitted from InjectStitchOptions
+            injectStitchStream(stitch, {}, { streaming: false });
+        };
+        expect(true).toBe(true);
+    });
+});
+
 // --- stitchQueryOptions ----------------------------------------------------------
 
 describe('stitchQueryOptions', () => {
@@ -324,16 +337,11 @@ describe('stitchQueryOptions', () => {
     });
 });
 
-describe('queryOptions (deprecated alias)', () => {
-    test('queryOptions stays a deprecated alias of stitchQueryOptions (ADR 0012)', () => {
-        expect(queryOptions).toBe(stitchQueryOptions);
-    });
-});
-
 // --- stitchQueryOptions: cache-key derivation regressions ------------------
-// The `queryKey` derivation shared the same three bugs as `@stitchapi/react`'s
-// (fixed there in #406). Each of these FAILED before the port. Keep in lock-step
-// with `@stitchapi/react`'s `packages/react/test/hooks.spec.tsx`.
+// The derivation now lives in `@stitchapi/query-core` (`deriveQueryKey`) and is
+// re-exported here; these regressions stay to guard the re-export wiring. Each
+// of these FAILED before the original fix (the local copy shared the same three
+// bugs as `@stitchapi/react`'s, fixed there in #406).
 
 describe('stitchQueryOptions — no cache collision between nameless stitches', () => {
     // Bug 1 (correctness): `name ?? 'stitch'` keyed every nameless stitch as the

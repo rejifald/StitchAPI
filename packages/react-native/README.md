@@ -64,7 +64,7 @@ function Chat({ prompt }: { prompt: string }) {
 }
 ```
 
-`useStitch` / `useStitchStream` / `queryOptions` and their types are re-exported here, so you import everything from `@stitchapi/react-native`.
+`useStitch` / `useStitchStream` / `stitchQueryOptions` and their types are re-exported here, so you import everything from `@stitchapi/react-native`.
 
 ## Refetch on foreground / reconnect
 
