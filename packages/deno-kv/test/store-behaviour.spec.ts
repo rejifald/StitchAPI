@@ -289,12 +289,96 @@ describe('denoKvStore — increment TTL window', () => {
         expect(await store.increment('legacy', 200)).toBe(2);
     });
 
-    test('throws after exhausting maxIncrRetries lost compare-and-set races', async () => {
+    test('throws after exhausting retry.attempts lost compare-and-set races', async () => {
         const rec = recordingKv({ failAtomic: true });
-        const store = denoKvStore(rec.kv, { maxIncrRetries: 3 });
+        const store = denoKvStore(rec.kv, { retry: { attempts: 3 } });
+        // `attempts` is the TOTAL including the first, so 3 means 3 reads, not 4.
+        await expect(store.increment('x', 1000)).rejects.toThrow(
+            /lost 3 compare-and-set races/,
+        );
+    });
+
+    test('a bare number is the attempts shorthand (retry: 3 ≡ { attempts: 3 })', async () => {
+        const rec = recordingKv({ failAtomic: true });
+        const store = denoKvStore(rec.kv, { retry: 3 });
+        await expect(store.increment('x', 1000)).rejects.toThrow(
+            /lost 3 compare-and-set races/,
+        );
+    });
+
+    test('the default budget is 100 attempts', async () => {
+        const rec = recordingKv({ failAtomic: true });
+        const store = denoKvStore(rec.kv);
+        await expect(store.increment('x', 1000)).rejects.toThrow(
+            /lost 100 compare-and-set races/,
+        );
+    });
+
+    test('no backoff by default: the loop re-reads with no timer in between', async () => {
+        // With a curve unset the retry path must never touch `setTimeout` — a hot
+        // re-read is the tightest path to a win when contention is brief, and it is
+        // what keeps this loop usable under fake timers.
+        const spy = vi.spyOn(globalThis, 'setTimeout');
+        const rec = recordingKv({ failAtomic: true });
+        const store = denoKvStore(rec.kv, { retry: 4 });
         await expect(store.increment('x', 1000)).rejects.toThrow(
             /lost 4 compare-and-set races/,
         );
+        expect(spy).not.toHaveBeenCalled();
+        spy.mockRestore();
+    });
+
+    test('a fixed curve sleeps baseDelay between attempts, but not after the last', async () => {
+        const delays: number[] = [];
+        const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+            fn: () => void,
+            ms?: number,
+        ) => {
+            delays.push(ms ?? 0);
+            fn();
+            return 0 as unknown as ReturnType<typeof setTimeout>;
+        }) as unknown as typeof setTimeout);
+        const rec = recordingKv({ failAtomic: true });
+        const store = denoKvStore(rec.kv, {
+            retry: { attempts: 4, backoff: 'fixed', baseDelay: '20ms' },
+        });
+        await expect(store.increment('x', 1000)).rejects.toThrow(
+            /lost 4 compare-and-set races/,
+        );
+        // 4 attempts → 3 gaps; the delay after the final loss would only stall the throw.
+        expect(delays).toEqual([20, 20, 20]);
+        spy.mockRestore();
+    });
+
+    test('an expo curve doubles and clamps at maxDelay', async () => {
+        const delays: number[] = [];
+        const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+            fn: () => void,
+            ms?: number,
+        ) => {
+            delays.push(ms ?? 0);
+            fn();
+            return 0 as unknown as ReturnType<typeof setTimeout>;
+        }) as unknown as typeof setTimeout);
+        const rec = recordingKv({ failAtomic: true });
+        const store = denoKvStore(rec.kv, {
+            retry: {
+                attempts: 5,
+                backoff: 'expo',
+                baseDelay: 10,
+                maxDelay: 30,
+            },
+        });
+        await expect(store.increment('x', 1000)).rejects.toThrow(
+            /lost 5 compare-and-set races/,
+        );
+        expect(delays).toEqual([10, 20, 30, 30]);
+        spy.mockRestore();
+    });
+
+    test('the empty object is a compile error (P20), the envelope needs a field', () => {
+        // @ts-expect-error `{}` must not satisfy AtLeastOne<DenoKvRetryOptions>
+        denoKvStore(recordingKv().kv, { retry: {} });
     });
 });
 

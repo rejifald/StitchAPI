@@ -116,7 +116,7 @@ current index.
 
 _Violations:_ `ReconnectOptions.maxAttempts` (→ `attempts`), `CacheConfig.maxEntries`
 (→ `entries`), `CircuitOptions.failureThreshold` (→ `failures`), `paginate.max`
-(→ `pages`), `deno-kv maxIncrRetries`.
+(→ `pages`). (`deno-kv maxIncrRetries` → `retry.attempts` — **fixed**, see [§6](#6-migration-backlog).)
 
 ---
 
@@ -479,7 +479,6 @@ the obligation to the GA channel. Severity = consumer blast radius.
 | Med  | SSE helper `sendStitchSse`/`stitchSse`                             | `streamStitchSse`                       | P16  |
 | Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions` | `StitchErrorOptions` (+ `body`)         | P16  |
 | Low  | `RedisDriver…quit`, sync `close`                                   | async `close`                           | P18  |
-| Low  | `deno-kv maxIncrRetries`                                           | `incrementRetries`                      | P4   |
 | Low  | `bodyKind` (from-curl)                                             | `bodyType`                              | P1   |
 
 New shorthand/toggle slots to **add** (additive, non-breaking): `.inspect()`
@@ -592,6 +591,16 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     both are consumer-implemented contracts, which could not have carried an alias in any
     case. (`deno-kv`'s `maxIncrRetries` is untouched here; it is a P4 `max`-prefix
     violation and renames in that slice.)
+-   **P4 + P12/P14/P20 (`deno-kv` CAS retries)** `maxIncrRetries` — the last `max`-prefixed
+    count cap — becomes `retry?: number | AtLeastOne<DenoKvRetryOptions>`, reusing core's
+    `retry` vocabulary for the same concept instead of a second private spelling:
+    `attempts` (P4 bare noun, total incl. the first), plus `backoff`/`baseDelay`/`maxDelay`
+    for a curve the loop never had. A bare number is the P12 dominant-field shorthand
+    (`retry: 20` ≡ `{ attempts: 20 }`), and the object form is `AtLeastOne`, so `{}` is a
+    compile error (P20). No `on`: a CAS loop retries exactly one condition. Durations parse
+    through core's `parseDuration`, now **exported** so a peer package satisfies P17's "one
+    shared parser" instead of mirroring the grammar. Backoff stays **off by default** — the
+    hot re-read is today's behaviour and flipping it is a separate call.
 -   **P24 (refresh envelope)** the auth strategies' `refresh`-prefixed flat members fold into one
     envelope (genuine breaking flat→envelope, no alias): `OAuth2Options.refreshOn`/`refreshSkew` →
     `refresh?: StatusMatch | AtLeastOne<OAuth2RefreshOptions>` (`{ on, skew }`), and

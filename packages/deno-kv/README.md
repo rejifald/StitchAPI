@@ -69,8 +69,27 @@ The TTL unit is **milliseconds** — the same unit as the contract's `ttl`, and 
 KV's own `expireIn` unit, so there's no conversion at the seam. An `increment` without
 a `ttl` (or with `ttl <= 0`) has **no window**: the counter accumulates forever
 and the key never expires — the same "absent `ttl` = no expiry" rule `set`
-follows. `maxIncrRetries` (default `100`) bounds the loop under pathological
-contention.
+follows.
+
+### Tuning the compare-and-set loop
+
+`retry` bounds that loop. A bare number is the attempts shorthand; the envelope adds
+a backoff curve, using the same words as core's `retry`:
+
+```ts
+denoKvStore(kv, { retry: 20 }); // ≡ { attempts: 20 }
+denoKvStore(kv, { retry: { attempts: 20, backoff: 'expo-jitter' } });
+```
+
+`attempts` (default `100`) is the **total** including the first, so it is a budget,
+not a retry count. There is no `on`: the loop retries exactly one condition — another
+isolate committed first — so there is nothing to match against.
+
+`backoff` is **off by default**: the loop re-reads immediately, which is the tightest
+path to a win when contention is brief. Set a curve (`'expo'`, `'expo-jitter'`,
+`'fixed'`, with `baseDelay` 5ms and `maxDelay` 250ms) when many isolates hammer one
+key and the hot spin costs more KV reads than it saves — `'expo-jitter'` is the one to
+reach for there, since full jitter stops a thundering herd re-colliding in lockstep.
 
 The store owns no connection: `store.close()` delegates to the handle, so you
 decide when KV shuts down.

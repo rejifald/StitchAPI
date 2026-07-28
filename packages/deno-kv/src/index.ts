@@ -16,7 +16,8 @@
 //
 // Compliance with the store contract is proven against `verifyStoreContract` from
 // `stitchapi/testing` (see test/conformance.spec.ts).
-import type { StitchStore } from 'stitchapi';
+import { parseDuration } from 'stitchapi';
+import type { AtLeastOne, StitchStore } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
 // the Deno KV surface
@@ -108,9 +109,55 @@ function asWindow(value: unknown): CounterWindow | null {
         : null;
 }
 
+// Delay before retry #n (1-based) under a backoff curve, clamped to `max`. Mirrors
+// core's `RetryOptions` curves: `fixed` holds `base`, `expo` doubles it, and
+// `expo-jitter` picks uniformly in `[0, expo]` (full jitter) so a thundering herd of
+// isolates doesn't re-collide in lockstep on the same tick.
+function backoffDelay(
+    curve: 'expo' | 'expo-jitter' | 'fixed',
+    n: number,
+    base: number,
+    max: number,
+): number {
+    if (curve === 'fixed') return Math.min(base, max);
+    const expo = Math.min(base * 2 ** (n - 1), max);
+    return curve === 'expo' ? expo : Math.random() * expo;
+}
+
+const sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
 // ---------------------------------------------------------------------------
 // the store
 // ---------------------------------------------------------------------------
+
+/**
+ * How {@link StitchStore.increment} rides out a lost compare-and-set race. The
+ * subset of core's `RetryOptions` that means anything to a CAS loop: there is no
+ * `on`, because the loop retries exactly one condition — another isolate committed
+ * first — and nothing else.
+ */
+export interface DenoKvRetryOptions {
+    /**
+     * Total attempts including the first (default `100`). Each attempt re-reads the
+     * current value, so the loop only spins under genuine contention. With N callers
+     * racing one counter, the unluckiest needs up to N−1 retries (each round exactly
+     * one commit wins, so contention drains one caller at a time); the default
+     * comfortably covers any realistic per-key concurrency on a single window.
+     */
+    attempts?: number;
+    /**
+     * Delay curve between attempts. Omitted (the default) means **no delay** — the
+     * loop re-reads immediately, which is the tightest path to a win when contention
+     * is brief. Set a curve when many isolates hammer one key and the hot spin costs
+     * more KV reads than it saves.
+     */
+    backoff?: 'expo' | 'expo-jitter' | 'fixed';
+    /** Delay before the first retry — `5`, `'5ms'`, `'1s'`. Default 5ms; only used when `backoff` is set. */
+    baseDelay?: number | string;
+    /** Ceiling the computed delay is clamped to — `250`, `'250ms'`. Default 250ms. */
+    maxDelay?: number | string;
+}
 
 /** Options for {@link denoKvStore}. */
 export interface DenoKvStoreOptions {
@@ -122,14 +169,11 @@ export interface DenoKvStoreOptions {
      */
     keyPrefix?: string;
     /**
-     * How many times {@link StitchStore.increment} retries a lost compare-and-set race
-     * before giving up. Each retry re-reads the current value, so the loop only
-     * spins under genuine contention. With N callers racing one counter, the
-     * unluckiest needs up to N−1 retries (each round exactly one commit wins, so
-     * contention drains one caller at a time); the default `100` therefore
-     * comfortably covers any realistic per-key concurrency on a single window.
+     * Compare-and-set retry policy for {@link StitchStore.increment}. A bare number
+     * is the attempts shorthand (`retry: 20` ≡ `retry: { attempts: 20 }`); the
+     * envelope adds a backoff curve. Default `{ attempts: 100 }` with no delay.
      */
-    maxIncrRetries?: number;
+    retry?: number | AtLeastOne<DenoKvRetryOptions>;
 }
 
 /**
@@ -155,7 +199,16 @@ export function denoKvStore(
     opts: DenoKvStoreOptions = {},
 ): StitchStore {
     const prefix = opts.keyPrefix;
-    const maxRetries = opts.maxIncrRetries ?? 100;
+    // P12 dominant-field shorthand: a bare number is `{ attempts }`. Normalized once
+    // here so the loop below only ever reads the envelope.
+    const retry: DenoKvRetryOptions =
+        typeof opts.retry === 'number'
+            ? { attempts: opts.retry }
+            : (opts.retry ?? {});
+    const attempts = retry.attempts ?? 100;
+    const backoff = retry.backoff;
+    const baseDelay = parseDuration(retry.baseDelay) ?? 5;
+    const maxDelay = parseDuration(retry.maxDelay) ?? 250;
     // String key → Deno KV array key. With a prefix it's a two-segment key so the
     // namespace is a real KV sub-range; without, a flat one-segment key.
     const k = (key: string): DenoKvKey =>
@@ -208,7 +261,7 @@ export function denoKvStore(
             // FIRST increment and never extended, and re-derive `expireIn` from
             // it on every commit so the fixed window always expires on time.
             const kk = k(key);
-            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            for (let attempt = 1; attempt <= attempts; attempt++) {
                 const entry = await kv.get(kk);
                 const now = Date.now();
                 const prev = asWindow(entry.value);
@@ -243,9 +296,17 @@ export function denoKvStore(
                     .set(kk, { n, deadline }, options)
                     .commit();
                 if (res.ok) return n;
+                // Lost the race. Pause only when a curve is configured — the default
+                // re-reads immediately — and never after the final attempt, which
+                // would just delay the throw.
+                if (backoff && attempt < attempts) {
+                    await sleep(
+                        backoffDelay(backoff, attempt, baseDelay, maxDelay),
+                    );
+                }
             }
             throw new Error(
-                `@stitchapi/deno-kv: increment(${key}) lost ${maxRetries + 1} compare-and-set races`,
+                `@stitchapi/deno-kv: increment(${key}) lost ${attempts} compare-and-set races`,
             );
         },
     };
