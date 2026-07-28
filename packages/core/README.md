@@ -410,7 +410,7 @@ Three more knobs round out the resilience set:
 -   **`circuit`** fast-fails a dependency that is already down — after `failures` consecutive failures the breaker opens for `cooldown`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
 
     ```ts
-    circuit: { failures: 5, cooldown: 30_000 }
+    circuit: { failures: 5, cooldown: '30s' } // or the positional [5, '30s']
     ```
 
 -   **`idempotency`** injects a stable `Idempotency-Key` header on writes, so a safe retry can't duplicate a side effect:
@@ -427,7 +427,7 @@ Three more knobs round out the resilience set:
     acceptStatus: [404]; // resource-gone → fall back, no try/catch on the happy path
     ```
 
-When an _outer_ gate owns backoff (its own `Retry-After` budget, a DB-persisted limiter), `rateLimit: { delegate: true }` surfaces a `RateLimitError` (carrying `retryAfter`) instead of retrying internally — so StitchAPI's retry + throttle don't double-count against it.
+When an _outer_ gate owns backoff (its own `Retry-After` budget, a DB-persisted limiter), `throttle: { delegate: true }` surfaces a `RateLimitError` (carrying `retryAfter`) instead of retrying internally — so StitchAPI's retry + throttle don't double-count against it.
 
 ## Caching
 

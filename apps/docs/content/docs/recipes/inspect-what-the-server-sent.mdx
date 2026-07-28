@@ -89,6 +89,9 @@ const getUser = stitch({
 const cached = await getUser.inspect({ params: { id: 1 } }, { cache: true });
 ```
 
+`true` is shorthand for `{ cache: true }` — `getUser.inspect(input, true)` reads
+the same way at a call site.
+
 `raw` is `null` on a [streaming surface](/docs/concepts/event-stream) too — the
 engine refuses to buffer an unbounded delta spine — while `findings` and `status`
 still populate; use `.stream()` for incremental inspection there.

@@ -103,7 +103,11 @@ const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     output: User,
-    retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 0 },
+    retry: {
+        attempts: 3,
+        on: [503],
+        backoff: { curve: 'fixed', base: 0 },
+    },
     adapter,
 });
 
@@ -182,7 +186,11 @@ const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     output: User,
-    retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 0 },
+    retry: {
+        attempts: 3,
+        on: [503],
+        backoff: { curve: 'fixed', base: 0 },
+    },
     adapter,
 });
 
@@ -261,7 +269,7 @@ const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     output: User,
-    retry: { attempts: 3, on: [503], baseMs: 1000 },
+    retry: { attempts: 3, on: [503], backoff: { base: 1000 } },
     adapter,
     clock,
 });

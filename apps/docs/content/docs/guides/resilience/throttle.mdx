@@ -29,7 +29,8 @@ silently stalled.
 
 `rate` is a string like `"5/s"` — a minimum spacing between successive calls,
 not a token bucket. `concurrency` caps simultaneous in-flight calls; either may
-be set on its own.
+be set on its own. When rate is all you need, the scalar form reads best:
+`throttle: '2/s'` ≡ `throttle: { rate: '2/s' }`.
 
 When the rate is all you need, pass it directly — a bare string is shorthand for
 `rate`, exactly like `timeout: '5s'` is shorthand for `timeout: { total: '5s' }`:
