@@ -42,11 +42,13 @@ describe('stubStitch call spy', () => {
         await s.unwrap({ params: { id: 1 } });
         await s.safe();
         await collect(s.stream());
-        expect(s.callCount).toBe(4);
-        expect(s.calls[1]).toEqual({ params: { id: 1 } });
+        expect(s.callCount()).toBe(4);
+        expect(s.calls()[1]).toEqual({ params: { id: 1 } });
+        // The optional filter is a predicate over the call input, like mockAdapter's spy.
+        expect(s.callCount((i) => i.params !== undefined)).toBe(1);
         s.reset();
-        expect(s.callCount).toBe(0);
-        expect(s.calls).toEqual([]);
+        expect(s.callCount()).toBe(0);
+        expect(s.calls()).toEqual([]);
     });
 });
 

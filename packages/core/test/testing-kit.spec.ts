@@ -171,8 +171,8 @@ describe('stubStitch / failStitch — testing code that calls a stitch', () => {
 
         const user = await getUser({ params: { id: 42 } });
         expect(user).toEqual({ id: 42, name: 'Ada' });
-        expect(getUser.callCount).toBe(1);
-        expect(getUser.calls[0]).toEqual({ params: { id: 42 } });
+        expect(getUser.callCount()).toBe(1);
+        expect(getUser.calls()[0]).toEqual({ params: { id: 42 } });
 
         const safe = await getUser.safe({ params: { id: 42 } });
         expect(safe).toEqual({
@@ -180,10 +180,10 @@ describe('stubStitch / failStitch — testing code that calls a stitch', () => {
             data: { id: 42, name: 'Ada' },
             error: null,
         });
-        expect(getUser.callCount).toBe(2);
+        expect(getUser.callCount()).toBe(2);
 
         getUser.reset();
-        expect(getUser.callCount).toBe(0);
+        expect(getUser.callCount()).toBe(0);
     });
 
     test('stubStitch synthesizes a start→result→done stream', async () => {
