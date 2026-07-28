@@ -292,12 +292,12 @@ function maxBodyFromEnv(value: string | undefined): number | false | undefined {
 
 function getTrace(): TraceSink {
     const file = fileFromEnv(readEnv('STITCH_TRACE_FILE'));
-    const maxBodyBytes = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
+    const maxBodyChars = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
     const base = createTrace(
         compact({
             console: readEnv('STITCH_TRACE_CONSOLE') === '1',
             file,
-            maxBodyBytes,
+            maxBodyChars,
         }),
     );
     if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;

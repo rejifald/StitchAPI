@@ -17,11 +17,11 @@ export interface TraceOptions {
     /**
      * Max length (in characters of the JSON encoding) of the request body and the
      * response value persisted to the JSONL sink. Anything larger is replaced with a
-     * `{ truncated, bytes, preview }` marker, so a multi-MB response never bloats the
-     * log or persists a payload in full. Default {@link DEFAULT_MAX_BODY_BYTES}; pass
+     * `{ truncated, chars, preview }` marker, so a multi-MB response never bloats the
+     * log or persists a payload in full. Default {@link DEFAULT_MAX_BODY_CHARS}; pass
      * `false` for full capture (the pre-1.0 behaviour); `0` keeps only the marker.
      */
-    maxBodyBytes?: number | false;
+    maxBodyChars?: number | false;
     /**
      * Extra header names (case-insensitive) to redact on top of the built-in
      * denylist. Additive — you can widen the denylist but never shrink it, so a
@@ -98,8 +98,8 @@ export function redactEventForTransport(event: StitchEvent): StitchEvent {
 
 // Default body/result truncation cap: large enough to keep a small JSON response or
 // error body fully readable, small enough to bound on-disk growth and limit how much
-// payload is persisted by default. Opt into full capture with `maxBodyBytes: false`.
-const DEFAULT_MAX_BODY_BYTES = 2048;
+// payload is persisted by default. Opt into full capture with `maxBodyChars: false`.
+const DEFAULT_MAX_BODY_CHARS = 2048;
 
 // Deep-clone `value`, replacing any object property whose key is in `denylist`
 // (lowercased secret header names) with '[REDACTED]'. Non-mutating: the engine keeps
@@ -137,7 +137,7 @@ function capBody(value: unknown, max: number | false): unknown {
         if (json.length <= max) return value;
         return {
             truncated: true,
-            bytes: json.length,
+            chars: json.length,
             preview: json.slice(0, max),
         };
     } catch {
@@ -282,7 +282,7 @@ export interface LoggerSinkOptions {
      * `debug`, or dropping the happy-path lifecycle. Takes precedence over {@link levels}. `delta` is
      * dropped before this runs, so it is never called for one.
      */
-    level?: (
+    levelOf?: (
         event: StitchEvent,
         ctx: TraceContext,
     ) => LogLevel | null | undefined;
@@ -356,7 +356,7 @@ function summary(name: string, event: StitchEvent): string | null {
  * **never** logged — a streamed chunk is raw response data. Override any per-type level via
  * {@link LoggerSinkOptions.levels} (e.g. `{ result: 'debug' }`); `drift` still follows the finding
  * level unless you pin it there too. For conditional rules the per-type map can't express, pass a
- * {@link LoggerSinkOptions.level} resolver (per-instance; `null` drops the event); for a different
+ * {@link LoggerSinkOptions.levelOf} resolver (per-instance; `null` drops the event); for a different
  * house style, pass a {@link LoggerSinkOptions.format} formatter (it then owns the payload-free
  * guarantee). `@stitchapi/nest`'s Nest-flavored `loggerSink` is built by delegating here with both.
  *
@@ -382,7 +382,7 @@ export function loggerSink(
     opts?: LoggerSinkOptions,
 ): TraceSink {
     const overrides = opts?.levels;
-    const resolveLevel = opts?.level;
+    const resolveLevel = opts?.levelOf;
     const format = opts?.format;
     return {
         handle(event: StitchEvent, ctx: TraceContext): void {
@@ -450,7 +450,7 @@ export function createTrace(
         ...SECRET_HEADERS,
         ...(opts?.redactHeaders ?? []).map((h) => h.toLowerCase()),
     ]);
-    const maxBody = opts?.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+    const maxBody = opts?.maxBodyChars ?? DEFAULT_MAX_BODY_CHARS;
 
     return {
         path,
