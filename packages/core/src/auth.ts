@@ -228,7 +228,23 @@ export function apiKey(
     };
 }
 
-export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
+export interface BasicOptions {
+    user: Secret;
+    pass: Secret;
+}
+
+/** HTTP Basic auth. Positional `basic(user, pass)` ≡ `basic({ user, pass })` (CONTRACT.md P15). */
+export function basic(user: Secret, pass: Secret): AuthStrategy;
+export function basic(opts: BasicOptions): AuthStrategy;
+export function basic(
+    userOrOpts: Secret | BasicOptions,
+    pass?: Secret,
+): AuthStrategy {
+    // A Secret is a string or a thunk, never a plain object — so an object IS the options form.
+    const opts: BasicOptions =
+        typeof userOrOpts === 'string' || typeof userOrOpts === 'function'
+            ? { user: userOrOpts, pass: pass as Secret }
+            : userOrOpts;
     return {
         name: 'basic',
         scheme: { type: 'http', scheme: 'basic' },
