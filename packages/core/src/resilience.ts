@@ -4,6 +4,7 @@
 import type {
     AcquireOptions,
     AdapterResponse,
+    BackoffOptions,
     CircuitOptions,
     Clock,
     RetryOptions,
@@ -36,9 +37,14 @@ export function acceptsStatus(
  * 'fixed' = base. Result is clamped to max.
  */
 export function backoffDelay(attempt: number, opts?: RetryOptions): number {
-    const kind = opts?.backoff ?? 'expo-jitter';
-    const base = parseDuration(opts?.baseDelay) ?? 100;
-    const max = parseDuration(opts?.maxDelay) ?? 10_000;
+    // `expandShorthand` folds a bare curve into the envelope before the engine sees it, but
+    // `backoffDelay` is also called directly (tests, the reconnect path), so accept both.
+    const b = opts?.backoff;
+    const policy: BackoffOptions =
+        typeof b === 'string' ? { curve: b } : (b ?? {});
+    const kind = policy.curve ?? 'expo-jitter';
+    const base = parseDuration(policy.base) ?? 100;
+    const max = parseDuration(policy.max) ?? 10_000;
     const exp = Math.max(0, attempt - 2); // attempt 2 -> 2^0
     let delay: number;
     if (kind === 'fixed') {

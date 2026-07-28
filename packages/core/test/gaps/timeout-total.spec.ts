@@ -50,7 +50,11 @@ test('timeout.total caps the whole retry/backoff loop, not just one attempt', as
     const call = stitch({
         baseUrl: server.url,
         path: '/always-503',
-        retry: { attempts: 5, on: [503], backoff: 'fixed', baseDelay: 300 },
+        retry: {
+            attempts: 5,
+            on: [503],
+            backoff: { curve: 'fixed', base: 300 },
+        },
         timeout: { total: 400 },
     });
 
@@ -77,7 +81,7 @@ test('timeout.total is enforced alongside timeout.perAttempt across retries', as
     const call = stitch({
         baseUrl: server.url,
         path: '/glacial',
-        retry: { attempts: 5, backoff: 'fixed', baseDelay: 50 },
+        retry: { attempts: 5, backoff: { curve: 'fixed', base: 50 } },
         timeout: { total: 400, perAttempt: 350 },
     });
 

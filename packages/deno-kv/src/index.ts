@@ -17,7 +17,12 @@
 // Compliance with the store contract is proven against `verifyStoreContract` from
 // `stitchapi/testing` (see test/conformance.spec.ts).
 import { parseDuration } from 'stitchapi';
-import type { AtLeastOne, StitchStore } from 'stitchapi';
+import type {
+    AtLeastOne,
+    BackoffCurve,
+    BackoffOptions,
+    StitchStore,
+} from 'stitchapi';
 
 // ---------------------------------------------------------------------------
 // the Deno KV surface
@@ -147,16 +152,13 @@ export interface DenoKvRetryOptions {
      */
     attempts?: number;
     /**
-     * Delay curve between attempts. Omitted (the default) means **no delay** — the
-     * loop re-reads immediately, which is the tightest path to a win when contention
-     * is brief. Set a curve when many isolates hammer one key and the hot spin costs
-     * more KV reads than it saves.
+     * Delay policy between attempts, the same envelope core's `retry.backoff` uses — a
+     * bare curve is the shorthand for `{ curve }`. Omitted (the default) means **no
+     * delay**: the loop re-reads immediately, which is the tightest path to a win when
+     * contention is brief. Set a curve when many isolates hammer one key and the hot spin
+     * costs more KV reads than it saves. `base` defaults to 5ms, `max` to 250ms.
      */
-    backoff?: 'expo' | 'expo-jitter' | 'fixed';
-    /** Delay before the first retry — `5`, `'5ms'`, `'1s'`. Default 5ms; only used when `backoff` is set. */
-    baseDelay?: number | string;
-    /** Ceiling the computed delay is clamped to — `250`, `'250ms'`. Default 250ms. */
-    maxDelay?: number | string;
+    backoff?: BackoffCurve | AtLeastOne<BackoffOptions>;
 }
 
 /** Options for {@link denoKvStore}. */
@@ -206,9 +208,13 @@ export function denoKvStore(
             ? { attempts: opts.retry }
             : (opts.retry ?? {});
     const attempts = retry.attempts ?? 100;
-    const backoff = retry.backoff;
-    const baseDelay = parseDuration(retry.baseDelay) ?? 5;
-    const maxDelay = parseDuration(retry.maxDelay) ?? 250;
+    // Same nested fold core does (P12): a bare curve is `{ curve }`.
+    const b = retry.backoff;
+    const curve: BackoffOptions | undefined =
+        typeof b === 'string' ? { curve: b } : b;
+    const backoff = curve?.curve ?? (curve ? 'expo-jitter' : undefined);
+    const base = parseDuration(curve?.base) ?? 5;
+    const max = parseDuration(curve?.max) ?? 250;
     // String key → Deno KV array key. With a prefix it's a two-segment key so the
     // namespace is a real KV sub-range; without, a flat one-segment key.
     const k = (key: string): DenoKvKey =>
@@ -300,9 +306,7 @@ export function denoKvStore(
                 // re-reads immediately — and never after the final attempt, which
                 // would just delay the throw.
                 if (backoff && attempt < attempts) {
-                    await sleep(
-                        backoffDelay(backoff, attempt, baseDelay, maxDelay),
-                    );
+                    await sleep(backoffDelay(backoff, attempt, base, max));
                 }
             }
             throw new Error(

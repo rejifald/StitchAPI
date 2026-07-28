@@ -188,21 +188,21 @@ test('predefined query merges with call-time query (input wins on conflict)', as
     expect(call?.query).toEqual({ sort: 'name', type: 'user' });
 });
 
-// 3) Objects deep-merge across layers: base retry {attempts,on} survives a child adding {baseDelay}.
-test('deep-merge keeps base retry.attempts/on when child adds retry.baseDelay', async () => {
+// 3) Objects deep-merge across layers: base retry {attempts,on} survives a child adding {backoff}.
+test('deep-merge keeps base retry.attempts/on when child adds retry.backoff.base', async () => {
     server.route('GET', '/flaky', {
         statuses: [503, 503, 200],
         body: { ok: true },
     });
 
     const retryPreset = { retry: { attempts: 3, on: [503] } };
-    // Child only sets baseDelay; if merge replaced the object wholesale, attempts/on would be lost
+    // Child only sets backoff; if merge replaced the object wholesale, attempts/on would be lost
     // and the stitch would NOT retry the two 503s.
     const flaky = stitch({
         baseUrl: server.url,
         path: '/flaky',
         extends: [retryPreset],
-        retry: { baseDelay: 5 },
+        retry: { backoff: { base: 5 } },
     });
 
     const events = await collect(flaky.stream());
@@ -277,6 +277,24 @@ test('scalar shorthands (retry/timeout/cache/throttle) expand to option objects'
     expect(resolved.timeout).toEqual({ total: '5s' });
     expect(resolved.cache).toEqual({ ttl: '1m' });
     expect(resolved.throttle).toEqual({ rate: '1/s' });
+});
+
+// 6-nested) P24/P12: `retry.backoff` is itself a scalar-or-envelope slot, so the bare curve folds
+// too — the string form must never reach `__config` (P0), and the fold must survive the outer
+// `retry` scalar shorthand being applied in the same pass.
+test('retry.backoff folds its bare curve into the envelope', () => {
+    expect(
+        compose({ path: '/x', retry: { attempts: 2, backoff: 'fixed' } }).retry,
+    ).toEqual({ attempts: 2, backoff: { curve: 'fixed' } });
+
+    // Already an envelope → passed through untouched, not double-wrapped.
+    expect(
+        compose({ path: '/x', retry: { backoff: { base: 50, max: 500 } } })
+            .retry,
+    ).toEqual({ backoff: { base: 50, max: 500 } });
+
+    // No `backoff` at all → the slot stays absent rather than gaining an empty envelope.
+    expect(compose({ path: '/x', retry: 3 }).retry).toEqual({ attempts: 3 });
 });
 
 // 6a) P20/P12/P13: the stream/multipart dominant-field scalars and the `sse` toggle fold to their

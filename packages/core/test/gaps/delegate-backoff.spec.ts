@@ -204,7 +204,7 @@ test('throttle.on selects which statuses delegate (503 delegates, 429 retries)',
     const retried = stitch<{ ok: boolean }>({
         baseUrl: server.url,
         path: '/retry-429',
-        retry: { attempts: 3, on: [429], backoff: 'fixed', baseDelay: 1 },
+        retry: { attempts: 3, on: [429], backoff: { curve: 'fixed', base: 1 } },
         throttle: { delegate: true, on: [503] },
     });
     await expect(retried()).resolves.toEqual({ ok: true });
@@ -287,7 +287,7 @@ test('retry.on accepts a predicate (P7): retries while the predicate matches', a
     const call = stitch({
         baseUrl: server.url,
         path: '/retry-pred',
-        retry: { attempts: 2, on: (s) => s === 503, baseDelay: 1 },
+        retry: { attempts: 2, on: (s) => s === 503, backoff: { base: 1 } },
     });
     await expect(call()).resolves.toEqual({ ok: true });
     expect(server.calls('/retry-pred').length).toBe(2); // 503 retried, then 200

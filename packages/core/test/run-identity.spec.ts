@@ -270,7 +270,7 @@ test('OTLP: a retried call emits flat per-attempt child spans parented to the ru
         name: 'flaky',
         baseUrl: server.url,
         path: '/flaky',
-        retry: { attempts: 3, on: [503], backoff: 'fixed', baseDelay: 1 },
+        retry: { attempts: 3, on: [503], backoff: { curve: 'fixed', base: 1 } },
         trace: otlpSink({ exporter }),
     });
 

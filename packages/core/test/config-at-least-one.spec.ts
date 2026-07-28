@@ -38,6 +38,12 @@ test('the opaque `{}` is rejected at each Scalar|AtLeastOne slot (P20)', () => {
             // @ts-expect-error — `stream: {}` is rejected; use `'ndjson'` or set `decode`.
             stream: {},
         }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — `retry.backoff: {}` is rejected; use a curve or set base/max.
+            retry: { attempts: 2, backoff: {} },
+        }),
     ];
     // The assertions that matter are the @ts-expect-error directives above (checked by `check:types`).
     expect(typeof rejected).toBe('function');
@@ -53,6 +59,22 @@ test('the scalar / ≥1-field forms are accepted at each slot (P12/P13/P20)', ()
             baseUrl: 'https://x',
             path: '/y',
             hooks: { onRequest: () => undefined },
+        }),
+        // P24/P12: `retry.backoff` takes the bare curve or a ≥1-field envelope.
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            retry: { backoff: 'expo' },
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            retry: { backoff: { curve: 'expo', base: '1s', max: '10s' } },
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            retry: { backoff: { base: 5 } },
         }),
     ];
     expect(typeof accepted).toBe('function');

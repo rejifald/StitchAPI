@@ -19,8 +19,7 @@ const getUser = stitch({
     retry: {
         attempts: 3,
         on: [429, 503],
-        backoff: 'expo-jitter',
-        baseDelay: 200,
+        backoff: { curve: 'expo-jitter', base: 200 },
         respectRetryAfter: true,
     },
 });
@@ -37,10 +36,18 @@ single status, a list, or a predicate `(status) => boolean` (`on: 429` ≡
 `on: [429]`). It defaults to `[429, 502, 503, 504]` — the usual transient set —
 and you narrow or widen it per stitch.
 
-`backoff` chooses how long to wait between attempts, paced from `baseDelay` and
-clamped to `maxDelay`: `'expo'` doubles the delay each attempt, `'expo-jitter'`
+`backoff` chooses how long to wait between attempts. A bare curve is the whole
+policy — `backoff: 'expo-jitter'` — and the object form adds the two bounds that
+shape it, `base` and `max`:
+
+```ts
+retry: { attempts: 3, backoff: { curve: 'expo', base: 200, max: '10s' } }
+```
+
+`'expo'` doubles the delay each attempt starting from `base`, `'expo-jitter'`
 spreads it randomly up to that exponential value to avoid thundering herds, and
-`'fixed'` waits a constant `baseDelay` every time.
+`'fixed'` waits a constant `base` every time. Every computed delay is clamped to
+`max`.
 
 `respectRetryAfter` honors a `Retry-After` header on the failing response —
 delta-seconds or an HTTP-date — using it in place of the computed backoff when

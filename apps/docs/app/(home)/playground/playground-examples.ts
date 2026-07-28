@@ -33,10 +33,7 @@ const api = stitch({
   retry: {
     attempts: 4,
     on: [429, 502, 503, 504],
-    backoff: 'expo-jitter',
-    baseDelay: 100,
-    maxDelay: 400,
-  },
+    backoff: { curve: 'expo-jitter', base: 100, max: 400 },},
   timeout: { total: '4s', perAttempt: '2s' }, // fail fast instead of hanging
   throttle: { rate: '50/s' }, // client-side rate limit
   circuit: { failures: 5, cooldown: 1000 }, // stop hammering a dead dep

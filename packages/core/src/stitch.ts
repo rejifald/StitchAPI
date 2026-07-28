@@ -145,7 +145,16 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
     // P12/P14: each slot's dominant-field scalar folds into its envelope, so the opaque `{}` never
     // reaches the slot (P20) and the engine only ever sees the object form. One `envelope` call per
     // slot — the slot and its dominant field, nothing else to keep in sync.
-    if (cfg.retry !== undefined) cfg.retry = envelope(cfg.retry, 'attempts');
+    if (cfg.retry !== undefined) {
+        cfg.retry = envelope(cfg.retry, 'attempts');
+        // Nested fold (P24): `backoff` is itself a scalar-or-envelope slot, so the bare curve
+        // normalizes too — `__config` never carries the string form (P0).
+        if (cfg.retry.backoff !== undefined)
+            cfg.retry = {
+                ...cfg.retry,
+                backoff: envelope(cfg.retry.backoff, 'curve'),
+            };
+    }
     if (cfg.timeout !== undefined) cfg.timeout = envelope(cfg.timeout, 'total');
     if (cfg.cache !== undefined) cfg.cache = envelope(cfg.cache, 'ttl');
     if (cfg.stream !== undefined) cfg.stream = envelope(cfg.stream, 'decode');
