@@ -5,6 +5,7 @@
 > **Answers open risk:** [SANDBOX.md](./SANDBOX.md) §10.4 ("browser `stitch` build … largest single unknown") · [REQUIREMENTS.md](../playground/REQUIREMENTS.md) §6, §10.1
 > **Keys on:** [`contracts/dispatch.ts`](./contracts/dispatch.ts) `NODE_ONLY_SURFACES` · **Fallback if NO-GO:** [RATIONALE.md](../playground/RATIONALE.md) §"Confidence & escape hatch" (self-hosted LiveCodes)
 > **Downstream:** R1 (Worker runner — injects this build), D1 (dispatcher)
+> **Note (2026-07):** this is a point-in-time record; `otlpTrace` was renamed to `otlpSink` (and `toValidator` was replaced by `validate`/`compile`) in the 2026-07 contract sweep — the current lists live in `contracts/surface.ts` and `runtime/stitch-browser.ts`.
 
 ## Verdict
 
