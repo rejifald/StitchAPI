@@ -95,6 +95,19 @@ describe('streamStitchSse — delta mapping', () => {
         const body = await res.text();
         expect(body).toContain('data: line1\ndata: line2');
     });
+
+    test('a {stream()} source (the core StitchEventSource arm) is driven too', async () => {
+        const res = streamStitchSse({
+            stream: () =>
+                gen([
+                    { type: 'delta', chunk: 'via-stream', at: 0 },
+                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+                ]),
+        });
+
+        const body = await res.text();
+        expect(body).toContain('data: via-stream');
+    });
 });
 
 describe('streamStitchSse — control events', () => {

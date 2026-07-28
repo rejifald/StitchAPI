@@ -157,7 +157,10 @@ describe('streamStitchSse bridges a stitch stream to an SSE body', () => {
 
         const res = await app.handle(GET('/events'));
         const body = await res.text();
-        expect(body).toContain('event: error');
+        // A generic `data: error` token — the raw upstream message (`HTTP 500`) is withheld
+        // so upstream status/topology is not disclosed; `errorData` is the opt-in.
+        expect(body).toContain('event: error\ndata: error');
+        expect(body).not.toContain('HTTP 500');
         await api.close();
     });
 });
