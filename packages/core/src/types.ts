@@ -137,15 +137,17 @@ export interface StreamOptions {
     /** Decoder for a `stream` surface body. Default `'bytes'` (total + lossless). */
     decode?: StreamDecode;
     /**
-     * Max bytes a streaming decoder will buffer for a single un-terminated unit before throwing (the
-     * engine turns the throw into an `error` event). Guards every un-framed / never-closing case
-     * against growing client memory without limit (an OOM DoS):
+     * Max characters a streaming decoder will buffer for a single un-terminated unit before throwing
+     * (the engine turns the throw into an `error` event). Counts characters of the DECODED text —
+     * UTF-16 code units, so an astral character costs 2 — not bytes off the socket. Guards every
+     * un-framed / never-closing case against growing client memory without limit (an OOM DoS):
      *   - `'json'` — a single in-progress value (e.g. an unclosed `[`).
-     *   - `'lines'` / `'ndjson'` — a single un-terminated line (a run of bytes with no `\n`).
+     *   - `'lines'` / `'ndjson'` — a single un-terminated line (a run of text with no `\n`).
      *   - the `sse` surface — one un-dispatched event's `data:` payload (a frame with no blank line).
-     * Default ~8 MB (see `json-stream.ts`). Not meaningful for `decode: 'bytes'` (raw, unbuffered).
+     * Default ~8M characters (see `json-stream.ts`). Not meaningful for `decode: 'bytes'` (raw,
+     * unbuffered).
      */
-    maxBufferBytes?: number;
+    maxBufferChars?: number;
 }
 /**
  * Tuning for resumable SSE reconnection (issue #71). When enabled, the engine reopens a dropped
