@@ -3,13 +3,15 @@
 // a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
 import { compact } from './compact';
 import { fetchAdapter } from './http-adapter';
-import { parseRetryAfter } from './resilience';
+import { acceptsStatus, parseRetryAfter } from './resilience';
 import type {
     Adapter,
     AdapterResponse,
+    AtLeastOne,
     AuthContext,
     AuthStrategy,
     RunContext,
+    StatusMatch,
     Stitch,
     StitchInput,
 } from './types';
@@ -20,7 +22,7 @@ import {
     now,
     parseDuration,
     readEnv,
-    registerSecretQueryKey,
+    registerSecretKey,
 } from './util';
 
 export type Secret = string | (() => string);
@@ -200,7 +202,7 @@ export function apiKey(
         const name = opts.name ?? 'api_key';
         // Teach the trace scrubber this param name carries a secret, so the key never reaches a
         // sink in the clear — even when `name` is a vendor spelling the built-in stems don't catch.
-        registerSecretQueryKey(name);
+        registerSecretKey(name);
         return {
             name: 'apiKey',
             scheme: { type: 'apiKey', in: 'query', name },
@@ -237,6 +239,21 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
     };
 }
 
+/**
+ * Envelope for {@link OAuth2Options.refresh} (CONTRACT.md P24: `refreshOn` + `refreshSkew` shared
+ * the `refresh` prefix, so they fold into one envelope; a bare {@link StatusMatch} is the P12
+ * dominant-field shorthand for `{ on }`).
+ */
+export interface OAuth2RefreshOptions {
+    /**
+     * Status(es) — or a predicate — that mean the token was rejected and should force a refresh
+     * (CONTRACT.md P7: `401` ≡ `[401]`). Default `[401]`.
+     */
+    on?: StatusMatch;
+    /** Refresh this long BEFORE the token's expiry, so it is never used mid-flight — `30_000`, `'30s'`. Default 30s. */
+    skew?: number | string;
+}
+
 export interface OAuth2Options {
     /** The `client_credentials` token endpoint (POST, form-encoded). */
     tokenUrl: string;
@@ -268,19 +285,21 @@ export interface OAuth2Options {
      * cannot override the `Authorization` header that `clientAuth: 'basic'` sets.
      */
     headers?: Record<string, string>;
-    /** Statuses that mean the token was rejected and should force a refresh. Default [401]. */
-    refreshOn?: number[];
-    /** Refresh this long BEFORE the token's expiry, so it is never used mid-flight — `30_000`, `'30s'`. Default 30s. */
-    refreshSkew?: number | string;
-    /** @deprecated Renamed to {@link OAuth2Options.refreshSkew} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    refreshSkewMs?: number;
+    /**
+     * When to force a fresh token (CONTRACT.md P24 envelope). A bare {@link StatusMatch} — a
+     * number, a list, or a predicate — is shorthand for `{ on }` (P12): the status(es) that mean
+     * the token was rejected (CONTRACT.md P7: `401` ≡ `[401]`). Default `[401]`. Reach `skew` —
+     * how long BEFORE the token's expiry to refresh it, so it is never used mid-flight (`30_000`,
+     * `'30s'`; default 30s) — through the envelope form: `refresh: { skew: '1m' }`.
+     */
+    refresh?: StatusMatch | AtLeastOne<OAuth2RefreshOptions>;
     /** Store namespace — give two stitches the same `key` + a shared `store` to share one token. Default: `tokenUrl`. */
     key?: string;
     /**
      * Token tenancy (ADR 0002 §3). Default **`'app'`**: one token serves every caller — the right
      * model for `client_credentials`, which authenticates the *application*, not a user. Set
      * `'principal'` to fold the seam-bound principal into the token's cache key (and **throw if no
-     * principal is bound**, mirroring {@link CookieSessionOptions.scope}); each tenant then caches its
+     * principal is bound**, mirroring {@link CookieSessionOptions.tenancy}); each tenant then caches its
      * own token and one tenant's 401/refresh never disturbs another's in-flight calls. Pair it with
      * per-tenant `clientId`/`clientSecret`/`scope` for full multi-tenant separation.
      */
@@ -312,16 +331,36 @@ function singleFlight<T>(): (key: string, run: () => Promise<T>) => Promise<T> {
 }
 
 /**
+ * Normalize a `refresh` slot (CONTRACT.md P24) to its envelope form, ONCE, at strategy
+ * construction — every internal read then goes through the normalized object, never the raw
+ * union. A bare {@link StatusMatch} (number, list, or predicate) is the P12 dominant-field
+ * shorthand for `{ on: <value> }`; an object is already the envelope (possibly `undefined`,
+ * meaning "use the caller's defaults").
+ */
+function normalizeRefresh<T extends { on?: StatusMatch }>(
+    refresh: StatusMatch | AtLeastOne<T> | undefined,
+): Partial<T> {
+    if (refresh === undefined) return {};
+    if (
+        typeof refresh === 'number' ||
+        typeof refresh === 'function' ||
+        Array.isArray(refresh)
+    )
+        return { on: refresh } as Partial<T>;
+    return refresh;
+}
+
+/**
  * OAuth2 `client_credentials`: POST the token endpoint, cache the access token in the
- * StitchStore (TTL from `expires_in`), refresh it `refreshSkew` before expiry, and attach
+ * StitchStore (TTL from `expires_in`), refresh it `refresh.skew` before expiry, and attach
  * it as `Authorization: Bearer …`. A SHARED store makes one token serve many stitches/workers
- * and survive restarts; a rejected token (status in `refreshOn`) forces a fresh fetch + retry.
+ * and survive restarts; a rejected token (status matched by `refresh`/`refresh.on`) forces a
+ * fresh fetch + retry.
  */
 export function oauth2(opts: OAuth2Options): AuthStrategy {
-    const refreshOn = opts.refreshOn ?? [401];
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `refreshSkewMs` is the @deprecated alias of `refreshSkew`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const skewInput = opts.refreshSkew ?? opts.refreshSkewMs;
-    const skew = parseDuration(skewInput) ?? 30_000;
+    const refreshOpts = normalizeRefresh<OAuth2RefreshOptions>(opts.refresh);
+    const refreshMatch = acceptsStatus(refreshOpts.on ?? [401]);
+    const skew = parseDuration(refreshOpts.skew) ?? 30_000;
     const baseKey = 'oauth2:' + (opts.key ?? opts.tokenUrl);
     const tenancy = opts.tenancy ?? 'app';
     const adapter = opts.adapter ?? fetchAdapter();
@@ -330,7 +369,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
 
     // The vault key for THIS call. Default 'app' shares one token across all callers (correct for
     // client_credentials — the token authenticates the application, not a user). 'principal' folds
-    // the seam-bound principal in (fail-closed if none, mirroring cookieSession's scope), so each
+    // the seam-bound principal in (fail-closed if none, mirroring cookieSession's tenancy), so each
     // tenant caches its own token and one tenant's 401/refresh never disturbs another's.
     const keyFor = (ctx: AuthContext): string => {
         if (tenancy === 'app') return baseKey;
@@ -444,7 +483,7 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
             req.headers['authorization'] = `Bearer ${await tokenFor(ctx)}`;
         },
         shouldRefresh(res) {
-            return refreshOn.includes(res.status);
+            return refreshMatch(res.status);
         },
         async refresh(ctx) {
             // Force a fresh token, ignoring the cache — but simultaneous 401s
@@ -468,12 +507,10 @@ export interface AuthFailureResult {
     status?: number;
     /** `Retry-After` parsed to ms when the login was rate-limited (status 429). */
     retryAfter?: number;
-    /** @deprecated Renamed to {@link AuthFailureResult.retryAfter} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    retryAfterMs?: number;
     /** The thrown value when the login stitch itself threw (network/transport failure). */
     error?: unknown;
     /**
-     * - `'unauthenticated'` — login responded with a `refreshOn` status (e.g. 401) and set no cookie (bad/expired creds);
+     * - `'unauthenticated'` — login responded with a status matched by `refresh` (e.g. 401) and set no cookie (bad/expired creds);
      * - `'rate-limited'` — login responded `429` (back off, then retry; see `retryAfter`);
      * - `'network'` — the login stitch threw before any response (DNS/connection/transport);
      * - `'unknown'` — login responded but captured no cookie for some other reason.
@@ -487,6 +524,22 @@ export interface RefreshResult {
     ok: boolean;
     /** The login response status when the login responded (absent when it threw). */
     status?: number;
+}
+
+/**
+ * Envelope for {@link CookieSessionOptions.refresh} (CONTRACT.md P24: `refreshOn` + `refreshWhen`
+ * shared the `refresh` prefix, so they fold into one envelope; a bare {@link StatusMatch} — incl.
+ * a bare function, which is the STATUS predicate — is the P12 dominant-field shorthand for
+ * `{ on }`; reaching `when` requires the envelope form).
+ */
+export interface CookieSessionRefreshOptions {
+    /**
+     * Status(es) — or a predicate — that mean "the wall" and should trigger a re-login
+     * (CONTRACT.md P7: `401` ≡ `[401]`). Default `[401]`.
+     */
+    on?: StatusMatch;
+    /** Inspect the response (status + body) for a soft wall — e.g. a 200 that is actually a login page. */
+    when?: (res: AdapterResponse) => boolean;
 }
 
 export interface CookieSessionOptions {
@@ -505,24 +558,31 @@ export interface CookieSessionOptions {
      * identity to that user's credentials — credentials still never originate from the caller.
      */
     loginInput?: (principal?: string) => StitchInput;
-    /** Statuses that mean "the wall" and should trigger a re-login. Default [401]. */
-    refreshOn?: number[];
-    /** Inspect the response (status + body) for a soft wall — e.g. a 200 that is actually a login page. */
-    refreshWhen?: (res: AdapterResponse) => boolean;
+    /**
+     * When to trigger a re-login (CONTRACT.md P24 envelope). A bare function is the P12
+     * dominant-field shorthand for `{ on: <fn> }` — a {@link StatusMatch} predicate over the
+     * response STATUS; likewise a bare number/list is `{ on: <value> }`: status(es) that mean
+     * "the wall" (CONTRACT.md P7: `401` ≡ `[401]`). Default `[401]`. Reach `when` — inspecting the
+     * full response (status + body) for a SOFT wall, e.g. a 200 that is actually a login page —
+     * only through the envelope form: `refresh: { when: (res) => … }`.
+     */
+    refresh?: StatusMatch | AtLeastOne<CookieSessionRefreshOptions>;
     /** Vault namespace — give two stitches the same `key` + a shared seam/store to share one session. */
     key?: string;
-    /** Optional TTL for the stored session — `60_000`, `'1m'`. With `scope: 'principal'`, set this — per-user sessions multiply. */
+    /** Optional TTL for the stored session — `60_000`, `'1m'`. With `tenancy: 'principal'`, set this — per-user sessions multiply. */
     ttl?: number | string;
-    /** @deprecated Renamed to {@link CookieSessionOptions.ttl} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    ttlMs?: number;
     /**
      * Who the session belongs to (ADR 0002 §3). **Fail-closed default `'principal'`**: the
      * session is keyed by the seam-bound principal and the call **throws if no principal is
      * bound** — per-user auth can never silently run app-wide. `'app'` is the explicit opt-in to
      * sharing ONE session across all callers (the only safe choice for a standalone `stitch()`,
      * which never has a principal). Sessions always live in the {@link AuthContext.vault}.
+     *
+     * The two defaults deliberately diverge (CONTRACT.md P8): a cookie session belongs to a user,
+     * so it fails closed to `'principal'`, while {@link OAuth2Options.tenancy} defaults to `'app'`
+     * because a client-credentials token belongs to the application.
      */
-    scope?: 'principal' | 'app';
+    tenancy?: 'principal' | 'app';
     /**
      * Host-owned hook fired once per ACTUAL login attempt that failed to capture a cookie — NOT
      * per coalesced waiter (it runs inside the single-flight-guarded `doRefresh`). The host maps the
@@ -541,9 +601,12 @@ export interface CookieSessionOptions {
 }
 
 export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
-    const refreshOn = opts.refreshOn ?? [401];
+    const refreshOpts = normalizeRefresh<CookieSessionRefreshOptions>(
+        opts.refresh,
+    );
+    const refreshMatch = acceptsStatus(refreshOpts.on ?? [401]);
     const jarMode = opts.jar === true || opts.cookie === '*';
-    const scope = opts.scope ?? 'principal';
+    const tenancy = opts.tenancy ?? 'principal';
     const baseKey = (jarMode ? 'jar:' : 'cookie:') + (opts.key ?? opts.cookie);
     const flight = singleFlight<unknown>();
 
@@ -554,13 +617,13 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     const sessionFor = (
         ctx: AuthContext,
     ): { key: string; principal?: string } => {
-        if (scope === 'app') return { key: baseKey };
+        if (tenancy === 'app') return { key: baseKey };
         const principal = ctx.principal;
         if (principal == null || principal === '') {
             const e = new Error(
-                "cookieSession with scope 'principal' (the default) requires a bound principal: " +
+                "cookieSession with tenancy 'principal' (the default) requires a bound principal: " +
                     'create the stitch through a seam and call `seam.as(principalId)`, or set ' +
-                    "`scope: 'app'` to deliberately share one session across all callers.",
+                    "`tenancy: 'app'` to deliberately share one session across all callers.",
             );
             e.name = 'StitchAuthError';
             throw e;
@@ -589,8 +652,8 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     };
 
     // Categorise a login response that captured no cookie, given its status + headers. A 429 means
-    // rate-limited (back off per `Retry-After`); a `refreshOn` status (e.g. 401) means the creds were
-    // rejected; anything else — including a soft 200 wall that set no cookie — is `unknown`.
+    // rate-limited (back off per `Retry-After`); a status matched by `refresh` (e.g. 401) means the
+    // creds were rejected; anything else — including a soft 200 wall that set no cookie — is `unknown`.
     const classify = (
         phase: 'apply' | 'refresh',
         status: number,
@@ -599,20 +662,14 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
         if (status === 429) {
             // Omit `retryAfter` entirely when the header is absent/unparseable —
             // `exactOptionalPropertyTypes` forbids setting an optional prop to `undefined`.
-            const retryAfter = parseRetryAfter(headers['retry-after']);
-            const result: AuthFailureResult = compact({
+            return compact({
                 phase,
                 status,
                 category: 'rate-limited',
-                retryAfter,
+                retryAfter: parseRetryAfter(headers['retry-after']),
             });
-            // Co-set the @deprecated `retryAfterMs` alias for back-compat (CONTRACT.md P17/P19), by
-            // assignment (not a literal `*Ms:` key) so the contract lint's R2 stays clean.
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- writing the @deprecated alias for back-compat
-            if (retryAfter !== undefined) result.retryAfterMs = retryAfter;
-            return result;
         }
-        if (refreshOn.includes(status))
+        if (refreshMatch(status))
             return { phase, status, category: 'unauthenticated' };
         return { phase, status, category: 'unknown' };
     };
@@ -690,8 +747,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
         const setCookie =
             res.headers['set-cookie'] ?? res.headers['Set-Cookie'];
         let captured = false;
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `ttlMs` is the @deprecated alias of `ttl`, read for back-compat until the GA cut (CONTRACT.md P17)
-        const sessionTtl = parseDuration(opts.ttl ?? opts.ttlMs);
+        const sessionTtl = parseDuration(opts.ttl);
         if (jarMode) {
             // Capture the full jar: every name=value pair the login set.
             const jar = parseCookieJar(setCookie);
@@ -753,7 +809,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
             }
         },
         shouldRefresh(res) {
-            return refreshOn.includes(res.status) || !!opts.refreshWhen?.(res);
+            return refreshMatch(res.status) || !!refreshOpts.when?.(res);
         },
         async refresh(ctx) {
             const { key, principal } = sessionFor(ctx);
@@ -792,7 +848,3 @@ function serializeJar(jar: Record<string, string> | undefined): string {
         .map(([k, v]) => `${k}=${v}`)
         .join('; ');
 }
-
-// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
-/** @deprecated Renamed to {@link AuthFailureResult} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
-export type AuthFailureInfo = AuthFailureResult;

@@ -37,7 +37,7 @@ describe('GraphQL kind', () => {
 
         const query = graphql({
             baseUrl: server.url,
-            query: 'query($id: ID) { thing(id: $id) { name } }',
+            document: 'query($id: ID) { thing(id: $id) { name } }',
             auth: apiKey({ header: 'apikey', value: env('GQL_KEY') }),
         });
 
@@ -56,7 +56,7 @@ describe('GraphQL kind', () => {
         server.route('POST', '/graphql', { body: { data: { ok: true } } });
         const query = graphql({
             baseUrl: server.url,
-            query: 'query($id: ID) { thing(id: $id) { name } }',
+            document: 'query($id: ID) { thing(id: $id) { name } }',
         });
 
         // Partial application must preserve EVERY StitchInput field. `variables` is the primary
@@ -74,7 +74,7 @@ describe('GraphQL kind', () => {
         server.route('POST', '/graphql', {
             body: { errors: [{ message: 'field "thing" not found' }] },
         });
-        const query = graphql({ baseUrl: server.url, query: '{ thing }' });
+        const query = graphql({ baseUrl: server.url, document: '{ thing }' });
         await expect(query()).rejects.toThrow(/thing.*not found/);
     });
 });
@@ -86,7 +86,7 @@ describe('GraphQL input.variables validation', () => {
         server.route('POST', '/graphql', { body: { data: { ok: true } } });
         const query = graphql({
             baseUrl: server.url,
-            query: 'query($id: ID!) { thing(id: $id) { name } }',
+            document: 'query($id: ID!) { thing(id: $id) { name } }',
             input: { variables: z.object({ id: z.string() }) },
         });
 
@@ -104,7 +104,7 @@ describe('GraphQL input.variables validation', () => {
         });
         const query = graphql({
             baseUrl: server.url,
-            query: 'query($id: ID!) { thing(id: $id) { name } }',
+            document: 'query($id: ID!) { thing(id: $id) { name } }',
             input: { variables: z.object({ id: z.string() }) },
         });
 
@@ -120,7 +120,7 @@ describe('GraphQL input.variables validation', () => {
         server.route('POST', '/graphql', { body: { data: { ok: true } } });
         const query = graphql({
             baseUrl: server.url,
-            query: 'query($id: ID) { thing(id: $id) { name } }',
+            document: 'query($id: ID) { thing(id: $id) { name } }',
         });
 
         // No `input.variables` → no validation; any variables flow straight through.
@@ -157,7 +157,7 @@ describe('Surface dispatch — graphql is no longer special-cased', () => {
             id: 'upper',
             interpret: (res) => ({
                 ok: true,
-                value: (res.body as { msg: string }).msg.toUpperCase(),
+                data: (res.body as { msg: string }).msg.toUpperCase(),
             }),
         };
         const s = stitch({ kind: upper, url: server.url + '/u' });

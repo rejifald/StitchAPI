@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 // 1) a declared `input.variables` schema types the call arg's `variables` and makes it required.
 const getThing = graphql({
-    query: 'query($id: ID!) { thing(id: $id) { name } }',
+    document: 'query($id: ID!) { thing(id: $id) { name } }',
     input: { variables: z.object({ id: z.string() }) },
 });
 expectType<{ id: string }>(
@@ -25,7 +25,7 @@ expectError(getThing({ variables: { id: 1 } })); // `id` is a string, not a numb
 //    (so a no-arg call stays legal, asserted via `{}` below), yet a present `variables` is still
 //    type-checked: a bad shape is rejected.
 const maybeVars = graphql({
-    query: 'query { ok }',
+    document: 'query { ok }',
     input: { variables: z.object({ region: z.string() }).optional() },
 });
 expectAssignable<CallArg<typeof maybeVars>>({}); // optional slot → empty arg is valid
@@ -34,14 +34,14 @@ expectError(maybeVars({ variables: { region: 1 } })); // region must be a string
 
 // 3) a graphql stitch with NO variables schema keeps `variables` optional + a loose passthrough —
 //    the pre-#75 behaviour, preserved now that `variables` is an InputSchemas slot. Any shape goes.
-const loose = graphql({ query: 'query { ok }' });
+const loose = graphql({ document: 'query { ok }' });
 expectAssignable<CallArg<typeof loose>>({ variables: { anything: 1 } });
 expectAssignable<CallArg<typeof loose>>({}); // and the arg stays fully optional
 
 // 4) `seam.graphql(...)` infers `variables` identically (it routes through the same `InputOf<C>`).
 const api = seam({ baseUrl: 'https://api.example.com' });
 const memberTyped = api.graphql({
-    query: 'query($id: ID!) { thing(id: $id) { name } }',
+    document: 'query($id: ID!) { thing(id: $id) { name } }',
     input: { variables: z.object({ id: z.string() }) },
 });
 expectType<{ id: string }>(
@@ -51,5 +51,5 @@ expectError(memberTyped()); // required on a seam member too
 expectError(memberTyped({ variables: { id: 1 } })); // wrong type on a seam member too
 
 // a schema-less seam graphql member also keeps the loose passthrough.
-const memberLoose = api.graphql({ query: 'query { ok }' });
+const memberLoose = api.graphql({ document: 'query { ok }' });
 expectAssignable<CallArg<typeof memberLoose>>({ variables: { anything: 1 } });

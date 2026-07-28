@@ -13,6 +13,7 @@ import {
     CircuitOpenError,
     RateLimitError,
     TimeoutError,
+    acceptsStatus,
     backoffDelay,
     createCircuit,
     parseRetryAfter,
@@ -166,8 +167,7 @@ function applyIdempotency(
         )
     )
         return;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the @deprecated alias of `keyOf`, read as the back-compat fallback until the GA cut (CONTRACT.md P6)
-    const keyOf = cfg.idempotency.keyOf ?? cfg.idempotency.key;
+    const keyOf = cfg.idempotency.keyOf;
     headers[header] = keyOf ? keyOf(input) : randomUUID();
 }
 
@@ -256,8 +256,7 @@ const cloneReq = (r: AdapterRequest): AdapterRequest => ({
     headers: { ...r.headers },
 });
 const hostKey = (req: AdapterRequest, cfg: ResolvedStitchConfig): string => {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `scope` is the @deprecated alias of `pool`, read as the back-compat fallback until the GA cut (CONTRACT.md P2)
-    if ((cfg.throttle?.pool ?? cfg.throttle?.scope) === 'host') {
+    if (cfg.throttle?.pool === 'host') {
         try {
             return new URL(req.url).host;
         } catch {
@@ -350,11 +349,7 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     // Delegate-backoff signal: stamp the structured `retryAfter` onto the event (so `.stream()`
     // consumers get it) and pin the live RateLimitError so the awaited path re-throws it intact.
     if (err instanceof RateLimitError) {
-        if (err.retryAfter !== undefined) {
-            evt.retryAfter = err.retryAfter;
-            // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-emit the @deprecated alias for back-compat (CONTRACT.md P17)
-            evt.retryAfterMs = err.retryAfter;
-        }
+        if (err.retryAfter !== undefined) evt.retryAfter = err.retryAfter;
         Object.defineProperty(evt, ERROR_SOURCE, {
             value: err,
             enumerable: false,
@@ -371,22 +366,13 @@ function errEvt(err: unknown, name: string, attempts: number): StitchEvent {
     }
     return evt;
 }
-const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => {
-    const elapsed = now() - t0;
-    // `elapsed` is canonical; `ms` is set alongside it as the @deprecated alias (CONTRACT.md P17).
-    return { type: 'done', ok, elapsed, ms: elapsed, attempts, at: now() };
-};
-
-// Co-emit a `progress` event's @deprecated `waitedMs` alias by ASSIGNMENT (not a literal `waitedMs:`
-// key) so back-compat holds until the GA cut (CONTRACT.md P17/P19) without re-tripping the contract
-// lint's R2, which flags a literal `*Ms:` declaration. The canonical field is `waited`.
-function coemitWaitedMs(
-    evt: Extract<StitchEvent, { type: 'progress' }>,
-): Extract<StitchEvent, { type: 'progress' }> {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- writing the @deprecated alias for back-compat (CONTRACT.md P17/P19)
-    if (evt.waited !== undefined) evt.waitedMs = evt.waited;
-    return evt;
-}
+const doneEvt = (ok: boolean, t0: number, attempts: number): StitchEvent => ({
+    type: 'done',
+    ok,
+    elapsed: now() - t0,
+    attempts,
+    at: now(),
+});
 
 async function validateInput(
     cfg: ResolvedStitchConfig,
@@ -558,17 +544,6 @@ function abortReason(signal: AbortSignal): Error {
         : new Error('the operation was aborted');
 }
 
-// Normalize `acceptStatus` (a number list, a predicate, or unset) into a single predicate. Unset →
-// accept nothing (every `>= 400` still throws). Shared by the buffered/paginated `attemptLoop` and
-// the streaming path so both honour the same per-stitch policy.
-function acceptsStatus(
-    accept: number[] | ((status: number) => boolean) | undefined,
-): (status: number) => boolean {
-    if (accept === undefined) return () => false;
-    if (typeof accept === 'function') return accept;
-    return (status) => accept.includes(status);
-}
-
 // Materialize a streaming-path error body for StitchError.body. A streaming adapter hands back the
 // live `ReadableStream` unparsed (so it can be decoded into deltas); on the error branch the stream
 // is never decoded, so read it to text and best-effort JSON-parse it — the same shape the buffered
@@ -617,16 +592,13 @@ async function* attemptLoop(
     const perAttemptMs = parseDuration(cfg.timeout?.perAttempt);
     const key = hostKey(baseReq, cfg);
     let refreshed = false;
-    // Delegate-backoff mode (issue #145): the host owns the gate. We bypass the internal throttle
-    // for the call (no acquire/release, so `throttle` is inert and no `throttled` event fires) and,
-    // on a response whose status matches `rlMatch` (default [429]), surface a RateLimitError instead
-    // of retrying. Everything else — auth, the success path, non-rate-limit failures — is unchanged.
-    // P14: `rateLimit` folded into `throttle` — read `throttle.delegate`/`throttle.on`, falling back
-    // to the @deprecated top-level `rateLimit` (read once here) until the GA cut.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `rateLimit` folded into `throttle` (P14); back-compat fallback until GA
-    const legacyRl = cfg.rateLimit;
-    const delegate = (cfg.throttle?.delegate ?? legacyRl?.delegate) === true;
-    const rlMatch = acceptsStatus(cfg.throttle?.on ?? legacyRl?.on ?? [429]);
+    // Delegate-backoff mode (issue #145, folded into `throttle` — P14): the host owns the gate. We
+    // bypass the internal throttle for the call (no acquire/release, so `throttle` is inert and no
+    // `throttled` event fires) and, on a response whose status matches `rlMatch` (default [429]),
+    // surface a RateLimitError instead of retrying. Everything else — auth, the success path,
+    // non-rate-limit failures — is unchanged.
+    const delegate = cfg.throttle?.delegate === true;
+    const rlMatch = acceptsStatus(cfg.throttle?.on ?? [429]);
     // acceptStatus (issue #155): statuses the caller declares NORMAL — an accepted non-2xx returns
     // `res` like a 2xx (flowing through interpret → transform → pick → validate) instead of
     // throwing. Checked at the `>= 400` site, i.e. AFTER the retry-on-status path, so `retry.on`
@@ -646,13 +618,13 @@ async function* attemptLoop(
                 baseReq.signal,
             );
             if (waited > 0)
-                yield coemitWaitedMs({
+                yield {
                     type: 'progress',
                     phase: 'throttled',
                     attempt,
                     waited,
                     at: now(),
-                });
+                };
         }
         try {
             const req = cloneReq(baseReq);
@@ -748,6 +720,7 @@ async function* attemptLoop(
                         rt.clock,
                     ),
                     response: res,
+                    attempts: attempt,
                 });
             }
 
@@ -877,8 +850,7 @@ async function* paginated(
     const { cfg } = rt;
     const name = nameOf(cfg);
     const pg = cfg.paginate!;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `max` is the @deprecated alias of `pages`, read for back-compat until the GA cut (CONTRACT.md P4)
-    const max = pg.pages ?? pg.max ?? 50;
+    const max = pg.pages ?? 50;
     const acc: unknown[] = [];
     let pageInput = input;
     let page = 0;
@@ -908,7 +880,7 @@ async function* paginated(
             return;
         }
 
-        let value: unknown = outcome.value;
+        let value: unknown = outcome.data;
         if (cfg.transform) value = await cfg.transform(value);
         if (cfg.pick) value = getPath(value, cfg.pick);
         const items = pg.items
@@ -1073,11 +1045,9 @@ const resultEvt = (
     data: unknown,
     status: number,
     attempts: number,
-    // `data` is canonical; `value` is co-set as the @deprecated alias (CONTRACT.md P5).
 ): StitchEvent => ({
     type: 'result',
     data,
-    value: data,
     status,
     attempts,
     at: now(),
@@ -1091,7 +1061,7 @@ function interpretResponse(
 ): SurfaceOutcome {
     return cfg.kind?.interpret
         ? cfg.kind.interpret(res, cfg)
-        : { ok: true, value: res.body };
+        : { ok: true, data: res.body };
 }
 
 // Build the `error` event for a surface that interpreted the response as a failure.
@@ -1141,7 +1111,7 @@ async function* runFrom(
         yield doneEvt(false, t0, state.attempts);
         return { ok: false };
     }
-    let value: unknown = outcome.value;
+    let value: unknown = outcome.data;
     if (cfg.transform) value = await cfg.transform(value);
     if (cfg.pick) value = getPath(value, cfg.pick);
     // The pre-validation body — the left side of 0015's `diff(raw, validated)`, the coordinate space a
@@ -1173,7 +1143,7 @@ async function* runFrom(
 // the cache), but resumable when the surface opts in: a surface that exposes the resume hooks
 // (`resumeToken`/`applyResume`) AND a stitch that set `sse.reconnect` (off by default — issue #71)
 // reconnect a dropped body, replaying the last resume token (sse → `Last-Event-ID`) and honouring a
-// server-sent backoff (sse → the `retry:` field), capped at `maxAttempts`. The engine stays
+// server-sent backoff (sse → the `retry:` field), capped at `reconnect.attempts`. The engine stays
 // surface-agnostic: it never branches on `kind.id === 'sse'`; it reads the resume token / server
 // backoff through the surface's generic hooks and the reconnect policy through one config accessor.
 // It charges the rate gate at every open (each reconnect is a fresh request) but takes NO concurrency
@@ -1202,8 +1172,7 @@ async function* runStreaming(
     // The resume hooks (issue #71) stay optional; the surface is resumable only when both are set.
     const streamHook: NonNullable<Surface['stream']> = surface.stream;
     const resumeToken = surface.resumeToken;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `resumeRetryMs` is the @deprecated alias of `resumeRetry`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const resumeRetry = surface.resumeRetry ?? surface.resumeRetryMs;
+    const resumeRetry = surface.resumeRetry;
     const applyResume = surface.applyResume;
 
     let baseReq: AdapterRequest;
@@ -1268,13 +1237,13 @@ async function* runStreaming(
             return 'fail';
         }
         if (waited > 0)
-            yield coemitWaitedMs({
+            yield {
                 type: 'progress',
                 phase: 'throttled',
                 attempt,
                 waited,
                 at: now(),
-            });
+            };
 
         let res: AdapterResponse;
         try {
@@ -1406,19 +1375,17 @@ async function* runStreaming(
         }
 
         // Backoff: a server-sent `retry:` (seen on any connection this run) wins; else the explicit
-        // `reconnect.backoff`; else the stitch's `retry` backoff math. `attempt` is now the count
+        // `reconnect.delay`; else the stitch's `retry` backoff math. `attempt` is now the count
         // of opens DONE, so `attempt + 1` is the upcoming reconnect for the expo curve.
         const backoff =
-            lastRetryMs ??
-            policy.backoff ??
-            backoffDelay(attempt + 1, cfg.retry);
-        yield coemitWaitedMs({
+            lastRetryMs ?? policy.delay ?? backoffDelay(attempt + 1, cfg.retry);
+        yield {
             type: 'progress',
             phase: 'reconnect',
             attempt,
             waited: backoff,
             at: now(),
-        });
+        };
         await sleepWithin(backoff, budget, baseReq.signal, rt.clock);
     }
 
@@ -1428,24 +1395,20 @@ async function* runStreaming(
 
 // Resolve the resumable-SSE reconnect policy from config (issue #71) — the ONE place the engine
 // reads the `sse` config slot, keeping `runStreaming` free of SSE-isms. `sse.reconnect` is off by
-// default; `true` enables it with sane defaults; the object form tunes the cap / fallback backoff.
-// `backoff` stays `undefined` when unset so the caller can fall back to the `retry` policy.
+// default; `true` enables it with sane defaults; the object form tunes the cap / fallback delay.
+// `delay` stays `undefined` when unset so the caller can fall back to the `retry` policy.
 function resolveReconnect(cfg: ResolvedStitchConfig): {
     enabled: boolean;
     maxAttempts: number;
-    backoff: number | undefined;
+    delay: number | undefined;
 } {
     const r = cfg.sse?.reconnect;
-    if (!r) return { enabled: false, maxAttempts: 0, backoff: undefined };
-    if (r === true)
-        return { enabled: true, maxAttempts: 3, backoff: undefined };
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `backoffMs` is the @deprecated alias of `backoff`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const backoff = parseDuration(r.backoff ?? r.backoffMs);
+    if (!r) return { enabled: false, maxAttempts: 0, delay: undefined };
+    if (r === true) return { enabled: true, maxAttempts: 3, delay: undefined };
     return {
         enabled: true,
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `maxAttempts` is the @deprecated alias of `attempts`, read for back-compat until the GA cut (CONTRACT.md P4)
-        maxAttempts: r.attempts ?? r.maxAttempts ?? 3,
-        backoff,
+        maxAttempts: r.attempts ?? 3,
+        delay: parseDuration(r.delay),
     };
 }
 
@@ -1522,7 +1485,7 @@ async function* runCached(
     }
 
     const d = describe(baseReq);
-    const key = ctl.key(d, input);
+    const key = ctl.keyOf(d, input);
     if (key === undefined) {
         yield cacheEvt('bypass: unhashable request');
         yield* runFrom(rt, baseReq, name, state, t0, run, budget);
@@ -1541,7 +1504,7 @@ async function* runCached(
         if (ctl.revalidateOnHit && cfg.output) {
             // Only the hard validation result matters on a cache hit: a stored value that no longer
             // satisfies the schema is stale-shaped. Soft drift (raw-vs-validated) is meaningless here.
-            const { errors } = await validateValue(cfg, found.value);
+            const { errors } = await validateValue(cfg, found.data);
             for (const finding of errors) {
                 yield { type: 'drift', finding, at: now() };
                 if (finding.level === 'error') stale = true;
@@ -1549,7 +1512,7 @@ async function* runCached(
         }
         if (!stale) {
             yield cacheEvt(ctl.revalidateOnHit ? 'hit (revalidated)' : 'hit');
-            yield resultEvt(found.value, found.status, 0);
+            yield resultEvt(found.data, found.status, 0);
             yield doneEvt(true, t0, 0);
             return;
         }
@@ -1579,7 +1542,7 @@ async function* runCached(
         }
         if (out.ok) {
             await store(out);
-            claim.settle({ value: out.value, status: out.status });
+            claim.settle({ data: out.value, status: out.status });
         } else {
             // Failure is not shared — waiters re-run on their own.
             claim.fail(new Error('cache: leader run failed'));
@@ -1596,7 +1559,7 @@ async function* runCached(
         return;
     }
     yield cacheEvt('coalesced');
-    yield resultEvt(shared.value, shared.status, 0);
+    yield resultEvt(shared.data, shared.status, 0);
     yield doneEvt(true, t0, 0);
 }
 
@@ -1678,7 +1641,7 @@ export async function cacheInvalidateExact(
     }
     if (!ctl.cacheableMethod(baseReq.method)) return;
     const d = describe(baseReq);
-    const key = ctl.key(d, input);
+    const key = ctl.keyOf(d, input);
     if (key === undefined) return;
     await (await ctl.open(key, d)).delete();
 }
@@ -1691,7 +1654,7 @@ export async function cacheInvalidateBulk(rt: Runtime): Promise<void> {
     await ctl.invalidate();
 }
 
-/** The derived opaque key for `input`, for introspection. Backs `stitch.cache.key(input)`. */
+/** The derived opaque key for `input`, for introspection. Backs `stitch.cache.keyOf(input)`. */
 export async function cacheKeyOf(
     rt: Runtime,
     input: StitchInput = {},
@@ -1704,7 +1667,7 @@ export async function cacheKeyOf(
     } catch {
         return undefined;
     }
-    return ctl.key(describe(baseReq), input);
+    return ctl.keyOf(describe(baseReq), input);
 }
 
 export async function executeRaw(

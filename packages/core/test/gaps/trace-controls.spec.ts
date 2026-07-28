@@ -164,7 +164,7 @@ test('JSONL truncates request body and response value past the default cap', asy
     expect(reqBody['bytes']).toBeGreaterThanOrEqual(2048);
     expect((reqBody['preview'] as string).length).toBeLessThanOrEqual(2048);
 
-    const value = result['value'] as Record<string, unknown>;
+    const value = result['data'] as Record<string, unknown>;
     expect(value['truncated']).toBe(true);
     expect(value['blob']).toBeUndefined(); // the original shape is gone
 
@@ -186,7 +186,7 @@ test('STITCH_TRACE_MAX_BODY=full captures the whole body (no truncation)', async
     await expect(call()).resolves.toEqual({ blob: BIG });
 
     const result = readRecords(traceFile).find((r) => r['type'] === 'result')!;
-    expect((result['value'] as { blob: string }).blob).toBe(BIG);
+    expect((result['data'] as { blob: string }).blob).toBe(BIG);
 });
 
 // (f) Opt-in full capture (code): fileSink(path, { maxBodyBytes: false }) is the
@@ -206,7 +206,7 @@ test('fileSink({ maxBodyBytes: false }) captures the whole body', async () => {
     await expect(call()).resolves.toEqual({ blob: BIG });
 
     const result = readRecords(traceFile).find((r) => r['type'] === 'result')!;
-    expect((result['value'] as { blob: string }).blob).toBe(BIG);
+    expect((result['data'] as { blob: string }).blob).toBe(BIG);
 });
 
 // (g) URL credential-scrub: a secret-bearing query param is REDACTED in the

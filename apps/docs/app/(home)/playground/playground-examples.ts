@@ -33,10 +33,7 @@ const api = stitch({
   retry: {
     attempts: 4,
     on: [429, 502, 503, 504],
-    backoff: 'expo-jitter',
-    baseDelay: 100,
-    maxDelay: 400,
-  },
+    backoff: { curve: 'expo-jitter', base: 100, max: 400 },},
   timeout: { total: '4s', perAttempt: '2s' }, // fail fast instead of hanging
   throttle: { rate: '50/s' }, // client-side rate limit
   circuit: { failures: 5, cooldown: 1000 }, // stop hammering a dead dep
@@ -83,7 +80,7 @@ console.log('3) whoami:', me);
 const flaky = stitch({ extends: [api], path: '/users', pick: 'data' });
 let recovered, attempts;
 for await (const event of flaky.stream({ query: { __flaky: 2 } })) {
-  if (event.type === 'result') recovered = event.value;
+  if (event.type === 'result') recovered = event.data;
   if (event.type === 'done') attempts = event.attempts;
 }
 console.log(

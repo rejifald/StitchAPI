@@ -28,7 +28,7 @@ const FUNCTIONS = [
     'fileSink',
     'multiplex',
     'loggerSink',
-    'otlpTrace',
+    'otlpSink',
     'otlpHttpExporter',
     'toOtlpJson',
     'memoryStore',

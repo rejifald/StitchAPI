@@ -17,7 +17,7 @@ import { StitchError, graphql } from 'stitchapi';
 const user = graphql({
     baseUrl: 'https://api.example.com',
     path: '/graphql',
-    query: `query ($id: ID!) { user(id: $id) { name } }`,
+    document: `query ($id: ID!) { user(id: $id) { name } }`,
 });
 
 try {

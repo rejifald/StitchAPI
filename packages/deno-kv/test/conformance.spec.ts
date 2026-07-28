@@ -5,7 +5,7 @@
 // expiry + a monotonic versionstamp + an atomic builder that fails the commit
 // when a checked versionstamp is stale). Single-threaded JS makes the engine's
 // read-modify-write atomic, exactly as Deno KV's real `atomic().commit()` does
-// against its storage — so the contract's "20 concurrent incrs net +20" rule
+// against its storage — so the contract's "20 concurrent increments net +20" rule
 // holds here and on real Deno KV alike, including the compare-and-set RETRY path
 // (the fake genuinely fails losing commits, so the store must re-read and retry).
 import { denoKvStore } from '../src';

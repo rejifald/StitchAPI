@@ -59,7 +59,7 @@ const ORIGIN_B = 'https://iframe.example.com';
 function channelPair(): {
     parent: PostMessageChannel;
     iframe: PostMessageChannel;
-    closeBoth: () => void;
+    closeBoth: () => Promise<void>;
 } {
     const { a, b } = linkedPair(ORIGIN_A, ORIGIN_B);
     const parent = channel(a, { allowedOrigins: [ORIGIN_B] });
@@ -67,9 +67,9 @@ function channelPair(): {
     return {
         parent,
         iframe,
-        closeBoth: () => {
-            parent.close();
-            iframe.close();
+        closeBoth: async () => {
+            await parent.close();
+            await iframe.close();
         },
     };
 }
@@ -84,13 +84,12 @@ describe('respond() replacement', () => {
         iframe.respond('q', () => 'second', { reply: 'q-reply' });
         // The first handle must NOT remove the now-active 'second' responder.
         off1();
-        const ask = parent.request({
-            type: 'q',
+        const ask = parent.request('q', {
             reply: 'q-reply',
             timeout: { perAttempt: 300 },
         });
         await expect(ask()).resolves.toBe('second');
-        closeBoth();
+        await closeBoth();
     });
 });
 
@@ -100,22 +99,21 @@ describe('responder error handling', () => {
         iframe.respond('boom', () => {
             throw new Error('handler blew up');
         });
-        const ask = parent.request({
-            type: 'boom',
+        const ask = parent.request('boom', {
             timeout: { perAttempt: 40 },
         });
         await expect(ask({ body: { x: 1 } })).rejects.toMatchObject({
             name: 'StitchError',
         });
-        closeBoth();
+        await closeBoth();
     });
 });
 
 describe('events fan-out', () => {
     test('one inbound event reaches every matching subscription of that type', async () => {
         const { parent, iframe, closeBoth } = channelPair();
-        const subA = parent.events<{ type: 'tick' }>({ type: 'tick' });
-        const subB = parent.events<{ type: 'tick' }>({ type: 'tick' });
+        const subA = parent.events('tick');
+        const subB = parent.events('tick');
         const ctlA = new AbortController();
         const ctlB = new AbortController();
         const gotA: unknown[] = [];
@@ -130,8 +128,8 @@ describe('events fan-out', () => {
         })();
         // Let both subscriptions register before emitting.
         await tick(10);
-        await iframe.emit({ type: 'tick' as const })({ body: { n: 1 } });
-        await iframe.emit({ type: 'tick' as const })({ body: { n: 2 } });
+        await iframe.emit('tick')({ body: { n: 1 } });
+        await iframe.emit('tick')({ body: { n: 2 } });
         await tick(30);
         ctlA.abort();
         ctlB.abort();
@@ -141,6 +139,6 @@ describe('events fan-out', () => {
         ]);
         expect(gotA).toEqual([{ n: 1 }, { n: 2 }]);
         expect(gotB).toEqual([{ n: 1 }, { n: 2 }]);
-        closeBoth();
+        await closeBoth();
     });
 });

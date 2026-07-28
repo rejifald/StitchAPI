@@ -15,9 +15,6 @@ export {
     secretFrom,
 } from './auth';
 export type { SecretSource, AuthFailureResult, RefreshResult } from './auth';
-// CONTRACT.md P3 — deprecated alias re-export, removed at GA.
-// eslint-disable-next-line @typescript-eslint/no-deprecated -- intentional back-compat re-export of the @deprecated `AuthFailureInfo` (now `AuthFailureResult`) until the GA cut
-export type { AuthFailureInfo } from './auth';
 export { fetchAdapter } from './http-adapter';
 export type { FetchAdapterOptions } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';
@@ -36,7 +33,7 @@ export {
     loggerSink,
 } from './trace';
 export type { LoggerLike, LoggerSinkOptions, LogLevel } from './trace';
-export { otlpTrace, otlpHttpExporter, toOtlpJson } from './otlp';
+export { otlpSink, otlpHttpExporter, toOtlpJson } from './otlp';
 export type {
     SpanExporter,
     OtelSpan,
@@ -47,15 +44,10 @@ export type {
 // Trace-redaction escape hatch: widen the secret-key denylist so a host's custom credential
 // param name is scrubbed in every trace sink (start.url, OTLP url.full, input.query). `apiKey({ in:
 // 'query', name })` registers its name here automatically; this is the manual hook for a credential
-// the built-in set/stems don't catch. `isSecretKey` is the matching predicate (alias:
-// `isSecretQueryKey`), exposed so a host can audit which of its query params / body keys the
-// scrubbers already cover. `redactSecretsDeep` walks a plain value and replaces secret-named keys.
-export {
-    registerSecretQueryKey,
-    isSecretKey,
-    isSecretQueryKey,
-    redactSecretsDeep,
-} from './util';
+// the built-in set/stems don't catch. `isSecretKey` is the matching predicate, exposed so a host
+// can audit which of its query params / body keys the scrubbers already cover. `redactSecretsDeep`
+// walks a plain value and replaces secret-named keys.
+export { registerSecretKey, isSecretKey, redactSecretsDeep } from './util';
 export type { Issue, ValidationResult, Validator } from './validator';
 // Standalone validation, uniform with what `input`/`output` consume: `validate(schema, value)`
 // checks a value now; `compile(schema)` coerces once and returns a reusable checker. Both take any
@@ -69,12 +61,16 @@ export { memoryStore } from './store';
 // The default Clock (ADR 0010) — wall-clock + global timers. Inject a custom `Clock` (or a
 // `manualClock()` from `stitchapi/testing`) via a stitch/seam `clock` to control time.
 export { systemClock } from './util';
+// The one shared duration parser (CONTRACT.md P17): `5_000`, `'5s'`, `'1m'` → ms.
+// Exported so a peer package that takes a consumer-authored duration parses it the
+// same way core does, instead of mirroring the grammar and drifting from it.
+export { parseDuration } from './util';
 // `compact({ ...obj, key: value })` — a shallow copy with `undefined`-valued keys removed, typed so
 // undefined-admitting keys come back optional. Pairs with `exactOptionalPropertyTypes`: it omits an
 // absent optional without the `...(key !== undefined ? { key } : {})` spread dance.
 export { compact } from './compact';
 export type { Compact } from './compact';
 // The delegate-backoff error (issue #145): thrown on the awaited path and surfaced as an `error`
-// event when `rateLimit.delegate` is on, so a host's outer gate owns the rate-limit backoff.
+// event when `throttle.delegate` is on, so a host's outer gate owns the rate-limit backoff.
 export { RateLimitError } from './resilience';
 export * from './types';

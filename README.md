@@ -283,12 +283,12 @@ const listUsers = stitch({
     baseUrl: 'https://demo.stitchapi.dev',
     path: '/users',
     retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
-    throttle: { rate: '1/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '1/s', concurrency: 2, pool: 'host' },
     timeout: { total: '30s', perAttempt: '10s' },
 });
 ```
 
-`throttle` is proactive (keeps you under a limit before it bites; `scope: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`acceptStatus`** treats a non-2xx (e.g. `404`) as a normal result instead of a throw. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry).
+`throttle` is proactive (keeps you under a limit before it bites; `pool: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`acceptStatus`** treats a non-2xx (e.g. `404`) as a normal result instead of a throw. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry).
 
 ## Caching
 
@@ -310,7 +310,7 @@ const listAnnouncements = stitch({
         ttl: '1h',
         scope: 'app',
         vary: ['accept-language'],
-        maxEntries: 500,
+        entries: 500,
         version: 1, // pins the shape — cacheable without a fingerprinter
     },
 });

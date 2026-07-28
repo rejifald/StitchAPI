@@ -4,7 +4,7 @@ import { compact } from './compact';
 import type { DriftLevel, StitchEvent, TraceContext, TraceSink } from './types';
 import {
     dirnameOf,
-    isSecretQueryKey,
+    isSecretKey,
     nodeFs,
     readEnv,
     redactSecretsDeep,
@@ -155,7 +155,7 @@ function redactSecretQuery(
 ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(query))
-        out[k] = isSecretQueryKey(k) ? REDACTED : v;
+        out[k] = isSecretKey(k) ? REDACTED : v;
     return out;
 }
 
@@ -189,12 +189,8 @@ function prepareRecord(
         }
     } else if (event.type === 'result') {
         record['data'] = capBody(record['data'], maxBody);
-        // The @deprecated `value` alias is co-emitted (CONTRACT.md P5); cap it too so the body is
-        // never written uncapped under either key.
-        if ('value' in record)
-            record['value'] = capBody(record['value'], maxBody);
     } else if (event.type === 'delta') {
-        // A streamed chunk is response-body data too — cap it like `result.value`.
+        // A streamed chunk is response-body data too — cap it like `result.data`.
         record['chunk'] = capBody(record['chunk'], maxBody);
     }
     return record;

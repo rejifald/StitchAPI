@@ -126,7 +126,7 @@ describe('streamStitchSse bridges a stitch stream to an SSE body', () => {
             });
             return streamStitchSse(c, events.stream(), {
                 // The sse surface parses each frame to `{ data: 'one' }`; pull the text back out.
-                data: (chunk) => (chunk as { data: string }).data,
+                delta: (chunk) => (chunk as { data: string }).data,
             });
         });
 

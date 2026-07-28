@@ -117,7 +117,7 @@ const session = cookieSession({
     login: signIn, // ← another stitch
     cookie: 'session_token',
     secret: keychain('app'),
-    refreshOn: [401],
+    refresh: [401],
 });
 ```
 
@@ -203,11 +203,11 @@ This is a concrete cookie wall (`GET /api/websites` needs a `session_token` cook
 
 ```ts
 retry:    { attempts: 3, backoff: 'expo+jitter', on: [429, 503], respectRetryAfter: true },
-throttle: { rate: '1/s', concurrency: 2, scope: 'host' },   // proactive limiter
+throttle: { rate: '1/s', concurrency: 2, pool: 'host' },   // proactive limiter
 timeout:  { total: '30s', perAttempt: '10s' },
 ```
 
--   **`throttle`** is _proactive_ — a token-bucket/concurrency cap to stay _under_ a vendor's limit (replaces the hand-rolled 1/s buckets and per-request delays integrations write by hand). `scope: 'host'` shares one limiter across all stitches hitting the same host.
+-   **`throttle`** is _proactive_ — a token-bucket/concurrency cap to stay _under_ a vendor's limit (replaces the hand-rolled 1/s buckets and per-request delays integrations write by hand). `pool: 'host'` shares one limiter across all stitches hitting the same host.
 -   **`retry`** is _reactive_ — backoff+jitter, honoring `Retry-After`.
 -   All emit events (`retry`, `throttled`) onto the stream → visible in the trace for free.
 
@@ -247,7 +247,7 @@ type StitchEvent<T> =
   | { type: 'progress'; phase: 'auth'|'request'|'throttled'|'retry'|'paginate'; ... }
   | { type: 'delta';    chunk }          // streamed body / LLM tokens (future kinds)
   | { type: 'drift';    level: 'error'|'warn'|'info'; path; change }
-  | { type: 'result';   value: T }        // validated, unwrapped
+  | { type: 'result';   data: T }         // validated, unwrapped
   | { type: 'error';    error }
   | { type: 'done';     timing; usage };
 ```
@@ -380,7 +380,7 @@ const listWebsites = stitch({
         login: signIn,
         cookie: 'session_token',
         secret: secretsFile('app'),
-        refreshOn: [401],
+        refresh: [401],
     }),
 });
 await listWebsites(); // logs in, manages cookie, retries wall, returns Website[]
@@ -403,7 +403,7 @@ const metadata = stitch({
 for await (const ev of listWebsites.stream()) {
     if (ev.type === 'progress' && ev.phase === 'retry') log('retrying…');
     if (ev.type === 'drift' && ev.level === 'info') log('new field:', ev.path);
-    if (ev.type === 'result') render(ev.value);
+    if (ev.type === 'result') render(ev.data);
 }
 ```
 
@@ -486,8 +486,8 @@ The two gaps both audits flagged _critical_ — distributed rate limiting and pe
 ```ts
 interface StitchStore {
     get(key: string): Promise<unknown | undefined>;
-    set(key: string, value: unknown, ttlMs?: number): Promise<void>;
-    incr(key: string, ttlMs: number): Promise<number>; // atomic — for rate windows
+    set(key: string, value: unknown, ttl?: number): Promise<void>;
+    increment(key: string, ttl?: number): Promise<number>; // atomic — for rate windows
 }
 
 const api = seam({

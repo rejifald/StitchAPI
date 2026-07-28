@@ -52,7 +52,7 @@ describe('mockAdapter — testing a stitch definition', () => {
             baseUrl: 'https://api.test',
             path: '/flaky',
             adapter: api,
-            retry: { attempts: 3, on: [503], baseMs: 1 },
+            retry: { attempts: 3, on: [503], backoff: { base: 1 } },
         });
 
         await expect(call()).resolves.toEqual({ ok: true });

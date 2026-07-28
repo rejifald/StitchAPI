@@ -70,7 +70,11 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
             baseUrl: server.url,
             path: '/graphql',
             auth: apiKey({ header: 'apikey', value: env('METADATA_API_KEY') }),
-            retry: { attempts: 5, on: [429, 500, 502, 503], baseMs: 5 },
+            retry: {
+                attempts: 5,
+                on: [429, 500, 502, 503],
+                backoff: { base: 5 },
+            },
             pick: 'data',
         });
 
@@ -127,8 +131,8 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
             auth: cookieSession({
                 login,
                 cookie: 'SID',
-                scope: 'app',
-                refreshOn: [403], // this integration uses 403, not 401
+                tenancy: 'app',
+                refresh: [403], // this integration uses 403, not 401
                 loginInput: () => ({
                     body: {
                         username: env('CLIENT_USER')(),
@@ -179,7 +183,7 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
             auth: cookieSession({
                 login,
                 cookie: 'session_id',
-                scope: 'app',
+                tenancy: 'app',
                 loginInput: () => ({
                     body: {
                         username: env('SCRAPE_USER')(),

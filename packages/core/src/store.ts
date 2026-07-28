@@ -9,13 +9,13 @@ import type {
 } from './types';
 import { now, parseRate, systemClock } from './util';
 
-/** Default store: in-memory, single process, with TTL + atomic incr. */
+/** Default store: in-memory, single process, with TTL + atomic increment. */
 export function memoryStore(): StitchStore {
     const data = new Map<string, { value: unknown; expires: number }>();
     const live = (e?: { expires: number }) =>
         !!e && (e.expires === 0 || e.expires > now());
     // Opportunistic, bounded sweep of expired entries. The store evicts a key lazily on a `get`/
-    // `incr` of THAT key, so a throttle that mints a new per-window `rl:` key each window would
+    // `increment` of THAT key, so a throttle that mints a new per-window `rl:` key each window would
     // otherwise accumulate dead keys forever (no key is ever read again). On a write we scan up to
     // `SWEEP_BUDGET` entries and drop any that have expired — never touching a live key, so
     // observable behaviour is unchanged; it just keeps the Map from growing without bound.
@@ -44,13 +44,14 @@ export function memoryStore(): StitchStore {
             sweepExpired();
             data.set(key, { value, expires: ttl ? now() + ttl : 0 });
         },
-        async incr(key, ttl) {
+        async increment(key, ttl) {
             const e = data.get(key);
             const n = (live(e) ? (e!.value as number) : 0) + 1;
             sweepExpired();
             data.set(key, {
                 value: n,
-                expires: live(e) ? e!.expires : now() + ttl,
+                // Absent `ttl` = no window: the counter never expires (0 marks "live forever").
+                expires: live(e) ? e!.expires : ttl ? now() + ttl : 0,
             });
             return n;
         },
@@ -71,7 +72,7 @@ export function vaultView(store: StitchStore, prefix = 'vault:'): StitchStore {
     const view: StitchStore = {
         get: (key) => store.get(prefix + key),
         set: (key, value, ttl) => store.set(prefix + key, value, ttl),
-        incr: (key, ttl) => store.incr(prefix + key, ttl),
+        increment: (key, ttl) => store.increment(prefix + key, ttl),
     };
     // Delegate lifecycle to the backend (bind keeps `this` for stores that need it).
     if (store.close) view.close = store.close.bind(store);
@@ -172,7 +173,7 @@ export function createStoreThrottle(
         }
         if (rate) {
             // Even-spaced pacing over the shared counter (mirrors createThrottle's `spacing`):
-            // the atomic incr hands each caller a unique slot N in the window, and slot N is
+            // the atomic increment hands each caller a unique slot N in the window, and slot N is
             // scheduled at windowStart + (N-1)·spacing. Slot count+1 lands exactly at the next
             // windowStart, so grants stay one `spacing` apart across the boundary — no fixed-window
             // burst. No re-check loop: each caller owns a distinct, non-colliding slot.
@@ -186,7 +187,7 @@ export function createStoreThrottle(
             if (s.lastWindow !== undefined && s.lastWindow < windowStart)
                 await store.set(`rl:${key}:${s.lastWindow}`, undefined);
             s.lastWindow = windowStart;
-            const n = await store.incr(
+            const n = await store.increment(
                 `rl:${key}:${windowStart}`,
                 rate.per + 100,
             );

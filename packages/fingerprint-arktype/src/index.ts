@@ -3,7 +3,7 @@
 // ArkType exposes a canonical JSON representation of every type on `t.json`. It
 // already normalises the parts that matter for structural identity — object keys
 // are emitted in a stable order and union branches are pre-sorted — so the bulk
-// of the work is reading that surface, then ABSTAINING (returning `value: null`)
+// of the work is reading that surface, then ABSTAINING (returning `token: null`)
 // the moment it contains something that can't be soundly captured:
 //
 //   - morphs (`.pipe`) surface as `morphs: ["$ark.fn10"]` and narrows (`.narrow`)
@@ -120,10 +120,10 @@ export const arktypeFingerprinter: SchemaFingerprinter = {
             // `afp1` tags the descriptor format: bump it to force a one-time,
             // safe re-fingerprint if the descriptor scheme ever changes.
             const token = hash(`afp1|${describe(schema)}`);
-            return { token, value: token, strength: 'strong' };
+            return { token, strength: 'strong' };
         } catch {
             // ABSTAIN sentinel or any unexpected introspection failure → abstain.
-            return { token: null, value: null, strength: 'strong' };
+            return { token: null, strength: 'strong' };
         }
     },
 };

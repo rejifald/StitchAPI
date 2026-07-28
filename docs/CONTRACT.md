@@ -73,8 +73,7 @@ A public field or symbol **MUST** be the shortest unambiguous token for its conc
 value-space across the entire surface.
 
 _Current violations:_ `key` is a `string` namespace in `CircuitOptions` but a
-`(input) => string` in `IdempotencyOptions` / `CacheConfig`; `query` is a GraphQL
-document string in `StitchConfig` but URL params in `StitchInput` / `InputSchemas`;
+`(input) => string` in `IdempotencyOptions` / `CacheConfig`;
 `on` is retry-trigger statuses **and** rate-limit-signal statuses; `bodyKind`
 (`from-curl`) vs `bodyType` (everywhere else) for one `'json'|'form'` concept.
 
@@ -89,6 +88,12 @@ and a **tenancy** axis (`'principal'|'app'`) in `CacheConfig`/`CookieSessionOpts
 These are real, distinct concepts → **`throttle.scope` is renamed to `pool`**, freeing
 `scope` to mean tenancy everywhere. (This is a rename, **not** an assertion that they
 were the same concept.)
+
+_Second case:_ `backoff` was a **curve policy** (`'expo'|'expo-jitter'|'fixed'`) in
+`RetryOptions` and a flat **duration** (`number | string`) in `ReconnectOptions` — one token,
+two value-spaces, and both accept strings, so `backoff: 'expo'` and `backoff: '1s'` were
+indistinguishable by shape. → **`reconnect.backoff` is renamed to `delay`**, leaving `backoff`
+to mean "the curve policy" everywhere.
 
 ### P3 · One suffix system
 
@@ -117,7 +122,7 @@ current index.
 
 _Violations:_ `ReconnectOptions.maxAttempts` (→ `attempts`), `CacheConfig.maxEntries`
 (→ `entries`), `CircuitOptions.failureThreshold` (→ `failures`), `paginate.max`
-(→ `pages`), `deno-kv maxIncrRetries`.
+(→ `pages`). (`deno-kv maxIncrRetries` → `retry.attempts` — **fixed**, see [§6](#6-migration-backlog).)
 
 ---
 
@@ -146,7 +151,7 @@ function **MUST** be named **`keyOf`** (a `(input) => string`) and **MUST NOT** 
 called `key`.
 
 _Violations:_ `IdempotencyOptions.key`, `CacheConfig.key` (both `(input) => string`)
-→ `keyOf`. `CircuitOptions.key` and `StitchStore.get/set/incr(key)` are correct as-is.
+→ `keyOf`. `CircuitOptions.key` and `StitchStore.get/set/increment(key)` are correct as-is.
 
 ### P7 · Status-classification parity
 
@@ -279,6 +284,15 @@ error-options is `StitchErrorHandlerOptions` / `StitchErrorOptions` /
 result interface is `UseStitchResult` / `UseStitchReturn` / `InjectStitchResult` /
 `StitchStore`; `queryOptions` is still bare in vue/solid/svelte/angular.
 
+_Settled:_ the SSE frame options are **`delta`** and **`error`** on every SSE-capable
+host (`express` / `fastify` / `hono` / `next` / `elysia`) — symmetric envelopes, each a
+`{ data, event, … }` config that also accepts a **bare shaper function as shorthand for
+`{ data }`** (`delta: (c) => c.text`, `error: (e) => e.message`). `delta` carries
+`{ data, event, id }`; `error` carries `{ data, event, observe }` (`observe` sees the
+real server-side failure while the client still gets the generic `data: error` token).
+Do **not** reintroduce the flat `data` / `event` / `id` / `errorData` / `onError`
+spellings (nor the interim `payload` name).
+
 ### P17 · One canonical duration form
 
 Per **D3**, **ms is the single house time unit** and **no duration field carries the
@@ -311,16 +325,49 @@ at the adapter edge and is named with its true unit (`expirationSeconds`,
 A duck-type that mirrors a foreign SDK **MUST** keep that SDK's spelling (so it
 structurally matches). StitchAPI's **own normalized** contracts (`StitchStore`,
 `RedisDriver`) **MUST** use one house vocabulary: `ttl` (ms — the house unit, no suffix
-per P17; convert foreign units at the edge), `delete` (not `del`),
+per P17; convert foreign units at the edge), **whole words — never a wire
+abbreviation** (`delete` not `del`, `increment` not `incr`),
 `close(): Promise<void>` (async, per P11), with one optionality per parameter (`ttl`
-MUST NOT be optional on `set` but required on `incr`).
+MUST NOT be optional on `set` but required on `increment`).
 
-### P19 · No pre-GA hard break
+_Why whole words:_ the house verbs are the vocabulary a **consumer** implements against,
+not the bytes a server parses. `DEL`/`INCR` are terse because they cross a socket
+millions of times a second; a TypeScript method name is read, not transmitted. The rule
+is all-or-nothing by construction — a contract that spells `delete` but keeps `incr`
+teaches neither convention, and the reader has to memorize which verbs got the
+abbreviation. The Redis **command** names stay verbatim wherever the code speaks Redis
+(the Lua `INCR`, the `IoredisLike`/`NodeRedisLike`/`UpstashLike` mirrors' `del`) — that
+is the first half of this rule doing its job, not an exception to the second.
 
-Every rename, narrowing, or removal mandated here **MUST** ship a `@deprecated`
-re-export/field alias pinned by an identity test, removed at the **1.0 GA cut**
-(extending ADR 0012's precedent from symbols to fields). Widening
-(`number → number | string`, P17) is non-breaking and needs no alias.
+### P19 · The alias obligation is scoped to the GA channel
+
+The `@deprecated`-alias requirement binds the **general-availability** channel. On a
+pre-release channel (`rc`, `beta`, `canary` — anything published under a prerelease tag),
+a rename, narrowing, or removal mandated here **MAY** ship as a **hard break**: no alias,
+declared under **BREAKING CHANGE** with a one-line migration in `CHANGELOG.md`. Once
+**1.0 GA** ships, the obligation is in force — every such change **MUST** carry a
+`@deprecated` re-export/field alias pinned by an identity test (extending ADR 0012's
+precedent from symbols to fields), retired only on the next major. Widening
+(`number → number | string`, P17) is non-breaking and needs no alias in either channel.
+
+_Why the channel, not the change:_ a prerelease is the window the semver contract sets
+aside for exactly this. Paying alias tax during it buys back-compat for a population that
+has accepted breakage by installing an `rc`, and the aliases accumulate into a second
+vocabulary the GA cut then has to delete — every one a field a reader must learn is dead.
+The clean surface at 1.0 is worth more than continuity between two release candidates.
+
+_Aliases already shipped stay._ Relaxing the rule forward does not retroactively demand
+their removal: the `*Ms` duration aliases, `keyOf`, `StatusMatch`, and the rest listed in
+[§6](#6-migration-backlog) remain, pinned by their identity tests, until the GA cut
+removes them together. Removing one now would itself be a break, for no gain.
+
+_Corollary — some contracts cannot alias at all._ Where the consumer **implements** an
+interface and core **calls** it (`StitchStore`, `RedisDriver`, `Adapter`, `TraceSink`,
+`AuthStrategy`), there is no `new ?? old` to read: an "alias" means typing **both**
+spellings optional forever and dispatching on whichever is present, which erases the
+contract the rename exists to state and lets an implementation satisfy the type while
+providing neither. For these, a rename is a hard break in **any** channel — post-GA it is
+a major-version change, not an aliasable one.
 
 ### P20 · No empty-object config; enable-with-defaults is a scalar
 
@@ -424,42 +471,28 @@ bridge from JSON Schema, producing a `SchemaLike` those consumers treat identica
 ## 6. Migration backlog (proposed renames — confirm during sweep)
 
 Not normative. The rule is the law; these are the proposed target spellings the sweep
-will apply under `@deprecated` aliases (P18). Severity = consumer blast radius.
+will apply. While the line is pre-GA, each may land as a hard break or under a
+`@deprecated` alias — [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes
+the obligation to the GA channel. Severity = consumer blast radius.
 
-| Sev  | Current                                                               | Proposed                                                       | Rule   |
-| ---- | --------------------------------------------------------------------- | -------------------------------------------------------------- | ------ |
-| High | `SafeResult.data` ↔ `Inspection.value` ↔ `StitchEvent.result.value` | `data` everywhere                                              | P5     |
-| High | `IdempotencyOptions.key`, `CacheConfig.key` (fn)                      | `keyOf`                                                        | P6     |
-| High | `ThrottleOptions.scope` (`'stitch'｜'host'`)                          | `pool`                                                         | P2     |
-| High | `rateLimit` (separate top-level key) vs `throttle`                    | fold into one `throttle` envelope (`delegate` / `on` as modes) | P2/P14 |
-| High | `retry.on` + rate-limit `on` (`number[]`)                             | `number[] ｜ (status)=>boolean`                                | P7     |
-| High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes            | hoist or qualify                                               | P9     |
-| High | `queryOptions` bare in vue/solid/svelte/angular                       | `stitchQueryOptions`                                           | P16    |
-| Med  | `CacheConfig` →                                                       | `CacheOptions`                                                 | P3     |
-| Med  | `OAuth2Opts`, `CookieSessionOpts`                                     | `OAuth2Options`, `CookieSessionOptions`                        | P3     |
-| Med  | `McpServerInfo`, `SignV4Params`                                       | `…Options`                                                     | P3     |
-| Med  | `StitchQueryOptions` (a result)                                       | `StitchQueryResult`                                            | P3     |
-| Med  | `ReconnectOptions.maxAttempts`                                        | `attempts`                                                     | P4     |
-| Med  | `CacheConfig.maxEntries`                                              | `entries`                                                      | P4     |
-| Med  | `CircuitOptions.failureThreshold`                                     | `failures`                                                     | P4     |
-| Med  | `paginate.max`                                                        | `pages`                                                        | P4     |
-| Med  | `*Ms` duration inputs (`cooldownMs`, `backoffMs`, `ttlMs`, …)         | de-suffix + `number｜string`                                   | P17    |
-| Med  | `paginate` inline shape                                               | `PaginateOptions`                                              | P14    |
-| Med  | SSE helper `sendStitchSse`/`stitchSse`                                | `streamStitchSse`                                              | P16    |
-| Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions`    | `StitchErrorOptions` (+ `body`)                                | P16    |
-| Low  | `RedisDriver.del`, `…quit`, sync `close`                              | `delete`, async `close`                                        | P18    |
-| Low  | `SchemaFingerprint.value`                                             | `token`                                                        | P5     |
-| Low  | `bodyKind` (from-curl)                                                | `bodyType`                                                     | P1     |
-| Low  | emitted `*Ms` (`waitedMs`, `retryAfterMs`, done `ms`)                 | de-suffix (`waited`, `retryAfter`, `elapsed`); units → JSDoc   | P17    |
+| Sev  | Current                                                            | Proposed                                | Rule |
+| ---- | ------------------------------------------------------------------ | --------------------------------------- | ---- |
+| High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes         | hoist or qualify                        | P9   |
+| High | `queryOptions` bare in vue/solid/svelte/angular                    | `stitchQueryOptions`                    | P16  |
+| Med  | `OAuth2Opts`, `CookieSessionOpts`                                  | `OAuth2Options`, `CookieSessionOptions` | P3   |
+| Med  | `StitchQueryOptions` (a result)                                    | `StitchQueryResult`                     | P3   |
+| Med  | `paginate` inline shape                                            | `PaginateOptions`                       | P14  |
+| Med  | SSE helper `sendStitchSse`/`stitchSse`                             | `streamStitchSse`                       | P16  |
+| Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions` | `StitchErrorOptions` (+ `body`)         | P16  |
+| Low  | `RedisDriver…quit`, sync `close`                                   | async `close`                           | P18  |
+| Low  | `bodyKind` (from-curl)                                             | `bodyType`                              | P1   |
 
-New shorthand/toggle slots to **add** (additive, non-breaking): `stream`, `multipart`,
-`sse`, `.inspect()` scalars (P12); `idempotency` boolean (P13-toggle);
-`throttle` string (P14).
+New shorthand/toggle slots to **add** (additive, non-breaking): `.inspect()`
+scalars (P12); `idempotency` boolean (P13-toggle); `throttle` string (P14).
 
 **Shipped (migration in progress)** — all under `@deprecated` aliases read until the GA
 cut; the lint skips the deprecated members so each rename ratchets the baseline down:
 
--   **P2** `ThrottleOptions.scope`→`pool`; runtime prefers `pool ?? scope`.
 -   **P6** `IdempotencyOptions.key`/`CacheOptions.key`→`keyOf`; runtime prefers `keyOf ?? key`.
 -   **P3** suffix renames (type-only, zero runtime): `CacheConfig`→`CacheOptions`,
     `OAuth2Opts`→`OAuth2Options`, `CookieSessionOpts`→`CookieSessionOptions`,
@@ -470,9 +503,13 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `CacheOptions.maxEntries`→`entries`, `paginate.max`→`pages`; runtime prefers the new
     field. (`CircuitOptions.failureThreshold`→`failures` is deferred to the P17 CircuitOptions
     overhaul, where its required-ness + `cooldownMs`/`halfOpenAfterMs` are handled together.)
--   **P7** `RetryOptions.on` (and the folded `throttle.on`) now accept
-    `number[] | (status) => boolean` — additive widening, no alias. The engine normalizes via the
-    shared `acceptsStatus` matcher.
+-   **P7** the exported `StatusMatch` (`number | number[] | (status) => boolean`) is the one shape
+    for every status-classification slot: `RetryOptions.on`, `throttle.on`, `StitchConfig.acceptStatus`,
+    and the auth strategies' `refreshOn` (oauth2 + cookieSession). A bare status is shorthand for its
+    one-element list (`404` ≡ `[404]`); additive widening, no alias. Every reader normalizes through the
+    shared `acceptsStatus` matcher, hoisted from the engine into `resilience.ts` so `auth` shares it. The
+    `T | T[]` list-widening is uniform too — `DriftOptions.ignore` and `CacheOptions.vary` now accept a
+    bare string (`'x'` ≡ `['x']`), matching `DriftOptions.severity`; each consumer normalizes to the array.
 -   **P14** `rateLimit` folded into `throttle` (`throttle.delegate` / `throttle.on`); the top-level
     `rateLimit` is `@deprecated` (runtime prefers `throttle.* ?? rateLimit.*`). `PaginateOptions`
     extracted from the inline `paginate` shape (named + exported). `throttle: { rate, delegate }` is
@@ -482,7 +519,7 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     `ReconnectOptions.backoffMs`→`backoff`; `OAuth2Options.refreshSkewMs`→`refreshSkew`;
     `CookieSessionOptions.ttlMs`→`ttl`. Each keeps a `@deprecated` `*Ms` alias (runtime prefers
     `new ?? old`). House store contracts use the bare `ttl` param (ms, no suffix): `StitchStore` /
-    `RedisDriver` `set`/`incr` and the redis/deno-kv/cloudflare-kv drivers; `verifyStoreContract`'s
+    `RedisDriver` `set`/`increment` and the redis/deno-kv/cloudflare-kv drivers; `verifyStoreContract`'s
     knob is `ttl` (deprecated `ttlMs` alias).
 -   **P17 (circuit) + P4** `CircuitOptions` overhaul: `failureThreshold`→`failures` (P4),
     `cooldownMs`→`cooldown`, `halfOpenAfterMs`→`halfOpenAfter` (P17, widened to `number | string`).
@@ -547,6 +584,64 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
     rich shape is assignable to the minimal one (a real stitch satisfies both), so it is **de-listed**.
     With this, **R5 is fully cleared** — the baseline is now 6, exactly R6's P20 backlog
     (multipart/stream/sse/throttle/hooks/input → `Scalar | AtLeastOne`).
+-   **P18 (store verbs) + P17 (`ttl`)** the house store contracts speak whole words:
+    `RedisDriver.del`→`delete` and `StitchStore`/`RedisDriver` `incr`→**`increment`**, across
+    core `memoryStore`/`vaultView`, `@stitchapi/redis` (all three adapters), `@stitchapi/deno-kv`,
+    `@stitchapi/cloudflare-kv`, `@stitchapi/react-native` (and `@stitchapi/expo`, which reuses it),
+    the `nestBorrowStore` bridge, and `verifyStoreContract`. `ttl` (ms) is now optional on
+    **both** verbs — absent means no expiry / no window — so the parameter's optionality no
+    longer differs between `set` and `increment`. The upstream mirrors (`IoredisLike`,
+    `NodeRedisLike`, `UpstashLike`) keep `del`, and the Lua keeps `INCR`, per P18's first half.
+    **No `@deprecated` aliases** — a deliberate hard break on the `rc` channel, where
+    [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) does not impose one; and
+    both are consumer-implemented contracts, which could not have carried an alias in any
+    case. (`deno-kv`'s `maxIncrRetries` is untouched here; it is a P4 `max`-prefix
+    violation and renames in that slice.)
+-   **P4 + P12/P14/P20 (`deno-kv` CAS retries)** `maxIncrRetries` — the last `max`-prefixed
+    count cap — becomes `retry?: number | AtLeastOne<DenoKvRetryOptions>`, reusing core's
+    `retry` vocabulary for the same concept instead of a second private spelling:
+    `attempts` (P4 bare noun, total incl. the first), plus a `backoff` envelope for a curve
+    the loop never had (folded to `{ curve, base, max }` in the same sweep as core's). A bare number is the P12 dominant-field shorthand
+    (`retry: 20` ≡ `{ attempts: 20 }`), and the object form is `AtLeastOne`, so `{}` is a
+    compile error (P20). No `on`: a CAS loop retries exactly one condition. Durations parse
+    through core's `parseDuration`, now **exported** so a peer package satisfies P17's "one
+    shared parser" instead of mirroring the grammar. Backoff stays **off by default** — the
+    hot re-read is today's behaviour and flipping it is a separate call.
+-   **P24 (backoff envelope) + P2 (`backoff` disambiguated)** `RetryOptions`'
+    `backoff`/`baseDelay`/`maxDelay` — three flat members configuring one concept, two of them
+    sharing a `Delay` suffix — fold into `backoff?: BackoffCurve | AtLeastOne<BackoffOptions>`
+    (`{ curve, base, max }`). A bare curve is the P12 dominant-field shorthand
+    (`backoff: 'fixed'` ≡ `{ curve: 'fixed' }`), folded by a **nested** `envelope()` call in
+    `expandShorthand` so the string never reaches `__config` (P0); `{}` is a compile error (P20).
+    Inside the envelope the bounds need no suffix (P1), and `max` bounds a **magnitude**, the case
+    P4 leaves it. In the same pass `ReconnectOptions.backoff` — a flat duration, not a curve —
+    becomes **`delay`**, so `backoff` names one concept with one value-space across the surface.
+    Genuine breaking flat→envelope, no alias (P19, `rc` channel).
+-   **P24 (refresh envelope)** the auth strategies' `refresh`-prefixed flat members fold into one
+    envelope (genuine breaking flat→envelope, no alias): `OAuth2Options.refreshOn`/`refreshSkew` →
+    `refresh?: StatusMatch | AtLeastOne<OAuth2RefreshOptions>` (`{ on, skew }`), and
+    `CookieSessionOptions.refreshOn`/`refreshWhen` → `refresh?: StatusMatch | AtLeastOne<CookieSessionRefreshOptions>`
+    (`{ on, when }`). A bare `StatusMatch` is the P12 dominant-field shorthand for `{ on }`
+    (`refresh: 401` ≡ `refresh: { on: [401] }`); a shared `normalizeRefresh` collapses the union to
+    the envelope once at construction, and every internal read goes through `refresh.on` (via the
+    shared `acceptsStatus` matcher) / `refresh.skew` / `refresh.when`.
+-   **P24 (Sentry capture)** `@stitchapi/sentry`'s `SentrySinkOptions.captureErrors`+`captureDrift`
+    (shared `capture` prefix) fold into `capture?: boolean | AtLeastOne<SentryCaptureOptions>` —
+    `capture: true`/omitted keeps the defaults (errors on, drift off), `false` disables both, and the
+    `{ errors, drift }` envelope sets them independently. Genuine breaking flat→envelope, no alias.
+-   **P24 (nest seam)** `@stitchapi/nest`'s `StitchFeatureOptions` feature-seam facets (the `seam`
+    config slot + `seamToken`, sharing the "seam" prefix) fold into
+    `seam?: AtLeastOne<NestFeatureSeamOptions>` (`{ config?: AtLeastOne<SeamConfig>, token? }`).
+    `forFeature`/`forFeatureScoped` read `seam.config` / `seam.token`. Genuine breaking
+    flat→envelope, no alias.
+-   **P20/P12/P13 (empty-object rejection)** the five bare all-optional `StitchConfig` slots R6 flagged
+    now type their object form so `{}` is a **compile error**: `hooks?: AtLeastOne<Hooks>` and
+    `input?: AtLeastOne<InputSchemas>` (no scalar); `multipart?: MultipartNesting | AtLeastOne<MultipartOptions>`
+    and `stream?: StreamDecode | AtLeastOne<StreamOptions>` (P12 dominant-field scalar); and
+    `sse?: boolean | AtLeastOne<SseOptions>` (P13 toggle). `expandShorthand` folds each scalar into its
+    envelope at compose time (`multipart: 'dot'` → `{ nesting }`, `stream: 'ndjson'` → `{ decode }`,
+    `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
+    only ever see the object form. **R6 clears** — the baseline is now **0**.
 
 ## 7. Enforcement
 

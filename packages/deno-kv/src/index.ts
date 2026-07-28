@@ -16,7 +16,13 @@
 //
 // Compliance with the store contract is proven against `verifyStoreContract` from
 // `stitchapi/testing` (see test/conformance.spec.ts).
-import type { StitchStore } from 'stitchapi';
+import { parseDuration } from 'stitchapi';
+import type {
+    AtLeastOne,
+    BackoffCurve,
+    BackoffOptions,
+    StitchStore,
+} from 'stitchapi';
 
 // ---------------------------------------------------------------------------
 // the Deno KV surface
@@ -85,12 +91,14 @@ export interface DenoKvLike {
 // ---------------------------------------------------------------------------
 
 /**
- * What `incr` stores under a counter key: the running count `n` plus the window's
- * absolute `deadline` (epoch ms). We keep the deadline in the VALUE — rather than
- * relying on the key's `expireIn` alone — because Deno KV's `set` replaces the
- * whole entry (clearing any prior expiry) and `get` never exposes the remaining
- * TTL. Storing the deadline lets each `incr` re-derive the correct `expireIn` on
- * every write, so a fixed window's expiry survives later increments intact.
+ * What `increment` stores under a counter key: the running count `n` plus the window's
+ * absolute `deadline` (epoch ms; `0` = no window — the counter never expires,
+ * mirroring `memoryStore`'s "0 marks live forever"). We keep the deadline in the
+ * VALUE — rather than relying on the key's `expireIn` alone — because Deno KV's
+ * `set` replaces the whole entry (clearing any prior expiry) and `get` never
+ * exposes the remaining TTL. Storing the deadline lets each `increment` re-derive the
+ * correct `expireIn` on every write, so a fixed window's expiry survives later
+ * increments intact.
  */
 interface CounterWindow {
     n: number;
@@ -106,9 +114,52 @@ function asWindow(value: unknown): CounterWindow | null {
         : null;
 }
 
+// Delay before retry #n (1-based) under a backoff curve, clamped to `max`. Mirrors
+// core's `RetryOptions` curves: `fixed` holds `base`, `expo` doubles it, and
+// `expo-jitter` picks uniformly in `[0, expo]` (full jitter) so a thundering herd of
+// isolates doesn't re-collide in lockstep on the same tick.
+function backoffDelay(
+    curve: 'expo' | 'expo-jitter' | 'fixed',
+    n: number,
+    base: number,
+    max: number,
+): number {
+    if (curve === 'fixed') return Math.min(base, max);
+    const expo = Math.min(base * 2 ** (n - 1), max);
+    return curve === 'expo' ? expo : Math.random() * expo;
+}
+
+const sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
 // ---------------------------------------------------------------------------
 // the store
 // ---------------------------------------------------------------------------
+
+/**
+ * How {@link StitchStore.increment} rides out a lost compare-and-set race. The
+ * subset of core's `RetryOptions` that means anything to a CAS loop: there is no
+ * `on`, because the loop retries exactly one condition — another isolate committed
+ * first — and nothing else.
+ */
+export interface DenoKvRetryOptions {
+    /**
+     * Total attempts including the first (default `100`). Each attempt re-reads the
+     * current value, so the loop only spins under genuine contention. With N callers
+     * racing one counter, the unluckiest needs up to N−1 retries (each round exactly
+     * one commit wins, so contention drains one caller at a time); the default
+     * comfortably covers any realistic per-key concurrency on a single window.
+     */
+    attempts?: number;
+    /**
+     * Delay policy between attempts, the same envelope core's `retry.backoff` uses — a
+     * bare curve is the shorthand for `{ curve }`. Omitted (the default) means **no
+     * delay**: the loop re-reads immediately, which is the tightest path to a win when
+     * contention is brief. Set a curve when many isolates hammer one key and the hot spin
+     * costs more KV reads than it saves. `base` defaults to 5ms, `max` to 250ms.
+     */
+    backoff?: BackoffCurve | AtLeastOne<BackoffOptions>;
+}
 
 /** Options for {@link denoKvStore}. */
 export interface DenoKvStoreOptions {
@@ -120,14 +171,11 @@ export interface DenoKvStoreOptions {
      */
     keyPrefix?: string;
     /**
-     * How many times {@link StitchStore.incr} retries a lost compare-and-set race
-     * before giving up. Each retry re-reads the current value, so the loop only
-     * spins under genuine contention. With N callers racing one counter, the
-     * unluckiest needs up to N−1 retries (each round exactly one commit wins, so
-     * contention drains one caller at a time); the default `100` therefore
-     * comfortably covers any realistic per-key concurrency on a single window.
+     * Compare-and-set retry policy for {@link StitchStore.increment}. A bare number
+     * is the attempts shorthand (`retry: 20` ≡ `retry: { attempts: 20 }`); the
+     * envelope adds a backoff curve. Default `{ attempts: 100 }` with no delay.
      */
-    maxIncrRetries?: number;
+    retry?: number | AtLeastOne<DenoKvRetryOptions>;
 }
 
 /**
@@ -144,7 +192,7 @@ export interface DenoKvStoreOptions {
  * Values round-trip through a JSON envelope so the store never wrestles with Deno
  * KV's structured-clone edge cases (BigInt, undefined-vs-null) — it persists the
  * exact bytes the contract handed it. The throttle's counter uses an atomic
- * compare-and-set loop (see {@link StitchStore.incr}). The store owns no
+ * compare-and-set loop (see {@link StitchStore.increment}). The store owns no
  * connection — `close()` delegates to the handle, so the caller decides when KV
  * shuts down.
  */
@@ -153,7 +201,20 @@ export function denoKvStore(
     opts: DenoKvStoreOptions = {},
 ): StitchStore {
     const prefix = opts.keyPrefix;
-    const maxRetries = opts.maxIncrRetries ?? 100;
+    // P12 dominant-field shorthand: a bare number is `{ attempts }`. Normalized once
+    // here so the loop below only ever reads the envelope.
+    const retry: DenoKvRetryOptions =
+        typeof opts.retry === 'number'
+            ? { attempts: opts.retry }
+            : (opts.retry ?? {});
+    const attempts = retry.attempts ?? 100;
+    // Same nested fold core does (P12): a bare curve is `{ curve }`.
+    const b = retry.backoff;
+    const curve: BackoffOptions | undefined =
+        typeof b === 'string' ? { curve: b } : b;
+    const backoff = curve?.curve ?? (curve ? 'expo-jitter' : undefined);
+    const base = parseDuration(curve?.base) ?? 5;
+    const max = parseDuration(curve?.max) ?? 250;
     // String key → Deno KV array key. With a prefix it's a two-segment key so the
     // namespace is a real KV sub-range; without, a flat one-segment key.
     const k = (key: string): DenoKvKey =>
@@ -163,7 +224,7 @@ export function denoKvStore(
         async get(key) {
             const { value } = await kv.get(k(key));
             if (value == null) return undefined;
-            // A counter written by `incr` is a `{ n, deadline }` envelope; the
+            // A counter written by `increment` is a `{ n, deadline }` envelope; the
             // contract's cross-reads of a counter (e.g. core's cache-generation
             // number) expect the plain count, so unwrap it back to `n`. A legacy
             // bare-number counter from before this envelope is returned as-is.
@@ -189,12 +250,12 @@ export function denoKvStore(
                 ttl != null && ttl > 0 ? { expireIn: ttl } : undefined;
             await kv.set(k(key), JSON.stringify(value), options);
         },
-        async incr(key, ttl) {
+        async increment(key, ttl) {
             // Atomic FIXED-window counter via compare-and-set. Read the current
             // value + its versionstamp, then commit the next state guarded by a
             // `check` on that versionstamp: if another isolate raced us, the
             // versionstamp moved, the commit returns `ok: false`, and we re-read
-            // and retry — so N concurrent incrs net exactly +N (the contract).
+            // and retry — so N concurrent increments net exactly +N (the contract).
             //
             // The window is a `{ n, deadline }` envelope, NOT a bare number,
             // because Deno KV's `set` replaces the whole entry — including its
@@ -206,21 +267,33 @@ export function denoKvStore(
             // FIRST increment and never extended, and re-derive `expireIn` from
             // it on every commit so the fixed window always expires on time.
             const kk = k(key);
-            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            for (let attempt = 1; attempt <= attempts; attempt++) {
                 const entry = await kv.get(kk);
                 const now = Date.now();
                 const prev = asWindow(entry.value);
                 // A window past its deadline (or an absent / legacy bare-number
                 // value) starts a fresh window at 1; an old bare counter thus
-                // self-heals into the envelope on its next incr.
-                const live = prev != null && prev.deadline > now;
-                const deadline = live ? prev.deadline : now + ttl;
+                // self-heals into the envelope on its next increment. A `deadline` of
+                // 0 marks a windowless counter — live forever.
+                const live =
+                    prev != null &&
+                    (prev.deadline === 0 || prev.deadline > now);
+                // Absent (or non-positive) `ttl` = no window: the counter never
+                // expires — `deadline: 0`, the same "live forever" marker
+                // `memoryStore` uses. A live counter keeps its original
+                // deadline, windowed or not, regardless of this call's `ttl`.
+                const windowed = ttl != null && ttl > 0;
+                const deadline = live
+                    ? prev.deadline
+                    : windowed
+                      ? now + ttl
+                      : 0;
                 const n = (live ? prev.n : 0) + 1;
                 // Deno KV rejects `expireIn` of 0/negative; keep it ≥ 1 while the
-                // deadline is in the future. `ttl <= 0` means "no window" — write
-                // without an expiry (matching `set`'s no-TTL path).
+                // deadline is in the future. A windowless counter (deadline 0)
+                // writes without an expiry (matching `set`'s no-TTL path).
                 const options =
-                    ttl > 0
+                    deadline > 0
                         ? { expireIn: Math.max(1, deadline - now) }
                         : undefined;
                 const res = await kv
@@ -229,9 +302,15 @@ export function denoKvStore(
                     .set(kk, { n, deadline }, options)
                     .commit();
                 if (res.ok) return n;
+                // Lost the race. Pause only when a curve is configured — the default
+                // re-reads immediately — and never after the final attempt, which
+                // would just delay the throw.
+                if (backoff && attempt < attempts) {
+                    await sleep(backoffDelay(backoff, attempt, base, max));
+                }
             }
             throw new Error(
-                `@stitchapi/deno-kv: incr(${key}) lost ${maxRetries + 1} compare-and-set races`,
+                `@stitchapi/deno-kv: increment(${key}) lost ${attempts} compare-and-set races`,
             );
         },
     };

@@ -38,10 +38,13 @@ expiry, all behind the capability boundary.
 `env('CLIENT_ID')` — so the credentials are read at call time and never
 committed. `scope` is an optional space-delimited scope string.
 
-The token is cached and auto-refreshed: `refreshSkew` (default `30_000`)
-refreshes it that many milliseconds before expiry, so it is never used
-mid-flight, and `refreshOn` (default `[401]`) lists the statuses that mean the
-token was rejected and force a fresh fetch plus retry.
+The token is cached and auto-refreshed through one `refresh` envelope
+(CONTRACT.md P24). A bare `StatusMatch` — a status, a list, or a predicate — is
+shorthand for `refresh: { on }`: the status(es) that mean the token was rejected
+and force a fresh fetch plus retry (default `[401]`, and `refresh: 419` ≡
+`refresh: { on: [419] }`). Reach `refresh.skew` — how many milliseconds before
+expiry to refresh so the token is never used mid-flight (default `30_000`) —
+through the envelope form: `refresh: { skew: '1m' }`.
 
 Give two stitches the same `key` plus a shared `store` and one token serves them
 all — across stitches and across workers, surviving restarts. See

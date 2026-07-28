@@ -23,8 +23,7 @@ const transport = null as unknown as MessageTransport;
 const ch = channel(transport, { allowedOrigins: ['https://x.test'] });
 
 // 1) request: result inferred from `opts.output`, call argument from `opts.input`.
-const sum = ch.request({
-    type: 'sum',
+const sum = ch.request('sum', {
     input: { body: z.object({ a: z.number(), b: z.number() }) },
     output: z.object({ total: z.number() }),
 });
@@ -36,12 +35,11 @@ expectError(sum({ body: { a: 1 } })); // missing `b`
 expectError(sum({ body: { a: 1, b: 'two' } })); // `b` must be a number
 
 // 2) request with NO output schema → result is unknown (no contract pinned); arg stays optional.
-const bare = ch.request({ type: 'ping' });
+const bare = ch.request('ping');
 expectType<unknown>(output(bare));
 
 // 3) emit: result is void; call argument inferred from `opts.input`.
-const log = ch.emit({
-    type: 'log',
+const log = ch.emit('log', {
     input: { body: z.object({ msg: z.string() }) },
 });
 expectType<void>(null as unknown as Result<typeof log>);
@@ -49,16 +47,15 @@ expectType<{ msg: string }>(null as unknown as CallArg<typeof log>['body']);
 expectError(log({ body: { msg: 123 } })); // msg must be a string
 
 // 4) events: result is the COLLECTED PAYLOAD ARRAY, typed from `opts.output`.
-const ticks = ch.events({
-    type: 'tick',
+const ticks = ch.events('tick', {
     output: z.object({ n: z.number() }),
 });
 expectType<{ n: number }[]>(output(ticks)); // await ⇒ payload[] (no required arg → output() is fine)
 
 // 5) events with NO output schema → unknown[] (the loose collected array).
-const loose = ch.events({ type: 'evt' });
+const loose = ch.events('evt');
 expectType<unknown[]>(output(loose));
 
 // 6) a no-input request keeps a fully-OPTIONAL call argument (backward-compatible with StitchInput).
-const noInput = ch.request({ type: 'noop' });
+const noInput = ch.request('noop');
 expectAssignable<CallArg<typeof noInput>>(undefined);

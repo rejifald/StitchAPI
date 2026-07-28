@@ -2,7 +2,7 @@
 // `open` map, and prompt abort during retry/reconnect backoff + throttle waits. These are leak
 // regressions, not behaviour changes — each test asserts a bound or a prompt cancellation that the
 // pre-fix code violated (an ever-growing Map, or a backoff sleep that ignored the caller signal).
-import { otlpTrace, stitch } from '../../src';
+import { otlpSink, stitch } from '../../src';
 import { OPEN_SPANS } from '../../src/otlp';
 import { THROTTLE_STATES, createThrottle } from '../../src/resilience';
 import {
@@ -49,10 +49,10 @@ test('store throttle: old rate-window keys do not accumulate over many windows',
             }
             return inner.set(k, v, ttl);
         },
-        async incr(k: string, ttl: number): Promise<number> {
+        async increment(k: string, ttl: number): Promise<number> {
             liveKeys.add(k);
             seen.add(k);
-            return inner.incr(k, ttl);
+            return inner.increment(k, ttl);
         },
     };
 
@@ -73,7 +73,7 @@ test('store throttle: old rate-window keys do not accumulate over many windows',
 });
 
 // ── 1a'. memoryStore sweeps expired entries on write (no unbounded growth) ───
-// The default store evicts a key lazily only on a get/incr of THAT key. Many short-TTL keys that
+// The default store evicts a key lazily only on a get/increment of THAT key. Many short-TTL keys that
 // are never read again must still be reclaimed: a write triggers a bounded opportunistic sweep.
 test('memoryStore sweeps expired keys on write so it stays bounded', async () => {
     const store = memoryStore();
@@ -140,11 +140,11 @@ test('in-process throttle: a key with a queued waiter is not dropped early', asy
 });
 
 // ── 2. OTLP sink drains its `open` map after a completed run ─────────────────
-// otlpTrace stacks an in-flight span per run key; on `done` it popped the span but left the empty
+// otlpSink stacks an in-flight span per run key; on `done` it popped the span but left the empty
 // stack as a Map entry, leaking one entry per unique run id. The fix deletes the entry when the
 // stack empties.
 test('otlp sink: the internal open-span map is empty after a completed run', () => {
-    const sink = otlpTrace({
+    const sink = otlpSink({
         exporter: {
             export() {
                 /* drop spans — the test only inspects the internal map */
@@ -201,7 +201,11 @@ test('abort during a retry backoff rejects promptly (well under the backoff dela
         baseUrl: 'http://test',
         path: '/always-503',
         adapter: always503,
-        retry: { attempts: 5, on: [503], backoff: 'fixed', baseMs: 1000 },
+        retry: {
+            attempts: 5,
+            on: [503],
+            backoff: { curve: 'fixed', base: 1000 },
+        },
     });
 
     const ac = new AbortController();
@@ -235,7 +239,11 @@ test('an already-aborted signal rejects without sleeping the backoff', async () 
         baseUrl: 'http://test',
         path: '/x',
         adapter: always503,
-        retry: { attempts: 5, on: [503], backoff: 'fixed', baseMs: 1000 },
+        retry: {
+            attempts: 5,
+            on: [503],
+            backoff: { curve: 'fixed', base: 1000 },
+        },
     });
 
     const ac = new AbortController();

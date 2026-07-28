@@ -2,7 +2,7 @@
 // throttle + sessions through real stitches (integration), but three building blocks are only ever
 // exercised indirectly:
 //   memoryStore   — the bare key/value contract (get-missing, set/get, set(undefined) deletes,
-//                   incr atomicity, close clears);
+//                   increment atomicity, close clears);
 //   vaultView     — the namespaced lens that prefixes every key and delegates close to the backend;
 //   chainThrottle — composing gates: acquire each in order (summing waited), release in REVERSE,
 //                   threading acquire options to every gate.
@@ -25,11 +25,11 @@ describe('memoryStore (key/value contract)', () => {
         expect(await s.get('k')).toBeUndefined();
     });
 
-    test('incr starts at 1 and increments the same key atomically', async () => {
+    test('increment starts at 1 and increments the same key atomically', async () => {
         const s = memoryStore();
-        expect(await s.incr('c', 1000)).toBe(1);
-        expect(await s.incr('c', 1000)).toBe(2);
-        expect(await s.incr('c', 1000)).toBe(3);
+        expect(await s.increment('c', 1000)).toBe(1);
+        expect(await s.increment('c', 1000)).toBe(2);
+        expect(await s.increment('c', 1000)).toBe(3);
     });
 
     test('close() clears all state', async () => {
@@ -48,7 +48,7 @@ describe('vaultView (namespaced lens)', () => {
         expect(await backend.get('vault:token')).toBe('abc'); // stored under the prefix
         expect(await backend.get('token')).toBeUndefined(); // not under the bare key
         expect(await vault.get('token')).toBe('abc'); // read back through the lens
-        await vault.incr('count', 1000);
+        await vault.increment('count', 1000);
         expect(await backend.get('vault:count')).toBe(1);
     });
 
@@ -64,7 +64,7 @@ describe('vaultView (namespaced lens)', () => {
         const backend: StitchStore = {
             get: async () => undefined,
             set: async () => undefined,
-            incr: async () => 1,
+            increment: async () => 1,
             close: async () => {
                 closed = true;
             },
@@ -77,7 +77,7 @@ describe('vaultView (namespaced lens)', () => {
         const backend: StitchStore = {
             get: async () => undefined,
             set: async () => undefined,
-            incr: async () => 1,
+            increment: async () => 1,
         };
         expect('close' in vaultView(backend)).toBe(false);
     });

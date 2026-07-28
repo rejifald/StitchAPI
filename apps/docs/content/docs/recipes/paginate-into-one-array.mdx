@@ -41,7 +41,7 @@ const users = (await allUsers()) as unknown[];
 the [input](/docs/reference/config-types) for the next page, merged over the
 original call — set only what changes. Return `undefined` to stop. `items`
 selects the array to aggregate from each page (after [pick](/docs/guides/data/pick)).
-`max` caps the page count as a safety net (default `50`). Auth, retry, and
+`pages` caps the page count as a safety net (default `50`). Auth, retry, and
 throttle apply per page, not once for the whole run. Without an
 [`output` schema](/docs/guides/validation/validation) the aggregated result is
 typed `unknown[]`, hence the cast — add a schema to type the rows.

@@ -70,7 +70,7 @@ const KB = 1024;
 // (#369/#370), and variadic argument lists (#371) — core-entry surface, so it lifts
 // the whole entry more than `import { stitch }`, which tree-shakes it away. (2) The
 // meta-contract sweep (#352, P3–P20) renamed/de-suffixed public fields and co-emits
-// the old names as @deprecated runtime aliases (throttle.scope→pool, key→keyOf;
+// the old names as @deprecated runtime aliases (key→keyOf;
 // value→data on result envelopes; *Ms duration de-suffixing) — shared code on
 // stitch's own path. Together they reach ~23.13 / ~18.61 KB gzip (+~0.39 / +~0.27
 // since #362). Neither wave can move to a subpath — composition and the renamed

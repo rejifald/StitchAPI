@@ -268,7 +268,7 @@ describe('generation helpers', () => {
         expect(cacheStitchId({})).toBe('stitch');
     });
 
-    test('bumpCacheGeneration incr-s the cache-wide and per-stitch counters', async () => {
+    test('bumpCacheGeneration increments the cache-wide and per-stitch counters', async () => {
         const store = memoryStore();
         await bumpCacheGeneration(store);
         await bumpCacheGeneration(store);

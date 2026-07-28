@@ -50,7 +50,11 @@ test('timeout.total caps the whole retry/backoff loop, not just one attempt', as
     const call = stitch({
         baseUrl: server.url,
         path: '/always-503',
-        retry: { attempts: 5, on: [503], backoff: 'fixed', baseMs: 300 },
+        retry: {
+            attempts: 5,
+            on: [503],
+            backoff: { curve: 'fixed', base: 300 },
+        },
         timeout: { total: 400 },
     });
 
@@ -71,13 +75,13 @@ test('timeout.total caps the whole retry/backoff loop, not just one attempt', as
 // at ~400ms.
 test('timeout.total is enforced alongside timeout.perAttempt across retries', async () => {
     server.route('GET', '/glacial', {
-        delayMs: 5000,
+        delay: 5000,
         body: { ok: true },
     });
     const call = stitch({
         baseUrl: server.url,
         path: '/glacial',
-        retry: { attempts: 5, backoff: 'fixed', baseMs: 50 },
+        retry: { attempts: 5, backoff: { curve: 'fixed', base: 50 } },
         timeout: { total: 400, perAttempt: 350 },
     });
 
@@ -123,7 +127,7 @@ test('timeout.total caps a throttle (rate) wait', async () => {
 // budget must cut it to a few pages instead of grinding through `max` (50) pages.
 test('timeout.total bounds a paginated call across pages', async () => {
     server.route('GET', '/feed', {
-        delayMs: 150, // each page costs ~150ms
+        delay: 150, // each page costs ~150ms
         body: (i: number) => ({ items: [i], cursor: i + 1 }),
     });
     const call = stitch({
@@ -153,7 +157,7 @@ test('timeout.total bounds a paginated call across pages', async () => {
 // otherwise a hung login would block the whole session setup. A glacial endpoint
 // under a 300ms total must reject promptly, not hang for the server's 5s.
 test('timeout.total bounds executeRaw', async () => {
-    server.route('GET', '/raw-glacial', { delayMs: 5000, body: { ok: true } });
+    server.route('GET', '/raw-glacial', { delay: 5000, body: { ok: true } });
     const call = stitch({
         baseUrl: server.url,
         path: '/raw-glacial',

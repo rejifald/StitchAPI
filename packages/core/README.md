@@ -245,15 +245,15 @@ for await (const ev of getUsers.stream()) {
     switch (ev.type) {
         case 'start': // { name, method, url, input }
             break;
-        case 'progress': // { phase: 'auth'|'request'|'throttled'|'retry'|'paginate', attempt, waitedMs? }
+        case 'progress': // { phase: 'auth'|'request'|'throttled'|'retry'|'paginate', attempt, waited? }
             break;
         case 'drift': // { finding: { level: 'error'|'warn'|'info', path, change } }
             break;
-        case 'result': // { value, status, attempts }
+        case 'result': // { data, status, attempts }
             break;
         case 'error': // { message, status?, attempts }
             break;
-        case 'done': // { ok, ms, attempts }
+        case 'done': // { ok, elapsed, attempts }
             break;
     }
 }
@@ -392,13 +392,13 @@ const listUsers = stitch({
     baseUrl: 'https://demo.stitchapi.dev',
     path: '/users',
     retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
-    throttle: { rate: '1/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '1/s', concurrency: 2, pool: 'host' },
     timeout: { total: '30s', perAttempt: '10s' },
 });
 ```
 
--   **`throttle` is proactive** - a rate (`'1/s'`) and a concurrency cap that keep you under a vendor's limit before it bites; `scope: 'host'` shares one limiter across every stitch hitting the same host.
--   **`retry` is reactive** - `attempts` is the total including the first; retried statuses default to `[429, 502, 503, 504]`; backoff is `'expo'` / `'expo-jitter'` / `'fixed'` with `baseMs` / `maxMs` clamps; `respectRetryAfter` honors the `Retry-After` header (delta-seconds or HTTP-date).
+-   **`throttle` is proactive** - a rate (`'1/s'`) and a concurrency cap that keep you under a vendor's limit before it bites; `pool: 'host'` shares one limiter across every stitch hitting the same host.
+-   **`retry` is reactive** - `attempts` is the total including the first; retried statuses default to `[429, 502, 503, 504]`; backoff is `'expo'` / `'expo-jitter'` / `'fixed'`, with `backoff.base` / `backoff.max` bounds; `respectRetryAfter` honors the `Retry-After` header (delta-seconds or HTTP-date).
 -   **`timeout` aborts** - `total` and/or `perAttempt`, as milliseconds or `'30s'`-style strings, enforced with a real `AbortSignal` instead of a request left hanging.
 
 Throttle waits and retries emit `throttled` / `retry` events on the stream, so the waiting is visible in the trace for free.
@@ -407,17 +407,17 @@ Throttle waits and retries emit `throttled` / `retry` events on the stream, so t
 
 Three more knobs round out the resilience set:
 
--   **`circuit`** fast-fails a dependency that is already down — after `failureThreshold` consecutive failures the breaker opens for `cooldownMs`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
+-   **`circuit`** fast-fails a dependency that is already down — after `failures` consecutive failures the breaker opens for `cooldown`, then allows a half-open trial. A repeatedly-failing dependency stops eating your latency budget (and throws `STITCH_CIRCUIT_OPEN` while open):
 
     ```ts
-    circuit: { failureThreshold: 5, cooldownMs: 30_000 }
+    circuit: { failures: 5, cooldown: 30_000 }
     ```
 
 -   **`idempotency`** injects a stable `Idempotency-Key` header on writes, so a safe retry can't duplicate a side effect:
 
     ```ts
     idempotency: {
-        key: (input) => input.body.requestId;
+        keyOf: (input) => input.body.requestId;
     }
     ```
 
@@ -427,7 +427,7 @@ Three more knobs round out the resilience set:
     acceptStatus: [404]; // resource-gone → fall back, no try/catch on the happy path
     ```
 
-When an _outer_ gate owns backoff (its own `Retry-After` budget, a DB-persisted limiter), `rateLimit: { delegate: true }` surfaces a `RateLimitError` (carrying `retryAfterMs`) instead of retrying internally — so StitchAPI's retry + throttle don't double-count against it.
+When an _outer_ gate owns backoff (its own `Retry-After` budget, a DB-persisted limiter), `rateLimit: { delegate: true }` surfaces a `RateLimitError` (carrying `retryAfter`) instead of retrying internally — so StitchAPI's retry + throttle don't double-count against it.
 
 ## Caching
 
@@ -455,7 +455,7 @@ const listAnnouncements = stitch({
         ttl: '1h',
         scope: 'app', // public, unauthenticated data → share one entry across callers
         vary: ['accept-language'], // request headers that vary the response
-        maxEntries: 500, // in-process LRU cap (default 1000)
+        entries: 500, // in-process LRU cap (default 1000)
     },
 });
 ```
@@ -477,7 +477,7 @@ const getUser = stitch({
 });
 ```
 
-**OAuth2 client credentials** — `oauth2()` POSTs the token endpoint (form-encoded `client_credentials` grant), caches the access token in the [store](#pluggable-state-store) with the TTL from `expires_in`, refreshes it `refreshSkewMs` (default 30s) before expiry, and attaches it as `Authorization: Bearer …`. A rejected token (status in `refreshOn`, default `[401]`) forces a fresh fetch and an uncounted re-run of the attempt:
+**OAuth2 client credentials** — `oauth2()` POSTs the token endpoint (form-encoded `client_credentials` grant), caches the access token in the [store](#pluggable-state-store) with the TTL from `expires_in`, refreshes it `refresh.skew` (default 30s) before expiry, and attaches it as `Authorization: Bearer …`. A rejected token (status matched by `refresh`, default `[401]`) forces a fresh fetch and an uncounted re-run of the attempt:
 
 ```ts
 import { env, oauth2, stitch } from 'stitchapi';
@@ -520,7 +520,7 @@ const listUsers = stitch({
                 password: secretsFile('APP_PASS')(),
             },
         }),
-        refreshOn: [401], // the wall → re-login, then retry (default)
+        refresh: [401], // the wall → re-login, then retry (default)
     }),
 });
 
@@ -535,8 +535,9 @@ A `200` that is really a login page is a soft wall — catch it with a content p
 auth: cookieSession({
     login: signIn,
     cookie: 'session_token',
-    refreshWhen: (res) =>
-        typeof res.body === 'string' && /log in/i.test(res.body),
+    refresh: {
+        when: (res) => typeof res.body === 'string' && /log in/i.test(res.body),
+    },
 });
 ```
 
@@ -550,8 +551,8 @@ Throttle counters and session/token state live behind one small seam — a `stor
 ```ts
 export interface StitchStore {
     get(key: string): Promise<unknown | undefined>;
-    set(key: string, value: unknown, ttlMs?: number): Promise<void>;
-    incr(key: string, ttlMs: number): Promise<number>; // atomic — rate windows
+    set(key: string, value: unknown, ttl?: number): Promise<void>;
+    increment(key: string, ttl: number): Promise<number>; // atomic — rate windows
 }
 ```
 
@@ -659,7 +660,7 @@ import { graphql } from 'stitchapi';
 
 const getUser = graphql({
     baseUrl: 'https://demo.stitchapi.dev',
-    query: 'query ($id: ID) { user(id: $id) { name } }',
+    document: 'query ($id: ID) { user(id: $id) { name } }',
 });
 
 const user = await getUser({ variables: { id: 1 } });
@@ -679,14 +680,14 @@ for await (const ev of events.stream()) {
 }
 ```
 
-`stream` is the raw sibling — `decode: 'bytes'` (default), `'lines'`, or `'ndjson'`:
+`stream` is the raw sibling — `decode: 'bytes'` (default), `'lines'`, or `'ndjson'`; the bare decoder is shorthand for the object (`stream: 'ndjson'` ≡ `stream: { decode: 'ndjson' }`):
 
 ```ts
 import { stream } from 'stitchapi/stream';
 
 const logs = stream({
     url: 'https://demo.stitchapi.dev/logs',
-    stream: { decode: 'ndjson' },
+    stream: 'ndjson',
 });
 
 for await (const ev of logs.stream()) {
@@ -759,7 +760,7 @@ Because every surface is just a stitch underneath, `auth`, `retry`, `throttle`, 
 
 ## Pagination
 
-One logical call follows pages until `next` returns `undefined` (or the `max` safety cap, default 50, is hit), aggregating items into a single result. Each page is a full request — auth, retry, and throttle apply per page — and each page emits a `paginate` progress event:
+One logical call follows pages until `next` returns `undefined` (or the `pages` safety cap, default 50, is hit), aggregating items into a single result. Each page is a full request — auth, retry, and throttle apply per page — and each page emits a `paginate` progress event:
 
 ```ts
 const listOrders = stitch({
@@ -820,8 +821,8 @@ One definition, more than one front door: the same stitch your code imports is c
 ```bash
 $ stitch run getUser --id 7 --query.expand roles
 {"type":"start","name":"getUser","method":"GET","url":"https://demo.stitchapi.dev/users/7?expand=roles",...}
-{"type":"result","value":{"id":7,"name":"Ada"},"status":200,"attempts":1,...}
-{"type":"done","ok":true,"ms":142,...}
+{"type":"result","data":{"id":7,"name":"Ada"},"status":200,"attempts":1,...}
+{"type":"done","ok":true,"elapsed":142,...}
 ```
 
 Flags map onto the stitch's single input object: a bare `--id 7` routes to `params` when `{id}` appears in the path (otherwise to `query`); `--body '<json>'` or `--body.<k> <v>` set the body; `--headers.<k> <v>` sets a header. The exit code is non-zero when an `error` event was seen. (`.ts` modules need a TypeScript-aware runner such as `tsx`; otherwise point `--module` at compiled JS.)

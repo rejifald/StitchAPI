@@ -8,7 +8,7 @@
 // its own status. The hooks fire ONCE per actual login attempt (inside the single-flight-guarded
 // `doRefresh`), never per coalesced waiter, and a throwing hook never crashes the call.
 //
-// These standalone stitches share ONE session across all callers, so they pass `scope: 'app'`
+// These standalone stitches share ONE session across all callers, so they pass `tenancy: 'app'`
 // explicitly — the fail-closed default `'principal'` would throw (no seam binds a principal).
 import {
     type AuthFailureResult,
@@ -73,7 +73,7 @@ test('onRefresh fires with { ok: true, status: 200 } after a successful cold log
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onRefresh: (r) => {
                 refreshes.push(r);
             },
@@ -94,7 +94,7 @@ test('onRefresh fires ONCE (not per-waiter) under concurrent cold callers sharin
         // Hold the first login in flight long enough that every concurrent cold
         // caller has already taken the cache-miss branch — making the race
         // deterministic, the same trick the single-flight token test uses.
-        delayMs: 50,
+        delay: 50,
         setCookie: { name: 'sid', value: 'ABC' },
         body: { ok: true },
     });
@@ -112,7 +112,7 @@ test('onRefresh fires ONCE (not per-waiter) under concurrent cold callers sharin
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onRefresh: () => {
                 refreshCount++;
             },
@@ -129,7 +129,7 @@ test('onRefresh fires ONCE (not per-waiter) under concurrent cold callers sharin
 
 test("onAuthFailure fires category 'unauthenticated' when the login returns 401 and sets no cookie", async () => {
     // No setCookie + a 401 status: the login responded but captured nothing, and 401 is a
-    // `refreshOn` status → the host hears "the creds were rejected".
+    // `refresh` (`refresh.on`) status → the host hears "the creds were rejected".
     server.route('POST', '/login', {
         statuses: [401],
         body: { error: 'bad creds' },
@@ -149,7 +149,7 @@ test("onAuthFailure fires category 'unauthenticated' when the login returns 401 
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onAuthFailure: (f) => {
                 failures.push(f);
             },
@@ -173,7 +173,7 @@ test("onAuthFailure fires category 'unauthenticated' when the login returns 401 
 test("onAuthFailure fires category 'rate-limited' + retryAfter when the login returns 429 with Retry-After", async () => {
     server.route('POST', '/login', {
         statuses: [429],
-        retryAfter: 7, // seconds → 7000ms
+        retryAfterSeconds: 7, // seconds → 7000ms
         body: { error: 'slow down' },
     });
     server.route('GET', '/data', {
@@ -190,7 +190,7 @@ test("onAuthFailure fires category 'rate-limited' + retryAfter when the login re
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onAuthFailure: (f) => {
                 failures.push(f);
             },
@@ -205,8 +205,6 @@ test("onAuthFailure fires category 'rate-limited' + retryAfter when the login re
             status: 429,
             category: 'rate-limited',
             retryAfter: 7000,
-            // The @deprecated `retryAfterMs` alias is co-set for back-compat (CONTRACT.md P17).
-            retryAfterMs: 7000,
         },
     ]);
 });
@@ -231,7 +229,7 @@ test("onAuthFailure fires category 'network' + error when the login stitch throw
             login: loginStitch(deadUrl),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onAuthFailure: (f) => {
                 failures.push(f);
             },
@@ -270,7 +268,7 @@ test('a throwing hook does not crash the stitch call', async () => {
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
             onRefresh: () => {
                 throw new Error('host bookkeeping blew up');
             },
@@ -300,7 +298,7 @@ test('hooks are absent → cookieSession behaves exactly as before (additive, no
             login: loginStitch(server.url),
             cookie: 'sid',
             loginInput,
-            scope: 'app',
+            tenancy: 'app',
         }),
     });
 

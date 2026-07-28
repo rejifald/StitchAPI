@@ -128,7 +128,7 @@ expectType<{ org: string | number }>(
 );
 expectError(asMember());
 const gqlMember = api.graphql({
-    query: 'query { ok }',
+    document: 'query { ok }',
     path: '/gql/{region}',
 });
 expectType<{ region: string | number }>(

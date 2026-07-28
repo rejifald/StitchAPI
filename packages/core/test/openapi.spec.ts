@@ -422,7 +422,7 @@ describe('toOpenApi security schemes', () => {
                 auth: cookieSession({
                     cookie: 'sid',
                     login: stitch('https://api.example.com/login'),
-                    scope: 'app',
+                    tenancy: 'app',
                 }),
             }),
         };

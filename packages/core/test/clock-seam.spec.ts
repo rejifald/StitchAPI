@@ -16,7 +16,11 @@ describe('manualClock drives retry backoff (ADR 0010)', () => {
             baseUrl: 'https://api.test',
             path: '/flaky',
             adapter: api,
-            retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 10_000 },
+            retry: {
+                attempts: 3,
+                on: [503],
+                backoff: { curve: 'fixed', base: 10_000 },
+            },
             clock,
         });
 
@@ -47,7 +51,11 @@ describe('manualClock drives retry backoff (ADR 0010)', () => {
             baseUrl: 'https://api.test',
             path: '/flaky',
             adapter: api,
-            retry: { attempts: 2, on: [503], backoff: 'fixed', baseMs: 10_000 },
+            retry: {
+                attempts: 2,
+                on: [503],
+                backoff: { curve: 'fixed', base: 10_000 },
+            },
             clock,
         });
 

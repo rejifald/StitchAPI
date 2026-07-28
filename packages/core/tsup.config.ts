@@ -31,6 +31,8 @@ export default defineConfig([
             // surfaces (ADR 0005 Decision 10) — subpath-only; the root entry bundles http alone
             'src/graphql.ts',
             'src/sse.ts',
+            // server-side SSE emission kit shared by the HTTP adapters → stitchapi/sse-emit
+            'src/sse-emit.ts',
             'src/stream.ts',
             'src/download.ts',
             // the postMessage surface (ADR 0009) → stitchapi/postmessage

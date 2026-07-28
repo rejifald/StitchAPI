@@ -30,17 +30,17 @@ types** — it runs on a small structural `KVNamespaceLike` surface that a real
 `KVNamespace` binding satisfies as-is, so there's no `@cloudflare/workers-types`
 dependency and a test double is a drop-in.
 
-## `incr` is unsupported on Workers KV — use a Durable Object
+## `increment` is unsupported on Workers KV — use a Durable Object
 
 > **Workers KV has no atomic increment.** It is last-write-wins `get`/`put`/
 > `delete` only, so a distributed throttle counter built on it would **undercount
 > under concurrency and silently break rate limiting**. Rather than do that,
-> `cloudflareKvStore(...).incr(...)` **throws** a clear, documented error.
+> `cloudflareKvStore(...).increment(...)` **throws** a clear, documented error.
 
 If you need a **distributed throttle**, back it with a
 **[Durable Object](https://developers.cloudflare.com/durable-objects/)**-based
 `StitchStore` instead: a Durable Object gives you the single-writer,
-strongly-consistent counter that an atomic `incr` requires. KV remains the right
+strongly-consistent counter that an atomic `increment` requires. KV remains the right
 backend for the rest — **cache and shared sessions/tokens** (`get`/`set`), which
 is the overwhelmingly common edge need.
 
@@ -49,9 +49,9 @@ is the overwhelmingly common edge need.
 KV's `expirationTtl` is in **seconds** and has a **60-second minimum**. The store
 reconciles this with the StitchStore contract's millisecond TTLs for you:
 
--   `ttlMs` → `Math.max(60, Math.ceil(ttlMs / 1000))` seconds.
+-   `ttl` (ms) → `Math.max(60, Math.ceil(ttl / 1000))` seconds.
 -   So a value asked to live for 5s lives for 60s (harmless for caches/sessions).
--   No `ttlMs` → no expiry.
+-   No `ttl` → no expiry (`ttl` is optional on both `set` and `increment`).
 
 `set(key, undefined)` deletes the key (the cache's delete, ADR 0003 §8). The store
 owns no connection, so there is no `close()`.

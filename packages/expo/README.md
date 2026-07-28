@@ -72,7 +72,7 @@ useReconnectRefetch(q, { netInfo: NetInfo });
 
 ## The secure store
 
-`expoSecureStore(SecureStore, options?)` reuses the AsyncStorage store's logic (JSON envelope, TTL, serialized atomic `incr`) over SecureStore's `*Async` methods. Engine keys are hex-encoded into SecureStore's restricted key charset (`[A-Za-z0-9._-]`). Keep individual values under SecureStore's ~2 KB limit — auth tokens fit comfortably. For non-secret throttle counters, pair it with the re-exported `asyncStorageStore`.
+`expoSecureStore(SecureStore, options?)` reuses the AsyncStorage store's logic (JSON envelope, TTL, serialized atomic `increment`) over SecureStore's `*Async` methods. Engine keys are hex-encoded into SecureStore's restricted key charset (`[A-Za-z0-9._-]`). Keep individual values under SecureStore's ~2 KB limit — auth tokens fit comfortably. For non-secret throttle counters, pair it with the re-exported `asyncStorageStore`.
 
 ## License
 

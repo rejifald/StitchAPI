@@ -88,13 +88,13 @@ function defaultEvents<TOut>(
         return [
             start,
             err,
-            { type: 'done', ok: false, elapsed: 0, ms: 0, attempts: 1, at },
+            { type: 'done', ok: false, elapsed: 0, attempts: 1, at },
         ];
     }
     return [
         start,
         { type: 'result', data: value as TOut, status, attempts: 1, at },
-        { type: 'done', ok: true, elapsed: 0, ms: 0, attempts: 1, at },
+        { type: 'done', ok: true, elapsed: 0, attempts: 1, at },
     ];
 }
 
@@ -191,7 +191,7 @@ function assemble<TOut, TIn>(
     Object.defineProperty(stub, 'cache', {
         value: {
             invalidate: () => Promise.resolve(),
-            key: () => Promise.resolve(undefined),
+            keyOf: () => Promise.resolve(undefined),
         },
     });
 

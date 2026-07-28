@@ -11,6 +11,105 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Added
+
+-   **`parseDuration` is now exported from `stitchapi`.** The one shared duration parser
+    (`5_000`, `'5s'`, `'1m'` → ms) that CONTRACT.md P17 requires every consumer-authored
+    duration to go through. It was already the parser core used internally; exporting it
+    lets a peer package accept `number | string` without mirroring the grammar and drifting
+    from it. Additive — nothing else changes.
+
+### Changed
+
+-   **BREAKING — `retry`'s backoff fields fold into one `backoff` envelope.**
+    `RetryOptions.backoff` / `baseDelay` / `maxDelay` were three flat members configuring a
+    single concept, two of them sharing a `Delay` suffix. They are now one envelope:
+
+    ```ts
+    // before
+    retry: { attempts: 3, backoff: 'expo', baseDelay: 200, maxDelay: '10s' }
+    // after
+    retry: { attempts: 3, backoff: { curve: 'expo', base: 200, max: '10s' } }
+    ```
+
+    `backoff: 'expo-jitter'` still works — a bare curve is the shorthand for `{ curve }`, so
+    the common case is unchanged. Only configs that set `baseDelay` or `maxDelay` need editing:
+    move them under `backoff` as `base` / `max`. Inside the envelope the `Delay` suffix is
+    redundant — there is only one thing there to measure. `backoff: {}` is a compile error;
+    pass a curve, or set at least one bound.
+
+    `@stitchapi/deno-kv`'s `retry.backoff` folds identically in the same release, so the
+    store's compare-and-set policy and a stitch's retry policy keep spelling the same
+    concept the same way.
+
+-   **BREAKING — `sse.reconnect.backoff` is renamed to `delay`.** It is a flat fallback
+    duration, while `retry.backoff` is a curve policy — one token meaning two things, and since
+    both accept strings, `backoff: 'expo'` and `backoff: '1s'` were indistinguishable by shape.
+    `backoff` now means "the curve policy" everywhere; the reconnect fallback is a `delay`:
+
+    ```ts
+    sse: { reconnect: { attempts: 5, delay: '1s' } }
+    ```
+
+    Behaviour is unchanged — a server-sent `retry:` still wins, and with no `delay` the stitch's
+    `retry.backoff` still supplies the wait.
+
+    Neither carries a `@deprecated` alias: P19 scopes that obligation to the GA channel and this
+    lands on `rc`.
+
+-   **BREAKING — `@stitchapi/deno-kv`'s `maxIncrRetries` becomes `retry`.** The
+    compare-and-set budget for `increment` is now `retry?: number | AtLeastOne<DenoKvRetryOptions>`,
+    speaking core's `retry` vocabulary rather than a second private spelling. A bare number
+    is the attempts shorthand; the envelope adds a backoff curve the loop never had:
+
+    ```ts
+    denoKvStore(kv, { retry: 20 }); // ≡ { attempts: 20 }
+    denoKvStore(kv, { retry: { attempts: 20, backoff: 'expo-jitter' } });
+    ```
+
+    Two things to know when migrating, beyond the rename:
+
+    -   **`attempts` counts total attempts, not retries.** `maxIncrRetries: 3` allowed four
+        reads (the first plus three retries); `retry: 3` allows three. Add one to preserve the
+        old budget exactly. The default moves from `100` retries to `100` attempts — one fewer
+        read in the worst case, which no realistic contention notices.
+    -   **`{}` is a compile error.** The object form is `AtLeastOne<DenoKvRetryOptions>` per
+        P20, so `retry: {}` (which reads as a no-op but would silently mean "defaults") is
+        rejected; write `retry: 100` for the all-defaults case.
+
+    `backoff` is **off by default**, preserving today's behaviour — the loop re-reads
+    immediately on a lost race. Set `'expo'`, `'expo-jitter'` or `'fixed'` — or the
+    `{ curve, base, max }` envelope, `base` 5ms and `max` 250ms — when many isolates contend
+    on one key. No `@deprecated` alias:
+    P19 scopes that obligation to the GA channel and this lands on `rc`.
+
+-   **BREAKING — the store contract speaks whole words: `incr` is now `increment`, and
+    `RedisDriver.del` is now `delete`.** `StitchStore` — the interface every store
+    implements — renames its atomic counter to `increment(key, ttl?)`, and
+    `@stitchapi/redis`'s `RedisDriver` follows for both verbs. The house contracts are
+    the vocabulary a consumer implements against, not bytes on a socket, so they use
+    whole words (CONTRACT.md P18); the Redis **commands** are untouched — the Lua still
+    calls `INCR`, and the `IoredisLike`/`NodeRedisLike`/`UpstashLike` mirrors still
+    expose `del`, because a mirror keeps its SDK's spelling. Shipped **without
+    `@deprecated` aliases** — CONTRACT.md P19 scopes the alias obligation to the GA
+    channel, and this lands on `rc`. (They could not have carried one anyway: on an
+    interface the consumer implements and core calls, an alias means typing both
+    spellings optional forever and letting a store satisfy the type while implementing
+    neither verb.)
+
+    _Migration:_ rename the method on any custom store or driver — `incr` → `increment`,
+    and on a `RedisDriver`, `del` → `delete`. The bundled stores (`memoryStore`,
+    `@stitchapi/redis`, `@stitchapi/deno-kv`, `@stitchapi/cloudflare-kv`,
+    `@stitchapi/react-native`, `@stitchapi/expo`) are already updated, so you only act
+    if you hand-rolled one. TypeScript names every site.
+
+-   **BREAKING — `ttl` is now optional on `increment`.** `StitchStore.increment(key, ttl?)`
+    and `RedisDriver.increment(key, ttl?)` match `set`: an absent `ttl` means **no
+    window**, so the counter accumulates and never expires. Previously `ttl` was
+    required on the counter but optional on `set` — the same parameter with two
+    optionalities. Widening, so existing call sites are unaffected; an implementor whose
+    signature typed `ttl` as required should relax it and handle the absent case.
+
 ## [1.0.0-rc.6] — 2026-07-23
 
 ### Changed

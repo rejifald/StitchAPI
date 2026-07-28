@@ -31,7 +31,7 @@ const me = stitch({
         loginInput: () => ({
             body: { user: env('USER')(), pass: env('PASS')() },
         }),
-        refreshOn: [401],
+        refresh: [401],
     }),
 });
 ```
@@ -48,9 +48,11 @@ its credentials, resolved at call time with [`env()`](/docs/guides/auth/secret-r
 `cookie` selects what to keep: a single cookie name, or `'*'` (equivalently
 `jar: true`) to capture and replay the whole Set-Cookie jar.
 
-`refreshOn` re-runs the login on a status code (default `[401]`); `refreshWhen`
-re-runs it on a content predicate, for soft 200 walls where a login page is
-served with a `200`. Give two stitches the same `key` plus a shared `store` to
+`refresh` is one envelope (CONTRACT.md P24). A bare `StatusMatch` — a number, a
+list, or a predicate — is shorthand for `refresh: { on }`: the status(es) that
+re-run the login (default `[401]`, and `refresh: 401` ≡ `refresh: { on: [401] }`).
+Reach `refresh.when` — a content predicate for soft 200 walls where a login page
+is served with a `200` — through the envelope form: `refresh: { when: (res) => … }`. Give two stitches the same `key` plus a shared `store` to
 share one session. See
 [Reference → Auth strategies](/docs/reference/auth-strategies) for every field.
 
@@ -69,7 +71,7 @@ never crashes the call.
     clear or extend a cooldown.
 -   `onAuthFailure(info)` runs when an attempt captured no cookie, with a
     `category` you map to your own status:
-    `'unauthenticated'` (a `refreshOn` status, e.g. `401` — bad/expired creds),
+    `'unauthenticated'` (a `refresh` status, e.g. `401` — bad/expired creds),
     `'rate-limited'` (`429`, with `retryAfter` parsed from `Retry-After`),
     `'network'` (the login threw before any response — with the thrown `error`),
     or `'unknown'`. `info.phase` is `'apply'` for a cold session or `'refresh'`
@@ -133,14 +135,14 @@ const me = stitch({
 
 The hooks are purely additive: omit them and `cookieSession` behaves exactly as
 before. They observe and record — they never change _whether_ the stitch logs in
-or retries (that stays governed by `refreshOn`/`refreshWhen`). Your external loop
+or retries (that stays governed by `refresh`). Your external loop
 reads the durable state and decides when to call the stitch again.
 
 <Callout type="warn">
-    **Anti-pattern:** don't lean on `refreshOn` status codes alone to catch an
+    **Anti-pattern:** don't lean on `refresh.on` status codes alone to catch an
     expired session — a soft 200 wall, where the login page comes back with
     status `200`, slips straight past it and your stitch reads the login HTML as
-    data; add a `refreshWhen` content predicate so the session re-logs in on
+    data; add a `refresh.when` content predicate so the session re-logs in on
     that body too. See [STITCH_AUTH_WALL](/docs/errors/stitch-auth-wall).
 </Callout>
 

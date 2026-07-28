@@ -49,12 +49,12 @@ Anything that satisfies `DenoKvLike` (a test double, a proxy) is a drop-in.
 
 ## Atomic counters
 
-Deno KV has no `INCR`, so `incr` is implemented as an **atomic compare-and-set
+Deno KV has no `INCR`, so `increment` is implemented as an **atomic compare-and-set
 loop**: read the current value + its `versionstamp`, then
 `atomic().check({ key, versionstamp }).set(key, next, { expireIn }).commit()`. If
 another isolate raced us, the versionstamp moved, the commit returns `ok: false`,
 and the loop re-reads and retries — so N concurrent increments net **exactly +N**
-(proven by the store contract's "20 concurrent incrs net +20" rule).
+(proven by the store contract's "20 concurrent increments net +20" rule).
 
 The counter is a **fixed window** (matching the Redis adapter): the first increment
 pins an absolute deadline `now + ttl`, and every increment inside that window keeps
@@ -66,8 +66,30 @@ deadline. That keeps the window's expiry alive across every write instead of a
 later increment silently wiping it and leaking the key forever. (`get` unwraps this
 envelope back to the plain count, so nothing downstream sees the internal shape.)
 The TTL unit is **milliseconds** — the same unit as the contract's `ttl`, and Deno
-KV's own `expireIn` unit, so there's no conversion at the seam. `maxIncrRetries`
-(default `100`) bounds the loop under pathological contention.
+KV's own `expireIn` unit, so there's no conversion at the seam. An `increment` without
+a `ttl` (or with `ttl <= 0`) has **no window**: the counter accumulates forever
+and the key never expires — the same "absent `ttl` = no expiry" rule `set`
+follows.
+
+### Tuning the compare-and-set loop
+
+`retry` bounds that loop. A bare number is the attempts shorthand; the envelope adds
+a backoff curve, using the same words as core's `retry`:
+
+```ts
+denoKvStore(kv, { retry: 20 }); // ≡ { attempts: 20 }
+denoKvStore(kv, { retry: { attempts: 20, backoff: 'expo-jitter' } });
+```
+
+`attempts` (default `100`) is the **total** including the first, so it is a budget,
+not a retry count. There is no `on`: the loop retries exactly one condition — another
+isolate committed first — so there is nothing to match against.
+
+`backoff` is **off by default**: the loop re-reads immediately, which is the tightest
+path to a win when contention is brief. Set a curve (`'expo'`, `'expo-jitter'`,
+`'fixed'`, or the envelope `{ curve, base, max }` with `base` 5ms and `max` 250ms) when many isolates hammer one
+key and the hot spin costs more KV reads than it saves — `'expo-jitter'` is the one to
+reach for there, since full jitter stops a thundering herd re-colliding in lockstep.
 
 The store owns no connection: `store.close()` delegates to the handle, so you
 decide when KV shuts down.

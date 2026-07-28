@@ -55,9 +55,9 @@ describe('sseResponse', () => {
         expect(body).toBe('data: a\n\ndata: b\n\n');
     });
 
-    test('a `data` mapper pulls text out of a structured chunk', async () => {
+    test('a `delta` function shorthand pulls text out of a structured chunk', async () => {
         const res = sseResponse(events(delta({ text: 'hi' }), done), {
-            data: (c) => (c as { text: string }).text,
+            delta: (c) => (c as { text: string }).text,
         });
         expect(await res.text()).toBe('data: hi\n\n');
     });
@@ -83,7 +83,7 @@ describe('sseResponse', () => {
         expect(body).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the error frame', async () => {
+    test('error (function shorthand) opts in to the raw message on the error frame', async () => {
         const res = sseResponse(
             events(delta('a'), {
                 type: 'error',
@@ -92,7 +92,7 @@ describe('sseResponse', () => {
                 attempts: 1,
                 at: 0,
             }),
-            { errorData: (e) => e.message },
+            { error: (e) => e.message },
         );
         const body = await res.text();
         expect(body).toBe(
@@ -100,14 +100,16 @@ describe('sseResponse', () => {
         );
     });
 
-    test('the event option labels each frame', async () => {
-        const res = sseResponse(events(delta('a'), done), { event: 'token' });
+    test('the delta.event option labels each frame', async () => {
+        const res = sseResponse(events(delta('a'), done), {
+            delta: { event: 'token' },
+        });
         expect(await res.text()).toBe('event: token\ndata: a\n\n');
     });
 
-    test('the id option emits an id: line per frame with the zero-based index', async () => {
+    test('the delta.id option emits an id: line per frame with the zero-based index', async () => {
         const res = sseResponse(events(delta('a'), delta('b'), done), {
-            id: (chunk, i) => `${String(chunk)}-${i}`,
+            delta: { id: (chunk, i) => `${String(chunk)}-${i}` },
         });
         expect(await res.text()).toBe(
             'id: a-0\ndata: a\n\nid: b-1\ndata: b\n\n',
@@ -153,14 +155,51 @@ describe('sseResponse', () => {
         expect(body).not.toContain('ENOTFOUND');
     });
 
-    test('errorData opts in to the raw message on the throw path too', async () => {
+    test('error opts in to the raw message on the throw path too', async () => {
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield delta('a');
             throw new Error('stream blew up');
         }
-        const res = sseResponse(boom(), { errorData: (e) => e.message });
+        const res = sseResponse(boom(), { error: (e) => e.message });
         const body = await res.text();
         expect(body).toBe('data: a\n\nevent: error\ndata: stream blew up\n\n');
+    });
+
+    test('error.observe sees the real failure even when the client gets the generic token', async () => {
+        const observed: unknown[] = [];
+        const res = sseResponse(
+            events(delta('a'), {
+                type: 'error',
+                name: 'StitchError',
+                message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                status: 502,
+                attempts: 1,
+                at: 0,
+            }),
+            { error: { observe: (err) => observed.push(err) } },
+        );
+        const body = await res.text();
+        // Client still gets the generic token — the raw message is withheld.
+        expect(body).toBe('data: a\n\nevent: error\ndata: error\n\n');
+        expect(body).not.toContain('payments.internal.corp');
+        // … but observe got the real failure server-side.
+        expect((observed[0] as Error).message).toContain('ENOTFOUND');
+    });
+
+    test('error can be the full object with a custom event name', async () => {
+        const res = sseResponse(
+            events(delta('a'), {
+                type: 'error',
+                name: 'StitchError',
+                message: 'upstream blew up',
+                attempts: 1,
+                at: 0,
+            }),
+            { error: { data: (e) => e.message, event: 'failure' } },
+        );
+        expect(await res.text()).toBe(
+            'data: a\n\nevent: failure\ndata: upstream blew up\n\n',
+        );
     });
 });
 
