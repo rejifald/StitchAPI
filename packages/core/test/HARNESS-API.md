@@ -30,8 +30,8 @@ import { z } from 'zod';
 -   `output`: a schema **or** `drift(schema, opts)` — validated against the **picked** value
 -   `pick`: dot-path string (e.g. `'data'`)
 -   `auth`: an AuthStrategy (see below)
--   `retry`: `{ attempts (total incl. first, default 1), on: number[] (default [429,502,503,504]), backoff: 'expo'|'expo-jitter'|'fixed', baseDelay, maxDelay, respectRetryAfter }`
--   `throttle`: `{ rate: '2/s', concurrency: number, pool: 'stitch'|'host' }`
+-   `retry`: `{ attempts (total incl. first, default 1), on: StatusMatch (default [429,502,503,504]), backoff: BackoffCurve | { curve, base, max }, respectRetryAfter }`
+-   `throttle`: `{ rate: '2/s', concurrency: number, pool: 'stitch'|'host', delegate?: boolean, on?: StatusMatch }`
 -   `timeout`: `{ total: number|string, perAttempt: number|string }` (ms or '30s')
 -   `hooks`: `{ onRequest, onResponse, onError, onRetry }` — `(ctx) => void|Promise<void>`, `ctx = { name, attempt, req?, res?, error? }`
 -   `extends`: `Array<fragment | stitch>`
@@ -52,7 +52,7 @@ const s2 = s.with({ query: { role: 'admin' } });   // partial application -> new
 -   `{ type:'start', name, method, url, input }`
 -   `{ type:'progress', phase:'auth'|'request'|'throttled'|'retry'|'paginate', attempt, detail?, waited? }`
 -   `{ type:'drift', finding:{ level:'error'|'warn'|'info'|'verbose', path, change:'invalid'|'undeclared'|'coerced'|'defaulted', detail? } }`
--   `{ type:'result', value, status, attempts }`
+-   `{ type:'result', data, status, attempts }`
 -   `{ type:'error', name, message, status?, attempts }`
 -   `{ type:'done', ok, elapsed, attempts }`
 
@@ -76,7 +76,7 @@ Drift is schema-anchored — no snapshot (ADR 0015). Each call validates the unw
 
 ## Auth
 
-`bearer(secret)`, `apiKey({ header?, value })`, `basic({ user, pass })`, `cookieSession({ login: <stitch>, cookie: 'sid', loginInput?: () => StitchInput, refresh?: [401] })`. Secrets: `env('VAR')` / `secretsFile('name')` return `() => string` resolved at call time. `cookieSession` auto-logs-in when no cookie is stored, replays the captured cookie, and re-logs-in when a response status is matched by `refresh`.
+`bearer(secret)`, `apiKey({ in?, name?, value })`, `basic({ user, pass })`, `cookieSession({ login: <stitch>, cookie: 'sid', loginInput?: () => StitchInput, refresh?: [401] })`. Secrets: `env('VAR')` / `secretsFile('name')` return `() => string` resolved at call time. `cookieSession` auto-logs-in when no cookie is stored, replays the captured cookie, and re-logs-in when a response status is matched by `refresh`.
 
 ## Mock server
 
