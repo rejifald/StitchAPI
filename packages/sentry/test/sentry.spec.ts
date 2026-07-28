@@ -141,6 +141,33 @@ describe('sentrySink', () => {
         expect(breadcrumbs[0]!.level).toBe('error');
     });
 
+    test('capture: false disables both errors and drift capture, but keeps breadcrumbs', () => {
+        const { sentry, breadcrumbs, captures } = mockSentry();
+        const sink = sentrySink(sentry, { capture: false });
+        sink.handle(ev.error, ctx);
+        sink.handle(ev.driftError, ctx);
+
+        expect(captures).toHaveLength(0);
+        expect(breadcrumbs).toHaveLength(2);
+    });
+
+    test('capture: true resolves to the same defaults as omitting the option', () => {
+        const withTrue = mockSentry();
+        sentrySink(withTrue.sentry, { capture: true }).handle(ev.error, ctx);
+        sentrySink(withTrue.sentry, { capture: true }).handle(
+            ev.driftError,
+            ctx,
+        );
+
+        const omitted = mockSentry();
+        sentrySink(omitted.sentry).handle(ev.error, ctx);
+        sentrySink(omitted.sentry).handle(ev.driftError, ctx);
+
+        // errors: true (captured), drift: false (breadcrumb only) in both cases.
+        expect(withTrue.captures).toHaveLength(1);
+        expect(omitted.captures).toHaveLength(1);
+    });
+
     test('capture.drift only captures an error-level finding — a warn-level drift is breadcrumbed only', () => {
         const driftWarn: StitchEvent = {
             type: 'drift',
@@ -163,14 +190,14 @@ describe('sentrySink', () => {
         });
     });
 
-    test('capture:false disables both errors and drift — only breadcrumbs (P24 toggle)', () => {
-        const { sentry, breadcrumbs, captures } = mockSentry();
-        const sink = sentrySink(sentry, { capture: false });
-        sink.handle(ev.error, ctx);
-        sink.handle(ev.driftError, ctx);
-        // Both the error and the error-level drift are trailed but never captured as issues.
-        expect(captures).toHaveLength(0);
-        expect(breadcrumbs).toHaveLength(2);
+    test('old flat spellings are DELETED and the empty capture bag is rejected (compile-time)', () => {
+        // @ts-expect-error — `captureErrors` was folded into `capture` (no alias, P24)
+        void sentrySink(mockSentry().sentry, { captureErrors: false });
+        // @ts-expect-error — `captureDrift` was folded into `capture` (no alias, P24)
+        void sentrySink(mockSentry().sentry, { captureDrift: true });
+        // @ts-expect-error — `{}` is not a valid capture envelope (CONTRACT.md P20): use `true`/omit
+        void sentrySink(mockSentry().sentry, { capture: {} });
+        expect(true).toBe(true);
     });
 
     test('delta and info events are never sent (raw data / announcements)', () => {
@@ -207,7 +234,7 @@ describe('sentrySink', () => {
         });
     });
 
-    test('metadata only: no secret query, no input/value/chunk reaches Sentry', () => {
+    test('metadata only: no secret query, no input/data/chunk reaches Sentry', () => {
         const { sentry, breadcrumbs, captures } = mockSentry();
         const sink = sentrySink(sentry, { lifecycle: true });
         for (const e of Object.values(ev)) sink.handle(e, ctx);

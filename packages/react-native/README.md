@@ -79,16 +79,16 @@ import {
 function Inbox() {
     const q = useStitch(getInbox, {});
     useAppActiveRefetch(q); // refetch when the app returns to the foreground
-    useReconnectRefetch(q, { netInfo: NetInfo }); // refetch when connectivity returns
+    useReconnectRefetch(q, NetInfo); // refetch when connectivity returns
     // ...
 }
 ```
 
-Both subscriptions are also available as plain functions — `onAppActive(appState, cb)` and `onReconnect(netInfo, cb)` — for use outside React.
+`useReconnectRefetch` takes the NetInfo module positionally; pass the options envelope (`{ netInfo, enabled }`) when you also need `enabled`. Both subscriptions are also available as plain functions — `onAppActive(appState, cb)` and `onReconnect(netInfo, cb)` — for use outside React.
 
 ## The persistent store
 
-`asyncStorageStore(storage, options?)` accepts any client matching `{ getItem, setItem, removeItem }` (the community AsyncStorage module, an MMKV shim, a test double). Values ride in a JSON envelope with an absolute expiry (AsyncStorage has no native TTL); `increment` is serialized so concurrent increments stay atomic — the throttle counter behaves exactly as it does on Redis. Pass `keyPrefix` to namespace, `now` to inject a clock in tests.
+`asyncStorageStore(storage, options?)` accepts any client matching `{ getItem, setItem, removeItem }` (the community AsyncStorage module, an MMKV shim, a test double). Values ride in a JSON envelope with an absolute expiry (AsyncStorage has no native TTL); `increment` is serialized so concurrent increments stay atomic — the throttle counter behaves exactly as it does on Redis. Pass `keyPrefix` to namespace (default `'stitch:'` — AsyncStorage is the app's one shared bucket, so the store namespaces by default), `now` to inject a clock in tests.
 
 ## License
 

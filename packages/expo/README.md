@@ -67,7 +67,7 @@ import {
 
 const q = useStitch(getInbox, {});
 useAppActiveRefetch(q);
-useReconnectRefetch(q, { netInfo: NetInfo });
+useReconnectRefetch(q, NetInfo);
 ```
 
 ## The secure store

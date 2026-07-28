@@ -1,7 +1,11 @@
 // The lifecycle subscription logic lives in two pure functions (onAppActive /
 // onReconnect) that take the platform module by argument; the hooks are thin
 // useEffect wrappers over them. Test the logic directly with fake emitters.
-import { onAppActive, onReconnect } from '../src/lifecycle';
+import {
+    onAppActive,
+    onReconnect,
+    useReconnectRefetch,
+} from '../src/lifecycle';
 import type { AppStateLike, NetInfoLike } from '../src/lifecycle';
 
 import { describe, expect, test } from 'vitest';
@@ -65,6 +69,17 @@ describe('onAppActive', () => {
         emit('active'); // unsubscribed: no
 
         expect(calls).toBe(2);
+    });
+});
+
+describe('useReconnectRefetch', () => {
+    test('accepts the NetInfo module positionally or in the envelope (P15, type-level)', () => {
+        const { netInfo } = fakeNetInfo();
+        type Second = Parameters<typeof useReconnectRefetch>[1];
+        const positional: Second = netInfo;
+        const envelope: Second = { netInfo, enabled: false };
+        expect(positional).toBeDefined();
+        expect(envelope).toBeDefined();
     });
 });
 
