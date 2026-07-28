@@ -25,10 +25,13 @@ pnpm add @stitchapi/nest@rc stitchapi@rc
 
 ## Configure the shared client — `forRoot` / `forRootAsync`
 
-`forRoot` configures the app-wide shared infrastructure (one `store`, one `trace`
+`forRoot` configures the app-wide shared infrastructure (one `store`, one trace
 sink) and a default seam carrying your `SeamConfig` defaults (`baseUrl`, `headers`,
-`auth`, `retry`, `throttle`, `cache`, …). Tracing is **off by default**; opt in with the
-`'logger'` sentinel.
+`auth`, `retry`, `throttle`, `cache`, …). The **Nest `Logger` bridge is on by
+default** (`logger: true` → `nestLoggerSink(new Logger('Stitch'))`, the same default
+as `@stitchapi/fastify`'s plugin): pass sink options (`logger: { lifecycle: false }`),
+set `logger: false` to leave tracing as core configures it (off), or set an explicit
+`trace` — it wins over the bridge.
 
 ```ts
 import { StitchModule, fromNestConfig } from '@stitchapi/nest';
@@ -43,7 +46,7 @@ import { bearer } from 'stitchapi';
                 baseUrl: config.getOrThrow('API_BASE_URL'),
                 store: new RedisStore(config.getOrThrow('REDIS_URL')), // any StitchStore
                 auth: bearer(fromNestConfig(config)('API_TOKEN')),
-                trace: 'logger', // → nestLoggerSink(new Logger('Stitch'))
+                // logger: false, // opt out of the default Nest Logger trace bridge
             }),
         }),
     ],
@@ -56,8 +59,8 @@ export class AppModule {}
 Declare stitches with `defineStitch(build)` — the injection **token is optional** (a
 unique `Symbol` is generated; pass `defineStitch(token, build)` only when you need a
 stable, well-known token). Register them per feature module, which may also own its
-**own upstream seam** (its `baseUrl`/`auth`), built over the shared store + trace — omit
-`seam` to attach the stitches to the default seam.
+**own upstream seam** (a `seam.config` with its `baseUrl`/`auth`), built over the shared
+store + trace — omit `seam` to attach the stitches to the default seam.
 
 ```ts
 // users.stitches.ts
@@ -161,39 +164,45 @@ app.useGlobalFilters(new StitchExceptionFilter(app.getHttpAdapter()));
 // …or as a provider: { provide: APP_FILTER, useClass: StitchExceptionFilter }
 ```
 
-`status` takes a fixed number or a `(err) => number` function. Outside a filter, use
-`toHttpException(err, { status })` / `isStitchError(err)` directly.
+The options envelope is `StitchErrorOptions` — the same `{ status?, body? }` shape as
+`@stitchapi/hono`'s and `@stitchapi/elysia`'s error helpers. `status` takes a fixed number
+or a `(err) => number` function. Outside a filter, use `toHttpException(err, { status })` /
+`isStitchError(err)` directly.
 
-The client-facing **message** is a fixed `'Upstream request failed'` by default — the raw
-`err.message` is withheld, because it can disclose an internal hostname (a transport
-failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status
-(`HTTP 401`). The original error is always attached as the exception's `cause` for
-server-side logging. Opt in to a message when you need one: `{ exposeMessage: true }` for
-the raw message, or `{ message: 'Payment provider unavailable' }` / `{ message: (e) => … }`
-for a curated one.
+The client-facing **body** defaults to Nest's rendering of a fixed
+`'Upstream request failed'` — the raw `err.message` is withheld, because it can disclose an
+internal hostname (a transport failure reads like
+`getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`). The
+original error is always attached as the exception's `cause` for server-side logging. Shape
+your own envelope with `body`: `{ body: (e, status) => ({ error: 'Payment provider unavailable' }) }`,
+or opt in to the raw message with `{ body: (e) => ({ error: e.message }) }` when the
+upstream messages are known safe.
 
-## Streaming → SSE — `stitchSse`
+## Streaming → SSE — `streamStitchSse`
 
-Return a stitch's `stream()` from a Nest `@Sse()` endpoint: `delta` chunks become messages,
-an `error` event errors the stream (a fixed, safe message by default — see below), and a
-client disconnect aborts the upstream generator.
+Return a stitch's `stream()` (or any `StitchEventSource`) from a Nest `@Sse()` endpoint:
+`delta` chunks become messages, an `error` event errors the stream (a generic `data: error`
+frame by default — see below), and a client disconnect aborts the upstream generator. The
+options (`StreamStitchSseOptions`) are the canonical host set shared with
+`@stitchapi/express` / `@stitchapi/hono`: `data`, `event`, `id`, `errorData`, `onError`.
 
 ```ts
 @Sse('chat')
 chat(@Query('q') q: string) {
-    return stitchSse(this.complete.stream({ body: { prompt: q } }), {
+    return streamStitchSse(this.complete.stream({ body: { prompt: q } }), {
         data: (c: any) => c.text, // map a delta chunk → message data
     });
 }
 ```
 
 Nest renders an errored `@Sse()` observable's message to the client as the final `event: error`
-frame, so the client-facing **message** defaults to a fixed `'Upstream request failed'` — the raw
+frame, so the client-facing **data** defaults to a generic `error` token — the raw
 `event.message` is withheld, since it can disclose an internal hostname (a transport failure reads
-like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`). The
-original error is always attached as the errored observable's `cause` for server-side logging. Opt
-in when you need a message: `{ exposeMessage: true }` for the raw message, or
-`{ message: 'Stream unavailable' }` / `{ message: (e) => … }` for a curated one.
+like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`). Observe
+the real failure server-side with `onError`; it is also attached as the errored observable's
+`cause`. Shape the client frame with `errorData` when you need to:
+`{ errorData: (e) => e.message }` opts in to the raw message,
+`{ errorData: () => 'Stream unavailable' }` sets a curated one.
 
 ## Testing
 

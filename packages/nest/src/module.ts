@@ -2,7 +2,11 @@
 // configure shared infrastructure (store + trace) and a default seam; forFeature
 // registers injectable stitches and, optionally, a per-upstream feature seam built over
 // that shared infrastructure. `SeamRegistry` owns the shutdown lifecycle.
-import { nestBorrowStore, nestLoggerSink } from './bridges';
+import {
+    type NestLoggerSinkOptions,
+    nestBorrowStore,
+    nestLoggerSink,
+} from './bridges';
 import type { AnyStitchDef, NestRequestSeam } from './define-stitch';
 import { STITCH_SEAM, STITCH_STORE, STITCH_TRACE } from './tokens';
 
@@ -29,10 +33,17 @@ import {
     seam,
 } from 'stitchapi';
 
-/** forRoot options: the shared `SeamConfig` defaults + infra, plus the `'logger'` trace sentinel. */
-export interface StitchModuleOptions extends Omit<SeamOptions, 'trace'> {
-    /** A `TraceSink`, `'console'`, `false`, or the `'logger'` sentinel (→ Nest Logger). Default: off. */
-    trace?: SeamOptions['trace'] | 'logger';
+/** forRoot options: the shared `SeamConfig` defaults + infra, plus the Nest `logger` bridge. */
+export interface StitchModuleOptions extends SeamOptions {
+    /**
+     * Bridge stitch events into a Nest `Logger` (via {@link nestLoggerSink}) as the seam's
+     * `TraceSink`. **Default `true`** — aligned with `@stitchapi/fastify`'s plugin `logger`
+     * default, so every host integration traces through its framework logger out of the box.
+     * Pass sink options to customise (`{ lifecycle: false }`), or `false` to leave tracing as
+     * core configures it (off). Ignored when `trace` is set — an explicit trace sink wins,
+     * exactly as a `trace` on a Fastify `seamConfig` wins over its `logger` bridge.
+     */
+    logger?: boolean | AtLeastOne<NestLoggerSinkOptions>;
     /** Register as a global module (default `true`). */
     isGlobal?: boolean;
 }
@@ -88,19 +99,27 @@ interface Infra {
 }
 
 // Normalise module options into shared infra: borrow an app-provided store (else own a
-// memoryStore), expand the `'logger'` trace sentinel, default tracing OFF.
+// memoryStore), resolve the `logger` bridge (default ON, matching @stitchapi/fastify) —
+// an explicit `trace` wins over it.
 function resolveInfra(options: StitchModuleOptions): Infra {
-    const { store, trace } = options;
+    const { store, trace, logger } = options;
     const defaults: Record<string, unknown> = { ...options };
     delete defaults['store'];
     delete defaults['trace'];
+    delete defaults['logger'];
     delete defaults['isGlobal'];
+    const sinkOptions: NestLoggerSinkOptions =
+        typeof logger === 'object' ? logger : {};
     return {
         store: store ? nestBorrowStore(store) : memoryStore(),
+        // An explicit `trace` wins; otherwise bridge the Nest Logger unless `logger: false`
+        // (the same precedence as the Fastify plugin's `seamConfig.trace` vs `logger`).
         trace:
-            trace === 'logger'
-                ? nestLoggerSink(new Logger('Stitch'))
-                : (trace ?? false),
+            trace !== undefined
+                ? trace
+                : logger !== false
+                  ? nestLoggerSink(new Logger('Stitch'), sinkOptions)
+                  : false,
         defaults: defaults as Omit<SeamOptions, 'store' | 'trace'>,
     };
 }
