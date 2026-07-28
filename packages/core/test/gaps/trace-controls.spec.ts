@@ -138,7 +138,7 @@ function readRecords(file: string): Record<string, unknown>[] {
 const BIG = 'x'.repeat(5000);
 
 // (d) Default truncation: a request body / response value larger than the cap is
-// replaced with a compact `{ truncated, bytes, preview }` marker — the multi-KB
+// replaced with a compact `{ truncated, chars, preview }` marker — the multi-KB
 // payload never lands on disk in full.
 test('JSONL truncates request body and response value past the default cap', async () => {
     const traceFile = join(tmpdir(), `stitch-trace-trunc-${process.pid}.jsonl`);
@@ -161,7 +161,7 @@ test('JSONL truncates request body and response value past the default cap', asy
 
     const reqBody = (start['input'] as { body: Record<string, unknown> }).body;
     expect(reqBody['truncated']).toBe(true);
-    expect(reqBody['bytes']).toBeGreaterThanOrEqual(2048);
+    expect(reqBody['chars']).toBeGreaterThanOrEqual(2048);
     expect((reqBody['preview'] as string).length).toBeLessThanOrEqual(2048);
 
     const value = result['data'] as Record<string, unknown>;
@@ -189,9 +189,9 @@ test('STITCH_TRACE_MAX_BODY=full captures the whole body (no truncation)', async
     expect((result['data'] as { blob: string }).blob).toBe(BIG);
 });
 
-// (f) Opt-in full capture (code): fileSink(path, { maxBodyBytes: false }) is the
+// (f) Opt-in full capture (code): fileSink(path, { maxBodyChars: false }) is the
 // in-code equivalent of the env switch.
-test('fileSink({ maxBodyBytes: false }) captures the whole body', async () => {
+test('fileSink({ maxBodyChars: false }) captures the whole body', async () => {
     const traceFile = join(tmpdir(), `stitch-trace-cap-${process.pid}.jsonl`);
     rmSync(traceFile, { force: true });
     cleanupPaths.push(traceFile);
@@ -201,7 +201,7 @@ test('fileSink({ maxBodyBytes: false }) captures the whole body', async () => {
         name: 'cap',
         baseUrl: server.url,
         path: '/cap',
-        trace: fileSink(traceFile, { maxBodyBytes: false }),
+        trace: fileSink(traceFile, { maxBodyChars: false }),
     });
     await expect(call()).resolves.toEqual({ blob: BIG });
 

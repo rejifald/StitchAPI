@@ -67,7 +67,7 @@ export function nestLoggerSink(
     // per-instance level rules (`nestLevel`), and the glyph one-liners (`nestFormat`). The
     // resulting levels and messages are identical to the hand-rolled switch this replaced.
     return coreLoggerSink(toCoreLogger(logger), {
-        level: (event) => nestLevel(event, lifecycle),
+        levelOf: (event) => nestLevel(event, lifecycle),
         format: (event, ctx) => nestFormat(ctx.name, event),
     });
 }

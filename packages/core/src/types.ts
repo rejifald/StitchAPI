@@ -608,6 +608,16 @@ export type StitchEvent<T = unknown> =
           at: number;
       };
 
+/**
+ * Anything that produces a stitch event stream: the event iterable itself (a `.stream()`
+ * generator), or anything that hands one back (a {@link StitchResult}, a stitch stub). The
+ * canonical intake for event-stream consumers — `collectStitchEvents` in `stitchapi/testing`
+ * accepts exactly this.
+ */
+export type StitchEventSource<T = unknown> =
+    | AsyncIterable<StitchEvent<T>>
+    | { stream(): AsyncIterable<StitchEvent<T>> };
+
 // ---- Clock (injectable time, ADR 0010) ------------------------------------
 /** An opaque timer handle returned by {@link Clock.setTimer}. */
 export type TimerHandle = unknown;

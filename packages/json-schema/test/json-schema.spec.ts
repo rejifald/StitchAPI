@@ -1,6 +1,7 @@
 import { JsonSchema, type JsonSchemaCheck } from '../src/index';
 
 import Ajv from 'ajv';
+import { compile, validate } from 'stitchapi';
 
 // A JSON Schema you obtained at runtime — the shape a discovery hands you.
 const toolSchema = {
@@ -93,5 +94,33 @@ describe('JsonSchema.adapt (bring-your-own check)', () => {
         });
         const result = await validator['~standard'].validate({ query: 'x' });
         expect(result).toEqual({ value: { query: 'x' } });
+    });
+});
+
+// P23 — one schema intake: the adapted schema enters core through the same `SchemaLike`
+// intake as any Standard Schema and yields core's `ValidationResult` shape
+// (`{ ok: true, value } | { ok: false, issues }`), with issues nominally matching core's
+// `Issue` (`{ message, path }`). Verified through the workspace dev-dependency; this
+// package's runtime still depends on nothing from core.
+describe('JsonSchema.adapt feeds core validate/compile (P23)', () => {
+    it('validate() returns { ok: true, value } for a conforming payload', async () => {
+        const schema = JsonSchema.adapt(toolSchema, { ajv });
+        const result = await validate(schema, { query: 'shoes', limit: 5 });
+        expect(result).toEqual({
+            ok: true,
+            value: { query: 'shoes', limit: 5 },
+        });
+    });
+
+    it('compile() returns { ok: false, issues } with { message, path } per failure', async () => {
+        const check = compile(JsonSchema.adapt(toolSchema, { ajv }));
+        const result = await check({ query: 42 });
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+            expect(result.issues).toContainEqual({
+                message: expect.any(String),
+                path: ['query'],
+            });
+        }
     });
 });

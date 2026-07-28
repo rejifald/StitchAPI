@@ -23,20 +23,24 @@ usable anywhere a Standard Schema is — not only with StitchAPI.
 
 ```ts
 import Ajv from 'ajv';
+import { validate } from 'stitchapi';
 import { JsonSchema } from '@stitchapi/json-schema';
 
 const ajv = new Ajv(); // your app's configured engine — formats, keywords, $refs, draft
 // `discovered` is a JSON Schema you obtained at runtime.
-const validator = JsonSchema.adapt(discovered, { ajv });
+const schema = JsonSchema.adapt(discovered, { ajv });
 
-const result = await validator['~standard'].validate(payload);
-if (result.issues) {
+const result = await validate(schema, payload);
+if (!result.ok) {
     // Structured, per-path — hand it back to the sender to correct.
     // [{ message: 'must be <= 50', path: ['limit'] }]
     return respondWithErrors(result.issues);
 }
 handle(result.value); // `unknown` — a runtime schema carries no static shape
 ```
+
+The adapted schema is a plain Standard Schema: pass it to a stitch's `input`/`output`, to
+`validate`/`compile`, or to any other Standard-Schema consumer — they all treat it identically.
 
 `JsonSchema.adapt<T>()` takes an optional type argument. Leave it `unknown` for a
 runtime-obtained schema; pass `T` only when you already know the shape at authoring time.

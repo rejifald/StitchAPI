@@ -169,7 +169,7 @@ conformant `Stitch`: callable, with `.safe`/`.unwrap`/`.stream`/`.with`, passing
 `isStitch`, plus a call spy — but with no network behind it.
 
 `stubStitch(value | (input) => value, opts?)` resolves to the value (or a
-function of the call input). The spy exposes `.calls`, `.callCount`, and
+function of the call input). The spy exposes `.calls(filter?)`, `.callCount(filter?)`, and
 `.reset()`:
 
 ```ts twoslash
@@ -186,8 +186,8 @@ const getUser = stubStitch({ id: 42, name: 'Ada' });
 isStitch(getUser); // true — it's a real Stitch shape
 
 await loadProfile(getUser);
-getUser.callCount; // 1
-getUser.calls[0]; // { params: { id: 42 } }
+getUser.callCount(); // 1
+getUser.calls()[0]; // { params: { id: 42 } }
 ```
 
 `failStitch(error, opts?)` is the failure twin. Pass a message, an
