@@ -193,7 +193,7 @@ describe('useStitchSWR', () => {
         expect(calls).toBe(1);
     });
 
-    test('forwards the SWR config (third argument) to useSWR', async () => {
+    test('forwards the SWR options (third argument) to useSWR', async () => {
         const getUser = unaryStitch(async () => ({ name: 'fresh' }));
         const { result } = renderHook(
             () =>
@@ -205,7 +205,7 @@ describe('useStitchSWR', () => {
             { wrapper },
         );
 
-        // `fallbackData` is a config option, so its presence proves the third
+        // `fallbackData` is an SWR option, so its presence proves the third
         // argument reached useSWR: the cached value shows immediately…
         expect(result.current.data).toEqual({ name: 'cached' });
         // …then the stitch fetcher revalidates to the fresh value.

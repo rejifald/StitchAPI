@@ -36,9 +36,10 @@ export type JsonSchemaCheck = (value: unknown) => {
 /**
  * The slice of an Ajv instance we use — just `ajv.compile(schema)`. Declared structurally so this
  * package imports nothing from `ajv`: your configured instance satisfies it, and a `{ check }`-only
- * consumer needs `ajv` neither installed nor in their type graph.
+ * consumer needs `ajv` neither installed nor in their type graph. Member spellings mirror Ajv's own
+ * (`compile`, `errors`, `instancePath`) so a real instance matches without translation.
  */
-export interface AjvInstance {
+export interface AjvLike {
     compile(schema: JsonSchemaObject): AjvValidate;
 }
 interface AjvValidate {
@@ -58,7 +59,7 @@ interface AjvError {
  * custom compiled `check` (a Workers-safe validator, a draft-2020-12 engine, a shared instance).
  */
 export type JsonSchemaEngine =
-    | { readonly ajv: AjvInstance }
+    | { readonly ajv: AjvLike }
     | { readonly check: JsonSchemaCheck };
 
 /**
@@ -67,12 +68,13 @@ export type JsonSchemaEngine =
  *
  * ```ts
  * import Ajv from 'ajv';
+ * import { validate } from 'stitchapi';
  * import { JsonSchema } from '@stitchapi/json-schema';
  *
  * const ajv = new Ajv();                               // your app's configured engine
- * const validator = JsonSchema.adapt(discovered, { ajv });
- * const result = await validator['~standard'].validate(payload);
- * if (result.issues) repair(result.issues);           // [{ message: 'must be <= 50', path: ['limit'] }]
+ * const schema = JsonSchema.adapt(discovered, { ajv });
+ * const result = await validate(schema, payload);      // { ok: true, value } | { ok: false, issues }
+ * if (!result.ok) repair(result.issues);               // [{ message: 'must be <= 50', path: ['limit'] }]
  * ```
  *
  * The output type is `T` (default `unknown`): a schema discovered at runtime carries no static
@@ -122,7 +124,7 @@ function pointerToPath(pointer: string): (string | number)[] {
         });
 }
 
-function ajvCheck(ajv: AjvInstance, schema: JsonSchemaObject): JsonSchemaCheck {
+function ajvCheck(ajv: AjvLike, schema: JsonSchemaObject): JsonSchemaCheck {
     const validate = ajv.compile(schema);
     return (value) => {
         if (validate(value)) return { valid: true, issues: [] };

@@ -27,6 +27,13 @@ import useSWR, { type SWRConfiguration, type SWRResponse } from 'swr';
 // streamable) lives in `@stitchapi/query-core`; a real stitch satisfies both.
 export type StitchLike<T, Input = unknown> = (input?: Input) => PromiseLike<T>;
 
+// `QueryOutput` / `QueryInput` deliberately re-state `@stitchapi/query-core`'s
+// inference helpers over THIS package's minimal `StitchLike` tier (CONTRACT.md P9
+// de-list): same identifier, same conditional shape, but inferring from the
+// await-only duck-type above — a cross-package import would add a runtime
+// dependency this adapter intentionally does not have. query-core's rich tier is
+// assignable to the minimal one, so both spellings agree on any real stitch.
+
 /** The validated output type of a stitch (or `StitchLike`). */
 export type QueryOutput<S> =
     S extends Stitch<infer O, infer _I>
@@ -184,26 +191,28 @@ export function swrKey<T>(
  * Pass SWR options as the third argument (`{ revalidateOnFocus, refreshInterval,
  * … }`). For conditional fetching use {@link swrKey} with a bare `useSWR`.
  */
+// The third parameter is `options` (house vocabulary); its TYPE stays SWR's own
+// `SWRConfiguration` — an adapter mirror keeps upstream spelling (CONTRACT.md P18).
 export function useStitchSWR<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: QueryInput<S>,
-    config?: SWRConfiguration<QueryOutput<S>>,
+    options?: SWRConfiguration<QueryOutput<S>>,
 ): SWRResponse<QueryOutput<S>>;
 export function useStitchSWR<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: Input,
-    config?: SWRConfiguration<T>,
+    options?: SWRConfiguration<T>,
 ): SWRResponse<T>;
 export function useStitchSWR<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
-    config?: SWRConfiguration<T>,
+    options?: SWRConfiguration<T>,
 ): SWRResponse<T> {
     // The stitch is the fetcher; SWR caches by `swrKey`. `Promise.resolve` lifts
     // the stitch's thenable result into a real Promise for SWR.
     return useSWR<T>(
         swrKey(stitch, input),
         () => Promise.resolve(stitch(input)),
-        config,
+        options,
     );
 }
