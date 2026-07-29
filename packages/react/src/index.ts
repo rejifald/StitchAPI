@@ -10,9 +10,11 @@
 // - `useStitchStream` — the streaming hook: re-renders as `delta` chunks arrive.
 //                       This is the differentiator over plain request/response
 //                       query libraries.
-// - `stitchQueryOptions` — an OPTIONAL TanStack Query adapter (returns a plain POJO,
-//                       so it needs no import of `@tanstack/react-query`; named with the
-//                       `stitch` prefix because TanStack exports its own `queryOptions`).
+// - `stitchQueryOptions` — an OPTIONAL TanStack Query adapter, re-exported from
+//                       `@stitchapi/query-core` (returns a plain POJO, so it needs
+//                       no import of `@tanstack/react-query`; named with the
+//                       `stitch` prefix because TanStack exports its own
+//                       `queryOptions`, see ADR 0012).
 import {
     type CreateStitchQueryOptions,
     type QueryInput,
@@ -21,6 +23,8 @@ import {
     type StitchQuery,
     type StitchQueryResult,
     createStitchQuery,
+    keyInputFor,
+    nameOf,
 } from '@stitchapi/query-core';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSyncExternalStore } from 'react';
@@ -32,12 +36,40 @@ export type {
     QueryOutput,
     StitchLike,
     StitchQuery,
+    StitchQueryOptions,
     StitchQueryResult,
 } from '@stitchapi/query-core';
 
+// The TanStack Query adapter and its key derivation live in
+// `@stitchapi/query-core` — ONE shared implementation across every framework
+// binding, so the key format (and its secret-redaction guarantees) cannot drift
+// between frameworks. Re-exported here so React apps import everything from
+// `@stitchapi/react`.
+export {
+    deriveQueryKey,
+    keyInputFor,
+    nameOf,
+    stitchQueryOptions,
+} from '@stitchapi/query-core';
+
 // ---------------------------------------------------------------------------
-// Hook result
+// Hook options & result
 // ---------------------------------------------------------------------------
+
+/**
+ * Options accepted by {@link useStitch} / {@link useStitchStream}.
+ *
+ * The store's `streaming` flag is deliberately OMITTED: each hook hard-sets it
+ * (`useStitch` → unary, `useStitchStream` → streaming), so passing it would be
+ * silently ignored — the type forbids it instead.
+ */
+export interface UseStitchOptions<T>
+    extends Omit<CreateStitchQueryOptions<T>, 'streaming'> {
+    /** Explicit re-create trigger. When provided, the handle is re-created only
+     * when one of these changes (by `Object.is`), instead of the default
+     * structural key of `input`. */
+    deps?: readonly unknown[];
+}
 
 /** What `useStitch` / `useStitchStream` return: the reactive state plus the
  * imperative `refetch` / `cancel` handles. */
@@ -52,94 +84,16 @@ export interface UseStitchResult<T> extends StitchQueryResult<T> {
 // Shared driver
 // ---------------------------------------------------------------------------
 
-// --- key derivation (shared logic; duplicated in @stitchapi/swr) -----------
-// These helpers are intentionally copied verbatim into `@stitchapi/swr`'s
-// `swrKey`: they are separate published packages, so a cross-package import would
-// add a runtime dependency. Keep the two copies in lock-step.
-
-/** The `__config` slice a key derives from. Mirrors core's `nameOf`
- * (`name ?? path ?? 'stitch'`) plus a `url` fallback for URL-configured stitches. */
-type KeyConfig = { name?: string; path?: string; url?: string };
-
-/** A stable, human-meaningful name for the stitch. Mirrors core's `nameOf`
- * (`packages/core/src/engine.ts`) — `name ?? path ?? url ?? 'stitch'` — so two
- * DISTINCT nameless stitches (`/users/{id}` vs `/orders/{id}`) don't collapse to
- * the literal `'stitch'` and collide on one cache entry. */
-function nameOf(stitch: unknown): string {
-    const cfg = (stitch as { __config?: KeyConfig }).__config;
-    return cfg?.name ?? cfg?.path ?? cfg?.url ?? 'stitch';
-}
-
-// Header names whose VALUES are secrets — mirrors core's private `SECRET_HEADERS`
-// trace denylist (`packages/core/src/trace.ts`), which is not exported. We redact
-// the value (rather than dropping the header) so the key stays stable per token
-// AND callers who legitimately vary a response by a non-secret header (e.g.
-// `accept-language`) keep separate cache entries. Compared case-insensitively; the
-// `*-token` / `*-api-key` suffix rules catch vendor spellings without enumerating.
-const SECRET_HEADERS = new Set([
-    'authorization',
-    'proxy-authorization',
-    'cookie',
-    'set-cookie',
-    'x-api-key',
-    'x-auth-token',
-]);
-const REDACTED = '[redacted]';
-
-function isSecretHeader(name: string): boolean {
-    const k = name.toLowerCase();
-    return (
-        SECRET_HEADERS.has(k) || k.endsWith('-token') || k.endsWith('-api-key')
-    );
-}
-
-/**
- * Build the value that goes into a cache/query key from a stitch's per-call input.
- * Never puts the raw input in the key:
- *
- * - drops `signal` / `onProgress` — runtime-only, never-serialised (CONTRACT.md);
- *   `onProgress` in particular churns identity every render, which would refetch
- *   forever if it entered the key;
- * - redacts the VALUES of secret-bearing headers (`authorization`, `cookie`, …)
- *   so a bearer token can't leak into a persisted / devtools-visible key, while
- *   keeping non-secret headers so they still vary the cache;
- * - keeps every other field (`params` / `query` / `body` / `variables` / …) as-is.
- *
- * `null` / `undefined` inputs stay `null`; a primitive input is returned unchanged.
- */
-function keyInputFor(input: unknown): unknown {
-    if (input === null || input === undefined) return null;
-    if (typeof input !== 'object') return input;
-
-    const {
-        signal: _signal,
-        onProgress: _onProgress,
-        ...rest
-    } = input as {
-        signal?: unknown;
-        onProgress?: unknown;
-        headers?: Record<string, unknown>;
-    } & Record<string, unknown>;
-
-    if (rest.headers && typeof rest.headers === 'object') {
-        const headers: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(rest.headers)) {
-            headers[k] = isSecretHeader(k) ? REDACTED : v;
-        }
-        rest.headers = headers;
-    }
-    return rest;
-}
-
 // `deps` lets the caller control when the query handle is re-created. By default
 // we derive a stable identity from the stitch + a structural key of the input, so
 // `{ id: 1 }` !== `{ id: 2 }` re-fetches but a re-render with an equal-shaped
 // literal does not. A caller who keys differently passes explicit `deps`.
 function defaultKey(input: unknown): string {
     try {
-        // Sanitise first: an inline `onProgress` (fresh identity per render) would
-        // otherwise churn the structural key and loop; a per-call `signal` would
-        // add non-deterministic noise. Both are runtime-only, so drop them.
+        // Sanitise first (via query-core's `keyInputFor`): an inline `onProgress`
+        // (fresh identity per render) would otherwise churn the structural key
+        // and loop; a per-call `signal` would add non-deterministic noise. Both
+        // are runtime-only, so they are dropped.
         return JSON.stringify(keyInputFor(input));
     } catch {
         // Non-serialisable input (a function, a cyclic object) → opt out of
@@ -148,19 +102,12 @@ function defaultKey(input: unknown): string {
     }
 }
 
-interface UseStitchOptions<T> extends CreateStitchQueryOptions<T> {
-    /** Explicit re-create trigger. When provided, the handle is re-created only
-     * when one of these changes (by `Object.is`), instead of the default
-     * structural key of `input`. */
-    deps?: readonly unknown[];
-}
-
 function useStitchInternal<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
-    options: UseStitchOptions<T> & { stream: boolean },
+    options: UseStitchOptions<T> & { streaming: boolean },
 ): UseStitchResult<T> {
-    const { deps, stream, mode, enabled, onSuccess, onError } = options;
+    const { deps, streaming, mode, enabled, onSuccess, onError } = options;
 
     // Keep the latest callbacks in a ref so changing them does not re-create the
     // handle (and so the store never holds a stale closure).
@@ -184,11 +131,12 @@ function useStitchInternal<T>(
 
     // The dependency list that triggers a fresh handle (and re-fetch). Default: a
     // structural key of the input + a stable name for the stitch (NOT its function
-    // identity; via `nameOf`, so two nameless stitches on different paths don't
-    // share a dep key) + the streaming flags. Pass `options.deps` to override.
+    // identity; via query-core's `nameOf`, so two nameless stitches on different
+    // paths don't share a dep key) + the streaming flags. Pass `options.deps` to
+    // override.
     const depKey = deps
         ? deps
-        : [nameOf(stitch), defaultKey(input), stream, mode, enabled];
+        : [nameOf(stitch), defaultKey(input), streaming, mode, enabled];
 
     const query: StitchQuery<T> = useMemo(
         () =>
@@ -196,7 +144,7 @@ function useStitchInternal<T>(
                 stableStitch,
                 input,
                 compact({
-                    stream,
+                    streaming,
                     mode,
                     enabled,
                     onSuccess: (d: T) => cbRef.current.onSuccess?.(d),
@@ -262,7 +210,10 @@ export function useStitch<T>(
     input: unknown,
     options: UseStitchOptions<T> = {},
 ): UseStitchResult<T> {
-    return useStitchInternal<T>(stitch, input, { ...options, stream: false });
+    return useStitchInternal<T>(stitch, input, {
+        ...options,
+        streaming: false,
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -297,55 +248,5 @@ export function useStitchStream<T>(
     input: unknown,
     options: UseStitchOptions<T> = {},
 ): UseStitchResult<T> {
-    return useStitchInternal<T>(stitch, input, { ...options, stream: true });
-}
-
-// ---------------------------------------------------------------------------
-// stitchQueryOptions — optional TanStack Query adapter
-// ---------------------------------------------------------------------------
-
-/** The plain object {@link stitchQueryOptions} returns — structurally compatible with
- * TanStack Query's `useQuery(options)` without importing the library. */
-export interface StitchQueryOptions<T> {
-    queryKey: readonly unknown[];
-    queryFn: (ctx?: { signal?: AbortSignal }) => Promise<T>;
-}
-
-/**
- * Build a TanStack-Query-compatible options object for a stitch, WITHOUT a hard
- * dependency on `@tanstack/react-query` — it just returns a POJO. Pass it
- * straight to `useQuery`:
- *
- * ```tsx
- * import { useQuery } from '@tanstack/react-query';
- * import { stitchQueryOptions } from '@stitchapi/react';
- *
- * const { data } = useQuery(stitchQueryOptions(getUser, { params: { id } }));
- * ```
- *
- * The `queryFn` awaits the stitch (the validated output); the `queryKey` is a
- * stable name for the stitch plus a sanitised copy of the input (secret header
- * values redacted, runtime-only `signal`/`onProgress` dropped), so TanStack caches
- * per call without leaking a bearer token into the key or refetching every render.
- *
- * Named `stitchQueryOptions` (not a bare `queryOptions`) because TanStack Query
- * itself exports a `queryOptions` — the bare name would clash on import. See
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md).
- */
-export function stitchQueryOptions<S extends StitchLike<unknown, never>>(
-    stitch: S,
-    input: QueryInput<S>,
-): StitchQueryOptions<QueryOutput<S>>;
-export function stitchQueryOptions<T, Input = unknown>(
-    stitch: StitchLike<T, Input>,
-    input: Input,
-): StitchQueryOptions<T>;
-export function stitchQueryOptions<T>(
-    stitch: StitchLike<T, unknown>,
-    input: unknown,
-): StitchQueryOptions<T> {
-    return {
-        queryKey: [nameOf(stitch), keyInputFor(input)],
-        queryFn: () => Promise.resolve(stitch(input)),
-    };
+    return useStitchInternal<T>(stitch, input, { ...options, streaming: true });
 }

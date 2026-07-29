@@ -8,13 +8,15 @@
 // that one-shot call into a SUBSCRIBABLE store: a `getSnapshot()` / `subscribe()`
 // handle that drives React's `useSyncExternalStore` (see `@stitchapi/react`) and,
 // later, the equivalent primitives in Vue / Svelte / Solid. It imports NO
-// framework and NO `node:*`, so it is browser- and edge-safe.
+// framework and NO `node:*` — its only runtime import is its `stitchapi` peer
+// (for the shared secret-key predicate) — so it is browser- and edge-safe.
 //
 // The store owns the lifecycle the engine deliberately leaves to a host: it runs
 // the call under an `AbortController`, publishes status transitions to listeners,
 // `cancel()`s by aborting, and `refetch()`es by re-running. For a streaming
 // surface it consumes `.stream()` and pushes a state update as each `delta`
 // arrives — the reactive differentiator over plain request/response query libs.
+import { isSecretKey } from 'stitchapi';
 import type { Stitch, StitchEvent, StitchResult } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
@@ -43,7 +45,7 @@ export interface StitchQueryResult<T> {
     /** The thrown reason on failure (a `StitchError` from core, or any throw). */
     readonly error: unknown;
     /** Accumulated `delta` chunks, in arrival order. Empty for a unary call, or
-     * when `accumulate: false` (only the latest chunk is kept on `data`). */
+     * when `mode: 'replace'` (only the latest chunk is kept on `data`). */
     readonly chunks: readonly unknown[];
     /** `status === 'pending'` — a convenience flag for the common render branch. */
     readonly isPending: boolean;
@@ -63,7 +65,7 @@ export interface CreateStitchQueryOptions<T> {
      * a streaming surface (`sse` / `stream`), set this so chunks render as they
      * arrive.
      */
-    readonly stream?: boolean;
+    readonly streaming?: boolean;
     /**
      * For a streaming query, how `data` reflects the stream. `'append'` (default)
      * collects every chunk into `chunks` and sets `data` to the running array.
@@ -197,7 +199,7 @@ export function createStitchQuery<T>(
     options: CreateStitchQueryOptions<T> = {},
 ): StitchQuery<T> {
     const {
-        stream = false,
+        streaming = false,
         mode = 'append',
         enabled = true,
         onSuccess,
@@ -328,7 +330,7 @@ export function createStitchQuery<T>(
             }),
         );
         // `void` the promise: errors are folded into state, never unhandled.
-        void (stream ? runStream(token) : runUnary(token));
+        void (streaming ? runStream(token) : runUnary(token));
     }
 
     if (enabled) start();
@@ -366,6 +368,165 @@ class DOMExceptionLike extends Error {
     constructor(message: string) {
         super(message);
     }
+}
+
+// ---------------------------------------------------------------------------
+// TanStack Query interop — the canonical options shape + key derivation
+// ---------------------------------------------------------------------------
+// The one shared implementation behind every TanStack binding's
+// `stitchQueryOptions` (react / vue / svelte / solid / angular) and the swr
+// binding's key builder. Bindings import from here instead of carrying private
+// copies, so the key format — and its secret-redaction guarantees — cannot
+// drift between frameworks (CONTRACT.md P9).
+
+/**
+ * The canonical options object a binding's `stitchQueryOptions(...)` returns —
+ * structurally what TanStack Query's `useQuery` / `createQuery` / `injectQuery`
+ * consume, WITHOUT importing the library.
+ *
+ * `queryKey` / `queryFn` — and the `*Options` name itself, which TanStack uses
+ * for exactly this shape — are TanStack Query's own vocabulary, kept verbatim
+ * as a deliberate standards-interop carve-out (CONTRACT.md P22): this type
+ * exists solely to be handed to TanStack, so renaming any part of it would buy
+ * a translation seam and nothing else. The name is blessed; do not rename.
+ */
+export interface StitchQueryOptions<T> {
+    queryKey: readonly unknown[];
+    queryFn: (ctx?: { signal?: AbortSignal }) => Promise<T>;
+}
+
+/** The `__config` slice a key derives from. Mirrors core's `nameOf`
+ * (`name ?? path ?? 'stitch'`) plus a `url` fallback for URL-configured stitches. */
+type KeyConfig = { name?: string; path?: string; url?: string };
+
+/** A stable, human-meaningful name for the stitch — the first segment of a
+ * derived query key. Mirrors core's `nameOf` (`packages/core/src/engine.ts`) —
+ * `name ?? path ?? url ?? 'stitch'` — so two DISTINCT nameless stitches
+ * (`/users/{id}` vs `/orders/{id}`) don't collapse to the literal `'stitch'`
+ * and collide on one cache entry. */
+export function nameOf(stitch: unknown): string {
+    const cfg = (stitch as { __config?: KeyConfig }).__config;
+    return cfg?.name ?? cfg?.path ?? cfg?.url ?? 'stitch';
+}
+
+// Header names whose VALUES are secrets — the header-specific denylist on top of
+// core's `isSecretKey` predicate (which contributes the secret stems — `token`,
+// `secret`, `apikey`, … — and any caller-registered names via
+// `registerSecretKey`). We redact the value (rather than dropping the header) so
+// the key stays stable per token AND callers who legitimately vary a response by
+// a non-secret header (e.g. `accept-language`) keep separate cache entries.
+// Compared case-insensitively; the `*-token` / `*-api-key` suffix rules catch
+// vendor spellings the stems miss (dashes defeat the `api_key`/`apikey` stems).
+const SECRET_HEADERS = new Set([
+    'authorization',
+    'proxy-authorization',
+    'cookie',
+    'set-cookie',
+    'x-api-key',
+    'x-auth-token',
+]);
+const REDACTED = '[redacted]';
+
+function isSecretHeader(name: string): boolean {
+    const k = name.toLowerCase();
+    return (
+        SECRET_HEADERS.has(k) ||
+        k.endsWith('-token') ||
+        k.endsWith('-api-key') ||
+        isSecretKey(k)
+    );
+}
+
+/**
+ * Build the value that goes into a cache/query key from a stitch's per-call
+ * input — the second segment of a derived query key. Never puts the raw input
+ * in the key:
+ *
+ * - drops `signal` / `onProgress` — runtime-only, never-serialised (CONTRACT.md);
+ *   `onProgress` in particular churns identity every render, which would refetch
+ *   forever if it entered the key;
+ * - redacts the VALUES of secret-bearing headers (`authorization`, `cookie`, …)
+ *   so a bearer token can't leak into a persisted / devtools-visible key, while
+ *   keeping non-secret headers so they still vary the cache;
+ * - keeps every other field (`params` / `query` / `body` / `variables` / …) as-is.
+ *
+ * `null` / `undefined` inputs stay `null`; a primitive input is returned unchanged.
+ */
+export function keyInputFor(input: unknown): unknown {
+    if (input === null || input === undefined) return null;
+    if (typeof input !== 'object') return input;
+
+    const {
+        signal: _signal,
+        onProgress: _onProgress,
+        ...rest
+    } = input as {
+        signal?: unknown;
+        onProgress?: unknown;
+        headers?: Record<string, unknown>;
+    } & Record<string, unknown>;
+
+    if (rest.headers && typeof rest.headers === 'object') {
+        const headers: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(rest.headers)) {
+            headers[k] = isSecretHeader(k) ? REDACTED : v;
+        }
+        rest.headers = headers;
+    }
+    return rest;
+}
+
+/**
+ * Derive the canonical cache/query key for a stitch call: a stable name for the
+ * stitch (see {@link nameOf}) plus a sanitised copy of the input (see
+ * {@link keyInputFor}). Every binding — the five TanStack adapters' query keys
+ * and the swr key builder — derives from here, so a stitch keys identically no
+ * matter which framework reads it.
+ */
+export function deriveQueryKey(
+    stitch: unknown,
+    input: unknown,
+): readonly [string, unknown] {
+    return [nameOf(stitch), keyInputFor(input)];
+}
+
+/**
+ * Build a TanStack-Query-compatible options object for a stitch, WITHOUT a hard
+ * dependency on any `@tanstack/*-query` package — it just returns a POJO. The
+ * framework bindings re-export this; pass it straight to `useQuery` /
+ * `createQuery` / `injectQuery`:
+ *
+ * ```ts
+ * import { useQuery } from '@tanstack/react-query';
+ * import { stitchQueryOptions } from '@stitchapi/react';
+ *
+ * const { data } = useQuery(stitchQueryOptions(getUser, { params: { id } }));
+ * ```
+ *
+ * The `queryFn` awaits the stitch (the validated output); the `queryKey` is
+ * {@link deriveQueryKey}'s stable, secret-redacted key, so TanStack caches per
+ * call without leaking a bearer token into the key or refetching every render.
+ *
+ * Named `stitchQueryOptions` (not a bare `queryOptions`) because TanStack Query
+ * itself exports a `queryOptions` — the bare name would clash on import. See
+ * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md).
+ */
+export function stitchQueryOptions<S extends StitchLike<unknown, never>>(
+    stitch: S,
+    input: QueryInput<S>,
+): StitchQueryOptions<QueryOutput<S>>;
+export function stitchQueryOptions<T, Input = unknown>(
+    stitch: StitchLike<T, Input>,
+    input: Input,
+): StitchQueryOptions<T>;
+export function stitchQueryOptions<T>(
+    stitch: StitchLike<T, unknown>,
+    input: unknown,
+): StitchQueryOptions<T> {
+    return {
+        queryKey: deriveQueryKey(stitch, input),
+        queryFn: () => Promise.resolve(stitch(input)),
+    };
 }
 
 // ---------------------------------------------------------------------------

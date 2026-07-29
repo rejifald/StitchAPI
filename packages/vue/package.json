@@ -2,7 +2,7 @@
     "name": "@stitchapi/vue",
     "version": "1.0.0-rc.6",
     "type": "commonjs",
-    "description": "Vue 3 bindings for StitchAPI — reactive useStitch/useStitchStream composables over @stitchapi/query-core, plus an optional TanStack Query queryOptions helper. Streaming-first: re-render as `delta` chunks arrive.",
+    "description": "Vue 3 bindings for StitchAPI — reactive useStitch/useStitchStream composables over @stitchapi/query-core, plus an optional TanStack Query stitchQueryOptions helper. Streaming-first: re-render as `delta` chunks arrive.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
     "types": "lib/index.d.ts",
