@@ -109,25 +109,34 @@ export interface ReconnectRefetchOptions {
     /** Turn the subscription on/off without unmounting (default `true`). */
     enabled?: boolean;
     /**
-     * The NetInfo module — required, because `@react-native-community/netinfo` is
-     * an optional peer this package does not bundle. Pass the imported module.
+     * The NetInfo module — required (P15), because `@react-native-community/netinfo`
+     * is an optional peer this package does not bundle. Pass the imported module;
+     * or skip the envelope and pass the module positionally.
      */
     netInfo: NetInfoLike;
 }
 
 /**
- * Refetch a stitch query whenever connectivity returns.
+ * Refetch a stitch query whenever connectivity returns. The NetInfo module is the
+ * one required value, so it can be passed positionally (P15 shorthand); use the
+ * options envelope when you also need `enabled`.
  *
  * ```tsx
  * import NetInfo from '@react-native-community/netinfo';
- * useReconnectRefetch(q, { netInfo: NetInfo });
+ * useReconnectRefetch(q, NetInfo);
+ * // or, with the envelope:
+ * useReconnectRefetch(q, { netInfo: NetInfo, enabled: isLoggedIn });
  * ```
  */
 export function useReconnectRefetch(
     handle: Refetchable,
-    options: ReconnectRefetchOptions,
+    options: NetInfoLike | ReconnectRefetchOptions,
 ): void {
-    const { enabled = true, netInfo } = options;
+    // A NetInfoLike is distinguishable by its `addEventListener`; the envelope
+    // carries the module under `netInfo` instead.
+    const opts: ReconnectRefetchOptions =
+        'addEventListener' in options ? { netInfo: options } : options;
+    const { enabled = true, netInfo } = opts;
     const ref = useRef(handle);
     ref.current = handle;
     useEffect(() => {

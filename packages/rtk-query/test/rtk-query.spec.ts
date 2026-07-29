@@ -87,11 +87,13 @@ describe('stitchQueryFn', () => {
         expect(result.error && typeof result.error).toBe('object');
     });
 
-    test('keeps primitive own fields but DROPS non-primitive ones (Redux-serialisable)', async () => {
+    test('preserves the P10 field set — body included — across serialisation', async () => {
         class RichError extends Error {
             override name = 'StitchError';
-            status = 502; // primitive → carried
-            response = { headers: { secret: 'x' } }; // object → dropped
+            status = 502;
+            attempts = 3;
+            body = { error: 'bad gateway', upstream: ['a', 'b'] }; // parsed JSON payload → carried
+            url = 'https://api.example.com/users/1';
         }
         const qfn = stitchQueryFn(
             unaryStitch(async () => {
@@ -104,8 +106,45 @@ describe('stitchQueryFn', () => {
             name: 'StitchError',
             message: 'bad gateway',
             status: 502,
+            attempts: 3,
+            body: { error: 'bad gateway', upstream: ['a', 'b'] },
+            url: 'https://api.example.com/users/1',
         });
-        // A non-serialisable object field must never reach Redux state.
+        // The whole error survives a real JSON round trip intact (Redux persistence).
+        expect(JSON.parse(JSON.stringify(result.error))).toEqual(result.error);
+    });
+
+    test('drops non-JSON-survivable fields and the raw response carrier', async () => {
+        const cyclic: Record<string, unknown> = {};
+        cyclic['self'] = cyclic;
+        class LeakyError extends Error {
+            override name = 'RateLimitError';
+            status = 429;
+            retryAfter = 1000; // plain data → carried
+            // The full AdapterResponse lives on the thrown instance ONLY (core's rule) —
+            // its headers (set-cookie & co.) must never reach Redux state.
+            response = {
+                status: 429,
+                headers: { 'set-cookie': 'secret' },
+                body: {},
+            };
+            onRetry = (): void => {}; // function → dropped
+            inner = new RangeError('nested'); // class instance → dropped
+            loop = cyclic; // cycle → dropped (JSON.stringify would throw)
+        }
+        const qfn = stitchQueryFn(
+            unaryStitch(async () => {
+                throw new LeakyError('rate limited (HTTP 429)');
+            }),
+        );
+        const result = await qfn({});
+
+        expect(result.error).toEqual({
+            name: 'RateLimitError',
+            message: 'rate limited (HTTP 429)',
+            status: 429,
+            retryAfter: 1000,
+        });
         expect(result.error && 'response' in result.error).toBe(false);
     });
 
@@ -147,6 +186,19 @@ describe('stitchStreamUpdater', () => {
             mode: 'replace',
         })(undefined, api);
         expect(data).toEqual([3]);
+    });
+
+    test("scalar shorthand: 'replace' ≡ { mode: 'replace' } (P12), and {} is rejected (P20)", async () => {
+        const { data, api } = mockCache<number>([]);
+        await stitchStreamUpdater<number>(streamStitch(events), 'replace')(
+            undefined,
+            api,
+        );
+        expect(data).toEqual([3]);
+
+        // @ts-expect-error — P20: the empty object is not a valid options value;
+        // the all-defaults case is omitting the argument.
+        stitchStreamUpdater<number>(streamStitch(events), {});
     });
 
     test('stops when the cache entry is removed, even if the stream never ends', async () => {

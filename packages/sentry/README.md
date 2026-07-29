@@ -33,20 +33,25 @@ The same sink works on a single stitch — `stitch({ trace: sentrySink(Sentry) }
 
 ## What it sends
 
-| Event                          | Sentry                                                                |
-| ------------------------------ | --------------------------------------------------------------------- |
-| `error`                        | `captureMessage` (level `error`) + an error breadcrumb                |
-| `progress` (`retry`/`circuit`) | breadcrumb, level `warning`                                           |
-| `progress` (throttle/paginate) | breadcrumb, level `debug`                                             |
-| `drift`                        | breadcrumb (level follows the finding); captured with `capture.drift` |
-| `start` / `result` / `done`    | breadcrumb only when `lifecycle: true` (off by default)               |
-| `delta` / `info`               | **never sent** (raw response data / strategy announcements)           |
+| Event                          | Sentry                                                                           |
+| ------------------------------ | -------------------------------------------------------------------------------- |
+| `error`                        | `captureMessage` (level `error`) + an error breadcrumb                           |
+| `progress` (`retry`/`circuit`) | breadcrumb, level `warning`                                                      |
+| `progress` (throttle/paginate) | breadcrumb, level `debug`                                                        |
+| `drift`                        | breadcrumb (level follows the finding); captured with `capture: { drift: true }` |
+| `start` / `result` / `done`    | breadcrumb only when `lifecycle: true` (off by default)                          |
+| `delta` / `info`               | **never sent** (raw response data / strategy announcements)                      |
 
-Options: `{ lifecycle?, capture? }` — `capture` is `boolean | { errors?, drift? }`: `true`/omitted captures errors (not drift), `false` disables both, or set `errors`/`drift` independently.
+Options: `{ lifecycle?, capture?: boolean | { errors?, drift? } }`. `capture: false` disables both `errors` and `drift` capture (breadcrumbs still flow); `capture: true`/omitted resolves to the documented defaults (`errors: true`, `drift: false`); pass the envelope to set them independently.
+
+> [!NOTE]
+> The same `lifecycle` option in `@stitchapi/pino` defaults to `true` — a
+> **deliberate** divergence: Sentry breadcrumbs/events cost quota, while Pino log
+> lines are cheap and level-filtered.
 
 ## Safe on a secret-bearing seam
 
-> A custom `TraceSink` receives the **raw** event — core only redacts inside its own built-in sinks. This sink therefore sends **metadata only**: the stitch name, method, **redacted URL** (query stripped — it can carry `?api_key=…`), status, attempt counts, drift path/level/change, phase, and timing. It never sends `event.input` (headers still hold the live `authorization`/`cookie`), the response `value`, or a `delta` chunk.
+> A custom `TraceSink` receives the **raw** event — core only redacts inside its own built-in sinks. This sink therefore sends **metadata only**: the stitch name, method, **redacted URL** (query stripped — it can carry `?api_key=…`), status, attempt counts, drift path/level/change, phase, and timing. It never sends `event.input` (headers still hold the live `authorization`/`cookie`), the response `data`, or a `delta` chunk.
 
 ## License
 

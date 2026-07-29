@@ -1,6 +1,6 @@
 // @stitchapi/react-native — React Native bindings for StitchAPI.
 //
-// The hooks (`useStitch` / `useStitchStream` / `queryOptions`) are re-exported
+// The hooks (`useStitch` / `useStitchStream` / `stitchQueryOptions`) are re-exported
 // verbatim from `@stitchapi/react`: they are pure `useSyncExternalStore` over the
 // shared `@stitchapi/query-core` store and run unchanged on React Native. What this
 // package ADDS is the platform glue bare RN needs:
