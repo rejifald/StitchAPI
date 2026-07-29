@@ -6,8 +6,20 @@
 // This guards two things at once: the exfil-at-rest surface (a public config view must not carry
 // live author closures — ADR 0002) and JSON-serialisability (a function silently drops on
 // `JSON.stringify`, so a leaked one corrupts every trace / report / `mcp` view of the stitch).
-import { stitch } from '../src';
+import {
+    basic,
+    fetchAdapter,
+    graphqlSurface,
+    memoryStore,
+    stitch,
+    systemClock,
+} from '../src';
 import type { StitchConfig, TraceSink } from '../src';
+import type {
+    FnBearingSlot,
+    ProjectedSlot,
+    RedactedSlot,
+} from '../src/anatomy';
 
 import { describe, expect, test } from 'vitest';
 
@@ -26,39 +38,53 @@ function fnPaths(value: unknown, path = '$'): string[] {
 const rawConfigOf = (f: unknown): StitchConfig =>
     (f as { __rawConfig: StitchConfig }).__rawConfig;
 
+// Every slot the anatomy marks as carrying author closures at depth 1, with a sample that populates
+// them. Keyed by `FnBearingSlot`, so a NEW fn-bearing slot fails to compile here until it has a
+// sample — the fixture can no longer pass this suite by simply not exercising a slot, which is how a
+// live `TraceSink` reached `__config` unnoticed.
+const FN_BEARING_SAMPLES: Record<FnBearingSlot, object> = {
+    paginate: { next: () => undefined, items: () => [], pages: 3 },
+    retry: { attempts: 2, on: (status: number) => status >= 500 },
+    throttle: { rate: '2/s', on: (status: number) => status === 429 },
+    idempotency: { keyOf: () => 'p0-idem' },
+    cache: {
+        ttl: '1m',
+        // The canonical derivation-fn name (not the @deprecated `key`): redaction must strip BOTH,
+        // so exercising `keyOf` here pins the name-agnostic strip.
+        keyOf: () => 'p0-cache',
+        vary: ['accept'],
+        methods: ['GET'],
+    },
+};
+
+// Every slot the anatomy drops OUTRIGHT — live handles and always-fns — minus the two it re-projects
+// as data (`kind` → its id, `auth` → `authScheme`, asserted separately). Same guarantee in the other
+// direction: a new must-not-appear slot has to be sampled here before this compiles.
+const HANDLE_SAMPLES: Record<Exclude<RedactedSlot, ProjectedSlot>, unknown> = {
+    transform: (body: unknown) => body,
+    hooks: {
+        onRequest: () => undefined,
+        onResponse: () => undefined,
+        onError: () => undefined,
+        onRetry: () => undefined,
+    },
+    adapter: fetchAdapter(),
+    clock: systemClock,
+    store: memoryStore(),
+    // A live sink: `trace` is data in its shorthand forms but an author-closure handle in this one.
+    trace: { handle: () => undefined },
+};
+
 describe('CONTRACT.md P0 — __config is plain JSON data', () => {
-    // Every function-valued slot an author can populate, in one stitch.
+    // Every function-valued slot an author can populate, in one stitch — the two sample sets are
+    // keyed off the anatomy, so this fixture is complete by construction rather than by review.
     const laden = stitch({
         name: 'p0-fn-laden',
         url: () => 'https://api.example.test/items',
-        transform: (body) => body,
-        paginate: {
-            next: () => undefined,
-            items: () => [],
-            pages: 3,
-        },
-        hooks: {
-            onRequest: () => undefined,
-            onResponse: () => undefined,
-            onError: () => undefined,
-            onRetry: () => undefined,
-        },
-        acceptStatus: (status) => status === 404,
-        retry: { attempts: 2, on: (status) => status >= 500 },
-        throttle: { rate: '2/s', on: (status) => status === 429 },
-        idempotency: { keyOf: () => 'p0-idem' },
-        cache: {
-            ttl: '1m',
-            // The canonical derivation-fn name (not the @deprecated `key`): redaction must strip
-            // BOTH, so exercising `keyOf` here pins the name-agnostic strip.
-            keyOf: () => 'p0-cache',
-            vary: ['accept'],
-            methods: ['GET'],
-        },
-        // A live sink: `trace` is data in its shorthand forms but an author-closure handle in this
-        // one, so it is the third data-or-handle slot alongside `url`/`acceptStatus`.
-        trace: { handle: () => undefined },
-    });
+        acceptStatus: (status: number) => status === 404,
+        ...FN_BEARING_SAMPLES,
+        ...HANDLE_SAMPLES,
+    } as Partial<StitchConfig>);
 
     test('the fn-laden stitch exposes zero function-valued paths on __config', () => {
         expect(fnPaths(laden.__config)).toEqual([]);
@@ -74,8 +100,6 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
         const cfg = laden.__config;
         // A thunked endpoint has no static string — the slot is absent, not stringified.
         expect(cfg.url).toBeUndefined();
-        expect(cfg).not.toHaveProperty('transform');
-        expect(cfg).not.toHaveProperty('hooks');
         // Fn-free data survives; the paginate/keyOf/predicate fns are gone.
         expect(cfg.paginate).not.toHaveProperty('next');
         expect(cfg.paginate).not.toHaveProperty('items');
@@ -89,9 +113,32 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
         expect(cfg.cache).not.toHaveProperty('keyOf');
         expect(cfg.cache).not.toHaveProperty('key');
         expect(cfg.cache?.ttl).toBe('1m');
-        // A live sink is dropped WHOLE, not fn-stripped to a hollow `{}` — an empty object would
-        // read as "tracing configured with defaults" and would not survive a JSON round-trip.
-        expect(cfg).not.toHaveProperty('trace');
+    });
+
+    test('every slot the anatomy drops outright is absent from __config', () => {
+        // Driven off `HANDLE_SAMPLES`, whose keys ARE `Exclude<RedactedSlot, ProjectedSlot>`, so
+        // this widens by itself the moment a new slot is marked `dropped: 'redact'`. Each is dropped
+        // WHOLE, not fn-stripped to a hollow `{}` — an empty `trace` would read as "tracing
+        // configured with defaults" and would not survive a JSON round-trip either.
+        for (const slot of Object.keys(HANDLE_SAMPLES)) {
+            expect(laden.__config).not.toHaveProperty(slot);
+        }
+    });
+
+    test('the two projected slots become plain data, not absence', () => {
+        const projected = stitch({
+            name: 'p0-projected',
+            url: 'https://api.example.test/graphql',
+            kind: graphqlSurface,
+            document: 'query { x }',
+            auth: basic('user', 'pass'),
+        });
+        const cfg = projected.__config;
+        // `kind` → the surface's id string; `auth` → its non-secret scheme. The live values are gone.
+        expect(cfg.kind).toBe('graphql');
+        expect(cfg.authScheme).toBeDefined();
+        expect(cfg).not.toHaveProperty('auth');
+        expect(fnPaths(cfg)).toEqual([]);
     });
 
     test('the `trace` shorthand forms are dropped with the slot', () => {

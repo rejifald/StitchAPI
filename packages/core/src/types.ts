@@ -1,5 +1,6 @@
 // Shared vocabulary for the prototype. Leaf modules (resilience, trace, http-adapter,
 // auth, mock-server) and the engine all code against these types.
+import type { RedactedSlot } from './anatomy';
 import type {
     Args,
     InputOf,
@@ -896,10 +897,7 @@ export type ResolvedStitchConfig = Omit<
  * full, secret-bearing config lives on the non-enumerable `__rawConfig`, used only for fragment
  * composition.)
  */
-export type RedactedStitchConfig = Omit<
-    ResolvedStitchConfig,
-    'auth' | 'store' | 'adapter' | 'clock' | 'kind' | 'trace'
-> & {
+export type RedactedStitchConfig = Omit<ResolvedStitchConfig, RedactedSlot> & {
     /** The surface's `id` string (never the live {@link Surface}); absent for the default `http`. */
     kind?: string;
     /** Non-secret auth scheme projected from the (stripped) live `auth`; feeds `export --openapi`. */

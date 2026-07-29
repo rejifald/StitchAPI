@@ -1,6 +1,14 @@
 // The authoring surface: stitch() + the extends composition facade +
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
+import type {
+    Assert,
+    Covers,
+    FnBearingSlot,
+    RedactedIfFnSlot,
+    RedactedSlot,
+    ShorthandPair,
+} from './anatomy';
 import { compact } from './compact';
 import {
     ERROR_SOURCE,
@@ -35,6 +43,7 @@ import {
     type Inspection,
     type RedactedStitchConfig,
     type ResolvedStitchConfig,
+    type RetryOptions,
     type RunContext,
     type RunReport,
     type SafeResult,
@@ -138,30 +147,45 @@ function normalizeInput(
     return out;
 }
 
+// Every slot whose scalar shorthand folds into a dominant field, paired with that field. The pairs
+// are the config anatomy's, not a second copy of them: `satisfies` rejects a slot/field mismatch and
+// `_ShorthandsCovered` rejects an omission, naming the slot left out.
+const SHORTHAND_SLOTS = [
+    ['retry', 'attempts'],
+    ['timeout', 'total'],
+    ['cache', 'ttl'],
+    ['stream', 'decode'],
+    ['multipart', 'nesting'],
+    ['throttle', 'rate'],
+] as const satisfies readonly ShorthandPair[];
+// The walk carries a UNION of slots, so `envelope`'s per-slot generic inference cannot apply — bind
+// it once at the erased signature instead. No cast: the slot/field pairing is already proved above,
+// against the anatomy.
+const fold: (value: unknown, key: string) => unknown = envelope;
+export type _ShorthandsCovered = Assert<
+    Covers<ShorthandPair[0], (typeof SHORTHAND_SLOTS)[number][0]>
+>;
+
 // Expand the scalar shorthands (`retry: 3`, `timeout: '5s'`, `cache: '1m'`) to their object form
 // IN PLACE, before the deep-merge, so a literal in one layer folds cleanly into an object in
 // another and the resolved config the engine reads is always the normalised shape.
 function expandShorthand(cfg: Partial<StitchConfig>): void {
     // P12/P14: each slot's dominant-field scalar folds into its envelope, so the opaque `{}` never
     // reaches the slot (P20) and the engine only ever sees the object form. One `envelope` call per
-    // slot — the slot and its dominant field, nothing else to keep in sync.
-    if (cfg.retry !== undefined) {
-        cfg.retry = envelope(cfg.retry, 'attempts');
-        // Nested fold (P24): `backoff` is itself a scalar-or-envelope slot, so the bare curve
-        // normalizes too — `__config` never carries the string form (P0).
-        if (cfg.retry.backoff !== undefined)
-            cfg.retry = {
-                ...cfg.retry,
-                backoff: envelope(cfg.retry.backoff, 'curve'),
-            };
+    // slot, driven off the anatomy — nothing here to keep in sync by hand.
+    const slots = cfg as Record<string, unknown>;
+    for (const [slot, field] of SHORTHAND_SLOTS) {
+        if (slots[slot] !== undefined) slots[slot] = fold(slots[slot], field);
     }
-    if (cfg.timeout !== undefined) cfg.timeout = envelope(cfg.timeout, 'total');
-    if (cfg.cache !== undefined) cfg.cache = envelope(cfg.cache, 'ttl');
-    if (cfg.stream !== undefined) cfg.stream = envelope(cfg.stream, 'decode');
-    if (cfg.multipart !== undefined)
-        cfg.multipart = envelope(cfg.multipart, 'nesting');
-    if (cfg.throttle !== undefined)
-        cfg.throttle = envelope(cfg.throttle, 'rate');
+    // Nested fold (P24): `backoff` is itself a scalar-or-envelope slot, so the bare curve
+    // normalizes too — `__config` never carries the string form (P0). Read back through the
+    // normalised shape the loop just wrote.
+    const retry = cfg.retry as RetryOptions | undefined;
+    if (retry?.backoff !== undefined)
+        cfg.retry = {
+            ...retry,
+            backoff: envelope(retry.backoff, 'curve'),
+        };
     // P13: `sse: true` enables reconnection with defaults; `false`/absent is off (the opaque
     // `sse: {}` is a type error at the slot, so the all-defaults case arrives here as `true`).
     if (cfg.sse === true) cfg.sse = { reconnect: true };
@@ -713,6 +737,41 @@ function omit<T extends object, K extends keyof T>(
     ) as Omit<T, K>;
 }
 
+// The three redaction key lists, each checked against the config anatomy: `satisfies` rejects a slot
+// the anatomy does not mark that way, and the `Covers` aliases reject an omission, naming the slot
+// that was left out. Adding a slot to `StitchConfig` and forgetting it here no longer compiles.
+const REDACTED_SLOTS = [
+    'store',
+    'auth',
+    'adapter',
+    'clock',
+    'kind',
+    'transform',
+    'hooks',
+    'trace',
+] as const satisfies readonly RedactedSlot[];
+const REDACTED_IF_FN_SLOTS = [
+    'url',
+    'baseUrl',
+    'acceptStatus',
+] as const satisfies readonly RedactedIfFnSlot[];
+const FN_BEARING_SLOTS = [
+    'paginate',
+    'retry',
+    'throttle',
+    'idempotency',
+    'cache',
+] as const satisfies readonly FnBearingSlot[];
+export type _RedactedCovered = Assert<
+    Covers<RedactedSlot, (typeof REDACTED_SLOTS)[number]>
+>;
+export type _RedactedIfFnCovered = Assert<
+    Covers<RedactedIfFnSlot, (typeof REDACTED_IF_FN_SLOTS)[number]>
+>;
+export type _FnBearingCovered = Assert<
+    Covers<FnBearingSlot, (typeof FN_BEARING_SLOTS)[number]>
+>;
+
 // `__config` is the PUBLIC view; strip the live secret-bearing handles so the running store,
 // credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest), and
 // strip EVERY function-valued field so it is plain JSON data (CONTRACT.md P0). The full config —
@@ -734,20 +793,14 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     //     handle, so they go with it — nothing reads `trace` off `__config`; the engine reads the
     //     live sink off the runtime (`resolveTrace`).
     // `omit` filters entries (no `delete` — the repo bans dynamic delete), so this replaces a column
-    // of per-field deletes with a single declarative drop-list.
-    const fnValued = (['url', 'baseUrl', 'acceptStatus'] as const).filter(
+    // of per-field deletes with one drop-list — and the list is the anatomy's, so a new slot that
+    // must not reach `__config` is a compile error here rather than a silent leak.
+    const fnValued = REDACTED_IF_FN_SLOTS.filter(
         (k) => typeof cfg[k] === 'function',
     );
     const redacted = omit(
         cfg,
-        'store',
-        'auth',
-        'adapter',
-        'clock',
-        'kind',
-        'transform',
-        'hooks',
-        'trace',
+        ...REDACTED_SLOTS,
         ...fnValued,
     ) as RedactedStitchConfig;
     // Project the auth's NON-SECRET scheme onto the public config — always re-derived from the live
@@ -764,11 +817,10 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     // — canonical or @deprecated alias, dropped by value so a rename can't rot it). `stripFns`
     // rebuilds each slot FRESH, so `cfg` — i.e. `__rawConfig` — is never mutated. The engine reads all
     // that sugar off `__rawConfig`; nothing reads it off `__config` (see e.g. `toOpenApi`).
-    if (cfg.paginate) redacted.paginate = stripFns(cfg.paginate);
-    if (cfg.retry) redacted.retry = stripFns(cfg.retry);
-    if (cfg.throttle) redacted.throttle = stripFns(cfg.throttle);
-    if (cfg.idempotency) redacted.idempotency = stripFns(cfg.idempotency);
-    if (cfg.cache) redacted.cache = stripFns(cfg.cache);
+    const out = redacted as Record<string, unknown>;
+    for (const k of FN_BEARING_SLOTS) {
+        if (cfg[k] !== undefined) out[k] = stripFns(cfg[k]);
+    }
     return redacted;
 }
 
