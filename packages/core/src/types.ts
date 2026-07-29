@@ -1,6 +1,6 @@
 // Shared vocabulary for the prototype. Leaf modules (resilience, trace, http-adapter,
 // auth, mock-server) and the engine all code against these types.
-import type { RedactedSlot } from './anatomy';
+import type { Assert, Covers, NormalizedSlot, RedactedSlot } from './anatomy';
 import type {
     Args,
     InputOf,
@@ -859,19 +859,7 @@ export interface StitchConfig {
  * the `hooks` / `input` envelopes to their chained/normalized object). This is the shape the engine
  * and {@link redactConfig} read — never the loose authoring union.
  */
-export type ResolvedStitchConfig = Omit<
-    StitchConfig,
-    | 'retry'
-    | 'timeout'
-    | 'cache'
-    | 'idempotency'
-    | 'throttle'
-    | 'stream'
-    | 'multipart'
-    | 'sse'
-    | 'hooks'
-    | 'input'
-> & {
+interface ResolvedNormalizations {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
     cache?: CacheOptions;
@@ -882,7 +870,18 @@ export type ResolvedStitchConfig = Omit<
     sse?: SseOptions;
     hooks?: Hooks;
     input?: InputSchemas;
-};
+}
+/**
+ * The slots dropped and the slots re-declared are the same set, both taken from the config anatomy:
+ * a new shorthand/toggle slot widens {@link NormalizedSlot} on its own, and this assert then fails
+ * until it is re-declared here — so the resolved type can never keep admitting an authoring form the
+ * engine will never see.
+ */
+export type _ResolvedRedeclaresEveryNormalizedSlot = Assert<
+    Covers<NormalizedSlot, keyof ResolvedNormalizations>
+>;
+export type ResolvedStitchConfig = Omit<StitchConfig, NormalizedSlot> &
+    ResolvedNormalizations;
 
 /**
  * The PUBLIC, redacted projection of a {@link StitchConfig} that a stitch exposes as `__config`

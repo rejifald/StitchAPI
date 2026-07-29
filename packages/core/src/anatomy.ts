@@ -58,6 +58,14 @@ interface SlotFacts {
     stage?: number;
     /** Reported as a configured/not-configured flag in the `mcp` `policies` summary. */
     policy?: true;
+    /**
+     * `compose` rewrites this slot, so `ResolvedStitchConfig` re-declares it in its normalised form
+     * rather than inheriting the loose authoring union. Only needed for slots normalised by
+     * something OTHER than the shorthand/toggle folds — `hooks` (chained into one) and `input`
+     * (each schema through `toValidator`); every `shorthand`/`toggle` slot is normalised by
+     * definition and counts automatically. See {@link NormalizedSlot}.
+     */
+    normalized?: true;
 }
 
 /**
@@ -79,7 +87,7 @@ export interface Anatomy {
     headers: object;
     document: object;
     operationName: object;
-    input: object;
+    input: { normalized: true };
     output: { stage: 7 };
     pick: { stage: 6 };
     transform: { dropped: 'redact' };
@@ -94,7 +102,7 @@ export interface Anatomy {
     cache: { shorthand: 'ttl'; fns: true; stage: 8; policy: true };
     sensitive: object;
     arrayFormat: object;
-    hooks: { dropped: 'redact' };
+    hooks: { dropped: 'redact'; normalized: true };
     extends: { dropped: 'compose' };
     adapter: { dropped: 'redact' };
     clock: { dropped: 'redact' };
@@ -134,6 +142,20 @@ export type RedactedSlot = SlotsWhere<{ dropped: 'redact' }>;
 export type RedactedIfFnSlot = SlotsWhere<{ dropped: 'redact-if-fn' }>;
 /** Slots re-projected onto `__config` as plain data rather than simply removed. */
 export type ProjectedSlot = SlotsWhere<{ project: true }>;
+/** Slots whose scalar shorthand folds into a dominant field. */
+export type ShorthandSlot = SlotsWhere<{ shorthand: string }>;
+/** Slots whose `true`/`false` toggle normalises to the object form (or removal). */
+export type ToggleSlot = SlotsWhere<{ toggle: true }>;
+/**
+ * Slots `compose` rewrites, and therefore exactly the slots `ResolvedStitchConfig` must re-declare
+ * in their normalised form. A shorthand or toggle slot qualifies BY DEFINITION — `expandShorthand`
+ * rewrites it — so adding one to the anatomy widens this union automatically, and forgetting to
+ * re-declare it becomes a compile error instead of a resolved type that still admits the scalar.
+ */
+export type NormalizedSlot =
+    | ShorthandSlot
+    | ToggleSlot
+    | SlotsWhere<{ normalized: true }>;
 /** Slots reported as configured/not in the `mcp` `policies` summary. */
 export type PolicySlot = SlotsWhere<{ policy: true }>;
 /** Slots that appear in the pipeline read-out. */
@@ -152,12 +174,10 @@ export type StageEntry<Cfg> = {
 }[StagedSlot];
 /** Slots with a scalar shorthand, paired with the field it folds into. */
 export type ShorthandPair = {
-    [K in SlotsWhere<{ shorthand: string }>]: Anatomy[K] extends {
-        shorthand: infer Field;
-    }
+    [K in ShorthandSlot]: Anatomy[K] extends { shorthand: infer Field }
         ? readonly [K, Field]
         : never;
-}[SlotsWhere<{ shorthand: string }>];
+}[ShorthandSlot];
 
 /**
  * Assert a hand-written key list covers every slot the anatomy marks. `satisfies` already rejects a
