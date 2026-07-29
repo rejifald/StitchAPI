@@ -703,7 +703,15 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     //     exfil-at-rest) and the live `Surface` `kind` (both re-projected to plain data below);
     //   • the always-fn `transform` (a mapper) and `hooks` (an object of callbacks);
     //   • whichever of `url`/`baseUrl`/`acceptStatus` are in their function form — a string endpoint
-    //     or a `number[]` status list stays, a thunk/predicate goes.
+    //     or a `number[]` status list stays, a thunk/predicate goes;
+    //   • `trace` — infrastructure, exactly like `store`/`adapter`/`clock`. Its full form is a live
+    //     `TraceSink` whose `handle`/`flush` are author closures (the same exfil-at-rest surface,
+    //     ADR 0002 §4/§6), and dropping the SLOT rather than fn-stripping the sink is what makes
+    //     that airtight: a sink implemented as a CLASS carries those methods on the prototype, where
+    //     an own-entry strip would not even see them, and a hollow `{}` would read as "tracing
+    //     configured with defaults". The shorthand `'console'` / `false` resolve to that same
+    //     handle, so they go with it — nothing reads `trace` off `__config`; the engine reads the
+    //     live sink off the runtime (`resolveTrace`).
     // `omit` filters entries (no `delete` — the repo bans dynamic delete), so this replaces a column
     // of per-field deletes with a single declarative drop-list.
     const fnValued = (['url', 'baseUrl', 'acceptStatus'] as const).filter(
@@ -718,6 +726,7 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
         'kind',
         'transform',
         'hooks',
+        'trace',
         ...fnValued,
     ) as RedactedStitchConfig;
     // Project the auth's NON-SECRET scheme onto the public config — always re-derived from the live

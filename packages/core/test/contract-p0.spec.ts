@@ -1,12 +1,13 @@
 // CONTRACT.md P0 regression: the enumerable `__config` is plain JSON data. Every function-valued
 // field an author can write — endpoint thunks, `transform`, `paginate.next`/`items`, `hooks.*`, the
-// predicate forms of `acceptStatus`/`retry.on`/`throttle.on`, `idempotency.keyOf`, `cache.keyOf` —
-// must be stripped by redaction; the engine reads that sugar off the non-enumerable `__rawConfig`.
+// predicate forms of `acceptStatus`/`retry.on`/`throttle.on`, `idempotency.keyOf`, `cache.keyOf`,
+// and a live `TraceSink` — must be stripped by redaction; the engine reads that sugar off the
+// non-enumerable `__rawConfig`.
 // This guards two things at once: the exfil-at-rest surface (a public config view must not carry
 // live author closures — ADR 0002) and JSON-serialisability (a function silently drops on
 // `JSON.stringify`, so a leaked one corrupts every trace / report / `mcp` view of the stitch).
 import { stitch } from '../src';
-import type { StitchConfig } from '../src';
+import type { StitchConfig, TraceSink } from '../src';
 
 import { describe, expect, test } from 'vitest';
 
@@ -54,6 +55,9 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
             vary: ['accept'],
             methods: ['GET'],
         },
+        // A live sink: `trace` is data in its shorthand forms but an author-closure handle in this
+        // one, so it is the third data-or-handle slot alongside `url`/`acceptStatus`.
+        trace: { handle: () => undefined },
     });
 
     test('the fn-laden stitch exposes zero function-valued paths on __config', () => {
@@ -85,6 +89,44 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
         expect(cfg.cache).not.toHaveProperty('keyOf');
         expect(cfg.cache).not.toHaveProperty('key');
         expect(cfg.cache?.ttl).toBe('1m');
+        // A live sink is dropped WHOLE, not fn-stripped to a hollow `{}` — an empty object would
+        // read as "tracing configured with defaults" and would not survive a JSON round-trip.
+        expect(cfg).not.toHaveProperty('trace');
+    });
+
+    test('the `trace` shorthand forms are dropped with the slot', () => {
+        // `'console'` / `false` resolve to the same live sink, so the whole slot goes — `trace` is
+        // infrastructure and joins `store`/`adapter`/`clock` in being absent from the public view.
+        const named = stitch({
+            name: 'p0-trace-console',
+            url: 'https://api.example.test/x',
+            trace: 'console',
+        });
+        expect(named.__config).not.toHaveProperty('trace');
+        const off = stitch({
+            name: 'p0-trace-off',
+            url: 'https://api.example.test/x',
+            trace: false,
+        });
+        expect(off.__config).not.toHaveProperty('trace');
+    });
+
+    test('a class-based TraceSink is dropped too (methods live on the prototype)', () => {
+        // The own-entry fn-strip cannot see a prototype method, so this is the case a per-field
+        // strip would silently pass while still exposing a live handle.
+        class ClassSink implements TraceSink {
+            seen = 0;
+            handle(): void {
+                this.seen += 1;
+            }
+        }
+        const s = stitch({
+            name: 'p0-trace-class',
+            url: 'https://api.example.test/x',
+            trace: new ClassSink(),
+        });
+        expect(s.__config).not.toHaveProperty('trace');
+        expect(JSON.parse(JSON.stringify(s.__config))).toEqual(s.__config);
     });
 
     test('the engine-side sugar lives on the non-enumerable __rawConfig', () => {
@@ -95,6 +137,7 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
         expect(typeof raw.hooks?.onRequest).toBe('function');
         expect(typeof raw.acceptStatus).toBe('function');
         expect(fnPaths(raw.cache)).toContain('$.keyOf'); // the cache derivation fn is retained raw
+        expect(fnPaths(raw.trace)).toContain('$.handle'); // the live sink is retained raw
         // Neither meta property is enumerable — a spread / JSON view of the stitch leaks nothing.
         expect(Object.keys(laden)).not.toContain('__config');
         expect(Object.keys(laden)).not.toContain('__rawConfig');

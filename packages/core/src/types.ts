@@ -885,14 +885,14 @@ export type ResolvedStitchConfig = Omit<
  * therefore round-trips as JSON (ADR 0005 Decision 11 — the contract gate) and is what `mcp` /
  * `diagram` / `stitch export --openapi` read.
  *
- * This is the HONEST runtime shape: `__config.auth` / `.store` / `.adapter` are always absent, and
- * `__config.kind` is the surface's `id` string — never a live {@link Surface}. (The full,
- * secret-bearing config lives on the non-enumerable `__rawConfig`, used only for fragment
+ * This is the HONEST runtime shape: `__config.auth` / `.store` / `.adapter` / `.trace` are always
+ * absent, and `__config.kind` is the surface's `id` string — never a live {@link Surface}. (The
+ * full, secret-bearing config lives on the non-enumerable `__rawConfig`, used only for fragment
  * composition.)
  */
 export type RedactedStitchConfig = Omit<
     ResolvedStitchConfig,
-    'auth' | 'store' | 'adapter' | 'clock' | 'kind'
+    'auth' | 'store' | 'adapter' | 'clock' | 'kind' | 'trace'
 > & {
     /** The surface's `id` string (never the live {@link Surface}); absent for the default `http`. */
     kind?: string;
