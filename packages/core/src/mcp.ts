@@ -7,25 +7,12 @@
 // transport (newline-delimited JSON), with no SDK — consistent with the library's
 // zero-dependency stance. `handle()` is transport-agnostic, so the same core can back a
 // Streamable HTTP transport too (see the `serve` surface for the HTTP pattern).
-import type { Assert, Covers, PolicySlot } from './anatomy';
-import { endpointLabel, pipelineStages } from './config-summary';
+import { endpointLabel, pipelineStages, policySummary } from './config-summary';
 import { toMermaid } from './diagram';
 import { type StitchRegistry, selectStitch } from './registry';
 import type { RedactedStitchConfig, Stitch, StitchInput } from './types';
 
 import type { Readable, Writable } from 'node:stream';
-
-// The resilience knobs reported to the agent as configured/not. The list is the anatomy's, so a new
-// policy slot is a compile error here rather than a capability the agent never learns about.
-const POLICY_SLOTS = [
-    'retry',
-    'throttle',
-    'cache',
-    'timeout',
-] as const satisfies readonly PolicySlot[];
-export type _PoliciesCovered = Assert<
-    Covers<PolicySlot, (typeof POLICY_SLOTS)[number]>
->;
 
 const PROTOCOL_VERSION = '2025-06-18';
 const SERVER_NAME = 'stitchapi';
@@ -230,9 +217,7 @@ export function createMcpServer(
                 pick: cfg.pick ?? null,
             },
             auth: authTagOf(cfg),
-            policies: Object.fromEntries(
-                POLICY_SLOTS.map((k) => [k, cfg[k] !== undefined]),
-            ),
+            policies: policySummary(cfg),
             pipeline: pipelineStages(cfg),
             diagram: toMermaid(registry, { name: a.name }).diagram,
         });

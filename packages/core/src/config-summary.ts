@@ -2,7 +2,13 @@
 // used by both `stitch diagram` (./diagram) and the MCP server's stitch listing (./mcp). Kept in one
 // leaf so the two stay in lockstep instead of drifting as near-duplicate copies. Auth is redacted
 // from `__config` (ADR 0002), so it never appears here.
-import type { Assert, Covers, StageEntry, StagedSlot } from './anatomy';
+import type {
+    Assert,
+    Covers,
+    PolicySlot,
+    StageEntry,
+    StagedSlot,
+} from './config-anatomy';
 import type { RedactedStitchConfig } from './types';
 
 // A compact "METHOD endpoint" label for the request node. Reused by `stitch init --project` (the
@@ -75,4 +81,26 @@ export function pipelineStages(
             at.push([stage.at, stage.label(cfg, opts.detailed ?? false)]);
     }
     return at.sort((a, b) => a[0] - b[0]).map(([, label]) => label);
+}
+
+// The resilience knobs reported to an agent as configured/not (the `mcp` `policies` block). It joins
+// `endpointLabel` and `pipelineStages` here rather than living in `mcp.ts` for two reasons: it is the
+// same kind of pure read-out of `__config`, and `mcp` is a published entry point, so an exported
+// coverage assert there would land in the package's public `.d.ts`.
+const POLICY_SLOTS = [
+    'retry',
+    'throttle',
+    'cache',
+    'timeout',
+] as const satisfies readonly PolicySlot[];
+export type _PoliciesCovered = Assert<
+    Covers<PolicySlot, (typeof POLICY_SLOTS)[number]>
+>;
+
+export function policySummary(
+    cfg: RedactedStitchConfig,
+): Record<string, boolean> {
+    return Object.fromEntries(
+        POLICY_SLOTS.map((k) => [k, cfg[k] !== undefined]),
+    );
 }

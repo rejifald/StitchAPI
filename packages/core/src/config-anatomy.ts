@@ -12,7 +12,19 @@
 // `export --openapi`) care about. The runtime key lists stay hand-written where they are used, but
 // each is now checked against the anatomy with `satisfies` (a WRONG entry) plus a coverage assert
 // (a MISSING entry), so a stale list is a compile error naming the slot it forgot.
-import type { StitchConfig } from './types';
+import type {
+    CacheOptions,
+    Hooks,
+    IdempotencyOptions,
+    InputSchemas,
+    MultipartOptions,
+    RetryOptions,
+    SseOptions,
+    StitchConfig,
+    StreamOptions,
+    ThrottleOptions,
+    TimeoutOptions,
+} from './types';
 
 /** Fail to compile unless `T` is exactly `true`; the failing type shows the offending slot name. */
 export type Assert<T extends true> = T;
@@ -66,13 +78,22 @@ interface SlotFacts {
      * definition and counts automatically. See {@link NormalizedSlot}.
      */
     normalized?: true;
+    /**
+     * Holds a Standard Schema validator, whose `validate` sits at depth 2 — the ONE documented
+     * exception to P0's "no functions on `__config`" (CONTRACT.md P0). It is not sugar: `toOpenApi`
+     * reads these schemas off `__config` to build its parameter and response shapes, so stripping
+     * the validator would break `export --openapi` outright, and a schema is not reconstructible
+     * from its fn-free husk the way a `retry` envelope is. The slot is therefore kept whole and the
+     * exemption is stated rather than discovered. See {@link SchemaSlot}.
+     */
+    carriesSchema?: true;
 }
 
 /**
  * Every slot of {@link StitchConfig}, described once. The two asserts below make this list and
  * `StitchConfig` provably the same set — add a slot to one and the other fails to compile.
  */
-export interface Anatomy {
+export interface StitchConfigAnatomy {
     name: object;
     kind: { dropped: 'redact'; project: true };
     method: object;
@@ -87,8 +108,8 @@ export interface Anatomy {
     headers: object;
     document: object;
     operationName: object;
-    input: { normalized: true };
-    output: { stage: 7 };
+    input: { normalized: true; carriesSchema: true };
+    output: { stage: 7; carriesSchema: true };
     pick: { stage: 6 };
     transform: { dropped: 'redact' };
     paginate: { fns: true; stage: 5 };
@@ -110,8 +131,8 @@ export interface Anatomy {
     trace: { dropped: 'redact' };
 }
 
-type Undescribed = Exclude<keyof StitchConfig, keyof Anatomy>;
-type Phantom = Exclude<keyof Anatomy, keyof StitchConfig>;
+type Undescribed = Exclude<keyof StitchConfig, keyof StitchConfigAnatomy>;
+type Phantom = Exclude<keyof StitchConfigAnatomy, keyof StitchConfig>;
 
 /** A slot exists on `StitchConfig` but the anatomy says nothing about it. */
 export type _EverySlotDescribed = Assert<
@@ -127,12 +148,16 @@ export type _NoPhantomSlots = Assert<
 >;
 /** Every declared fact is a real fact (a typo'd key is a compile error, not a silently-ignored one). */
 export type _FactsWellFormed = Assert<
-    Anatomy extends Record<keyof Anatomy, SlotFacts> ? true : false
+    StitchConfigAnatomy extends Record<keyof StitchConfigAnatomy, SlotFacts>
+        ? true
+        : false
 >;
 
 type SlotsWhere<F> = {
-    [K in keyof Anatomy]: Anatomy[K] extends F ? K : never;
-}[keyof Anatomy];
+    [K in keyof StitchConfigAnatomy]: StitchConfigAnatomy[K] extends F
+        ? K
+        : never;
+}[keyof StitchConfigAnatomy];
 
 /** Slots carrying author closures at depth 1 — fn-stripped on the way to `__config` (P0). */
 export type FnBearingSlot = SlotsWhere<{ fns: true }>;
@@ -142,6 +167,11 @@ export type RedactedSlot = SlotsWhere<{ dropped: 'redact' }>;
 export type RedactedIfFnSlot = SlotsWhere<{ dropped: 'redact-if-fn' }>;
 /** Slots re-projected onto `__config` as plain data rather than simply removed. */
 export type ProjectedSlot = SlotsWhere<{ project: true }>;
+/**
+ * Slots holding a Standard Schema validator — P0's single documented exemption. Every OTHER slot on
+ * `__config` is fn-free; these two carry `validate` at depth 2 by design.
+ */
+export type SchemaSlot = SlotsWhere<{ carriesSchema: true }>;
 /** Slots whose scalar shorthand folds into a dominant field. */
 export type ShorthandSlot = SlotsWhere<{ shorthand: string }>;
 /** Slots whose `true`/`false` toggle normalises to the object form (or removal). */
@@ -168,13 +198,15 @@ export type StagedSlot = SlotsWhere<{ stage: number }>;
 export type StageEntry<Cfg> = {
     [K in StagedSlot]: {
         slot: K;
-        at: Anatomy[K] extends { stage: infer At } ? At : never;
+        at: StitchConfigAnatomy[K] extends { stage: infer At } ? At : never;
         label: (cfg: Cfg, detailed: boolean) => string;
     };
 }[StagedSlot];
 /** Slots with a scalar shorthand, paired with the field it folds into. */
 export type ShorthandPair = {
-    [K in ShorthandSlot]: Anatomy[K] extends { shorthand: infer Field }
+    [K in ShorthandSlot]: StitchConfigAnatomy[K] extends {
+        shorthand: infer Field;
+    }
         ? readonly [K, Field]
         : never;
 }[ShorthandSlot];
@@ -189,3 +221,25 @@ export type Covers<Expected extends PropertyKey, Listed extends PropertyKey> = [
 ] extends [never]
     ? true
     : ['list is missing slot(s):', Exclude<Expected, Listed>];
+
+/**
+ * What each {@link NormalizedSlot} looks like AFTER `compose` has rewritten it — the object half of
+ * `ResolvedStitchConfig`. It lives here, beside the anatomy that decides which slots are normalised,
+ * so the two halves cannot drift: `_ResolvedRedeclaresEveryNormalizedSlot` holds the key sets equal,
+ * and a new shorthand/toggle slot fails here until it is re-declared.
+ */
+export interface ResolvedNormalizations {
+    retry?: RetryOptions;
+    timeout?: TimeoutOptions;
+    cache?: CacheOptions;
+    idempotency?: IdempotencyOptions;
+    throttle?: ThrottleOptions;
+    stream?: StreamOptions;
+    multipart?: MultipartOptions;
+    sse?: SseOptions;
+    hooks?: Hooks;
+    input?: InputSchemas;
+}
+export type _ResolvedRedeclaresEveryNormalizedSlot = Assert<
+    Covers<NormalizedSlot, keyof ResolvedNormalizations>
+>;

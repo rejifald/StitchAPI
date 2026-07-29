@@ -1,6 +1,7 @@
 // The authoring surface: stitch() + the extends composition facade +
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
+import { compact } from './compact';
 import type {
     Assert,
     Covers,
@@ -8,8 +9,7 @@ import type {
     RedactedIfFnSlot,
     RedactedSlot,
     ShorthandPair,
-} from './anatomy';
-import { compact } from './compact';
+} from './config-anatomy';
 import {
     ERROR_SOURCE,
     RAW_BODY,

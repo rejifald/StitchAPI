@@ -19,7 +19,8 @@ import type {
     FnBearingSlot,
     ProjectedSlot,
     RedactedSlot,
-} from '../src/anatomy';
+    SchemaSlot,
+} from '../src/config-anatomy';
 
 import { describe, expect, test } from 'vitest';
 
@@ -34,6 +35,13 @@ function fnPaths(value: unknown, path = '$'): string[] {
     }
     return out;
 }
+
+// The slots P0 exempts, keyed off the anatomy — widening the exemption means marking a slot
+// `carriesSchema`, which shows up here rather than as a quietly-passing test.
+const SCHEMA_SLOTS = [
+    'input',
+    'output',
+] as const satisfies readonly SchemaSlot[];
 
 const rawConfigOf = (f: unknown): StitchConfig =>
     (f as { __rawConfig: StitchConfig }).__rawConfig;
@@ -123,6 +131,32 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
         for (const slot of Object.keys(HANDLE_SAMPLES)) {
             expect(laden.__config).not.toHaveProperty(slot);
         }
+    });
+
+    test('schema slots are the ONE documented P0 exemption', () => {
+        // `output`/`input` hold Standard Schema validators, whose `validate` sits at depth 2.
+        // `toOpenApi` reads them off `__config` to build its parameter/response shapes, so they are
+        // kept whole (CONTRACT.md P0) — the exemption is stated, not discovered. Pinned in BOTH
+        // directions: the validators are still there, and nothing else is.
+        const schema = {
+            '~standard': {
+                version: 1 as const,
+                vendor: 'p0-probe',
+                validate: (value: unknown) => ({ value }),
+            },
+        };
+        const s = stitch({
+            name: 'p0-schema',
+            url: 'https://api.example.test/x',
+            input: { query: schema },
+            output: schema,
+        });
+        const leaked = fnPaths(s.__config);
+        expect(leaked.length).toBeGreaterThan(0); // the exemption is real, not vacuous
+        const exempt = SCHEMA_SLOTS.map((k) => `$.${k}`);
+        expect(
+            leaked.filter((p) => !exempt.some((e) => p.startsWith(`${e}.`))),
+        ).toEqual([]);
     });
 
     test('the two projected slots become plain data, not absence', () => {
