@@ -892,7 +892,6 @@ export type ResolvedStitchConfig = Omit<
     | 'circuit'
     | 'hooks'
     | 'input'
-    | 'acceptStatus'
 > & {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
@@ -905,8 +904,6 @@ export type ResolvedStitchConfig = Omit<
     circuit?: CircuitOptions;
     hooks?: Hooks;
     input?: InputSchemas;
-    /** Post-compose a bare number is folded into its list form; predicates pass through. */
-    acceptStatus?: number[] | ((status: number) => boolean);
 };
 
 /**
