@@ -16,6 +16,7 @@ import type {
     Stitch,
     StitchInput,
 } from './types';
+import { envelope } from './util';
 
 import type { Readable, Writable } from 'node:stream';
 
@@ -24,7 +25,7 @@ const SERVER_NAME = 'stitchapi';
 // Derived at build time from packages/core/package.json `version` via an esbuild
 // `define` (see tsup.config.ts / vitest.config.ts and src/version.d.ts), so the
 // version the MCP server reports can never drift from the published release. An
-// explicit `info.version` from the caller still wins (see `createMcpServer`).
+// explicit `server.version` from the caller still wins (see `createMcpServer`).
 const SERVER_VERSION = __PKG_VERSION__;
 
 export interface JsonRpcMessage {
@@ -138,20 +139,29 @@ export interface McpServer {
     handle(message: JsonRpcMessage): Promise<JsonRpcMessage | null>;
 }
 
+/**
+ * Identity a server reports in its `initialize` result, mapped straight onto MCP's `serverInfo`
+ * object (CONTRACT.md P22 — the field names are the standard's). `name` defaults to `stitchapi`
+ * and `version` to the build-time package version, so naming the server is the only field a host
+ * normally sets — hence the `server: 'orders-api'` shorthand at every slot that takes this.
+ */
 export interface McpServerOptions {
     name?: string;
     version?: string;
 }
 
 // Build an MCP server over a stitch registry. `handle()` maps one JSON-RPC message to
-// its response (or null for notifications), independent of any transport.
+// its response (or null for notifications), independent of any transport. A bare string is
+// shorthand for the dominant `name` field — `'orders-api'` ≡ `{ name: 'orders-api' }`
+// (CONTRACT.md P14); the opaque `{}` is rejected (P20).
 export function createMcpServer(
     registry: StitchRegistry,
-    info?: AtLeastOne<McpServerOptions>,
+    server?: string | AtLeastOne<McpServerOptions>,
 ): McpServer {
+    const opts = envelope(server, 'name');
     const serverInfo = {
-        name: info?.name ?? SERVER_NAME,
-        version: info?.version ?? SERVER_VERSION,
+        name: opts?.name ?? SERVER_NAME,
+        version: opts?.version ?? SERVER_VERSION,
     };
 
     async function callRunStitch(args: unknown): Promise<ToolResult> {
@@ -287,7 +297,12 @@ export function createMcpServer(
 export interface StdioOptions {
     input?: Readable;
     output?: Writable;
-    serverInfo?: AtLeastOne<McpServerOptions>;
+    /**
+     * Identity this server reports (see {@link McpServerOptions}). A bare string is shorthand for
+     * the name — `server: 'orders-api'` ≡ `server: { name: 'orders-api' }` (CONTRACT.md P14); the
+     * opaque `server: {}` is rejected (P20).
+     */
+    server?: string | AtLeastOne<McpServerOptions>;
 }
 
 // Wire an McpServer to the stdio transport: read newline-delimited JSON-RPC from
@@ -297,7 +312,7 @@ export function serveStdio(
     registry: StitchRegistry,
     opts: StdioOptions = {},
 ): { server: McpServer; close: () => void } {
-    const server = createMcpServer(registry, opts.serverInfo);
+    const server = createMcpServer(registry, opts.server);
     const input = opts.input ?? process.stdin;
     const output = opts.output ?? process.stdout;
     input.setEncoding('utf8');
