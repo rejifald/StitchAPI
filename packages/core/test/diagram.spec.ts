@@ -45,10 +45,11 @@ describe('toMermaid', () => {
         expect(diagram).toContain('(["result"])');
     });
 
-    test('post-response stages render in engine order: transform -> pick -> validate', () => {
+    test('post-response stages render in engine order: pick -> validate', () => {
         // The engine processes the response body transform → pick → validate (engine.ts), and the
-        // diagram's contract is "the configured request pipeline … in engine order". So the diagram
-        // must place validate LAST of the three, not first.
+        // diagram's contract is "the configured request pipeline … in engine order". `transform` is a
+        // live closure (P0 — off the public `__config`), so the diagram omits it; of the two stages it
+        // can report, validate must come LAST, not first.
         const { diagram } = toMermaid({
             proc: stitch({
                 baseUrl: 'https://api.example.com',
@@ -58,11 +59,11 @@ describe('toMermaid', () => {
                 output: z.object({ id: z.number() }),
             }),
         });
-        const iTransform = diagram.indexOf('transform');
         const iPick = diagram.indexOf('pick: data');
         const iValidate = diagram.indexOf('validate');
-        expect(iTransform).toBeGreaterThanOrEqual(0);
-        expect(iPick).toBeGreaterThan(iTransform); // pick after transform
+        // `transform` is a closure and never reaches the redacted `__config`, so it isn't diagrammed.
+        expect(diagram).not.toContain('transform');
+        expect(iPick).toBeGreaterThanOrEqual(0);
         expect(iValidate).toBeGreaterThan(iPick); // validate after pick
     });
 

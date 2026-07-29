@@ -1,6 +1,11 @@
 // Shared vocabulary for the prototype. Leaf modules (resilience, trace, http-adapter,
 // auth, mock-server) and the engine all code against these types.
 import type {
+    NormalizedSlot,
+    RedactedSlot,
+    ResolvedNormalizations,
+} from './config-anatomy';
+import type {
     Args,
     InputOf,
     RelaxKeys,
@@ -858,30 +863,8 @@ export interface StitchConfig {
  * the `hooks` / `input` envelopes to their chained/normalized object). This is the shape the engine
  * and {@link redactConfig} read — never the loose authoring union.
  */
-export type ResolvedStitchConfig = Omit<
-    StitchConfig,
-    | 'retry'
-    | 'timeout'
-    | 'cache'
-    | 'idempotency'
-    | 'throttle'
-    | 'stream'
-    | 'multipart'
-    | 'sse'
-    | 'hooks'
-    | 'input'
-> & {
-    retry?: RetryOptions;
-    timeout?: TimeoutOptions;
-    cache?: CacheOptions;
-    idempotency?: IdempotencyOptions;
-    throttle?: ThrottleOptions;
-    stream?: StreamOptions;
-    multipart?: MultipartOptions;
-    sse?: SseOptions;
-    hooks?: Hooks;
-    input?: InputSchemas;
-};
+export type ResolvedStitchConfig = Omit<StitchConfig, NormalizedSlot> &
+    ResolvedNormalizations;
 
 /**
  * The PUBLIC, redacted projection of a {@link StitchConfig} that a stitch exposes as `__config`
@@ -891,15 +874,12 @@ export type ResolvedStitchConfig = Omit<
  * therefore round-trips as JSON (ADR 0005 Decision 11 — the contract gate) and is what `mcp` /
  * `diagram` / `stitch export --openapi` read.
  *
- * This is the HONEST runtime shape: `__config.auth` / `.store` / `.adapter` are always absent, and
- * `__config.kind` is the surface's `id` string — never a live {@link Surface}. (The full,
- * secret-bearing config lives on the non-enumerable `__rawConfig`, used only for fragment
+ * This is the HONEST runtime shape: `__config.auth` / `.store` / `.adapter` / `.trace` are always
+ * absent, and `__config.kind` is the surface's `id` string — never a live {@link Surface}. (The
+ * full, secret-bearing config lives on the non-enumerable `__rawConfig`, used only for fragment
  * composition.)
  */
-export type RedactedStitchConfig = Omit<
-    ResolvedStitchConfig,
-    'auth' | 'store' | 'adapter' | 'clock' | 'kind'
-> & {
+export type RedactedStitchConfig = Omit<ResolvedStitchConfig, RedactedSlot> & {
     /** The surface's `id` string (never the live {@link Surface}); absent for the default `http`. */
     kind?: string;
     /** Non-secret auth scheme projected from the (stripped) live `auth`; feeds `export --openapi`. */
