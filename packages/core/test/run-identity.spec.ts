@@ -3,13 +3,7 @@
 // The OTLP sink reads them to build a real span tree (shared traceId, parentSpanId) instead of
 // minting per-start and guessing by name; a child run inherits the parent's traceId and points
 // parentSpanId at the parent's spanId. Ids are engine-minted, never caller-supplied (ADR 0002 §2).
-import {
-    cookieSession,
-    multiplex,
-    otlpTrace,
-    stitch,
-    toOtlpJson,
-} from '../src';
+import { cookieSession, multiplex, otlpSink, stitch, toOtlpJson } from '../src';
 import type {
     OtelSpan,
     SpanExporter,
@@ -123,7 +117,7 @@ test('newRunContext: a root mints fresh ids; a child inherits traceId and sets p
 
 test('the OTLP sink builds a span tree from the ctx ids (traceId / spanId / parentSpanId)', () => {
     const { exporter, spans } = stubExporter();
-    const sink = otlpTrace({ exporter });
+    const sink = otlpSink({ exporter });
     const parent = newRunContext();
     const child = newRunContext(parent); // shares traceId, parentSpanId = parent.spanId
 
@@ -187,7 +181,7 @@ test('end-to-end: a real call feeds the OTLP sink the same ids it stamped on `st
         name: 'ping',
         baseUrl: server.url,
         path: '/ping',
-        trace: multiplex(cap, otlpTrace({ exporter })),
+        trace: multiplex(cap, otlpSink({ exporter })),
     });
 
     await ping();
@@ -200,7 +194,7 @@ test('end-to-end: a real call feeds the OTLP sink the same ids it stamped on `st
 
 test('a hand-fed OTLP sink (no ctx ids) still mints a valid span — back-compat', () => {
     const { exporter, spans } = stubExporter();
-    const sink = otlpTrace({ exporter });
+    const sink = otlpSink({ exporter });
     const name = 'legacy';
     sink.handle(
         {
@@ -247,7 +241,7 @@ test('cookieSession runs its login as a traced CHILD of the call that triggered 
         baseUrl: server.url,
         path: '/me',
         trace: sink,
-        auth: cookieSession({ login: signIn, cookie: 'sid', scope: 'app' }),
+        auth: cookieSession({ login: signIn, cookie: 'sid', tenancy: 'app' }),
     });
 
     await expect(me()).resolves.toEqual({ user: 'ada' });
@@ -276,8 +270,8 @@ test('OTLP: a retried call emits flat per-attempt child spans parented to the ru
         name: 'flaky',
         baseUrl: server.url,
         path: '/flaky',
-        retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 1 },
-        trace: otlpTrace({ exporter }),
+        retry: { attempts: 3, on: [503], backoff: { curve: 'fixed', base: 1 } },
+        trace: otlpSink({ exporter }),
     });
 
     await flaky();
@@ -307,7 +301,7 @@ test('OTLP: a paginated call emits flat per-page child spans parented to the run
             next: (_body, page) =>
                 page < 3 ? { query: { page: page + 1 } } : undefined,
         },
-        trace: otlpTrace({ exporter }),
+        trace: otlpSink({ exporter }),
     });
 
     await list();

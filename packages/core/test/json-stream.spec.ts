@@ -4,7 +4,7 @@
 // byte offset (incl. mid-string, mid-escape, mid-multibyte-UTF8, mid-number, between values) and
 // byte-by-byte, and must yield identical deltas every time.
 import {
-    JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES,
+    JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS,
     jsonStream,
 } from '../src/json-stream';
 
@@ -27,17 +27,17 @@ function streamOfBytes(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
 /** Drain the tokenizer over `chunks` into the array of emitted deltas. */
 async function decode(
     chunks: Uint8Array[],
-    maxBufferBytes?: number,
+    maxBufferChars?: number,
 ): Promise<unknown[]> {
     const out: unknown[] = [];
-    for await (const v of jsonStream(streamOfBytes(chunks), maxBufferBytes))
+    for await (const v of jsonStream(streamOfBytes(chunks), maxBufferChars))
         out.push(v);
     return out;
 }
 
 /** Feed a single string as one UTF-8 chunk. */
-function decodeText(s: string, maxBufferBytes?: number): Promise<unknown[]> {
-    return decode([enc.encode(s)], maxBufferBytes);
+function decodeText(s: string, maxBufferChars?: number): Promise<unknown[]> {
+    return decode([enc.encode(s)], maxBufferChars);
 }
 
 describe('json-stream tokenizer: value boundaries', () => {
@@ -211,18 +211,18 @@ describe('json-stream tokenizer: chunk-split robustness (the load-bearing matrix
 
 describe('json-stream tokenizer: max-buffer guard + incomplete streams', () => {
     test('the default cap is a few MB (exported)', () => {
-        expect(JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES).toBeGreaterThan(
+        expect(JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS).toBeGreaterThan(
             1024 * 1024,
         );
     });
 
-    test('a never-closing value throws once the buffer exceeds maxBufferBytes', async () => {
+    test('a never-closing value throws once the buffer exceeds maxBufferChars', async () => {
         // An open `[` whose content never closes; cap at 64 bytes so it trips quickly.
         const chunks = [
             enc.encode('['),
             ...Array.from({ length: 50 }, () => enc.encode('1234567890')),
         ];
-        await expect(decode(chunks, 64)).rejects.toThrow(/maxBufferBytes/);
+        await expect(decode(chunks, 64)).rejects.toThrow(/maxBufferChars/);
     });
 
     test('a stream that ends mid-value throws (complete-value semantics)', async () => {

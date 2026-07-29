@@ -64,7 +64,7 @@ const allUsers = stitch({
 const users = (await allUsers()) as unknown[]; // every page, one array
 ```
 
-`next(prevBody, pagesFetched)` reads the cursor off the previous page's raw body and returns the input for the next page, merged over the original call — set only what changes. Return `undefined` to stop. `items(value)` selects the array to aggregate from each page; it defaults to the value itself when that value is already an array. `max` caps the page count as a safety net (default `50`), so a `next` that never returns `undefined` can't spin forever.
+`next(prevBody, pagesFetched)` reads the cursor off the previous page's raw body and returns the input for the next page, merged over the original call — set only what changes. Return `undefined` to stop. `items(value)` selects the array to aggregate from each page; it defaults to the value itself when that value is already an array. `pages` caps the page count as a safety net (default `50`), so a `next` that never returns `undefined` can't spin forever.
 
 For an offset or page-number API, `next` uses the page count it's handed instead of a cursor:
 
@@ -103,7 +103,7 @@ const mirror = stitch({
         backoff: 'expo-jitter',
         respectRetryAfter: true,
     },
-    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '5/s', concurrency: 2, pool: 'host' },
     paginate: {
         next: (prevBody) => {
             const cursor = (prevBody as { nextCursor?: string }).nextCursor;

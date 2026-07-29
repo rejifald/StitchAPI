@@ -132,7 +132,7 @@ function buildChildSpans(run: OtelSpan): OtelSpan[] {
  * `traceId`/`spanId`/`parentSpanId` tree — falling back to the stitch name (a tolerant stack) only
  * when a sink is fed events by hand without ids (e.g. synthetic test events).
  */
-export function otlpTrace(opts: OtlpOptions = {}): TraceSink {
+export function otlpSink(opts: OtlpOptions = {}): TraceSink {
     const exporter =
         opts.exporter ??
         otlpHttpExporter(
@@ -362,14 +362,15 @@ export function toOtlpJson(spans: OtelSpan[]): unknown {
     };
 }
 
+/** Options for {@link otlpHttpExporter} — {@link OtlpOptions} minus the exporter it builds. */
+export type OtlpExporterOptions = Omit<OtlpOptions, 'exporter'>;
+
 /**
  * Default exporter: POST spans as OTLP/JSON to `${endpoint}/v1/traces` (endpoint defaults to
  * `OTEL_EXPORTER_OTLP_ENDPOINT` or `http://localhost:4318`). Fire-and-forget — failures are
  * swallowed so a missing collector never breaks a stitch call.
  */
-export function otlpHttpExporter(
-    opts: { endpoint?: string; headers?: Record<string, string> } = {},
-): SpanExporter {
+export function otlpHttpExporter(opts: OtlpExporterOptions = {}): SpanExporter {
     const base =
         opts.endpoint ??
         readEnv('OTEL_EXPORTER_OTLP_ENDPOINT') ??

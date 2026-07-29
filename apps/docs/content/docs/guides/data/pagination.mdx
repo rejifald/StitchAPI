@@ -43,7 +43,7 @@ it defaults to the value itself when that value is already an array. The pick
 runs first, so pair `items` with [`pick`](/docs/guides/data/pick) when the
 array sits under an envelope, and use `items` to dig into a nested shape.
 
-`max` caps the page count as a safety net (default `50`) so a misbehaving
+`pages` caps the page count as a safety net (default `50`) so a misbehaving
 `next` can't loop forever.
 
 Auth, retry, and throttle apply per page, not once for the whole run: a

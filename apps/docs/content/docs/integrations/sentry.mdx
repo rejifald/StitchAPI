@@ -46,16 +46,16 @@ The same sink works on a single stitch — `stitch({ trace: sentrySink(Sentry) }
 
 ## What it sends
 
-| Event                          | Sentry                                                               |
-| ------------------------------ | -------------------------------------------------------------------- |
-| `error`                        | `captureMessage` (level `error`) + an error breadcrumb               |
-| `progress` (`retry`/`circuit`) | breadcrumb, level `warning`                                          |
-| `progress` (throttle/paginate) | breadcrumb, level `debug`                                            |
-| `drift`                        | breadcrumb (level follows the finding); captured with `captureDrift` |
-| `start` / `result` / `done`    | breadcrumb only when `lifecycle: true` (off by default)              |
-| `delta` / `info`               | **never sent** (raw response data / strategy announcements)          |
+| Event                          | Sentry                                                                |
+| ------------------------------ | --------------------------------------------------------------------- |
+| `error`                        | `captureMessage` (level `error`) + an error breadcrumb                |
+| `progress` (`retry`/`circuit`) | breadcrumb, level `warning`                                           |
+| `progress` (throttle/paginate) | breadcrumb, level `debug`                                             |
+| `drift`                        | breadcrumb (level follows the finding); captured with `capture.drift` |
+| `start` / `result` / `done`    | breadcrumb only when `lifecycle: true` (off by default)               |
+| `delta` / `info`               | **never sent** (raw response data / strategy announcements)           |
 
-Options: `{ lifecycle?, captureErrors?, captureDrift? }`.
+Options: `{ lifecycle?, capture? }` — `capture` is `boolean | { errors?, drift? }`: `true`/omitted captures errors (not drift), `false` disables both, or set `errors`/`drift` independently.
 
 <Callout type="warn">
     **Metadata only, by design.** A custom `TraceSink` receives the **raw**
@@ -64,7 +64,7 @@ Options: `{ lifecycle?, captureErrors?, captureDrift? }`.
     — it can carry `?api_key=…`), status, attempt counts, drift
     path/level/change, phase, and timing. It never sends `event.input` (its
     headers still hold the live `authorization` / `cookie`), the response
-    `value`, or a `delta` chunk — safe on a secret-bearing seam regardless of
+    `data`, or a `delta` chunk — safe on a secret-bearing seam regardless of
     core's trace redaction.
 </Callout>
 

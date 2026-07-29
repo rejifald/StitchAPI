@@ -87,7 +87,7 @@ app.get('/chat', async (req, res) => {
         res,
         completion.stream({ body: { prompt: String(req.query.q ?? '') } }),
         {
-            data: (chunk) => (chunk as { data: string }).data,
+            delta: (chunk) => (chunk as { data: string }).data,
             req, // also tear down if the request socket signals disconnect
         },
     );

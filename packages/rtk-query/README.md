@@ -16,7 +16,7 @@ pnpm add @stitchapi/rtk-query@rc stitchapi@rc @reduxjs/toolkit
 
 ## `stitchQueryFn` — a stitch as an endpoint
 
-`stitchQueryFn(stitch)` returns an endpoint `queryFn`: on success `{ data }` with the validated output, on a throw `{ error }` with a **serialisable** error (so Redux holds no non-serialisable value).
+`stitchQueryFn(stitch)` returns an endpoint `queryFn`: on success `{ data }` with the validated output, on a throw `{ error }` with a **serialisable** error (so Redux holds no non-serialisable value). The error keeps the thrown error's `name` (the discriminator), `message`, and every JSON-survivable own field — for a `StitchError` / `RateLimitError` that is the full `status` / `attempts` / `body` / `url` set, so you can branch on a stored error exactly as on the thrown one. Fields that would not survive `JSON.stringify` (functions, class instances, the raw `response` carrier) are dropped.
 
 ```ts
 import { createApi, fakeBaseQuery } from '@reduxjs/toolkit/query/react';
@@ -52,7 +52,7 @@ chat: build.query<number[], { prompt: string }>({
 }),
 ```
 
-The cached data is the accumulated chunks (`mode: 'append'`, default) or the latest chunk (`mode: 'replace'`). Streaming stops when the cache entry is removed (the last component unsubscribes).
+The cached data is the accumulated chunks (`'append'`, default) or the latest chunk — pass the mode directly: `stitchStreamUpdater(chat, 'replace')` (≡ `{ mode: 'replace' }`). Streaming stops when the cache entry is removed (the last component unsubscribes).
 
 ## License
 

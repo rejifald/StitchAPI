@@ -33,7 +33,7 @@ const mirror = stitch({
         backoff: 'expo-jitter',
         respectRetryAfter: true,
     },
-    throttle: { rate: '5/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '5/s', concurrency: 2, pool: 'host' },
     paginate: {
         next: (prevBody) => {
             const cursor = (prevBody as { nextCursor?: string }).nextCursor;

@@ -217,6 +217,6 @@ describe('@stitchapi/fingerprint-valibot', () => {
             ) as never,
         );
         expect(base.token).not.toBeNull();
-        expect(checked.value).toBeNull();
+        expect(checked.token).toBeNull();
     });
 });

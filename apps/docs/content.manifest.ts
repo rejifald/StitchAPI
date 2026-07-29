@@ -411,7 +411,7 @@ export const pages: Page[] = [
         path: 'guides/resilience/throttle',
         title: 'Throttle',
         description:
-            'Space requests by rate and cap concurrency, scoped per stitch or per host.',
+            'Space requests by rate and cap concurrency, pooled per stitch or per host.',
         kind: 'guide',
     },
     {
@@ -529,7 +529,7 @@ export const pages: Page[] = [
         path: 'guides/state/pluggable-store',
         title: 'The pluggable store',
         description:
-            'Swap the in-memory store for a shared one to back throttle and sessions with get/set/incr + TTL.',
+            'Swap the in-memory store for a shared one to back throttle and sessions with get/set/increment + TTL.',
         kind: 'guide',
     },
     {

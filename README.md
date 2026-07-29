@@ -109,7 +109,7 @@ Keep the `fetch` or axios you already have — it's the adapter underneath. A st
 
 ## Motivation
 
-In almost every project there's a `src/api/` folder of thin functions that fire an HTTP request and unwrap the response. Everything that actually makes an integration reliable — auth lifecycle, retries, rate limits, timeouts, response validation, drift detection, observability — gets re-implemented at every call site, and each wrapper rots independently. `fetch` hands back opaque bytes, and raw bytes aren't what application code (or an AI agent) needs; both want structured, validated, observable results.
+In almost every project there's a `src/api/` folder of thin functions that fire an HTTP request and pull the payload out of the response. Everything that actually makes an integration reliable — auth lifecycle, retries, rate limits, timeouts, response validation, drift detection, observability — gets re-implemented at every call site, and each wrapper rots independently. `fetch` hands back opaque bytes, and raw bytes aren't what application code (or an AI agent) needs; both want structured, validated, observable results.
 
 A stitch folds all of that back into the call:
 
@@ -283,12 +283,12 @@ const listUsers = stitch({
     baseUrl: 'https://demo.stitchapi.dev',
     path: '/users',
     retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
-    throttle: { rate: '1/s', concurrency: 2, scope: 'host' },
+    throttle: { rate: '1/s', concurrency: 2, pool: 'host' },
     timeout: { total: '30s', perAttempt: '10s' },
 });
 ```
 
-`throttle` is proactive (keeps you under a limit before it bites; `scope: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`acceptStatus`** treats a non-2xx (e.g. `404`) as a normal result instead of a throw. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry).
+`throttle` is proactive (keeps you under a limit before it bites; `pool: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`acceptStatus`** treats a non-2xx (e.g. `404`) as a normal result instead of a throw. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry).
 
 ## Caching
 
@@ -310,7 +310,7 @@ const listAnnouncements = stitch({
         ttl: '1h',
         scope: 'app',
         vary: ['accept-language'],
-        maxEntries: 500,
+        entries: 500,
         version: 1, // pins the shape — cacheable without a fingerprinter
     },
 });
@@ -337,16 +337,16 @@ const getUser = stitch({
 
 A **surface** is the request _style_ a stitch speaks. `http` is the default; the rest are peer surfaces on the same engine — `auth`, `retry`, `throttle`, `timeout`, validation, and the event stream compose with every one. Each ships as its own subpath import, so `import { stitch }` pulls in `http` alone.
 
-| Surface       | Import                        | Shapes                                     | `await` resolves to            |
-| ------------- | ----------------------------- | ------------------------------------------ | ------------------------------ |
-| `http`        | `stitch` (default)            | a JSON-over-HTTP call                      | the validated body             |
-| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, unwrap `data` | the `data` payload             |
-| `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch)  | every parsed event, collected  |
-| `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader              | every decoded chunk, collected |
-| `download`    | `stitchapi/download`          | a buffered binary GET                      | `{ blob, filename }`           |
-| `llm`         | `stitchapi/llm`               | a chat-completion via a provider contract  | the normalised `{ text, … }`   |
-| `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin              | the command's stdout           |
-| `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call  | the typed RPC response         |
+| Surface       | Import                        | Shapes                                    | `await` resolves to            |
+| ------------- | ----------------------------- | ----------------------------------------- | ------------------------------ |
+| `http`        | `stitch` (default)            | a JSON-over-HTTP call                     | the validated body             |
+| `graphql`     | `stitchapi/graphql`           | POST `{ query, variables }`, picks `data` | the `data` payload             |
+| `sse`         | `stitchapi/sse`               | a `text/event-stream` reader (over fetch) | every parsed event, collected  |
+| `stream`      | `stitchapi/stream`            | a raw `ReadableStream` reader             | every decoded chunk, collected |
+| `download`    | `stitchapi/download`          | a buffered binary GET                     | `{ blob, filename }`           |
+| `llm`         | `stitchapi/llm`               | a chat-completion via a provider contract | the normalised `{ text, … }`   |
+| `shell`       | `@stitchapi/shell` (peer pkg) | a local command, args + stdin             | the command's stdout           |
+| `postmessage` | `stitchapi/postmessage`       | a typed iframe ↔ parent RPC / event call | the typed RPC response         |
 
 Full guide: [Surfaces](https://stitchapi.dev/docs/reference/surfaces).
 

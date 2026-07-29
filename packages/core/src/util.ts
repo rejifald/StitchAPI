@@ -67,16 +67,28 @@ export const systemClock: Clock = {
     },
 };
 
-/** "30s" | "500ms" | "2m" | 1500 -> milliseconds. */
+/**
+ * Parse a duration into milliseconds. Grammar: a number (already ms), a numeric
+ * string (`"1500"` → 1500), or `<number><unit>` with unit `ms` | `s` | `m` | `h` | `d`
+ * (`"500ms"`, `"30s"`, `"2m"`, `"1h"`, `"2d"`; fractions like `"1.5s"` allowed).
+ * Anything else → `undefined`.
+ */
 export function parseDuration(
     d: number | string | undefined,
 ): number | undefined {
     if (d == null) return undefined;
     if (typeof d === 'number') return d;
-    const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m)$/.exec(d.trim());
+    const m = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$/.exec(d.trim());
     if (!m) return Number(d) || undefined;
     const n = parseFloat(m[1] ?? '');
-    return m[2] === 'ms' ? n : m[2] === 's' ? n * 1000 : n * 60000;
+    const scale: Record<string, number> = {
+        ms: 1,
+        s: 1000,
+        m: 60_000,
+        h: 3_600_000,
+        d: 86_400_000,
+    };
+    return n * (scale[m[2] ?? ''] ?? 1);
 }
 
 /** "2/s" | "10/m" -> { count, per } (window length in ms). */
@@ -100,6 +112,71 @@ export function stripTrailingSlashes(s: string): string {
 
 export const isObj = (x: unknown): x is Record<string, unknown> =>
     !!x && typeof x === 'object' && !Array.isArray(x);
+
+/**
+ * The envelope member of a shorthand union — the plain-object form, with every bare spelling
+ * (scalar, function, array) removed. `EnvelopeOf<number | RetryOptions>` is `RetryOptions`.
+ */
+export type EnvelopeOf<T> = Exclude<
+    T,
+    | string
+    | number
+    | boolean
+    | bigint
+    | symbol
+    | null
+    | undefined
+    | ((...a: never[]) => unknown)
+    | readonly unknown[]
+>;
+
+/** The bare (shorthand) member of the union — everything `EnvelopeOf` took out. */
+type ShorthandOf<T> = Exclude<T, EnvelopeOf<T> | undefined>;
+
+/**
+ * The envelope's fields the bare form could fold into: those whose type the shorthand actually
+ * has. This is CONTRACT.md P12/P14's "dominant field" as a type — `number | RetryOptions` may
+ * fold into `attempts` (a `number`) but not `backoff` (a `string`), so a mis-picked key is a
+ * compile error rather than a slot the engine silently never reads.
+ *
+ * One gap to know about: in an in-place `cfg.x = envelope(cfg.x, 'k')` the assignment's own
+ * contextual type steers `T`, and the *field-type* half of the check stops biting (a key that
+ * isn't on the envelope at all is still rejected). In every contextless position — the adapter
+ * `const o = envelope(opts.delta, 'data')` form — both halves hold.
+ */
+type DominantKey<T> = {
+    [K in keyof EnvelopeOf<T>]-?: [ShorthandOf<T>] extends [
+        NonNullable<EnvelopeOf<T>[K]>,
+    ]
+        ? K
+        : never;
+}[keyof EnvelopeOf<T>];
+
+/**
+ * Fold a bare dominant-field value into its envelope — CONTRACT.md P12/P14's scalar shorthand,
+ * in one place instead of one hand-written ternary per slot: `retry: 3` ≡ `{ attempts: 3 }`,
+ * `throttle: '2/s'` ≡ `{ rate: '2/s' }`, `delta: (c) => …` ≡ `{ data: (c) => … }`.
+ *
+ * The test is "is it already the envelope?", not a list of the scalar types a slot happens to
+ * accept today: anything that is not a plain object IS the bare form (every shorthand we offer is
+ * a scalar or a function), so widening a slot's shorthand — `timeout: 5000` gaining `'5s'` — needs
+ * no change here. A plain object passes through **by reference**; `undefined` stays `undefined`,
+ * so an absent slot stays absent under `exactOptionalPropertyTypes`.
+ */
+export function envelope<T extends NonNullable<unknown>>(
+    value: T,
+    key: DominantKey<T> & string,
+): EnvelopeOf<T>;
+export function envelope<T>(
+    value: T,
+    key: DominantKey<T> & string,
+): EnvelopeOf<T> | undefined;
+export function envelope<T>(value: T, key: string): EnvelopeOf<T> | undefined {
+    if (value === undefined) return undefined;
+    return isObj(value)
+        ? (value as EnvelopeOf<T>)
+        : ({ [key]: value } as EnvelopeOf<T>);
+}
 
 export function deepMerge<T>(a: T, b: T): T {
     if (b === undefined) return a;
@@ -492,7 +569,7 @@ const REGISTERED_SECRET_QUERY_KEYS = new Set<string>();
  * scrubbers redact it. Additive and process-wide (mirroring the built-in denylist): names can be
  * widened but never un-redacted. Idempotent — registering the same name twice is a no-op.
  */
-export function registerSecretQueryKey(name: string): void {
+export function registerSecretKey(name: string): void {
     REGISTERED_SECRET_QUERY_KEYS.add(name.toLowerCase());
 }
 
@@ -501,7 +578,7 @@ export function registerSecretQueryKey(name: string): void {
  * key in the same family — a `start` event's `input.query`) carries a secret value:
  * matched case-insensitively against the secret key set above, by containing one of
  * the secret stems, or because a caller registered it via
- * {@link registerSecretQueryKey} (e.g. `apiKey({ in: 'query', name })`).
+ * {@link registerSecretKey} (e.g. `apiKey({ in: 'query', name })`).
  */
 export function isSecretKey(key: string): boolean {
     const k = key.toLowerCase();
@@ -511,12 +588,6 @@ export function isSecretKey(key: string): boolean {
         SECRET_QUERY_STEMS.some((s) => k.includes(s))
     );
 }
-
-/**
- * Backward-compatible alias for {@link isSecretKey} — the URL scrubbers and any
- * external code that imported the original name keep working unchanged.
- */
-export const isSecretQueryKey: (key: string) => boolean = isSecretKey;
 
 /**
  * Deep-clone `value` and replace any object key that matches {@link isSecretKey}

@@ -192,6 +192,17 @@ describe('classifyDiff', () => {
         ).toEqual([]);
     });
 
+    test('ignore accepts a bare string as a one-element list (P7)', () => {
+        // `ignore: 'meta'` ≡ `ignore: ['meta']` — the `T | T[]` widening (CONTRACT.md P7).
+        expect(
+            classifyDiff(
+                { a: 1, meta: { id: 'x' } },
+                { a: 1 },
+                { ignore: 'meta' },
+            ),
+        ).toEqual([]);
+    });
+
     describe('severity', () => {
         test('a bare level is an allowlist — only that tier surfaces', () => {
             // undeclared defaults to info, so requesting only 'warn' drops it...

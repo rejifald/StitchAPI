@@ -2,9 +2,6 @@
 // directly (no Nest DI container needed) and run the resulting stitches against a mock
 // adapter, asserting wire-level effects — the same style as core's tests.
 import {
-    // Deprecated aliases (ADR 0012) — exercised by the alias-guard test below.
-    type ConfigServiceLike,
-    type LoggerLike,
     type NestConfigServiceLike,
     type NestLoggerLike,
     STITCH_SEAM,
@@ -12,11 +9,8 @@ import {
     STITCH_TRACE,
     SeamRegistry,
     StitchModule,
-    borrowStore,
     defineStitch,
-    fromConfig,
     fromNestConfig,
-    loggerSink,
     nestBorrowStore,
     nestLoggerSink,
 } from '../src';
@@ -90,8 +84,10 @@ describe('StitchModule.forFeature', () => {
         );
         const mod = StitchModule.forFeature({
             seam: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
             },
             stitches: [GetThing],
         });
@@ -145,8 +141,10 @@ describe('StitchModule.forFeature', () => {
         ];
         const providers = StitchModule.forFeature({
             seam: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
             },
             stitches: mixed,
         }).providers as FProv[];
@@ -176,11 +174,13 @@ describe('StitchModule.forFeatureScoped', () => {
         const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
         const mod = StitchModule.forFeatureScoped({
             seam: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
+                token: TENANT,
             },
             stitches: [GetThing],
-            seamToken: TENANT,
             principal: (req: { tenantId: string }) => req.tenantId,
         });
         const providers = mod.providers as FProv[];
@@ -246,8 +246,10 @@ describe('defineStitch token', () => {
         const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
         const providers = StitchModule.forFeature({
             seam: {
-                baseUrl: 'https://feat.test',
-                adapter: recordingAdapter(calls),
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter(calls),
+                },
             },
             stitches: [GetThing],
         }).providers as FProv[];
@@ -270,7 +272,7 @@ describe('defineStitch token', () => {
 });
 
 describe('bridges', () => {
-    it('nestBorrowStore delegates get/set/incr but omits close', async () => {
+    it('nestBorrowStore delegates get/set/increment but omits close', async () => {
         const calls: string[] = [];
         const backing: StitchStore = {
             get: async () => {
@@ -280,8 +282,8 @@ describe('bridges', () => {
             set: async () => {
                 calls.push('set');
             },
-            incr: async () => {
-                calls.push('incr');
+            increment: async () => {
+                calls.push('increment');
                 return 2;
             },
             close: async () => {
@@ -292,8 +294,8 @@ describe('bridges', () => {
         expect(borrowed.close).toBeUndefined();
         expect(await borrowed.get('k')).toBe(1);
         await borrowed.set('k', 'v');
-        expect(await borrowed.incr('k', 1)).toBe(2);
-        expect(calls).toEqual(['get', 'set', 'incr']); // close is never delegated
+        expect(await borrowed.increment('k', 1)).toBe(2);
+        expect(calls).toEqual(['get', 'set', 'increment']); // close is never delegated
     });
 
     // A NestLoggerLike that records messages per level.
@@ -314,28 +316,6 @@ describe('bridges', () => {
         };
         return { rec, logger };
     };
-
-    it('keeps the pre-ADR-0012 names as deprecated aliases of the ecosystem-qualified ones', () => {
-        // Runtime: each deprecated function export is the very same function object.
-        expect(loggerSink).toBe(nestLoggerSink);
-        expect(fromConfig).toBe(fromNestConfig);
-        expect(borrowStore).toBe(nestBorrowStore);
-        // Type-level: the deprecated type aliases stay interchangeable with the canonical ones.
-        const loggerViaDeprecated: LoggerLike = {
-            log() {},
-            warn() {},
-            error() {},
-        };
-        const loggerViaCanonical: NestLoggerLike = loggerViaDeprecated;
-        expect(typeof loggerViaCanonical.log).toBe('function');
-        const cfgViaDeprecated: ConfigServiceLike = {
-            getOrThrow<T = string>(key: string): T {
-                return key as T;
-            },
-        };
-        const cfgViaCanonical: NestConfigServiceLike = cfgViaDeprecated;
-        expect(typeof cfgViaCanonical.getOrThrow).toBe('function');
-    });
 
     it('nestLoggerSink maps each event to the right level, payload-free, query redacted', () => {
         const { rec, logger } = recordingLogger();

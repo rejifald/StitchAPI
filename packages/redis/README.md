@@ -65,16 +65,17 @@ import { redisStore } from '@stitchapi/redis';
 
 const store = redisStore({
     get: (k) => myClient.get(k),
-    set: (k, v, ttlMs) => myClient.set(k, v, ttlMs),
-    del: (k) => myClient.del(k),
-    incr: (k, ttlMs) => myClient.incrWithTtl(k, ttlMs), // atomic INCR + first-time PEXPIRE
+    set: (k, v, ttl) => myClient.set(k, v, ttl),
+    delete: (k) => myClient.del(k),
+    increment: (k, ttl) => myClient.incrWithWindow(k, ttl), // atomic INCR + first-time PEXPIRE
 });
 ```
 
-`incr` must be **atomic** and set the key's TTL **only when it creates the
-counter** — `fromIoredis` / `fromNodeRedis` do this with a single Lua `EVAL`
-(`INCR`, then `PEXPIRE` only when the value is `1`), so a window can't slide
-forever and a crash can't strand an immortal counter.
+`ttl` (ms) is optional on both `set` and `increment` — absent means no expiry / no
+window. When a `ttl` is given, `increment` must be **atomic** and set it **only when
+it creates the counter** — `fromIoredis` / `fromNodeRedis` do this with a single
+Lua `EVAL` (`INCR`, then `PEXPIRE` only when the value is `1`), so a window
+can't slide forever and a crash can't strand an immortal counter.
 
 The store owns no connection: `store.close()` delegates to the driver, so you
 decide when the client shuts down.

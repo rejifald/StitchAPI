@@ -116,6 +116,10 @@ export function classifyDiff(
     opts: DriftOptions = {},
 ): DriftFinding[] {
     const { levelOf, allow } = resolveSeverity(opts.severity);
+    // P7: a bare `ignore` string is shorthand for a one-element list — normalize to the array the
+    // `matchAny` matcher wants (mirrors how `severity` already widens `'warn' ≡ ['warn']`).
+    const ignore =
+        typeof opts.ignore === 'string' ? [opts.ignore] : opts.ignore;
 
     // Group diffs by `change|path` (the collapse key).
     const groups = new Map<
@@ -138,7 +142,7 @@ export function classifyDiff(
 
     for (const { change, path, diffs } of groups.values()) {
         // Apply ignore (path-based) after grouping — all elements share the same [] path.
-        if (matchAny(opts.ignore, path)) continue;
+        if (matchAny(ignore, path)) continue;
         const level = levelOf(change);
         if (allow && !allow.has(level)) continue;
 

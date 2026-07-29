@@ -103,7 +103,8 @@ one store, one trace sink — plus the shared config (`baseUrl`, `auth`, `retry`
 `throttle`, …) every stitch inherits; `forRootAsync` resolves the same options
 from an injected factory. `forFeature({ stitches, seam })` registers injectable
 stitches and, optionally, a per-upstream seam built over the shared store and
-trace — omit `seam` to attach the stitches to the default one.
+trace — `seam: { config, token? }` (its `config` is the feature seam's
+`baseUrl`/`auth`/…); omit `seam` to attach the stitches to the default one.
 
 Two bridges connect the framework, and neither changes core:
 

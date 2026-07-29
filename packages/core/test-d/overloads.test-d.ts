@@ -26,10 +26,10 @@ expectType<unknown>(output(makeApi('/x')));
 const api = seam({ baseUrl: 'x' });
 expectType<unknown>(output(api.stitch(either)));
 
-// 4) graphql is a single overload, so a union of query-configs already resolves (no fallback needed).
+// 4) graphql is a single overload, so a union of document-configs already resolves (no fallback needed).
 declare const gqlEither:
-    | (Partial<StitchConfig> & { query: string })
-    | (Partial<StitchConfig> & { query: string; method: string });
+    | (Partial<StitchConfig> & { document: string })
+    | (Partial<StitchConfig> & { document: string; method: string });
 expectType<unknown>(output(api.graphql(gqlEither)));
 
 // 5) REGRESSION GUARD: the fallback overload must NOT shadow inference for concrete literals.

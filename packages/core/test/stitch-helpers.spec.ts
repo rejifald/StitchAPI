@@ -40,7 +40,7 @@ describe('redactConfig', () => {
                 store: {
                     get: () => undefined,
                     set: () => undefined,
-                    incr: () => 1,
+                    increment: () => 1,
                 },
                 adapter: () => Promise.resolve({}),
                 clock: systemClock,

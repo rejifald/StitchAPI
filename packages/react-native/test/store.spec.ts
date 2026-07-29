@@ -1,5 +1,5 @@
 // asyncStorageStore conformance + the AsyncStorage-specific behaviours (TTL via a
-// JSON envelope, serialized atomic incr) the generic contract can't express
+// JSON envelope, serialized atomic increment) the generic contract can't express
 // deterministically.
 import { asyncStorageStore } from '../src/store';
 import type { AsyncStorageLike } from '../src/store';
@@ -7,7 +7,7 @@ import type { AsyncStorageLike } from '../src/store';
 import { assertConformance, verifyStoreContract } from 'stitchapi/testing';
 import { describe, expect, test } from 'vitest';
 
-// A Map-backed AsyncStorage double with async resolution, so concurrent `incr`
+// A Map-backed AsyncStorage double with async resolution, so concurrent `increment`
 // calls genuinely interleave at await points — exercising the store's serializer.
 function fakeAsyncStorage(): AsyncStorageLike {
     const map = new Map<string, string>();
@@ -51,19 +51,27 @@ describe('asyncStorageStore', () => {
         expect(await store.get('k')).toBe('v');
     });
 
-    test('incr resets to 1 once its TTL window lapses', async () => {
+    test('increment without a ttl never expires (no window)', async () => {
         let t = 0;
         const store = asyncStorageStore(fakeAsyncStorage(), { now: () => t });
-        expect(await store.incr('c', 100)).toBe(1);
-        expect(await store.incr('c', 100)).toBe(2);
-        t = 200; // window lapsed
-        expect(await store.incr('c', 100)).toBe(1);
+        expect(await store.increment('c')).toBe(1);
+        t = 10_000_000;
+        expect(await store.increment('c')).toBe(2);
     });
 
-    test('concurrent incr stays atomic', async () => {
+    test('increment resets to 1 once its TTL window lapses', async () => {
+        let t = 0;
+        const store = asyncStorageStore(fakeAsyncStorage(), { now: () => t });
+        expect(await store.increment('c', 100)).toBe(1);
+        expect(await store.increment('c', 100)).toBe(2);
+        t = 200; // window lapsed
+        expect(await store.increment('c', 100)).toBe(1);
+    });
+
+    test('concurrent increment stays atomic', async () => {
         const store = asyncStorageStore(fakeAsyncStorage());
         const results = await Promise.all(
-            Array.from({ length: 20 }, () => store.incr('n', 60_000)),
+            Array.from({ length: 20 }, () => store.increment('n', 60_000)),
         );
         expect(results.sort((a, b) => a - b)).toEqual(
             Array.from({ length: 20 }, (_, i) => i + 1),

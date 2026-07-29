@@ -78,8 +78,10 @@ derivations:
     weights, and query-length cap **must** match `apps/docs/lib/search-index/*`
     exactly, or a query embeds into a different vector space than the bundled
     index was built in.
--   `src/doc-path.ts` — a verbatim copy (that file has no fumadocs
-    dependency either, so it's a straight copy, not a re-derivation).
+-   `src/doc-path.ts` — a behavior-verbatim copy (that file has no fumadocs
+    dependency either, so it's a straight copy, not a re-derivation; the one
+    textual difference is the named `GetDocOptions` input interface, which
+    apps/docs keeps inline).
 -   `src/server.ts`'s `SITE_URL`/`EXCERPT_LEN` mirror `apps/docs/lib/shared.ts`'s
     `siteUrl` and `apps/docs/app/api/mcp/route.ts`'s `EXCERPT_LEN`.
 
@@ -99,6 +101,10 @@ intentional.
     of running the `stitchapi-docs-mcp` bin)
 -   `searchDocs(query, options?)`, `getDoc({ url?, slug? })` — the underlying
     retrieval functions
+-   Option interfaces (all exported): `SearchOptions` — with `HybridWeights`
+    and `FieldBoost` naming its `hybridWeights`/`boost` slots (field names are
+    Orama's, passed through unchanged) — and `GetDocOptions`, the
+    `{ url?, slug? }` input shape `getDoc` takes
 
 ## Contributing
 

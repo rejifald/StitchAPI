@@ -18,7 +18,12 @@
 // `event.input` (its headers carry the live `authorization`/`cookie`), `event.data`,
 // or a `delta` chunk. Both the URL userinfo (`user:pass@`) and the query string are
 // dropped — either can carry a credential (`?api_key=…`).
-import type { StitchEvent, TraceContext, TraceSink } from 'stitchapi';
+import type {
+    AtLeastOne,
+    StitchEvent,
+    TraceContext,
+    TraceSink,
+} from 'stitchapi';
 import { compact } from 'stitchapi';
 
 // ---------------------------------------------------------------------------
@@ -61,19 +66,34 @@ export interface SentrySinkOptions {
      * Breadcrumb the happy-path lifecycle (`start` / `result` / `done`). Default
      * `false` — these are noisy in Sentry, where breadcrumbs matter most just before
      * an error. Retries, circuit trips, and drift findings are always breadcrumbed.
+     *
+     * DELIBERATE DIVERGENCE (contract P8): `@stitchapi/pino`'s same-named
+     * `lifecycle` defaults to `true`. Sentry breadcrumbs/events cost quota, so the
+     * lifecycle is off by default here; pino log lines are cheap and
+     * level-filtered, so it is on by default there.
      */
     lifecycle?: boolean;
     /**
-     * Capture `error` events as Sentry issues via `captureMessage`. Default `true`.
-     * Set `false` to only leave breadcrumbs (e.g. when your framework already reports
-     * the error to Sentry and you just want the stitch trail).
+     * Capture Sentry issues via `captureMessage`: `errors` for every `error` event
+     * (default `true`) and `drift` for an **error-level** `drift` finding (a breaking
+     * API change; default `false`). `capture: false` disables both — only breadcrumbs
+     * are left (e.g. when your framework already reports the error to Sentry and you
+     * just want the stitch trail). `capture: true` (or omitting the option) resolves
+     * both sub-fields to the defaults above. Pass a {@link SentryCaptureOptions}
+     * envelope to set them independently.
      */
-    captureErrors?: boolean;
+    capture?: boolean | AtLeastOne<SentryCaptureOptions>;
+}
+
+/** Envelope for {@link SentrySinkOptions.capture} (CONTRACT.md P24). */
+export interface SentryCaptureOptions {
+    /** Capture `error` events as Sentry issues via `captureMessage`. Default `true`. */
+    errors?: boolean;
     /**
      * Also capture an **error-level** `drift` finding (a breaking API change) as its
      * own Sentry issue, not just a breadcrumb. Default `false`.
      */
-    captureDrift?: boolean;
+    drift?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +119,17 @@ function redactUrl(url: string): string {
     }
     const q = url.indexOf('?');
     return q === -1 ? url : `${url.slice(0, q)}?…`;
+}
+
+/** Resolve {@link SentrySinkOptions.capture} to its two booleans (P24 envelope). */
+function resolveCapture(
+    capture: boolean | AtLeastOne<SentryCaptureOptions> | undefined,
+): { errors: boolean; drift: boolean } {
+    if (capture === false) return { errors: false, drift: false };
+    if (capture === true || capture === undefined) {
+        return { errors: true, drift: false };
+    }
+    return { errors: capture.errors ?? true, drift: capture.drift ?? false };
 }
 
 const DRIFT_TO_SENTRY: Record<string, SentryLevel> = {
@@ -214,8 +245,9 @@ export function sentrySink(
     options: SentrySinkOptions = {},
 ): TraceSink {
     const lifecycle = options.lifecycle ?? false;
-    const captureErrors = options.captureErrors ?? true;
-    const captureDrift = options.captureDrift ?? false;
+    const { errors: captureErrors, drift: captureDrift } = resolveCapture(
+        options.capture,
+    );
 
     return {
         handle(event: StitchEvent, ctx: TraceContext): void {

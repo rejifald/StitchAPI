@@ -19,14 +19,14 @@ import {
 import { z } from 'zod';
 
 // Run the SSE frame parser over the given chunk boundaries and collect the parsed events. A small
-// `maxBufferBytes` cap can be threaded through `stream.maxBufferBytes` (unbounded-buffer guard).
+// `maxBufferChars` cap can be threaded through `stream.maxBufferChars` (unbounded-buffer guard).
 async function parse(
     chunks: string[],
-    cfg: { stream?: { maxBufferBytes?: number } } = {},
+    cfg: { stream?: { maxBufferChars?: number } } = {},
 ): Promise<SseEvent[]> {
     const res = { status: 200, headers: {}, body: streamOf(chunks) };
     const out: SseEvent[] = [];
-    // `stream` is defined on a streaming surface; tests may assert non-null. Only `stream.maxBufferBytes`
+    // `stream` is defined on a streaming surface; tests may assert non-null. Only `stream.maxBufferChars`
     // is read off `cfg`, so this partial config (a resolved config's fields are all optional) suffices.
     for await (const ev of sseSurface.stream!(res, cfg))
         out.push(ev as SseEvent);
@@ -123,8 +123,8 @@ describe('sse buffer cap — an unbounded body fails instead of OOM-ing (securit
         // carry grows past the cap. Without the cap this would buffer the whole (unbounded) body.
         const noNewline = 'data: ' + 'x'.repeat(CAP * 4); // no trailing "\n\n"
         await expect(
-            parse([noNewline], { stream: { maxBufferBytes: CAP } }),
-        ).rejects.toThrow(/un-terminated line exceeded maxBufferBytes/);
+            parse([noNewline], { stream: { maxBufferChars: CAP } }),
+        ).rejects.toThrow(/un-terminated line exceeded maxBufferChars/);
     });
 
     test('endless data: lines with NO dispatching blank line past the cap throws (frame guard)', async () => {
@@ -134,15 +134,15 @@ describe('sse buffer cap — an unbounded body fails instead of OOM-ing (securit
         const manyDataLines =
             Array.from({ length: 200 }, () => 'data: chunk').join('\n') + '\n'; // no blank line ⇒ never dispatched
         await expect(
-            parse([manyDataLines], { stream: { maxBufferBytes: CAP } }),
-        ).rejects.toThrow(/un-dispatched event data exceeded maxBufferBytes/);
+            parse([manyDataLines], { stream: { maxBufferChars: CAP } }),
+        ).rejects.toThrow(/un-dispatched event data exceeded maxBufferChars/);
     });
 
     test('a normal stream UNDER the cap still parses (no false positive)', async () => {
         // Well under 64 bytes of data per frame, each properly blank-line terminated.
         expect(
             await parse(['data: {"n":1}\n\ndata: {"n":2}\n\n'], {
-                stream: { maxBufferBytes: CAP },
+                stream: { maxBufferChars: CAP },
             }),
         ).toEqual([{ data: { n: 1 } }, { data: { n: 2 } }]);
     });
@@ -156,9 +156,9 @@ describe('sse buffer cap — an unbounded body fails instead of OOM-ing (securit
         );
         await expect(
             parse([lines.join('\n') + '\n'], {
-                stream: { maxBufferBytes: CAP },
+                stream: { maxBufferChars: CAP },
             }),
-        ).rejects.toThrow(/un-dispatched event data exceeded maxBufferBytes/);
+        ).rejects.toThrow(/un-dispatched event data exceeded maxBufferChars/);
     });
 });
 
@@ -231,19 +231,19 @@ describe('sse over the engine (event spine + await)', () => {
         expect(ev.done?.ok).toBe(false);
     });
 
-    test('an unbounded body past maxBufferBytes fails the stream with error+done (not OOM)', async () => {
+    test('an unbounded body past maxBufferChars fails the stream with error+done (not OOM)', async () => {
         // A body that streams a long run with no newline / no dispatching blank line. The parser's
         // buffer cap throws; runStreaming turns the throw into error+done — a clean failure, not an
         // unbounded-memory grow. (This is the engine-spine counterpart to the frame-parser unit tests.)
         const s = sse({
             url: 'https://x.test/flood',
-            stream: { maxBufferBytes: 64 },
+            stream: { maxBufferChars: 64 },
             adapter: streamAdapter(streamOf(['data: ' + 'x'.repeat(4096)])), // no "\n\n" terminator
         });
         const ev = await collectEvents(s.stream());
         expect(ev.deltas).toEqual([]); // nothing was ever dispatched
         expect(ev.types).toContain('error');
-        expect(ev.error?.message).toMatch(/maxBufferBytes/);
+        expect(ev.error?.message).toMatch(/maxBufferChars/);
         expect(ev.done?.ok).toBe(false);
     });
 });
@@ -360,7 +360,7 @@ describe('sse over real fetch + Web Streams (browser-first gate)', () => {
                     'data: {"n":2}\n\n',
                     'data: {"n":3}\n\n',
                 ],
-                chunkDelayMs: 15,
+                chunkDelay: 15,
             },
         });
         const events = sse({ baseUrl: server.url, path: '/ticks' });
@@ -383,7 +383,7 @@ describe('sse over real fetch + Web Streams (browser-first gate)', () => {
                     'data: {"n":2}\n\n',
                     'data: {"n":3}\n\n',
                 ],
-                chunkDelayMs: 40,
+                chunkDelay: 40,
             },
         });
         const events = sse({ baseUrl: server.url, path: '/abortable' });
@@ -471,13 +471,13 @@ describe('lineReader teardown + cap (shared streaming plumbing)', () => {
         expect(lines).toEqual(['a', 'b', 'c']);
     });
 
-    test('a single un-terminated line past maxBufferBytes throws a descriptive error', async () => {
+    test('a single un-terminated line past maxBufferChars throws a descriptive error', async () => {
         // No `\n` ever arrives, so the carry grows unbounded — the cap turns that into a clean throw.
         await expect(async () => {
             for await (const _ of lineReader(streamOf(['x'.repeat(200)]), 64)) {
                 void _;
             }
-        }).rejects.toThrow(/un-terminated line exceeded maxBufferBytes/);
+        }).rejects.toThrow(/un-terminated line exceeded maxBufferChars/);
     });
 });
 

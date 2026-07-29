@@ -293,7 +293,7 @@ describe('pinoSink — secret safety', () => {
         expect(JSON.stringify(calls[0]!.obj)).not.toContain('headers');
     });
 
-    it('never logs the `result.value` response body', () => {
+    it('never logs the `result.data` response body', () => {
         const calls = run({
             type: 'result',
             data: { ssn: '123-45-6789', token: 'leak-me' },

@@ -4,6 +4,8 @@
 -   **Date:** 2026-06-14
 -   **Tags:** caching, performance, resilience, runtime, multi-tenant, agents
 
+> **Amendment — the store contract's counter verb is `increment`.** This ADR was written when `StitchStore`'s atomic counter was spelled `incr`; the house contracts now use whole words, so it is **`increment`** (`get`/`set`/`increment`/`close?`) per [CONTRACT.md P18](../CONTRACT.md#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary). Read `incr` as `increment` throughout the text below — the Redis **command** `INCR` is unchanged. The decision itself (reuse the store contract, grow no new vendor surface) is unaffected.
+
 ## Context
 
 The request that started this: "we're missing a cache — two calls with the same key and

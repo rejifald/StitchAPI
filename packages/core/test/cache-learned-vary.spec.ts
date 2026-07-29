@@ -19,7 +19,7 @@ describe('createCache learned Vary (response-driven)', () => {
         const store = memoryStore();
         const cache = createCache({ config: { ttl: 0 }, store, stitchId: 's' });
         const d = desc();
-        const baseKey = cache.key(d, {});
+        const baseKey = cache.keyOf(d, {});
         if (baseKey === undefined) throw new Error('expected a derived key');
         await (await cache.open(baseKey, d)).set('VALUE', 200, '*');
         expect(await (await cache.open(baseKey, d)).get()).toBeNull();
@@ -30,15 +30,15 @@ describe('createCache learned Vary (response-driven)', () => {
         const cache = createCache({ config: { ttl: 0 }, store, stitchId: 's' });
         const en = desc({ 'accept-language': 'en' });
         const de = desc({ 'accept-language': 'de' });
-        const baseKey = cache.key(en, {});
+        const baseKey = cache.keyOf(en, {});
         if (baseKey === undefined) throw new Error('expected a derived key');
         // Without an explicit vary allowlist, accept-language is NOT in the base key.
-        expect(cache.key(de, {})).toBe(baseKey);
+        expect(cache.keyOf(de, {})).toBe(baseKey);
 
         await (await cache.open(baseKey, en)).set('EN', 200, 'accept-language');
 
         // same accept-language → hit
-        expect((await (await cache.open(baseKey, en)).get())?.value).toBe('EN');
+        expect((await (await cache.open(baseKey, en)).get())?.data).toBe('EN');
         // different accept-language → miss (a separate learned-vary entry)
         expect(await (await cache.open(baseKey, de)).get()).toBeNull();
     });

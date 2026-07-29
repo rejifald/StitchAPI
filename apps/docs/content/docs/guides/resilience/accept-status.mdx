@@ -40,10 +40,11 @@ A `404` here **resolves** with the response body instead of rejecting. Everythin
 else (`401`, `500`, …) still throws a `StitchError` exactly as before — `acceptStatus`
 is additive, never a blanket "ignore failures".
 
-## A list or a predicate
+## A number, a list, or a predicate
 
-`acceptStatus` is either a number list or a predicate `(status) => boolean`. Use a
-predicate to accept a range:
+`acceptStatus` is a `StatusMatch`: a single status, a number list, or a predicate
+`(status) => boolean`. A bare number is shorthand for its one-element list
+(`acceptStatus: 404` ≡ `acceptStatus: [404]`). Use a predicate to accept a range:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';

@@ -113,7 +113,7 @@ above: rank for the generic problem, teach it honestly, then show the one-line s
 
 | Topic (working title)                                       | Pillar | Target query                                          | Maps to (feature)                                                             |
 | ----------------------------------------------------------- | ------ | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Session auth that logs itself back in                       | 1      | "refresh token on 401", "session auth fetch"          | `cookieSession` (`refreshOn`/`refreshWhen`/`loginInput`) + `oauth2`           |
+| Session auth that logs itself back in                       | 1      | "refresh token on 401", "session auth fetch"          | `cookieSession` (`refresh`/`loginInput`) + `oauth2`                           |
 | Multi-tenant API calls from one definition                  | 4      | "multi-tenant api client"                             | `seam.as(principal)` + `oauth2` `tenancy`, per-tenant credentials             |
 | Tap into every request with hooks (interceptor alternative) | 1      | "fetch interceptor alternative", "http middleware ts" | request/response/error/retry `hooks`                                          |
 | Use any validator (Standard Schema)                         | 3      | "valibot api validation", "standard schema"           | validator-agnostic core; Zod/Valibot/ArkType/Effect/Typebox via `toValidator` |

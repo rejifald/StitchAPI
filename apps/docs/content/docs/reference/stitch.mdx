@@ -22,14 +22,14 @@ const user = stitch<{ id: string }>({
 ## graphql()
 
 `graphql<T>(config)` is a thin wrapper over `stitch()` for GraphQL-over-HTTP: it POSTs
-`{ query, variables }` and unwraps `data`. The config must carry a `query`.
+`{ query, variables }` and picks `data`. The config must carry a `document`.
 
 ```ts twoslash
 import { graphql } from 'stitchapi';
 
 const viewer = graphql<{ viewer: { id: string } }>({
     path: 'https://api.example.com/graphql',
-    query: 'query { viewer { id } }',
+    document: 'query { viewer { id } }',
 });
 ```
 

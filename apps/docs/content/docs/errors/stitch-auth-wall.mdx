@@ -7,7 +7,7 @@ description: 'Authentication failed, or a soft 200 login wall was hit and could 
 
 A call that depends on a session fails after the runtime has tried to
 re-authenticate. With [`cookieSession`](/docs/guides/auth/cookie-session) the
-login is re-run on the configured `refreshOn` status (default `401`) and the
+login is re-run on the configured `refresh` status (default `401`) and the
 request retried once; when that retry still can't get through, the stitch
 surfaces the failure instead of looping. The downstream response keeps coming
 back unauthenticated — most often a `401`, sometimes a `200` whose body is
@@ -21,7 +21,7 @@ Two distinct triggers land here:
     rotated form fields, or a login endpoint that now sets a different cookie than
     the one you capture — so `cookieSession` replays a cookie the API rejects.
 -   **A soft 200 wall.** The API answers an unauthenticated request with `200` and
-    an HTML login page rather than a `401`. `refreshOn` only matches status codes,
+    an HTML login page rather than a `401`. `refresh.on` only matches status codes,
     so the wall slips past it and the body is treated as a successful response.
 
 ## How to fix
@@ -31,7 +31,7 @@ Confirm the credentials resolve at call time (see
 captures the cookie the API actually checks — `'*'` captures the whole jar when
 you're unsure which one matters.
 
-For a soft 200 wall, add `refreshWhen` so a login page served with `200`
+For a soft 200 wall, add `refresh.when` so a login page served with `200`
 triggers a re-login instead of passing as data:
 
 ```ts twoslash
@@ -54,8 +54,10 @@ const me = stitch({
             body: { user: env('USER')(), pass: env('PASS')() },
         }),
         // A 200 that is really the login page is a soft wall — re-login on it.
-        refreshWhen: (res) =>
-            typeof res.body === 'string' && res.body.includes('id="login"'),
+        refresh: {
+            when: (res) =>
+                typeof res.body === 'string' && res.body.includes('id="login"'),
+        },
     }),
 });
 ```

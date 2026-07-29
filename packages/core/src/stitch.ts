@@ -16,7 +16,7 @@ import {
     makeRuntime,
 } from './engine';
 import type { InferOutput, InputOf, ResolveOutput } from './infer';
-import { otlpTrace } from './otlp';
+import { otlpSink } from './otlp';
 import { RateLimitError, createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
@@ -50,6 +50,7 @@ import {
 } from './types';
 import {
     deepMerge,
+    envelope,
     newRunContext,
     readEnv,
     redactSecretsDeep,
@@ -141,12 +142,30 @@ function normalizeInput(
 // IN PLACE, before the deep-merge, so a literal in one layer folds cleanly into an object in
 // another and the resolved config the engine reads is always the normalised shape.
 function expandShorthand(cfg: Partial<StitchConfig>): void {
-    if (typeof cfg.retry === 'number') cfg.retry = { attempts: cfg.retry };
-    if (typeof cfg.timeout === 'number' || typeof cfg.timeout === 'string')
-        cfg.timeout = { total: cfg.timeout };
-    if (typeof cfg.cache === 'number' || typeof cfg.cache === 'string')
-        cfg.cache = { ttl: cfg.cache };
-    if (typeof cfg.throttle === 'string') cfg.throttle = { rate: cfg.throttle };
+    // P12/P14: each slot's dominant-field scalar folds into its envelope, so the opaque `{}` never
+    // reaches the slot (P20) and the engine only ever sees the object form. One `envelope` call per
+    // slot — the slot and its dominant field, nothing else to keep in sync.
+    if (cfg.retry !== undefined) {
+        cfg.retry = envelope(cfg.retry, 'attempts');
+        // Nested fold (P24): `backoff` is itself a scalar-or-envelope slot, so the bare curve
+        // normalizes too — `__config` never carries the string form (P0).
+        if (cfg.retry.backoff !== undefined)
+            cfg.retry = {
+                ...cfg.retry,
+                backoff: envelope(cfg.retry.backoff, 'curve'),
+            };
+    }
+    if (cfg.timeout !== undefined) cfg.timeout = envelope(cfg.timeout, 'total');
+    if (cfg.cache !== undefined) cfg.cache = envelope(cfg.cache, 'ttl');
+    if (cfg.stream !== undefined) cfg.stream = envelope(cfg.stream, 'decode');
+    if (cfg.multipart !== undefined)
+        cfg.multipart = envelope(cfg.multipart, 'nesting');
+    if (cfg.throttle !== undefined)
+        cfg.throttle = envelope(cfg.throttle, 'rate');
+    // P13: `sse: true` enables reconnection with defaults; `false`/absent is off (the opaque
+    // `sse: {}` is a type error at the slot, so the all-defaults case arrives here as `true`).
+    if (cfg.sse === true) cfg.sse = { reconnect: true };
+    else if (cfg.sse === false) delete cfg.sse;
     // P20: `idempotency: true` enables it with defaults; `false`/absent is off. Normalize the
     // boolean toggle to the object form the engine reads (the opaque `idempotency: {}` is a type
     // error at the slot, so the all-defaults case arrives here as `true`).
@@ -197,16 +216,19 @@ export function compose(config: Fragment): ResolvedStitchConfig {
         // last to set it and set it off.
         if (idempotencyToggle === false) delete merged.idempotency;
     }
+    // The chained hooks / normalized input are the RESOLVED shapes (plain `Hooks`/`InputSchemas`),
+    // past the authoring-side `AtLeastOne` gate (P20) — write them through the resolved view.
+    const resolved = merged as ResolvedStitchConfig;
     const hooks = chainHooks(hookLayers);
-    if (hooks) merged.hooks = hooks;
+    if (hooks) resolved.hooks = hooks;
     if (store) merged.store = store;
     if (kind) merged.kind = kind;
     const output = normalizeOutput(merged.output);
     if (output !== undefined) merged.output = output;
     const input = normalizeInput(merged.input);
-    if (input !== undefined) merged.input = input;
-    // `expandShorthand` ran on every layer, so retry/timeout/cache are now their object form.
-    return merged as ResolvedStitchConfig;
+    if (input !== undefined) resolved.input = input;
+    // `expandShorthand` ran on every layer, so every scalar shorthand is now its envelope form.
+    return resolved;
 }
 
 // Construction-time nudges for `idempotency` misuse — hints with an out, never errors. Two cases,
@@ -231,10 +253,9 @@ function warnIdempotency(cfg: ResolvedStitchConfig): void {
         );
         return;
     }
-    // A derived key (either spelling — `keyOf`, or the @deprecated `key` alias) dedupes
-    // resubmissions on its own, so only the random default with no retry is the inert case.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `key` is the back-compat alias of `keyOf` (CONTRACT.md P6)
-    if (idem.keyOf || idem.key || cfg.retry) return;
+    // A derived `keyOf` dedupes resubmissions on its own, so only the random default with no
+    // retry is the inert case.
+    if (idem.keyOf || cfg.retry) return;
     console.warn(
         `stitchapi: \`${name}\` has \`idempotency\` with a random key and no \`retry\`, so it ` +
             `only dedupes its own retries — add \`retry\`, or set \`idempotency.keyOf\`.`,
@@ -271,16 +292,16 @@ function maxBodyFromEnv(value: string | undefined): number | false | undefined {
 
 function getTrace(): TraceSink {
     const file = fileFromEnv(readEnv('STITCH_TRACE_FILE'));
-    const maxBodyBytes = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
+    const maxBodyChars = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
     const base = createTrace(
         compact({
             console: readEnv('STITCH_TRACE_CONSOLE') === '1',
             file,
-            maxBodyBytes,
+            maxBodyChars,
         }),
     );
     if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;
-    return multiplex(base, otlpTrace());
+    return multiplex(base, otlpSink());
 }
 
 // A sink that drops every event — `trace: false` forces tracing off even when the
@@ -375,11 +396,9 @@ function makeInspection<T>(
     error: StitchError | null,
     source: Inspection<T>['source'],
 ): Inspection<T> {
-    // `data` is canonical; `value` is co-set as the @deprecated alias (CONTRACT.md P5).
     // `source` (ADR 0019) rides as a normal enumerable field — the interpretant of `raw`.
     const wrapper = {
         data: value,
-        value,
         findings,
         status,
         error,
@@ -402,7 +421,7 @@ interface Drained<T> {
     error: StitchError | null;
     source: Inspection<T>['source'];
     attempts: number;
-    ms: number;
+    elapsed: number;
     waited: number;
     /** The `phase:'cache'` event detail seen this run, if any (e.g. 'hit', 'miss', 'bypass: …'). */
     cacheDetail: string | undefined;
@@ -428,7 +447,7 @@ async function drainRun<T>(
     let streamed = false;
     let cacheHit = false;
     let attempts = 0;
-    let ms = 0;
+    let elapsed = 0;
     let waited = 0;
     let cacheDetail: string | undefined;
     const readRaw = (carrier: object): void => {
@@ -457,7 +476,7 @@ async function drainRun<T>(
                 error = asStitchError(rebuilt);
                 readRaw(rebuilt);
             } else if (ev.type === 'done') {
-                ms = ev.elapsed;
+                elapsed = ev.elapsed;
                 if (ev.attempts) attempts = ev.attempts;
             }
         }
@@ -482,7 +501,7 @@ async function drainRun<T>(
         error,
         source,
         attempts,
-        ms,
+        elapsed,
         waited,
         cacheDetail,
     };
@@ -532,7 +551,7 @@ function cacheOutcome(
 }
 
 // `.report()` consumer (ADR 0019): the same drained run as `.inspect()`, assembled into a
-// `RunReport` — the `Inspection` fields plus `attempts`, `timing` (`{ ms, waited? }`), the resolved
+// `RunReport` — the `Inspection` fields plus `attempts`, `timing` (`{ elapsed, waited? }`), the resolved
 // redacted `config`, and the fine-grained `cache` outcome. `config` is the stitch's ALREADY-redacted
 // `__config` (never `__rawConfig`). Never throws. `waited` is omitted entirely when nothing waited
 // (exactOptionalPropertyTypes), so its absence reads as "no backoff/throttle wait".
@@ -551,7 +570,9 @@ async function consumeReport<T>(
         d.source,
     );
     const timing: RunReport<T>['timing'] =
-        d.waited > 0 ? { ms: d.ms, waited: d.waited } : { ms: d.ms };
+        d.waited > 0
+            ? { elapsed: d.elapsed, waited: d.waited }
+            : { elapsed: d.elapsed };
     const report = base as RunReport<T>;
     report.attempts = d.attempts;
     report.timing = timing;
@@ -773,7 +794,7 @@ function attachCacheSurface(
     Object.defineProperty(target, 'cache', {
         value: {
             invalidate: () => cacheInvalidateBulk(rt),
-            key: (input?: StitchInput) => cacheKeyOf(rt, resolve(input)),
+            keyOf: (input?: StitchInput) => cacheKeyOf(rt, resolve(input)),
         },
     });
 }
@@ -1000,9 +1021,9 @@ export function drift<S>(
 export function graphql<
     TExplicit = never,
     const C extends Partial<StitchConfig> & {
-        query: string;
+        document: string;
     } = Partial<StitchConfig> & {
-        query: string;
+        document: string;
     },
 >(config: C): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the

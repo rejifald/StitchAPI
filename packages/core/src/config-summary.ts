@@ -40,8 +40,7 @@ export function pipelineStages(
         );
     if (kind !== 'http') stages.push(`${kind} interpret`);
     if (cfg.paginate) {
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- `max` is the @deprecated alias of `pages`, read for back-compat until the GA cut (CONTRACT.md P4)
-        const pages = cfg.paginate.pages ?? cfg.paginate.max ?? 50;
+        const pages = cfg.paginate.pages ?? 50;
         stages.push(opts.detailed ? `paginate (max ${pages})` : 'paginate');
     }
     // Post-response order matches the engine (engine.ts): transform → pick → validate. The pick path

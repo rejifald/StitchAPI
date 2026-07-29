@@ -86,7 +86,7 @@ expectType<{ id: string }>(
     null as unknown as CallArg<typeof asMember>['params'],
 );
 const gqlTyped = api.graphql({
-    query: 'query { ok }',
+    document: 'query { ok }',
     input: { params: z.object({ region: z.string() }) },
 });
 expectType<{ region: string }>(
@@ -95,7 +95,7 @@ expectType<{ region: string }>(
 // A graphql stitch with NO `input.variables` schema keeps `variables` as a loose untyped
 // passthrough. (Issue #75 makes a DECLARED `input.variables` schema type them — covered in
 // graphql-variables.test-d.ts; this case pins the schema-less behaviour stays unchanged.)
-const gqlLoose = api.graphql({ query: 'query { ok }', output: userSchema });
+const gqlLoose = api.graphql({ document: 'query { ok }', output: userSchema });
 expectAssignable<CallArg<typeof gqlLoose>>({ variables: { region: 'eu' } });
 
 // 7) a non-schema `input` slot value is rejected at compile time.

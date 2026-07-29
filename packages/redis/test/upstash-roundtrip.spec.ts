@@ -75,7 +75,7 @@ describe('fromUpstash — JSON-parseable string values round-trip', () => {
     });
 
     test('a bare INCR counter (Upstash returns a number) round-trips', async () => {
-        // A counter is written by `incr`, not `set`, so the stored value is the
+        // A counter is written by `increment`, not `set`, so the stored value is the
         // bare string "1"; Upstash's auto-deserialize turns that reply into the
         // number 1. `fromUpstash.get` must re-serialize it to "1" so
         // `redisStore.get` reads back the number 1, not `undefined`/a throw.

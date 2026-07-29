@@ -27,6 +27,9 @@ expectType<User>(
 // graphql member infers from `output`
 expectType<User>(
     output(
-        api.graphql({ query: 'query { u { id name } }', output: userSchema }),
+        api.graphql({
+            document: 'query { u { id name } }',
+            output: userSchema,
+        }),
     ),
 );

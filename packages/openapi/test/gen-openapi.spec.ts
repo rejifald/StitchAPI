@@ -195,11 +195,58 @@ describe('planGen — naming, typing, auth, notice', () => {
         expect(c).toMatch(/import \{ seam, bearer, env \}/);
     });
 
+    test('emitted throttle TODO uses the canonical `pool` (ThrottleOptions.scope is gone)', () => {
+        const r = planGen(doc, { all: true });
+        const c = file(r, 'client.ts') as string;
+        expect(c).toMatch(/pool: 'host'/);
+        expect(c).not.toMatch(/\bscope\b/);
+    });
+
     test('types-only emits the validation-off notice', () => {
         const r = planGen(doc, { all: true });
         expect(r.notices.join('\n')).toMatch(
             /runtime validation \+ drift are OFF/,
         );
+    });
+
+    // apiKey auth. Core's `apiKey()` only models a header (default) or query key; a `cookie` apiKey
+    // has no arm. The generator must emit the header/query forms but let `cookie` fall through to
+    // the not-auto-mapped warning — never silently emit it as a header key.
+    const apiKeyDoc = (loc: 'header' | 'query' | 'cookie'): OpenApiDoc => ({
+        openapi: '3.0.0',
+        info: { title: 'T', version: '1' },
+        servers: [{ url: 'https://api.example.com' }],
+        security: [{ apiKeyAuth: [] }],
+        components: {
+            securitySchemes: {
+                apiKeyAuth: { type: 'apiKey', in: loc, name: 'X-API-Key' },
+            },
+        },
+        paths: { '/ping': { get: { operationId: 'ping', responses: {} } } },
+    });
+
+    test('apiKey in header → header key (no `in:`), no warning', () => {
+        const r = planGen(apiKeyDoc('header'), { all: true });
+        const c = file(r, 'client.ts') ?? '';
+        expect(c).toMatch(
+            /auth: apiKey\(\{ name: "X-API-Key", value: env\('API_KEY'\) \}\)/,
+        );
+        expect(c).not.toMatch(/in: 'query'/);
+        expect(r.warnings.join('\n')).not.toMatch(/not auto-mapped/);
+    });
+
+    test("apiKey in query → `in: 'query'` discriminant emitted", () => {
+        const r = planGen(apiKeyDoc('query'), { all: true });
+        expect(file(r, 'client.ts') ?? '').toMatch(
+            /auth: apiKey\(\{ in: 'query', name: "X-API-Key", value: env\('API_KEY'\) \}\)/,
+        );
+    });
+
+    test('apiKey in cookie → not auto-mapped, no silent header key', () => {
+        const r = planGen(apiKeyDoc('cookie'), { all: true });
+        // Must NOT emit an apiKey() call at all — cookie has no core arm.
+        expect(file(r, 'client.ts') ?? '').not.toMatch(/apiKey\(/);
+        expect(r.warnings.join('\n')).toMatch(/not auto-mapped/);
     });
 });
 

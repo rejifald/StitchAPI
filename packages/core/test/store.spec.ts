@@ -78,7 +78,7 @@ describe('Pluggable store — sessions', () => {
                 cookie: 'SID',
                 key: 'svc',
                 loginInput,
-                scope: 'app', // standalone shared session (no principal bound)
+                tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
         const b = stitch({
@@ -90,7 +90,7 @@ describe('Pluggable store — sessions', () => {
                 cookie: 'SID',
                 key: 'svc',
                 loginInput,
-                scope: 'app', // standalone shared session (no principal bound)
+                tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
 
@@ -129,7 +129,7 @@ describe('Pluggable store — sessions', () => {
                 cookie: 'SID',
                 key: 'svc',
                 loginInput,
-                scope: 'app', // standalone shared session (no principal bound)
+                tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
         const b = stitch({
@@ -140,7 +140,7 @@ describe('Pluggable store — sessions', () => {
                 cookie: 'SID',
                 key: 'svc',
                 loginInput,
-                scope: 'app', // standalone shared session (no principal bound)
+                tenancy: 'app', // standalone shared session (no principal bound)
             }),
         });
 
@@ -158,13 +158,13 @@ describe('Pluggable store — throttle', () => {
             baseUrl: server.url,
             path: '/x',
             store,
-            throttle: { rate: '1/s', scope: 'host' },
+            throttle: { rate: '1/s', pool: 'host' },
         });
         const s2 = stitch({
             baseUrl: server.url,
             path: '/x',
             store,
-            throttle: { rate: '1/s', scope: 'host' },
+            throttle: { rate: '1/s', pool: 'host' },
         });
 
         const [w1, w2] = await Promise.all([
@@ -174,7 +174,7 @@ describe('Pluggable store — throttle', () => {
         expect(w1 + w2).toBe(1); // 1/s shared → exactly one of two concurrent calls is paced
     });
 
-    test('scope:"host" pools the rate budget in-process WITHOUT a shared store', async () => {
+    test('pool:"host" pools the rate budget in-process WITHOUT a shared store', async () => {
         // throttle.mdx: "'host' pools the budget across every stitch hitting the same host."
         // Host-scoped state lives in a module-level registry (resilience.ts), so two separate
         // stitches with no shared store still draw from one 1/s budget — one of two concurrent
@@ -183,12 +183,12 @@ describe('Pluggable store — throttle', () => {
         const s1 = stitch({
             baseUrl: server.url,
             path: '/y',
-            throttle: { rate: '1/s', scope: 'host' },
+            throttle: { rate: '1/s', pool: 'host' },
         });
         const s2 = stitch({
             baseUrl: server.url,
             path: '/y',
-            throttle: { rate: '1/s', scope: 'host' },
+            throttle: { rate: '1/s', pool: 'host' },
         });
 
         const [w1, w2] = await Promise.all([
@@ -198,8 +198,8 @@ describe('Pluggable store — throttle', () => {
         expect(w1 + w2).toBe(1); // pooled 1/s → exactly one of two concurrent calls is paced
     });
 
-    test('scope:"stitch" (default) keeps separate budgets per instance', async () => {
-        // The default scope is per-stitch: each instance keeps its own closure-local budget,
+    test('pool:"stitch" (default) keeps separate budgets per instance', async () => {
+        // The default pool is per-stitch: each instance keeps its own closure-local budget,
         // so two separate stitches (no shared store) on distinct names never pace each other.
         server.route('GET', '/z', { body: { ok: true } });
         const s1 = stitch({

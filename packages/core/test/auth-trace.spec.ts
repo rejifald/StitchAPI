@@ -64,7 +64,7 @@ test('auth-wall: me() auto-logs-in and never asks the caller for a secret', asyn
         auth: cookieSession({
             login: signIn,
             cookie: 'sid',
-            scope: 'app',
+            tenancy: 'app',
             loginInput: () => ({
                 body: { user: env('DEMO_USER')(), pass: env('DEMO_PASS')() },
             }),
@@ -103,8 +103,8 @@ test('refresh on the 401 wall re-logs-in and retries the request', async () => {
         auth: cookieSession({
             login: signIn,
             cookie: 'sid',
-            refreshOn: [401],
-            scope: 'app',
+            refresh: [401],
+            tenancy: 'app',
         }),
     });
 

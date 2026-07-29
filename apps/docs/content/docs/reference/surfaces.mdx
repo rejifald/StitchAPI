@@ -48,7 +48,7 @@ import { graphql } from 'stitchapi/graphql';
 
 const getThing = graphql({
     baseUrl: 'https://api.example.com',
-    query: 'query ($id: ID) { thing(id: $id) { name } }',
+    document: 'query ($id: ID) { thing(id: $id) { name } }',
 });
 
 const thing = await getThing({ variables: { id: 1 } });
@@ -78,14 +78,16 @@ for await (const ev of ticks.stream()) {
 
 `stream` is the raw streaming sibling — it hands back the response body decoded
 per `stream.decode`: `'bytes'` (the default, lossless `Uint8Array` chunks),
-`'lines'` (UTF-8 lines), or `'ndjson'` (a parsed value per line).
+`'lines'` (UTF-8 lines), or `'ndjson'` (a parsed value per line). The bare
+decoder is shorthand for the object form — `stream: 'ndjson'` ≡
+`stream: { decode: 'ndjson' }` (the opaque `stream: {}` is rejected).
 
 ```ts
 import { stream } from 'stitchapi/stream';
 
 const logs = stream({
     url: 'https://api.example.com/logs',
-    stream: { decode: 'ndjson' },
+    stream: 'ndjson',
 });
 
 for await (const ev of logs.stream()) {
@@ -104,9 +106,10 @@ concurrency budget.
 
 A streaming surface has no single response body, so an `output` contract
 validates **each `delta` before it is emitted** — never the collected array. A
-value that fails a `critical`/schema check fails the stream and is never
-delivered; a `drift` `watch` path warns and the value still flows, so a
-`.stream()` consumer only ever sees values that passed the contract.
+value that fails the schema fails the stream and is never delivered; soft
+drift (a coerced or undeclared field) surfaces as a leveled `drift` finding
+and the value still flows, so a `.stream()` consumer only ever sees values
+that passed the contract.
 
 ```ts
 import { stream } from 'stitchapi/stream';
@@ -121,8 +124,7 @@ const logs = stream({
 
 For `sse` the contract describes the event's `data` payload, not the
 `{ event, data, id, retry }` envelope. `transform` and `pick` reshape a whole
-buffered body and aren't applied to the delta path, and drift **snapshots** are
-a whole-body concept — not taken per-`delta`.
+buffered body and aren't applied to the delta path.
 
 ## download
 

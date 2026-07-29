@@ -35,7 +35,7 @@ const drainMicrotasks = (): Promise<void> =>
  *
  * ```ts
  * const clock = manualClock();
- * const call = stitch({ url, adapter, retry: { attempts: 3, baseDelay: 10_000 }, clock });
+ * const call = stitch({ url, adapter, retry: { attempts: 3, backoff: { base: 10_000 }}, clock });
  * const p = call.safe();
  * await clock.advance(0); // run the first attempt
  * await clock.advance(10_000); // fire the backoff → next attempt

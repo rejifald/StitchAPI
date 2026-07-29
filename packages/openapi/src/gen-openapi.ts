@@ -757,7 +757,7 @@ function emitClient(baseUrl: string | undefined, auth: DerivedAuth): GenFile {
     if (auth.expr) lines.push(`    auth: ${auth.expr},`);
     lines.push('    // TODO: tune shared resilience, e.g.');
     lines.push('    // retry: { attempts: 3, on: [429, 502, 503] },');
-    lines.push("    // throttle: { rate: '10/s', scope: 'host' },");
+    lines.push("    // throttle: { rate: '10/s', pool: 'host' },");
     lines.push('});');
     return { path: 'client.ts', contents: `${lines.join('\n')}\n` };
 }
@@ -916,7 +916,16 @@ function deriveAuth(
             expr: `basic({ user: env('API_USER'), pass: env('API_PASSWORD') })`,
             imports: ['basic', 'env'],
         };
-    if (scheme.type === 'apiKey') {
+    if (
+        scheme.type === 'apiKey' &&
+        (scheme.in === 'header' ||
+            scheme.in === 'query' ||
+            scheme.in === undefined)
+    ) {
+        // Core's `apiKey()` only has header (default) and query arms — `name` locates the key in
+        // both. Header is the default, so `in: 'header'` is never emitted; a query scheme gets the
+        // `in: 'query'` discriminant. An `in: 'cookie'` scheme has no arm, so it must NOT land here
+        // (it would silently become a header key) — it falls through to the not-auto-mapped warning.
         const where = scheme.in === 'query' ? `in: 'query', ` : '';
         const nm = scheme.name ? `name: ${JSON.stringify(scheme.name)}, ` : '';
         return {

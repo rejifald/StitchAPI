@@ -54,6 +54,23 @@ test('acceptStatus: [404] resolves with the 404 body instead of throwing', async
     await expect(call()).resolves.toEqual({ error: 'not_found', code: 'gone' });
 });
 
+// ── A′. P7: a BARE number is shorthand for the one-element list ──
+// `acceptStatus: 404` ≡ `acceptStatus: [404]` (the `StatusMatch` widening, CONTRACT.md P7). The
+// scalar spelling flows through the same accept path — no `[…]` wrapper required.
+test('acceptStatus: 404 (bare number) resolves like the one-element list', async () => {
+    server.route('GET', '/missing-bare', {
+        statuses: [404],
+        body: { error: 'not_found', code: 'gone' },
+    });
+    const call = stitch<{ error: string; code: string }>({
+        baseUrl: server.url,
+        path: '/missing-bare',
+        acceptStatus: 404,
+    });
+
+    await expect(call()).resolves.toEqual({ error: 'not_found', code: 'gone' });
+});
+
 // ── B. transform / unwrap / output validation still run on an accepted non-2xx ──
 // An accepted 404 is NOT a bare pass-through: it flows through the whole success pipeline. Here a
 // 404 body { data: {...} } is unwrapped, reshaped by transform, and validated by the output guard —
@@ -124,7 +141,7 @@ test('a status in both retry.on and acceptStatus is retried, then accepted on th
     const call = stitch<{ ok: boolean; last: boolean }>({
         baseUrl: server.url,
         path: '/retry-then-accept',
-        retry: { attempts: 3, on: [503], backoff: 'fixed', baseMs: 1 },
+        retry: { attempts: 3, on: [503], backoff: { curve: 'fixed', base: 1 } },
         acceptStatus: [503],
     });
 

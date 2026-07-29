@@ -135,7 +135,7 @@ The entire core library (`stitchapi`, currently `1.0.0-rc.1`), verified against
 -   [x] **ADR 0004 Standard-Schema fingerprint** (PR #81) — **folded into cache
         generation** (PR #85), so a sound vendor fingerprint skips revalidation.
 -   [x] **`@stitchapi/redis`** — the package exists ([`packages/redis/`](../packages/redis/)):
-        a Redis-backed `StitchStore` (`get`/`set`/`incr`/`close`) with
+        a Redis-backed `StitchStore` (`get`/`set`/`increment`/`close`) with
         `fromIoredis` + `fromNodeRedis` driver adapters, passing
         `verifyStoreContract` against a hermetic in-repo Redis engine. Makes "two
         workers share one login + rate budget" work out of the box. Versioned

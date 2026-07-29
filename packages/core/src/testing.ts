@@ -26,7 +26,7 @@ import type {
     StitchStore,
     TraceSink,
 } from './types';
-import { stripTrailingSlashes } from './util';
+import { parseDuration, stripTrailingSlashes } from './util';
 
 /**
  * The outcome of one `verify*Contract` run.
@@ -157,7 +157,7 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
  *   a second `set` overwrites; writes are isolated by key.
  * - `set(key, value, ttl)` expires the value after `ttl` ms; a `set` without
  *   `ttl` does not expire.
- * - `incr(key, ttl)` initializes a missing key to 1, increments an existing
+ * - `increment(key, ttl)` initializes a missing key to 1, increments an existing
  *    counter, is ATOMIC within a process (20 concurrent calls return
  *    1..20 exactly), and restarts at 1 once its TTL window lapses.
  *
@@ -167,19 +167,17 @@ function asJsonObject(body: unknown, label: string): Record<string, unknown> {
  *
  * @param makeStore Factory for the store under test; awaited, so it may
  *   connect to a real backend.
- * @param opts `ttl` — the expiry window (ms) the TTL rules use (default 60).
+ * @param opts `ttl` — the expiry window the TTL rules use, as ms or a
+ *   duration string (`'250ms'`, `'1s'`). Default 60ms.
  */
 export async function verifyStoreContract(
     makeStore: () => StitchStore | Promise<StitchStore>,
     opts?: {
-        /** Expiry window (ms) the TTL rules use. Default 60. */
-        ttl?: number;
-        /** @deprecated Renamed to `ttl` (CONTRACT.md P17). Read until the 1.0 GA cut. */
-        ttlMs?: number;
+        /** Expiry window the TTL rules use — ms, or a duration string. Default 60ms. */
+        ttl?: number | string;
     },
 ): Promise<ContractReport> {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- `ttlMs` is the @deprecated alias of `ttl`, read for back-compat until the GA cut (CONTRACT.md P17)
-    const ttlMs = opts?.ttl ?? opts?.ttlMs ?? 60;
+    const ttlMs = parseDuration(opts?.ttl) ?? 60;
     const store = await makeStore();
     const ns = `stitch-conformance:${Date.now().toString(36)}-${Math.random()
         .toString(36)
@@ -241,7 +239,7 @@ export async function verifyStoreContract(
             },
         ],
         [
-            'set: a ttlMs entry expires',
+            'set: a ttl entry expires',
             async () => {
                 await store.set(k('ttl'), 'soon-gone', ttlMs);
                 expectDeepEqual(
@@ -259,7 +257,7 @@ export async function verifyStoreContract(
             },
         ],
         [
-            'set: no ttlMs means no expiry',
+            'set: no ttl means no expiry',
             async () => {
                 await store.set(k('keep'), 'kept');
                 await sleep(ttlMs + 50);
@@ -271,30 +269,30 @@ export async function verifyStoreContract(
             },
         ],
         [
-            'incr: initializes a missing key to 1',
+            'increment: initializes a missing key to 1',
             async () => {
-                const first = await store.incr(k('init'), 5_000);
+                const first = await store.increment(k('init'), 5_000);
                 if (first !== 1) {
                     throw new Error(`expected 1, got ${show(first)}`);
                 }
             },
         ],
         [
-            'incr: increments an existing counter',
+            'increment: increments an existing counter',
             async () => {
-                await store.incr(k('seq'), 5_000);
-                const second = await store.incr(k('seq'), 5_000);
+                await store.increment(k('seq'), 5_000);
+                const second = await store.increment(k('seq'), 5_000);
                 if (second !== 2) {
                     throw new Error(`expected 2, got ${show(second)}`);
                 }
             },
         ],
         [
-            'incr: 20 concurrent calls net exactly +20',
+            'increment: 20 concurrent calls net exactly +20',
             async () => {
                 const results = await Promise.all(
                     Array.from({ length: 20 }, () =>
-                        store.incr(k('atomic'), 5_000),
+                        store.increment(k('atomic'), 5_000),
                     ),
                 );
                 const sorted = [...results].sort((a, b) => a - b);
@@ -302,16 +300,16 @@ export async function verifyStoreContract(
                 expectDeepEqual(
                     sorted,
                     wanted,
-                    'sorted results of 20 concurrent incrs (non-atomic stores collide)',
+                    'sorted results of 20 concurrent increments (non-atomic stores collide)',
                 );
             },
         ],
         [
-            'incr: the counter expires after ttlMs',
+            'increment: the counter expires after its ttl',
             async () => {
-                await store.incr(k('window'), ttlMs);
+                await store.increment(k('window'), ttlMs);
                 await sleep(ttlMs + 50);
-                const restarted = await store.incr(k('window'), ttlMs);
+                const restarted = await store.increment(k('window'), ttlMs);
                 if (restarted !== 1) {
                     throw new Error(
                         `expected a fresh window to restart at 1, got ${show(restarted)}`,
@@ -325,24 +323,24 @@ export async function verifyStoreContract(
                 await store.set(k('iso-a'), 'a');
                 await store.set(k('iso-b'), 'b');
                 // Counters live under their own keys, never a shared one:
-                // iso-n's first incr lands at 1, an incr on a different
-                // key (iso-m) must not advance it, so iso-n's next incr is 2.
-                const isoN = await store.incr(k('iso-n'), 5_000);
+                // iso-n's first increment lands at 1, an increment on a different
+                // key (iso-m) must not advance it, so iso-n's next increment is 2.
+                const isoN = await store.increment(k('iso-n'), 5_000);
                 if (isoN !== 1) {
                     throw new Error(
                         `expected iso-n to start at 1, got ${show(isoN)}`,
                     );
                 }
-                const isoM = await store.incr(k('iso-m'), 5_000);
+                const isoM = await store.increment(k('iso-m'), 5_000);
                 if (isoM !== 1) {
                     throw new Error(
                         `expected iso-m to start at 1, got ${show(isoM)}`,
                     );
                 }
-                const isoNAgain = await store.incr(k('iso-n'), 5_000);
+                const isoNAgain = await store.increment(k('iso-n'), 5_000);
                 if (isoNAgain !== 2) {
                     throw new Error(
-                        `incr on iso-m leaked into iso-n: expected 2, got ${show(isoNAgain)}`,
+                        `increment on iso-m leaked into iso-n: expected 2, got ${show(isoNAgain)}`,
                     );
                 }
                 expectDeepEqual(await store.get(k('iso-a')), 'a', 'iso-a');
@@ -384,8 +382,6 @@ export interface FixtureResponse {
     body: string;
     /** When set, the host MUST delay sending the response by this many ms. */
     delay?: number;
-    /** @deprecated Renamed to {@link FixtureResponse.delay} (CONTRACT.md P17). Read until the 1.0 GA cut. */
-    delayMs?: number;
 }
 
 /**
@@ -459,13 +455,7 @@ export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
         return json(200, JSON_BODY, { 'x-stitch-echo': 'json' });
     }
     if (path === '/slow' && method === 'GET') {
-        const res: FixtureResponse = {
-            ...json(200, { slow: true }),
-            delay: SLOW_DELAY_MS,
-        };
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- co-set the @deprecated `delayMs` alias for back-compat (CONTRACT.md P17)
-        res.delayMs = SLOW_DELAY_MS;
-        return res;
+        return { ...json(200, { slow: true }), delay: SLOW_DELAY_MS };
     }
     return json(404, { error: 'not_found' });
 }
@@ -486,14 +476,16 @@ export function adapterContractFixture(req: FixtureRequest): FixtureResponse {
  *   rejects promptly instead of waiting out the response.
  *
  * @param adapter The transport under test.
- * @param opts `baseUrl` — origin of a server mounting the fixture, e.g.
- *   `http://127.0.0.1:4123`.
+ * @param opts Origin of a server mounting the fixture — a bare string, or
+ *   `{ baseUrl }`, e.g. `'http://127.0.0.1:4123'`.
  */
 export async function verifyAdapterContract(
     adapter: Adapter,
-    opts: { baseUrl: string },
+    opts: string | { baseUrl: string },
 ): Promise<ContractReport> {
-    const base = stripTrailingSlashes(opts.baseUrl);
+    const base = stripTrailingSlashes(
+        typeof opts === 'string' ? opts : opts.baseUrl,
+    );
     const request = (
         method: string,
         path: string,
@@ -696,7 +688,6 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
         type: 'done',
         ok: true,
         elapsed: 34,
-        ms: 34,
         attempts: 1,
         at: SINK_AT + 7,
     },
@@ -710,13 +701,13 @@ const SINK_EVENT_FIXTURES: readonly StitchEvent[] = [
  * conforming sink must already tolerate it), and the optional `flush()` must
  * settle without throwing when present.
  *
- * @param makeSink Factory for the sink under test; one sink instance receives
- *   the whole sequence in order.
+ * @param makeSink Factory for the sink under test; awaited, so it may set up
+ *   async state. One sink instance receives the whole sequence in order.
  */
-export function verifySinkContract(
-    makeSink: () => TraceSink,
+export async function verifySinkContract(
+    makeSink: () => TraceSink | Promise<TraceSink>,
 ): Promise<ContractReport> {
-    const sink = makeSink();
+    const sink = await makeSink();
     const ctx = { name: 'conformance' };
     const rules: Rule[] = SINK_EVENT_FIXTURES.map(
         (event): Rule => [
@@ -758,16 +749,23 @@ function runRulesSync(seam: string, rules: SyncRule[]): ContractReport {
 }
 
 /** One labelled schema fixture; the thunk builds a fresh instance per call. */
-interface SchemaFixture {
+export interface SchemaFixture {
     readonly label: string;
     readonly schema: () => unknown;
+}
+
+/** One labelled pair of independently-built schemas that must share a fingerprint. */
+export interface EquivalentSchemaPair {
+    readonly label: string;
+    readonly a: () => unknown;
+    readonly b: () => unknown;
 }
 
 /** Fixtures a vendor package supplies to prove its fingerprint strategy. */
 export interface FingerprintFixtures {
     /**
      * Schemas that must each produce a STABLE, non-null fingerprint: building the
-     * schema twice (via the thunk) and fingerprinting both yields the same value.
+     * schema twice (via the thunk) and fingerprinting both yields the same token.
      * Covers determinism + construction-independence.
      */
     readonly stable: readonly SchemaFixture[];
@@ -775,13 +773,9 @@ export interface FingerprintFixtures {
      * Pairs of independently-built but structurally-IDENTICAL schemas (e.g. the
      * same object with permuted key order) that must share a fingerprint.
      */
-    readonly equivalent?: readonly {
-        readonly label: string;
-        readonly a: () => unknown;
-        readonly b: () => unknown;
-    }[];
+    readonly equivalent?: readonly EquivalentSchemaPair[];
     /**
-     * Schemas that must all fingerprint to PAIRWISE-DISTINCT, non-null values —
+     * Schemas that must all fingerprint to PAIRWISE-DISTINCT, non-null tokens —
      * typically a base schema plus one mutation each (field added, type changed,
      * constraint changed, …). Proves sensitivity to real semantic changes.
      */
@@ -789,11 +783,11 @@ export interface FingerprintFixtures {
     /**
      * Schemas containing parts the strategy cannot soundly capture (opaque
      * `.refine`/`.transform`/`.brand`, unrepresentable types). The strategy MUST
-     * ABSTAIN (`value === null`) rather than emit a possibly-colliding token.
+     * ABSTAIN (`token === null`) rather than emit a possibly-colliding token.
      */
     readonly abstain?: readonly SchemaFixture[];
     /**
-     * Optional committed snapshots (`label` → expected `value`) for schemas in
+     * Optional committed snapshots (`label` → expected `token`) for schemas in
      * `stable`/`distinct`. Re-run under a new validator minor version in CI, a
      * drift means the introspection surface moved — the cross-version guard.
      */
@@ -818,13 +812,12 @@ function callFingerprint(
         throw new Error(`${label}: fingerprint() must be synchronous`);
     }
     const r = result as
-        | { token?: unknown; value?: unknown; strength?: unknown }
+        | { token?: unknown; strength?: unknown }
         | null
         | undefined;
-    // Accept the canonical `token` or the @deprecated `value` alias (CONTRACT.md P5), and normalize
-    // so downstream rules read `.token` regardless of which spelling the fingerprinter produced. A
-    // presence check (not `??`) preserves the `null` ABSTAIN sentinel — `null ?? value` would drop it.
-    const token = r?.token !== undefined ? r.token : r?.value;
+    // `null` is the ABSTAIN sentinel, so the shape check below is a presence check on `token`
+    // (missing/`undefined` fails, `null` passes) rather than a truthiness one.
+    const token = r?.token;
     if (
         !r ||
         (token !== null && typeof token !== 'string') ||
@@ -834,7 +827,7 @@ function callFingerprint(
             `${label}: expected { token: string|null, strength: 'strong'|'weak' }, got ${show(result)}`,
         );
     }
-    return { token, value: token, strength: r.strength };
+    return { token, strength: r.strength };
 }
 
 /**
@@ -1016,8 +1009,9 @@ export {
 export {
     gatedStream,
     sseStream,
-    type SseEvent,
+    type SseFixtureEvent,
     streamAdapter,
+    type StreamAdapterOptions,
     streamOf,
     streamThenError,
 } from './test-stream';
@@ -1030,6 +1024,7 @@ export {
     failStitch,
     stubStitch,
     type StubImpl,
+    type StubMatch,
     type StubSpy,
     type StubStitchOptions,
 } from './test-stub';

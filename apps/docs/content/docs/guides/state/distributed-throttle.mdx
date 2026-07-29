@@ -6,7 +6,7 @@ prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 
 Share one rate limit across every worker or server by pointing the throttle at a
 shared `store`. By default a stitch keeps its throttle counters in the in-memory
-store, so the rate budget is per process: with `scope: 'host'` every stitch in
+store, so the rate budget is per process: with `pool: 'host'` every stitch in
 that process already pools into one budget per host (see
 [Throttle](/docs/guides/resilience/throttle)), but the in-memory store keeps that
 pooling within a single process — each worker gets its own. Point the throttle at
@@ -24,7 +24,7 @@ declare const sharedStore: StitchStore;
 const search = stitch({
     baseUrl: 'https://api.example.com',
     path: '/search',
-    throttle: { rate: '10/s', scope: 'host' },
+    throttle: { rate: '10/s', pool: 'host' },
     store: sharedStore, // the budget now spans all workers using this store
 });
 ```
@@ -32,7 +32,7 @@ const search = stitch({
 ## Options
 
 `throttle` sets the limits — `rate` (e.g. `'10/s'`), `concurrency`, and
-`scope` — while `store` decides where the counters live. The default in-memory
+`pool` — while `store` decides where the counters live. The default in-memory
 store is single-process, so each worker enforces `10/s` on its own and the fleet
 runs at `10/s × workers`. A shared store holds the rate counter every worker
 increments, so the whole fleet shares one `10/s` budget — and grants are
@@ -48,10 +48,10 @@ boundary bursts. (Concurrency stays in-process; only the rate limit is distribut
     The budget itself still holds.
 </Callout>
 
-`scope` decides what shares a budget: `'stitch'` (the default) gives each stitch
+`pool` decides what shares a budget: `'stitch'` (the default) gives each stitch
 its own counter keyed by name, while `'host'` keys by origin so every stitch
 hitting `api.example.com` draws from one budget. Workers share a budget only when
-they point at the same store and resolve to the same key — same scope, same
+they point at the same store and resolve to the same key — same pool, same
 stitch name or host.
 
 <Callout type="info">

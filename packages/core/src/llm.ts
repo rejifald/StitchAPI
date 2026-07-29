@@ -108,7 +108,7 @@ function llmSurface(d: LlmDefaults): Surface<StitchInput, LlmResult> {
         // successful body. A provider's "200 with an error envelope" can be handled in its `parse`.
         interpret: (res): SurfaceOutcome<LlmResult> => ({
             ok: true,
-            value: provider.parse(res.body),
+            data: provider.parse(res.body),
         }),
     };
 }
@@ -259,7 +259,3 @@ export const openai: LlmProvider = {
         return result;
     },
 };
-
-// CONTRACT.md P3 — deprecated alias, removed at the 1.0 GA cut.
-/** @deprecated Renamed to {@link LlmOptions} (CONTRACT.md P3). Imported name kept until the 1.0 GA cut. */
-export type LlmConfig = LlmOptions;

@@ -25,7 +25,7 @@ function makeTraceFile(): string {
             name: 'test',
             type: 'done',
             ok: true,
-            ms: 5,
+            elapsed: 5,
             at: Date.now(),
         }) + '\n',
     );
@@ -44,14 +44,12 @@ describe('CLI trace --since with unparseable value', () => {
     });
 
     /**
-     * CONTRACT (desired, not yet implemented):
-     *   `stitch trace --since not-a-date` must:
-     *     1. exit with code 2  (not 0)
-     *     2. write a message to stderr that mentions "--since"
+     * CONTRACT: `stitch trace --since not-a-date` must:
+     *   1. exit with code 2  (not 0)
+     *   2. write a message to stderr that mentions "--since"
      *
-     * TODAY (bug): parseSince('not-a-date') returns undefined, the code falls
-     * through to `cutoff = io.now() - (undefined ?? 0) = now`, silently filters
-     * out all records, and exits 0 with an empty summary.
+     * Guards the fix: parseDuration('not-a-date') returns undefined and the
+     * command reports bad usage instead of silently filtering everything out.
      */
     test('exits 2 and writes a --since error to stderr for unparseable input', async () => {
         const exitCode = await main(

@@ -19,11 +19,12 @@
 
 /**
  * Default cap on the chars the `'json'` decoder will buffer for a single in-progress value before
- * it throws. ~8 MB: generous for real records, but bounded so a malformed / never-closing value
- * (e.g. an unterminated `[`) can't grow the buffer without limit. Overridable per-stream via
- * `stream.maxBufferBytes`. The engine (`runStreaming`) turns the throw into an `error` event.
+ * it throws — characters of the DECODED text (UTF-16 code units), not bytes off the socket. ~8M:
+ * generous for real records, but bounded so a malformed / never-closing value (e.g. an unterminated
+ * `[`) can't grow the buffer without limit. Overridable per-stream via `stream.maxBufferChars`. The
+ * engine (`runStreaming`) turns the throw into an `error` event.
  */
-export const JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES = 8 * 1024 * 1024;
+export const JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS = 8 * 1024 * 1024;
 
 // Whitespace JSON permits between values (RFC 8259): space, tab, LF, CR.
 function isJsonWhitespace(code: number): boolean {
@@ -43,12 +44,12 @@ function isJsonWhitespace(code: number): boolean {
  *     closing delimiter, so its boundary is whitespace, the start of a following value, or EOF.
  *
  * Each emitted slice is `JSON.parse`d; the parsed value is the delta. Throws if a single in-progress
- * value's buffer exceeds `maxBufferBytes`, or if the stream ends mid-value, or if a slice fails to
+ * value's buffer exceeds `maxBufferChars`, or if the stream ends mid-value, or if a slice fails to
  * parse (a thrown error becomes an `error` event in the engine).
  */
 export async function* jsonStream(
     stream: ReadableStream<Uint8Array>,
-    maxBufferBytes: number = JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES,
+    maxBufferChars: number = JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS,
 ): AsyncGenerator<unknown, void> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
@@ -86,10 +87,10 @@ export async function* jsonStream(
     };
 
     const guard = (): void => {
-        if (buf.length > maxBufferBytes) {
+        if (buf.length > maxBufferChars) {
             throw new Error(
-                `json decoder: in-progress value exceeded maxBufferBytes (${String(
-                    maxBufferBytes,
+                `json decoder: in-progress value exceeded maxBufferChars (${String(
+                    maxBufferChars,
                 )}); a malformed or never-closing value was streamed`,
             );
         }

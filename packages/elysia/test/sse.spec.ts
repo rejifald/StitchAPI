@@ -42,13 +42,13 @@ describe('streamStitchSse — delta mapping', () => {
         expect(body).toContain('data: {"a":1}');
     });
 
-    test('the event option labels each delta message', async () => {
+    test('the delta.event option labels each delta message', async () => {
         const res = streamStitchSse(
             gen([
                 { type: 'delta', chunk: 't1', at: 0 },
                 { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
             ]),
-            { event: 'token' },
+            { delta: { event: 'token' } },
         );
 
         const body = await res.text();
@@ -56,17 +56,32 @@ describe('streamStitchSse — delta mapping', () => {
         expect(body).toContain('data: t1');
     });
 
-    test('a custom data mapper pulls text out of a structured chunk', async () => {
+    test('a delta function shorthand pulls text out of a structured chunk', async () => {
         const res = streamStitchSse(
             gen([
                 { type: 'delta', chunk: { text: 'pulled' }, at: 0 },
                 { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
             ]),
-            { data: (chunk) => (chunk as { text: string }).text },
+            { delta: (chunk) => (chunk as { text: string }).text },
         );
 
         const body = await res.text();
         expect(body).toContain('data: pulled');
+    });
+
+    test('delta.id emits an id: line per message with the zero-based index', async () => {
+        const res = streamStitchSse(
+            gen([
+                { type: 'delta', chunk: 'a', at: 0 },
+                { type: 'delta', chunk: 'b', at: 0 },
+                { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+            ]),
+            { delta: { id: (chunk, index) => `${String(chunk)}-${index}` } },
+        );
+
+        const body = await res.text();
+        expect(body).toContain('id: a-0');
+        expect(body).toContain('id: b-1');
     });
 
     test('a multi-line chunk gets one data: prefix per line (SSE spec)', async () => {
@@ -114,7 +129,7 @@ describe('streamStitchSse — control events', () => {
 });
 
 describe('streamStitchSse — error paths', () => {
-    test('an error event writes an event: error frame, invokes onError, and stops forwarding', async () => {
+    test('an error event writes an event: error frame, invokes error.observe, and stops forwarding', async () => {
         let captured: unknown;
         const res = streamStitchSse(
             gen([
@@ -129,8 +144,10 @@ describe('streamStitchSse — error paths', () => {
                 { type: 'delta', chunk: 'never', at: 0 },
             ]),
             {
-                onError: (e) => {
-                    captured = e;
+                error: {
+                    observe: (e) => {
+                        captured = e;
+                    },
                 },
             },
         );
@@ -138,12 +155,15 @@ describe('streamStitchSse — error paths', () => {
         const body = await res.text();
         expect(body).toContain('data: a');
         expect(body).toContain('event: error');
-        expect(body).toContain('upstream failed');
+        // the raw upstream message is withheld from the client by default (leak-regression below)
+        expect(body).not.toContain('upstream failed');
+        expect(body).toContain('data: error');
         expect(body).not.toContain('never');
+        // error.observe still sees the real failure server-side
         expect((captured as Error).message).toBe('upstream failed');
     });
 
-    test('a throw mid-stream is caught: onError fires and a final event: error frame is written', async () => {
+    test('a throw mid-stream is caught: error.observe fires and a final event: error frame is written', async () => {
         let captured: unknown;
         async function* boom(): AsyncGenerator<StitchEvent, void> {
             yield { type: 'delta', chunk: 'a', at: 0 };
@@ -151,16 +171,78 @@ describe('streamStitchSse — error paths', () => {
         }
 
         const res = streamStitchSse(boom(), {
-            onError: (e) => {
-                captured = e;
+            error: {
+                observe: (e) => {
+                    captured = e;
+                },
             },
         });
 
         const body = await res.text();
         expect(body).toContain('data: a');
         expect(body).toContain('event: error');
-        expect(body).toContain('stream blew up');
+        // the raw throw message is withheld from the client by default
+        expect(body).not.toContain('stream blew up');
+        expect(body).toContain('data: error');
+        // error.observe still sees the real failure server-side
         expect((captured as Error).message).toBe('stream blew up');
+    });
+});
+
+describe('streamStitchSse — the error frame does not leak the raw message', () => {
+    // Regression: the default error frame must not echo the raw upstream/transport message, which
+    // can disclose internal network topology (a transport error names the host it failed to reach)
+    // or the upstream's status to an untrusted client — bringing @stitchapi/elysia in line with the
+    // other hosts (express/fastify/hono/nest/next), whose SSE helpers already withhold it.
+    test('an internal hostname in the error message is not disclosed by default', async () => {
+        const res = streamStitchSse(
+            gen([
+                {
+                    type: 'error',
+                    name: 'StitchError',
+                    message: 'getaddrinfo ENOTFOUND payments.internal.corp',
+                    status: 502,
+                    attempts: 1,
+                    at: 0,
+                },
+            ]),
+        );
+        const body = await res.text();
+        expect(body).toContain('event: error');
+        expect(body).toContain('data: error');
+        expect(body).not.toContain('payments.internal.corp');
+        expect(body).not.toContain('ENOTFOUND');
+    });
+
+    test('error opts in to shaping the client-facing error payload', async () => {
+        const res = streamStitchSse(
+            gen([
+                {
+                    type: 'error',
+                    name: 'StitchError',
+                    message: 'upstream blew up',
+                    attempts: 1,
+                    at: 0,
+                },
+            ]),
+            { error: (e) => e.message },
+        );
+        const body = await res.text();
+        expect(body).toContain('event: error');
+        expect(body).toContain('data: upstream blew up');
+    });
+
+    test('error shapes the throw path too', async () => {
+        async function* boom(): AsyncGenerator<StitchEvent, void> {
+            yield { type: 'delta', chunk: 'a', at: 0 };
+            throw new Error('stream blew up');
+        }
+        const res = streamStitchSse(boom(), {
+            error: (e) => JSON.stringify({ error: e.message }),
+        });
+        const body = await res.text();
+        expect(body).toContain('event: error');
+        expect(body).toContain('data: {"error":"stream blew up"}');
     });
 });
 
