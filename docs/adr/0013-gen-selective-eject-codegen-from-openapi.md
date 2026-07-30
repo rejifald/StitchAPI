@@ -1,10 +1,10 @@
 # ADR 0013 — `stitch gen`: selective, eject-model codegen from OpenAPI
 
--   **Status:** Proposed (open questions resolved 2026-06-28; v1 implemented as the
-    separate **`@stitchapi/openapi`** package, _not_ a `stitch` subcommand — see
-    _Addendum: packaging_)
--   **Date:** 2026-06-28
--   **Tags:** codegen, openapi, cli, eject, bundle-frugal, contract-not-dependency, atomicity, audit, lint
+- **Status:** Proposed (open questions resolved 2026-06-28; v1 implemented as the
+  separate **`@stitchapi/openapi`** package, _not_ a `stitch` subcommand — see
+  _Addendum: packaging_)
+- **Date:** 2026-06-28
+- **Tags:** codegen, openapi, cli, eject, bundle-frugal, contract-not-dependency, atomicity, audit, lint
 
 > [!NOTE]
 >
@@ -23,11 +23,11 @@ The request: a vendor (or a consumer) has an OpenAPI document and wants stitches
 out of it. Two framings collapsed into one design over the course of the
 discussion that produced this ADR:
 
--   **API client authors** want to publish a stitch-based client instead of
-    hand-writing an SDK. The publishing half of that is a packaging recipe and is
-    handled separately in [ADR 0014](./0014-publishing-stitch-based-clients.md);
-    the **generation** half — "turn my spec into stitches" — is this ADR.
--   **Spec import** as a standalone feature.
+- **API client authors** want to publish a stitch-based client instead of
+  hand-writing an SDK. The publishing half of that is a packaging recipe and is
+  handled separately in [ADR 0014](./0014-publishing-stitch-based-clients.md);
+  the **generation** half — "turn my spec into stitches" — is this ADR.
+- **Spec import** as a standalone feature.
 
 The first goal is explicitly **not** "scaffold a whole API integration from a
 schema." It is a **selective, surgical** tool: the user decides _which_
@@ -56,11 +56,11 @@ self-owned orphan detection below.
 2.  **Selection is the spine, not an afterthought.** Because "pick what to stitch,
     skip the rest" _is_ the feature:
 
-    -   **Interactive (default):** parse the spec, present a multi-select list of
-        operations grouped by tag (`METHOD path — operationId`), generate only
-        the checked ones.
-    -   **Non-interactive (CI/scripting):** `--only`, `--tag <t>`,
-        `--operation <id>`, `--grep '<glob>'`, `--all`.
+    - **Interactive (default):** parse the spec, present a multi-select list of
+      operations grouped by tag (`METHOD path — operationId`), generate only
+      the checked ones.
+    - **Non-interactive (CI/scripting):** `--only`, `--tag <t>`,
+      `--operation <id>`, `--grep '<glob>'`, `--all`.
 
     This is what makes the tool "cherry-pick into stitches" rather than "scaffold
     the entire API."
@@ -95,9 +95,9 @@ self-owned orphan detection below.
     lives is decided by how many _selected_ operations reference it, not by where
     it sits in the spec's `components`:
 
-    -   referenced by exactly **one** selected operation → emit it private, inside
-        that operation's directory (dies with it);
-    -   referenced by **two or more** → hoist to `_shared/`.
+    - referenced by exactly **one** selected operation → emit it private, inside
+      that operation's directory (dies with it);
+    - referenced by **two or more** → hoist to `_shared/`.
 
     The reference count is computed on the **condensation** of the `$ref` graph
     (collapse each strongly-connected component into a single node, then count
@@ -116,13 +116,13 @@ self-owned orphan detection below.
     reliably tree-shake independent runtime _values_ out of a module full of
     interdependent definitions. Concretely:
 
-    -   No eager schema barrel (`_shared/index.ts` re-exporting everything
-        re-couples the graph); operations **deep-import** `../_shared/user`.
-    -   Recursive/mutual `$ref`s wrap the cyclic nodes in the validator's lazy
-        constructor (`z.lazy(() => …)`, `v.lazy(() => …)`), since ES modules
-        handle the circular _import_ but the validator needs help with the
-        circular _value_.
-    -   Generated package is `"sideEffects": false`, ESM.
+    - No eager schema barrel (`_shared/index.ts` re-exporting everything
+      re-couples the graph); operations **deep-import** `../_shared/user`.
+    - Recursive/mutual `$ref`s wrap the cyclic nodes in the validator's lazy
+      constructor (`z.lazy(() => …)`, `v.lazy(() => …)`), since ES modules
+      handle the circular _import_ but the validator needs help with the
+      circular _value_.
+    - Generated package is `"sideEffects": false`, ESM.
 
     For **types** the motive is different and must not be oversold: TS types erase
     at build, so atomic types buy **zero** bundle bytes. They are atomic for
@@ -134,16 +134,16 @@ self-owned orphan detection below.
 6.  **Validator tiers, skewed for the frontend.** The generator emits validator
     **source** for a chosen target:
 
-    -   `types-only` — emit TS types only; `output` is a passthrough/predicate.
-        Zero runtime weight; the lightest frontend tier by far. **The default**
-        (Q2, resolved): it imposes neither a validator dependency nor bundle
-        bytes, but runtime validation + `drift` are off under it, so the
-        generator emits a loud one-line notice pointing at `--validator`.
-    -   `valibot` — modular, function-based, built for tree-shaking; you pay
-        roughly per-validator-used. The recommended tier when runtime validation
-        is wanted (best frontend runtime story).
-    -   `zod` — ergonomic but a chunkier, less-shakeable baseline; fine for a
-        backend SDK, heavier for bit-counting frontends. Opt-in.
+    - `types-only` — emit TS types only; `output` is a passthrough/predicate.
+      Zero runtime weight; the lightest frontend tier by far. **The default**
+      (Q2, resolved): it imposes neither a validator dependency nor bundle
+      bytes, but runtime validation + `drift` are off under it, so the
+      generator emits a loud one-line notice pointing at `--validator`.
+    - `valibot` — modular, function-based, built for tree-shaking; you pay
+      roughly per-validator-used. The recommended tier when runtime validation
+      is wanted (best frontend runtime story).
+    - `zod` — ergonomic but a chunkier, less-shakeable baseline; fine for a
+      backend SDK, heavier for bit-counting frontends. Opt-in.
 
     **Consistency with [ADR 0011](./0011-no-pattern-primitive-schema-reuse-is-the-validators-job.md):**
     this emits validator **source code at build time**; it does **not** add a
@@ -158,13 +158,13 @@ self-owned orphan detection below.
     Eject means we emit good-enough code and let the author finish it in place.
     An OpenAPI document does not carry the operational facts a stitch needs, so:
 
-    -   `securityScheme → auth strategy` **shape** is emitted (`bearer` / `apiKey`
-        / `basic` / `oauth2` all already exist in
-        [`auth.ts`](../../packages/core/src/auth.ts)); the **secret source** is a
-        TODO: `auth: bearer(env('FOO_TOKEN')) // TODO: set env var`.
-    -   `throttle` / `retry` — never in the spec — are emitted as commented
-        defaults to fill in.
-    -   `pagination` and `server` choice (when multiple) — TODO.
+    - `securityScheme → auth strategy` **shape** is emitted (`bearer` / `apiKey`
+      / `basic` / `oauth2` all already exist in
+      [`auth.ts`](../../packages/core/src/auth.ts)); the **secret source** is a
+      TODO: `auth: bearer(env('FOO_TOKEN')) // TODO: set env var`.
+    - `throttle` / `retry` — never in the spec — are emitted as commented
+      defaults to fill in.
+    - `pagination` and `server` choice (when multiple) — TODO.
 
     No overlay config file is required for v1. (The overlay was the _managed-regen_
     model's tax; eject drops it.)
@@ -230,13 +230,13 @@ already own the graph.
     codegen plumbing. They generalise — and this is a deliberate forward seam,
     flagged now so the `gen` module is structured for it:
 
-    -   **dead-schema detection** — already, via `prune`;
-    -   **rule enforcement** (`stitch audit` / a lint mode), e.g. _every operation
-        must declare both `input` and `output`_, _no `output: any`_, _write
-        methods must set `throttle`_, _no operation without `auth` on a non-public
-        path_, _a drift snapshot must accompany a published client_;
-    -   **audit reports** over a whole tree — which operations lack validation,
-        which schemas are shared, the bundle-closure size per operation.
+    - **dead-schema detection** — already, via `prune`;
+    - **rule enforcement** (`stitch audit` / a lint mode), e.g. _every operation
+      must declare both `input` and `output`_, _no `output: any`_, _write
+      methods must set `throttle`_, _no operation without `auth` on a non-public
+      path_, _a drift snapshot must accompany a published client_;
+    - **audit reports** over a whole tree — which operations lack validation,
+      which schemas are shared, the bundle-closure size per operation.
 
     These are build-time, zero-dep, and **contract-reading** (they read the
     `__config`-shaped declarations plus the source graph). Ship `gen` first; the
@@ -246,25 +246,25 @@ already own the graph.
 
 ## Gates
 
--   **Browser-first.** Generated clients ride the existing surfaces/adapters; the
-    emitted code is browser-safe (secrets via `env()` resolve at call time on the
-    consumer; no `fs`). The generator _itself_ is a Node CLI tool, which is
-    correct — it is build-time, never shipped to the consumer's bundle.
--   **Bundle-frugal.** Atomic per-operation layout + atomic schemas + no eager
-    barrel + `types-only`/`valibot` tiers ⇒ an operation costs its transitive
-    `$ref` closure and nothing else. The generator, `prune`, and the future
-    `audit` live in `@stitchapi/openapi`, never reachable from `import { stitch }`
-    and never shipped in the `stitchapi` tarball.
--   **Contract-not-dependency.** Generated stitch declarations round-trip as JSON
-    like any hand-written stitch (`auth` → descriptor, surface → id per
-    [ADR 0005](./0005-surfaces-and-the-authoring-model.md)). The generator reads
-    a contract (OpenAPI) and emits contracts (stitches) — symmetric to
-    `export --openapi`. No live-closure dependency is introduced into the
-    declaration.
--   **Zero-deps.** Core untouched — the generator is a _separate package_, so its
-    dependencies never touch `stitchapi`. The package takes the deps it needs
-    there (today: `yaml`, lazily imported so JSON-only runs skip it); future tiers
-    (valibot/zod emitters) add theirs in `@stitchapi/openapi`, where they belong.
+- **Browser-first.** Generated clients ride the existing surfaces/adapters; the
+  emitted code is browser-safe (secrets via `env()` resolve at call time on the
+  consumer; no `fs`). The generator _itself_ is a Node CLI tool, which is
+  correct — it is build-time, never shipped to the consumer's bundle.
+- **Bundle-frugal.** Atomic per-operation layout + atomic schemas + no eager
+  barrel + `types-only`/`valibot` tiers ⇒ an operation costs its transitive
+  `$ref` closure and nothing else. The generator, `prune`, and the future
+  `audit` live in `@stitchapi/openapi`, never reachable from `import { stitch }`
+  and never shipped in the `stitchapi` tarball.
+- **Contract-not-dependency.** Generated stitch declarations round-trip as JSON
+  like any hand-written stitch (`auth` → descriptor, surface → id per
+  [ADR 0005](./0005-surfaces-and-the-authoring-model.md)). The generator reads
+  a contract (OpenAPI) and emits contracts (stitches) — symmetric to
+  `export --openapi`. No live-closure dependency is introduced into the
+  declaration.
+- **Zero-deps.** Core untouched — the generator is a _separate package_, so its
+  dependencies never touch `stitchapi`. The package takes the deps it needs
+  there (today: `yaml`, lazily imported so JSON-only runs skip it); future tiers
+  (valibot/zod emitters) add theirs in `@stitchapi/openapi`, where they belong.
 
 ## Open questions (resolved)
 
@@ -356,40 +356,40 @@ rule-enforcement framing of Decision 11) is the single future home.
 
 ## Out of scope (considered, deferred)
 
--   **Managed regeneration / overlay-merge engine** — explicitly rejected by
-    Decision 1 for the first goal; revisit only if users ask for sync-on-spec-
-    change, and then as an opt-in mode, never the default.
--   **Remote / external `$ref` and `$dynamicRef` resolution.**
--   **Mock-server / MSW-handler generation from the spec.**
--   **Pagination auto-detection** — the spec rarely carries it machine-readably;
-    emitted as a TODO (Decision 7).
--   **The full `audit`/`lint` rule set** — Decision 11 reserves the seam; the
-    rules are their own design.
--   **GraphQL SDL → stitches** — the symmetric idea for a different surface; its
-    own spec.
+- **Managed regeneration / overlay-merge engine** — explicitly rejected by
+  Decision 1 for the first goal; revisit only if users ask for sync-on-spec-
+  change, and then as an opt-in mode, never the default.
+- **Remote / external `$ref` and `$dynamicRef` resolution.**
+- **Mock-server / MSW-handler generation from the spec.**
+- **Pagination auto-detection** — the spec rarely carries it machine-readably;
+  emitted as a TODO (Decision 7).
+- **The full `audit`/`lint` rule set** — Decision 11 reserves the seam; the
+  rules are their own design.
+- **GraphQL SDL → stitches** — the symmetric idea for a different surface; its
+  own spec.
 
 ## Alternatives considered
 
--   **A. Managed regenerator (Orval-style), regenerate on spec change with an
-    overlay holding human additions.** Rejected as the _first_ goal: the stated
-    need is cherry-pick + free reshuffle, which a regenerator fights because it
-    must own the tree to stay in sync. Eject first; managed mode later, opt-in.
--   **B. Group-by-kind layout (`schemas/`, `operations/`).** Rejected: deleting an
-    operation leaves orphan types in a central file — the opposite of the
-    atomicity goal (Decision 3).
--   **C. A single shared `schemas.ts` barrel.** Rejected: defeats tree-shaking of
-    runtime values in practice; an operation drags the whole module's value graph
-    (Decision 5).
--   **D. Lean on `knip` / `ts-prune` for orphans.** Rejected: a dev dependency and
-    a brand mismatch with the zero-dep ethos; we own the graph, so we detect
-    orphans ourselves (Decisions 9–10).
--   **E. Bundle a JSON-Schema→zod compiler into core.** Rejected by
-    [ADR 0011](./0011-no-pattern-primitive-schema-reuse-is-the-validators-job.md):
-    no core schema engine. The generator emits validator _source_ at build time
-    instead (Decision 6).
--   **F. Require a complete overlay config up front.** Rejected: that is the
-    managed-regen model's tax; eject uses TODO placeholders so the tool runs with
-    zero config (Decision 7).
+- **A. Managed regenerator (Orval-style), regenerate on spec change with an
+  overlay holding human additions.** Rejected as the _first_ goal: the stated
+  need is cherry-pick + free reshuffle, which a regenerator fights because it
+  must own the tree to stay in sync. Eject first; managed mode later, opt-in.
+- **B. Group-by-kind layout (`schemas/`, `operations/`).** Rejected: deleting an
+  operation leaves orphan types in a central file — the opposite of the
+  atomicity goal (Decision 3).
+- **C. A single shared `schemas.ts` barrel.** Rejected: defeats tree-shaking of
+  runtime values in practice; an operation drags the whole module's value graph
+  (Decision 5).
+- **D. Lean on `knip` / `ts-prune` for orphans.** Rejected: a dev dependency and
+  a brand mismatch with the zero-dep ethos; we own the graph, so we detect
+  orphans ourselves (Decisions 9–10).
+- **E. Bundle a JSON-Schema→zod compiler into core.** Rejected by
+  [ADR 0011](./0011-no-pattern-primitive-schema-reuse-is-the-validators-job.md):
+  no core schema engine. The generator emits validator _source_ at build time
+  instead (Decision 6).
+- **F. Require a complete overlay config up front.** Rejected: that is the
+  managed-regen model's tax; eject uses TODO placeholders so the tool runs with
+  zero config (Decision 7).
 
 ## Addendum (2026-06-28) — packaging: a separate `@stitchapi/openapi`, not a `stitch` subcommand
 

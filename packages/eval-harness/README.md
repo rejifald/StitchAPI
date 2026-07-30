@@ -36,11 +36,11 @@ condition.
 
 ## Conditions
 
--   **COLD** — a bare scratch dir. The agent gets only the task prompt.
--   **WARM** — the scratch dir is seeded with the project's agent docs:
-    `llms.txt` (from `apps/docs/app/llms.txt`) and `agents/*.mdx` (from
-    `apps/docs/content/docs/agents/`), so an agent that reads its workspace
-    discovers StitchAPI.
+- **COLD** — a bare scratch dir. The agent gets only the task prompt.
+- **WARM** — the scratch dir is seeded with the project's agent docs:
+  `llms.txt` (from `apps/docs/app/llms.txt`) and `agents/*.mdx` (from
+  `apps/docs/content/docs/agents/`), so an agent that reads its workspace
+  discovers StitchAPI.
 
 v1 does **not** `pnpm add stitchapi` into the scratch dir — produced files are
 scored by transpiling + importing them against this monorepo's already-installed

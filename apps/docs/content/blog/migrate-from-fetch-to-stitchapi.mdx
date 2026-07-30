@@ -28,10 +28,10 @@ async function getUser(id: string): Promise<User> {
 
 It runs. It also carries four sharp edges that only show up off the happy path:
 
--   **No retry.** A single `503` or a dropped connection surfaces to the caller, even when the data was there a second earlier and one retry would have caught it.
--   **No timeout.** A hung connection blocks the `await` until the platform's default kills it — often minutes, sometimes never — and the call holds its slot the whole time.
--   **No validation.** `res.json() as User` is a cast, not a check. The runtime never compares the bytes to `User`, so a renamed or missing field flows downstream as the wrong type and crashes somewhere far from here.
--   **The token lives at the call site.** `process.env.API_TOKEN` is read inline, interpolated into a header, and now sits in this function's scope where every code path can see it.
+- **No retry.** A single `503` or a dropped connection surfaces to the caller, even when the data was there a second earlier and one retry would have caught it.
+- **No timeout.** A hung connection blocks the `await` until the platform's default kills it — often minutes, sometimes never — and the call holds its slot the whole time.
+- **No validation.** `res.json() as User` is a cast, not a check. The runtime never compares the bytes to `User`, so a renamed or missing field flows downstream as the wrong type and crashes somewhere far from here.
+- **The token lives at the call site.** `process.env.API_TOKEN` is read inline, interpolated into a header, and now sits in this function's scope where every code path can see it.
 
 Each fix is a known recipe — a retry loop, an `AbortController`, a schema parse, a secret helper — and each one is more code wrapped around the same call, in a function that grows until the request is the smallest part of it.
 

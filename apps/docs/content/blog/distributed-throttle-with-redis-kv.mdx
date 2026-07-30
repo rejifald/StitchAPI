@@ -15,8 +15,8 @@ The throttle isn't broken. It's doing precisely what it was told — for one pro
 
 A stitch keeps a small amount of state between calls. By default it lives in an **in-process store** — a plain object in the heap of the one process that made the call. Two pieces of that state are the ones that go wrong when you scale out:
 
--   **Throttle counters.** The rate limiter counts requests inside a time window and the number in flight, then makes the next caller wait if it would breach the cap. Those counters are the whole mechanism. If every process keeps its own, every process limits itself in isolation and the aggregate sails past the cap.
--   **Auth sessions.** A [`cookieSession`](/docs/guides/auth/cookie-session) logs in once, captures the cookie, replays it, and re-logs-in when the wall returns. That captured cookie — and any token an `oauth2` strategy caches — also lives in the per-process store. Across instances each process runs its own login: three instances, three logins against an upstream that may itself rate-limit logins, and a re-auth on one worker doesn't help the other two.
+- **Throttle counters.** The rate limiter counts requests inside a time window and the number in flight, then makes the next caller wait if it would breach the cap. Those counters are the whole mechanism. If every process keeps its own, every process limits itself in isolation and the aggregate sails past the cap.
+- **Auth sessions.** A [`cookieSession`](/docs/guides/auth/cookie-session) logs in once, captures the cookie, replays it, and re-logs-in when the wall returns. That captured cookie — and any token an `oauth2` strategy caches — also lives in the per-process store. Across instances each process runs its own login: three instances, three logins against an upstream that may itself rate-limit logins, and a re-auth on one worker doesn't help the other two.
 
 In-process is the right default: for a single long-lived process it's correct, zero-latency, and needs nothing to operate. It only becomes wrong the moment a second copy of your code shares the same upstream budget or account — and the fix isn't a different limiter, it's a different _place to keep the counters_.
 
@@ -26,9 +26,9 @@ StitchAPI puts that per-process state behind one seam: a **`StitchStore`**, a sm
 
 The three first-party drivers are thin peer-dependency packages:
 
--   `@stitchapi/redis` — for servers (and the edge via Upstash's HTTP Redis)
--   `@stitchapi/cloudflare-kv` — for Cloudflare Workers and Pages
--   `@stitchapi/deno-kv` — for Deno Deploy, Node, or Bun
+- `@stitchapi/redis` — for servers (and the edge via Upstash's HTTP Redis)
+- `@stitchapi/cloudflare-kv` — for Cloudflare Workers and Pages
+- `@stitchapi/deno-kv` — for Deno Deploy, Node, or Bun
 
 ```ts twoslash
 // @noErrors
@@ -96,9 +96,9 @@ The in-process default is the floor you start from. One process, one upstream ac
 
 Reach for a shared store the moment any of these are true:
 
--   **You run more than one instance.** Two workers with independent in-memory limiters each enforce the full cap — the upstream sees double. Attach a store and both workers share one counter.
--   **You autoscale.** Ephemeral instances spin up with no memory of what the others have already sent. The store is the one line that turns N independent limiters back into one.
--   **The upstream enforces per-account, not per-IP.** One account, many servers — the limit applies across all of them, so the counter has to live somewhere they all reach.
+- **You run more than one instance.** Two workers with independent in-memory limiters each enforce the full cap — the upstream sees double. Attach a store and both workers share one counter.
+- **You autoscale.** Ephemeral instances spin up with no memory of what the others have already sent. The store is the one line that turns N independent limiters back into one.
+- **The upstream enforces per-account, not per-IP.** One account, many servers — the limit applies across all of them, so the counter has to live somewhere they all reach.
 
 A few trade-offs to account for when you cross that line: the store adds a network hop on every throttle check (latency on the hot path), and under contention the cap is "close to N/s across the fleet" rather than exact — keep a little headroom below the upstream's real ceiling. Workers KV is looser still (eventually-consistent reads, 60-second TTL floor), which is why `increment` throws there. And namespace staging vs. production with `keyPrefix` — one store, no collision.
 
@@ -112,8 +112,8 @@ stitchapi
 
 Then attach a driver and your throttle and sessions go fleet-wide without touching a call site:
 
--   [Distributed stores](/docs/integrations/stores) — the Redis, Workers KV, and Deno KV drivers, with the atomic-`increment` trade-off in full.
--   [Pluggable store](/docs/guides/state/pluggable-store) — the `StitchStore` interface the drivers implement.
--   [Distributed throttle](/docs/guides/state/distributed-throttle) and [Shared sessions](/docs/guides/state/shared-sessions) — the exact pacing and session-sharing semantics.
+- [Distributed stores](/docs/integrations/stores) — the Redis, Workers KV, and Deno KV drivers, with the atomic-`increment` trade-off in full.
+- [Pluggable store](/docs/guides/state/pluggable-store) — the `StitchStore` interface the drivers implement.
+- [Distributed throttle](/docs/guides/state/distributed-throttle) and [Shared sessions](/docs/guides/state/shared-sessions) — the exact pacing and session-sharing semantics.
 
 Point every instance at the same store, and the cap you wrote is the cap the upstream sees.

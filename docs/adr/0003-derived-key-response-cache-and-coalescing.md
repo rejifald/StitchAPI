@@ -1,8 +1,8 @@
 # ADR 0003 — Derived-key response cache & request coalescing
 
--   **Status:** Accepted & implemented — the derived-key cache, in-process coalescing, generation-based invalidation, and LRU bound ship behind the `stitchapi/cache` subpath, and the [ADR 0004](0004-standard-schema-fingerprint-for-cache-invalidation.md) schema fingerprint is now folded into the generation (decisions 2 & 8). The cross-process coalescing protocol (decision 6) remains deferred to its own grill.
--   **Date:** 2026-06-14
--   **Tags:** caching, performance, resilience, runtime, multi-tenant, agents
+- **Status:** Accepted & implemented — the derived-key cache, in-process coalescing, generation-based invalidation, and LRU bound ship behind the `stitchapi/cache` subpath, and the [ADR 0004](0004-standard-schema-fingerprint-for-cache-invalidation.md) schema fingerprint is now folded into the generation (decisions 2 & 8). The cross-process coalescing protocol (decision 6) remains deferred to its own grill.
+- **Date:** 2026-06-14
+- **Tags:** caching, performance, resilience, runtime, multi-tenant, agents
 
 > **Amendment — the store contract's counter verb is `increment`.** This ADR was written when `StitchStore`'s atomic counter was spelled `incr`; the house contracts now use whole words, so it is **`increment`** (`get`/`set`/`increment`/`close?`) per [CONTRACT.md P18](../CONTRACT.md#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary). Read `incr` as `increment` throughout the text below — the Redis **command** `INCR` is unchanged. The decision itself (reuse the store contract, grow no new vendor surface) is unaffected.
 
@@ -14,19 +14,19 @@ the design well past "add react-query."
 
 Two observations reshaped it:
 
--   **react-query is a UI-bound cache that sits _above_ the transport.** Its real value —
-    `useQuery` subscriptions, refetch-on-focus/reconnect/interval, invalidate-and-components-
-    re-render — exists only because a retained `QueryClient` and a reactive component tree sit
-    underneath it. StitchAPI is the **transport itself**: kind-agnostic, server _and_ browser,
-    no component model. So the question is not "should we have react-query's feature" but
-    "which parts are _transport_ concerns vs _UI_ concerns." A stitch runs where react-query
-    cannot — agents, CLIs, servers, the REPL — and that is exactly the gap a transport-level
-    cache fills.
--   **We can _derive_ the key; react-query must have the user author it.** react-query demands
-    user-authored keys only because it cannot see the request. We can: method + URL (path +
-    query) + body / GraphQL variables + the headers that actually vary the response are all in
-    hand. A derived key is **more reliable than an authored one** — a caller (or an agent)
-    cannot typo a key that desyncs from the request it names — and it costs the caller nothing.
+- **react-query is a UI-bound cache that sits _above_ the transport.** Its real value —
+  `useQuery` subscriptions, refetch-on-focus/reconnect/interval, invalidate-and-components-
+  re-render — exists only because a retained `QueryClient` and a reactive component tree sit
+  underneath it. StitchAPI is the **transport itself**: kind-agnostic, server _and_ browser,
+  no component model. So the question is not "should we have react-query's feature" but
+  "which parts are _transport_ concerns vs _UI_ concerns." A stitch runs where react-query
+  cannot — agents, CLIs, servers, the REPL — and that is exactly the gap a transport-level
+  cache fills.
+- **We can _derive_ the key; react-query must have the user author it.** react-query demands
+  user-authored keys only because it cannot see the request. We can: method + URL (path +
+  query) + body / GraphQL variables + the headers that actually vary the response are all in
+  hand. A derived key is **more reliable than an authored one** — a caller (or an agent)
+  cannot typo a key that desyncs from the request it names — and it costs the caller nothing.
 
 This also **revives a feature ADR 0002 deliberately dropped.** [ADR 0002 §7](0002-seam-primitive-and-principal-scoped-auth.md)
 rejected "request dedup / single-flight as a user feature" because of the **cross-principal
@@ -54,18 +54,18 @@ round-trips as JSON; functions are sugar).
     never authors it; a `cache.key(input)` override exists as **sugar only** (declarative-spelling
     gate). Canonicalisation is mandatory so semantically identical requests collide intentionally:
 
-    -   **Objects**: keys sorted recursively; **arrays and query-param order are preserved** (both
-        are ordered — and we build the query string ourselves, so its order is ours to fix).
-    -   **`null` vs absent**: `null` is an explicit value and is kept; `undefined` is treated as
-        absent (and drops out under `JSON.stringify` for free).
-    -   **URL**: normalised through the platform `URL` only (lower-cased host, default port
-        dropped, dot-segments resolved) — no hand-rolled trailing-slash / percent-encoding
-        heuristics.
-    -   **GraphQL**: the query **document is opaque** (canonicalising it would pull in a GraphQL
-        parser, against the frugal gate) — only `variables` are canonicalised; persisted-query
-        users already send a hash.
-    -   **Principal**: canonicalised exactly as a body, so an object principal can't split a
-        user's cache; use opaque principal ids — the principal is part of every scoped key.
+    - **Objects**: keys sorted recursively; **arrays and query-param order are preserved** (both
+      are ordered — and we build the query string ourselves, so its order is ours to fix).
+    - **`null` vs absent**: `null` is an explicit value and is kept; `undefined` is treated as
+      absent (and drops out under `JSON.stringify` for free).
+    - **URL**: normalised through the platform `URL` only (lower-cased host, default port
+      dropped, dot-segments resolved) — no hand-rolled trailing-slash / percent-encoding
+      heuristics.
+    - **GraphQL**: the query **document is opaque** (canonicalising it would pull in a GraphQL
+      parser, against the frugal gate) — only `variables` are canonicalised; persisted-query
+      users already send a hash.
+    - **Principal**: canonicalised exactly as a body, so an object principal can't split a
+      user's cache; use opaque principal ids — the principal is part of every scoped key.
 
     **The hash is 128-bit, non-cryptographic, and synchronous** (e.g. xxh128): sync because
     WebCrypto's `digest` is async and a JS crypto hash is bundle weight (browser-first / frugal),
@@ -139,16 +139,16 @@ round-trips as JSON; functions are sugar).
     coalescing applies only to the **cacheable method set** (GET/HEAD + opted-in GraphQL queries —
     never collapse two writes).
 
-    -   **In-process (ships in v1).** A process-local map of in-flight Promises keyed by the
-        derived key; concurrent callers in one process await a single shared Promise. No store
-        interaction, no lease, instant. This is the dominant real case (one server, one agent)
-        and the only mode that makes sense without a shared store.
-    -   **Cross-process / cluster (deferred — own grill).** Collapses identical requests across
-        workers via a store lock (lease + `incr` election + poll). Its cost (lease sizing,
-        re-election, poll cadence, ordering invariants, conformance) is real and its marginal
-        benefit over the TTL cache is only the **cold concurrent window** before any worker has
-        cached. So the **protocol is deferred to a dedicated grill/ADR**; the open questions are
-        recorded under _Required follow-ups_.
+    - **In-process (ships in v1).** A process-local map of in-flight Promises keyed by the
+      derived key; concurrent callers in one process await a single shared Promise. No store
+      interaction, no lease, instant. This is the dominant real case (one server, one agent)
+      and the only mode that makes sense without a shared store.
+    - **Cross-process / cluster (deferred — own grill).** Collapses identical requests across
+      workers via a store lock (lease + `incr` election + poll). Its cost (lease sizing,
+      re-election, poll cadence, ordering invariants, conformance) is real and its marginal
+      benefit over the TTL cache is only the **cold concurrent window** before any worker has
+      cached. So the **protocol is deferred to a dedicated grill/ADR**; the open questions are
+      recorded under _Required follow-ups_.
 
     **The default is store-aware.** With no shared store, in-process is the only option; once the
     cluster protocol ships, a **shared store enables cross-process by default** — what a user
@@ -168,17 +168,17 @@ round-trips as JSON; functions are sugar).
     cache hit does **not** by itself prove the input is valid, because the key is only a
     _projection_ of the input:
 
-    -   **Key correctness.** The key must mirror the request actually sent, which is built from
-        the **coerced/defaulted** input. Under `params: { id: z.coerce.number() }`, `{ id: '42' }`
-        and `{ id: 42 }` must hit the _same_ entry; keying on raw input splits them (false misses)
-        and keys on something other than what we send. So the coercion validation performs is a
-        prerequisite for a correct key.
-    -   **Boundary integrity.** The key is the request-shaping slice of the input only. A
-        _different_ input can match a stored key yet be one validation would reject — a strict
-        schema's extra field, a cross-field refinement whose fields aren't both in the key, a
-        validated-but-non-`vary` header. Looking up before validation would serve a cached
-        **success** for a call that should have **thrown**, tunnelling an invalid call past the
-        stitch boundary. Validation is the boundary; a hit must not bypass it.
+    - **Key correctness.** The key must mirror the request actually sent, which is built from
+      the **coerced/defaulted** input. Under `params: { id: z.coerce.number() }`, `{ id: '42' }`
+      and `{ id: 42 }` must hit the _same_ entry; keying on raw input splits them (false misses)
+      and keys on something other than what we send. So the coercion validation performs is a
+      prerequisite for a correct key.
+    - **Boundary integrity.** The key is the request-shaping slice of the input only. A
+      _different_ input can match a stored key yet be one validation would reject — a strict
+      schema's extra field, a cross-field refinement whose fields aren't both in the key, a
+      validated-but-non-`vary` header. Looking up before validation would serve a cached
+      **success** for a call that should have **thrown**, tunnelling an invalid call past the
+      stitch boundary. Validation is the boundary; a hit must not bypass it.
 
     The cost of keeping validation first is microseconds; the latency a hit actually saves — the
     network, throttle/circuit, transform, and output-validation/drift — is all still skipped. The
@@ -213,75 +213,75 @@ round-trips as JSON; functions are sugar).
     distributed for free, identically to throttle and the circuit breaker.
 
 12. **Explicitly out of scope (considered and dropped).**
-    -   **Hierarchical / tag-based / prefix invalidation** — irreconcilable with derived opaque
-        keys (decision 1); ceded deliberately.
-    -   **Stale-while-revalidate / background refresh** and **refetch-on-focus / reconnect /
-        interval** — these need a retained reactive host; they belong to a react-query/SWR
-        _integration_ layered on top, not the transport.
-    -   **Mutation-driven cross-stitch auto-invalidation** (a `POST /users/1` auto-busting
-        `GET /users/1`) — requires a relationship map between stitches, i.e. **app-level
-        response-cache policy**, which [`DESIGN.md`](../DESIGN.md) puts out of scope ("a stitch is
-        not a platform"). Manual `invalidate` (decision 8) is the supported path.
-    -   **Caching writes / non-idempotent methods** — cacheable is **GET/HEAD by default**;
-        GraphQL queries (POST-but-read) may opt in explicitly, since a POST's read-vs-mutate
-        intent cannot be inferred. Mutations are never cached.
+    - **Hierarchical / tag-based / prefix invalidation** — irreconcilable with derived opaque
+      keys (decision 1); ceded deliberately.
+    - **Stale-while-revalidate / background refresh** and **refetch-on-focus / reconnect /
+      interval** — these need a retained reactive host; they belong to a react-query/SWR
+      _integration_ layered on top, not the transport.
+    - **Mutation-driven cross-stitch auto-invalidation** (a `POST /users/1` auto-busting
+      `GET /users/1`) — requires a relationship map between stitches, i.e. **app-level
+      response-cache policy**, which [`DESIGN.md`](../DESIGN.md) puts out of scope ("a stitch is
+      not a platform"). Manual `invalidate` (decision 8) is the supported path.
+    - **Caching writes / non-idempotent methods** — cacheable is **GET/HEAD by default**;
+      GraphQL queries (POST-but-read) may opt in explicitly, since a POST's read-vs-mutate
+      intent cannot be inferred. Mutations are never cached.
 
 ## Consequences
 
 **Positive**
 
--   **Zero-config correctness no UI cache can match.** The key is derived from the actual
-    request, so it cannot drift from what it names — and it works in agents, CLIs, and servers
-    where react-query/SWR have no host.
--   **Coalescing lands, safely.** The cross-principal hazard that killed it in ADR 0002 is closed
-    by principal-keying. v1 collapses concurrent identical calls **in-process** (herd protection
-    for the common single-process case); the cross-process tier that also serialises retries
-    across workers is deferred (decision 6).
--   **Reuses existing machinery.** `StitchStore.get/set/incr`, principal-keying, the
-    shared-store-makes-it-distributed pattern, and the trace event stream all carry over; net-new
-    runtime dependency count stays **zero**.
+- **Zero-config correctness no UI cache can match.** The key is derived from the actual
+  request, so it cannot drift from what it names — and it works in agents, CLIs, and servers
+  where react-query/SWR have no host.
+- **Coalescing lands, safely.** The cross-principal hazard that killed it in ADR 0002 is closed
+  by principal-keying. v1 collapses concurrent identical calls **in-process** (herd protection
+  for the common single-process case); the cross-process tier that also serialises retries
+  across workers is deferred (decision 6).
+- **Reuses existing machinery.** `StitchStore.get/set/incr`, principal-keying, the
+  shared-store-makes-it-distributed pattern, and the trace event stream all carry over; net-new
+  runtime dependency count stays **zero**.
 
 **Accepted trade-offs**
 
--   **Drift is invisible on cache-hit paths** between writes (decision 2). `ttl` is the only
-    bound; a tight TTL trades hit rate for freshness/drift-sensitivity.
--   **v1 coalescing is process-local.** A shared store makes the TTL cache distributed, but the
-    in-process coalescer is by nature per-process (a Promise can't cross processes). Across
-    workers the TTL cache still dampens duplication; full cross-process coalescing waits on the
-    deferred cluster mode (decision 6). Its known costs when it lands — poll-based waiting (no
-    pub/sub in the contract) and a waiter latency that can reach `leader's full retry + its own` —
-    are noted now so they aren't a surprise then.
+- **Drift is invisible on cache-hit paths** between writes (decision 2). `ttl` is the only
+  bound; a tight TTL trades hit rate for freshness/drift-sensitivity.
+- **v1 coalescing is process-local.** A shared store makes the TTL cache distributed, but the
+  in-process coalescer is by nature per-process (a Promise can't cross processes). Across
+  workers the TTL cache still dampens duplication; full cross-process coalescing waits on the
+  deferred cluster mode (decision 6). Its known costs when it lands — poll-based waiting (no
+  pub/sub in the contract) and a waiter latency that can reach `leader's full retry + its own` —
+  are noted now so they aren't a surprise then.
 
 **Required follow-ups**
 
--   **Freeze and version the key-derivation algorithm.** The hash is settled (128-bit sync
-    xxh128, decision 1), but a shared/distributed store outlives a deploy, so the
-    **canonicalisation** must be a **versioned, frozen** contract with a key-schema version
-    prefix; any change to it is itself a generation bump (mass self-healing miss, never a
-    stale-key collision). Oversized / stream / `FormData` bodies skip hashing and fall to
-    warn-and-pass-through (decision 3).
--   **Schema-fingerprinting (ADR 0004).** ✅ _Resolved & wired._ A Standard Schema fingerprint folds
-    into the generation so an `output`/`unwrap`/versioned-`transform` change invalidates cached
-    values (decision 2): per-validator strategies behind a contract, a manual `cache.version`
-    fallback, refuse-to-cache by default when un-fingerprintable, and `onUnfingerprintable:
+- **Freeze and version the key-derivation algorithm.** The hash is settled (128-bit sync
+  xxh128, decision 1), but a shared/distributed store outlives a deploy, so the
+  **canonicalisation** must be a **versioned, frozen** contract with a key-schema version
+  prefix; any change to it is itself a generation bump (mass self-healing miss, never a
+  stale-key collision). Oversized / stream / `FormData` bodies skip hashing and fall to
+  warn-and-pass-through (decision 3).
+- **Schema-fingerprinting (ADR 0004).** ✅ _Resolved & wired._ A Standard Schema fingerprint folds
+  into the generation so an `output`/`unwrap`/versioned-`transform` change invalidates cached
+  values (decision 2): per-validator strategies behind a contract, a manual `cache.version`
+  fallback, refuse-to-cache by default when un-fingerprintable, and `onUnfingerprintable:
 'revalidate'` for opt-in re-validate-on-hit. `resolveFingerprint` is computed once per stitch in
-    `createCache`; its `policy` drives fast / revalidate / refuse and its `reason` rides the cache
-    trace.
--   **Cross-process coalescing protocol (deferred — own grill).** The cluster mode of decision 6,
-    saved for a dedicated session: the `incr` + lease lock and **leader election / re-election**;
-    the **stranded-waiter signal** (cache-present ⇒ take it / lock-gone + cache-empty ⇒ re-elect)
-    with the **write-cache-before-release** and **discover-once-then-poll-via-`get`** invariants;
-    **lease sizing** vs. a crashed leader (lease ≈ `timeout.total` + margin, no heartbeat,
-    leader-abort releases immediately); **poll cadence + latency floor**; **process-local abort**
-    at the cluster tier; and a **conformance addendum** (`incr` exactly-once under N concurrent
-    callers + lease-expiry frees the lock) so BYO stores prove coalescing-safety, not just
-    rate-limit `incr`.
--   **GraphQL opt-in classification** — how a `kind: 'graphql'` stitch marks a query as
-    cacheable (queries yes, mutations never), since intent can't be inferred from POST.
--   **LRU eviction** in the cache layer / `memoryStore` interplay: where `maxEntries` is enforced
-    and how it composes with a distributed backend that has its own eviction (decision 9).
--   **`__config` redaction & traces** — cached values and lock keys must not leak via
-    `Stitch.__config` or trace/hook payloads (extends ADR 0002 decision 4 / §6).
--   **Config shape** — settle `cache: { ttl, scope, vary?, methods?, maxEntries?, coalesce?, key? }`
-    plus the stitch-level `sensitive?`, confirm every field round-trips as JSON, and that `key` is
-    sugar over the derived default.
+  `createCache`; its `policy` drives fast / revalidate / refuse and its `reason` rides the cache
+  trace.
+- **Cross-process coalescing protocol (deferred — own grill).** The cluster mode of decision 6,
+  saved for a dedicated session: the `incr` + lease lock and **leader election / re-election**;
+  the **stranded-waiter signal** (cache-present ⇒ take it / lock-gone + cache-empty ⇒ re-elect)
+  with the **write-cache-before-release** and **discover-once-then-poll-via-`get`** invariants;
+  **lease sizing** vs. a crashed leader (lease ≈ `timeout.total` + margin, no heartbeat,
+  leader-abort releases immediately); **poll cadence + latency floor**; **process-local abort**
+  at the cluster tier; and a **conformance addendum** (`incr` exactly-once under N concurrent
+  callers + lease-expiry frees the lock) so BYO stores prove coalescing-safety, not just
+  rate-limit `incr`.
+- **GraphQL opt-in classification** — how a `kind: 'graphql'` stitch marks a query as
+  cacheable (queries yes, mutations never), since intent can't be inferred from POST.
+- **LRU eviction** in the cache layer / `memoryStore` interplay: where `maxEntries` is enforced
+  and how it composes with a distributed backend that has its own eviction (decision 9).
+- **`__config` redaction & traces** — cached values and lock keys must not leak via
+  `Stitch.__config` or trace/hook payloads (extends ADR 0002 decision 4 / §6).
+- **Config shape** — settle `cache: { ttl, scope, vary?, methods?, maxEntries?, coalesce?, key? }`
+  plus the stitch-level `sensitive?`, confirm every field round-trips as JSON, and that `key` is
+  sugar over the derived default.

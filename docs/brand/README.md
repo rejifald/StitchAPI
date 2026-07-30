@@ -36,10 +36,10 @@ The mark is a **cloud** (brand blue) crossed by a **`</>` code bracket** with a
 **dashed "stitch" seam** (amber) — the network, the API, and the stitch that
 joins them.
 
--   The **cloud** always carries the **brand blue**.
--   The **`</>` brackets** are **ink** (foreground): near-black on light surfaces,
-    off-white on dark — so the mark reads on either.
--   The **dashed seam** is the **amber accent** — the one warm note in the system.
+- The **cloud** always carries the **brand blue**.
+- The **`</>` brackets** are **ink** (foreground): near-black on light surfaces,
+  off-white on dark — so the mark reads on either.
+- The **dashed seam** is the **amber accent** — the one warm note in the system.
 
 ![StitchAPI logo on light and dark backgrounds](./assets/logo-preview.svg)
 
@@ -65,33 +65,33 @@ The mark geometry comes straight from the artwork: viewBox `726 542 148 116`
 
 ### Clearspace & minimum size **[proposed]**
 
--   **Clearspace** — keep free space on all four sides equal to the height of the
-    `</>` chevron (≈ ¼ of the mark height). Nothing intrudes into that margin.
--   **Minimum size** — logomark no smaller than **20 px** tall on screen (it ships
-    at 24 px in the navbar). Full lockup no smaller than **96 px** wide before the
-    wordmark loses legibility.
+- **Clearspace** — keep free space on all four sides equal to the height of the
+  `</>` chevron (≈ ¼ of the mark height). Nothing intrudes into that margin.
+- **Minimum size** — logomark no smaller than **20 px** tall on screen (it ships
+  at 24 px in the navbar). Full lockup no smaller than **96 px** wide before the
+  wordmark loses legibility.
 
 ### Do / Don't
 
 **Do**
 
--   Use the live `<Logo />` / `<Logomark />` component, or the provided SVGs —
-    never a screenshot.
--   Keep the cloud in **brand blue**, the brackets in **ink**, and the seam in
-    **amber** (ink at favicon scale).
--   Give it room — respect the clearspace.
+- Use the live `<Logo />` / `<Logomark />` component, or the provided SVGs —
+  never a screenshot.
+- Keep the cloud in **brand blue**, the brackets in **ink**, and the seam in
+  **amber** (ink at favicon scale).
+- Give it room — respect the clearspace.
 
 **Don't**
 
--   Recolor the cloud to anything but the brand blue, or add gradients / shadows /
-    outlines.
--   Stretch, rotate, skew, or rearrange the cloud / brackets / stitch.
--   Put the ink-on-light mark on a dark background — switch to the dark variant.
--   Re-letter or re-space the wordmark, or write it as **"Stitch API"** (two words)
-    or **"stitchapi"** — it is always one word, **StitchAPI**, capital `S` and
-    `API`.
--   Crop the dashed stitch seam out of the mark, or recolor it away from amber on
-    the lockup.
+- Recolor the cloud to anything but the brand blue, or add gradients / shadows /
+  outlines.
+- Stretch, rotate, skew, or rearrange the cloud / brackets / stitch.
+- Put the ink-on-light mark on a dark background — switch to the dark variant.
+- Re-letter or re-space the wordmark, or write it as **"Stitch API"** (two words)
+  or **"stitchapi"** — it is always one word, **StitchAPI**, capital `S` and
+  `API`.
+- Crop the dashed stitch seam out of the mark, or recolor it away from amber on
+  the lockup.
 
 ---
 
@@ -239,28 +239,28 @@ iCloud and are **not yet versioned** — see that folder's README.
 **Resolved by the Signal adoption** (was open under the old "Tailwind blue"
 brand):
 
--   **Light-mode link contrast** — `--brand #2563EB` is **5.0:1** on `--bg`
-    (passes AA text); the old `#3B82F6` was 3.4:1 ✗.
--   **The orphaned amber** is now a first-class `--accent` token (the stitch seam),
-    not just a syntax color.
--   **Three disagreeing blues** collapse into one `--brand` referenced everywhere
-    via tokens.
+- **Light-mode link contrast** — `--brand #2563EB` is **5.0:1** on `--bg`
+  (passes AA text); the old `#3B82F6` was 3.4:1 ✗.
+- **The orphaned amber** is now a first-class `--accent` token (the stitch seam),
+  not just a syntax color.
+- **Three disagreeing blues** collapse into one `--brand` referenced everywhere
+  via tokens.
 
 **Open / notes:**
 
--   **[note]** Amber on **light** is AA-large only (≈4.1:1) — keep it to the seam,
-    icons, and short ≥24 px labels; never body text. See [§2](#2-color).
--   **[note]** The static `public/*.svg` bake the **light** Signal colors (they are
-    not theme-aware). For dark surfaces use the dark banner, or the live
-    `<Logo />` / `<Logomark />` components (which track the theme via CSS vars).
--   **[open]** Drop the duplicate
-    [`docs/media/logo_baner_light.png`](../media/logo_baner_light.png)
-    (byte-identical to `baner_light.png`) once
-    [`packages/core/README.md`](../../packages/core/README.md) — which references
-    it via a **pinned-commit** raw URL — is repointed at `baner_light.png` on a
-    commit that exists post-merge.
--   **[open]** Import the master files (`.svg .png .pdf .ai .eps`) from iCloud into
-    [`docs/brand/source/`](./source) so the brand isn't stranded outside the repo;
-    then re-export the web SVGs from the updated masters rather than hand-recoloring.
--   **[open]** Define and document semantic state colors (success / warning / error
-    / info) as Signal tokens rather than inheriting Fumadocs' defaults.
+- **[note]** Amber on **light** is AA-large only (≈4.1:1) — keep it to the seam,
+  icons, and short ≥24 px labels; never body text. See [§2](#2-color).
+- **[note]** The static `public/*.svg` bake the **light** Signal colors (they are
+  not theme-aware). For dark surfaces use the dark banner, or the live
+  `<Logo />` / `<Logomark />` components (which track the theme via CSS vars).
+- **[open]** Drop the duplicate
+  [`docs/media/logo_baner_light.png`](../media/logo_baner_light.png)
+  (byte-identical to `baner_light.png`) once
+  [`packages/core/README.md`](../../packages/core/README.md) — which references
+  it via a **pinned-commit** raw URL — is repointed at `baner_light.png` on a
+  commit that exists post-merge.
+- **[open]** Import the master files (`.svg .png .pdf .ai .eps`) from iCloud into
+  [`docs/brand/source/`](./source) so the brand isn't stranded outside the repo;
+  then re-export the web SVGs from the updated masters rather than hand-recoloring.
+- **[open]** Define and document semantic state colors (success / warning / error
+  / info) as Signal tokens rather than inheriting Fumadocs' defaults.

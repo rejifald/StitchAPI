@@ -73,8 +73,8 @@ When stitches compose via [`extends`](/docs/guides/authoring/extends), hooks
 **chain** rather than overwrite — every layer's hook runs. They unwind like
 middleware:
 
--   `onRequest` runs **base → child** (outermost layer first)
--   `onResponse`, `onError`, `onRetry` run **child → base** (innermost layer first)
+- `onRequest` runs **base → child** (outermost layer first)
+- `onResponse`, `onError`, `onRetry` run **child → base** (innermost layer first)
 
 ```ts twoslash
 import { stitch } from 'stitchapi';

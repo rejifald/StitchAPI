@@ -18,8 +18,7 @@ import type {
 
 /** The result a surface's {@link Surface.interpret} produces from a buffered response. The success arm carries `data` (CONTRACT.md P5). */
 export type SurfaceOutcome<T = unknown> =
-    | { ok: true; data: T }
-    | { ok: false; message: string; status?: number };
+    { ok: true; data: T } | { ok: false; message: string; status?: number };
 
 /**
  * A pluggable request style. `TInput` is the call-argument type a typed surface narrows to;

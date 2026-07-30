@@ -63,10 +63,10 @@ api.lastRequest()?.method; // 'GET'
 
 A route's `match` selects which requests it answers:
 
--   a **string** matches the URL pathname (or, failing that, any substring of
-    the full URL),
--   a **`RegExp`** tests the full URL,
--   a **function** `(req) => boolean` is a predicate.
+- a **string** matches the URL pathname (or, failing that, any substring of
+  the full URL),
+- a **`RegExp`** tests the full URL,
+- a **function** `(req) => boolean` is a predicate.
 
 Omit `match` (and `method`) and the route catches every request.
 
@@ -74,12 +74,12 @@ Omit `match` (and `method`) and the route catches every request.
 
 `respond` is one of three shapes:
 
--   a single **`MockResponse`** — one fixed reply. Its fields: `status`,
-    `headers`, `body`, `stream`, `delay`, `retryAfterSeconds`.
--   an **array** of them — one per call, the last entry repeating, which is how
-    you drive a retry sequence,
--   a **function** `(call) => MockResponse` that sees `call.index` and
-    `call.req` — for pagination.
+- a single **`MockResponse`** — one fixed reply. Its fields: `status`,
+  `headers`, `body`, `stream`, `delay`, `retryAfterSeconds`.
+- an **array** of them — one per call, the last entry repeating, which is how
+  you drive a retry sequence,
+- a **function** `(call) => MockResponse` that sees `call.index` and
+  `call.req` — for pagination.
 
 `body` is the already-decoded body: an object is delivered as-is. `delay` is
 **abortable**, so a stitch `timeout` cancels it just like a real slow endpoint.
@@ -133,12 +133,12 @@ await list(); // { page: 1 }
 
 Every mock adapter records what it received:
 
--   **`.calls(filter?)`** — the requests, optionally filtered by the same
-    string/regex/predicate as `match`.
--   **`.callCount(filter?)`** — how many; assert retry and cache behaviour with
-    it.
--   **`.lastRequest()`** — the most recent request, or `undefined`.
--   **`.reset()`** — forget everything and reset each route's call counter.
+- **`.calls(filter?)`** — the requests, optionally filtered by the same
+  string/regex/predicate as `match`.
+- **`.callCount(filter?)`** — how many; assert retry and cache behaviour with
+  it.
+- **`.lastRequest()`** — the most recent request, or `undefined`.
+- **`.reset()`** — forget everything and reset each route's call counter.
 
 ### Unmatched requests
 
@@ -228,17 +228,17 @@ To test the [`stream`](/docs/reference/surfaces) and [`sse`](/docs/reference/sur
 surfaces you need a live response body. The stream builders produce one, and
 `collectStitchEvents` drains the result so you can assert on it.
 
--   **`streamOf(chunks)`** — a `ReadableStream` that emits each chunk as its own
-    read, then closes.
--   **`sseStream(events)`** — a `text/event-stream` body, one well-formed frame
-    per event (a bare string is shorthand for `{ data }`).
--   **`streamThenError(chunks, err?)`** — emits the chunks, then errors instead
-    of closing — for a mid-stream transport failure.
--   **`gatedStream(first, gate)`** — emits `first`, then stays open until `gate`
-    resolves — the long-lived shape a concurrency / long-poll test needs.
--   **`streamAdapter(body, init?)`** — a minimal adapter that returns `body` as
-    the live response body; for routing and a spy, use `mockAdapter` (it accepts
-    a `stream` response too).
+- **`streamOf(chunks)`** — a `ReadableStream` that emits each chunk as its own
+  read, then closes.
+- **`sseStream(events)`** — a `text/event-stream` body, one well-formed frame
+  per event (a bare string is shorthand for `{ data }`).
+- **`streamThenError(chunks, err?)`** — emits the chunks, then errors instead
+  of closing — for a mid-stream transport failure.
+- **`gatedStream(first, gate)`** — emits `first`, then stays open until `gate`
+  resolves — the long-lived shape a concurrency / long-poll test needs.
+- **`streamAdapter(body, init?)`** — a minimal adapter that returns `body` as
+  the live response body; for routing and a spy, use `mockAdapter` (it accepts
+  a `stream` response too).
 
 `collectStitchEvents(source)` drains a `StitchResult` (or a `.stream()`
 generator) into `{ types, deltas, drifts, result, error, done, events }` — the

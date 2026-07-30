@@ -22,9 +22,9 @@ Live, in-browser playground widgets for the StitchAPI docs — a reader edits a
 
 ## Contents
 
--   **[RATIONALE.md](./RATIONALE.md)** — decision record: why in-house over react-live / Sandpack / LiveCodes / Runno.
--   **[REQUIREMENTS.md](./REQUIREMENTS.md)** — the engine's shape & requirements (FR/NFR, the `CodeRunner` contract in §1, Node-only boundary, security, acceptance criteria).
--   **[COMPETITORS.md](./COMPETITORS.md)** — verified options scorecard + evidence.
+- **[RATIONALE.md](./RATIONALE.md)** — decision record: why in-house over react-live / Sandpack / LiveCodes / Runno.
+- **[REQUIREMENTS.md](./REQUIREMENTS.md)** — the engine's shape & requirements (FR/NFR, the `CodeRunner` contract in §1, Node-only boundary, security, acceptance criteria).
+- **[COMPETITORS.md](./COMPETITORS.md)** — verified options scorecard + evidence.
 
 ## How the pieces fit
 

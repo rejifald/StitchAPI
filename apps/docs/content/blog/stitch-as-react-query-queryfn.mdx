@@ -136,8 +136,8 @@ function Answer({ prompt }: { prompt: string }) {
 
 The query and the stitch own different things, and that's why they fit:
 
--   **The query owns view state** — caching by key, invalidation, refetch on focus, subscriptions across components.
--   **The stitch owns the call** — types, validation, auth, retries, timeouts, drift detection.
+- **The query owns view state** — caching by key, invalidation, refetch on focus, subscriptions across components.
+- **The stitch owns the call** — types, validation, auth, retries, timeouts, drift detection.
 
 This isn't a React-Query-only arrangement. The same shape works with **SWR** (`useSWR(key, () => getUser({ params: { id } }))`) and **RTK Query** (a stitch as the endpoint's `queryFn`). Whichever query layer you run, the split holds: it owns the view, the stitch owns the call.
 

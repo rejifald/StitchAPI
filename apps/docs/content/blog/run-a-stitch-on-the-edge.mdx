@@ -82,8 +82,8 @@ That covers a stateless call. The problem the edge adds is everything that wants
 
 Two of a stitch's jobs are read-heavy and want shared state across calls:
 
--   The **response cache** dedupes repeat reads and coalesces concurrent ones.
--   The **auth jar** holds a `cookieSession` cookie jar or an `oauth2` token cache so you reuse a session instead of re-authenticating on every request.
+- The **response cache** dedupes repeat reads and coalesces concurrent ones.
+- The **auth jar** holds a `cookieSession` cookie jar or an `oauth2` token cache so you reuse a session instead of re-authenticating on every request.
 
 On a single Node process both live in memory and that is fine. On the edge it is not: each isolate has its own memory and gets recycled between requests, so an in-memory cache is cold on nearly every hit, and a token refreshed on one isolate is invisible to the next. You would be re-authenticating constantly and caching nothing.
 
@@ -158,8 +158,8 @@ stitchapi @stitchapi/cloudflare-kv
 
 Attach `cloudflareKvStore(env.MY_KV)` as your seam's `store` and the cache and auth jar go fleet-wide across isolates — no call-site change. For the backend story end to end, see:
 
--   [The pluggable store](/docs/guides/state/pluggable-store)
--   [Distributed throttle, cache, and sessions](/docs/guides/state/distributed-throttle)
--   [What a stitch is](/docs/concepts/the-stitch)
--   [Distributed throttle with Redis as the KV](/blog/distributed-throttle-with-redis-kv) — the same seam, a Node backend
--   [Choosing an HTTP adapter](/blog/choosing-an-http-adapter) and [adopting StitchAPI without a rewrite](/blog/adopt-stitchapi-without-a-rewrite)
+- [The pluggable store](/docs/guides/state/pluggable-store)
+- [Distributed throttle, cache, and sessions](/docs/guides/state/distributed-throttle)
+- [What a stitch is](/docs/concepts/the-stitch)
+- [Distributed throttle with Redis as the KV](/blog/distributed-throttle-with-redis-kv) — the same seam, a Node backend
+- [Choosing an HTTP adapter](/blog/choosing-an-http-adapter) and [adopting StitchAPI without a rewrite](/blog/adopt-stitchapi-without-a-rewrite)

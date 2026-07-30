@@ -28,44 +28,44 @@ existing or proposed — passes through all three before it ships.
 
 ### Reliability
 
--   Retry with backoff — `attempts`, retry-on status codes (default `429/502/503/504`),
-    `expo` / `expo-jitter` / `fixed` strategies, `baseMs` / `maxMs` clamp — [`src/resilience.ts`](../src/resilience.ts)
--   `Retry-After` respected (delta-seconds **or** HTTP-date) via `respectRetryAfter`
--   Timeouts — `total` and `perAttempt`, enforced with a real `AbortSignal`
--   Lifecycle hooks — `onRequest` / `onResponse` / `onError` / `onRetry`, chained across layers
--   Auth auto-refresh on the wall — a `401` (or soft wall) re-runs the attempt with fresh
-    credentials, uncounted — [`src/engine.ts`](../src/engine.ts)
--   Failure semantics — a GraphQL `200` carrying `errors` and an `error`-level drift finding both
-    fail the call instead of silently passing
+- Retry with backoff — `attempts`, retry-on status codes (default `429/502/503/504`),
+  `expo` / `expo-jitter` / `fixed` strategies, `baseMs` / `maxMs` clamp — [`src/resilience.ts`](../src/resilience.ts)
+- `Retry-After` respected (delta-seconds **or** HTTP-date) via `respectRetryAfter`
+- Timeouts — `total` and `perAttempt`, enforced with a real `AbortSignal`
+- Lifecycle hooks — `onRequest` / `onResponse` / `onError` / `onRetry`, chained across layers
+- Auth auto-refresh on the wall — a `401` (or soft wall) re-runs the attempt with fresh
+  credentials, uncounted — [`src/engine.ts`](../src/engine.ts)
+- Failure semantics — a GraphQL `200` carrying `errors` and an `error`-level drift finding both
+  fail the call instead of silently passing
 
 ### Observability
 
--   The streaming event spine — `start → progress → drift → delta → result → done` / `error` —
-    a typed async-iterable, not `Promise<bytes>` — [`src/types.ts`](../src/types.ts)
--   Progress phases — `auth` / `request` / `throttled` / `retry` / `paginate`
--   Trace sink — **off by default**; opt in per stitch (`trace: 'console'` / `fileSink(path)` /
-    a custom `TraceSink`) or by env (`STITCH_TRACE_CONSOLE=1`, `STITCH_TRACE_FILE=<path>`) —
-    [`src/trace.ts`](../src/trace.ts)
--   Timing baked into events — `waitedMs`, `attempts`, total `ms`, per-event `at`
+- The streaming event spine — `start → progress → drift → delta → result → done` / `error` —
+  a typed async-iterable, not `Promise<bytes>` — [`src/types.ts`](../src/types.ts)
+- Progress phases — `auth` / `request` / `throttled` / `retry` / `paginate`
+- Trace sink — **off by default**; opt in per stitch (`trace: 'console'` / `fileSink(path)` /
+  a custom `TraceSink`) or by env (`STITCH_TRACE_CONSOLE=1`, `STITCH_TRACE_FILE=<path>`) —
+  [`src/trace.ts`](../src/trace.ts)
+- Timing baked into events — `waitedMs`, `attempts`, total `ms`, per-event `at`
 
 ### Security
 
--   Auth strategies — `bearer`, `apiKey`, `basic`, `cookieSession`, and OAuth2
-    `client_credentials` — [`src/auth.ts`](../src/auth.ts)
--   Secret resolvers — `env()` and `secretsFile()`, resolved at **call time**
--   The caller gets a capability, not a credential — the stitch holds the secret; an agent
-    invoking it never sees the token
--   Session handling — cookie capture + replay, TTL, refresh on `refresh` (`refresh.on` / `refresh.when`),
-    sessions shareable across stitches via a `key` + shared store
+- Auth strategies — `bearer`, `apiKey`, `basic`, `cookieSession`, and OAuth2
+  `client_credentials` — [`src/auth.ts`](../src/auth.ts)
+- Secret resolvers — `env()` and `secretsFile()`, resolved at **call time**
+- The caller gets a capability, not a credential — the stitch holds the secret; an agent
+  invoking it never sees the token
+- Session handling — cookie capture + replay, TTL, refresh on `refresh` (`refresh.on` / `refresh.when`),
+  sessions shareable across stitches via a `key` + shared store
 
 ### Performance & scale
 
--   Proactive throttle — `rate` (e.g. `"2/s"`) spacing **+** `concurrency` cap (FIFO),
-    scoped per-stitch or per-`host` — [`src/resilience.ts`](../src/resilience.ts)
--   Streaming delivers early instead of blocking for the whole body
--   Pluggable state store (`get` / `set` / `increment` + TTL) turns throttle **distributed** and
-    sessions **persistent / shared across workers** — [`src/store.ts`](../src/store.ts)
--   Zero runtime dependencies, tree-shakeable
+- Proactive throttle — `rate` (e.g. `"2/s"`) spacing **+** `concurrency` cap (FIFO),
+  scoped per-stitch or per-`host` — [`src/resilience.ts`](../src/resilience.ts)
+- Streaming delivers early instead of blocking for the whole body
+- Pluggable state store (`get` / `set` / `increment` + TTL) turns throttle **distributed** and
+  sessions **persistent / shared across workers** — [`src/store.ts`](../src/store.ts)
+- Zero runtime dependencies, tree-shakeable
 
 > **On "performance":** as a standalone lens it's thin — most of what looks like performance
 > here is really politeness (throttle → reliability) or horizontal scale (shared store →
@@ -84,17 +84,17 @@ existing or proposed — passes through all three before it ships.
 
 ### Developer experience
 
--   `stitch(url | config)` → a typed, callable function — the core "declare an endpoint, get a
-    function" move — [`src/stitch.ts`](../src/stitch.ts)
--   One handle, two modes — `await theStitch()` **or** `theStitch().stream()`
--   URL templates (full RFC 6570 — operators, explode `*`, prefix `:n`) and a `qs`-style query builder for nested objects/arrays, plus predefined query baked into the path
--   `.with(partial)` partial application — reuses the same runtime so cookies/throttle persist
+- `stitch(url | config)` → a typed, callable function — the core "declare an endpoint, get a
+  function" move — [`src/stitch.ts`](../src/stitch.ts)
+- One handle, two modes — `await theStitch()` **or** `theStitch().stream()`
+- URL templates (full RFC 6570 — operators, explode `*`, prefix `:n`) and a `qs`-style query builder for nested objects/arrays, plus predefined query baked into the path
+- `.with(partial)` partial application — reuses the same runtime so cookies/throttle persist
 
 ### Composability & reuse
 
--   `extends` — recursive layering of fragments (string · object · another stitch), deep-merged
--   `seam(options)` — a long-lived entity stitches belong to: shared fragment + runtime (store, vault, sink) + a trusted principal boundary
--   Hook chaining — `onRequest` runs base→child, the rest unwind child→base
+- `extends` — recursive layering of fragments (string · object · another stitch), deep-merged
+- `seam(options)` — a long-lived entity stitches belong to: shared fragment + runtime (store, vault, sink) + a trusted principal boundary
+- Hook chaining — `onRequest` runs base→child, the rest unwind child→base
 
 ---
 
@@ -106,25 +106,25 @@ existing or proposed — passes through all three before it ships.
 
 ### Data management
 
--   `unwrap` — pull the part you want by dot-path
--   `transform` — reshape before unwrap/validate (e.g. scrape HTML → structured)
--   Pagination — auto-loop pages and aggregate items (`next` / `items` / `max`), each page a
-    full request so auth/retry/throttle still apply — [`src/engine.ts`](../src/engine.ts)
--   Request encodings — `json` / `form` / `multipart`; GraphQL variables
+- `unwrap` — pull the part you want by dot-path
+- `transform` — reshape before unwrap/validate (e.g. scrape HTML → structured)
+- Pagination — auto-loop pages and aggregate items (`next` / `items` / `max`), each page a
+  full request so auth/retry/throttle still apply — [`src/engine.ts`](../src/engine.ts)
+- Request encodings — `json` / `form` / `multipart`; GraphQL variables
 
 ### Type safety & validation
 
--   On-the-fly validation of `params` / `query` / `body` / `headers` **and** the response
--   Standard Schema support — bring any compliant validator — [`src/validator.ts`](../src/validator.ts),
-    [`src/standard-schema.ts`](../src/standard-schema.ts)
--   Inferred TypeScript types from the schemas; `ValidationError` fails fast, before the request
+- On-the-fly validation of `params` / `query` / `body` / `headers` **and** the response
+- Standard Schema support — bring any compliant validator — [`src/validator.ts`](../src/validator.ts),
+  [`src/standard-schema.ts`](../src/standard-schema.ts)
+- Inferred TypeScript types from the schemas; `ValidationError` fails fast, before the request
 
 ### Contract & drift
 
--   `drift()` — schema-anchored, leveled findings instead of pass/fail (ADR 0015) — [`src/drift.ts`](../src/drift.ts)
--   Two tiers — validation throws (`invalid`/`error`, returns the validated value); soft drift is the `diff(raw, validated)` — [`src/diff.ts`](../src/diff.ts)
--   Change classification — `undeclared` (info) / `coerced` (warn) / `defaulted` (verbose) / `invalid` (error)
--   `ignore` path globs to silence known fields; `severity` to filter (level/list) or re-level (map)
+- `drift()` — schema-anchored, leveled findings instead of pass/fail (ADR 0015) — [`src/drift.ts`](../src/drift.ts)
+- Two tiers — validation throws (`invalid`/`error`, returns the validated value); soft drift is the `diff(raw, validated)` — [`src/diff.ts`](../src/diff.ts)
+- Change classification — `undeclared` (info) / `coerced` (warn) / `defaulted` (verbose) / `invalid` (error)
+- `ignore` path globs to silence known fields; `severity` to filter (level/list) or re-level (map)
 
 ---
 
@@ -132,22 +132,22 @@ existing or proposed — passes through all three before it ships.
 
 ### Portability
 
--   Browser **and** Node
--   Validator-agnostic, store-agnostic, adapter-agnostic
--   Zero runtime dependencies
+- Browser **and** Node
+- Validator-agnostic, store-agnostic, adapter-agnostic
+- Zero runtime dependencies
 
 ### Extensibility
 
--   Every seam is swappable — `Adapter`, `StitchStore`, `TraceSink`, `AuthStrategy`, `Hooks`,
-    `transform` — [`src/http-adapter.ts`](../src/http-adapter.ts)
--   Pluggable HTTP transport — `fetchAdapter` (default) or the shipped `axiosAdapter(client)`
-    that wraps your own axios instance; any `Adapter` function works (got, a fake, your own)
--   The adapter doubles as a test seam (inject a fake transport)
+- Every seam is swappable — `Adapter`, `StitchStore`, `TraceSink`, `AuthStrategy`, `Hooks`,
+  `transform` — [`src/http-adapter.ts`](../src/http-adapter.ts)
+- Pluggable HTTP transport — `fetchAdapter` (default) or the shipped `axiosAdapter(client)`
+  that wraps your own axios instance; any `Adapter` function works (got, a fake, your own)
+- The adapter doubles as a test seam (inject a fake transport)
 
 ### Protocol coverage
 
--   `http` today; `graphql()` preset (POST `{ query, variables }`, unwrap `data`, `errors` → failure)
--   Shell and LLM kinds on the roadmap — one primitive across protocols (see [`OVERVIEW.md`](OVERVIEW.md))
+- `http` today; `graphql()` preset (POST `{ query, variables }`, unwrap `data`, `errors` → failure)
+- Shell and LLM kinds on the roadmap — one primitive across protocols (see [`OVERVIEW.md`](OVERVIEW.md))
 
 ---
 
@@ -155,12 +155,12 @@ existing or proposed — passes through all three before it ships.
 
 Not a peer category; the thesis every other lens ladders into. An agent invoking a stitch gets:
 
--   A **capability, not a credential** (← Security)
--   **Machine-readable progress** as typed events, not opaque bytes (← Observability)
--   **Drift surfaced as data** it can react to (← Contract & drift)
--   **Validation as guardrails** with fail-fast errors (← Type safety)
--   **One uniform primitive** across HTTP/GraphQL/shell/LLM (← Protocol coverage)
--   **Declarative, deterministic** configuration it can author and reason about (← Authoring)
+- A **capability, not a credential** (← Security)
+- **Machine-readable progress** as typed events, not opaque bytes (← Observability)
+- **Drift surfaced as data** it can react to (← Contract & drift)
+- **Validation as guardrails** with fail-fast errors (← Type safety)
+- **One uniform primitive** across HTTP/GraphQL/shell/LLM (← Protocol coverage)
+- **Declarative, deterministic** configuration it can author and reason about (← Authoring)
 
 **The declarative-spelling rule.** Every capability must have a JSON-serializable spelling;
 function-valued config (hooks, `transform`, custom predicates) is sugar, never the only way.

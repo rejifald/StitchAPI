@@ -9,8 +9,7 @@ export interface Issue {
 }
 
 export type ValidationResult<T> =
-    | { ok: true; value: T }
-    | { ok: false; issues: Issue[] };
+    { ok: true; value: T } | { ok: false; issues: Issue[] };
 
 export interface Validator<T = unknown> {
     validate(value: unknown): Promise<ValidationResult<T>>;

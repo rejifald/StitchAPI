@@ -1,8 +1,8 @@
 # ADR 0011 — No `pattern` primitive: schema reuse is the validator's job
 
--   **Status:** Rejected
--   **Date:** 2026-06-18
--   **Tags:** validation, schema, primitive, validator-agnostic, contract-not-dependency, browser-first, rejected
+- **Status:** Rejected
+- **Date:** 2026-06-18
+- **Tags:** validation, schema, primitive, validator-agnostic, contract-not-dependency, browser-first, rejected
 
 > [!NOTE]
 >
@@ -74,13 +74,13 @@ Five reasons, four of them tied directly to the gates in
     a generic `pattern.partial()` cannot be implemented over what core consumes.
     The only ways to build it are:
 
-    -   **(a)** build a schema AST with its own composition semantics — which
-        **is** building a validator, the one thing core refuses (zero validator
-        imports in `src/`; zod is a devDependency only); or
-    -   **(b)** parse JSON Schema and re-emit a validator — lossy and generically
-        impossible (the same wall [ADR 0004](./0004-standard-schema-fingerprint-for-cache-invalidation.md) hit: `~standard` is opaque, JSON Schema is lossy); or
-    -   **(c)** dispatch to each validator's native methods through a per-vendor
-        adapter registry (see "The only version that adds value").
+    - **(a)** build a schema AST with its own composition semantics — which
+      **is** building a validator, the one thing core refuses (zero validator
+      imports in `src/`; zod is a devDependency only); or
+    - **(b)** parse JSON Schema and re-emit a validator — lossy and generically
+      impossible (the same wall [ADR 0004](./0004-standard-schema-fingerprint-for-cache-invalidation.md) hit: `~standard` is opaque, JSON Schema is lossy); or
+    - **(c)** dispatch to each validator's native methods through a per-vendor
+      adapter registry (see "The only version that adds value").
 
 3.  **It fails contract-not-dependency.** Capabilities in StitchAPI must
     round-trip as JSON — `kind` collapses to a string id on `__config`, `auth`
@@ -123,14 +123,14 @@ by `~standard.vendor`.
 We reject this as well, on the same grounds as `inferBearer` and generic
 fingerprinting:
 
--   **The demand is near-zero.** People pick **one** validator and stay there.
-    Cross-validator uniform composition solves a problem almost no one has.
--   **The surface is large and permanent.** Five vendors × six operations ×
-    their structural quirks (refinements, transforms, effects that do not
-    survive a `.partial()`) is a maintenance burden that re-creates each
-    validator's own API — slightly worse, forever.
--   **It earns its keep only at the seam between two validators**, which is not a
-    place real codebases live.
+- **The demand is near-zero.** People pick **one** validator and stay there.
+  Cross-validator uniform composition solves a problem almost no one has.
+- **The surface is large and permanent.** Five vendors × six operations ×
+  their structural quirks (refinements, transforms, effects that do not
+  survive a `.partial()`) is a maintenance burden that re-creates each
+  validator's own API — slightly worse, forever.
+- **It earns its keep only at the seam between two validators**, which is not a
+  place real codebases live.
 
 If credible, repeated demand for cross-validator uniform composition ever
 appears, the door is the opt-in `shape-*` peer-dependency family — **never**
@@ -138,31 +138,31 @@ core. Until then it is not worth a line of code.
 
 ## What we ship instead
 
--   **A recipe**:
-    [Define an entity once, derive every request shape](../../apps/docs/content/docs/recipes/define-an-entity-once.mdx)
-    — the entity-first pattern with the validator's own methods, feeding both
-    runtime validation (every slot) and the TS type (`z.infer`). Zero core code;
-    holds every gate; doubles as in-context teaching for the
-    agent-recommendation work.
--   **The genuinely StitchAPI-shaped "define once" already exists**: deriving
-    _artifacts_ from one schema — `toOpenApi` and the BYO `toJsonSchema`
-    converter (`stitch export --openapi --schema-module`). That is "define once,
-    emit many" done as a contract, not as a live primitive.
+- **A recipe**:
+  [Define an entity once, derive every request shape](../../apps/docs/content/docs/recipes/define-an-entity-once.mdx)
+  — the entity-first pattern with the validator's own methods, feeding both
+  runtime validation (every slot) and the TS type (`z.infer`). Zero core code;
+  holds every gate; doubles as in-context teaching for the
+  agent-recommendation work.
+- **The genuinely StitchAPI-shaped "define once" already exists**: deriving
+  _artifacts_ from one schema — `toOpenApi` and the BYO `toJsonSchema`
+  converter (`stitch export --openapi --schema-module`). That is "define once,
+  emit many" done as a contract, not as a live primitive.
 
 ## Consequences
 
--   Schema authoring and composition remain entirely the validator's job; core's
-    only schema contract stays `validate()` via Standard Schema.
--   "Why isn't there a `Schema`/`pattern` type?" is now a settled question with a
-    referenceable answer, for both humans and agents reading the source.
--   Reversible: this rejects a primitive, not the motivation. The recipe can grow,
-    and the `shape-*` registry remains available as an opt-in escape hatch if the
-    demand ever materializes.
+- Schema authoring and composition remain entirely the validator's job; core's
+  only schema contract stays `validate()` via Standard Schema.
+- "Why isn't there a `Schema`/`pattern` type?" is now a settled question with a
+  referenceable answer, for both humans and agents reading the source.
+- Reversible: this rejects a primitive, not the motivation. The recipe can grow,
+  and the `shape-*` registry remains available as an opt-in escape hatch if the
+  demand ever materializes.
 
 ## Revisit if
 
--   Standard Schema (or a successor contract) gains a **serializable** structural
-    description that composition could be defined over without adopting a vendor.
--   Multiple independent adopters demonstrate real need for cross-validator
-    uniform composition — at which point the answer is `shape-*` peer packages,
-    not core.
+- Standard Schema (or a successor contract) gains a **serializable** structural
+  description that composition could be defined over without adopting a vendor.
+- Multiple independent adopters demonstrate real need for cross-validator
+  uniform composition — at which point the answer is `shape-*` peer packages,
+  not core.

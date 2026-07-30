@@ -124,9 +124,9 @@ const getStatusPage = stitch({
 
 Caching is only correct for **idempotent reads**: a request you could make twice and reasonably expect the same answer. That's the whole safe set.
 
--   **Writes are out.** A `POST` that creates an order or charges a card is not a read; there's no "same answer" to reuse. (For a _retried_ write settling once instead of twice, the tool is [idempotency keys](/docs/guides/resilience/idempotency) — a different mechanism entirely.)
--   **Per-request-varying reads are out.** A response that legitimately changes every call — a fresh nonce, a timestamp, a random pick — gains nothing from a cache and risks serving something stale.
--   **Anything you can't safely share across the chosen scope.** If a response is user-specific it must stay principal-scoped; widening it to `scope: 'app'` to "improve the hit rate" is the exact move that turns a cache into a leak.
+- **Writes are out.** A `POST` that creates an order or charges a card is not a read; there's no "same answer" to reuse. (For a _retried_ write settling once instead of twice, the tool is [idempotency keys](/docs/guides/resilience/idempotency) — a different mechanism entirely.)
+- **Per-request-varying reads are out.** A response that legitimately changes every call — a fresh nonce, a timestamp, a random pick — gains nothing from a cache and risks serving something stale.
+- **Anything you can't safely share across the chosen scope.** If a response is user-specific it must stay principal-scoped; widening it to `scope: 'app'` to "improve the hit rate" is the exact move that turns a cache into a leak.
 
 There's a guardrail in the shape layer too: a stitch with an `output` schema caches only when that schema can be fingerprinted (or you pin a `version`). If it can't establish the shape it's storing, it **refuses to cache** rather than serve a value that no longer matches its contract. Data you never want at rest can be marked `sensitive: true` to opt out entirely.
 
@@ -140,10 +140,10 @@ Run four instances behind a load balancer and a cold key can produce up to four 
 
 A plain stitch call with no `cache` is the floor you start from. Crossing to cache + coalesce is a field, not a rewrite — and these are the conditions that tell you it's time:
 
--   **The same read repeats.** A request made once — or one whose result legitimately differs every time — has a hit rate near zero. Add `cache` the moment you see the same key firing more than once per business operation.
--   **Calls overlap in time.** Coalescing wins when multiple code paths race to the same endpoint concurrently. Strictly sequential callers never produce an in-flight request to attach to; a fan-out inside a single agent run or a shared route handler is exactly where collapse matters.
--   **The upstream is slow or rate-limited.** Latency and quota pressure are the clearest signals: cache absorbs the repeat cost, coalescing caps the burst, and neither change your call site.
--   **The data tolerates a short TTL.** A one-off read with a response that must be live every time genuinely needs no cache — and that's fine. The first call, and every genuinely-distinct one, still costs what it costs; caching removes only the calls you didn't need to repeat.
+- **The same read repeats.** A request made once — or one whose result legitimately differs every time — has a hit rate near zero. Add `cache` the moment you see the same key firing more than once per business operation.
+- **Calls overlap in time.** Coalescing wins when multiple code paths race to the same endpoint concurrently. Strictly sequential callers never produce an in-flight request to attach to; a fan-out inside a single agent run or a shared route handler is exactly where collapse matters.
+- **The upstream is slow or rate-limited.** Latency and quota pressure are the clearest signals: cache absorbs the repeat cost, coalescing caps the burst, and neither change your call site.
+- **The data tolerates a short TTL.** A one-off read with a response that must be live every time genuinely needs no cache — and that's fine. The first call, and every genuinely-distinct one, still costs what it costs; caching removes only the calls you didn't need to repeat.
 
 The one thing to get right when you do reach for it is the key and `scope`: too coarse a key serves stale data, and too wide a scope can leak one principal's data to another — both silently, which is harder to catch than slow-but-right. The defaults make the safe path the default one; widening the scope is a decision you own.
 

@@ -1,8 +1,8 @@
 # ADR 0008 — Non-HTTP surfaces (`llm`, `shell`) & the `pipe()` primitive
 
--   **Status:** Accepted (decisions resolved in the 2026-06-16 review of PR [#164](https://github.com/rejifald/StitchAPI/pull/164); implemented in PR [#165](https://github.com/rejifald/StitchAPI/pull/165))
--   **Date:** 2026-06-16
--   **Tags:** surfaces, transport, llm, shell, composition, pipe, security, browser-first, peer-dependency
+- **Status:** Accepted (decisions resolved in the 2026-06-16 review of PR [#164](https://github.com/rejifald/StitchAPI/pull/164); implemented in PR [#165](https://github.com/rejifald/StitchAPI/pull/165))
+- **Date:** 2026-06-16
+- **Tags:** surfaces, transport, llm, shell, composition, pipe, security, browser-first, peer-dependency
 
 > [!NOTE]
 >
@@ -26,12 +26,12 @@ The thing a non-HTTP kind must NOT lose is the **resilience chain**: `retry` →
 
 4.  **`shell` is a Node-only, security-gated peer package — injection-proof by construction.** It ships as `@stitchapi/shell` (a peer package like `@stitchapi/nest`), **never imported by core** (browser-first), providing a `shell` `Surface` whose `execute` runs a subprocess. The security model is non-negotiable and **structural, not advisory** (the bar that rejected host-inferred bearer tokens in #6):
 
-    -   **Static executable.** The binary is fixed in the stitch config at construction (`shell.stitch({ command: 'git' })`), **never** taken from call input — as a credential is bound at construction, not passed by the caller.
-    -   **`argv` is an ARRAY, never a string.** Arguments are a `string[]` passed as the `args` array to `child_process.execFile`/`spawn`. There is **no shell**: no `shell: true`, no `/bin/sh -c`, so shell metacharacters (`;` `|` `$()` `` ` `` `>` `*`) are **inert data**. Command injection is not "mitigated by escaping" — it is **structurally impossible**, because no string is ever handed to a shell to parse.
-    -   **No interpolation, ever.** Each `argv` element is one process argument, verbatim. An `input` schema (`z.array(z.string())`, or an enum of allowed flags) can _further_ constrain values, but the array boundary is the guarantee, not the schema.
-    -   **Fail-closed env** (resolves Q3). The subprocess inherits **no** `process.env` by default — you pass exactly the vars it needs, so a secret in the parent environment can't leak into a child. A **bin allowlist is deferred** (the executable is already static per stitch — Q3); it can be added at the seam level later as defense-in-depth.
-    -   **Timeout + cancellation come free** from the resilience chain (the per-attempt `timeout` and caller `signal` reach `execute`, which forwards them to `execFile`) — the concrete payoff of Decision 1.
-    -   A non-zero exit maps to `status >= 400` (a `StitchError`, or a normal result via `acceptStatus`); `stdout` is the body (parsed per `responseType`), `stderr` rides the error. The `argv` travels in `req.body` (Decision 1).
+    - **Static executable.** The binary is fixed in the stitch config at construction (`shell.stitch({ command: 'git' })`), **never** taken from call input — as a credential is bound at construction, not passed by the caller.
+    - **`argv` is an ARRAY, never a string.** Arguments are a `string[]` passed as the `args` array to `child_process.execFile`/`spawn`. There is **no shell**: no `shell: true`, no `/bin/sh -c`, so shell metacharacters (`;` `|` `$()` `` ` `` `>` `*`) are **inert data**. Command injection is not "mitigated by escaping" — it is **structurally impossible**, because no string is ever handed to a shell to parse.
+    - **No interpolation, ever.** Each `argv` element is one process argument, verbatim. An `input` schema (`z.array(z.string())`, or an enum of allowed flags) can _further_ constrain values, but the array boundary is the guarantee, not the schema.
+    - **Fail-closed env** (resolves Q3). The subprocess inherits **no** `process.env` by default — you pass exactly the vars it needs, so a secret in the parent environment can't leak into a child. A **bin allowlist is deferred** (the executable is already static per stitch — Q3); it can be added at the seam level later as defense-in-depth.
+    - **Timeout + cancellation come free** from the resilience chain (the per-attempt `timeout` and caller `signal` reach `execute`, which forwards them to `execFile`) — the concrete payoff of Decision 1.
+    - A non-zero exit maps to `status >= 400` (a `StitchError`, or a normal result via `acceptStatus`); `stdout` is the body (parsed per `responseType`), `stderr` rides the error. The `argv` travels in `req.body` (Decision 1).
 
 5.  **`pipe()` — a `stitchapi/pipe` subpath; linear, each step a child run** (resolves Q4). `pipe(stepA, stepB, …)` runs steps in order, feeding each result to the next. Each step runs under a `RunContext` (ADR 0007) that is a **child of the previous step's** — the first step is the root run, step N is a child of step N-1 — so the trace/DAG shows the chain `stepA → stepB → stepC`, the step-to-step data dependency drawn as causality. There is **no separate `pipe` span**: the pipeline _is_ its chain of step runs, sharing one `traceId`; the first step's run is the chain's root. It ships behind its **own `stitchapi/pipe` subpath** (bundle-frugal, like cache/graphql), so `import { stitch }` stays lean. v1 is **linear** (fan-out/DAG deferred); the step-to-step **mapping** is a closure (`(prev) => nextCallInput`), acknowledged non-serializable **sugar** in the exact category as `transform`/`paginate.next`/`cache.key`, while the pipe's **structure** (its ordered member stitches, each of which round-trips) does serialize — so the contract gate holds at the line the library already draws. Fail-fast on the first step error (the `StitchError` becomes the pipe run's error; `.safe()` works as usual).
 
@@ -39,30 +39,30 @@ The thing a non-HTTP kind must NOT lose is the **resilience chain**: `retry` →
 
 ## Resolved questions
 
--   **Q1 — `execute` request carrier (resolved: reuse `req.body`).** Surface-specific request data rides `req.body`, the `graphqlSurface` precedent — zero core-contract change, no new field on `AdapterRequest`/`StitchInput`.
--   **Q2 — `llm` providers (resolved: contract-first + first-party mappings + override).** An `LlmProvider` mapping contract is the primitive; StitchAPI ships first-party Anthropic + OpenAI mappings (plain config, no SDK dep) implementing it; a customer can always override with their own. See Decision 3.
--   **Q3 — `shell` env/cwd (resolved: fail-closed env; allowlist deferred).** No inherited `process.env` by default; the static-per-stitch bin makes a v1 allowlist unnecessary (deferrable to a later seam-level option).
--   **Q4 — `pipe()` placement & shape (resolved: `stitchapi/pipe` subpath, linear v1).** Own subpath (bundle-frugal); linear sequence; mapping closures as acknowledged sugar; fan-out/DAG deferred.
--   **Q5 — Staging (resolved: one push, single review).** The execute-hook → llm → shell → pipe sequence is built together and reviewed once, after 0007 lands.
+- **Q1 — `execute` request carrier (resolved: reuse `req.body`).** Surface-specific request data rides `req.body`, the `graphqlSurface` precedent — zero core-contract change, no new field on `AdapterRequest`/`StitchInput`.
+- **Q2 — `llm` providers (resolved: contract-first + first-party mappings + override).** An `LlmProvider` mapping contract is the primitive; StitchAPI ships first-party Anthropic + OpenAI mappings (plain config, no SDK dep) implementing it; a customer can always override with their own. See Decision 3.
+- **Q3 — `shell` env/cwd (resolved: fail-closed env; allowlist deferred).** No inherited `process.env` by default; the static-per-stitch bin makes a v1 allowlist unnecessary (deferrable to a later seam-level option).
+- **Q4 — `pipe()` placement & shape (resolved: `stitchapi/pipe` subpath, linear v1).** Own subpath (bundle-frugal); linear sequence; mapping closures as acknowledged sugar; fan-out/DAG deferred.
+- **Q5 — Staging (resolved: one push, single review).** The execute-hook → llm → shell → pipe sequence is built together and reviewed once, after 0007 lands.
 
 ## Consequences
 
--   The surface model gains a fourth verb (`execute`) alongside `buildRequest`/`interpret`/`stream`, and "all common comms in one lib" extends past HTTP to subprocesses and LLMs — without a second resilience implementation, because everything still flows through the one chain.
--   `shell` is the first capability that is **deliberately not browser-safe**; it is quarantined in a peer package so core stays browser-first and `import { stitch }` pulls in no `child_process`.
--   `llm` proves the contract-not-dependency pattern a third time (after fingerprint and adapter): a vendor capability becomes a BYO contract with first-party conveniences, never a hard dependency.
--   `pipe()` is the first multi-run composition and the consumer that makes ADR 0007's parent/child identity pay off — the first place a trace spans more than one run (a linear chain of step runs under one `traceId`).
--   New surface area: one optional hook on `Surface`, one engine call-site change (+ guard bypass), the `stitchapi/llm` subpath (contract + two mappings), the `@stitchapi/shell` peer package, and the `stitchapi/pipe` subpath.
+- The surface model gains a fourth verb (`execute`) alongside `buildRequest`/`interpret`/`stream`, and "all common comms in one lib" extends past HTTP to subprocesses and LLMs — without a second resilience implementation, because everything still flows through the one chain.
+- `shell` is the first capability that is **deliberately not browser-safe**; it is quarantined in a peer package so core stays browser-first and `import { stitch }` pulls in no `child_process`.
+- `llm` proves the contract-not-dependency pattern a third time (after fingerprint and adapter): a vendor capability becomes a BYO contract with first-party conveniences, never a hard dependency.
+- `pipe()` is the first multi-run composition and the consumer that makes ADR 0007's parent/child identity pay off — the first place a trace spans more than one run (a linear chain of step runs under one `traceId`).
+- New surface area: one optional hook on `Surface`, one engine call-site change (+ guard bypass), the `stitchapi/llm` subpath (contract + two mappings), the `@stitchapi/shell` peer package, and the `stitchapi/pipe` subpath.
 
 ## Alternatives considered
 
--   **Make `shell` a user `adapter` instead of a surface `execute`.** Rejected: `adapter` is the user's HTTP-client slot; overloading it conflates "which HTTP client" with "which protocol", loses the one-import `shell.stitch({…})` bundling, and muddies redaction.
--   **A shell _string_ with escaping/quoting.** Rejected outright: escaping is advisory and one missed quote is RCE. The argv-array + no-shell rule makes injection structurally impossible — the same "don't rely on getting the dangerous path right" stance as the `inferBearer` rejection.
--   **Ship an LLM SDK (or hardcode one provider) in core.** Rejected: violates browser-first/bundle-frugal and pins a vendor dep. The `LlmProvider` contract + first-party plain-config mappings give turn-key Anthropic/OpenAI with neither a dependency nor provider lock-in.
--   **`AsyncLocalStorage` to thread `pipe()` step identity.** Rejected: Node-only, breaks browser-first; ADR 0007's explicit `RunContext` threading is portable.
+- **Make `shell` a user `adapter` instead of a surface `execute`.** Rejected: `adapter` is the user's HTTP-client slot; overloading it conflates "which HTTP client" with "which protocol", loses the one-import `shell.stitch({…})` bundling, and muddies redaction.
+- **A shell _string_ with escaping/quoting.** Rejected outright: escaping is advisory and one missed quote is RCE. The argv-array + no-shell rule makes injection structurally impossible — the same "don't rely on getting the dangerous path right" stance as the `inferBearer` rejection.
+- **Ship an LLM SDK (or hardcode one provider) in core.** Rejected: violates browser-first/bundle-frugal and pins a vendor dep. The `LlmProvider` contract + first-party plain-config mappings give turn-key Anthropic/OpenAI with neither a dependency nor provider lock-in.
+- **`AsyncLocalStorage` to thread `pipe()` step identity.** Rejected: Node-only, breaks browser-first; ADR 0007's explicit `RunContext` threading is portable.
 
 ## Gates
 
--   **browser-first** — `execute` is a plain function field on `Surface`; `llm` is HTTP with plain-config mappings; `shell` is a **Node-only peer package** core never imports, so `child_process` never reaches a browser bundle (guarded by the existing `browser-bundle.spec` matrix).
--   **bundle-frugal** — `execute` adds one optional field; `llm`/`pipe` are subpath-exported; `shell` is out-of-core entirely. `import { stitch }` pulls none of it.
--   **contract-not-dependency** — the surface `id` round-trips as JSON (the live `execute`/provider hooks are redacted like every surface); the `LlmProvider` mapping and the shell command are BYO config, not vendor deps.
--   **security (shell)** — injection is **structurally impossible** (static bin + argv array + no shell + no interpolation), not escaped; secrets do not leak to subprocesses (fail-closed env); timeout/cancel are enforced by the resilience chain.
+- **browser-first** — `execute` is a plain function field on `Surface`; `llm` is HTTP with plain-config mappings; `shell` is a **Node-only peer package** core never imports, so `child_process` never reaches a browser bundle (guarded by the existing `browser-bundle.spec` matrix).
+- **bundle-frugal** — `execute` adds one optional field; `llm`/`pipe` are subpath-exported; `shell` is out-of-core entirely. `import { stitch }` pulls none of it.
+- **contract-not-dependency** — the surface `id` round-trips as JSON (the live `execute`/provider hooks are redacted like every surface); the `LlmProvider` mapping and the shell command are BYO config, not vendor deps.
+- **security (shell)** — injection is **structurally impossible** (static bin + argv array + no shell + no interpolation), not escaped; secrets do not leak to subprocesses (fail-closed env); timeout/cancel are enforced by the resilience chain.

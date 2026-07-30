@@ -14,9 +14,9 @@ This is the definition page. For the argument that drift is the single most unde
 
 Schema drift is a divergence between the **contract you wrote down** and the **bytes the API actually returns**, introduced by a change on the provider's side after your code was written. Three properties make it its own category:
 
--   **It happens out-of-band.** The change lands on a system you don't control, with no commit in your repo, no PR, no review.
--   **It's invisible to static checks.** Your TypeScript types describe what you expected, frozen when you wrote them. The compiler checks your code against that claim, not the claim against reality.
--   **Its first witness is runtime.** The only place a live response appears is on a real call — so the first code to see the new shape is whatever runs in production on the unlucky request.
+- **It happens out-of-band.** The change lands on a system you don't control, with no commit in your repo, no PR, no review.
+- **It's invisible to static checks.** Your TypeScript types describe what you expected, frozen when you wrote them. The compiler checks your code against that claim, not the claim against reality.
+- **Its first witness is runtime.** The only place a live response appears is on a real call — so the first code to see the new shape is whatever runs in production on the unlucky request.
 
 That last property is why drift is different from an ordinary type error or a failing test. Neither of those looks at a live response; drift is, by definition, a change to one.
 
@@ -24,11 +24,11 @@ That last property is why drift is different from an ordinary type error or a fa
 
 Drift is concrete. Common shapes, from a `/orders/{id}` response you depend on:
 
--   **A rename.** `total` becomes `total_amount`. Your code reads `order.total` and gets `undefined`.
--   **A type shift.** A numeric `total: 42` comes back as `"42"`. Arithmetic on it produces `NaN`.
--   **A new nullable.** `shippedAt` was always a string; now it's sometimes `null`. A `.toISOString()` three layers down throws.
--   **An added field.** The provider grows a `discount` key you never modeled. Harmless until you assume the old shape elsewhere.
--   **A removed required field.** `customerId` stops appearing. Everything keyed on it silently misbehaves.
+- **A rename.** `total` becomes `total_amount`. Your code reads `order.total` and gets `undefined`.
+- **A type shift.** A numeric `total: 42` comes back as `"42"`. Arithmetic on it produces `NaN`.
+- **A new nullable.** `shippedAt` was always a string; now it's sometimes `null`. A `.toISOString()` three layers down throws.
+- **An added field.** The provider grows a `discount` key you never modeled. Harmless until you assume the old shape elsewhere.
+- **A removed required field.** `customerId` stops appearing. Everything keyed on it silently misbehaves.
 
 ## The kinds of drift: breaking vs. additive
 
@@ -102,8 +102,8 @@ When you own and version both sides and change them in the same commit, a plain 
 
 Two honest edges, even then:
 
--   **It observes live calls, not the whole contract.** Proving every endpoint matches a spec before release is a contract-testing job; drift watches the calls your code actually makes, which is a different question.
--   **It needs a schema to anchor on.** Drift's signal comes from diffing against a declared shape. Write no schema and there's nothing to diff — a stitch is back to being a fetch wrapper.
+- **It observes live calls, not the whole contract.** Proving every endpoint matches a spec before release is a contract-testing job; drift watches the calls your code actually makes, which is a different question.
+- **It needs a schema to anchor on.** Drift's signal comes from diffing against a declared shape. Write no schema and there's nothing to diff — a stitch is back to being a fetch wrapper.
 
 The trade is the same either way. Without a contract checked on every call, a quietly renamed field is an `undefined` you discover from a production incident; with one, it's either a thrown `STITCH_DRIFT` on the request that actually drifted or a `drift` event on a named path — caught at the boundary, not on the call that finally fell over.
 

@@ -31,11 +31,11 @@ app.get('/me', (c) => c.json(c.get('stitch').stitch('/me')()));
 
 On each request the middleware sets `c.set('stitch', …)`:
 
--   `principal` returns an id → the context seam is `seam.as(id)` — a
-    **principal-bound** handle (separate auth sessions per principal, one shared
-    throttle bucket). The principal lives in the closure, never in a call
-    argument, so a handler can't impersonate another identity (ADR 0002 §2).
--   `principal` returns `undefined` (or is omitted) → the **root** seam, unbound.
+- `principal` returns an id → the context seam is `seam.as(id)` — a
+  **principal-bound** handle (separate auth sessions per principal, one shared
+  throttle bucket). The principal lives in the closure, never in a call
+  argument, so a handler can't impersonate another identity (ADR 0002 §2).
+- `principal` returns `undefined` (or is omitted) → the **root** seam, unbound.
 
 Parametrise your app with `StitchEnv` so `c.get('stitch')` is typed. Have other
 variables? Intersect: `new Hono<StitchEnv & MyEnv>()`.

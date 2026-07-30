@@ -14,8 +14,8 @@ A stitch is a typed, declarative, composable unit: `input → validated output`,
 
 **Why now / why us.** Two market quadrants are empty:
 
--   **Spec-less long tail** — every serious competitor (Massimo, Orval, Speakeasy, Stainless) needs an OpenAPI spec. A stitch needs one endpoint or one example.
--   **Heterogeneous + agent-native** — the closest competitor, **Windmill**, is ~85% there but is a heavy server _platform_ that treats HTTP/LLM as "just code." We are a **lightweight library** where HTTP/GraphQL/shell/LLM are symmetric _declared primitives_, consumed natively by agents.
+- **Spec-less long tail** — every serious competitor (Massimo, Orval, Speakeasy, Stainless) needs an OpenAPI spec. A stitch needs one endpoint or one example.
+- **Heterogeneous + agent-native** — the closest competitor, **Windmill**, is ~85% there but is a heavy server _platform_ that treats HTTP/LLM as "just code." We are a **lightweight library** where HTTP/GraphQL/shell/LLM are symmetric _declared primitives_, consumed natively by agents.
 
 **What it's not.** A stitch is a _per-call primitive_, not a workflow / queue / iPaaS engine. Orchestration, job queues, inbound webhooks, app-level caching, and business state stay the app's job — see the scope boundary in §12. Absorbing them is exactly how we'd drift into the heavy platform we're positioned against.
 
@@ -61,8 +61,8 @@ const listWebsites = stitch({
 
 Everything except a target is optional. Spell the target one of two ways:
 
--   **`url`** — the whole endpoint as one string (`url: 'https://api.example.com/users/{id}'`). The **atomic spelling**: reach for it when a stitch is exactly one endpoint with no base to share, so you don't pre-split into base + path for a composition that doesn't exist. Templated (`{param}`, including the host) and `?query`-aware just like `path`, and may be a function for lazy/env resolution.
--   **`baseUrl` + `path`** — a shareable base joined to a per-endpoint path. The **composition spelling**: a shared fragment supplies `baseUrl` once and each stitch supplies its own `path` (§4).
+- **`url`** — the whole endpoint as one string (`url: 'https://api.example.com/users/{id}'`). The **atomic spelling**: reach for it when a stitch is exactly one endpoint with no base to share, so you don't pre-split into base + path for a composition that doesn't exist. Templated (`{param}`, including the host) and `?query`-aware just like `path`, and may be a function for lazy/env resolution.
+- **`baseUrl` + `path`** — a shareable base joined to a per-endpoint path. The **composition spelling**: a shared fragment supplies `baseUrl` once and each stitch supplies its own `path` (§4).
 
 The two are mutually exclusive — when both appear, `url` wins. The smallest possible stitch is `stitch('https://…')` (a bare string is shorthand for `path`; an absolute one resolves as-is). A target that resolves to a relative URL (a `path` with no `baseUrl`) is a config error under the default transport.
 
@@ -161,10 +161,10 @@ const getWebsite = stitch({
 
 ### Merge semantics **[proposed]**
 
--   **Scalars** (`path`, `method`, `baseUrl`, `url`, `pick`): replace. The endpoint is one slot: `url` and `baseUrl`/`path` are mutually exclusive, so the last fragment to set either spelling wins it whole — a child `url` clears an inherited `baseUrl`/`path`, and a child `baseUrl`/`path` clears an inherited `url`.
--   **Objects** (`retry`, `throttle`, `timeout`, `input`, auth options): deep-merge field-wise.
--   **`hooks`**: **chain**, don't replace — base `onRequest` runs, then child's; `onResponse` unwinds child→base (middleware order). This is what makes a base like "always log + add trace header" actually composable.
--   **`output` / contracts**: replace (a child declares its own); compose explicitly with `schema.merge(...)` when you want to extend.
+- **Scalars** (`path`, `method`, `baseUrl`, `url`, `pick`): replace. The endpoint is one slot: `url` and `baseUrl`/`path` are mutually exclusive, so the last fragment to set either spelling wins it whole — a child `url` clears an inherited `baseUrl`/`path`, and a child `baseUrl`/`path` clears an inherited `url`.
+- **Objects** (`retry`, `throttle`, `timeout`, `input`, auth options): deep-merge field-wise.
+- **`hooks`**: **chain**, don't replace — base `onRequest` runs, then child's; `onResponse` unwinds child→base (middleware order). This is what makes a base like "always log + add trace header" actually composable.
+- **`output` / contracts**: replace (a child declares its own); compose explicitly with `schema.merge(...)` when you want to extend.
 
 ---
 
@@ -174,9 +174,9 @@ const getWebsite = stitch({
 
 **Inferred by default [proposed].** If you don't specify `auth`, StitchAPI infers a common strategy from signals:
 
--   an `Authorization: Bearer …`/`X-Api-Key` header in the example/curl you stitched from → Bearer/API-key, value resolved from a matching `*_TOKEN` / `*_API_KEY` env var;
--   a `Set-Cookie` from a provided login example → cookie session;
--   an OAuth2 token endpoint + client id/secret in env → client_credentials.
+- an `Authorization: Bearer …`/`X-Api-Key` header in the example/curl you stitched from → Bearer/API-key, value resolved from a matching `*_TOKEN` / `*_API_KEY` env var;
+- a `Set-Cookie` from a provided login example → cookie session;
+- an OAuth2 token endpoint + client id/secret in env → client_credentials.
 
 Inference is always overridable. (Progressive disclosure: it usually "just works"; you configure only when it can't guess.)
 
@@ -207,9 +207,9 @@ throttle: { rate: '1/s', concurrency: 2, pool: 'host' },   // proactive limiter
 timeout:  { total: '30s', perAttempt: '10s' },
 ```
 
--   **`throttle`** is _proactive_ — a token-bucket/concurrency cap to stay _under_ a vendor's limit (replaces the hand-rolled 1/s buckets and per-request delays integrations write by hand). `pool: 'host'` shares one limiter across all stitches hitting the same host.
--   **`retry`** is _reactive_ — backoff+jitter, honoring `Retry-After`.
--   All emit events (`retry`, `throttled`) onto the stream → visible in the trace for free.
+- **`throttle`** is _proactive_ — a token-bucket/concurrency cap to stay _under_ a vendor's limit (replaces the hand-rolled 1/s buckets and per-request delays integrations write by hand). `pool: 'host'` shares one limiter across all stitches hitting the same host.
+- **`retry`** is _reactive_ — backoff+jitter, honoring `Retry-After`.
+- All emit events (`retry`, `throttled`) onto the stream → visible in the trace for free.
 
 ---
 
@@ -262,9 +262,9 @@ One shape generalizes **HTTP progress/pagination** _and_ (future) **LLM token st
 
 Observability is a **consumer of the event stream**, not a separate system — and, like all state, it is **off until you opt in**:
 
--   **Off by default (zero infra):** a stitch traces nothing. Turn it on per stitch with `trace: 'console'` (colored stderr) or `trace: fileSink('runs.jsonl')` (JSONL on disk), or globally with `STITCH_TRACE_CONSOLE=1` / `STITCH_TRACE_FILE=<path>`. Either way you instantly have per-vendor latency, error rate, retry counts, throttle waits, and drift flags.
--   **Local viewer (zero infra):** `stitch run --trace` records the JSONL file (off without the flag — the CLI honors the same no-side-effects default), and `stitch trace` / `stitch top` reads it → p99, error rate, drift timeline, in your terminal.
--   **Opt-in bridge:** `STITCH_EXPORT=otlp` fans the _same_ events to Jaeger/Grafana/Langfuse when you have them, using OTel `http.*` semantic conventions.
+- **Off by default (zero infra):** a stitch traces nothing. Turn it on per stitch with `trace: 'console'` (colored stderr) or `trace: fileSink('runs.jsonl')` (JSONL on disk), or globally with `STITCH_TRACE_CONSOLE=1` / `STITCH_TRACE_FILE=<path>`. Either way you instantly have per-vendor latency, error rate, retry counts, throttle waits, and drift flags.
+- **Local viewer (zero infra):** `stitch run --trace` records the JSONL file (off without the flag — the CLI honors the same no-side-effects default), and `stitch trace` / `stitch top` reads it → p99, error rate, drift timeline, in your terminal.
+- **Opt-in bridge:** `STITCH_EXPORT=otlp` fans the _same_ events to Jaeger/Grafana/Langfuse when you have them, using OTel `http.*` semantic conventions.
 
 ---
 
@@ -456,22 +456,23 @@ const enrich = pipe(
 
 Two production apps (brand-neutral here) were audited end to end to test fit:
 
--   **An auth-gated SaaS** — a cookie-walled API plus a domain registrar (Bearer), an SMS gateway (OAuth2 client_credentials), and currency feeds.
--   **A multi-provider aggregator** — a GraphQL API (ApiKey + 1/s bucket), a cookie-session download client (403→relogin), a multi-cookie HTML-scrape tracker (drift-prone), a Bearer REST API, and two media servers with bespoke token headers.
+- **An auth-gated SaaS** — a cookie-walled API plus a domain registrar (Bearer), an SMS gateway (OAuth2 client_credentials), and currency feeds.
+- **A multi-provider aggregator** — a GraphQL API (ApiKey + 1/s bucket), a cookie-session download client (403→relogin), a multi-cookie HTML-scrape tracker (drift-prone), a Bearer REST API, and two media servers with bespoke token headers.
 
 A stitch is a **per-call primitive**, so the audit splits into three buckets.
 
 **Covered today (replaces hand-rolled code in both):** auth header injection (bearer/apikey/basic), cookie login + re-login on status, **content-aware "soft-auth" refresh** (a 200 that is really a login page), retry + `Retry-After`, in-process throttle (rate + concurrency), timeout/abort, form/multipart encoding, validation + leveled drift, HTML-scrape transform, GraphQL, static headers.
 
 **Planned additions (in scope, mostly additive):**
-| Addition | Why |
-|---|---|
-| **Pluggable state store** ⭐ | throttle + session/token state are in-memory; a `store` interface (in-memory default; Redis/Postgres adapter) turns _distributed rate-limiting_ and _persistent/shared sessions_ into a config choice. See §13. |
-| Pagination | auto-loop cursor/offset/Link; neither app has a generic one. |
-| OAuth2 `client_credentials` | token fetch + cache + expiry refresh, as an auth strategy. |
-| Multi-cookie jar | capture the full Set-Cookie set, not one named cookie. |
-| Binary/blob responses (+ stream) | arraybuffer/stream return for downloads. |
-| Circuit breaker · idempotency keys · OTLP export | resilience + the observability bridge (both apps already run OTel). |
+
+| Addition                                         | Why                                                                                                                                                                                                             |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pluggable state store** ⭐                     | throttle + session/token state are in-memory; a `store` interface (in-memory default; Redis/Postgres adapter) turns _distributed rate-limiting_ and _persistent/shared sessions_ into a config choice. See §13. |
+| Pagination                                       | auto-loop cursor/offset/Link; neither app has a generic one.                                                                                                                                                    |
+| OAuth2 `client_credentials`                      | token fetch + cache + expiry refresh, as an auth strategy.                                                                                                                                                      |
+| Multi-cookie jar                                 | capture the full Set-Cookie set, not one named cookie.                                                                                                                                                          |
+| Binary/blob responses (+ stream)                 | arraybuffer/stream return for downloads.                                                                                                                                                                        |
+| Circuit breaker · idempotency keys · OTLP export | resilience + the observability bridge (both apps already run OTel).                                                                                                                                             |
 
 **Out of scope — a stitch is not a platform:** job queues, inbound webhooks, business/DB idempotency, multi-step rollback/compensation, app-level response-cache policy, broad fan-out orchestration. These stay app concerns; absorbing them is how StitchAPI would become the heavy platform it's positioned against (§1).
 
@@ -495,8 +496,8 @@ const api = seam({
 });
 ```
 
--   **Throttle** reads/writes its rate counters through the store → a Redis-backed store gives _cross-process_ rate limiting with no change to the call site.
--   **Auth** (`cookieSession`, future `oauth2`) reads/writes the cookie jar / token through the store → sessions & tokens **survive restarts and are shared across workers**.
+- **Throttle** reads/writes its rate counters through the store → a Redis-backed store gives _cross-process_ rate limiting with no change to the call site.
+- **Auth** (`cookieSession`, future `oauth2`) reads/writes the cookie jar / token through the store → sessions & tokens **survive restarts and are shared across workers**.
 
 Default is in-memory (zero-config, single process). You opt into Redis/Postgres only when you scale out — progressive disclosure (§2) applied to state.
 
@@ -521,8 +522,8 @@ Next, to close the validated gaps (§12), in leverage order:
 
 ## 15. Open questions
 
--   ~~Composition syntax / call convention~~ — **resolved**: the composition facades supported (extends + `seam` for a whole shared surface); call = single-input-object + `.with()` + optional curried.
--   **Validation lib** — move from Zod-locked to **Standard Schema** (Zod/Valibot/ArkType)? (Recommended; affects bundle size.)
--   **Secret resolvers** — which to ship first: `env()`, `secretsFile()`, cloud secret managers?
--   **Query array format** — arrays currently serialize `qs`-style indexed (`ids[0]=1&ids[1]=2`), matching the pre-rebuild baseline. Should the format be configurable (`arrayFormat: 'indices' | 'brackets' | 'repeat'`), and which is the right default for the APIs we target? (Flagged for future review; behavior is fixed until then.)
--   **Visual** — Mermaid-from-definition first; how important is the live interactive trace view for v1?
+- ~~Composition syntax / call convention~~ — **resolved**: the composition facades supported (extends + `seam` for a whole shared surface); call = single-input-object + `.with()` + optional curried.
+- **Validation lib** — move from Zod-locked to **Standard Schema** (Zod/Valibot/ArkType)? (Recommended; affects bundle size.)
+- **Secret resolvers** — which to ship first: `env()`, `secretsFile()`, cloud secret managers?
+- **Query array format** — arrays currently serialize `qs`-style indexed (`ids[0]=1&ids[1]=2`), matching the pre-rebuild baseline. Should the format be configurable (`arrayFormat: 'indices' | 'brackets' | 'repeat'`), and which is the right default for the APIs we target? (Flagged for future review; behavior is fixed until then.)
+- **Visual** — Mermaid-from-definition first; how important is the live interactive trace view for v1?

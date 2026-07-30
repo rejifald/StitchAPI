@@ -97,9 +97,9 @@ Refs, stores, store proxies, signals, observables — different surfaces, but th
 
 If you already run a query/cache layer, the stitch doesn't fight it — it slots in as the call. The split is clean: **the query layer owns view state** (caching, invalidation, refetch policy) and **the stitch owns the call** (types, auth, resilience, drift).
 
--   **`@stitchapi/swr`** runs a stitch as an SWR fetcher; SWR keeps owning the cache.
--   **`@stitchapi/rtk-query`** runs a stitch as an RTK Query endpoint, with stream updates flowing through.
--   Each of the framework bindings above also ships an optional TanStack Query adapter (a plain `{ queryKey, queryFn }` object), so you can hand a stitch straight to `useQuery` without pulling the binding's own hooks into the picture.
+- **`@stitchapi/swr`** runs a stitch as an SWR fetcher; SWR keeps owning the cache.
+- **`@stitchapi/rtk-query`** runs a stitch as an RTK Query endpoint, with stream updates flowing through.
+- Each of the framework bindings above also ships an optional TanStack Query adapter (a plain `{ queryKey, queryFn }` object), so you can hand a stitch straight to `useQuery` without pulling the binding's own hooks into the picture.
 
 So the decision isn't "stitch bindings _or_ my query library." It's which layer owns view state — and the stitch is the call either way.
 

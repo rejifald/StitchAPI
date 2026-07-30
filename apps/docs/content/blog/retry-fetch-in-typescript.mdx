@@ -129,9 +129,9 @@ Because the policy lives on the definition, it composes instead of tangling. Eac
 
 The dozen lines above are a fine floor. For a single internal `GET` that flakes once a month they're clearer than a dependency, and a run-once script never meets the thundering herd that jitter exists to break up. What the helper can't do is stay in one place — the moment the rule has to hold the same way across a second call site, it gets copy-pasted, and the copies drift:
 
--   **A second endpoint needs the same policy.** "Retry the transient set, back off with jitter, honor `Retry-After`, and don't you dare retry that `POST`" is now duplicated logic, each copy free to fall out of step with the others.
--   **You want the policy visible, not trusted.** Buried in a shared helper three files away, retry is something a reader takes on faith. On the declaration it's a field they can see at the call site.
--   **The policy gains a neighbor.** The same definition takes a `timeout` next to `retry` — a per-attempt and total budget the loop never bounded — and surfaces each attempt as a `progress` event instead of a silent stall.
+- **A second endpoint needs the same policy.** "Retry the transient set, back off with jitter, honor `Retry-After`, and don't you dare retry that `POST`" is now duplicated logic, each copy free to fall out of step with the others.
+- **You want the policy visible, not trusted.** Buried in a shared helper three files away, retry is something a reader takes on faith. On the declaration it's a field they can see at the call site.
+- **The policy gains a neighbor.** The same definition takes a `timeout` next to `retry` — a per-attempt and total budget the loop never bounded — and surfaces each attempt as a `progress` event instead of a silent stall.
 
 That's the line, and crossing it is a field, not a rewrite: the same call gains `retry` declared once, applied by the engine rather than by convention. A stitch is the helper you'd graduate to anyway — it just starts where the helper tops out. If you're arriving here from axios interceptors rather than raw `fetch`, the same trade is mapped out in [axios alternatives](/blog/axios-alternatives).
 

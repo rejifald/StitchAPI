@@ -38,8 +38,8 @@ const { text } = await generateText({
 });
 ```
 
--   `inputSchema` — the schema the model fills (a Zod schema, or any AI SDK `Schema`).
--   `toInput` — maps the model's args onto the stitch's `{ params, query, body }`. Omit it when the args _are_ the stitch input.
+- `inputSchema` — the schema the model fills (a Zod schema, or any AI SDK `Schema`).
+- `toInput` — maps the model's args onto the stitch's `{ params, query, body }`. Omit it when the args _are_ the stitch input.
 
 `inputSchema` is the one required field, so it also goes positionally: when the model's args _are_ the stitch input and no description is needed, pass the schema directly —
 

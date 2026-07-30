@@ -92,8 +92,10 @@ export interface UseStitchResult<T> {
  * options minus `streaming` — which composable you call decides that
  * (`useStitch` is unary, `useStitchStream` streams).
  */
-export interface UseStitchOptions<T>
-    extends Omit<CreateStitchQueryOptions<T>, 'streaming'> {}
+export interface UseStitchOptions<T> extends Omit<
+    CreateStitchQueryOptions<T>,
+    'streaming'
+> {}
 
 // ---------------------------------------------------------------------------
 // Shared driver

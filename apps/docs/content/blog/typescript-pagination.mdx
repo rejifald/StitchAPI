@@ -127,10 +127,10 @@ The `do/while` over a cursor is a fine floor. A handful of pages from a well-beh
 
 You reach for `paginate` when the loop hits a wall:
 
--   **Rate limit on page seven.** A `429` mid-run means adding retry logic inside the loop — or pulling it out to a wrapper that now has to know about cursors. With `paginate`, `retry` is a field on the declaration.
--   **Throttle across pages.** Keeping the whole run under N requests per second means coordinating state across iterations. `throttle` on the stitch applies it per page without touching the pagination logic.
--   **An auth boundary.** Token refresh mid-run tangles into the loop. On a stitch it's a separate concern, declared beside `paginate`.
--   **A second paginated endpoint that needs the same handling.** Copy-pasting the loop copies the retry logic too. The stitch's policy is reused across both declarations.
+- **Rate limit on page seven.** A `429` mid-run means adding retry logic inside the loop — or pulling it out to a wrapper that now has to know about cursors. With `paginate`, `retry` is a field on the declaration.
+- **Throttle across pages.** Keeping the whole run under N requests per second means coordinating state across iterations. `throttle` on the stitch applies it per page without touching the pagination logic.
+- **An auth boundary.** Token refresh mid-run tangles into the loop. On a stitch it's a separate concern, declared beside `paginate`.
+- **A second paginated endpoint that needs the same handling.** Copy-pasting the loop copies the retry logic too. The stitch's policy is reused across both declarations.
 
 The loop and `paginate` walk the same pages. The difference is where the surrounding concerns live — in the loop body each time, or declared once beside it. Crossing from loop to stitch is a field on a declaration, not a rewrite.
 

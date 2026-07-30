@@ -853,13 +853,7 @@ function readStdin(): Promise<string> {
 // it per target and writes it idempotently (markers + --force; see rules-template.ts).
 
 type InitFormat =
-    | 'agents'
-    | 'cursor'
-    | 'claude'
-    | 'copilot'
-    | 'windsurf'
-    | 'cline'
-    | 'aider';
+    'agents' | 'cursor' | 'claude' | 'copilot' | 'windsurf' | 'cline' | 'aider';
 
 // How a rule is planted in a host file:
 //   standalone — a dedicated rule file we own; idempotent on existence, --force overwrites it.
