@@ -18,11 +18,12 @@
     /* Type families — Schibsted Grotesk (display), Hanken Grotesk
        (body), IBM Plex Mono (code). The bare --font-* vars are
        supplied by next/font in layout.tsx. */
-    --font-display: var(--font-schibsted), 'Schibsted Grotesk', system-ui,
-        sans-serif;
+    --font-display:
+        var(--font-schibsted), 'Schibsted Grotesk', system-ui, sans-serif;
     --font-sans: var(--font-hanken), 'Hanken Grotesk', system-ui, sans-serif;
-    --font-mono: var(--font-ibm-plex-mono), 'IBM Plex Mono', ui-monospace,
-        'SF Mono', monospace;
+    --font-mono:
+        var(--font-ibm-plex-mono), 'IBM Plex Mono', ui-monospace, 'SF Mono',
+        monospace;
 
     /* Type scale — display & h2 are fluid (clamp). */
     --fs-display: clamp(40px, 5.6vw, 68px);

@@ -56,10 +56,10 @@ const uploadVideo = stitch<{ id: string; url: string }>({
 
 Each field replaces glue you would otherwise write:
 
--   `adapter: xhrAdapter()` routes the request through `XMLHttpRequest` instead of the default `fetchAdapter()`, so `xhr.upload` is available to report bytes sent. It is **browser-only** (it needs `XMLHttpRequest`) and **buffered**, not streaming — it reads the whole response into memory, and rejects a `stream` request. Upload progress is its reason to exist.
--   `bodyType: 'multipart'` encodes the body as `multipart/form-data` and sets the boundary header for you.
--   `auth: bearer(env('API_TOKEN'))` resolves the token at call time and sets the `Authorization` header; the caller never holds the secret.
--   `output` validates the JSON the server returns, so a successful `await` hands back a typed `{ id, url }` — not `unknown`.
+- `adapter: xhrAdapter()` routes the request through `XMLHttpRequest` instead of the default `fetchAdapter()`, so `xhr.upload` is available to report bytes sent. It is **browser-only** (it needs `XMLHttpRequest`) and **buffered**, not streaming — it reads the whole response into memory, and rejects a `stream` request. Upload progress is its reason to exist.
+- `bodyType: 'multipart'` encodes the body as `multipart/form-data` and sets the boundary header for you.
+- `auth: bearer(env('API_TOKEN'))` resolves the token at call time and sets the `Authorization` header; the caller never holds the secret.
+- `output` validates the JSON the server returns, so a successful `await` hands back a typed `{ id, url }` — not `unknown`.
 
 A multipart **file part** in the body can be a `Blob` (a `File` is a `Blob`), a `Uint8Array`, or a `{ value, filename?, type? }` wrapper when you want to name the part or set its content type explicitly. Scalar values — strings, numbers — become string parts. So the body for this stitch is a plain object whose `file` key holds the upload.
 
@@ -131,8 +131,8 @@ The bar now moves because it is reading real bytes off the wire, not a timer pre
 
 Two controls travel with the call this way, and in both cases **the call argument wins over a bound or configured value**:
 
--   `onProgress`, above — supply a different callback per upload without redeclaring the stitch.
--   `signal`, an `AbortSignal` — pass `{ body, onProgress, signal }` and a cancel button aborts the in-flight upload.
+- `onProgress`, above — supply a different callback per upload without redeclaring the stitch.
+- `signal`, an `AbortSignal` — pass `{ body, onProgress, signal }` and a cancel button aborts the in-flight upload.
 
 ```ts twoslash
 import { bearer, env, stitch, xhrAdapter } from 'stitchapi';

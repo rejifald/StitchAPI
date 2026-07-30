@@ -67,9 +67,9 @@ const getOrder = async (id: number) => {
 
 **Tier two is drift — the soft, non-fatal layer.** Once a response validates, StitchAPI returns the _validated_ value (coerced, defaulted, unknown keys stripped) and diffs the raw body against it. That difference is the drift, and it catches three things plain validation hides:
 
--   **`coerced`** — the schema quietly absorbed a wire-type shift. A defensive `z.coerce.number()` turns the provider's new `"42"` back into `42`, validation passes, and _nothing_ tells you the wire format changed — except the diff. This is drift intel you can't get any other way.
--   **`undeclared`** — the response carried a key your schema doesn't model. The API grew something.
--   **`defaulted`** — a `.default()` fired because a field you expected wasn't there.
+- **`coerced`** — the schema quietly absorbed a wire-type shift. A defensive `z.coerce.number()` turns the provider's new `"42"` back into `42`, validation passes, and _nothing_ tells you the wire format changed — except the diff. This is drift intel you can't get any other way.
+- **`undeclared`** — the response carried a key your schema doesn't model. The API grew something.
+- **`defaulted`** — a `.default()` fired because a field you expected wasn't there.
 
 No snapshot. No baseline to generate, commit, or regenerate when the API legitimately changes. The contract is the code.
 
@@ -127,10 +127,10 @@ If you own the API and deploy both sides in lockstep, a plain `output` schema is
 
 The honest edges of what drift watches:
 
--   **It observes the responses you actually receive — it is not a contract test.** Drift checks the live calls your code makes; it doesn't probe every endpoint with synthetic traffic. A field in a response path you never exercise isn't checked until something calls it. Exhaustive surface coverage is a contract-testing job.
--   **Drift watches the surface you declare.** The flip side of anchoring on your schema: change the provider makes in a field you don't model is, by definition, change you don't consume — so it's invisible. That's a deliberate scope, not an accident. (Catching drift in undeclared fields would need the provider's published spec, or the kind of remembered-sample baseline this design rejected.)
--   **Severity is yours, including the mistakes.** What you make required is what throws; under-specify and a real break slips through as a `warn` nobody reads, over-specify and you fail calls over a tolerable shift. The schema is the dial — it doesn't tell you where to set it.
--   **Keep transforms out of the schema.** Drift diffs the raw body against the validated value, so a `.transform()` _inside_ the schema looks like drift. Reshape in the pipeline `transform` step instead, which runs before validation.
+- **It observes the responses you actually receive — it is not a contract test.** Drift checks the live calls your code makes; it doesn't probe every endpoint with synthetic traffic. A field in a response path you never exercise isn't checked until something calls it. Exhaustive surface coverage is a contract-testing job.
+- **Drift watches the surface you declare.** The flip side of anchoring on your schema: change the provider makes in a field you don't model is, by definition, change you don't consume — so it's invisible. That's a deliberate scope, not an accident. (Catching drift in undeclared fields would need the provider's published spec, or the kind of remembered-sample baseline this design rejected.)
+- **Severity is yours, including the mistakes.** What you make required is what throws; under-specify and a real break slips through as a `warn` nobody reads, over-specify and you fail calls over a tolerable shift. The schema is the dial — it doesn't tell you where to set it.
+- **Keep transforms out of the schema.** Drift diffs the raw body against the validated value, so a `.transform()` _inside_ the schema looks like drift. Reshape in the pipeline `transform` step instead, which runs before validation.
 
 None of that changes the core trade. Without drift, a quietly renamed field is an `undefined` you discover from a production incident. With it, a required field's loss throws on the request that actually drifted, and a coercion or new key is a `drift` event on a named path — caught at the boundary, not on the call that finally fell over.
 

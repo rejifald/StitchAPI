@@ -13,17 +13,17 @@ Each one is small on purpose. They plug into a handful of **stable seams**, so a
 new integration is ~100 lines over an existing contract, not a rewrite — and every
 companion is proven against the same conformance kits the core ships:
 
--   **Backend seam** — lifecycle, request-scoped principal (`seam.as(user)`), an
-    SSE→response bridge, and an error→HTTP mapping, identical across frameworks.
--   **Reactive store** — [`@stitchapi/query-core`](/docs/integrations/react) owns a
-    framework-agnostic `subscribe` / `getSnapshot` store; each frontend binding is a
-    few lines against its own primitive.
--   **[`TraceSink`](/docs/guides/observability/trace-sinks)** — forward the typed
-    [event stream](/docs/concepts/event-stream) to the logger or telemetry pipeline
-    you already run.
--   **[`StitchStore`](/docs/guides/state/pluggable-store)** — move throttle counters,
-    sessions, and cache into a shared backend so they go fleet-wide with no call-site
-    change.
+- **Backend seam** — lifecycle, request-scoped principal (`seam.as(user)`), an
+  SSE→response bridge, and an error→HTTP mapping, identical across frameworks.
+- **Reactive store** — [`@stitchapi/query-core`](/docs/integrations/react) owns a
+  framework-agnostic `subscribe` / `getSnapshot` store; each frontend binding is a
+  few lines against its own primitive.
+- **[`TraceSink`](/docs/guides/observability/trace-sinks)** — forward the typed
+  [event stream](/docs/concepts/event-stream) to the logger or telemetry pipeline
+  you already run.
+- **[`StitchStore`](/docs/guides/state/pluggable-store)** — move throttle counters,
+  sessions, and cache into a shared backend so they go fleet-wide with no call-site
+  change.
 
 ## Server frameworks
 

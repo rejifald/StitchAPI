@@ -1,8 +1,8 @@
 # ADR 0010 — An injectable `Clock` for deterministic time in tests
 
--   **Status:** Accepted
--   **Date:** 2026-06-18
--   **Tags:** testing, time, retry, throttle, timeout, circuit, seam, determinism
+- **Status:** Accepted
+- **Date:** 2026-06-18
+- **Tags:** testing, time, retry, throttle, timeout, circuit, seam, determinism
 
 > [!NOTE]
 >
@@ -30,8 +30,8 @@ This fits the project's "contract, not dependency" model exactly: a `Clock` is t
 
 ## Consequences
 
--   **Deterministic, zero-wait tests** for the four time-driven behaviours, via the published `manualClock()` + the `mockAdapter` from the same entry. No fake-timer library, no monkeypatching `Date`/`setTimeout`.
--   **No behaviour change by default.** `systemClock` is the default at every site; the full suite is green unchanged. The new capability activates only when a `Clock` is injected.
--   **Bundle cost:** the seam adds ~0.14 kB to the `import { stitch }` path (it threads through the hot path), nudging the advertised tree-shaken size from ~17 kB to ~18 kB (still within the CI budget). The whole entry stays ~22 kB.
--   **Advanced users can BYO clock** — any object satisfying `Clock` (e.g. a wrapper over `@sinonjs/fake-timers`) plugs in via `clock`, since `Clock` and `systemClock` are exported from the main entry.
--   **Follow-ups (out of scope here):** driving `timeout.total`, event timestamps, and store/cache TTL off the clock, should a concrete need arise.
+- **Deterministic, zero-wait tests** for the four time-driven behaviours, via the published `manualClock()` + the `mockAdapter` from the same entry. No fake-timer library, no monkeypatching `Date`/`setTimeout`.
+- **No behaviour change by default.** `systemClock` is the default at every site; the full suite is green unchanged. The new capability activates only when a `Clock` is injected.
+- **Bundle cost:** the seam adds ~0.14 kB to the `import { stitch }` path (it threads through the hot path), nudging the advertised tree-shaken size from ~17 kB to ~18 kB (still within the CI budget). The whole entry stays ~22 kB.
+- **Advanced users can BYO clock** — any object satisfying `Clock` (e.g. a wrapper over `@sinonjs/fake-timers`) plugs in via `clock`, since `Clock` and `systemClock` are exported from the main entry.
+- **Follow-ups (out of scope here):** driving `timeout.total`, event timestamps, and store/cache TTL off the clock, should a concrete need arise.

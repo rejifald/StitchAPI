@@ -86,17 +86,17 @@ export function dirnameOf(path: string): string {
 }
 ```
 
--   **No static `node:` specifier exists in the reachable graph.** `getBuiltinModule`
-    takes `'node:fs'` as a _runtime string_, so a browser bundler never tries to
-    resolve it. Off Node, `process` is absent → the optional chain returns
-    `undefined` → file features (JSONL trace, drift snapshots, `secretsFile`) become
-    explicit no-ops, never crashes.
--   **Crypto uses Web Crypto** (`globalThis.crypto`) with a non-secret Math.random
-    fallback for idempotency keys / span ids.
--   **The CLI/HTTP/MCP front doors** (`cli`, `serve`, `mcp`, `registry`) keep their
-    honest static `node:` imports. They are **subpath-only** (`stitchapi/serve`,
-    etc.) and are _not_ exported from the root barrel, so `import { stitch }` never
-    pulls them (verified: they don't appear in the browser bundle; §6).
+- **No static `node:` specifier exists in the reachable graph.** `getBuiltinModule`
+  takes `'node:fs'` as a _runtime string_, so a browser bundler never tries to
+  resolve it. Off Node, `process` is absent → the optional chain returns
+  `undefined` → file features (JSONL trace, drift snapshots, `secretsFile`) become
+  explicit no-ops, never crashes.
+- **Crypto uses Web Crypto** (`globalThis.crypto`) with a non-secret Math.random
+  fallback for idempotency keys / span ids.
+- **The CLI/HTTP/MCP front doors** (`cli`, `serve`, `mcp`, `registry`) keep their
+  honest static `node:` imports. They are **subpath-only** (`stitchapi/serve`,
+  etc.) and are _not_ exported from the root barrel, so `import { stitch }` never
+  pulls them (verified: they don't appear in the browser bundle; §6).
 
 This is strictly better than a build-time swap: **one published artifact**, no
 shim modules to drift out of sync with core, and the "browser-safe" property lives
@@ -145,11 +145,11 @@ nothing distinguishes the browser-legit subpaths from the server-only ones.
 `test/gaps/browser-bundle.spec.ts` asserts the browser bundle (a) builds and
 (b) contains no `from "node:"`/`require("node:")`. Both already pass. But:
 
--   it has **no `Buffer` assertion**, so gap 1 sails through;
--   it is **pure string-matching** — it never runs the bundle, so it cannot prove a
-    stitch actually _executes_ where only `fetch` exists ("assert no shims");
--   it covers only `index` + `sse` + `stream`, not the other browser-legit subpaths
-    or the server-only ones.
+- it has **no `Buffer` assertion**, so gap 1 sails through;
+- it is **pure string-matching** — it never runs the bundle, so it cannot prove a
+  stitch actually _executes_ where only `fetch` exists ("assert no shims");
+- it covers only `index` + `sse` + `stream`, not the other browser-legit subpaths
+  or the server-only ones.
 
 ---
 
@@ -227,13 +227,13 @@ the `bin`, not an export, so it is unaffected.
 
 Extend the existing file (see §5 for the full design):
 
--   add a **`Buffer` pin** to the static bundle check (catches gap 1);
--   parametrize the static check over **all 9 browser-legit subpaths**;
--   add **negative pins**: `serve`/`mcp`/`registry` must _fail_ to bundle for the
-    browser (regression-pins the server/browser split);
--   add a **behavioral test**: bundle `src/index.ts`, run it in a Node-free `vm`
-    context (no `process`/`Buffer`/`require`), execute a stitch, assert it returns
-    and sets the right `Authorization` header.
+- add a **`Buffer` pin** to the static bundle check (catches gap 1);
+- parametrize the static check over **all 9 browser-legit subpaths**;
+- add **negative pins**: `serve`/`mcp`/`registry` must _fail_ to bundle for the
+  browser (regression-pins the server/browser split);
+- add a **behavioral test**: bundle `src/index.ts`, run it in a Node-free `vm`
+  context (no `process`/`Buffer`/`require`), execute a stitch, assert it returns
+  and sets the right `Authorization` header.
 
 ### 4.4 `apps/docs/.../getting-started/installation.mdx` — make the promise true
 
@@ -258,11 +258,11 @@ For each **browser-legit** entry (`index`, `graphql`, `sse`, `stream`,
 `download`, `cache`, `fingerprint`, `xhr-adapter`, `testing`): esbuild
 `platform:'browser'`, `write:false`, then assert
 
--   `errors === []` (resolves with no unshimmed `node:*`),
--   output does **not** match `/from\s*["']node:|require\(["']node:/` (the existing
-    narrow regex — correctly ignores the `getBuiltinModule("node:fs")` _string_),
--   **new:** output does **not** match `/\bBuffer\b/`,
--   output length `> 0`.
+- `errors === []` (resolves with no unshimmed `node:*`),
+- output does **not** match `/from\s*["']node:|require\(["']node:/` (the existing
+  narrow regex — correctly ignores the `getBuiltinModule("node:fs")` _string_),
+- **new:** output does **not** match `/\bBuffer\b/`,
+- output length `> 0`.
 
 Keep the existing `sse`/`stream` "no `EventSource`" pin and the bundle-frugal
 pins (`index`/`engine` don't statically import a streaming surface).
@@ -377,17 +377,17 @@ else in the browser-reachable surface is clean today.
 
 ## 7. Non-goals / risks
 
--   **Not** introducing a separate browser build. Isomorphism is the design; a
-    divergent build would reintroduce the exact drift the audit complained about.
--   **Not** changing OTLP/trace browser _behavior_ in core. `otlpHttpExporter()`
-    doing a real `fetch` is correct for a browser app that wants it; the sandbox's
-    no-op-egress is a CSP policy that stays in `docs/`.
--   **Not** removing the server-tier subpaths' `node:*` imports. They are honest and
-    subpath-isolated; the guard's layer 2 keeps them out of the browser graph.
--   **`btoa` Node floor:** Node ≥ 16 (a global since 16.0). The package has no
-    `engines` floor below that; Node 18 is the practical minimum. Low risk.
--   **attw:** the `browser` condition must keep `check:exports` green — verify in
-    the PR (types kept consistent; see §4.2).
+- **Not** introducing a separate browser build. Isomorphism is the design; a
+  divergent build would reintroduce the exact drift the audit complained about.
+- **Not** changing OTLP/trace browser _behavior_ in core. `otlpHttpExporter()`
+  doing a real `fetch` is correct for a browser app that wants it; the sandbox's
+  no-op-egress is a CSP policy that stays in `docs/`.
+- **Not** removing the server-tier subpaths' `node:*` imports. They are honest and
+  subpath-isolated; the guard's layer 2 keeps them out of the browser graph.
+- **`btoa` Node floor:** Node ≥ 16 (a global since 16.0). The package has no
+  `engines` floor below that; Node 18 is the practical minimum. Low risk.
+- **attw:** the `browser` condition must keep `check:exports` green — verify in
+  the PR (types kept consistent; see §4.2).
 
 ---
 

@@ -29,11 +29,12 @@
 
     /* Type families (mirror the stacks in tokens.css; the bare --font-*
        vars come from next/font in layout.tsx). */
-    --font-display: var(--font-schibsted), 'Schibsted Grotesk', system-ui,
-        sans-serif;
+    --font-display:
+        var(--font-schibsted), 'Schibsted Grotesk', system-ui, sans-serif;
     --font-sans: var(--font-hanken), 'Hanken Grotesk', system-ui, sans-serif;
-    --font-mono: var(--font-ibm-plex-mono), 'IBM Plex Mono', ui-monospace,
-        'SF Mono', monospace;
+    --font-mono:
+        var(--font-ibm-plex-mono), 'IBM Plex Mono', ui-monospace, 'SF Mono',
+        monospace;
 }
 
 /* Brand alias: point the site's brand handles at the Signal tokens. These

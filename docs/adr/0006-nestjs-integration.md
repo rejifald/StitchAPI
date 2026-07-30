@@ -1,8 +1,8 @@
 # ADR 0006 — NestJS integration (`@stitchapi/nest`)
 
--   **Status:** Accepted (Q1–Q2 resolved 2026-06-15; `@stitchapi/nest` implemented in PR [#103](https://github.com/rejifald/StitchAPI/pull/103) — see _Resolved questions_). Net-new: not in [`GAP-AUDIT.md`](../GAP-AUDIT.md). Builds only on existing core extension points.
--   **Date:** 2026-06-15
--   **Tags:** integration, nestjs, adapter, packaging, dependency-injection, multi-tenant, peer-dependency, contract-not-dependency
+- **Status:** Accepted (Q1–Q2 resolved 2026-06-15; `@stitchapi/nest` implemented in PR [#103](https://github.com/rejifald/StitchAPI/pull/103) — see _Resolved questions_). Net-new: not in [`GAP-AUDIT.md`](../GAP-AUDIT.md). Builds only on existing core extension points.
+- **Date:** 2026-06-15
+- **Tags:** integration, nestjs, adapter, packaging, dependency-injection, multi-tenant, peer-dependency, contract-not-dependency
 
 > [!NOTE]
 >
@@ -38,9 +38,9 @@ There is precedent for "host integration as a thin, framework-free adapter over 
 
 2.  **Separate app-global _infrastructure_ from per-upstream _surface_.** A real backend integrates several upstreams (Stripe + GitHub + an internal service), each with its own `baseUrl`/`auth`/`throttle`/`retry` — but it wants **one** Redis and **one** Logger. So:
 
-    -   **`forRoot({ store?, trace?, ...defaultSeam? })`** configures shared infrastructure once and exposes it as injectable tokens — `STITCH_STORE` (borrowed if you pass one, else an owned `memoryStore()`) and `STITCH_TRACE` — plus (for the single-upstream common case) an optional **default seam** (`STITCH_SEAM`) carrying app-wide `SeamConfig` defaults.
-    -   **Each additional upstream is its own seam**, created by a feature module via `forFeature({ stitches, seam })` (Decision 4, **Q1**), which builds the seam from the shared `STITCH_STORE`/`STITCH_TRACE` but layers its own surface config. "Which seam does a stitch belong to?" is answered by **which module registered it** — the natural Nest grain (one feature module ≈ one bounded context ≈ one upstream).
-    -   A small **`SeamRegistry`** singleton (provided by `forRoot`) collects every seam created in the app so a single lifecycle guardian can flush their traces and close package-created stores (Decision 8).
+    - **`forRoot({ store?, trace?, ...defaultSeam? })`** configures shared infrastructure once and exposes it as injectable tokens — `STITCH_STORE` (borrowed if you pass one, else an owned `memoryStore()`) and `STITCH_TRACE` — plus (for the single-upstream common case) an optional **default seam** (`STITCH_SEAM`) carrying app-wide `SeamConfig` defaults.
+    - **Each additional upstream is its own seam**, created by a feature module via `forFeature({ stitches, seam })` (Decision 4, **Q1**), which builds the seam from the shared `STITCH_STORE`/`STITCH_TRACE` but layers its own surface config. "Which seam does a stitch belong to?" is answered by **which module registered it** — the natural Nest grain (one feature module ≈ one bounded context ≈ one upstream).
+    - A small **`SeamRegistry`** singleton (provided by `forRoot`) collects every seam created in the app so a single lifecycle guardian can flush their traces and close package-created stores (Decision 8).
 
 3.  **`forRoot` / `forRootAsync` provide the seam(s).** The seam is exposed under a symbol token (`STITCH_SEAM` for the default seam); `forRootAsync` is the path that lets `ConfigService` reach the store, secrets, and `baseUrl`.
 
@@ -232,8 +232,8 @@ There is precedent for "host integration as a thin, framework-free adapter over 
 
     Two caveats, both documented:
 
-    -   **Scope bubbling.** A request-scoped provider makes its consumers request-scoped too — a real per-request instantiation cost. Teams that want singleton services can instead keep everything singleton and bind at the edge: `this.api.as(req.user.tenantId).stitch(...)`. The package offers both; the request-scoped wiring is the default convenience.
-    -   **Non-HTTP contexts.** `REQUEST` does not exist in BullMQ processors, `@Cron` jobs, or microservice consumers. There, the principal is **bound explicitly** from job/message metadata: inject the singleton seam and call `seam.as(job.data.tenantId)`. `seam.as` is the primitive; request scope is only an HTTP-edge convenience over it.
+    - **Scope bubbling.** A request-scoped provider makes its consumers request-scoped too — a real per-request instantiation cost. Teams that want singleton services can instead keep everything singleton and bind at the edge: `this.api.as(req.user.tenantId).stitch(...)`. The package offers both; the request-scoped wiring is the default convenience.
+    - **Non-HTTP contexts.** `REQUEST` does not exist in BullMQ processors, `@Cron` jobs, or microservice consumers. There, the principal is **bound explicitly** from job/message metadata: inject the singleton seam and call `seam.as(job.data.tenantId)`. `seam.as` is the primitive; request scope is only an HTTP-edge convenience over it.
 
 6.  **`trace` → Nest `Logger` via `loggerSink()`.** A `TraceSink` whose `handle` forwards the event stream to a framework `Logger`:
 
@@ -306,7 +306,7 @@ There is precedent for "host integration as a thin, framework-free adapter over 
 
     Two correctness points:
 
-    -   **`seam.close()` always closes its store** ([`seam.ts:171`](../../packages/core/src/seam.ts)). With many seams sharing one store, that would close it N times (the second close disconnects a pool the others still need). So the package wraps any **app-provided** store in a **borrowed view** (below) before handing it to each seam: a seam never tears down a store it did not create, and an app-provided store stays the **app's** to dispose. `SeamRegistry.closeAll()` flushes every seam's trace and closes only the stores the package itself created.
+    - **`seam.close()` always closes its store** ([`seam.ts:171`](../../packages/core/src/seam.ts)). With many seams sharing one store, that would close it N times (the second close disconnects a pool the others still need). So the package wraps any **app-provided** store in a **borrowed view** (below) before handing it to each seam: a seam never tears down a store it did not create, and an app-provided store stays the **app's** to dispose. `SeamRegistry.closeAll()` flushes every seam's trace and closes only the stores the package itself created.
 
         ```ts
         // `close` intentionally omitted → a seam's `store.close?.()` becomes a no-op.
@@ -321,67 +321,67 @@ There is precedent for "host integration as a thin, framework-free adapter over 
 
         When `forRoot` is given no `store`, the package creates and **owns** one `memoryStore()` (shared via `STITCH_STORE`), and `closeAll()` closes it — the simple case stays simple. Borrowing applies only to a store the app passed in.
 
-    -   **`enableShutdownHooks()` is required.** Nest does not invoke `OnApplicationShutdown` unless the app calls `app.enableShutdownHooks()`. Without it, `seam.close()` never runs (trace unflushed, store unclosed). A library cannot force this; the README's first setup step states it prominently.
+    - **`enableShutdownHooks()` is required.** Nest does not invoke `OnApplicationShutdown` unless the app calls `app.enableShutdownHooks()`. Without it, `seam.close()` never runs (trace unflushed, store unclosed). A library cannot force this; the README's first setup step states it prominently.
 
 9.  **Testing: swap the transport, or override the provider.** Two clean paths, both first-class:
 
-    -   **Globally** — `forRoot({ adapter: mockAdapter })` (or a `forRootAsync` test factory) routes every stitch through a mock transport; the seam's `adapter` slot is part of `SeamConfig` for exactly this.
-    -   **Per stitch** — `Test.createTestingModule(...).overrideProvider(GetUser.token).useValue(fakeStitch)`.
+    - **Globally** — `forRoot({ adapter: mockAdapter })` (or a `forRootAsync` test factory) routes every stitch through a mock transport; the seam's `adapter` slot is part of `SeamConfig` for exactly this.
+    - **Per stitch** — `Test.createTestingModule(...).overrideProvider(GetUser.token).useValue(fakeStitch)`.
 
     Pair with `stitchapi/testing` (the conformance kit) for adapter-level assertions.
 
 10. **Non-goals for this version (anticipated, not built).** Kept out to stay thin; each is a clean follow-up:
 
-    -   **Exception mapping** — a `StitchExceptionFilter` mapping `StitchError.status` ([`stitch.ts:209`](../../packages/core/src/stitch.ts)) → Nest `HttpException`. Opt-in; today the app writes its own filter.
-    -   **SSE controller bridge** — `stitch.stream()` is an `AsyncGenerator`; Nest's `@Sse()` wants an RxJS `Observable`. A `from()` interop is ~3 lines but pulls `rxjs` (an optional peer); documented as a snippet for now.
-    -   **Terminus health indicator** — a `StitchHealthIndicator` that pings a stitch.
-    -   **Nest GraphQL (server) disambiguation** — StitchAPI's `graphql()` is a _client_ surface (calling an upstream GraphQL API); it does not interact with `@nestjs/graphql` (a server). A one-paragraph README note prevents the confusion.
+    - **Exception mapping** — a `StitchExceptionFilter` mapping `StitchError.status` ([`stitch.ts:209`](../../packages/core/src/stitch.ts)) → Nest `HttpException`. Opt-in; today the app writes its own filter.
+    - **SSE controller bridge** — `stitch.stream()` is an `AsyncGenerator`; Nest's `@Sse()` wants an RxJS `Observable`. A `from()` interop is ~3 lines but pulls `rxjs` (an optional peer); documented as a snippet for now.
+    - **Terminus health indicator** — a `StitchHealthIndicator` that pings a stitch.
+    - **Nest GraphQL (server) disambiguation** — StitchAPI's `graphql()` is a _client_ surface (calling an upstream GraphQL API); it does not interact with `@nestjs/graphql` (a server). A one-paragraph README note prevents the confusion.
 
 ## Resolved questions
 
 Both resolved 2026-06-15 (the recommended option chosen for each); folded into the Decisions above.
 
--   **Q1 — Feature-seam ergonomics → `forFeature({ stitches, seam? })` (Decision 4).** The feature module owns one seam, the most idiomatic Nest grain; lifecycle stays in `SeamRegistry`. The feature seam is built over the shared `STITCH_STORE`/`STITCH_TRACE` tokens `forRoot` exposes (Decision 3). A bare `StitchDef[]` is shorthand for `{ stitches }` on the default seam. Rejected: a dedicated `forSeam(token, opts)` (a non-standard fourth static) and a `forRoot({ seams })` map (couples every upstream to root config, scales poorly).
+- **Q1 — Feature-seam ergonomics → `forFeature({ stitches, seam? })` (Decision 4).** The feature module owns one seam, the most idiomatic Nest grain; lifecycle stays in `SeamRegistry`. The feature seam is built over the shared `STITCH_STORE`/`STITCH_TRACE` tokens `forRoot` exposes (Decision 3). A bare `StitchDef[]` is shorthand for `{ stitches }` on the default seam. Rejected: a dedicated `forSeam(token, opts)` (a non-standard fourth static) and a `forRoot({ seams })` map (couples every upstream to root config, scales poorly).
 
--   **Q2 — `trace` default → OFF (Decisions 3 & 6).** Honors **"no side effects by default"** ([`no-side-effects-default`](../OVERVIEW.md)): a stitch's only effect is its call. The friendly opt-in is the string sentinel **`trace: 'logger'`**, which `forRoot`/`forRootAsync` expand to `loggerSink(new Logger('Stitch'))` — one word, no import. Any `TraceSink` / `'console'` / `false` still passes straight through to core. (My first sketch defaulted it on; this corrected it.)
+- **Q2 — `trace` default → OFF (Decisions 3 & 6).** Honors **"no side effects by default"** ([`no-side-effects-default`](../OVERVIEW.md)): a stitch's only effect is its call. The friendly opt-in is the string sentinel **`trace: 'logger'`**, which `forRoot`/`forRootAsync` expand to `loggerSink(new Logger('Stitch'))` — one word, no import. Any `TraceSink` / `'console'` / `false` still passes straight through to core. (My first sketch defaulted it on; this corrected it.)
 
 ## Consequences
 
 **Positive**
 
--   **No core change.** Every bridge rides an existing extension point; core stays at its current surface, and the contract-not-dependency gate is green by construction (the package adds no capability, declares `stitchapi` as a peer).
--   **One mental model:** the root/feature seam is a provider; a stitch is a provider built from it; a tenant is `seam.as()` in request scope. Nothing new to learn beyond core + Nest DI.
--   **Correctness the recipe can't guarantee:** single core instance (peer dep), lifecycle (`SeamRegistry.closeAll`), the principal boundary, and credential-safe logging are owned once.
--   **Idiomatic Nest:** `forRoot`/`forRootAsync`/`forFeature`, `ConfigService` and `Logger` bridges, request-scoped multi-tenant, and a clean testing override story.
+- **No core change.** Every bridge rides an existing extension point; core stays at its current surface, and the contract-not-dependency gate is green by construction (the package adds no capability, declares `stitchapi` as a peer).
+- **One mental model:** the root/feature seam is a provider; a stitch is a provider built from it; a tenant is `seam.as()` in request scope. Nothing new to learn beyond core + Nest DI.
+- **Correctness the recipe can't guarantee:** single core instance (peer dep), lifecycle (`SeamRegistry.closeAll`), the principal boundary, and credential-safe logging are owned once.
+- **Idiomatic Nest:** `forRoot`/`forRootAsync`/`forFeature`, `ConfigService` and `Logger` bridges, request-scoped multi-tenant, and a clean testing override story.
 
 **Accepted trade-offs**
 
--   **Request-scoped multi-tenant bubbles scope** to consumers (per-request instantiation). Mitigated by offering the singleton + edge-binding alternative.
--   **Synchronous secrets** (Decision 7): per-call async secret fetch is unsupported; rotating credentials go through `oauth2`/`cookieSession`.
--   **In-process concurrency is per-instance.** Horizontally scaled (multi-pod) deployments share _rate_ limits only through a shared store; concurrency caps stay per-pod ([`store.ts:96`](../../packages/core/src/store.ts)). Documented, not solved here (a distributed semaphore is out of scope, same as core).
+- **Request-scoped multi-tenant bubbles scope** to consumers (per-request instantiation). Mitigated by offering the singleton + edge-binding alternative.
+- **Synchronous secrets** (Decision 7): per-call async secret fetch is unsupported; rotating credentials go through `oauth2`/`cookieSession`.
+- **In-process concurrency is per-instance.** Horizontally scaled (multi-pod) deployments share _rate_ limits only through a shared store; concurrency caps stay per-pod ([`store.ts:96`](../../packages/core/src/store.ts)). Documented, not solved here (a distributed semaphore is out of scope, same as core).
 
 **Required follow-ups**
 
--   Resolve Q1 + Q2, then scaffold `packages/nest` (package.json mirroring `fingerprint-*`; `DynamicModule`, `defineStitch`/`forFeature`, `loggerSink`, `fromConfig`, `borrowStore`, `SeamRegistry`, `StitchLifecycle`).
--   Confirm npm scope ownership before publishing the first `@stitchapi/*` package ([ADR 0001](./0001-package-naming-and-distribution.md) follow-up — still open).
--   A docs guide under `apps/docs` (the recipe + the bridges), and an end-to-end vitest against a real Nest test module + the mock server.
+- Resolve Q1 + Q2, then scaffold `packages/nest` (package.json mirroring `fingerprint-*`; `DynamicModule`, `defineStitch`/`forFeature`, `loggerSink`, `fromConfig`, `borrowStore`, `SeamRegistry`, `StitchLifecycle`).
+- Confirm npm scope ownership before publishing the first `@stitchapi/*` package ([ADR 0001](./0001-package-naming-and-distribution.md) follow-up — still open).
+- A docs guide under `apps/docs` (the recipe + the bridges), and an end-to-end vitest against a real Nest test module + the mock server.
 
 ## Alternatives considered
 
--   **A. Recipe-only, no package.** A documented `useFactory: () => seam({...})` provider. Cheapest, and stays valid as the package's own internals doc. Rejected as the _primary_ answer because it cannot enforce the three correctness items (peer-dep single instance, lifecycle, credential-safe logging) and re-litigates the principal wiring in every app. **Kept as the package README's "under the hood."**
--   **B. Single global seam only** (the brief's literal `forRoot({ store, trace, preset })`). Simplest, but a real backend integrates multiple upstreams with different `baseUrl`/`auth`; one seam cannot model that. Rejected in favour of the infra-vs-surface split (Decision 2), which keeps the single-upstream case a one-liner (the default seam) while supporting many.
--   **C. Per-stitch, no seam** (plain `stitch()` + a shared config fragment via `extends`). Avoids the seam abstraction, but each stitch then builds its _own_ store/throttle/trace runtime — losing the shared throttle bucket, the shared vault, the principal boundary, and a single lifecycle. The seam exists precisely for a long-lived shared surface; a server is the canonical case. Rejected.
--   **D. Fold Nest support into core** (a `stitchapi/nest` subpath). Violates [ADR 0001](./0001-package-naming-and-distribution.md) Decisions 4 & 6 (a framework peer dep does not belong in lean core; subpaths are for dependency-free in-package code) and would put `@nestjs/*` in core's dependency graph. Rejected.
+- **A. Recipe-only, no package.** A documented `useFactory: () => seam({...})` provider. Cheapest, and stays valid as the package's own internals doc. Rejected as the _primary_ answer because it cannot enforce the three correctness items (peer-dep single instance, lifecycle, credential-safe logging) and re-litigates the principal wiring in every app. **Kept as the package README's "under the hood."**
+- **B. Single global seam only** (the brief's literal `forRoot({ store, trace, preset })`). Simplest, but a real backend integrates multiple upstreams with different `baseUrl`/`auth`; one seam cannot model that. Rejected in favour of the infra-vs-surface split (Decision 2), which keeps the single-upstream case a one-liner (the default seam) while supporting many.
+- **C. Per-stitch, no seam** (plain `stitch()` + a shared config fragment via `extends`). Avoids the seam abstraction, but each stitch then builds its _own_ store/throttle/trace runtime — losing the shared throttle bucket, the shared vault, the principal boundary, and a single lifecycle. The seam exists precisely for a long-lived shared surface; a server is the canonical case. Rejected.
+- **D. Fold Nest support into core** (a `stitchapi/nest` subpath). Violates [ADR 0001](./0001-package-naming-and-distribution.md) Decisions 4 & 6 (a framework peer dep does not belong in lean core; subpaths are for dependency-free in-package code) and would put `@nestjs/*` in core's dependency graph. Rejected.
 
 ## Addendum (2026-06-16) — boilerplate-reduction follow-ups delivered
 
 Layered on the original decisions to cut per-consumer boilerplate. All additive, **no core change**:
 
--   **`defineStitch` token is now optional** — `defineStitch(build)` generates a unique `Symbol`; the `(token, build)` form still works. You reference the def object everywhere anyway (`forFeature({ stitches: [GetUser] })`, `@InjectStitch(GetUser)`, `overrideProvider(GetUser.token)`), so the hand-picked token was ceremony.
--   **`loggerSink` mapping refined** — lifecycle events (`start`/`result`/`done`) moved off the happy-path info level to `debug`/`verbose` (opt out with `{ lifecycle: false }`), `drift` routed by `finding.level`, and `retry`/`circuit` progress surfaced at `warn`. Still payload-free (metadata only), so it stays safe on a secret-bearing seam.
--   **Exception mapping delivered** (was Decision 10 non-goal) — `StitchExceptionFilter` plus `toHttpException()` / `isStitchError()` map a `StitchError` to an `HttpException`. Status is **`502 Bad Gateway` by default** (never leaks an upstream's status to the client); configurable via `status: number | (err) => number` (propagate, fix, or remap).
--   **SSE bridge delivered** (was Decision 10 non-goal) — `stitchSse()` adapts `stitch.stream()` to an `Observable<MessageEvent>` for `@Sse()`. Adds `rxjs` as a peer (always present in a Nest app).
--   **Multi-tenant wiring packaged** — `StitchModule.forFeatureScoped({ stitches, principal })` replaces the hand-rolled request-scoped `TENANT_SEAM` recipe (Decision 5). Adds `@nestjs/core` as a peer (for `REQUEST`; always present in a Nest app).
+- **`defineStitch` token is now optional** — `defineStitch(build)` generates a unique `Symbol`; the `(token, build)` form still works. You reference the def object everywhere anyway (`forFeature({ stitches: [GetUser] })`, `@InjectStitch(GetUser)`, `overrideProvider(GetUser.token)`), so the hand-picked token was ceremony.
+- **`loggerSink` mapping refined** — lifecycle events (`start`/`result`/`done`) moved off the happy-path info level to `debug`/`verbose` (opt out with `{ lifecycle: false }`), `drift` routed by `finding.level`, and `retry`/`circuit` progress surfaced at `warn`. Still payload-free (metadata only), so it stays safe on a secret-bearing seam.
+- **Exception mapping delivered** (was Decision 10 non-goal) — `StitchExceptionFilter` plus `toHttpException()` / `isStitchError()` map a `StitchError` to an `HttpException`. Status is **`502 Bad Gateway` by default** (never leaks an upstream's status to the client); configurable via `status: number | (err) => number` (propagate, fix, or remap).
+- **SSE bridge delivered** (was Decision 10 non-goal) — `stitchSse()` adapts `stitch.stream()` to an `Observable<MessageEvent>` for `@Sse()`. Adds `rxjs` as a peer (always present in a Nest app).
+- **Multi-tenant wiring packaged** — `StitchModule.forFeatureScoped({ stitches, principal })` replaces the hand-rolled request-scoped `TENANT_SEAM` recipe (Decision 5). Adds `@nestjs/core` as a peer (for `REQUEST`; always present in a Nest app).
 
 Peer-dependency policy unchanged in spirit: peer-depend on what a Nest app **always** has (`@nestjs/common`, now `@nestjs/core` + `rxjs`); keep **optional** deps structural (`@nestjs/config` → `ConfigServiceLike`). Still non-goals: the Terminus health indicator and the Nest-GraphQL disambiguation note.
 
@@ -389,11 +389,11 @@ Peer-dependency policy unchanged in spirit: peer-depend on what a Nest app **alw
 
 Core has since grown two generic primitives that the original ADRs hand-rolled inside this package: `secretFrom(source, name)` — a `SecretSource`-backed secret thunk ([`auth.ts`](../../packages/core/src/auth.ts)) — and a logger-agnostic `loggerSink(logger, opts)` ([`trace.ts`](../../packages/core/src/trace.ts)). The two bridge helpers now **delegate** to them instead of reimplementing the logic, killing the duplication:
 
--   **`fromConfig` → `secretFrom`.** `fromConfig(config)(key)` is now `secretFrom((name) => String(config.getOrThrow(name)), key)`. A missing key still throws (`ConfigService.getOrThrow`'s own error propagates); empty values are now rejected too — matching `env()` / `secretFrom()`, so a blank credential never silently rides along. That empty-string rejection is the **one** behavior the delegation tightens (previously a present-but-empty config value returned `''`); it is strictly safer and untested before. Public type (`ConfigServiceLike`) and signature unchanged.
--   **`loggerSink` → core `loggerSink`.** Nest's sink is _richer_ than core's twin — Nest's `Logger` has `verbose` (core's `LoggerLike` has only `info`/`debug`), it has a `{ lifecycle }` toggle, it routes `retry`/`circuit` progress to `warn` (a per-_instance_ rule core's per-_type_ `levels` map can't express), it pins info-`drift` to `debug`, and its one-liners carry glyphs + attempt counts. To let it delegate **without changing a single logged byte**, core's `loggerSink` gained two **generic** optional hooks (no NestJS concept leaks in):
+- **`fromConfig` → `secretFrom`.** `fromConfig(config)(key)` is now `secretFrom((name) => String(config.getOrThrow(name)), key)`. A missing key still throws (`ConfigService.getOrThrow`'s own error propagates); empty values are now rejected too — matching `env()` / `secretFrom()`, so a blank credential never silently rides along. That empty-string rejection is the **one** behavior the delegation tightens (previously a present-but-empty config value returned `''`); it is strictly safer and untested before. Public type (`ConfigServiceLike`) and signature unchanged.
+- **`loggerSink` → core `loggerSink`.** Nest's sink is _richer_ than core's twin — Nest's `Logger` has `verbose` (core's `LoggerLike` has only `info`/`debug`), it has a `{ lifecycle }` toggle, it routes `retry`/`circuit` progress to `warn` (a per-_instance_ rule core's per-_type_ `levels` map can't express), it pins info-`drift` to `debug`, and its one-liners carry glyphs + attempt counts. To let it delegate **without changing a single logged byte**, core's `loggerSink` gained two **generic** optional hooks (no NestJS concept leaks in):
 
-    -   `level?: (event, ctx) => LogLevel | null` — resolve the level per event instance (`null` drops it, `undefined` defers); a strict superset of `levels`.
-    -   `format?: (event, ctx) => string | null` — supply the metadata-only line (the host then owns the payload-free guarantee; the default formatter stays payload-free for everyone else).
+    - `level?: (event, ctx) => LogLevel | null` — resolve the level per event instance (`null` drops it, `undefined` defers); a strict superset of `levels`.
+    - `format?: (event, ctx) => string | null` — supply the metadata-only line (the host then owns the payload-free guarantee; the default formatter stays payload-free for everyone else).
 
     Nest passes a verbose-routing `LoggerLike` adapter (core `info` → Nest `verbose`), its level rules, and its glyph formatter. Levels, messages, and the payload-free / never-log-`delta` guarantees stay byte-identical to the hand-rolled switch this replaced.
 
@@ -403,7 +403,7 @@ This is the **deliberate exception** to the original "no core change" / "this AD
 
 [ADR 0012](./0012-integration-symbol-naming.md) makes integration-package adapter symbols ecosystem-qualified, so **all four** of this package's generically-named bridge exports are renamed:
 
--   **`loggerSink` → `nestLoggerSink`** and **`LoggerLike` → `NestLoggerLike`** — these collided with core's _generic_ `loggerSink` / `LoggerLike` outright (`bridges.ts` already had to import core's as `coreLoggerSink` / `CoreLoggerLike` to disambiguate).
--   **`fromConfig` → `fromNestConfig`**, **`borrowStore` → `nestBorrowStore`**, **`ConfigServiceLike` → `NestConfigServiceLike`** — no collision _yet_, but the bare names would clash the moment another adapter ships a config-secret bridge or a store wrapper, so they are qualified proactively (ADR 0012 rule 6). `NestLoggerSinkOptions` was already on-pattern and is unchanged.
+- **`loggerSink` → `nestLoggerSink`** and **`LoggerLike` → `NestLoggerLike`** — these collided with core's _generic_ `loggerSink` / `LoggerLike` outright (`bridges.ts` already had to import core's as `coreLoggerSink` / `CoreLoggerLike` to disambiguate).
+- **`fromConfig` → `fromNestConfig`**, **`borrowStore` → `nestBorrowStore`**, **`ConfigServiceLike` → `NestConfigServiceLike`** — no collision _yet_, but the bare names would clash the moment another adapter ships a config-secret bridge or a store wrapper, so they are qualified proactively (ADR 0012 rule 6). `NestLoggerSinkOptions` was already on-pattern and is unchanged.
 
 The old names all remain as `@deprecated` aliases through the `1.0.0-rc` line and are removed at the 1.0 GA cut. The delegation described above is unchanged; only the public symbol names move.

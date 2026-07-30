@@ -26,11 +26,7 @@ import type { Stitch, StitchEvent, StitchResult } from 'stitchapi';
 /** The lifecycle status of a query. `'streaming'` is entered when a streaming
  * surface has emitted at least one `delta` but not yet its terminal `result`. */
 export type StitchQueryStatus =
-    | 'idle'
-    | 'pending'
-    | 'streaming'
-    | 'success'
-    | 'error';
+    'idle' | 'pending' | 'streaming' | 'success' | 'error';
 
 /**
  * A snapshot of a query's reactive state. Stable by identity between

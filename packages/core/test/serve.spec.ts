@@ -118,8 +118,7 @@ test('SSE start frame scrubs credential headers the caller echoed (serve is unau
     const start = parseSse(text).find((f) => f.event === 'start');
     const echoed = (
         start?.data?.['input'] as
-            | { headers?: Record<string, string> }
-            | undefined
+            { headers?: Record<string, string> } | undefined
     )?.headers;
     expect(echoed?.['authorization']).toBe('[REDACTED]'); // credential scrubbed before it leaves
     expect(echoed?.['x-keep']).toBe('ok'); // non-secret header preserved
@@ -137,8 +136,7 @@ test('SSE start frame scrubs a secret query param the caller echoed (structured 
     const start = parseSse(text).find((f) => f.event === 'start');
     const echoed = (
         start?.data?.['input'] as
-            | { query?: Record<string, unknown> }
-            | undefined
+            { query?: Record<string, unknown> } | undefined
     )?.query;
     expect(echoed?.['api_key']).toBe('[REDACTED]'); // secret query value scrubbed before it leaves
     expect(echoed?.['page']).toBe('2'); // non-secret query param preserved

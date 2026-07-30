@@ -6,8 +6,8 @@
 
 Next App Router route handlers are Web-standard — they take a `Request` and return a `Response` — so a stitch already runs in one directly: define a `seam` once and call it in the handler. What's worth a helper is the two bits you'd otherwise hand-roll on the Web platform:
 
--   **`streamStitchSse(stitch.stream())`** — turn a streaming stitch into a `text/event-stream` `Response`.
--   **`stitchErrorResponse(err)`** — map a thrown `StitchError` to a `Response` with a safe status, or `undefined` for anything else so you can rethrow it.
+- **`streamStitchSse(stitch.stream())`** — turn a streaming stitch into a `text/event-stream` `Response`.
+- **`stitchErrorResponse(err)`** — map a thrown `StitchError` to a `Response` with a safe status, or `undefined` for anything else so you can rethrow it.
 
 Built on Web standards only (`Response`, `ReadableStream`, `TextEncoder`) — **no `next` import** — so the same helpers also work in Remix, SvelteKit endpoints, Bun, Deno, and Workers.
 

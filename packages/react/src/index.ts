@@ -63,8 +63,10 @@ export {
  * (`useStitch` → unary, `useStitchStream` → streaming), so passing it would be
  * silently ignored — the type forbids it instead.
  */
-export interface UseStitchOptions<T>
-    extends Omit<CreateStitchQueryOptions<T>, 'streaming'> {
+export interface UseStitchOptions<T> extends Omit<
+    CreateStitchQueryOptions<T>,
+    'streaming'
+> {
     /** Explicit re-create trigger. When provided, the handle is re-created only
      * when one of these changes (by `Object.is`), instead of the default
      * structural key of `input`. */

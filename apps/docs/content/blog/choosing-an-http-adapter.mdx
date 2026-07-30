@@ -52,9 +52,7 @@ const behindProxy = stitch({
     baseUrl: 'https://internal.example.com',
     path: '/reports/{id}',
     adapter: fetchAdapter({
-        dispatcher: new Agent({
-            /* proxy, CA */
-        }),
+        dispatcher: new Agent({/* proxy, CA */}),
     }),
 });
 ```

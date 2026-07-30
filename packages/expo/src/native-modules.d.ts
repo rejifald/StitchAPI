@@ -14,11 +14,7 @@ declare module 'react-native' {
         remove(): void;
     }
     export type AppStateStatus =
-        | 'active'
-        | 'background'
-        | 'inactive'
-        | 'unknown'
-        | 'extension';
+        'active' | 'background' | 'inactive' | 'unknown' | 'extension';
     export interface AppStateStatic {
         readonly currentState: AppStateStatus;
         addEventListener(

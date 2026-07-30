@@ -140,8 +140,7 @@ describe('browser bundle (GAP-AUDIT §1.5)', () => {
         expect(output.length).toBeGreaterThan(0);
 
         let captured:
-            | { url: string; headers: Record<string, string> }
-            | undefined;
+            { url: string; headers: Record<string, string> } | undefined;
         const moduleObj: { exports: Record<string, unknown> } = { exports: {} };
         const sandbox: Record<string, unknown> = {
             module: moduleObj,

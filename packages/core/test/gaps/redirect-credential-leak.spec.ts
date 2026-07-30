@@ -233,8 +233,7 @@ describe('axiosAdapter — beforeRedirect enforces the same cross-origin strip p
             headers: { 'x-api-key': API_KEY, authorization: AWS_AUTH },
         });
         const hook = client.calls[0]?.['beforeRedirect'] as
-            | ((options: Record<string, unknown>) => void)
-            | undefined;
+            ((options: Record<string, unknown>) => void) | undefined;
         if (!hook)
             throw new Error(
                 'axiosAdapter did not install a beforeRedirect hook',

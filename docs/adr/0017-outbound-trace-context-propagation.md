@@ -1,8 +1,8 @@
 # ADR 0017 — Outbound trace-context propagation: correlation is not idempotency
 
--   **Status:** Proposed
--   **Date:** 2026-06-29
--   **Tags:** observability, tracing, traceparent, w3c-trace-context, propagation, correlation, idempotency, browser-first
+- **Status:** Proposed
+- **Date:** 2026-06-29
+- **Tags:** observability, tracing, traceparent, w3c-trace-context, propagation, correlation, idempotency, browser-first
 
 > [!NOTE]
 >
@@ -121,45 +121,45 @@ on".**
 
 ## Consequences
 
--   `idempotency.header` documents cleanly as "rename the idempotency key" — the
-    docs de-conflation (blog `idempotency-keys-safe-retries`, guide
-    `resilience/idempotency`, recipe `idempotent-writes`) lands ahead of this ADR
-    and stops teaching the mix.
--   Correlation gets a first-class, **trace-aligned** door: the id on the wire is
-    the id in the user's traces, so client and server spans actually join.
--   With correlation moved here, `idempotency` is unambiguously about dedupe — so
-    the idempotency feature's construction nudge (a random key with no `retry`
-    usually has nothing to collapse) no longer has "but it's my request id" as a
-    counter-argument: that need is served by this door instead, and the nudge stays
-    silenceable (`idempotency.warn = false`) for the narrow proxy-dedupe case.
--   New surface + bytes on an opt-in path. Measure against the core bundle budget
-    ([`bundle-size.mjs`](../../packages/core/scripts/bundle-size.mjs)); if it doesn't
-    fit the hot path, ship it behind a `stitchapi/trace` subpath like cache / sse —
-    propagation is a tracing concern and consumers who don't opt in shouldn't pay
-    for it.
+- `idempotency.header` documents cleanly as "rename the idempotency key" — the
+  docs de-conflation (blog `idempotency-keys-safe-retries`, guide
+  `resilience/idempotency`, recipe `idempotent-writes`) lands ahead of this ADR
+  and stops teaching the mix.
+- Correlation gets a first-class, **trace-aligned** door: the id on the wire is
+  the id in the user's traces, so client and server spans actually join.
+- With correlation moved here, `idempotency` is unambiguously about dedupe — so
+  the idempotency feature's construction nudge (a random key with no `retry`
+  usually has nothing to collapse) no longer has "but it's my request id" as a
+  counter-argument: that need is served by this door instead, and the nudge stays
+  silenceable (`idempotency.warn = false`) for the narrow proxy-dedupe case.
+- New surface + bytes on an opt-in path. Measure against the core bundle budget
+  ([`bundle-size.mjs`](../../packages/core/scripts/bundle-size.mjs)); if it doesn't
+  fit the hot path, ship it behind a `stitchapi/trace` subpath like cache / sse —
+  propagation is a tracing concern and consumers who don't opt in shouldn't pay
+  for it.
 
 ## Open questions
 
--   **Header set:** `traceparent` only, or also a configurable correlation header
-    in the first cut?
--   **Policy shape:** a host allowlist (simplest), a predicate on the resolved URL
-    (most flexible), or both? And does it live on `trace` config, a dedicated
-    `propagation` block, or the `seam`?
--   **Home:** core hot path vs a `stitchapi/trace` subpath, given the bundle budget.
--   **Pair with inbound?** ADR 0007's reserved inbound `traceparent` continuation
-    is the mirror of this; decide whether they land together.
--   **Fan-out into separate traces.** `traceparent` only links a child to its direct
-    caller in the _same_ trace. When one initiator spawns work that runs as its own
-    trace (a queue job, a batch, an async webhook with a fresh `traceId`), parent-child
-    can't join them — that's OTel **span links** (explicit references to other
-    spanContexts), which neither this ADR nor ADR 0007 models. Out of scope here;
-    recorded so propagation isn't mistaken for covering it.
+- **Header set:** `traceparent` only, or also a configurable correlation header
+  in the first cut?
+- **Policy shape:** a host allowlist (simplest), a predicate on the resolved URL
+  (most flexible), or both? And does it live on `trace` config, a dedicated
+  `propagation` block, or the `seam`?
+- **Home:** core hot path vs a `stitchapi/trace` subpath, given the bundle budget.
+- **Pair with inbound?** ADR 0007's reserved inbound `traceparent` continuation
+  is the mirror of this; decide whether they land together.
+- **Fan-out into separate traces.** `traceparent` only links a child to its direct
+  caller in the _same_ trace. When one initiator spawns work that runs as its own
+  trace (a queue job, a batch, an async webhook with a fresh `traceId`), parent-child
+  can't join them — that's OTel **span links** (explicit references to other
+  spanContexts), which neither this ADR nor ADR 0007 models. Out of scope here;
+  recorded so propagation isn't mistaken for covering it.
 
 ## Alternatives considered
 
--   **Keep overloading `idempotency.header`.** Rejected: conflates dedupe with
-    correlation, and the random key can never equal the `traceId`, so it never
-    correlates with the spans StitchAPI exports — it _looks_ like tracing without
-    being it.
--   **Caller-supplied correlation id on `StitchInput`.** Rejected: ids must be
-    engine-minted and unforgeable (ADR 0002 principal, ADR 0007 run identity).
+- **Keep overloading `idempotency.header`.** Rejected: conflates dedupe with
+  correlation, and the random key can never equal the `traceId`, so it never
+  correlates with the spans StitchAPI exports — it _looks_ like tracing without
+  being it.
+- **Caller-supplied correlation id on `StitchInput`.** Rejected: ids must be
+  engine-minted and unforgeable (ADR 0002 principal, ADR 0007 run identity).

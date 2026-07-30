@@ -21,13 +21,11 @@ export async function GET(
     if (!post) notFound();
 
     return new ImageResponse(
-        (
-            <DefaultImage
-                title={post.data.title}
-                description={post.data.description}
-                site={appName}
-            />
-        ),
+        <DefaultImage
+            title={post.data.title}
+            description={post.data.description}
+            site={appName}
+        />,
         {
             width: 1200,
             height: 630,

@@ -4,9 +4,9 @@
 
 React Native bindings for [StitchAPI](https://stitchapi.dev). The `useStitch` / `useStitchStream` hooks are re-exported verbatim from [`@stitchapi/react`](../react) — they are pure `useSyncExternalStore` over the shared [`@stitchapi/query-core`](../query-core) store and run unchanged on React Native. What this package **adds** is the platform glue bare RN needs:
 
--   **`rnStreamAdapter`** — a streaming transport. RN's global `fetch` cannot stream (`response.body` is `undefined`, [facebook/react-native#27741](https://github.com/facebook/react-native/issues/27741)); this reads `XMLHttpRequest.responseText` incrementally and surfaces it as a `ReadableStream`, which is exactly what core's `sse` / `stream` decoders consume.
--   **`asyncStorageStore`** — a `StitchStore` over AsyncStorage, so login sessions, cookie jars, and tokens survive app restarts.
--   **`useAppActiveRefetch` / `useReconnectRefetch`** — refetch on app-foreground / on reconnect, the data lifecycle a mobile app expects.
+- **`rnStreamAdapter`** — a streaming transport. RN's global `fetch` cannot stream (`response.body` is `undefined`, [facebook/react-native#27741](https://github.com/facebook/react-native/issues/27741)); this reads `XMLHttpRequest.responseText` incrementally and surfaces it as a `ReadableStream`, which is exactly what core's `sse` / `stream` decoders consume.
+- **`asyncStorageStore`** — a `StitchStore` over AsyncStorage, so login sessions, cookie jars, and tokens survive app restarts.
+- **`useAppActiveRefetch` / `useReconnectRefetch`** — refetch on app-foreground / on reconnect, the data lifecycle a mobile app expects.
 
 > On **Expo**, use [`@stitchapi/expo`](../expo) instead — `expo/fetch` streams natively, so it needs no XHR shim or polyfills.
 

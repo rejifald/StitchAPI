@@ -25,18 +25,18 @@ Elysia is **Bun-first**, but the plugin imports only `elysia` and `stitchapi`
 
 ## What it does
 
--   **Puts a seam on the context.** `.derive` runs per request and adds `stitch`
-    to the context, so a handler reads it off the destructured context:
-    `({ stitch }) => stitch.stitch('/path')()`.
--   **Binds a request-scoped principal.** With a `principal` resolver, every
-    request's `stitch` is a `seam.as(principal)` handle — a separate session/token
-    over the **shared** store + throttle. This is the trusted boundary StitchAPI's
-    seam exists for: the principal lives in the closure, so a handler can never name
-    another identity (ADR 0002).
--   **SSE bridge.** `streamStitchSse(stream)` turns a stitch's `.stream()` output
-    into a `text/event-stream` `Response` you return straight from a handler.
--   **Error bridge.** A thrown `StitchError` is mapped to an HTTP response
-    (`502` by default) via the plugin's `.onError`, so handlers need no try/catch.
+- **Puts a seam on the context.** `.derive` runs per request and adds `stitch`
+  to the context, so a handler reads it off the destructured context:
+  `({ stitch }) => stitch.stitch('/path')()`.
+- **Binds a request-scoped principal.** With a `principal` resolver, every
+  request's `stitch` is a `seam.as(principal)` handle — a separate session/token
+  over the **shared** store + throttle. This is the trusted boundary StitchAPI's
+  seam exists for: the principal lives in the closure, so a handler can never name
+  another identity (ADR 0002).
+- **SSE bridge.** `streamStitchSse(stream)` turns a stitch's `.stream()` output
+  into a `text/event-stream` `Response` you return straight from a handler.
+- **Error bridge.** A thrown `StitchError` is mapped to an HTTP response
+  (`502` by default) via the plugin's `.onError`, so handlers need no try/catch.
 
 ## Seam: borrow, don't own
 

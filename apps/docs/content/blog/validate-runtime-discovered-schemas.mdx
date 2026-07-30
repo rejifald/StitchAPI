@@ -52,9 +52,9 @@ A runtime-obtained schema hands you `unknown`. That only helps if the compiler f
 }
 ```
 
--   `strict` makes `unknown` unusable until you narrow it — the whole reason the boundary is worth drawing. It also hands you `unknown` in `catch`, so a throwing validator can't smuggle `any` back in.
--   `noUncheckedIndexedAccess` types `value.items[0]` as possibly `undefined`. You're reading data you never compiled against; the index you assume is there might not be.
--   `exactOptionalPropertyTypes` keeps a missing field and a field set to `undefined` from collapsing into one type — the distinction the validator just measured.
+- `strict` makes `unknown` unusable until you narrow it — the whole reason the boundary is worth drawing. It also hands you `unknown` in `catch`, so a throwing validator can't smuggle `any` back in.
+- `noUncheckedIndexedAccess` types `value.items[0]` as possibly `undefined`. You're reading data you never compiled against; the index you assume is there might not be.
+- `exactOptionalPropertyTypes` keeps a missing field and a field set to `undefined` from collapsing into one type — the distinction the validator just measured.
 
 Then keep `any` out with lint, so nobody casts around the boundary you built: `@typescript-eslint/no-explicit-any` and the `no-unsafe-*` family.
 
@@ -117,6 +117,6 @@ A runtime-obtained schema has no compile-time shape, so the compiler can't guard
 @stitchapi/json-schema stitchapi
 ```
 
--   [Type-safe API clients without codegen](/blog/type-safe-api-client-without-codegen) — the same "no build-time shape" bind, solved at the call.
--   [Schema drift is a production bug](/blog/schema-drift-is-a-production-bug) — what `inspect()` surfaces and how to act on findings.
--   [Typed errors without try/catch](/blog/typed-errors-without-try-catch) — return failures as values instead of throwing.
+- [Type-safe API clients without codegen](/blog/type-safe-api-client-without-codegen) — the same "no build-time shape" bind, solved at the call.
+- [Schema drift is a production bug](/blog/schema-drift-is-a-production-bug) — what `inspect()` surfaces and how to act on findings.
+- [Typed errors without try/catch](/blog/typed-errors-without-try-catch) — return failures as values instead of throwing.

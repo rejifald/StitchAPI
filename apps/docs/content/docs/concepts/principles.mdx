@@ -148,38 +148,38 @@ exported as a spec.
 
 ## How it relates
 
--   **Progressive disclosure** runs from the [stitch primitive](/docs/concepts/the-stitch)
-    through the full config object — the string and the config object are two
-    altitudes of one call.
--   **Atomic stitches** are the [stitch](/docs/concepts/the-stitch) itself: one
-    endpoint, no spec, no codegen, no server.
--   **Composition over configuration** is what [`extends`](/docs/guides/authoring/extends)
-    expresses — a plain fragment is what it composes (a [`seam`](/docs/concepts/the-seam)
-    owns one for a whole shared surface).
--   **One source of truth** shows up at runtime as [leveled drift](/docs/guides/validation/drift),
-    the same anti-drift rule this documentation follows.
--   **Agent-native** is spelled out across [capability, not credential](/docs/concepts/capability-not-credential),
-    the [event stream](/docs/concepts/event-stream), and the [agent surfaces](/docs/agents).
--   **Browser-first** is what [installation](/docs/getting-started/installation)
-    promises — the package runs anywhere `fetch` does, with server-side
-    capabilities kept to the [CLI](/docs/surfaces/cli), [HTTP serve](/docs/surfaces/http-serve),
-    and [MCP](/docs/surfaces/mcp) surfaces.
--   **Pay only for what you import** governs how those surfaces and the
-    pluggable seams ([adapters](/docs/reference/helpers), stores, trace sinks)
-    are packaged: explicit imports beside the core, never bytes inside it.
--   **Contract, not dependency** is visible at every seam — the pluggable
-    [adapters](/docs/reference/helpers), stores, and
-    [Standard Schema validation](/docs/guides/validation/standard-schema) —
-    and made enforceable by the
-    [conformance kits](/docs/reference/conformance-kits).
--   **No side effects by default** is the [in-memory store](/docs/guides/state/pluggable-store)
-    behind every stitch and the silent [trace sink](/docs/guides/observability/trace-sinks):
-    opt into a shared store and the same throttle turns
-    [distributed](/docs/guides/state/distributed-throttle) and the same
-    [session is shared](/docs/guides/state/shared-sessions) across workers; opt
-    into a sink and the event stream lands on the console or disk.
--   **Declarative spelling** keeps every stitch agent-authorable: the
-    [config object](/docs/reference/config-types) is the canonical form.
+- **Progressive disclosure** runs from the [stitch primitive](/docs/concepts/the-stitch)
+  through the full config object — the string and the config object are two
+  altitudes of one call.
+- **Atomic stitches** are the [stitch](/docs/concepts/the-stitch) itself: one
+  endpoint, no spec, no codegen, no server.
+- **Composition over configuration** is what [`extends`](/docs/guides/authoring/extends)
+  expresses — a plain fragment is what it composes (a [`seam`](/docs/concepts/the-seam)
+  owns one for a whole shared surface).
+- **One source of truth** shows up at runtime as [leveled drift](/docs/guides/validation/drift),
+  the same anti-drift rule this documentation follows.
+- **Agent-native** is spelled out across [capability, not credential](/docs/concepts/capability-not-credential),
+  the [event stream](/docs/concepts/event-stream), and the [agent surfaces](/docs/agents).
+- **Browser-first** is what [installation](/docs/getting-started/installation)
+  promises — the package runs anywhere `fetch` does, with server-side
+  capabilities kept to the [CLI](/docs/surfaces/cli), [HTTP serve](/docs/surfaces/http-serve),
+  and [MCP](/docs/surfaces/mcp) surfaces.
+- **Pay only for what you import** governs how those surfaces and the
+  pluggable seams ([adapters](/docs/reference/helpers), stores, trace sinks)
+  are packaged: explicit imports beside the core, never bytes inside it.
+- **Contract, not dependency** is visible at every seam — the pluggable
+  [adapters](/docs/reference/helpers), stores, and
+  [Standard Schema validation](/docs/guides/validation/standard-schema) —
+  and made enforceable by the
+  [conformance kits](/docs/reference/conformance-kits).
+- **No side effects by default** is the [in-memory store](/docs/guides/state/pluggable-store)
+  behind every stitch and the silent [trace sink](/docs/guides/observability/trace-sinks):
+  opt into a shared store and the same throttle turns
+  [distributed](/docs/guides/state/distributed-throttle) and the same
+  [session is shared](/docs/guides/state/shared-sessions) across workers; opt
+  into a sink and the event stream lands on the console or disk.
+- **Declarative spelling** keeps every stitch agent-authorable: the
+  [config object](/docs/reference/config-types) is the canonical form.
 
 ## See also
 

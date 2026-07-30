@@ -92,24 +92,24 @@ in the same slot.
 
 The same mapping rules drive both `stitch from-curl` and a hand-authored stitch:
 
--   **URL → `baseUrl` + `path`.** The origin becomes `baseUrl`; the rest becomes
-    `path`, with id-like segments lifted into `{param}` slots (so `/users/1`
-    becomes `/users/{userId}`, called with `{ params: { userId: 1 } }`). `from-curl`
-    is conservative — it lifts only pure digits, UUIDs, long hex, or url-encoded
-    segments, and warns on each one so you can revert it.
--   **Headers → `auth` / `headers`.** An `Authorization: Bearer …` or `x-api-key`
-    header becomes an `auth` strategy resolved at call time — the captured
-    credential is replaced with an `env('NAME')` placeholder and never written into
-    the source. Other headers become static `headers` (transport noise like
-    `host`, `cookie`, and `content-length` is dropped).
--   **A request body → `bodyType` + an example.** A JSON `-d` payload becomes
-    `bodyType: 'json'`, a form one (`k=v&…` or `--data-urlencode`) becomes
-    `bodyType: 'form'`, and a body implies `POST` unless `-G` folds the data into
-    the query.
--   **An example response → an `output` schema.** `from-curl` emits none by
-    default (one example cannot prove the shape); add one with `--zod --response`,
-    or hand-write it — turning one move into TypeScript types, runtime validation,
-    and drift detection.
+- **URL → `baseUrl` + `path`.** The origin becomes `baseUrl`; the rest becomes
+  `path`, with id-like segments lifted into `{param}` slots (so `/users/1`
+  becomes `/users/{userId}`, called with `{ params: { userId: 1 } }`). `from-curl`
+  is conservative — it lifts only pure digits, UUIDs, long hex, or url-encoded
+  segments, and warns on each one so you can revert it.
+- **Headers → `auth` / `headers`.** An `Authorization: Bearer …` or `x-api-key`
+  header becomes an `auth` strategy resolved at call time — the captured
+  credential is replaced with an `env('NAME')` placeholder and never written into
+  the source. Other headers become static `headers` (transport noise like
+  `host`, `cookie`, and `content-length` is dropped).
+- **A request body → `bodyType` + an example.** A JSON `-d` payload becomes
+  `bodyType: 'json'`, a form one (`k=v&…` or `--data-urlencode`) becomes
+  `bodyType: 'form'`, and a body implies `POST` unless `-G` folds the data into
+  the query.
+- **An example response → an `output` schema.** `from-curl` emits none by
+  default (one example cannot prove the shape); add one with `--zod --response`,
+  or hand-write it — turning one move into TypeScript types, runtime validation,
+  and drift detection.
 
 This works because a stitch is atomic, not spec-first — no OpenAPI document, no
 codegen step. What `from-curl` writes is the normal authoring surface: a plain

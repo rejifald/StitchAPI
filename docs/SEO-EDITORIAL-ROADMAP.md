@@ -29,7 +29,7 @@ generic problem before they know StitchAPI exists. Three under-served intents:
 | 1   | **Resilient API calls in TypeScript**         | retry / timeout / throttle / circuit-breaker / caching how-to | Searchable (implementation)        | mechanisms covered shareably; generic-query spokes missing                                       |
 | 2   | **Agent-native API access (MCP & code-mode)** | "give an agent a tool", MCP, code-mode, credential-safe       | Shareable → Searchable (awareness) | strong opinion pieces; awareness/definition layer missing                                        |
 | 3   | **Typed API clients without codegen**         | vs axios / ky / openapi-fetch / Orval, validation, drift      | Searchable (consideration)         | 2 comparisons exist; alternatives/"best" space open. **`axios-alternatives` shipped 2026-06-28** |
-| 4   | **One definition, every surface**             | function ↔ CLI ↔ HTTP ↔ MCP, framework integrations        | Shareable + use-case               | well covered — maintain, add integration use-cases                                               |
+| 4   | **One definition, every surface**             | function ↔ CLI ↔ HTTP ↔ MCP, framework integrations           | Shareable + use-case               | well covered — maintain, add integration use-cases                                               |
 
 Pillars 1–3 hold the SEO upside. Pillar 4 is the differentiation moat — keep feeding it,
 but it is not the traffic engine.
@@ -129,17 +129,17 @@ resilience guides, and typed iframe↔parent RPC (`stitchapi/postmessage`, ADR 0
 
 ## Notes & guardrails
 
--   **Honesty bar.** Every comparison names where the alternative wins (see the "when a
-    fetch wrapper is the right call" section in `axios-alternatives.mdx`). This is what
-    makes the posts credible and matches the [EDITORIAL.md](../apps/docs/EDITORIAL.md) standard.
--   **No fabricated claims.** Do not assert specific third-party security incidents or
-    invented metrics; frame around verifiable properties (dependency tree, transitive
-    surface). Same reason the structured data omits fabricated `datePublished` dates.
--   **Slugs stay evergreen.** Keep the target keyword in the slug (`axios-alternatives`),
-    carry the year in the title only, and refresh content yearly rather than re-slugging.
+- **Honesty bar.** Every comparison names where the alternative wins (see the "when a
+  fetch wrapper is the right call" section in `axios-alternatives.mdx`). This is what
+  makes the posts credible and matches the [EDITORIAL.md](../apps/docs/EDITORIAL.md) standard.
+- **No fabricated claims.** Do not assert specific third-party security incidents or
+  invented metrics; frame around verifiable properties (dependency tree, transitive
+  surface). Same reason the structured data omits fabricated `datePublished` dates.
+- **Slugs stay evergreen.** Keep the target keyword in the slug (`axios-alternatives`),
+  carry the year in the title only, and refresh content yearly rather than re-slugging.
 
 ## References
 
--   TypeScript HTTP-client landscape 2026 — <https://reintech.io/blog/axios-vs-fetch-vs-ky-http-client-comparison-2026>
--   Cloudflare, "Code Mode: the better way to use MCP" — <https://blog.cloudflare.com/code-mode/>
--   Anthropic, "Code execution with MCP" — <https://www.anthropic.com/engineering/code-execution-with-mcp>
+- TypeScript HTTP-client landscape 2026 — <https://reintech.io/blog/axios-vs-fetch-vs-ky-http-client-comparison-2026>
+- Cloudflare, "Code Mode: the better way to use MCP" — <https://blog.cloudflare.com/code-mode/>
+- Anthropic, "Code execution with MCP" — <https://www.anthropic.com/engineering/code-execution-with-mcp>

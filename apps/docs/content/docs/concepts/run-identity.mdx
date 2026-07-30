@@ -13,12 +13,12 @@ back as **one tree**, not a flat list of unrelated calls.
 Three ids, in the OpenTelemetry shape — because a run has to answer two questions at
 once, and one id can't:
 
--   **`traceId`** — a 32-hex id **shared** by every run in one logical operation. It is
-    not parented; it is the same value everywhere in the tree. Filter by it and you get
-    the whole operation.
--   **`spanId`** — a 16-hex id for **this** call (the OpenTelemetry span id).
--   **`parentSpanId`** — the **caller's** `spanId`, set only when one run spawned
-    another. Absent on a root run.
+- **`traceId`** — a 32-hex id **shared** by every run in one logical operation. It is
+  not parented; it is the same value everywhere in the tree. Filter by it and you get
+  the whole operation.
+- **`spanId`** — a 16-hex id for **this** call (the OpenTelemetry span id).
+- **`parentSpanId`** — the **caller's** `spanId`, set only when one run spawned
+  another. Absent on a root run.
 
 The tree comes from **composition**, not configuration. When a stitch spawns another
 run, the child **inherits** the `traceId` and points its `parentSpanId` at the parent's

@@ -1,8 +1,8 @@
 # ADR 0019 — The enhanced result object (`.report()`) + the `source` discriminator
 
--   **Status:** Accepted (designed 2026-06-28; implemented in this PR; extends [ADR 0016](./0016-inspect-raw-and-findings.md), merged in [#334](https://github.com/rejifald/StitchAPI/pull/334)). Folds in **two** of the four items ADR 0016 deferred: the `source` discriminator and the enhanced result object.
--   **Date:** 2026-06-28
--   **Tags:** inspect, diagnostics, result-object, observability, privacy, api-surface
+- **Status:** Accepted (designed 2026-06-28; implemented in this PR; extends [ADR 0016](./0016-inspect-raw-and-findings.md), merged in [#334](https://github.com/rejifald/StitchAPI/pull/334)). Folds in **two** of the four items ADR 0016 deferred: the `source` discriminator and the enhanced result object.
+- **Date:** 2026-06-28
+- **Tags:** inspect, diagnostics, result-object, observability, privacy, api-surface
 
 > [!NOTE]
 >
@@ -28,11 +28,11 @@ actually resolved for this call?_ 0016 deliberately excluded these to keep
 
 It also left two related questions open:
 
--   **`source: 'live' | 'cache' | 'stream'`** — disambiguates _why_ `raw` is
-    `null` (a cache hit vs. a streaming surface vs. a live miss). 0016 guessed this
-    belonged on "the enhanced-result-object, not here."
--   **The enhanced result object** (config echo, attempts, timing) — its own
-    decision, "the largest."
+- **`source: 'live' | 'cache' | 'stream'`** — disambiguates _why_ `raw` is
+  `null` (a cache hit vs. a streaming surface vs. a live miss). 0016 guessed this
+  belonged on "the enhanced-result-object, not here."
+- **The enhanced result object** (config echo, attempts, timing) — its own
+  decision, "the largest."
 
 Most of the data already exists on the event spine (ADR 0007). This ADR audits
 what is free vs. what needs plumbing, and lands the surface.
@@ -103,17 +103,17 @@ diagnostics. So `.inspect()` stays 0016's minimal "raw + drift" tool, and
 
 ### 3. Why a separate method, not an expanded `Inspection`
 
--   **Expand `Inspection` with all fields** — rejected: re-breaks 0016's held line
-    and makes _every_ `.inspect()` pay the config-resolve-and-redact cost for data
-    most probes don't want. (We make a single exception for `source` — free, and
-    the interpretant of `raw`.)
--   **Option-gated optional fields** (`.inspect(input, { trace: true })` populates
-    `attempts?`, `timing?`, …) — rejected: "sometimes-undefined" fields are a
-    typing wart; you can't tell "not asked for" from "genuinely empty." A distinct
-    return type is cleaner.
--   **A separate `.report()` returning `RunReport<T> extends Inspection<T>`** —
-    chosen. Names the diagnostics concern, keeps `.inspect()` minimal, one type
-    hierarchy.
+- **Expand `Inspection` with all fields** — rejected: re-breaks 0016's held line
+  and makes _every_ `.inspect()` pay the config-resolve-and-redact cost for data
+  most probes don't want. (We make a single exception for `source` — free, and
+  the interpretant of `raw`.)
+- **Option-gated optional fields** (`.inspect(input, { trace: true })` populates
+  `attempts?`, `timing?`, …) — rejected: "sometimes-undefined" fields are a
+  typing wart; you can't tell "not asked for" from "genuinely empty." A distinct
+  return type is cleaner.
+- **A separate `.report()` returning `RunReport<T> extends Inspection<T>`** —
+  chosen. Names the diagnostics concern, keeps `.inspect()` minimal, one type
+  hierarchy.
 
 Name: **`.report()`**. Rejected `.trace()` (collides with the existing trace sink
 — `trace.ts`, `TraceContext`, the JSONL/OTLP `trace`) and `.describe()`
@@ -144,55 +144,55 @@ ADR's v1 needs **no new engine events** — it rides the spine.
 
 ### 5. Privacy posture
 
--   **`config` is the redacted `__config`, never `__rawConfig`.** `__rawConfig`
-    carries live auth/secrets; `__config` is the auth-stripped projection (ADR
-    0002). `RunReport.config` is the **resolved** per-call config (after `.with()`
-    binding and per-call `deepMerge`) run through the _same_ redaction projection
-    that produces `__config` — the one bit of new config-side work, and it MUST go
-    through that projection. Echoing `__rawConfig` is forbidden.
--   **`raw` is inherited** from `Inspection`: non-enumerable, and ADR 0018's
-    `redact` option applies to it.
--   Every other `RunReport` field (`attempts`, `timing`, `source`, `cache`,
-    `config`) is secret-free and **enumerable** — a report is safe to log _except_
-    don't expand `raw`. Same posture as `Inspection`.
+- **`config` is the redacted `__config`, never `__rawConfig`.** `__rawConfig`
+  carries live auth/secrets; `__config` is the auth-stripped projection (ADR
+  0002). `RunReport.config` is the **resolved** per-call config (after `.with()`
+  binding and per-call `deepMerge`) run through the _same_ redaction projection
+  that produces `__config` — the one bit of new config-side work, and it MUST go
+  through that projection. Echoing `__rawConfig` is forbidden.
+- **`raw` is inherited** from `Inspection`: non-enumerable, and ADR 0018's
+  `redact` option applies to it.
+- Every other `RunReport` field (`attempts`, `timing`, `source`, `cache`,
+  `config`) is secret-free and **enumerable** — a report is safe to log _except_
+  don't expand `raw`. Same posture as `Inspection`.
 
 ## Consequences
 
--   `Inspection<T>` gains `source` (one enum, free); `RunReport<T>` + `.report()`
-    are net-new. No change to `await` / `.safe()` / `.unwrap()` / `.inspect()`
-    _value_ typing.
--   Like `.inspect()`, `.report()` is a network probe (bypasses cache by default,
-    `{ cache: true }` to honor it) — same caveats as 0016.
--   Per-attempt latency is explicitly absent in v1; flagged so its absence reads
-    as "deferred," not "covered."
+- `Inspection<T>` gains `source` (one enum, free); `RunReport<T>` + `.report()`
+  are net-new. No change to `await` / `.safe()` / `.unwrap()` / `.inspect()`
+  _value_ typing.
+- Like `.inspect()`, `.report()` is a network probe (bypasses cache by default,
+  `{ cache: true }` to honor it) — same caveats as 0016.
+- Per-attempt latency is explicitly absent in v1; flagged so its absence reads
+  as "deferred," not "covered."
 
 ## Engine / type touch-points
 
--   [`types.ts`](../../packages/core/src/types.ts) — add `source` to
-    `Inspection<T>`; add `RunReport<T> extends Inspection<T>`, `CacheOutcome`; add
-    `report(...)` to the `Stitch` interface. `InspectOptions` is shared (or a
-    `ReportOptions` alias).
--   [`stitch.ts`](../../packages/core/src/stitch.ts) — a `.report()` consumer that
-    drains the event stream once (like `.inspect()`): collect `attempts` (terminal
-    event), `ms` (`done`), `waited` (Σ `progress.waitedMs`), `cache`/`source` (the
-    `phase:'cache'` detail + surface kind), `config` (resolved + redacted
-    `__config`). Add the `source` computation to the existing `.inspect()` consumer.
--   [`config-summary.ts`](../../packages/core/src/config-summary.ts) — reuse the
-    redacted-config read-outs; reuse the `__rawConfig → __config` redaction
-    projection to produce the resolved per-call echo.
--   `engine.ts` — **no new events for v1.** The only engine change (per-attempt
-    span stamping) is the _deferred_ item, out of scope here.
+- [`types.ts`](../../packages/core/src/types.ts) — add `source` to
+  `Inspection<T>`; add `RunReport<T> extends Inspection<T>`, `CacheOutcome`; add
+  `report(...)` to the `Stitch` interface. `InspectOptions` is shared (or a
+  `ReportOptions` alias).
+- [`stitch.ts`](../../packages/core/src/stitch.ts) — a `.report()` consumer that
+  drains the event stream once (like `.inspect()`): collect `attempts` (terminal
+  event), `ms` (`done`), `waited` (Σ `progress.waitedMs`), `cache`/`source` (the
+  `phase:'cache'` detail + surface kind), `config` (resolved + redacted
+  `__config`). Add the `source` computation to the existing `.inspect()` consumer.
+- [`config-summary.ts`](../../packages/core/src/config-summary.ts) — reuse the
+  redacted-config read-outs; reuse the `__rawConfig → __config` redaction
+  projection to produce the resolved per-call echo.
+- `engine.ts` — **no new events for v1.** The only engine change (per-attempt
+  span stamping) is the _deferred_ item, out of scope here.
 
 ## Relationship to the other 0016 deferrals
 
--   **Folds in the `source` item** (0016 deferral #2) — landed on `Inspection`,
-    revising 0016's guess.
--   **Overlaps ADR 0018**: `RunReport` inherits `raw`, so 0018's `redact` and
-    non-enumerability cover it; but `config` echo uses a _different_ redaction path
-    (the `__config` projection), so the two ADRs touch redaction in
-    non-overlapping places.
--   **Independent of ADR 0017** (array drift summarization — the diff/classify
-    layer). `RunReport.findings` inherit 0017's summarized shape for free.
+- **Folds in the `source` item** (0016 deferral #2) — landed on `Inspection`,
+  revising 0016's guess.
+- **Overlaps ADR 0018**: `RunReport` inherits `raw`, so 0018's `redact` and
+  non-enumerability cover it; but `config` echo uses a _different_ redaction path
+  (the `__config` projection), so the two ADRs touch redaction in
+  non-overlapping places.
+- **Independent of ADR 0017** (array drift summarization — the diff/classify
+  layer). `RunReport.findings` inherit 0017's summarized shape for free.
 
 This is the **largest** of the four and rightly its own ADR, with `source`
 merged in because `source` is the interpretant of `raw` and cannot stand on its

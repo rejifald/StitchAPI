@@ -28,23 +28,23 @@ encapsulation and are visible app-wide.
 
 ## What it does
 
--   **Decorates the app** with the root `seam` at `fastify.stitch`.
--   **Binds a request-scoped principal.** With a `principal` resolver, every
-    request gets a `seam.as(principal)` handle — a separate session/token over the
-    **shared** store + throttle — on `request.stitch`. This is the trusted boundary
-    StitchAPI's seam exists for: the caller can never name another principal.
--   **Ambient principal via `AsyncLocalStorage`.** `currentStitch()` reads the
-    request's bound seam from Node's `AsyncLocalStorage`, so handlers and services
-    don't have to thread `request.stitch` through every call — a value-add a Node
-    integration can offer that the browser-first core cannot.
--   **Pino logger bridge.** `fastify.log` becomes the seam's `TraceSink`
-    (default on). It logs **only metadata** (name, method, scrubbed URL, status,
-    attempts, timing), never request/response bodies or headers, so it is safe on a
-    secret-bearing seam.
--   **SSE bridge.** `streamStitchSse(reply, stream)` streams a stitch's `.stream()`
-    output to a `text/event-stream` reply.
--   **Error bridge.** A thrown `StitchError` is mapped to an HTTP response
-    (`502` by default) so handlers need no try/catch.
+- **Decorates the app** with the root `seam` at `fastify.stitch`.
+- **Binds a request-scoped principal.** With a `principal` resolver, every
+  request gets a `seam.as(principal)` handle — a separate session/token over the
+  **shared** store + throttle — on `request.stitch`. This is the trusted boundary
+  StitchAPI's seam exists for: the caller can never name another principal.
+- **Ambient principal via `AsyncLocalStorage`.** `currentStitch()` reads the
+  request's bound seam from Node's `AsyncLocalStorage`, so handlers and services
+  don't have to thread `request.stitch` through every call — a value-add a Node
+  integration can offer that the browser-first core cannot.
+- **Pino logger bridge.** `fastify.log` becomes the seam's `TraceSink`
+  (default on). It logs **only metadata** (name, method, scrubbed URL, status,
+  attempts, timing), never request/response bodies or headers, so it is safe on a
+  secret-bearing seam.
+- **SSE bridge.** `streamStitchSse(reply, stream)` streams a stitch's `.stream()`
+  output to a `text/event-stream` reply.
+- **Error bridge.** A thrown `StitchError` is mapped to an HTTP response
+  (`502` by default) so handlers need no try/catch.
 
 ## Seam: build or borrow
 

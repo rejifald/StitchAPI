@@ -41,18 +41,18 @@ it).
 
 ## 1. Problem, and why now
 
--   **Load-it-all has a per-turn tax.** `llms-full.txt` fits in context, so it is
-    the right default today (and stays the default for small corpora — see §8). But
-    an agent that reloads ~84k tokens every turn pays for them every turn, in money
-    and in prefill latency, and has that much less room for its own reasoning. A
-    targeted lookup returns ~1k tokens instead.
--   **Orama is keyword-only and invisible to agents.** The site's human search
-    can't match on meaning (a query phrased in the user's words misses the page
-    that uses ours), and there is no tool an agent can call to reach it.
--   **Dual value.** The same retrieval engine upgrades the **human** site search
-    from keyword to semantic _and_ gives **agents** a context-frugal tool. That
-    second beneficiary is why this is worth building before the corpus outgrows the
-    window: §6's P2 stands on its own even if P3 never ships.
+- **Load-it-all has a per-turn tax.** `llms-full.txt` fits in context, so it is
+  the right default today (and stays the default for small corpora — see §8). But
+  an agent that reloads ~84k tokens every turn pays for them every turn, in money
+  and in prefill latency, and has that much less room for its own reasoning. A
+  targeted lookup returns ~1k tokens instead.
+- **Orama is keyword-only and invisible to agents.** The site's human search
+  can't match on meaning (a query phrased in the user's words misses the page
+  that uses ours), and there is no tool an agent can call to reach it.
+- **Dual value.** The same retrieval engine upgrades the **human** site search
+  from keyword to semantic _and_ gives **agents** a context-frugal tool. That
+  second beneficiary is why this is worth building before the corpus outgrows the
+  window: §6's P2 stands on its own even if P3 never ships.
 
 ## 2. Not the same as `run_stitch`
 
@@ -144,30 +144,30 @@ cold-start measurement on Vercel.
 
 ## 7. Anti-drift & gates
 
--   **Built from the one source.** The index derives from `getText('processed')`,
-    same as `llms.txt` and the HTML — edit an MDX file and all three move together.
-    Regenerated every deploy; nothing to hand-sync.
--   **A build gate**, mirroring the `gen:docs` diff gate: CI fails if the index
-    step errors or a chunk has no `description`/title (the manifest already makes
-    descriptions mandatory).
--   **No core impact.** Everything lives in `apps/docs`; `packages/core` gains no
-    dependency and the bundle gates are untouched. (This is server-only docs infra,
-    so the browser-first / bundle-frugal gates that govern the _library_ don't
-    apply.)
+- **Built from the one source.** The index derives from `getText('processed')`,
+  same as `llms.txt` and the HTML — edit an MDX file and all three move together.
+  Regenerated every deploy; nothing to hand-sync.
+- **A build gate**, mirroring the `gen:docs` diff gate: CI fails if the index
+  step errors or a chunk has no `description`/title (the manifest already makes
+  descriptions mandatory).
+- **No core impact.** Everything lives in `apps/docs`; `packages/core` gains no
+  dependency and the bundle gates are untouched. (This is server-only docs infra,
+  so the browser-first / bundle-frugal gates that govern the _library_ don't
+  apply.)
 
 ## 8. What to hold the line on
 
--   **Stay context-frugal.** `search_docs` returns excerpts + links, never full
-    pages. The moment it dumps whole pages it's just a slower `llms-full.txt`.
--   **Don't add an external vector DB.** Extend Orama. Self-contained is the brand.
--   **Self-contained by default.** A local model means no key, no third-party
-    service in the request path. A hosted embedding API is an opt-in upgrade, never
-    the default.
--   **Keep `llms.txt` / `llms-full.txt`.** `search_docs` is additive. For a corpus
-    this size, "just load it all" remains the documented default (see the agents
-    page); retrieval is the path for scale and per-turn frugality, not a
-    replacement.
--   **Don't conflate with `run_stitch`** (see §2).
+- **Stay context-frugal.** `search_docs` returns excerpts + links, never full
+  pages. The moment it dumps whole pages it's just a slower `llms-full.txt`.
+- **Don't add an external vector DB.** Extend Orama. Self-contained is the brand.
+- **Self-contained by default.** A local model means no key, no third-party
+  service in the request path. A hosted embedding API is an opt-in upgrade, never
+  the default.
+- **Keep `llms.txt` / `llms-full.txt`.** `search_docs` is additive. For a corpus
+  this size, "just load it all" remains the documented default (see the agents
+  page); retrieval is the path for scale and per-turn frugality, not a
+  replacement.
+- **Don't conflate with `run_stitch`** (see §2).
 
 ## 9. Phasing (one PR each, stop between)
 

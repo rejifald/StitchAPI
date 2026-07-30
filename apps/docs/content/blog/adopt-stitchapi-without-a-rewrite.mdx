@@ -28,10 +28,10 @@ async function getUser(id: string) {
 
 The sharp edges are real, and they are the ones you keep patching by hand:
 
--   **No retry.** A 503 from the upstream propagates straight to the caller. The fix is a loop with backoff, written once here and forgotten in the next copy.
--   **No timeout.** A hung connection hangs the request behind it. You reach for `AbortController` and a `setTimeout` you have to clear.
--   **The cast lies.** `as Promise<{ id: number; name: string }>` is a promise to the compiler, not a check against the bytes. The day the API renames `name`, this code reads `undefined` and keeps going.
--   **The token is in the function.** `process.env.API_TOKEN` is interpolated inline, so every copy holds the secret and every log line risks leaking it.
+- **No retry.** A 503 from the upstream propagates straight to the caller. The fix is a loop with backoff, written once here and forgotten in the next copy.
+- **No timeout.** A hung connection hangs the request behind it. You reach for `AbortController` and a `setTimeout` you have to clear.
+- **The cast lies.** `as Promise<{ id: number; name: string }>` is a promise to the compiler, not a check against the bytes. The day the API renames `name`, this code reads `undefined` and keeps going.
+- **The token is in the function.** `process.env.API_TOKEN` is interpolated inline, so every copy holds the secret and every log line risks leaking it.
 
 ## The same call, as a stitch
 
@@ -54,10 +54,10 @@ const user = await getUser({ params: { id: '42' } }); // typed · validated
 
 Field by field, against the list above:
 
--   `retry` replaces the hand-rolled loop — status-aware, capped attempts, jittered backoff, and it honors `Retry-After` on its own.
--   `timeout` replaces the `AbortController` dance with a layered budget: `total` bounds the whole call, `perAttempt` bounds each try.
--   `output` replaces the cast with a real check. `await` returns the **validated** value; a renamed `name` throws a `StitchError` at the boundary instead of leaking `undefined` downstream.
--   `auth: bearer(env('API_TOKEN'))` keeps the secret out of the function — it resolves at call time, and the caller never holds it.
+- `retry` replaces the hand-rolled loop — status-aware, capped attempts, jittered backoff, and it honors `Retry-After` on its own.
+- `timeout` replaces the `AbortController` dance with a layered budget: `total` bounds the whole call, `perAttempt` bounds each try.
+- `output` replaces the cast with a real check. `await` returns the **validated** value; a renamed `name` throws a `StitchError` at the boundary instead of leaking `undefined` downstream.
+- `auth: bearer(env('API_TOKEN'))` keeps the secret out of the function — it resolves at call time, and the caller never holds it.
 
 `await getUser(...)` throws `StitchError` (with `.status`, `.attempts`, `.body`, `.url`) after the stitch exhausts its own retries. In a loader or server action, call `getUser.safe({ params: { id } })` instead — it resolves to `{ ok, data, error }` and never throws.
 

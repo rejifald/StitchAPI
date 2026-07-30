@@ -25,12 +25,12 @@ They share exactly one property — "stable across a call's retries" — which i
 random idempotency key _feels_ like a request id. But their semantics diverge the moment
 you look past that:
 
--   An idempotency key is sometimes **derived** from the input, so two _separate_
-    submissions (a double-clicked button) collapse into one write. A correlation id is the
-    opposite: you want each submission to stay **distinct** in the logs.
--   A correlation id wants to **be** the trace id, so the line a server logs joins the
-    spans you already export. An idempotency key has no such tie — a random uuid is fine,
-    because all it needs to be is _the same_ across one write's attempts.
+- An idempotency key is sometimes **derived** from the input, so two _separate_
+  submissions (a double-clicked button) collapse into one write. A correlation id is the
+  opposite: you want each submission to stay **distinct** in the logs.
+- A correlation id wants to **be** the trace id, so the line a server logs joins the
+  spans you already export. An idempotency key has no such tie — a random uuid is fine,
+  because all it needs to be is _the same_ across one write's attempts.
 
 So one field can't serve both. The idempotency `header` option renames the key a server
 **dedupes** on — nothing more. A correlation id belongs to tracing, where its value is

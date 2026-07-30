@@ -17,8 +17,8 @@ A stitch lets you declare a **proactive throttle** — a ceiling on how fast and
 
 The throttle is two independent caps, and conflating them is the most common mistake. They answer different questions.
 
--   **Rate cap (`rate`)** — _how fast_ you may call. In StitchAPI this is a minimum spacing between successive calls, written as a string like `'5/s'`. It's about pace over time, not a burst allowance: five per second means roughly one every 200ms, not five at once followed by silence.
--   **Concurrency cap (`concurrency`)** — _how many at once_. This bounds in-flight requests regardless of how quickly they complete. It's the control that matters when an upstream tolerates a steady stream but falls over if you open fifty sockets to it simultaneously.
+- **Rate cap (`rate`)** — _how fast_ you may call. In StitchAPI this is a minimum spacing between successive calls, written as a string like `'5/s'`. It's about pace over time, not a burst allowance: five per second means roughly one every 200ms, not five at once followed by silence.
+- **Concurrency cap (`concurrency`)** — _how many at once_. This bounds in-flight requests regardless of how quickly they complete. It's the control that matters when an upstream tolerates a steady stream but falls over if you open fifty sockets to it simultaneously.
 
 They're orthogonal. A slow-but-parallel API wants a concurrency cap and a loose rate. A fast-but-serial one wants a tight rate and `concurrency: 1`. Most real limits are a combination, and you can set either on its own or both together.
 
@@ -106,9 +106,9 @@ The reactive `429`/retry path is the sensible floor. At low volume you'll never 
 
 Flip on `throttle` — a single field on the same stitch — when:
 
--   **Your volume brushes the limit.** You're making enough calls that `429`s start appearing in normal traffic, not just spikes. A declared rate gives you smooth pacing instead of a bounce-and-wait cycle.
--   **You want to stop hammering a shared cap.** Multiple call sites share one account quota. The throttle keeps any one stitch from consuming the whole budget before others get a turn.
--   **Many stitches share one host budget.** Set `pool: 'host'` and the limiter counts across every stitch pointed at that origin — the right control when the ceiling is per-domain, not per-endpoint.
+- **Your volume brushes the limit.** You're making enough calls that `429`s start appearing in normal traffic, not just spikes. A declared rate gives you smooth pacing instead of a bounce-and-wait cycle.
+- **You want to stop hammering a shared cap.** Multiple call sites share one account quota. The throttle keeps any one stitch from consuming the whole budget before others get a turn.
+- **Many stitches share one host budget.** Set `pool: 'host'` and the limiter counts across every stitch pointed at that origin — the right control when the ceiling is per-domain, not per-endpoint.
 
 Two caveats stay real regardless of volume: you have to declare the actual limit (set it too high and `retry` is still doing the work; set it too low and you've throttled yourself for no reason), and the default limiter is per-process (multiple workers each keep their own count — span them with a shared store, covered in the [distributed throttle](/blog/distributed-throttle-with-redis-kv) write-up).
 

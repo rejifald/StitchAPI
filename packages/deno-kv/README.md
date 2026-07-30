@@ -7,10 +7,10 @@ A **[Deno KV](https://docs.deno.com/deploy/kv/manual/)-backed
 process-local pieces of a stitch become fleet-wide, with **no change to the call
 site** (DESIGN §13):
 
--   **Throttle** — rate counters live in Deno KV, so the rate budget is shared
-    across every isolate (distributed rate limiting).
--   **Auth** — the cookie jar / token cache lives in Deno KV, so sessions & tokens
-    are shared across isolates and survive restarts.
+- **Throttle** — rate counters live in Deno KV, so the rate budget is shared
+  across every isolate (distributed rate limiting).
+- **Auth** — the cookie jar / token cache lives in Deno KV, so sessions & tokens
+  are shared across isolates and survive restarts.
 
 On Deno Deploy the same `Deno.openKv()` handle is replicated globally, so a
 stitch's state becomes edge-native for free.

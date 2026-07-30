@@ -984,8 +984,7 @@ function describe(baseReq: AdapterRequest): RequestDescriptor {
 }
 
 type RunOutcome =
-    | { ok: true; value: unknown; status: number; vary?: string }
-    | { ok: false };
+    { ok: true; value: unknown; status: number; vary?: string } | { ok: false };
 
 const startEvt = (
     name: string,

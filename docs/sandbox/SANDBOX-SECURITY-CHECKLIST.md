@@ -21,27 +21,27 @@ outside world a snippet sees is the simulator `fetch` shim._ The §3 static surf
 The contract gaps this checklist flagged in Appendix A are now resolved and **frozen in
 [`component/runner.ts`](./component/runner.ts)**. Tests assert the concrete fields, not recommendations:
 
--   **Timeout vs abort vs throw** (was Appendix A.3) → `RunError.reason: 'throw'|'timeout'|'abort'|'internal'`.
-    SEC-20/25 assert `reason === 'timeout'` / `'abort'` respectively.
--   **Shim notice channel** (was A.5) → `RunResult.notices: RunNotice[]` with `{ kind:'shim', surface, message }`.
-    SEC-3x asserts a shim run yields a `notices[]` entry for the surface — not a log scrape.
--   **Always-resolve semantics** (was A.4) → engine failures resolve as `reason:'internal'`; `run()` rejects
-    only for unrecoverable harness bugs. SEC-39d asserts a renderable `RunResult` for every failure class.
--   **Browser memory cap** (A.1) → accepted **time-bounded only**; `SEC-23` stays `server`-only.
--   **CSP tokens** (A.2) → intent `connect-src 'self'` + `worker-src 'self' blob:`; Worker eval needs
-    `'unsafe-eval'` _inside the Worker only_. Exact tokens validated in the Phase-2 spike (SEC-10..13 test intent now).
--   **Determinism vs timing** (A.7) → determinism covers response **bytes**, not delivery **timing**; SEC-05
-    asserts payload equality, not latency equality.
+- **Timeout vs abort vs throw** (was Appendix A.3) → `RunError.reason: 'throw'|'timeout'|'abort'|'internal'`.
+  SEC-20/25 assert `reason === 'timeout'` / `'abort'` respectively.
+- **Shim notice channel** (was A.5) → `RunResult.notices: RunNotice[]` with `{ kind:'shim', surface, message }`.
+  SEC-3x asserts a shim run yields a `notices[]` entry for the surface — not a log scrape.
+- **Always-resolve semantics** (was A.4) → engine failures resolve as `reason:'internal'`; `run()` rejects
+  only for unrecoverable harness bugs. SEC-39d asserts a renderable `RunResult` for every failure class.
+- **Browser memory cap** (A.1) → accepted **time-bounded only**; `SEC-23` stays `server`-only.
+- **CSP tokens** (A.2) → intent `connect-src 'self'` + `worker-src 'self' blob:`; Worker eval needs
+  `'unsafe-eval'` _inside the Worker only_. Exact tokens validated in the Phase-2 spike (SEC-10..13 test intent now).
+- **Determinism vs timing** (A.7) → determinism covers response **bytes**, not delivery **timing**; SEC-05
+  asserts payload equality, not latency equality.
 
 Conventions for every row:
 
--   **Applies to** is one of: `browser` (Phase-2 Web Worker runner), `server` (Phase-3
-    isolated-vm run-service), or `both`.
--   A test is **mechanical**: it asserts an observable (a resolved `RunResult`, a thrown/not-thrown
-    promise, a network spy with zero real sockets, a terminated Worker handle, a CSP string match).
--   "real network" / "real socket" means any egress that is **not** the injected simulator shim.
--   Server-tier rows (SEC-40..45) are **Phase 3**; T-α marks them `skip` until SR1 exists, but they
-    are ratified here so SR1 codes against them.
+- **Applies to** is one of: `browser` (Phase-2 Web Worker runner), `server` (Phase-3
+  isolated-vm run-service), or `both`.
+- A test is **mechanical**: it asserts an observable (a resolved `RunResult`, a thrown/not-thrown
+  promise, a network spy with zero real sockets, a terminated Worker handle, a CSP string match).
+- "real network" / "real socket" means any egress that is **not** the injected simulator shim.
+- Server-tier rows (SEC-40..45) are **Phase 3**; T-α marks them `skip` until SR1 exists, but they
+  are ratified here so SR1 codes against them.
 
 ---
 
@@ -191,9 +191,9 @@ server blast radius (capped, network-less, recycled, rate-limited) → SEC-40..4
 
 **38 invariants defined** (SEC-01..05, SEC-10..13, SEC-20..27, SEC-30..38, SEC-39a..d, SEC-40..48).
 
--   **Phase-2 (browser, must pass for sandbox v1):** SEC-01..05, SEC-10..13, SEC-20/21/22/24,
-    SEC-25..27, SEC-30..37, SEC-39a..d, SEC-46..48.
--   **Phase-3 (server, `skip` until SR1):** SEC-23, SEC-38, SEC-40..45.
+- **Phase-2 (browser, must pass for sandbox v1):** SEC-01..05, SEC-10..13, SEC-20/21/22/24,
+  SEC-25..27, SEC-30..37, SEC-39a..d, SEC-46..48.
+- **Phase-3 (server, `skip` until SR1):** SEC-23, SEC-38, SEC-40..45.
 
 T-α implements the "How T-α tests it" column verbatim as assertions and wires the §10 coverage
 map into a CI gate: **sandbox v1 ships only when every Phase-2 row is green.**
