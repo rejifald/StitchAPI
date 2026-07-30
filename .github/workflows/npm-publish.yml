@@ -36,8 +36,8 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 5
         steps:
-            - uses: actions/checkout@v4
-            - uses: actions/setup-node@v4
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
               with:
                   node-version-file: .nvmrc
             - name: Release tag must match the tagged commit's version
@@ -56,9 +56,9 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
-            - uses: actions/checkout@v4
-            - uses: pnpm/action-setup@v4
-            - uses: actions/setup-node@v4
+            - uses: actions/checkout@v7
+            - uses: pnpm/action-setup@v6
+            - uses: actions/setup-node@v7
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
@@ -84,9 +84,9 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 15
         steps:
-            - uses: actions/checkout@v4
-            - uses: pnpm/action-setup@v4
-            - uses: actions/setup-node@v4
+            - uses: actions/checkout@v7
+            - uses: pnpm/action-setup@v6
+            - uses: actions/setup-node@v7
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
@@ -107,9 +107,9 @@ jobs:
             contents: read
             id-token: write # mint the OIDC token npm exchanges for publish auth (+ provenance)
         steps:
-            - uses: actions/checkout@v4
-            - uses: pnpm/action-setup@v4
-            - uses: actions/setup-node@v4
+            - uses: actions/checkout@v7
+            - uses: pnpm/action-setup@v6
+            - uses: actions/setup-node@v7
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
@@ -205,7 +205,7 @@ jobs:
         permissions:
             contents: write # attach the SBOMs as GitHub release assets
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
 
             - name: Generate SPDX SBOM
               uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
