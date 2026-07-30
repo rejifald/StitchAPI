@@ -95,8 +95,7 @@ const { data } = useQuery(stitchQueryOptions(getUser, { params: { id } }));
 >
 > It is `stitchQueryOptions`, not a bare `queryOptions`, because TanStack Query
 > exports its own `queryOptions` — the bare name would clash on import
-> ([ADR 0012](../../docs/adr/0012-integration-symbol-naming.md)). `queryOptions`
-> remains a `@deprecated` alias through `1.0.0-rc`, removed at the 1.0 GA cut.
+> ([ADR 0012](../../docs/adr/0012-integration-symbol-naming.md)).
 
 ## License
 

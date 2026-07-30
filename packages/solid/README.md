@@ -14,7 +14,7 @@ These primitives are a thin layer over [`@stitchapi/query-core`](../query-core),
 pnpm add @stitchapi/solid@rc @stitchapi/query-core@rc stitchapi@rc solid-js
 ```
 
-`stitchapi`, `@stitchapi/query-core`, and `solid-js` (`^1.8`) are peer dependencies. `@tanstack/solid-query` is an **optional** peer — only needed if you use `queryOptions`.
+`stitchapi`, `@stitchapi/query-core`, and `solid-js` (`^1.8`) are peer dependencies. `@tanstack/solid-query` is an **optional** peer — only needed if you use `stitchQueryOptions`.
 
 ## `createStitch` — request / response
 
@@ -98,14 +98,14 @@ interface StitchStore<T> {
 
 ## Optional: TanStack Query
 
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/solid-query` required, so it works even if you never install it.
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/solid-query` required, so it works even if you never install it.
 
 ```tsx
-import { queryOptions } from '@stitchapi/solid';
+import { stitchQueryOptions } from '@stitchapi/solid';
 import { createQuery } from '@tanstack/solid-query';
 
 const query = createQuery(() =>
-    queryOptions(getUser, { params: { id: id() } }),
+    stitchQueryOptions(getUser, { params: { id: id() } }),
 );
 ```
 

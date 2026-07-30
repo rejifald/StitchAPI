@@ -36,7 +36,7 @@ jobs:
             contents: read
             actions: read
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
               with:
                   # Required by scorecard-action: it re-clones and analyses the repo, and a
                   # persisted credential in .git/config would be an ambient token in the
@@ -61,7 +61,7 @@ jobs:
 
             # Keep the raw SARIF downloadable for the run — useful when a check regresses
             # and the Security tab's rendering hides the reason.
-            - uses: actions/upload-artifact@v4
+            - uses: actions/upload-artifact@v7
               with:
                   name: scorecard-sarif
                   path: results.sarif

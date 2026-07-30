@@ -18,7 +18,7 @@ export {
     STITCH_VAR,
     type HonoRequestSeam,
     type StitchEnv,
-    type StitchMiddlewareOptions,
+    type HonoStitchMiddlewareOptions,
 } from './middleware';
 
 export {

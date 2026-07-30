@@ -2,13 +2,13 @@
 // `adapter` (no network), so every stitch call resolves against canned responses. We drive the
 // app with `fastify.inject()` and assert the four contracts: the seam is decorated, the
 // request-scoped principal binds (a route reads `currentStitch()` and `request.stitch`),
-// `sendStitchSse` streams events, and `stitchErrorHandler` maps a StitchError to a status.
+// `streamStitchSse` streams events, and `stitchErrorHandler` maps a StitchError to a status.
 import {
     currentStitch,
     isStitchError,
-    sendStitchSse,
     stitchErrorHandler,
     stitchPlugin,
+    streamStitchSse,
 } from '../src';
 
 import Fastify from 'fastify';
@@ -145,7 +145,7 @@ describe('stitchPlugin', () => {
         expect(res.json()).toEqual({ isRoot: true });
     });
 
-    test('sendStitchSse streams delta events to the reply', async () => {
+    test('streamStitchSse streams delta events to the reply', async () => {
         // A hand-built event stream — the SSE bridge consumes any AsyncIterable<StitchEvent>.
         async function* events(): AsyncGenerator<StitchEvent<unknown>> {
             yield {
@@ -173,7 +173,7 @@ describe('stitchPlugin', () => {
             },
             logger: false,
         });
-        app.get('/sse', (_request, reply) => sendStitchSse(reply, events()));
+        app.get('/sse', (_request, reply) => streamStitchSse(reply, events()));
         await app.ready();
 
         const res = await app.inject({ method: 'GET', url: '/sse' });
@@ -181,6 +181,35 @@ describe('stitchPlugin', () => {
         expect(res.headers['content-type']).toContain('text/event-stream');
         // Only the two delta chunks become frames; control events are not forwarded.
         expect(res.body).toBe('data: hello\n\ndata: world\n\n');
+    });
+
+    test('accepts the { stream() } arm of StitchEventSource', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'via-stream()', at: 1 };
+            yield { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 2 };
+        }
+        // Anything with a `.stream()` handing back the iterable — e.g. a StitchResult.
+        const source = { stream: () => events() };
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seamConfig: {
+                baseUrl: 'https://api.test',
+                adapter: fakeAdapter(() => ({
+                    status: 200,
+                    headers: {},
+                    body: {},
+                })).adapter,
+            },
+            logger: false,
+        });
+        app.get('/sse-source', (_request, reply) =>
+            streamStitchSse(reply, source),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/sse-source' });
+        expect(res.body).toBe('data: via-stream()\n\n');
     });
 
     test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
@@ -212,7 +241,7 @@ describe('stitchPlugin', () => {
             logger: false,
         });
         app.get('/sse-err', (_request, reply) =>
-            sendStitchSse(reply, events()),
+            streamStitchSse(reply, events()),
         );
         await app.ready();
 
@@ -248,7 +277,7 @@ describe('stitchPlugin', () => {
             logger: false,
         });
         app.get('/sse-err', (_request, reply) =>
-            sendStitchSse(reply, events(), { error: (e) => e.message }),
+            streamStitchSse(reply, events(), { error: (e) => e.message }),
         );
         await app.ready();
 
@@ -285,7 +314,7 @@ describe('stitchPlugin', () => {
             logger: false,
         });
         app.get('/sse-err', (_request, reply) =>
-            sendStitchSse(reply, events(), {
+            streamStitchSse(reply, events(), {
                 error: { observe: (err) => observed.push(err) },
             }),
         );
