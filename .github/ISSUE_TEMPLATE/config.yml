@@ -1,0 +1,13 @@
+# Blank issues are off so every report arrives through a template — chiefly so a
+# security problem is routed to the private channel below instead of being disclosed
+# in a public issue before a fix exists (SECURITY.md).
+blank_issues_enabled: false
+
+contact_links:
+    - name: Report a security vulnerability
+      url: https://github.com/rejifald/StitchAPI/blob/main/SECURITY.md
+      about: Never in a public issue. SECURITY.md has the private channels, the response timeline, and what's in scope.
+
+    - name: Documentation, guides and live playground
+      url: https://stitchapi.dev
+      about: Check the docs before filing — the playground reproduces most questions faster than an issue can.
