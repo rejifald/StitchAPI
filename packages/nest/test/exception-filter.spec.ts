@@ -95,23 +95,26 @@ describe('toHttpException', () => {
             expect(ex.cause).toBe(original);
         });
 
-        it('opt-in `exposeMessage: true` includes the raw message', () => {
+        it('opt-in `body` can echo the raw message when the caller chooses to', () => {
             const ex = toHttpException(
                 stitchError('getaddrinfo ENOTFOUND payments.internal.corp'),
-                { exposeMessage: true },
+                { body: (e) => ({ error: e.message }) },
             )!;
             expect(bodyOf(ex)).toContain('payments.internal.corp');
         });
 
-        it('opt-in `message` override sets a caller-chosen message', () => {
-            const fixed = toHttpException(stitchError('HTTP 401', 401), {
-                message: 'Payment provider unavailable',
+        it('`body` shapes a caller-chosen error envelope, receiving the mapped status', () => {
+            const ex = toHttpException(stitchError('HTTP 401', 401), {
+                body: (_e, status) => ({
+                    error: 'Payment provider unavailable',
+                    status,
+                }),
             })!;
-            expect(fixed.message).toBe('Payment provider unavailable');
-            const fromFn = toHttpException(stitchError('HTTP 429', 429), {
-                message: (e) => `upstream said ${e.status}`,
-            })!;
-            expect(fromFn.message).toBe('upstream said 429');
+            expect(ex.getResponse()).toEqual({
+                error: 'Payment provider unavailable',
+                status: 502, // the mapped status, not the upstream 401
+            });
+            expect(bodyOf(ex)).not.toContain('HTTP 401');
         });
     });
 });

@@ -86,14 +86,15 @@ async function loadProfile() {
 
 ## SSE streaming
 
-`sendStitchSse(reply, stream, options?)` streams a stitch's `.stream()` output to a
+`streamStitchSse(reply, stream, options?)` streams a stitch's `.stream()` output to a
 `text/event-stream` reply. Each `delta` chunk becomes one SSE frame; an `error`
-event ends the stream as a named `error` frame; stream end closes the response; and
-a client disconnect aborts the upstream stitch generator rather than leaving it
-running.
+event ends the stream as a named `error` frame whose `data` is a generic `error`
+token by default (the raw upstream message never reaches the client — opt in with
+`error`); stream end closes the response; and a client disconnect aborts the
+upstream stitch generator rather than leaving it running.
 
 ```ts twoslash
-import { sendStitchSse } from '@stitchapi/fastify';
+import { streamStitchSse } from '@stitchapi/fastify';
 import Fastify from 'fastify';
 import { sse } from 'stitchapi/sse';
 
@@ -101,7 +102,7 @@ const chat = sse({ url: 'https://api.example.com/chat' });
 const app = Fastify();
 
 app.get<{ Querystring: { q: string } }>('/chat', (req, reply) =>
-    sendStitchSse(reply, chat.stream({ query: { q: req.query.q } }), {
+    streamStitchSse(reply, chat.stream({ query: { q: req.query.q } }), {
         delta: (chunk) => (chunk as { data: string }).data, // pull text out
     }),
 );
