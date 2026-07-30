@@ -32,7 +32,7 @@
         "prepare": "lefthook install"
     },
     "devDependencies": {
-        "@trivago/prettier-plugin-sort-imports": "^4.3.0",
+        "@trivago/prettier-plugin-sort-imports": "^6.0.2",
         "fallow": "^2.99.0",
         "lefthook": "^2.1.9",
         "prettier": "3.3.3",
