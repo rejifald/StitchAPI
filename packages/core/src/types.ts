@@ -247,9 +247,7 @@ export interface AdapterResponse {
  *     {@link AdapterRequest.onProgress} as the response arrives. `fetch`, `xhr`, and axios all can.
  */
 export type AdapterCapability =
-    | 'stream'
-    | 'uploadProgress'
-    | 'downloadProgress';
+    'stream' | 'uploadProgress' | 'downloadProgress';
 /**
  * What a transport supports, declared on the adapter itself (ADR 0005 Decision 9). An adapter is
  * still just a function — this is an OPTIONAL hint hung off it. A descriptor lists the features the
@@ -622,8 +620,7 @@ export type StitchEvent<T = unknown> =
  * accepts exactly this.
  */
 export type StitchEventSource<T = unknown> =
-    | AsyncIterable<StitchEvent<T>>
-    | { stream(): AsyncIterable<StitchEvent<T>> };
+    AsyncIterable<StitchEvent<T>> | { stream(): AsyncIterable<StitchEvent<T>> };
 
 // ---- Clock (injectable time, ADR 0010) ------------------------------------
 /** An opaque timer handle returned by {@link Clock.setTimer}. */
@@ -1010,11 +1007,7 @@ export interface Inspection<T> {
  * `'disabled'` is a stitch with no `cache` block configured at all.
  */
 export type CacheOutcome =
-    | 'hit'
-    | 'hit (revalidated)'
-    | 'miss'
-    | 'bypass'
-    | 'disabled';
+    'hit' | 'hit (revalidated)' | 'miss' | 'bypass' | 'disabled';
 
 /**
  * The result of {@link Stitch.report} (ADR 0019) — an {@link Inspection} **plus** run diagnostics: it

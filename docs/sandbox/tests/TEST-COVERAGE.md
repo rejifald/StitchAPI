@@ -2,10 +2,10 @@
 
 Maps every SANDBOX §9 acceptance line and every SEC-xx invariant to its evidence:
 
--   **covered-in-node** — asserted by a test that runs in Node/tsx (T-α integration or a named smoke)
--   **proven-by-R1-harness** — asserted by the `worker_threads` harness in `browser-runner.test.ts` (real OS-thread isolation)
--   **browser-deferred** — needs a Playwright-class harness (real CSP headers, real Worker global, real `fetch` interception at the browser layer)
--   **server-deferred** — Phase-3 server tier not yet implemented (SR1); tests marked `skip` per the checklist
+- **covered-in-node** — asserted by a test that runs in Node/tsx (T-α integration or a named smoke)
+- **proven-by-R1-harness** — asserted by the `worker_threads` harness in `browser-runner.test.ts` (real OS-thread isolation)
+- **browser-deferred** — needs a Playwright-class harness (real CSP headers, real Worker global, real `fetch` interception at the browser layer)
+- **server-deferred** — Phase-3 server tier not yet implemented (SR1); tests marked `skip` per the checklist
 
 ---
 
@@ -142,14 +142,14 @@ The following invariants require infrastructure beyond Node/tsx and are explicit
 
 ### Browser-deferred (need Playwright or equivalent)
 
--   **SEC-04** — Non-HTTP egress (WebSocket, EventSource, sendBeacon, remote `import()`) blocked. Requires real browser globals.
--   **SEC-10** — `connect-src` CSP header value. Requires a running docs server + HTTP response header inspection.
--   **SEC-11** — `worker-src` restricts foreign Worker creation. Requires real browser + CSP violation event.
--   **SEC-12** — Direct bypass attempt caught by CSP (not silently sent). Requires real browser network layer.
--   **SEC-13** — `unsafe-eval` confined to Worker context only. Requires real browser CSP inspection per context.
+- **SEC-04** — Non-HTTP egress (WebSocket, EventSource, sendBeacon, remote `import()`) blocked. Requires real browser globals.
+- **SEC-10** — `connect-src` CSP header value. Requires a running docs server + HTTP response header inspection.
+- **SEC-11** — `worker-src` restricts foreign Worker creation. Requires real browser + CSP violation event.
+- **SEC-12** — Direct bypass attempt caught by CSP (not silently sent). Requires real browser network layer.
+- **SEC-13** — `unsafe-eval` confined to Worker context only. Requires real browser CSP inspection per context.
 
 ### Server-deferred (need Phase-3 SR1 implementation)
 
--   **SEC-23** — Memory-bomb contained by isolate memory cap. Requires `isolated-vm` or hardened `worker_threads` pool.
--   **SEC-38** — Isolate recycled per run (heap/globals from run 1 unreachable in run 2). Requires pool.
--   **SEC-40..45** — All server-tier invariants: network-less isolate, per-IP rate limit, concurrency queue, wall-clock/CPU/memory caps, isolate recycling, fallback equivalence.
+- **SEC-23** — Memory-bomb contained by isolate memory cap. Requires `isolated-vm` or hardened `worker_threads` pool.
+- **SEC-38** — Isolate recycled per run (heap/globals from run 1 unreachable in run 2). Requires pool.
+- **SEC-40..45** — All server-tier invariants: network-less isolate, per-IP rate limit, concurrency queue, wall-clock/CPU/memory caps, isolate recycling, fallback equivalence.

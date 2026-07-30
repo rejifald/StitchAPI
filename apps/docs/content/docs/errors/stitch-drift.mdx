@@ -35,12 +35,12 @@ throws; an optional field whose absence is silently tolerated.
 Read the finding's `path` to see exactly what moved, then decide which case you
 are in:
 
--   **The change is intended.** The upstream shape genuinely changed and you want
-    the new shape. Update the `output` schema to match the new type or mark the
-    field optional, and the error stops.
--   **It is a vendor regression.** You did not expect this change — that is the
-    signal drift exists to give you. Treat the thrown error as the alert and act
-    on the upstream break.
+- **The change is intended.** The upstream shape genuinely changed and you want
+  the new shape. Update the `output` schema to match the new type or mark the
+  field optional, and the error stops.
+- **It is a vendor regression.** You did not expect this change — that is the
+  signal drift exists to give you. Treat the thrown error as the alert and act
+  on the upstream break.
 
 If a field should be tolerated when absent, declare it `.optional()` in the
 schema. Validation will then succeed, and drift may emit a soft `defaulted`

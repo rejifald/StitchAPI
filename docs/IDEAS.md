@@ -12,10 +12,10 @@ Every idea must answer the same questions, so they stay comparable and we never 
 ```markdown
 ## <Idea name>
 
--   **Status:** idea | exploring | accepted → §10
--   **Date:** YYYY-MM
--   **Tags:** …
--   **Gates:** browser-first? · bundle-frugal? (the two gates — FEATURE-LENSES)
+- **Status:** idea | exploring | accepted → §10
+- **Date:** YYYY-MM
+- **Tags:** …
+- **Gates:** browser-first? · bundle-frugal? (the two gates — FEATURE-LENSES)
 
 **Problem / why** — what's painful or missing today.
 **Sketch** — what it is, concretely.
@@ -27,11 +27,11 @@ Every idea must answer the same questions, so they stay comparable and we never 
 
 ## Studio — the visual surface
 
--   **Status:** idea
--   **Date:** 2026-06
--   **Tags:** surface, visual, authoring, observability, DX
--   **Gates:** browser-first ✅ (it _is_ the FE surface) · bundle-frugal — must not pull weight
-    into the core import; ships as its own surface, not bundled into `stitch()`.
+- **Status:** idea
+- **Date:** 2026-06
+- **Tags:** surface, visual, authoring, observability, DX
+- **Gates:** browser-first ✅ (it _is_ the FE surface) · bundle-frugal — must not pull weight
+  into the core import; ships as its own surface, not bundled into `stitch()`.
 
 **Problem / why** — Two pains share one missing surface. (1) You can't _see_ what a stitch is
 doing — traces, drift, and health are JSONL today, not a picture. (2) Authoring a stitch still
@@ -39,13 +39,13 @@ means hand-writing the validation shape, even though the spec-less promise is "o
 
 **Sketch** — A browser app with two halves over the same runtime:
 
--   **Inspect** — see what's happening: live trace overlay, drift/health signals, and
-    Mermaid-from-definition (git-friendly) for any stitch. _(This supersedes and expands the
-    §10 "Visual" roadmap line.)_
--   **Author from a request** — fire a real call, **infer the validation shape** from the
-    response, and emit copy-paste `stitch({...})` code. The spec-less "one example" promise
-    (OVERVIEW §1, §5.1) made visual: request → inferred schema → ready-to-paste stitch, no
-    hand-written types.
+- **Inspect** — see what's happening: live trace overlay, drift/health signals, and
+  Mermaid-from-definition (git-friendly) for any stitch. _(This supersedes and expands the
+  §10 "Visual" roadmap line.)_
+- **Author from a request** — fire a real call, **infer the validation shape** from the
+  response, and emit copy-paste `stitch({...})` code. The spec-less "one example" promise
+  (OVERVIEW §1, §5.1) made visual: request → inferred schema → ready-to-paste stitch, no
+  hand-written types.
 
 **Backed by / builds on** — the event stream (trace overlay), leveled drift (health signals),
 the existing playground/sandbox surface, and Standard-Schema validation (the inferred shape
@@ -59,12 +59,12 @@ snapshot? How much of the inspect half is just the planned trace overlay vs net-
 
 ## `seam` — a primitive stitches belong to
 
--   **Status:** exploring → see [`adr/0002`](adr/0002-seam-primitive-and-principal-scoped-auth.md)
--   **Date:** 2026-06
--   **Tags:** authoring-surface, auth, security, multi-tenant, agents, runtime
--   **Gates:** browser-first — must hold without an OS keychain (vault default = memory/opaque
-    in-browser); principal binding + sealing are pure runtime, no lint. · bundle-frugal —
-    reuses `extends`/store keying/sink flush; avoid a _second mandatory_ storage backend.
+- **Status:** exploring → see [`adr/0002`](adr/0002-seam-primitive-and-principal-scoped-auth.md)
+- **Date:** 2026-06
+- **Tags:** authoring-surface, auth, security, multi-tenant, agents, runtime
+- **Gates:** browser-first — must hold without an OS keychain (vault default = memory/opaque
+  in-browser); principal binding + sealing are pure runtime, no lint. · bundle-frugal —
+  reuses `extends`/store keying/sink flush; avoid a _second mandatory_ storage backend.
 
 **Problem / why** — Shared defaults (baseUrl, throttle, retry, sink) get threaded into every
 `stitch()` by hand; `defineStitch` shares **config** but not **runtime**, so "this third-party
@@ -98,14 +98,14 @@ teardown order + GC. Dropped along the way: request dedup, abandoned-request can
 
 ## response cache & request coalescing — derived keys
 
--   **Status:** exploring → see [`adr/0003`](adr/0003-derived-key-response-cache-and-coalescing.md)
--   **Date:** 2026-06
--   **Tags:** caching, performance, resilience, multi-tenant, agents, runtime
--   **Gates:** browser-first — sync browser-safe body hash, no `node:*`; uncacheable (stream)
-    calls warn-and-pass-through, never crash. · bundle-frugal — subpath export, off until a
-    `cache` block exists; reuses the `StitchStore` `get/set/increment` contract, grows no new backend.
-    · declarative — `cache: { ttl, scope, vary?, methods?, maxEntries? }` round-trips as JSON;
-    `key()` is sugar over the derived default.
+- **Status:** exploring → see [`adr/0003`](adr/0003-derived-key-response-cache-and-coalescing.md)
+- **Date:** 2026-06
+- **Tags:** caching, performance, resilience, multi-tenant, agents, runtime
+- **Gates:** browser-first — sync browser-safe body hash, no `node:*`; uncacheable (stream)
+  calls warn-and-pass-through, never crash. · bundle-frugal — subpath export, off until a
+  `cache` block exists; reuses the `StitchStore` `get/set/increment` contract, grows no new backend.
+  · declarative — `cache: { ttl, scope, vary?, methods?, maxEntries? }` round-trips as JSON;
+  `key()` is sugar over the derived default.
 
 **Problem / why** — "two calls with the same key and variables should resolve to the same
 response," modelled on react-query — but react-query is a **UI-bound** cache above the transport
@@ -139,12 +139,12 @@ cache signal); GraphQL query-vs-mutation opt-in classification; conformance-kit 
 
 ## Playground trace DAG — `extends` derivation overlay
 
--   **Status:** idea
--   **Date:** 2026-06
--   **Tags:** playground, visual, observability, DX, trace
--   **Gates:** browser-first ✅ (renders client-side in the existing playground; mermaid is
-    lazy-loaded, off the SSR / initial-bundle path) · bundle-frugal — stays inside the
-    `docs/sandbox` playground surface, never pulled into the core `stitch()` import.
+- **Status:** idea
+- **Date:** 2026-06
+- **Tags:** playground, visual, observability, DX, trace
+- **Gates:** browser-first ✅ (renders client-side in the existing playground; mermaid is
+  lazy-loaded, off the SSR / initial-bundle path) · bundle-frugal — stays inside the
+  `docs/sandbox` playground surface, never pulled into the core `stitch()` import.
 
 **Problem / why** — The playground DAG now renders one node per executed `stitch()` call
 (labelled `METHOD /path`, or `$ command` for a `shell` surface), **with real edges**: ADR 0007's
@@ -176,11 +176,11 @@ the runtime-causality edges? (Down-payment on the Studio "Mermaid-from-definitio
 
 ## Frontend reactive bindings — Vue · Svelte · Solid
 
--   **Status:** idea
--   **Date:** 2026-06
--   **Tags:** integration, frontend, reactivity, streaming, DX
--   **Gates:** browser-first ✅ (it _is_ a FE surface) · bundle-frugal ✅ — a thin per-framework
-    binding over the shared `@stitchapi/query-core`, never a re-implementation.
+- **Status:** idea
+- **Date:** 2026-06
+- **Tags:** integration, frontend, reactivity, streaming, DX
+- **Gates:** browser-first ✅ (it _is_ a FE surface) · bundle-frugal ✅ — a thin per-framework
+  binding over the shared `@stitchapi/query-core`, never a re-implementation.
 
 **Problem / why** — `@stitchapi/react` (shipped) gives `useStitch`/`useStitchStream` over a
 framework-agnostic reactive store. React is ~45% of the market, but Vue/Svelte/Solid users have no
@@ -205,11 +205,11 @@ framework, or leave it to the POJO `queryOptions`?
 
 ## Edge-KV stores — Upstash · Cloudflare KV · Deno KV
 
--   **Status:** idea
--   **Date:** 2026-06
--   **Tags:** integration, storage, edge, StitchStore
--   **Gates:** browser-first ✅ (HTTP / Web-API drivers, edge-safe) · bundle-frugal ✅ — a peer-dep
-    package implementing the existing `StitchStore` contract, zero core change.
+- **Status:** idea
+- **Date:** 2026-06
+- **Tags:** integration, storage, edge, StitchStore
+- **Gates:** browser-first ✅ (HTTP / Web-API drivers, edge-safe) · bundle-frugal ✅ — a peer-dep
+  package implementing the existing `StitchStore` contract, zero core change.
 
 **Problem / why** — `@stitchapi/redis` makes "two workers share one login + rate budget"
 demonstrable, but it's Node/TCP. The edge story (Workers / Deno / Vercel + `@stitchapi/hono`) needs an
@@ -234,11 +234,11 @@ covers the `StitchStore` contract; it is not the storage gap worth filling.
 
 ## More backend adapters — Express · Elysia
 
--   **Status:** idea
--   **Date:** 2026-06
--   **Tags:** integration, backend, seam, lifecycle
--   **Gates:** browser-first n/a (a companion inherits its **host's** environment — the browser-first
-    gate binds _core_ only; Node/Bun is fine here) · bundle-frugal ✅.
+- **Status:** idea
+- **Date:** 2026-06
+- **Tags:** integration, backend, seam, lifecycle
+- **Gates:** browser-first n/a (a companion inherits its **host's** environment — the browser-first
+  gate binds _core_ only; Node/Bun is fine here) · bundle-frugal ✅.
 
 **Problem / why** — Nest (DI), Fastify (plugin), and Hono (edge) are shipped. Express still has the
 largest install base (mostly legacy); Bun-native Elysia is rising. Neither has a first-party seam

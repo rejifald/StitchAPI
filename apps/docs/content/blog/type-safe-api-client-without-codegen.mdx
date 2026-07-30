@@ -121,9 +121,9 @@ A required field that vanishes or turns incompatible fails loudly; a coercion th
 
 The honest line: if you have a maintained, accurate spec and accurate types are the whole requirement, a generator is less ceremony for that goal — and that's the floor you'd start from before reaching for a stitch.
 
--   **The spec is real, current, and owned.** When someone keeps the OpenAPI document honest and you'll touch a large fraction of the surface, generation types everything for the cost of one command. Per-endpoint stitch declarations would be more typing for that case.
--   **You don't want runtime validation.** A stitch's guarantees come from the `output` validator running on every response. If you don't want that work happening at runtime — or won't write a schema — a generated type is the leaner choice, and a stitch without an `output` is a fetch wrapper with extra steps.
--   **The contract and its spec move together.** When the API and document change on a cadence you control, regenerate-on-change is a feature, not a chore, and you may not need drift signals at all.
+- **The spec is real, current, and owned.** When someone keeps the OpenAPI document honest and you'll touch a large fraction of the surface, generation types everything for the cost of one command. Per-endpoint stitch declarations would be more typing for that case.
+- **You don't want runtime validation.** A stitch's guarantees come from the `output` validator running on every response. If you don't want that work happening at runtime — or won't write a schema — a generated type is the leaner choice, and a stitch without an `output` is a fetch wrapper with extra steps.
+- **The contract and its spec move together.** When the API and document change on a cadence you control, regenerate-on-change is a feature, not a chore, and you may not need drift signals at all.
 
 A stitch earns its place on the opposite shape of problem: spec-less, partial-spec, internal, or long-tail APIs; surfaces that change without warning; and anywhere you'd rather the type and the runtime check come from one schema than from a document and a build step. For the broader axis-by-axis version of this trade — generators versus runtime stitching across the whole surface — see [stitching vs. codegen API clients](/blog/stitch-vs-codegen-api-clients).
 

@@ -21,8 +21,8 @@ Say you set a 30-second timeout and retry three times. What does the 30 seconds 
 
 You want both bounds, and you want them named separately:
 
--   **`perAttempt`** — how long any single try gets before it's aborted and (maybe) retried.
--   **`total`** — how long the entire call gets, across every attempt and the backoff waits between them.
+- **`perAttempt`** — how long any single try gets before it's aborted and (maybe) retried.
+- **`total`** — how long the entire call gets, across every attempt and the backoff waits between them.
 
 StitchAPI declares them as one `timeout` object:
 
@@ -48,9 +48,9 @@ That's the cascading-failure pattern. When a dependency is already failing, ever
 
 A **circuit breaker** encodes "stop calling for a bit" as state. The mechanics are a small state machine:
 
--   It starts **closed** — calls pass through normally.
--   After a run of consecutive failures (the `failures`) it trips **open**. While open, calls **fast-fail** immediately without touching the dependency, for a cooldown window.
--   Once the cooldown elapses it goes **half-open** and lets a single trial call through. If that probe succeeds, the breaker **closes** and normal traffic resumes; if it fails, the breaker re-**opens** for a fresh cooldown.
+- It starts **closed** — calls pass through normally.
+- After a run of consecutive failures (the `failures`) it trips **open**. While open, calls **fast-fail** immediately without touching the dependency, for a cooldown window.
+- Once the cooldown elapses it goes **half-open** and lets a single trial call through. If that probe succeeds, the breaker **closes** and normal traffic resumes; if it fails, the breaker re-**opens** for a fresh cooldown.
 
 The fast-fail is the whole point. While the circuit is open, a call returns in microseconds instead of burning a `perAttempt` timeout discovering — again — that the dependency is unreachable. You stop adding load to a struggling upstream, and you stop tying up your own connections and promises waiting on doomed calls. The half-open probe is how you find out it's healthy again without flipping the floodgates open on the first hopeful guess.
 
@@ -124,13 +124,13 @@ Each piece covers a gap the others can't. Retry without a breaker turns a sustai
 
 None of this is free, and the defaults that are right for one dependency are wrong for another.
 
--   **Breaker thresholds need tuning, and the failure modes are symmetric.** Set `failures` too low or `cooldown` too long and the breaker trips on a momentary blip, cutting you off from a dependency that was fine. Set it too high or too short and it never really protects you — the circuit stays closed through an outage you wanted it to short. There's no universal number; it depends on the dependency's normal failure rate and how costly a false trip is. Start conservative and watch the `progress` events the breaker emits with phase `circuit`.
+- **Breaker thresholds need tuning, and the failure modes are symmetric.** Set `failures` too low or `cooldown` too long and the breaker trips on a momentary blip, cutting you off from a dependency that was fine. Set it too high or too short and it never really protects you — the circuit stays closed through an outage you wanted it to short. There's no universal number; it depends on the dependency's normal failure rate and how costly a false trip is. Start conservative and watch the `progress` events the breaker emits with phase `circuit`.
 
--   **The default breaker is process-local.** The failure counter lives in memory, so across multiple workers or replicas each one tallies its own failures and trips independently — meaning a failing host can take many times the hits you intended before every process's circuit opens. If you run more than one instance, give the stitches a shared `key` plus a durable store so one breaker spans the fleet — the same [shared-store move that makes a throttle distributed](/blog/distributed-throttle-with-redis-kv).
+- **The default breaker is process-local.** The failure counter lives in memory, so across multiple workers or replicas each one tallies its own failures and trips independently — meaning a failing host can take many times the hits you intended before every process's circuit opens. If you run more than one instance, give the stitches a shared `key` plus a durable store so one breaker spans the fleet — the same [shared-store move that makes a throttle distributed](/blog/distributed-throttle-with-redis-kv).
 
--   **Fast-fail means you need a plan for the fast failure.** A breaker doesn't make the data appear; it converts "wait, then fail" into "fail now." That's only an improvement if you have somewhere to go when it fires — a cached value, a degraded response, a queued retry, a clear error to the user. A `STITCH_CIRCUIT_OPEN` with no fallback is just a faster error, and sometimes that genuinely is the right call. But decide it on purpose.
+- **Fast-fail means you need a plan for the fast failure.** A breaker doesn't make the data appear; it converts "wait, then fail" into "fail now." That's only an improvement if you have somewhere to go when it fires — a cached value, a degraded response, a queued retry, a clear error to the user. A `STITCH_CIRCUIT_OPEN` with no fallback is just a faster error, and sometimes that genuinely is the right call. But decide it on purpose.
 
--   **Timeouts trade completeness for bounded latency.** A call that would have succeeded in 11 seconds fails under a 10-second `total`. That's the deal you're making on purpose: predictable latency in exchange for occasionally abandoning a slow-but-valid response. For a user-facing path it's almost always the right trade; for a nightly batch job that genuinely needs to finish, a tight timeout can be actively harmful. Match the budget to the caller.
+- **Timeouts trade completeness for bounded latency.** A call that would have succeeded in 11 seconds fails under a 10-second `total`. That's the deal you're making on purpose: predictable latency in exchange for occasionally abandoning a slow-but-valid response. For a user-facing path it's almost always the right trade; for a nightly batch job that genuinely needs to finish, a tight timeout can be actively harmful. Match the budget to the caller.
 
 The throughline: these tools bound a bad situation, they don't fix it. A dependency that's down is still down. What you've changed is that its outage no longer drags your service down with it — failures fail fast, in a shape you can catch and route around, instead of piling up as held connections and stalled loops.
 
@@ -142,6 +142,6 @@ stitchapi
 
 Declare a stitch, give it a `timeout`, a `retry` policy, and a `circuit`, and you've described how it should behave when the upstream misbehaves — once, for every caller. The per-feature guides go deeper:
 
--   [Circuit breaker](/docs/guides/resilience/circuit-breaker) — the state machine, shared breakers, and `STITCH_CIRCUIT_OPEN`.
--   [Timeouts](/docs/guides/resilience/timeout) — `total` vs `perAttempt`, and how they compose with retry.
--   [Retry](/docs/guides/resilience/retry) — backoff, jitter, and honoring `Retry-After`.
+- [Circuit breaker](/docs/guides/resilience/circuit-breaker) — the state machine, shared breakers, and `STITCH_CIRCUIT_OPEN`.
+- [Timeouts](/docs/guides/resilience/timeout) — `total` vs `perAttempt`, and how they compose with retry.
+- [Retry](/docs/guides/resilience/retry) — backoff, jitter, and honoring `Retry-After`.

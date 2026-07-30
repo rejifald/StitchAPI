@@ -101,23 +101,23 @@ The platform still owns the orchestration — the trigger, the schedule, the run
 
 Plainly, because this isn't a sales pitch:
 
--   **Non-developers own the automation.** A visual canvas lets someone who doesn't write TypeScript build and read the flow. A library can't do that — its surface is code.
--   **You want managed, scheduled, durable runs.** Cron triggers, run history that survives a process restart, retries _between_ steps across a queue — that's the platform's home turf, and an in-process library doesn't replicate it.
--   **You lean on prebuilt connectors.** Hundreds of ready-made integrations to popular SaaS tools are a real head start a library doesn't hand you.
--   **The orchestration _is_ the product.** If the value is the multi-step graph itself, you want the tool built around graphs.
+- **Non-developers own the automation.** A visual canvas lets someone who doesn't write TypeScript build and read the flow. A library can't do that — its surface is code.
+- **You want managed, scheduled, durable runs.** Cron triggers, run history that survives a process restart, retries _between_ steps across a queue — that's the platform's home turf, and an in-process library doesn't replicate it.
+- **You lean on prebuilt connectors.** Hundreds of ready-made integrations to popular SaaS tools are a real head start a library doesn't hand you.
+- **The orchestration _is_ the product.** If the value is the multi-step graph itself, you want the tool built around graphs.
 
 ## When a stitch is the better fit
 
--   **The logic belongs in your codebase.** You want integrations to diff, review, test, and deploy with the rest of your app — under version control, not in a separate editor.
--   **You don't want another service to run.** Zero dependencies, embeds in what you already ship, nothing extra to operate or pay per-execution for.
--   **The hard part is one call, not the sequence.** A long-tail or internal API with no connector, where what you actually need is auth, retries, timeouts, and drift detection on _that_ endpoint — declared once.
--   **An AI agent is the caller.** A stitch hands an agent a capability, not a credential, and presents the same definition over MCP that your code calls — without standing up an orchestration service to do it (or [an MCP server per integration](/blog/you-might-not-need-an-mcp-server-per-integration)).
+- **The logic belongs in your codebase.** You want integrations to diff, review, test, and deploy with the rest of your app — under version control, not in a separate editor.
+- **You don't want another service to run.** Zero dependencies, embeds in what you already ship, nothing extra to operate or pay per-execution for.
+- **The hard part is one call, not the sequence.** A long-tail or internal API with no connector, where what you actually need is auth, retries, timeouts, and drift detection on _that_ endpoint — declared once.
+- **An AI agent is the caller.** A stitch hands an agent a capability, not a credential, and presents the same definition over MCP that your code calls — without standing up an orchestration service to do it (or [an MCP server per integration](/blog/you-might-not-need-an-mcp-server-per-integration)).
 
 ## The honest caveats
 
--   **A stitch is not an orchestrator.** It doesn't schedule, it doesn't persist runs across processes, and it has no visual builder. If you need durable, scheduled, multi-step automation, a stitch is a _component_ of that, not a replacement for it.
--   **A platform is not a typed-call primitive.** Its connectors give you breadth, but the per-call hardening — schema validation, leveled drift against the declared schema, an explicit auth boundary — is a different concern than wiring nodes together.
--   **"Complementary" has a cost too.** Running a stitch inside a platform's code step means you're operating the platform _and_ maintaining code. That's the right call when you need both layers — and overhead when you only needed one.
+- **A stitch is not an orchestrator.** It doesn't schedule, it doesn't persist runs across processes, and it has no visual builder. If you need durable, scheduled, multi-step automation, a stitch is a _component_ of that, not a replacement for it.
+- **A platform is not a typed-call primitive.** Its connectors give you breadth, but the per-call hardening — schema validation, leveled drift against the declared schema, an explicit auth boundary — is a different concern than wiring nodes together.
+- **"Complementary" has a cost too.** Running a stitch inside a platform's code step means you're operating the platform _and_ maintaining code. That's the right call when you need both layers — and overhead when you only needed one.
 
 The useful frame: a platform answers "in what order, and when, do these steps run?" A stitch answers "how does this one step talk to its API without falling over?" Pick the platform when the first question is your problem, the library when the second is, and reach for both when the honest answer is "both."
 

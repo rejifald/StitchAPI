@@ -21,19 +21,19 @@ bytes, and then every reliability concern gets re-implemented by hand at each
 call site, separately, where it quietly drifts out of date. A stitch replaces
 that wrapper with a declaration:
 
--   **No spec, no codegen, no config files, no server.** A stitch needs a URL and
-    an example response — so it works on the long tail of internal and
-    undocumented APIs that never get a complete OpenAPI document.
--   **Auth is a boundary.** Bearer, API key, cookie sessions, OAuth2 client
-    credentials — the stitch owns the secret and its lifecycle, and the caller
-    receives data, never the credential.
--   **Resilience is declared.** Retry with backoff, proactive throttling, and
-    real timeouts are configuration, uniform across every stitch.
--   **Validation and drift are live.** Responses are validated on every call, and
-    a silently renamed field surfaces as a loud, leveled drift signal instead of
-    an `undefined` three layers downstream.
--   **Observability ships with it.** Every call emits a typed event stream,
-    traced to a local JSONL log by default — no collector, nothing to deploy.
+- **No spec, no codegen, no config files, no server.** A stitch needs a URL and
+  an example response — so it works on the long tail of internal and
+  undocumented APIs that never get a complete OpenAPI document.
+- **Auth is a boundary.** Bearer, API key, cookie sessions, OAuth2 client
+  credentials — the stitch owns the secret and its lifecycle, and the caller
+  receives data, never the credential.
+- **Resilience is declared.** Retry with backoff, proactive throttling, and
+  real timeouts are configuration, uniform across every stitch.
+- **Validation and drift are live.** Responses are validated on every call, and
+  a silently renamed field surfaces as a loud, leveled drift signal instead of
+  an `undefined` three layers downstream.
+- **Observability ships with it.** Every call emits a typed event stream,
+  traced to a local JSONL log by default — no collector, nothing to deploy.
 
 ## The smallest stitch
 

@@ -531,8 +531,7 @@ function makeChannel(
                         if (pending.delete(id)) {
                             req.signal?.removeEventListener('abort', onAbort);
                             const reason = (req.signal?.reason ?? undefined) as
-                                | { name?: string }
-                                | undefined;
+                                { name?: string } | undefined;
                             const err = new Error(
                                 reason?.name === 'TimeoutError'
                                     ? `postmessage: request '${type}' timed out`

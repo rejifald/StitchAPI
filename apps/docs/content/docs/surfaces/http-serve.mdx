@@ -32,9 +32,9 @@ and returns the final validated result as JSON.
 
 Two routes serve the registry of named stitches:
 
--   `GET /` lists the available stitch names.
--   `POST /stitch/:name` runs that stitch; the JSON request body is its input.
-    Any other method returns `405`, and an unknown name returns `404`.
+- `GET /` lists the available stitch names.
+- `POST /stitch/:name` runs that stitch; the JSON request body is its input.
+  Any other method returns `405`, and an unknown name returns `404`.
 
 The server binds to `127.0.0.1:8787` by default. Responses are the final
 validated result as JSON; send `Accept: text/event-stream` (or add `?stream=1`)

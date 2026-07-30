@@ -39,11 +39,11 @@ everywhere.
 On each request the middleware sets `req.stitch` (and mirrors it on
 `res.locals.stitch`):
 
--   `principal` returns an id → `req.stitch` is `seam.as(id)` — a
-    **principal-bound** handle (separate auth sessions per principal, one shared
-    throttle bucket). The principal lives in the closure, never in a call
-    argument, so a handler can't impersonate another identity (ADR 0002 §2).
--   `principal` returns `undefined` (or is omitted) → the **root** seam, unbound.
+- `principal` returns an id → `req.stitch` is `seam.as(id)` — a
+  **principal-bound** handle (separate auth sessions per principal, one shared
+  throttle bucket). The principal lives in the closure, never in a call
+  argument, so a handler can't impersonate another identity (ADR 0002 §2).
+- `principal` returns `undefined` (or is omitted) → the **root** seam, unbound.
 
 `currentStitch(req)` reads the same handle back as a typed value (and throws if
 the middleware never ran, so a missing `app.use(stitch(...))` fails loudly).

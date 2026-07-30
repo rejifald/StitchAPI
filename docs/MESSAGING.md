@@ -12,14 +12,14 @@
 
 ## ⚠️ How to use this doc
 
--   **Not UI-facing.** No string here is meant to ship as-is — it's source material, not a
-    headline. Treat each line like a prompt for the real copy, then throw the seed away.
--   **Honest by construction.** Every buying line is paired with the capability that already
-    ships (the "Backed by" line). If a line loses its backing, **cut the line** — don't
-    soften it into a promise we don't keep.
--   **Neutral archetypes only.** No third-party vendor names in any line that could reach a
-    public artifact — use archetypes (an auth-gated SaaS, a multi-provider aggregator). See
-    OVERVIEW §8.
+- **Not UI-facing.** No string here is meant to ship as-is — it's source material, not a
+  headline. Treat each line like a prompt for the real copy, then throw the seed away.
+- **Honest by construction.** Every buying line is paired with the capability that already
+  ships (the "Backed by" line). If a line loses its backing, **cut the line** — don't
+  soften it into a promise we don't keep.
+- **Neutral archetypes only.** No third-party vendor names in any line that could reach a
+  public artifact — use archetypes (an auth-gated SaaS, a multi-provider aggregator). See
+  OVERVIEW §8.
 
 ---
 
@@ -40,9 +40,9 @@ Each line names the objection it answers and the shipped fact that keeps it hone
 > Try it on one endpoint. No new infrastructure, no migration, no rewrite — a stitch is a
 > per-call primitive you drop in next to the `fetch` you already have.
 
--   **Kills:** _"I can't adopt a framework or rebuild my whole API layer just to try this."_
--   **Backed by:** atomic stitches, no global config (OVERVIEW §8); spec-less — "one endpoint
-    or one example," not a whole OpenAPI doc (OVERVIEW §1, §5.1).
+- **Kills:** _"I can't adopt a framework or rebuild my whole API layer just to try this."_
+- **Backed by:** atomic stitches, no global config (OVERVIEW §8); spec-less — "one endpoint
+  or one example," not a whole OpenAPI doc (OVERVIEW §1, §5.1).
 
 ### Works with what you already have
 
@@ -50,21 +50,21 @@ Each line names the objection it answers and the shipped fact that keeps it hone
 > adapters, validates with Zod, Valibot, or ArkType out of the box — and wraps any other
 > validator (Yup, a custom check) in a one-line predicate.
 
--   **Kills:** _"I already have a stack; I don't want to swap my client or my schema library."_
--   **Backed by:** pluggable HTTP adapters — `fetchAdapter` (default) + `axiosAdapter` ship today
-    (**don't hardcode the set in copy** — pull the current list from the exports:
-    [`packages/core/src/index.ts`](../packages/core/src/index.ts)); Standard-Schema validation
-    (Zod / Valibot / ArkType), plus a predicate escape hatch for everything else
-    (OVERVIEW §5.6; `validator.ts`).
+- **Kills:** _"I already have a stack; I don't want to swap my client or my schema library."_
+- **Backed by:** pluggable HTTP adapters — `fetchAdapter` (default) + `axiosAdapter` ship today
+  (**don't hardcode the set in copy** — pull the current list from the exports:
+  [`packages/core/src/index.ts`](../packages/core/src/index.ts)); Standard-Schema validation
+  (Zod / Valibot / ArkType), plus a predicate escape hatch for everything else
+  (OVERVIEW §5.6; `validator.ts`).
 
 ### Fits your style
 
 > Declare a stitch the way you already write code — a fluent builder, a config object, or
 > extend-and-override. Callbacks or pure functions, your call.
 
--   **Kills:** _"This will force one rigid authoring pattern on my codebase."_
--   **Backed by:** two interchangeable facades — `extends` / fluent builder — over one
-    engine, plus `seam` for shared surfaces (OVERVIEW §6).
+- **Kills:** _"This will force one rigid authoring pattern on my codebase."_
+- **Backed by:** two interchangeable facades — `extends` / fluent builder — over one
+  engine, plus `seam` for shared surfaces (OVERVIEW §6).
 
 ---
 
@@ -83,13 +83,13 @@ Each line names the objection it answers and the shipped fact that keeps it hone
 
 ## Words we avoid
 
--   **"Replaces `fetch`," "a better `fetch`," "HTTP client / HTTP library."** StitchAPI is
-    _not_ an HTTP library and not a `fetch` competitor — `fetch`/axios are the substrate it sits
-    above (BYO adapter). Position it as **API stitching**: turning an endpoint into a function.
-    Say "keep your `fetch`," never "replace it." (This is the 2026-06 positioning pivot — the
-    old "a typed stitch replaces `fetch`" line is retired.)
--   **Vendor names** in public lines — neutral archetypes only (OVERVIEW §8).
--   **"Platform," "framework," "orchestrator"** — we're a _library_ and a _primitive_; the
-    scope-creep-into-iPaaS risk is real (OVERVIEW §11). Hold the line.
--   **Maturity overreach** — features in progress stay labelled in progress; the "under heavy
-    development" candor is a feature, not a bug (brand Voice).
+- **"Replaces `fetch`," "a better `fetch`," "HTTP client / HTTP library."** StitchAPI is
+  _not_ an HTTP library and not a `fetch` competitor — `fetch`/axios are the substrate it sits
+  above (BYO adapter). Position it as **API stitching**: turning an endpoint into a function.
+  Say "keep your `fetch`," never "replace it." (This is the 2026-06 positioning pivot — the
+  old "a typed stitch replaces `fetch`" line is retired.)
+- **Vendor names** in public lines — neutral archetypes only (OVERVIEW §8).
+- **"Platform," "framework," "orchestrator"** — we're a _library_ and a _primitive_; the
+  scope-creep-into-iPaaS risk is real (OVERVIEW §11). Hold the line.
+- **Maturity overreach** — features in progress stay labelled in progress; the "under heavy
+  development" candor is a feature, not a bug (brand Voice).

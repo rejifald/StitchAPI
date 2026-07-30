@@ -22,10 +22,10 @@ surfaces (ADR 0008) — and stitches compose into bigger stitches, including acr
 
 Two market quadrants are empty, and StitchAPI targets both:
 
--   **Spec-less long tail** — every serious competitor needs an OpenAPI spec. A stitch needs one
-    endpoint or one example.
--   **Heterogeneous + agent-native** — no lightweight library treats HTTP/GraphQL/shell/LLM as
-    symmetric, declared, agent-consumable primitives.
+- **Spec-less long tail** — every serious competitor needs an OpenAPI spec. A stitch needs one
+  endpoint or one example.
+- **Heterogeneous + agent-native** — no lightweight library treats HTTP/GraphQL/shell/LLM as
+  symmetric, declared, agent-consumable primitives.
 
 ---
 
@@ -59,16 +59,16 @@ credential**.
 
 **Integrating one third-party API:**
 
--   **Silent breaking changes / schema drift (top):** a vendor renames or restructures a field with
-    no version bump; health checks stay `200 OK` while consumers parse garbage for hours. Types are
-    compile-time only — drift surfaces as a downstream `undefined`.
--   **Third-party observability (top):** you can't instrument inside a vendor. "The API is up but
-    not working correctly."
--   **Reliability:** rate limits/quotas, latency spikes, flaky partial outages → backoff+jitter,
-    `Retry-After`, idempotency, circuit breaking.
--   **Auth lifecycle:** token-refresh races, key rotation, cookie jars, soft (200-but-login-page)
-    walls.
--   **Data shape:** pagination drift, inconsistent nulls, timezone/error-shape chaos.
+- **Silent breaking changes / schema drift (top):** a vendor renames or restructures a field with
+  no version bump; health checks stay `200 OK` while consumers parse garbage for hours. Types are
+  compile-time only — drift surfaces as a downstream `undefined`.
+- **Third-party observability (top):** you can't instrument inside a vendor. "The API is up but
+  not working correctly."
+- **Reliability:** rate limits/quotas, latency spikes, flaky partial outages → backoff+jitter,
+  `Retry-After`, idempotency, circuit breaking.
+- **Auth lifecycle:** token-refresh races, key rotation, cookie jars, soft (200-but-login-page)
+  walls.
+- **Data shape:** pagination drift, inconsistent nulls, timezone/error-shape chaos.
 
 **Composing several heterogeneous sources:** there is no uniform primitive across
 HTTP/GraphQL/shell/LLM — each lives in a different tool, glued with bespoke code. The failures
@@ -85,10 +85,10 @@ health** as a byproduct — the agent-native layer is also the integration-relia
 
 **Named competitors**
 
--   **Massimo** (`massimohttp.dev`, Platformatic) — OpenAPI/GraphQL → typed TS client, dual
-    undici+fetch runtime. **Spec-required**, no agent features.
--   **Requestly** — open-source HTTP interceptor + mocking + privacy-first API client (a Postman
-    alternative). A developer/QA **tool**, not a client-library runtime.
+- **Massimo** (`massimohttp.dev`, Platformatic) — OpenAPI/GraphQL → typed TS client, dual
+  undici+fetch runtime. **Spec-required**, no agent features.
+- **Requestly** — open-source HTTP interceptor + mocking + privacy-first API client (a Postman
+  alternative). A developer/QA **tool**, not a client-library runtime.
 
 **Closest competitor: Windmill (~85%)** — a git-backed platform where Bash/SQL/GraphQL are
 first-class script kinds that compose into flows, each auto-exposed as REST/webhook/UI/CLI/MCP.
@@ -136,22 +136,22 @@ but don't give you a typed, resilient _library_.
 
 The v1 runtime (in `src/`, **zero runtime dependencies**):
 
--   **Primitive + composition** — `stitch()` with two interchangeable facades (`extends` /
-    fluent builder) over one engine, plus `.with()` partial application; `seam` owns the
-    fragment + shared runtime for a whole surface.
--   **Event-stream return** (`start → progress → drift → result → done`) + an `await` convenience.
--   **Flexible validation** (Zod _and_ Standard Schema) + **leveled drift** — schema-anchored, no
-    snapshot: a required field missing/incompatible throws, soft drift (coerced/undeclared/defaulted)
-    is non-fatal `warn`/`info`/`verbose` (ADR 0015).
--   **Resilience** — retry (backoff, `Retry-After`), throttle (rate + concurrency), timeout (abort).
--   **Auth-as-boundary** — bearer / apiKey / basic / cookieSession (auto-login, refresh-on-status,
-    content-aware refresh) and **OAuth2 client_credentials** (token endpoint, cached access token,
-    single-flight refresh).
--   **Pluggable state store** — in-memory default; a shared store makes throttle **distributed** and
-    sessions **persistent/shared across workers** (the two "critical" gaps closed by one seam).
--   **Body encoding** (json/form/multipart), **GraphQL kind**, **static headers**, **transform**
-    (e.g. scrape HTML → structured), **pagination** (auto-loop, aggregate).
--   **Zero-infra observability** — off by default; opt into the console stream, a JSONL file, or OTLP export with one flag (no side effects by default).
+- **Primitive + composition** — `stitch()` with two interchangeable facades (`extends` /
+  fluent builder) over one engine, plus `.with()` partial application; `seam` owns the
+  fragment + shared runtime for a whole surface.
+- **Event-stream return** (`start → progress → drift → result → done`) + an `await` convenience.
+- **Flexible validation** (Zod _and_ Standard Schema) + **leveled drift** — schema-anchored, no
+  snapshot: a required field missing/incompatible throws, soft drift (coerced/undeclared/defaulted)
+  is non-fatal `warn`/`info`/`verbose` (ADR 0015).
+- **Resilience** — retry (backoff, `Retry-After`), throttle (rate + concurrency), timeout (abort).
+- **Auth-as-boundary** — bearer / apiKey / basic / cookieSession (auto-login, refresh-on-status,
+  content-aware refresh) and **OAuth2 client_credentials** (token endpoint, cached access token,
+  single-flight refresh).
+- **Pluggable state store** — in-memory default; a shared store makes throttle **distributed** and
+  sessions **persistent/shared across workers** (the two "critical" gaps closed by one seam).
+- **Body encoding** (json/form/multipart), **GraphQL kind**, **static headers**, **transform**
+  (e.g. scrape HTML → structured), **pagination** (auto-loop, aggregate).
+- **Zero-infra observability** — off by default; opt into the console stream, a JSONL file, or OTLP export with one flag (no side effects by default).
 
 **Four surfaces from one definition:** in-process function · CLI (`stitch run`/`trace`) · HTTP
 serve · MCP.
@@ -166,16 +166,16 @@ serve · MCP.
 Audited end-to-end against two production apps (an auth-gated SaaS; a multi-provider aggregator).
 A stitch is a **per-call primitive**, so coverage splits three ways:
 
--   **Covered** — auth header injection, cookie login + re-login, content-aware refresh, retry +
-    `Retry-After`, throttle, timeout, form/multipart, validation + leveled drift, HTML-scrape
-    transform, GraphQL, static headers, pagination, **distributed throttle + shared sessions** (via
-    the store).
--   **Also shipped since this audit** — OAuth2 client_credentials, multi-cookie jar, binary/blob
-    responses, circuit breaker, idempotency keys, OTLP export.
--   **Out of scope** — job queues, inbound webhooks, business/DB idempotency, multi-step
-    rollback/compensation, app-level cache policy, broad fan-out orchestration. **A stitch is not a
-    workflow/iPaaS engine** — absorbing these is how it would become the heavy platform it's
-    positioned against.
+- **Covered** — auth header injection, cookie login + re-login, content-aware refresh, retry +
+  `Retry-After`, throttle, timeout, form/multipart, validation + leveled drift, HTML-scrape
+  transform, GraphQL, static headers, pagination, **distributed throttle + shared sessions** (via
+  the store).
+- **Also shipped since this audit** — OAuth2 client_credentials, multi-cookie jar, binary/blob
+  responses, circuit breaker, idempotency keys, OTLP export.
+- **Out of scope** — job queues, inbound webhooks, business/DB idempotency, multi-step
+  rollback/compensation, app-level cache policy, broad fan-out orchestration. **A stitch is not a
+  workflow/iPaaS engine** — absorbing these is how it would become the heavy platform it's
+  positioned against.
 
 **Verdict:** covers ~80–90% of what both apps reinvent at the integration layer, with a bounded,
 mostly-additive list for the rest.
@@ -207,40 +207,40 @@ v1.0 release candidate, zero runtime deps). Full gate green — eslint, prettier
 **581 tests / 71 suites**, `tsup` ESM+CJS+DTS build — and verified against synthetic scenarios
 **and** two real apps' integration patterns.
 
--   **Primitive + composition** — `stitch()` (`extends` + fluent builder facades), `seam` with
-    principal-scoped auth (ADR 0002), `.with()` partial application, deep fragment composition +
-    hook chaining.
--   **Engine** — RFC 6570 Level-4 templates, nested query encoding, transform/unwrap, pagination;
-    Zod **and** Standard Schema validation with schema-anchored leveled drift (ADR 0015).
--   **End-to-end type inference** — `Stitch<T>` inferred from the `output` schema **and** call
-    arguments inferred from `config.input`, including graphql `variables`, path literals, and
-    `extends`/compose typing (all now supported).
--   **Resilience** — retry (backoff modes, `Retry-After`), throttle (rate + concurrency, per-stitch
-    **and** in-process host pooling), per-attempt **and** total timeout, store-backed circuit breaker.
--   **Auth-as-boundary** — bearer / apiKey / basic / cookieSession / **OAuth2 client_credentials**,
-    call-time secret resolution, single-flight token refresh.
--   **Response cache** — derived-key cache + in-process request coalescing (ADR 0003 v1).
--   **Response streaming** — the fetch adapter exposes the live `ReadableStream`; the engine emits
-    a `delta` per chunk with per-delta `output` validation; `sse()` / `stream()` surfaces frame and
-    decode; `stitch serve` forwards deltas over SSE. (The `xhr` / `axios` adapters reject streaming
-    by design.) Includes unframed structural `decode: 'json'`, the streamed `delta` element type
-    inferred from `output`, and resumable SSE (`Last-Event-ID` reconnect with server-`retry`
-    backoff).
--   **Non-HTTP surfaces** — `llm` and `shell` as symmetric kinds, plus `pipe()` to compose
-    heterogeneous stitches with one causal trace across the chain (ADR 0008).
--   **Composition causality** — a run-identity OTLP span tree (`spanId` / `traceId` / `parentSpanId`):
-    retries and pages are child spans with their own latency/outcome (ADR 0007).
--   **Observability** — console / JSONL / OTLP, secret redaction, **off by default**.
--   **Four surfaces, one definition** — in-process function · CLI (`stitch run`/`trace`/`export`/`diagram`) ·
-    HTTP serve (+SSE) · MCP stdio, over a shared registry. Subpath exports for `serve` / `mcp` /
-    `registry` / `testing` / `cache`.
--   **State + testing** — `memoryStore` + pluggable store seam (+ a Redis-backed store in
-    `@stitchapi/redis`); store / adapter / sink **conformance kit**.
--   **Playground** — Node sandbox engine complete and green; the real-browser runner and
-    real-run-trace → Mermaid DAG have shipped. The remaining Launch item is the **real-browser
-    Playwright proof** of the worker's security behaviors (already covered by Node unit tests).
--   **Branch workflow:** feature branches → PR → **`main`** (the `develop` integration branch was
-    retired).
+- **Primitive + composition** — `stitch()` (`extends` + fluent builder facades), `seam` with
+  principal-scoped auth (ADR 0002), `.with()` partial application, deep fragment composition +
+  hook chaining.
+- **Engine** — RFC 6570 Level-4 templates, nested query encoding, transform/unwrap, pagination;
+  Zod **and** Standard Schema validation with schema-anchored leveled drift (ADR 0015).
+- **End-to-end type inference** — `Stitch<T>` inferred from the `output` schema **and** call
+  arguments inferred from `config.input`, including graphql `variables`, path literals, and
+  `extends`/compose typing (all now supported).
+- **Resilience** — retry (backoff modes, `Retry-After`), throttle (rate + concurrency, per-stitch
+  **and** in-process host pooling), per-attempt **and** total timeout, store-backed circuit breaker.
+- **Auth-as-boundary** — bearer / apiKey / basic / cookieSession / **OAuth2 client_credentials**,
+  call-time secret resolution, single-flight token refresh.
+- **Response cache** — derived-key cache + in-process request coalescing (ADR 0003 v1).
+- **Response streaming** — the fetch adapter exposes the live `ReadableStream`; the engine emits
+  a `delta` per chunk with per-delta `output` validation; `sse()` / `stream()` surfaces frame and
+  decode; `stitch serve` forwards deltas over SSE. (The `xhr` / `axios` adapters reject streaming
+  by design.) Includes unframed structural `decode: 'json'`, the streamed `delta` element type
+  inferred from `output`, and resumable SSE (`Last-Event-ID` reconnect with server-`retry`
+  backoff).
+- **Non-HTTP surfaces** — `llm` and `shell` as symmetric kinds, plus `pipe()` to compose
+  heterogeneous stitches with one causal trace across the chain (ADR 0008).
+- **Composition causality** — a run-identity OTLP span tree (`spanId` / `traceId` / `parentSpanId`):
+  retries and pages are child spans with their own latency/outcome (ADR 0007).
+- **Observability** — console / JSONL / OTLP, secret redaction, **off by default**.
+- **Four surfaces, one definition** — in-process function · CLI (`stitch run`/`trace`/`export`/`diagram`) ·
+  HTTP serve (+SSE) · MCP stdio, over a shared registry. Subpath exports for `serve` / `mcp` /
+  `registry` / `testing` / `cache`.
+- **State + testing** — `memoryStore` + pluggable store seam (+ a Redis-backed store in
+  `@stitchapi/redis`); store / adapter / sink **conformance kit**.
+- **Playground** — Node sandbox engine complete and green; the real-browser runner and
+  real-run-trace → Mermaid DAG have shipped. The remaining Launch item is the **real-browser
+  Playwright proof** of the worker's security behaviors (already covered by Node unit tests).
+- **Branch workflow:** feature branches → PR → **`main`** (the `develop` integration branch was
+  retired).
 
 ---
 
@@ -270,19 +270,19 @@ resumable SSE / `Last-Event-ID`).
 
 ## 11. Risks & open questions
 
--   **The moat.** If an LLM can write `fetch()`, why StitchAPI? Only valid answer: the **runtime**
-    (retries/auth/pagination/validation/observability) is genuinely better than hand-rolled. If the
-    runtime is mediocre, this collapses into "just write fetch." Everything rides on runtime quality.
--   **Scope creep → iPaaS.** "Stitch anything" wants to become Windmill/n8n. Hold the line: primitive
-    -   library, composition is code, never a visual builder.
--   **Crowded runtime-client space.** Zodios/ts-rest/Effect own "typed client in TS." We must win on
-    _spec-less + agent-native_, relentlessly — not "another typed client."
--   **Partial knowledge.** Spec-less means you discover an API endpoint-by-endpoint; frame it as
-    _just-in-time_, not a comprehensive SDK.
--   **The LLM kind invites "is this LangChain/Mastra?"** Differentiate: uniform across LLM and
-    non-LLM, mission is third-party reliability + agent consumption, not agent orchestration.
--   **Surface-area sequencing.** Four surfaces × N kinds × streaming × observability is a lot for a
-    small lib; sequence it (it's why HTTP shipped first, abstraction-ready).
+- **The moat.** If an LLM can write `fetch()`, why StitchAPI? Only valid answer: the **runtime**
+  (retries/auth/pagination/validation/observability) is genuinely better than hand-rolled. If the
+  runtime is mediocre, this collapses into "just write fetch." Everything rides on runtime quality.
+- **Scope creep → iPaaS.** "Stitch anything" wants to become Windmill/n8n. Hold the line: primitive
+    - library, composition is code, never a visual builder.
+- **Crowded runtime-client space.** Zodios/ts-rest/Effect own "typed client in TS." We must win on
+  _spec-less + agent-native_, relentlessly — not "another typed client."
+- **Partial knowledge.** Spec-less means you discover an API endpoint-by-endpoint; frame it as
+  _just-in-time_, not a comprehensive SDK.
+- **The LLM kind invites "is this LangChain/Mastra?"** Differentiate: uniform across LLM and
+  non-LLM, mission is third-party reliability + agent consumption, not agent orchestration.
+- **Surface-area sequencing.** Four surfaces × N kinds × streaming × observability is a lot for a
+  small lib; sequence it (it's why HTTP shipped first, abstraction-ready).
 
 ---
 
@@ -302,14 +302,14 @@ surface a stitch provides.
 
 ## 13. How we'll know it works (success criteria)
 
--   One stitch replaces a provider's hand-rolled auth + retry + rate-limit + session code — proven
-    on both dogfood apps.
--   An agent gets past a real **auth wall** (a cookie-walled endpoint) and returns data **without
-    ever seeing the secret**.
--   **Drift catches a silent breaking change** (a markup/field rename) as a loud, leveled signal
-    instead of a downstream `undefined`.
--   A **shared store** makes two workers share one login and one rate budget — distributed
-    rate-limiting and persistent sessions become a config choice, not an architecture project.
+- One stitch replaces a provider's hand-rolled auth + retry + rate-limit + session code — proven
+  on both dogfood apps.
+- An agent gets past a real **auth wall** (a cookie-walled endpoint) and returns data **without
+  ever seeing the secret**.
+- **Drift catches a silent breaking change** (a markup/field rename) as a loud, leveled signal
+  instead of a downstream `undefined`.
+- A **shared store** makes two workers share one login and one rate budget — distributed
+  rate-limiting and persistent sessions become a config choice, not an architecture project.
 
 ---
 

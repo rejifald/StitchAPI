@@ -54,22 +54,22 @@ be callable returning a `StitchResult` _and_ carry
 
 ## 2. What already ships, and who it serves
 
--   **`stitchapi/testing` conformance kit** (`packages/core/src/testing.ts`):
-    `verify{Store,Adapter,Sink,Fingerprint}Contract`, `assertConformance`,
-    `adapterContractFixture`. **Audience: vendors.** Not for app code.
--   **Usable-but-not-test-specific main exports:** `memoryStore()`,
-    `consoleSink()`/`loggerSink()`, `fetchAdapter`/`axiosAdapter`/`xhrAdapter`.
--   **Private, not the user-facing story:** `@stitchapi/sandbox-sim` (playground
-    simulator), `@stitchapi/eval-harness` (agent evals).
--   **Rich internal support — the obvious thing to productize:**
-    -   `test/support/mock-server.ts` — route patterns, **status sequences**
-        (`[503,503,200]`), latency knobs, real chunked streaming, **call spies**
-        (`calls()`, `callCount()`). Used by 30+ specs.
-    -   `test/support/streams.ts` — `streamOf`, `streamThenError`, `gatedStream`,
-        `streamAdapter`, `collectEvents`. Used by 40+ specs.
-    -   Copy-pasted-in-6+-places adapter factories (`counting`, `recordingClient`,
-        `scriptedAdapter`) and a local `collect()` drainer — direct evidence of the
-        missing exported helper.
+- **`stitchapi/testing` conformance kit** (`packages/core/src/testing.ts`):
+  `verify{Store,Adapter,Sink,Fingerprint}Contract`, `assertConformance`,
+  `adapterContractFixture`. **Audience: vendors.** Not for app code.
+- **Usable-but-not-test-specific main exports:** `memoryStore()`,
+  `consoleSink()`/`loggerSink()`, `fetchAdapter`/`axiosAdapter`/`xhrAdapter`.
+- **Private, not the user-facing story:** `@stitchapi/sandbox-sim` (playground
+  simulator), `@stitchapi/eval-harness` (agent evals).
+- **Rich internal support — the obvious thing to productize:**
+    - `test/support/mock-server.ts` — route patterns, **status sequences**
+      (`[503,503,200]`), latency knobs, real chunked streaming, **call spies**
+      (`calls()`, `callCount()`). Used by 30+ specs.
+    - `test/support/streams.ts` — `streamOf`, `streamThenError`, `gatedStream`,
+      `streamAdapter`, `collectEvents`. Used by 40+ specs.
+    - Copy-pasted-in-6+-places adapter factories (`counting`, `recordingClient`,
+      `scriptedAdapter`) and a local `collect()` drainer — direct evidence of the
+      missing exported helper.
 
 GAP-AUDIT §2.9 already names the build: _"publish a `mockAdapter({handlers})` …
 optionally with record/replay to fixtures, plus a testing guide."_
@@ -88,12 +88,12 @@ deep transport tests; any filesystem record/replay goes behind a node-only entry
 **`mockAdapter(routes)` → `Adapter` + spy.** Adapter-level (browser-safe), _not_ a
 real server. Productizes `mock-server.ts`'s `RouteBehavior` at the adapter layer:
 
--   match by method + path/url (string / pattern / regex)
--   response = value | **sequence** (for retry) | `(callIndex, req) => …`
--   `status` sequences, `delayMs`, headers, streaming body (returns a `ReadableStream`)
--   **request spy:** `.calls()`, `.callCount()`, `.lastRequest()` — assert
-    method/url/headers/body
--   configurable unmatched behavior (404 vs throw)
+- match by method + path/url (string / pattern / regex)
+- response = value | **sequence** (for retry) | `(callIndex, req) => …`
+- `status` sequences, `delayMs`, headers, streaming body (returns a `ReadableStream`)
+- **request spy:** `.calls()`, `.callCount()`, `.lastRequest()` — assert
+  method/url/headers/body
+- configurable unmatched behavior (404 vs throw)
 
 Wire via `stitch({ adapter })` or `seam({ adapter })`. Serves Job A directly.
 
@@ -151,21 +151,21 @@ export interface Clock {
 }
 ```
 
--   **`systemClock`** (default) wraps `Date.now` + global timers — today's behavior,
-    zero change for users. Injected via config/seam alongside `adapter`/`store`/
-    `trace`/`auth` ("contract, not dependency").
--   **`manualClock()`** (shipped in `stitchapi/testing`) exposes `.advance(ms)` /
-    `.tick()` that fast-forwards `now` _and_ resolves every pending `sleep`/timer
-    whose deadline was crossed. Advanced users can plug their own clock (or
-    `@sinonjs/fake-timers`) by satisfying the interface.
+- **`systemClock`** (default) wraps `Date.now` + global timers — today's behavior,
+  zero change for users. Injected via config/seam alongside `adapter`/`store`/
+  `trace`/`auth` ("contract, not dependency").
+- **`manualClock()`** (shipped in `stitchapi/testing`) exposes `.advance(ms)` /
+  `.tick()` that fast-forwards `now` _and_ resolves every pending `sleep`/timer
+  whose deadline was crossed. Advanced users can plug their own clock (or
+  `@sinonjs/fake-timers`) by satisfying the interface.
 
 **Why it's worth a core change (beyond easier mocks):**
 
--   Instant long-horizon tests — OAuth token expiry, `maxMs` backoff caps, circuit
-    `cooldownMs` — without waiting minutes.
--   Deterministic `at:` timestamps, so `collectStitchEvents` snapshots are stable
-    (today `at: now()` must be stripped before snapshotting).
--   Removes wall-clock flakiness from timing assertions.
+- Instant long-horizon tests — OAuth token expiry, `maxMs` backoff caps, circuit
+  `cooldownMs` — without waiting minutes.
+- Deterministic `at:` timestamps, so `collectStitchEvents` snapshots are stable
+  (today `at: now()` must be stripped before snapshotting).
+- Removes wall-clock flakiness from timing assertions.
 
 **On the "no fake timers" stance:** that rule governs _the library's own_
 internal tests (deliberate, to catch real timing regressions). Exposing a `Clock`
@@ -193,11 +193,11 @@ new subpath to its matrix.
 
 ## 6. What to hold the line on
 
--   **Don't reimplement MSW/nock.** The `Adapter` seam _is_ the interception point;
-    "swap the adapter" is the idiomatic, global-patch-free story.
--   **Don't publish `sandbox-sim` as the test story** — it is a playground
-    simulator, a different purpose.
--   **Ship the guide.** A testing guide is half of §2.9's value, not an afterthought.
+- **Don't reimplement MSW/nock.** The `Adapter` seam _is_ the interception point;
+  "swap the adapter" is the idiomatic, global-patch-free story.
+- **Don't publish `sandbox-sim` as the test story** — it is a playground
+  simulator, a different purpose.
+- **Ship the guide.** A testing guide is half of §2.9's value, not an afterthought.
 
 ---
 

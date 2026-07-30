@@ -62,10 +62,10 @@ const rows = await getRevenueReport({ params: { month: '2026-06' } });
 
 `responseType` is one of four values, and the default is auto:
 
--   **default (omitted)** — JSON when the content-type says so, else text. This is the right choice for ordinary JSON APIs; you never set it.
--   **`'text'`** — force a string. Use it for HTML, CSV, or plain text, where content-type sniffing might guess wrong or the parser you want runs on the raw string.
--   **`'arrayBuffer'`** — force bytes as an `ArrayBuffer`. Use it for binary: an image, a PDF, a zip.
--   **`'blob'`** — force a `Blob`, the better shape when you hand bytes to a browser API.
+- **default (omitted)** — JSON when the content-type says so, else text. This is the right choice for ordinary JSON APIs; you never set it.
+- **`'text'`** — force a string. Use it for HTML, CSV, or plain text, where content-type sniffing might guess wrong or the parser you want runs on the raw string.
+- **`'arrayBuffer'`** — force bytes as an `ArrayBuffer`. Use it for binary: an image, a PDF, a zip.
+- **`'blob'`** — force a `Blob`, the better shape when you hand bytes to a browser API.
 
 For binary you set `responseType` and skip `transform` if the bytes are the deliverable:
 
@@ -192,7 +192,7 @@ Declare a stitch with `responseType: 'text'`, run your own parser in `transform`
 stitchapi
 ```
 
--   [transform](/docs/guides/data/transform) — the reshape seam, in full.
--   [Validation](/docs/guides/validation/validation) — how `output` types and checks the result.
--   [Helpers reference](/docs/reference/helpers) — adapters and the rest of the surface.
--   [Read non-JSON, then compose it](/blog/compose-api-calls-into-a-pipeline) — chain these stitches into one pipeline.
+- [transform](/docs/guides/data/transform) — the reshape seam, in full.
+- [Validation](/docs/guides/validation/validation) — how `output` types and checks the result.
+- [Helpers reference](/docs/reference/helpers) — adapters and the rest of the surface.
+- [Read non-JSON, then compose it](/blog/compose-api-calls-into-a-pipeline) — chain these stitches into one pipeline.

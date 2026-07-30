@@ -1,8 +1,8 @@
 # ADR 0014 — Publishing stitch-based API clients: recipe + scaffold, `defineClient` gated on demand
 
--   **Status:** Proposed (leaning: recipe + scaffold now; `defineClient` only if the override-contract earns it)
--   **Date:** 2026-06-28
--   **Tags:** packaging, authoring, seam, publishing, recipe, primitive-bar, contract-not-dependency
+- **Status:** Proposed (leaning: recipe + scaffold now; `defineClient` only if the override-contract earns it)
+- **Date:** 2026-06-28
+- **Tags:** packaging, authoring, seam, publishing, recipe, primitive-bar, contract-not-dependency
 
 > [!NOTE]
 >
@@ -27,17 +27,17 @@ declines primitives a recipe can serve.
 
 The honest baseline recipe:
 
--   **Export a factory, not a seam instance.** The published entry is
-    `createFooClient({ auth, baseUrl? }) => seam({ ...fixed, ...consumer })`,
-    because the consumer supplies their own credential.
--   **Secrets are never baked in.** `env()` / `secretFrom()` resolve at call time
-    on the consumer's machine — already true today.
--   **Types just work.** Ship `.d.ts`; the consumer gets fully typed
-    `getUser({ params: { id } })` with no codegen on their side.
--   **Ship a `drift()` snapshot with the package** so the consumer is _told_ when
-    the upstream API diverges from what the package was built against — something
-    hand-rolled SDKs do not do. Pure convention (a `contract.json` + a prepublish
-    script).
+- **Export a factory, not a seam instance.** The published entry is
+  `createFooClient({ auth, baseUrl? }) => seam({ ...fixed, ...consumer })`,
+  because the consumer supplies their own credential.
+- **Secrets are never baked in.** `env()` / `secretFrom()` resolve at call time
+  on the consumer's machine — already true today.
+- **Types just work.** Ship `.d.ts`; the consumer gets fully typed
+  `getUser({ params: { id } })` with no codegen on their side.
+- **Ship a `drift()` snapshot with the package** so the consumer is _told_ when
+  the upstream API diverges from what the package was built against — something
+  hand-rolled SDKs do not do. Pure convention (a `contract.json` + a prepublish
+  script).
 
 The one thing raw `seam` **cannot declare** is the boundary between author-fixed
 config, consumer-**required** config (`auth`), and consumer-**overridable** config
@@ -51,9 +51,9 @@ for a primitive.
 
 1.  **Ship the recipe now.** A docs page (the factory pattern + `env()` + `.d.ts`
 
-    -   bundled drift snapshot) — zero core code, holds every gate, exactly like
-        [ADR 0011](./0011-no-pattern-primitive-schema-reuse-is-the-validators-job.md)'s
-        "Define an entity once."
+    - bundled drift snapshot) — zero core code, holds every gate, exactly like
+      [ADR 0011](./0011-no-pattern-primitive-schema-reuse-is-the-validators-job.md)'s
+      "Define an entity once."
 
 2.  **Ship a scaffold — this is the highest-leverage piece and is pure tooling.**
     `create-stitch-package` / `stitch init-package` emits a package with the
@@ -86,37 +86,37 @@ for a primitive.
 
 ## Why gate `defineClient` (the primitive bar)
 
--   **The recipe already delivers ~90%** — factory, call-time secrets, typed
-    `.d.ts`, drift snapshot. The override-contract is the only delta.
--   **The delta is small and serializable**, so it _could_ be core — but the
-    project rejects primitives without **repeated, demonstrated** demand (#6,
-    ADR 0011). One imagined publisher is not demand.
--   **The generator may create the demand.** [ADR 0013](./0013-gen-selective-eject-codegen-from-openapi.md)
-    makes publishable clients cheap to produce; once people actually publish them,
-    we will learn whether enforced consumer boundaries are wanted. Correct
-    sequence: ship generator + recipe + scaffold, watch, then decide.
+- **The recipe already delivers ~90%** — factory, call-time secrets, typed
+  `.d.ts`, drift snapshot. The override-contract is the only delta.
+- **The delta is small and serializable**, so it _could_ be core — but the
+  project rejects primitives without **repeated, demonstrated** demand (#6,
+  ADR 0011). One imagined publisher is not demand.
+- **The generator may create the demand.** [ADR 0013](./0013-gen-selective-eject-codegen-from-openapi.md)
+  makes publishable clients cheap to produce; once people actually publish them,
+  we will learn whether enforced consumer boundaries are wanted. Correct
+  sequence: ship generator + recipe + scaffold, watch, then decide.
 
 ## Gates
 
--   **Contract-not-dependency.** The override policy is **data** (`require` /
-    `allowOverride` / `lock` arrays + objects); `auth` stays a descriptor plus a
-    call-time closure. The published declaration round-trips as JSON.
--   **Bundle-frugal.** `defineClient` (if built) is type-level / a thin wrapper
-    over `seam`; the scaffold is build-time tooling. Neither adds weight to
-    `import { stitch }`.
--   **Zero-deps.** No core dependency in any branch of this decision.
+- **Contract-not-dependency.** The override policy is **data** (`require` /
+  `allowOverride` / `lock` arrays + objects); `auth` stays a descriptor plus a
+  call-time closure. The published declaration round-trips as JSON.
+- **Bundle-frugal.** `defineClient` (if built) is type-level / a thin wrapper
+  over `seam`; the scaffold is build-time tooling. Neither adds weight to
+  `import { stitch }`.
+- **Zero-deps.** No core dependency in any branch of this decision.
 
 ## Out of scope (considered, deferred)
 
--   **A registry / marketplace of stitch clients.**
--   **Automatic semver-coupling of the client package to the API contract** — the
-    drift snapshot _surfaces_ divergence; it does not version the package for you.
--   **Runtime negotiation of the override policy** — the policy is a build/author-
-    time declaration, enforced when the factory is called, not negotiated over the
-    wire.
+- **A registry / marketplace of stitch clients.**
+- **Automatic semver-coupling of the client package to the API contract** — the
+  drift snapshot _surfaces_ divergence; it does not version the package for you.
+- **Runtime negotiation of the override policy** — the policy is a build/author-
+  time declaration, enforced when the factory is called, not negotiated over the
+  wire.
 
 ## Revisit if
 
--   Repeated publisher demand for **enforced consumer boundaries** appears — then
-    build the thin, serializable `defineClient` of Decision 3. Until then, the
-    recipe (Decision 1) and the scaffold (Decision 2) are the whole answer.
+- Repeated publisher demand for **enforced consumer boundaries** appears — then
+  build the thin, serializable `defineClient` of Decision 3. Until then, the
+  recipe (Decision 1) and the scaffold (Decision 2) are the whole answer.

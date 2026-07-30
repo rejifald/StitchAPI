@@ -26,13 +26,13 @@ Three facts shaped the decision:
 
 ## Decision
 
--   **Docs framework:** Fumadocs (decided earlier — React/Next-native, component-first, MIT, actively maintained).
--   **Execution engine:** **build in-house** — CodeMirror 6 editor + Sucrase transpiler +
-    in-page async `Function` execution with an injected `stitch` scope and a bespoke
-    output panel. Conform to the `CodeRunner` contract so it's swappable.
--   **Implementation is deferred.** This change defines the engine's _shape and
-    requirements_ (incl. the `CodeRunner` contract) so the UI and docs can proceed
-    against a stable interface before the engine exists.
+- **Docs framework:** Fumadocs (decided earlier — React/Next-native, component-first, MIT, actively maintained).
+- **Execution engine:** **build in-house** — CodeMirror 6 editor + Sucrase transpiler +
+  in-page async `Function` execution with an injected `stitch` scope and a bespoke
+  output panel. Conform to the `CodeRunner` contract so it's swappable.
+- **Implementation is deferred.** This change defines the engine's _shape and
+  requirements_ (incl. the `CodeRunner` contract) so the UI and docs can proceed
+  against a stable interface before the engine exists.
 
 ## Rationale — why in-house over LiveCodes (the only viable off-the-shelf option)
 
@@ -54,34 +54,34 @@ Three facts shaped the decision:
 
 See [COMPETITORS.md](./COMPETITORS.md) for the full scorecard. In short:
 
--   **react-live** — rejected: stalled (~18 months no release), async-weak. `@uiw/react-live` doesn't exist.
--   **Sandpack** — rejected: foreign-origin iframe by default reintroduces CORS; heavyweight.
--   **Runno** — disqualified: no network, QuickJS≠Node, no TS/JSX.
--   **react-runner** — kept as a **reference** for the in-house Sucrase + async-runner approach, not adopted wholesale.
--   **LiveCodes** — the credible off-the-shelf option and our explicit fallback (below).
+- **react-live** — rejected: stalled (~18 months no release), async-weak. `@uiw/react-live` doesn't exist.
+- **Sandpack** — rejected: foreign-origin iframe by default reintroduces CORS; heavyweight.
+- **Runno** — disqualified: no network, QuickJS≠Node, no TS/JSX.
+- **react-runner** — kept as a **reference** for the in-house Sucrase + async-runner approach, not adopted wholesale.
+- **LiveCodes** — the credible off-the-shelf option and our explicit fallback (below).
 
 ## Consequences
 
 We now own, as part of the deferred work:
 
--   the **eval security model** (isolation; the proxy allowlist is the real trust boundary);
--   **console capture** and **async/promise output rendering**;
--   a **browser build of `stitch`** that shims its Node-only surfaces (`keychain`, `env`,
-    `cookieSession`, JSONL trace) — see REQUIREMENTS.md §6, the **largest unknown**;
--   the **same-origin allowlisted proxy** (Next Route Handler or Cloudflare Worker).
+- the **eval security model** (isolation; the proxy allowlist is the real trust boundary);
+- **console capture** and **async/promise output rendering**;
+- a **browser build of `stitch`** that shims its Node-only surfaces (`keychain`, `env`,
+  `cookieSession`, JSONL trace) — see REQUIREMENTS.md §6, the **largest unknown**;
+- the **same-origin allowlisted proxy** (Next Route Handler or Cloudflare Worker).
 
 ## Confidence & escape hatch
 
--   The **constraint-based eliminations are verified** (Sandpack foreign-origin, Runno
-    disqualified, react-live stalled). The in-house-vs-LiveCodes call and the reference
-    stack are **engineering judgment**, not independently benchmarked — validate in a spike.
--   **Escape hatch:** if the in-house engine proves more costly than expected (esp. the
-    browser `stitch` build), fall back to **self-hosted LiveCodes** on the docs origin.
-    Because the UI is built against `CodeRunner`, that swap is a single implementation,
-    not a rewrite.
+- The **constraint-based eliminations are verified** (Sandpack foreign-origin, Runno
+  disqualified, react-live stalled). The in-house-vs-LiveCodes call and the reference
+  stack are **engineering judgment**, not independently benchmarked — validate in a spike.
+- **Escape hatch:** if the in-house engine proves more costly than expected (esp. the
+  browser `stitch` build), fall back to **self-hosted LiveCodes** on the docs origin.
+  Because the UI is built against `CodeRunner`, that swap is a single implementation,
+  not a rewrite.
 
 ## Revisit this decision if…
 
--   react-live ships a release / a maintained successor with first-class async appears;
--   the browser `stitch` shim (REQUIREMENTS.md §6) turns out to be disproportionately hard;
--   a same-origin, async-first, in-page OSS runner emerges that renders custom output.
+- react-live ships a release / a maintained successor with first-class async appears;
+- the browser `stitch` shim (REQUIREMENTS.md §6) turns out to be disproportionately hard;
+- a same-origin, async-first, in-page OSS runner emerges that renders custom output.

@@ -12,9 +12,9 @@ You've decided to drop axios from a TypeScript project. Before you reach for the
 
 This is the common case, and the honest answer is that the field is good. Native `fetch` plus one of a few small libraries covers most of what axios did.
 
--   **Native `fetch`.** It's everywhere in 2026 — browsers, Node, Deno, Bun, edge runtimes — with no dependency at all. The two gaps people hit: it doesn't reject on a non-2xx status (you check `response.ok` yourself), and retries, timeouts, and base-URL handling are yours to write. `AbortSignal.timeout()` covers the simplest timeout case.
--   **[ky](https://github.com/sindresorhus/ky).** A tiny `fetch`-based client with retry, timeout, and hooks built in, written in TypeScript. It's the closest "axios feel" in a fraction of the size, and the default pick if you're browser-first and want batteries included.
--   **[ofetch](https://github.com/unjs/ofetch).** Auto-parses JSON, throws on errors, retries, and runs the same in Node and the browser. It's the `fetch` layer under Nuxt, and a clean choice if you live in that ecosystem.
+- **Native `fetch`.** It's everywhere in 2026 — browsers, Node, Deno, Bun, edge runtimes — with no dependency at all. The two gaps people hit: it doesn't reject on a non-2xx status (you check `response.ok` yourself), and retries, timeouts, and base-URL handling are yours to write. `AbortSignal.timeout()` covers the simplest timeout case.
+- **[ky](https://github.com/sindresorhus/ky).** A tiny `fetch`-based client with retry, timeout, and hooks built in, written in TypeScript. It's the closest "axios feel" in a fraction of the size, and the default pick if you're browser-first and want batteries included.
+- **[ofetch](https://github.com/unjs/ofetch).** Auto-parses JSON, throws on errors, retries, and runs the same in Node and the browser. It's the `fetch` layer under Nuxt, and a clean choice if you live in that ecosystem.
 
 If a smaller wrapper is genuinely all you need — a couple of well-behaved endpoints, and the reliability story isn't yours to own — one of these is the right move, and it's the floor to start from. The rest of this post is for the moment that story becomes yours: when the glue around `fetch` is the real work.
 
@@ -72,9 +72,9 @@ If an AI agent is one of the callers, the category gap widens. A wrapper gives a
 
 This isn't a piece that ends with "so never use ky." There's a clear lane where a wrapper wins, and it's worth naming:
 
--   **You call a few well-behaved endpoints.** No rate limits, no flakiness, no shifting shapes — most of a stitch's machinery would sit dormant, and a thin typed wrapper is less ceremony.
--   **You won't write a schema.** A stitch's runtime guarantees come from its `output` validator. Skip it and you skip validation and drift, at which point a stitch is a fetch wrapper with extra steps — so use the actual wrapper.
--   **You're already deep in an ecosystem.** If Nuxt gives you ofetch and it's working, switching layers for its own sake is churn, not progress.
+- **You call a few well-behaved endpoints.** No rate limits, no flakiness, no shifting shapes — most of a stitch's machinery would sit dormant, and a thin typed wrapper is less ceremony.
+- **You won't write a schema.** A stitch's runtime guarantees come from its `output` validator. Skip it and you skip validation and drift, at which point a stitch is a fetch wrapper with extra steps — so use the actual wrapper.
+- **You're already deep in an ecosystem.** If Nuxt gives you ofetch and it's working, switching layers for its own sake is churn, not progress.
 
 A stitch earns its keep on the opposite shape of problem: APIs that rate-limit, flake, or change shape without warning; heterogeneous surfaces — HTTP, GraphQL, SSE, an LLM endpoint — stitched under one model; and anywhere you want resilience, an auth boundary, and an agent front door declared on the primitive instead of assembled around a client per project.
 

@@ -12,14 +12,14 @@ Opus-tier pass reserved for the load-bearing design, security, and integration w
 
 ## 1. How to dispatch
 
--   **One task = one subagent.** Each task card below is self-contained: it names the
-    files to touch, the contract to code against, and binary acceptance checks.
--   **Freeze the contracts first (Wave 0).** Every downstream task imports types from
-    §3. They must not be edited by lower tiers — changing a shared contract is an
-    Opus-tier task that re-ratifies the dependents.
--   **Dispatch by wave.** Tasks in the same wave have no inter-dependencies and run in
-    parallel. A wave starts only when its predecessor wave's acceptance checks pass.
--   **Worktree isolation** for any wave with >1 task touching files concurrently.
+- **One task = one subagent.** Each task card below is self-contained: it names the
+  files to touch, the contract to code against, and binary acceptance checks.
+- **Freeze the contracts first (Wave 0).** Every downstream task imports types from
+  §3. They must not be edited by lower tiers — changing a shared contract is an
+  Opus-tier task that re-ratifies the dependents.
+- **Dispatch by wave.** Tasks in the same wave have no inter-dependencies and run in
+  parallel. A wave starts only when its predecessor wave's acceptance checks pass.
+- **Worktree isolation** for any wave with >1 task touching files concurrently.
 
 ### Tier legend
 
@@ -61,11 +61,11 @@ Opus-tier pass reserved for the load-bearing design, security, and integration w
 
 Lower tiers import these; they do not invent them.
 
--   **`CodeRunner`, `RunRequest`, `RunResult`, `RunError`, `StitchTraceEntry`, `LogEntry`**
-    — already defined in [`component/runner.ts`](./component/runner.ts). **C1** relocates
-    them into the docs app and adds only the additive `StitchTraceEntry.stream?` hint
-    from [SANDBOX.md](./SANDBOX.md) §8.
--   **Simulator handler contract** (new, authored by **C1**):
+- **`CodeRunner`, `RunRequest`, `RunResult`, `RunError`, `StitchTraceEntry`, `LogEntry`**
+  — already defined in [`component/runner.ts`](./component/runner.ts). **C1** relocates
+  them into the docs app and adds only the additive `StitchTraceEntry.stream?` hint
+  from [SANDBOX.md](./SANDBOX.md) §8.
+- **Simulator handler contract** (new, authored by **C1**):
 
     ```ts
     // one handler definition, run by both adapters (browser fetch-shim + node)
@@ -98,7 +98,7 @@ Lower tiers import these; they do not invent them.
     }
     ```
 
--   **Dispatch contract** (new, authored by **C1**):
+- **Dispatch contract** (new, authored by **C1**):
 
     ```ts
     export type Tier = 'browser' | 'server';
@@ -256,16 +256,16 @@ flowchart LR
 
 ## 7. Tier-assignment rationale
 
--   **T3 (Opus)** holds the four load-bearing pieces only: the **contracts** (C1) that
-    everything imports, the **security boundary** (C2) where a wrong call is a real
-    vulnerability, the **browser `stitch` shim build** (B1, the largest unknown), the
-    **dispatcher heuristic** (D1) where mis-routing untrusted code matters, and
-    **integration** (I1, SR1).
--   **T2 (Sonnet)** does the bulk: every simulator handler group, the adapters, the
-    transpile module, the Worker runner, the UI wiring, and the tests — all against
-    contracts frozen by C1, so the design judgment is already made.
--   **T1 (Haiku)** does pure scaffolding: the package skeleton (S1) and the
-    fixtures/index (F1) — pattern-fill with no decisions.
+- **T3 (Opus)** holds the four load-bearing pieces only: the **contracts** (C1) that
+  everything imports, the **security boundary** (C2) where a wrong call is a real
+  vulnerability, the **browser `stitch` shim build** (B1, the largest unknown), the
+  **dispatcher heuristic** (D1) where mis-routing untrusted code matters, and
+  **integration** (I1, SR1).
+- **T2 (Sonnet)** does the bulk: every simulator handler group, the adapters, the
+  transpile module, the Worker runner, the UI wiring, and the tests — all against
+  contracts frozen by C1, so the design judgment is already made.
+- **T1 (Haiku)** does pure scaffolding: the package skeleton (S1) and the
+  fixtures/index (F1) — pattern-fill with no decisions.
 
 > If a T2/T1 task hits a genuine design fork, it **returns to T3** rather than guessing —
 > the frozen-contract rule is what makes lower-tier dispatch safe here.

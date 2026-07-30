@@ -107,17 +107,17 @@ trace — `seam: { config, token? }` (its `config` is the feature seam's
 
 Two bridges connect the framework, and neither changes core:
 
--   **`logger`** bridges a stitch's
-    [event stream](/docs/concepts/event-stream) into the Nest `Logger` as the
-    seam's `TraceSink` — **on by default**, matching the Fastify plugin. It logs
-    only metadata (name, method, scrubbed URL, status, attempts, timing) — never
-    bodies or headers. Disable it with `logger: false`, or drop the happy path
-    with `logger: { lifecycle: false }`; an explicit `trace` wins over the
-    bridge.
--   **`fromNestConfig(config)('KEY')`** is a `ConfigService`-backed
-    [secret resolver](/docs/guides/auth/secret-resolvers) — the `ConfigService`
-    twin of `env()`. It resolves synchronously at call time, so the credential
-    never lands on the config or in a trace.
+- **`logger`** bridges a stitch's
+  [event stream](/docs/concepts/event-stream) into the Nest `Logger` as the
+  seam's `TraceSink` — **on by default**, matching the Fastify plugin. It logs
+  only metadata (name, method, scrubbed URL, status, attempts, timing) — never
+  bodies or headers. Disable it with `logger: false`, or drop the happy path
+  with `logger: { lifecycle: false }`; an explicit `trace` wins over the
+  bridge.
+- **`fromNestConfig(config)('KEY')`** is a `ConfigService`-backed
+  [secret resolver](/docs/guides/auth/secret-resolvers) — the `ConfigService`
+  twin of `env()`. It resolves synchronously at call time, so the credential
+  never lands on the config or in a trace.
 
 For multi-tenancy, bind a principal per request with `seam.as(...)`. The principal
 scopes sessions and cache over the one shared store, so each tenant gets its own

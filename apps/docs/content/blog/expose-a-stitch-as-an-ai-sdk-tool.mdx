@@ -152,10 +152,10 @@ It cuts the other way too. The schema is also documentation the model can use: t
 
 This is the part that makes a stitch-as-tool different from a hand-rolled fetch tool. Everything declared on the stitch applies no matter who pulls the trigger — and a model is an unusually trigger-happy caller.
 
--   The `throttle` caps how fast the model can hammer the endpoint, even if it gets stuck in a retry-it-yourself loop. With `pool: 'host'`, that ceiling is shared across every stitch hitting the same host, so a chatty agent can't starve the rest of your app.
--   The `retry` absorbs a transient `503` without the model ever seeing it — and honors `Retry-After`, so you back off the way the upstream asked.
--   The `cache` collapses a model that asks the same question twice in one loop into a single paid upstream call.
--   The `timeout` bounds how long a single tool call can hang, so one slow dependency doesn't stall the whole generation.
+- The `throttle` caps how fast the model can hammer the endpoint, even if it gets stuck in a retry-it-yourself loop. With `pool: 'host'`, that ceiling is shared across every stitch hitting the same host, so a chatty agent can't starve the rest of your app.
+- The `retry` absorbs a transient `503` without the model ever seeing it — and honors `Retry-After`, so you back off the way the upstream asked.
+- The `cache` collapses a model that asks the same question twice in one loop into a single paid upstream call.
+- The `timeout` bounds how long a single tool call can hang, so one slow dependency doesn't stall the whole generation.
 
 None of that is configured in the tool or in the agent. It's on the stitch, which is the right place: the same `getOrder` behaves identically whether it's called from your code, the CLI, [over MCP](/docs/surfaces/mcp), or from this AI SDK tool. The [throttle guide](/docs/guides/resilience/throttle) covers the semantics if you want to tune them.
 
@@ -163,10 +163,10 @@ None of that is configured in the tool or in the agent. It's on the stitch, whic
 
 This pattern closes real gaps, but it isn't a force field. A few things it deliberately does not do:
 
--   **You still scope which stitches an agent may call.** Wrapping a stitch as a tool grants exactly that capability — and only the ones you put in the `tools` map. Handing a model `getOrder` is safe; handing it `deleteOrder` is a decision you make on purpose, not a default. Curate the `tools` map per agent.
--   **A model can call a tool wrongly.** The credential is safe and the output is validated, but the model can still pass a nonsensical `id`, or call the tool when it shouldn't. That's why the **input** schema matters: keep `inputSchema` tight, and let `toInput` (or the stitch's own input validation) reject bad arguments before a request is ever sent. A capability the model holds is still a capability the model can misuse.
--   **Validation guards shape, not truth.** A response can match `Order` perfectly and still be wrong for the user's question. The schema stops malformed data from poisoning the model's reasoning; it doesn't make the data correct.
--   **Confirm the exact API in the docs.** The exports here — `stitchTool` and `stitchExecute` — are what this package ships today, but the AI SDK moves quickly. Treat [the integration page](/docs/integrations/vercel-ai) as the source of truth for the current signatures rather than a code snippet in a blog post.
+- **You still scope which stitches an agent may call.** Wrapping a stitch as a tool grants exactly that capability — and only the ones you put in the `tools` map. Handing a model `getOrder` is safe; handing it `deleteOrder` is a decision you make on purpose, not a default. Curate the `tools` map per agent.
+- **A model can call a tool wrongly.** The credential is safe and the output is validated, but the model can still pass a nonsensical `id`, or call the tool when it shouldn't. That's why the **input** schema matters: keep `inputSchema` tight, and let `toInput` (or the stitch's own input validation) reject bad arguments before a request is ever sent. A capability the model holds is still a capability the model can misuse.
+- **Validation guards shape, not truth.** A response can match `Order` perfectly and still be wrong for the user's question. The schema stops malformed data from poisoning the model's reasoning; it doesn't make the data correct.
+- **Confirm the exact API in the docs.** The exports here — `stitchTool` and `stitchExecute` — are what this package ships today, but the AI SDK moves quickly. Treat [the integration page](/docs/integrations/vercel-ai) as the source of truth for the current signatures rather than a code snippet in a blog post.
 
 For most apps already on the AI SDK, the MCP surface is still the canonical way to hand a stitch to any agent — this package is the framework-specific convenience when you're already inside `generateText` / `streamText` and want the wiring to be three lines.
 
