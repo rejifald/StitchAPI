@@ -1,9 +1,10 @@
-// P20 (No empty-object config): the five `StitchConfig` slots that used to be a bare all-optional
-// `*Options` bag — `hooks`, `input`, `multipart`, `sse`, `stream` — now reject the opaque `{}` at
-// the slot. The all-defaults case is the scalar (`sse: true`, `stream: 'ndjson'`, `multipart: 'dot'`)
-// or a real ≥1-field object; the empty object is a COMPILE error. These `@ts-expect-error` assertions
-// are enforced by `check:types` (an unused directive would itself fail), not at runtime — the
-// closures are never invoked.
+// P20 (No empty-object config): every `StitchConfig` slot that used to be a bare all-optional
+// `*Options` bag — `hooks`, `input`, `multipart`, `sse`, `stream`, and now `retry`, `throttle`,
+// `timeout`, `circuit` and the nested `sse.reconnect` — rejects the opaque `{}` at the slot. The
+// all-defaults case is the scalar (`sse: true`, `stream: 'ndjson'`, `multipart: 'dot'`, `retry: 3`,
+// `timeout: '5s'`, `throttle: '2/s'`) or a real ≥1-field object; the empty object is a COMPILE
+// error. These `@ts-expect-error` assertions are enforced by `check:types` (an unused directive
+// would itself fail), not at runtime — the closures are never invoked.
 import { stitch } from '../src';
 
 test('the opaque `{}` is rejected at each Scalar|AtLeastOne slot (P20)', () => {
@@ -43,6 +44,36 @@ test('the opaque `{}` is rejected at each Scalar|AtLeastOne slot (P20)', () => {
             path: '/y',
             // @ts-expect-error — `retry.backoff: {}` is rejected; use a curve or set base/max.
             retry: { attempts: 2, backoff: {} },
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — `retry: {}` is rejected; use `retry: 3` or set a field.
+            retry: {},
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — `throttle: {}` is rejected; use `'2/s'` or set a field.
+            throttle: {},
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — `timeout: {}` is rejected; use `'5s'` or set `total`/`perAttempt`.
+            timeout: {},
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — `sse.reconnect: {}` is rejected; use `true` or set a field.
+            sse: { reconnect: {} },
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — `circuit: {}` is rejected; both fields are required (P15).
+            circuit: {},
         }),
     ];
     // The assertions that matter are the @ts-expect-error directives above (checked by `check:types`).
