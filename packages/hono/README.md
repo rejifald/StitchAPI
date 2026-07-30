@@ -78,12 +78,16 @@ messages are known safe; `error.observe` still receives the real failure
 server-side for logging:
 
 ```ts
-return streamStitchSse(c, completion.stream({ body: { prompt: c.req.query('q') } }), {
-    error: {
-        data: (e) => e.message, // opt in to the raw upstream message
-        observe: (err) => c.get('log').error(err), // real failure, server-side only
+return streamStitchSse(
+    c,
+    completion.stream({ body: { prompt: c.req.query('q') } }),
+    {
+        error: {
+            data: (e) => e.message, // opt in to the raw upstream message
+            observe: (err) => c.get('log').error(err), // real failure, server-side only
+        },
     },
-});
+);
 ```
 
 Both `delta` and `error` also accept a bare function as shorthand for `{ data }` —

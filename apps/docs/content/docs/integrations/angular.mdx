@@ -107,7 +107,7 @@ Both functions return the same shape — `data`, `error`, `status`, `chunks`, an
 
 ## The observable: `state$`
 
-Prefer RxJS? The same state is a multicast `Observable<StitchQueryState<T>>` on
+Prefer RxJS? The same state is a multicast `Observable<StitchQueryResult<T>>` on
 `state$`, sharing the one query execution with the signals. Read it with the
 `async` pipe:
 
