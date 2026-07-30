@@ -38,10 +38,10 @@ If your runtime predates `AbortSignal.timeout`, build the same thing from an `Ab
 const controller = new AbortController();
 const timer = setTimeout(() => controller.abort(), 3000);
 try {
-  const res = await fetch(url, { signal: controller.signal });
-  return await res.json();
+    const res = await fetch(url, { signal: controller.signal });
+    return await res.json();
 } finally {
-  clearTimeout(timer);
+    clearTimeout(timer);
 }
 ```
 
