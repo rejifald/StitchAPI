@@ -1,0 +1,77 @@
+# OpenSSF Scorecard: the automated supply-chain score that deps.dev, Socket, Snyk and
+# GitHub's own dependency views surface to anyone evaluating `stitchapi` as a dependency.
+# It grades ~18 checks over this repo (signed releases, branch protection, pinned CI
+# dependencies, SAST coverage, dangerous workflow patterns, …) and — because
+# `publish_results` is on — publishes the result to the public OpenSSF API that backs the
+# README badge.
+#
+# This is the check the repo scores WELL on and never claimed: releases already ship
+# `npm publish --provenance` over OIDC trusted publishing (npm-publish.yml), core has an
+# empty dependency tree, and every gate in verify.yml is a required check. Scorecard is
+# what turns those facts into a number a stranger can verify without reading the repo.
+name: Scorecard
+
+on:
+    # Scorecard's Branch-Protection check reads the ruleset itself, so re-score whenever a
+    # protection rule changes rather than waiting for the weekly cron to notice.
+    branch_protection_rule:
+    schedule:
+        - cron: '27 5 * * 1'
+    # Results are only publishable from the default branch — a PR run would score the
+    # fork's HEAD, not this repo, so `pull_request` is deliberately absent.
+    push:
+        branches: [main]
+
+# Default-deny; the analysis job elevates the three scopes it actually needs.
+permissions: read-all
+
+jobs:
+    analysis:
+        name: Scorecard analysis
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            security-events: write # upload the SARIF into the Security tab
+            id-token: write # sign the results so the public OpenSSF API accepts them
+            contents: read
+            actions: read
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  # Required by scorecard-action: it re-clones and analyses the repo, and a
+                  # persisted credential in .git/config would be an ambient token in the
+                  # environment it scans.
+                  persist-credentials: false
+
+            - name: Run analysis
+              uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+              with:
+                  results_file: results.sarif
+                  results_format: sarif
+                  # Publishes to https://api.scorecard.dev — this is what makes the README
+                  # badge render and what lets downstream tooling read the score without
+                  # re-running the analysis. Public repos only; this repo is public.
+                  publish_results: true
+                  # OPTIONAL: the Branch-Protection and Webhooks checks need more than the
+                  # default GITHUB_TOKEN can see, so they currently score as "unknown". To
+                  # grade them, create a fine-grained PAT with read-only Administration +
+                  # Webhooks on this repo, store it as the `SCORECARD_TOKEN` secret, and
+                  # uncomment the line below. Everything else scores fine without it.
+                  # repo_token: ${{ secrets.SCORECARD_TOKEN }}
+
+            # Keep the raw SARIF downloadable for the run — useful when a check regresses
+            # and the Security tab's rendering hides the reason.
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: scorecard-sarif
+                  path: results.sarif
+                  retention-days: 5
+
+            # Third-party SARIF, so this does NOT collide with the repo's CodeQL default
+            # setup the way an advanced CodeQL *analysis* workflow would — only CodeQL
+            # analyses conflict, and Scorecard uploads under its own category.
+            # v4 deliberately: the v3 action is deprecated from December 2026.
+            - name: Upload to code scanning
+              uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
+              with:
+                  sarif_file: results.sarif
