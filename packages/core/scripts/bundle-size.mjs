@@ -133,16 +133,26 @@ const KB = 1024;
 // added last costs 0.00 KB gzip. This is a MINIMUM step (0.07 / 0.08 KB headroom), not the ~0.2 KB
 // this gate usually restores: the overflow is small and the maintainer chose the smallest deliberate
 // bump that clears it (see PR #477 for the measured before/after).
+// Budgets raised for the config-surface shorthands (24.90→25.10 / 20.10→20.25 KB; measured 24.99 /
+// 20.14). CONTRACT.md P7/P12/P13/P15 buy authoring ergonomics with hot-path bytes: `circuit:[f,c]`,
+// the single-fragment `extends`, the `cache.methods`/`vary` list widening and the `inspect(i,true)`
+// probe boolean all normalise in `compose`/`makeStitch`, which every stitch runs — there is no
+// subpath to move them behind, and the alternative is not "smaller" but "the shorthand does not
+// exist". Measured against a `main` that had grown to 24.81 / 20.01 underneath this branch: the
+// slice is +0.15 / +0.11, of which the `cache` list widening is +0.03 / +0.02 (it was declared in
+// the types but never performed — `methods: 'POST'` threw). Headroom lands at 0.11 / 0.11, the same
+// tight step #477 took, not a restoration of the ~0.2 KB the gate usually holds (see PR #524 for
+// the measured before/after at each ref).
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.9 * KB,
+        budget: 25.1 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 20.1 * KB,
+        budget: 20.25 * KB,
     },
 ];
 
