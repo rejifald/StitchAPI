@@ -91,6 +91,11 @@ export function startMockServer(): Promise<MockServer> {
     const routes = new Map<string, RouteBehavior>();
     const counters = new Map<string, number>();
     const log: ReqInfo[] = [];
+    // Armed `delay` timers, so a pending response can't outlive the test that asked for it. A
+    // timeout/abort test deliberately walks away from a slow route long before it answers; without
+    // this the stray timer keeps the worker's event loop alive past `close()` and then writes to a
+    // socket the client already dropped. Cleared on reset() and close().
+    const pendingResponses = new Set<ReturnType<typeof setTimeout>>();
     const key = (method: string, path: string): string =>
         `${method.toUpperCase()} ${path}`;
 
@@ -244,10 +249,18 @@ export function startMockServer(): Promise<MockServer> {
         else if (typeof behavior.delay === 'number') delay = behavior.delay;
 
         const respond = (): void => {
+            // The client may have aborted while we were sleeping out `delay` — writing to a
+            // destroyed response emits an unhandled 'error' on it. Nothing to answer: drop it.
+            if (res.writableEnded || res.destroyed) return;
             send(status, body, behavior);
         };
-        if (delay > 0) setTimeout(respond, delay);
-        else respond();
+        if (delay > 0) {
+            const timer = setTimeout(() => {
+                pendingResponses.delete(timer);
+                respond();
+            }, delay);
+            pendingResponses.add(timer);
+        } else respond();
     };
 
     const server: Server = createServer((req, res) => {
@@ -260,6 +273,11 @@ export function startMockServer(): Promise<MockServer> {
 
     const filter = (path?: string): ReqInfo[] =>
         path ? log.filter((r) => r.path === path) : log.slice();
+
+    const clearPending = (): void => {
+        for (const timer of pendingResponses) clearTimeout(timer);
+        pendingResponses.clear();
+    };
 
     return new Promise((resolve) => {
         server.listen(0, '127.0.0.1', () => {
@@ -276,9 +294,11 @@ export function startMockServer(): Promise<MockServer> {
                     routes.clear();
                     counters.clear();
                     log.length = 0;
+                    clearPending();
                 },
                 close: () =>
                     new Promise<void>((res) => {
+                        clearPending();
                         // Force-drop any still-open connection (a half-read stream from an early
                         // break) so close() can't hang waiting on it (Node ≥ 18.2).
                         server.closeAllConnections();

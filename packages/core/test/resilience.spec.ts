@@ -149,7 +149,14 @@ test('throttle concurrency:1 serializes concurrent calls', async () => {
 
 // ── 6. Timeout aborts ──────────────────────────────────────────────────────
 test('timeout aborts a slow request instead of waiting it out', async () => {
-    server.route('GET', '/slow', { delay: 200, body: { ok: true } });
+    // The route answers only after 2s — 40× the timeout budget. That ratio, not a tight absolute
+    // margin, is what separates "aborted at the deadline" from "waited the server out". A loaded
+    // runner (parallel vitest workers, a concurrent build) stalls the event loop and pushes the
+    // measured elapsed up by however long the stall lasted; the old shape (200ms delay, ceiling
+    // 180) reddened at a ~160ms stall, which is an ordinary amount of noise — measured elapsed 206
+    // on a failing run. Widening the delay buys the ceiling room: this shape survives a ~950ms
+    // stall. Don't narrow the gap between `delay`, `total` and the ceiling below.
+    server.route('GET', '/slow', { delay: 2000, body: { ok: true } });
     const call = stitch({
         baseUrl: server.url,
         path: '/slow',
@@ -157,9 +164,18 @@ test('timeout aborts a slow request instead of waiting it out', async () => {
     });
 
     const t0 = Date.now();
-    await expect(call()).rejects.toBeDefined();
+    const err = await call().then(
+        () => undefined,
+        (e: unknown) => e as Error,
+    );
     const elapsed = Date.now() - t0;
 
-    // Aborted near the 50ms deadline, not after the full 200ms server delay.
-    expect(elapsed).toBeLessThan(180);
+    // The call must fail, and fail *because the budget ran out* — not with some other error, and
+    // certainly not resolve with the body a non-aborting timeout would have waited around for.
+    expect(err).toBeDefined();
+    expect(err?.message ?? '').toMatch(/timed?\s?out|timeout/i);
+    // And it must give up promptly rather than rejecting only once the response lands. The
+    // ceiling is deliberately loose — 20× the 50ms budget, still 2× under the server's 2s delay —
+    // so scheduling noise can't red it while a timeout that stopped aborting still can.
+    expect(elapsed).toBeLessThan(1000);
 });
