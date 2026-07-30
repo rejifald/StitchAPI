@@ -151,10 +151,8 @@ describe('stitch() middleware puts a seam on req', () => {
         await api.close();
     });
 
-    test('currentStitch throws when the middleware did not run', () => {
-        expect(() => currentStitch(mockReq())).toThrow(
-            /req\.stitch is not set/,
-        );
+    test('currentStitch returns undefined (never throws) when the middleware did not run', () => {
+        expect(currentStitch(mockReq())).toBeUndefined();
     });
 });
 
@@ -303,6 +301,18 @@ describe('streamStitchSse writes SSE frames to res', () => {
         expect(res.body()).toBe(
             'event: token\ndata: a\n\nevent: token\ndata: b\n\n',
         );
+    });
+
+    test('accepts the { stream() } arm of StitchEventSource (e.g. a StitchResult)', async () => {
+        async function* events(): AsyncGenerator<StitchEvent<unknown>> {
+            yield { type: 'delta', chunk: 'via-stream', at: 1 };
+        }
+        const res = mockRes();
+        await streamStitchSse(res as unknown as Response, {
+            stream: () => events(),
+        });
+        expect(res.body()).toBe('data: via-stream\n\n');
+        expect(res.ended).toBe(true);
     });
 
     test('the default data mapper sends a string verbatim and JSON-stringifies an object', async () => {

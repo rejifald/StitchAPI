@@ -18,7 +18,7 @@ export {
     stitch,
     currentStitch,
     type ExpressRequestSeam,
-    type StitchMiddlewareOptions,
+    type ExpressStitchMiddlewareOptions,
 } from './middleware';
 
 export {
@@ -31,5 +31,5 @@ export {
     stitchErrorHandler,
     isStitchError,
     type StitchErrorLike,
-    type StitchErrorHandlerOptions,
+    type StitchErrorOptions,
 } from './error';

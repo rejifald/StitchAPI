@@ -13,7 +13,7 @@ export function isStitchError(err: unknown): err is StitchErrorLike {
     return err instanceof Error && err.name === 'StitchError';
 }
 
-export interface StitchErrorHandlerOptions {
+export interface StitchErrorOptions {
     /**
      * The HTTP status for a mapped stitch failure. Default `502 Bad Gateway` — **every**
      * upstream failure is reported as a gateway error, regardless of the upstream's own
@@ -46,7 +46,7 @@ const STATUS_TEXT: Record<number, string> = {
 
 function resolveStatus(
     err: StitchErrorLike,
-    status: StitchErrorHandlerOptions['status'],
+    status: StitchErrorOptions['status'],
 ): number {
     if (status === undefined) return DEFAULT_STATUS;
     return typeof status === 'function' ? status(err) : status;
@@ -54,7 +54,7 @@ function resolveStatus(
 
 /**
  * Build a `setErrorHandler`-compatible function that maps a {@link StitchErrorLike} to an HTTP
- * response (status `502` by default; override via {@link StitchErrorHandlerOptions.status})
+ * response (status `502` by default; override via {@link StitchErrorOptions.status})
  * and **rethrows every other error** so Fastify's default handling — and any error handler
  * registered in an outer scope — stays in charge. Register it on the app or a plugin scope:
  *
@@ -66,7 +66,7 @@ function resolveStatus(
  * only to register it yourself with custom options.
  */
 export function stitchErrorHandler(
-    options: StitchErrorHandlerOptions = {},
+    options: StitchErrorOptions = {},
 ): (error: FastifyError, request: FastifyRequest, reply: FastifyReply) => void {
     return (error, _request, reply): void => {
         if (!isStitchError(error)) {

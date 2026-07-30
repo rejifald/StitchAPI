@@ -11,13 +11,30 @@
 // Zero-dep and browser-safe (no `node:*`): pure types + string building, so it satisfies the same
 // three gates as its siblings and rides the `browser` export condition. Reached only through the
 // `sse-emit` subpath — `import { stitch }` pulls in none of it.
-import type { StitchEvent } from './types';
+import type { StitchEvent, StitchEventSource } from './types';
 import { envelope } from './util';
 
-/** Anything an SSE emitter can drive: a stitch `.stream()` generator, or any event iterable. */
-export type StitchEventSource<T> =
-    | AsyncIterable<StitchEvent<T>>
-    | AsyncGenerator<StitchEvent<T>, void>;
+/**
+ * Anything an SSE emitter can drive: an event iterable (a `.stream()` generator), or anything
+ * that hands one back (a `StitchResult`, a stitch stub). RE-EXPORTED from the barrel rather than
+ * restated here, so an adapter accepts exactly what core says a source is — there is one
+ * definition, so there is nothing to keep in step. (`AsyncGenerator` needs no arm of its own: it
+ * already satisfies `AsyncIterable`.)
+ */
+export type { StitchEventSource } from './types';
+
+/**
+ * Resolve the canonical intake to the event iterable itself: a `.stream()`-bearing source (a
+ * `StitchResult`, a stitch stub) is asked for its stream; an iterable is used as-is. Every
+ * adapter's driver starts here, so the two arms are unwrapped in exactly one place.
+ */
+export function toIterable<T>(
+    source: StitchEventSource<T>,
+): AsyncIterable<StitchEvent<T>> {
+    return Symbol.asyncIterator in source
+        ? (source as AsyncIterable<StitchEvent<T>>)
+        : source.stream();
+}
 
 /** The terminal `error` event a stitch stream emits — carries `message`, `status`, `attempts`. */
 export type StitchErrorEvent = Extract<StitchEvent, { type: 'error' }>;

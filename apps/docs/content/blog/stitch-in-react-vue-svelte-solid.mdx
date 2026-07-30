@@ -20,7 +20,7 @@ Query-core owns the lifecycle and nothing else: status transitions, cancellation
 That shared core is why the per-framework state shape is the same everywhere:
 
 ```ts twoslash
-interface StitchQueryState<T> {
+interface StitchQueryResult<T> {
     status: 'idle' | 'pending' | 'streaming' | 'success' | 'error';
     data: T | undefined;
     error: unknown;

@@ -14,10 +14,11 @@ export interface PrincipalContext {
 }
 
 /**
- * The slice of Elysia's error context the error bridge reads: the thrown `error`. Elysia's real
- * context also carries `code` / `set` / `request`, but the StitchError bridge only needs `error`.
+ * The slice of Elysia's error context the error bridge reads: the thrown `error` (mirrors Elysia's
+ * `ErrorContext`, structurally). Elysia's real context also carries `code` / `set` / `request`, but
+ * the StitchError bridge only needs `error`.
  */
-export interface StitchEnvLike {
+export interface ErrorContextLike {
     error: unknown;
 }
 

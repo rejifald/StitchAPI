@@ -17,6 +17,7 @@ import {
     resolveDelta,
     resolveError,
     sseFrame,
+    toIterable,
 } from 'stitchapi/sse-emit';
 
 export type { StitchEventSource };
@@ -32,7 +33,7 @@ export interface StreamStitchSseOptions extends SseEmitOptions {
 
 /**
  * Stream a stitch's output to an Express {@link Response} as Server-Sent Events. Pass the stitch's
- * `.stream()` generator (or any `AsyncIterable<StitchEvent>`): each `delta` becomes one SSE frame, an
+ * `.stream()` generator (or any `StitchEventSource`): each `delta` becomes one SSE frame, an
  * `error` event ends the stream with a named `event: error` frame (a generic `data: error` by
  * default — the raw message is withheld to avoid disclosing internal topology; opt in via
  * `error`), and stream end closes the response. The non-output events (`start` / `progress` /
@@ -68,7 +69,10 @@ export async function streamStitchSse<T>(
         res.flushHeaders();
     }
 
-    const iterator = source[Symbol.asyncIterator]();
+    // Accept both arms of the canonical `StitchEventSource` — the iterable itself, or a handle that
+    // hands one back (a `StitchResult`, a stitch stub) — by resolving to the event iterable up front.
+    const iterable = toIterable(source);
+    const iterator = iterable[Symbol.asyncIterator]();
     let active = true;
 
     // Client disconnect: stop consuming and abort the upstream iterator. Listen on the response and,

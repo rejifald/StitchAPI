@@ -14,7 +14,7 @@ These composables are a thin layer over [`@stitchapi/query-core`](../query-core)
 pnpm add @stitchapi/vue@rc @stitchapi/query-core@rc stitchapi@rc vue
 ```
 
-`stitchapi` (`>=0.7.0`) and `vue` (`^3.4`) are peer dependencies. `@tanstack/vue-query` is **not** required — `queryOptions` returns a plain object.
+`stitchapi` (`>=0.7.0`) and `vue` (`^3.4`) are peer dependencies. `@tanstack/vue-query` is **not** required — `stitchQueryOptions` returns a plain object.
 
 ## `useStitch` — request / response
 
@@ -74,7 +74,7 @@ Same return shape as `useStitch`. `data` is the accumulated chunks (`mode: 'appe
 Each field is a `ComputedRef`, so destructuring keeps reactivity (and `.value` is unwrapped automatically in templates):
 
 ```ts
-interface UseStitchReturn<T> {
+interface UseStitchResult<T> {
     status: ComputedRef<'idle' | 'pending' | 'streaming' | 'success' | 'error'>;
     data: ComputedRef<T | undefined>;
     error: ComputedRef<unknown>;
@@ -90,13 +90,13 @@ interface UseStitchReturn<T> {
 
 ## Optional: TanStack Query
 
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/vue-query` required, so it works even if you never install it.
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/vue-query` required, so it works even if you never install it.
 
 ```ts
-import { queryOptions } from '@stitchapi/vue';
+import { stitchQueryOptions } from '@stitchapi/vue';
 import { useQuery } from '@tanstack/vue-query';
 
-const { data } = useQuery(queryOptions(getUser, { params: { id } }));
+const { data } = useQuery(stitchQueryOptions(getUser, { params: { id } }));
 ```
 
 ## License
