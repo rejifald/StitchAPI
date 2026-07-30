@@ -6,7 +6,7 @@
 
 Next App Router route handlers are Web-standard — they take a `Request` and return a `Response` — so a stitch already runs in one directly: define a `seam` once and call it in the handler. What's worth a helper is the two bits you'd otherwise hand-roll on the Web platform:
 
--   **`sseResponse(stitch.stream())`** — turn a streaming stitch into a `text/event-stream` `Response`.
+-   **`streamStitchSse(stitch.stream())`** — turn a streaming stitch into a `text/event-stream` `Response`.
 -   **`stitchErrorResponse(err)`** — map a thrown `StitchError` to a `Response` with a safe status, or `undefined` for anything else so you can rethrow it.
 
 Built on Web standards only (`Response`, `ReadableStream`, `TextEncoder`) — **no `next` import** — so the same helpers also work in Remix, SvelteKit endpoints, Bun, Deno, and Workers.
@@ -48,17 +48,17 @@ export async function GET(
 
 ## Streaming with SSE
 
-`sseResponse` streams a stitch's events as `text/event-stream`. Each `delta` becomes one frame; an `error` event ends with a named `event: error` frame (a generic `data: error` by default — see below):
+`streamStitchSse` streams a stitch's events as `text/event-stream`. Each `delta` becomes one frame; an `error` event ends with a named `event: error` frame (a generic `data: error` by default — see below):
 
 ```ts
 // app/api/chat/route.ts
 import { chat } from '@/lib/api';
 
-import { sseResponse } from '@stitchapi/next';
+import { streamStitchSse } from '@stitchapi/next';
 
 export async function POST(request: Request) {
     const { prompt } = await request.json();
-    return sseResponse(chat({ body: { prompt } }).stream(), {
+    return streamStitchSse(chat({ body: { prompt } }).stream(), {
         delta: (c) => String(c), // pull text out of each chunk
         signal: request.signal, // abort the upstream if the client leaves
     });
@@ -70,7 +70,7 @@ Pass `request.signal` so a client disconnect tears the stitch down rather than l
 By default the `error` frame carries a generic `data: error` token, **not** the raw error message — echoing it can disclose internal network topology (a transport failure reads like `getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status (`HTTP 401`) to the client. Pass `error` to opt in when the upstream messages are known safe to expose:
 
 ```ts
-return sseResponse(chat({ body: { prompt } }).stream(), {
+return streamStitchSse(chat({ body: { prompt } }).stream(), {
     error: (e) => e.message, // opt in to the raw upstream message
 });
 ```

@@ -1,9 +1,16 @@
 // @stitchapi/query-core behaviour. Driven by FAKE stitches (plain callables that
 // return a `StitchResult`-shaped value) — no engine, no network. We exercise the
 // unary lifecycle, cancel/refetch, and the streaming `delta` accumulation.
-import { createStitchQuery } from '../src';
+import {
+    createStitchQuery,
+    deriveQueryKey,
+    keyInputFor,
+    nameOf,
+    stitchQueryOptions,
+} from '../src';
 import type { StitchCallResult, StitchLike } from '../src';
 
+import { registerSecretKey } from 'stitchapi';
 import type { StitchEvent } from 'stitchapi';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -15,7 +22,7 @@ function unaryStitch<T>(settle: (input: unknown) => Promise<T>): StitchLike<T> {
         const promise = settle(input);
         return {
             then: (onf, onr) => promise.then(onf, onr),
-            // A unary fake never streams; the store only calls this in stream mode.
+            // A unary fake never streams; the store only calls this when `streaming`.
             stream() {
                 async function* gen(): AsyncGenerator<StitchEvent<T>> {
                     const value = await promise;
@@ -253,7 +260,7 @@ describe('streaming query', () => {
             { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
         ];
         const q = createStitchQuery(streamStitch(events), undefined, {
-            stream: true,
+            streaming: true,
         });
 
         const seen: number[][] = [];
@@ -282,7 +289,7 @@ describe('streaming query', () => {
             { type: 'result', data: 20, status: 200, attempts: 1, at: 0 },
         ];
         const q = createStitchQuery(streamStitch(events), undefined, {
-            stream: true,
+            streaming: true,
             mode: 'replace',
         });
         await new Promise((r) => setTimeout(r, 10));
@@ -304,7 +311,7 @@ describe('streaming query', () => {
             },
         ];
         const q = createStitchQuery(streamStitch(events), undefined, {
-            stream: true,
+            streaming: true,
         });
         await new Promise((r) => setTimeout(r, 10));
         const s = q.getSnapshot();
@@ -319,7 +326,7 @@ describe('streaming query', () => {
         ];
         const statuses: string[] = [];
         const q = createStitchQuery(streamStitch(events), undefined, {
-            stream: true,
+            streaming: true,
             mode: 'replace',
         });
         q.subscribe(() => statuses.push(q.getSnapshot().status));
@@ -394,7 +401,7 @@ describe('onSuccess / onError callbacks', () => {
             { type: 'result', data: 'final', status: 200, attempts: 1, at: 0 },
         ];
         const q = createStitchQuery(streamStitch(events), undefined, {
-            stream: true,
+            streaming: true,
             onSuccess,
         });
         await tick();
@@ -415,7 +422,7 @@ describe('onSuccess / onError callbacks', () => {
             },
         ];
         const q = createStitchQuery(streamStitch(events), undefined, {
-            stream: true,
+            streaming: true,
             onError,
         });
         await tick();
@@ -437,5 +444,101 @@ describe('onSuccess / onError callbacks', () => {
         await tick();
         expect(onSuccess).not.toHaveBeenCalled();
         q.destroy();
+    });
+});
+
+// --- key derivation (the one shared implementation behind every binding) ----
+
+describe('nameOf()', () => {
+    const withConfig = (cfg: Record<string, unknown>): StitchLike<string> =>
+        Object.assign(
+            unaryStitch<string>(async () => 'x'),
+            { __config: cfg },
+        );
+
+    test('prefers name, then path, then url, then the literal fallback', () => {
+        expect(nameOf(withConfig({ name: 'getUser', path: '/u/{id}' }))).toBe(
+            'getUser',
+        );
+        expect(nameOf(withConfig({ path: '/users/{id}' }))).toBe('/users/{id}');
+        expect(nameOf(withConfig({ url: 'https://x.dev/feed' }))).toBe(
+            'https://x.dev/feed',
+        );
+        expect(nameOf(withConfig({}))).toBe('stitch');
+    });
+
+    test('a bare callable without __config falls back to the literal', () => {
+        expect(nameOf(unaryStitch(async () => 1))).toBe('stitch');
+    });
+});
+
+describe('keyInputFor()', () => {
+    test('null / undefined stay null; primitives pass through', () => {
+        expect(keyInputFor(null)).toBeNull();
+        expect(keyInputFor(undefined)).toBeNull();
+        expect(keyInputFor(7)).toBe(7);
+        expect(keyInputFor('q')).toBe('q');
+    });
+
+    test('drops runtime-only signal / onProgress, keeps everything else', () => {
+        const out = keyInputFor({
+            params: { id: '1' },
+            signal: new AbortController().signal,
+            onProgress: () => {},
+        });
+        expect(out).toEqual({ params: { id: '1' } });
+    });
+
+    test('redacts secret header VALUES but keeps benign headers varying the key', () => {
+        const out = keyInputFor({
+            headers: {
+                Authorization: 'Bearer tok',
+                'x-csrf-token': 'abc',
+                'x-goog-api-key': 'k',
+                'accept-language': 'uk',
+            },
+        }) as { headers: Record<string, unknown> };
+        expect(out.headers['Authorization']).toBe('[redacted]');
+        expect(out.headers['x-csrf-token']).toBe('[redacted]');
+        expect(out.headers['x-goog-api-key']).toBe('[redacted]');
+        expect(out.headers['accept-language']).toBe('uk');
+    });
+
+    test("reuses core's isSecretKey: registerSecretKey widens header redaction", () => {
+        registerSecretKey('x-querycore-spec-credential');
+        const out = keyInputFor({
+            headers: { 'x-querycore-spec-credential': 'v' },
+        }) as { headers: Record<string, unknown> };
+        expect(out.headers['x-querycore-spec-credential']).toBe('[redacted]');
+    });
+});
+
+describe('deriveQueryKey() / stitchQueryOptions()', () => {
+    test('the key is [name, sanitised input]', () => {
+        const stitch = Object.assign(
+            unaryStitch<string>(async () => 'x'),
+            { __config: { path: '/users/{id}' } },
+        );
+        expect(
+            deriveQueryKey(stitch, {
+                params: { id: '1' },
+                headers: { authorization: 'Bearer t' },
+            }),
+        ).toEqual([
+            '/users/{id}',
+            { params: { id: '1' }, headers: { authorization: '[redacted]' } },
+        ]);
+    });
+
+    test('stitchQueryOptions returns the derived key and an awaiting queryFn', async () => {
+        const stitch = Object.assign(
+            unaryStitch(async (input) => ({ echoed: input })),
+            { __config: { name: 'echo' } },
+        );
+        const options = stitchQueryOptions(stitch, { body: { a: 1 } });
+        expect(options.queryKey).toEqual(['echo', { body: { a: 1 } }]);
+        await expect(options.queryFn()).resolves.toEqual({
+            echoed: { body: { a: 1 } },
+        });
     });
 });

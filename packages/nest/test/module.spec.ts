@@ -43,6 +43,7 @@ describe('StitchModule.forRoot', () => {
         const mod = StitchModule.forRoot({
             baseUrl: 'https://api.test',
             adapter: recordingAdapter(calls),
+            logger: false, // keep the default Nest Logger bridge out of the test output
         });
         expect(mod.global).toBe(true);
 
@@ -60,19 +61,37 @@ describe('StitchModule.forRoot', () => {
         await reg.closeAll(); // must not throw
     });
 
-    it('defaults tracing OFF (no STITCH_TRACE sink)', () => {
+    // The `logger` bridge defaults ON — aligned with @stitchapi/fastify's plugin default.
+    it('defaults the Nest Logger bridge ON (STITCH_TRACE is a sink)', () => {
         const providers = StitchModule.forRoot().providers as FProv[];
-        const traceProv = providers.find((p) => p.provide === STITCH_TRACE);
-        expect(traceProv?.useValue).toBe(false);
-    });
-
-    it("expands the 'logger' trace sentinel to a sink", () => {
-        const providers = StitchModule.forRoot({ trace: 'logger' })
-            .providers as FProv[];
         const traceProv = providers.find((p) => p.provide === STITCH_TRACE);
         expect(
             typeof (traceProv?.useValue as { handle?: unknown }).handle,
         ).toBe('function');
+    });
+
+    it('logger: false turns the bridge off (tracing falls back to core’s off default)', () => {
+        const providers = StitchModule.forRoot({ logger: false })
+            .providers as FProv[];
+        const traceProv = providers.find((p) => p.provide === STITCH_TRACE);
+        expect(traceProv?.useValue).toBe(false);
+    });
+
+    it('logger accepts sink options (AtLeastOne envelope) and still yields a sink', () => {
+        const providers = StitchModule.forRoot({
+            logger: { lifecycle: false },
+        }).providers as FProv[];
+        const traceProv = providers.find((p) => p.provide === STITCH_TRACE);
+        expect(
+            typeof (traceProv?.useValue as { handle?: unknown }).handle,
+        ).toBe('function');
+    });
+
+    it('an explicit trace wins over the logger bridge', () => {
+        const providers = StitchModule.forRoot({ trace: false, logger: true })
+            .providers as FProv[];
+        const traceProv = providers.find((p) => p.provide === STITCH_TRACE);
+        expect(traceProv?.useValue).toBe(false);
     });
 });
 
@@ -126,6 +145,39 @@ describe('StitchModule.forFeature', () => {
         expect(providers[0]?.inject).toEqual([STITCH_SEAM]);
     });
 
+    // P20/P24: `seam` is `AtLeastOne<NestFeatureSeamOptions>` — an empty `{}` is
+    // indistinguishable from omitting the envelope entirely, so it must not compile.
+    // `config`/`token` compose freely (each independently satisfies AtLeastOne).
+    it('rejects an empty seam envelope at compile time, but config + token compose', () => {
+        const GetThing = defineStitch('GET_THING_3', (h) =>
+            h.stitch({ path: '/thing' }),
+        );
+        const TOKEN = Symbol('feature-seam-token');
+
+        // @ts-expect-error — `seam: {}` satisfies neither `config` nor `token`; P20/P24.
+        StitchModule.forFeature({ seam: {}, stitches: [GetThing] });
+
+        // Both facets together — config builds the seam, token exposes it under a
+        // caller-chosen DI token (not just the root/default XOR one-of-them cases above).
+        const providers = StitchModule.forFeature({
+            seam: {
+                config: {
+                    baseUrl: 'https://feat.test',
+                    adapter: recordingAdapter([]),
+                },
+                token: TOKEN,
+            },
+            stitches: [GetThing],
+        }).providers as FProv[];
+        const seamProv = providers.find((p) => p.provide === TOKEN);
+        expect(seamProv).toBeDefined();
+        expect(seamProv?.inject).toEqual([
+            STITCH_STORE,
+            STITCH_TRACE,
+            SeamRegistry,
+        ]);
+    });
+
     // Regression (path-vars fallout, #114): a templated-path def's call argument now *requires*
     // `params`, so its `StitchDef` has a narrower (contravariant) input than the loose default.
     // The feature registry must still admit it — `stitches` is bound to the any-input
@@ -173,6 +225,8 @@ describe('StitchModule.forFeatureScoped', () => {
         const TENANT = Symbol('tenant');
         const GetThing = defineStitch((h) => h.stitch({ path: '/thing' }));
         const mod = StitchModule.forFeatureScoped({
+            // Both facets of the envelope together: config builds the feature seam, token
+            // exposes it under a caller-chosen DI token — proving they compose (P24).
             seam: {
                 config: {
                     baseUrl: 'https://feat.test',

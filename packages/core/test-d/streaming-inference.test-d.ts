@@ -33,7 +33,7 @@ expectType<unknown>(output(bare)[0]!.data);
 //    pre-built `Seam`) so the seam is minted inside the same module family as `sse` — a `Seam` imported
 //    from the root entry is a nominally distinct (built-`lib`) type from `src`'s here.
 const member = sse
-    .seam({ baseUrl: 'https://x' })
+    .bind({ baseUrl: 'https://x' })
     .stitch({ path: '/s', output: itemSchema });
 expectType<SseEvent<Item>[]>(output(member));
 
@@ -83,6 +83,6 @@ expectType<Uint8Array[]>(output(outputNoDecode));
 
 // 10) a seam-bound `stream` member is decoder-dependent too (covers `bindSeam`).
 const streamMember = stream
-    .seam({ baseUrl: 'https://x' })
+    .bind({ baseUrl: 'https://x' })
     .stitch({ path: '/s', stream: { decode: 'ndjson' }, output: itemSchema });
 expectType<Item[]>(output(streamMember));
