@@ -1,4 +1,4 @@
-import { npmUrl } from './shared';
+import { contributeRoute, npmUrl } from './shared';
 
 import { GithubStarButton } from '@/app/(home)/components/github-star-button';
 import { NpmIcon } from '@/app/(home)/components/primitives';
@@ -24,6 +24,13 @@ export function baseOptions(): BaseLayoutProps {
             {
                 text: 'Playground',
                 url: '/playground',
+            },
+            // The site's own route to "how do I report this / help?". Without it the
+            // only feedback affordance is the GitHub button below, which asks a visitor
+            // to already know that issues and CONTRIBUTING.md live behind it.
+            {
+                text: 'Contribute',
+                url: contributeRoute,
             },
             {
                 type: 'icon',
