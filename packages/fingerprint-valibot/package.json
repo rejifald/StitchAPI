@@ -52,14 +52,14 @@
     },
     "peerDependencies": {
         "stitchapi": "^1.0.0-rc.1",
-        "valibot": "^1.0.0"
+        "valibot": "^1.4.2"
     },
     "devDependencies": {
         "@types/node": "^22.10.0",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",
-        "valibot": "^1.0.0",
-        "vitest": "^4.1.8"
+        "valibot": "^1.4.2",
+        "vitest": "^4.1.10"
     }
 }

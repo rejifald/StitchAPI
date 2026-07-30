@@ -51,15 +51,15 @@
         "node": ">=18.18.0"
     },
     "peerDependencies": {
-        "@sinclair/typebox": "^0.34.0",
+        "@sinclair/typebox": "^0.34.52",
         "stitchapi": "^1.0.0-rc.1"
     },
     "devDependencies": {
-        "@sinclair/typebox": "^0.34.0",
+        "@sinclair/typebox": "^0.34.52",
         "@types/node": "^22.10.0",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",
-        "vitest": "^4.1.8"
+        "vitest": "^4.1.10"
     }
 }

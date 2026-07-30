@@ -77,7 +77,7 @@
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",
-        "vitest": "^4.1.8",
-        "zone.js": "~0.15.0"
+        "vitest": "^4.1.10",
+        "zone.js": "~0.16.2"
     }
 }

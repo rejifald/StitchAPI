@@ -51,15 +51,15 @@
         "node": ">=18.18.0"
     },
     "peerDependencies": {
-        "arktype": "^2.0.0",
+        "arktype": "^2.2.3",
         "stitchapi": "^1.0.0-rc.1"
     },
     "devDependencies": {
         "@types/node": "^22.10.0",
-        "arktype": "^2.0.0",
+        "arktype": "^2.2.3",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",
-        "vitest": "^4.1.8"
+        "vitest": "^4.1.10"
     }
 }
