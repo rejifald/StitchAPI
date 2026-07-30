@@ -619,6 +619,22 @@ describe('cache — GraphQL opt-in', () => {
         expect(calls()).toBe(1); // POST opted in → cached
     });
 
+    test('the bare `methods` string is the one-element list (P7)', async () => {
+        const { adapter, calls } = counting({
+            body: () => ({ data: { me: { id: 1 } } }),
+        });
+        const q = graphql({
+            url: 'https://api.test/graphql',
+            document: '{ me { id } }',
+            adapter,
+            trace: false,
+            cache: { ttl: '60s', scope: 'app', methods: 'POST' },
+        });
+        expect(await q()).toEqual({ me: { id: 1 } });
+        await q();
+        expect(calls()).toBe(1); // `'POST'` ≡ `['POST']` → cached
+    });
+
     test('a GraphQL query without the opt-in is not cached', async () => {
         const { adapter, calls } = counting({
             body: () => ({ data: { me: { id: 1 } } }),

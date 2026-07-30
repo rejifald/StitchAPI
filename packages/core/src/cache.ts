@@ -368,11 +368,12 @@ export function createCache(opts: CacheControllerOptions): CacheController {
         m.toUpperCase(),
     );
     const maxEntries = config.entries ?? 1000;
-    // P7: a bare `vary` string is shorthand for a one-element list — normalize before keying.
-    const varyList =
-        typeof config.vary === 'string' ? [config.vary] : config.vary;
-    const explicitVary = varyList?.length
-        ? varyList.map((n) => n.toLowerCase()).filter((n) => !NEVER_VARY.has(n))
+    // Both list fields arrive as arrays: `compose` widened the P7 bare string on the way in, so the
+    // controller reads one settled shape rather than re-normalising per key.
+    const explicitVary = config.vary?.length
+        ? config.vary
+              .map((n) => n.toLowerCase())
+              .filter((n) => !NEVER_VARY.has(n))
         : undefined;
     // Fold the Standard Schema fingerprint (ADR 0004) ONCE, here at controller creation (which is
     // once per stitch — `ensureCache` memoises it). It resolves three things from the stitch's

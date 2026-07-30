@@ -30,6 +30,7 @@ import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
 import {
+    type CacheOptions,
     type CacheOutcome,
     type Clock,
     type DriftFinding,
@@ -173,6 +174,12 @@ export type _ShorthandsCovered = Assert<
     Covers<ShorthandPair[0], (typeof SHORTHAND_SLOTS)[number][0]>
 >;
 
+// P7: one value reads as itself, not as a one-element list. An unset slot stays unset rather than
+// becoming `[]` — an empty `cache.methods` is not the same as an absent one, which falls back to
+// the `['GET','HEAD']` default.
+const listOf = (v: string | string[] | undefined): string[] | undefined =>
+    v === undefined ? undefined : typeof v === 'string' ? [v] : v;
+
 // Expand the scalar shorthands (`retry: 3`, `timeout: '5s'`, `cache: '1m'`) to their object form
 // IN PLACE, before the deep-merge, so a literal in one layer folds cleanly into an object in
 // another and the resolved config the engine reads is always the normalised shape.
@@ -192,6 +199,18 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
         cfg.retry = {
             ...retry,
             backoff: envelope(retry.backoff, 'curve'),
+        };
+    // P7: the cache's list fields take a bare string as the one-element list. Widened HERE, before
+    // the deep-merge, so a string in one layer and a list in another merge as one shape and the
+    // controller reads the settled `ResolvedCacheOptions` — always arrays, never re-normalising.
+    const cache = cfg.cache as CacheOptions | undefined;
+    if (cache !== undefined)
+        cfg.cache = {
+            ...cache,
+            ...compact({
+                vary: listOf(cache.vary),
+                methods: listOf(cache.methods),
+            }),
         };
     // P13: `sse: true` enables reconnection with defaults; `false`/absent is off (the opaque
     // `sse: {}` is a type error at the slot, so the all-defaults case arrives here as `true`).
