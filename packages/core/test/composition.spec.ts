@@ -63,6 +63,20 @@ test('extends facade produces the correct result', async () => {
     expect(server.callCount('/items')).toBe(1);
 });
 
+// 1a) A single fragment is the one-element list (P7) — `Array.isArray` separates the two spellings,
+// so a bare partial (an object) and a `Stitch` (a function) both read as one fragment.
+test('a single `extends` fragment is the one-element list (P7)', async () => {
+    server.route('GET', '/items', { body: { data: [{ id: 1, name: 'Ada' }] } });
+
+    const base = { baseUrl: server.url, pick: 'data' };
+    const bare = stitch({ extends: base, path: '/items' });
+    const listed = stitch({ extends: [base], path: '/items' });
+
+    expect(await bare()).toEqual([{ id: 1, name: 'Ada' }]);
+    // Same resolved config both ways — the shorthand is not a second code path.
+    expect(bare.__config).toEqual(listed.__config);
+});
+
 // 1b) A seam member resolves to the SAME result as the config-`extends` facade — the seam shares
 // runtime on top, but its config inheritance is the same `flatten`/`compose` machinery.
 test('a seam member is equivalent to the extends facade', async () => {

@@ -41,10 +41,9 @@ export interface ServeHandle {
 // Default request-body cap. `serve` is unauthenticated (loopback by default; DESIGN.md §10), but
 // `cli.ts --host` lets an operator bind a wider interface, so an unbounded body would let a single
 // large/slow POST buffer the whole payload into memory → OOM. A few MB comfortably fits any real
-// stitch input (JSON params/query/headers/variables) while capping that exposure. Distinct from
-// trace's `DEFAULT_MAX_BODY_CHARS`, which bounds how much of a body is *recorded* and counts
-// characters of the JSON encoding — this one counts bytes off the socket. Override per server
-// via {@link ServeOptions.maxBodyBytes}.
+// stitch input (JSON params/query/headers/variables) while capping that exposure; the same 2 MB
+// order of magnitude as trace's body-truncation scale (`DEFAULT_MAX_BODY_BYTES`). Override per
+// server via {@link ServeOptions.maxBodyBytes}.
 export const MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024;
 
 // Thrown by `readBody` when the body exceeds the cap; the handler maps it to 413.

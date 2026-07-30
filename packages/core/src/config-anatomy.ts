@@ -13,11 +13,12 @@
 // each is now checked against the anatomy with `satisfies` (a WRONG entry) plus a coverage assert
 // (a MISSING entry), so a stale list is a compile error naming the slot it forgot.
 import type {
-    CacheOptions,
+    CircuitOptions,
     Hooks,
     IdempotencyOptions,
     InputSchemas,
     MultipartOptions,
+    ResolvedCacheOptions,
     RetryOptions,
     SseOptions,
     StitchConfig,
@@ -73,9 +74,10 @@ interface SlotFacts {
     /**
      * `compose` rewrites this slot, so `ResolvedStitchConfig` re-declares it in its normalised form
      * rather than inheriting the loose authoring union. Only needed for slots normalised by
-     * something OTHER than the shorthand/toggle folds — `hooks` (chained into one) and `input`
-     * (each schema through `toValidator`); every `shorthand`/`toggle` slot is normalised by
-     * definition and counts automatically. See {@link NormalizedSlot}.
+     * something OTHER than the shorthand/toggle folds — `hooks` (chained into one), `input` (each
+     * schema through `toValidator`) and `circuit` (the positional `[failures, cooldown]` tuple
+     * spread into its named fields); every `shorthand`/`toggle` slot is normalised by definition
+     * and counts automatically. See {@link NormalizedSlot}.
      */
     normalized?: true;
     /**
@@ -118,7 +120,7 @@ export interface StitchConfigAnatomy {
     acceptStatus: { dropped: 'redact-if-fn' };
     throttle: { shorthand: 'rate'; fns: true; stage: 1; policy: true };
     timeout: { shorthand: 'total'; policy: true };
-    circuit: object;
+    circuit: { normalized: true };
     idempotency: { toggle: true; fns: true };
     cache: { shorthand: 'ttl'; fns: true; stage: 8; policy: true };
     sensitive: object;
@@ -231,9 +233,10 @@ export type Covers<Expected extends PropertyKey, Listed extends PropertyKey> = [
 export interface ResolvedNormalizations {
     retry?: RetryOptions;
     timeout?: TimeoutOptions;
-    cache?: CacheOptions;
+    cache?: ResolvedCacheOptions;
     idempotency?: IdempotencyOptions;
     throttle?: ThrottleOptions;
+    circuit?: CircuitOptions;
     stream?: StreamOptions;
     multipart?: MultipartOptions;
     sse?: SseOptions;

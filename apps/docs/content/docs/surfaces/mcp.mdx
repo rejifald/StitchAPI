@@ -83,7 +83,12 @@ close();
 
 `serveStdio(registry, options?)` wires the `run_stitch` / `list_stitches` server
 to stdio and returns a handle whose `close()` detaches the transport. Pass
-`{ input, output }` to bind a different stream pair instead of stdio.
+`{ input, output }` to bind a different stream pair instead of stdio, and
+`server` to set the identity reported in the MCP `initialize` result — a bare
+string names it (`server: 'orders-api'` ≡ `server: { name: 'orders-api' }`).
+The `version` defaults to the package version baked in at build time, so it can
+never drift from the release you installed; set `server: { name, version }` only
+when you want to report your own.
 
 The capability boundary holds here: the agent calls `run_stitch` by name and
 never sees the token, cookie, or signing key the stitch holds — it invokes a
