@@ -131,7 +131,7 @@ export interface StreamSeamApi {
 // `'bytes'`/`'lines'` decoders, `OutputOf<C>` for `'ndjson'`. The `as` retypes the loose `makeStitch`
 // result to the declared `InputOf<C>`/`StreamElement<C>[]`: now that `InputOf` reads `extends`-fragment
 // schemas (#76) it is no longer a clean supertype of `StitchInput` under an unresolved `C`, so this
-// loose body needs the same retype `stitch()`/`seam` get from their inferring overloads. Sound — the
+// loose body needs the same retype `stitch()`/`bind` get from their inferring overloads. Sound — the
 // runtime stitch is byte-identical (the type tests cover it).
 const streamStitch = <
     const C extends Partial<StitchConfig> = Partial<StitchConfig>,
@@ -160,13 +160,13 @@ function bindSeam(s: Seam): StreamSeamApi {
 /**
  * The stream surface's authoring helper — callable for the terse form (`stream(config)`) plus:
  * - `stream.stitch(config)` — a standalone stream stitch (alias of the callable).
- * - `stream.seam(existingSeam)` — bind stream members to an existing seam.
- * - `stream.seam(options)` — a new seam whose members default to stream.
+ * - `stream.bind(existingSeam)` — bind stream members to an existing seam.
+ * - `stream.bind(options)` — a new seam whose members default to stream.
  * - `stream.surface` — the stream {@link Surface} identity.
  */
 export const stream = Object.assign(streamStitch, {
     surface: streamSurface,
     stitch: streamStitch,
-    seam: (arg: Seam | SeamOptions): StreamSeamApi =>
+    bind: (arg: Seam | SeamOptions): StreamSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });
