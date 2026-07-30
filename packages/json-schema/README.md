@@ -22,9 +22,9 @@ usable anywhere a Standard Schema is — not only with StitchAPI.
 ## Use
 
 ```ts
+import { JsonSchema } from '@stitchapi/json-schema';
 import Ajv from 'ajv';
 import { validate } from 'stitchapi';
-import { JsonSchema } from '@stitchapi/json-schema';
 
 const ajv = new Ajv(); // your app's configured engine — formats, keywords, $refs, draft
 // `discovered` is a JSON Schema you obtained at runtime.
