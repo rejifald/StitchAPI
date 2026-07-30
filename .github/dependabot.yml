@@ -1,0 +1,49 @@
+# Dependabot. Beyond the obvious (a bot watching for CVEs), this is one of the checks
+# Scorecard grades directly — `Dependency-Update-Tool` is pass/fail on the mere presence
+# of this file, and `Pinned-Dependencies` only stays green if something keeps the pinned
+# action SHAs in scorecard.yml / codeql.yml / npm-publish.yml from rotting.
+#
+# Deliberately conservative. This workspace has a *single* root pnpm-lock.yaml covering 37
+# packages, and `pnpm check:release` enforces version lockstep across all of them, so an
+# ungrouped config would open a wall of PRs and some of them would be unmergeable by
+# construction. Everything is grouped and capped instead.
+version: 2
+
+updates:
+    # The pinned SHAs are the whole point of pinning only if they get updated; without
+    # this, "pinned" quietly means "frozen at whatever was current the day it was
+    # written", including past a security fix in an action we depend on.
+    - package-ecosystem: github-actions
+      directory: /
+      schedule:
+          interval: weekly
+          day: monday
+      open-pull-requests-limit: 3
+      groups:
+          github-actions:
+              patterns: ['*']
+      commit-message:
+          prefix: 'chore(ci)'
+
+    # One entry for the whole pnpm workspace: Dependabot reads pnpm-workspace.yaml from
+    # the root and updates every member manifest in a single PR, which is also the only
+    # shape that can satisfy the lockstep check. Internal `workspace:` deps are not
+    # candidates, so @stitchapi/* cross-links are untouched.
+    - package-ecosystem: npm
+      directory: /
+      schedule:
+          interval: weekly
+          day: monday
+      open-pull-requests-limit: 5
+      groups:
+          # Minor/patch batched by dependency type. Majors are deliberately excluded from
+          # both groups so each one arrives as its own PR — a major here means a real
+          # review (the TS 5.5 → 5.9 bump moved type output across every package).
+          dev-dependencies:
+              dependency-type: development
+              update-types: [minor, patch]
+          production-dependencies:
+              dependency-type: production
+              update-types: [minor, patch]
+      commit-message:
+          prefix: 'chore(deps)'

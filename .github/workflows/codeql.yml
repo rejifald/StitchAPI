@@ -1,0 +1,56 @@
+# CodeQL static analysis. Two reasons this earns its ~5 min:
+#
+#   1. SECURITY.md names the areas where a bug here has real blast radius — credential
+#      handling (bearer/apiKey/basic/oauth2/cookieSession), secret redaction in traces,
+#      and the docs playground sandbox that runs untrusted snippets. Those are exactly
+#      the taint-flow shapes CodeQL is good at, and ESLint is not.
+#   2. It satisfies Scorecard's SAST check (scorecard.yml), which is otherwise a
+#      permanent zero no matter how good the test suite is.
+#
+# JS/TS needs no build step — CodeQL extracts from source, so this never has to stay in
+# sync with the tsup build.
+name: CodeQL
+
+on:
+    pull_request:
+        branches: [main, develop]
+    push:
+        branches: [main, develop]
+    # Catch newly-published queries against unchanged code; a rule added upstream can
+    # flag something that has been sitting in main for months.
+    schedule:
+        - cron: '31 5 * * 1'
+
+# Default-deny; the analyze job elevates only what the upload needs.
+permissions:
+    contents: read
+
+# A superseded PR run has nothing to say; integration-branch runs queue.
+concurrency:
+    group: codeql-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+    analyze:
+        name: Analyze javascript-typescript
+        runs-on: ubuntu-latest
+        # security-extended over a 37-package workspace is the slow part; 20 is a ceiling,
+        # not a target.
+        timeout-minutes: 20
+        permissions:
+            security-events: write # write the alerts into the Security tab
+            contents: read
+            actions: read
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Initialize CodeQL
+              uses: github/codeql-action/init@a2983b8bed1923f44751c5c43237f479442827b3 # v3
+              with:
+                  languages: javascript-typescript
+                  config-file: ./.github/codeql/codeql-config.yml
+
+            - name: Analyze
+              uses: github/codeql-action/analyze@a2983b8bed1923f44751c5c43237f479442827b3 # v3
+              with:
+                  category: '/language:javascript-typescript'

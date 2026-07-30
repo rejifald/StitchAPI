@@ -1,0 +1,23 @@
+# CodeQL scan configuration (referenced by .github/workflows/codeql.yml).
+name: StitchAPI CodeQL config
+
+# `security-extended` over the default query pack. The default set is tuned for a low
+# false-positive rate on application code; this repo is a library that touches
+# credentials, redacts secrets from traces, and sandboxes untrusted snippets, so the
+# extra taint-tracking queries are worth the handful of extra findings to triage.
+queries:
+    - uses: security-extended
+
+# Build output and generated artifacts only. Everything hand-written — including
+# `examples/` and the playground runtime under `docs/sandbox/` — stays in scope: an
+# example is copy-pasted by definition, so a bad pattern there propagates.
+paths-ignore:
+    # tsup output (packages/*/lib) — the same source, already scanned, minus the types.
+    - '**/lib/**'
+    # Machine-written completion maps (see .prettierignore for why they are left raw).
+    - '**/*.generated.ts'
+    # Built playground Worker bundle: a rollup of source that is scanned separately.
+    - 'apps/docs/public/sandbox/**'
+    # Fumadocs' generated content index.
+    - 'apps/docs/.source/**'
+    - '**/coverage/**'
