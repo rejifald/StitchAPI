@@ -20,13 +20,13 @@ running while the call gives up — the underlying request receives the abort.
 
 Two distinct triggers land here:
 
--   **The dependency is slow or unreachable.** The request genuinely takes longer
-    than the budget you allowed — a degraded upstream, a cold start, or a host that
-    never answers and ties up the attempt until the signal fires.
--   **The budget is too tight.** `perAttempt` is shorter than the dependency's
-    normal latency, so healthy responses get cut off; or `total` doesn't leave room
-    for every attempt plus the backoff between them, so the whole call aborts mid-
-    way through a retry sequence that would otherwise have succeeded.
+- **The dependency is slow or unreachable.** The request genuinely takes longer
+  than the budget you allowed — a degraded upstream, a cold start, or a host that
+  never answers and ties up the attempt until the signal fires.
+- **The budget is too tight.** `perAttempt` is shorter than the dependency's
+  normal latency, so healthy responses get cut off; or `total` doesn't leave room
+  for every attempt plus the backoff between them, so the whole call aborts mid-
+  way through a retry sequence that would otherwise have succeeded.
 
 ## How to fix
 

@@ -56,22 +56,19 @@ interface FastifyStitchPluginCommon {
 }
 
 /** Pass a prebuilt seam the app owns — the plugin borrows it and never closes it by default. */
-export interface FastifyStitchPluginSeamOptions
-    extends FastifyStitchPluginCommon {
+export interface FastifyStitchPluginSeamOptions extends FastifyStitchPluginCommon {
     seam: Seam;
     seamConfig?: never;
 }
 
 /** Let the plugin build (and, by default, own + close) the seam from a {@link SeamConfig}. */
-export interface FastifyStitchPluginConfigOptions
-    extends FastifyStitchPluginCommon {
+export interface FastifyStitchPluginConfigOptions extends FastifyStitchPluginCommon {
     seamConfig: SeamConfig;
     seam?: never;
 }
 
 export type FastifyStitchPluginOptions =
-    | FastifyStitchPluginSeamOptions
-    | FastifyStitchPluginConfigOptions;
+    FastifyStitchPluginSeamOptions | FastifyStitchPluginConfigOptions;
 
 // The ambient request-scoped host. `currentStitch()` reads it; the `onRequest` hook runs each
 // request inside `als.run(host, …)` so the value is the per-request principal handle.

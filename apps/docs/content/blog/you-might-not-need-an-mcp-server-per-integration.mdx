@@ -15,9 +15,9 @@ That's the pattern this post is about: **one MCP server per integration**, each 
 
 A dedicated MCP server is a real process with a real surface area. The first one is free; the cost is in the multiplier.
 
--   **N processes to run and supervise.** Each server is something that starts, can crash, needs a port or a stdio pipe, and shows up in your deployment story. Three integrations is three things to keep alive; twelve is twelve.
--   **N auth boundaries to wire and secure.** Every server needs its upstream credential — a token, a key pair, an OAuth client — configured, rotated, and scoped. Each one is a place a secret can leak. The agent, meanwhile, is trusted to call all of them.
--   **N tool catalogs in the context window.** This is the quiet one. Each server advertises its tools, and an MCP client hands those schemas to the model. A server with twenty tools is twenty JSON schemas; five such servers is a hundred. That catalog is re-sent on every turn of the loop, used or not. Tool-schema sprawl is a tax you pay per turn, and it scales with the number of servers times the tools each one ships.
+- **N processes to run and supervise.** Each server is something that starts, can crash, needs a port or a stdio pipe, and shows up in your deployment story. Three integrations is three things to keep alive; twelve is twelve.
+- **N auth boundaries to wire and secure.** Every server needs its upstream credential — a token, a key pair, an OAuth client — configured, rotated, and scoped. Each one is a place a secret can leak. The agent, meanwhile, is trusted to call all of them.
+- **N tool catalogs in the context window.** This is the quiet one. Each server advertises its tools, and an MCP client hands those schemas to the model. A server with twenty tools is twenty JSON schemas; five such servers is a hundred. That catalog is re-sent on every turn of the loop, used or not. Tool-schema sprawl is a tax you pay per turn, and it scales with the number of servers times the tools each one ships.
 
 None of these is fatal on its own. Together, "add an integration" quietly means "add a process, an auth boundary, and a slice of every future turn's context." The reflex optimizes for the first integration and pays for it at the tenth.
 
@@ -27,9 +27,9 @@ StitchAPI is API stitching — you declare an endpoint once (its types, auth, an
 
 The relevant part here is how it reaches an agent. Instead of a server per service exposing a tool per endpoint, one StitchAPI runtime exposes a single, fixed **code-mode** surface over MCP — three tools, no matter how many stitches sit behind them:
 
--   `run_stitch` — execute a stitch by name with its input
--   `list_stitches` — discover what's available, on demand
--   `describe_stitch` — pull one stitch's shape, schema, and auth scheme only when the model needs it
+- `run_stitch` — execute a stitch by name with its input
+- `list_stitches` — discover what's available, on demand
+- `describe_stitch` — pull one stitch's shape, schema, and auth scheme only when the model needs it
 
 Adding an integration is adding a stitch, not standing up a server. The MCP surface stays three tools whether you have four stitches or four hundred:
 
@@ -67,9 +67,9 @@ The model learns about a new stitch through `list_stitches` only on the turns it
 
 Map the same three pressures onto one runtime and they collapse:
 
--   **One process, not N.** `stitch mcp` is a single surface in front of every stitch you've declared. Adding the eleventh integration adds a declaration, not an eleventh thing to launch and watch.
--   **One auth boundary, declared per stitch — and the secret never crosses it.** Auth is a field on the stitch (`bearer`, `apiKey`, `basic`, `cookieSession`, `oauth2`), resolved at call time. The agent calls a stitch and gets data; it names a capability, the runtime holds the credential. `describe_stitch` even reports the auth _scheme_ without ever exposing the token. So the agent boundary is a capability boundary, not a pile of credentials handed to the model.
--   **One fixed tool surface.** Three tools, constant. The schema you'd otherwise re-send for every endpoint of every server is replaced by on-demand discovery.
+- **One process, not N.** `stitch mcp` is a single surface in front of every stitch you've declared. Adding the eleventh integration adds a declaration, not an eleventh thing to launch and watch.
+- **One auth boundary, declared per stitch — and the secret never crosses it.** Auth is a field on the stitch (`bearer`, `apiKey`, `basic`, `cookieSession`, `oauth2`), resolved at call time. The agent calls a stitch and gets data; it names a capability, the runtime holds the credential. `describe_stitch` even reports the auth _scheme_ without ever exposing the token. So the agent boundary is a capability boundary, not a pile of credentials handed to the model.
+- **One fixed tool surface.** Three tools, constant. The schema you'd otherwise re-send for every endpoint of every server is replaced by on-demand discovery.
 
 And because the stitch is the unit — not the server — the same definition is also an in-process function, a CLI command (`stitch run`), and an HTTP endpoint (`stitch serve`). The agent isn't getting a second-class copy of an integration that also exists elsewhere; it's calling the exact thing your code calls, with the same validation, retries, throttle, and drift detection declared on it.
 
@@ -77,9 +77,9 @@ And because the stitch is the unit — not the server — the same definition is
 
 This isn't an argument against MCP servers — code-mode _is_ an MCP surface. It's an argument against reflexively running _one per integration_ when the integrations are HTTP APIs you could declare. A dedicated server earns its keep when:
 
--   **A vendor ships a rich, official MCP server.** If the service you're integrating already maintains a well-built server — with curated tools, server-side logic, and ergonomics tuned for the model — adopting it is usually better than re-deriving the surface from raw endpoints. Don't rebuild what someone maintains for you.
--   **The capability isn't an HTTP request.** A stitch sits above a transport — strongest fit is HTTP, with `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` as peer surfaces. If a server's value is something outside that — driving a database session, [orchestrating](/blog/runtime-stitching-vs-workflow-platforms) local processes, wrapping a non-HTTP protocol, holding rich server-side state — a purpose-built MCP server may model it better than a stitch would.
--   **You specifically want that tool's ergonomics.** Sometimes the curated, named-tool-per-action shape _is_ the interface you want the model to see — a small, deliberately designed menu beats code-mode's "discover and call." If a tightly authored tool surface is the product, build it as one.
+- **A vendor ships a rich, official MCP server.** If the service you're integrating already maintains a well-built server — with curated tools, server-side logic, and ergonomics tuned for the model — adopting it is usually better than re-deriving the surface from raw endpoints. Don't rebuild what someone maintains for you.
+- **The capability isn't an HTTP request.** A stitch sits above a transport — strongest fit is HTTP, with `graphql`, `sse`, `stream`, `download`, `llm`, `shell`, and `postmessage` as peer surfaces. If a server's value is something outside that — driving a database session, [orchestrating](/blog/runtime-stitching-vs-workflow-platforms) local processes, wrapping a non-HTTP protocol, holding rich server-side state — a purpose-built MCP server may model it better than a stitch would.
+- **You specifically want that tool's ergonomics.** Sometimes the curated, named-tool-per-action shape _is_ the interface you want the model to see — a small, deliberately designed menu beats code-mode's "discover and call." If a tightly authored tool surface is the product, build it as one.
 
 The honest framing: a dedicated server is right when someone else maintains a good one, when the capability isn't a plain HTTP call, or when the exact tool ergonomics are the point. A single runtime is right when you're otherwise about to stand up your own thin server around a handful of endpoints — and then another, and another.
 
@@ -89,8 +89,8 @@ If you have exactly one integration, this is a non-decision: stand up the one se
 
 Two more caveats, because overclaiming helps no one:
 
--   **Consolidating doesn't make the integrations themselves simpler.** Each upstream still has its own auth, its own quirks, its own failure modes. One runtime gives you one place to _declare_ those, not a way to wish them away.
--   **A great official server beats a hand-declared stitch for that service.** If the vendor's MCP server is genuinely better than the endpoints you'd stitch by hand, use it — and let the StitchAPI runtime carry the long tail of services that _don't_ have one.
+- **Consolidating doesn't make the integrations themselves simpler.** Each upstream still has its own auth, its own quirks, its own failure modes. One runtime gives you one place to _declare_ those, not a way to wish them away.
+- **A great official server beats a hand-declared stitch for that service.** If the vendor's MCP server is genuinely better than the endpoints you'd stitch by hand, use it — and let the StitchAPI runtime carry the long tail of services that _don't_ have one.
 
 The decision isn't "MCP servers, yes or no." It's "how many processes, auth boundaries, and tool catalogs do you want to carry to reach N services?" For a pile of HTTP APIs you control or consume, the answer can be one runtime, one surface, one credential boundary — and adding the next service is adding a stitch.
 

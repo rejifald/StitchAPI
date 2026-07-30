@@ -87,8 +87,10 @@ export type MaybeSignal<T> = T | Signal<T> | (() => T);
  * it (`injectStitch` → unary, `injectStitchStream` → streaming), so passing it
  * would be silently ignored — the type forbids it instead.
  */
-export interface InjectStitchOptions<T>
-    extends Omit<CreateStitchQueryOptions<T>, 'streaming'> {
+export interface InjectStitchOptions<T> extends Omit<
+    CreateStitchQueryOptions<T>,
+    'streaming'
+> {
     /** Injection context to use when `injectStitch` is called outside one (e.g. a
      * test, or a non-injection callback). Defaults to the ambient context. */
     injector?: Injector;

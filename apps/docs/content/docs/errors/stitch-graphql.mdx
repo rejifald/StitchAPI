@@ -51,14 +51,14 @@ the stitch honours that signal.
 Read the GraphQL message(s) on the thrown `StitchError` — they are the server's
 own description of what went wrong — and fix the cause:
 
--   **Bad query or variables.** Correct the operation string or the `variables`
-    you pass so they satisfy the schema (right field names, required variables
-    provided, correct types).
--   **Resolver error.** The fault is server-side; reproduce the operation against
-    the GraphQL server and fix it there.
--   **Authorization.** The server rejected the operation in the `errors` array,
-    not with a status code — supply the credential or capability the operation
-    requires.
+- **Bad query or variables.** Correct the operation string or the `variables`
+  you pass so they satisfy the schema (right field names, required variables
+  provided, correct types).
+- **Resolver error.** The fault is server-side; reproduce the operation against
+  the GraphQL server and fix it there.
+- **Authorization.** The server rejected the operation in the `errors` array,
+  not with a status code — supply the credential or capability the operation
+  requires.
 
 Remember that GraphQL signals failure in the response body, not through the HTTP
 status: a `200` is not proof of success. See the

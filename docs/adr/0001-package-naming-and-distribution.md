@@ -1,8 +1,8 @@
 # ADR 0001 — Package naming & distribution model
 
--   **Status:** Accepted
--   **Date:** 2026-06-12
--   **Tags:** packaging, npm, public-api, plugins
+- **Status:** Accepted
+- **Date:** 2026-06-12
+- **Tags:** packaging, npm, public-api, plugins
 
 ## Context
 
@@ -65,50 +65,50 @@ add plugins?
 
 **Positive**
 
--   Cleanest install/import for the 90% path: `npm i stitchapi`,
-    `import { stitch } from 'stitchapi'`.
--   Lean core: a plugin's (often heavy/optional) dependencies are installed only when
-    that plugin is.
--   One core identity: the `peerDependency` rule keeps a single physical core module,
-    avoiding dual-instance bugs in an extensible / registry-based library.
--   Owned namespace: `@stitchapi/*` can only be published by us → supply-chain trust (a
-    scoped plugin is provably first-party) and a browsable family on npm.
--   No breaking change to the already-published `stitchapi` package.
+- Cleanest install/import for the 90% path: `npm i stitchapi`,
+  `import { stitch } from 'stitchapi'`.
+- Lean core: a plugin's (often heavy/optional) dependencies are installed only when
+  that plugin is.
+- One core identity: the `peerDependency` rule keeps a single physical core module,
+  avoiding dual-instance bugs in an extensible / registry-based library.
+- Owned namespace: `@stitchapi/*` can only be published by us → supply-chain trust (a
+  scoped plugin is provably first-party) and a browsable family on npm.
+- No breaking change to the already-published `stitchapi` package.
 
 **Accepted trade-offs**
 
--   The surface is intentionally "mixed": unscoped core (`stitchapi`) alongside scoped
-    plugins (`@stitchapi/react`). This is cosmetic and follows established precedent
-    (`vite` + `@vitejs/plugin-*`, `rollup` + `@rollup/plugin-*`, `astro` + `@astrojs/*`,
-    `svelte` + `@sveltejs/*`). The asymmetry encodes meaning: bare = the library,
-    scoped = its official add-ons.
+- The surface is intentionally "mixed": unscoped core (`stitchapi`) alongside scoped
+  plugins (`@stitchapi/react`). This is cosmetic and follows established precedent
+  (`vite` + `@vitejs/plugin-*`, `rollup` + `@rollup/plugin-*`, `astro` + `@astrojs/*`,
+  `svelte` + `@sveltejs/*`). The asymmetry encodes meaning: bare = the library,
+  scoped = its official add-ons.
 
 **Required follow-ups**
 
--   Docs and the Twoslash sandbox import `stitchapi` (Twoslash type-checks every
-    ` ```ts twoslash ` block against the real workspace `stitchapi`). The pre-existing
-    `@stitchapi/core` drift was swept to `stitchapi`: content pages in PR #39, and the
-    sandbox runtime + contracts alongside this ADR.
--   Before publishing the first `@stitchapi/*` plugin, **register / confirm ownership of
-    the npm org (scope) `stitchapi`** — the unscoped `stitchapi` package alone does not
-    reserve the scope.
+- Docs and the Twoslash sandbox import `stitchapi` (Twoslash type-checks every
+  ` ```ts twoslash ` block against the real workspace `stitchapi`). The pre-existing
+  `@stitchapi/core` drift was swept to `stitchapi`: content pages in PR #39, and the
+  sandbox runtime + contracts alongside this ADR.
+- Before publishing the first `@stitchapi/*` plugin, **register / confirm ownership of
+  the npm org (scope) `stitchapi`** — the unscoped `stitchapi` package alone does not
+  reserve the scope.
 
 ## Alternatives considered
 
--   **A. Scope everything: `@stitchapi/core` + `@stitchapi/react` (Babel model).** Fully
-    symmetric, but a breaking rename of a published package, worse ergonomics on the
-    primary path, and it loses the "bare name = the main thing" signal. Babel is the lone
-    major ecosystem that scopes core, and it is widely regarded as friction. Rejected.
--   **B. Subpath monolith: `stitchapi/react` + `stitchapi/transform-xml`.** One install,
-    but every consumer downloads every plugin's dependencies (transformers often wrap
-    parser libs), per-subpath peer deps aren't expressible, and third parties can't
-    extend it. Rejected for plugins; retained for in-package dependency-free helpers
-    (decision 6).
--   **C. All-unscoped: `stitchapi` + `stitchapi-react`.** Internally consistent and keeps
-    core ergonomics, but gives up the owned namespace (typosquat / malware risk, no scope
-    page). Rejected for first-party; adopted as the **community** convention
-    (`stitchapi-plugin-*`, decision 3).
--   **D. `@stitchapi/core` as an alias alongside `stitchapi`.** Reintroduces the naming
-    ambiguity we are resolving, imposes a permanent dual-publish / version-skew tax, and
-    — for a plugin host — invites dual-instance / identity bugs when app and plugins
-    resolve different specifiers. Rejected.
+- **A. Scope everything: `@stitchapi/core` + `@stitchapi/react` (Babel model).** Fully
+  symmetric, but a breaking rename of a published package, worse ergonomics on the
+  primary path, and it loses the "bare name = the main thing" signal. Babel is the lone
+  major ecosystem that scopes core, and it is widely regarded as friction. Rejected.
+- **B. Subpath monolith: `stitchapi/react` + `stitchapi/transform-xml`.** One install,
+  but every consumer downloads every plugin's dependencies (transformers often wrap
+  parser libs), per-subpath peer deps aren't expressible, and third parties can't
+  extend it. Rejected for plugins; retained for in-package dependency-free helpers
+  (decision 6).
+- **C. All-unscoped: `stitchapi` + `stitchapi-react`.** Internally consistent and keeps
+  core ergonomics, but gives up the owned namespace (typosquat / malware risk, no scope
+  page). Rejected for first-party; adopted as the **community** convention
+  (`stitchapi-plugin-*`, decision 3).
+- **D. `@stitchapi/core` as an alias alongside `stitchapi`.** Reintroduces the naming
+  ambiguity we are resolving, imposes a permanent dual-publish / version-skew tax, and
+  — for a plugin host — invites dual-instance / identity bugs when app and plugins
+  resolve different specifiers. Rejected.

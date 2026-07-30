@@ -69,19 +69,19 @@ _runtime_ reads — but both must be handled or the hot path won't load/run in a
 
 ## 3. Tree-shakeability & top-level side effects (Q3)
 
--   **`cli`/`serve`/`mcp`/`registry` tree-shake out completely.** They are imported only by each other,
-    never by the barrel. Probe 2 confirmed: the bundle contains **0** occurrences of `serveStdio`,
-    `selectStitch`, `pathToFileURL`, or `process.cwd`. `package.json` has `"sideEffects": false`,
-    which makes this reliable across bundlers.
--   **No top-level Node _side effects_ anywhere.** Every `process.env` / `fs` / `crypto` access is
-    inside a function body or a returned closure — **nothing executes Node at module-evaluation time**.
-    This is the thing that usually defeats a browser bundle; here it is absent. (Verified by grep for
-    module-scope `process.`/`Buffer`/`globalThis` and by Probe 5: the shimmed module _evaluates_ with
-    `process` set to `undefined` and only throws if a Node path is actually _called_.)
--   **The entanglement that remains is import-level, not evaluation-level**: the `node:*` imports in
-    the 5 leaf modules are static `import` statements, so a plain `--platform=browser` bundle fails to
-    _resolve_ them (Probe 1) — but they are trivially redirectable by alias/`browser` field because
-    nothing runs at load. This is the easy kind of entanglement.
+- **`cli`/`serve`/`mcp`/`registry` tree-shake out completely.** They are imported only by each other,
+  never by the barrel. Probe 2 confirmed: the bundle contains **0** occurrences of `serveStdio`,
+  `selectStitch`, `pathToFileURL`, or `process.cwd`. `package.json` has `"sideEffects": false`,
+  which makes this reliable across bundlers.
+- **No top-level Node _side effects_ anywhere.** Every `process.env` / `fs` / `crypto` access is
+  inside a function body or a returned closure — **nothing executes Node at module-evaluation time**.
+  This is the thing that usually defeats a browser bundle; here it is absent. (Verified by grep for
+  module-scope `process.`/`Buffer`/`globalThis` and by Probe 5: the shimmed module _evaluates_ with
+  `process` set to `undefined` and only throws if a Node path is actually _called_.)
+- **The entanglement that remains is import-level, not evaluation-level**: the `node:*` imports in
+  the 5 leaf modules are static `import` statements, so a plain `--platform=browser` bundle fails to
+  _resolve_ them (Probe 1) — but they are trivially redirectable by alias/`browser` field because
+  nothing runs at load. This is the easy kind of entanglement.
 
 ---
 
@@ -110,13 +110,13 @@ exactly the 5 modules above.
 
 **Probe 3/4/5 — `--alias` the 3 built-ins to hand-written browser shims + `--define:process`:**
 
--   Probe 3: alias `node:fs`/`node:path`/`node:crypto` → `/tmp/b1-shims/*.js` → **builds clean,
-    0 residual `node:` imports** (8 `process.env` reads remain).
--   Probe 4: add `--define:process={"env":{}}` → **0 `process.env` reads remain**, builds clean.
--   Probe 5 (the real proof): load the final bundle in a context with `globalThis.process = undefined`,
-    import it, call `stitch("https://demo/x")`. Result: all 21 browser-safe exports present;
-    `makeStitch` **runs without throwing** and returns a working stitch fn with `.stream`. The hot path
-    constructs end-to-end in a Node-less environment.
+- Probe 3: alias `node:fs`/`node:path`/`node:crypto` → `/tmp/b1-shims/*.js` → **builds clean,
+  0 residual `node:` imports** (8 `process.env` reads remain).
+- Probe 4: add `--define:process={"env":{}}` → **0 `process.env` reads remain**, builds clean.
+- Probe 5 (the real proof): load the final bundle in a context with `globalThis.process = undefined`,
+  import it, call `stitch("https://demo/x")`. Result: all 21 browser-safe exports present;
+  `makeStitch` **runs without throwing** and returns a working stitch fn with `.stream`. The hot path
+  constructs end-to-end in a Node-less environment.
 
 So: naive bundle fails predictably; **shim+define bundle succeeds and runs.**
 
@@ -168,22 +168,22 @@ Tier-1 examples need it. The risk is retired: the bundle builds and the call pat
 
 ## 7. Blockers / must-knows for downstream
 
--   **R1 (Worker runner):** the injected `stitch` build needs `process` (or `process.env`) defined in
-    the Worker scope **or** the bundle built with `define:process={"env":{}}`. Web Workers have no
-    `process`; pick one and document it. Web Crypto (`crypto.randomUUID`/`getRandomValues`) **is**
-    available in Workers — the crypto shim is safe there.
--   **R1:** `engine.ts` `randomUUID` is on the hot path (write idempotency). The Web Crypto shim covers
-    it; just don't forget it when listing aliases.
--   **D1 (dispatcher):** `NODE_ONLY_SURFACES` in [`contracts/dispatch.ts`](./contracts/dispatch.ts) is
-    accurate for _routing_, but note for the browser-shim path: `env`/`keychain`/`createTrace`/`otlpSink`
-    load fine once aliased and run shimmed-with-notice; `cli`/`serve`/`mcp` genuinely cannot run in the
-    browser (server-tier only). The scan list needs no change.
--   **CSP (SANDBOX §7):** the OTLP default exporter does a real `fetch` to a collector. With
-    `connect-src 'self'` it will fail silently (already swallowed), but make the browser build's default
-    OTLP exporter a no-op to avoid noise — don't rely on CSP alone.
--   **No `pnpm install` was run**; bundle probes used `npx esbuild` against uninstalled source (zod is
-    unused so resolution succeeded). R1's real build will run inside the installed workspace — expect
-    the same result or better.
+- **R1 (Worker runner):** the injected `stitch` build needs `process` (or `process.env`) defined in
+  the Worker scope **or** the bundle built with `define:process={"env":{}}`. Web Workers have no
+  `process`; pick one and document it. Web Crypto (`crypto.randomUUID`/`getRandomValues`) **is**
+  available in Workers — the crypto shim is safe there.
+- **R1:** `engine.ts` `randomUUID` is on the hot path (write idempotency). The Web Crypto shim covers
+  it; just don't forget it when listing aliases.
+- **D1 (dispatcher):** `NODE_ONLY_SURFACES` in [`contracts/dispatch.ts`](./contracts/dispatch.ts) is
+  accurate for _routing_, but note for the browser-shim path: `env`/`keychain`/`createTrace`/`otlpSink`
+  load fine once aliased and run shimmed-with-notice; `cli`/`serve`/`mcp` genuinely cannot run in the
+  browser (server-tier only). The scan list needs no change.
+- **CSP (SANDBOX §7):** the OTLP default exporter does a real `fetch` to a collector. With
+  `connect-src 'self'` it will fail silently (already swallowed), but make the browser build's default
+  OTLP exporter a no-op to avoid noise — don't rely on CSP alone.
+- **No `pnpm install` was run**; bundle probes used `npx esbuild` against uninstalled source (zod is
+  unused so resolution succeeded). R1's real build will run inside the installed workspace — expect
+  the same result or better.
 
 ---
 

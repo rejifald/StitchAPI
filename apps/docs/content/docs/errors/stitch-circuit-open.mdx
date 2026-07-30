@@ -33,19 +33,19 @@ happened on earlier calls; this one is just being short-circuited.
 Most of the time this is working as intended — a failing dependency is being
 shielded from a stampede. Work through these in order:
 
--   **Wait it out.** After `cooldown` (or `halfOpenAfter`, if set) the breaker
-    goes half-open and lets a single trial through; a success closes it and traffic
-    resumes. If the dependency has recovered, the next call after the window will
-    succeed.
--   **Fix the underlying dependency.** The breaker is a symptom, not the cause. Find
-    and fix the real failures — the earlier errors that incremented the count to
-    `failures` — so the half-open trial can close it.
--   **Tune the thresholds.** Raise `failures` if the breaker trips on
-    transient blips; adjust `cooldown` / `halfOpenAfter` to control how long it
-    fast-fails before retesting.
--   **Check the `key`.** Breakers are keyed (default: the stitch/host key). If two
-    unrelated stitches share a `key`, one failing dependency trips the breaker for
-    both — give them distinct keys so they don't share a breaker.
+- **Wait it out.** After `cooldown` (or `halfOpenAfter`, if set) the breaker
+  goes half-open and lets a single trial through; a success closes it and traffic
+  resumes. If the dependency has recovered, the next call after the window will
+  succeed.
+- **Fix the underlying dependency.** The breaker is a symptom, not the cause. Find
+  and fix the real failures — the earlier errors that incremented the count to
+  `failures` — so the half-open trial can close it.
+- **Tune the thresholds.** Raise `failures` if the breaker trips on
+  transient blips; adjust `cooldown` / `halfOpenAfter` to control how long it
+  fast-fails before retesting.
+- **Check the `key`.** Breakers are keyed (default: the stitch/host key). If two
+  unrelated stitches share a `key`, one failing dependency trips the breaker for
+  both — give them distinct keys so they don't share a breaker.
 
 Pair the breaker with [retry](/docs/guides/resilience/retry) and
 [timeout](/docs/guides/resilience/timeout): timeouts and retries absorb the

@@ -76,10 +76,10 @@ asserts the secret never appears in any logged argument.
 
 ## Public API
 
--   `pinoSink(logger, options?)` → a `TraceSink`
--   `interface PinoLoggerLike` — the structural logger slice
--   `interface PinoLogFn` — a single level method (`(obj, msg?)` and `(msg)`)
--   `interface PinoSinkOptions` — `{ lifecycle?: boolean }` (default `true`)
+- `pinoSink(logger, options?)` → a `TraceSink`
+- `interface PinoLoggerLike` — the structural logger slice
+- `interface PinoLogFn` — a single level method (`(obj, msg?)` and `(msg)`)
+- `interface PinoSinkOptions` — `{ lifecycle?: boolean }` (default `true`)
 
 ## Contributing
 

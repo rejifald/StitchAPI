@@ -1,8 +1,8 @@
 # ADR 0005 — Surfaces & the authoring model
 
--   **Status:** Accepted (implemented across all staged PRs [#89](https://github.com/rejifald/StitchAPI/pull/89) / [#93](https://github.com/rejifald/StitchAPI/pull/93) / [#96](https://github.com/rejifald/StitchAPI/pull/96) / [#97](https://github.com/rejifald/StitchAPI/pull/97) / [#98](https://github.com/rejifald/StitchAPI/pull/98) / [#99](https://github.com/rejifald/StitchAPI/pull/99) / [#100](https://github.com/rejifald/StitchAPI/pull/100) / [#101](https://github.com/rejifald/StitchAPI/pull/101) — see _Staged rollout_). Supersedes the closed `kind: 'http' | 'graphql'` union in [`packages/core/src/types.ts`](../../packages/core/src/types.ts).
--   **Date:** 2026-06-14
--   **Tags:** authoring-surface, surfaces, streaming, multipart, packaging, browser-first, runtime
+- **Status:** Accepted (implemented across all staged PRs [#89](https://github.com/rejifald/StitchAPI/pull/89) / [#93](https://github.com/rejifald/StitchAPI/pull/93) / [#96](https://github.com/rejifald/StitchAPI/pull/96) / [#97](https://github.com/rejifald/StitchAPI/pull/97) / [#98](https://github.com/rejifald/StitchAPI/pull/98) / [#99](https://github.com/rejifald/StitchAPI/pull/99) / [#100](https://github.com/rejifald/StitchAPI/pull/100) / [#101](https://github.com/rejifald/StitchAPI/pull/101) — see _Staged rollout_). Supersedes the closed `kind: 'http' | 'graphql'` union in [`packages/core/src/types.ts`](../../packages/core/src/types.ts).
+- **Date:** 2026-06-14
+- **Tags:** authoring-surface, surfaces, streaming, multipart, packaging, browser-first, runtime
 
 > [!NOTE]
 >
@@ -12,24 +12,24 @@
 
 A stitch today is a JSON-over-HTTP call: `buildRequest` reads `cfg.kind` — a closed `'http' | 'graphql'` string union — and the engine special-cases the one non-default member (`graphql`) inline in three places ([`engine.ts`](../../packages/core/src/engine.ts): `buildRequest`, `runFrom`, `paginated`). Two pressures have built up against that shape:
 
--   **The kind is a closed enum the library owns.** Every new request _style_ — Server-Sent Events, a raw chunked stream, a binary download — would be another member baked into core, another `if (cfg.kind === …)` branch on the hot path, and another lump of engine code that `import { stitch }` pays for whether or not a caller ever streams. GraphQL already demonstrates the smell: its POST-`{query,variables}` shaping, its `data` unwrap, and its "200-with-`errors`-is-a-failure" rule are scattered through the engine rather than owned by one cohesive unit.
--   **The transport contract is buffer-only.** `Adapter` is `(req) => Promise<AdapterResponse>` where `AdapterResponse.body` is "parsed JSON when possible, else text" — fully read before the engine sees it. There is no way for a transport to hand back a live byte stream, and no way for a caller to observe upload/download progress. The `delta` `StitchEvent` (`{ type: 'delta'; chunk: unknown }`) was reserved in the event spine for exactly this and has sat **dormant** — defined, never emitted.
+- **The kind is a closed enum the library owns.** Every new request _style_ — Server-Sent Events, a raw chunked stream, a binary download — would be another member baked into core, another `if (cfg.kind === …)` branch on the hot path, and another lump of engine code that `import { stitch }` pays for whether or not a caller ever streams. GraphQL already demonstrates the smell: its POST-`{query,variables}` shaping, its `data` unwrap, and its "200-with-`errors`-is-a-failure" rule are scattered through the engine rather than owned by one cohesive unit.
+- **The transport contract is buffer-only.** `Adapter` is `(req) => Promise<AdapterResponse>` where `AdapterResponse.body` is "parsed JSON when possible, else text" — fully read before the engine sees it. There is no way for a transport to hand back a live byte stream, and no way for a caller to observe upload/download progress. The `delta` `StitchEvent` (`{ type: 'delta'; chunk: unknown }`) was reserved in the event spine for exactly this and has sat **dormant** — defined, never emitted.
 
 The shape we converged on: a **surface** is a first-class, pluggable _request style_ — an `id` plus a small set of behaviour hooks — that owns how a call is built, how its response is interpreted, and (for streaming styles) how bytes become `delta` chunks. `http` is just the default surface; `graphql`, `sse`, `stream`, and `download` are peers. The closed `kind` union is replaced by "the kind **is** the surface."
 
 This is **forward-looking** and lands in stages (each its own reviewable PR), but the core decisions are firm. There are no production users, so every choice optimises for correctness and the three project gates over continuity:
 
--   **Browser-first** — every surface runs on `fetch` + Web Streams, available in the browser, Node ≥ 18, and workers. No `EventSource`, no Node-only stream deps, no `fs`.
--   **Bundle-frugal** — `import { stitch }` pulls in **no** surface engine beyond `http`. Each surface (and each adapter) is its own subpath export, loaded only when used, exactly as the cache engine is reached through a lazy `import('./cache')` today.
--   **Contract-not-dependency** — a stitch's declaration must round-trip as JSON. A surface is named by a **string id** in `__config`; its behaviour closures are runtime-only and never serialised (Decision 11).
+- **Browser-first** — every surface runs on `fetch` + Web Streams, available in the browser, Node ≥ 18, and workers. No `EventSource`, no Node-only stream deps, no `fs`.
+- **Bundle-frugal** — `import { stitch }` pulls in **no** surface engine beyond `http`. Each surface (and each adapter) is its own subpath export, loaded only when used, exactly as the cache engine is reached through a lazy `import('./cache')` today.
+- **Contract-not-dependency** — a stitch's declaration must round-trip as JSON. A surface is named by a **string id** in `__config`; its behaviour closures are runtime-only and never serialised (Decision 11).
 
 ## Decision
 
 1.  **A surface is a plugin, not an enum member.** Introduce `Surface<TInput, TResult>` — an object with a stable string `id` and a small set of **behaviour hooks** that the engine calls instead of branching on `kind`. The minimum hooks cover the three things the engine special-cases today and the two things streaming adds:
 
-    -   `buildRequest(cfg, input) => AdapterRequest` (or a patch over the http default) — how the call is shaped. `graphql` puts `{ query, variables }` in the body and forces `POST`; `download` forces `GET` + `responseType: 'blob'`; `http` is the identity.
-    -   `interpret(res, cfg) => { value } | { error }` — how a buffered response becomes the result (or a failure). `graphql`'s "200-with-`errors`" rule lives here, not in the engine.
-    -   `stream?(res, cfg) => AsyncIterable<unknown>` — present only on streaming surfaces (`sse`, `stream`); each yielded item is emitted as a `delta` chunk. Its presence is what marks a surface as **streaming** (Decision 12).
+    - `buildRequest(cfg, input) => AdapterRequest` (or a patch over the http default) — how the call is shaped. `graphql` puts `{ query, variables }` in the body and forces `POST`; `download` forces `GET` + `responseType: 'blob'`; `http` is the identity.
+    - `interpret(res, cfg) => { value } | { error }` — how a buffered response becomes the result (or a failure). `graphql`'s "200-with-`errors`" rule lives here, not in the engine.
+    - `stream?(res, cfg) => AsyncIterable<unknown>` — present only on streaming surfaces (`sse`, `stream`); each yielded item is emitted as a `delta` chunk. Its presence is what marks a surface as **streaming** (Decision 12).
 
     Surfaces are **pure data + closures**; they hold no per-call state. The engine owns retry/throttle/circuit/cache/validation; a surface owns only _shaping_ and _interpretation_. This keeps the cross-cutting machinery in one place and lets a surface stay a small, testable unit.
 
@@ -37,26 +37,26 @@ This is **forward-looking** and lands in stages (each its own reviewable PR), bu
 
 3.  **Typed authoring: one generic overload + monomorphic per-surface helpers; the seam stays surface-agnostic.** Two co-existing spellings, same engine:
 
-    -   **Generic, on the core `stitch`** — `stitch<S extends Surface>({ kind: S, …InputOf<S> })` infers the call-argument and result types from the surface, the same way `stitch` already infers from `config.output` / `config.input`. Pass any surface; `http` is the default when `kind` is omitted, so every existing call is unchanged.
-    -   **Monomorphic, per surface** — each surface ships a **subpath export** exposing its own `.stitch()` (and `.seam(...)`) pre-bound to that surface, so `import { sse } from 'stitchapi/sse'; sse.stitch({ … })` needs no `kind` and gives surface-specific types and docs. This mirrors the existing top-level `graphql(...)` preset, generalised.
-    -   The **seam does not fork per surface.** `seam.stitch({ kind: … })` and `surface.seam(existingSeam)` both produce members of the _same_ seam — one shared runtime, one principal boundary, one registry (ADR 0002). A surface customises _a stitch_, never the seam's identity/lifecycle.
+    - **Generic, on the core `stitch`** — `stitch<S extends Surface>({ kind: S, …InputOf<S> })` infers the call-argument and result types from the surface, the same way `stitch` already infers from `config.output` / `config.input`. Pass any surface; `http` is the default when `kind` is omitted, so every existing call is unchanged.
+    - **Monomorphic, per surface** — each surface ships a **subpath export** exposing its own `.stitch()` (and `.seam(...)`) pre-bound to that surface, so `import { sse } from 'stitchapi/sse'; sse.stitch({ … })` needs no `kind` and gives surface-specific types and docs. This mirrors the existing top-level `graphql(...)` preset, generalised.
+    - The **seam does not fork per surface.** `seam.stitch({ kind: … })` and `surface.seam(existingSeam)` both produce members of the _same_ seam — one shared runtime, one principal boundary, one registry (ADR 0002). A surface customises _a stitch_, never the seam's identity/lifecycle.
 
 4.  **`sse` surface — Server-Sent Events over `fetch`, not `EventSource`.** A streaming surface whose `stream` hook parses the **`text/event-stream`** wire format (events separated by blank lines; `event:` / `data:` (multiple `data:` lines joined with `\n`) / `id:` / `retry:` fields; `:`-prefixed comments ignored) off the response's `ReadableStream`, and yields one parsed event per `delta` chunk (`{ event?, data, id?, retry? }`, with `data` JSON-parsed when it parses, else the raw string). `EventSource` is rejected: it is GET-only, has no custom headers (so no auth), and is absent in Node — all three gates fail. Using `fetch` + Web Streams keeps SSE on the same auth/retry/headers path as every other surface.
 
 5.  **`stream` surface — raw response streaming with a configurable decoder.** The generic streaming sibling of `sse`: its `stream` hook reads the `ReadableStream` and decodes each chunk per `stream.decode`:
 
-    -   `'bytes'` — raw `Uint8Array` chunks, lossless, no encoding assumed (**the default** — see _Open questions_ Q2).
-    -   `'lines'` — UTF-8, split on `\n`, each `delta` chunk a `string`.
-    -   `'ndjson'` — `'lines'` + `JSON.parse` per line, each chunk a parsed value.
+    - `'bytes'` — raw `Uint8Array` chunks, lossless, no encoding assumed (**the default** — see _Open questions_ Q2).
+    - `'lines'` — UTF-8, split on `\n`, each `delta` chunk a `string`.
+    - `'ndjson'` — `'lines'` + `JSON.parse` per line, each chunk a parsed value.
 
     Decoders share an internal byte→line reader with `sse` (Decision 4) but `sse` layers its own frame parser on top — see _Open questions_ Q3.
 
 6.  **Nested multipart — `multipart.nesting`.** `encodeRequestBody` / `appendForm` ([`http-adapter.ts`](../../packages/core/src/http-adapter.ts)) currently iterate top-level keys only, so a nested object becomes `[object Object]`. Add `multipart.nesting`:
 
-    -   `'bracket'` (**default**) — recursive flatten to `parent[child][0]` keys (PHP/Rails convention), the broadest server compatibility.
-    -   `'dot'` — `parent.child.0` keys.
-    -   `'json'` — scalars/objects without files are `JSON.stringify`-ed into one part; any **file leaf** is hoisted out into its own path-keyed part, so a JSON metadata blob can still carry binary siblings.
-    -   `'none'` — today's behaviour (top-level only), kept as an escape hatch.
+    - `'bracket'` (**default**) — recursive flatten to `parent[child][0]` keys (PHP/Rails convention), the broadest server compatibility.
+    - `'dot'` — `parent.child.0` keys.
+    - `'json'` — scalars/objects without files are `JSON.stringify`-ed into one part; any **file leaf** is hoisted out into its own path-keyed part, so a JSON metadata blob can still carry binary siblings.
+    - `'none'` — today's behaviour (top-level only), kept as an escape hatch.
 
     A **file leaf** is a `Blob`, a `Uint8Array`, or a `{ value, filename?, type? }` wrapper (the same detection `appendForm` already uses). No new dependencies — recursion + the existing `FormData`.
 
@@ -66,10 +66,10 @@ This is **forward-looking** and lands in stages (each its own reviewable PR), bu
 
 9.  **Adapter contract extension — streaming `body` + `onProgress`.** The minimal transport widening that every streaming/progress surface rides on (resolutions in _Open questions_ Q1):
 
-    -   `AdapterRequest` gains `stream?: boolean` (ask the transport **not** to buffer/parse — return the live body) and `onProgress?: (p: ProgressEvent) => void` where `ProgressEvent = { phase: 'upload' | 'download'; loaded: number; total?: number }`.
-    -   `AdapterResponse.body` is **reused** as the stream slot: when `req.stream` is set, `body` is the response's `ReadableStream<Uint8Array>` (the field is already `unknown`, so no type break); otherwise it is the parsed/encoded value as today. The surface that asked for a stream narrows it.
-    -   `fetchAdapter` implements both (return `response.body` when streaming; report `download` progress while reading a buffered binary body via `Content-Length` + the body reader). A new **browser-only**, zero-dep `xhrAdapter` ([`xhr-adapter.ts`](../../packages/core/src/xhr-adapter.ts)) adds **upload** progress (which `fetch` cannot report). `axiosAdapter` stays buffered-only — it **throws a clear error** if `req.stream` is set — and must keep compiling against the widened contract. (Per the Decision 9 addendum below it now wires axios's native `onUploadProgress`/`onDownloadProgress` into `onProgress`, so it reports both phases.)
-    -   **Capabilities + a teaching note (ADDENDUM).** A silent `onProgress` no-op is a footgun: a caller draws an upload bar, leaves the call on the default `fetch`, and nothing moves. So an adapter MAY hang an optional `capabilities` descriptor off the function — `{ name?, supports }`, where `supports: AdapterCapability[]` is a POSITIVE list of the optional features the transport has (`'stream'` | `'uploadProgress'` | `'downloadProgress'`); anything not listed, it can't do. The built-ins declare it: `fetch` = `{ supports: ['stream', 'downloadProgress'] }`, `xhr` = `{ supports: ['uploadProgress', 'downloadProgress'] }`, axios = `{ supports: ['uploadProgress', 'downloadProgress'] }`. Only `fetch` streams (`xhr`/axios buffer and reject `stream`), and only `fetch` can't report bytes SENT; `xhr` reports both phases natively and the axios adapter wires axios's own `onUploadProgress`/`onDownloadProgress` into `onProgress` (so it needs a v1+ axios). A positive list, not a set of `false` flags, so "I declared my capabilities and this isn't one" is distinct from "I declared nothing" with no tri-state boolean. When a call sets `onProgress` **with a request body** and the active adapter's `supports` omits `'uploadProgress'` (only `fetch` among the built-ins), the engine ([`engine.ts`](../../packages/core/src/engine.ts) `execute`) emits one `info` event (`topic: 'adapter.upload-progress-unsupported'`) pointing at `xhrAdapter`. It is a **note, not a throw** — `fetch` still serves `phase: 'download'` progress, so a download bar on a `POST` keeps working; only the genuinely-silent upload phase is called out. Declaring `capabilities` is opt-in: an adapter that declares nothing is treated as unknown and triggers no checks, so the open one-function contract stands.
+    - `AdapterRequest` gains `stream?: boolean` (ask the transport **not** to buffer/parse — return the live body) and `onProgress?: (p: ProgressEvent) => void` where `ProgressEvent = { phase: 'upload' | 'download'; loaded: number; total?: number }`.
+    - `AdapterResponse.body` is **reused** as the stream slot: when `req.stream` is set, `body` is the response's `ReadableStream<Uint8Array>` (the field is already `unknown`, so no type break); otherwise it is the parsed/encoded value as today. The surface that asked for a stream narrows it.
+    - `fetchAdapter` implements both (return `response.body` when streaming; report `download` progress while reading a buffered binary body via `Content-Length` + the body reader). A new **browser-only**, zero-dep `xhrAdapter` ([`xhr-adapter.ts`](../../packages/core/src/xhr-adapter.ts)) adds **upload** progress (which `fetch` cannot report). `axiosAdapter` stays buffered-only — it **throws a clear error** if `req.stream` is set — and must keep compiling against the widened contract. (Per the Decision 9 addendum below it now wires axios's native `onUploadProgress`/`onDownloadProgress` into `onProgress`, so it reports both phases.)
+    - **Capabilities + a teaching note (ADDENDUM).** A silent `onProgress` no-op is a footgun: a caller draws an upload bar, leaves the call on the default `fetch`, and nothing moves. So an adapter MAY hang an optional `capabilities` descriptor off the function — `{ name?, supports }`, where `supports: AdapterCapability[]` is a POSITIVE list of the optional features the transport has (`'stream'` | `'uploadProgress'` | `'downloadProgress'`); anything not listed, it can't do. The built-ins declare it: `fetch` = `{ supports: ['stream', 'downloadProgress'] }`, `xhr` = `{ supports: ['uploadProgress', 'downloadProgress'] }`, axios = `{ supports: ['uploadProgress', 'downloadProgress'] }`. Only `fetch` streams (`xhr`/axios buffer and reject `stream`), and only `fetch` can't report bytes SENT; `xhr` reports both phases natively and the axios adapter wires axios's own `onUploadProgress`/`onDownloadProgress` into `onProgress` (so it needs a v1+ axios). A positive list, not a set of `false` flags, so "I declared my capabilities and this isn't one" is distinct from "I declared nothing" with no tri-state boolean. When a call sets `onProgress` **with a request body** and the active adapter's `supports` omits `'uploadProgress'` (only `fetch` among the built-ins), the engine ([`engine.ts`](../../packages/core/src/engine.ts) `execute`) emits one `info` event (`topic: 'adapter.upload-progress-unsupported'`) pointing at `xhrAdapter`. It is a **note, not a throw** — `fetch` still serves `phase: 'download'` progress, so a download bar on a `POST` keeps working; only the genuinely-silent upload phase is called out. Declaring `capabilities` is opt-in: an adapter that declares nothing is treated as unknown and triggers no checks, so the open one-function contract stands.
 
 10. **Packaging: every surface and adapter is a subpath export.** `package.json` `exports` gains `./sse`, `./stream`, `./download`, `./graphql`, and `./xhr` (the xhr adapter) alongside the existing `./cache`, `./fingerprint`, etc. The engine reaches a streaming surface's code the same way it reaches the cache: only when a stitch actually uses it. `import { stitch }` from the root entry bundles `http` only. The generic `stitch<S>(...)` overload is type-level (free at runtime); the per-surface helpers live behind their subpaths.
 
@@ -89,8 +89,8 @@ Stage 0 of the rollout is to **resolve** the three questions left open when this
 
 `onProgress` is **independent of `stream`**, on two axes:
 
--   **Direction.** `onProgress` reports `{ phase: 'upload' | 'download', loaded, total? }`. Upload progress has nothing to do with how the response body is read; download progress is meaningful whether the body is streamed _or_ buffered.
--   **Buffering.** `download` (Decision 8) sets `onProgress` **without** `stream`: it wants the bytes _buffered_ into a `Blob` but reported as they arrive. `sse`/`stream` set `stream` and may also set `onProgress` for byte counts.
+- **Direction.** `onProgress` reports `{ phase: 'upload' | 'download', loaded, total? }`. Upload progress has nothing to do with how the response body is read; download progress is meaningful whether the body is streamed _or_ buffered.
+- **Buffering.** `download` (Decision 8) sets `onProgress` **without** `stream`: it wants the bytes _buffered_ into a `Blob` but reported as they arrive. `sse`/`stream` set `stream` and may also set `onProgress` for byte counts.
 
 So the two flags are composable, not coupled: `stream` controls _buffering_, `onProgress` controls _reporting_. An adapter that cannot stream (axios) throws on `stream: true`. It still **drops** the upload phase of `onProgress` — but no longer silently: when an adapter declares its `capabilities` and `'uploadProgress'` is not among them (Decision 9 addendum), a call that asks for upload progress gets a teaching `info` event instead of a dead bar.
 
@@ -118,23 +118,23 @@ A streaming run ends, like every run, `… → result → done`, and `await stit
 
 **Positive**
 
--   New request styles stop touching the engine. A surface is a small unit (`id` + a few hooks) with its own tests and its own subpath; the hot path is `surface.buildRequest` / `surface.interpret`, not a growing `switch (kind)`.
--   `graphql`'s three scattered special-cases collapse into one surface, proving the model against existing behaviour (Stage 4 is a refactor, not a feature).
--   The `delta` event finally has emitters; SSE/stream/streaming-progress are expressible without a second event channel.
--   Bundle-frugal holds: a REST-only app bundles zero streaming/multipart-nesting code; a streaming app pays only for the surface it imports.
+- New request styles stop touching the engine. A surface is a small unit (`id` + a few hooks) with its own tests and its own subpath; the hot path is `surface.buildRequest` / `surface.interpret`, not a growing `switch (kind)`.
+- `graphql`'s three scattered special-cases collapse into one surface, proving the model against existing behaviour (Stage 4 is a refactor, not a feature).
+- The `delta` event finally has emitters; SSE/stream/streaming-progress are expressible without a second event channel.
+- Bundle-frugal holds: a REST-only app bundles zero streaming/multipart-nesting code; a streaming app pays only for the surface it imports.
 
 **Accepted trade-offs**
 
--   Real engine work, not a config tweak: the engine gains a surface-dispatch seam, a streaming execution path that emits `delta` and bypasses concurrency (Decision 12), and a widened adapter contract every adapter must satisfy (even if only to reject streaming).
--   **Two adapters with different capabilities** (`fetch` streams + download progress; `xhr` adds upload progress; `axios` buffered-only). Callers pick the adapter whose capabilities match the surface; a mismatch is a clear throw, not a silent degrade.
--   `AdapterResponse.body` now means "stream **or** value" depending on the request flag — a small overload of one field, chosen over a second field (Q1).
+- Real engine work, not a config tweak: the engine gains a surface-dispatch seam, a streaming execution path that emits `delta` and bypasses concurrency (Decision 12), and a widened adapter contract every adapter must satisfy (even if only to reject streaming).
+- **Two adapters with different capabilities** (`fetch` streams + download progress; `xhr` adds upload progress; `axios` buffered-only). Callers pick the adapter whose capabilities match the surface; a mismatch is a clear throw, not a silent degrade.
+- `AdapterResponse.body` now means "stream **or** value" depending on the request flag — a small overload of one field, chosen over a second field (Q1).
 
 **Required follow-ups (tracked as the rollout stages)**
 
--   Surface dispatch + the `Surface` type + `kind` normalisation/redaction (Stage 3).
--   Streaming execution path: `delta` emission, the rate-only throttle acquire, the `lineReader` helper, the SSE frame parser, the `stream` decoders (Stage 5).
--   `xhrAdapter` + `fetchAdapter` streaming/progress; axios compile-check (Stage 2).
--   `package.json` `exports` per surface/adapter; docs reframe (Stages 7, 10).
+- Surface dispatch + the `Surface` type + `kind` normalisation/redaction (Stage 3).
+- Streaming execution path: `delta` emission, the rate-only throttle acquire, the `lineReader` helper, the SSE frame parser, the `stream` decoders (Stage 5).
+- `xhrAdapter` + `fetchAdapter` streaming/progress; axios compile-check (Stage 2).
+- `package.json` `exports` per surface/adapter; docs reframe (Stages 7, 10).
 
 ## Staged rollout
 
@@ -151,27 +151,27 @@ Each stage is a single reviewable PR against `main`, in order; review stops betw
 
 ## Gates
 
--   **Browser-first.** `fetch` + Web Streams everywhere; SSE via `fetch`, never `EventSource`; `xhrAdapter` uses `XMLHttpRequest` (browser-native) and is explicitly browser-only; `download` returns a `Blob`, never touches `fs`.
--   **Bundle-frugal.** Root `import { stitch }` bundles `http` only. Every other surface and the `xhr` adapter are subpath exports / lazily reached, like the cache engine. The generic `stitch<S>` overload is erased at runtime.
--   **Contract-not-dependency.** Surfaces are named by a string id; `__config` carries the id, never the closures (Decision 11). A stitch's declaration round-trips to JSON for MCP/playground/`llms.txt`; an unknown surface id degrades, never crashes.
+- **Browser-first.** `fetch` + Web Streams everywhere; SSE via `fetch`, never `EventSource`; `xhrAdapter` uses `XMLHttpRequest` (browser-native) and is explicitly browser-only; `download` returns a `Blob`, never touches `fs`.
+- **Bundle-frugal.** Root `import { stitch }` bundles `http` only. Every other surface and the `xhr` adapter are subpath exports / lazily reached, like the cache engine. The generic `stitch<S>` overload is erased at runtime.
+- **Contract-not-dependency.** Surfaces are named by a string id; `__config` carries the id, never the closures (Decision 11). A stitch's declaration round-trips to JSON for MCP/playground/`llms.txt`; an unknown surface id degrades, never crashes.
 
 ## Out of scope (considered, deferred)
 
--   **SSE auto-reconnection / `Last-Event-ID` resume** — real and wanted, but a feature of its own (backoff policy, replay semantics). Tracked as issue #71.
--   **GraphQL `variables` typing** — inferring the call argument from a typed `variables` schema is the existing deferred gql-vars work (#75/#76), orthogonal to making graphql a surface.
--   **Builder removal** — the fluent `stitch.use(...)` Builder is on its own deprecation track (the API-grill round); surfaces neither need nor block it.
--   **Disk-writing downloads / streamed uploads from a file path** — Node-only, breaks browser-first; `download` returns a `Blob` and upload bodies are in-memory `Blob`/`Uint8Array`.
--   **A distributed concurrency semaphore for streams** — concurrency stays in-process (Decision 12 exempts streams from it entirely); the rate gate is already store-backed.
--   **Structural streaming-JSON decoder for unframed payloads** — accumulating until a JSON value is _structurally_ complete (balanced braces, not newline/event framed). Per-`delta` validation (the Addendum) covers the framed `ndjson`/`sse` cases; the unframed `decode: 'json'` parser is deferred. Tracked as issue #111.
+- **SSE auto-reconnection / `Last-Event-ID` resume** — real and wanted, but a feature of its own (backoff policy, replay semantics). Tracked as issue #71.
+- **GraphQL `variables` typing** — inferring the call argument from a typed `variables` schema is the existing deferred gql-vars work (#75/#76), orthogonal to making graphql a surface.
+- **Builder removal** — the fluent `stitch.use(...)` Builder is on its own deprecation track (the API-grill round); surfaces neither need nor block it.
+- **Disk-writing downloads / streamed uploads from a file path** — Node-only, breaks browser-first; `download` returns a `Blob` and upload bodies are in-memory `Blob`/`Uint8Array`.
+- **A distributed concurrency semaphore for streams** — concurrency stays in-process (Decision 12 exempts streams from it entirely); the rate gate is already store-backed.
+- **Structural streaming-JSON decoder for unframed payloads** — accumulating until a JSON value is _structurally_ complete (balanced braces, not newline/event framed). Per-`delta` validation (the Addendum) covers the framed `ndjson`/`sse` cases; the unframed `decode: 'json'` parser is deferred. Tracked as issue #111.
 
 ## Alternatives considered
 
--   **A. Keep the closed `kind` union; add `'sse' | 'stream' | 'download'` members.** Rejected: every style baked into core, more hot-path branches, and `import { stitch }` pays for streaming it never uses — the bundle-frugal gate.
--   **B. Make a surface a full adapter (own transport).** Rejected: surfaces would re-implement retry/throttle/circuit/cache/auth. A surface shapes and interprets; the _adapter_ is the transport; the _engine_ owns cross-cutting concerns. Three roles, kept separate.
--   **C. `EventSource` for SSE.** Rejected: GET-only, no custom headers (no auth), Node-absent — fails all three gates. `fetch` + a frame parser keeps SSE on the shared spine.
--   **D. `stream` defaults to `ndjson` (or `lines`).** Rejected: a `stream` default must be total and lossless; `ndjson` throws on non-JSON, `lines` silently mangles binary. `bytes` is the only never-wrong default (Q2).
--   **E. A second `AdapterResponse.stream` field.** Rejected: `body` is already `unknown` and already _is_ "the payload"; a second field forces every reader to branch and invites the two fields to disagree (Q1).
--   **F. Surfaces carry serialisable behaviour (so the whole plugin round-trips).** Rejected: behaviour is closures; only the _identity_ (id) is a contract. The JSON round-trip carries the id, and the running process supplies the behaviour — the contract-not-dependency gate as written (Decision 11).
+- **A. Keep the closed `kind` union; add `'sse' | 'stream' | 'download'` members.** Rejected: every style baked into core, more hot-path branches, and `import { stitch }` pays for streaming it never uses — the bundle-frugal gate.
+- **B. Make a surface a full adapter (own transport).** Rejected: surfaces would re-implement retry/throttle/circuit/cache/auth. A surface shapes and interprets; the _adapter_ is the transport; the _engine_ owns cross-cutting concerns. Three roles, kept separate.
+- **C. `EventSource` for SSE.** Rejected: GET-only, no custom headers (no auth), Node-absent — fails all three gates. `fetch` + a frame parser keeps SSE on the shared spine.
+- **D. `stream` defaults to `ndjson` (or `lines`).** Rejected: a `stream` default must be total and lossless; `ndjson` throws on non-JSON, `lines` silently mangles binary. `bytes` is the only never-wrong default (Q2).
+- **E. A second `AdapterResponse.stream` field.** Rejected: `body` is already `unknown` and already _is_ "the payload"; a second field forces every reader to branch and invites the two fields to disagree (Q1).
+- **F. Surfaces carry serialisable behaviour (so the whole plugin round-trips).** Rejected: behaviour is closures; only the _identity_ (id) is a contract. The JSON round-trip carries the id, and the running process supplies the behaviour — the contract-not-dependency gate as written (Decision 11).
 
 ## Addendum (2026-06-15) — per-`delta` validation for streaming surfaces
 

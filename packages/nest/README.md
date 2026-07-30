@@ -128,19 +128,19 @@ seam and bind explicitly — `seam.as(job.data.tenantId)`.
 
 ## Bridges
 
--   **`nestLoggerSink(logger?, { lifecycle? })`** — a `TraceSink` that forwards the event
-    stream to a Nest `Logger`, by level: `error` → `error`; `drift` → `error`/`warn`/`debug`
-    by the finding's level; a `retry`/`circuit` `progress` → `warn`; `start`/`result`/`done`
-    → `debug`/`verbose` (the happy path, hidden at Nest's default level — `lifecycle: false`
-    drops them). It logs **only metadata** and strips the URL query, so it is safe on a
-    secret-bearing seam: a custom sink receives **un-redacted** events, so never log
-    `event.input`/headers or a `delta` chunk raw.
--   **`fromNestConfig(config)(key)`** — a `ConfigService`-backed secret thunk (core's `env()`
-    twin). Synchronous, so it cannot fetch a rotating secret per call — use
-    `oauth2`/`cookieSession` for that.
--   **`nestBorrowStore(store)`** — wraps an app-owned `StitchStore` so the seam never
-    `close()`s it (the app owns disposal). `NestConfigServiceLike` is the structural type
-    `fromNestConfig` accepts.
+- **`nestLoggerSink(logger?, { lifecycle? })`** — a `TraceSink` that forwards the event
+  stream to a Nest `Logger`, by level: `error` → `error`; `drift` → `error`/`warn`/`debug`
+  by the finding's level; a `retry`/`circuit` `progress` → `warn`; `start`/`result`/`done`
+  → `debug`/`verbose` (the happy path, hidden at Nest's default level — `lifecycle: false`
+  drops them). It logs **only metadata** and strips the URL query, so it is safe on a
+  secret-bearing seam: a custom sink receives **un-redacted** events, so never log
+  `event.input`/headers or a `delta` chunk raw.
+- **`fromNestConfig(config)(key)`** — a `ConfigService`-backed secret thunk (core's `env()`
+  twin). Synchronous, so it cannot fetch a rotating secret per call — use
+  `oauth2`/`cookieSession` for that.
+- **`nestBorrowStore(store)`** — wraps an app-owned `StitchStore` so the seam never
+  `close()`s it (the app owns disposal). `NestConfigServiceLike` is the structural type
+  `fromNestConfig` accepts.
 
 > [!NOTE]
 >

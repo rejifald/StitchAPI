@@ -17,12 +17,12 @@ actually the login page.
 
 Two distinct triggers land here:
 
--   **The login no longer establishes a session.** Bad or expired credentials,
-    rotated form fields, or a login endpoint that now sets a different cookie than
-    the one you capture — so `cookieSession` replays a cookie the API rejects.
--   **A soft 200 wall.** The API answers an unauthenticated request with `200` and
-    an HTML login page rather than a `401`. `refresh.on` only matches status codes,
-    so the wall slips past it and the body is treated as a successful response.
+- **The login no longer establishes a session.** Bad or expired credentials,
+  rotated form fields, or a login endpoint that now sets a different cookie than
+  the one you capture — so `cookieSession` replays a cookie the API rejects.
+- **A soft 200 wall.** The API answers an unauthenticated request with `200` and
+  an HTML login page rather than a `401`. `refresh.on` only matches status codes,
+  so the wall slips past it and the body is treated as a successful response.
 
 ## How to fix
 

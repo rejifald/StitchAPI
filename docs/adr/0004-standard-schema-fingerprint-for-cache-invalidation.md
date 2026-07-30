@@ -1,8 +1,8 @@
 # ADR 0004 — Standard Schema fingerprint for cache invalidation
 
--   **Status:** Accepted & implemented — the contract, conformance kit, and five vendor packages ship, and `resolveFingerprint` is now **folded into [ADR 0003](0003-derived-key-response-cache-and-coalescing.md)'s response cache**: it is resolved once per stitch and its `generation` folds into the cache generation namespace, its `policy` drives fast / re-validate-on-hit / refuse, and its `reason` is surfaced on the cache trace.
--   **Date:** 2026-06-14
--   **Tags:** caching, validation, schema, standard-schema, contract-not-dependency, runtime
+- **Status:** Accepted & implemented — the contract, conformance kit, and five vendor packages ship, and `resolveFingerprint` is now **folded into [ADR 0003](0003-derived-key-response-cache-and-coalescing.md)'s response cache**: it is resolved once per stitch and its `generation` folds into the cache generation namespace, its `policy` drives fast / re-validate-on-hit / refuse, and its `reason` is surfaced on the cache trace.
+- **Date:** 2026-06-14
+- **Tags:** caching, validation, schema, standard-schema, contract-not-dependency, runtime
 
 ## Context
 
@@ -57,18 +57,18 @@ _because_ it is opaque.)
 
 ### Constraints carried in from the gates
 
--   **Contract, not dependency** ([FEATURE-LENSES](../FEATURE-LENSES.md)): core
-    ships a fingerprint **contract + platform defaults only** and never grows a
-    validator dependency. Per-validator strategies are separate packages with the
-    validator as a **peer** dependency, each proving compliance via the
-    conformance kit (`stitchapi/testing`).
--   **Browser-first + bundle-frugal:** the hot path must stay free of `node:*`,
-    WebCrypto-async, and any heavy converter. The fingerprint is **synchronous**
-    and a **non-crypto** hash; it is computed **once at stitch-definition time**,
-    never per request.
--   **Declarative spelling:** every capability needs a JSON-serialisable spelling.
-    `transform` is "sugar, never the only way." The declarative escape hatch here
-    is an explicit `cache.version`, which always round-trips as data.
+- **Contract, not dependency** ([FEATURE-LENSES](../FEATURE-LENSES.md)): core
+  ships a fingerprint **contract + platform defaults only** and never grows a
+  validator dependency. Per-validator strategies are separate packages with the
+  validator as a **peer** dependency, each proving compliance via the
+  conformance kit (`stitchapi/testing`).
+- **Browser-first + bundle-frugal:** the hot path must stay free of `node:*`,
+  WebCrypto-async, and any heavy converter. The fingerprint is **synchronous**
+  and a **non-crypto** hash; it is computed **once at stitch-definition time**,
+  never per request.
+- **Declarative spelling:** every capability needs a JSON-serialisable spelling.
+  `transform` is "sugar, never the only way." The declarative escape hatch here
+  is an explicit `cache.version`, which always round-trips as data.
 
 ## Decisions
 
@@ -126,30 +126,30 @@ The fingerprint input is the canonical composition of three contributions:
 `U` is trivially sound — it is already a string. The asymmetry that drives the
 whole design is between `S` and `X`:
 
--   **A changed `S` is caught by re-validating on hit** — the stored value stops
-    satisfying the new schema, so the hit misses and refetches. Re-validation is a
-    safe degraded mode for the schema.
--   **A changed `X` is _not_ caught by re-validating on hit.** If only the
-    `transform` changes (e.g. a clamp constant moves) but the schema is unchanged,
-    the stale value still validates and is served. Re-validation gives **no**
-    protection here. This is the sharp edge that forces refuse-to-cache for an
-    un-versioned transform (Decision 4, rung 2).
+- **A changed `S` is caught by re-validating on hit** — the stored value stops
+  satisfying the new schema, so the hit misses and refetches. Re-validation is a
+  safe degraded mode for the schema.
+- **A changed `X` is _not_ caught by re-validating on hit.** If only the
+  `transform` changes (e.g. a clamp constant moves) but the schema is unchanged,
+  the stale value still validates and is served. Re-validation gives **no**
+  protection here. This is the sharp edge that forces refuse-to-cache for an
+  un-versioned transform (Decision 4, rung 2).
 
 ### 3 — The fingerprint primitive
 
--   **Opaque token**, like an HTTP `ETag`: a short stable string that changes iff
-    the contract's observable shape changes, whose construction the cache layer
-    need not understand (RFC 9110 §8.8: _"Since the value is opaque, there is no
-    need for the client to be aware of how each entity tag is constructed"_).
--   **Computed once at stitch-definition time**, cached on the stitch. The hot
-    path reads a precomputed string — nothing to hash per request.
--   **Hashed with the same 128-bit non-crypto sync primitive ADR 0003 mandates
-    for the cache key** (xxh128-class). No new dependency, no WebCrypto-async.
--   **Folded into the ADR 0003 _generation_, not the per-call key.** ADR 0003
-    Decision 8 already bumps a per-stitch generation counter to bulk-invalidate.
-    The fingerprint simply becomes part of that generation namespace: when it
-    changes, every prior-generation entry becomes unreachable and TTLs out on its
-    own. **No new store mechanism, no key enumeration, no `SCAN`.**
+- **Opaque token**, like an HTTP `ETag`: a short stable string that changes iff
+  the contract's observable shape changes, whose construction the cache layer
+  need not understand (RFC 9110 §8.8: _"Since the value is opaque, there is no
+  need for the client to be aware of how each entity tag is constructed"_).
+- **Computed once at stitch-definition time**, cached on the stitch. The hot
+  path reads a precomputed string — nothing to hash per request.
+- **Hashed with the same 128-bit non-crypto sync primitive ADR 0003 mandates
+  for the cache key** (xxh128-class). No new dependency, no WebCrypto-async.
+- **Folded into the ADR 0003 _generation_, not the per-call key.** ADR 0003
+  Decision 8 already bumps a per-stitch generation counter to bulk-invalidate.
+  The fingerprint simply becomes part of that generation namespace: when it
+  changes, every prior-generation entry becomes unreachable and TTLs out on its
+  own. **No new store mechanism, no key enumeration, no `SCAN`.**
 
 ```ts
 // core, at stitch-definition time (sketch)
@@ -229,14 +229,14 @@ network-saving re-validate behaviour stays one opt-in away.
 
 Borrowing RFC 9110's validator taxonomy:
 
--   A **strong** fingerprint changes on **any** observable structural change
-    (RFC 9110 §8.8.1: a strong validator _"changes value whenever a change occurs
-    to the representation data that would be observable"_). **This is the
-    default.**
--   A **weak** fingerprint may stay equal across owner-declared equivalences
-    (e.g. a description-only edit). It is an opt-in optimisation, marked so the
-    cache layer can choose comparison semantics, exactly as ETag marks weak
-    validators `W/`.
+- A **strong** fingerprint changes on **any** observable structural change
+  (RFC 9110 §8.8.1: a strong validator _"changes value whenever a change occurs
+  to the representation data that would be observable"_). **This is the
+  default.**
+- A **weak** fingerprint may stay equal across owner-declared equivalences
+  (e.g. a description-only edit). It is an opt-in optimisation, marked so the
+  cache layer can choose comparison semantics, exactly as ETag marks weak
+  validators `W/`.
 
 The governing safety rule, true of every prior-art system surveyed:
 **fail toward over-invalidation, never under-invalidation.** A spurious cache
@@ -250,24 +250,24 @@ hold steady.
 These cannot be soundly fingerprinted from the closure, and **function-source
 hashing (`Function.prototype.toString`) is not a sound option:**
 
--   **Minifiers rewrite the source.** terser/swc rename identifiers and reformat
-    whitespace, so `toString` differs across builds for identical logic — churn
-    (safe but wasteful) — and the
-    [TC39 stricter-`toString` proposal](https://github.com/tc39/proposal-stricter-function-tostring)
-    can return a placeholder body, **erasing** the logic — which would make
-    different logic hash the **same** (unsafe).
--   **Closures capture values the source text does not show.** `(b) => clamp(b,
+- **Minifiers rewrite the source.** terser/swc rename identifiers and reformat
+  whitespace, so `toString` differs across builds for identical logic — churn
+  (safe but wasteful) — and the
+  [TC39 stricter-`toString` proposal](https://github.com/tc39/proposal-stricter-function-tostring)
+  can return a placeholder body, **erasing** the logic — which would make
+  different logic hash the **same** (unsafe).
+- **Closures capture values the source text does not show.** `(b) => clamp(b,
 MAX)` has identical source regardless of `MAX`; a changed `MAX` is a changed
-    contract with an unchanged `toString`. This false-negative is the decisive
-    argument: source hashing can serve stale values.
+  contract with an unchanged `toString`. This false-negative is the decisive
+  argument: source hashing can serve stale values.
 
 Therefore opaque logic is handled by **abstain-or-version**, never by hashing it:
 
--   If a strategy encounters an opaque `.refine`/`.transform`/`.brand`/predicate
-    it cannot represent, it **abstains** (`value: null`) → conservative fallback.
--   `config.transform` is opaque to core. Its provenance enters the fingerprint
-    only as `cache.transformVersion` (a user tag); otherwise it forces refuse
-    (Decision 4, rung 2).
+- If a strategy encounters an opaque `.refine`/`.transform`/`.brand`/predicate
+  it cannot represent, it **abstains** (`value: null`) → conservative fallback.
+- `config.transform` is opaque to core. Its provenance enters the fingerprint
+  only as `cache.transformVersion` (a user tag); otherwise it forces refuse
+  (Decision 4, rung 2).
 
 This is exactly how every prior-art system treats non-serialisable logic:
 GraphQL schema hashing excludes resolvers from the SDL ("the hash describes the
@@ -295,37 +295,37 @@ hashing: _stable-sort all definitions, strip insignificant whitespace, strip
 comments but not docstrings_
 ([Apollo schema-reporting protocol](https://github.com/apollographql/apollo-schema-reporting-preview-docs/blob/master/schema-reporting-protocol.md)).
 
--   **Zod** — prefer native `z.toJSONSchema(schema, { io: 'input' })` (shipped
-    since v4 / `[email protected]`; `zod-to-json-schema` is the deprecated v3
-    path), or walk internals. Detect version at runtime via `'_zod' in schema`
-    (`schema._zod.def` on v4 vs `schema._def` on v3 —
-    [zod.dev/library-authors](https://zod.dev/library-authors)). `z.toJSONSchema`
-    **throws by default** on unrepresentable parts (transform/bigint/date/…) —
-    treat that throw as the **abstain** signal. **Stability:** internals broke
-    across a _major_ (`z.literal().value` → `.values` as a `Set`,
-    [zod #4497](https://github.com/colinhacks/zod/issues/4497)); pin `supports` to
-    a major, conformance-gate every minor.
--   **Valibot** — walk the plain-object graph: `schema.type`, `schema.entries`
-    (objects), and the `schema.pipe` action array. Each action carries a `.type`
-    discriminator, so a `transform`/`check` action's **presence is detectable**
-    even though its predicate function is opaque → abstain (or version) when one
-    is present. `@valibot/to-json-schema` (separate peer dep) is the JSON-Schema
-    fallback.
--   **ArkType** — every `Type` exposes a native `.json` canonical serialisation
-    and `.toJsonSchema()`. Hash `.json` (richer than JSON Schema). `.toJsonSchema()`
-    **throws by default** on morphs/predicates/narrows/bigint/symbol/instanceof —
-    the abstain signal (its fallback handlers _silently drop_, so do **not** use
-    them for fingerprinting).
--   **Effect Schema** — **best case.** Hash the canonical `schema.ast`. The AST
-    represents transformations as nodes (with from/to types), so it captures the
-    _presence and typing_ of a transform even though the transform body stays
-    opaque — strictly more than JSON Schema, whose `JSONSchema.make` _"stops at
-    the first transformation encountered"_ and drops it
-    ([effect docs](https://effect.website/docs/schema/json-schema/)).
--   **Typebox** — the schema **is** JSON Schema (a canonical plain object).
-    Canonicalise (sort keys) and hash directly — no conversion, no loss for the
-    JSON-Schema-expressible parts. `Type.Transform` codec functions are opaque
-    (detectable via the `[Transform]` symbol) → abstain/version.
+- **Zod** — prefer native `z.toJSONSchema(schema, { io: 'input' })` (shipped
+  since v4 / `[email protected]`; `zod-to-json-schema` is the deprecated v3
+  path), or walk internals. Detect version at runtime via `'_zod' in schema`
+  (`schema._zod.def` on v4 vs `schema._def` on v3 —
+  [zod.dev/library-authors](https://zod.dev/library-authors)). `z.toJSONSchema`
+  **throws by default** on unrepresentable parts (transform/bigint/date/…) —
+  treat that throw as the **abstain** signal. **Stability:** internals broke
+  across a _major_ (`z.literal().value` → `.values` as a `Set`,
+  [zod #4497](https://github.com/colinhacks/zod/issues/4497)); pin `supports` to
+  a major, conformance-gate every minor.
+- **Valibot** — walk the plain-object graph: `schema.type`, `schema.entries`
+  (objects), and the `schema.pipe` action array. Each action carries a `.type`
+  discriminator, so a `transform`/`check` action's **presence is detectable**
+  even though its predicate function is opaque → abstain (or version) when one
+  is present. `@valibot/to-json-schema` (separate peer dep) is the JSON-Schema
+  fallback.
+- **ArkType** — every `Type` exposes a native `.json` canonical serialisation
+  and `.toJsonSchema()`. Hash `.json` (richer than JSON Schema). `.toJsonSchema()`
+  **throws by default** on morphs/predicates/narrows/bigint/symbol/instanceof —
+  the abstain signal (its fallback handlers _silently drop_, so do **not** use
+  them for fingerprinting).
+- **Effect Schema** — **best case.** Hash the canonical `schema.ast`. The AST
+  represents transformations as nodes (with from/to types), so it captures the
+  _presence and typing_ of a transform even though the transform body stays
+  opaque — strictly more than JSON Schema, whose `JSONSchema.make` _"stops at
+  the first transformation encountered"_ and drops it
+  ([effect docs](https://effect.website/docs/schema/json-schema/)).
+- **Typebox** — the schema **is** JSON Schema (a canonical plain object).
+  Canonicalise (sort keys) and hash directly — no conversion, no loss for the
+  JSON-Schema-expressible parts. `Type.Transform` codec functions are opaque
+  (detectable via the `[Transform]` symbol) → abstain/version.
 
 ## Conformance-test shape
 
@@ -378,123 +378,123 @@ assertConformance(
 
 ### Positive
 
--   Schema changes auto-invalidate via the existing generation mechanism — no new
-    store surface, no `SCAN`, no contract extension.
--   Core stays dependency-free and bundle-frugal; heavy converters live in opt-in
-    vendor packages and run once at definition time.
--   Every failure mode degrades safely (re-validate-on-hit or refuse-to-cache);
-    the system never silently serves a value bound to an unverifiable shape.
--   `cache.version` is a always-available, JSON-serialisable manual override.
+- Schema changes auto-invalidate via the existing generation mechanism — no new
+  store surface, no `SCAN`, no contract extension.
+- Core stays dependency-free and bundle-frugal; heavy converters live in opt-in
+  vendor packages and run once at definition time.
+- Every failure mode degrades safely (re-validate-on-hit or refuse-to-cache);
+  the system never silently serves a value bound to an unverifiable shape.
+- `cache.version` is a always-available, JSON-serialisable manual override.
 
 ### Negative / trade-offs
 
--   **Per-validator effort.** Each vendor needs a strategy and a conformance-gated
-    CI matrix; there is no shared shortcut (the spec surface forbids it).
--   **Internals are undocumented-ish and version-sensitive.** Pinning to a major
-    and gating every minor is mandatory, not optional
-    ([zod #4497](https://github.com/colinhacks/zod/issues/4497)).
--   **Transforms are a genuine blind spot.** An un-versioned `transform` forces
-    refuse-to-cache; this is correct but costs the cache for transform-heavy
-    stitches until the author adds `cache.transformVersion`.
--   **Over-invalidation by design.** Strong-by-default fingerprints will bump on
-    cosmetic schema refactors (e.g. inlining a sub-schema) unless a weak strategy
-    is chosen. We accept refetch cost over staleness risk.
--   **Do not lean on StandardJSONSchemaV1 yet.** It is new (Dec 2025) with limited
-    adoption; treat it as an optional fallback substrate, not the foundation.
+- **Per-validator effort.** Each vendor needs a strategy and a conformance-gated
+  CI matrix; there is no shared shortcut (the spec surface forbids it).
+- **Internals are undocumented-ish and version-sensitive.** Pinning to a major
+  and gating every minor is mandatory, not optional
+  ([zod #4497](https://github.com/colinhacks/zod/issues/4497)).
+- **Transforms are a genuine blind spot.** An un-versioned `transform` forces
+  refuse-to-cache; this is correct but costs the cache for transform-heavy
+  stitches until the author adds `cache.transformVersion`.
+- **Over-invalidation by design.** Strong-by-default fingerprints will bump on
+  cosmetic schema refactors (e.g. inlining a sub-schema) unless a weak strategy
+  is chosen. We accept refetch cost over staleness risk.
+- **Do not lean on StandardJSONSchemaV1 yet.** It is new (Dec 2025) with limited
+  adoption; treat it as an optional fallback substrate, not the foundation.
 
 ## Resolved decisions
 
--   **Default for an unknown/unregistered vendor (or any un-fingerprintable output
-    schema): refuse-to-cache.** Decided 2026-06-14. Failing closed is unambiguously
-    sound (re-validate-on-hit assumes idempotent validation), and a missing
-    fingerprint package surfaces as a clear, actionable reason rather than a silent
-    perf tax. Re-validate-on-hit is retained as an explicit opt-in
-    (`cache.onUnfingerprintable: 'revalidate'`). A stitch with **no** output schema
-    still caches fast (no shape to go stale). Placement (bare-stitch vs subpath) does
-    not change the default — both fail closed.
+- **Default for an unknown/unregistered vendor (or any un-fingerprintable output
+  schema): refuse-to-cache.** Decided 2026-06-14. Failing closed is unambiguously
+  sound (re-validate-on-hit assumes idempotent validation), and a missing
+  fingerprint package surfaces as a clear, actionable reason rather than a silent
+  perf tax. Re-validate-on-hit is retained as an explicit opt-in
+  (`cache.onUnfingerprintable: 'revalidate'`). A stitch with **no** output schema
+  still caches fast (no shape to go stale). Placement (bare-stitch vs subpath) does
+  not change the default — both fail closed.
 
 ## Open questions
 
--   Should core ship a **first-party Typebox strategy** in core's test fixtures
-    (since Typebox _is_ JSON Schema and needs no converter), or keep even that in a
-    vendor package for consistency?
--   Is a `weak` strategy worth shipping per-vendor, or is strong-by-default
-    sufficient until a concrete refetch-cost complaint arrives?
--   Empirically: do any target validators change introspection internals under
-    **semver-minor** (not just major)? The conformance matrix will answer this per
-    vendor; until it runs, treat minor-stability as unproven.
+- Should core ship a **first-party Typebox strategy** in core's test fixtures
+  (since Typebox _is_ JSON Schema and needs no converter), or keep even that in a
+  vendor package for consistency?
+- Is a `weak` strategy worth shipping per-vendor, or is strong-by-default
+  sufficient until a concrete refetch-cost complaint arrives?
+- Empirically: do any target validators change introspection internals under
+  **semver-minor** (not just major)? The conformance matrix will answer this per
+  vendor; until it runs, treat minor-stability as unproven.
 
 ## Implementation status
 
 Shipped and **wired into the ADR 0003 response cache** (each piece unit- and
 conformance-tested):
 
--   **`stitchapi/fingerprint`** — the contract: `SchemaFingerprinter` /
-    `SchemaFingerprint`, the registry (`registerFingerprinter` /
-    `getFingerprinter`), the synchronous `hash`, and `resolveFingerprint`
-    (the ladder). Browser-safe, synchronous, no new core dependency. `hash` now
-    rides the **same 128-bit `xxh128`** the cache key uses (the shared `src/hash.ts`
-    primitive) — the swap this module always anticipated, a one-time safe
-    over-invalidation of the opaque token.
--   **The fold (`stitchapi/cache`)** — `createCache` calls `resolveFingerprint`
-    once per stitch from its `output`/`transform`/`unwrap` + the `cache` options
-    (`version`, `transformVersion`, `trustTransform`, `onUnfingerprintable`). The
-    `generation` token folds into the cache namespace **alongside** the per-stitch
-    generation counter (so a schema/unwrap/versioned-transform change moves the
-    bucket while bulk-invalidate still bumps the counter); the `policy` selects
-    fast / re-validate-on-hit / refuse; the `reason` is surfaced on the cache
-    trace. The raw schema reaches the resolver because `toValidator` keeps a
-    non-enumerable `source` back-reference (the Validator wrapper otherwise hides
-    `~standard`).
--   **`stitchapi/testing` → `verifyFingerprintContract`** — the conformance kit
-    (vendor agreement, sync result-shape, determinism + stability, sensitivity,
-    soundness-or-abstain, committed snapshots).
--   **Five vendor packages**, each with the validator as a _peer_ dependency and
-    each proving compliance via the kit:
-    -   `@stitchapi/fingerprint-zod` — walks `_def` (Zod 3) and `_zod.def`
-        (Zod 4); abstains on `ZodEffects`/`.default`/custom checks.
-    -   `@stitchapi/fingerprint-valibot` — walks `.type`/`.entries`/`.pipe`;
-        abstains on transformation/`check`/`custom` actions, function
-        requirements, and injected defaults.
-    -   `@stitchapi/fingerprint-arktype` — hashes the canonical `t.json`;
-        abstains on `$ark.fn` morph/predicate refs (opaque _and_
-        non-deterministic) and on defaults.
-    -   `@stitchapi/fingerprint-effect` — walks the `.ast`; abstains on
-        `Transformation`/`Refinement`/`Suspend`/`Declaration`. Consumes
-        `Schema.standardSchemaV1(schema)` (a raw Effect schema carries no
-        `~standard`).
-    -   `@stitchapi/fingerprint-typebox` — canonical-hashes the JSON Schema;
-        abstains on `Type.Transform` (detected via symbol, recursively, since it
-        is invisible to `JSON.stringify`) and on opaque kinds. **Caveat:**
-        TypeBox 0.34 schemas have no `~standard`, so a TypeBox schema must be
-        surfaced as a Standard Schema (a thin wrapper today, or a future TypeBox
-        release) for the registry to dispatch to it; the package proves the
-        fingerprint logic.
+- **`stitchapi/fingerprint`** — the contract: `SchemaFingerprinter` /
+  `SchemaFingerprint`, the registry (`registerFingerprinter` /
+  `getFingerprinter`), the synchronous `hash`, and `resolveFingerprint`
+  (the ladder). Browser-safe, synchronous, no new core dependency. `hash` now
+  rides the **same 128-bit `xxh128`** the cache key uses (the shared `src/hash.ts`
+  primitive) — the swap this module always anticipated, a one-time safe
+  over-invalidation of the opaque token.
+- **The fold (`stitchapi/cache`)** — `createCache` calls `resolveFingerprint`
+  once per stitch from its `output`/`transform`/`unwrap` + the `cache` options
+  (`version`, `transformVersion`, `trustTransform`, `onUnfingerprintable`). The
+  `generation` token folds into the cache namespace **alongside** the per-stitch
+  generation counter (so a schema/unwrap/versioned-transform change moves the
+  bucket while bulk-invalidate still bumps the counter); the `policy` selects
+  fast / re-validate-on-hit / refuse; the `reason` is surfaced on the cache
+  trace. The raw schema reaches the resolver because `toValidator` keeps a
+  non-enumerable `source` back-reference (the Validator wrapper otherwise hides
+  `~standard`).
+- **`stitchapi/testing` → `verifyFingerprintContract`** — the conformance kit
+  (vendor agreement, sync result-shape, determinism + stability, sensitivity,
+  soundness-or-abstain, committed snapshots).
+- **Five vendor packages**, each with the validator as a _peer_ dependency and
+  each proving compliance via the kit:
+    - `@stitchapi/fingerprint-zod` — walks `_def` (Zod 3) and `_zod.def`
+      (Zod 4); abstains on `ZodEffects`/`.default`/custom checks.
+    - `@stitchapi/fingerprint-valibot` — walks `.type`/`.entries`/`.pipe`;
+      abstains on transformation/`check`/`custom` actions, function
+      requirements, and injected defaults.
+    - `@stitchapi/fingerprint-arktype` — hashes the canonical `t.json`;
+      abstains on `$ark.fn` morph/predicate refs (opaque _and_
+      non-deterministic) and on defaults.
+    - `@stitchapi/fingerprint-effect` — walks the `.ast`; abstains on
+      `Transformation`/`Refinement`/`Suspend`/`Declaration`. Consumes
+      `Schema.standardSchemaV1(schema)` (a raw Effect schema carries no
+      `~standard`).
+    - `@stitchapi/fingerprint-typebox` — canonical-hashes the JSON Schema;
+      abstains on `Type.Transform` (detected via symbol, recursively, since it
+      is invisible to `JSON.stringify`) and on opaque kinds. **Caveat:**
+      TypeBox 0.34 schemas have no `~standard`, so a TypeBox schema must be
+      surfaced as a Standard Schema (a thin wrapper today, or a future TypeBox
+      release) for the registry to dispatch to it; the package proves the
+      fingerprint logic.
 
 ## References
 
 Primary sources, verified during research (2026-06-14):
 
--   Standard Schema spec: [`index.ts`](https://github.com/standard-schema/standard-schema/blob/main/packages/spec/src/index.ts),
-    [JSON Schema sister spec / issue #21](https://github.com/standard-schema/standard-schema/issues/21),
-    [standardschema.dev/json-schema](https://standardschema.dev/json-schema)
--   Zod: [library-authors](https://zod.dev/library-authors),
-    [json-schema](https://zod.dev/json-schema),
-    [issue #4497 (`.value`→`.values`)](https://github.com/colinhacks/zod/issues/4497)
--   Effect: [Schema → JSON Schema](https://effect.website/docs/schema/json-schema/) ·
-    ArkType: [integrations](https://arktype.io/docs/integrations),
-    [configuration](https://arktype.io/docs/configuration) ·
-    Valibot: [JSON Schema guide](https://valibot.dev/guides/json-schema)
--   Function source hashing: [terser](https://terser.org/docs/options/),
-    [swc minification](https://swc.rs/docs/configuration/minification),
-    [TC39 stricter-function-toString](https://github.com/tc39/proposal-stricter-function-tostring),
-    [MDN `Function.prototype.toString`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/toString)
--   Prior art:
-    [tRPC `getQueryKey.ts`](https://github.com/trpc/trpc/blob/main/packages/react-query/src/internals/getQueryKey.ts),
-    [Zodios `hooks.ts`](https://github.com/ecyrbe/zodios-react/blob/main/src/hooks.ts),
-    [openapi-typescript `cli.js`](https://github.com/openapi-ts/openapi-typescript/blob/main/packages/openapi-typescript/bin/cli.js),
-    [TanStack Query `utils.ts`](https://github.com/TanStack/query/blob/main/packages/query-core/src/utils.ts),
-    [Apollo schema-reporting protocol](https://github.com/apollographql/apollo-schema-reporting-preview-docs/blob/master/schema-reporting-protocol.md),
-    [Apollo APQ](https://www.apollographql.com/docs/apollo-server/performance/apq),
-    [RFC 9110 §8.8](https://www.rfc-editor.org/rfc/rfc9110.txt),
-    [oasdiff `FINGERPRINT.md`](https://github.com/oasdiff/oasdiff/blob/main/docs/FINGERPRINT.md)
+- Standard Schema spec: [`index.ts`](https://github.com/standard-schema/standard-schema/blob/main/packages/spec/src/index.ts),
+  [JSON Schema sister spec / issue #21](https://github.com/standard-schema/standard-schema/issues/21),
+  [standardschema.dev/json-schema](https://standardschema.dev/json-schema)
+- Zod: [library-authors](https://zod.dev/library-authors),
+  [json-schema](https://zod.dev/json-schema),
+  [issue #4497 (`.value`→`.values`)](https://github.com/colinhacks/zod/issues/4497)
+- Effect: [Schema → JSON Schema](https://effect.website/docs/schema/json-schema/) ·
+  ArkType: [integrations](https://arktype.io/docs/integrations),
+  [configuration](https://arktype.io/docs/configuration) ·
+  Valibot: [JSON Schema guide](https://valibot.dev/guides/json-schema)
+- Function source hashing: [terser](https://terser.org/docs/options/),
+  [swc minification](https://swc.rs/docs/configuration/minification),
+  [TC39 stricter-function-toString](https://github.com/tc39/proposal-stricter-function-tostring),
+  [MDN `Function.prototype.toString`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/toString)
+- Prior art:
+  [tRPC `getQueryKey.ts`](https://github.com/trpc/trpc/blob/main/packages/react-query/src/internals/getQueryKey.ts),
+  [Zodios `hooks.ts`](https://github.com/ecyrbe/zodios-react/blob/main/src/hooks.ts),
+  [openapi-typescript `cli.js`](https://github.com/openapi-ts/openapi-typescript/blob/main/packages/openapi-typescript/bin/cli.js),
+  [TanStack Query `utils.ts`](https://github.com/TanStack/query/blob/main/packages/query-core/src/utils.ts),
+  [Apollo schema-reporting protocol](https://github.com/apollographql/apollo-schema-reporting-preview-docs/blob/master/schema-reporting-protocol.md),
+  [Apollo APQ](https://www.apollographql.com/docs/apollo-server/performance/apq),
+  [RFC 9110 §8.8](https://www.rfc-editor.org/rfc/rfc9110.txt),
+  [oasdiff `FINGERPRINT.md`](https://github.com/oasdiff/oasdiff/blob/main/docs/FINGERPRINT.md)

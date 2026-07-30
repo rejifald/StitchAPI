@@ -186,8 +186,7 @@ async function runRace(
  * cast to their call-signature view, not through this constraint.
  */
 export type Member =
-    | { readonly __stitch: true }
-    | { readonly __composable: true };
+    { readonly __stitch: true } | { readonly __composable: true };
 
 /**
  * A member's resolved output — `Awaited` of its call-signature return (a `StitchResult<O>` or a

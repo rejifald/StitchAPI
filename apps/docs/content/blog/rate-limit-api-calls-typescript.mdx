@@ -12,8 +12,8 @@ You need to rate-limit outbound API calls in TypeScript when an upstream caps ho
 
 These two answer different questions, and conflating them is the most common bug in a hand-rolled limiter.
 
--   **Rate** is _how fast_ — calls per unit time. "Five per second" is a pace: roughly one call every 200ms. It governs the gap between successive requests, not how many are open at once.
--   **Concurrency** is _how many at once_ — the in-flight cap. "At most two" means a third call waits until one of the first two returns, no matter how quickly that happens.
+- **Rate** is _how fast_ — calls per unit time. "Five per second" is a pace: roughly one call every 200ms. It governs the gap between successive requests, not how many are open at once.
+- **Concurrency** is _how many at once_ — the in-flight cap. "At most two" means a third call waits until one of the first two returns, no matter how quickly that happens.
 
 They're orthogonal. An upstream that tolerates a steady stream but falls over on fifty simultaneous sockets wants a concurrency cap. One that counts requests in a window and returns `429` past the count wants a rate cap. Most real limits are both, and a limiter that only spaces calls in time will still open a hundred sockets the instant they're all due.
 
@@ -35,9 +35,9 @@ async function paced<T>(fn: () => Promise<T>): Promise<T> {
 
 This holds one call site to roughly 5/s. It breaks the moment reality is bigger than one function:
 
--   **Multiple call sites.** Two modules each keep their own `last`, and the upstream sees the sum. Three of them at 5/s apiece is 15/s against a host that allows five — and you're back to meeting `429`s in production.
--   **No concurrency cap.** It spaces _starts_ but never counts in-flight requests. Slow responses pile up, and you breach a concurrency limit the timer never modeled.
--   **Multiple processes.** Scale to three instances behind a load balancer, or a dozen serverless isolates, and each keeps its own `last` in its own memory. Your real upstream rate is N times your cap, where N is however many copies happen to be running.
+- **Multiple call sites.** Two modules each keep their own `last`, and the upstream sees the sum. Three of them at 5/s apiece is 15/s against a host that allows five — and you're back to meeting `429`s in production.
+- **No concurrency cap.** It spaces _starts_ but never counts in-flight requests. Slow responses pile up, and you breach a concurrency limit the timer never modeled.
+- **Multiple processes.** Scale to three instances behind a load balancer, or a dozen serverless isolates, and each keeps its own `last` in its own memory. Your real upstream rate is N times your cap, where N is however many copies happen to be running.
 
 Every one of these is the same root issue: the budget lives in one variable in one place, and the limit it's protecting is shared somewhere wider.
 
@@ -90,9 +90,9 @@ The `setTimeout` version above is the honest floor. A handful of calls well unde
 
 Reach for `throttle` when you hit the first trigger:
 
--   **You start brushing the cap.** Reactive `429` handling works until volume approaches the ceiling; proactive pacing keeps you under it. That's the moment a declared rate is worth more than a caught error.
--   **The budget is shared across call sites or processes.** A second endpoint that draws from the same provider quota, or a second worker process, means the in-memory counter is silently undercounting. `pool: 'host'` and a `store` close that gap — the counter that moves is the one the upstream sees.
--   **You pair pacing with retry or auth.** A `throttle` alongside `retry` on the same stitch is one declaration; threading both through a hand-rolled limiter wrapping `fetch` is two separate maintenance surfaces.
+- **You start brushing the cap.** Reactive `429` handling works until volume approaches the ceiling; proactive pacing keeps you under it. That's the moment a declared rate is worth more than a caught error.
+- **The budget is shared across call sites or processes.** A second endpoint that draws from the same provider quota, or a second worker process, means the in-memory counter is silently undercounting. `pool: 'host'` and a `store` close that gap — the counter that moves is the one the upstream sees.
+- **You pair pacing with retry or auth.** A `throttle` alongside `retry` on the same stitch is one declaration; threading both through a hand-rolled limiter wrapping `fetch` is two separate maintenance surfaces.
 
 The line is whether the shared budget has grown past a single variable. While it hasn't, the limiter is fine. When it has — crossing that line is a field on the declaration, not a rewrite. The same call gains `throttle` applied by the engine rather than by convention.
 

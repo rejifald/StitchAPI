@@ -47,8 +47,7 @@ export interface DenoAtomicCheck {
 
 /** The outcome of an atomic commit. `ok: false` ⇒ a `check` failed; retry. */
 export type DenoAtomicCommitResult =
-    | { ok: true; versionstamp: string }
-    | { ok: false };
+    { ok: true; versionstamp: string } | { ok: false };
 
 /**
  * The fluent atomic builder Deno KV's `atomic()` returns. We use only the slice

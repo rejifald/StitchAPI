@@ -111,10 +111,10 @@ This is for AI agents, and the design is deliberate. A [tool-per-endpoint surfac
 
 Here's the part that makes four doors worth it rather than four times the work: the behavior you put on the declaration is the same through every door, because there's only the one declaration.
 
--   **Resilience.** The `retry: { attempts: 3, on: [429, 503] }` and `timeout: { total: '10s' }` above fire identically whether the call came from your app, a `curl`, or an agent. A flaky upstream is retried the same way for everyone.
--   **Auth.** `bearer(env('API_TOKEN'))` resolves at call time, on the server side of every door. The CLI user, the HTTP caller, and the agent all get data without ever seeing the token.
--   **Drift.** Wrap the `output` in `drift()` and a silently renamed upstream field surfaces as a leveled `error` / `warn` / `info` signal — through all four doors, not just the one you happened to test. ([Schema drift is a production bug](/blog/schema-drift-is-a-production-bug), caught at the boundary.)
--   **Observability.** Every door emits the same typed event stream. Tracing is off by default; opt in per stitch or with `STITCH_TRACE_*` env vars, and a CLI run, an HTTP request, and an agent call all record the same shape of trace.
+- **Resilience.** The `retry: { attempts: 3, on: [429, 503] }` and `timeout: { total: '10s' }` above fire identically whether the call came from your app, a `curl`, or an agent. A flaky upstream is retried the same way for everyone.
+- **Auth.** `bearer(env('API_TOKEN'))` resolves at call time, on the server side of every door. The CLI user, the HTTP caller, and the agent all get data without ever seeing the token.
+- **Drift.** Wrap the `output` in `drift()` and a silently renamed upstream field surfaces as a leveled `error` / `warn` / `info` signal — through all four doors, not just the one you happened to test. ([Schema drift is a production bug](/blog/schema-drift-is-a-production-bug), caught at the boundary.)
+- **Observability.** Every door emits the same typed event stream. Tracing is off by default; opt in per stitch or with `STITCH_TRACE_*` env vars, and a CLI run, an HTTP request, and an agent call all record the same shape of trace.
 
 You don't reconcile four policies. You change the stitch, and every front door changes with it.
 
@@ -128,8 +128,8 @@ Two doors cost almost nothing to run: the function is an import, the CLI exits w
 
 A few things to wire deliberately when you do:
 
--   **HTTP has no auth of its own.** It binds to `127.0.0.1` loopback on purpose. A public bind turns the registry into an open proxy. Put a gateway or reverse proxy in front; the stitch resolves its own credentials server-side regardless.
--   **Scope what each server exposes.** A destructive write that runs through one reviewed code path probably shouldn't be a tool an agent can invoke by name. Expose the registry an agent _should_ have, not your whole module.
+- **HTTP has no auth of its own.** It binds to `127.0.0.1` loopback on purpose. A public bind turns the registry into an open proxy. Put a gateway or reverse proxy in front; the stitch resolves its own credentials server-side regardless.
+- **Scope what each server exposes.** A destructive write that runs through one reviewed code path probably shouldn't be a tool an agent can invoke by name. Expose the registry an agent _should_ have, not your whole module.
 
 The point isn't turning everything on. It's that when a stitch belongs behind several doors, you described it once — and the doors share it instead of drifting apart.
 

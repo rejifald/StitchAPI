@@ -1,8 +1,8 @@
 # ADR 0016 — `.inspect()`: expose the raw body + drift findings
 
--   **Status:** Accepted (decided 2026-06-28; builds on [ADR 0015](./0015-schema-anchored-drift.md), merged in [#331](https://github.com/rejifald/StitchAPI/pull/331)). Implementation follows in the same PR line.
--   **Date:** 2026-06-28
--   **Tags:** drift, diagnostics, inspect, result-object, security, api-surface, accepted
+- **Status:** Accepted (decided 2026-06-28; builds on [ADR 0015](./0015-schema-anchored-drift.md), merged in [#331](https://github.com/rejifald/StitchAPI/pull/331)). Implementation follows in the same PR line.
+- **Date:** 2026-06-28
+- **Tags:** drift, diagnostics, inspect, result-object, security, api-surface, accepted
 
 > [!NOTE]
 >
@@ -25,11 +25,11 @@
 
 Under [0015](./0015-schema-anchored-drift.md):
 
--   A stitch resolves to the **validated** value, so the **raw body is lost** to
-    an `await` consumer.
--   Soft findings (`undeclared` / `coerced` / `defaulted`) ride the **event
-    stream only** (`{ type: 'drift', finding }`), so an `await` consumer never
-    sees them.
+- A stitch resolves to the **validated** value, so the **raw body is lost** to
+  an `await` consumer.
+- Soft findings (`undeclared` / `coerced` / `defaulted`) ride the **event
+  stream only** (`{ type: 'drift', finding }`), so an `await` consumer never
+  sees them.
 
 For after-the-fact analysis — "the schema `coerced` `user.age`; what did the
 server actually send?" — you need both, on the resolved result, without
@@ -112,31 +112,31 @@ The hard-fail (contract-violation) path throws before surfacing the body. Carry
 
 ## Caveats (documented behaviour)
 
--   **`.inspect()` diverges from `await`.** `await api.users(input)` may be a 0 ms
-    cache hit; `.inspect(input)` always hits the network. It is "probe a fresh
-    call now," not "observe what my cached call did."
--   **Streaming surfaces:** `raw` is `null` (no single buffered body — the engine
-    refuses to buffer an unbounded delta spine). `findings` and `status` still
-    populate; use `.stream()` `delta`/`drift` events for incremental inspection.
+- **`.inspect()` diverges from `await`.** `await api.users(input)` may be a 0 ms
+  cache hit; `.inspect(input)` always hits the network. It is "probe a fresh
+  call now," not "observe what my cached call did."
+- **Streaming surfaces:** `raw` is `null` (no single buffered body — the engine
+  refuses to buffer an unbounded delta spine). `findings` and `status` still
+  populate; use `.stream()` `delta`/`drift` events for incremental inspection.
 
 ## Consequences
 
--   One new method per stitch; one new exported type (`Inspection<T>`).
--   No change to `await` / `.safe()` / `.unwrap()` types — `value` stays pure `T`.
--   Cache-bypass-by-default makes `.inspect()` a network call; documented loudly.
+- One new method per stitch; one new exported type (`Inspection<T>`).
+- No change to `await` / `.safe()` / `.unwrap()` types — `value` stays pure `T`.
+- Cache-bypass-by-default makes `.inspect()` a network call; documented loudly.
 
 ## Future work / Out of scope
 
--   **Default redaction of `raw`** — ships unredacted-but-non-enumerable; revisit
-    with a `redact` option if an incident or demand justifies it.
--   **`source: 'live' | 'cache' | 'stream'` discriminator** — would disambiguate
-    why `raw` is `null`; it is diagnostic metadata → the enhanced-result-object,
-    not here.
--   **Array drift summarization in `classifyDiff`** — for an array-typed value,
-    summarize homogeneous drift as one finding (`detail: "all N elements: …"`,
-    optional sample index), per-element only on heterogeneity, so findings stay
-    proportional to distinct problems, not data size. This is a refinement to
-    **0015's `diff.ts`**, recommended alongside this work; `actual` retention here
-    keeps the full per-element detail recoverable regardless.
--   **The enhanced result object** (config, attempts, timing) — a separate ADR;
-    this one holds the line.
+- **Default redaction of `raw`** — ships unredacted-but-non-enumerable; revisit
+  with a `redact` option if an incident or demand justifies it.
+- **`source: 'live' | 'cache' | 'stream'` discriminator** — would disambiguate
+  why `raw` is `null`; it is diagnostic metadata → the enhanced-result-object,
+  not here.
+- **Array drift summarization in `classifyDiff`** — for an array-typed value,
+  summarize homogeneous drift as one finding (`detail: "all N elements: …"`,
+  optional sample index), per-element only on heterogeneity, so findings stay
+  proportional to distinct problems, not data size. This is a refinement to
+  **0015's `diff.ts`**, recommended alongside this work; `actual` retention here
+  keeps the full per-element detail recoverable regardless.
+- **The enhanced result object** (config, attempts, timing) — a separate ADR;
+  this one holds the line.

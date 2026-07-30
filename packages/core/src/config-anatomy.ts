@@ -185,9 +185,7 @@ export type ToggleSlot = SlotsWhere<{ toggle: true }>;
  * re-declare it becomes a compile error instead of a resolved type that still admits the scalar.
  */
 export type NormalizedSlot =
-    | ShorthandSlot
-    | ToggleSlot
-    | SlotsWhere<{ normalized: true }>;
+    ShorthandSlot | ToggleSlot | SlotsWhere<{ normalized: true }>;
 /** Slots reported as configured/not in the `mcp` `policies` summary. */
 export type PolicySlot = SlotsWhere<{ policy: true }>;
 /** Slots that appear in the pipeline read-out. */
