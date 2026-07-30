@@ -184,3 +184,58 @@ jobs:
                       exit 1
                   fi
                   echo "✓ all publishable packages are on the registry at $TAG"
+
+    # Release-attached SBOM. `--provenance` above proves WHERE each tarball was built and
+    # from which commit; an SBOM states WHAT is in the tree it was built from. Enterprise
+    # procurement asks for the second artifact by name, and neither the provenance
+    # attestation nor a zero-dependency badge substitutes for it.
+    #
+    # Both formats ship because buyers cite different ones: SPDX (ISO/IEC 5962) is what US
+    # federal procurement references under EO 14028, CycloneDX is what most scanners
+    # ingest natively. Generating both costs one extra Syft pass.
+    #
+    # Runs after publish so an SBOM never describes a release that failed to reach the
+    # registry, and deliberately does NOT `pnpm install`: Syft reads pnpm-lock.yaml
+    # directly, so the SBOM describes the committed lockfile rather than whatever a fresh
+    # resolve happened to produce on the day of the run.
+    sbom:
+        needs: publish-npm
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            contents: write # attach the SBOMs as GitHub release assets
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Generate SPDX SBOM
+              uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+              with:
+                  path: .
+                  format: spdx-json
+                  output-file: stitchapi-${{ github.event.release.tag_name }}.spdx.json
+                  upload-artifact: false
+                  upload-release-assets: false
+
+            - name: Generate CycloneDX SBOM
+              uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+              with:
+                  path: .
+                  format: cyclonedx-json
+                  output-file: stitchapi-${{ github.event.release.tag_name }}.cdx.json
+                  upload-artifact: false
+                  upload-release-assets: false
+
+            # `gh release upload` rather than the action's own uploader: it is one legible
+            # step for both files, and --clobber makes a re-run after a partial publish
+            # idempotent the same way the publish loop above is.
+            - name: Attach SBOMs to the release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  TAG: ${{ github.event.release.tag_name }}
+              run: |
+                  set -euo pipefail
+                  gh release upload "$TAG" \
+                      "stitchapi-$TAG.spdx.json" \
+                      "stitchapi-$TAG.cdx.json" \
+                      --clobber
+                  echo "✓ SPDX + CycloneDX SBOMs attached to release $TAG"

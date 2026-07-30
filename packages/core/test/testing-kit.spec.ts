@@ -75,9 +75,12 @@ describe('mockAdapter — testing a stitch definition', () => {
     });
 
     test('delay is abortable: a per-attempt timeout cancels the slow response', async () => {
+        // Same shape as resilience.spec.ts §6: the 2s delay is 100× the deadline so the RATIO
+        // separates "aborted" from "waited it out", instead of a tight absolute margin that an
+        // event-loop stall on a loaded runner can cross. See that test for the measurements.
         const api = mockAdapter({
             match: '/slow',
-            respond: { delay: 1000, body: { ok: true } },
+            respond: { delay: 2000, body: { ok: true } },
         });
         const call = stitch({
             baseUrl: 'https://api.test',
@@ -90,8 +93,11 @@ describe('mockAdapter — testing a stitch definition', () => {
         const res = await call.safe();
         const elapsed = Date.now() - t0;
 
+        // Failed, and failed *because the deadline passed* — not merely "not ok".
         expect(res.ok).toBe(false);
-        expect(elapsed).toBeLessThan(300); // aborted near 20ms, not after the 1000ms delay
+        expect(res.error?.message ?? '').toMatch(/timed?\s?out|timeout/i);
+        // Aborted near the 20ms deadline; loose ceiling, still 2× under the 2s delay.
+        expect(elapsed).toBeLessThan(1000);
     });
 
     test('an unmatched request throws by default', async () => {

@@ -56,6 +56,17 @@ must preserve it.
     `Surface` already do. This explicitly includes the key-derivation functions
     ([`keyOf`](#p6--key-is-a-string-keyof-is-a-function)) — they are sugar, not a
     blessed `__config` exception.
+-   **One exemption, and only one:** the schema slots `input` / `output` hold Standard
+    Schema validators, whose `validate` sits at depth 2. They are **not** sugar —
+    `export --openapi` reads them off `__config` to build its parameter and response
+    shapes, and unlike a `retry` envelope a schema is not reconstructible from a
+    function-stripped husk. They are therefore kept whole, and a `__config` carrying
+    them does **not** survive `JSON.stringify` unchanged; every other slot does. The
+    exemption is a named fact (`carriesSchema` in
+    [`config-anatomy.ts`](../packages/core/src/config-anatomy.ts)), not a gap, and
+    [`contract-p0.spec.ts`](../packages/core/test/contract-p0.spec.ts) pins it in both
+    directions: the validators survive, and nothing else does. Widening it means marking
+    another slot `carriesSchema` — a deliberate edit, reviewed as a contract change.
 
 > **Why first:** the program of adding shorthands (P12–P15) is safe **only** because
 > normalization keeps `__config` stable. A shorthand that leaked its scalar form onto

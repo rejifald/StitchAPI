@@ -7,7 +7,7 @@
 // transport (newline-delimited JSON), with no SDK — consistent with the library's
 // zero-dependency stance. `handle()` is transport-agnostic, so the same core can back a
 // Streamable HTTP transport too (see the `serve` surface for the HTTP pattern).
-import { endpointLabel, pipelineStages } from './config-summary';
+import { endpointLabel, pipelineStages, policySummary } from './config-summary';
 import { toMermaid } from './diagram';
 import { type StitchRegistry, selectStitch } from './registry';
 import type {
@@ -232,12 +232,7 @@ export function createMcpServer(
                 pick: cfg.pick ?? null,
             },
             auth: authTagOf(cfg),
-            policies: {
-                retry: cfg.retry !== undefined,
-                throttle: cfg.throttle !== undefined,
-                cache: cfg.cache !== undefined,
-                timeout: cfg.timeout !== undefined,
-            },
+            policies: policySummary(cfg),
             pipeline: pipelineStages(cfg),
             diagram: toMermaid(registry, { name: a.name }).diagram,
         });

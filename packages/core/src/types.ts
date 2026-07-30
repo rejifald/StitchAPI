@@ -1,6 +1,11 @@
 // Shared vocabulary for the prototype. Leaf modules (resilience, trace, http-adapter,
 // auth, mock-server) and the engine all code against these types.
 import type {
+    NormalizedSlot,
+    RedactedSlot,
+    ResolvedNormalizations,
+} from './config-anatomy';
+import type {
     Args,
     InputOf,
     RelaxKeys,
@@ -137,15 +142,17 @@ export interface StreamOptions {
     /** Decoder for a `stream` surface body. Default `'bytes'` (total + lossless). */
     decode?: StreamDecode;
     /**
-     * Max bytes a streaming decoder will buffer for a single un-terminated unit before throwing (the
-     * engine turns the throw into an `error` event). Guards every un-framed / never-closing case
-     * against growing client memory without limit (an OOM DoS):
+     * Max characters a streaming decoder will buffer for a single un-terminated unit before throwing
+     * (the engine turns the throw into an `error` event). Counts characters of the DECODED text —
+     * UTF-16 code units, so an astral character costs 2 — not bytes off the socket. Guards every
+     * un-framed / never-closing case against growing client memory without limit (an OOM DoS):
      *   - `'json'` — a single in-progress value (e.g. an unclosed `[`).
-     *   - `'lines'` / `'ndjson'` — a single un-terminated line (a run of bytes with no `\n`).
+     *   - `'lines'` / `'ndjson'` — a single un-terminated line (a run of text with no `\n`).
      *   - the `sse` surface — one un-dispatched event's `data:` payload (a frame with no blank line).
-     * Default ~8 MB (see `json-stream.ts`). Not meaningful for `decode: 'bytes'` (raw, unbuffered).
+     * Default ~8M characters (see `json-stream.ts`). Not meaningful for `decode: 'bytes'` (raw,
+     * unbuffered).
      */
-    maxBufferBytes?: number;
+    maxBufferChars?: number;
 }
 /**
  * Tuning for resumable SSE reconnection (issue #71). When enabled, the engine reopens a dropped
@@ -879,32 +886,8 @@ export type ResolvedCacheOptions = Omit<CacheOptions, 'vary' | 'methods'> & {
  * become their chained/normalized object, and every `T | T[]` list field is an array. This is the
  * shape the engine and {@link redactConfig} read — never the loose authoring union.
  */
-export type ResolvedStitchConfig = Omit<
-    StitchConfig,
-    | 'retry'
-    | 'timeout'
-    | 'cache'
-    | 'idempotency'
-    | 'throttle'
-    | 'stream'
-    | 'multipart'
-    | 'sse'
-    | 'circuit'
-    | 'hooks'
-    | 'input'
-> & {
-    retry?: RetryOptions;
-    timeout?: TimeoutOptions;
-    cache?: ResolvedCacheOptions;
-    idempotency?: IdempotencyOptions;
-    stream?: StreamOptions;
-    multipart?: MultipartOptions;
-    sse?: SseOptions;
-    throttle?: ThrottleOptions;
-    circuit?: CircuitOptions;
-    hooks?: Hooks;
-    input?: InputSchemas;
-};
+export type ResolvedStitchConfig = Omit<StitchConfig, NormalizedSlot> &
+    ResolvedNormalizations;
 
 /**
  * The PUBLIC, redacted projection of a {@link StitchConfig} that a stitch exposes as `__config`
@@ -914,15 +897,12 @@ export type ResolvedStitchConfig = Omit<
  * therefore round-trips as JSON (ADR 0005 Decision 11 — the contract gate) and is what `mcp` /
  * `diagram` / `stitch export --openapi` read.
  *
- * This is the HONEST runtime shape: `__config.auth` / `.store` / `.adapter` are always absent, and
- * `__config.kind` is the surface's `id` string — never a live {@link Surface}. (The full,
- * secret-bearing config lives on the non-enumerable `__rawConfig`, used only for fragment
+ * This is the HONEST runtime shape: `__config.auth` / `.store` / `.adapter` / `.trace` are always
+ * absent, and `__config.kind` is the surface's `id` string — never a live {@link Surface}. (The
+ * full, secret-bearing config lives on the non-enumerable `__rawConfig`, used only for fragment
  * composition.)
  */
-export type RedactedStitchConfig = Omit<
-    ResolvedStitchConfig,
-    'auth' | 'store' | 'adapter' | 'clock' | 'kind'
-> & {
+export type RedactedStitchConfig = Omit<ResolvedStitchConfig, RedactedSlot> & {
     /** The surface's `id` string (never the live {@link Surface}); absent for the default `http`. */
     kind?: string;
     /** Non-secret auth scheme projected from the (stripped) live `auth`; feeds `export --openapi`. */

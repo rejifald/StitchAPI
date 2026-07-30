@@ -120,16 +120,29 @@ const KB = 1024;
 // / ~0.28 KB gzip. The step restores the same tight ~0.2 KB headroom the gate is meant to hold. The
 // cost buys closing a HIGH credential-exfiltration hole — a deliberate trade the maintainer signs off
 // on by merging (see PR body for the exact before/after/Δ).
+// Budgets raised for the P0 `__config` redaction (24.80→24.90 / 20.00→20.10 KB; measured 24.83 /
+// 20.02). CONTRACT.md P0 says the public `__config` is plain JSON data, and it was not: endpoint
+// thunks, `transform`, `hooks`, the `paginate`/`retry`/`throttle`/`idempotency`/`cache` derivation
+// fns and a live `TraceSink` all rode onto it. That is an exfil-at-rest hole (ADR 0002 §4/§6 — a
+// public config view carrying live author closures) and a silent serialisation bug (a function
+// vanishes on `JSON.stringify`, corrupting every trace / report / `mcp` view of the stitch), so the
+// `stripFns` + `omit` pass is not optional. It sits in `redactConfig`, which every `makeStitch` call
+// runs, so it lifts `import { stitch }` as much as the whole entry and cannot move to a subpath.
+// The redaction itself is ~0.03 / ~0.02 KB over the OLD ceiling — the branch had been measuring
+// against a merge base from six days earlier and `main` had grown underneath it; the `trace` slot
+// added last costs 0.00 KB gzip. This is a MINIMUM step (0.07 / 0.08 KB headroom), not the ~0.2 KB
+// this gate usually restores: the overflow is small and the maintainer chose the smallest deliberate
+// bump that clears it (see PR #477 for the measured before/after).
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.8 * KB,
+        budget: 24.9 * KB,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 20.0 * KB,
+        budget: 20.1 * KB,
     },
 ];
 

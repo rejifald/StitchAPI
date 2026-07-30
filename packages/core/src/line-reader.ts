@@ -7,17 +7,18 @@
 // `stream`'s `'lines'` / `'ndjson'` decoders consume these lines directly; `sse`'s frame parser
 // layers the event-stream grammar on top (stripping a trailing `\r`, grouping by blank lines). They
 // share this plumbing, not a decoder — `text/event-stream` is a protocol, "lines" is not.
-import { JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES } from './json-stream';
+import { JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS } from './json-stream';
 
 /**
  * Read UTF-8 lines off `stream`, splitting on `\n` and yielding each line WITHOUT its terminator.
  *
- * `maxBufferBytes` caps the length of a single UN-TERMINATED line held in `buf`: an upstream that
- * streams bytes with no `\n` would otherwise grow client memory without limit (an OOM DoS), so once
- * the carry exceeds the cap we throw a descriptive Error instead. This mirrors the `'json'` decoder's
- * per-value cap (`json-stream.ts`) — same default (~8 MB), same "the engine turns the throw into an
+ * `maxBufferChars` caps the length — in characters of the DECODED text, not bytes off the socket —
+ * of a single UN-TERMINATED line held in `buf`: an upstream that streams bytes with no `\n` would
+ * otherwise grow client memory without limit (an OOM DoS), so once the carry exceeds the cap we throw
+ * a descriptive Error instead. This mirrors the `'json'` decoder's per-value cap (`json-stream.ts`)
+ * — same default (~8M chars), same "the engine turns the throw into an
  * `error` event" contract (`runStreaming`), so an abusive body fails the stream cleanly rather than
- * OOM-ing. Overridable per-stream via `stream.maxBufferBytes`.
+ * OOM-ing. Overridable per-stream via `stream.maxBufferChars`.
  *
  * On any completion — normal end OR an early generator `.return()` (a consumer `break`s without
  * aborting a signal) — the `finally` proactively `cancel()`s the underlying stream before releasing
@@ -27,18 +28,18 @@ import { JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES } from './json-stream';
  */
 export async function* lineReader(
     stream: ReadableStream<Uint8Array>,
-    maxBufferBytes: number = JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES,
+    maxBufferChars: number = JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS,
 ): AsyncGenerator<string, void> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buf = '';
-    // Guard the un-terminated carry: `buf` here holds only the bytes AFTER the last `\n`, so a
+    // Guard the un-terminated carry: `buf` here holds only the decoded text AFTER the last `\n`, so a
     // legitimate long-but-terminated line stream never trips it — only a run with no line break does.
     const guard = (): void => {
-        if (buf.length > maxBufferBytes) {
+        if (buf.length > maxBufferChars) {
             throw new Error(
-                `line reader: un-terminated line exceeded maxBufferBytes (${String(
-                    maxBufferBytes,
+                `line reader: un-terminated line exceeded maxBufferChars (${String(
+                    maxBufferChars,
                 )}); a stream with no newline was sent`,
             );
         }
