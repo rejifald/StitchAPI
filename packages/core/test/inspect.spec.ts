@@ -190,6 +190,27 @@ test('{ cache: true }: a cache hit yields value but raw null', async () => {
     expect(r.error).toBeNull();
 });
 
+test('the bare `true` is the `{ cache: true }` probe (P13)', async () => {
+    const { adapter, calls } = counting({ n: 1 });
+    const s = stitch({
+        url: URL,
+        adapter,
+        trace: false,
+        cache: { ttl: '60s', scope: 'app' },
+    });
+    expect(await s()).toEqual({ n: 1 }); // warm the cache
+    expect(calls()).toBe(1);
+
+    const r = await s.inspect(undefined, true); // ≡ { cache: true }
+    expect(calls()).toBe(1); // honoured the policy — no new origin call
+    expect(r.data).toEqual({ n: 1 });
+    expect(r.raw).toBeNull();
+
+    // …and `false` is the default: a fresh, cache-bypassing probe.
+    expect((await s.inspect(undefined, false)).raw).not.toBeNull();
+    expect(calls()).toBe(2);
+});
+
 // ---------------------------------------------------------------------------
 // 8. Streaming surface — `raw` is null (the engine refuses to buffer the delta spine); `value`
 //    (the collected chunks) and `status` still populate.

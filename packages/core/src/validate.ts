@@ -5,6 +5,7 @@
 // which is a protocol-level detail, not an app-facing API (and whose raw result carries no `ok`
 // discriminant and can hold non-array issue paths — both normalised here).
 import type { InferOutput, SchemaLike } from './infer';
+import type { DriftSpec } from './types';
 import { type ValidationResult, toValidator } from './validator';
 
 const UNSUPPORTED =
@@ -18,19 +19,26 @@ const UNSUPPORTED =
  * Reach for this when you validate many values against one schema: the coercion is paid here, not
  * on every call. For a one-off check, {@link validate} is the more direct spelling.
  *
- * `schema` is any {@link SchemaLike} — a hand-written Zod / Valibot / ArkType schema, any Standard
- * Schema (including one from `JsonSchema.adapt`), a `(value) => boolean` predicate, or a
- * {@link Validator}. It is the identical set of schemas a stitch accepts.
+ * `schema` is anything a stitch's `output` slot accepts (P23) — a hand-written Zod / Valibot /
+ * ArkType schema, any Standard Schema (including one from `JsonSchema.adapt`), a
+ * `(value) => boolean` predicate, a {@link Validator}, or a `drift(...)` spec (validated against
+ * its wrapped schema; the drift options don't apply outside a call).
  *
  * @example
  * const check = compile(userSchema);
  * const result = await check(payload);
  * if (result.ok) use(result.value); // else result.issues → [{ message, path }]
  */
-export function compile<S extends SchemaLike>(
+export function compile<S extends SchemaLike | DriftSpec>(
     schema: S,
 ): (value: unknown) => Promise<ValidationResult<InferOutput<S>>> {
-    const validator = toValidator(schema);
+    // Unwrap a `drift(...)` spec to its schema, so the standalone verbs take the identical set the
+    // `output` slot takes (P23 — one schema intake).
+    const source =
+        (schema as Partial<DriftSpec>).__kind === 'drift'
+            ? (schema as DriftSpec).schema
+            : (schema as SchemaLike);
+    const validator = toValidator(source);
     if (!validator) throw new TypeError(UNSUPPORTED);
     return (value) =>
         validator.validate(value) as Promise<ValidationResult<InferOutput<S>>>;
@@ -48,7 +56,7 @@ export function compile<S extends SchemaLike>(
  * const result = await validate(userSchema, payload);
  * if (result.ok) use(result.value); // else result.issues → [{ message, path }]
  */
-export function validate<S extends SchemaLike>(
+export function validate<S extends SchemaLike | DriftSpec>(
     schema: S,
     value: unknown,
 ): Promise<ValidationResult<InferOutput<S>>> {

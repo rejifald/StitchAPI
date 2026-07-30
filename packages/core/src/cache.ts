@@ -10,7 +10,7 @@
 import { resolveFingerprint } from './fingerprint';
 import type { CachePolicy } from './fingerprint';
 import { xxh128 } from './hash';
-import type { CacheOptions, StitchInput, StitchStore } from './types';
+import type { ResolvedCacheOptions, StitchInput, StitchStore } from './types';
 import { parseDuration } from './util';
 
 // The 128-bit synchronous non-crypto key hash now lives in the shared `./hash` module so the cache
@@ -347,7 +347,8 @@ export interface CacheController {
 }
 
 export interface CacheControllerOptions {
-    config: CacheOptions;
+    /** The stitch's cache block, post-`compose` — list fields are always arrays. */
+    config: ResolvedCacheOptions;
     store: StitchStore;
     stitchId: string;
     principal?: string;
@@ -367,11 +368,12 @@ export function createCache(opts: CacheControllerOptions): CacheController {
         m.toUpperCase(),
     );
     const maxEntries = config.entries ?? 1000;
-    // P7: a bare `vary` string is shorthand for a one-element list — normalize before keying.
-    const varyList =
-        typeof config.vary === 'string' ? [config.vary] : config.vary;
-    const explicitVary = varyList?.length
-        ? varyList.map((n) => n.toLowerCase()).filter((n) => !NEVER_VARY.has(n))
+    // Both list fields arrive as arrays: `compose` widened the P7 bare string on the way in, so the
+    // controller reads one settled shape rather than re-normalising per key.
+    const explicitVary = config.vary?.length
+        ? config.vary
+              .map((n) => n.toLowerCase())
+              .filter((n) => !NEVER_VARY.has(n))
         : undefined;
     // Fold the Standard Schema fingerprint (ADR 0004) ONCE, here at controller creation (which is
     // once per stitch — `ensureCache` memoises it). It resolves three things from the stitch's
