@@ -355,8 +355,11 @@ adapters, not react only.
 _Resolved (2026-07 sweep):_ the SSE helper is `streamStitchSse` on every host (was
 also `sendStitchSse` / `stitchSse`); error-options is one `StitchErrorOptions` shape
 (with `body`) everywhere (was `StitchErrorHandlerOptions` / `ToHttpExceptionOptions`);
-the hook result is `UseStitchResult` / `InjectStitchResult` over query-core's shared
-`StitchQueryResult`; `stitchQueryOptions` replaced the bare `queryOptions` in
+the hook result is `UseStitchResult` (react) / `VueUseStitchResult` /
+`InjectStitchResult` (angular) over query-core's shared `StitchQueryResult` — the vue one
+is framework-qualified because wrapping each field in a `ComputedRef` makes it
+unassignable to react's raw shape in either direction, the `SolidStitchStore` /
+`SvelteStitchStore` case; `stitchQueryOptions` replaced the bare `queryOptions` in
 vue/solid/svelte/angular.
 
 _Settled:_ the SSE frame options are **`delta`** and **`error`** on every SSE-capable
@@ -653,13 +656,19 @@ the GA channel. Severity = consumer blast radius.
 **Still open.** The row below is CLI-internal — `from-curl.ts` is imported by `cli.ts`
 alone, exported from no index and behind no subpath — but it is **not** the whole open
 set. A follow-up audit (2026-07-31) swept every principle against the published surface
-and found further violations that no rule in [§7](#7-enforcement) was tracking, across
-**P4** (`maxTokens`), **P9** (`UseStitchResult` declared incompatibly by react and vue),
-**P14**, **P16** (nest's SSE options, and solid/svelte accepting a `streaming` they
-ignore) and **P20** (slots typed `Fn | Options` or `Options | false`, so `{}` still
-compiles). They are tracked and fixed separately; the ratchet is being widened first so
-the gate holds them once fixed. A green baseline meant "nothing the rules can see", not
-"nothing there".
+and found further violations that no rule in [§7](#7-enforcement) was tracking. A green
+baseline meant "nothing the rules can see", not "nothing there" — so the rules were
+widened first, and each finding is then fixed against a gate that holds it:
+
+- **P20** — four slots typed `Fn | Options` or `Options | false`, where `{}` still
+  compiled. **Fixed** (`AtLeastOne`, and `errorHandler` gained the `true` spelling).
+- **P9** — `UseStitchResult` declared incompatibly by react and vue. **Fixed** (the vue
+  side is framework-qualified `VueUseStitchResult`).
+- **P4** — `maxTokens` (see the still-open note under
+  [P4](#p4--one-cap-vocabulary)). **Open.**
+- **P16** — nest's SSE options carry the flat spellings the _Settled_ clause above forbids;
+  solid and svelte accept a `streaming` they hard-set and ignore. **Open.**
+- **P14** — an anonymous inline shape on `SecurityScheme`'s oauth2 arm. **Open.**
 
 | Sev | Current                | Proposed   | Rule |
 | --- | ---------------------- | ---------- | ---- |
