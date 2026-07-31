@@ -143,11 +143,20 @@ const KB = 1024;
 // the types but never performed — `methods: 'POST'` threw). Headroom lands at 0.11 / 0.11, the same
 // tight step #477 took, not a restoration of the ~0.2 KB the gate usually holds (see PR #524 for
 // the measured before/after at each ref).
+// Whole entry 25.10→25.15 KB for the atomic `auth` extends slot. The overflow is literally ONE byte
+// (25703 vs a 25702 B ceiling): #485's apiKey cookie arm landed at 25.08 KB, leaving 0.02 KB, and
+// this fix spends it. It cannot move behind a subpath — it is a merge rule in `compose`, which every
+// stitch runs — and it is not optional: without it `deepMerge` splices a child strategy's `apply`
+// onto an inherited strategy's `refresh`/`scheme`, so a child `bearer` answered a 401 by running an
+// inherited oauth2's token request. This is a MINIMUM step (0.05 KB / ~49 B headroom), deliberately
+// NOT the ~0.2 KB the gate usually restores: ADR 0021 moves the whole auth surface behind
+// `stitchapi/auth`, which drops this entry to ~22.7 KB and takes the budget down with it. Until that
+// lands the entry is full, and this tight ceiling is the intended signal.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 25.1 * KB,
+        budget: 25.15 * KB,
     },
     {
         name: 'import { stitch }',

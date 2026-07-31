@@ -243,11 +243,13 @@ export function compose(config: Fragment): ResolvedStitchConfig {
         // Surface objects would corrupt their hooks/identity (ADR 0005 Decision 2).
         if (layer.kind) kind = layer.kind;
         // hooks/store/kind are accumulated above; strip them so deepMerge only folds the rest
-        // (exactOptionalPropertyTypes forbids spreading them back in as `undefined`).
+        // (exactOptionalPropertyTypes forbids spreading them back in as `undefined`). `auth` is
+        // stripped too and re-applied per layer below — it is the third atomic slot.
         const rest = { ...layer };
         delete rest.hooks;
         delete rest.store;
         delete rest.kind;
+        delete rest.auth;
         // Capture the raw `idempotency` toggle BEFORE `expandShorthand` normalizes it away — a
         // child `idempotency: false` must clear an inherited object (see the reconcile below), but
         // `expandShorthand` deletes `false` from this layer, so `deepMerge` would never see it and
@@ -271,6 +273,15 @@ export function compose(config: Fragment): ResolvedStitchConfig {
         // through the merge alone — reconcile it here, clearing the slot when this layer is the
         // last to set it and set it off.
         if (idempotencyToggle === false) delete merged.idempotency;
+        // Auth slot: atomic last-writer-wins, like the endpoint slot above — a strategy is a live
+        // object whose methods are OPTIONAL, so deep-merging two of them splices this layer's
+        // `apply` onto whichever of `shouldRefresh`/`refresh`/`scheme` only an earlier layer
+        // declares. A child `bearer` over an inherited `oauth2` answered a 401 by running oauth2's
+        // refresh — a real client_credentials token request to an endpoint the child never named —
+        // and published a blended `scheme` (`type: 'http'` carrying oauth2 `flows`), which is not a
+        // valid OpenAPI security scheme and reaches consumers through `__config.authScheme` and
+        // `stitch export --openapi`. One layer's strategy wins whole, or not at all.
+        if (layer.auth) merged.auth = layer.auth;
     }
     // The chained hooks / normalized input are the RESOLVED shapes (plain `Hooks`/`InputSchemas`),
     // past the authoring-side `AtLeastOne` gate (P20) — write them through the resolved view.
