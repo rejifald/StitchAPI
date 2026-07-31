@@ -151,9 +151,16 @@ bare `max`. A **magnitude** ceiling (a delay) MAY keep `max` when a bare noun wo
 ambiguous. Plural **`attempts`** = a running total; singular **`attempt`** = the
 current index.
 
-_Violations:_ `ReconnectOptions.maxAttempts` (→ `attempts`), `CacheConfig.maxEntries`
-(→ `entries`), `CircuitOptions.failureThreshold` (→ `failures`), `paginate.max`
-(→ `pages`). (`deno-kv maxIncrRetries` → `retry.attempts` — **fixed**, see [§6](#6-migration-backlog).)
+_Resolved (2026-07 sweep):_ every consumer-authored cap is a bare plural noun —
+`ReconnectOptions.maxAttempts`→`attempts`, `CacheOptions.maxEntries`→`entries`,
+`CircuitOptions.failureThreshold`→`failures` (landed with the P17 `CircuitOptions`
+overhaul), `paginate.max`→`pages`, `deno-kv maxIncrRetries`→`retry.attempts`
+(see [§6](#6-migration-record-2026-07-08-hard-break-sweep)).
+
+A `max*` spelling survives only on **resolved internals** — the reconnect policy in
+`engine.ts`, the local `maxEntries` in `cache.ts`, the `failureThreshold` local in
+`resilience.ts` — which name a computed value, never a field a consumer writes. That
+split is the rule's boundary: P4 governs the **authoring** surface.
 
 ---
 
@@ -419,7 +426,7 @@ The clean surface at 1.0 is worth more than continuity between two release candi
 
 _Aliases already shipped stay._ Relaxing the rule forward does not retroactively demand
 their removal: the `*Ms` duration aliases, `keyOf`, `StatusMatch`, and the rest listed in
-[§6](#6-migration-backlog) remain, pinned by their identity tests, until the GA cut
+[§6](#6-migration-record-2026-07-08-hard-break-sweep) remain, pinned by their identity tests, until the GA cut
 removes them together. Removing one now would itself be a break, for no gain.
 
 _Corollary — some contracts cannot alias at all._ Where the consumer **implements** an
@@ -627,21 +634,27 @@ parses the grammar instead of mirroring it.
 
 ## 6. Migration record (2026-07-08 hard-break sweep)
 
-Not normative. The rule is the law; these are the proposed target spellings the sweep
-will apply. While the line is pre-GA, each may land as a hard break or under a
-`@deprecated` alias — [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes
-the obligation to the GA channel. Severity = consumer blast radius.
+Not normative. The rule is the law; this records what the sweep applied and what is left.
+While the line is pre-GA, a rename may land as a hard break or under a `@deprecated` alias
+— [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes the obligation to
+the GA channel. Severity = consumer blast radius.
 
-| Sev  | Current                                                            | Proposed                                | Rule |
-| ---- | ------------------------------------------------------------------ | --------------------------------------- | ---- |
-| High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes         | hoist or qualify                        | P9   |
-| High | `queryOptions` bare in vue/solid/svelte/angular                    | `stitchQueryOptions`                    | P16  |
-| Med  | `OAuth2Opts`, `CookieSessionOpts`                                  | `OAuth2Options`, `CookieSessionOptions` | P3   |
-| Med  | `paginate` inline shape                                            | `PaginateOptions`                       | P14  |
-| Med  | SSE helper `sendStitchSse`/`stitchSse`                             | `streamStitchSse`                       | P16  |
-| Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions` | `StitchErrorOptions` (+ `body`)         | P16  |
-| Low  | `RedisDriver…quit`, sync `close`                                   | async `close`                           | P18  |
-| Low  | `bodyKind` (from-curl)                                             | `bodyType`                              | P1   |
+**Still open** — one entry, and it is CLI-internal: `from-curl.ts` is imported by `cli.ts`
+alone, exported from no index and behind no subpath, so nothing on the published surface
+carries this name today.
+
+| Sev | Current                | Proposed   | Rule |
+| --- | ---------------------- | ---------- | ---- |
+| Low | `bodyKind` (from-curl) | `bodyType` | P1   |
+
+Everything else this table used to list has **shipped** and moved to the record below —
+the cross-package `StitchStore`/`StitchLike`/`RequestSeam` clashes (qualified per-framework
+and per-ecosystem), `queryOptions`→`stitchQueryOptions`, `OAuth2Opts`/`CookieSessionOpts`,
+the anonymous `paginate` shape, the SSE helper, the error-options types, and
+`RedisDriver`'s async `close` (`quit` survives only on the upstream client duck-types,
+which [P18](#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary)
+keeps at their upstream spelling). A backlog that still advertises finished work reads as a
+rule nobody enforces.
 
 New shorthand/toggle slots to **add** (additive, non-breaking): `.inspect()`
 scalars (P12); `idempotency` boolean (P13-toggle); `throttle` string (P14).
