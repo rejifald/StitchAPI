@@ -155,7 +155,7 @@ _Resolved (2026-07 sweep):_ every consumer-authored cap is a bare plural noun �
 `ReconnectOptions.maxAttempts`→`attempts`, `CacheOptions.maxEntries`→`entries`,
 `CircuitOptions.failureThreshold`→`failures` (landed with the P17 `CircuitOptions`
 overhaul), `paginate.max`→`pages`, `deno-kv maxIncrRetries`→`retry.attempts`
-(see [§6](#6-migration-backlog)).
+(see [§6](#6-migration-record-2026-07-08-hard-break-sweep)).
 
 A `max*` spelling survives only on **resolved internals** — the reconnect policy in
 `engine.ts`, the local `maxEntries` in `cache.ts`, the `failureThreshold` local in
@@ -426,7 +426,7 @@ The clean surface at 1.0 is worth more than continuity between two release candi
 
 _Aliases already shipped stay._ Relaxing the rule forward does not retroactively demand
 their removal: the `*Ms` duration aliases, `keyOf`, `StatusMatch`, and the rest listed in
-[§6](#6-migration-backlog) remain, pinned by their identity tests, until the GA cut
+[§6](#6-migration-record-2026-07-08-hard-break-sweep) remain, pinned by their identity tests, until the GA cut
 removes them together. Removing one now would itself be a break, for no gain.
 
 _Corollary — some contracts cannot alias at all._ Where the consumer **implements** an
@@ -634,10 +634,14 @@ parses the grammar instead of mirroring it.
 
 ## 6. Migration record (2026-07-08 hard-break sweep)
 
-Not normative. The rule is the law; these are the proposed target spellings the sweep
-will apply. While the line is pre-GA, each may land as a hard break or under a
-`@deprecated` alias — [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes
-the obligation to the GA channel. Severity = consumer blast radius.
+Not normative. The rule is the law; this records what the sweep applied and what is left.
+While the line is pre-GA, a rename may land as a hard break or under a `@deprecated` alias
+— [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes the obligation to
+the GA channel. Severity = consumer blast radius.
+
+**Still open** — one entry, and it is CLI-internal: `from-curl.ts` is imported by `cli.ts`
+alone, exported from no index and behind no subpath, so nothing on the published surface
+carries this name today.
 
 | Sev | Current                | Proposed   | Rule |
 | --- | ---------------------- | ---------- | ---- |
