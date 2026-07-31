@@ -375,6 +375,41 @@ describe('stitchPlugin', () => {
         expect(res.statusCode).toBe(429);
     });
 
+    test('errorHandler:true registers the default mapping (the new P13 spelling, at runtime)', async () => {
+        // `true` never type-checked before, so this asserts the RUNTIME honours it — not just
+        // that the signature widened. It must behave exactly like omitting the key: register
+        // the 502-by-default mapping, NOT pass `true` through to `stitchErrorHandler`.
+        const { adapter } = fakeAdapter(() => ({
+            status: 503,
+            headers: {},
+            body: {},
+        }));
+        const app = Fastify();
+        apps.push(app);
+        await app.register(stitchPlugin, {
+            seamConfig: { baseUrl: 'https://api.test', adapter },
+            logger: false,
+            errorHandler: true,
+        });
+        app.get('/boom', async (request) =>
+            request.stitch.stitch({ path: '/boom' })(),
+        );
+        await app.ready();
+
+        const res = await app.inject({ method: 'GET', url: '/boom' });
+        expect(res.statusCode).toBe(502);
+    });
+
+    test('the empty errorHandler bag is rejected (compile-time, P20)', () => {
+        void (() =>
+            // @ts-expect-error — `{}` is not a valid bag: enable-with-defaults is `true`
+            Fastify().register(stitchPlugin, {
+                seamConfig: { baseUrl: 'https://api.test' },
+                errorHandler: {},
+            }));
+        expect(true).toBe(true);
+    });
+
     test('non-stitch errors are rethrown for Fastify default handling', async () => {
         const { adapter } = fakeAdapter(() => ({
             status: 200,
