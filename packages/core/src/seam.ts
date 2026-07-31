@@ -38,7 +38,7 @@ import { envelope, systemClock } from './util';
 let seamCounter = 0;
 
 // The seam builds throttles from the RAW authoring config (before `compose` runs for the member),
-// so expand the rate-string shorthand here: `'2/s'` ≡ `{ rate: '2/s' }`.
+// so expand the P12 rate-string shorthand here: `'2/s'` ≡ `{ rate: '2/s' }`.
 const throttleOptions = (
     t: StitchConfig['throttle'],
 ): ThrottleOptions | undefined => envelope(t, 'rate');
@@ -105,9 +105,16 @@ function makeBuild(shared: SharedSeam, principal: string | undefined) {
             ? chainThrottle([shared.throttle, local])
             : shared.throttle;
 
+        // A member's `extends` may be the single-fragment shorthand (P7) — fold it into the list.
+        const ownExtends =
+            own.extends === undefined
+                ? []
+                : Array.isArray(own.extends)
+                  ? own.extends
+                  : [own.extends];
         const cfg: Partial<StitchConfig> = {
             ...own,
-            extends: [shared.fragment, ...(own.extends ?? [])],
+            extends: [shared.fragment, ...ownExtends],
         };
         if (isGql) {
             cfg.kind = graphqlSurface;

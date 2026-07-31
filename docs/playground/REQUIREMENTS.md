@@ -73,9 +73,9 @@ runs code.
 
 Not yet built; this is the intended composition. See RATIONALE.md §"Reference stack".
 
--   **Editor:** CodeMirror 6 (TS/JSX language + theme sync). Lighter than Monaco; richer than a Prism textarea.
--   **Transpiler:** Sucrase (fast, tiny, TS+JSX erasure — what `react-runner` uses). Fallback: `@babel/standalone`.
--   **Execution:** in-page async `Function` constructor with injected scope and captured console:
+- **Editor:** CodeMirror 6 (TS/JSX language + theme sync). Lighter than Monaco; richer than a Prism textarea.
+- **Transpiler:** Sucrase (fast, tiny, TS+JSX erasure — what `react-runner` uses). Fallback: `@babel/standalone`.
+- **Execution:** in-page async `Function` constructor with injected scope and captured console:
 
 ```ts
 const js = transform(code, {
@@ -96,14 +96,14 @@ from the docs origin for DOM isolation while preserving the same-origin fetch (�
 
 ## 5. Transpiler decision points
 
--   **Sucrase vs `@babel/standalone`:** Sucrase is smaller and faster and does exactly
-    the erasure we need; Babel is the officially-blessed browser build (it powers the
-    Babel REPL / JSFiddle) and bundles `typescript` + `react` presets. Either works —
-    Sucrase is the default, Babel the fallback. **esbuild-wasm is overkill** (ships a
-    WASM binary) for a fetch-wrapper snippet.
--   **No type-checking:** both only erase types. If we want red squiggles for type
-    errors later, that's a separate CodeMirror + `@typescript/vfs` concern, not the
-    runner's job.
+- **Sucrase vs `@babel/standalone`:** Sucrase is smaller and faster and does exactly
+  the erasure we need; Babel is the officially-blessed browser build (it powers the
+  Babel REPL / JSFiddle) and bundles `typescript` + `react` presets. Either works —
+  Sucrase is the default, Babel the fallback. **esbuild-wasm is overkill** (ships a
+  WASM binary) for a fetch-wrapper snippet.
+- **No type-checking:** both only erase types. If we want red squiggles for type
+  errors later, that's a separate CodeMirror + `@typescript/vfs` concern, not the
+  runner's job.
 
 ---
 
@@ -144,16 +144,16 @@ the browser `stitch` build must shim them:
 
 ## 8. Security model
 
--   Snippet code runs in the **visitor's own browser**; blast radius is their session.
--   **Isolation:** prefer a same-origin `<iframe sandbox="allow-scripts allow-same-origin">`
-    so snippet code can't read/modify the docs app's DOM or state, while still reaching
-    the same-origin `/api` proxy. In-page eval is acceptable for v1 given the small
-    surface, but iframe isolation is the belt-and-suspenders target.
--   **The proxy is the trust boundary.** It MUST allowlist destination hosts (no
-    arbitrary user-supplied URLs → no SSRF / open relay), inject secrets server-side,
-    and rate-limit. Never expose a wildcard "fetch anything" forwarder.
--   **CSP:** the eval approach needs a CSP that permits it in the sandbox without
-    loosening the rest of the docs site — validate in the spike.
+- Snippet code runs in the **visitor's own browser**; blast radius is their session.
+- **Isolation:** prefer a same-origin `<iframe sandbox="allow-scripts allow-same-origin">`
+  so snippet code can't read/modify the docs app's DOM or state, while still reaching
+  the same-origin `/api` proxy. In-page eval is acceptable for v1 given the small
+  surface, but iframe isolation is the belt-and-suspenders target.
+- **The proxy is the trust boundary.** It MUST allowlist destination hosts (no
+  arbitrary user-supplied URLs → no SSRF / open relay), inject secrets server-side,
+  and rate-limit. Never expose a wildcard "fetch anything" forwarder.
+- **CSP:** the eval approach needs a CSP that permits it in the sandbox without
+  loosening the rest of the docs site — validate in the spike.
 
 ---
 
@@ -161,17 +161,17 @@ the browser `stitch` build must shim them:
 
 The deferred work is "done enough" when, wired into the playground UI with the in-house runner:
 
--   [ ] Running `const u = await stitch('https://reqres.in/api/users/2'); console.log(u);`
-        renders the `console.log`, the resolved value, and `done · <ms>`.
--   [ ] A TS snippet with annotations (`const n: number = …`) runs (types erased).
--   [ ] A failing request (404 / network) renders a clean `RunError`, not a crash, and
-        does not reject `run()`.
--   [ ] Top-level `await` works without the author wrapping an IIFE themselves.
--   [ ] `console.*` is captured in order and does not leak to the host page console.
--   [ ] **Stop** aborts an in-flight request via `signal`.
--   [ ] A Tier-2 snippet calling an authenticated endpoint succeeds via the proxy with
-        **no credential present in the editor source**.
--   [ ] No `window`/`globalThis` leakage between two consecutive runs.
+- [ ] Running `const u = await stitch('https://reqres.in/api/users/2'); console.log(u);`
+      renders the `console.log`, the resolved value, and `done · <ms>`.
+- [ ] A TS snippet with annotations (`const n: number = …`) runs (types erased).
+- [ ] A failing request (404 / network) renders a clean `RunError`, not a crash, and
+      does not reject `run()`.
+- [ ] Top-level `await` works without the author wrapping an IIFE themselves.
+- [ ] `console.*` is captured in order and does not leak to the host page console.
+- [ ] **Stop** aborts an in-flight request via `signal`.
+- [ ] A Tier-2 snippet calling an authenticated endpoint succeeds via the proxy with
+      **no credential present in the editor source**.
+- [ ] No `window`/`globalThis` leakage between two consecutive runs.
 
 ---
 

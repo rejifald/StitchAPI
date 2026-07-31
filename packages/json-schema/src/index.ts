@@ -59,8 +59,7 @@ interface AjvError {
  * custom compiled `check` (a Workers-safe validator, a draft-2020-12 engine, a shared instance).
  */
 export type JsonSchemaEngine =
-    | { readonly ajv: AjvLike }
-    | { readonly check: JsonSchemaCheck };
+    { readonly ajv: AjvLike } | { readonly check: JsonSchemaCheck };
 
 /**
  * Adapt a JSON Schema into a {@link StitchSchema} — a Standard Schema (https://standardschema.dev)

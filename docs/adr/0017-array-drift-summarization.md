@@ -1,8 +1,8 @@
 # ADR 0017 — Array drift summarization in `classifyDiff`
 
--   **Status:** Accepted (designed 2026-06-28; implemented in this PR; refines [ADR 0015](./0015-schema-anchored-drift.md), merged in [#331](https://github.com/rejifald/StitchAPI/pull/331)). One of the four items [ADR 0016](./0016-inspect-raw-and-findings.md), merged in [#334](https://github.com/rejifald/StitchAPI/pull/334), deferred.
--   **Date:** 2026-06-28
--   **Tags:** drift, diff, findings, proportionality, correctness
+- **Status:** Accepted (designed 2026-06-28; implemented in this PR; refines [ADR 0015](./0015-schema-anchored-drift.md), merged in [#331](https://github.com/rejifald/StitchAPI/pull/331)). One of the four items [ADR 0016](./0016-inspect-raw-and-findings.md), merged in [#334](https://github.com/rejifald/StitchAPI/pull/334), deferred.
+- **Date:** 2026-06-28
+- **Tags:** drift, diff, findings, proportionality, correctness
 
 > [!NOTE]
 >
@@ -78,20 +78,20 @@ per-variant findings ever leak a payload value, a property ADR 0018 leans on.)
 
 ### Emitted shape
 
--   **Homogeneous group** (one distinct `detail`): **one** finding.
-    -   `path` stays the `[]` grammar (`items[].x`) — dedup-stable and
-        `ignore`-compatible.
-    -   `detail` becomes **`all N elements: <detail>`** where `N` is the count of
-        affected elements.
-    -   add `sample` = a **concrete-index path** for the first occurrence
-        (`items[0].x`) so a consumer can drill into the real value.
--   **Heterogeneous group** (>1 distinct `detail`): **one finding per distinct
-    `detail` variant**, each with its own `count` and `sample` concrete index.
-    Output stays proportional to _distinct problems_, degrading to one-per-element
-    only when every element genuinely differs (the honest worst case). This is
-    strictly stronger than ADR 0016's note ("per-element only on heterogeneity"):
-    per-variant subsumes per-element and never floods on a near-homogeneous array
-    with a single outlier.
+- **Homogeneous group** (one distinct `detail`): **one** finding.
+    - `path` stays the `[]` grammar (`items[].x`) — dedup-stable and
+      `ignore`-compatible.
+    - `detail` becomes **`all N elements: <detail>`** where `N` is the count of
+      affected elements.
+    - add `sample` = a **concrete-index path** for the first occurrence
+      (`items[0].x`) so a consumer can drill into the real value.
+- **Heterogeneous group** (>1 distinct `detail`): **one finding per distinct
+  `detail` variant**, each with its own `count` and `sample` concrete index.
+  Output stays proportional to _distinct problems_, degrading to one-per-element
+  only when every element genuinely differs (the honest worst case). This is
+  strictly stronger than ADR 0016's note ("per-element only on heterogeneity"):
+  per-variant subsumes per-element and never floods on a near-homogeneous array
+  with a single outlier.
 
 `ignore` (path-based) and `severity` (change-based) apply **after** grouping, to
 the summarized/variant findings — unchanged semantics, since all elements share
@@ -132,45 +132,45 @@ streaming caveat and is documented, not hidden.
 
 ## Alternatives considered
 
--   **Keep first-wins dedup (status quo).** Rejected: silently drops
-    heterogeneous problems (gap 3) and reports no count/coordinate.
--   **Always one finding per element (no collapse).** Rejected: findings scale
-    with data size, not distinct problems — floods on large arrays, the precise
-    failure 0015's `[]` dedup was built to prevent.
--   **One finding per `change|path` always, just append a `count`.** Rejected:
-    fixes gaps 1–2 but not gap 3 — heterogeneous problems still merge and vanish.
--   **Cap at the first K elements sampled.** Rejected: a silent cap; a divergent
-    element past K is missed — the no-silent-truncation principle. (If a future
-    bound is ever needed, it must be logged, not silent.)
--   **Put `count`/`sample` in `diff.ts` (the structural diff).** Rejected: the
-    diff must stay index-precise so heterogeneity is _detectable_. Summarization
-    is a classify-layer concern; `diff.ts` is untouched.
+- **Keep first-wins dedup (status quo).** Rejected: silently drops
+  heterogeneous problems (gap 3) and reports no count/coordinate.
+- **Always one finding per element (no collapse).** Rejected: findings scale
+  with data size, not distinct problems — floods on large arrays, the precise
+  failure 0015's `[]` dedup was built to prevent.
+- **One finding per `change|path` always, just append a `count`.** Rejected:
+  fixes gaps 1–2 but not gap 3 — heterogeneous problems still merge and vanish.
+- **Cap at the first K elements sampled.** Rejected: a silent cap; a divergent
+  element past K is missed — the no-silent-truncation principle. (If a future
+  bound is ever needed, it must be logged, not silent.)
+- **Put `count`/`sample` in `diff.ts` (the structural diff).** Rejected: the
+  diff must stay index-precise so heterogeneity is _detectable_. Summarization
+  is a classify-layer concern; `diff.ts` is untouched.
 
 ## Consequences
 
--   `classifyDiff` gains a group/summarize pass; `diff.ts` unchanged.
--   `DriftFinding` gains one optional `sample` — additive; existing consumers and
-    the `drift` event are unaffected.
--   The existing "stripped field on 100 elements = 1 finding" test stays green,
-    now asserting `detail: "all 100 elements: …"` and `count`-in-detail.
--   Heterogeneous arrays surface every distinct problem instead of the first —
-    a behavior change that can _increase_ finding count on genuinely mixed data
-    (the point).
+- `classifyDiff` gains a group/summarize pass; `diff.ts` unchanged.
+- `DriftFinding` gains one optional `sample` — additive; existing consumers and
+  the `drift` event are unaffected.
+- The existing "stripped field on 100 elements = 1 finding" test stays green,
+  now asserting `detail: "all 100 elements: …"` and `count`-in-detail.
+- Heterogeneous arrays surface every distinct problem instead of the first —
+  a behavior change that can _increase_ finding count on genuinely mixed data
+  (the point).
 
 ## Engine / type touch-points
 
--   [`packages/core/src/drift.ts`](../../packages/core/src/drift.ts) —
-    `classifyDiff`: swap the per-diff `seen` loop for group-by-`change|path`, then
-    a `summarizeGroup` helper that branches on `detail` homogeneity; reuse
-    `detailFor` per variant. Apply `ignore`/`severity` after grouping.
--   [`packages/core/src/types.ts`](../../packages/core/src/types.ts) —
-    `DriftFinding`: add `sample?: string`. Flows to `Inspection.findings` and the
-    `drift` event for free (same type).
--   [`packages/core/src/diff.ts`](../../packages/core/src/diff.ts) — **no change**
-    (stays index-precise; precision is what makes heterogeneity detectable).
--   Tests: homogeneous vs heterogeneous array cases; scalar-array coercion; the
-    single-outlier-in-a-large-array case (one variant finding + one summary, not a
-    flood).
+- [`packages/core/src/drift.ts`](../../packages/core/src/drift.ts) —
+  `classifyDiff`: swap the per-diff `seen` loop for group-by-`change|path`, then
+  a `summarizeGroup` helper that branches on `detail` homogeneity; reuse
+  `detailFor` per variant. Apply `ignore`/`severity` after grouping.
+- [`packages/core/src/types.ts`](../../packages/core/src/types.ts) —
+  `DriftFinding`: add `sample?: string`. Flows to `Inspection.findings` and the
+  `drift` event for free (same type).
+- [`packages/core/src/diff.ts`](../../packages/core/src/diff.ts) — **no change**
+  (stays index-precise; precision is what makes heterogeneity detectable).
+- Tests: homogeneous vs heterogeneous array cases; scalar-array coercion; the
+  single-outlier-in-a-large-array case (one variant finding + one summary, not a
+  flood).
 
 ## Relationship to the other 0016 deferrals
 

@@ -70,7 +70,8 @@ The sharp edges are familiar. The two response interceptors fire in an order you
 A stitch is one endpoint as a typed, validated, resilient function. The interceptor stack above isn't ported line by line; it's _declared_ as data on the stitch.
 
 ```ts twoslash
-import { bearer, drift, env, oauth2, seam, stitch } from 'stitchapi';
+import { drift, seam, stitch } from 'stitchapi';
+import { bearer, env, oauth2 } from 'stitchapi/auth';
 import { z } from 'zod';
 
 declare const id: string;
@@ -117,7 +118,8 @@ You don't have to rip axios out to get the layer. Your configured instance — p
 ```ts twoslash
 // @noErrors
 import axios from 'axios';
-import { axiosAdapter, bearer, env, stitch } from 'stitchapi';
+import { axiosAdapter, stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 
 const client = axios.create({ proxy: false, httpsAgent: myAgent });
 
@@ -139,7 +141,8 @@ If nothing in your instance needed axios specifically, leave the adapter off. A 
 
 ```ts twoslash
 // ---cut---
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({ id: z.string(), name: z.string(), email: z.string() });
@@ -161,7 +164,8 @@ A mature codebase has many endpoints behind one host, sharing a base URL, an aut
 
 ```ts twoslash
 // ---cut---
-import { env, oauth2, seam } from 'stitchapi';
+import { seam } from 'stitchapi';
+import { env, oauth2 } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({ id: z.string(), name: z.string(), email: z.string() });

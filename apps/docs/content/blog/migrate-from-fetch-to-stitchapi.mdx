@@ -28,10 +28,10 @@ async function getUser(id: string): Promise<User> {
 
 It runs. It also carries four sharp edges that only show up off the happy path:
 
--   **No retry.** A single `503` or a dropped connection surfaces to the caller, even when the data was there a second earlier and one retry would have caught it.
--   **No timeout.** A hung connection blocks the `await` until the platform's default kills it — often minutes, sometimes never — and the call holds its slot the whole time.
--   **No validation.** `res.json() as User` is a cast, not a check. The runtime never compares the bytes to `User`, so a renamed or missing field flows downstream as the wrong type and crashes somewhere far from here.
--   **The token lives at the call site.** `process.env.API_TOKEN` is read inline, interpolated into a header, and now sits in this function's scope where every code path can see it.
+- **No retry.** A single `503` or a dropped connection surfaces to the caller, even when the data was there a second earlier and one retry would have caught it.
+- **No timeout.** A hung connection blocks the `await` until the platform's default kills it — often minutes, sometimes never — and the call holds its slot the whole time.
+- **No validation.** `res.json() as User` is a cast, not a check. The runtime never compares the bytes to `User`, so a renamed or missing field flows downstream as the wrong type and crashes somewhere far from here.
+- **The token lives at the call site.** `process.env.API_TOKEN` is read inline, interpolated into a header, and now sits in this function's scope where every code path can see it.
 
 Each fix is a known recipe — a retry loop, an `AbortController`, a schema parse, a secret helper — and each one is more code wrapped around the same call, in a function that grows until the request is the smallest part of it.
 
@@ -40,7 +40,8 @@ Each fix is a known recipe — a retry loop, an `AbortController`, a schema pars
 A stitch is the same request expressed as a declaration: the URL, the auth, the resilience policy, and the response shape are fields, and the engine applies them on every call.
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({
@@ -89,7 +90,8 @@ The `fetch` version tangles policy into the call: the retry loop, the abort plum
 **Declare the shared parts once, not per call.** When a second and third endpoint hit the same host with the same auth and retry, a [`seam`](/docs/guides/authoring/seam) holds that base and every stitch inherits it:
 
 ```ts twoslash
-import { bearer, env, seam } from 'stitchapi';
+import { seam } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({ id: z.string(), name: z.string() });
@@ -109,7 +111,8 @@ const listOrders = api.stitch({ path: '/orders', output: Orders });
 
 ```ts twoslash
 import { useQuery } from '@tanstack/react-query';
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const getUser = stitch({

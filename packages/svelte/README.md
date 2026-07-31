@@ -14,7 +14,7 @@ These stores are a thin layer over [`@stitchapi/query-core`](../query-core), the
 pnpm add @stitchapi/svelte@rc @stitchapi/query-core@rc stitchapi@rc svelte
 ```
 
-`stitchapi` and `svelte` (`^4 || ^5`) are peer dependencies. `@tanstack/svelte-query` is an **optional** peer — only needed if you use `queryOptions`.
+`stitchapi` and `svelte` (`^4 || ^5`) are peer dependencies. `@tanstack/svelte-query` is an **optional** peer — only needed if you use `stitchQueryOptions`.
 
 ## `stitchStore` — request / response
 
@@ -66,7 +66,7 @@ Same state shape as `stitchStore`. `data` is the accumulated chunks (`mode: 'app
 ## State shape
 
 ```ts
-interface StitchQueryState<T> {
+interface StitchQueryResult<T> {
     status: 'idle' | 'pending' | 'streaming' | 'success' | 'error';
     data: T | undefined;
     error: unknown;
@@ -82,13 +82,13 @@ The store value is this state; `refetch` / `cancel` are attached as methods on t
 
 ## Optional: TanStack Query
 
-`queryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/svelte-query` required, so it works even if you never install it.
+`stitchQueryOptions(stitch, input)` returns a plain `{ queryKey, queryFn }` object — no import of `@tanstack/svelte-query` required, so it works even if you never install it.
 
 ```ts
-import { queryOptions } from '@stitchapi/svelte';
+import { stitchQueryOptions } from '@stitchapi/svelte';
 import { createQuery } from '@tanstack/svelte-query';
 
-const query = createQuery(queryOptions(getUser, { params: { id } }));
+const query = createQuery(stitchQueryOptions(getUser, { params: { id } }));
 ```
 
 ## License

@@ -13,8 +13,9 @@
 // projects onto `__config` from the live `auth` (the credential itself is stripped; a strategy with
 // no declarable scheme, e.g. a jar-mode `cookieSession`, is simply left unannotated). Query/header
 // parameters declared via an `input` SCHEMA (rather than the URL template) are still not enumerated.
-// A stitch whose endpoint is a thunk (resolved at call time) cannot be exported statically; it is
-// reported as a warning, never dropped silently.
+// A stitch whose endpoint is a thunk (resolved at call time) cannot be exported statically; the
+// thunk never survives redaction (P0 — no functions on `__config`), so it shows up here as an
+// absent endpoint and is reported as a warning, never dropped silently.
 import { compact } from './compact';
 import type { StitchRegistry } from './registry';
 import { isStandardSchema } from './standard-schema';
@@ -181,14 +182,13 @@ const BODY_CONTENT_TYPE: Record<
 
 // Resolve a stitch's endpoint to a single string. `url` (string) is the whole endpoint; otherwise
 // `baseUrl` + `path` are joined — and when there is no `baseUrl`, `path` carries the whole endpoint
-// (the `stitch('https://…')` string form composes to `path`). A thunk `url`/`baseUrl` is resolved
-// at call time and cannot be exported statically.
-// `null` = nothing to export; `{ thunk: true }` = endpoint resolved at call time (unexportable).
-type ResolvedEndpoint = { value: string } | { thunk: true } | null;
+// (the `stitch('https://…')` string form composes to `path`). A thunk `url`/`baseUrl` never survives
+// redaction (P0 — no functions on `__config`), so an absent endpoint here means "never configured OR
+// resolved at call time" — either way there is nothing static to export.
+// `null` = nothing to export.
+type ResolvedEndpoint = { value: string } | null;
 
 function endpointOf(cfg: RedactedStitchConfig): ResolvedEndpoint {
-    if (typeof cfg.url === 'function' || typeof cfg.baseUrl === 'function')
-        return { thunk: true };
     if (typeof cfg.url === 'string') return { value: cfg.url };
     const base =
         typeof cfg.baseUrl === 'string' ? cfg.baseUrl.replace(/\/+$/, '') : '';
@@ -346,12 +346,8 @@ export function toOpenApi(
         const cfg = stitch.__config;
         const endpoint = endpointOf(cfg);
         if (endpoint === null) {
-            warnings.push(`skipped "${key}": no url/baseUrl/path to export`);
-            continue;
-        }
-        if ('thunk' in endpoint) {
             warnings.push(
-                `skipped "${key}": endpoint is a thunk (resolved at call time), not a static string`,
+                `skipped "${key}": no static url/baseUrl/path to export (a thunk endpoint is resolved at call time and never survives redaction)`,
             );
             continue;
         }

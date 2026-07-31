@@ -7,10 +7,10 @@ A **[Cloudflare Workers KV](https://developers.cloudflare.com/kv/)-backed
 the read-heavy halves of a stitch become fleet-wide, with **no change to the call
 site** (DESIGN §13):
 
--   **Cache** — cached responses live in KV, shared across every isolate and
-    surviving cold starts.
--   **Auth** — the cookie jar / token cache lives in KV, so sessions & tokens are
-    shared across isolates and persist between requests.
+- **Cache** — cached responses live in KV, shared across every isolate and
+  surviving cold starts.
+- **Auth** — the cookie jar / token cache lives in KV, so sessions & tokens are
+  shared across isolates and persist between requests.
 
 ```ts
 import { cloudflareKvStore } from '@stitchapi/cloudflare-kv';
@@ -49,9 +49,9 @@ is the overwhelmingly common edge need.
 KV's `expirationTtl` is in **seconds** and has a **60-second minimum**. The store
 reconciles this with the StitchStore contract's millisecond TTLs for you:
 
--   `ttl` (ms) → `Math.max(60, Math.ceil(ttl / 1000))` seconds.
--   So a value asked to live for 5s lives for 60s (harmless for caches/sessions).
--   No `ttl` → no expiry (`ttl` is optional on both `set` and `increment`).
+- `ttl` (ms) → `Math.max(60, Math.ceil(ttl / 1000))` seconds.
+- So a value asked to live for 5s lives for 60s (harmless for caches/sessions).
+- No `ttl` → no expiry (`ttl` is optional on both `set` and `increment`).
 
 `set(key, undefined)` deletes the key (the cache's delete, ADR 0003 §8). The store
 owns no connection, so there is no `close()`.

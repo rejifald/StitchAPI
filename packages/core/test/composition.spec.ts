@@ -1,5 +1,6 @@
 import { seam, stitch } from '../src';
 import type { StitchEvent } from '../src';
+import { bearer, env, oauth2 } from '../src/auth';
 import { compose } from '../src/stitch';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
@@ -61,6 +62,20 @@ test('extends facade produces the correct result', async () => {
 
     expect(result).toEqual(expected);
     expect(server.callCount('/items')).toBe(1);
+});
+
+// 1a) A single fragment is the one-element list (P7) — `Array.isArray` separates the two spellings,
+// so a bare partial (an object) and a `Stitch` (a function) both read as one fragment.
+test('a single `extends` fragment is the one-element list (P7)', async () => {
+    server.route('GET', '/items', { body: { data: [{ id: 1, name: 'Ada' }] } });
+
+    const base = { baseUrl: server.url, pick: 'data' };
+    const bare = stitch({ extends: base, path: '/items' });
+    const listed = stitch({ extends: [base], path: '/items' });
+
+    expect(await bare()).toEqual([{ id: 1, name: 'Ada' }]);
+    // Same resolved config both ways — the shorthand is not a second code path.
+    expect(bare.__config).toEqual(listed.__config);
 });
 
 // 1b) A seam member resolves to the SAME result as the config-`extends` facade — the seam shares
@@ -345,4 +360,61 @@ test('a stitch built from shorthand exposes the normalized objects on __config',
     expect(s.__config.retry).toEqual({ attempts: 4 });
     expect(s.__config.timeout).toEqual({ total: 2000 });
     expect(s.__config.throttle).toEqual({ rate: '1/s' });
+});
+
+// 7) `auth` is an ATOMIC slot — last writer wins, never deep-merged. A strategy is a live object
+// whose methods are optional, so folding two of them field-by-field splices the child's `apply`
+// onto whichever of `shouldRefresh`/`refresh`/`scheme` only the parent declares. The same treatment
+// `store`/`kind` get, for the same reason (ADR 0005 Decision 2), and load-bearing for security:
+// the spliced strategy below authenticated as `bearer` but answered a 401 by running **oauth2's**
+// refresh — a real client_credentials token request to an endpoint the child never named.
+const oauth2Fragment = {
+    auth: oauth2({
+        tokenUrl: 'https://auth.example.com/token',
+        clientId: 'id',
+        clientSecret: 'sec',
+    }),
+};
+
+test('a child auth replaces an inherited one whole — no spliced refresh methods', () => {
+    const resolved = compose({
+        extends: [oauth2Fragment],
+        path: 'https://api.example.com/x',
+        auth: bearer(env('TOK')),
+    });
+    // `bearer` declares neither, so neither may survive the merge. If they do, a 401 fires the
+    // parent's token request against credentials the child never declared.
+    expect(resolved.auth?.shouldRefresh).toBeUndefined();
+    expect(resolved.auth?.refresh).toBeUndefined();
+    expect(resolved.auth?.name).toBe('bearer');
+});
+
+test("a child auth's scheme is its own, not blended with the parent's", () => {
+    const resolved = compose({
+        extends: [oauth2Fragment],
+        path: 'https://api.example.com/x',
+        auth: bearer(env('TOK')),
+    });
+    // Blending produced `{ type: 'http', flows: {…}, scheme: 'bearer' }` — an `http` scheme
+    // carrying oauth2 `flows` is not a valid OpenAPI security scheme, and it reaches the wire
+    // through `__config.authScheme` / `stitch export --openapi`.
+    expect(resolved.auth?.scheme).toEqual({ type: 'http', scheme: 'bearer' });
+});
+
+test('the atomic auth slot holds end-to-end on __config.authScheme', () => {
+    const s = stitch({
+        extends: [oauth2Fragment],
+        path: 'https://api.example.com/x',
+        auth: bearer(env('TOK')),
+    });
+    expect(s.__config.authScheme).toEqual({ type: 'http', scheme: 'bearer' });
+});
+
+test('an inherited auth still flows through when the child declares none', () => {
+    const resolved = compose({
+        extends: [oauth2Fragment],
+        path: 'https://api.example.com/x',
+    });
+    expect(resolved.auth?.name).toBe('oauth2');
+    expect(typeof resolved.auth?.refresh).toBe('function');
 });

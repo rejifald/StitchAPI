@@ -120,16 +120,66 @@ const KB = 1024;
 // / ~0.28 KB gzip. The step restores the same tight ~0.2 KB headroom the gate is meant to hold. The
 // cost buys closing a HIGH credential-exfiltration hole — a deliberate trade the maintainer signs off
 // on by merging (see PR body for the exact before/after/Δ).
+// Budgets raised for the P0 `__config` redaction (24.80→24.90 / 20.00→20.10 KB; measured 24.83 /
+// 20.02). CONTRACT.md P0 says the public `__config` is plain JSON data, and it was not: endpoint
+// thunks, `transform`, `hooks`, the `paginate`/`retry`/`throttle`/`idempotency`/`cache` derivation
+// fns and a live `TraceSink` all rode onto it. That is an exfil-at-rest hole (ADR 0002 §4/§6 — a
+// public config view carrying live author closures) and a silent serialisation bug (a function
+// vanishes on `JSON.stringify`, corrupting every trace / report / `mcp` view of the stitch), so the
+// `stripFns` + `omit` pass is not optional. It sits in `redactConfig`, which every `makeStitch` call
+// runs, so it lifts `import { stitch }` as much as the whole entry and cannot move to a subpath.
+// The redaction itself is ~0.03 / ~0.02 KB over the OLD ceiling — the branch had been measuring
+// against a merge base from six days earlier and `main` had grown underneath it; the `trace` slot
+// added last costs 0.00 KB gzip. This is a MINIMUM step (0.07 / 0.08 KB headroom), not the ~0.2 KB
+// this gate usually restores: the overflow is small and the maintainer chose the smallest deliberate
+// bump that clears it (see PR #477 for the measured before/after).
+// Budgets raised for the config-surface shorthands (24.90→25.10 / 20.10→20.25 KB; measured 24.99 /
+// 20.14). CONTRACT.md P7/P12/P13/P15 buy authoring ergonomics with hot-path bytes: `circuit:[f,c]`,
+// the single-fragment `extends`, the `cache.methods`/`vary` list widening and the `inspect(i,true)`
+// probe boolean all normalise in `compose`/`makeStitch`, which every stitch runs — there is no
+// subpath to move them behind, and the alternative is not "smaller" but "the shorthand does not
+// exist". Measured against a `main` that had grown to 24.81 / 20.01 underneath this branch: the
+// slice is +0.15 / +0.11, of which the `cache` list widening is +0.03 / +0.02 (it was declared in
+// the types but never performed — `methods: 'POST'` threw). Headroom lands at 0.11 / 0.11, the same
+// tight step #477 took, not a restoration of the ~0.2 KB the gate usually holds (see PR #524 for
+// the measured before/after at each ref).
+// Whole entry 25.10→25.15 KB for the atomic `auth` extends slot. The overflow is literally ONE byte
+// (25703 vs a 25702 B ceiling): #485's apiKey cookie arm landed at 25.08 KB, leaving 0.02 KB, and
+// this fix spends it. It cannot move behind a subpath — it is a merge rule in `compose`, which every
+// stitch runs — and it is not optional: without it `deepMerge` splices a child strategy's `apply`
+// onto an inherited strategy's `refresh`/`scheme`, so a child `bearer` answered a 401 by running an
+// inherited oauth2's token request. This is a MINIMUM step (0.05 KB / ~49 B headroom), deliberately
+// NOT the ~0.2 KB the gate usually restores: ADR 0021 moves the whole auth surface behind
+// `stitchapi/auth`, which drops this entry to ~22.7 KB and takes the budget down with it. Until that
+// lands the entry is full, and this tight ceiling is the intended signal.
+// Whole entry 25.15→22.90 KB — a DROP, not a raise. ADR 0021 moved the auth surface (the five
+// strategy factories + the four secret resolvers) off the root barrel onto `stitchapi/auth`, so
+// `export *` no longer reaches oauth2's token cache or cookieSession's login state machine:
+// measured 22.69 KB, down 2.41 from 25.10. `import { stitch }` is unchanged at 20.17 (the barrel
+// was already tree-shaken there — the split makes that a module-graph fact rather than a
+// tree-shaking outcome, and buys back the headroom the two PRs above spent). The advertised figure
+// moves ~25 → ~23 kB. The new third scenario budgets the subpath itself: pay for the whole auth
+// surface only if you `export *` from it; a real call site imports one strategy (`bearer` + `env`
+// is 0.39 KB gzip, `oauth2` + `env` 3.22 KB).
+// `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
+// `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.8 * KB,
+        budget: 22.9 * KB,
+        advertised: true,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 20.0 * KB,
+        budget: 20.25 * KB,
+        advertised: true,
+    },
+    {
+        name: 'stitchapi/auth — whole surface',
+        code: `export * from './auth.mjs';`,
+        budget: 5.35 * KB,
     },
 ];
 
@@ -181,15 +231,22 @@ if (process.argv.includes('--json')) {
             // quote (`~NN kB`). Emitting it here lets the yakir `bundle-advertised-size`
             // tether read the measured set straight from this output (it greps `"kb"`),
             // instead of re-deriving the rounding. See yakir.json.
-            rows.map(({ name, min, gzip, brotli, budget, over }) => ({
-                name,
-                min,
-                gzip,
-                brotli,
-                kb: Math.round(gzip / KB),
-                budget,
-                over,
-            })),
+            //
+            // ONLY the scenarios the docs actually quote carry `kb` — the tether greps every `"kb"`
+            // in this output and compares the set against the doc sites, so emitting one for a
+            // scenario no README mentions (the `stitchapi/auth` subpath) would inject a number the
+            // doc sites can never match and fail the tether. Budget it here, advertise it nowhere.
+            rows.map(
+                ({ name, min, gzip, brotli, budget, over, advertised }) => ({
+                    name,
+                    min,
+                    gzip,
+                    brotli,
+                    ...(advertised ? { kb: Math.round(gzip / KB) } : {}),
+                    budget,
+                    over,
+                }),
+            ),
             null,
             2,
         ),
@@ -199,21 +256,21 @@ if (process.argv.includes('--json')) {
     console.log('\n  Core bundle budget — tree-shaken, min+gzip\n');
     console.log(
         '  ' +
-            'scenario'.padEnd(26) +
+            'scenario'.padEnd(32) +
             col('minified', 11) +
             col('gzip', 11) +
             col('brotli', 11) +
             col('budget', 11) +
             '   status',
     );
-    console.log('  ' + '─'.repeat(83));
+    console.log('  ' + '─'.repeat(89));
     for (const r of rows) {
         const headroom = r.over
             ? `OVER by ${kb(r.gzip - r.budget)}`
             : `${kb(r.budget - r.gzip)} left`;
         console.log(
             '  ' +
-                r.name.padEnd(26) +
+                r.name.padEnd(32) +
                 col(kb(r.min), 11) +
                 col(kb(r.gzip), 11) +
                 col(kb(r.brotli), 11) +

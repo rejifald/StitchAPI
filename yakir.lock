@@ -148,35 +148,35 @@
       "accepted": null
     },
     "bundle-advertised-size": {
-      "baseline": "19, 24",
+      "baseline": "20, 23",
       "sites": {
         "command:node packages/core/scripts/bundle-size.mjs --json#regex:\"kb\"\\s*:\\s*(\\d+):all": {
-          "value": "19, 24",
-          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+          "value": "20, 23",
+          "fp": "sha256:8a88fece6c42b6e6fda0394d485eca3430e2bf492c972ea3dbdd8e6c92b01472"
         },
         "README.md#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
-          "value": "19, 24",
-          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+          "value": "20, 23",
+          "fp": "sha256:8a88fece6c42b6e6fda0394d485eca3430e2bf492c972ea3dbdd8e6c92b01472"
         },
         "packages/core/README.md#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
-          "value": "19, 24",
-          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+          "value": "20, 23",
+          "fp": "sha256:8a88fece6c42b6e6fda0394d485eca3430e2bf492c972ea3dbdd8e6c92b01472"
         },
         "apps/docs/content/docs/getting-started/installation.mdx#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
-          "value": "19, 24",
-          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+          "value": "20, 23",
+          "fp": "sha256:8a88fece6c42b6e6fda0394d485eca3430e2bf492c972ea3dbdd8e6c92b01472"
         },
         "apps/docs/content/docs/concepts/principles.mdx#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
-          "value": "19, 24",
-          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+          "value": "20, 23",
+          "fp": "sha256:8a88fece6c42b6e6fda0394d485eca3430e2bf492c972ea3dbdd8e6c92b01472"
         },
         "apps/docs/app/(home)/components/metrics.tsx#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
-          "value": "19, 24",
-          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+          "value": "20, 23",
+          "fp": "sha256:8a88fece6c42b6e6fda0394d485eca3430e2bf492c972ea3dbdd8e6c92b01472"
         },
         "apps/docs/lib/source.ts#pattern:~(?:\\s|&nbsp;|%20)*(\\d+)(?:\\s|&nbsp;|%20)*kB:all": {
-          "value": "19, 24",
-          "fp": "sha256:94eb0530a98af45bfd198e4fda97eecd20de9db344236ba391f59943ddf05a33"
+          "value": "20, 23",
+          "fp": "sha256:8a88fece6c42b6e6fda0394d485eca3430e2bf492c972ea3dbdd8e6c92b01472"
         }
       },
       "accepted": null

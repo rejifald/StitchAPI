@@ -10,7 +10,7 @@
 // Bundle-frugal (Decision 10): this module — and the frame parser — is reached only through the
 // `sse` subpath, never from the root entry; `import { stitch }` pulls in no SSE code.
 import type { InputOf, OutputOf } from './infer';
-import { JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES } from './json-stream';
+import { JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS } from './json-stream';
 import { lineReader } from './line-reader';
 import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
@@ -101,20 +101,21 @@ function dispatchFrame(frame: SseFrame): SseEvent | undefined {
 // `:`-prefixed lines are comments; exactly one leading space after the field colon is stripped. A
 // trailing event with no terminating blank line is discarded (spec), as is a block with no `data:`.
 //
-// `maxBufferBytes` bounds the accumulated `data:` payload of a SINGLE in-progress frame (a run of
+// `maxBufferChars` bounds the accumulated `data:` payload of a SINGLE in-progress frame (a run of
 // `data:` lines with no dispatching blank line): without this an upstream that streams endless
 // `data:` fields — or one giant unterminated line — would grow client memory without limit (an OOM
 // DoS). `lineReader` caps a single un-terminated LINE with the same knob; this caps the frame that
-// spans many terminated lines. Same default (~8 MB) and thrown-error → `error` event contract as the
-// `'json'` decoder (`json-stream.ts` / `runStreaming`). Overridable per-stream via `stream.maxBufferBytes`.
+// spans many terminated lines. Counted in characters of the decoded text, not bytes off the socket.
+// Same default (~8M chars) and thrown-error → `error` event contract as the
+// `'json'` decoder (`json-stream.ts` / `runStreaming`). Overridable per-stream via `stream.maxBufferChars`.
 async function* parseEventStream(
     body: ReadableStream<Uint8Array>,
-    maxBufferBytes: number = JSON_STREAM_DEFAULT_MAX_BUFFER_BYTES,
+    maxBufferChars: number = JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS,
 ): AsyncGenerator<SseEvent, void> {
     let frame = freshFrame();
-    let frameBytes = 0; // accumulated length of the current frame's data lines (+1 per join `\n`)
+    let frameChars = 0; // accumulated length of the current frame's data lines (+1 per join `\n`)
 
-    for await (const raw of lineReader(body, maxBufferBytes)) {
+    for await (const raw of lineReader(body, maxBufferChars)) {
         // lineReader splits on `\n`; strip a trailing `\r` so CRLF streams parse (the SSE plumbing
         // shared with `stream`'s `'lines'` stays a literal `\n` split — Q3).
         const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
@@ -123,7 +124,7 @@ async function* parseEventStream(
             const ev = dispatchFrame(frame);
             if (ev !== undefined) yield ev;
             frame = freshFrame();
-            frameBytes = 0;
+            frameChars = 0;
         } else if (!line.startsWith(':')) {
             const before = frame.dataLines.length;
             applyFieldLine(frame, line); // non-comment field line
@@ -132,11 +133,11 @@ async function* parseEventStream(
             // past the cap.
             if (frame.dataLines.length > before) {
                 const added = frame.dataLines[frame.dataLines.length - 1] ?? '';
-                frameBytes += added.length + (before > 0 ? 1 : 0);
-                if (frameBytes > maxBufferBytes) {
+                frameChars += added.length + (before > 0 ? 1 : 0);
+                if (frameChars > maxBufferChars) {
                     throw new Error(
-                        `sse parser: un-dispatched event data exceeded maxBufferBytes (${String(
-                            maxBufferBytes,
+                        `sse parser: un-dispatched event data exceeded maxBufferChars (${String(
+                            maxBufferChars,
                         )}); a frame with no terminating blank line was streamed`,
                     );
                 }
@@ -158,7 +159,7 @@ export const sseSurface: Surface<StitchInput, SseEvent[]> = {
         if (body instanceof ReadableStream)
             yield* parseEventStream(
                 body as ReadableStream<Uint8Array>,
-                cfg.stream?.maxBufferBytes,
+                cfg.stream?.maxBufferChars,
             );
     },
     contractValue: (chunk) => (chunk as SseEvent).data,
@@ -190,7 +191,7 @@ export interface SseSeamApi {
 // keeping `SseEvent<unknown>[]` identical to the old `SseEvent[]`. The `as` retypes the loose
 // `makeStitch` result to the declared `InputOf<C>`/`SseEvent<OutputOf<C>>[]`: now that `InputOf` reads
 // `extends`-fragment schemas (#76) it is no longer a clean supertype of `StitchInput` under an
-// unresolved `C`, so this loose body needs the same retype `stitch()`/`seam` get from their
+// unresolved `C`, so this loose body needs the same retype `stitch()`/`bind` get from their
 // inferring overloads. Sound — the runtime stitch is byte-identical (the type tests cover it).
 const sseStitch = <
     const C extends Partial<StitchConfig> = Partial<StitchConfig>,
@@ -220,13 +221,13 @@ function bindSeam(s: Seam): SseSeamApi {
 /**
  * The sse surface's authoring helper — callable for the terse form (`sse(config)`) plus:
  * - `sse.stitch(config)` — a standalone sse stitch (alias of the callable).
- * - `sse.seam(existingSeam)` — bind sse members to an existing seam.
- * - `sse.seam(options)` — a new seam whose members default to sse.
+ * - `sse.bind(existingSeam)` — bind sse members to an existing seam.
+ * - `sse.bind(options)` — a new seam whose members default to sse.
  * - `sse.surface` — the sse {@link Surface} identity.
  */
 export const sse = Object.assign(sseStitch, {
     surface: sseSurface,
     stitch: sseStitch,
-    seam: (arg: Seam | SeamOptions): SseSeamApi =>
+    bind: (arg: Seam | SeamOptions): SseSeamApi =>
         bindSeam(isSeam(arg) ? arg : makeSeam(arg)),
 });

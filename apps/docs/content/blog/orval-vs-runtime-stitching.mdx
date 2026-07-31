@@ -38,9 +38,9 @@ That one run gives you a `useListPets` hook per operation, request/response mode
 
 The model has one load-bearing assumption: the spec is the truth. Everything Orval emits is a snapshot of that document, frozen at generation time. Three consequences follow.
 
--   **It needs a complete, accurate spec first.** Orval can't emit anything until the OpenAPI file exists and is right. Internal services and long-tail vendors that never produced one leave you with nothing to point it at.
--   **The generated types and Zod schemas are blind to live change.** They describe what the spec _said_. When the provider renames `total` to `amount` next Tuesday, the generated type and the generated validator both still say `total`, the build still passes, and the mismatch is an `undefined` at runtime — until you regenerate, which you'll only think to do once something already broke.
--   **The generated MSW mocks freeze the old shape too.** They're built from the same spec, so your tests pass against a fixture of a response that may no longer exist on the wire.
+- **It needs a complete, accurate spec first.** Orval can't emit anything until the OpenAPI file exists and is right. Internal services and long-tail vendors that never produced one leave you with nothing to point it at.
+- **The generated types and Zod schemas are blind to live change.** They describe what the spec _said_. When the provider renames `total` to `amount` next Tuesday, the generated type and the generated validator both still say `total`, the build still passes, and the mismatch is an `undefined` at runtime — until you regenerate, which you'll only think to do once something already broke.
+- **The generated MSW mocks freeze the old shape too.** They're built from the same spec, so your tests pass against a fixture of a response that may no longer exist on the wire.
 
 None of that is a flaw in Orval — it's the boundary of generating from a spec. The artifacts are exactly as current as the document, and no more.
 
@@ -99,9 +99,9 @@ The difference is that you declare the endpoint and wire it once, rather than ge
 
 This isn't a piece that ends with "so never run Orval." There's a clear lane where it wins, and it's worth naming plainly:
 
--   **You have a maintained, accurate spec.** If the OpenAPI document is real, current, and owned by someone who keeps it honest, Orval gives you the whole surface — client, models, Zod, mocks — for the cost of one command. Per-endpoint stitch declarations would be more typing for that case.
--   **You'll touch a large fraction of the API.** Building against a big chunk of a known surface? A generated hook per operation, ready in autocomplete, is a real head start a per-endpoint approach won't match.
--   **Your app is TanStack Query / SWR-centric and you want the hooks generated.** Orval was built for exactly this. If generating one hook per endpoint from a spec is the workflow you want, that's its home turf.
+- **You have a maintained, accurate spec.** If the OpenAPI document is real, current, and owned by someone who keeps it honest, Orval gives you the whole surface — client, models, Zod, mocks — for the cost of one command. Per-endpoint stitch declarations would be more typing for that case.
+- **You'll touch a large fraction of the API.** Building against a big chunk of a known surface? A generated hook per operation, ready in autocomplete, is a real head start a per-endpoint approach won't match.
+- **Your app is TanStack Query / SWR-centric and you want the hooks generated.** Orval was built for exactly this. If generating one hook per endpoint from a spec is the workflow you want, that's its home turf.
 
 Runtime stitching earns its keep on the opposite shape: spec-less, partial-spec, or internal APIs; providers that change shape without warning; and anywhere you'd rather validate the live response and declare resilience, auth, and an [agent surface](/docs/agents) on the endpoint than generate a client and bolt those on around it. The two aren't really competing for one job — they make opposite bets about how much you can trust your spec.
 

@@ -7,13 +7,13 @@ publishes it automatically.
 
 ## What the CI does
 
--   **Official MCP registry** (`dev.stitchapi/docs`) — published on every push to
-    `main` that changes `server.json`'s `version`. This **cascades automatically**
-    to **Glama** (minutes) and **PulseMCP** (~weekly) — no separate step for those.
--   **Smithery** — published in the same run (idempotent upsert), but only once you
-    set `SMITHERY_API_KEY` (the step no-ops until then).
--   **PRs** that touch `server.json` run `mcp-publisher validate` only — a bad
-    `server.json` is caught before merge, and nothing is published.
+- **Official MCP registry** (`dev.stitchapi/docs`) — published on every push to
+  `main` that changes `server.json`'s `version`. This **cascades automatically**
+  to **Glama** (minutes) and **PulseMCP** (~weekly) — no separate step for those.
+- **Smithery** — published in the same run (idempotent upsert), but only once you
+  set `SMITHERY_API_KEY` (the step no-ops until then).
+- **PRs** that touch `server.json` run `mcp-publisher validate` only — a bad
+  `server.json` is caught before merge, and nothing is published.
 
 `mcp.so` and `cursor.directory` have no API — submit those once by hand (see the
 tracking notes).
@@ -69,11 +69,11 @@ record is tried first and breaks auth).
 
 ### 3. Add repo secrets
 
--   **`MCP_PRIVATE_KEY`** — the hex private key from step 1 (the only secret the
-    registry publish needs).
--   **`SMITHERY_API_KEY`** _(optional)_ — mint with `npx -y @smithery/cli auth token`,
-    then confirm the `-n <owner>/<name>` in the workflow matches your Smithery
-    namespace.
+- **`MCP_PRIVATE_KEY`** — the hex private key from step 1 (the only secret the
+  registry publish needs).
+- **`SMITHERY_API_KEY`** _(optional)_ — mint with `npx -y @smithery/cli auth token`,
+  then confirm the `-n <owner>/<name>` in the workflow matches your Smithery
+  namespace.
 
 ## Publishing an update
 

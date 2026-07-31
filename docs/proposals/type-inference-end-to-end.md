@@ -20,18 +20,18 @@ OVERVIEW §2.1 promised that a stitch infers its result type from `config.output
 and its call-argument type from `config.input`, "so you almost never write a
 generic." That promise is **kept on `main`**:
 
--   **Output inference** ([#72](https://github.com/rejifald/StitchAPI/pull/72)) —
-    `infer.ts`'s `InferOutput`/`OutputOf`/`ResolveOutput` read the result type
-    straight off the `output` schema (Zod / Standard Schema / `Validator` /
-    `drift()` / predicate). The `StitchFn` inferring overload
-    (`stitch.ts:397-402`) wires it into `Stitch<ResolveOutput<TExplicit, C>, …>`.
--   **Call-argument inference** ([#77](https://github.com/rejifald/StitchAPI/pull/77))
-    — `InferInput`/`InputOf`/`CallInput`/`Args` type the call argument from the
-    `input.*` schemas, with per-slot required-vs-optional and `.with()` relaxation
-    (`RelaxKeys`).
--   **The `asValidator` cast is gone** — every slot accepts `SchemaLike`
-    (`infer.ts:14-18`), so a raw Zod / Standard Schema / predicate type-checks
-    directly.
+- **Output inference** ([#72](https://github.com/rejifald/StitchAPI/pull/72)) —
+  `infer.ts`'s `InferOutput`/`OutputOf`/`ResolveOutput` read the result type
+  straight off the `output` schema (Zod / Standard Schema / `Validator` /
+  `drift()` / predicate). The `StitchFn` inferring overload
+  (`stitch.ts:397-402`) wires it into `Stitch<ResolveOutput<TExplicit, C>, …>`.
+- **Call-argument inference** ([#77](https://github.com/rejifald/StitchAPI/pull/77))
+  — `InferInput`/`InputOf`/`CallInput`/`Args` type the call argument from the
+  `input.*` schemas, with per-slot required-vs-optional and `.with()` relaxation
+  (`RelaxKeys`).
+- **The `asValidator` cast is gone** — every slot accepts `SchemaLike`
+  (`infer.ts:14-18`), so a raw Zod / Standard Schema / predicate type-checks
+  directly.
 
 Two design ideas §2.1 leaned on were **removed**, not implemented:
 `defineStitch` ([#66](https://github.com/rejifald/StitchAPI/pull/66)) and the
@@ -192,12 +192,12 @@ type PathOnlyParams<C> = C extends { path: infer P extends string }
     : {}; // url is `string | (() => string)`; a thunk → no literal → {} (fail open)
 ```
 
--   **Schema keys win.** When `input.params` declares `id`, `DeclaredParams<C>`
-    already covers it, `Exclude<…>` drops it, and the path contributes nothing —
-    the schema's richer type (e.g. a branded `UserId`) stands.
--   **Merge into `params`.** `PathOnlyParams<C>` intersects into the existing
-    `params` slot inside `InputOf` so a config with _both_ a partial params schema
-    and extra path vars gets both.
+- **Schema keys win.** When `input.params` declares `id`, `DeclaredParams<C>`
+  already covers it, `Exclude<…>` drops it, and the path contributes nothing —
+  the schema's richer type (e.g. a branded `UserId`) stands.
+- **Merge into `params`.** `PathOnlyParams<C>` intersects into the existing
+  `params` slot inside `InputOf` so a config with _both_ a partial params schema
+  and extra path vars gets both.
 
 #### Before / after
 
@@ -212,20 +212,20 @@ getUser({ params: { id: '7' } }); // after: ✅
 
 #### Edge cases
 
--   **Operators/modifiers:** `'/files{/path*}'` → `path`; `'{?q,sort}'` → `q | sort`;
-    `'/x/{id:4}'` → `id`. `StripOp` + `StripMod` + `SplitVars` reduce all of these
-    to bare names, matching `expandPath`.
--   **Reserved/query operators (`?`,`&`,`;`):** these produce _query_-style output
-    at runtime but still read from `input.params` (`expandPath` only ever reads
-    `params`). Typing them as required `params` keys is faithful to the runtime.
-    (A future refinement could route `{?q}` to the `query` slot; out of scope —
-    start by matching the current read site.)
--   **Thunk `url`:** `url: () => string` carries no literal, so `PathVars` sees no
-    template → contributes `{}`. Correct: we cannot know the vars, so we must not
-    invent required keys (fail open).
--   **`baseUrl` + `path`:** only `path` is templated against `params` in the read
-    site we extend; `baseUrl` host templating (also supported by `url`) is the same
-    fail-open story when it's a thunk.
+- **Operators/modifiers:** `'/files{/path*}'` → `path`; `'{?q,sort}'` → `q | sort`;
+  `'/x/{id:4}'` → `id`. `StripOp` + `StripMod` + `SplitVars` reduce all of these
+  to bare names, matching `expandPath`.
+- **Reserved/query operators (`?`,`&`,`;`):** these produce _query_-style output
+  at runtime but still read from `input.params` (`expandPath` only ever reads
+  `params`). Typing them as required `params` keys is faithful to the runtime.
+  (A future refinement could route `{?q}` to the `query` slot; out of scope —
+  start by matching the current read site.)
+- **Thunk `url`:** `url: () => string` carries no literal, so `PathVars` sees no
+  template → contributes `{}`. Correct: we cannot know the vars, so we must not
+  invent required keys (fail open).
+- **`baseUrl` + `path`:** only `path` is templated against `params` in the read
+  site we extend; `baseUrl` host templating (also supported by `url`) is the same
+  fail-open story when it's a thunk.
 
 #### Breaking-change assessment — **breaking (intended)**
 
@@ -412,14 +412,14 @@ _validation_ wiring is missing.
 
 #### Edge cases
 
--   **Optional schema:** `input: { variables: z.object({…}).optional() }` →
-    `undefined extends SlotInput` → optional slot (consistent with every other slot,
-    `infer.ts:99-110`).
--   **No `input` block at all:** `InputOf` returns loose `StitchInput`
-    (`infer.ts:132-134`), whose `variables?` is already optional — unchanged.
--   **`graphql()` preset:** it forwards `config` through `makeStitch` with
-    `InputOf<C>` (`stitch.ts:435-452`), so the new slot flows through with no preset
-    change.
+- **Optional schema:** `input: { variables: z.object({…}).optional() }` →
+  `undefined extends SlotInput` → optional slot (consistent with every other slot,
+  `infer.ts:99-110`).
+- **No `input` block at all:** `InputOf` returns loose `StitchInput`
+  (`infer.ts:132-134`), whose `variables?` is already optional — unchanged.
+- **`graphql()` preset:** it forwards `config` through `makeStitch` with
+  `InputOf<C>` (`stitch.ts:435-452`), so the new slot flows through with no preset
+  change.
 
 #### Breaking-change assessment — **opt-in (+ runtime)**
 
@@ -559,27 +559,27 @@ gap.
 
 Every stage is gated by:
 
--   **`check:types-d`** — the tsd suite (`build` then `tsd`); add the per-gap files
-    in §4. Remember the "no `expectType<Stitch<…>>`" rule.
--   **the docs twoslash suite** — `build-docs` over the whole tree (the pre-push
-    gate runs it repo-wide); any `.mdx` example that newly fails to type-check is a
-    real regression, especially around §2.1's examples.
+- **`check:types-d`** — the tsd suite (`build` then `tsd`); add the per-gap files
+  in §4. Remember the "no `expectType<Stitch<…>>`" rule.
+- **the docs twoslash suite** — `build-docs` over the whole tree (the pre-push
+  gate runs it repo-wide); any `.mdx` example that newly fails to type-check is a
+  real regression, especially around §2.1's examples.
 
 ---
 
 ## 6. Non-goals / risks
 
--   **Not** reviving `defineStitch` or the fluent Builder — both were removed
-    deliberately (#66/#90); inference stays on the config overloads.
--   **Not** adding a `Stitch<TOut, TIn, TConfig>` third type parameter to carry the
-    literal config — that is the only way to fully fix Gap B finding (ii), and it is
-    a far larger, separate change.
--   **Not** routing `{?q}` path operators to the `query` slot — Gap A types them as
-    `params` to match the single runtime read site (`engine.ts:164`); a query-slot
-    refinement is a later, additive step.
--   **Compile-budget:** Gap B's recursion must stay bounded (depth cap); a runaway
-    `extends` chain must degrade gracefully, not hang `tsc`. The tsd run is the gate.
--   **`exactOptionalPropertyTypes`:** all three folds must avoid emitting
-    `key: undefined` members — the codebase compiles under
-    `exactOptionalPropertyTypes` (see the `mergeInput`/`compose` `delete` dances,
-    `stitch.ts:121-126,257-265`), and the new mapped types must honour it.
+- **Not** reviving `defineStitch` or the fluent Builder — both were removed
+  deliberately (#66/#90); inference stays on the config overloads.
+- **Not** adding a `Stitch<TOut, TIn, TConfig>` third type parameter to carry the
+  literal config — that is the only way to fully fix Gap B finding (ii), and it is
+  a far larger, separate change.
+- **Not** routing `{?q}` path operators to the `query` slot — Gap A types them as
+  `params` to match the single runtime read site (`engine.ts:164`); a query-slot
+  refinement is a later, additive step.
+- **Compile-budget:** Gap B's recursion must stay bounded (depth cap); a runaway
+  `extends` chain must degrade gracefully, not hang `tsc`. The tsd run is the gate.
+- **`exactOptionalPropertyTypes`:** all three folds must avoid emitting
+  `key: undefined` members — the codebase compiles under
+  `exactOptionalPropertyTypes` (see the `mergeInput`/`compose` `delete` dances,
+  `stitch.ts:121-126,257-265`), and the new mapped types must honour it.

@@ -176,11 +176,11 @@ for a fixed denylist are replaced with the literal `[REDACTED]`, matched
 case-insensitively wherever headers appear in the event payload (the `start`
 event's input headers, response headers, and so on):
 
--   `authorization`
--   `proxy-authorization`
--   `cookie`
--   `set-cookie`
--   `x-api-key`
+- `authorization`
+- `proxy-authorization`
+- `cookie`
+- `set-cookie`
+- `x-api-key`
 
 So a call carrying `authorization: 'Bearer …'` traces as
 `"authorization":"[REDACTED]"` — the raw secret never reaches disk. Redaction

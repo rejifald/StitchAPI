@@ -20,25 +20,25 @@ machine-readable `llms.mdx`.
 
 ## How the site is built
 
--   **Engine:** Fumadocs (Next.js App Router). Pages are MDX with frontmatter under
-    `content/docs/`.
--   **Structure is data:** [`content.manifest.ts`](./content.manifest.ts) is the
-    source of truth for the information architecture — every page (path, title,
-    description, kind) and every sidebar group. The skeleton generator reads it to
-    emit folders, each `meta.json`, and a stub `.mdx` per page.
-    **A page that isn't in the manifest doesn't exist; a manifest entry with no
-    file is a bug.** Don't reorganize the tree by hand — change the manifest.
-    `test/content-manifest.spec.ts` and a CI `gen:docs` diff gate enforce this
-    two-way sync, so a drifted manifest fails the build.
-    -   **Exception — hand-maintained sections:** a section listed in
-        `HAND_MAINTAINED_SECTIONS` (e.g. `integrations`, whose pages are added
-        per-PR as each `@stitchapi/*` package ships) curates its own `meta.json`
-        and page set. The generator skips it and the sync test exempts its pages,
-        so for those folders you edit `meta.json` by hand and the manifest stays
-        out of it.
--   **Machine-readable output is automatic:** Fumadocs emits `llms.txt`,
-    `llms-full.txt`, and a per-page `llms.mdx` from your content. You never write
-    these — but [rule 5](#authoring-rules) exists because of them.
+- **Engine:** Fumadocs (Next.js App Router). Pages are MDX with frontmatter under
+  `content/docs/`.
+- **Structure is data:** [`content.manifest.ts`](./content.manifest.ts) is the
+  source of truth for the information architecture — every page (path, title,
+  description, kind) and every sidebar group. The skeleton generator reads it to
+  emit folders, each `meta.json`, and a stub `.mdx` per page.
+  **A page that isn't in the manifest doesn't exist; a manifest entry with no
+  file is a bug.** Don't reorganize the tree by hand — change the manifest.
+  `test/content-manifest.spec.ts` and a CI `gen:docs` diff gate enforce this
+  two-way sync, so a drifted manifest fails the build.
+    - **Exception — hand-maintained sections:** a section listed in
+      `HAND_MAINTAINED_SECTIONS` (e.g. `integrations`, whose pages are added
+      per-PR as each `@stitchapi/*` package ships) curates its own `meta.json`
+      and page set. The generator skips it and the sync test exempts its pages,
+      so for those folders you edit `meta.json` by hand and the manifest stays
+      out of it.
+- **Machine-readable output is automatic:** Fumadocs emits `llms.txt`,
+  `llms-full.txt`, and a per-page `llms.mdx` from your content. You never write
+  these — but [rule 5](#authoring-rules) exists because of them.
 
 ## Information architecture
 
@@ -92,7 +92,8 @@ for you.
 {/* The smallest stitch that uses the feature, above the fold. Twoslash — see
 "Code examples" below. */}
 ```ts twoslash
-import { stitch, cookieSession, env } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { cookieSession, env } from 'stitchapi/auth';
 
 const signIn = stitch({
     method: 'POST',
@@ -256,21 +257,21 @@ prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 ---
 ```
 
--   **Aim at the foundational set, not at siblings.** The usual targets are
-    `/docs/concepts/the-stitch`, `/docs/concepts/the-seam`,
-    `/docs/concepts/event-stream`, `/docs/concepts/capability-not-credential`, and
-    `/docs/getting-started/quickstart`. One or two is plenty — it's a heads-up, not
-    a syllabus.
--   **Only when the opening assumes prior knowledge.** A page that self-grounds in
-    its first sentence — states its premise, defines its term — needs none, and the
-    foundational pages themselves never declare one.
--   **Cross-surface is normal.** A blog post pointing at
-    `/docs/concepts/the-stitch` is the common case; a docs page may point at
-    another docs page.
--   **Every href must resolve.** `test/prerequisites.spec.ts` fails the build on a
-    dangling or self-referential prerequisite — the same no-orphans guarantee the
-    blog's sibling links carry. The box silently drops a broken link at runtime, so
-    that gate is the only thing that flags it. Keep it green.
+- **Aim at the foundational set, not at siblings.** The usual targets are
+  `/docs/concepts/the-stitch`, `/docs/concepts/the-seam`,
+  `/docs/concepts/event-stream`, `/docs/concepts/capability-not-credential`, and
+  `/docs/getting-started/quickstart`. One or two is plenty — it's a heads-up, not
+  a syllabus.
+- **Only when the opening assumes prior knowledge.** A page that self-grounds in
+  its first sentence — states its premise, defines its term — needs none, and the
+  foundational pages themselves never declare one.
+- **Cross-surface is normal.** A blog post pointing at
+  `/docs/concepts/the-stitch` is the common case; a docs page may point at
+  another docs page.
+- **Every href must resolve.** `test/prerequisites.spec.ts` fails the build on a
+  dangling or self-referential prerequisite — the same no-orphans guarantee the
+  blog's sibling links carry. The box silently drops a broken link at runtime, so
+  that gate is the only thing that flags it. Keep it green.
 
 ---
 
@@ -337,7 +338,8 @@ a `baseUrl`, a type, or shared auth, it uses _these_, verbatim:
 
 <!-- prettier-ignore -->
 ```ts
-import { seam, bearer, env } from 'stitchapi';
+import { seam } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 // Types — reuse these exact shapes (they match what the sim returns).
@@ -378,14 +380,14 @@ const listOrders = api.stitch({ path: '/users/{id}/orders', pick: 'data', output
 
 ### Auth, secrets, surfaces — same names everywhere
 
--   **Auth deep-dives reuse the base:** `cookieSession` logs in via a `signIn`
-    stitch; `oauth2` hangs off `api`. Secrets are **always** `API_TOKEN`,
-    `APP_USER` / `APP_PASS`, `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET`.
--   **The four surfaces always show `getUser`**, so the comparison is
-    apples-to-apples: `await getUser({ params: { id: '42' } })` ·
-    `stitch run getUser --id 42` · `GET /get-user` · `tool: get_user`.
--   **GraphQL** mirrors `getUser` against `/graphql` — the surface contrast is the
-    same operation, not a new one.
+- **Auth deep-dives reuse the base:** `cookieSession` logs in via a `signIn`
+  stitch; `oauth2` hangs off `api`. Secrets are **always** `API_TOKEN`,
+  `APP_USER` / `APP_PASS`, `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET`.
+- **The four surfaces always show `getUser`**, so the comparison is
+  apples-to-apples: `await getUser({ params: { id: '42' } })` ·
+  `stitch run getUser --id 42` · `GET /get-user` · `tool: get_user`.
+- **GraphQL** mirrors `getUser` against `/graphql` — the surface contrast is the
+  same operation, not a new one.
 
 **Extending the roster.** Only when a feature needs a shape these can't show
 (e.g. a `multipart` upload, a binary `download`). Add the stitch to this section
@@ -412,12 +414,12 @@ types during the docs build, renders inline type hovers, and **fails the build
 on a type error**. That's the whole point: examples cannot silently drift from
 the runtime.
 
--   Imports must resolve to published entry points (`stitchapi`), not deep
-    paths.
--   To intentionally show an error, use Twoslash's `// @errors:` directive — don't
-    ship an un-annotated broken snippet.
--   One-time pipeline wiring (the `fumadocs-twoslash` transformer in
-    `source.config.ts`) is a tooling task, separate from writing pages.
+- Imports must resolve to published entry points (`stitchapi`), not deep
+  paths.
+- To intentionally show an error, use Twoslash's `// @errors:` directive — don't
+  ship an un-annotated broken snippet.
+- One-time pipeline wiring (the `fumadocs-twoslash` transformer in
+  `source.config.ts`) is a tooling task, separate from writing pages.
 
 ## Folding setup code
 
@@ -442,18 +444,18 @@ const getUser = stitch({
 ```
 ````
 
--   **`// [!code fold:start]` … `// [!code fold:end]`** are whole-line markers; the
-    lines between them collapse and the markers themselves never render. Put `:end`
-    after the trailing blank line so the collapsed view opens cleanly on the code.
--   **The folded code stays real.** It's still type-checked by Twoslash and still in
-    the page source — this hides it, it doesn't cut it (contrast Twoslash's
-    `// ---cut---`, which deletes setup from the output with no way back).
--   **This is not a tab (rule 9).** Tabs are for _equivalent variants_ the reader
-    chooses between (`pnpm`/`npm`, `String form`/`Config object`). A fold is one
-    example at two zoom levels, so it stays out of the tab system: no `tabGroup`, no
-    persisted bar. Fold _inside_ a tab freely — it's a property of one block.
--   **Fold the boilerplate, not the lesson.** Collapse imports, schema setup, and
-    type plumbing. Never fold the line the page is actually teaching.
+- **`// [!code fold:start]` … `// [!code fold:end]`** are whole-line markers; the
+  lines between them collapse and the markers themselves never render. Put `:end`
+  after the trailing blank line so the collapsed view opens cleanly on the code.
+- **The folded code stays real.** It's still type-checked by Twoslash and still in
+  the page source — this hides it, it doesn't cut it (contrast Twoslash's
+  `// ---cut---`, which deletes setup from the output with no way back).
+- **This is not a tab (rule 9).** Tabs are for _equivalent variants_ the reader
+  chooses between (`pnpm`/`npm`, `String form`/`Config object`). A fold is one
+  example at two zoom levels, so it stays out of the tab system: no `tabGroup`, no
+  persisted bar. Fold _inside_ a tab freely — it's a property of one block.
+- **Fold the boilerplate, not the lesson.** Collapse imports, schema setup, and
+  type plumbing. Never fold the line the page is actually teaching.
 
 The pipeline wiring (`transformerFold` in `source.config.ts` + the `pre` override
 in `components/mdx.tsx`) is a one-time tooling task, separate from writing pages.
@@ -550,12 +552,12 @@ lands on, so make it the recommended form.
 
 Four rules keep it coherent:
 
--   **Always set `tabGroup`.** It's the persistence key, not decoration.
--   **Lead with the recommended form.** The first tab is where the reader lands.
--   **Show 2–4 relevant variants, not all of them.** The `extends` page leads
-    with the config-object tab; it doesn't parade all twelve call styles.
--   **A new axis is a new row here first.** Don't coin ad-hoc `tabGroup` values
-    inline — add the row above, then use it, so persistence stays consistent.
+- **Always set `tabGroup`.** It's the persistence key, not decoration.
+- **Lead with the recommended form.** The first tab is where the reader lands.
+- **Show 2–4 relevant variants, not all of them.** The `extends` page leads
+  with the config-object tab; it doesn't parade all twelve call styles.
+- **A new axis is a new row here first.** Don't coin ad-hoc `tabGroup` values
+  inline — add the row above, then use it, so persistence stays consistent.
 
 ### `approach` — the "peek at the hand-rolled way" axis (blog)
 
@@ -567,24 +569,24 @@ tab on its **hero snippet**. The reader lands on `StitchAPI` and can switch to
 
 Specific to this axis:
 
--   **`StitchAPI` is always the default (first) tab.** The point is to stay
-    stitch-first; the `fetch` tab is the comparison, not the lede.
--   **The `fetch` tab must be an _honest_ equivalent of that hero snippet** — the
-    naive hand-rolled version a reader would actually write, so the contrast is
-    real (the boilerplate the stitch folds in is visibly present, or visibly
-    absent). Don't gold-plate it and don't strawman it.
--   **Hero snippet only, and only where an honest equivalent exists.** Don't tab
-    every block, and skip it where there's no faithful `fetch` form (a `pipe()`
-    composition, a CLI command, a conceptual essay with no single API call).
--   **Both fences are `twoslash`** (the blog gate requires it — see "Blog
-    posts"). The `StitchAPI` tab type-checks against the real `stitchapi` types
-    like any other snippet. The `fetch` tab is a deliberately hand-rolled
-    baseline that imports no `stitchapi`, so it carries an in-block `// @noErrors`
-    — the gate's sanctioned escape hatch — keeping the fence uniform and the
-    exception explicit:
-    ` ```ts twoslash tab="fetch" tabGroup="approach" ` then `// @noErrors`.
--   **Posts that already carry a fetch-vs-stitch prose "before" don't need this**
-    — they've made the comparison already.
+- **`StitchAPI` is always the default (first) tab.** The point is to stay
+  stitch-first; the `fetch` tab is the comparison, not the lede.
+- **The `fetch` tab must be an _honest_ equivalent of that hero snippet** — the
+  naive hand-rolled version a reader would actually write, so the contrast is
+  real (the boilerplate the stitch folds in is visibly present, or visibly
+  absent). Don't gold-plate it and don't strawman it.
+- **Hero snippet only, and only where an honest equivalent exists.** Don't tab
+  every block, and skip it where there's no faithful `fetch` form (a `pipe()`
+  composition, a CLI command, a conceptual essay with no single API call).
+- **Both fences are `twoslash`** (the blog gate requires it — see "Blog
+  posts"). The `StitchAPI` tab type-checks against the real `stitchapi` types
+  like any other snippet. The `fetch` tab is a deliberately hand-rolled
+  baseline that imports no `stitchapi`, so it carries an in-block `// @noErrors`
+  — the gate's sanctioned escape hatch — keeping the fence uniform and the
+  exception explicit:
+  ` ```ts twoslash tab="fetch" tabGroup="approach" ` then `// @noErrors`.
+- **Posts that already carry a fetch-vs-stitch prose "before" don't need this**
+  — they've made the comparison already.
 
 ## Type tables — AutoTypeTable
 
@@ -596,10 +598,10 @@ Reference pages render option shapes from the **actual** TypeScript with
 <AutoTypeTable path="../../packages/core/src/types.ts" name="StitchConfig" />
 ```
 
--   `path` is relative to the MDX file; `name` is the exported type.
--   Never hand-write a prop table — it will drift. If a field needs explanation,
-    add TSDoc to the type (rule 8) and the table picks it up.
--   Type tables belong in Reference only; guides link to them (rule 6).
+- `path` is relative to the MDX file; `name` is the exported type.
+- Never hand-write a prop table — it will drift. If a field needs explanation,
+  add TSDoc to the type (rule 8) and the table picks it up.
+- Type tables belong in Reference only; guides link to them (rule 6).
 
 ## The error code registry
 
@@ -607,12 +609,12 @@ Errors & pitfalls is keyed to a registry of stable codes (`STITCH_VALIDATION`,
 `STITCH_DRIFT`, `STITCH_AUTH_WALL`, `STITCH_TIMEOUT`, `STITCH_CIRCUIT_OPEN`,
 `STITCH_GRAPHQL` — provisional until the runtime taxonomy refactor lands).
 
--   One catalog page per code. The page **slug is the URL** the runtime will point
-    to in a thrown error (`/errors/<slug>`).
--   **Slugs are an API.** Once a page is published, never rename its slug — add a
-    new page and redirect the old one.
--   The registry of codes will live in `packages/core` and be the shared source of
-    truth for both the runtime (which throws the code + url) and these pages.
+- One catalog page per code. The page **slug is the URL** the runtime will point
+  to in a thrown error (`/errors/<slug>`).
+- **Slugs are an API.** Once a page is published, never rename its slug — add a
+  new page and redirect the old one.
+- The registry of codes will live in `packages/core` and be the shared source of
+  truth for both the runtime (which throws the code + url) and these pages.
 
 ---
 
@@ -654,13 +656,13 @@ footer is a safety net, not a substitute: it catches the post a reader lands on,
 but inline links are what carry a reader _mid-argument_ to the post that goes
 deeper.
 
--   **Link down to docs** for the canonical mechanism — the primitive, the guide,
-    the reference, the error. `[the stitch](/docs/concepts/the-stitch)`.
--   **Link across to sibling posts** for the adjacent argument or the next step —
-    `([schema drift is a production bug](/blog/schema-drift-is-a-production-bug))`.
--   **Anchor on the idea, not the URL.** The link text reads as part of the
-    sentence: _"…shares one limiter across every stitch hitting that host
-    ([proactive throttling beats reacting to 429s](/blog/proactive-throttling-vs-reactive-429s))."_
+- **Link down to docs** for the canonical mechanism — the primitive, the guide,
+  the reference, the error. `[the stitch](/docs/concepts/the-stitch)`.
+- **Link across to sibling posts** for the adjacent argument or the next step —
+  `([schema drift is a production bug](/blog/schema-drift-is-a-production-bug))`.
+- **Anchor on the idea, not the URL.** The link text reads as part of the
+  sentence: _"…shares one limiter across every stitch hitting that host
+  ([proactive throttling beats reacting to 429s](/blog/proactive-throttling-vs-reactive-429s))."_
 
 A good post threads two-to-four such links through its body and closes by pointing
 at the obvious next read. A post that links to **no** sibling post fails
@@ -685,21 +687,21 @@ without `See also` strands its reader. Dangling `/blog/<slug>` links fail it too
 
 ## Definition of done (per page)
 
--   [ ] Listed in `content.manifest.ts`; file path matches.
--   [ ] `title` + `description` frontmatter; `description` is a real sentence.
--   [ ] Uses the correct template for its `kind`; all `(required)` sections present.
--   [ ] Every TypeScript code block is `ts twoslash` and builds clean (install,
-        CLI, and CommonJS blocks are the exception — they aren't TypeScript).
--   [ ] Equivalent forms (install, import, definition, consumption) are tabs with a
-        canonical `tabGroup`, not prose alternatives.
--   [ ] No hand-written type tables; shapes come from `AutoTypeTable`.
--   [ ] Neutral names only; `demo.stitchapi.dev` for hosts. Examples come from the
-        canonical roster (`getUser` / `listUsers` / `createUser` / `listOrders` /
-        `events`), not a one-off domain.
--   [ ] Reads correctly in isolation (imagine it as a lone `llms.mdx`).
--   [ ] `See also` links neighbors, the Reference entry, and any catalog pages.
--   [ ] If the opening assumes a foundational concept, `prerequisites` points
-        upstream to it (hrefs that resolve); foundational pages declare none.
--   [ ] Any tempting-but-wrong use is flagged with an inline **Anti-pattern**
-        `<Callout type="warn">` at the point of temptation, not a separate
-        section (rule 10) — omit only when the page has no such pitfall.
+- [ ] Listed in `content.manifest.ts`; file path matches.
+- [ ] `title` + `description` frontmatter; `description` is a real sentence.
+- [ ] Uses the correct template for its `kind`; all `(required)` sections present.
+- [ ] Every TypeScript code block is `ts twoslash` and builds clean (install,
+      CLI, and CommonJS blocks are the exception — they aren't TypeScript).
+- [ ] Equivalent forms (install, import, definition, consumption) are tabs with a
+      canonical `tabGroup`, not prose alternatives.
+- [ ] No hand-written type tables; shapes come from `AutoTypeTable`.
+- [ ] Neutral names only; `demo.stitchapi.dev` for hosts. Examples come from the
+      canonical roster (`getUser` / `listUsers` / `createUser` / `listOrders` /
+      `events`), not a one-off domain.
+- [ ] Reads correctly in isolation (imagine it as a lone `llms.mdx`).
+- [ ] `See also` links neighbors, the Reference entry, and any catalog pages.
+- [ ] If the opening assumes a foundational concept, `prerequisites` points
+      upstream to it (hrefs that resolve); foundational pages declare none.
+- [ ] Any tempting-but-wrong use is flagged with an inline **Anti-pattern**
+      `<Callout type="warn">` at the point of temptation, not a separate
+      section (rule 10) — omit only when the page has no such pitfall.

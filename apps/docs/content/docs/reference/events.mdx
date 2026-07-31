@@ -22,25 +22,25 @@ import type { StitchEvent } from 'stitchapi';
 A union table can render sparsely, so here is each of the eight variants and its
 fields. Every event carries an `at` field — a millisecond timestamp.
 
--   **`start`** — the request is about to go out. Fields: `name` (the stitch
-    label), `method`, `url`, `input` (the `StitchInput` for this call), `at`.
--   **`progress`** — a lifecycle beat within an attempt. Fields: `phase` (a
-    `ProgressPhase`), `attempt` (1-based), `detail?`, `waitedMs?` (set when the
-    phase involved a wait, e.g. `throttled` or `retry`), `at`.
--   **`info`** — an auth strategy announcing a decision it made (e.g. which env
-    var a `bearer` token resolved from, or that `oauth2` fetched a token); it
-    never carries the secret itself. Fields: `topic`, `detail?`, `at`.
--   **`drift`** — a single contract-drift observation against the response.
-    Fields: `finding` (a `DriftFinding` with `level`, `path`, `change`,
-    `detail?`), `at`.
--   **`delta`** — a streamed chunk of the response body. Fields: `chunk`
-    (`unknown`), `at`.
--   **`result`** — the call succeeded and produced a value. Fields: `data` (the
-    `T`), `status` (HTTP status), `attempts` (how many it took), `at`.
--   **`error`** — the call failed. Fields: `name`, `message`, `status?`,
-    `attempts`, `at`.
--   **`done`** — the stream is finished, success or failure. Fields: `ok`, `ms`
-    (total duration), `attempts`, `at`.
+- **`start`** — the request is about to go out. Fields: `name` (the stitch
+  label), `method`, `url`, `input` (the `StitchInput` for this call), `at`.
+- **`progress`** — a lifecycle beat within an attempt. Fields: `phase` (a
+  `ProgressPhase`), `attempt` (1-based), `detail?`, `waited?` (set when the
+  phase involved a wait, e.g. `throttled` or `retry`), `at`.
+- **`info`** — an auth strategy announcing a decision it made (e.g. which env
+  var a `bearer` token resolved from, or that `oauth2` fetched a token); it
+  never carries the secret itself. Fields: `topic`, `detail?`, `at`.
+- **`drift`** — a single contract-drift observation against the response.
+  Fields: `finding` (a `DriftFinding` with `level`, `path`, `change`,
+  `detail?`), `at`.
+- **`delta`** — a streamed chunk of the response body. Fields: `chunk`
+  (`unknown`), `at`.
+- **`result`** — the call succeeded and produced a value. Fields: `data` (the
+  `T`), `status` (HTTP status), `attempts` (how many it took), `at`.
+- **`error`** — the call failed. Fields: `name`, `message`, `status?`,
+  `attempts`, `at`.
+- **`done`** — the stream is finished, success or failure. Fields: `ok`, `elapsed`
+  (total duration), `attempts`, `at`.
 
 `ProgressPhase` is one of `'auth'`, `'request'`, `'throttled'`, `'retry'`,
 `'paginate'`, or `'circuit'`.

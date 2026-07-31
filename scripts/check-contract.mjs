@@ -117,6 +117,26 @@ function deprecatedBefore(src, idx) {
     return open !== -1 && /@deprecated/.test(src.slice(open, j));
 }
 
+// Index of the first `@deprecated` JSDoc TAG, or -1. A tag is the word at TAG POSITION — line
+// start, after the block comment's optional leading `*` — inside a `/* … */` block. Prose that
+// merely NAMES the marker is not one: a `//` line comment explaining that a deprecated alias
+// exists (core's `stripFns` note on `key`/`keyOf`), or a mid-sentence mention inside a JSDoc,
+// is documentation about the surface, not a shim on it. A raw `indexOf('@deprecated')` cannot
+// tell those apart and flagged the explanatory comment as a violation.
+function deprecatedTagIndex(src) {
+    let open = src.indexOf('/*');
+    while (open !== -1) {
+        const close = src.indexOf('*/', open + 2);
+        if (close === -1) return -1; // unterminated block: nothing further is a comment
+        const m = /^[ \t]*\*?[ \t]*@deprecated\b/m.exec(
+            src.slice(open + 2, close),
+        );
+        if (m) return open + 2 + m.index;
+        open = src.indexOf('/*', close + 2);
+    }
+    return -1;
+}
+
 // True when every TOP-LEVEL member of an interface body is optional (`?`) — so the bag is
 // `{}`-constructible and would accept the opaque empty object at a config slot (P20). Tracks
 // brace/paren depth so a nested object-literal field type doesn't read as a required member.
@@ -531,13 +551,13 @@ function collect() {
                 }
             }
 
-            // R7 — a `@deprecated` marker anywhere in a published package's src (amended P19).
+            // R7 — a `@deprecated` JSDoc TAG in a published package's src (amended P19).
             // The GA hard-break sweep removed every pre-GA migration shim; post-GA policy is
             // that deprecation aliases do not accumulate on the surface — a removal is a
             // semver-major, not a shim. One finding per file (first occurrence) keeps the
             // baseline key stable if a stray marker gains siblings before it's purged.
             {
-                const d = src.indexOf('@deprecated');
+                const d = deprecatedTagIndex(src);
                 if (d !== -1)
                     add(
                         'R7',

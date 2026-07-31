@@ -31,20 +31,20 @@ at a single version:
 
 ## Versioning
 
--   **Semantic Versioning.** At/after `1.0.0`: breaking → **major**, features →
-    **minor**, fixes → **patch**. (While pre-`1.0`, breaking changes bumped the
-    _minor_.)
--   **Prereleases** use a dotted identifier: `X.Y.Z-rc.N` (also `-beta.N`,
-    `-alpha.N`). Precedence: `alpha` < `beta` < `rc` < the final release.
--   **The npm dist-tag is derived from the version**, never passed by hand:
-    `-rc.*`→`rc`, `-beta.*`→`beta`, `-alpha.*`→`alpha`, a numeric-only prerelease →
-    `next`, and a stable version → `latest`. **A prerelease therefore never takes
-    `latest`** — `npm install stitchapi` keeps resolving the last stable release.
--   **Lockstep + peer ranges.** All publishable packages share the version. Each
-    companion declares `"stitchapi": "^<version>"`. A caret range like
-    `^1.0.0-rc.1` admits the entire `1.x` line (so `rc.2`, `1.0.0`, `1.4.0` all
-    satisfy it) — **only a major bump (e.g. `1.x` → `2.0.0`) needs the companion
-    peer ranges widened.**
+- **Semantic Versioning.** At/after `1.0.0`: breaking → **major**, features →
+  **minor**, fixes → **patch**. (While pre-`1.0`, breaking changes bumped the
+  _minor_.)
+- **Prereleases** use a dotted identifier: `X.Y.Z-rc.N` (also `-beta.N`,
+  `-alpha.N`). Precedence: `alpha` < `beta` < `rc` < the final release.
+- **The npm dist-tag is derived from the version**, never passed by hand:
+  `-rc.*`→`rc`, `-beta.*`→`beta`, `-alpha.*`→`alpha`, a numeric-only prerelease →
+  `next`, and a stable version → `latest`. **A prerelease therefore never takes
+  `latest`** — `npm install stitchapi` keeps resolving the last stable release.
+- **Lockstep + peer ranges.** All publishable packages share the version. Each
+  companion declares `"stitchapi": "^<version>"`. A caret range like
+  `^1.0.0-rc.1` admits the entire `1.x` line (so `rc.2`, `1.0.0`, `1.4.0` all
+  satisfy it) — **only a major bump (e.g. `1.x` → `2.0.0`) needs the companion
+  peer ranges widened.**
 
 > [!IMPORTANT]
 >
@@ -118,25 +118,25 @@ npm dist-tag add stitchapi@1.0.0 latest
 
 ## CI & authentication (OIDC trusted publishing)
 
--   `npm-publish.yml` triggers on `release: created`. A fast **`preflight`** job runs
-    first and gates everything else: it rejects in seconds a release whose tag does not
-    match the version in the commit it points at (the classic "tagged `main` before the
-    bump PR merged" mistake), so the long gates never run on a doomed release. Then the
-    full verify gate (`check:format` → `lint` → `types` → `test:coverage` → `exports` →
-    `check:release`) + the browser e2e gate run, and finally it publishes — the publish
-    job re-runs `check-release --release-tag` as the authoritative final guard. Node
-    version comes from [`.nvmrc`](../.nvmrc).
--   **No npm token.** The publish job authenticates with **OIDC trusted publishing**:
-    it requests an `id-token: write` permission, mints a short-lived token, and npm
-    exchanges it for publish rights — nothing to store, rotate, or leak. It then runs
-    `pnpm pack` (which rewrites the `workspace:` protocol and builds via `prepack`) and
-    `npm publish <tarball> --provenance`, so every release also carries a signed
-    build-provenance attestation. `publishConfig.access: public` (set on every
-    companion) makes the scoped publishes public.
--   **Each package needs a Trusted Publisher** configured once on npmjs.com: the
-    package's _Settings → Trusted Publisher_ → GitHub Actions, repo `rejifald/StitchAPI`,
-    workflow `npm-publish.yml`. Without it that package's publish step fails to
-    authenticate.
+- `npm-publish.yml` triggers on `release: created`. A fast **`preflight`** job runs
+  first and gates everything else: it rejects in seconds a release whose tag does not
+  match the version in the commit it points at (the classic "tagged `main` before the
+  bump PR merged" mistake), so the long gates never run on a doomed release. Then the
+  full verify gate (`check:format` → `lint` → `types` → `test:coverage` → `exports` →
+  `check:release`) + the browser e2e gate run, and finally it publishes — the publish
+  job re-runs `check-release --release-tag` as the authoritative final guard. Node
+  version comes from [`.nvmrc`](../.nvmrc).
+- **No npm token.** The publish job authenticates with **OIDC trusted publishing**:
+  it requests an `id-token: write` permission, mints a short-lived token, and npm
+  exchanges it for publish rights — nothing to store, rotate, or leak. It then runs
+  `pnpm pack` (which rewrites the `workspace:` protocol and builds via `prepack`) and
+  `npm publish <tarball> --provenance`, so every release also carries a signed
+  build-provenance attestation. `publishConfig.access: public` (set on every
+  companion) makes the scoped publishes public.
+- **Each package needs a Trusted Publisher** configured once on npmjs.com: the
+  package's _Settings → Trusted Publisher_ → GitHub Actions, repo `rejifald/StitchAPI`,
+  workflow `npm-publish.yml`. Without it that package's publish step fails to
+  authenticate.
 
 ## Bootstrapping a new package's first publish
 

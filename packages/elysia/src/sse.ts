@@ -21,6 +21,7 @@ import {
     resolveError,
     sseFrame,
     toErrorEvent,
+    toIterable,
 } from 'stitchapi/sse-emit';
 
 export type { StitchEventSource };
@@ -57,7 +58,7 @@ export function streamStitchSse<T>(
     const error = resolveError(options.error);
     const errorEvent = error.event ?? 'error';
     const enc = new TextEncoder();
-    const iterator = source[Symbol.asyncIterator]();
+    const iterator = toIterable(source)[Symbol.asyncIterator]();
     let index = 0;
 
     const body = new ReadableStream<Uint8Array>({

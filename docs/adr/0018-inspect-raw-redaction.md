@@ -1,8 +1,8 @@
 # ADR 0018 — `.inspect()`: an opt-in `redact` option for `raw`
 
--   **Status:** Accepted (designed 2026-06-28; implemented in this PR; refines [ADR 0016](./0016-inspect-raw-and-findings.md), merged in [#334](https://github.com/rejifald/StitchAPI/pull/334)). One of the four items ADR 0016 deferred.
--   **Date:** 2026-06-28
--   **Tags:** inspect, security, redaction, privacy, opt-in
+- **Status:** Accepted (designed 2026-06-28; implemented in this PR; refines [ADR 0016](./0016-inspect-raw-and-findings.md), merged in [#334](https://github.com/rejifald/StitchAPI/pull/334)). One of the four items ADR 0016 deferred.
+- **Date:** 2026-06-28
+- **Tags:** inspect, security, redaction, privacy, opt-in
 
 > [!NOTE]
 >
@@ -81,14 +81,14 @@ scrubbing is then also caught when it echoes in a response body.
 The denylist is **query-key-named** today; the body case needs the same matcher
 under a body-neutral name:
 
--   Promote the predicate to **`isSecretKey(name)`** in `util.ts`, keeping
-    the original query-scoped name as a compat alias (the URL scrubbers keep
-    their name).
--   Add **`redactSecretsDeep(value, extra?)`** in `util.ts`: walk a plain value,
-    replace any object key matching `isSecretKey` (or the caller's `extra`
-    name/path patterns via the existing `matchPath`) with the existing
-    `URL_REDACTED = 'REDACTED'` sentinel. Returns a **deep clone** — never mutate
-    the engine's retained body.
+- Promote the predicate to **`isSecretKey(name)`** in `util.ts`, keeping
+  the original query-scoped name as a compat alias (the URL scrubbers keep
+  their name).
+- Add **`redactSecretsDeep(value, extra?)`** in `util.ts`: walk a plain value,
+  replace any object key matching `isSecretKey` (or the caller's `extra`
+  name/path patterns via the existing `matchPath`) with the existing
+  `URL_REDACTED = 'REDACTED'` sentinel. Returns a **deep clone** — never mutate
+  the engine's retained body.
 
 `redact: true` uses the shared denylist; `redact: string[]` adds extra key
 names / paths (reusing `matchPath`'s prefix/`*` grammar) on top of it.
@@ -99,16 +99,16 @@ Redaction here is **name-based**: it scrubs fields whose _key_ is known-secret. 
 deliberately does **not** attempt value-shape (regex JWT/bearer/PII) redaction.
 This is the crux:
 
--   A name-based redactor **cannot** catch a token sitting in an innocently-named,
-    undeclared field — and that is **exactly the case `.inspect()` exists to let a
-    human find.** So redaction is scoped honestly as "scrub the fields I already
-    know are secret-named, so I can share the rest," **not** as a guarantee that
-    `raw` is now leak-free.
--   That scoping _is the argument for opt-in._ An opt-in convenience cannot lull
-    you. An on-by-default "safety" net would: you'd believe `raw` is safe to log
-    while the dangerous case (token in a field not named like a secret) slips
-    through unredacted. **The default protection is non-enumerability** (accidental
-    leakage); `redact` is the deliberate-sharing escape hatch layered on top.
+- A name-based redactor **cannot** catch a token sitting in an innocently-named,
+  undeclared field — and that is **exactly the case `.inspect()` exists to let a
+  human find.** So redaction is scoped honestly as "scrub the fields I already
+  know are secret-named, so I can share the rest," **not** as a guarantee that
+  `raw` is now leak-free.
+- That scoping _is the argument for opt-in._ An opt-in convenience cannot lull
+  you. An on-by-default "safety" net would: you'd believe `raw` is safe to log
+  while the dangerous case (token in a field not named like a secret) slips
+  through unredacted. **The default protection is non-enumerability** (accidental
+  leakage); `redact` is the deliberate-sharing escape hatch layered on top.
 
 ### 4. Findings are computed before redaction
 
@@ -122,44 +122,44 @@ on `wrapper.raw` and drops the unredacted body (otherwise redaction is pointless
 
 ## Alternatives considered
 
--   **Redact by default (opt-out).** Rejected: inverts the tool's purpose, creates
-    false confidence, and a name-based redactor can't catch the stray-token case
-    anyway — so a default-on net protects least where it matters most.
--   **A new, body-specific secret denylist.** Rejected: duplicates the curated
-    `isSecretKey` list, would drift, and caller registrations on the
-    query-scoped registrar (later `registerSecretKey`) wouldn't carry over.
--   **Value-shape (regex) redaction.** Rejected for v1: heuristic, false-positive
-    prone, and still cannot guarantee catching the field manual inspection exists
-    for. Could be a future additive `redact` mode if demand appears.
--   **Process-wide / global redaction default.** Rejected as a mechanism: the
-    silent-blinding footgun. Allowed only as an explicit stitch-level default that
-    the per-call option overrides.
--   **Redact in place on the retained body.** Rejected: corrupts the engine's
-    pristine `RAW_BODY`; redaction returns a clone.
+- **Redact by default (opt-out).** Rejected: inverts the tool's purpose, creates
+  false confidence, and a name-based redactor can't catch the stray-token case
+  anyway — so a default-on net protects least where it matters most.
+- **A new, body-specific secret denylist.** Rejected: duplicates the curated
+  `isSecretKey` list, would drift, and caller registrations on the
+  query-scoped registrar (later `registerSecretKey`) wouldn't carry over.
+- **Value-shape (regex) redaction.** Rejected for v1: heuristic, false-positive
+  prone, and still cannot guarantee catching the field manual inspection exists
+  for. Could be a future additive `redact` mode if demand appears.
+- **Process-wide / global redaction default.** Rejected as a mechanism: the
+  silent-blinding footgun. Allowed only as an explicit stitch-level default that
+  the per-call option overrides.
+- **Redact in place on the retained body.** Rejected: corrupts the engine's
+  pristine `RAW_BODY`; redaction returns a clone.
 
 ## Consequences
 
--   `.inspect()` gains one optional `redact`; the default path is byte-identical
-    to 0016 (unredacted, non-enumerable).
--   **No engine change.** Redaction lives entirely at the `.inspect()` assembly
-    site in `stitch.ts`; the engine keeps retaining the pristine body on
-    `RAW_BODY` (contrast 0016, which _did_ need the `RAW_BODY`/`ERROR_SOURCE`
-    engine plumbing).
--   `util.ts` gains a reusable `redactSecretsDeep` + the `isSecretKey` rename;
-    the URL scrubbers are unchanged behind the alias.
+- `.inspect()` gains one optional `redact`; the default path is byte-identical
+  to 0016 (unredacted, non-enumerable).
+- **No engine change.** Redaction lives entirely at the `.inspect()` assembly
+  site in `stitch.ts`; the engine keeps retaining the pristine body on
+  `RAW_BODY` (contrast 0016, which _did_ need the `RAW_BODY`/`ERROR_SOURCE`
+  engine plumbing).
+- `util.ts` gains a reusable `redactSecretsDeep` + the `isSecretKey` rename;
+  the URL scrubbers are unchanged behind the alias.
 
 ## Engine / type touch-points
 
--   [`types.ts`](../../packages/core/src/types.ts) — `InspectOptions`: add
-    `redact?: boolean | string[]`. Update the `Inspection.raw` JSDoc to mention
-    the escape hatch.
--   [`util.ts`](../../packages/core/src/util.ts) — rename the predicate to
-    `isSecretKey` (alias: the original query-scoped name); add
-    `redactSecretsDeep(value, extra?)` reusing it + `URL_REDACTED`.
--   [`stitch.ts`](../../packages/core/src/stitch.ts) — the `.inspect()` consumer:
-    after recovering `raw` (`RAW_BODY`) and computing `findings`, if `redact` is
-    set, place `redactSecretsDeep(...)` on `wrapper.raw` instead of the raw body.
--   `engine.ts` — **no change.**
+- [`types.ts`](../../packages/core/src/types.ts) — `InspectOptions`: add
+  `redact?: boolean | string[]`. Update the `Inspection.raw` JSDoc to mention
+  the escape hatch.
+- [`util.ts`](../../packages/core/src/util.ts) — rename the predicate to
+  `isSecretKey` (alias: the original query-scoped name); add
+  `redactSecretsDeep(value, extra?)` reusing it + `URL_REDACTED`.
+- [`stitch.ts`](../../packages/core/src/stitch.ts) — the `.inspect()` consumer:
+  after recovering `raw` (`RAW_BODY`) and computing `findings`, if `redact` is
+  set, place `redactSecretsDeep(...)` on `wrapper.raw` instead of the raw body.
+- `engine.ts` — **no change.**
 
 ## Relationship to the other 0016 deferrals
 

@@ -1,8 +1,8 @@
 # ADR 0012 — Integration symbol naming (ecosystem-qualified adapters)
 
--   **Status:** Accepted (2026-06-20). Applies to every published `@stitchapi/*` package. The enforcement sweep qualifies the bare adapter exports in `@stitchapi/nest` (5), `@stitchapi/hono` (1), and `@stitchapi/react` (1); the rest were already on-pattern.
--   **Date:** 2026-06-20
--   **Tags:** naming, conventions, public-api, packaging, adapters, integrations, dx
+- **Status:** Accepted (2026-06-20). Applies to every published `@stitchapi/*` package. The enforcement sweep qualifies the bare adapter exports in `@stitchapi/nest` (5), `@stitchapi/hono` (1), and `@stitchapi/react` (1); the rest were already on-pattern.
+- **Date:** 2026-06-20
+- **Tags:** naming, conventions, public-api, packaging, adapters, integrations, dx
 
 > [!NOTE]
 >
@@ -70,27 +70,27 @@ The JS projects shaped most like StitchAPI — a vendor-neutral runtime with one
 adapter package per host/library — **qualify the symbol with the ecosystem**, despite
 the package path already naming it:
 
--   **OpenTelemetry** — `@opentelemetry/instrumentation-pino` exports
-    `PinoInstrumentation`; `@opentelemetry/instrumentation-fastify` exports
-    `FastifyInstrumentation`. It also drops _redundant_ tokens: it is
-    `PinoInstrumentation`, not `PinoLoggerInstrumentation`.
--   **Auth.js** — `@auth/prisma-adapter` exports `PrismaAdapter`,
-    `@auth/drizzle-adapter` exports `DrizzleAdapter`.
--   The bare-export camp (Vite/Rollup plugins → default `react()`, `vue()`) still
-    names the export after the **target ecosystem**, never the host runtime — the same
-    principle by a different mechanism.
+- **OpenTelemetry** — `@opentelemetry/instrumentation-pino` exports
+  `PinoInstrumentation`; `@opentelemetry/instrumentation-fastify` exports
+  `FastifyInstrumentation`. It also drops _redundant_ tokens: it is
+  `PinoInstrumentation`, not `PinoLoggerInstrumentation`.
+- **Auth.js** — `@auth/prisma-adapter` exports `PrismaAdapter`,
+  `@auth/drizzle-adapter` exports `DrizzleAdapter`.
+- The bare-export camp (Vite/Rollup plugins → default `react()`, `vue()`) still
+  names the export after the **target ecosystem**, never the host runtime — the same
+  principle by a different mechanism.
 
 ## Decision
 
 **1. Two package archetypes, two rules for the _primary_ surface.**
 
--   **Host adapters** — you plug Stitch _into_ a framework (`fastify`, `hono`, `nest`,
-    `react`). The primary surface is **`Stitch`-branded**, because the thing you
-    register/use _is_ Stitch: `stitchPlugin`, `stitch` (middleware), `StitchModule`,
-    `useStitch`.
--   **Capability providers** — an external library _backs_ a Stitch capability
-    (`pino`, `redis`). The primary surface is **`{provider}`-branded**, because the
-    name's job is to say _which_ backing it is: `pinoSink`, `redisStore`.
+- **Host adapters** — you plug Stitch _into_ a framework (`fastify`, `hono`, `nest`,
+  `react`). The primary surface is **`Stitch`-branded**, because the thing you
+  register/use _is_ Stitch: `stitchPlugin`, `stitch` (middleware), `StitchModule`,
+  `useStitch`.
+- **Capability providers** — an external library _backs_ a Stitch capability
+  (`pino`, `redis`). The primary surface is **`{provider}`-branded**, because the
+  name's job is to say _which_ backing it is: `pinoSink`, `redisStore`.
 
 **2. Cross-cutting bridge/adapter helpers are ecosystem-qualified.** A helper that
 adapts one of a host's subsystems (its logger, its config) into a Stitch seam is named
@@ -100,10 +100,10 @@ adapts one of a host's subsystems (its logger, its config) into a Stitch seam is
 **3. Use the _minimal_ subsystem token (the OTel refinement).** Qualify with the
 ecosystem plus only the token needed to answer _"which subsystem of that ecosystem?"_
 
--   A logger library already _is_ a logger, so the token is redundant: `pinoSink`
-    (not `pinoLoggerSink`).
--   A web framework is not a logger, so name the subsystem you are bridging:
-    `fastifyLoggerSink`, `nestLoggerSink` (you are bridging its `.log`, not its router).
+- A logger library already _is_ a logger, so the token is redundant: `pinoSink`
+  (not `pinoLoggerSink`).
+- A web framework is not a logger, so name the subsystem you are bridging:
+  `fastifyLoggerSink`, `nestLoggerSink` (you are bridging its `.log`, not its router).
 
 **4. Constructors that adapt a foreign instance use `from{Source}` — and the source
 token must be specific enough not to collide.** A concrete library name is its own
@@ -174,32 +174,32 @@ hard-breaks:
 
 ## Enforcement
 
--   **Review gate.** This ADR is the reference; new adapter packages and exports are
-    checked against rules 1–6 in review. `pnpm check:exports` surfaces the full public
-    surface of each package so a reviewer can eyeball it.
--   **Future (optional).** A small lint over each published package's `index.ts` could
-    assert "an adapter/provider package exports no bare, non-branded identifier" (no
-    export that is neither `Stitch`-/`{provider}`-prefixed nor a specific `from{Lib}`).
-    That would mechanize rule 6. Deferred until the surface grows enough to justify the
-    machinery — this sweep covered every published package by hand.
+- **Review gate.** This ADR is the reference; new adapter packages and exports are
+  checked against rules 1–6 in review. `pnpm check:exports` surfaces the full public
+  surface of each package so a reviewer can eyeball it.
+- **Future (optional).** A small lint over each published package's `index.ts` could
+  assert "an adapter/provider package exports no bare, non-branded identifier" (no
+  export that is neither `Stitch`-/`{provider}`-prefixed nor a specific `from{Lib}`).
+  That would mechanize rule 6. Deferred until the surface grows enough to justify the
+  machinery — this sweep covered every published package by hand.
 
 ## Alternatives considered
 
--   **Drop the prefix everywhere** (`loggerSink` / `LoggerLike` in every package).
-    Rejected: it re-creates the exact core collision nest already suffered and leans on
-    the Go stutter rule, whose premise (mandatory qualification) JS named imports
-    violate.
--   **Uniform `{ecosystem}LoggerSink` everywhere**, including `pinoSink` →
-    `pinoLoggerSink`. Rejected for the minimal-token form (rule 3): it adds a
-    redundant token to logger libraries and churns `@stitchapi/pino` for no clarity
-    gain, against OTel precedent (`PinoInstrumentation`, not
-    `PinoLoggerInstrumentation`).
--   **`Stitch`-brand the bridges** (`stitchLoggerSink`). Rejected: the sink bridges the
-    _host's_ logger, not Stitch's — the ecosystem token is the informative one.
+- **Drop the prefix everywhere** (`loggerSink` / `LoggerLike` in every package).
+  Rejected: it re-creates the exact core collision nest already suffered and leans on
+  the Go stutter rule, whose premise (mandatory qualification) JS named imports
+  violate.
+- **Uniform `{ecosystem}LoggerSink` everywhere**, including `pinoSink` →
+  `pinoLoggerSink`. Rejected for the minimal-token form (rule 3): it adds a
+  redundant token to logger libraries and churns `@stitchapi/pino` for no clarity
+  gain, against OTel precedent (`PinoInstrumentation`, not
+  `PinoLoggerInstrumentation`).
+- **`Stitch`-brand the bridges** (`stitchLoggerSink`). Rejected: the sink bridges the
+  _host's_ logger, not Stitch's — the ecosystem token is the informative one.
 
 ## References
 
--   [ADR 0001 — package naming & distribution](./0001-package-naming-and-distribution.md) (the `@stitchapi/<name>` adapter tier this refines)
--   [ADR 0006 — NestJS integration](./0006-nestjs-integration.md) (the renamed bridge sink; see its 2026-06-20 addendum)
--   OpenTelemetry JS instrumentation packages (`{Target}Instrumentation`)
--   Auth.js database adapters (`{Backing}Adapter`)
+- [ADR 0001 — package naming & distribution](./0001-package-naming-and-distribution.md) (the `@stitchapi/<name>` adapter tier this refines)
+- [ADR 0006 — NestJS integration](./0006-nestjs-integration.md) (the renamed bridge sink; see its 2026-06-20 addendum)
+- OpenTelemetry JS instrumentation packages (`{Target}Instrumentation`)
+- Auth.js database adapters (`{Backing}Adapter`)

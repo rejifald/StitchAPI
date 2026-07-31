@@ -49,13 +49,13 @@ flowchart TB
   class SR deferred;
 ```
 
--   **The UI talks only to `CodeRunner`** (unchanged from [`runner.ts`](./component/runner.ts)).
-    The **dispatcher** is itself a `CodeRunner` that delegates to a browser runner or
-    a server runner based on a static scan of the snippet (§3).
--   **Both runners hit the same fake-API simulator** via different adapters (§4). A
-    snippet behaves identically regardless of where it runs.
--   **The server tier is optional and deferred.** Phase 1–2 ship browser-only and
-    cover the large majority of examples at **zero infrastructure**.
+- **The UI talks only to `CodeRunner`** (unchanged from [`runner.ts`](./component/runner.ts)).
+  The **dispatcher** is itself a `CodeRunner` that delegates to a browser runner or
+  a server runner based on a static scan of the snippet (§3).
+- **Both runners hit the same fake-API simulator** via different adapters (§4). A
+  snippet behaves identically regardless of where it runs.
+- **The server tier is optional and deferred.** Phase 1–2 ship browser-only and
+  cover the large majority of examples at **zero infrastructure**.
 
 ---
 
@@ -80,11 +80,11 @@ Classification of the **develop** core exports ([`packages/core/src/index.ts`](.
 Node-only identifiers, plus their import specifiers. It is **intentionally
 conservative**:
 
--   A clear Node-only reference → **server runner** (if the server tier is built;
-    otherwise the browser runner runs it with the surface **shimmed** and shows a
-    "running shimmed — `keychain` is simulated" notice).
--   **Ambiguous / dynamic** access (e.g. `core['key' + 'chain']`) → **safe default**:
-    browser runner + shim + notice. Never silently route dynamic code to the isolate.
+- A clear Node-only reference → **server runner** (if the server tier is built;
+  otherwise the browser runner runs it with the surface **shimmed** and shows a
+  "running shimmed — `keychain` is simulated" notice).
+- **Ambiguous / dynamic** access (e.g. `core['key' + 'chain']`) → **safe default**:
+  browser runner + shim + notice. Never silently route dynamic code to the isolate.
 
 > The scan is a heuristic for _routing_, not a security control. Security comes from
 > the runtime having no network and no ambient authority (§7) — not from the scan.
@@ -100,9 +100,9 @@ nothing** and exists only to _simulate behaviour_ deterministically.
 
 Handlers are written **once** and run in both environments:
 
--   **Browser adapter:** a `fetch` shim injected into the Worker scope (Web Workers
-    have no Service Worker / MSW page interception, so we inject `fetch`, not a SW).
--   **Node adapter:** the same handlers wired into the server isolate's `fetch` shim.
+- **Browser adapter:** a `fetch` shim injected into the Worker scope (Web Workers
+  have no Service Worker / MSW page interception, so we inject `fetch`, not a SW).
+- **Node adapter:** the same handlers wired into the server isolate's `fetch` shim.
 
 This guarantees the two runners are behaviour-equivalent — no per-tier drift.
 
@@ -122,17 +122,17 @@ show off. Requested behaviour is selected by route and/or reserved query knobs
 
 ### 4.3 Rules
 
--   **Deterministic.** Seeded PRNG; no wall-clock/`Math.random` in handler output paths
-    — same request → same response, so docs examples are reproducible and snapshot-able.
-    Determinism covers the response **bytes/structure**, _not_ delivery **timing**:
-    `__latencyMs` and stream pacing may vary by wall-clock; only payloads are pinned.
-    (Ratified Wave 0 — resolves the §4.2 latency vs §4.3 determinism tension.)
--   **Unknown host/route → documented sandbox-404.** A freely-editable REPL _will_ call
-    URLs the sim doesn't know. Those return a clean, explanatory body
-    (`"<host> is not reachable inside the StitchAPI sandbox; available demo hosts: …"`),
-    **never** a real network attempt.
--   **Discoverable.** The sim ships a tiny self-describing index (`GET /__sandbox`) so
-    the docs can list available demo endpoints next to the editor.
+- **Deterministic.** Seeded PRNG; no wall-clock/`Math.random` in handler output paths
+  — same request → same response, so docs examples are reproducible and snapshot-able.
+  Determinism covers the response **bytes/structure**, _not_ delivery **timing**:
+  `__latencyMs` and stream pacing may vary by wall-clock; only payloads are pinned.
+  (Ratified Wave 0 — resolves the §4.2 latency vs §4.3 determinism tension.)
+- **Unknown host/route → documented sandbox-404.** A freely-editable REPL _will_ call
+  URLs the sim doesn't know. Those return a clean, explanatory body
+  (`"<host> is not reachable inside the StitchAPI sandbox; available demo hosts: …"`),
+  **never** a real network attempt.
+- **Discoverable.** The sim ships a tiny self-describing index (`GET /__sandbox`) so
+  the docs can list available demo endpoints next to the editor.
 
 ---
 
@@ -171,17 +171,17 @@ Runs **only** Node-only-surface snippets, against the **real Node `stitch` build
 
 Yes, and it's cheaper than it sounds **because it runs a minority of examples**:
 
--   **Isolation:** [`isolated-vm`](https://github.com/laverdet/isolated-vm) — each run
-    gets a fresh V8 `Isolate` (own heap, ~few MB) with **no fs, no `require`, no network**
-    (only the injected sim `fetch`), and **wall-clock + CPU + memory caps**.
--   **Concurrency:** V8 runs JS on the calling thread, so the isolate **pool lives inside
-    a `worker_threads` pool sized to vCPUs**. Each request checks out an isolate, runs
-    capped, and recycles it. Runs are short (cap ≈ 2–5 s), so a small box serves dozens
-    of concurrent short runs; the service is **stateless and scales horizontally**.
--   **Backpressure:** a global concurrency queue + **per-IP rate limit**; a flood
-    degrades to "please wait," not a crash.
--   **Cost:** one small always-warm container (≈ **$5–15/mo** for a docs demo). It is a
-    Phase-3 add-on, **not** a v1 dependency.
+- **Isolation:** [`isolated-vm`](https://github.com/laverdet/isolated-vm) — each run
+  gets a fresh V8 `Isolate` (own heap, ~few MB) with **no fs, no `require`, no network**
+  (only the injected sim `fetch`), and **wall-clock + CPU + memory caps**.
+- **Concurrency:** V8 runs JS on the calling thread, so the isolate **pool lives inside
+  a `worker_threads` pool sized to vCPUs**. Each request checks out an isolate, runs
+  capped, and recycles it. Runs are short (cap ≈ 2–5 s), so a small box serves dozens
+  of concurrent short runs; the service is **stateless and scales horizontally**.
+- **Backpressure:** a global concurrency queue + **per-IP rate limit**; a flood
+  degrades to "please wait," not a crash.
+- **Cost:** one small always-warm container (≈ **$5–15/mo** for a docs demo). It is a
+  Phase-3 add-on, **not** a v1 dependency.
 
 ### 6.2 Cheaper fallback
 
@@ -195,16 +195,16 @@ no-secret sandbox. The `CodeRunner` contract makes this swap a single implementa
 
 ## 7. Security model (revised)
 
--   **No ambient authority.** Neither runtime exposes the real network, filesystem, real
-    env, or real secrets. The snippet's `fetch` is the simulator; that is the whole
-    outside world it can see.
--   **Browser blast radius = the visitor's own Worker.** No same-origin proxy, no
-    credential anywhere in the system → no SSRF / open-relay / secret-leak surface that
-    the old proxy design had to defend.
--   **Server blast radius = one capped, network-less isolate**, recycled per run, behind
-    a rate limiter. The only untrusted-code-meets-our-infra point, and it is isolated.
--   **CSP** still matters for the eval in the browser; validate the `connect-src` +
-    `worker-src` policy in the Phase-2 spike.
+- **No ambient authority.** Neither runtime exposes the real network, filesystem, real
+  env, or real secrets. The snippet's `fetch` is the simulator; that is the whole
+  outside world it can see.
+- **Browser blast radius = the visitor's own Worker.** No same-origin proxy, no
+  credential anywhere in the system → no SSRF / open-relay / secret-leak surface that
+  the old proxy design had to defend.
+- **Server blast radius = one capped, network-less isolate**, recycled per run, behind
+  a rate limiter. The only untrusted-code-meets-our-infra point, and it is isolated.
+- **CSP** still matters for the eval in the browser; validate the `connect-src` +
+  `worker-src` policy in the Phase-2 spike.
 
 ---
 
@@ -213,28 +213,28 @@ no-secret sandbox. The `CodeRunner` contract makes this swap a single implementa
 The [`CodeRunner`](./component/runner.ts) contract is **unchanged**; this design adds
 implementations and one composite:
 
--   `browserWorkerRunner: CodeRunner` (Phase 2)
--   `serverRunner: CodeRunner` (Phase 3, talks to the run-service over HTTP)
--   `dispatchRunner(opts): CodeRunner` — wraps the two, does the §3 static scan, and is
-    what `<StitchPlayground runner={…}/>` actually receives.
+- `browserWorkerRunner: CodeRunner` (Phase 2)
+- `serverRunner: CodeRunner` (Phase 3, talks to the run-service over HTTP)
+- `dispatchRunner(opts): CodeRunner` — wraps the two, does the §3 static scan, and is
+  what `<StitchPlayground runner={…}/>` actually receives.
 
 Additive (non-breaking) extensions **frozen in Wave 0** (see [`contracts/`](./contracts/),
 [SANDBOX-SECURITY-CHECKLIST.md](./SANDBOX-SECURITY-CHECKLIST.md)):
 
--   `StitchTraceEntry.stream?: { chunks: number }` — render streaming/LLM responses distinctly.
--   `RunError.reason?: 'throw' | 'timeout' | 'abort' | 'internal'` — so the UI and tests can
-    tell a timeout from an abort from a thrown error (`phase` alone can't). Engine failures
-    resolve as `reason: 'internal'`; `run()` rejects only for unrecoverable harness bugs.
--   `RunResult.notices?: RunNotice[]` — the structured channel for the shimmed-surface notice
-    the browser runner shows when a Node-only surface runs shimmed (§3, §5.7).
--   `RunRequest.scope` already carries the browser `stitch` build + sim `fetch`; the
-    dispatcher decides the scope per tier.
--   `RunRequest.onEvent?(RunEvent)` (added Wave 4) — an optional progressive channel so
-    the UI can render **incrementally** (the §9 LLM/SSE token-by-token criterion). `run()`
-    stays single-shot; runners without progress just never call it. **Meeting §9's
-    "incrementally" end-to-end requires a scheduled amendment:** R1's worker must forward
-    chunks via `postMessage` as they arrive, and U1 must consume `onEvent` (today U1 renders
-    the _assembled_ stream + a streaming badge). Tracked into Wave 5.
+- `StitchTraceEntry.stream?: { chunks: number }` — render streaming/LLM responses distinctly.
+- `RunError.reason?: 'throw' | 'timeout' | 'abort' | 'internal'` — so the UI and tests can
+  tell a timeout from an abort from a thrown error (`phase` alone can't). Engine failures
+  resolve as `reason: 'internal'`; `run()` rejects only for unrecoverable harness bugs.
+- `RunResult.notices?: RunNotice[]` — the structured channel for the shimmed-surface notice
+  the browser runner shows when a Node-only surface runs shimmed (§3, §5.7).
+- `RunRequest.scope` already carries the browser `stitch` build + sim `fetch`; the
+  dispatcher decides the scope per tier.
+- `RunRequest.onEvent?(RunEvent)` (added Wave 4) — an optional progressive channel so
+  the UI can render **incrementally** (the §9 LLM/SSE token-by-token criterion). `run()`
+  stays single-shot; runners without progress just never call it. **Meeting §9's
+  "incrementally" end-to-end requires a scheduled amendment:** R1's worker must forward
+  chunks via `postMessage` as they arrive, and U1 must consume `onEvent` (today U1 renders
+  the _assembled_ stream + a streaming badge). Tracked into Wave 5.
 
 **Browser memory & CSP (ratified Wave 0):** the browser Worker is **time-bounded only** —
 no portable per-Worker memory cap exists, and the blast radius is the visitor's own tab,
@@ -246,17 +246,17 @@ _inside the Worker context only_. Exact tokens are validated in the Phase-2 spik
 
 ## 9. Acceptance criteria (sandbox v1 = Phases 1–2)
 
--   [ ] `const u = await stitch('https://demo.stitchapi.dev/users/2'); console.log(u)`
-        renders the log, the resolved value, a `StitchTraceEntry`, and `done · <ms>`.
--   [ ] A snippet hitting `?__status=500` renders a clean error, does **not** reject `run()`.
--   [ ] A `?__stream=sse` / LLM endpoint renders streamed output incrementally.
--   [ ] A `?__drift=1` response makes on-the-fly Zod validation fail visibly.
--   [ ] `while(true){}` is **killed** at `timeoutMs` (proves the Worker, not main-thread, eval).
--   [ ] **Stop** aborts an in-flight streamed response via `signal`.
--   [ ] A snippet calling an unknown host renders the sandbox-404, with **no** real request.
--   [ ] A snippet using `keychain` runs in the browser **shimmed**, with a visible notice
-        (and, once Phase 3 exists, routes to the isolate and runs for real).
--   [ ] No `globalThis` state bleed between two consecutive runs.
+- [ ] `const u = await stitch('https://demo.stitchapi.dev/users/2'); console.log(u)`
+      renders the log, the resolved value, a `StitchTraceEntry`, and `done · <ms>`.
+- [ ] A snippet hitting `?__status=500` renders a clean error, does **not** reject `run()`.
+- [ ] A `?__stream=sse` / LLM endpoint renders streamed output incrementally.
+- [ ] A `?__drift=1` response makes on-the-fly Zod validation fail visibly.
+- [ ] `while(true){}` is **killed** at `timeoutMs` (proves the Worker, not main-thread, eval).
+- [ ] **Stop** aborts an in-flight streamed response via `signal`.
+- [ ] A snippet calling an unknown host renders the sandbox-404, with **no** real request.
+- [ ] A snippet using `keychain` runs in the browser **shimmed**, with a visible notice
+      (and, once Phase 3 exists, routes to the isolate and runs for real).
+- [ ] No `globalThis` state bleed between two consecutive runs.
 
 ---
 

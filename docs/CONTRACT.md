@@ -50,17 +50,28 @@ This is the existing contract that everything else hangs off
 Decision 11). It is restated first because every shorthand and envelope rule below
 must preserve it.
 
--   The public, redacted `__config` a stitch/seam exposes — read by `diagram`, `mcp`,
-    `cli`, `config-summary`, and `export --openapi` — **MUST be plain JSON-serializable
-    data**: no functions, no live handles, no sugar forms.
--   Every scalar/boolean/string **shorthand MUST be normalized** to its canonical
-    envelope field by `compose()` **before it reaches `__config`** (a `retry: 3` is
-    `{ attempts: 3 }` on `__config`, never `3`).
--   Every **function-valued field is sugar** and lives **off** `__config` (on the
-    non-enumerable `__rawConfig`), exactly as `auth` / `store` / `adapter` / the live
-    `Surface` already do. This explicitly includes the key-derivation functions
-    ([`keyOf`](#p6--key-is-a-string-keyof-is-a-function)) — they are sugar, not a
-    blessed `__config` exception.
+- The public, redacted `__config` a stitch/seam exposes — read by `diagram`, `mcp`,
+  `cli`, `config-summary`, and `export --openapi` — **MUST be plain JSON-serializable
+  data**: no functions, no live handles, no sugar forms.
+- Every scalar/boolean/string **shorthand MUST be normalized** to its canonical
+  envelope field by `compose()` **before it reaches `__config`** (a `retry: 3` is
+  `{ attempts: 3 }` on `__config`, never `3`).
+- Every **function-valued field is sugar** and lives **off** `__config` (on the
+  non-enumerable `__rawConfig`), exactly as `auth` / `store` / `adapter` / the live
+  `Surface` already do. This explicitly includes the key-derivation functions
+  ([`keyOf`](#p6--key-is-a-string-keyof-is-a-function)) — they are sugar, not a
+  blessed `__config` exception.
+- **One exemption, and only one:** the schema slots `input` / `output` hold Standard
+  Schema validators, whose `validate` sits at depth 2. They are **not** sugar —
+  `export --openapi` reads them off `__config` to build its parameter and response
+  shapes, and unlike a `retry` envelope a schema is not reconstructible from a
+  function-stripped husk. They are therefore kept whole, and a `__config` carrying
+  them does **not** survive `JSON.stringify` unchanged; every other slot does. The
+  exemption is a named fact (`carriesSchema` in
+  [`config-anatomy.ts`](../packages/core/src/config-anatomy.ts)), not a gap, and
+  [`contract-p0.spec.ts`](../packages/core/test/contract-p0.spec.ts) pins it in both
+  directions: the validators survive, and nothing else does. Widening it means marking
+  another slot `carriesSchema` — a deliberate edit, reviewed as a contract change.
 
 > **Why first:** the program of adding shorthands (P12–P15) is safe **only** because
 > normalization keeps `__config` stable. A shorthand that leaked its scalar form onto
@@ -153,13 +164,13 @@ _Violations:_ `ReconnectOptions.maxAttempts` (→ `attempts`), `CacheConfig.maxE
 Per **D1**, every StitchAPI **runtime** result/event envelope **MUST** expose its
 success payload as **`data`** and its failure payload as **`error`**.
 
--   Streaming increments keep **`chunk`** (`StitchEvent.delta.chunk`) — `data` is the
-    terminal/aggregated payload, `chunk` is an increment.
--   The **Standard-Schema validation layer** (`ValidationResult` / `StandardResult`)
-    keeps **`value`** / **`issues`** — that is the external Standard-Schema spec, not
-    ours to rename.
--   `value` **MUST NOT** be overloaded for non-payload tokens (this is why
-    `SchemaFingerprint.value` became `token`).
+- Streaming increments keep **`chunk`** (`StitchEvent.delta.chunk`) — `data` is the
+  terminal/aggregated payload, `chunk` is an increment.
+- The **Standard-Schema validation layer** (`ValidationResult` / `StandardResult`)
+  keeps **`value`** / **`issues`** — that is the external Standard-Schema spec, not
+  ours to rename.
+- `value` **MUST NOT** be overloaded for non-payload tokens (this is why
+  `SchemaFingerprint.value` became `token`).
 
 _Resolved (2026-07 sweep):_ success is `data` on every runtime envelope that had
 drifted to `value` — `Inspection`, `StitchEvent.result`, `SurfaceOutcome`, `CacheHit`;
@@ -302,10 +313,10 @@ documented default). Where a field is **required by design** because a silent de
 is a footgun, it **MUST** stay required and the envelope **MUST** offer a scalar/
 positional shorthand naming the required value(s).
 
--   `CircuitOptions.failures`/`cooldown` **stay required** (a breaker with invisible
-    thresholds fails open/closed silently) — the positional shorthand is the tuple
-    `circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }`.
--   `CacheOptions.ttl` **stays required** — its shorthand `cache: '1m'` already names it.
+- `CircuitOptions.failures`/`cooldown` **stay required** (a breaker with invisible
+  thresholds fails open/closed silently) — the positional shorthand is the tuple
+  `circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }`.
+- `CacheOptions.ttl` **stays required** — its shorthand `cache: '1m'` already names it.
 
 > This corrects the audit draft, which tried to defend `ttl`-required while attacking
 > `circuit`-required. Required-with-a-named-shorthand is the **one** acceptable form of
@@ -492,6 +503,13 @@ field is gone. The **wire** side still follows its own standard — W3C Trace Co
 [ADR 0017 Decision 7](adr/0017-outbound-trace-context-propagation.md) and the
 `concepts/run-identity` page.
 
+_Also:_ `apiKey`'s options mirror OpenAPI's `apiKey` security scheme: the key is labelled with
+**`name`** and located with **`in: 'header' | 'query' | 'cookie'`** — the same two fields in every
+arm. So `stitch gen openapi` (import) and `stitch export --openapi` (export) are identity mappings
+with no translation seam, and the three locations are symmetric
+([P16](#p16--cross-surface--cross-package-parity)). The pre-GA sweep removed the header-only
+`header` alias: **`name` is the only spelling — `apiKey({ header })` is forbidden.**
+
 ### P23 · One schema intake; foreign formats enter through one adapter
 
 Every place that consumes a validation schema — a stitch's `input`/`output`, and the
@@ -525,19 +543,19 @@ bridge from JSON Schema, producing a `SchemaLike` those consumers treat identica
 
 _Carve-outs:_
 
--   **(a) Foreign mirrors keep the foreign shape.** A contract that exists to structurally or
-    nominally match a foreign SDK, standard, or wire format (P18/P22) keeps **every** field of the
-    pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, RFC
-    6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair (and
-    its React Native mirror), RTK Query's lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`),
-    and Orama's own index-document schema (`DocSearchHit.pageUrl`/`pageTitle`) — all exempt.
--   **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
-    the pair is a genuine option and the other is a discriminator/tag describing it (not an
-    independent knob), the pair **stays flat** — nesting would turn a scalar-plus-tag into a
-    needless envelope for zero added configurability.
--   **(c) Conventional prefixes are not groups:** `on*` handlers, `is*` guards, and a percentile
-    family (`p50`/`p95`/`p99`) share a prefix by naming convention, not by being facets of one
-    capability.
+- **(a) Foreign mirrors keep the foreign shape.** A contract that exists to structurally or
+  nominally match a foreign SDK, standard, or wire format (P18/P22) keeps **every** field of the
+  pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, RFC
+  6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair (and
+  its React Native mirror), RTK Query's lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`),
+  and Orama's own index-document schema (`DocSearchHit.pageUrl`/`pageTitle`) — all exempt.
+- **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
+  the pair is a genuine option and the other is a discriminator/tag describing it (not an
+  independent knob), the pair **stays flat** — nesting would turn a scalar-plus-tag into a
+  needless envelope for zero added configurability.
+- **(c) Conventional prefixes are not groups:** `on*` handlers, `is*` guards, and a percentile
+  family (`p50`/`p95`/`p99`) share a prefix by naming convention, not by being facets of one
+  capability.
 
 _Canonical case (converted 2026-07-08):_ `OAuth2Options.refresh` and
 `CookieSessionOptions.refresh` fold what were `refreshOn`+`refreshSkew` and `refreshOn`+
@@ -557,6 +575,34 @@ exemption beyond this rule's named list — a discriminated-union pair (mutually
 `X?: never`), a derived/internal read-view that is not itself an authored config, or a
 plugin-extension-hook bag, are all real shapes this rule does not reach.
 
+### P25 · One canonical size form
+
+**Bytes are the house size unit.** Every **consumer-authored** byte cap **MUST** accept
+**`number | string`** — a raw byte count or a token like `'64kb'`/`'1mb'` — parsed by one
+shared `parseBytes`, whose units are **powers of 1024** (`'1mb'` = 1_048_576). Every
+**emitted** size is a raw-byte `number`.
+
+Unlike a duration ([P17](#p17--one-canonical-duration-form)), a size field **KEEPS** its
+unit suffix. `Ms` encodes a **scale**, which `'5s'` overrides — so the suffix becomes a
+lie and P17 drops it. `Bytes` encodes a **dimension**: octets, as opposed to the `Chars`
+family (`stream.maxBufferChars`, `trace.maxBodyChars`) that counts UTF-16 code units of
+decoded text. `'1mb'` restates the scale, never the dimension, so the suffix stays true.
+That distinction is load-bearing per [P1](#p1--one-word-one-concept-one-value-space) —
+`Bytes` denotes bytes and cannot also denote code units — and a `Chars` field therefore
+**MUST NOT** take a byte token.
+
+_Why:_ every JS-native size API (`byteLength`, `Buffer.length`, `execFile`'s `maxBuffer`)
+is already bytes, so a bare number needs no unit; and 1024-based `kb`/`mb` is what the
+Node ecosystem's de-facto parser already means by those tokens
+([P22](#p22--a-standards-interop-contract-uses-the-standards-field-names)), matching the
+base the house defaults are written in (`10 * 1024 * 1024`). An unparseable token resolves
+to `undefined` and lands on the field's default — a typo can never widen a cap to
+"unbounded".
+
+_Canonical case:_ `ServeOptions.maxBodyBytes` and `@stitchapi/shell`'s
+`ShellOptions.maxBufferBytes` each take `2 * 1024 * 1024` or `'2mb'`; `parseBytes` is
+exported from `stitchapi` so a peer package parses the grammar instead of mirroring it.
+
 ---
 
 ## 6. Migration record (2026-07-08 hard-break sweep)
@@ -571,7 +617,6 @@ the obligation to the GA channel. Severity = consumer blast radius.
 | High | `StitchStore`/`StitchLike`/`RequestSeam` cross-pkg clashes         | hoist or qualify                        | P9   |
 | High | `queryOptions` bare in vue/solid/svelte/angular                    | `stitchQueryOptions`                    | P16  |
 | Med  | `OAuth2Opts`, `CookieSessionOpts`                                  | `OAuth2Options`, `CookieSessionOptions` | P3   |
-| Med  | `StitchQueryOptions` (a result)                                    | `StitchQueryResult`                     | P3   |
 | Med  | `paginate` inline shape                                            | `PaginateOptions`                       | P14  |
 | Med  | SSE helper `sendStitchSse`/`stitchSse`                             | `streamStitchSse`                       | P16  |
 | Med  | error-options `StitchErrorHandlerOptions`/`ToHttpExceptionOptions` | `StitchErrorOptions` (+ `body`)         | P16  |
@@ -584,155 +629,155 @@ scalars (P12); `idempotency` boolean (P13-toggle); `throttle` string (P14).
 **Shipped (migration in progress)** — all under `@deprecated` aliases read until the GA
 cut; the lint skips the deprecated members so each rename ratchets the baseline down:
 
--   **P6** `IdempotencyOptions.key`/`CacheOptions.key`→`keyOf`; runtime prefers `keyOf ?? key`.
--   **P3** suffix renames (type-only, zero runtime): `CacheConfig`→`CacheOptions`,
-    `OAuth2Opts`→`OAuth2Options`, `CookieSessionOpts`→`CookieSessionOptions`,
-    `McpServerInfo`→`McpServerOptions`, `LlmConfig`→`LlmOptions`,
-    `SignV4Params`→`SignV4Options`, and the read-back `AuthFailureInfo`→`AuthFailureResult`.
-    (`OAuth2Opts`/`CookieSessionOpts` are auth-internal — renamed without an alias.)
--   **P4** caps → bare nouns: `ReconnectOptions.maxAttempts`→`attempts`,
-    `CacheOptions.maxEntries`→`entries`, `paginate.max`→`pages`; runtime prefers the new
-    field. (`CircuitOptions.failureThreshold`→`failures` is deferred to the P17 CircuitOptions
-    overhaul, where its required-ness + `cooldownMs`/`halfOpenAfterMs` are handled together.)
--   **P7** the exported `StatusMatch` (`number | number[] | (status) => boolean`) is the one shape
-    for every status-classification slot: `RetryOptions.on`, `throttle.on`, `StitchConfig.acceptStatus`,
-    and the auth strategies' `refreshOn` (oauth2 + cookieSession). A bare status is shorthand for its
-    one-element list (`404` ≡ `[404]`); additive widening, no alias. Every reader normalizes through the
-    shared `acceptsStatus` matcher, hoisted from the engine into `resilience.ts` so `auth` shares it. The
-    `T | T[]` list-widening is uniform too — `DriftOptions.ignore` and `CacheOptions.vary` now accept a
-    bare string (`'x'` ≡ `['x']`), matching `DriftOptions.severity`; each consumer normalizes to the array.
--   **P14** `rateLimit` folded into `throttle` (`throttle.delegate` / `throttle.on`); the top-level
-    `rateLimit` is `@deprecated` (runtime prefers `throttle.* ?? rateLimit.*`). `PaginateOptions`
-    extracted from the inline `paginate` shape (named + exported). `throttle: { rate, delegate }` is
-    the unified envelope — delegate makes the rate inert, now legible within one object.
--   **P17 (inputs)** consumer-authored durations de-suffixed and widened to `number | string` (parsed
-    by `parseDuration`): `RetryOptions.baseMs`→`baseDelay`, `maxMs`→`maxDelay`;
-    `ReconnectOptions.backoffMs`→`backoff`; `OAuth2Options.refreshSkewMs`→`refreshSkew`;
-    `CookieSessionOptions.ttlMs`→`ttl`. Each keeps a `@deprecated` `*Ms` alias (runtime prefers
-    `new ?? old`). House store contracts use the bare `ttl` param (ms, no suffix): `StitchStore` /
-    `RedisDriver` `set`/`increment` and the redis/deno-kv/cloudflare-kv drivers; `verifyStoreContract`'s
-    knob is `ttl` (deprecated `ttlMs` alias).
--   **P17 (circuit) + P4** `CircuitOptions` overhaul: `failureThreshold`→`failures` (P4),
-    `cooldownMs`→`cooldown`, `halfOpenAfterMs`→`halfOpenAfter` (P17, widened to `number | string`).
-    `failures`/`cooldown` become type-optional so the `@deprecated` aliases can stand in;
-    `createCircuit` throws if neither spelling is set (required-by-design, P15). The
-    `StitchConfig.circuit` slot is `AtLeastOne<CircuitOptions>`, so the empty object is rejected (P20)
-    while the breaker stays required-by-design.
--   **P17 (emitted: waited/elapsed)** `StitchEvent` `progress.waitedMs`→`waited` and `done.ms`→`elapsed`;
-    `Throttle.acquire` now returns `{ waited }`. The engine **co-emits** the `@deprecated` aliases for
-    back-compat (the type carries both): `done.ms` as a plain literal, `progress.waitedMs` by assignment
-    (a helper, so the literal-`*Ms:` lint R2 stays clean). Every first-party sink (core trace/cli/otlp,
-    `@stitchapi/pino`/`sentry`/`fastify`/`nest`) reads the canonical field. Parity tested in
-    `contract-event-aliases.spec.ts`.
--   **P17 (emitted: retryAfter)** `retryAfterMs`→`retryAfter` on the three read-back surfaces that carry
-    a parsed `Retry-After`: `RateLimitError`, `StitchEvent.error`, and `AuthFailureResult`. Each co-sets
-    the `@deprecated` alias for back-compat (by assignment, R2-clean); the engine/auth set both. Docs and
-    the delegate-backoff / cookie-session tests move to the canonical name (alias parity asserted).
--   **P17 (mock fixtures)** `MockResponse.delayMs`→`delay` (widened to `number | string`) and the
-    adapter-conformance `FixtureResponse.delayMs`→`delay`; both keep the `@deprecated` `delayMs` alias.
-    **Unit hazard:** `MockResponse.retryAfter` is **seconds** (it sets the `Retry-After` wire header), so
-    it is renamed to `retryAfterSeconds` (deprecated `retryAfter` alias) — the unit is in the name, per
-    P17.
--   **P17 (internal `*Ms`)** the remaining internal duration fields are de-suffixed (no public alias —
-    none are consumer-authored): the `Throttle.acquire` result `{ waited }`, `TotalBudget.total`,
-    `parseRate`'s `{ count, per }`, `StitchStats.avg` (the `stitch summary` mean). `Surface.resumeRetryMs`
-    →`resumeRetry` keeps a `@deprecated` alias (a `Surface` is the public extension seam). This completes
-    the R2 (`*Ms`) clearance; the remaining baseline is R5 (P9/P16) + R6's P20 slots.
--   **P5 (success payload `data`)** `value`→`data` on the runtime result envelopes: `StitchEvent.result`
-    and `Inspection`. Both co-set the `@deprecated` `value` alias for back-compat (the engine /
-    `makeInspection` set both; the trace JSONL caps both keys so the body never leaks uncapped). Stream
-    increments keep `chunk`; the Standard-Schema layer keeps spec `value`/`issues`. Every sink/adapter
-    (core trace/cli/serve, `@stitchapi/query-core`, all five TanStack/RTK/SWR readers) and the docs read
-    the canonical `data`. (Also folds the cross-package done-event `ms`→`elapsed` fixtures missed when
-    P17(c) only typechecked core + four sinks.)
--   **P5 (`SchemaFingerprint.value`→`token`)** the fingerprint token is renamed off the overloaded
-    `value` (P5 reserves `value` for the success payload); all five vendor fingerprint-\* packages co-set
-    the `@deprecated` `value` alias, and both the cache-generation deriver and the `verifyFingerprintContract`
-    kit read `token` (normalizing either spelling, preserving the `null` ABSTAIN sentinel via a presence
-    check, not `??`).
--   **P9 (`StitchStore`) + P16 (`queryOptions`)** — first R5 pair. The per-framework query store is
-    framework-qualified (ADR 0012 rule 6): `@stitchapi/solid`'s `StitchStore`→`SolidStitchStore`,
-    `@stitchapi/svelte`'s →`SvelteStitchStore` (genuinely incompatible — Solid nests `.state`, Svelte is
-    a `Readable` — and both collided with core's state-store `StitchStore`). The ADR 0012
-    `stitchQueryOptions` rename now covers vue/solid/svelte/angular (was react-only); the bare
-    `queryOptions` survives as a uniform `@deprecated` alias (identity-tested) and is **de-listed from the
-    R5 watch-list** since it is no longer a competing canonical.
--   **P9 (`StitchError` / `StitchErrorLike`)** — second R5 pair. The host adapters
-    (express/fastify/nest/next) mis-named their error **duck-type** `StitchError`, shadowing core's real
-    `StitchError` **class**. Renamed to `StitchErrorLike` (`Error & { status? }`), matching elysia/hono —
-    so bare `StitchError` is now core-only (R5 clears, watch-list unchanged), and `StitchErrorLike` is one
-    structural contract across all six host adapters (de-listed from R5, the `isStitchError` guard stays).
--   **P9/P16 (per-request seam)** — third R5 pair. The per-request seam handle is ecosystem-qualified
-    per ADR 0012 (extending hono's `HonoRequestSeam`): express `RequestSeam`→`ExpressRequestSeam`, elysia
-    →`ElysiaRequestSeam`, fastify `StitchHost`→`FastifyRequestSeam`, nest `StitchHost`→`NestRequestSeam`.
-    Each keeps the bare name as a `@deprecated` alias (re-exported with a leading comment in the index
-    block, the codebase's established way to keep an alias off R5's name count). Bare `RequestSeam` /
-    `StitchHost` are no longer a canonical export anywhere, so both R5 findings clear (watch-list unchanged).
--   **P9 (`StitchLike`)** — final R5. It is two deliberate, compatible tiers, not a clash: the canonical
-    RICH `(input?) => StitchCallResult<T>` (awaitable + streamable) in `@stitchapi/query-core`, re-exported
-    by the five TanStack-family bindings; and an intentional MINIMAL await-only `(input?) => PromiseLike<T>`
-    in the three stream-less adapters (swr/rtk-query/vercel-ai), which never call `.stream()`. query-core's
-    rich shape is assignable to the minimal one (a real stitch satisfies both), so it is **de-listed**.
-    With this, **R5 is fully cleared** — the baseline is now 6, exactly R6's P20 backlog
-    (multipart/stream/sse/throttle/hooks/input → `Scalar | AtLeastOne`).
--   **P18 (store verbs) + P17 (`ttl`)** the house store contracts speak whole words:
-    `RedisDriver.del`→`delete` and `StitchStore`/`RedisDriver` `incr`→**`increment`**, across
-    core `memoryStore`/`vaultView`, `@stitchapi/redis` (all three adapters), `@stitchapi/deno-kv`,
-    `@stitchapi/cloudflare-kv`, `@stitchapi/react-native` (and `@stitchapi/expo`, which reuses it),
-    the `nestBorrowStore` bridge, and `verifyStoreContract`. `ttl` (ms) is now optional on
-    **both** verbs — absent means no expiry / no window — so the parameter's optionality no
-    longer differs between `set` and `increment`. The upstream mirrors (`IoredisLike`,
-    `NodeRedisLike`, `UpstashLike`) keep `del`, and the Lua keeps `INCR`, per P18's first half.
-    **No `@deprecated` aliases** — a deliberate hard break on the `rc` channel, where
-    [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) does not impose one; and
-    both are consumer-implemented contracts, which could not have carried an alias in any
-    case. (`deno-kv`'s `maxIncrRetries` is untouched here; it is a P4 `max`-prefix
-    violation and renames in that slice.)
--   **P4 + P12/P14/P20 (`deno-kv` CAS retries)** `maxIncrRetries` — the last `max`-prefixed
-    count cap — becomes `retry?: number | AtLeastOne<DenoKvRetryOptions>`, reusing core's
-    `retry` vocabulary for the same concept instead of a second private spelling:
-    `attempts` (P4 bare noun, total incl. the first), plus a `backoff` envelope for a curve
-    the loop never had (folded to `{ curve, base, max }` in the same sweep as core's). A bare number is the P12 dominant-field shorthand
-    (`retry: 20` ≡ `{ attempts: 20 }`), and the object form is `AtLeastOne`, so `{}` is a
-    compile error (P20). No `on`: a CAS loop retries exactly one condition. Durations parse
-    through core's `parseDuration`, now **exported** so a peer package satisfies P17's "one
-    shared parser" instead of mirroring the grammar. Backoff stays **off by default** — the
-    hot re-read is today's behaviour and flipping it is a separate call.
--   **P24 (backoff envelope) + P2 (`backoff` disambiguated)** `RetryOptions`'
-    `backoff`/`baseDelay`/`maxDelay` — three flat members configuring one concept, two of them
-    sharing a `Delay` suffix — fold into `backoff?: BackoffCurve | AtLeastOne<BackoffOptions>`
-    (`{ curve, base, max }`). A bare curve is the P12 dominant-field shorthand
-    (`backoff: 'fixed'` ≡ `{ curve: 'fixed' }`), folded by a **nested** `envelope()` call in
-    `expandShorthand` so the string never reaches `__config` (P0); `{}` is a compile error (P20).
-    Inside the envelope the bounds need no suffix (P1), and `max` bounds a **magnitude**, the case
-    P4 leaves it. In the same pass `ReconnectOptions.backoff` — a flat duration, not a curve —
-    becomes **`delay`**, so `backoff` names one concept with one value-space across the surface.
-    Genuine breaking flat→envelope, no alias (P19, `rc` channel).
--   **P24 (refresh envelope)** the auth strategies' `refresh`-prefixed flat members fold into one
-    envelope (genuine breaking flat→envelope, no alias): `OAuth2Options.refreshOn`/`refreshSkew` →
-    `refresh?: StatusMatch | AtLeastOne<OAuth2RefreshOptions>` (`{ on, skew }`), and
-    `CookieSessionOptions.refreshOn`/`refreshWhen` → `refresh?: StatusMatch | AtLeastOne<CookieSessionRefreshOptions>`
-    (`{ on, when }`). A bare `StatusMatch` is the P12 dominant-field shorthand for `{ on }`
-    (`refresh: 401` ≡ `refresh: { on: [401] }`); a shared `normalizeRefresh` collapses the union to
-    the envelope once at construction, and every internal read goes through `refresh.on` (via the
-    shared `acceptsStatus` matcher) / `refresh.skew` / `refresh.when`.
--   **P24 (Sentry capture)** `@stitchapi/sentry`'s `SentrySinkOptions.captureErrors`+`captureDrift`
-    (shared `capture` prefix) fold into `capture?: boolean | AtLeastOne<SentryCaptureOptions>` —
-    `capture: true`/omitted keeps the defaults (errors on, drift off), `false` disables both, and the
-    `{ errors, drift }` envelope sets them independently. Genuine breaking flat→envelope, no alias.
--   **P24 (nest seam)** `@stitchapi/nest`'s `StitchFeatureOptions` feature-seam facets (the `seam`
-    config slot + `seamToken`, sharing the "seam" prefix) fold into
-    `seam?: AtLeastOne<NestFeatureSeamOptions>` (`{ config?: AtLeastOne<SeamConfig>, token? }`).
-    `forFeature`/`forFeatureScoped` read `seam.config` / `seam.token`. Genuine breaking
-    flat→envelope, no alias.
--   **P20/P12/P13 (empty-object rejection)** the five bare all-optional `StitchConfig` slots R6 flagged
-    now type their object form so `{}` is a **compile error**: `hooks?: AtLeastOne<Hooks>` and
-    `input?: AtLeastOne<InputSchemas>` (no scalar); `multipart?: MultipartNesting | AtLeastOne<MultipartOptions>`
-    and `stream?: StreamDecode | AtLeastOne<StreamOptions>` (P12 dominant-field scalar); and
-    `sse?: boolean | AtLeastOne<SseOptions>` (P13 toggle). `expandShorthand` folds each scalar into its
-    envelope at compose time (`multipart: 'dot'` → `{ nesting }`, `stream: 'ndjson'` → `{ decode }`,
-    `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
-    only ever see the object form. **R6 clears** — the baseline is now **0**.
+- **P6** `IdempotencyOptions.key`/`CacheOptions.key`→`keyOf`; runtime prefers `keyOf ?? key`.
+- **P3** suffix renames (type-only, zero runtime): `CacheConfig`→`CacheOptions`,
+  `OAuth2Opts`→`OAuth2Options`, `CookieSessionOpts`→`CookieSessionOptions`,
+  `McpServerInfo`→`McpServerOptions`, `LlmConfig`→`LlmOptions`,
+  `SignV4Params`→`SignV4Options`, and the read-back `AuthFailureInfo`→`AuthFailureResult`.
+  (`OAuth2Opts`/`CookieSessionOpts` are auth-internal — renamed without an alias.)
+- **P4** caps → bare nouns: `ReconnectOptions.maxAttempts`→`attempts`,
+  `CacheOptions.maxEntries`→`entries`, `paginate.max`→`pages`; runtime prefers the new
+  field. (`CircuitOptions.failureThreshold`→`failures` is deferred to the P17 CircuitOptions
+  overhaul, where its required-ness + `cooldownMs`/`halfOpenAfterMs` are handled together.)
+- **P7** the exported `StatusMatch` (`number | number[] | (status) => boolean`) is the one shape
+  for every status-classification slot: `RetryOptions.on`, `throttle.on`, `StitchConfig.acceptStatus`,
+  and the auth strategies' `refreshOn` (oauth2 + cookieSession). A bare status is shorthand for its
+  one-element list (`404` ≡ `[404]`); additive widening, no alias. Every reader normalizes through the
+  shared `acceptsStatus` matcher, hoisted from the engine into `resilience.ts` so `auth` shares it. The
+  `T | T[]` list-widening is uniform too — `DriftOptions.ignore` and `CacheOptions.vary` now accept a
+  bare string (`'x'` ≡ `['x']`), matching `DriftOptions.severity`; each consumer normalizes to the array.
+- **P14** `rateLimit` folded into `throttle` (`throttle.delegate` / `throttle.on`); the top-level
+  `rateLimit` is `@deprecated` (runtime prefers `throttle.* ?? rateLimit.*`). `PaginateOptions`
+  extracted from the inline `paginate` shape (named + exported). `throttle: { rate, delegate }` is
+  the unified envelope — delegate makes the rate inert, now legible within one object.
+- **P17 (inputs)** consumer-authored durations de-suffixed and widened to `number | string` (parsed
+  by `parseDuration`): `RetryOptions.baseMs`→`baseDelay`, `maxMs`→`maxDelay`;
+  `ReconnectOptions.backoffMs`→`backoff`; `OAuth2Options.refreshSkewMs`→`refreshSkew`;
+  `CookieSessionOptions.ttlMs`→`ttl`. Each keeps a `@deprecated` `*Ms` alias (runtime prefers
+  `new ?? old`). House store contracts use the bare `ttl` param (ms, no suffix): `StitchStore` /
+  `RedisDriver` `set`/`increment` and the redis/deno-kv/cloudflare-kv drivers; `verifyStoreContract`'s
+  knob is `ttl` (deprecated `ttlMs` alias).
+- **P17 (circuit) + P4** `CircuitOptions` overhaul: `failureThreshold`→`failures` (P4),
+  `cooldownMs`→`cooldown`, `halfOpenAfterMs`→`halfOpenAfter` (P17, widened to `number | string`).
+  `failures`/`cooldown` become type-optional so the `@deprecated` aliases can stand in;
+  `createCircuit` throws if neither spelling is set (required-by-design, P15). The
+  `StitchConfig.circuit` slot is `AtLeastOne<CircuitOptions>`, so the empty object is rejected (P20)
+  while the breaker stays required-by-design.
+- **P17 (emitted: waited/elapsed)** `StitchEvent` `progress.waitedMs`→`waited` and `done.ms`→`elapsed`;
+  `Throttle.acquire` now returns `{ waited }`. The engine **co-emits** the `@deprecated` aliases for
+  back-compat (the type carries both): `done.ms` as a plain literal, `progress.waitedMs` by assignment
+  (a helper, so the literal-`*Ms:` lint R2 stays clean). Every first-party sink (core trace/cli/otlp,
+  `@stitchapi/pino`/`sentry`/`fastify`/`nest`) reads the canonical field. Parity tested in
+  `contract-event-aliases.spec.ts`.
+- **P17 (emitted: retryAfter)** `retryAfterMs`→`retryAfter` on the three read-back surfaces that carry
+  a parsed `Retry-After`: `RateLimitError`, `StitchEvent.error`, and `AuthFailureResult`. Each co-sets
+  the `@deprecated` alias for back-compat (by assignment, R2-clean); the engine/auth set both. Docs and
+  the delegate-backoff / cookie-session tests move to the canonical name (alias parity asserted).
+- **P17 (mock fixtures)** `MockResponse.delayMs`→`delay` (widened to `number | string`) and the
+  adapter-conformance `FixtureResponse.delayMs`→`delay`; both keep the `@deprecated` `delayMs` alias.
+  **Unit hazard:** `MockResponse.retryAfter` is **seconds** (it sets the `Retry-After` wire header), so
+  it is renamed to `retryAfterSeconds` (deprecated `retryAfter` alias) — the unit is in the name, per
+  P17.
+- **P17 (internal `*Ms`)** the remaining internal duration fields are de-suffixed (no public alias —
+  none are consumer-authored): the `Throttle.acquire` result `{ waited }`, `TotalBudget.total`,
+  `parseRate`'s `{ count, per }`, `StitchStats.avg` (the `stitch summary` mean). `Surface.resumeRetryMs`
+  →`resumeRetry` keeps a `@deprecated` alias (a `Surface` is the public extension seam). This completes
+  the R2 (`*Ms`) clearance; the remaining baseline is R5 (P9/P16) + R6's P20 slots.
+- **P5 (success payload `data`)** `value`→`data` on the runtime result envelopes: `StitchEvent.result`
+  and `Inspection`. Both co-set the `@deprecated` `value` alias for back-compat (the engine /
+  `makeInspection` set both; the trace JSONL caps both keys so the body never leaks uncapped). Stream
+  increments keep `chunk`; the Standard-Schema layer keeps spec `value`/`issues`. Every sink/adapter
+  (core trace/cli/serve, `@stitchapi/query-core`, all five TanStack/RTK/SWR readers) and the docs read
+  the canonical `data`. (Also folds the cross-package done-event `ms`→`elapsed` fixtures missed when
+  P17(c) only typechecked core + four sinks.)
+- **P5 (`SchemaFingerprint.value`→`token`)** the fingerprint token is renamed off the overloaded
+  `value` (P5 reserves `value` for the success payload); all five vendor fingerprint-\* packages co-set
+  the `@deprecated` `value` alias, and both the cache-generation deriver and the `verifyFingerprintContract`
+  kit read `token` (normalizing either spelling, preserving the `null` ABSTAIN sentinel via a presence
+  check, not `??`).
+- **P9 (`StitchStore`) + P16 (`queryOptions`)** — first R5 pair. The per-framework query store is
+  framework-qualified (ADR 0012 rule 6): `@stitchapi/solid`'s `StitchStore`→`SolidStitchStore`,
+  `@stitchapi/svelte`'s →`SvelteStitchStore` (genuinely incompatible — Solid nests `.state`, Svelte is
+  a `Readable` — and both collided with core's state-store `StitchStore`). The ADR 0012
+  `stitchQueryOptions` rename now covers vue/solid/svelte/angular (was react-only); the bare
+  `queryOptions` survives as a uniform `@deprecated` alias (identity-tested) and is **de-listed from the
+  R5 watch-list** since it is no longer a competing canonical.
+- **P9 (`StitchError` / `StitchErrorLike`)** — second R5 pair. The host adapters
+  (express/fastify/nest/next) mis-named their error **duck-type** `StitchError`, shadowing core's real
+  `StitchError` **class**. Renamed to `StitchErrorLike` (`Error & { status? }`), matching elysia/hono —
+  so bare `StitchError` is now core-only (R5 clears, watch-list unchanged), and `StitchErrorLike` is one
+  structural contract across all six host adapters (de-listed from R5, the `isStitchError` guard stays).
+- **P9/P16 (per-request seam)** — third R5 pair. The per-request seam handle is ecosystem-qualified
+  per ADR 0012 (extending hono's `HonoRequestSeam`): express `RequestSeam`→`ExpressRequestSeam`, elysia
+  →`ElysiaRequestSeam`, fastify `StitchHost`→`FastifyRequestSeam`, nest `StitchHost`→`NestRequestSeam`.
+  Each keeps the bare name as a `@deprecated` alias (re-exported with a leading comment in the index
+  block, the codebase's established way to keep an alias off R5's name count). Bare `RequestSeam` /
+  `StitchHost` are no longer a canonical export anywhere, so both R5 findings clear (watch-list unchanged).
+- **P9 (`StitchLike`)** — final R5. It is two deliberate, compatible tiers, not a clash: the canonical
+  RICH `(input?) => StitchCallResult<T>` (awaitable + streamable) in `@stitchapi/query-core`, re-exported
+  by the five TanStack-family bindings; and an intentional MINIMAL await-only `(input?) => PromiseLike<T>`
+  in the three stream-less adapters (swr/rtk-query/vercel-ai), which never call `.stream()`. query-core's
+  rich shape is assignable to the minimal one (a real stitch satisfies both), so it is **de-listed**.
+  With this, **R5 is fully cleared** — the baseline is now 6, exactly R6's P20 backlog
+  (multipart/stream/sse/throttle/hooks/input → `Scalar | AtLeastOne`).
+- **P18 (store verbs) + P17 (`ttl`)** the house store contracts speak whole words:
+  `RedisDriver.del`→`delete` and `StitchStore`/`RedisDriver` `incr`→**`increment`**, across
+  core `memoryStore`/`vaultView`, `@stitchapi/redis` (all three adapters), `@stitchapi/deno-kv`,
+  `@stitchapi/cloudflare-kv`, `@stitchapi/react-native` (and `@stitchapi/expo`, which reuses it),
+  the `nestBorrowStore` bridge, and `verifyStoreContract`. `ttl` (ms) is now optional on
+  **both** verbs — absent means no expiry / no window — so the parameter's optionality no
+  longer differs between `set` and `increment`. The upstream mirrors (`IoredisLike`,
+  `NodeRedisLike`, `UpstashLike`) keep `del`, and the Lua keeps `INCR`, per P18's first half.
+  **No `@deprecated` aliases** — a deliberate hard break on the `rc` channel, where
+  [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) does not impose one; and
+  both are consumer-implemented contracts, which could not have carried an alias in any
+  case. (`deno-kv`'s `maxIncrRetries` is untouched here; it is a P4 `max`-prefix
+  violation and renames in that slice.)
+- **P4 + P12/P14/P20 (`deno-kv` CAS retries)** `maxIncrRetries` — the last `max`-prefixed
+  count cap — becomes `retry?: number | AtLeastOne<DenoKvRetryOptions>`, reusing core's
+  `retry` vocabulary for the same concept instead of a second private spelling:
+  `attempts` (P4 bare noun, total incl. the first), plus a `backoff` envelope for a curve
+  the loop never had (folded to `{ curve, base, max }` in the same sweep as core's). A bare number is the P12 dominant-field shorthand
+  (`retry: 20` ≡ `{ attempts: 20 }`), and the object form is `AtLeastOne`, so `{}` is a
+  compile error (P20). No `on`: a CAS loop retries exactly one condition. Durations parse
+  through core's `parseDuration`, now **exported** so a peer package satisfies P17's "one
+  shared parser" instead of mirroring the grammar. Backoff stays **off by default** — the
+  hot re-read is today's behaviour and flipping it is a separate call.
+- **P24 (backoff envelope) + P2 (`backoff` disambiguated)** `RetryOptions`'
+  `backoff`/`baseDelay`/`maxDelay` — three flat members configuring one concept, two of them
+  sharing a `Delay` suffix — fold into `backoff?: BackoffCurve | AtLeastOne<BackoffOptions>`
+  (`{ curve, base, max }`). A bare curve is the P12 dominant-field shorthand
+  (`backoff: 'fixed'` ≡ `{ curve: 'fixed' }`), folded by a **nested** `envelope()` call in
+  `expandShorthand` so the string never reaches `__config` (P0); `{}` is a compile error (P20).
+  Inside the envelope the bounds need no suffix (P1), and `max` bounds a **magnitude**, the case
+  P4 leaves it. In the same pass `ReconnectOptions.backoff` — a flat duration, not a curve —
+  becomes **`delay`**, so `backoff` names one concept with one value-space across the surface.
+  Genuine breaking flat→envelope, no alias (P19, `rc` channel).
+- **P24 (refresh envelope)** the auth strategies' `refresh`-prefixed flat members fold into one
+  envelope (genuine breaking flat→envelope, no alias): `OAuth2Options.refreshOn`/`refreshSkew` →
+  `refresh?: StatusMatch | AtLeastOne<OAuth2RefreshOptions>` (`{ on, skew }`), and
+  `CookieSessionOptions.refreshOn`/`refreshWhen` → `refresh?: StatusMatch | AtLeastOne<CookieSessionRefreshOptions>`
+  (`{ on, when }`). A bare `StatusMatch` is the P12 dominant-field shorthand for `{ on }`
+  (`refresh: 401` ≡ `refresh: { on: [401] }`); a shared `normalizeRefresh` collapses the union to
+  the envelope once at construction, and every internal read goes through `refresh.on` (via the
+  shared `acceptsStatus` matcher) / `refresh.skew` / `refresh.when`.
+- **P24 (Sentry capture)** `@stitchapi/sentry`'s `SentrySinkOptions.captureErrors`+`captureDrift`
+  (shared `capture` prefix) fold into `capture?: boolean | AtLeastOne<SentryCaptureOptions>` —
+  `capture: true`/omitted keeps the defaults (errors on, drift off), `false` disables both, and the
+  `{ errors, drift }` envelope sets them independently. Genuine breaking flat→envelope, no alias.
+- **P24 (nest seam)** `@stitchapi/nest`'s `StitchFeatureOptions` feature-seam facets (the `seam`
+  config slot + `seamToken`, sharing the "seam" prefix) fold into
+  `seam?: AtLeastOne<NestFeatureSeamOptions>` (`{ config?: AtLeastOne<SeamConfig>, token? }`).
+  `forFeature`/`forFeatureScoped` read `seam.config` / `seam.token`. Genuine breaking
+  flat→envelope, no alias.
+- **P20/P12/P13 (empty-object rejection)** the five bare all-optional `StitchConfig` slots R6 flagged
+  now type their object form so `{}` is a **compile error**: `hooks?: AtLeastOne<Hooks>` and
+  `input?: AtLeastOne<InputSchemas>` (no scalar); `multipart?: MultipartNesting | AtLeastOne<MultipartOptions>`
+  and `stream?: StreamDecode | AtLeastOne<StreamOptions>` (P12 dominant-field scalar); and
+  `sse?: boolean | AtLeastOne<SseOptions>` (P13 toggle). `expandShorthand` folds each scalar into its
+  envelope at compose time (`multipart: 'dot'` → `{ nesting }`, `stream: 'ndjson'` → `{ decode }`,
+  `sse: true` → `{ reconnect: true }`; `sse: false` clears the slot), so the engine and `__config`
+  only ever see the object form. **R6 clears** — the baseline is now **0**.
 
 ## 7. Enforcement
 
@@ -740,48 +785,50 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
 `pnpm check:contract` in `lefthook` (pre-push) and `verify.yml` — the same wiring as
 `check:exports` / `check:release`.
 
--   It scans the published packages' public surface and reports contract violations.
--   The baseline
-    ([`scripts/contract-violations.baseline.json`](../scripts/contract-violations.baseline.json))
-    was **zero from the 2026-07-08 sweep**; the same-day P24 addition
-    ([§6](#6-migration-record-2026-07-08-hard-break-sweep)) briefly carried one
-    pre-existing real match it had not yet fixed, since converted — the baseline is
-    **zero again**, and the lint fails on **any** new violation. The ratchet mechanics
-    stay (mirroring the repo's ESLint-suppression ratchet) purely as the shrink-only
-    guarantee: the surface can only get more consistent, never less.
--   Rules implemented (high-precision, source-text level): **R1** banned type-name
-    suffix (P3) — input-side `*Opts`/`*Info`/`*Params`/`*Config` **and** produced-side
-    `*Return`/`*State`; **R2** any `*Ms`-suffixed duration field, input or emitted
-    (P17); **R3** function-typed `key` (P6); **R4** a `scope: 'stitch'|'host'` pool
-    overload (P2); **R5** the same identifier exported by ≥2 published packages
-    (P9/P16), against an allow-list of the blessed one-declaration-site re-exports and
-    identical-by-design host envelopes; **R6** a config capability slot — top-level or
-    nested — typed as a bare all-optional `*Options` bag that accepts `{}` (P20);
-    **R7** any `@deprecated` marker on a published surface — the surface is shim-free
-    since the sweep, so a post-GA deprecation alias (mandated by P19) enters the
-    baseline **deliberately** for its cycle and is flagged until the major removes it;
-    **R8** a shared leading-word prefix across ≥2 flat members of the same exported
-    interface, not on the curated allow-list of verified foreign-mirror,
-    discriminated-union, and P12 dominant-field pairs (P24) — high-precision by
-    construction: the conventional `on*`/`is*`/percentile prefixes are structurally
-    excluded before grouping, and every remaining match is either fixed at the source
-    or gets a one-line-rationale allow-list entry, never silently dropped.
--   Deferred to a type-aware phase (needs the TS checker, not regex): full
-    same-name-different-**shape** detection, duration-type conformance, default-value
-    inversion (P8). Tracked as comments in the lint. R8 is also source-text-only in a
-    second sense — it scans exported `interface` bodies, not `type`-literal object
-    shapes or class fields; no group was found in either at the 2026-07-08 audit, but
-    a future one wouldn't be caught until it grows an `interface`.
+- It scans the published packages' public surface and reports contract violations.
+- The baseline
+  ([`scripts/contract-violations.baseline.json`](../scripts/contract-violations.baseline.json))
+  was **zero from the 2026-07-08 sweep**; the same-day P24 addition
+  ([§6](#6-migration-record-2026-07-08-hard-break-sweep)) briefly carried one
+  pre-existing real match it had not yet fixed, since converted — the baseline is
+  **zero again**, and the lint fails on **any** new violation. The ratchet mechanics
+  stay (mirroring the repo's ESLint-suppression ratchet) purely as the shrink-only
+  guarantee: the surface can only get more consistent, never less.
+- Rules implemented (high-precision, source-text level): **R1** banned type-name
+  suffix (P3) — input-side `*Opts`/`*Info`/`*Params`/`*Config` **and** produced-side
+  `*Return`/`*State`; **R2** any `*Ms`-suffixed duration field, input or emitted
+  (P17); **R3** function-typed `key` (P6); **R4** a `scope: 'stitch'|'host'` pool
+  overload (P2); **R5** the same identifier exported by ≥2 published packages
+  (P9/P16), against an allow-list of the blessed one-declaration-site re-exports and
+  identical-by-design host envelopes; **R6** a config capability slot — top-level or
+  nested — typed as a bare all-optional `*Options` bag that accepts `{}` (P20);
+  **R7** a `@deprecated` JSDoc **tag** on a published surface (at tag position inside
+  a block comment — prose that merely names the marker is documentation, not a shim) —
+  the surface is shim-free since the sweep, so a post-GA deprecation alias (mandated by
+  P19) enters the baseline **deliberately** for its cycle and is flagged until the
+  major removes it;
+  **R8** a shared leading-word prefix across ≥2 flat members of the same exported
+  interface, not on the curated allow-list of verified foreign-mirror,
+  discriminated-union, and P12 dominant-field pairs (P24) — high-precision by
+  construction: the conventional `on*`/`is*`/percentile prefixes are structurally
+  excluded before grouping, and every remaining match is either fixed at the source
+  or gets a one-line-rationale allow-list entry, never silently dropped.
+- Deferred to a type-aware phase (needs the TS checker, not regex): full
+  same-name-different-**shape** detection, duration-type conformance, default-value
+  inversion (P8). Tracked as comments in the lint. R8 is also source-text-only in a
+  second sense — it scans exported `interface` bodies, not `type`-literal object
+  shapes or class fields; no group was found in either at the 2026-07-08 audit, but
+  a future one wouldn't be caught until it grows an `interface`.
 
 ---
 
 ## 8. References
 
--   [ADR 0012 — Integration symbol naming](adr/0012-integration-symbol-naming.md) — the
-    cross-package symbol rules this contract extends to field/shape level.
--   [ADR 0005 — Surfaces and the authoring model](adr/0005-surfaces-and-the-authoring-model.md)
-    — Decision 11, the `__config`-round-trips-as-JSON gate (P0).
--   [ADR 0002 — Seam primitive](adr/0002-seam-primitive-and-principal-scoped-auth.md) —
-    the principal boundary and the `SeamConfig = Omit<StitchConfig>` projection (P16).
--   [`packages/core/src/types.ts`](../packages/core/src/types.ts) — the canonical
-    `StitchConfig` envelope and result/event shapes.
+- [ADR 0012 — Integration symbol naming](adr/0012-integration-symbol-naming.md) — the
+  cross-package symbol rules this contract extends to field/shape level.
+- [ADR 0005 — Surfaces and the authoring model](adr/0005-surfaces-and-the-authoring-model.md)
+  — Decision 11, the `__config`-round-trips-as-JSON gate (P0).
+- [ADR 0002 — Seam primitive](adr/0002-seam-primitive-and-principal-scoped-auth.md) —
+  the principal boundary and the `SeamConfig = Omit<StitchConfig>` projection (P16).
+- [`packages/core/src/types.ts`](../packages/core/src/types.ts) — the canonical
+  `StitchConfig` envelope and result/event shapes.

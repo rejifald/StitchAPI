@@ -1,6 +1,6 @@
 ---
 title: 'Migration notes'
-description: 'Three spec-correct behaviors — lowercase header names, %20 query spaces, and template-narrowed stitch types — that differ from a naive baseline and surprise migrators.'
+description: 'Auth strategies import from stitchapi/auth, plus three spec-correct behaviors — lowercase header names, %20 query spaces, and template-narrowed stitch types — that surprise migrators.'
 ---
 
 When you port an existing integration onto a stitch, most things just work. A
@@ -15,12 +15,64 @@ template-narrowed stitch infers. Each section is the same shape — what you'd
 expect, what a stitch emits, why it's conformant, and the one-line adjustment to
 your fixture or field type.
 
+It opens with a fourth item of a different kind — not a conformance surprise but
+a deliberate pre-GA break: the auth strategies moved to their own import.
+
 The running example is a generic catalog provider at `api.example.com` — a media
 server exposing items behind an API key.
 
+## Auth strategies import from `stitchapi/auth`
+
+You upgrade, and every file that authenticates stops compiling:
+
+```
+Module '"stitchapi"' has no exported member 'bearer'.
+```
+
+The five strategy factories (`bearer`, `apiKey`, `basic`, `oauth2`,
+`cookieSession`) and the four secret resolvers (`env`, `optionalEnv`,
+`secretsFile`, `secretFrom`) now live on the `stitchapi/auth` subpath. Split the
+import in two:
+
+```ts twoslash
+// @noErrors
+// before
+import { bearer, env, stitch } from 'stitchapi';
+```
+
+```ts twoslash
+// after
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
+```
+
+Nothing else changes — same factories, same options, same wire behaviour. Only
+the module they come from.
+
+**Why.** `auth` is the one config slot whose values cost real bytes to build:
+`oauth2` carries a token cache and a refresh state machine, `cookieSession` a
+login flow and a cookie jar. On the root barrel those rode along in the
+advertised entry size for everyone, including projects with no `auth` at all.
+Behind their own import, "you only pay for the strategy you use" stops depending
+on your bundler's tree-shaking and becomes a fact about the module graph — it
+holds for CommonJS and for a naive bundler too. The whole entry drops from
+~25 kB to ~23 kB min+gzip; `import { stitch }` is unchanged.
+
+There is no compatibility re-export. Re-exporting from the root would put the
+factories back in the barrel and undo the entire change, and StitchAPI is still
+pre-GA (`1.0.0-rc`), where the alias obligation does not yet apply. The break is
+a compile error at the import line, not a runtime surprise.
+
+<Callout type="info">
+    A custom strategy is unaffected in kind — `AuthStrategy`, `AuthContext` and
+    `SecurityScheme` are still exported from `stitchapi` (they type
+    `StitchConfig.auth`), and `stitchapi/auth` re-exports them so authoring one
+    takes a single import.
+</Callout>
+
 ## Header names go on the wire lowercase
 
-You configure `apiKey({ header: 'X-Catalog-Token', ... })` and your fixture
+You configure `apiKey({ name: 'X-Catalog-Token', ... })` and your fixture
 asserts the request carried a header literally named `X-Catalog-Token`.
 
 A stitch lowercases the header name: it sends `x-catalog-token`. The default
@@ -28,12 +80,13 @@ A stitch lowercases the header name: it sends `x-catalog-token`. The default
 for the headers on an `oauth2` token request.
 
 ```ts twoslash
-import { apiKey, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { apiKey, env } from 'stitchapi/auth';
 
 const getItem = stitch({
     baseUrl: 'https://api.example.com',
     path: '/items/{id}',
-    auth: apiKey({ header: 'X-Catalog-Token', value: env('CATALOG_TOKEN') }),
+    auth: apiKey({ name: 'X-Catalog-Token', value: env('CATALOG_TOKEN') }),
 });
 // On the wire, the request header is `x-catalog-token`, not `X-Catalog-Token`.
 ```

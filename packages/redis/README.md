@@ -6,10 +6,10 @@ A **Redis-backed [`StitchStore`](https://stitchapi.dev)** for StitchAPI. Attach
 it and two process-local pieces of a stitch become fleet-wide, with **no change
 to the call site** (DESIGN §13):
 
--   **Throttle** — rate counters live in Redis, so the rate budget is shared across
-    every worker (distributed rate limiting).
--   **Auth** — the cookie jar / token cache lives in Redis, so sessions & tokens are
-    shared across workers and survive restarts.
+- **Throttle** — rate counters live in Redis, so the rate budget is shared across
+  every worker (distributed rate limiting).
+- **Auth** — the cookie jar / token cache lives in Redis, so sessions & tokens are
+  shared across workers and survive restarts.
 
 ```ts
 import { fromIoredis, redisStore } from '@stitchapi/redis';

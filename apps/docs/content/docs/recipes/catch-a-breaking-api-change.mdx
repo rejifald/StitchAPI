@@ -45,12 +45,12 @@ On a clean validation, drift diffs the raw body against the validated value and
 emits any difference as a non-fatal `drift` event on the
 [event stream](/docs/concepts/event-stream):
 
--   `undeclared` (`info` by default) — a key the schema stripped; the API added
-    something you do not model.
--   `coerced` (`warn` by default) — a value the schema coerced, e.g. `"42"` → `42`;
-    a wire-type shift that validation hides.
--   `defaulted` (`verbose` by default) — a `.default()` fired because the field
-    was absent.
+- `undeclared` (`info` by default) — a key the schema stripped; the API added
+  something you do not model.
+- `coerced` (`warn` by default) — a value the schema coerced, e.g. `"42"` → `42`;
+  a wire-type shift that validation hides.
+- `defaulted` (`verbose` by default) — a `.default()` fired because the field
+  was absent.
 
 These non-fatal findings do not throw — they ride the event stream so you can
 [watch a field erode](/docs/recipes/watch-a-call-as-it-happens) before it

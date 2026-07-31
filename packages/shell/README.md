@@ -22,23 +22,23 @@ const status = await git({ body: ['status', '--porcelain'] }); // stdout (string
 Not "mitigated by escaping" — **structurally impossible**, the same bar that rejected
 host-inferred bearer tokens in StitchAPI's auth:
 
--   **Static executable.** `command` is bound in `shell({ command })`, **never** taken from call
-    input — exactly as a credential is bound at construction.
--   **`argv` is an array, never a string.** Arguments are a `string[]` passed straight to
-    `child_process.execFile`. There is **no shell** (`shell: true` is never set), so `;` `|` `$()`
-    backticks `*` `>` are inert data, never interpreted.
--   **No interpolation.** Each `argv` element is one process argument, verbatim. An `input` schema can
-    further constrain values, but the array boundary is the guarantee.
--   **Fail-closed env.** The subprocess inherits **no** `process.env` by default, so a secret in the
-    parent environment cannot leak into a child. Pass exactly what's needed — including `PATH` for a
-    bare command name, or use an absolute command path (as in the example).
+- **Static executable.** `command` is bound in `shell({ command })`, **never** taken from call
+  input — exactly as a credential is bound at construction.
+- **`argv` is an array, never a string.** Arguments are a `string[]` passed straight to
+  `child_process.execFile`. There is **no shell** (`shell: true` is never set), so `;` `|` `$()`
+  backticks `*` `>` are inert data, never interpreted.
+- **No interpolation.** Each `argv` element is one process argument, verbatim. An `input` schema can
+  further constrain values, but the array boundary is the guarantee.
+- **Fail-closed env.** The subprocess inherits **no** `process.env` by default, so a secret in the
+  parent environment cannot leak into a child. Pass exactly what's needed — including `PATH` for a
+  bare command name, or use an absolute command path (as in the example).
 
 ## Result
 
--   Exit `0` → the value is `stdout` (a `string`; pass `decode: 'json'` to `JSON.parse` it).
--   A non-zero exit → a `StitchError` (status `500`) whose `.body` is `{ exitCode, stdout, stderr }`
-    (or accept it as a normal result with `acceptStatus`).
--   A timeout / caller `AbortSignal` aborts the subprocess (it runs inside the resilience chain).
+- Exit `0` → the value is `stdout` (a `string`; pass `decode: 'json'` to `JSON.parse` it).
+- A non-zero exit → a `StitchError` (status `500`) whose `.body` is `{ exitCode, stdout, stderr }`
+  (or accept it as a normal result with `acceptStatus`).
+- A timeout / caller `AbortSignal` aborts the subprocess (it runs inside the resilience chain).
 
 ## Options
 

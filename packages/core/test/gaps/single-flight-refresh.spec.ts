@@ -1,5 +1,6 @@
 // Pins docs/GAP-AUDIT.md §2.6: OAuth2 token fetch must be single-flight under concurrency
-import { env, oauth2, stitch } from '../../src';
+import { stitch } from '../../src';
+import { env, oauth2 } from '../../src/auth';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 

@@ -25,18 +25,18 @@ Elysia is **Bun-first**, but the plugin imports only `elysia` and `stitchapi`
 
 ## What it does
 
--   **Puts a seam on the context.** `.derive` runs per request and adds `stitch`
-    to the context, so a handler reads it off the destructured context:
-    `({ stitch }) => stitch.stitch('/path')()`.
--   **Binds a request-scoped principal.** With a `principal` resolver, every
-    request's `stitch` is a `seam.as(principal)` handle — a separate session/token
-    over the **shared** store + throttle. This is the trusted boundary StitchAPI's
-    seam exists for: the principal lives in the closure, so a handler can never name
-    another identity (ADR 0002).
--   **SSE bridge.** `streamStitchSse(stream)` turns a stitch's `.stream()` output
-    into a `text/event-stream` `Response` you return straight from a handler.
--   **Error bridge.** A thrown `StitchError` is mapped to an HTTP response
-    (`502` by default) via the plugin's `.onError`, so handlers need no try/catch.
+- **Puts a seam on the context.** `.derive` runs per request and adds `stitch`
+  to the context, so a handler reads it off the destructured context:
+  `({ stitch }) => stitch.stitch('/path')()`.
+- **Binds a request-scoped principal.** With a `principal` resolver, every
+  request's `stitch` is a `seam.as(principal)` handle — a separate session/token
+  over the **shared** store + throttle. This is the trusted boundary StitchAPI's
+  seam exists for: the principal lives in the closure, so a handler can never name
+  another identity (ADR 0002).
+- **SSE bridge.** `streamStitchSse(stream)` turns a stitch's `.stream()` output
+  into a `text/event-stream` `Response` you return straight from a handler.
+- **Error bridge.** A thrown `StitchError` is mapped to an HTTP response
+  (`502` by default) via the plugin's `.onError`, so handlers need no try/catch.
 
 ## Seam: borrow, don't own
 
@@ -79,11 +79,25 @@ app.get('/chat', ({ stitch, query }) => {
 });
 ```
 
-Each `delta` chunk becomes one SSE message; an `error` event ends the stream as a
-named `event: error` message; stream end closes the response; and a client
-disconnect cancels the body and aborts the upstream stitch stream rather than
-leaving it running. Control events (`start`/`progress`/`result`/`done`/…) are not
-forwarded.
+Each `delta` chunk becomes one SSE message (label it with `event`, add a
+last-event id with `id: (chunk, index) => string`); an `error` event ends the
+stream as a named `event: error` message; stream end closes the response; and a
+client disconnect cancels the body and aborts the upstream stitch stream rather
+than leaving it running. Control events (`start`/`progress`/`result`/`done`/…)
+are not forwarded.
+
+The error message's `data` is a **generic `error` token by default** — the raw
+upstream message is withheld, because it can disclose internal network topology
+(`getaddrinfo ENOTFOUND payments.internal.corp`) or the upstream's status
+(`HTTP 401`) to an untrusted client. Observe the real failure server-side with
+`onError`, and opt in to shaping the client-facing frame with `errorData`:
+
+```ts
+return streamStitchSse(chat.stream(), {
+    onError: (err) => log.error(err), // the raw failure, server-side only
+    // errorData: (e) => e.message,   // opt-in: only when upstream messages are safe
+});
+```
 
 By default the `error` frame carries a generic `data: error` token, **not** the raw
 error message — echoing it can disclose internal network topology (a transport failure

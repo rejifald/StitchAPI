@@ -39,6 +39,9 @@ const ENTRY = resolve(__dirname, 'stitch-browser.ts');
 const OUT = process.env.OUT ?? '/tmp/b1-out/stitch-browser.mjs';
 const CORE =
     process.env.CORE ?? resolve(repoRoot, 'packages/core/src/index.ts');
+// The auth surface is its own entry (ADR 0021); `stitchapi` aliases to a FILE, so
+// `stitchapi/auth` cannot resolve underneath it and needs its own alias.
+const CORE_AUTH = CORE.replace(/index\.ts$/, 'auth.ts');
 
 async function loadEsbuild() {
     // Prefer a workspace-resolvable `esbuild`. If unresolvable (e.g. deps not
@@ -78,6 +81,7 @@ const result = await esbuild.build({
     // shims required.
     alias: {
         stitchapi: CORE,
+        'stitchapi/auth': CORE_AUTH,
     },
     metafile: true,
     logLevel: 'info',

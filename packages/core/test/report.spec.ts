@@ -6,8 +6,9 @@
 //     the REDACTED `config` (never `__rawConfig`), and the fine-grained `cache` outcome
 //     (bypass / miss / hit / disabled). Like `.inspect()` it never throws on a hard contract
 //     violation — it returns with `error` set and the diagnostics populated.
-import { StitchError, bearer, stitch } from '../src';
+import { StitchError, stitch } from '../src';
 import type { Adapter } from '../src';
+import { bearer } from '../src/auth';
 import { stream } from '../src/stream';
 import { asValidator } from './support/schema';
 import { streamAdapter, streamOf } from './support/streams';

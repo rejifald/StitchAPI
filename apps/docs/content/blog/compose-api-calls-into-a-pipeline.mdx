@@ -90,9 +90,9 @@ const tracking = await linked(async (run) => {
 
 `linked(body)` hands your `body` a `run`. Call your stitches through it instead of directly — that's the whole API.
 
--   **Same types, no casts.** `run(stitch, input)` is typed straight from the stitch: input from its input, result from its output. The two-hops-back ancestor isn't a feature you invoke; it's a variable you already have.
--   **One trace.** Each `run(...)` chains as a child of the call before it, so the trace draws `fetchOrder → fetchShipment → fetchTracking` as one connected sequence — `order` the root run, `shipment` a child of `order`, `tracking` a child of `shipment`.
--   **Fails fast.** A rejected call rejects the whole `linked(...)` and the body stops, carrying the failing call's `.status`, `.attempts`, `.body`, and `.url`. You handle one failure at the boundary — the `await` you already wrote.
+- **Same types, no casts.** `run(stitch, input)` is typed straight from the stitch: input from its input, result from its output. The two-hops-back ancestor isn't a feature you invoke; it's a variable you already have.
+- **One trace.** Each `run(...)` chains as a child of the call before it, so the trace draws `fetchOrder → fetchShipment → fetchTracking` as one connected sequence — `order` the root run, `shipment` a child of `order`, `tracking` a child of `shipment`.
+- **Fails fast.** A rejected call rejects the whole `linked(...)` and the body stops, carrying the failing call's `.status`, `.attempts`, `.body`, and `.url`. You handle one failure at the boundary — the `await` you already wrote.
 
 ## Concurrent steps stay in the trace
 

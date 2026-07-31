@@ -91,6 +91,33 @@ export function parseDuration(
     return n * (scale[m[2] ?? ''] ?? 1);
 }
 
+/**
+ * Parse a size into bytes — the size analogue of {@link parseDuration}. Grammar: a number
+ * (already bytes), a numeric string (`"4096"` → 4096), or `<number><unit>` with unit
+ * `b` | `kb` | `mb` | `gb` | `tb` (`"512b"`, `"64kb"`, `"1mb"`, `"1.5gb"`; case-insensitive,
+ * fractions allowed). Anything else → `undefined`.
+ *
+ * Units are **powers of 1024** — `"1mb"` is 1_048_576, the npm-`bytes` convention every
+ * Node config parser in the ecosystem already speaks (CONTRACT.md P22) and the base the
+ * house defaults are written in (`10 * 1024 * 1024`). The IEC spellings `kib` | `mib` |
+ * `gib` | `tib` are accepted for the same values, for callers who want the base explicit.
+ *
+ * Only for fields that count **bytes**. The `Chars` family (`stream.maxBufferChars`,
+ * `trace.maxBodyChars`) counts UTF-16 code units of decoded text, where a byte token would
+ * be a category error — that distinction is what the `Bytes`/`Chars` suffixes carry (P1).
+ */
+export function parseBytes(s: number | string | undefined): number | undefined {
+    if (s == null) return undefined;
+    if (typeof s === 'number') return s;
+    const m = /^(\d+(?:\.\d+)?)\s*(?:([kmgt])i?)?b$/i.exec(s.trim());
+    if (!m) return Number(s) || undefined;
+    // Index in `bkmgt` IS the power of 1024: `b`→0, `k`→1, `m`→2… The `i` spellings collapse
+    // onto the same index (`kib` and `kb` are both 1024). A cap is a whole number of bytes, so
+    // a fractional token floors — never rounds up past what the caller asked for.
+    const pow = 'bkmgt'.indexOf(m[2]?.toLowerCase() ?? 'b');
+    return Math.floor(parseFloat(m[1] ?? '') * 1024 ** pow);
+}
+
 /** "2/s" | "10/m" -> { count, per } (window length in ms). */
 export function parseRate(r: string): { count: number; per: number } {
     const m = /^(\d+)\s*\/\s*(ms|s|m)$/.exec(r.trim());
@@ -562,15 +589,16 @@ const URL_REDACTED = 'REDACTED';
 // structured `input.query` via `redactSecretQuery`) without listing every vendor spelling. The
 // default `api_key` already matches a stem; this covers an arbitrary configured name too.
 // Lower-cased on insert so the membership test in `isSecretKey` stays case-insensitive.
-const REGISTERED_SECRET_QUERY_KEYS = new Set<string>();
+const REGISTERED_SECRET_KEYS = new Set<string>();
 
 /**
- * Register an additional query-param name whose value is a secret, so the trace URL/query
- * scrubbers redact it. Additive and process-wide (mirroring the built-in denylist): names can be
- * widened but never un-redacted. Idempotent — registering the same name twice is a no-op.
+ * Register an additional key name whose value is a secret (a query-param name, a body
+ * field, …), so the trace URL/query scrubbers redact it. Additive and process-wide
+ * (mirroring the built-in denylist): names can be widened but never un-redacted.
+ * Idempotent — registering the same name twice is a no-op.
  */
 export function registerSecretKey(name: string): void {
-    REGISTERED_SECRET_QUERY_KEYS.add(name.toLowerCase());
+    REGISTERED_SECRET_KEYS.add(name.toLowerCase());
 }
 
 /**
@@ -584,7 +612,7 @@ export function isSecretKey(key: string): boolean {
     const k = key.toLowerCase();
     return (
         SECRET_QUERY_KEYS.has(k) ||
-        REGISTERED_SECRET_QUERY_KEYS.has(k) ||
+        REGISTERED_SECRET_KEYS.has(k) ||
         SECRET_QUERY_STEMS.some((s) => k.includes(s))
     );
 }
@@ -602,33 +630,39 @@ export function isSecretKey(key: string): boolean {
  *   grammar: exact, `*` wildcard, or prefix). Added on top of the shared denylist;
  *   the denylist is always applied.
  */
-export function redactSecretsDeep(
+export function redactSecretsDeep(value: unknown, extra?: string[]): unknown {
+    return redactSecretsAt(value, extra, undefined);
+}
+
+// Recursive worker for redactSecretsDeep: `path` tracks where in the tree we are so the
+// caller's `extra` patterns can match full paths, without that state leaking into the export.
+function redactSecretsAt(
     value: unknown,
-    extra?: string[],
-    _path?: string,
+    extra: string[] | undefined,
+    path: string | undefined,
 ): unknown {
     if (Array.isArray(value)) {
         return value.map((item, i) =>
-            redactSecretsDeep(
+            redactSecretsAt(
                 item,
                 extra,
-                _path !== undefined ? `${_path}[${i}]` : `[${i}]`,
+                path !== undefined ? `${path}[${i}]` : `[${i}]`,
             ),
         );
     }
     if (value !== null && typeof value === 'object') {
         const out: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            const childPath = _path !== undefined ? `${_path}.${k}` : k;
+            const childPath = path !== undefined ? `${path}.${k}` : k;
             const secret =
                 isSecretKey(k) ||
                 (extra !== undefined &&
                     (extra.some((p) => matchPath(p, k)) ||
-                        (_path !== undefined &&
+                        (path !== undefined &&
                             extra.some((p) => matchPath(p, childPath)))));
             out[k] = secret
                 ? URL_REDACTED
-                : redactSecretsDeep(v, extra, childPath);
+                : redactSecretsAt(v, extra, childPath);
         }
         return out;
     }

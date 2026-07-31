@@ -12,7 +12,8 @@ for you — the stitch holds the login, the caller never touches a cookie.
 ## Example
 
 ```ts twoslash
-import { cookieSession, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { cookieSession, env } from 'stitchapi/auth';
 
 // The login is itself a stitch — its Set-Cookie response seeds the session.
 const login = stitch({
@@ -66,20 +67,21 @@ that decision back to you. They fire **once per actual login attempt** — insid
 the single-flight refresh, never once per coalesced caller — and a throwing hook
 never crashes the call.
 
--   `onRefresh({ ok, status })` runs after **every** (re)login attempt with its
-    outcome (`ok` = a cookie was captured), so you can persist session state and
-    clear or extend a cooldown.
--   `onAuthFailure(info)` runs when an attempt captured no cookie, with a
-    `category` you map to your own status:
-    `'unauthenticated'` (a `refresh` status, e.g. `401` — bad/expired creds),
-    `'rate-limited'` (`429`, with `retryAfter` parsed from `Retry-After`),
-    `'network'` (the login threw before any response — with the thrown `error`),
-    or `'unknown'`. `info.phase` is `'apply'` for a cold session or `'refresh'`
-    for a wall that was hit mid-stream.
+- `onRefresh({ ok, status })` runs after **every** (re)login attempt with its
+  outcome (`ok` = a cookie was captured), so you can persist session state and
+  clear or extend a cooldown.
+- `onAuthFailure(info)` runs when an attempt captured no cookie, with a
+  `category` you map to your own status:
+  `'unauthenticated'` (a `refresh` status, e.g. `401` — bad/expired creds),
+  `'rate-limited'` (`429`, with `retryAfter` parsed from `Retry-After`),
+  `'network'` (the login threw before any response — with the thrown `error`),
+  or `'unknown'`. `info.phase` is `'apply'` for a cold session or `'refresh'`
+  for a wall that was hit mid-stream.
 
 ```ts twoslash
-import { cookieSession, env, stitch } from 'stitchapi';
-import type { AuthFailureResult, RefreshResult } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { cookieSession, env } from 'stitchapi/auth';
+import type { AuthFailureResult, RefreshResult } from 'stitchapi/auth';
 
 // Your own durable store — a row in a database, a Redis hash, anything.
 declare const sessionState: {

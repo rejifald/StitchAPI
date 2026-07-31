@@ -101,8 +101,8 @@ const config = {
     // The playground consumes the in-repo sandbox engine (@stitchapi/sandbox), a
     // workspace package that ships raw TS/TSX source — Next must transpile it.
     transpilePackages: ['@stitchapi/sandbox'],
-    // The config key `unwrap` was renamed to `pick`; the guide page moved with
-    // it. Permanent redirect keeps published links alive.
+    // The 2026-07 contract sweep renamed the config key `unwrap` to `pick`; the
+    // guide page moved with it. Permanent redirect keeps published links alive.
     async redirects() {
         return [
             {

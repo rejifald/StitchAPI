@@ -1,6 +1,6 @@
 // @stitchapi/next behaviour — Web-standard Response helpers driven with fake event
 // sources and errors. No engine, no Next.
-import { isStitchError, sseResponse, stitchErrorResponse } from '../src';
+import { isStitchError, stitchErrorResponse, streamStitchSse } from '../src';
 
 import type { StitchEvent } from 'stitchapi';
 import { describe, expect, test } from 'vitest';
@@ -41,11 +41,11 @@ function stitchError(message: string, status?: number): Error {
     return e;
 }
 
-// --- sseResponse -----------------------------------------------------------
+// --- streamStitchSse -----------------------------------------------------------
 
-describe('sseResponse', () => {
+describe('streamStitchSse', () => {
     test('streams each delta as an SSE frame and sets the content type', async () => {
-        const res = sseResponse(
+        const res = streamStitchSse(
             events(delta('a'), delta('b'), result(['a', 'b']), done),
         );
         expect(res.headers.get('content-type')).toBe(
@@ -55,15 +55,21 @@ describe('sseResponse', () => {
         expect(body).toBe('data: a\n\ndata: b\n\n');
     });
 
+    test('accepts anything with a .stream() (the core StitchEventSource intake)', async () => {
+        const source = { stream: () => events(delta('a'), done) };
+        const res = streamStitchSse(source);
+        expect(await res.text()).toBe('data: a\n\n');
+    });
+
     test('a `delta` function shorthand pulls text out of a structured chunk', async () => {
-        const res = sseResponse(events(delta({ text: 'hi' }), done), {
+        const res = streamStitchSse(events(delta({ text: 'hi' }), done), {
             delta: (c) => (c as { text: string }).text,
         });
         expect(await res.text()).toBe('data: hi\n\n');
     });
 
     test('by default an error event yields a named event: error frame with a generic token, never the raw message', async () => {
-        const res = sseResponse(
+        const res = streamStitchSse(
             events(delta('a'), {
                 type: 'error',
                 name: 'StitchError',
@@ -84,7 +90,7 @@ describe('sseResponse', () => {
     });
 
     test('error (function shorthand) opts in to the raw message on the error frame', async () => {
-        const res = sseResponse(
+        const res = streamStitchSse(
             events(delta('a'), {
                 type: 'error',
                 name: 'StitchError',
@@ -101,14 +107,14 @@ describe('sseResponse', () => {
     });
 
     test('the delta.event option labels each frame', async () => {
-        const res = sseResponse(events(delta('a'), done), {
+        const res = streamStitchSse(events(delta('a'), done), {
             delta: { event: 'token' },
         });
         expect(await res.text()).toBe('event: token\ndata: a\n\n');
     });
 
     test('the delta.id option emits an id: line per frame with the zero-based index', async () => {
-        const res = sseResponse(events(delta('a'), delta('b'), done), {
+        const res = streamStitchSse(events(delta('a'), delta('b'), done), {
             delta: { id: (chunk, i) => `${String(chunk)}-${i}` },
         });
         expect(await res.text()).toBe(
@@ -117,12 +123,12 @@ describe('sseResponse', () => {
     });
 
     test('a multi-line chunk gets one data: prefix per line (SSE spec)', async () => {
-        const res = sseResponse(events(delta('l1\nl2'), done));
+        const res = streamStitchSse(events(delta('l1\nl2'), done));
         expect(await res.text()).toBe('data: l1\ndata: l2\n\n');
     });
 
     test('extra headers merge over the SSE defaults, with overrides winning', async () => {
-        const res = sseResponse(events(delta('a'), done), {
+        const res = streamStitchSse(events(delta('a'), done), {
             headers: { 'x-custom': '1', 'cache-control': 'no-store' },
         });
         expect(res.headers.get('x-custom')).toBe('1');
@@ -136,7 +142,7 @@ describe('sseResponse', () => {
     });
 
     test('a pre-aborted signal yields no frames', async () => {
-        const res = sseResponse(events(delta('a'), delta('b'), done), {
+        const res = streamStitchSse(events(delta('a'), delta('b'), done), {
             signal: AbortSignal.abort(),
         });
         expect(await res.text()).toBe('');
@@ -148,7 +154,7 @@ describe('sseResponse', () => {
             // A transport failure disclosing an internal hostname must not reach the client.
             throw new Error('getaddrinfo ENOTFOUND payments.internal.corp');
         }
-        const res = sseResponse(boom());
+        const res = streamStitchSse(boom());
         const body = await res.text();
         expect(body).toBe('data: a\n\nevent: error\ndata: error\n\n');
         expect(body).not.toContain('payments.internal.corp');
@@ -160,14 +166,14 @@ describe('sseResponse', () => {
             yield delta('a');
             throw new Error('stream blew up');
         }
-        const res = sseResponse(boom(), { error: (e) => e.message });
+        const res = streamStitchSse(boom(), { error: (e) => e.message });
         const body = await res.text();
         expect(body).toBe('data: a\n\nevent: error\ndata: stream blew up\n\n');
     });
 
     test('error.observe sees the real failure even when the client gets the generic token', async () => {
         const observed: unknown[] = [];
-        const res = sseResponse(
+        const res = streamStitchSse(
             events(delta('a'), {
                 type: 'error',
                 name: 'StitchError',
@@ -187,7 +193,7 @@ describe('sseResponse', () => {
     });
 
     test('error can be the full object with a custom event name', async () => {
-        const res = sseResponse(
+        const res = streamStitchSse(
             events(delta('a'), {
                 type: 'error',
                 name: 'StitchError',

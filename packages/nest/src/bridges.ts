@@ -4,7 +4,7 @@
 // level/format/source adapters), and `nestBorrowStore` wraps a `StitchStore`. A TraceSink,
 // a `Secret` thunk, and a StitchStore are all existing extension points.
 import { Logger } from '@nestjs/common';
-import { loggerSink as coreLoggerSink, secretFrom } from 'stitchapi';
+import { loggerSink as coreLoggerSink } from 'stitchapi';
 import type {
     LoggerLike as CoreLoggerLike,
     LogLevel,
@@ -12,6 +12,7 @@ import type {
     StitchStore,
     TraceSink,
 } from 'stitchapi';
+import { secretFrom } from 'stitchapi/auth';
 
 /**
  * The minimal logger surface this sink calls — declared structurally so Nest's

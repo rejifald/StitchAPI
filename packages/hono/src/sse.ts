@@ -21,6 +21,7 @@ import {
     resolveDelta,
     resolveError,
     toErrorEvent,
+    toIterable,
 } from 'stitchapi/sse-emit';
 
 export type { StitchEventSource };
@@ -58,8 +59,11 @@ export function streamStitchSse<T>(
     const error = resolveError(options.error);
     const toData = delta.data ?? defaultData;
     const errorEvent = error.event ?? 'error';
+    // Core's `StitchEventSource` admits the iterable itself or a `{ stream() }` holder (a
+    // `StitchResult`, a stitch stub) — unwrap the holder once, up front.
+    const iterable = toIterable(source);
     return streamSSE(c, async (stream: SSEStreamingApi) => {
-        const iterator = source[Symbol.asyncIterator]();
+        const iterator = iterable[Symbol.asyncIterator]();
         let index = 0;
         // Write the terminal `error` message: a generic token by default so a raw message
         // (`getaddrinfo ENOTFOUND …` / `HTTP 401`) is never disclosed; `error.data` opts in.

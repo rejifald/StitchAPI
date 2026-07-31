@@ -1,16 +1,13 @@
 // @stitchapi/svelte store behaviour, driven by FAKE stitches in node env (no DOM):
 // we subscribe to the readable store and assert the emitted state transitions —
 // exactly how Svelte's `$store` / `subscribe` would observe them at runtime.
-import {
-    queryOptions,
-    stitchQueryOptions,
-    stitchStore,
-    stitchStreamStore,
-    useStitch,
-    useStitchStream,
-} from '../src';
+import { stitchQueryOptions, stitchStore, stitchStreamStore } from '../src';
 
-import type { StitchCallResult, StitchLike } from '@stitchapi/query-core';
+import {
+    type StitchCallResult,
+    type StitchLike,
+    stitchQueryOptions as coreStitchQueryOptions,
+} from '@stitchapi/query-core';
 import type { StitchEvent } from 'stitchapi';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -172,10 +169,6 @@ describe('stitchStore', () => {
         unsubscribe();
     });
 
-    test('useStitch is an alias of stitchStore', () => {
-        expect(useStitch).toBe(stitchStore);
-    });
-
     test('forwards onSuccess to the underlying query (fires on success after subscribe)', async () => {
         let received: unknown;
         const store = stitchStore(
@@ -266,15 +259,18 @@ describe('stitchStreamStore', () => {
         expect(last?.chunks).toEqual([]);
         unsubscribe();
     });
-
-    test('useStitchStream is an alias of stitchStreamStore', () => {
-        expect(useStitchStream).toBe(stitchStreamStore);
-    });
 });
 
 // --- stitchQueryOptions ----------------------------------------------------------
+// The implementation is HOISTED into `@stitchapi/query-core` (nameOf /
+// keyInputFor / deriveQueryKey own the deep coverage there); these tests verify
+// the re-export wiring and one end-to-end shape through this package's entry.
 
 describe('stitchQueryOptions', () => {
+    test('is the ONE shared query-core implementation, re-exported', () => {
+        expect(stitchQueryOptions).toBe(coreStitchQueryOptions);
+    });
+
     test('returns a TanStack-shaped POJO with key + async queryFn', async () => {
         const stitch = unaryStitch(async () => ({ ok: true }), {
             name: 'getThing',
@@ -295,43 +291,9 @@ describe('stitchQueryOptions', () => {
         const opts = stitchQueryOptions(stitch, { params: { id: '7' } });
         expect(opts.queryKey[1]).toEqual({ params: { id: '7' } });
     });
-});
 
-describe('queryOptions (deprecated alias)', () => {
-    test('queryOptions stays a deprecated alias of stitchQueryOptions (ADR 0012)', () => {
-        expect(queryOptions).toBe(stitchQueryOptions);
-    });
-});
-
-// --- stitchQueryOptions: cache-key derivation regressions ------------------
-// The `queryKey` derivation shared the same three bugs @stitchapi/react fixed in
-// #406 (nameless-collision, secret-header leak, refetch storm). Each of these
-// FAILED before the port. Kept in lock-step with `packages/react/test/hooks.spec.tsx`.
-
-describe('stitchQueryOptions — no cache collision between nameless stitches', () => {
-    // Bug 1 (correctness): `name ?? 'stitch'` keyed every nameless stitch as the
-    // literal 'stitch', so two distinct endpoints with same-shaped input collided
-    // on one TanStack Query cache entry. Fixed by mirroring core's `nameOf`
-    // (name ?? path ?? url ?? 'stitch').
-    test('two nameless stitches with different paths get DIFFERENT keys', () => {
-        const getUser = unaryStitch(async () => 1, { path: '/users/{id}' });
-        const getOrder = unaryStitch(async () => 1, { path: '/orders/{id}' });
-        const input = { params: { id: '1' } };
-
-        const userKey = stitchQueryOptions(getUser, input).queryKey;
-        const orderKey = stitchQueryOptions(getOrder, input).queryKey;
-
-        expect(userKey).not.toEqual(orderKey);
-        expect(userKey[0]).toBe('/users/{id}');
-        expect(orderKey[0]).toBe('/orders/{id}');
-    });
-});
-
-describe('stitchQueryOptions — no secret leak in the query key', () => {
-    // Bug 2 (security): the raw `input` went straight into the queryKey, so a
-    // per-call `authorization` header serialised the bearer token into the
-    // TanStack Query key (persisted, and shown in the devtools panel). Fixed by
-    // redacting denylisted header VALUES.
+    // Smoke test through THIS package's entry (deep redaction coverage lives in
+    // query-core): a per-call bearer token must never serialise into the key.
     test('a per-call authorization header does not put the token in the key', () => {
         const getUser = unaryStitch(async () => 1, { name: 'getUser' });
         const { queryKey } = stitchQueryOptions(getUser, {
@@ -340,57 +302,5 @@ describe('stitchQueryOptions — no secret leak in the query key', () => {
         });
 
         expect(JSON.stringify(queryKey)).not.toContain('SECRET123');
-    });
-
-    test('redacts the secret header but keeps a benign one (no fresh collision)', () => {
-        const getUser = unaryStitch(async () => 1, { name: 'getUser' });
-        const [, keyInput] = stitchQueryOptions(getUser, {
-            params: { id: '1' },
-            headers: {
-                authorization: 'Bearer SECRET123',
-                'accept-language': 'en-US',
-            },
-        }).queryKey;
-
-        const headers = (keyInput as { headers: Record<string, string> })
-            .headers;
-        expect(headers['authorization']).not.toContain('SECRET123');
-        expect(headers['accept-language']).toBe('en-US');
-    });
-});
-
-describe('stitchQueryOptions — no refetch storm from runtime-only input fields', () => {
-    // Bug 3 (reliability): `signal`/`onProgress` are runtime-only (never
-    // serialised, per CONTRACT.md). An inline `onProgress` churns identity every
-    // render, so keying it re-fetched forever. Fixed by excluding both fields.
-    test('two distinct inline onProgress functions produce EQUAL keys', () => {
-        const getUser = unaryStitch(async () => 1, { name: 'getUser' });
-        const base = { params: { id: '1' } };
-
-        const keyA = stitchQueryOptions(getUser, {
-            ...base,
-            onProgress: () => {},
-        }).queryKey;
-        const keyB = stitchQueryOptions(getUser, {
-            ...base,
-            onProgress: () => {},
-        }).queryKey;
-
-        expect(keyA).toEqual(keyB);
-    });
-
-    test('a per-call signal does not enter the key', () => {
-        const getUser = unaryStitch(async () => 1, { name: 'getUser' });
-        const controller = new AbortController();
-
-        const withSignal = stitchQueryOptions(getUser, {
-            params: { id: '1' },
-            signal: controller.signal,
-        }).queryKey;
-        const without = stitchQueryOptions(getUser, {
-            params: { id: '1' },
-        }).queryKey;
-
-        expect(withSignal).toEqual(without);
     });
 });

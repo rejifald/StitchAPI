@@ -41,6 +41,9 @@ const OUT =
     resolve(repoRoot, 'apps/docs/public/sandbox/sandbox-worker.mjs');
 const CORE =
     process.env.CORE ?? resolve(repoRoot, 'packages/core/src/index.ts');
+// The auth surface is its own entry (ADR 0021); `stitchapi` aliases to a FILE, so
+// `stitchapi/auth` cannot resolve underneath it and needs its own alias.
+const CORE_AUTH = CORE.replace(/index\.ts$/, 'auth.ts');
 // Alias every workspace `@stitchapi/*` playground package to its SOURCE: its
 // published entry is a built `lib/` the docs `build:sandbox` flow never builds, so
 // resolving src keeps the worker build publish-free (the same trick as `stitchapi`
@@ -105,6 +108,7 @@ await esbuild.build({
     // shims are required — this is the only alias the bundle needs.
     alias: {
         stitchapi: CORE,
+        'stitchapi/auth': CORE_AUTH,
         ...WORKSPACE_ALIASES,
     },
     logLevel: 'info',

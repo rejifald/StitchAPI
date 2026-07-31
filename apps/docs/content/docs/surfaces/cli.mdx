@@ -114,19 +114,19 @@ path/query parameters parsed from each
 [URL template](/docs/guides/data/url-shaping), plus the presence of a request
 body and response. Three things make it richer:
 
--   **Body and per-parameter schemas.** Pass `--schema-module <path>` at a module
-    that exports a `toJsonSchema(source, info)` converter (its default export or a
-    named `toJsonSchema`). Core stays zero-dependency — you bring the converter
-    (e.g. one wrapping `zod-to-json-schema`), the way an adapter brings your
-    `axios`. Without it, bodies and parameters stay `{}`.
--   **Security schemes.** Each stitch's `auth` contributes a
-    `components.securitySchemes` entry and a per-operation `security` requirement —
-    `bearer`/`basic` become HTTP schemes, `apiKey` its declared header, `oauth2`
-    its token endpoint and scopes. Only the **scheme** is emitted; the credential
-    is never read or written.
--   **Warnings, not silent drops.** A stitch whose endpoint is a thunk (resolved
-    at call time) can't be exported statically, so it is reported on stderr as a
-    `warning:` and skipped — never dropped silently.
+- **Body and per-parameter schemas.** Pass `--schema-module <path>` at a module
+  that exports a `toJsonSchema(source, info)` converter (its default export or a
+  named `toJsonSchema`). Core stays zero-dependency — you bring the converter
+  (e.g. one wrapping `zod-to-json-schema`), the way an adapter brings your
+  `axios`. Without it, bodies and parameters stay `{}`.
+- **Security schemes.** Each stitch's `auth` contributes a
+  `components.securitySchemes` entry and a per-operation `security` requirement —
+  `bearer`/`basic` become HTTP schemes, `apiKey` its declared header, `oauth2`
+  its token endpoint and scopes. Only the **scheme** is emitted; the credential
+  is never read or written.
+- **Warnings, not silent drops.** A stitch whose endpoint is a thunk (resolved
+  at call time) can't be exported statically, so it is reported on stderr as a
+  `warning:` and skipped — never dropped silently.
 
 `toOpenApi` is also exported from `stitchapi/registry` for in-process use — pass
 your own `toJsonSchema` converter to fill body and parameter schemas:

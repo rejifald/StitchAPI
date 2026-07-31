@@ -9,22 +9,23 @@
 // secure-by-default error framing are shared with every other HTTP adapter via
 // `stitchapi/sse-emit`; this file keeps only Fastify's reply driver.
 import type { FastifyReply } from 'fastify';
-import type { StitchEvent } from 'stitchapi';
 import {
     DEFAULT_ERROR_DATA,
     type SseEmitOptions,
+    type StitchEventSource,
     deltaFrame,
     resolveDelta,
     resolveError,
     sseFrame,
+    toIterable,
 } from 'stitchapi/sse-emit';
 
 /** How each `delta` / terminal `error` becomes an SSE frame (see {@link SseEmitOptions}). */
-export type SendStitchSseOptions = SseEmitOptions;
+export type StreamStitchSseOptions = SseEmitOptions;
 
 /**
  * Stream a stitch's output to a Fastify {@link FastifyReply} as Server-Sent Events. Pass the
- * stitch's `.stream()` generator (or any `AsyncIterable<StitchEvent>`): each `delta` becomes
+ * stitch's `.stream()` generator (or any `StitchEventSource`): each `delta` becomes
  * one SSE frame, an `error` event ends the stream with a named `event: error` frame (a generic
  * `data: error` by default — the raw message is withheld to avoid disclosing internal topology;
  * opt in via `error`), and stream end closes the response. The non-output events (`start` /
@@ -37,15 +38,15 @@ export type SendStitchSseOptions = SseEmitOptions;
  *
  * ```ts
  * app.get('/chat', (req, reply) =>
- *   sendStitchSse(reply, chat.stream({ query: { q: req.query.q } }),
+ *   streamStitchSse(reply, chat.stream({ query: { q: req.query.q } }),
  *                 { delta: (c: any) => c.text }),
  * );
  * ```
  */
-export async function sendStitchSse<T>(
+export async function streamStitchSse<T>(
     reply: FastifyReply,
-    stream: AsyncIterable<StitchEvent<T>>,
-    options: SendStitchSseOptions = {},
+    source: StitchEventSource<T>,
+    options: StreamStitchSseOptions = {},
 ): Promise<void> {
     const delta = resolveDelta(options.delta);
     const error = resolveError(options.error);
@@ -60,7 +61,9 @@ export async function sendStitchSse<T>(
         });
     }
 
-    const iterator = stream[Symbol.asyncIterator]();
+    // Resolve the `{ stream() }` arm of StitchEventSource to its event iterable.
+    const iterable = toIterable(source);
+    const iterator = iterable[Symbol.asyncIterator]();
     let active = true;
 
     // Client disconnect: stop consuming and abort the upstream generator.

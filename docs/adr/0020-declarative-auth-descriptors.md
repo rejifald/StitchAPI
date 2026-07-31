@@ -1,8 +1,26 @@
 # ADR 0020 — Declarative auth descriptors: `auth` accepts a descriptor or a factory
 
--   **Status:** Accepted
--   **Date:** 2026-07-23
--   **Tags:** auth, config, descriptor, contract-not-dependency, P0-json-config, P16-parity, browser-first, additive
+- **Status:** **Superseded by [ADR 0021](./0021-auth-strategies-move-to-a-subpath.md)** (2026-07-31), before implementation. Accepted 2026-07-23 in [#486](https://github.com/rejifald/StitchAPI/pull/486); implemented in [#487](https://github.com/rejifald/StitchAPI/pull/487), which was closed unmerged.
+- **Date:** 2026-07-23
+- **Tags:** auth, config, descriptor, contract-not-dependency, P0-json-config, P16-parity, browser-first, additive
+
+> [!WARNING]
+>
+> **Superseded — `auth` accepts an `AuthStrategy` only; there is no `AuthDescriptor`.**
+> A descriptor is inert data, so the resolver mapping `strategy: 'oauth2'` to its factory has
+> to reference all five strategies and be reachable from `stitch()` — measured at **+2.33 KB
+> gzip on `import { stitch }`** for every consumer, including the ones with no `auth` at all.
+> #487's escape (a resolver seam armed as a side effect of the secret resolvers) bought the
+> bytes back, but made a literal-secret descriptor's validity depend on module execution
+> order. [ADR 0021](./0021-auth-strategies-move-to-a-subpath.md) withdraws the descriptor and
+> moves the auth surface to `stitchapi/auth` instead.
+>
+> Two conclusions below survived and shipped: **Q7** (`auth` is an atomic `extends` slot,
+> never deep-merged — [#544](https://github.com/rejifald/StitchAPI/pull/544)) and the
+> symmetric `apiKey({ in, name, value })` it builds on
+> ([#485](https://github.com/rejifald/StitchAPI/pull/485)). Everything else here is
+> historical. The examples' `stitchapi` imports were rewritten to `stitchapi/auth` so the
+> page never teaches a dead import path.
 
 > [!NOTE]
 >
@@ -18,7 +36,7 @@ Today `auth` accepts one thing — a live `AuthStrategy`
 ([`types.ts:752`](../../packages/core/src/types.ts)) built by a factory:
 
 ```ts
-import { apiKey, env } from 'stitchapi';
+import { apiKey, env } from 'stitchapi/auth';
 
 auth: apiKey({ in: 'cookie', name: 'sid', value: env('API_KEY') });
 ```
@@ -185,50 +203,50 @@ unlike the option types (`ApiKeyOptions` etc.), which stay local (#485).
 
 ## Alternatives considered
 
--   **Key-tagged form `auth: { apiKey: { … } }` / `auth: { bearer: env('T') }`.**
-    Terser, but the shape is a lie: one key-per-strategy _invites_ a second key
-    (`{ apiKey: …, bearer: … }`) and reads as "combine these" — yet `auth` is a
-    **single** strategy with no combinator (Q4). A flat discriminated union on
-    `strategy` holds exactly one strategy by construction, so the type matches the
-    semantics. (It also diverges from the house discriminated-union convention —
-    `StitchEvent` / `SecurityScheme` are flat `{ discriminant, … }`.) Rejected.
--   **`type` as the discriminant.** Rejected — see Q5 (value-space collision with
-    `scheme.type`).
--   **Status quo (factory only).** The motivating ceremony (import + call for a
-    field that already serializes as a descriptor) stays. Rejected.
--   **Deprecate the factories in favour of descriptors.** Rejected — factories are
-    required for BYO/custom `apply`, are terser for `bearer`, and are the natural
-    programmatic/shareable form. Both stay first-class.
+- **Key-tagged form `auth: { apiKey: { … } }` / `auth: { bearer: env('T') }`.**
+  Terser, but the shape is a lie: one key-per-strategy _invites_ a second key
+  (`{ apiKey: …, bearer: … }`) and reads as "combine these" — yet `auth` is a
+  **single** strategy with no combinator (Q4). A flat discriminated union on
+  `strategy` holds exactly one strategy by construction, so the type matches the
+  semantics. (It also diverges from the house discriminated-union convention —
+  `StitchEvent` / `SecurityScheme` are flat `{ discriminant, … }`.) Rejected.
+- **`type` as the discriminant.** Rejected — see Q5 (value-space collision with
+  `scheme.type`).
+- **Status quo (factory only).** The motivating ceremony (import + call for a
+  field that already serializes as a descriptor) stays. Rejected.
+- **Deprecate the factories in favour of descriptors.** Rejected — factories are
+  required for BYO/custom `apply`, are terser for `bearer`, and are the natural
+  programmatic/shareable form. Both stay first-class.
 
 ## Consequences
 
--   `auth` gains a declarative form; no import needed for built-in strategies; the
-    intake shape now matches the inspected/exported descriptor.
--   `auth` becomes an atomic `extends` slot (fixes a latent strategy-deep-merge
-    bug as a side effect).
--   One new normalization branch at construction; `__config` stays strict JSON;
-    redaction unchanged.
--   Surface growth: `AuthDescriptor` / `AuthConfig` exported. Every doc/test that
-    shows `auth:` gains a descriptor variant; generators may switch to descriptor
-    emit (Q8).
--   Additive and non-breaking: every existing factory call is untouched.
+- `auth` gains a declarative form; no import needed for built-in strategies; the
+  intake shape now matches the inspected/exported descriptor.
+- `auth` becomes an atomic `extends` slot (fixes a latent strategy-deep-merge
+  bug as a side effect).
+- One new normalization branch at construction; `__config` stays strict JSON;
+  redaction unchanged.
+- Surface growth: `AuthDescriptor` / `AuthConfig` exported. Every doc/test that
+  shows `auth:` gains a descriptor variant; generators may switch to descriptor
+  emit (Q8).
+- Additive and non-breaking: every existing factory call is untouched.
 
 ## Gates
 
--   **Browser-first:** descriptors add no Node dependency; normalization is pure.
--   **Bundle-frugal:** normalization is a small dispatch table over the five
-    factories already in the bundle; no new runtime weight beyond the switch.
--   **Contract-not-dependency / P0:** `__config` remains strict JSON; live leaves
-    stay on `__rawConfig`; `authScheme` export path is unchanged. Aligns with the
-    "auth to a descriptor" vision ADR 0011 already records.
+- **Browser-first:** descriptors add no Node dependency; normalization is pure.
+- **Bundle-frugal:** normalization is a small dispatch table over the five
+  factories already in the bundle; no new runtime weight beyond the switch.
+- **Contract-not-dependency / P0:** `__config` remains strict JSON; live leaves
+  stay on `__rawConfig`; `authScheme` export path is unchanged. Aligns with the
+  "auth to a descriptor" vision ADR 0011 already records.
 
 ## Revisit if
 
--   A sixth strategy or a genuinely composed auth (a combinator over strategies)
-    appears — the descriptor union and the "single atomic slot" assumption would
-    both need revisiting.
--   Standard-Schema-style structural needs push auth config toward something the
-    flat union can't express.
+- A sixth strategy or a genuinely composed auth (a combinator over strategies)
+  appears — the descriptor union and the "single atomic slot" assumption would
+  both need revisiting.
+- Standard-Schema-style structural needs push auth config toward something the
+  flat union can't express.
 
 ## Rollout (proposed, one PR per step, stop between)
 

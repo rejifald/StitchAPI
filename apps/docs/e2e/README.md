@@ -28,20 +28,20 @@ The remaining browser-tier invariants are proved by driving the **real productio
 worker bundle** (`/sandbox/sandbox-worker.mjs`) directly via its `{type:'run', js}`
 protocol — the same UI-independent style as `sandbox-trace.spec.ts`:
 
--   **`sandbox-nonhttp-egress.spec.ts`** — SEC-04: `WebSocket`/`EventSource` are
-    `undefined` in snippet scope, `navigator.sendBeacon` is unavailable, and a remote
-    `import('https://…')` is CSP-blocked (`errorText: 'csp'`); the network spy records
-    **zero completed** connections to the foreign origin.
--   **`sandbox-timeout.spec.ts`** — SEC-20/21/22/24: a `while(true){}` snippet is killed
-    by `worker.terminate()` from the host main thread (the runner's kill mechanism); the
-    main thread keeps ticking during the loop (eval is off-main-thread), the worker is
-    dead afterwards, a fresh worker runs the next snippet, the default cap fires when
-    `timeoutMs` is omitted, and the kill is preemptive (a non-cooperative loop is still
-    killed). The spec plays the runner's main-thread-killer role because the timeout is
-    enforced by the runner, not the worker (a raw busy loop posted to the worker hangs).
--   **`sandbox-isolation.spec.ts`** — SEC-36/37: no `globalThis` or `memoryStore`
-    singleton bleed across runs, proved through the runner's **fresh-Worker-per-run**
-    lifecycle, with a same-worker positive control so the absence is non-vacuous.
+- **`sandbox-nonhttp-egress.spec.ts`** — SEC-04: `WebSocket`/`EventSource` are
+  `undefined` in snippet scope, `navigator.sendBeacon` is unavailable, and a remote
+  `import('https://…')` is CSP-blocked (`errorText: 'csp'`); the network spy records
+  **zero completed** connections to the foreign origin.
+- **`sandbox-timeout.spec.ts`** — SEC-20/21/22/24: a `while(true){}` snippet is killed
+  by `worker.terminate()` from the host main thread (the runner's kill mechanism); the
+  main thread keeps ticking during the loop (eval is off-main-thread), the worker is
+  dead afterwards, a fresh worker runs the next snippet, the default cap fires when
+  `timeoutMs` is omitted, and the kill is preemptive (a non-cooperative loop is still
+  killed). The spec plays the runner's main-thread-killer role because the timeout is
+  enforced by the runner, not the worker (a raw busy loop posted to the worker hangs).
+- **`sandbox-isolation.spec.ts`** — SEC-36/37: no `globalThis` or `memoryStore`
+  singleton bleed across runs, proved through the runner's **fresh-Worker-per-run**
+  lifecycle, with a same-worker positive control so the absence is non-vacuous.
 
 The timeout-classification fields of `RunError` (`reason:'timeout'`, etc.) and the
 ordered-capture / throw-containment behaviours are already proved mechanically in Node

@@ -64,7 +64,7 @@
     },
     "dependencies": {
         "@huggingface/transformers": "^4.2.0",
-        "@modelcontextprotocol/sdk": "1.26.0",
+        "@modelcontextprotocol/sdk": "1.30.0",
         "@orama/orama": "3.1.18",
         "@orama/plugin-data-persistence": "3.1.18",
         "zod": "^4.4.3"
@@ -73,6 +73,6 @@
         "@types/node": "^22.10.0",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",
-        "vitest": "^4.1.8"
+        "vitest": "^4.1.10"
     }
 }

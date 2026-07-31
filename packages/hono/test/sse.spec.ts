@@ -69,6 +69,21 @@ describe('streamStitchSse — delta mapping', () => {
         expect(body).toContain('data: t2');
     });
 
+    test('a { stream() } holder (StitchResult-shaped source) is unwrapped and driven', async () => {
+        const app = new Hono();
+        const holder = {
+            stream: () =>
+                gen([
+                    { type: 'delta', chunk: 'held', at: 0 },
+                    { type: 'done', ok: true, elapsed: 1, attempts: 1, at: 0 },
+                ]),
+        };
+        app.get('/x', (c) => streamStitchSse(c, holder));
+
+        const body = await (await app.request('/x')).text();
+        expect(dataLines(body)).toEqual(['data: held']);
+    });
+
     test('a custom data mapper pulls text out of a structured chunk', async () => {
         const app = new Hono();
         app.get('/x', (c) =>

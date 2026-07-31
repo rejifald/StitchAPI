@@ -14,8 +14,9 @@
 //
 // These tests FAIL before the fix (the second, redirect-target request still carries the
 // credential) and PASS after. A same-origin companion asserts we don't OVER-strip.
-import { apiKey, axiosAdapter, env, fetchAdapter, stitch } from '../../src';
+import { axiosAdapter, fetchAdapter, stitch } from '../../src';
 import type { AxiosLikeConfig, AxiosLikeResponse } from '../../src';
+import { apiKey, env } from '../../src/auth';
 import { headersForRedirect } from '../../src/http-adapter';
 
 import { tmpdir } from 'node:os';
@@ -233,8 +234,7 @@ describe('axiosAdapter — beforeRedirect enforces the same cross-origin strip p
             headers: { 'x-api-key': API_KEY, authorization: AWS_AUTH },
         });
         const hook = client.calls[0]?.['beforeRedirect'] as
-            | ((options: Record<string, unknown>) => void)
-            | undefined;
+            ((options: Record<string, unknown>) => void) | undefined;
         if (!hook)
             throw new Error(
                 'axiosAdapter did not install a beforeRedirect hook',

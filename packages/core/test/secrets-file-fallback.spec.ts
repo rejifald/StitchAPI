@@ -5,7 +5,7 @@
 //   - neither the file nor the env has it → throw "missing secret";
 //   - a non-string value in the file is coerced via String();
 //   - malformed JSON is swallowed (try/catch) and the env var is used.
-import { secretsFile } from '../src';
+import { secretsFile } from '../src/auth';
 
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

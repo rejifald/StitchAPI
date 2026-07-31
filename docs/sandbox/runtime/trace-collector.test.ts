@@ -144,8 +144,7 @@ async function runTests(): Promise<void> {
         await s();
         const entry = (
             events.find((e) => e.type === 'trace') as
-                | Extract<RunEvent, { type: 'trace' }>
-                | undefined
+                Extract<RunEvent, { type: 'trace' }> | undefined
         )?.entry;
         assert(
             '2 entry carries the error name/message',
@@ -182,8 +181,7 @@ async function runTests(): Promise<void> {
         await (collector.stitch({ name: 'x' }) as () => Promise<unknown>)();
         const entry = (
             events.find((e) => e.type === 'trace') as
-                | Extract<RunEvent, { type: 'trace' }>
-                | undefined
+                Extract<RunEvent, { type: 'trace' }> | undefined
         )?.entry;
         assert(
             '3 error entry has no response when status is unknown',
@@ -227,8 +225,7 @@ async function runTests(): Promise<void> {
         );
         const entry = (
             events.find((e) => e.type === 'trace') as
-                | Extract<RunEvent, { type: 'trace' }>
-                | undefined
+                Extract<RunEvent, { type: 'trace' }> | undefined
         )?.entry;
         assert(
             '4 trace entry records stream chunk count',
@@ -266,8 +263,7 @@ async function runTests(): Promise<void> {
         await (collector.stitch({ name: 'x' }) as () => Promise<unknown>)();
         const entry = (
             events.find((e) => e.type === 'trace') as
-                | Extract<RunEvent, { type: 'trace' }>
-                | undefined
+                Extract<RunEvent, { type: 'trace' }> | undefined
         )?.entry;
         assert(
             '5 only the sensitive header name is flagged',
@@ -461,8 +457,7 @@ async function runTests(): Promise<void> {
         await (collector.stitch({ name: 'x' }) as () => Promise<unknown>)();
         const entry = (
             events.find((e) => e.type === 'trace') as
-                | Extract<RunEvent, { type: 'trace' }>
-                | undefined
+                Extract<RunEvent, { type: 'trace' }> | undefined
         )?.entry;
         assert(
             '10 a retried run is annotated with its attempt count',
@@ -494,8 +489,7 @@ async function runTests(): Promise<void> {
         await (collector.stitch({ name: 'x' }) as () => Promise<unknown>)();
         const entry = (
             events.find((e) => e.type === 'trace') as
-                | Extract<RunEvent, { type: 'trace' }>
-                | undefined
+                Extract<RunEvent, { type: 'trace' }> | undefined
         )?.entry;
         assert(
             '11 a single clean attempt gets no count annotation',

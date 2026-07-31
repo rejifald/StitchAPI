@@ -12,8 +12,9 @@ across workers, not just within a single process.
 ## Example
 
 ```ts twoslash
-import { cookieSession, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
 import type { StitchStore } from 'stitchapi';
+import { cookieSession, env } from 'stitchapi/auth';
 
 // A Redis-backed StitchStore — see The pluggable store.
 declare const sharedStore: StitchStore;
