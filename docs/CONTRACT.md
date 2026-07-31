@@ -189,8 +189,10 @@ A field named **`key` MUST be a string** identifier/namespace. A key-**derivatio
 function **MUST** be named **`keyOf`** (a `(input) => string`) and **MUST NOT** be
 called `key`.
 
-_Violations:_ `IdempotencyOptions.key`, `CacheConfig.key` (both `(input) => string`)
-→ `keyOf`. `CircuitOptions.key` and `StitchStore.get/set/increment(key)` are correct as-is.
+_Resolved (2026-07 sweep):_ the two derivation functions are `keyOf` —
+`IdempotencyOptions.keyOf` and `CacheOptions.keyOf`, both `(input) => string`. The only
+surviving `key` on the surface is `CircuitOptions.key?: string` (a store namespace), which
+is what this rule mandates; `StitchStore.get/set/increment(key)` are likewise correct.
 
 ### P7 · Status-classification parity
 
@@ -425,9 +427,12 @@ vocabulary the GA cut then has to delete — every one a field a reader must lea
 The clean surface at 1.0 is worth more than continuity between two release candidates.
 
 _Aliases already shipped stay._ Relaxing the rule forward does not retroactively demand
-their removal: the `*Ms` duration aliases, `keyOf`, `StatusMatch`, and the rest listed in
-[§6](#6-migration-record-2026-07-08-hard-break-sweep) remain, pinned by their identity tests, until the GA cut
-removes them together. Removing one now would itself be a break, for no gain.
+their removal — but the rule currently guards an empty set. The 2026-07 sweep
+([§6](#6-migration-record-2026-07-08-hard-break-sweep)) applied every rename as a hard
+break, so **no `@deprecated` member survives anywhere in `packages/*/src`**, and the only
+`*Ms` names left on the surface are OTLP's `*UnixMs` instants, which P17 carves out as
+timestamps rather than durations. (`keyOf` and `StatusMatch` are the canonical spellings,
+not aliases.) The rule stands for the next alias that ships.
 
 _Corollary — some contracts cannot alias at all._ Where the consumer **implements** an
 interface and core **calls** it (`StitchStore`, `RedisDriver`, `Adapter`, `TraceSink`,
@@ -656,11 +661,18 @@ which [P18](#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-hou
 keeps at their upstream spelling). A backlog that still advertises finished work reads as a
 rule nobody enforces.
 
-New shorthand/toggle slots to **add** (additive, non-breaking): `.inspect()`
-scalars (P12); `idempotency` boolean (P13-toggle); `throttle` string (P14).
+The shorthand/toggle slots this section once listed as still-to-add have all shipped:
+`.inspect(…, opts?: boolean | AtLeastOne<InspectOptions>)` (P12), `idempotency?: boolean |
+AtLeastOne<IdempotencyOptions>` (P13-toggle), and `throttle: '2/s'` folding to
+`{ rate: '2/s' }` (P14).
 
-**Shipped (migration in progress)** — all under `@deprecated` aliases read until the GA
-cut; the lint skips the deprecated members so each rename ratchets the baseline down:
+**Shipped** — a historical record. Each bullet describes what its rename did **at the
+time**, including any `@deprecated` alias it shipped behind. Those aliases are all gone:
+the 2026-07-08 hard-break sweep deleted every prior shim ([D5](#0-resolved-decisions)),
+and **R7** now flags a `@deprecated` tag reaching a published surface — which is why the
+ratchet's baseline is empty rather than full of them. So where a bullet below says an
+alias "stays", or that the runtime "prefers `new ?? old`", read it as that migration's
+shape, not as today's surface: nothing on the surface carries an alias.
 
 - **P6** `IdempotencyOptions.key`/`CacheOptions.key`→`keyOf`; runtime prefers `keyOf ?? key`.
 - **P3** suffix renames (type-only, zero runtime): `CacheConfig`→`CacheOptions`,
