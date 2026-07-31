@@ -28,7 +28,7 @@ Take two stitches you would write anyway. `listOrders` declares its `status` que
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
-import { bearer, env } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 export const getUser = stitch({

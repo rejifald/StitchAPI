@@ -120,7 +120,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 - **CLI, HTTP & MCP surfaces** - the definition your code imports is also runnable from the shell (`stitch run <name>` streams JSONL events), served over HTTP (`stitch serve`), or exposed to agents over MCP (`stitch mcp`) — the same stitch behind every front door.
 - **Typed URLs** - full [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates (`{id}`, `{+path}`, `{?q,sort}`, explode `*`, prefix `:n`), and a `qs`-style query builder that serializes nested objects (`a[b]=c`) and arrays — both dependency-free.
 - **Pluggable transport** - `fetch` by default; drop in the shipped `axiosAdapter`, or any `Adapter` function, to route requests through axios or another HTTP client.
-- **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~25 kB min+gzip**; a typical `import { stitch }` trims to **~20 kB** — and with no transitive tree, that is the entire cost.
+- **Zero runtime dependencies** - `"dependencies": {}`; built on the platform's global `fetch`; tree-shakeable. The whole entry is **~23 kB min+gzip**; a typical `import { stitch }` trims to **~20 kB** — and with no transitive tree, that is the entire cost.
 
 ## Documentation
 
@@ -162,7 +162,7 @@ const { stitch } = require("stitchapi");
 
 The runtime ships with zero dependencies. Schema validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator ([Valibot](https://valibot.dev), [ArkType](https://arktype.io), …); none of them is bundled. The examples below use Zod for familiarity.
 
-**Bundle size.** The whole `stitchapi` entry is **~25 kB minified + gzipped** (~64 kB raw, ~20 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~20 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
+**Bundle size.** The whole `stitchapi` entry is **~23 kB minified + gzipped** (63 kB raw, ~20 kB brotli); because the package is side-effect-free and every surface beyond `http` lives behind its own subpath import, a typical `import { stitch }` tree-shakes to **~20 kB min+gzip**. With zero dependencies, that is the _whole_ cost — there is no transitive tree to install or audit.
 
 ## Quick start
 
@@ -469,7 +469,8 @@ Auth is a field on the stitch (or on a fragment it extends) — never global. Se
 Header strategies — `bearer`, `apiKey` (default header `x-api-key`), `basic`:
 
 ```ts
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
@@ -480,7 +481,8 @@ const getUser = stitch({
 **OAuth2 client credentials** — `oauth2()` POSTs the token endpoint (form-encoded `client_credentials` grant), caches the access token in the [store](#pluggable-state-store) with the TTL from `expires_in`, refreshes it `refresh.skew` (default 30s) before expiry, and attaches it as `Authorization: Bearer …`. A rejected token (status matched by `refresh`, default `[401]`) forces a fresh fetch and an uncounted re-run of the attempt:
 
 ```ts
-import { env, oauth2, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { env, oauth2 } from 'stitchapi/auth';
 
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
@@ -498,7 +500,8 @@ Give two stitches the same `key` plus a shared [store](#pluggable-state-store) a
 **Cookie sessions** — the marquee case: `cookieSession` runs a login (itself a stitch), captures the cookie from `Set-Cookie`, replays it on every call, and re-logs-in when the wall returns:
 
 ```ts
-import { cookieSession, env, secretsFile, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { cookieSession, env, secretsFile } from 'stitchapi/auth';
 
 const signIn = stitch({
     method: 'POST',
@@ -716,7 +719,7 @@ const { blob, filename } = await getReport({
 Two non-HTTP surfaces speak the same engine. `llm` is a chat-completion over a provider _contract_ — the first-party `anthropic` and `openai` mappings are plain config, no SDK dependency, and the credential is the stitch's own `auth`:
 
 ```ts
-import { apiKey, env } from 'stitchapi';
+import { apiKey, env } from 'stitchapi/auth';
 import { anthropic, llm } from 'stitchapi/llm';
 
 const chat = llm({

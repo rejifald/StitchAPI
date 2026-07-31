@@ -3,23 +3,13 @@ export { graphql } from './graphql';
 export { seam } from './seam';
 export { httpSurface, graphqlSurface } from './surface';
 export type { Surface, SurfaceOutcome } from './surface';
-export {
-    bearer,
-    apiKey,
-    basic,
-    cookieSession,
-    oauth2,
-    env,
-    optionalEnv,
-    secretsFile,
-    secretFrom,
-} from './auth';
-export type {
-    BasicOptions,
-    SecretSource,
-    AuthFailureResult,
-    RefreshResult,
-} from './auth';
+// The auth surface lives on `stitchapi/auth` (ADR 0021) — the strategy factories
+// (`bearer`/`apiKey`/`basic`/`oauth2`/`cookieSession`), the secret resolvers
+// (`env`/`optionalEnv`/`secretsFile`/`secretFrom`) and their option types. Deliberately NOT
+// re-exported here: a root re-export would put the factories back in this barrel and hand every
+// consumer oauth2's token cache and cookieSession's login state machine again, which is the whole
+// point of the split. `AuthStrategy`/`AuthContext`/`SecurityScheme` stay on the root — they type
+// `StitchConfig.auth` — via `export * from './types'`, and `/auth` re-exports them for authoring.
 export { fetchAdapter } from './http-adapter';
 export type { FetchAdapterOptions } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';

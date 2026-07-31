@@ -39,7 +39,7 @@ The vendor SDK hides the URL and the header names, but it does not buy you anyth
 A stitch turns one endpoint into a typed function you call with `await`. The `llm` surface declares a chat call the same way, binding the provider and its defaults to the surface; the messages travel in the call:
 
 ```ts twoslash
-import { apiKey, env } from 'stitchapi';
+import { apiKey, env } from 'stitchapi/auth';
 import { anthropic, llm } from 'stitchapi/llm';
 
 const chat = llm({
@@ -70,7 +70,7 @@ Each field replaces something the SDK did opaquely or `fetch` did by hand:
 The reason the rewrite goes away is that the provider is a value, not a library. The first-party providers ship as plain `LlmProvider` config — no SDK dependency, the contract-not-dependency gate — so moving from Claude to GPT-4o is a `provider:` change and an `auth:` change, nothing at the call site:
 
 ```ts twoslash
-import { bearer, env } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { llm, openai } from 'stitchapi/llm';
 
 const chat = llm({
@@ -90,7 +90,7 @@ const { text } = await chat({
 When you need a provider that does not ship first-party, you implement the same contract the built-ins do. An `LlmProvider` declares its `id`, its full completions `url`, optional non-secret `headers`, an optional `defaultModel`, a `buildBody` that maps a normalised `LlmRequest` to that vendor's wire body, and a `parse` that lifts the response back into an `LlmResult`:
 
 ```ts twoslash
-import { bearer, env } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { type LlmProvider, llm } from 'stitchapi/llm';
 
 // the vendor's wire response — name the shape `parse` reads, no `any`
@@ -123,7 +123,7 @@ The credential stays the stitch's `auth`, never the provider — so a provider y
 Switching at edit time covers the cost review. But the same property — a provider is a value, a stitch is a function — means you can hold both at once and choose between them per call. Declare a cheap stitch and a capable one, then route on whatever condition you have:
 
 ```ts twoslash
-import { apiKey, bearer, env } from 'stitchapi';
+import { apiKey, bearer, env } from 'stitchapi/auth';
 import { anthropic, llm, openai } from 'stitchapi/llm';
 
 // ---cut---
@@ -155,7 +155,7 @@ Both stitches are the same `chat` shape — same call signature, same `result.te
 Because the surface sends an HTTP request, every resilience field a stitch has applies to a model call. Provider overloads (`429`, `529`) are exactly what retry is for, and a metered key is exactly what throttle is for:
 
 ```ts twoslash
-import { apiKey, env } from 'stitchapi';
+import { apiKey, env } from 'stitchapi/auth';
 import { anthropic, llm } from 'stitchapi/llm';
 
 // ---cut---
@@ -185,7 +185,7 @@ The OpenAI-compatible endpoint streams when the body carries `stream: true`. Dec
 ```ts twoslash
 // your sink: a socket, the UI, stdout
 // ---cut---
-import { bearer, env } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { type SseEvent, sse } from 'stitchapi/sse';
 
 declare function onToken(token: string): void; // your sink: a socket, the UI, stdout

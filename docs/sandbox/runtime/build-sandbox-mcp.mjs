@@ -29,6 +29,9 @@ const pkgRoot = resolve(__dirname, '..'); // docs/sandbox
 const OUTDIR = process.env.OUT ?? resolve(pkgRoot, 'dist');
 const CORE =
     process.env.CORE ?? resolve(repoRoot, 'packages/core/src/index.ts');
+// The auth surface is its own entry (ADR 0021); `stitchapi` aliases to a FILE, so
+// `stitchapi/auth` cannot resolve underneath it and needs its own alias.
+const CORE_AUTH = CORE.replace(/index\.ts$/, 'auth.ts');
 // Alias each workspace `@stitchapi/*` playground package to its source (its published
 // `lib/` isn't built on this path); the node worker bundles them for snippet imports.
 // Derived from the one package list — adding a package needs no edit here.
@@ -81,7 +84,11 @@ const shared = {
     sourcemap: false,
     // Resolve the real core from source (no build:core needed). Node built-ins
     // stay external automatically under platform:node.
-    alias: { stitchapi: CORE, ...WORKSPACE_ALIASES },
+    alias: {
+        stitchapi: CORE,
+        'stitchapi/auth': CORE_AUTH,
+        ...WORKSPACE_ALIASES,
+    },
     // transpile.ts prefers sucrase (bundled) and only dynamically imports
     // @babel/standalone if sucrase fails to LOAD — never on this path. Keep it
     // external so the build doesn't require the heavy Babel bundle.

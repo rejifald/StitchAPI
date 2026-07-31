@@ -1,5 +1,6 @@
-import { bearer, env, oauth2, seam, stitch } from '../src';
+import { seam, stitch } from '../src';
 import type { StitchEvent } from '../src';
+import { bearer, env, oauth2 } from '../src/auth';
 import { compose } from '../src/stitch';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';

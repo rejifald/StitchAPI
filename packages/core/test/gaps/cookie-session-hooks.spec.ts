@@ -10,13 +10,13 @@
 //
 // These standalone stitches share ONE session across all callers, so they pass `tenancy: 'app'`
 // explicitly — the fail-closed default `'principal'` would throw (no seam binds a principal).
+import { stitch } from '../../src';
 import {
     type AuthFailureResult,
     type RefreshResult,
     cookieSession,
     env,
-    stitch,
-} from '../../src';
+} from '../../src/auth';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 

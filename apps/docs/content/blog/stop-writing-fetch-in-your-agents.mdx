@@ -46,7 +46,8 @@ Crucially, **a stitch does not replace `fetch`**. Your `fetch` (or axios) is sti
 Here's the same orders call as a stitch:
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 export const getOrders = stitch({

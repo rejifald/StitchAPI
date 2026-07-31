@@ -207,7 +207,21 @@ describe('planGen — naming, typing, auth, notice', () => {
         const r = planGen(doc, { all: true });
         const c = file(r, 'client.ts');
         expect(c).toMatch(/auth: bearer\(env\('API_TOKEN'\)\)/);
-        expect(c).toMatch(/import \{ seam, bearer, env \}/);
+        // The strategy + `env` come from `stitchapi/auth` (ADR 0021); `seam` from the root.
+        expect(c).toMatch(/import \{ seam \} from 'stitchapi';/);
+        expect(c).toMatch(/import \{ bearer, env \} from 'stitchapi\/auth';/);
+    });
+
+    test('an unauthenticated client emits no stitchapi/auth import at all', () => {
+        const noAuth: OpenApiDoc = {
+            openapi: '3.0.0',
+            info: { title: 'T', version: '1' },
+            servers: [{ url: 'https://api.example.com' }],
+            paths: { '/ping': { get: { operationId: 'ping', responses: {} } } },
+        };
+        const c = file(planGen(noAuth, { all: true }), 'client.ts') ?? '';
+        expect(c).toMatch(/import \{ seam \} from 'stitchapi';/);
+        expect(c).not.toMatch(/stitchapi\/auth/);
     });
 
     test('emitted throttle TODO uses the canonical `pool` (ThrottleOptions.scope is gone)', () => {

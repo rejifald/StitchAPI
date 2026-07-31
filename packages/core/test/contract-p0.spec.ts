@@ -7,7 +7,6 @@
 // live author closures — ADR 0002) and JSON-serialisability (a function silently drops on
 // `JSON.stringify`, so a leaked one corrupts every trace / report / `mcp` view of the stitch).
 import {
-    basic,
     fetchAdapter,
     graphqlSurface,
     memoryStore,
@@ -15,6 +14,7 @@ import {
     systemClock,
 } from '../src';
 import type { StitchConfig, TraceSink } from '../src';
+import { basic } from '../src/auth';
 import type {
     FnBearingSlot,
     ProjectedSlot,

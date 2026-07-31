@@ -92,7 +92,8 @@ for you.
 {/* The smallest stitch that uses the feature, above the fold. Twoslash — see
 "Code examples" below. */}
 ```ts twoslash
-import { stitch, cookieSession, env } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { cookieSession, env } from 'stitchapi/auth';
 
 const signIn = stitch({
     method: 'POST',
@@ -337,7 +338,8 @@ a `baseUrl`, a type, or shared auth, it uses _these_, verbatim:
 
 <!-- prettier-ignore -->
 ```ts
-import { seam, bearer, env } from 'stitchapi';
+import { seam } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 // Types — reuse these exact shapes (they match what the sim returns).

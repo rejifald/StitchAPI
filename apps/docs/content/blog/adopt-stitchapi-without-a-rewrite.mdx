@@ -38,7 +38,8 @@ The sharp edges are real, and they are the ones you keep patching by hand:
 Wrap that one endpoint. Each field is a sharp edge moved from glue into a declaration.
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const getUser = stitch({
@@ -99,7 +100,8 @@ Let the stitch own retries and set `retry: false` on the query so attempts don't
 Once two endpoints share a base URL and an auth scheme, lift those into a `seam` and stop repeating them. The seam declares the shared config once; each stitch inherits it, and an explicit per-stitch field wins.
 
 ```ts twoslash
-import { bearer, env, seam } from 'stitchapi';
+import { seam } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({ id: z.number(), name: z.string() });

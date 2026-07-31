@@ -20,7 +20,7 @@ Here's the whole thing — a single stitch with its resilience and validation de
 ```ts twoslash
 // stitches.ts
 import { stitch } from 'stitchapi';
-import { bearer, env } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 export const getUser = stitch({
@@ -42,7 +42,8 @@ Export your stitches by name from a module (the CLI and the servers default to `
 The closest door. Import the stitch and call it like any async function; `await` returns the final picked, validated value.
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 // the stitch declared in stitches.ts, imported here as `getUser`

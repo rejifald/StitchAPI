@@ -152,16 +152,34 @@ const KB = 1024;
 // NOT the ~0.2 KB the gate usually restores: ADR 0021 moves the whole auth surface behind
 // `stitchapi/auth`, which drops this entry to ~22.7 KB and takes the budget down with it. Until that
 // lands the entry is full, and this tight ceiling is the intended signal.
+// Whole entry 25.15→22.90 KB — a DROP, not a raise. ADR 0021 moved the auth surface (the five
+// strategy factories + the four secret resolvers) off the root barrel onto `stitchapi/auth`, so
+// `export *` no longer reaches oauth2's token cache or cookieSession's login state machine:
+// measured 22.69 KB, down 2.41 from 25.10. `import { stitch }` is unchanged at 20.17 (the barrel
+// was already tree-shaken there — the split makes that a module-graph fact rather than a
+// tree-shaking outcome, and buys back the headroom the two PRs above spent). The advertised figure
+// moves ~25 → ~23 kB. The new third scenario budgets the subpath itself: pay for the whole auth
+// surface only if you `export *` from it; a real call site imports one strategy (`bearer` + `env`
+// is 0.39 KB gzip, `oauth2` + `env` 3.22 KB).
+// `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
+// `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 25.15 * KB,
+        budget: 22.9 * KB,
+        advertised: true,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
         budget: 20.25 * KB,
+        advertised: true,
+    },
+    {
+        name: 'stitchapi/auth — whole surface',
+        code: `export * from './auth.mjs';`,
+        budget: 5.35 * KB,
     },
 ];
 
@@ -213,15 +231,22 @@ if (process.argv.includes('--json')) {
             // quote (`~NN kB`). Emitting it here lets the yakir `bundle-advertised-size`
             // tether read the measured set straight from this output (it greps `"kb"`),
             // instead of re-deriving the rounding. See yakir.json.
-            rows.map(({ name, min, gzip, brotli, budget, over }) => ({
-                name,
-                min,
-                gzip,
-                brotli,
-                kb: Math.round(gzip / KB),
-                budget,
-                over,
-            })),
+            //
+            // ONLY the scenarios the docs actually quote carry `kb` — the tether greps every `"kb"`
+            // in this output and compares the set against the doc sites, so emitting one for a
+            // scenario no README mentions (the `stitchapi/auth` subpath) would inject a number the
+            // doc sites can never match and fail the tether. Budget it here, advertise it nowhere.
+            rows.map(
+                ({ name, min, gzip, brotli, budget, over, advertised }) => ({
+                    name,
+                    min,
+                    gzip,
+                    brotli,
+                    ...(advertised ? { kb: Math.round(gzip / KB) } : {}),
+                    budget,
+                    over,
+                }),
+            ),
             null,
             2,
         ),
@@ -231,21 +256,21 @@ if (process.argv.includes('--json')) {
     console.log('\n  Core bundle budget — tree-shaken, min+gzip\n');
     console.log(
         '  ' +
-            'scenario'.padEnd(26) +
+            'scenario'.padEnd(32) +
             col('minified', 11) +
             col('gzip', 11) +
             col('brotli', 11) +
             col('budget', 11) +
             '   status',
     );
-    console.log('  ' + '─'.repeat(83));
+    console.log('  ' + '─'.repeat(89));
     for (const r of rows) {
         const headroom = r.over
             ? `OVER by ${kb(r.gzip - r.budget)}`
             : `${kb(r.budget - r.gzip)} left`;
         console.log(
             '  ' +
-                r.name.padEnd(26) +
+                r.name.padEnd(32) +
                 col(kb(r.min), 11) +
                 col(kb(r.gzip), 11) +
                 col(kb(r.brotli), 11) +

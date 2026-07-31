@@ -2,7 +2,8 @@
 // production apps, kept deliberately brand-neutral). Each test proves a hand-rolled per-
 // integration pain is replaced by one declarative stitch. Headline: a silent HTML-scrape
 // breakage becomes a loud drift error.
-import { apiKey, bearer, cookieSession, drift, env, stitch } from '../src';
+import { drift, stitch } from '../src';
+import { apiKey, bearer, cookieSession, env } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

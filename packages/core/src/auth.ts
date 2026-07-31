@@ -1,6 +1,14 @@
-// Auth strategies + secret resolvers. The key idea: the stitch holds the credential,
-// resolved at call time — the caller (an agent) never sees it. `cookieSession` performs
-// a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
+// `stitchapi/auth` — the auth strategies + secret resolvers (ADR 0021). The key idea: the stitch
+// holds the credential, resolved at call time — the caller (an agent) never sees it.
+// `cookieSession` performs a login (another stitch) and manages the cookie jar, refreshing on a
+// 401 wall.
+//
+// This is a SUBPATH entry, not part of the root barrel: `auth` is the one config slot whose values
+// cost real bytes to construct (oauth2 + cookieSession carry a token cache and a login state
+// machine), and nothing on the core path imports this module. Behind its own entry, "you only pay
+// for the strategy you import" stops being a tree-shaking outcome and becomes a module-graph fact —
+// it holds for CJS, for a naive bundler, and for anyone reading the import list. Same rule as
+// `cache` (ADR 0003 §11) and the non-http surfaces (ADR 0005 Decision 10).
 import { compact } from './compact';
 import { fetchAdapter } from './http-adapter';
 import { acceptsStatus, parseRetryAfter } from './resilience';
@@ -25,6 +33,17 @@ import {
     registerSecretKey,
 } from './util';
 
+// The auth types a caller needs are DECLARED on the root (they are part of the `StitchConfig`
+// contract — a BYO strategy is a value you hand to `stitch()`), and re-exported here so authoring
+// auth takes one import, not two. Type-only, so this costs zero bytes in either entry.
+export type { AuthContext, AuthStrategy, SecurityScheme } from './types';
+
+/**
+ * A credential: a literal string, or a getter resolved at CALL time (what {@link env},
+ * {@link secretsFile} and {@link secretFrom} return) so the declaration carries a capability
+ * rather than a value. Public so a peer package that accepts a consumer-authored credential —
+ * `@stitchapi/aws-sigv4`'s `accessKeyId`, say — names core's type instead of mirroring it.
+ */
 export type Secret = string | (() => string);
 const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
 

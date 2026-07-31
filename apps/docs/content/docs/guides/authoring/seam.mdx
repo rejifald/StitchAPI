@@ -9,7 +9,8 @@ Use `seam` when several stitches hit the same API and should share one runtime â
 ## Example
 
 ```ts twoslash
-import { bearer, env, seam } from 'stitchapi';
+import { seam } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({
