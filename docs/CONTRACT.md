@@ -151,15 +151,24 @@ bare `max`. A **magnitude** ceiling (a delay) MAY keep `max` when a bare noun wo
 ambiguous. Plural **`attempts`** = a running total; singular **`attempt`** = the
 current index.
 
-_Resolved (2026-07 sweep):_ every consumer-authored cap is a bare plural noun —
+_Resolved (2026-07 sweep):_ the caps this rule called out are bare plural nouns —
 `ReconnectOptions.maxAttempts`→`attempts`, `CacheOptions.maxEntries`→`entries`,
 `CircuitOptions.failureThreshold`→`failures` (landed with the P17 `CircuitOptions`
 overhaul), `paginate.max`→`pages`, `deno-kv maxIncrRetries`→`retry.attempts`
 (see [§6](#6-migration-record-2026-07-08-hard-break-sweep)).
 
-A `max*` spelling survives only on **resolved internals** — the reconnect policy in
-`engine.ts`, the local `maxEntries` in `cache.ts`, the `failureThreshold` local in
-`resilience.ts` — which name a computed value, never a field a consumer writes. That
+The 2026-07-31 audit found one more the sweep had missed and it is now fixed too:
+`LlmOptions.maxTokens` / `LlmRequest.maxTokens` (the `stitchapi/llm` subpath)
+→ **`tokens`**. It was **not** sheltered by
+[P22](#p22--a-standards-interop-contract-uses-the-standards-field-names), which is where
+the first reading of it went wrong: `LlmRequest` is the house-**normalised** shape, and
+each provider's `buildBody` emits the vendor's `max_tokens` separately, at the wire. A
+standard's field name is owed to the standard's own message, not to the house type that
+feeds it.
+
+A `max*` spelling survives legitimately only on **resolved internals** — the reconnect
+policy in `engine.ts`, the local `maxEntries` in `cache.ts`, the `failureThreshold` local
+in `resilience.ts` — which name a computed value, never a field a consumer writes. That
 split is the rule's boundary: P4 governs the **authoring** surface.
 
 ---
@@ -189,8 +198,10 @@ A field named **`key` MUST be a string** identifier/namespace. A key-**derivatio
 function **MUST** be named **`keyOf`** (a `(input) => string`) and **MUST NOT** be
 called `key`.
 
-_Violations:_ `IdempotencyOptions.key`, `CacheConfig.key` (both `(input) => string`)
-→ `keyOf`. `CircuitOptions.key` and `StitchStore.get/set/increment(key)` are correct as-is.
+_Resolved (2026-07 sweep):_ the two derivation functions are `keyOf` —
+`IdempotencyOptions.keyOf` and `CacheOptions.keyOf`, both `(input) => string`. The only
+surviving `key` on the surface is `CircuitOptions.key?: string` (a store namespace), which
+is what this rule mandates; `StitchStore.get/set/increment(key)` are likewise correct.
 
 ### P7 · Status-classification parity
 
@@ -347,8 +358,11 @@ adapters, not react only.
 _Resolved (2026-07 sweep):_ the SSE helper is `streamStitchSse` on every host (was
 also `sendStitchSse` / `stitchSse`); error-options is one `StitchErrorOptions` shape
 (with `body`) everywhere (was `StitchErrorHandlerOptions` / `ToHttpExceptionOptions`);
-the hook result is `UseStitchResult` / `InjectStitchResult` over query-core's shared
-`StitchQueryResult`; `stitchQueryOptions` replaced the bare `queryOptions` in
+the hook result is `UseStitchResult` (react) / `VueUseStitchResult` /
+`InjectStitchResult` (angular) over query-core's shared `StitchQueryResult` — the vue one
+is framework-qualified because wrapping each field in a `ComputedRef` makes it
+unassignable to react's raw shape in either direction, the `SolidStitchStore` /
+`SvelteStitchStore` case; `stitchQueryOptions` replaced the bare `queryOptions` in
 vue/solid/svelte/angular.
 
 _Settled:_ the SSE frame options are **`delta`** and **`error`** on every SSE-capable
@@ -425,9 +439,12 @@ vocabulary the GA cut then has to delete — every one a field a reader must lea
 The clean surface at 1.0 is worth more than continuity between two release candidates.
 
 _Aliases already shipped stay._ Relaxing the rule forward does not retroactively demand
-their removal: the `*Ms` duration aliases, `keyOf`, `StatusMatch`, and the rest listed in
-[§6](#6-migration-record-2026-07-08-hard-break-sweep) remain, pinned by their identity tests, until the GA cut
-removes them together. Removing one now would itself be a break, for no gain.
+their removal — but the rule currently guards an empty set. The 2026-07 sweep
+([§6](#6-migration-record-2026-07-08-hard-break-sweep)) applied every rename as a hard
+break, so **no `@deprecated` member survives anywhere in `packages/*/src`**, and the only
+`*Ms` names left on the surface are OTLP's `*UnixMs` instants, which P17 carves out as
+timestamps rather than durations. (`keyOf` and `StatusMatch` are the canonical spellings,
+not aliases.) The rule stands for the next alias that ships.
 
 _Corollary — some contracts cannot alias at all._ Where the consumer **implements** an
 interface and core **calls** it (`StitchStore`, `RedisDriver`, `Adapter`, `TraceSink`,
@@ -639,9 +656,22 @@ While the line is pre-GA, a rename may land as a hard break or under a `@depreca
 — [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes the obligation to
 the GA channel. Severity = consumer blast radius.
 
-**Still open** — one entry, and it is CLI-internal: `from-curl.ts` is imported by `cli.ts`
-alone, exported from no index and behind no subpath, so nothing on the published surface
-carries this name today.
+**Still open.** The row below is CLI-internal — `from-curl.ts` is imported by `cli.ts`
+alone, exported from no index and behind no subpath — but it is **not** the whole open
+set. A follow-up audit (2026-07-31) swept every principle against the published surface
+and found further violations that no rule in [§7](#7-enforcement) was tracking. A green
+baseline meant "nothing the rules can see", not "nothing there" — so the rules were
+widened first, and each finding is then fixed against a gate that holds it:
+
+- **P20** — four slots typed `Fn | Options` or `Options | false`, where `{}` still
+  compiled. **Fixed** (`AtLeastOne`, and `errorHandler` gained the `true` spelling).
+- **P9** — `UseStitchResult` declared incompatibly by react and vue. **Fixed** (the vue
+  side is framework-qualified `VueUseStitchResult`).
+- **P4** — `maxTokens` on the `stitchapi/llm` types. **Fixed**
+  ([P4](#p4--one-cap-vocabulary) → `tokens`; the wire keeps `max_tokens`).
+- **P16** — nest's SSE options carry the flat spellings the _Settled_ clause above forbids;
+  solid and svelte accept a `streaming` they hard-set and ignore. **Open.**
+- **P14** — an anonymous inline shape on `SecurityScheme`'s oauth2 arm. **Open.**
 
 | Sev | Current                | Proposed   | Rule |
 | --- | ---------------------- | ---------- | ---- |
@@ -656,11 +686,18 @@ which [P18](#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-hou
 keeps at their upstream spelling). A backlog that still advertises finished work reads as a
 rule nobody enforces.
 
-New shorthand/toggle slots to **add** (additive, non-breaking): `.inspect()`
-scalars (P12); `idempotency` boolean (P13-toggle); `throttle` string (P14).
+The shorthand/toggle slots this section once listed as still-to-add have all shipped:
+`.inspect(…, opts?: boolean | AtLeastOne<InspectOptions>)` (P12), `idempotency?: boolean |
+AtLeastOne<IdempotencyOptions>` (P13-toggle), and `throttle: '2/s'` folding to
+`{ rate: '2/s' }` (P14).
 
-**Shipped (migration in progress)** — all under `@deprecated` aliases read until the GA
-cut; the lint skips the deprecated members so each rename ratchets the baseline down:
+**Shipped** — a historical record. Each bullet describes what its rename did **at the
+time**, including any `@deprecated` alias it shipped behind. Those aliases are all gone:
+the 2026-07-08 hard-break sweep deleted every prior shim ([D5](#0-resolved-decisions)),
+and **R7** now flags a `@deprecated` tag reaching a published surface — which is why the
+ratchet's baseline is empty rather than full of them. So where a bullet below says an
+alias "stays", or that the runtime "prefers `new ?? old`", read it as that migration's
+shape, not as today's surface: nothing on the surface carries an alias.
 
 - **P6** `IdempotencyOptions.key`/`CacheOptions.key`→`keyOf`; runtime prefers `keyOf ?? key`.
 - **P3** suffix renames (type-only, zero runtime): `CacheConfig`→`CacheOptions`,
@@ -833,8 +870,10 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
   (P17); **R3** function-typed `key` (P6); **R4** a `scope: 'stitch'|'host'` pool
   overload (P2); **R5** the same identifier exported by ≥2 published packages
   (P9/P16), against an allow-list of the blessed one-declaration-site re-exports and
-  identical-by-design host envelopes; **R6** a config capability slot — top-level or
-  nested — typed as a bare all-optional `*Options` bag that accepts `{}` (P20);
+  identical-by-design host envelopes; **R6** a consumer-input slot — top-level, nested,
+  or **inherited** — with an all-optional bag in **any arm** of its union, so `{}`
+  type-checks (P20); the bag is resolved across files within a package and against
+  core's, and through `extends` including a non-exported base;
   **R7** a `@deprecated` JSDoc **tag** on a published surface (at tag position inside
   a block comment — prose that merely names the marker is documentation, not a shim) —
   the surface is shim-free since the sweep, so a post-GA deprecation alias (mandated by

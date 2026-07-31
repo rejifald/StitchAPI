@@ -10,7 +10,7 @@ import type { PrincipalContext, StitchContext } from './context';
 import { type StitchErrorOptions, stitchOnError } from './error';
 
 import { Elysia } from 'elysia';
-import type { PrincipalSeam, Seam } from 'stitchapi';
+import type { AtLeastOne, PrincipalSeam, Seam } from 'stitchapi';
 
 /**
  * The context value `.derive` adds and handlers read: the request's seam. It is a
@@ -54,10 +54,11 @@ export interface ElysiaStitchPluginOptions {
     principal?: (ctx: PrincipalContext) => string | undefined;
     /**
      * Options for the StitchError → HTTP mapping the plugin's `.onError` applies (see
-     * {@link stitchOnError}). Set to `false` to register **no** error handler (you wire your own).
-     * Default: register with the `502`-by-default mapping.
+     * {@link stitchOnError}). `false` registers **no** error handler (you wire your own); `true`
+     * (the default) registers the `502`-by-default mapping. The object form must set at least one
+     * field — enable-with-defaults is spelled `true`, never `{}` (CONTRACT.md P13/P20).
      */
-    errorHandler?: StitchErrorOptions | false;
+    errorHandler?: boolean | AtLeastOne<StitchErrorOptions>;
 }
 
 /**
@@ -102,7 +103,12 @@ export function stitch(options: ElysiaStitchPluginOptions): StitchPlugin {
     const app =
         errorHandler === false
             ? base
-            : base.onError({ as: 'global' }, stitchOnError(errorHandler ?? {}));
+            : base.onError(
+                  { as: 'global' },
+                  stitchOnError(
+                      typeof errorHandler === 'object' ? errorHandler : {},
+                  ),
+              );
 
     return app as unknown as StitchPlugin;
 }

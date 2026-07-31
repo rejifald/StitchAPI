@@ -74,7 +74,7 @@ Same return shape as `useStitch`. `data` is the accumulated chunks (`mode: 'appe
 Each field is a `ComputedRef`, so destructuring keeps reactivity (and `.value` is unwrapped automatically in templates):
 
 ```ts
-interface UseStitchResult<T> {
+interface VueUseStitchResult<T> {
     status: ComputedRef<'idle' | 'pending' | 'streaming' | 'success' | 'error'>;
     data: ComputedRef<T | undefined>;
     error: ComputedRef<unknown>;
