@@ -17,22 +17,27 @@ already exist locally in the core (`retry: 3`, `timeout: '5s'`, `cache: '1m'`) i
 global law, and pins the cross-cutting vocabulary so the same word never means two
 things.
 
-The rules are **normative** (MUST / SHOULD / MUST NOT). The per-field rename
-proposals in [§6](#6-migration-backlog) are the **backlog**, not part of the
-normative text — exact target spellings are confirmed during the migration sweep.
+The rules are **normative** (MUST / SHOULD / MUST NOT). The migration they mandated
+is **done**: the 2026-07-08 hard-break sweep
+([§6](#6-migration-record-2026-07-08-hard-break-sweep)) applied every rename and
+cleared the enforcement baseline, including the one pre-existing match the
+same-day P24 addition found and initially baselined rather than fixed — now
+converted too (§6, §7). Rule sections keep their worked examples as _Resolved_
+history so the reasoning survives the renames.
 
 ---
 
 ## 0. Resolved decisions
 
-Four forks were decided by the maintainer on adoption; the rules below assume them.
+Five forks were decided by the maintainer; the rules below assume them.
 
-| #   | Decision                   | Resolution                                                                                                                                                                                                                                      | Drives                                         |
-| --- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| D1  | Success-payload field name | **`data`** (align with axios / React Query / SWR / RTK Query, which every hook package wraps; `SafeResult` already uses it). Stream increments keep **`chunk`**; the Standard-Schema validation layer keeps spec-mandated **`value`/`issues`**. | [P5](#p5--one-success-field-one-failure-field) |
-| D2  | Cap-word convention        | **Bare nouns, no `max-` prefix**, for **count** caps (`attempts`, `entries`, `pages`, `failures`, `concurrency`). `max-` is retained only where it bounds a continuous **magnitude** and a bare noun would be ambiguous (a delay ceiling).      | [P4](#p4--one-cap-vocabulary)                  |
-| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `parseDuration`.                | [P17](#p17--one-canonical-duration-form)       |
-| D4  | Home of the contract       | **This `CONTRACT.md` (living doc) + an enforcement lint** in the verify gate.                                                                                                                                                                   | [§7](#7-enforcement)                           |
+| #   | Decision                   | Resolution                                                                                                                                                                                                                                                       | Drives                                                                    |
+| --- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| D1  | Success-payload field name | **`data`** (align with axios / React Query / SWR / RTK Query, which every hook package wraps; `SafeResult` already uses it). Stream increments keep **`chunk`**; the Standard-Schema validation layer keeps spec-mandated **`value`/`issues`**.                  | [P5](#p5--one-success-field-one-failure-field)                            |
+| D2  | Cap-word convention        | **Bare nouns, no `max-` prefix**, for **count** caps (`attempts`, `entries`, `pages`, `failures`, `concurrency`). `max-` is retained only where it bounds a continuous **magnitude** and a bare noun would be ambiguous (a delay ceiling).                       | [P4](#p4--one-cap-vocabulary)                                             |
+| D3  | Duration style             | **ms is the one house unit; drop the `Ms` suffix _everywhere_** (input and emitted; the unit lives in JSDoc). Consumer-authored durations additionally accept **`number \| string`** (`'5s'` or raw ms) via one `parseDuration`.                                 | [P17](#p17--one-canonical-duration-form)                                  |
+| D4  | Home of the contract       | **This `CONTRACT.md` (living doc) + an enforcement lint** in the verify gate.                                                                                                                                                                                    | [§7](#7-enforcement)                                                      |
+| D5  | Pre-GA break policy        | **Alias-free hard breaks are maintainer-sanctioned before 1.0 GA** (exercised once — the 2026-07-08 sweep, few adopters, every prior `@deprecated` shim deleted). From 1.0 GA, every rename/narrowing/removal requires a deprecation cycle and lands in a major. | [P19](#p19--breaking-changes-sanctioned-pre-ga-deprecation-cycle-from-ga) |
 
 ---
 
@@ -83,10 +88,14 @@ A public field or symbol **MUST** be the shortest unambiguous token for its conc
 (prefer one word), and that token **MUST** denote exactly one concept and one
 value-space across the entire surface.
 
-_Current violations:_ `key` is a `string` namespace in `CircuitOptions` but a
-`(input) => string` in `IdempotencyOptions` / `CacheConfig`;
-`on` is retry-trigger statuses **and** rate-limit-signal statuses; `bodyKind`
-(`from-curl`) vs `bodyType` (everywhere else) for one `'json'|'form'` concept.
+_Resolved (2026-07 sweep):_ the key-derivation functions in `IdempotencyOptions` /
+`CacheOptions` are **`keyOf`** ([P6](#p6--key-is-a-string-keyof-is-a-function)), so
+`key` is a string everywhere; the GraphQL document string moved off `query` to
+**`document`**, leaving `query` to mean URL params only; `retry.on` and `throttle.on`
+share one shape and one meaning — the statuses that trigger that envelope's capability
+(`StatusMatch`, [P7](#p7--status-classification-parity)); `bodyKind` survives only on
+the CLI-internal `from-curl` parser type (`ParsedRequest`), off the published surface —
+every published field is `bodyType`.
 
 ### P2 · Don't reuse one word for genuinely different concepts — rename one
 
@@ -94,11 +103,13 @@ When two fields legitimately mean **different** things, they **MUST NOT** share 
 name even if each is individually defensible; rename one so a reader never has to know
 they differ.
 
-_Canonical case:_ `scope` is a **pool** axis (`'stitch'|'host'`) in `ThrottleOptions`
-and a **tenancy** axis (`'principal'|'app'`) in `CacheConfig`/`CookieSessionOpts`.
-These are real, distinct concepts → **`throttle.scope` is renamed to `pool`**, freeing
-`scope` to mean tenancy everywhere. (This is a rename, **not** an assertion that they
-were the same concept.)
+_Canonical case (applied in the 2026-07 sweep):_ `scope` was a **pool** axis
+(`'stitch'|'host'`) in `ThrottleOptions` and a **tenancy** axis in the cache and auth
+envelopes. Three concepts now carry three words: **`throttle.pool`** (where the
+limiter's counter is pooled), **`cache.scope`** (`'principal'|'app'` — whose responses
+a cached entry may be served to), and **`tenancy`** on
+`OAuth2Options`/`CookieSessionOptions` (whose credential a token/session is). (Renames,
+**not** an assertion that they were one concept.)
 
 _Second case:_ `backoff` was a **curve policy** (`'expo'|'expo-jitter'|'fixed'`) in
 `RetryOptions` and a flat **duration** (`number | string`) in `ReconnectOptions` — one token,
@@ -117,11 +128,20 @@ A type's role **MUST** be predictable from its suffix:
 | Duck-typed foreign contract | `*Like` (or none) | —                                         |
 
 `*Options` **MUST NOT** appear on a returned value.
-_Violations:_ `CacheConfig`, `OAuth2Opts`, `CookieSessionOpts`, `McpServerInfo`,
-`SignV4Params`; `StitchQueryOptions` is actually a `{ queryKey, queryFn }` **result**.
-_Carve-out:_ `StitchConfig`/`SeamConfig`/`RedactedStitchConfig` keep `*Config` as the
+_Resolved (2026-07 sweep):_ `CacheConfig`→`CacheOptions`, `OAuth2Opts`→`OAuth2Options`,
+`CookieSessionOpts`→`CookieSessionOptions`, `McpServerInfo`→`McpServerOptions`,
+`LlmConfig`→`LlmOptions`, `SignV4Params`→`SignV4Options`,
+`AuthFailureInfo`→`AuthFailureResult`, `StitchQueryState`→`StitchQueryResult`,
+`UseStitchReturn`→`UseStitchResult`.
+_Carve-outs:_ `StitchConfig`/`SeamConfig`/`RedactedStitchConfig` keep `*Config` as the
 one well-known top-level authoring type family (the thing you literally call
-`stitch(config)` with); the ban targets the **sibling capability bags**.
+`stitch(config)` with) — the ban targets the **sibling capability bags**. `OpenApiInfo`
+mirrors the OpenAPI spec's `InfoObject` (P18). **`StitchQueryOptions`** keeps its name
+**and** its flat `queryKey`/`queryFn` fields as a deliberate
+[P22](#p22--a-standards-interop-contract-uses-the-standards-field-names)-style mirror
+of TanStack's own `queryOptions()` vocabulary — it is the object you hand `useQuery`,
+so it speaks TanStack, not house (hoisted into `query-core`, re-exported by all five
+bindings).
 
 ### P4 · One cap vocabulary
 
@@ -156,11 +176,12 @@ success payload as **`data`** and its failure payload as **`error`**.
 - The **Standard-Schema validation layer** (`ValidationResult` / `StandardResult`)
   keeps **`value`** / **`issues`** — that is the external Standard-Schema spec, not
   ours to rename.
-- `value` **MUST NOT** be overloaded for non-payload tokens (e.g. rename
-  `SchemaFingerprint.value` → `token`).
+- `value` **MUST NOT** be overloaded for non-payload tokens (this is why
+  `SchemaFingerprint.value` became `token`).
 
-_Violations:_ success is `data` in `SafeResult` but `value` in `Inspection` /
-`StitchEvent.result`; those two move to `data`.
+_Resolved (2026-07 sweep):_ success is `data` on every runtime envelope that had
+drifted to `value` — `Inspection`, `StitchEvent.result`, `SurfaceOutcome`, `CacheHit`;
+`SchemaFingerprint.value`→`token`.
 
 ### P6 · `key` is a string; `keyOf` is a function
 
@@ -173,24 +194,29 @@ _Violations:_ `IdempotencyOptions.key`, `CacheConfig.key` (both `(input) => stri
 
 ### P7 · Status-classification parity
 
-Any field that answers "does this HTTP status match?" **MUST** share one shape:
-**`number[] | ((status: number) => boolean)`**. Any list-shaped field whose
-single-value case is common **MUST** accept **`T | T[]`** and normalize internally.
+Any field that answers "does this HTTP status match?" **MUST** share one shape — the
+exported **`StatusMatch`** (`number | number[] | ((status: number) => boolean)`). Any
+list-shaped field whose single-value case is common **MUST** accept **`T | T[]`** and
+normalize internally.
 
-_Violations:_ `acceptStatus` takes a predicate but `retry.on` / `rateLimit.on` are
-`number[]`-only (widen them); `acceptStatus: 404` should be legal (today needs
-`[404]`); `DriftOptions.ignore`, `refreshOn` are list-only while `DriftOptions.severity`
-already widens `'warn' ≡ ['warn']` — make widening uniform.
+_Resolved (2026-07 sweep):_ `acceptStatus`, `retry.on`, `throttle.on`, and auth
+`refreshOn` all take `StatusMatch` (so `acceptStatus: 404` is legal); `DriftOptions.ignore`
+and `cache.vary` accept `string | string[]`, matching `DriftOptions.severity`'s
+existing `'warn' ≡ ['warn']` widening.
 
 ### P8 · Same concept → same default across packages
 
 A field reused across packages **MUST** carry the same default, or the divergence
 **MUST** be reconciled deliberately and documented — never left as a silent inversion.
 
-_Violations:_ `PinoSinkOptions.lifecycle` defaults `true` but `SentrySinkOptions.lifecycle`
-defaults `false`; `OAuth2Opts.tenancy` defaults `'app'` but `CookieSessionOpts.scope`
-defaults `'principal'` (same tenancy concept, two names **and** inverted defaults — fix
-both under P2).
+_Documented divergences (deliberate, per this rule's own clause):_ `lifecycle`
+defaults **`true`** in `@stitchapi/pino` (log lines are cheap and level-filtered) but
+**`false`** in `@stitchapi/sentry` (breadcrumbs/events cost quota); `tenancy` defaults
+**`'app'`** in `OAuth2Options` (a client-credentials token belongs to the application)
+but **`'principal'`** in `CookieSessionOptions` (sessions are per-user; fails closed);
+`keyPrefix` defaults **`'stitch:'`** in `@stitchapi/react-native` (AsyncStorage is
+app-shared, the prefix namespaces it) but empty in the dedicated-namespace KV stores.
+Each divergence is stated in the field's JSDoc with a cross-link to its counterpart.
 
 ### P9 · Unique-by-shape exported types
 
@@ -199,11 +225,25 @@ packages. A genuinely per-framework shape **MUST** be framework-qualified
 (`SolidStitchStore` vs `SvelteStitchStore`, ADR 0012 rule 6); a shared shape **MUST**
 be hoisted into `query-core`/`core` and re-exported.
 
-_Violations:_ `StitchStore<T>` means two incompatible things in `@stitchapi/solid`
-(nested `.state`) vs `@stitchapi/svelte` (a `Readable`); `StitchLike` is redefined
-three ways across `query-core` / `swr` / `rtk-query`; `RequestSeam` (express/elysia)
-vs `HonoRequestSeam` vs `StitchHost` (fastify/nest) for the per-request seam;
-`StitchError` vs `StitchErrorLike` for one runtime shape.
+_Resolved (2026-07 sweep):_ the per-framework query stores are framework-qualified
+(`SolidStitchStore` nests `.state`, `SvelteStitchStore` is a `Readable` — genuinely
+incompatible); the per-request host seam is ecosystem-qualified (`ExpressRequestSeam` /
+`ElysiaRequestSeam` / `FastifyRequestSeam` / `NestRequestSeam`, extending hono's
+`HonoRequestSeam`); the host adapters' error duck-type is `StitchErrorLike`
+(`Error & { status? }`), one structural contract across all six hosts, so bare
+`StitchError` is core's class only.
+
+_Blessed tiers and identities (P9-clean by design):_ `StitchLike` is two deliberate,
+**compatible** tiers, not a clash — the RICH canonical
+`(input?) => StitchCallResult<T>` (awaitable + streamable) lives in
+`@stitchapi/query-core` and is re-exported by the five TanStack-family bindings; the
+stream-less adapters (swr / rtk-query / vercel-ai) use an intentional MINIMAL
+await-only `(input?) => PromiseLike<T>` — they never call `.stream()`. A real stitch
+satisfies both tiers. `StreamableStitchLike` is rtk-query's streaming tier of the same
+family; swr's `QueryOutput`/`QueryInput` inference helpers are also surfaced by
+vercel-ai. `StreamStitchSseOptions` / `StitchErrorOptions` are intentionally
+**identical** envelopes declared per host adapter — same name, same shape, by design;
+`StitchEventSource` is core-owned and re-exported verbatim.
 
 ### P10 · Error-class taxonomy parity
 
@@ -217,30 +257,35 @@ The same verb **MUST** keep the same sync/async shape across every surface and a
 A `close()` is `() => Promise<void>` everywhere; a verb is not sync in one driver and
 async in another.
 
-_Violation:_ `DenoKvLike.close` is synchronous while every other store `close` returns
-`Promise<void>`.
+_Resolved (2026-07 sweep):_ `DenoKvLike.close` keeps Deno's synchronous spelling (it
+is a P18 mirror); the house store `denoKvStore()` wraps it, so `StitchStore.close()`
+is `() => Promise<void>` everywhere.
 
 ---
 
 ## 4. Shorthands & envelopes (the preferred authoring model)
 
 > The maintainer's model: **every capability is a config object (an envelope), and an
-> envelope with one dominant field also accepts that field's scalar as shorthand.** > `retry`/`timeout`/`cache` already prove it; the rest of the surface MUST follow.
-> Every shorthand normalizes to the canonical field per **P0**.
+> envelope with one dominant field also accepts that field's scalar as shorthand.** > `retry`/`timeout`/`cache` proved it; since the 2026-07 sweep the whole surface
+> follows. Every shorthand normalizes to the canonical field per **P0**.
 
 ### P12 · Envelope + scalar shorthand
 
 Every capability **MUST** be expressible as a config object. An envelope whose
 meaningful surface is a **single dominant field MUST** also accept that field's scalar
-at its `StitchConfig` slot.
+at its `StitchConfig` slot. All slots below are shipped — the 2026-07 sweep added the
+last four scalars and the `AtLeastOne<…>` object forms
+([P20](#p20--no-empty-object-config-enable-with-defaults-is-a-scalar)):
 
-| Slot                      | Today              | MUST also accept                            | Shorthand              |
-| ------------------------- | ------------------ | ------------------------------------------- | ---------------------- |
-| `retry` `timeout` `cache` | ✅                 | —                                           | done                   |
-| `stream`                  | `StreamOptions`    | `StreamDecode \| StreamOptions`             | `stream: 'ndjson'`     |
-| `multipart`               | `MultipartOptions` | `MultipartNesting \| MultipartOptions`      | `multipart: 'dot'`     |
-| `sse`                     | `{ reconnect }`    | `boolean \| ReconnectOptions \| SseOptions` | `sse: true`            |
-| `.inspect()`              | `{ cache }`        | `boolean \| InspectOptions`                 | `inspect(input, true)` |
+| Slot         | Envelope           | Scalar accepted               | Shorthand              |
+| ------------ | ------------------ | ----------------------------- | ---------------------- |
+| `retry`      | `RetryOptions`     | `number` (attempts)           | `retry: 3`             |
+| `timeout`    | `TimeoutOptions`   | `number \| string` (duration) | `timeout: '5s'`        |
+| `cache`      | `CacheOptions`     | `number \| string` (ttl)      | `cache: '1m'`          |
+| `stream`     | `StreamOptions`    | `StreamDecode`                | `stream: 'ndjson'`     |
+| `multipart`  | `MultipartOptions` | `MultipartNesting`            | `multipart: 'dot'`     |
+| `sse`        | `SseOptions`       | `boolean`                     | `sse: true`            |
+| `.inspect()` | `InspectOptions`   | `boolean`                     | `inspect(input, true)` |
 
 ### P13 · Boolean toggle means enable-with-defaults
 
@@ -248,9 +293,9 @@ A capability whose primary act is an on-switch **MUST** accept **`boolean | Opti
 where `true` = enable-with-documented-defaults; it **MUST NOT** require an object
 literal merely to switch on.
 
-_Apply to:_ `idempotency?: boolean | IdempotencyOptions` and `inspect(input, true)`.
-`sse.reconnect: true` already sets the precedent. (Rate-limit delegation becomes a
-`throttle` mode after the P14 fold, not its own toggle.)
+_Applied:_ `idempotency?: boolean | AtLeastOne<IdempotencyOptions>` and
+`inspect(input, true)`; `sse.reconnect: true` set the precedent. (Rate-limit
+delegation is a `throttle` mode since the P14 fold, not its own toggle.)
 
 ### P14 · Multi-field envelopes are named, exported, and MAY shorthand their dominant field
 
@@ -259,14 +304,14 @@ interface (never an anonymous inline shape), so it can be imported, extended, an
 referenced. A multi-field envelope **MAY** still offer a scalar shorthand for an
 **unambiguously dominant** field (this is **not** the single-field collapse of P12).
 
-_Violations:_ `paginate` (`{ next; items?; max? }`) is anonymous → extract
-`PaginateOptions`. `rateLimit` (`{ delegate?; on? }`) is anonymous **and** a near-synonym
-of `throttle` → **fold it into the `throttle` envelope** (`delegate` / `on` become
-throttle modes), collapsing two top-level keys into one and turning the buried "delegate
+_Resolved (2026-07 sweep):_ the anonymous `paginate` shape is the named, exported
+`PaginateOptions`. The anonymous `rateLimit` — a near-synonym of `throttle` — was
+**folded into the `throttle` envelope** (`delegate` / `on` are throttle modes) and the
+top-level key removed, collapsing two keys into one and turning the buried "delegate
 makes throttle inert" interaction into a within-envelope rule.
-_Allowed example:_ `throttle?: string | ThrottleOptions` where `'2/s' ≡ { rate: '2/s' }`
-— `rate` dominates although `concurrency` also exists (so this is a P14 dominant-field
-shorthand, not a P12 collapse).
+_Allowed example:_ `throttle?: string | AtLeastOne<ThrottleOptions>` where
+`'2/s' ≡ { rate: '2/s' }` — `rate` dominates although `concurrency` also exists (so
+this is a P14 dominant-field shorthand, not a P12 collapse).
 
 ### P15 · Required fields are deliberate and get a named/positional shorthand — not silent defaults
 
@@ -276,7 +321,8 @@ is a footgun, it **MUST** stay required and the envelope **MUST** offer a scalar
 positional shorthand naming the required value(s).
 
 - `CircuitOptions.failures`/`cooldown` **stay required** (a breaker with invisible
-  thresholds fails open/closed silently) — add a positional shorthand instead.
+  thresholds fails open/closed silently) — the positional shorthand is the tuple
+  `circuit: [5, '30s']` ≡ `circuit: { failures: 5, cooldown: '30s' }`.
 - `CacheOptions.ttl` **stays required** — its shorthand `cache: '1m'` already names it.
 
 > This corrects the audit draft, which tried to defend `ttl`-required while attacking
@@ -291,16 +337,19 @@ positional shorthand naming the required value(s).
 
 A concept **MUST** use the same field name, shorthand, and envelope on every surface
 (`stitch` / `seam` / `pipe`) and every framework package, varying only the
-framework-idiomatic verb (`use` / `create` / `inject`). New config fields are added to
-`StitchConfig` and **projected** (`SeamConfig = Omit<StitchConfig, …>` is the model),
-never re-declared per surface. ADR 0012's `stitchQueryOptions` rename **MUST** be
-applied to all five TanStack adapters, not react only.
+framework-idiomatic verb (`use` / `create` / `inject` — and svelte's `stitchStore*`
+family: `use:` is Svelte **directive syntax**, so a `useStitch` there would collide
+with the language, not echo it). New config fields are added to `StitchConfig` and
+**projected** (`SeamConfig = Omit<StitchConfig, …>` is the model), never re-declared
+per surface. ADR 0012's `stitchQueryOptions` spelling applies to all five TanStack
+adapters, not react only.
 
-_Violations:_ SSE helper is `streamStitchSse` / `sendStitchSse` / `stitchSse`;
-error-options is `StitchErrorHandlerOptions` / `StitchErrorOptions` /
-`ToHttpExceptionOptions` (with `body` present in some, absent in others); the hook
-result interface is `UseStitchResult` / `UseStitchReturn` / `InjectStitchResult` /
-`StitchStore`; `queryOptions` is still bare in vue/solid/svelte/angular.
+_Resolved (2026-07 sweep):_ the SSE helper is `streamStitchSse` on every host (was
+also `sendStitchSse` / `stitchSse`); error-options is one `StitchErrorOptions` shape
+(with `body`) everywhere (was `StitchErrorHandlerOptions` / `ToHttpExceptionOptions`);
+the hook result is `UseStitchResult` / `InjectStitchResult` over query-core's shared
+`StitchQueryResult`; `stitchQueryOptions` replaced the bare `queryOptions` in
+vue/solid/svelte/angular.
 
 _Settled:_ the SSE frame options are **`delta`** and **`error`** on every SSE-capable
 host (`express` / `fastify` / `hono` / `next` / `elysia`) — symmetric envelopes, each a
@@ -325,18 +374,19 @@ everywhere. On inputs, accepting `'5s'` on top is pure ergonomic gain (and a `Ms
 on a field that takes `'5s'` would be a lie). On outputs, one uniform de-suffixed
 vocabulary beats a split convention; the JSDoc carries the unit.
 
-_Violations (inputs — widen + de-suffix):_ `RetryOptions.baseMs`/`maxMs`,
-`CircuitOptions.cooldownMs`/`halfOpenAfterMs`, `ReconnectOptions.backoffMs`,
-`OAuth2Opts.refreshSkewMs`, `CookieSessionOpts.ttlMs`, store-contract `ttlMs`.
-_Violations (emitted — de-suffix):_ `StitchEvent` `waitedMs`→`waited`,
-`retryAfterMs`→`retryAfter`, the `done` event's `ms`→`elapsed`; `SseEvent.retry` stays
-(already bare; it mirrors the SSE `retry:` wire field); `MockResponse.delayMs`→`delay`.
+_Resolved (2026-07 sweep, inputs — widened + de-suffixed):_ `RetryOptions.baseDelay`/
+`maxDelay` (were `baseMs`/`maxMs`), `CircuitOptions.cooldown`/`halfOpenAfter`,
+`ReconnectOptions.backoff`, `OAuth2Options.refreshSkew`, `CookieSessionOptions.ttl`,
+store-contract `ttl` — all `number | string` via the one shared `parseDuration`.
+_Resolved (2026-07 sweep, emitted — de-suffixed):_ `StitchEvent` `waited`,
+`retryAfter`, the `done` event's `elapsed` (was `ms`), `MockResponse.delay`;
+`SseEvent.retry` stays (already bare; it mirrors the SSE `retry:` wire field).
 _Unit hazard (the exception to "all JS time is ms"):_ a few fields are **seconds**
-because they mirror a wire format — `MockResponse.retryAfter` and the HTTP
-`Retry-After` header (delta-seconds), Cloudflare KV `expirationTtl`. Every
-StitchAPI-_authored_ duration stays ms; a field that must speak a foreign unit converts
-at the adapter edge and is named with its true unit (`expirationSeconds`,
-`retryAfterSeconds`) so the unit is never silent.
+because they mirror a wire format — the HTTP `Retry-After` header (delta-seconds),
+Cloudflare KV `expirationTtl`. Every StitchAPI-_authored_ duration stays ms; a field
+that must speak a foreign unit converts at the adapter edge and is named with its true
+unit (`MockResponse.retryAfterSeconds` — it sets the wire header) so the unit is never
+silent.
 
 ### P18 · Adapter mirrors keep upstream spelling; house contracts use house vocabulary
 
@@ -408,10 +458,11 @@ all-defaults case is the scalar, not `{}`.
 _Helper:_ `AtLeastOne<T>` = a value with at least one property of `T` set (`{}` matches
 none of its per-key-required variants, so it is rejected).
 
-_Violations:_ `idempotency?: IdempotencyOptions` (so `idempotency: {}` is legal — **fixed
-here**); the other all-optional bare-`*Options` slots accept `{}` too: `multipart`,
-`stream`, `sse`, `throttle`, `hooks`, `input` (each → `Scalar | AtLeastOne<Options>` per
-P12/P13; lint **R6** flags them).
+_Resolved (2026-07 sweep):_ every capability slot is `Scalar | AtLeastOne<Options>`
+(or `boolean | AtLeastOne<…>`): `stream`, `multipart`, `sse`, `throttle`,
+`idempotency`, `hooks`, `input`, `retry`, `timeout`, and `circuit` (whose scalar is
+the `[failures, cooldown]` tuple, P15). `{}` is a compile error at each of them; lint
+**R6** keeps it that way.
 
 ### P21 · Every contract has an extension seam
 
@@ -491,6 +542,46 @@ all take `SchemaLike` and return `ValidationResult`; `JsonSchema.adapt(json, { a
 bridge from JSON Schema, producing a `SchemaLike` those consumers treat identically. The standalone
 `validate`/`compile` verbs replaced app-level `schema['~standard'].validate(…)`.
 
+### P24 · A shared field-name prefix in a house contract is an envelope
+
+**≥2 public flat fields sharing a leading-word prefix in a house-owned contract MUST** fold into
+**one** envelope: a named, exported `*Options` interface (P14), typed so `{}` is a compile error
+(P20), with a scalar shorthand for the dominant field where one field dominates (P12).
+
+_Carve-outs:_
+
+- **(a) Foreign mirrors keep the foreign shape.** A contract that exists to structurally or
+  nominally match a foreign SDK, standard, or wire format (P18/P22) keeps **every** field of the
+  pair — it is not house vocabulary to fold. This covers TanStack's `queryKey`/`queryFn`, RFC
+  6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair (and
+  its React Native mirror), RTK Query's lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`),
+  and Orama's own index-document schema (`DocSearchHit.pageUrl`/`pageTitle`) — all exempt.
+- **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
+  the pair is a genuine option and the other is a discriminator/tag describing it (not an
+  independent knob), the pair **stays flat** — nesting would turn a scalar-plus-tag into a
+  needless envelope for zero added configurability.
+- **(c) Conventional prefixes are not groups:** `on*` handlers, `is*` guards, and a percentile
+  family (`p50`/`p95`/`p99`) share a prefix by naming convention, not by being facets of one
+  capability.
+
+_Canonical case (converted 2026-07-08):_ `OAuth2Options.refresh` and
+`CookieSessionOptions.refresh` fold what were `refreshOn`+`refreshSkew` and `refreshOn`+
+`refreshWhen` into `refresh?: StatusMatch | AtLeastOne<…RefreshOptions>` (a bare `StatusMatch` is
+the P12 shorthand for `{ on: … }`); `SentrySinkOptions.capture` folds `captureErrors`+
+`captureDrift` into `capture?: boolean | AtLeastOne<SentryCaptureOptions>`. All three landed as
+hard breaks, no aliases (P19).
+
+_Named exemptions verified against this rule_ (carve-out (a); named explicitly because each is the
+literal shape this rule would otherwise flag): **`StitchQueryOptions.queryKey`/`queryFn`** (the
+TanStack mirror, P3 — note this rule's own motivating example is itself exempt);
+**`OAuth2Options.clientId`/`clientSecret`/`clientAuth`** (RFC 6749); **`DocSearchHit.pageUrl`/
+`pageTitle`** (mirrors the persisted Orama index document schema; maintainer-exempted 2026-07-08).
+
+Enforced by lint **R8** (§7); its allow-list carries the one-line rationale for every verified
+exemption beyond this rule's named list — a discriminated-union pair (mutually exclusive by
+`X?: never`), a derived/internal read-view that is not itself an authored config, or a
+plugin-extension-hook bag, are all real shapes this rule does not reach.
+
 ### P25 · One canonical size form
 
 **Bytes are the house size unit.** Every **consumer-authored** byte cap **MUST** accept
@@ -498,14 +589,32 @@ bridge from JSON Schema, producing a `SchemaLike` those consumers treat identica
 shared `parseBytes`, whose units are **powers of 1024** (`'1mb'` = 1_048_576). Every
 **emitted** size is a raw-byte `number`.
 
-Unlike a duration ([P17](#p17--one-canonical-duration-form)), a size field **KEEPS** its
-unit suffix. `Ms` encodes a **scale**, which `'5s'` overrides — so the suffix becomes a
-lie and P17 drops it. `Bytes` encodes a **dimension**: octets, as opposed to the `Chars`
-family (`stream.maxBufferChars`, `trace.maxBodyChars`) that counts UTF-16 code units of
-decoded text. `'1mb'` restates the scale, never the dimension, so the suffix stays true.
-That distinction is load-bearing per [P1](#p1--one-word-one-concept-one-value-space) —
-`Bytes` denotes bytes and cannot also denote code units — and a `Chars` field therefore
-**MUST NOT** take a byte token.
+Unlike a duration ([P17](#p17--one-canonical-duration-form)), a **top-level** size field
+**KEEPS** its unit suffix. `Ms` encodes a **scale**, which `'5s'` overrides — so the
+suffix becomes a lie and P17 drops it. `Bytes` encodes a **dimension**: octets, as opposed
+to the `Chars` family (`stream.maxBufferChars`, `trace.maxBodyChars`) that counts UTF-16
+code units of decoded text. `'1mb'` restates the scale, never the dimension, so the suffix
+stays true. That distinction is load-bearing per
+[P1](#p1--one-word-one-concept-one-value-space) — `Bytes` denotes bytes and cannot also
+denote code units — and a `Chars` field therefore **MUST NOT** take a byte token.
+
+**Inside a named envelope, the suffix is dropped.** When the envelope already names the one
+thing being measured, its ceiling is a bare **`max`** — there is only one thing there to
+measure (P1), and `max` bounds a **magnitude**, the case [P4](#p4--one-cap-vocabulary)
+leaves it. This is the size analogue of `BackoffOptions.max` (`{ curve, base, max }` under
+`backoff`), and it is where the unmarked default does the work: bytes are the house size
+unit, so an unsuffixed size ceiling **IS** bytes, and only the `Chars` family is marked.
+A `Chars` cap therefore **MUST NOT** shed its suffix into a bare `max` — the marked member
+of a pair cannot be the one that goes unmarked.
+
+_The pair that proves it:_ `ServeOptions.maxBodyBytes` bounds what a single request may
+**buffer** (413 past it); `TraceOptions.maxBodyChars` bounds what a sink **logs**
+(truncated past it). Same noun, two dimensions, both top-level — the suffix is the only
+thing telling them apart. So neither may drop it, and neither may be folded into an
+envelope that would: an envelope is licensed where it names an unambiguous subject
+(`buffer` on a subprocess), **never** as a route around a live `Bytes`/`Chars` contrast.
+A later consistency sweep that "finishes the job" on these two would delete the
+distinction, not tidy it.
 
 _Why:_ every JS-native size API (`byteLength`, `Buffer.length`, `execFile`'s `maxBuffer`)
 is already bytes, so a bare number needs no unit; and 1024-based `kb`/`mb` is what the
@@ -515,13 +624,15 @@ base the house defaults are written in (`10 * 1024 * 1024`). An unparseable toke
 to `undefined` and lands on the field's default — a typo can never widen a cap to
 "unbounded".
 
-_Canonical case:_ `ServeOptions.maxBodyBytes` and `@stitchapi/shell`'s
-`ShellOptions.maxBufferBytes` each take `2 * 1024 * 1024` or `'2mb'`; `parseBytes` is
-exported from `stitchapi` so a peer package parses the grammar instead of mirroring it.
+_Canonical case:_ `ServeOptions.maxBodyBytes` (top-level, so suffixed) and
+`@stitchapi/shell`'s `buffer` slot (`ShellBufferOptions.max`, under an envelope, plus its
+[P12](#p12--envelope--scalar-shorthand) shorthand `buffer: '2mb'`) each take
+`2 * 1024 * 1024` or `'2mb'`; `parseBytes` is exported from `stitchapi` so a peer package
+parses the grammar instead of mirroring it.
 
 ---
 
-## 6. Migration backlog (proposed renames — confirm during sweep)
+## 6. Migration record (2026-07-08 hard-break sweep)
 
 Not normative. The rule is the law; these are the proposed target spellings the sweep
 will apply. While the line is pre-GA, each may land as a hard break or under a
@@ -704,20 +815,39 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
 `check:exports` / `check:release`.
 
 - It scans the published packages' public surface and reports contract violations.
-- The current backlog is frozen in
-  [`scripts/contract-violations.baseline.json`](../scripts/contract-violations.baseline.json).
-  The lint **fails only when a NEW violation appears** (or — once the migration
-  starts — when the baseline is not shrunk to match). This mirrors the repo's existing
-  ESLint-suppression ratchet: the gate never blocks unrelated work, but the surface can
-  only get more consistent, never less.
-- Rules implemented today (high-precision, source-text level): **R1** banned type-name
-  suffix (P3), **R2** any `*Ms`-suffixed duration field, input or emitted (P17),
-  **R3** function-typed `key` (P6), **R4** `scope: 'stitch'|'host'` overload (P2),
-  **R5** same identifier exported by ≥2 published packages (P9), **R6** a `StitchConfig`
-  slot typed as a bare all-optional `*Options` bag that accepts `{}` (P20).
+- The baseline
+  ([`scripts/contract-violations.baseline.json`](../scripts/contract-violations.baseline.json))
+  was **zero from the 2026-07-08 sweep**; the same-day P24 addition
+  ([§6](#6-migration-record-2026-07-08-hard-break-sweep)) briefly carried one
+  pre-existing real match it had not yet fixed, since converted — the baseline is
+  **zero again**, and the lint fails on **any** new violation. The ratchet mechanics
+  stay (mirroring the repo's ESLint-suppression ratchet) purely as the shrink-only
+  guarantee: the surface can only get more consistent, never less.
+- Rules implemented (high-precision, source-text level): **R1** banned type-name
+  suffix (P3) — input-side `*Opts`/`*Info`/`*Params`/`*Config` **and** produced-side
+  `*Return`/`*State`; **R2** any `*Ms`-suffixed duration field, input or emitted
+  (P17); **R3** function-typed `key` (P6); **R4** a `scope: 'stitch'|'host'` pool
+  overload (P2); **R5** the same identifier exported by ≥2 published packages
+  (P9/P16), against an allow-list of the blessed one-declaration-site re-exports and
+  identical-by-design host envelopes; **R6** a config capability slot — top-level or
+  nested — typed as a bare all-optional `*Options` bag that accepts `{}` (P20);
+  **R7** a `@deprecated` JSDoc **tag** on a published surface (at tag position inside
+  a block comment — prose that merely names the marker is documentation, not a shim) —
+  the surface is shim-free since the sweep, so a post-GA deprecation alias (mandated by
+  P19) enters the baseline **deliberately** for its cycle and is flagged until the
+  major removes it;
+  **R8** a shared leading-word prefix across ≥2 flat members of the same exported
+  interface, not on the curated allow-list of verified foreign-mirror,
+  discriminated-union, and P12 dominant-field pairs (P24) — high-precision by
+  construction: the conventional `on*`/`is*`/percentile prefixes are structurally
+  excluded before grouping, and every remaining match is either fixed at the source
+  or gets a one-line-rationale allow-list entry, never silently dropped.
 - Deferred to a type-aware phase (needs the TS checker, not regex): full
   same-name-different-**shape** detection, duration-type conformance, default-value
-  inversion (P8). Tracked as comments in the lint.
+  inversion (P8). Tracked as comments in the lint. R8 is also source-text-only in a
+  second sense — it scans exported `interface` bodies, not `type`-literal object
+  shapes or class fields; no group was found in either at the 2026-07-08 audit, but
+  a future one wouldn't be caught until it grows an `interface`.
 
 ---
 

@@ -12,7 +12,7 @@ browser bundle.
 ```ts
 import { shell } from '@stitchapi/shell';
 
-const git = shell({ command: 'git', env: { PATH: process.env.PATH! } });
+const git = shell('git', { env: { PATH: process.env.PATH! } });
 
 const status = await git({ body: ['status', '--porcelain'] }); // stdout (string)
 ```
@@ -22,8 +22,9 @@ const status = await git({ body: ['status', '--porcelain'] }); // stdout (string
 Not "mitigated by escaping" — **structurally impossible**, the same bar that rejected
 host-inferred bearer tokens in StitchAPI's auth:
 
-- **Static executable.** `command` is bound in `shell({ command })`, **never** taken from call
-  input — exactly as a credential is bound at construction.
+- **Static executable.** `command` is bound at construction — `shell(command, …)` or
+  `shell({ command, … })` — **never** taken from call input, exactly as a credential is bound at
+  construction.
 - **`argv` is an array, never a string.** Arguments are a `string[]` passed straight to
   `child_process.execFile`. There is **no shell** (`shell: true` is never set), so `;` `|` `$()`
   backticks `*` `>` are inert data, never interpreted.
@@ -42,9 +43,24 @@ host-inferred bearer tokens in StitchAPI's auth:
 
 ## Options
 
-`shell(options)` takes the static `command`, optional `cwd` / `env` / `decode` / `maxBuffer`, plus
-the usual `StitchConfig` keys (`retry`, `throttle`, `timeout`, `circuit`, `trace`, …) — all applied
-by the engine around the subprocess.
+Two spellings: the positional shorthand `shell(command, options?)` names the required `command`, or
+pass the full `ShellOptions` envelope `shell({ command, … })`. The options are the optional `cwd` /
+`env` / `decode` (`'text'` default, or `'json'`) / `buffer` (below), plus the usual `StitchConfig`
+keys (`retry`, `throttle`, `timeout`, `circuit`, `trace`, …) — all applied by the engine around the
+subprocess. The positional options bag must set at least one field — all-defaults is spelled by
+omitting it, never `{}`.
+
+`buffer` caps the buffered `stdout`/`stderr` (default 10 MiB; exceeding it fails the call). It is a
+`ShellBufferOptions` envelope whose dominant field takes a byte count or a size token, and it
+collapses to that scalar:
+
+```ts
+shell(NODE, { buffer: '4mb' }); // ≡ { buffer: { max: '4mb' } }
+shell(NODE, { buffer: 4096 }); // ≡ { buffer: { max: 4096 } }
+```
+
+Tokens are powers of 1024 (`'1mb'` = 1 048 576), parsed by core's shared `parseBytes`. An
+unparseable token falls back to the default — never to "unbounded".
 
 ## Contributing
 

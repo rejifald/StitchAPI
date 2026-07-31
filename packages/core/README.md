@@ -738,7 +738,7 @@ const { text } = await chat({
 ```ts
 import { shell } from '@stitchapi/shell';
 
-const git = shell({ command: 'git', env: { PATH: process.env.PATH! } });
+const git = shell('git', { env: { PATH: process.env.PATH! } });
 
 const status = await git({ body: ['status', '--porcelain'] }); // stdout string
 ```
