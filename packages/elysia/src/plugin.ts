@@ -54,11 +54,16 @@ export interface ElysiaStitchPluginOptions {
     principal?: (ctx: PrincipalContext) => string | undefined;
     /**
      * Options for the StitchError → HTTP mapping the plugin's `.onError` applies (see
-     * {@link stitchOnError}). `false` registers **no** error handler (you wire your own); `true`
+     * {@link stitchOnError}). `false` registers **no** handler (you wire your own); `true`
      * (the default) registers the `502`-by-default mapping. The object form must set at least one
      * field — enable-with-defaults is spelled `true`, never `{}` (CONTRACT.md P13/P20).
+     *
+     * Named for **Elysia's own hook**, per CONTRACT.md P18: a host adapter's slot for a framework
+     * hook takes that framework's word for it. Elysia registers via `.onError`, so the option is
+     * `onError`; fastify registers via `setErrorHandler`, so its option is `errorHandler`. The two
+     * differ on purpose — each reads as the framework its user already knows.
      */
-    errorHandler?: boolean | AtLeastOne<StitchErrorOptions>;
+    onError?: boolean | AtLeastOne<StitchErrorOptions>;
 }
 
 /**
@@ -82,7 +87,7 @@ export interface ElysiaStitchPluginOptions {
  * The `stitch` context property is typed: a handler reads it off the destructured context.
  */
 export function stitch(options: ElysiaStitchPluginOptions): StitchPlugin {
-    const { seam, principal, errorHandler } = options;
+    const { seam, principal, onError } = options;
 
     // `.derive` runs per request and merges its return into the context. The principal lives in this
     // closure (resolved from the request), never in a call argument, so a handler can never name
@@ -101,13 +106,11 @@ export function stitch(options: ElysiaStitchPluginOptions): StitchPlugin {
     // for a non-Stitch error leaves Elysia's default handling in charge. Both branches expose the
     // same `stitch` context, so the public {@link StitchPlugin} return type is stable either way.
     const app =
-        errorHandler === false
+        onError === false
             ? base
             : base.onError(
                   { as: 'global' },
-                  stitchOnError(
-                      typeof errorHandler === 'object' ? errorHandler : {},
-                  ),
+                  stitchOnError(typeof onError === 'object' ? onError : {}),
               );
 
     return app as unknown as StitchPlugin;
