@@ -25,6 +25,19 @@ updates:
       commit-message:
           prefix: 'chore(ci)'
 
+    # Same bargain as the action SHAs above, for the docs-mcp image. `node:24-slim` is
+    # pinned by digest so a build is reproducible, which also means the tag no longer
+    # floats onto Node's monthly security rebuilds — a digest without this entry is a
+    # base image frozen at the day it was written.
+    - package-ecosystem: docker
+      directory: /packages/docs-mcp
+      schedule:
+          interval: weekly
+          day: monday
+      open-pull-requests-limit: 2
+      commit-message:
+          prefix: 'chore(ci)'
+
     # One entry for the whole pnpm workspace: Dependabot reads pnpm-workspace.yaml from
     # the root and updates every member manifest in a single PR, which is also the only
     # shape that can satisfy the lockstep check. Internal `workspace:` deps are not
