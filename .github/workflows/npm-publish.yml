@@ -36,8 +36,8 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 5
         steps:
-            - uses: actions/checkout@v7
-            - uses: actions/setup-node@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
             - name: Release tag must match the tagged commit's version
@@ -56,9 +56,9 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
-            - uses: actions/checkout@v7
-            - uses: pnpm/action-setup@v6
-            - uses: actions/setup-node@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+            - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
@@ -84,9 +84,9 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 15
         steps:
-            - uses: actions/checkout@v7
-            - uses: pnpm/action-setup@v6
-            - uses: actions/setup-node@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+            - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
@@ -107,9 +107,9 @@ jobs:
             contents: read
             id-token: write # mint the OIDC token npm exchanges for publish auth (+ provenance)
         steps:
-            - uses: actions/checkout@v7
-            - uses: pnpm/action-setup@v6
-            - uses: actions/setup-node@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+            - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
               with:
                   node-version-file: .nvmrc
                   cache: pnpm
@@ -204,8 +204,10 @@ jobs:
         timeout-minutes: 10
         permissions:
             contents: write # attach the SBOMs as GitHub release assets
+            id-token: write # mint the short-lived Sigstore signing certificate
+            attestations: write # record the attestation against the repository
         steps:
-            - uses: actions/checkout@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
             - name: Generate SPDX SBOM
               uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
@@ -225,8 +227,34 @@ jobs:
                   upload-artifact: false
                   upload-release-assets: false
 
+            # Sign the SBOMs, for two reasons in this order. An unsigned SBOM is a text file
+            # anyone can rewrite in transit, so the signature is what makes it worth
+            # attaching at all. And Scorecard's Signed-Releases check reads release assets
+            # by extension: a release that carries artifacts but no signature scores 0,
+            # where a release with no assets at all is skipped entirely. Attaching the SBOMs
+            # unsigned would therefore have *lowered* the repo's score — this step is what
+            # makes the SBOM job a net gain rather than a regression.
+            - name: Attest the SBOMs
+              id: attest
+              uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+              with:
+                  subject-path: |
+                      stitchapi-${{ github.event.release.tag_name }}.spdx.json
+                      stitchapi-${{ github.event.release.tag_name }}.cdx.json
+
+            # The action names its Sigstore bundle as an implementation detail. `.intoto.jsonl`
+            # is both the suffix Scorecard matches on and the conventional name a verifier
+            # expects, so copy rather than upload it under whatever name it happened to get.
+            - name: Name the attestation bundle
+              env:
+                  BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+                  TAG: ${{ github.event.release.tag_name }}
+              run: |
+                  set -euo pipefail
+                  cp "$BUNDLE" "stitchapi-$TAG.intoto.jsonl"
+
             # `gh release upload` rather than the action's own uploader: it is one legible
-            # step for both files, and --clobber makes a re-run after a partial publish
+            # step for all three files, and --clobber makes a re-run after a partial publish
             # idempotent the same way the publish loop above is.
             - name: Attach SBOMs to the release
               env:
@@ -237,5 +265,6 @@ jobs:
                   gh release upload "$TAG" \
                       "stitchapi-$TAG.spdx.json" \
                       "stitchapi-$TAG.cdx.json" \
+                      "stitchapi-$TAG.intoto.jsonl" \
                       --clobber
-                  echo "✓ SPDX + CycloneDX SBOMs attached to release $TAG"
+                  echo "✓ SPDX + CycloneDX SBOMs + provenance attached to release $TAG"
