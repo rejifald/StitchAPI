@@ -55,7 +55,7 @@ async function main() {
     // 1. GET /users  — list
     // ------------------------------------------------------------------
     {
-        const req = makeReq('GET', 'https://demo.stitchapi.dev/users');
+        const req = makeReq('GET', 'https://api.example.com/users');
         const res = await dispatch(req);
 
         assert.equal(res.status, 200, '/users status should be 200');
@@ -82,7 +82,7 @@ async function main() {
     // 2. GET /users/:id  — found
     // ------------------------------------------------------------------
     {
-        const req = makeReq('GET', 'https://demo.stitchapi.dev/users/2');
+        const req = makeReq('GET', 'https://api.example.com/users/2');
         const res = await dispatch(req);
 
         assert.equal(res.status, 200, '/users/2 status should be 200');
@@ -96,7 +96,7 @@ async function main() {
     // 3. GET /users/:id  — not found
     // ------------------------------------------------------------------
     {
-        const req = makeReq('GET', 'https://demo.stitchapi.dev/users/999');
+        const req = makeReq('GET', 'https://api.example.com/users/999');
         const res = await dispatch(req);
 
         assert.equal(res.status, 404, '/users/999 should return 404');
@@ -110,11 +110,11 @@ async function main() {
     {
         const req: SimRequest = {
             method: 'POST',
-            url: new URL('https://demo.stitchapi.dev/users'),
+            url: new URL('https://api.example.com/users'),
             headers: new Headers(),
             body: {
                 name: 'Dave Lister',
-                email: 'dave@demo.stitchapi.dev',
+                email: 'dave@api.example.com',
                 role: 'member',
             },
         };
@@ -135,7 +135,7 @@ async function main() {
     // 3c. GET /users/:id/orders  — a user's orders
     // ------------------------------------------------------------------
     {
-        const req = makeReq('GET', 'https://demo.stitchapi.dev/users/1/orders');
+        const req = makeReq('GET', 'https://api.example.com/users/1/orders');
         const res = await dispatch(req);
 
         assert.equal(res.status, 200, '/users/1/orders should return 200');
@@ -151,10 +151,7 @@ async function main() {
 
     // /users/:id/orders — unknown user 404s
     {
-        const req = makeReq(
-            'GET',
-            'https://demo.stitchapi.dev/users/999/orders',
-        );
+        const req = makeReq('GET', 'https://api.example.com/users/999/orders');
         const res = await dispatch(req);
         assert.equal(res.status, 404, '/users/999/orders should return 404');
     }
@@ -163,7 +160,7 @@ async function main() {
     // 4. GET /status/:code — various codes
     // ------------------------------------------------------------------
     for (const code of [200, 400, 401, 403, 404, 429, 500, 503]) {
-        const req = makeReq('GET', `https://demo.stitchapi.dev/status/${code}`);
+        const req = makeReq('GET', `https://api.example.com/status/${code}`);
         const res = await dispatch(req);
 
         assert.equal(
@@ -178,7 +175,7 @@ async function main() {
 
     // /status/:code — a code not in the description map still works
     {
-        const req = makeReq('GET', 'https://demo.stitchapi.dev/status/418');
+        const req = makeReq('GET', 'https://api.example.com/status/418');
         const res = await dispatch(req);
         assert.equal(res.status, 418);
         const body = res.body as { description: string };
@@ -190,7 +187,7 @@ async function main() {
     // 5. GET /malformed  — 200 with HTML body
     // ------------------------------------------------------------------
     {
-        const req = makeReq('GET', 'https://demo.stitchapi.dev/malformed');
+        const req = makeReq('GET', 'https://api.example.com/malformed');
         const res = await dispatch(req);
 
         assert.equal(res.status, 200, '/malformed status should be 200');
@@ -210,10 +207,7 @@ async function main() {
     // 6. Non-matching requests should NOT be claimed
     // ------------------------------------------------------------------
     {
-        const unknown = makeReq(
-            'GET',
-            'https://demo.stitchapi.dev/unknown-route',
-        );
+        const unknown = makeReq('GET', 'https://api.example.com/unknown-route');
         const claimed = errorsStatusHandlers.some((h) => h.match(unknown));
         assert.equal(
             claimed,
@@ -226,7 +220,7 @@ async function main() {
     // 7. Determinism — same request returns equal body on repeated calls
     // ------------------------------------------------------------------
     {
-        const req = makeReq('GET', 'https://demo.stitchapi.dev/users/3');
+        const req = makeReq('GET', 'https://api.example.com/users/3');
         const r1 = await dispatch(req);
         const r2 = await dispatch(req);
         assert.deepEqual(

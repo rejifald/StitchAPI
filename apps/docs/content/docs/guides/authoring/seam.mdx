@@ -23,7 +23,7 @@ const User = z.object({
 // Build the seam once: its config is the base every member inherits, and its
 // runtime — store, vault, throttle bucket, trace sink — is shared across them.
 const api = seam({
-    baseUrl: 'https://demo.stitchapi.dev',
+    baseUrl: 'https://api.example.com',
     auth: bearer(env('API_TOKEN')),
     retry: { attempts: 3, on: [429, 503] },
 });
@@ -54,7 +54,7 @@ A seam takes the same fields a stitch does — `baseUrl`, `auth`, `retry`, `thro
 ```ts twoslash
 import { seam } from 'stitchapi';
 
-const api = seam({ baseUrl: 'https://demo.stitchapi.dev' });
+const api = seam({ baseUrl: 'https://api.example.com' });
 
 // One handle per request — bind the caller's identity, then create members.
 const forTenant = api.as('tenant-42');
@@ -73,7 +73,7 @@ const getUser = forTenant.stitch({ path: '/users/{id}', pick: 'data' });
 ```ts twoslash
 import { seam } from 'stitchapi';
 
-const api = seam({ baseUrl: 'https://demo.stitchapi.dev' });
+const api = seam({ baseUrl: 'https://api.example.com' });
 // ... build members, serve requests ...
 
 await api.close(); // flush the trace sink, close the shared store

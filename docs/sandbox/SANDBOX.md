@@ -246,7 +246,7 @@ _inside the Worker context only_. Exact tokens are validated in the Phase-2 spik
 
 ## 9. Acceptance criteria (sandbox v1 = Phases 1–2)
 
-- [ ] `const u = await stitch('https://demo.stitchapi.dev/users/2'); console.log(u)`
+- [ ] `const u = await stitch('https://api.example.com/users/2'); console.log(u)`
       renders the log, the resolved value, a `StitchTraceEntry`, and `done · <ms>`.
 - [ ] A snippet hitting `?__status=500` renders a clean error, does **not** reject `run()`.
 - [ ] A `?__stream=sse` / LLM endpoint renders streamed output incrementally.

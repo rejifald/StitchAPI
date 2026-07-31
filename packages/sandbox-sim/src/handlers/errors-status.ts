@@ -38,19 +38,19 @@ const FIXED_USERS: User[] = [
     {
         id: 1,
         name: 'Alice Liddell',
-        email: 'alice@demo.stitchapi.dev',
+        email: 'alice@api.example.com',
         role: 'admin',
     },
     {
         id: 2,
         name: 'Bob Hoskins',
-        email: 'bob@demo.stitchapi.dev',
+        email: 'bob@api.example.com',
         role: 'member',
     },
     {
         id: 3,
         name: 'Carol Danvers',
-        email: 'carol@demo.stitchapi.dev',
+        email: 'carol@api.example.com',
         role: 'viewer',
     },
 ];

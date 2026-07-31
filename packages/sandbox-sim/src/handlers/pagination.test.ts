@@ -35,7 +35,7 @@ interface PageBody {
 function makeReq(search = ''): SimRequest {
     return {
         method: 'GET',
-        url: new URL(`https://demo.stitchapi.dev/paged/users${search}`),
+        url: new URL(`https://api.example.com/paged/users${search}`),
         headers: new Headers(),
     };
 }
@@ -174,7 +174,7 @@ async function main() {
     {
         const postReq: SimRequest = {
             method: 'POST',
-            url: new URL('https://demo.stitchapi.dev/paged/users'),
+            url: new URL('https://api.example.com/paged/users'),
             headers: new Headers(),
         };
         const claimed = paginationHandlers.some((h) => h.match(postReq));

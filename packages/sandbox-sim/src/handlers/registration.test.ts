@@ -24,7 +24,7 @@ async function main() {
     console.log(`✓ Registered ${handlers.length} handlers`);
 
     // 2. Test GET /__sandbox — verify status 200 and catalogue structure.
-    const sandboxUrl = new URL('http://demo.stitchapi.dev/__sandbox');
+    const sandboxUrl = new URL('http://api.example.com/__sandbox');
     const sandboxReq = {
         method: 'GET',
         url: sandboxUrl,
@@ -60,7 +60,7 @@ async function main() {
     );
 
     // 3. Test GET /users — verify a known route still dispatches.
-    const usersUrl = new URL('http://demo.stitchapi.dev/users');
+    const usersUrl = new URL('http://api.example.com/users');
     const usersReq = {
         method: 'GET',
         url: usersUrl,

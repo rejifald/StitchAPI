@@ -69,7 +69,7 @@ async function main(): Promise<void> {
 
     // 1. Error/status: /status/500 → 500
     await check('/status/500 → 500', async () => {
-        const res = await simFetch('https://demo.stitchapi.dev/status/500');
+        const res = await simFetch('https://api.example.com/status/500');
         assert(res.status === 500, `Expected 500, got ${res.status}`);
         const body = (await res.json()) as Record<string, unknown>;
         assert(body.sandbox === true, 'Expected body.sandbox === true');
@@ -81,7 +81,7 @@ async function main(): Promise<void> {
 
     // 2. Error/status: /malformed → 200 with non-JSON body
     await check('/malformed → 200 with HTML (non-JSON) body', async () => {
-        const res = await simFetch('https://demo.stitchapi.dev/malformed');
+        const res = await simFetch('https://api.example.com/malformed');
         assert(res.status === 200, `Expected 200, got ${res.status}`);
         const text = await res.text();
         assert(
@@ -102,7 +102,7 @@ async function main(): Promise<void> {
         '/drift?__drift=1 → payload fails {id:number,name:string} shape',
         async () => {
             const res = await simFetch(
-                'https://demo.stitchapi.dev/drift?__drift=1',
+                'https://api.example.com/drift?__drift=1',
             );
             assert(res.status === 200, `Expected 200, got ${res.status}`);
             const body = (await res.json()) as Record<string, unknown>;
@@ -120,7 +120,7 @@ async function main(): Promise<void> {
     await check(
         '/drift (no drift) → valid {id:number, name:string} shape',
         async () => {
-            const res = await simFetch('https://demo.stitchapi.dev/drift');
+            const res = await simFetch('https://api.example.com/drift');
             assert(res.status === 200, `Expected 200, got ${res.status}`);
             const body = (await res.json()) as Record<string, unknown>;
             assert(
@@ -137,7 +137,7 @@ async function main(): Promise<void> {
 
     // 4. /limited → 429 + Retry-After
     await check('/limited → 429 + Retry-After header', async () => {
-        const res = await simFetch('https://demo.stitchapi.dev/limited');
+        const res = await simFetch('https://api.example.com/limited');
         assert(res.status === 429, `Expected 429, got ${res.status}`);
         const retryAfter = res.headers.get('Retry-After');
         assert(
@@ -164,7 +164,7 @@ async function main(): Promise<void> {
         '__flaky=2 → fails twice then succeeds (§9 resilience)',
         async () => {
             resetFlaky();
-            const url = 'https://demo.stitchapi.dev/limited?__flaky=2';
+            const url = 'https://api.example.com/limited?__flaky=2';
             const r1 = await simFetch(url);
             assert(
                 r1.status === 503,
@@ -186,7 +186,7 @@ async function main(): Promise<void> {
 
     // 6. /auth/me → 401 without bearer
     await check('/auth/me → 401 without bearer (§9 auth)', async () => {
-        const res = await simFetch('https://demo.stitchapi.dev/auth/me');
+        const res = await simFetch('https://api.example.com/auth/me');
         assert(res.status === 401, `Expected 401, got ${res.status}`);
         const body = (await res.json()) as Record<string, unknown>;
         assert(
@@ -199,7 +199,7 @@ async function main(): Promise<void> {
 
     // 7. /auth/me → 200 with bearer token
     await check('/auth/me → 200 with bearer token (§9 auth)', async () => {
-        const res = await simFetch('https://demo.stitchapi.dev/auth/me', {
+        const res = await simFetch('https://api.example.com/auth/me', {
             headers: { Authorization: 'Bearer sandbox-demo-token' },
         });
         assert(res.status === 200, `Expected 200, got ${res.status}`);
@@ -217,7 +217,7 @@ async function main(): Promise<void> {
 
     // 8. Streaming: GET /stream yields chunks (§9 streaming)
     await check('GET /stream → yields multiple chunks', async () => {
-        const res = await simFetch('https://demo.stitchapi.dev/stream');
+        const res = await simFetch('https://api.example.com/stream');
         assert(res.status === 200, `Expected 200, got ${res.status}`);
         assert(
             res.body !== null && res.body !== undefined,
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
         'POST /v1/chat/completions stream:true → SSE ends with [DONE]',
         async () => {
             const res = await simFetch(
-                'https://demo.stitchapi.dev/v1/chat/completions',
+                'https://api.example.com/v1/chat/completions',
                 {
                     method: 'POST',
                     headers: { 'content-type': 'application/json' },
@@ -269,7 +269,7 @@ async function main(): Promise<void> {
         'POST /v1/chat/completions stream:true + tools → tool_calls SSE + [DONE]',
         async () => {
             const res = await simFetch(
-                'https://demo.stitchapi.dev/v1/chat/completions',
+                'https://api.example.com/v1/chat/completions',
                 {
                     method: 'POST',
                     headers: { 'content-type': 'application/json' },
@@ -334,7 +334,7 @@ async function main(): Promise<void> {
     // 12. Unknown route on known host → sandbox-404 (not a crash)
     await check('Unknown route on known host → sandbox-404', async () => {
         const res = await simFetch(
-            'https://demo.stitchapi.dev/this-route-does-not-exist-in-sim',
+            'https://api.example.com/this-route-does-not-exist-in-sim',
         );
         assert(res.status === 404, `Expected 404, got ${res.status}`);
         const body = (await res.json()) as Record<string, unknown>;
@@ -348,8 +348,8 @@ async function main(): Promise<void> {
     await check(
         'Determinism: two fetches to /users/1 → identical bodies (SEC-05)',
         async () => {
-            const r1 = await simFetch('https://demo.stitchapi.dev/users/1');
-            const r2 = await simFetch('https://demo.stitchapi.dev/users/1');
+            const r1 = await simFetch('https://api.example.com/users/1');
+            const r2 = await simFetch('https://api.example.com/users/1');
             const b1 = await r1.json();
             const b2 = await r2.json();
             assert(
@@ -419,7 +419,7 @@ async function main(): Promise<void> {
 
     // 17. dispatch routing: clean stitch('/users') snippet → browser tier
     await check("scanSurface: stitch('/users') snippet → tier:browser", () => {
-        const code = `const u = await stitch('https://demo.stitchapi.dev/users');`;
+        const code = `const u = await stitch('https://api.example.com/users');`;
         const scan = scanSurface(code);
         assert(
             scan.tier === 'browser',
@@ -457,7 +457,7 @@ async function main(): Promise<void> {
 
     // 19. /__sandbox → 200 with self-describing catalogue (SANDBOX §4.3)
     await check('GET /__sandbox → 200 + routes catalogue', async () => {
-        const res = await simFetch('https://demo.stitchapi.dev/__sandbox');
+        const res = await simFetch('https://api.example.com/__sandbox');
         assert(res.status === 200, `Expected 200, got ${res.status}`);
         const body = (await res.json()) as Record<string, unknown>;
         assert(
@@ -481,7 +481,7 @@ async function main(): Promise<void> {
         'POST /v1/chat/completions stream:false → JSON body with content',
         async () => {
             const res = await simFetch(
-                'https://demo.stitchapi.dev/v1/chat/completions',
+                'https://api.example.com/v1/chat/completions',
                 {
                     method: 'POST',
                     headers: { 'content-type': 'application/json' },
@@ -513,7 +513,7 @@ async function main(): Promise<void> {
     await check(
         'GET /users → list of fixture users (§9 basic fetch)',
         async () => {
-            const res = await simFetch('https://demo.stitchapi.dev/users');
+            const res = await simFetch('https://api.example.com/users');
             assert(res.status === 200, `Expected 200, got ${res.status}`);
             const body = (await res.json()) as {
                 data: unknown[];
@@ -539,7 +539,7 @@ async function main(): Promise<void> {
 
     // 22. GET /users/2 → specific user (§9 basic fetch)
     await check('GET /users/2 → Bob Hoskins (§9 basic fetch)', async () => {
-        const res = await simFetch('https://demo.stitchapi.dev/users/2');
+        const res = await simFetch('https://api.example.com/users/2');
         assert(res.status === 200, `Expected 200, got ${res.status}`);
         const body = (await res.json()) as { data: Record<string, unknown> };
         assert(
@@ -557,7 +557,7 @@ async function main(): Promise<void> {
         '__status=403 knob applied end-to-end via fetch shim',
         async () => {
             const res = await simFetch(
-                'https://demo.stitchapi.dev/users?__status=403',
+                'https://api.example.com/users?__status=403',
             );
             assert(res.status === 403, `Expected 403, got ${res.status}`);
         },

@@ -19,7 +19,7 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<string> {
 async function main() {
     const req: SimRequest = {
         method: 'GET',
-        url: new URL('https://demo.stitchapi.dev/events'),
+        url: new URL('https://api.example.com/events'),
         headers: new Headers(),
     };
     const handler = eventsHandlers.find((h) => h.match(req));
@@ -51,7 +51,7 @@ async function main() {
     // POST /events (wrong method) should not match.
     const post: SimRequest = {
         method: 'POST',
-        url: new URL('https://demo.stitchapi.dev/events'),
+        url: new URL('https://api.example.com/events'),
         headers: new Headers(),
     };
     assert.equal(

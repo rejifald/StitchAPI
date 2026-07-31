@@ -1,6 +1,6 @@
 /**
  * Demo stitch registry for the sandbox MCP — stitches that target the fake API's
- * demo host (`demo.stitchapi.dev`), so `list_stitches` / `run_stitch` work out of
+ * demo host (`api.example.com`), so `list_stitches` / `run_stitch` work out of
  * the box against the simulator. These mirror the docs' canonical roster (see
  * `apps/docs/AUTHORING.md` → "The canonical example world"). Override with
  * `--module <path>` to point at your own (compiled) stitches and exercise them
@@ -16,23 +16,23 @@ import { stitch } from 'stitchapi';
 export const sandboxRegistry: StitchRegistry = {
     /** GET /users/{id} — a single user (ids 1–3). `{ params: { id } }`. */
     getUser: stitch({
-        path: 'https://demo.stitchapi.dev/users/{id}',
+        path: 'https://api.example.com/users/{id}',
         pick: 'data',
     }),
     /** GET /users — the fixed fixture (Alice, Bob, Carol). */
     listUsers: stitch({
-        path: 'https://demo.stitchapi.dev/users',
+        path: 'https://api.example.com/users',
         pick: 'data',
     }),
     /** POST /users — create a user; echoes the body + an assigned id. */
     createUser: stitch({
         method: 'POST',
-        path: 'https://demo.stitchapi.dev/users',
+        path: 'https://api.example.com/users',
         pick: 'data',
     }),
     /** GET /users/{id}/orders — a user's orders (ids 1–3). `{ params: { id } }`. */
     listOrders: stitch({
-        path: 'https://demo.stitchapi.dev/users/{id}/orders',
+        path: 'https://api.example.com/users/{id}/orders',
         pick: 'data',
     }),
 };

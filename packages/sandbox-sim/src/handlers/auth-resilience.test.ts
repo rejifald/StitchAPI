@@ -23,7 +23,7 @@ function makeReq(
 ): SimRequest {
     return {
         method,
-        url: new URL(`https://demo.stitchapi.dev${path}`),
+        url: new URL(`https://api.example.com${path}`),
         headers: new Headers(headers),
     };
 }

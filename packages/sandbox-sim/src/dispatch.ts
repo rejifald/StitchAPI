@@ -24,7 +24,7 @@ import type {
 // Sandbox-404 helper (SANDBOX.md §4.3)
 // ---------------------------------------------------------------------------
 
-const KNOWN_DEMO_HOSTS = ['demo.stitchapi.dev'];
+const KNOWN_DEMO_HOSTS = ['api.example.com'];
 
 function sandbox404(url: URL): SimResponse {
     return {

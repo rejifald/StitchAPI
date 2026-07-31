@@ -7,7 +7,7 @@
  * the real network. Local/trusted use only (see `worker-main.node.ts` caveat).
  *
  * Usage:  node dist/mcp.mjs [--module <compiled-stitches.js>]
- *   (default: a small demo registry of stitches against demo.stitchapi.dev)
+ *   (default: a small demo registry of stitches against api.example.com)
  */
 import {
     type StitchRegistry,
