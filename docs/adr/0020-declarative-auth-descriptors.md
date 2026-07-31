@@ -1,8 +1,26 @@
 # ADR 0020 — Declarative auth descriptors: `auth` accepts a descriptor or a factory
 
-- **Status:** Accepted
+- **Status:** **Superseded by [ADR 0021](./0021-auth-strategies-move-to-a-subpath.md)** (2026-07-31), before implementation. Accepted 2026-07-23 in [#486](https://github.com/rejifald/StitchAPI/pull/486); implemented in [#487](https://github.com/rejifald/StitchAPI/pull/487), which was closed unmerged.
 - **Date:** 2026-07-23
 - **Tags:** auth, config, descriptor, contract-not-dependency, P0-json-config, P16-parity, browser-first, additive
+
+> [!WARNING]
+>
+> **Superseded — `auth` accepts an `AuthStrategy` only; there is no `AuthDescriptor`.**
+> A descriptor is inert data, so the resolver mapping `strategy: 'oauth2'` to its factory has
+> to reference all five strategies and be reachable from `stitch()` — measured at **+2.33 KB
+> gzip on `import { stitch }`** for every consumer, including the ones with no `auth` at all.
+> #487's escape (a resolver seam armed as a side effect of the secret resolvers) bought the
+> bytes back, but made a literal-secret descriptor's validity depend on module execution
+> order. [ADR 0021](./0021-auth-strategies-move-to-a-subpath.md) withdraws the descriptor and
+> moves the auth surface to `stitchapi/auth` instead.
+>
+> Two conclusions below survived and shipped: **Q7** (`auth` is an atomic `extends` slot,
+> never deep-merged — [#544](https://github.com/rejifald/StitchAPI/pull/544)) and the
+> symmetric `apiKey({ in, name, value })` it builds on
+> ([#485](https://github.com/rejifald/StitchAPI/pull/485)). Everything else here is
+> historical. The examples' `stitchapi` imports were rewritten to `stitchapi/auth` so the
+> page never teaches a dead import path.
 
 > [!NOTE]
 >
@@ -18,7 +36,7 @@ Today `auth` accepts one thing — a live `AuthStrategy`
 ([`types.ts:752`](../../packages/core/src/types.ts)) built by a factory:
 
 ```ts
-import { apiKey, env } from 'stitchapi';
+import { apiKey, env } from 'stitchapi/auth';
 
 auth: apiKey({ in: 'cookie', name: 'sid', value: env('API_KEY') });
 ```
