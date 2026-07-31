@@ -6,7 +6,8 @@
 //
 // SECURITY — injection is impossible by CONSTRUCTION, not by escaping (the "structural, not
 // advisory" bar that rejected host-inferred bearer tokens in #6):
-//   • the executable is STATIC, bound in `shell({ command })`, NEVER taken from call input;
+//   • the executable is STATIC, bound at construction (`shell(command)` / `shell({ command })`),
+//     NEVER taken from call input;
 //   • arguments are an ARRAY of strings passed straight to `execFile` — there is NO shell
 //     (`shell: true` is never set, no `/bin/sh -c`), so `;` `|` `$()` backticks `*` `>` are inert
 //     data, never interpreted;
@@ -15,22 +16,40 @@
 //     into a child — pass exactly what's needed (incl. `PATH` for a bare command name, or use an
 //     absolute command path).
 import { execFile } from 'node:child_process';
-import { compact, stitch } from 'stitchapi';
+import { compact, parseBytes, stitch } from 'stitchapi';
 import type {
     AdapterRequest,
     AdapterResponse,
+    AtLeastOne,
     Stitch,
     StitchConfig,
     Surface,
 } from 'stitchapi';
 
-/** The defaults bound to a shell surface (the static command + how to run it). */
+/** The default cap on buffered stdout/stderr — Node's own `execFile` default is 1 MiB; a command
+ *  run as a stitch is usually reporting, so the surface is more generous. */
+const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024;
+
+/** The defaults bound to a shell surface (the static command + how to run it) — the RESOLVED
+ *  view, not the authoring one: the `buffer` shorthand is folded and its size token parsed once,
+ *  at construction, so the hot path never re-parses. The fields that reach `execFile` keep that
+ *  call's spelling (`maxBuffer`, bytes) so the mapping is one-to-one and nothing here reads as a
+ *  second public name for the `buffer` envelope. */
 interface ShellDefaults {
     command: string;
     cwd?: string;
     env?: Record<string, string>;
     decode: 'text' | 'json';
     maxBuffer: number;
+}
+
+// Fold the `buffer` slot's scalar shorthand — `'4mb'` ≡ `{ max: '4mb' }` (CONTRACT.md P12) — and
+// resolve it to the byte count `execFile` wants. An unparseable token yields `undefined` from
+// `parseBytes` and lands on the default, so a typo can never widen the cap to "unbounded" (P25).
+function resolveMaxBuffer(buffer: ShellOptions['buffer']): number {
+    const max =
+        typeof buffer === 'object' && buffer !== null ? buffer.max : buffer;
+    return parseBytes(max) ?? DEFAULT_MAX_BUFFER;
 }
 
 // Run the static command with the call's argv. The ONLY input is the argv array (`req.body`);
@@ -106,10 +125,40 @@ function shellSurface(d: ShellDefaults): Surface {
     };
 }
 
-/** Options for {@link shell}: the static `command` + run controls, plus the shared StitchConfig keys
- *  (`retry` / `throttle` / `timeout` / `circuit` / `trace` all apply via the resilience chain). */
-export type ShellOptions = Partial<Omit<StitchConfig, 'kind'>> & {
-    /** The executable — STATIC, bound here at construction, NEVER from call input. An absolute path
+/**
+ * How the subprocess's buffered output is bounded. One dominant field, so the `buffer` slot also
+ * takes its scalar (CONTRACT.md P12): `buffer: '4mb'` ≡ `buffer: { max: '4mb' }`. It is an
+ * envelope rather than a bare `maxBufferBytes` key so the next output control (an overflow
+ * policy, an encoding) lands inside it instead of adding a top-level word (P21).
+ *
+ * Inside it `max` needs no unit suffix — the size analogue of core's `BackoffOptions.max`: there
+ * is only one thing here to measure (P1), and it bounds a **magnitude**, which is the case P4
+ * leaves `max`. Bytes are the house size unit (P25) — the `Chars` family is the marked exception
+ * — and a subprocess buffer is natively bytes, as `execFile`'s own `maxBuffer` is.
+ */
+export interface ShellBufferOptions {
+    /** Ceiling on the buffered stdout/stderr; exceeding it fails the call. A raw byte count or a
+     *  size token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024) — parsed by core's shared
+     *  `parseBytes` (CONTRACT.md P25). Default 10 MiB; an unparseable token falls back to that
+     *  default, never to "unbounded". */
+    max?: number | string;
+}
+
+/**
+ * Options for {@link shell}: the static `command` + run controls, plus the shared StitchConfig keys
+ * (`retry` / `throttle` / `timeout` / `circuit` / `trace` all apply via the resilience chain).
+ * `command` is required by design (CONTRACT.md P15) — the positional `shell(command, options?)`
+ * shorthand names it, so the options bag there is `Omit<ShellOptions, 'command'>`.
+ *
+ * `responseType` is omitted from the inherited keys: a subprocess has no HTTP response, so how
+ * stdout becomes a value is spelled once, as `decode` — the house word for "turn raw output into
+ * values" (core spells the streaming decoder `stream.decode`). Passing the HTTP-shaped slot to a
+ * shell used to type-check and do nothing; now it does not type-check.
+ */
+export interface ShellOptions extends Partial<
+    Omit<StitchConfig, 'kind' | 'responseType'>
+> {
+    /** The executable — STATIC, bound at construction, NEVER from call input. An absolute path
      *  needs no `PATH`; a bare name (`'git'`) needs `env: { PATH: process.env.PATH }`. */
     command: string;
     /** Working directory for the subprocess (default: the process cwd). */
@@ -117,32 +166,51 @@ export type ShellOptions = Partial<Omit<StitchConfig, 'kind'>> & {
     /** Subprocess environment. FAIL-CLOSED: empty by default — pass exactly what's needed; nothing
      *  from `process.env` leaks in unless you put it here. */
     env?: Record<string, string>;
-    /** How to read stdout: `'text'` (default — the value is the string) or `'json'` (JSON.parse it). */
+    /** How to read stdout: `'text'` (default — the value is the string) or `'json'` (`JSON.parse`
+     *  it, falling back to the raw text). */
     decode?: 'text' | 'json';
-    /** Max stdout/stderr bytes buffered (default 10 MiB); exceeding it fails the call. */
-    maxBuffer?: number;
-};
+    /** Output buffering — {@link ShellBufferOptions}, or its dominant field's scalar:
+     *  `buffer: '4mb'` ≡ `buffer: { max: '4mb' }` (CONTRACT.md P12). Default 10 MiB. The
+     *  envelope must set a field — omit `buffer` for the default, never `{}` (P20). */
+    buffer?: number | string | AtLeastOne<ShellBufferOptions>;
+}
 
 /**
- * `shell({ command })` — a stitch that runs a static local command, its `stdout` the result. The
- * call supplies the argument vector as a `string[]` `body`; everything else (retry/throttle/
- * timeout/trace) is the usual StitchConfig. `T` is the result type (`string` for `decode: 'text'`,
- * your shape for `'json'`).
+ * `shell(command, options?)` — a stitch that runs a static local command, its `stdout` the result.
+ * The call supplies the argument vector as a `string[]` `body`; everything else (retry/throttle/
+ * timeout/trace) is the usual StitchConfig. `T` is the result type (`string` for the default
+ * `decode: 'text'`, your shape for `'json'`).
+ *
+ * Two spellings (CONTRACT.md P15): the positional shorthand names the required `command`, or pass
+ * the full {@link ShellOptions} envelope. The positional options bag must set at least one field —
+ * all-defaults is spelled by omitting it, never `{}` (P20).
  *
  * @example
  * ```ts
  * import { shell } from '@stitchapi/shell';
  *
- * const git = shell({ command: 'git', env: { PATH: process.env.PATH! } });
+ * const git = shell('git', { env: { PATH: process.env.PATH! } });
  * const status = await git({ body: ['status', '--porcelain'] }); // stdout string
  * ```
  */
-export function shell<T = string>(opts: ShellOptions): Stitch<T> {
-    const { command, cwd, env, decode, maxBuffer, ...rest } = opts;
+export function shell<T = string>(
+    command: string,
+    options?: AtLeastOne<Omit<ShellOptions, 'command'>>,
+): Stitch<T>;
+export function shell<T = string>(options: ShellOptions): Stitch<T>;
+export function shell<T = string>(
+    commandOrOptions: string | ShellOptions,
+    positionalOptions?: AtLeastOne<Omit<ShellOptions, 'command'>>,
+): Stitch<T> {
+    const opts: ShellOptions =
+        typeof commandOrOptions === 'string'
+            ? { ...positionalOptions, command: commandOrOptions }
+            : commandOrOptions;
+    const { command, cwd, env, decode, buffer, ...rest } = opts;
     const d: ShellDefaults = {
         command,
         decode: decode ?? 'text',
-        maxBuffer: maxBuffer ?? 10 * 1024 * 1024,
+        maxBuffer: resolveMaxBuffer(buffer),
     };
     if (cwd !== undefined) d.cwd = cwd;
     if (env !== undefined) d.env = env;
