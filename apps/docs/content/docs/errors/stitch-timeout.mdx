@@ -11,9 +11,13 @@ A call aborts and throws a `StitchError` once a configured timeout elapses.
 real `AbortSignal`, so the in-flight request is actually aborted rather than left
 running while the call gives up — the underlying request receives the abort.
 
-<Callout type="info">
-    The stable code `STITCH_TIMEOUT` is provisional: the error surfaces as a
-    `StitchError` today, and the code is pending the runtime taxonomy refactor.
+<Callout type="warn">
+    `STITCH_TIMEOUT` is this page's [catalog ID](/docs/errors), not a runtime
+    value — the thrown error has no `.code`. A timed-out call is a
+    `StitchError` with **no** `status` and `attempts` of at least `1`: the
+    request went out, but no response ever came back (the message is
+    `timed out after <n>ms`). See
+    [telling failures apart](/docs/errors#telling-failures-apart-at-runtime).
 </Callout>
 
 ## Why it happens

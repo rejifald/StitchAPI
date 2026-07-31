@@ -30,8 +30,13 @@ try {
 }
 ```
 
-(`STITCH_GRAPHQL` is the provisional registry code for this failure; the runtime
-throws a `StitchError` today.)
+<Callout type="warn">
+    `STITCH_GRAPHQL` is this page's [catalog ID](/docs/errors), not a runtime
+    value — the thrown error has no `.code`. Recognise this failure by its
+    shape: a `StitchError` whose `status` is `200` (a success at the transport
+    layer) with a message prefixed `GraphQL:`. See [telling failures
+    apart](/docs/errors#telling-failures-apart-at-runtime).
+</Callout>
 
 ## Why it happens
 
