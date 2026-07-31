@@ -23,15 +23,15 @@ test('the envelope form shell({ command }) is the same surface', async () => {
     ).resolves.toBe('hello');
 });
 
-test('responseType: "json" parses stdout', async () => {
-    const j = shell<{ a: number }>(NODE, { responseType: 'json' });
+test('decode: "json" parses stdout', async () => {
+    const j = shell<{ a: number }>(NODE, { decode: 'json' });
     await expect(
         j({ body: ['-e', 'process.stdout.write(JSON.stringify({a:1}))'] }),
     ).resolves.toEqual({ a: 1 });
 });
 
 test('argv elements are literal — shell metacharacters are inert (there is no shell)', async () => {
-    const dump = shell<string[]>(NODE, { responseType: 'json' });
+    const dump = shell<string[]>(NODE, { decode: 'json' });
     const evil = '; rm -rf / `whoami` $HOME && echo pwned';
     const out = await dump({
         body: [
@@ -50,7 +50,7 @@ test('fail-closed env: process.env does NOT leak into the subprocess', async () 
     process.env['SHELL_SECRET_LEAK'] = 'nope';
     try {
         const dumpEnv = shell<Record<string, string>>(NODE, {
-            responseType: 'json',
+            decode: 'json',
         });
         const out = await dumpEnv({
             body: ['-e', 'process.stdout.write(JSON.stringify(process.env))'],
@@ -64,7 +64,7 @@ test('fail-closed env: process.env does NOT leak into the subprocess', async () 
 test('explicit env IS passed to the subprocess', async () => {
     const dumpEnv = shell<Record<string, string>>({
         command: NODE,
-        responseType: 'json',
+        decode: 'json',
         env: { FOO: 'bar' },
     });
     const out = await dumpEnv({
@@ -117,26 +117,26 @@ test('cwd sets the subprocess working directory', async () => {
     expect(realpathSync(out)).toBe(dir);
 });
 
-test('responseType: "json" falls back to the raw text when stdout is not valid JSON', async () => {
-    const j = shell<unknown>(NODE, { responseType: 'json' });
+test('decode: "json" falls back to the raw text when stdout is not valid JSON', async () => {
+    const j = shell<unknown>(NODE, { decode: 'json' });
     await expect(
         j({ body: ['-e', 'process.stdout.write("not json")'] }),
     ).resolves.toBe('not json');
 });
 
-test('exceeding maxBufferBytes rejects as a transport error (not a 500 response)', async () => {
-    const tiny = shell(NODE, { maxBufferBytes: 4 });
+test('exceeding the buffer cap rejects as a transport error (not a 500 response)', async () => {
+    const tiny = shell(NODE, { buffer: 4 });
     await expect(
         tiny({ body: ['-e', 'process.stdout.write("x".repeat(100))'] }),
     ).rejects.toThrow(/maxBuffer/i);
 });
 
-test('maxBufferBytes also takes a size token, and the token really caps at runtime', async () => {
+test('the buffer scalar also takes a size token, and the token really caps at runtime', async () => {
     // A widened TYPE is not a widened runtime, so this asserts the bound, not the signature.
     // `'1kb'` must resolve to 1024 bytes: 4 KB of stdout is over a parsed `'1kb'` but far under
     // the 10 MiB default, so a rejection here can ONLY mean the token was honoured (an ignored
     // token would fall back to the default and resolve).
-    const tiny = shell(NODE, { maxBufferBytes: '1kb' });
+    const tiny = shell(NODE, { buffer: '1kb' });
     await expect(
         tiny({ body: ['-e', 'process.stdout.write("x".repeat(4096))'] }),
     ).rejects.toThrow(/maxBuffer/i);
@@ -147,22 +147,47 @@ test('maxBufferBytes also takes a size token, and the token really caps at runti
     ).resolves.toBe('x'.repeat(100));
 });
 
+test('the envelope form `buffer: { bytes }` binds the same runtime cap as the shorthand', async () => {
+    // The shorthand is only real if it folds to the envelope: same 4 KB write, same rejection,
+    // and the same resolve under the cap — proved on the spelled-out form, not just the scalar.
+    const tiny = shell(NODE, { buffer: { bytes: '1kb' } });
+    await expect(
+        tiny({ body: ['-e', 'process.stdout.write("x".repeat(4096))'] }),
+    ).rejects.toThrow(/maxBuffer/i);
+    await expect(
+        tiny({ body: ['-e', 'process.stdout.write("x".repeat(100))'] }),
+    ).resolves.toBe('x'.repeat(100));
+
+    // …and a raw byte count reads the same way through the envelope.
+    const four = shell(NODE, { buffer: { bytes: 4 } });
+    await expect(
+        four({ body: ['-e', 'process.stdout.write("x".repeat(100))'] }),
+    ).rejects.toThrow(/maxBuffer/i);
+});
+
 test('an unparseable size token lands on the default cap, not on 0/NaN', async () => {
     // `parseBytes('one gigabyte')` → undefined → the 10 MiB default. A `NaN`/`0` cap would
     // reject even this two-byte write; resolving proves the fallback is the real default.
-    const bad = shell(NODE, { maxBufferBytes: 'one gigabyte' });
+    const bad = shell(NODE, { buffer: 'one gigabyte' });
     await expect(
         bad({ body: ['-e', 'process.stdout.write("ok")'] }),
     ).resolves.toBe('ok');
+    // Same through the envelope — the fallback lives in the fold, not in the scalar branch.
+    const alsoBad = shell(NODE, { buffer: { bytes: 'one gigabyte' } });
+    await expect(
+        alsoBad({ body: ['-e', 'process.stdout.write("ok")'] }),
+    ).resolves.toBe('ok');
 });
 
-test('old spellings are DELETED and the empty options bag is rejected (compile-time)', () => {
-    // @ts-expect-error — `decode` was renamed to `responseType` (no alias)
-    void shell({ command: NODE, decode: 'json' });
-    // @ts-expect-error — `maxBuffer` was renamed to `maxBufferBytes` (no alias)
+test('old spellings are DELETED and the empty bags are rejected (compile-time)', () => {
+    // @ts-expect-error — `maxBuffer` was renamed to the `buffer` envelope (no alias)
     void shell({ command: NODE, maxBuffer: 4 });
-    // @ts-expect-error — responseType is narrowed to 'json' | 'text' for a subprocess
-    void shell(NODE, { responseType: 'blob' });
+    // @ts-expect-error — the HTTP-shaped slot is off this surface; the shell's word is `decode`
+    void shell(NODE, { responseType: 'json' });
+    // @ts-expect-error — a subprocess yields text or JSON, nothing else
+    void shell(NODE, { decode: 'blob' });
+    // @ts-expect-error — the buffer envelope must set a field (P20): pass a scalar or omit it
+    void shell(NODE, { buffer: {} });
     // @ts-expect-error — `{}` is not a valid options bag (CONTRACT.md P20): omit it instead
     void shell(NODE, {});
     expect(true).toBe(true);

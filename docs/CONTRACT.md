@@ -508,9 +508,15 @@ base the house defaults are written in (`10 * 1024 * 1024`). An unparseable toke
 to `undefined` and lands on the field's default — a typo can never widen a cap to
 "unbounded".
 
-_Canonical case:_ `ServeOptions.maxBodyBytes` and `@stitchapi/shell`'s
-`ShellOptions.maxBufferBytes` each take `2 * 1024 * 1024` or `'2mb'`; `parseBytes` is
-exported from `stitchapi` so a peer package parses the grammar instead of mirroring it.
+A [P12](#p12--envelope--scalar-shorthand) scalar shorthand does **NOT** drop that
+dimension: the slot collapses exactly one field, so the field it collapses still spells it
+— `buffer: '2mb'` ≡ `buffer: { bytes: '2mb' }`, the way `throttle: '2/s'` reads through
+`rate`.
+
+_Canonical case:_ `ServeOptions.maxBodyBytes` and `@stitchapi/shell`'s `buffer` slot
+(`ShellBufferOptions.bytes`, shorthanded `buffer: '2mb'`) each take `2 * 1024 * 1024` or
+`'2mb'`; `parseBytes` is exported from `stitchapi` so a peer package parses the grammar
+instead of mirroring it.
 
 ---
 

@@ -26,14 +26,28 @@ import type {
     Surface,
 } from 'stitchapi';
 
-/** The defaults bound to a shell surface (the static command + how to run it). Sizes are
- *  already resolved to bytes here — the `number | string` intake is parsed once, at
- *  construction, so the hot path never re-parses a token. */
+/** The default cap on buffered stdout/stderr — Node's own `execFile` default is 1 MiB; a command
+ *  run as a stitch is usually reporting, so the surface is more generous. */
+const DEFAULT_BUFFER_BYTES = 10 * 1024 * 1024;
+
+/** The defaults bound to a shell surface (the static command + how to run it). Both the
+ *  `buffer` shorthand and its size token are already resolved here — the `number | string`
+ *  intake is folded and parsed once, at construction, so the hot path never re-parses. */
 interface ShellDefaults {
     command: string;
     cwd?: string;
     env?: Record<string, string>;
-    maxBufferBytes: number;
+    decode: 'text' | 'json';
+    bufferBytes: number;
+}
+
+// Fold the `buffer` slot's scalar shorthand — `'4mb'` ≡ `{ bytes: '4mb' }` (CONTRACT.md P12) —
+// and resolve it to a byte count. An unparseable token yields `undefined` from `parseBytes` and
+// lands on the default, so a typo can never widen the cap to "unbounded" (P25).
+function resolveBufferBytes(buffer: ShellOptions['buffer']): number {
+    const bytes =
+        typeof buffer === 'object' && buffer !== null ? buffer.bytes : buffer;
+    return parseBytes(bytes) ?? DEFAULT_BUFFER_BYTES;
 }
 
 // Run the static command with the call's argv. The ONLY input is the argv array (`req.body`);
@@ -62,7 +76,7 @@ function runCommand(
                 cwd: d.cwd,
                 env: d.env ?? {}, // FAIL-CLOSED: no inherited process.env
                 signal: req.signal,
-                maxBuffer: d.maxBufferBytes,
+                maxBuffer: d.bufferBytes,
                 encoding: 'utf8',
             }),
             (err, stdout, stderr) => {
@@ -83,11 +97,8 @@ function runCommand(
                     reject(err);
                     return;
                 }
-                // Honour the shared StitchConfig.responseType slot (narrowed to 'json' | 'text'
-                // in ShellOptions): the engine threads it onto the request, the surface reads it
-                // here. Absent → 'text' (stdout is the value, verbatim).
                 let body: unknown = stdout;
-                if (req.responseType === 'json') {
+                if (d.decode === 'json') {
                     try {
                         body = JSON.parse(stdout);
                     } catch {
@@ -113,10 +124,29 @@ function shellSurface(d: ShellDefaults): Surface {
 }
 
 /**
+ * How the subprocess's buffered output is bounded. One dominant field, so the `buffer` slot also
+ * takes its scalar (CONTRACT.md P12): `buffer: '4mb'` ≡ `buffer: { bytes: '4mb' }`. It is an
+ * envelope rather than a bare `bufferBytes` key so the next output control (an overflow policy,
+ * an encoding) lands inside it instead of adding a top-level word (P21).
+ */
+export interface ShellBufferOptions {
+    /** Max stdout/stderr bytes buffered; exceeding it fails the call. A raw byte count or a size
+     *  token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024) — parsed by core's shared
+     *  `parseBytes` (CONTRACT.md P25). Default 10 MiB; an unparseable token falls back to that
+     *  default, never to "unbounded". */
+    bytes?: number | string;
+}
+
+/**
  * Options for {@link shell}: the static `command` + run controls, plus the shared StitchConfig keys
  * (`retry` / `throttle` / `timeout` / `circuit` / `trace` all apply via the resilience chain).
  * `command` is required by design (CONTRACT.md P15) — the positional `shell(command, options?)`
  * shorthand names it, so the options bag there is `Omit<ShellOptions, 'command'>`.
+ *
+ * `responseType` is omitted from the inherited keys: a subprocess has no HTTP response, so how
+ * stdout becomes a value is spelled once, as `decode` — the house word for "turn raw output into
+ * values" (core spells the streaming decoder `stream.decode`). Passing the HTTP-shaped slot to a
+ * shell used to type-check and do nothing; now it does not type-check.
  */
 export interface ShellOptions extends Partial<
     Omit<StitchConfig, 'kind' | 'responseType'>
@@ -129,22 +159,20 @@ export interface ShellOptions extends Partial<
     /** Subprocess environment. FAIL-CLOSED: empty by default — pass exactly what's needed; nothing
      *  from `process.env` leaks in unless you put it here. */
     env?: Record<string, string>;
-    /** How to read stdout — the shared {@link StitchConfig.responseType} slot, narrowed to what a
-     *  subprocess can yield: `'text'` (default — the value is the stdout string) or `'json'`
-     *  (`JSON.parse` it, falling back to the raw text). Honoured by the shell surface directly. */
-    responseType?: 'json' | 'text';
-    /** Max stdout/stderr bytes buffered (default 10 MiB); exceeding it fails the call. A raw
-     *  byte count or a size token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024), parsed by
-     *  core's shared `parseBytes` (CONTRACT.md P25). An unparseable token falls back to the
-     *  default, never to "unbounded". */
-    maxBufferBytes?: number | string;
+    /** How to read stdout: `'text'` (default — the value is the string) or `'json'` (`JSON.parse`
+     *  it, falling back to the raw text). */
+    decode?: 'text' | 'json';
+    /** Output buffering — {@link ShellBufferOptions}, or its dominant field's scalar:
+     *  `buffer: '4mb'` ≡ `buffer: { bytes: '4mb' }` (CONTRACT.md P12). Default 10 MiB. The
+     *  envelope must set a field — omit `buffer` for the default, never `{}` (P20). */
+    buffer?: number | string | AtLeastOne<ShellBufferOptions>;
 }
 
 /**
  * `shell(command, options?)` — a stitch that runs a static local command, its `stdout` the result.
  * The call supplies the argument vector as a `string[]` `body`; everything else (retry/throttle/
  * timeout/trace) is the usual StitchConfig. `T` is the result type (`string` for the default
- * `responseType: 'text'`, your shape for `'json'`).
+ * `decode: 'text'`, your shape for `'json'`).
  *
  * Two spellings (CONTRACT.md P15): the positional shorthand names the required `command`, or pass
  * the full {@link ShellOptions} envelope. The positional options bag must set at least one field —
@@ -171,15 +199,14 @@ export function shell<T = string>(
         typeof commandOrOptions === 'string'
             ? { ...positionalOptions, command: commandOrOptions }
             : commandOrOptions;
-    const { command, cwd, env, maxBufferBytes, ...rest } = opts;
+    const { command, cwd, env, decode, buffer, ...rest } = opts;
     const d: ShellDefaults = {
         command,
-        maxBufferBytes: parseBytes(maxBufferBytes) ?? 10 * 1024 * 1024,
+        decode: decode ?? 'text',
+        bufferBytes: resolveBufferBytes(buffer),
     };
     if (cwd !== undefined) d.cwd = cwd;
     if (env !== undefined) d.env = env;
-    // `responseType` stays in `rest` — it is a shared StitchConfig key, so it rides the config
-    // into the engine's base request, where the surface honours it (see runCommand).
     return stitch({
         ...rest,
         kind: shellSurface(d),

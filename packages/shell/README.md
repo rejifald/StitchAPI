@@ -36,7 +36,7 @@ host-inferred bearer tokens in StitchAPI's auth:
 
 ## Result
 
-- Exit `0` → the value is `stdout` (a `string`; pass `responseType: 'json'` to `JSON.parse` it).
+- Exit `0` → the value is `stdout` (a `string`; pass `decode: 'json'` to `JSON.parse` it).
 - A non-zero exit → a `StitchError` (status `500`) whose `.body` is `{ exitCode, stdout, stderr }`
   (or accept it as a normal result with `acceptStatus`).
 - A timeout / caller `AbortSignal` aborts the subprocess (it runs inside the resilience chain).
@@ -45,11 +45,22 @@ host-inferred bearer tokens in StitchAPI's auth:
 
 Two spellings: the positional shorthand `shell(command, options?)` names the required `command`, or
 pass the full `ShellOptions` envelope `shell({ command, … })`. The options are the optional `cwd` /
-`env` / `responseType` (`'text'` default, or `'json'` — the shared `StitchConfig` slot, narrowed) /
-`maxBufferBytes` (a byte count or a `'10mb'`-style token; default 10 MiB), plus the usual
-`StitchConfig` keys (`retry`, `throttle`,
-`timeout`, `circuit`, `trace`, …) — all applied by the engine around the subprocess. The positional
-options bag must set at least one field — all-defaults is spelled by omitting it, never `{}`.
+`env` / `decode` (`'text'` default, or `'json'`) / `buffer` (below), plus the usual `StitchConfig`
+keys (`retry`, `throttle`, `timeout`, `circuit`, `trace`, …) — all applied by the engine around the
+subprocess. The positional options bag must set at least one field — all-defaults is spelled by
+omitting it, never `{}`.
+
+`buffer` caps the buffered `stdout`/`stderr` (default 10 MiB; exceeding it fails the call). It is a
+`ShellBufferOptions` envelope whose dominant field takes a byte count or a size token, and it
+collapses to that scalar:
+
+```ts
+shell(NODE, { buffer: '4mb' }); // ≡ { buffer: { bytes: '4mb' } }
+shell(NODE, { buffer: 4096 }); // ≡ { buffer: { bytes: 4096 } }
+```
+
+Tokens are powers of 1024 (`'1mb'` = 1 048 576), parsed by core's shared `parseBytes`. An
+unparseable token falls back to the default — never to "unbounded".
 
 ## Contributing
 
