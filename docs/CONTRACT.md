@@ -491,14 +491,23 @@ bridge from JSON Schema, producing a `SchemaLike` those consumers treat identica
 shared `parseBytes`, whose units are **powers of 1024** (`'1mb'` = 1_048_576). Every
 **emitted** size is a raw-byte `number`.
 
-Unlike a duration ([P17](#p17--one-canonical-duration-form)), a size field **KEEPS** its
-unit suffix. `Ms` encodes a **scale**, which `'5s'` overrides — so the suffix becomes a
-lie and P17 drops it. `Bytes` encodes a **dimension**: octets, as opposed to the `Chars`
-family (`stream.maxBufferChars`, `trace.maxBodyChars`) that counts UTF-16 code units of
-decoded text. `'1mb'` restates the scale, never the dimension, so the suffix stays true.
-That distinction is load-bearing per [P1](#p1--one-word-one-concept-one-value-space) —
-`Bytes` denotes bytes and cannot also denote code units — and a `Chars` field therefore
-**MUST NOT** take a byte token.
+Unlike a duration ([P17](#p17--one-canonical-duration-form)), a **top-level** size field
+**KEEPS** its unit suffix. `Ms` encodes a **scale**, which `'5s'` overrides — so the
+suffix becomes a lie and P17 drops it. `Bytes` encodes a **dimension**: octets, as opposed
+to the `Chars` family (`stream.maxBufferChars`, `trace.maxBodyChars`) that counts UTF-16
+code units of decoded text. `'1mb'` restates the scale, never the dimension, so the suffix
+stays true. That distinction is load-bearing per
+[P1](#p1--one-word-one-concept-one-value-space) — `Bytes` denotes bytes and cannot also
+denote code units — and a `Chars` field therefore **MUST NOT** take a byte token.
+
+**Inside a named envelope, the suffix is dropped.** When the envelope already names the one
+thing being measured, its ceiling is a bare **`max`** — there is only one thing there to
+measure (P1), and `max` bounds a **magnitude**, the case [P4](#p4--one-cap-vocabulary)
+leaves it. This is the size analogue of `BackoffOptions.max` (`{ curve, base, max }` under
+`backoff`), and it is where the unmarked default does the work: bytes are the house size
+unit, so an unsuffixed size ceiling **IS** bytes, and only the `Chars` family is marked.
+A `Chars` cap therefore **MUST NOT** shed its suffix into a bare `max` — the marked member
+of a pair cannot be the one that goes unmarked.
 
 _Why:_ every JS-native size API (`byteLength`, `Buffer.length`, `execFile`'s `maxBuffer`)
 is already bytes, so a bare number needs no unit; and 1024-based `kb`/`mb` is what the
@@ -508,15 +517,11 @@ base the house defaults are written in (`10 * 1024 * 1024`). An unparseable toke
 to `undefined` and lands on the field's default — a typo can never widen a cap to
 "unbounded".
 
-A [P12](#p12--envelope--scalar-shorthand) scalar shorthand does **NOT** drop that
-dimension: the slot collapses exactly one field, so the field it collapses still spells it
-— `buffer: '2mb'` ≡ `buffer: { bytes: '2mb' }`, the way `throttle: '2/s'` reads through
-`rate`.
-
-_Canonical case:_ `ServeOptions.maxBodyBytes` and `@stitchapi/shell`'s `buffer` slot
-(`ShellBufferOptions.bytes`, shorthanded `buffer: '2mb'`) each take `2 * 1024 * 1024` or
-`'2mb'`; `parseBytes` is exported from `stitchapi` so a peer package parses the grammar
-instead of mirroring it.
+_Canonical case:_ `ServeOptions.maxBodyBytes` (top-level, so suffixed) and
+`@stitchapi/shell`'s `buffer` slot (`ShellBufferOptions.max`, under an envelope, plus its
+[P12](#p12--envelope--scalar-shorthand) shorthand `buffer: '2mb'`) each take
+`2 * 1024 * 1024` or `'2mb'`; `parseBytes` is exported from `stitchapi` so a peer package
+parses the grammar instead of mirroring it.
 
 ---
 

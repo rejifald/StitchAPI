@@ -147,10 +147,10 @@ test('the buffer scalar also takes a size token, and the token really caps at ru
     ).resolves.toBe('x'.repeat(100));
 });
 
-test('the envelope form `buffer: { bytes }` binds the same runtime cap as the shorthand', async () => {
+test('the envelope form `buffer: { max }` binds the same runtime cap as the shorthand', async () => {
     // The shorthand is only real if it folds to the envelope: same 4 KB write, same rejection,
     // and the same resolve under the cap — proved on the spelled-out form, not just the scalar.
-    const tiny = shell(NODE, { buffer: { bytes: '1kb' } });
+    const tiny = shell(NODE, { buffer: { max: '1kb' } });
     await expect(
         tiny({ body: ['-e', 'process.stdout.write("x".repeat(4096))'] }),
     ).rejects.toThrow(/maxBuffer/i);
@@ -159,7 +159,7 @@ test('the envelope form `buffer: { bytes }` binds the same runtime cap as the sh
     ).resolves.toBe('x'.repeat(100));
 
     // …and a raw byte count reads the same way through the envelope.
-    const four = shell(NODE, { buffer: { bytes: 4 } });
+    const four = shell(NODE, { buffer: { max: 4 } });
     await expect(
         four({ body: ['-e', 'process.stdout.write("x".repeat(100))'] }),
     ).rejects.toThrow(/maxBuffer/i);
@@ -173,7 +173,7 @@ test('an unparseable size token lands on the default cap, not on 0/NaN', async (
         bad({ body: ['-e', 'process.stdout.write("ok")'] }),
     ).resolves.toBe('ok');
     // Same through the envelope — the fallback lives in the fold, not in the scalar branch.
-    const alsoBad = shell(NODE, { buffer: { bytes: 'one gigabyte' } });
+    const alsoBad = shell(NODE, { buffer: { max: 'one gigabyte' } });
     await expect(
         alsoBad({ body: ['-e', 'process.stdout.write("ok")'] }),
     ).resolves.toBe('ok');

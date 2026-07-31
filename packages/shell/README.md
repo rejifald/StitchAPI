@@ -55,8 +55,8 @@ omitting it, never `{}`.
 collapses to that scalar:
 
 ```ts
-shell(NODE, { buffer: '4mb' }); // ≡ { buffer: { bytes: '4mb' } }
-shell(NODE, { buffer: 4096 }); // ≡ { buffer: { bytes: 4096 } }
+shell(NODE, { buffer: '4mb' }); // ≡ { buffer: { max: '4mb' } }
+shell(NODE, { buffer: 4096 }); // ≡ { buffer: { max: 4096 } }
 ```
 
 Tokens are powers of 1024 (`'1mb'` = 1 048 576), parsed by core's shared `parseBytes`. An

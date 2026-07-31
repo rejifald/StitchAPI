@@ -41,13 +41,13 @@ interface ShellDefaults {
     bufferBytes: number;
 }
 
-// Fold the `buffer` slot's scalar shorthand — `'4mb'` ≡ `{ bytes: '4mb' }` (CONTRACT.md P12) —
-// and resolve it to a byte count. An unparseable token yields `undefined` from `parseBytes` and
-// lands on the default, so a typo can never widen the cap to "unbounded" (P25).
+// Fold the `buffer` slot's scalar shorthand — `'4mb'` ≡ `{ max: '4mb' }` (CONTRACT.md P12) — and
+// resolve it to a byte count. An unparseable token yields `undefined` from `parseBytes` and lands
+// on the default, so a typo can never widen the cap to "unbounded" (P25).
 function resolveBufferBytes(buffer: ShellOptions['buffer']): number {
-    const bytes =
-        typeof buffer === 'object' && buffer !== null ? buffer.bytes : buffer;
-    return parseBytes(bytes) ?? DEFAULT_BUFFER_BYTES;
+    const max =
+        typeof buffer === 'object' && buffer !== null ? buffer.max : buffer;
+    return parseBytes(max) ?? DEFAULT_BUFFER_BYTES;
 }
 
 // Run the static command with the call's argv. The ONLY input is the argv array (`req.body`);
@@ -125,16 +125,21 @@ function shellSurface(d: ShellDefaults): Surface {
 
 /**
  * How the subprocess's buffered output is bounded. One dominant field, so the `buffer` slot also
- * takes its scalar (CONTRACT.md P12): `buffer: '4mb'` ≡ `buffer: { bytes: '4mb' }`. It is an
- * envelope rather than a bare `bufferBytes` key so the next output control (an overflow policy,
- * an encoding) lands inside it instead of adding a top-level word (P21).
+ * takes its scalar (CONTRACT.md P12): `buffer: '4mb'` ≡ `buffer: { max: '4mb' }`. It is an
+ * envelope rather than a bare `maxBufferBytes` key so the next output control (an overflow
+ * policy, an encoding) lands inside it instead of adding a top-level word (P21).
+ *
+ * Inside it `max` needs no unit suffix — the size analogue of core's `BackoffOptions.max`: there
+ * is only one thing here to measure (P1), and it bounds a **magnitude**, which is the case P4
+ * leaves `max`. Bytes are the house size unit (P25) — the `Chars` family is the marked exception
+ * — and a subprocess buffer is natively bytes, as `execFile`'s own `maxBuffer` is.
  */
 export interface ShellBufferOptions {
-    /** Max stdout/stderr bytes buffered; exceeding it fails the call. A raw byte count or a size
-     *  token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024) — parsed by core's shared
+    /** Ceiling on the buffered stdout/stderr; exceeding it fails the call. A raw byte count or a
+     *  size token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024) — parsed by core's shared
      *  `parseBytes` (CONTRACT.md P25). Default 10 MiB; an unparseable token falls back to that
      *  default, never to "unbounded". */
-    bytes?: number | string;
+    max?: number | string;
 }
 
 /**
@@ -163,7 +168,7 @@ export interface ShellOptions extends Partial<
      *  it, falling back to the raw text). */
     decode?: 'text' | 'json';
     /** Output buffering — {@link ShellBufferOptions}, or its dominant field's scalar:
-     *  `buffer: '4mb'` ≡ `buffer: { bytes: '4mb' }` (CONTRACT.md P12). Default 10 MiB. The
+     *  `buffer: '4mb'` ≡ `buffer: { max: '4mb' }` (CONTRACT.md P12). Default 10 MiB. The
      *  envelope must set a field — omit `buffer` for the default, never `{}` (P20). */
     buffer?: number | string | AtLeastOne<ShellBufferOptions>;
 }
