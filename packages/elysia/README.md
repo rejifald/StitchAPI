@@ -120,14 +120,14 @@ new Elysia().use(
     stitch({
         seam: api,
         // propagate the upstream status instead of the safe 502 default:
-        errorHandler: { status: (e) => e.status ?? 502 },
+        onError: { status: (e) => e.status ?? 502 },
         // opt in to the raw message (only when upstream messages are safe to expose):
-        // errorHandler: { body: (e) => ({ error: e.message }) },
+        // onError: { body: (e) => ({ error: e.message }) },
     }),
 );
 ```
 
-Set `errorHandler: false` to register none and wire your own with
+Set `onError: false` to register none and wire your own with
 `stitchOnError(options)` or `stitchErrorResponse(err, options)`.
 
 ## API

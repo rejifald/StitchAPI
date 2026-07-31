@@ -365,6 +365,13 @@ unassignable to react's raw shape in either direction, the `SolidStitchStore` /
 `SvelteStitchStore` case; `stitchQueryOptions` replaced the bare `queryOptions` in
 vue/solid/svelte/angular.
 
+_Where parity stops:_ a slot that mirrors a **framework hook** is named for that
+framework, not unified across hosts — `errorHandler` on fastify (`setErrorHandler`) vs
+`onError` on elysia (`.onError`). See
+[P18](#p18--adapter-mirrors-keep-upstream-spelling-house-contracts-use-house-vocabulary).
+Parity binds the **shape** behind such a slot, which is identical
+(`boolean | AtLeastOne<StitchErrorOptions>`), not the word in front of it.
+
 _Settled:_ the SSE frame options are **`delta`** and **`error`** on every SSE-capable
 host (`express` / `fastify` / `hono` / `next` / `elysia`) — symmetric envelopes, each a
 `{ data, event, … }` config that also accepts a **bare shaper function as shorthand for
@@ -420,6 +427,19 @@ teaches neither convention, and the reader has to memorize which verbs got the
 abbreviation. The Redis **command** names stay verbatim wherever the code speaks Redis
 (the Lua `INCR`, the `IoredisLike`/`NodeRedisLike`/`UpstashLike` mirrors' `del`) — that
 is the first half of this rule doing its job, not an exception to the second.
+
+_Extends to host-adapter hook slots._ A host adapter's option for a **framework hook**
+takes **that framework's word for it**, so the option reads as the framework its user
+already knows: `@stitchapi/fastify` registers via `setErrorHandler`, so its plugin option
+is **`errorHandler`**; `@stitchapi/elysia` registers via `.onError`, so its option is
+**`onError`**. One concept, two spellings, **deliberately** — this is the mirror clause,
+not a [P16](#p16--cross-surface--cross-package-parity) parity break, and a sweep that
+unifies them has removed information rather than added consistency. The _shape_ behind
+both stays identical (`boolean | AtLeastOne<StitchErrorOptions>`), which is where parity
+actually binds. Only these two hosts have the slot at all — express/hono/nest/next expose
+standalone helpers with no options object — and each of those helpers is likewise named
+for its own framework (`stitchErrorHandler` on express/fastify, `stitchOnError` on
+hono/elysia, `StitchExceptionFilter` on nest).
 
 ### P19 · The alias obligation is scoped to the GA channel
 
