@@ -93,6 +93,20 @@
                 "default": "./lib/cache.js"
             }
         },
+        "./auth": {
+            "browser": {
+                "types": "./lib/auth.d.mts",
+                "default": "./lib/auth.mjs"
+            },
+            "import": {
+                "types": "./lib/auth.d.mts",
+                "default": "./lib/auth.mjs"
+            },
+            "require": {
+                "types": "./lib/auth.d.ts",
+                "default": "./lib/auth.js"
+            }
+        },
         "./graphql": {
             "browser": {
                 "types": "./lib/graphql.d.mts",

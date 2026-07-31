@@ -35,7 +35,7 @@ set `logger: false` to leave tracing as core configures it (off), or set an expl
 
 ```ts
 import { StitchModule, fromNestConfig } from '@stitchapi/nest';
-import { bearer } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 
 @Module({
     imports: [

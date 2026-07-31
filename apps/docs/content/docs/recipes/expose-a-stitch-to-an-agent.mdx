@@ -17,7 +17,8 @@ MCP.
 
 ```ts twoslash
 // stitches.ts — author each stitch with its auth and a name.
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 
 export const getUser = stitch({
     name: 'getUser',

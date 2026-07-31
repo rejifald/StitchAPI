@@ -12,7 +12,8 @@ for you — the stitch holds the login, the caller never touches a cookie.
 ## Example
 
 ```ts twoslash
-import { cookieSession, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { cookieSession, env } from 'stitchapi/auth';
 
 // The login is itself a stitch — its Set-Cookie response seeds the session.
 const login = stitch({
@@ -78,8 +79,9 @@ never crashes the call.
   for a wall that was hit mid-stream.
 
 ```ts twoslash
-import { cookieSession, env, stitch } from 'stitchapi';
-import type { AuthFailureResult, RefreshResult } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { cookieSession, env } from 'stitchapi/auth';
+import type { AuthFailureResult, RefreshResult } from 'stitchapi/auth';
 
 // Your own durable store — a row in a database, a Redis hash, anything.
 declare const sessionState: {

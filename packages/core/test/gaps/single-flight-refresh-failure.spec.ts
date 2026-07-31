@@ -5,7 +5,8 @@
 // cached as a poisoned promise. This proves that contract end-to-end: a first
 // concurrent burst all fails through ONE token POST, then a later call — after
 // the token endpoint recovers — fetches a fresh token and SUCCEEDS.
-import { env, oauth2, stitch } from '../../src';
+import { stitch } from '../../src';
+import { env, oauth2 } from '../../src/auth';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 

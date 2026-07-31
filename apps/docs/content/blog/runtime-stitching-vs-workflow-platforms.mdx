@@ -32,7 +32,7 @@ With a stitch, the logic lives in your codebase. The declaration is a value in a
 
 ```ts twoslash
 import { seam } from 'stitchapi';
-import { bearer, env } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 
 const orders = seam({
     baseUrl: 'https://api.example.com',
@@ -66,7 +66,8 @@ Those are different grains. A workflow is _composed of_ calls. A stitch _is_ one
 Most platforms have a code step — a node where you run your own function. That's the seam where the two meet cleanly. Instead of hand-rolling a `fetch` inside that node, with its own ad-hoc retry and zero validation, you call a stitch:
 
 ```ts twoslash
-import { bearer, env, seam } from 'stitchapi';
+import { seam } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const orders = seam({

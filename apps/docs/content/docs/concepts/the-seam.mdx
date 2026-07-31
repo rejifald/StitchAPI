@@ -12,7 +12,8 @@ A single API is rarely one call. You wrap a handful of endpoints against the sam
 **A fragment shares config; a seam shares runtime.** A plain object folded in through [`extends`](/docs/guides/authoring/extends) is data: every stitch that extends it gets its _own_ copy — its own throttle counter, its own cookie jar, its own cached tokens. That is the right default, but it can't express "these five stitches draw from one rate budget" or "these share a login". A seam can, because it isn't a fragment the stitches copy — it is the live runtime they all _point at_. One throttle bucket pools the budget across every member; one vault lets a session captured by one stitch serve the next call; one trace sink sees the whole surface as a single stream.
 
 ```ts twoslash
-import { bearer, env, seam } from 'stitchapi';
+import { seam } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({

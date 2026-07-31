@@ -260,7 +260,8 @@ function formEncode(body: unknown): string {
  * Sign every request with AWS Signature V4. Attach it as a stitch's `auth`:
  *
  * ```ts
- * import { stitch, env } from 'stitchapi';
+ * import { stitch } from 'stitchapi';
+ * import { env } from 'stitchapi/auth';
  * import { awsSigV4 } from '@stitchapi/aws-sigv4';
  *
  * const putObject = stitch({

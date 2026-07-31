@@ -13,7 +13,8 @@
         "exactOptionalPropertyTypes": true,
         "types": ["node"],
         "paths": {
-            "stitchapi": ["../../../packages/core/src/index.ts"]
+            "stitchapi": ["../../../packages/core/src/index.ts"],
+            "stitchapi/auth": ["../../../packages/core/src/auth.ts"]
         }
     },
     "include": ["stitch-browser.ts", "shims/**/*.ts"]

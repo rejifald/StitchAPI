@@ -60,7 +60,8 @@ export async function run(fetchImpl: typeof fetch): Promise<User[]> {
 `;
 
 const oauth2ClientCredentials = `
-import { stitch, fetchAdapter, bearer, optionalEnv } from 'stitchapi';
+import { stitch, fetchAdapter } from 'stitchapi';
+import { bearer, optionalEnv } from 'stitchapi/auth';
 
 export async function run(fetchImpl: typeof fetch): Promise<unknown> {
     // The credential is held by the stitch via bearer(); the caller never sees it.

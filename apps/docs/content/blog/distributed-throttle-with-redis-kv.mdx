@@ -50,7 +50,8 @@ Sessions ride along for free. Give two stitches the same `key` plus a shared `st
 
 ```ts twoslash
 // @noErrors
-import { cookieSession, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { cookieSession, env } from 'stitchapi/auth';
 
 const me = stitch({
     baseUrl: 'https://api.example.com',

@@ -1,5 +1,6 @@
 // Set the trace file before importing ../src so the JSONL sink is captured/quiet.
-import { bearer, stitch } from '../src';
+import { stitch } from '../src';
+import { bearer } from '../src/auth';
 import { createMcpServer, serveStdio } from '../src/mcp';
 import type { JsonRpcMessage } from '../src/mcp';
 import { startMockServer } from './support/mock-server';

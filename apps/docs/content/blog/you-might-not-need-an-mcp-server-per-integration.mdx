@@ -35,7 +35,7 @@ Adding an integration is adding a stitch, not standing up a server. The MCP surf
 
 ```ts twoslash
 import { seam } from 'stitchapi';
-import { bearer, env } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 
 // One seam, many endpoints — all reachable behind the same MCP surface.
 const upstream = seam({

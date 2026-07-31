@@ -2,7 +2,8 @@
 // labels the key in every arm and `in` selects where it goes: header (default) / query / cookie.
 // The cookie arm makes `in: 'cookie'` a first-class location (matching OpenAPI's three `in` values),
 // so an OpenAPI `apiKey` cookie scheme maps to a real strategy instead of a not-auto-mapped warning.
-import { apiKey, stitch } from '../src';
+import { stitch } from '../src';
+import { apiKey } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

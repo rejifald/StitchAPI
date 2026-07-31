@@ -5,16 +5,8 @@ Public API of the prototype. See `test/smoke.spec.ts` for a working example.
 ## Imports
 
 ```ts
-import {
-    apiKey,
-    basic,
-    bearer,
-    cookieSession,
-    drift,
-    env,
-    seam,
-    stitch,
-} from '../src';
+import { drift, seam, stitch } from '../src';
+import { apiKey, basic, bearer, cookieSession, env } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

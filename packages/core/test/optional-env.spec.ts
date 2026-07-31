@@ -7,13 +7,14 @@
 // `apply` is synchronous on every path here, so each call is `void`-marked to satisfy
 // no-floating-promises while keeping the tests synchronous — important for the browser case, whose
 // `process` stub must not span an await.
-import { bearer, env, memoryStore, optionalEnv, stitch } from '../src';
+import { memoryStore, stitch } from '../src';
 import type {
     AdapterRequest,
     AuthContext,
     StitchEvent,
     TraceSink,
 } from '../src';
+import { bearer, env, optionalEnv } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

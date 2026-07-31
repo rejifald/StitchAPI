@@ -20,7 +20,8 @@ pnpm add @stitchapi/aws-sigv4@rc stitchapi@rc
 
 ```ts
 import { awsSigV4 } from '@stitchapi/aws-sigv4';
-import { env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { env } from 'stitchapi/auth';
 
 const putObject = stitch({
     baseUrl: 'https://my-bucket.s3.us-east-1.amazonaws.com',

@@ -948,15 +948,18 @@ function renderAuth(auth: AuthEmit): string {
     }
 }
 
-// The import line: only the symbols the emitted code actually uses (stitch always; an auth helper
-// when present; env when auth is present; z is imported separately under --zod).
+// The import lines: only the symbols the emitted code actually uses (stitch always; an auth helper
+// plus env when auth is present; z is imported separately under --zod). The auth helpers live on
+// `stitchapi/auth` (ADR 0021), so an authenticated scaffold emits TWO lines; a no-auth one stays a
+// single `stitchapi` import.
 function buildImport(auth: AuthEmit | undefined): string {
-    const named = ['stitch'];
-    if (auth) {
-        if (auth.kind === 'bearer') named.push('bearer');
-        else if (auth.kind === 'apiKey') named.push('apiKey');
-        else named.push('basic');
-        named.push('env');
-    }
-    return `import { ${named.join(', ')} } from 'stitchapi';`;
+    const root = `import { stitch } from 'stitchapi';`;
+    if (!auth) return root;
+    const strategy =
+        auth.kind === 'bearer'
+            ? 'bearer'
+            : auth.kind === 'apiKey'
+              ? 'apiKey'
+              : 'basic';
+    return `${root}\nimport { ${strategy}, env } from 'stitchapi/auth';`;
 }

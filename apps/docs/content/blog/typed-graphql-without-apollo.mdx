@@ -86,7 +86,8 @@ try {
 `graphql()` returns the same object `stitch()` does, so every resilience and validation field applies. Add an `output` schema and the picked `data` is validated before you touch it — the `as User` cast is gone, replaced by a runtime check the compiler can trust:
 
 ```ts twoslash
-import { bearer, env, graphql } from 'stitchapi';
+import { graphql } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const getUser = graphql<{ user: { id: string; name: string } }>({
@@ -125,7 +126,8 @@ The layer split is clean: the GraphQL document describes **what** you're asking 
 The bare `graphql()` form is one query, one function — and it scales the way the rest of StitchAPI does. When a second query against the same endpoint shows up, bind the shared `baseUrl` and `auth` once with a seam and let each operation inherit them:
 
 ```ts twoslash
-import { bearer, env, seam } from 'stitchapi';
+import { seam } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 
 const api = seam({
     baseUrl: 'https://api.example.com',
