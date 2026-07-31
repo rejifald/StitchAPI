@@ -201,8 +201,12 @@ describe('the teaching event stays quiet when it should', () => {
         // ...and translates an axios progress event into AdapterProgress.
         cfg?.onUploadProgress?.({ loaded: 5, total: 10 });
         cfg?.onDownloadProgress?.({ loaded: 3 });
-        expect(seen).toContainEqual({ phase: 'upload', loaded: 5, total: 10 });
-        expect(seen).toContainEqual({ phase: 'download', loaded: 3 });
+        expect(seen).toContainEqual({
+            direction: 'upload',
+            loaded: 5,
+            total: 10,
+        });
+        expect(seen).toContainEqual({ direction: 'download', loaded: 3 });
     });
 
     test('axios with onProgress but no body does not wire progress on a GET', async () => {

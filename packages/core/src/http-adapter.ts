@@ -144,7 +144,7 @@ export function fetchAdapter(opts?: FetchAdapterOptions): Adapter {
             url: finalUrl,
         };
     };
-    // `fetch` streams a response (so `stream`/`sse` ride it) and reports `phase: 'download'`
+    // `fetch` streams a response (so `stream`/`sse` ride it) and reports `direction: 'download'`
     // progress while reading a buffered body, but cannot report bytes SENT — the upload phase stays
     // silent, so `'uploadProgress'` is absent from `supports`. Declaring it lets the engine teach
     // instead of no-op when a call asks for upload progress.
@@ -169,8 +169,8 @@ async function readWithProgress(
     if (!reader) {
         onProgress(
             total !== undefined
-                ? { phase: 'download', loaded: 0, total }
-                : { phase: 'download', loaded: 0 },
+                ? { direction: 'download', loaded: 0, total }
+                : { direction: 'download', loaded: 0 },
         );
         return new ArrayBuffer(0);
     }
@@ -183,8 +183,8 @@ async function readWithProgress(
         loaded += value.byteLength;
         onProgress(
             total !== undefined
-                ? { phase: 'download', loaded, total }
-                : { phase: 'download', loaded },
+                ? { direction: 'download', loaded, total }
+                : { direction: 'download', loaded },
         );
     }
     const out = new Uint8Array(loaded);

@@ -132,7 +132,7 @@ describe('@stitchapi/fingerprint-effect', () => {
 
     it('declares the effect vendor and a supported range', () => {
         expect(effectFingerprinter.vendor).toBe('effect');
-        expect(effectFingerprinter.supports).toBe('^3.0.0');
+        expect(effectFingerprinter.range).toBe('^3.0.0');
     });
 
     it('abstains (null) on an opaque refinement but fingerprints its base type', () => {

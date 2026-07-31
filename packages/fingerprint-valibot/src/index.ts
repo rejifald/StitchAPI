@@ -239,7 +239,7 @@ function describe(schema: unknown): string {
  */
 export const valibotFingerprinter: SchemaFingerprinter = {
     vendor: 'valibot',
-    supports: '^1.0.0',
+    range: '^1.0.0',
     fingerprint(schema) {
         try {
             // `vfp1` tags the descriptor format: bump it to force a one-time,
