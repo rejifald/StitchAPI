@@ -12,15 +12,22 @@
 // `node:crypto`'s `webcrypto`. The low-level `signRequestV4` is exported too, so it
 // can be unit-tested against the official AWS test vectors.
 import type { AuthStrategy } from 'stitchapi';
+import type { Secret } from 'stitchapi/auth';
 
 // ---------------------------------------------------------------------------
 // Secret
 // ---------------------------------------------------------------------------
 
-/** A credential value — a string or a zero-arg getter resolved at call time (so an
- * `env()`-style thunk reads per call and the agent never sees the value). Mirrors
- * core's `Secret`. */
-export type Secret = string | (() => string);
+/**
+ * A credential value — a string or a zero-arg getter resolved at call time, so an `env()`-style
+ * thunk reads per call and the agent never sees the value.
+ *
+ * Re-exported from `stitchapi/auth`, not redeclared: this package's options take the SAME
+ * credential a core strategy takes, and a structural copy is a copy that can drift (ADR 0021 made
+ * the type public for exactly this). Type-only, so it costs nothing at runtime and adds no
+ * dependency beyond the `stitchapi` peer that is already required.
+ */
+export type { Secret };
 
 function resolveSecret(secret: Secret): string {
     return typeof secret === 'function' ? secret() : secret;
