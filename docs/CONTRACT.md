@@ -151,15 +151,21 @@ bare `max`. A **magnitude** ceiling (a delay) MAY keep `max` when a bare noun wo
 ambiguous. Plural **`attempts`** = a running total; singular **`attempt`** = the
 current index.
 
-_Resolved (2026-07 sweep):_ every consumer-authored cap is a bare plural noun —
+_Resolved (2026-07 sweep):_ the caps this rule called out are bare plural nouns —
 `ReconnectOptions.maxAttempts`→`attempts`, `CacheOptions.maxEntries`→`entries`,
 `CircuitOptions.failureThreshold`→`failures` (landed with the P17 `CircuitOptions`
 overhaul), `paginate.max`→`pages`, `deno-kv maxIncrRetries`→`retry.attempts`
 (see [§6](#6-migration-record-2026-07-08-hard-break-sweep)).
 
-A `max*` spelling survives only on **resolved internals** — the reconnect policy in
-`engine.ts`, the local `maxEntries` in `cache.ts`, the `failureThreshold` local in
-`resilience.ts` — which name a computed value, never a field a consumer writes. That
+_Still open:_ `LlmOptions.maxTokens` / `LlmRequest.maxTokens` (the `stitchapi/llm`
+subpath) — a **count** cap carrying a `max` prefix. It is **not** sheltered by
+[P22](#p22--a-standards-interop-contract-uses-the-standards-field-names): `LlmRequest` is
+the house-**normalised** shape, and each provider's `buildBody` emits the vendor's
+`max_tokens` separately. → `tokens`.
+
+A `max*` spelling survives legitimately only on **resolved internals** — the reconnect
+policy in `engine.ts`, the local `maxEntries` in `cache.ts`, the `failureThreshold` local
+in `resilience.ts` — which name a computed value, never a field a consumer writes. That
 split is the rule's boundary: P4 governs the **authoring** surface.
 
 ---
@@ -644,9 +650,16 @@ While the line is pre-GA, a rename may land as a hard break or under a `@depreca
 — [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes the obligation to
 the GA channel. Severity = consumer blast radius.
 
-**Still open** — one entry, and it is CLI-internal: `from-curl.ts` is imported by `cli.ts`
-alone, exported from no index and behind no subpath, so nothing on the published surface
-carries this name today.
+**Still open.** The row below is CLI-internal — `from-curl.ts` is imported by `cli.ts`
+alone, exported from no index and behind no subpath — but it is **not** the whole open
+set. A follow-up audit (2026-07-31) swept every principle against the published surface
+and found further violations that no rule in [§7](#7-enforcement) was tracking, across
+**P4** (`maxTokens`), **P9** (`UseStitchResult` declared incompatibly by react and vue),
+**P14**, **P16** (nest's SSE options, and solid/svelte accepting a `streaming` they
+ignore) and **P20** (slots typed `Fn | Options` or `Options | false`, so `{}` still
+compiles). They are tracked and fixed separately; the ratchet is being widened first so
+the gate holds them once fixed. A green baseline meant "nothing the rules can see", not
+"nothing there".
 
 | Sev | Current                | Proposed   | Rule |
 | --- | ---------------------- | ---------- | ---- |
