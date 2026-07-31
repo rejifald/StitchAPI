@@ -34,7 +34,11 @@ export interface LlmRequest {
     model: string;
     messages: LlmMessage[];
     system?: string;
-    maxTokens?: number;
+    /** Cap on tokens generated. A **count**, so it is a bare plural noun — CONTRACT.md P4 bans
+     *  the `max` prefix there, and leaves `max` only for a magnitude ceiling. This is the HOUSE
+     *  shape, so it uses house vocabulary; each provider's `buildBody` emits the vendor's own
+     *  `max_tokens` (P18/P22 keep the upstream spelling at the wire, not here). */
+    tokens?: number;
     temperature?: number;
 }
 
@@ -73,7 +77,7 @@ interface LlmDefaults {
     provider: LlmProvider;
     model?: string;
     system?: string;
-    maxTokens?: number;
+    tokens?: number;
     temperature?: number;
 }
 
@@ -92,8 +96,8 @@ function toRequest(d: LlmDefaults, input: StitchInput): LlmRequest {
     const req: LlmRequest = { model, messages: over.messages ?? [] };
     const system = over.system ?? d.system;
     if (system !== undefined) req.system = system;
-    const maxTokens = over.maxTokens ?? d.maxTokens;
-    if (maxTokens !== undefined) req.maxTokens = maxTokens;
+    const tokens = over.tokens ?? d.tokens;
+    if (tokens !== undefined) req.tokens = tokens;
     const temperature = over.temperature ?? d.temperature;
     if (temperature !== undefined) req.temperature = temperature;
     return req;
@@ -135,18 +139,20 @@ export type LlmOptions = Partial<Omit<StitchConfig, 'kind'>> & {
     provider: LlmProvider;
     model?: string;
     system?: string;
-    maxTokens?: number;
+    /** Default cap on tokens generated; a call's `body` may override it. See
+     *  {@link LlmRequest.tokens} for why the house name is not the wire's `max_tokens`. */
+    tokens?: number;
     temperature?: number;
 };
 
 // Split an LlmOptions into the surface-bound defaults and the plain stitch config carrying the
 // live surface — shared by the standalone stitch and the seam binder.
 function llmConfig(config: LlmOptions): Partial<StitchConfig> {
-    const { provider, model, system, maxTokens, temperature, ...rest } = config;
+    const { provider, model, system, tokens, temperature, ...rest } = config;
     const defaults: LlmDefaults = { provider };
     if (model !== undefined) defaults.model = model;
     if (system !== undefined) defaults.system = system;
-    if (maxTokens !== undefined) defaults.maxTokens = maxTokens;
+    if (tokens !== undefined) defaults.tokens = tokens;
     if (temperature !== undefined) defaults.temperature = temperature;
     const urlless = rest.url === undefined && rest.path === undefined;
     return {
@@ -158,7 +164,7 @@ function llmConfig(config: LlmOptions): Partial<StitchConfig> {
 
 /**
  * `llm({ provider, ... })` — a chat-completion stitch resolving to an {@link LlmResult}. The
- * provider (and `model`/`system`/`maxTokens`/`temperature` defaults) bind to the surface; the call
+ * provider (and `model`/`system`/`tokens`/`temperature` defaults) bind to the surface; the call
  * passes `{ body: { messages: [...] } }` (and may override the defaults). The `url` defaults to
  * the provider's. Bring the credential as the stitch's `auth` (`bearer(env(...))` for OpenAI,
  * `apiKey({ name: 'x-api-key', ... })` for Anthropic).
@@ -234,7 +240,7 @@ export const anthropic: LlmProvider = {
         ].join('\n\n');
         return compact({
             model: req.model,
-            max_tokens: req.maxTokens ?? 1024,
+            max_tokens: req.tokens ?? 1024,
             messages: req.messages
                 .filter((m) => m.role !== 'system')
                 .map((m) => ({ role: m.role, content: m.content })),
@@ -284,7 +290,7 @@ export const openai: LlmProvider = {
                     content: m.content,
                 })),
             ],
-            max_tokens: req.maxTokens,
+            max_tokens: req.tokens,
             temperature: req.temperature,
         }),
     parse: (body) => {
