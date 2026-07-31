@@ -69,7 +69,7 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
             method: 'POST',
             baseUrl: server.url,
             path: '/graphql',
-            auth: apiKey({ header: 'apikey', value: env('METADATA_API_KEY') }),
+            auth: apiKey({ name: 'apikey', value: env('METADATA_API_KEY') }),
             retry: {
                 attempts: 5,
                 on: [429, 500, 502, 503],
@@ -94,7 +94,7 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
             method: 'POST',
             baseUrl: server.url,
             path: '/graphql',
-            auth: apiKey({ header: 'apikey', value: () => 'sk' }),
+            auth: apiKey({ name: 'apikey', value: () => 'sk' }),
             throttle: { rate: '1/s' },
         });
         const start = Date.now();
@@ -249,7 +249,7 @@ describe('Diverse co-located auth (three providers, three header formats)', () =
             baseUrl: server.url,
             path: '/system',
             auth: apiKey({
-                header: 'authorization',
+                name: 'authorization',
                 value: () => `MediaToken token="${env('MEDIA_A_TOKEN')()}"`,
             }),
         });
@@ -257,7 +257,7 @@ describe('Diverse co-located auth (three providers, three header formats)', () =
             baseUrl: server.url,
             path: '/node',
             auth: apiKey({
-                header: 'x-media-token',
+                name: 'x-media-token',
                 value: env('MEDIA_B_TOKEN'),
             }),
             hooks: {

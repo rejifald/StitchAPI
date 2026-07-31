@@ -941,7 +941,7 @@ function renderAuth(auth: AuthEmit): string {
             return auth.queryName
                 ? `apiKey({ in: 'query', name: '${auth.queryName}', value: env('${auth.envName}') })`
                 : auth.header && auth.header.toLowerCase() !== 'x-api-key'
-                  ? `apiKey({ header: '${auth.header}', value: env('${auth.envName}') })`
+                  ? `apiKey({ name: '${auth.header}', value: env('${auth.envName}') })`
                   : `apiKey({ value: env('${auth.envName}') })`;
         case 'basic':
             return `basic({ user: env('${auth.userEnv}'), pass: env('${auth.passEnv}') })`;

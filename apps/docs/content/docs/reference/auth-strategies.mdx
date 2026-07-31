@@ -17,9 +17,9 @@ import { bearer } from 'stitchapi';
 
 ## apiKey
 
-Sends a secret in a header (`x-api-key` by default), or — with `in: 'query'` — as
-a URL query parameter (`api_key` by default), resolved and URL-encoded at call
-time.
+Sends a secret in a header (`X-API-Key` by default), a query parameter
+(`in: 'query'`, `api_key` by default, URL-encoded), or a cookie (`in: 'cookie'`).
+`name` labels the key in every arm, resolved at call time.
 
 ```ts twoslash
 import { apiKey } from 'stitchapi';

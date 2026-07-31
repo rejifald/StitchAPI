@@ -143,6 +143,21 @@ describe('planGen — selection', () => {
         const r = planGen(doc, { all: true });
         expect(r.selected).toHaveLength(4);
     });
+
+    // P7 widening: the list-shaped filters take a bare value too — `tags: 'users'` ≡ `tags: ['users']`.
+    test('P7: a bare-string tag ≡ a single-element list', () => {
+        const bare = planGen(doc, { tags: 'users' });
+        const list = planGen(doc, { tags: ['users'] });
+        expect(bare.selected.map((s) => s.name).sort()).toEqual(
+            list.selected.map((s) => s.name).sort(),
+        );
+        expect(bare.selected).toHaveLength(3);
+    });
+
+    test('P7: a bare-string only ≡ a single-element list', () => {
+        const r = planGen(doc, { only: 'getUser' });
+        expect(r.selected.map((s) => s.name)).toEqual(['getUser']);
+    });
 });
 
 describe('planGen — ownership (fan-in over the transitive closure)', () => {
@@ -202,17 +217,10 @@ describe('planGen — naming, typing, auth, notice', () => {
         expect(c).not.toMatch(/\bscope\b/);
     });
 
-    test('types-only emits the validation-off notice', () => {
-        const r = planGen(doc, { all: true });
-        expect(r.notices.join('\n')).toMatch(
-            /runtime validation \+ drift are OFF/,
-        );
-    });
-
-    // apiKey auth. Core's `apiKey()` only models a header (default) or query key; a `cookie` apiKey
-    // has no arm. The generator must emit the header/query forms but let `cookie` fall through to
-    // the not-auto-mapped warning — never silently emit it as a header key.
-    const apiKeyDoc = (loc: 'header' | 'query' | 'cookie'): OpenApiDoc => ({
+    // apiKey auth (CONTRACT.md P16/P22). Core's `apiKey()` models all three OpenAPI locations —
+    // header (default), query, and cookie — each naming the key with `name`. The generator emits the
+    // matching arm; `name`/`in` are single-quoted literals (`q()`), matching the emitted-source style.
+    const apiKeyDoc = (loc: string): OpenApiDoc => ({
         openapi: '3.0.0',
         info: { title: 'T', version: '1' },
         servers: [{ url: 'https://api.example.com' }],
@@ -229,24 +237,44 @@ describe('planGen — naming, typing, auth, notice', () => {
         const r = planGen(apiKeyDoc('header'), { all: true });
         const c = file(r, 'client.ts') ?? '';
         expect(c).toMatch(
-            /auth: apiKey\(\{ name: "X-API-Key", value: env\('API_KEY'\) \}\)/,
+            /auth: apiKey\(\{ name: 'X-API-Key', value: env\('API_KEY'\) \}\)/,
         );
-        expect(c).not.toMatch(/in: 'query'/);
+        expect(c).not.toMatch(/apiKey\(\{ in:/);
         expect(r.warnings.join('\n')).not.toMatch(/not auto-mapped/);
     });
 
     test("apiKey in query → `in: 'query'` discriminant emitted", () => {
         const r = planGen(apiKeyDoc('query'), { all: true });
         expect(file(r, 'client.ts') ?? '').toMatch(
-            /auth: apiKey\(\{ in: 'query', name: "X-API-Key", value: env\('API_KEY'\) \}\)/,
+            /auth: apiKey\(\{ in: 'query', name: 'X-API-Key', value: env\('API_KEY'\) \}\)/,
         );
     });
 
-    test('apiKey in cookie → not auto-mapped, no silent header key', () => {
+    // Supersedes #474's "cookie → not auto-mapped" behavior: core's cookie arm makes the cookie
+    // location first-class, so the generator MAPS it instead of dropping to a warning.
+    test("apiKey in cookie → `in: 'cookie'` discriminant emitted (first-class, not a warning)", () => {
         const r = planGen(apiKeyDoc('cookie'), { all: true });
-        // Must NOT emit an apiKey() call at all — cookie has no core arm.
+        const c = file(r, 'client.ts') ?? '';
+        expect(c).toMatch(
+            /auth: apiKey\(\{ in: 'cookie', name: 'X-API-Key', value: env\('API_KEY'\) \}\)/,
+        );
+        expect(r.warnings.join('\n')).not.toMatch(/not auto-mapped/);
+    });
+
+    test('apiKey with an `in` core has no arm for → not auto-mapped, no silent header key', () => {
+        const r = planGen(apiKeyDoc('matrix'), { all: true });
+        // Must NOT emit an apiKey() call at all — an unmodelled location has no core arm.
         expect(file(r, 'client.ts') ?? '').not.toMatch(/apiKey\(/);
-        expect(r.warnings.join('\n')).toMatch(/not auto-mapped/);
+        const warn = r.warnings.join('\n');
+        expect(warn).toMatch(/not auto-mapped/);
+        expect(warn).toMatch(/in matrix/); // the warning names the offending location
+    });
+
+    test('types-only emits the validation-off notice', () => {
+        const r = planGen(doc, { all: true });
+        expect(r.notices.join('\n')).toMatch(
+            /runtime validation \+ drift are OFF/,
+        );
     });
 });
 

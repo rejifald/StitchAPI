@@ -177,27 +177,72 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
 }
 
 /**
- * API-key auth, in a request **header** (the default) or a **query param**. The key is a
- * {@link Secret} resolved at call time — the caller (an agent) never sees it.
+ * Options for {@link apiKey}. `in` selects where the key goes and `name` labels it there — the same
+ * two fields for every location (they no longer diverge by arm), so the shape maps 1:1 onto
+ * OpenAPI's `apiKey` security scheme (`{ name, in }`, CONTRACT.md P22).
  *
- * - `in: 'header'` (default): writes `header` (default `'x-api-key'`, lower-cased) — byte-for-byte
- *   the original behaviour, so existing stitches are unaffected.
- * - `in: 'query'`: appends `name=<resolved>` (default `'api_key'`) to the request URL,
- *   URL-encoded. The strategy runs in the attempt loop on the fully-built `req` (after
- *   templating/query-building), so it safely appends onto whatever query the URL already carries.
+ * Local (non-exported) — like {@link OAuth2Options}/{@link CookieSessionOptions}, the builder's
+ * param type is not part of the package's public export surface (P16: none of the auth option
+ * types are). It is inlined into `apiKey`'s emitted `.d.ts`.
+ */
+interface ApiKeyOptions {
+    /** Where the key is sent. Default `'header'`. */
+    in?: 'header' | 'query' | 'cookie';
+    /**
+     * Name of the header, query parameter, or cookie the key is sent as. Default `'X-API-Key'` for
+     * a header (sent lower-cased), `'api_key'` for a query parameter or cookie.
+     */
+    name?: string;
+    /** The key itself — a {@link Secret} resolved at call time; the caller never sees it. */
+    value: Secret;
+}
+
+/**
+ * Set `name=value` on a request `Cookie` header, REPLACING any existing pair with the same name
+ * (a duplicate cookie name is ambiguous — RFC 6265 §5.4 — and re-applying the strategy on a retry
+ * must stay idempotent) while keeping the other pairs in place. Cookie names are case-sensitive, so
+ * the match is exact.
+ */
+function setCookiePair(
+    existing: string | undefined,
+    name: string,
+    value: string,
+): string {
+    const parts = (existing ?? '')
+        .split(';')
+        .map((p) => p.trim())
+        .filter(Boolean);
+    const idx = parts.findIndex((p) => {
+        const eq = p.indexOf('=');
+        return (eq < 0 ? p : p.slice(0, eq)).trim() === name;
+    });
+    const pair = `${name}=${value}`;
+    if (idx >= 0) parts[idx] = pair;
+    else parts.push(pair);
+    return parts.join('; ');
+}
+
+/**
+ * API-key auth, sent in a request **header** (the default), a **query param**, or a **cookie**.
+ * `in` selects the location and `name` labels it in every arm (matching OpenAPI's `{ name, in }`).
+ * The key is a {@link Secret} resolved at call time — the caller (an agent) never sees it.
+ *
+ * - `in: 'header'` (default): writes the `name` header (default `'X-API-Key'`, lower-cased on the wire).
+ * - `in: 'query'`: appends `name=<resolved>` (default `'api_key'`) to the request URL, URL-encoded.
+ *   The strategy runs in the attempt loop on the fully-built `req` (after templating/query-building),
+ *   so it safely appends onto whatever query the URL already carries.
+ * - `in: 'cookie'`: appends `name=<resolved>` (default `'api_key'`) to the `Cookie` header, merging
+ *   with any cookie the request already carries.
  *
  * SECURITY: a key in the URL leaks wherever URLs go — server access logs, proxies, the browser
- * history, a `Referer` header. Prefer `in: 'header'` when the API accepts it. The key stays out of
- * StitchAPI's own traces two ways: the strategy mutates only the request the transport sends (the
- * `start` event carries the pre-auth URL, so the key never lands there), and the configured query
- * `name` is registered with the URL-credential scrubber, so if it does surface in a sink (an OTLP
- * `url.full`, the structured `input.query`) it is REDACTED, like `api_key`/`access_token`/… are.
+ * history, a `Referer` header. Prefer `in: 'header'` (or `'cookie'`) when the API accepts it. The
+ * key stays out of StitchAPI's own traces: the strategy mutates only the request the transport
+ * sends (the `start` event carries the pre-auth request, so the key never lands there); the `header`
+ * and `cookie` arms write header names already on the trace denylist (`cookie` / `x-api-key`); and
+ * the `query` arm registers its `name` with the URL-credential scrubber, so if the key surfaces in a
+ * sink (an OTLP `url.full`, the structured `input.query`) it is REDACTED, like `api_key`/… are.
  */
-export function apiKey(
-    opts:
-        | { in?: 'header'; header?: string; value: Secret }
-        | { in: 'query'; name?: string; value: Secret },
-): AuthStrategy {
+export function apiKey(opts: ApiKeyOptions): AuthStrategy {
     if (opts.in === 'query') {
         const name = opts.name ?? 'api_key';
         // Teach the trace scrubber this param name carries a secret, so the key never reaches a
@@ -217,7 +262,26 @@ export function apiKey(
             },
         };
     }
-    const headerName = opts.header ?? 'X-API-Key';
+    if (opts.in === 'cookie') {
+        const name = opts.name ?? 'api_key';
+        return {
+            name: 'apiKey',
+            scheme: { type: 'apiKey', in: 'cookie', name },
+            apply(req) {
+                // Send the key as a cookie: set `name=value` on the Cookie header, replacing any
+                // same-named cookie the request already carries (never a duplicate; idempotent on
+                // retry) and keeping the rest. The value is sent verbatim — a cookie is read
+                // byte-for-byte, unlike a percent-decoded query param. The `cookie` header is on
+                // the trace denylist, so the key is redacted from sinks like the header arm.
+                req.headers['cookie'] = setCookiePair(
+                    req.headers['cookie'],
+                    name,
+                    resolve(opts.value),
+                );
+            },
+        };
+    }
+    const headerName = opts.name ?? 'X-API-Key';
     const header = headerName.toLowerCase();
     return {
         name: 'apiKey',

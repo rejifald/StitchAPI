@@ -452,6 +452,13 @@ field is gone. The **wire** side still follows its own standard — W3C Trace Co
 [ADR 0017 Decision 7](adr/0017-outbound-trace-context-propagation.md) and the
 `concepts/run-identity` page.
 
+_Also:_ `apiKey`'s options mirror OpenAPI's `apiKey` security scheme: the key is labelled with
+**`name`** and located with **`in: 'header' | 'query' | 'cookie'`** — the same two fields in every
+arm. So `stitch gen openapi` (import) and `stitch export --openapi` (export) are identity mappings
+with no translation seam, and the three locations are symmetric
+([P16](#p16--cross-surface--cross-package-parity)). The pre-GA sweep removed the header-only
+`header` alias: **`name` is the only spelling — `apiKey({ header })` is forbidden.**
+
 ### P23 · One schema intake; foreign formats enter through one adapter
 
 Every place that consumes a validation schema — a stitch's `input`/`output`, and the
