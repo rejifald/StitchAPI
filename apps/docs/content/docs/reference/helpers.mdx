@@ -120,7 +120,7 @@ adapter's `supports` omits `'uploadProgress'` (only `fetch`, among the built-ins
 sink, pointing you at `xhrAdapter`:
 
 > onProgress is set with a request body, but fetchAdapter cannot report upload
-> progress — only 'phase: download' events fire. Use xhrAdapter() to draw an
+> progress — only 'direction: download' events fire. Use xhrAdapter() to draw an
 > upload progress bar.
 
 It is a **note, not an error**: `fetch` still reports `direction: 'download'`
