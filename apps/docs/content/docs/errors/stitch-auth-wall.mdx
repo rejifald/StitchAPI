@@ -13,6 +13,16 @@ surfaces the failure instead of looping. The downstream response keeps coming
 back unauthenticated — most often a `401`, sometimes a `200` whose body is
 actually the login page.
 
+<Callout type="warn">
+    `STITCH_AUTH_WALL` is this page's [catalog ID](/docs/errors), not a runtime
+    value — the thrown error has no `.code`. This failure has no distinct
+    runtime identity of its own: a hard wall surfaces as an ordinary upstream
+    rejection (a `StitchError` with `status: 401` and the message `HTTP 401`),
+    and an **uncaught soft 200 wall does not throw at all** — the login page
+    arrives as a normal result, and usually fails your `output` schema instead.
+    That silent case is the reason for `refresh.when` below.
+</Callout>
+
 ## Why it happens
 
 Two distinct triggers land here:

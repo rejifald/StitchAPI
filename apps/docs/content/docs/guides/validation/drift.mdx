@@ -34,8 +34,10 @@ These are distinct layers, not options on a dial.
 ### Validation — the hard contract
 
 Validation runs first. A **missing required field** or **incompatible value**
-throws immediately with error code `STITCH_DRIFT` (a finding with
-`change: 'invalid'`, `level: 'error'`). On success the call **returns the
+throws immediately — a `StitchError` reading `contract violation (drift)`,
+alongside a finding with `change: 'invalid'`, `level: 'error'` (documented as
+[`STITCH_DRIFT`](/docs/errors/stitch-drift), a docs ID rather than a runtime
+`.code`). On success the call **returns the
 validated value** — defaults applied, types coerced, unknown keys stripped — so
 the result matches the declared TypeScript type exactly.
 

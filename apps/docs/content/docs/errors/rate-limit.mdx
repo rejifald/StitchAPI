@@ -41,6 +41,14 @@ try {
 - **`response`** — the raw `AdapterResponse`, so you can read other rate
   headers the API sent (`X-RateLimit-Remaining`, a reset timestamp, and so on).
 
+<Callout type="info">
+    This is the one entry in the [error catalog](/docs/errors) that is a real
+    runtime identity rather than a documentation ID: `RateLimitError` is an
+    exported class you can `instanceof`. The `STITCH_*` entries are page IDs —
+    those failures all arrive as a plain `StitchError` with no `.code`, told
+    apart by [their fields](/docs/errors#telling-failures-apart-at-runtime).
+</Callout>
+
 ## Why it happens
 
 You opted into delegate-backoff because an **outer** gate or circuit — not

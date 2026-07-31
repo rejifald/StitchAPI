@@ -1,6 +1,6 @@
 ---
 title: 'Errors & pitfalls'
-description: 'How StitchAPI errors work, the code-to-docs contract, and an index of every coded failure.'
+description: 'How StitchAPI errors work, how to tell failures apart at runtime, and an index of every documented failure.'
 ---
 
 When a stitch can't produce a result, it fails with a `StitchError` — an `Error`
@@ -66,24 +66,97 @@ else console.log(data); // the validated result; error is null here
 [the event stream](/docs/concepts/event-stream) for the iterate-instead-of-await
 view of the same outcomes.
 
-## The code-to-docs contract
+## Catalog IDs are documentation, not runtime values
 
-Each catalog page below owns a stable **code** (`STITCH_VALIDATION`,
-`STITCH_DRIFT`, and so on). The code's page **slug is its URL** — the failure
-documented at `/errors/<slug>` is the page the runtime will deep-link to from a
-thrown error. Slugs are an API: once a page is published its slug is never
-renamed, only added-and-redirected, so a link a runtime emitted a year ago still
-resolves.
+Each catalog page below is filed under a stable **catalog ID**
+(`STITCH_VALIDATION`, `STITCH_DRIFT`, and so on), and the ID's page **slug is its
+URL**. Slugs are an API: once a page is published its slug is never renamed, only
+added-and-redirected, so a link written a year ago still resolves.
 
 <Callout type="warn">
-    These codes are **provisional**. Today the runtime throws a `StitchError`
-    with a `message` and optional `.status` — the stable `code` and `url` fields
-    land with the error-taxonomy refactor. The slugs below are already fixed, so
-    you can rely on the URLs even while the in-runtime codes are still on the
-    way.
+    These IDs name **documentation pages** — they are not values the runtime
+    puts on the error. A thrown `StitchError` has no `.code` property, so
+    `err.code` is `undefined` and `if (err.code === 'STITCH_DRIFT')` never
+    matches. Use the IDs to refer to a failure mode (in this catalog, in the
+    docs MCP, in an issue report); to branch in code, use [the fields
+    below](#telling-failures-apart-at-runtime).
 </Callout>
 
-## Every coded failure
+## Telling failures apart at runtime
+
+Every failure arrives as a `StitchError` except the delegate-backoff rate limit,
+which is its own exported `RateLimitError`. So narrow with `instanceof` first,
+then branch on `.status` and `.attempts` — together they separate every failure
+mode in the catalog:
+
+| What you see                           | What happened                                                                                        |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `attempts === 0`                       | No request was made — input validation (`status` `undefined`) or an open circuit (`status` `503`).   |
+| `status` is a **2xx**                  | The response arrived and broke its contract — an `output` schema/drift failure, or GraphQL `errors`. |
+| `status` is **non-2xx**                | The upstream rejected it, after any retries — a `401` auth wall, a `5xx`, and so on.                 |
+| `status` `undefined`, `attempts` ≥ `1` | The request went out but never produced a response — a timeout or a transport error.                 |
+
+```ts twoslash
+import { RateLimitError, StitchError, stitch } from 'stitchapi';
+
+const report = stitch({ baseUrl: 'https://api.example.com', path: '/report' });
+
+try {
+    await report();
+} catch (e) {
+    if (e instanceof RateLimitError) {
+        // The one catalog entry that IS a runtime identity of its own.
+        console.error('back off for', e.retryAfter);
+    } else if (e instanceof StitchError) {
+        if (e.attempts === 0) {
+            // Nothing left the process: bad input, or the breaker is open.
+            console.error(e.status === 503 ? 'circuit open' : 'bad input');
+        } else if (e.status !== undefined && e.status < 300) {
+            // A 2xx that still failed: the body broke the declared contract.
+            console.error('contract violation', e.status);
+        } else {
+            console.error('upstream failed', e.status ?? 'no response');
+        }
+    }
+}
+```
+
+<Callout type="info">
+    `.message` is human-readable, not a contract — today it is
+    `invalid <slot>: <issue>` for input validation,
+    `contract violation (drift)` for a response that failed `output`,
+    `timed out after <n>ms`, `circuit open`, `GraphQL: <message>`, or
+    `HTTP <status>`. Match on it only as a last resort, and expect the wording
+    to change.
+</Callout>
+
+Two catalog IDs share one runtime failure: a plain `output` schema failure
+(`STITCH_VALIDATION`) and a hard [`drift()`](/docs/guides/validation/drift)
+failure (`STITCH_DRIFT`) both throw the same `contract violation (drift)`
+`StitchError`. The thrown error does not say **which** path broke — that detail
+rides the `drift` events on [the event stream](/docs/concepts/event-stream),
+where a hard failure appears as a finding with `level: 'error'` and
+`change: 'invalid'`:
+
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { z } from 'zod';
+
+const user = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/user',
+    output: drift(z.object({ id: z.number() })),
+});
+
+for await (const ev of user().stream()) {
+    if (ev.type === 'drift' && ev.finding.level === 'error') {
+        // The structured signal: which path broke, and how.
+        console.error(ev.finding.path, ev.finding.change, ev.finding.detail);
+    }
+}
+```
+
+## Every documented failure
 
 <Callout type="info">
     Debugging one of these with an agent? Connect the [docs
