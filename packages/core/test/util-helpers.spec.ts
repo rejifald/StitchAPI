@@ -12,6 +12,7 @@ import {
     isObj,
     matchAny,
     matchPath,
+    parseBytes,
     parseDuration,
     parseRate,
     stripTrailingSlashes,
@@ -45,6 +46,64 @@ describe('parseDuration', () => {
 
     it('returns undefined for an unparseable string', () => {
         expect(parseDuration('soon')).toBeUndefined();
+    });
+});
+
+describe('parseBytes', () => {
+    it('passes a number through unchanged', () => {
+        expect(parseBytes(4096)).toBe(4096);
+    });
+
+    it('returns undefined for nullish input', () => {
+        expect(parseBytes(undefined)).toBeUndefined();
+    });
+
+    it('parses b / kb / mb / gb / tb as powers of 1024', () => {
+        expect(parseBytes('512b')).toBe(512);
+        expect(parseBytes('64kb')).toBe(65_536);
+        expect(parseBytes('1mb')).toBe(1_048_576);
+        expect(parseBytes('2gb')).toBe(2_147_483_648);
+        expect(parseBytes('1tb')).toBe(1_099_511_627_776);
+    });
+
+    it('accepts the IEC spellings as the same values', () => {
+        expect(parseBytes('64kib')).toBe(parseBytes('64kb'));
+        expect(parseBytes('1mib')).toBe(parseBytes('1mb'));
+        expect(parseBytes('2gib')).toBe(parseBytes('2gb'));
+    });
+
+    it('is case-insensitive', () => {
+        expect(parseBytes('1MB')).toBe(1_048_576);
+        expect(parseBytes('1Mb')).toBe(1_048_576);
+        expect(parseBytes('10MiB')).toBe(10 * 1024 * 1024);
+    });
+
+    it('accepts a fractional value and surrounding whitespace', () => {
+        expect(parseBytes('1.5kb')).toBe(1536);
+        expect(parseBytes('  2 mb  ')).toBe(2_097_152);
+    });
+
+    it('floors a fraction that lands between bytes — a cap never rounds up', () => {
+        expect(parseBytes('1.1kb')).toBe(1126); // 1126.4
+    });
+
+    it('treats a bare numeric string as bytes', () => {
+        expect(parseBytes('4096')).toBe(4096);
+    });
+
+    it('returns undefined for an unparseable string', () => {
+        expect(parseBytes('big')).toBeUndefined();
+        expect(parseBytes('1gigabyte')).toBeUndefined();
+    });
+
+    it('does not accept a bare `i` prefix as a unit', () => {
+        expect(parseBytes('5ib')).toBeUndefined();
+    });
+
+    it('does not parse a duration token as a size', () => {
+        // The two grammars must not overlap: `'1m'` is a minute, never a megabyte.
+        expect(parseBytes('1m')).toBeUndefined();
+        expect(parseBytes('30s')).toBeUndefined();
     });
 });
 

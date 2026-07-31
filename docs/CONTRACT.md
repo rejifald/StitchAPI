@@ -484,6 +484,34 @@ all take `SchemaLike` and return `ValidationResult`; `JsonSchema.adapt(json, { a
 bridge from JSON Schema, producing a `SchemaLike` those consumers treat identically. The standalone
 `validate`/`compile` verbs replaced app-level `schema['~standard'].validate(…)`.
 
+### P25 · One canonical size form
+
+**Bytes are the house size unit.** Every **consumer-authored** byte cap **MUST** accept
+**`number | string`** — a raw byte count or a token like `'64kb'`/`'1mb'` — parsed by one
+shared `parseBytes`, whose units are **powers of 1024** (`'1mb'` = 1_048_576). Every
+**emitted** size is a raw-byte `number`.
+
+Unlike a duration ([P17](#p17--one-canonical-duration-form)), a size field **KEEPS** its
+unit suffix. `Ms` encodes a **scale**, which `'5s'` overrides — so the suffix becomes a
+lie and P17 drops it. `Bytes` encodes a **dimension**: octets, as opposed to the `Chars`
+family (`stream.maxBufferChars`, `trace.maxBodyChars`) that counts UTF-16 code units of
+decoded text. `'1mb'` restates the scale, never the dimension, so the suffix stays true.
+That distinction is load-bearing per [P1](#p1--one-word-one-concept-one-value-space) —
+`Bytes` denotes bytes and cannot also denote code units — and a `Chars` field therefore
+**MUST NOT** take a byte token.
+
+_Why:_ every JS-native size API (`byteLength`, `Buffer.length`, `execFile`'s `maxBuffer`)
+is already bytes, so a bare number needs no unit; and 1024-based `kb`/`mb` is what the
+Node ecosystem's de-facto parser already means by those tokens
+([P22](#p22--a-standards-interop-contract-uses-the-standards-field-names)), matching the
+base the house defaults are written in (`10 * 1024 * 1024`). An unparseable token resolves
+to `undefined` and lands on the field's default — a typo can never widen a cap to
+"unbounded".
+
+_Canonical case:_ `ServeOptions.maxBodyBytes` and `@stitchapi/shell`'s
+`ShellOptions.maxBufferBytes` each take `2 * 1024 * 1024` or `'2mb'`; `parseBytes` is
+exported from `stitchapi` so a peer package parses the grammar instead of mirroring it.
+
 ---
 
 ## 6. Migration backlog (proposed renames — confirm during sweep)
