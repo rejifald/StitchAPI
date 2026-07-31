@@ -879,9 +879,9 @@ try {
 }
 ```
 
-Prefer to branch rather than wrap in `try`/`catch`? `.safe()` never throws — it resolves to `{ ok, data, error }`. Each failure mode has a stable code and a docs page (the slug _is_ the URL the runtime deep-links to):
+Prefer to branch rather than wrap in `try`/`catch`? `.safe()` never throws — it resolves to `{ ok, data, error }`. Branch on `.status` and `.attempts` (plus `instanceof RateLimitError`) — the `STITCH_*` names below are **documentation IDs, not runtime values**, so there is no `error.code` to match on. Each has a docs page whose slug is a stable URL:
 
-| Code                  | When                                                                |
+| Catalog ID            | When                                                                |
 | --------------------- | ------------------------------------------------------------------- |
 | `STITCH_VALIDATION`   | a response failed its output schema — the shape you got isn't asked |
 | `STITCH_DRIFT`        | a response drifted past the level you allowed, so it was refused    |

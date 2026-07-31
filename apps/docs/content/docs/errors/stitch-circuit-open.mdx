@@ -6,17 +6,19 @@ description: 'The circuit breaker is open after repeated failures and short-circ
 ## What you'll see
 
 A stitch configured with a [`circuit`](/docs/guides/resilience/circuit-breaker)
-fails _immediately_ — no request leaves the process — with a `StitchError`
-surfaced on the event stream as an `error` event (phase `circuit`). The
-dependency itself isn't being hit: the breaker tripped open after repeated
-failures and is now fast-failing every call to protect it. This is the breaker
-doing its job, not a fresh failure.
+fails _immediately_ — no request leaves the process — with a `StitchError`,
+surfaced on the event stream as an `error` event. The dependency itself isn't
+being hit: the breaker tripped open after repeated failures and is now
+fast-failing every call to protect it. This is the breaker doing its job, not a
+fresh failure.
 
-<Callout type="info">
-    `STITCH_CIRCUIT_OPEN` is provisional — the stable error-code registry lands
-    with the runtime taxonomy refactor. Today the short-circuit surfaces as a
-    `StitchError`; match on the breaker's `circuit` phase rather than the code
-    string.
+<Callout type="warn">
+    `STITCH_CIRCUIT_OPEN` is this page's [catalog ID](/docs/errors), not a
+    runtime value — the thrown error has no `.code`. Recognise a short-circuit
+    by its fields instead: `status === 503` with `attempts === 0`, the
+    combination that means the breaker answered before any request was made (the
+    message is `circuit open`). See [telling failures
+    apart](/docs/errors#telling-failures-apart-at-runtime).
 </Callout>
 
 ## Why it happens
