@@ -2,7 +2,7 @@
 // injected source). Both resolve at call time and throw on a missing OR empty value — a blank
 // credential is never silently sent. (The optional, never-throwing path is `optionalEnv`, covered
 // in optional-env.spec.ts.) The thunks are exercised directly here — no engine, no network.
-import { env, secretFrom } from '../src';
+import { env, secretFrom } from '../src/auth';
 
 describe('env() (required)', () => {
     test('resolves the variable when set', () => {

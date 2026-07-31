@@ -12,15 +12,22 @@
 // `node:crypto`'s `webcrypto`. The low-level `signRequestV4` is exported too, so it
 // can be unit-tested against the official AWS test vectors.
 import type { AuthStrategy } from 'stitchapi';
+import type { Secret } from 'stitchapi/auth';
 
 // ---------------------------------------------------------------------------
 // Secret
 // ---------------------------------------------------------------------------
 
-/** A credential value — a string or a zero-arg getter resolved at call time (so an
- * `env()`-style thunk reads per call and the agent never sees the value). Mirrors
- * core's `Secret`. */
-export type Secret = string | (() => string);
+/**
+ * A credential value — a string or a zero-arg getter resolved at call time, so an `env()`-style
+ * thunk reads per call and the agent never sees the value.
+ *
+ * Re-exported from `stitchapi/auth`, not redeclared: this package's options take the SAME
+ * credential a core strategy takes, and a structural copy is a copy that can drift (ADR 0021 made
+ * the type public for exactly this). Type-only, so it costs nothing at runtime and adds no
+ * dependency beyond the `stitchapi` peer that is already required.
+ */
+export type { Secret };
 
 function resolveSecret(secret: Secret): string {
     return typeof secret === 'function' ? secret() : secret;
@@ -143,8 +150,9 @@ export interface SignV4Options {
     sessionToken?: string;
     region: string;
     service: string;
-    /** Amz datetime, `YYYYMMDDTHHMMSSZ`. */
-    dateTime: string;
+    /** Amz datetime, `YYYYMMDDTHHMMSSZ` — echoed back as `SignV4Result.amzDate`
+     * and sent as the `x-amz-date` header. */
+    amzDate: string;
 }
 
 export interface SignV4Result {
@@ -156,14 +164,14 @@ export interface SignV4Result {
 }
 
 /**
- * Compute a SigV4 signature for a request. Pure (given `dateTime`), so it is
+ * Compute a SigV4 signature for a request. Pure (given `amzDate`), so it is
  * verifiable against the official AWS `aws-sig-v4-test-suite` vectors. The
  * {@link awsSigV4} strategy wraps this with timestamping, payload hashing, and
  * header attachment.
  */
 export async function signRequestV4(p: SignV4Options): Promise<SignV4Result> {
     const u = new URL(p.url);
-    const amzDate = p.dateTime;
+    const amzDate = p.amzDate;
     const dateStamp = amzDate.slice(0, 8);
 
     const headers: Record<string, string> = {};
@@ -259,7 +267,8 @@ function formEncode(body: unknown): string {
  * Sign every request with AWS Signature V4. Attach it as a stitch's `auth`:
  *
  * ```ts
- * import { stitch, env } from 'stitchapi';
+ * import { stitch } from 'stitchapi';
+ * import { env } from 'stitchapi/auth';
  * import { awsSigV4 } from '@stitchapi/aws-sigv4';
  *
  * const putObject = stitch({
@@ -376,7 +385,7 @@ export function awsSigV4(opts: AwsSigV4Options): AuthStrategy {
                 ...(sessionToken ? { sessionToken } : {}),
                 region: opts.region,
                 service: opts.service,
-                dateTime: amzDate,
+                amzDate,
             });
 
             req.headers['authorization'] = authorization;

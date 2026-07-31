@@ -118,8 +118,7 @@ test('SSE start frame scrubs credential headers the caller echoed (serve is unau
     const start = parseSse(text).find((f) => f.event === 'start');
     const echoed = (
         start?.data?.['input'] as
-            | { headers?: Record<string, string> }
-            | undefined
+            { headers?: Record<string, string> } | undefined
     )?.headers;
     expect(echoed?.['authorization']).toBe('[REDACTED]'); // credential scrubbed before it leaves
     expect(echoed?.['x-keep']).toBe('ok'); // non-secret header preserved
@@ -137,8 +136,7 @@ test('SSE start frame scrubs a secret query param the caller echoed (structured 
     const start = parseSse(text).find((f) => f.event === 'start');
     const echoed = (
         start?.data?.['input'] as
-            | { query?: Record<string, unknown> }
-            | undefined
+            { query?: Record<string, unknown> } | undefined
     )?.query;
     expect(echoed?.['api_key']).toBe('[REDACTED]'); // secret query value scrubbed before it leaves
     expect(echoed?.['page']).toBe('2'); // non-secret query param preserved
@@ -324,6 +322,43 @@ describe('serve caps the request body (413), so an unauthenticated server cannot
         });
         expect(res.status).toBe(200);
         await expect(res.json()).resolves.toEqual({ ok: true });
+    });
+});
+
+describe('the body cap also accepts a size token (`parseBytes`)', () => {
+    // `'1kb'` must resolve to 1024 bytes. The probe body is ~1.1 KB — over a parsed `'1kb'`
+    // but far under the 2 MiB default, so a 413 here can only mean the token was honoured
+    // (an ignored/unparsed token would fall back to the default and answer 200).
+    let capped: ServeHandle;
+    beforeAll(async () => {
+        const ping = stitch({ baseUrl: api.url, path: '/ping' });
+        capped = await serve({ ping }, { port: 0, maxBodyBytes: '1kb' });
+    });
+    afterAll(async () => {
+        await capped.close();
+    });
+
+    test('a body over the token cap is rejected with 413', async () => {
+        api.route('GET', '/ping', { body: { ok: true } });
+        const res = await fetch(`${capped.url}/stitch/ping`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ query: { pad: 'y'.repeat(1100) } }),
+        });
+        expect(res.status).toBe(413);
+        await expect(res.json()).resolves.toMatchObject({
+            error: expect.stringContaining('1024'), // the parsed cap, in bytes
+        });
+    });
+
+    test('a body under the token cap still succeeds', async () => {
+        api.route('GET', '/ping', { body: { ok: true } });
+        const res = await fetch(`${capped.url}/stitch/ping`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ query: { pad: 'y'.repeat(100) } }),
+        });
+        expect(res.status).toBe(200);
     });
 });
 

@@ -38,9 +38,9 @@ Multiply the two and you get the shape of the problem: a large catalog inside a 
 
 StitchAPI inverts the pattern. Instead of enumerating every endpoint as a tool, an agent drives a single **code-mode** tool, `run_stitch`, plus two small companions for discovery:
 
--   `run_stitch` — execute a stitch by name, passing `{ name, input }`
--   `list_stitches` — discover the available stitch names, methods, and paths, on demand
--   `describe_stitch` — pull one stitch's shape (its input slots, output, auth _scheme_, policies) only when the model actually needs it
+- `run_stitch` — execute a stitch by name, passing `{ name, input }`
+- `list_stitches` — discover the available stitch names, methods, and paths, on demand
+- `describe_stitch` — pull one stitch's shape (its input slots, output, auth _scheme_, policies) only when the model actually needs it
 
 The tool surface is **a constant three**, whether you have four stitches or four hundred. The schemas the model carries every turn describe those three tools and nothing else. Discovery moves out of the standing context and into _tool calls the model makes only on the turns it cares_ — `list_stitches` once to orient, `describe_stitch` for the few names it's about to use.
 
@@ -86,9 +86,9 @@ There's an even cheaper way for an agent to orient, one that doesn't spend a too
 
 Code-mode is not free, and it isn't always the right call. Reach for the flat per-endpoint menu instead when:
 
--   **It needs a sandbox.** `run_stitch` executes a named stitch on the server side of the capability boundary; a setup where the model writes and runs code needs an eval/execution path you trust. One tool per endpoint needs none of that — the model just fills in a schema. When running a sandbox isn't an option, the per-endpoint pattern is the simpler thing.
--   **It leans on the model.** Driving stitches by name — listing, describing, composing a call — asks more of the model than picking from a flat menu of typed tools. A model that's weak at this kind of structured tool use may do better with explicit per-endpoint schemas, paid-per-turn and all.
--   **Small catalogs see no savings.** The whole win is `catalog × turns` collapsing on the catalog axis. With two endpoints and a single-shot call, there was never a fat menu to re-send — two schemas once is cheaper than standing up code-mode. The savings only show up when the catalog is large, the loops are long, or both.
+- **It needs a sandbox.** `run_stitch` executes a named stitch on the server side of the capability boundary; a setup where the model writes and runs code needs an eval/execution path you trust. One tool per endpoint needs none of that — the model just fills in a schema. When running a sandbox isn't an option, the per-endpoint pattern is the simpler thing.
+- **It leans on the model.** Driving stitches by name — listing, describing, composing a call — asks more of the model than picking from a flat menu of typed tools. A model that's weak at this kind of structured tool use may do better with explicit per-endpoint schemas, paid-per-turn and all.
+- **Small catalogs see no savings.** The whole win is `catalog × turns` collapsing on the catalog axis. With two endpoints and a single-shot call, there was never a fat menu to re-send — two schemas once is cheaper than standing up code-mode. The savings only show up when the catalog is large, the loops are long, or both.
 
 None of this makes a call the agent genuinely needs any cheaper. It removes the schemas you re-sent every turn for tools you didn't touch. The work the agent actually has to do still costs what it costs.
 
@@ -96,9 +96,9 @@ None of this makes a call the agent genuinely needs any cheaper. It removes the 
 
 This is the sharp version of one half of [cutting your LLM bill from both ends](/blog/cut-llm-costs-from-both-ends) — the context tax, on its own. If you want the mechanics:
 
--   [Use StitchAPI from an agent](/docs/agents) — the agent entry point and the capability boundary.
--   [run_stitch & code-mode](/docs/agents/run-stitch-tool) — the three-tool surface in full.
--   [Point an agent at llms.txt](/docs/agents/llms-txt) — the zero-tool-call discovery channel.
+- [Use StitchAPI from an agent](/docs/agents) — the agent entry point and the capability boundary.
+- [run_stitch & code-mode](/docs/agents/run-stitch-tool) — the three-tool surface in full.
+- [Point an agent at llms.txt](/docs/agents/llms-txt) — the zero-tool-call discovery channel.
 
 Or just start:
 

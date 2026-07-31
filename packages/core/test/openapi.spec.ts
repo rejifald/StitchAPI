@@ -3,7 +3,8 @@
 // parameters parsed from the RFC 6570 URL template, and the PRESENCE of a request body / response
 // as empty `{}` schemas. Field-level JSON Schema and security are deferred. The pure `toOpenApi`
 // is asserted directly; the `export` command is driven through `main` with an injected loader.
-import { apiKey, basic, bearer, cookieSession, oauth2, stitch } from '../src';
+import { stitch } from '../src';
+import { apiKey, basic, bearer, cookieSession, oauth2 } from '../src/auth';
 import { main } from '../src/cli';
 import { toOpenApi } from '../src/openapi';
 import type { StitchRegistry } from '../src/registry';
@@ -348,7 +349,7 @@ describe('toOpenApi security schemes', () => {
             createThing: stitch({
                 method: 'POST',
                 url: 'https://api.example.com/things',
-                auth: apiKey({ header: 'X-My-Key', value: 'zzz-apikey-cred' }),
+                auth: apiKey({ name: 'X-My-Key', value: 'zzz-apikey-cred' }),
             }),
             grant: stitch({
                 url: 'https://api.example.com/grant',
@@ -442,11 +443,11 @@ describe('toOpenApi security schemes', () => {
         const registry: StitchRegistry = {
             a: stitch({
                 url: 'https://api.example.com/a',
-                auth: apiKey({ header: 'X-Key-A', value: 'k' }),
+                auth: apiKey({ name: 'X-Key-A', value: 'k' }),
             }),
             b: stitch({
                 url: 'https://api.example.com/b',
-                auth: apiKey({ header: 'X-Key-B', value: 'k' }),
+                auth: apiKey({ name: 'X-Key-B', value: 'k' }),
             }),
         };
         const { document } = toOpenApi(registry);

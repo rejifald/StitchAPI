@@ -265,9 +265,9 @@ describe('download authoring helpers (Decision 3)', () => {
         expect(a.__config.kind).toBe(b.__config.kind);
     });
 
-    test('download.seam(existingSeam).stitch(...) creates a download member of that seam', async () => {
+    test('download.bind(existingSeam).stitch(...) creates a download member of that seam', async () => {
         const api = seam({ baseUrl: 'https://x.test' });
-        const getThing = download.seam(api).stitch({
+        const getThing = download.bind(api).stitch({
             path: '/thing',
             adapter: blobAdapter('thing-bytes', {
                 headers: {

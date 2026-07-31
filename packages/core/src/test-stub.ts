@@ -43,8 +43,7 @@ export interface StubStitchOptions<TOut = unknown> {
 
 /** The stub's success value, or a function of the call input that produces it. */
 export type StubImpl<TOut> =
-    | TOut
-    | ((input: StitchInput) => TOut | Promise<TOut>);
+    TOut | ((input: StitchInput) => TOut | Promise<TOut>);
 
 const toError = (e: unknown): StitchError =>
     e instanceof StitchError

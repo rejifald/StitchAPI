@@ -2,8 +2,9 @@
 // across every caller — the token is the application's identity, not a user's. Opting into
 // `tenancy: 'principal'` folds the seam-bound principal into the token's vault key, so each tenant
 // caches its own token and a missing principal fails closed (mirroring cookieSession's `scope`).
-import { env, oauth2, seam, stitch } from '../src';
+import { seam, stitch } from '../src';
 import type { Seam } from '../src';
+import { env, oauth2 } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

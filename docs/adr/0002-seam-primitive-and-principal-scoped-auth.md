@@ -1,8 +1,8 @@
 # ADR 0002 — The `seam` primitive & principal-scoped auth
 
--   **Status:** Accepted (implemented in PR [#66](https://github.com/rejifald/StitchAPI/pull/66); `defineStitch` removed in favor of `seam`)
--   **Date:** 2026-06-13
--   **Tags:** authoring-surface, auth, security, multi-tenant, runtime, agents
+- **Status:** Accepted (implemented in PR [#66](https://github.com/rejifald/StitchAPI/pull/66); `defineStitch` removed in favor of `seam`)
+- **Date:** 2026-06-13
+- **Tags:** authoring-surface, auth, security, multi-tenant, runtime, agents
 
 ## Context
 
@@ -19,21 +19,21 @@ The request that started this: a primitive a user configures **once** (baseUrl, 
 retry, sink) that every stitch then **belongs to**, so the shared policy can't be
 forgotten. Grilling that idea moved it well past "config DRY":
 
--   `defineStitch` already does config inheritance, so a new primitive only earns its keep
-    if it owns something a fragment/factory cannot: **shared runtime**, a **registry /
-    lifecycle**, and — the decisive one — a **trusted identity boundary**.
--   "Share the third-party's global limit" is keyed on the **credential/host**, not on the
-    object graph, and is already half-served by a shared `store` + `throttle.scope: 'host'`.
-    So shared limits alone do not justify a primitive.
--   The genuinely new, primitive-worthy job emerged from auth. Of the five auth strategies,
-    four are stateless or app-identity (`bearer`/`apiKey`/`basic` write straight to headers;
-    `oauth2` is `client_credentials`, an app token deliberately shared across workers —
-    [`auth.ts`](../../packages/core/src/auth.ts)). Exactly one, `cookieSession`, mints a
-    **per-login session** into the shared `StitchStore` keyed by **cookie name, not
-    principal**. A long-lived shared surface therefore risks serving user A's session to
-    user B — a cross-principal **bleed**. Two further leak surfaces exist: the live `store`
-    is reachable via the public `Stitch.__config` (**exfil-at-rest**), and the session is
-    written into `req.headers` and thence any trace/hook/error (**exfil-at-use**).
+- `defineStitch` already does config inheritance, so a new primitive only earns its keep
+  if it owns something a fragment/factory cannot: **shared runtime**, a **registry /
+  lifecycle**, and — the decisive one — a **trusted identity boundary**.
+- "Share the third-party's global limit" is keyed on the **credential/host**, not on the
+  object graph, and is already half-served by a shared `store` + `throttle.scope: 'host'`.
+  So shared limits alone do not justify a primitive.
+- The genuinely new, primitive-worthy job emerged from auth. Of the five auth strategies,
+  four are stateless or app-identity (`bearer`/`apiKey`/`basic` write straight to headers;
+  `oauth2` is `client_credentials`, an app token deliberately shared across workers —
+  [`auth.ts`](../../packages/core/src/auth.ts)). Exactly one, `cookieSession`, mints a
+  **per-login session** into the shared `StitchStore` keyed by **cookie name, not
+  principal**. A long-lived shared surface therefore risks serving user A's session to
+  user B — a cross-principal **bleed**. Two further leak surfaces exist: the live `store`
+  is reachable via the public `Stitch.__config` (**exfil-at-rest**), and the session is
+  written into `req.headers` and thence any trace/hook/error (**exfil-at-use**).
 
 This ADR records the design we converged on. It is **forward-looking** — none of it ships
 yet — but the core decisions (principal bound by the handle; seam as an entity; the
@@ -74,31 +74,31 @@ deprecation window, and no migration path is owed.
     per-login session state (`bearer`/`apiKey`/`basic` are stateless; `oauth2` is
     `client_credentials`, correctly app-shared). Its scope becomes **explicit and fail-closed**:
 
-    -   `scope` **defaults to `'principal'`** — the safe, fail-closed value. A missing scope can
-        only ever _throw_ (when no principal is bound), never silently share a session. Sharing
-        is opt-in: `scope: 'app'` must be written explicitly, because sharing one session across
-        callers is a decision that should be stated out loud. The default `'principal'` branch
-        still _requires_ the principal-aware `loginInput` at the type level (omitting both is a
-        type error); `scope: 'app'` is the member that opts out. `'app'` as the default is the
-        one choice rejected — it reintroduces the bleed.
-    -   `scope: 'principal'` folds the **seam-bound** principal into both the store key and the
-        single-flight key (the latter also fixes cross-user login coalescing), and **throws at
-        call time if no principal is bound**. Per-user auth cannot silently run app-scoped — the
-        bleed becomes a fail-closed error, not a prod leak.
-    -   The principal is read from `AuthContext` (threaded from `seam.as(id)`), never from
-        `loginInput` / `StitchInput`. `loginInput` gains the principal —
-        `loginInput?: (principal: string) => StitchInput` — so trusted code maps the identity to
-        _that user's_ login credentials; credentials still never originate from the caller.
-    -   Session bytes land in the **vault** namespace (off `__config`, redacted). With
-        `scope: 'principal'`, set `ttlMs` and use a distributed/secret backend at scale —
-        per-user sessions multiply and the in-memory default must evict.
+    - `scope` **defaults to `'principal'`** — the safe, fail-closed value. A missing scope can
+      only ever _throw_ (when no principal is bound), never silently share a session. Sharing
+      is opt-in: `scope: 'app'` must be written explicitly, because sharing one session across
+      callers is a decision that should be stated out loud. The default `'principal'` branch
+      still _requires_ the principal-aware `loginInput` at the type level (omitting both is a
+      type error); `scope: 'app'` is the member that opts out. `'app'` as the default is the
+      one choice rejected — it reintroduces the bleed.
+    - `scope: 'principal'` folds the **seam-bound** principal into both the store key and the
+      single-flight key (the latter also fixes cross-user login coalescing), and **throws at
+      call time if no principal is bound**. Per-user auth cannot silently run app-scoped — the
+      bleed becomes a fail-closed error, not a prod leak.
+    - The principal is read from `AuthContext` (threaded from `seam.as(id)`), never from
+      `loginInput` / `StitchInput`. `loginInput` gains the principal —
+      `loginInput?: (principal: string) => StitchInput` — so trusted code maps the identity to
+      _that user's_ login credentials; credentials still never originate from the caller.
+    - Session bytes land in the **vault** namespace (off `__config`, redacted). With
+      `scope: 'principal'`, set `ttlMs` and use a distributed/secret backend at scale —
+      per-user sessions multiply and the in-memory default must evict.
 
 4.  **Split storage into two namespaces by capability/visibility — not by backend.**
 
-    -   `store` — throttle counters, circuit state: freely shared, inspectable.
-    -   `vault` — auth tokens / sessions: (a) never exposed on `__config`, (b) redacted from
-        trace/hook/error payloads, (c) read only by auth strategies, (d) keyed by scope
-        (principal for sessions).
+    - `store` — throttle counters, circuit state: freely shared, inspectable.
+    - `vault` — auth tokens / sessions: (a) never exposed on `__config`, (b) redacted from
+      trace/hook/error payloads, (c) read only by auth strategies, (d) keyed by scope
+      (principal for sessions).
 
     Both may be in-memory **or** distributed. The default is **one `StitchStore` with a
     reserved, redacted secret namespace**; a separate `secretStore` is an _optional_ override
@@ -117,79 +117,79 @@ deprecation window, and no migration path is owed.
     trace/hook/error payloads. Storage relocation alone fixes **none** of them.
 
 7.  **Explicitly out of scope (considered and dropped).**
-    -   **Request dedup / single-flight as a user feature** — cross-principal coalescing
-        hazard (two users' identical in-flight requests sharing one response).
-    -   **Abandoned-request cancellation** — undetectable on the awaited-promise path (JS
-        gives no "no listener" signal). Reframed as: honour a caller `AbortSignal` + abort on
-        stream break, gated on write-safety — **deferred**, not part of the seam.
-    -   **A seam-level `strict` boolean** — too blunt; sealing is per-resource (decision 5).
-    -   **A custom ESLint plugin enforcing "all stitches via the seam"** — advisory, opt-in,
-        and absent in the browser/REPL (violates the browser-first gate). Enforcement is by
-        **runtime composition + encapsulation** (don't re-export raw `stitch` from a surface
-        module; `no-restricted-imports` if any lint at all), not a bespoke plugin.
+    - **Request dedup / single-flight as a user feature** — cross-principal coalescing
+      hazard (two users' identical in-flight requests sharing one response).
+    - **Abandoned-request cancellation** — undetectable on the awaited-promise path (JS
+      gives no "no listener" signal). Reframed as: honour a caller `AbortSignal` + abort on
+      stream break, gated on write-safety — **deferred**, not part of the seam.
+    - **A seam-level `strict` boolean** — too blunt; sealing is per-resource (decision 5).
+    - **A custom ESLint plugin enforcing "all stitches via the seam"** — advisory, opt-in,
+      and absent in the browser/REPL (violates the browser-first gate). Enforcement is by
+      **runtime composition + encapsulation** (don't re-export raw `stitch` from a surface
+      module; `no-restricted-imports` if any lint at all), not a bespoke plugin.
 
 ## Consequences
 
 **Positive**
 
--   The seam finally owns a capability no fragment or factory can express: a **trusted
-    principal boundary** plus lifecycle/registry. After a long grilling, that — not config
-    DRY — is its reason to exist.
--   Per-user secrets become **safe in an agent setting**: no impersonation (principal bound,
-    not passed), no bleed (principal in the key), no exfil (vault off `__config` + redaction)
-    — without giving up shared app-identity tokens.
--   Reuses existing machinery: `extends`/`flatten` composition, store keying
-    (`createStoreThrottle`), sink `flush()`. Net-new surface is small.
+- The seam finally owns a capability no fragment or factory can express: a **trusted
+  principal boundary** plus lifecycle/registry. After a long grilling, that — not config
+  DRY — is its reason to exist.
+- Per-user secrets become **safe in an agent setting**: no impersonation (principal bound,
+  not passed), no bleed (principal in the key), no exfil (vault off `__config` + redaction)
+  — without giving up shared app-identity tokens.
+- Reuses existing machinery: `extends`/`flatten` composition, store keying
+  (`createStoreThrottle`), sink `flush()`. Net-new surface is small.
 
 **Accepted trade-offs**
 
--   Real engine work (not a config tweak): throttle must evaluate a **chain** (intersection),
-    not a merged config; `AuthContext` gains a **principal** threaded from the trusted bind
-    point; `StitchStore` gains `close()` for lifecycle.
--   **Two creation paths** (`seam` and `stitch`) coexist — accepted because standalone
-    stitches are legitimate; docs steer shared surfaces to `seam`.
--   **Per-principal in-memory state grows unbounded** → per-user sessions require
-    TTL-eviction or a distributed vault; the in-memory default is for single-identity / dev.
+- Real engine work (not a config tweak): throttle must evaluate a **chain** (intersection),
+  not a merged config; `AuthContext` gains a **principal** threaded from the trusted bind
+  point; `StitchStore` gains `close()` for lifecycle.
+- **Two creation paths** (`seam` and `stitch`) coexist — accepted because standalone
+  stitches are legitimate; docs steer shared surfaces to `seam`.
+- **Per-principal in-memory state grows unbounded** → per-user sessions require
+  TTL-eviction or a distributed vault; the in-memory default is for single-identity / dev.
 
 **Required follow-ups**
 
--   Design the `AuthContext` identity field + `seam.as()` plumbing so the principal is
-    **unwritable from `StitchInput`** (forgery is the whole risk).
--   Implement `cookieSession` with `scope` **defaulting to `'principal'`** (the fail-closed
-    value; throws if no principal is bound; `scope: 'app'` is the explicit opt-in to sharing;
-    principal folded into store + single-flight keys; `'principal'` requires
-    `loginInput(principal)`) per decision 3.
-    `oauth2` needs no change today (client_credentials only); a future per-user OAuth flow takes
-    the same `scope` treatment.
--   Throttle **chaining** (tighten-only intersection) in the engine.
--   `StitchStore.close()` + vault **eviction/TTL** semantics.
--   `__config` **redaction**: drop `store` / `auth` / `adapter` (or expose a redacted view);
-    confirm nothing reads them.
--   **Nested seams**: teardown order (flush children before the parent sink) and parent-ref
-    GC retention.
--   **Gates:** browser-first — vault default backend in-browser is memory/opaque, **no OS
-    keychain**; bundle-frugal — avoid a second _mandatory_ backend.
+- Design the `AuthContext` identity field + `seam.as()` plumbing so the principal is
+  **unwritable from `StitchInput`** (forgery is the whole risk).
+- Implement `cookieSession` with `scope` **defaulting to `'principal'`** (the fail-closed
+  value; throws if no principal is bound; `scope: 'app'` is the explicit opt-in to sharing;
+  principal folded into store + single-flight keys; `'principal'` requires
+  `loginInput(principal)`) per decision 3.
+  `oauth2` needs no change today (client_credentials only); a future per-user OAuth flow takes
+  the same `scope` treatment.
+- Throttle **chaining** (tighten-only intersection) in the engine.
+- `StitchStore.close()` + vault **eviction/TTL** semantics.
+- `__config` **redaction**: drop `store` / `auth` / `adapter` (or expose a redacted view);
+  confirm nothing reads them.
+- **Nested seams**: teardown order (flush children before the parent sink) and parent-ref
+  GC retention.
+- **Gates:** browser-first — vault default backend in-browser is memory/opaque, **no OS
+  keychain**; bundle-frugal — avoid a second _mandatory_ backend.
 
 ## Alternatives considered
 
--   **A. Keep `defineStitch`; no new primitive.** Rejected: a factory cannot own
-    runtime/registry/principal binding. "Belongs to" needs an entity; `defineStitch` is an
-    alias and is retired.
--   **B. Pass the principal in `StitchInput`.** Rejected: in the agent model the caller
-    chooses its own input, so `principal: 'user-A'` is impersonation-by-design — an IDOR
-    with extra steps. The principal must be bound by trusted code.
--   **C. Move secrets to the OS keychain, or a memory-only vault.** Rejected on two counts:
-    the OS keychain is **host-wide** (worse bleed, not better) and Node-only (breaks the
-    browser gate); **memory-only** breaks the deliberate shared-token / shared-session
-    features. Sensitivity and shareability are orthogonal axes — the fix is the **key**
-    (scope) and **visibility** (off `__config`, redacted), not the storage backend.
--   **D. Enforce "all stitches via the seam" with a custom ESLint plugin.** Rejected:
-    advisory, opt-in, defeated by `eslint-disable`, and absent in the browser/REPL — the
-    exact runtimes the project prioritises. Runtime composition + module encapsulation
-    enforce membership instead.
--   **E. A seam-level `strict` boolean to forbid budget escape.** Rejected: one flag seals
-    everything or nothing; you want `throttle` sealed while `headers` stay overridable.
-    Sealing rides on the per-resource declaration (decision 5).
+- **A. Keep `defineStitch`; no new primitive.** Rejected: a factory cannot own
+  runtime/registry/principal binding. "Belongs to" needs an entity; `defineStitch` is an
+  alias and is retired.
+- **B. Pass the principal in `StitchInput`.** Rejected: in the agent model the caller
+  chooses its own input, so `principal: 'user-A'` is impersonation-by-design — an IDOR
+  with extra steps. The principal must be bound by trusted code.
+- **C. Move secrets to the OS keychain, or a memory-only vault.** Rejected on two counts:
+  the OS keychain is **host-wide** (worse bleed, not better) and Node-only (breaks the
+  browser gate); **memory-only** breaks the deliberate shared-token / shared-session
+  features. Sensitivity and shareability are orthogonal axes — the fix is the **key**
+  (scope) and **visibility** (off `__config`, redacted), not the storage backend.
+- **D. Enforce "all stitches via the seam" with a custom ESLint plugin.** Rejected:
+  advisory, opt-in, defeated by `eslint-disable`, and absent in the browser/REPL — the
+  exact runtimes the project prioritises. Runtime composition + module encapsulation
+  enforce membership instead.
+- **E. A seam-level `strict` boolean to forbid budget escape.** Rejected: one flag seals
+  everything or nothing; you want `throttle` sealed while `headers` stay overridable.
+  Sealing rides on the per-resource declaration (decision 5).
 
 ## Addendum (2026-06-16) — per-call multi-tenant credentials are a non-goal
 

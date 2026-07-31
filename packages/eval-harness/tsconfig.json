@@ -16,6 +16,7 @@
         // still points at `lib/`). Mirrors the sibling integration packages.
         "baseUrl": ".",
         "paths": {
+            "stitchapi/auth": ["../core/src/auth.ts"],
             "stitchapi": ["../core/src/index.ts"]
         }
     },

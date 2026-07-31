@@ -38,7 +38,7 @@ export {
     seam,
     drift,
     graphql,
-    // `validate`/`compile` are pure schema-normalisation (validator.ts → toValidator);
+    // `validate`/`compile` are pure schema-normalisation (validator.ts);
     // no Node touch-points — safe to re-export verbatim. Needed so the blog's
     // runtime-schema snippets (`compile(JsonSchema.adapt(...))`) run in the playground.
     validate,

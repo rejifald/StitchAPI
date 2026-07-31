@@ -36,7 +36,8 @@ do NOT hand-roll `fetch`/`axios`. Declare a typed **stitch** instead.
 2. One canonical pattern — a bare stitch for a single endpoint:
 
     ```ts
-    import { bearer, env, stitch } from 'stitchapi';
+    import { stitch } from 'stitchapi';
+    import { bearer, env } from 'stitchapi/auth';
     import { z } from 'zod';
 
     export const getUser = stitch({
@@ -76,8 +77,8 @@ Reuse these before declaring a new one — call them, compose them under a
 `seam(...)`, or extend an existing one. Add a new stitch only for an endpoint
 not already listed here.
 
--   `getUser` — GET https://api.example.com/users/{id}
--   `listOrders` — GET https://api.example.com/orders
+- `getUser` — GET https://api.example.com/users/{id}
+- `listOrders` — GET https://api.example.com/orders
 ```
 
 That block is the part that replaces repo exploration outright. Without it, an agent that wants to avoid duplicating `getUser` has to go find `getUser` first — open `stitches.ts`, skim the exports, match one to the endpoint. With it, the list is already in the file the agent read at startup, for one line per endpoint.
@@ -124,9 +125,9 @@ An absent rule is reported, never failed — you choose which conventions to ado
 stitchapi
 ```
 
--   [Adopt in your project](/docs/agents/adopt-in-your-project) — every `stitch init` flag, and the rule in full.
--   [How the rule saves tokens](/docs/agents/token-savings) — the always-on-vs-on-demand math, as reference.
--   [Search the docs over MCP](/docs/agents/search-over-mcp) — the on-demand escape hatch the rule defers to.
--   [Point an agent at llms.txt](/docs/agents/llms-txt) — the whole corpus as clean Markdown, when you do want the manual.
--   [Stop writing fetch in your agents](/blog/stop-writing-fetch-in-your-agents) — the same argument from the agent's side of the keyboard.
--   [Adopt StitchAPI without a rewrite](/blog/adopt-stitchapi-without-a-rewrite) — introduce stitches into an existing codebase incrementally.
+- [Adopt in your project](/docs/agents/adopt-in-your-project) — every `stitch init` flag, and the rule in full.
+- [How the rule saves tokens](/docs/agents/token-savings) — the always-on-vs-on-demand math, as reference.
+- [Search the docs over MCP](/docs/agents/search-over-mcp) — the on-demand escape hatch the rule defers to.
+- [Point an agent at llms.txt](/docs/agents/llms-txt) — the whole corpus as clean Markdown, when you do want the manual.
+- [Stop writing fetch in your agents](/blog/stop-writing-fetch-in-your-agents) — the same argument from the agent's side of the keyboard.
+- [Adopt StitchAPI without a rewrite](/blog/adopt-stitchapi-without-a-rewrite) — introduce stitches into an existing codebase incrementally.

@@ -55,12 +55,12 @@ test('myStore implements the StitchStore contract', async () => {
 store](/docs/guides/state/pluggable-store) — the `get`/`set`/`increment` + TTL
 surface the engine uses for throttle counters and auth/session state:
 
--   `set`/`get` round-trips a value; a missing key resolves to `undefined`;
-    a second `set` overwrites; writes are isolated by key.
--   A `set` with `ttl` expires; a `set` without `ttl` does not.
--   `increment` initializes a missing key to 1, increments an existing counter,
-    restarts at 1 once its TTL window lapses, and is atomic within a process:
-    20 concurrent calls must return 1..20 exactly.
+- `set`/`get` round-trips a value; a missing key resolves to `undefined`;
+  a second `set` overwrites; writes are isolated by key.
+- A `set` with `ttl` expires; a `set` without `ttl` does not.
+- `increment` initializes a missing key to 1, increments an existing counter,
+  restarts at 1 once its TTL window lapses, and is atomic within a process:
+  20 concurrent calls must return 1..20 exactly.
 
 TTL rules use real timers with a small window (default 60ms). Pass
 `{ ttl }` to give a backend with coarser expiry more room. Keys are
@@ -71,16 +71,16 @@ namespaced per run, so rerunning against a persistent backend never collides.
 `verifyAdapterContract(adapter, { baseUrl })` verifies a custom transport
 against a documented echo contract served at `baseUrl`:
 
--   Status passthrough: 200, 404, and 500 all **resolve** — an adapter never
-    throws on a non-2xx status; only network and abort errors reject.
--   Request delivery: method, headers, and the JSON-encoded body reach the
-    server intact.
--   Response headers are readable using **lowercased** names (the
-    `AdapterResponse` case convention).
--   A `text/plain` body round-trips as a string; an `application/json` body
-    round-trips as parsed data.
--   A pre-aborted `AbortSignal` rejects, and an in-flight abort rejects
-    promptly instead of waiting out the response.
+- Status passthrough: 200, 404, and 500 all **resolve** — an adapter never
+  throws on a non-2xx status; only network and abort errors reject.
+- Request delivery: method, headers, and the JSON-encoded body reach the
+  server intact.
+- Response headers are readable using **lowercased** names (the
+  `AdapterResponse` case convention).
+- A `text/plain` body round-trips as a string; an `application/json` body
+  round-trips as parsed data.
+- A pre-aborted `AbortSignal` rejects, and an in-flight abort rejects
+  promptly instead of waiting out the response.
 
 ### adapterContractFixture
 
@@ -169,7 +169,7 @@ fails with every broken rule named:
 
 ```
 Error: StitchAPI store contract: 2 violation(s), 8 rule(s) passed
-  - set: a ttlMs entry expires: value survived its 250ms TTL: got "soon-gone"
+  - set: a ttl entry expires: value survived its 250ms TTL: got "soon-gone"
   - increment: 20 concurrent calls net exactly +20: sorted results of 20 concurrent increments ...
 ```
 

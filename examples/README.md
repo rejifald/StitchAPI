@@ -6,13 +6,13 @@ Small, self-contained, runnable examples of the `stitchapi` core library.
 
 A basic, typed `stitch` with an `output` schema, run **offline**. It shows:
 
--   **Typed output inference** — the call's return type is inferred from the
-    `output` schema; no generic or cast.
--   **Runtime validation** — an off-contract (drifted) response is _rejected_
-    instead of leaking an `undefined` downstream.
--   **Pluggable transport / testability** — a tiny **mock adapter** is injected, so
-    the example is deterministic and needs no network. That same injection point is
-    how you unit-test a stitch.
+- **Typed output inference** — the call's return type is inferred from the
+  `output` schema; no generic or cast.
+- **Runtime validation** — an off-contract (drifted) response is _rejected_
+  instead of leaking an `undefined` downstream.
+- **Pluggable transport / testability** — a tiny **mock adapter** is injected, so
+  the example is deterministic and needs no network. That same injection point is
+  how you unit-test a stitch.
 
 ### Run it
 

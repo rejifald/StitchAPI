@@ -12,7 +12,8 @@ stitch holds the client id and secret, the caller never sees the token.
 ## Example
 
 ```ts twoslash
-import { env, oauth2, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { env, oauth2 } from 'stitchapi/auth';
 
 const orders = stitch({
     baseUrl: 'https://api.example.com',
@@ -58,7 +59,8 @@ By default the client authenticates with `client_secret_post`: `client_id` and
 only `grant_type` in the body. Set `clientAuth: 'basic'` for those:
 
 ```ts twoslash
-import { env, oauth2, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { env, oauth2 } from 'stitchapi/auth';
 
 const messages = stitch({
     baseUrl: 'https://sms.example.com',

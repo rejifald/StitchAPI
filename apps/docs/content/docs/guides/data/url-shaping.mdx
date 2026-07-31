@@ -14,12 +14,12 @@ common case; the full operator set is there when you need it.
 How you spell the endpoint decides whether a shared
 [`baseUrl`](/docs/reference/config-types) applies:
 
--   **`path`** is _relative_ and is **joined onto `baseUrl`** — the origin a stitch
-    inherits from a seam or a shared fragment. Reach for it whenever many stitches
-    share one host.
--   **`url`** is the _complete_ endpoint (host included). It is templated and
-    query-aware just like `path`, but it **ignores `baseUrl`** — setting `url`
-    means "this stitch addresses itself." Reach for it for a one-off endpoint.
+- **`path`** is _relative_ and is **joined onto `baseUrl`** — the origin a stitch
+  inherits from a seam or a shared fragment. Reach for it whenever many stitches
+  share one host.
+- **`url`** is the _complete_ endpoint (host included). It is templated and
+  query-aware just like `path`, but it **ignores `baseUrl`** — setting `url`
+  means "this stitch addresses itself." Reach for it for a one-off endpoint.
 
 ```ts twoslash
 import { stitch } from 'stitchapi';

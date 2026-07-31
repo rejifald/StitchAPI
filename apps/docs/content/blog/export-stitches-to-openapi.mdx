@@ -28,7 +28,7 @@ Take two stitches you would write anyway. `listOrders` declares its `status` que
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
-import { bearer, env } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 import { z } from 'zod';
 
 export const getUser = stitch({
@@ -48,10 +48,10 @@ export const listOrders = stitch({
 
 Run the export against that file and the structural pass fills in the parts of the spec it can read straight off the config, no extra wiring:
 
--   **Paths and methods** — each export becomes a `paths` entry with its HTTP method and an `operationId`.
--   **Path parameters** — every `{id}` slot in the path template becomes a required path parameter.
--   **Query parameters** — every query-position expression in the path template becomes a query parameter: `/orders{?status}` emits `status`. An `input.query` schema refines those parameters, marking a name required when the schema requires it. (A path with no `{?...}` template and no `input.query` emits no query parameters — there is no top-level `query` config slot, because on a stitch `query` is the GraphQL query string.)
--   **Security schemes** — each stitch's `auth` (`bearer`/`basic`/`apiKey`/`oauth2`) becomes a security scheme on the operation. The credential itself is never emitted.
+- **Paths and methods** — each export becomes a `paths` entry with its HTTP method and an `operationId`.
+- **Path parameters** — every `{id}` slot in the path template becomes a required path parameter.
+- **Query parameters** — every query-position expression in the path template becomes a query parameter: `/orders{?status}` emits `status`. An `input.query` schema refines those parameters, marking a name required when the schema requires it. (A path with no `{?...}` template and no `input.query` emits no query parameters — there is no top-level `query` config slot, because on a stitch `query` is the GraphQL query string.)
+- **Security schemes** — each stitch's `auth` (`bearer`/`basic`/`apiKey`/`oauth2`) becomes a security scheme on the operation. The credential itself is never emitted.
 
 The pass is structural by design, so request and response **body** schemas are `{}` (any) by default. That keeps core zero-dependency: turning a `z.object({...})` into JSON Schema needs a converter, and a converter is a dependency.
 
@@ -110,7 +110,7 @@ The export ships in the core package and its CLI — no extra install beyond wha
 stitchapi
 ```
 
--   [The CLI surface](/docs/surfaces/cli) — `run`, `serve`, `mcp`, `diagram`, and `export`.
--   [What a stitch is](/docs/concepts/the-stitch) — the declaration the spec is generated from.
--   [Stitching vs. codegen API clients](/blog/stitch-vs-codegen-api-clients) — the consume-a-spec direction, argued axis by axis.
--   [Orval vs. runtime stitching](/blog/orval-vs-runtime-stitching) — where generating from a spec earns its keep.
+- [The CLI surface](/docs/surfaces/cli) — `run`, `serve`, `mcp`, `diagram`, and `export`.
+- [What a stitch is](/docs/concepts/the-stitch) — the declaration the spec is generated from.
+- [Stitching vs. codegen API clients](/blog/stitch-vs-codegen-api-clients) — the consume-a-spec direction, argued axis by axis.
+- [Orval vs. runtime stitching](/blog/orval-vs-runtime-stitching) — where generating from a spec earns its keep.

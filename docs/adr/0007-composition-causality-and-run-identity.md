@@ -1,8 +1,8 @@
 # ADR 0007 — Composition causality: an OTLP span tree for the event stream
 
--   **Status:** Accepted (decisions resolved in the 2026-06-16 review of PR [#163](https://github.com/rejifald/StitchAPI/pull/163); implemented in PR [#163](https://github.com/rejifald/StitchAPI/pull/163))
--   **Date:** 2026-06-16
--   **Tags:** observability, tracing, otlp, playground, composition, causality, browser-first
+- **Status:** Accepted (decisions resolved in the 2026-06-16 review of PR [#163](https://github.com/rejifald/StitchAPI/pull/163); implemented in PR [#163](https://github.com/rejifald/StitchAPI/pull/163))
+- **Date:** 2026-06-16
+- **Tags:** observability, tracing, otlp, playground, composition, causality, browser-first
 
 > [!NOTE]
 >
@@ -18,8 +18,8 @@ A stitch's events are a **flat per-call stream**: `start → progress* → (info
 
 Two consumers want that structure and cannot get it:
 
--   **The OTLP sink** ([`otlp.ts`](../../packages/core/src/otlp.ts)) maps each call to one CLIENT span, but **mints a fresh `traceId`/`spanId` per `start`** and guesses correlation from a `name`-keyed stack; `parentSpanId` is never emitted, and a retry/page/login is at best a point-in-time **span event**, never a child span with its own latency and status. An operator cannot see "how each of the 3 attempts performed" or "page 4 took 800ms".
--   **The playground DAG** (PR [#94](https://github.com/rejifald/StitchAPI/pull/94)). `StitchTraceEntry.dependsOn` ([`runner.ts`](../../docs/sandbox/component/runner.ts)) exists and `traceToMermaid` draws edges from it — but the trace collector ([`trace-collector.ts`](../../docs/sandbox/runtime/trace-collector.ts)) mints synthetic `stitch-N` ids and FIFO-correlates because _"the composition graph core doesn't emit"_ parent identity.
+- **The OTLP sink** ([`otlp.ts`](../../packages/core/src/otlp.ts)) maps each call to one CLIENT span, but **mints a fresh `traceId`/`spanId` per `start`** and guesses correlation from a `name`-keyed stack; `parentSpanId` is never emitted, and a retry/page/login is at best a point-in-time **span event**, never a child span with its own latency and status. An operator cannot see "how each of the 3 attempts performed" or "page 4 took 800ms".
+- **The playground DAG** (PR [#94](https://github.com/rejifald/StitchAPI/pull/94)). `StitchTraceEntry.dependsOn` ([`runner.ts`](../../docs/sandbox/component/runner.ts)) exists and `traceToMermaid` draws edges from it — but the trace collector ([`trace-collector.ts`](../../docs/sandbox/runtime/trace-collector.ts)) mints synthetic `stitch-N` ids and FIFO-correlates because _"the composition graph core doesn't emit"_ parent identity.
 
 A run **already** spawns another: `cookieSession` runs its login stitch via `__raw` → `executeRaw` ([`auth.ts`](../../packages/core/src/auth.ts) `doRefresh`), and `executeRaw` drives `attemptLoop` directly and **emits no events** — so that child run is invisible today. #7's `pipe()` will spawn a child run per step.
 
@@ -47,33 +47,33 @@ A run **already** spawns another: `cookieSession` runs its login stitch via `__r
 
 ## Resolved questions
 
--   **Q1 — Trace identity on events too? What it gives, where it backfires (asked in review).**
-    -   _What stamping every event gives:_ a non-sink `.stream()` consumer (reading the async-iterable directly, not via a `TraceSink`) can attribute each event to a run without external correlation, and could demultiplex if multiple runs' events were ever merged onto one stream.
-    -   _Where it backfires:_ **(a) bloat on the hot path** — identity is ~64 bytes (3 hex ids) repeated on every event, and the `delta` event fires once per chunk (thousands for an LLM/SSE stream), so per-event ids multiply event size precisely where volume is highest and already-truncated payloads live; **(b) redundancy** — the ids are per-run-constant, so per-event is denormalised run data; **(c) no OTLP benefit** — the operator consumes via the OTLP sink, which already has full identity on ctx and builds the rich tree from ctx + sub-span structure, so per-event ids add nothing to the waterfall (the richness comes from **sub-spans**, not from stamping ids on each event); **(d) public-API churn** — `StitchEvent` is a public discriminated union, so 3 new fields hit all 8 variants, ~20 engine construction sites, and every consumer's exhaustive switch.
-    -   _Resolution:_ run identity on **ctx** (sinks/OTLP — full richness) **+ on `start`** (non-sink stream consumers, 1:1 with the run, zero delta-path cost). Revisit stamping all-but-`delta` only if we later expose a merged multi-run stream.
--   **Q2 — Paginate pages as child runs? (resolved: consistent with retries, both traced.)** Pages are **not** child runs and retries are **not** child runs — both are **intra-run sub-spans** (Decision 2). Both are traced the same way, so an operator sees how many retries were made, how many pages were scanned, and **how each performed** (per-iteration latency/status). This is the review's explicit ask.
--   **Q3 — Trace the `cookieSession` login? (resolved: yes, as a child run.)** The login is routed through a traced path that tees to the seam's shared sink with `parentId` set — lighting up the `login → call` edge PR #94's own fixture implies. Concretely: a **traced `executeRaw` variant** so the login emits its own run span (its events no longer vanish).
--   **Q4 — `extends` derivation vs. runtime causality? (resolved: out of scope.)** This ADR provides **only runtime causality** (which run/sub-span spawned which). The static `extends` derivation (which stitch was composed from which fragment) is a different axis the collector can't see at runtime; if ever wanted it is a separate optional overlay (distinct edge style / DAG toggle), not part of this work.
+- **Q1 — Trace identity on events too? What it gives, where it backfires (asked in review).**
+    - _What stamping every event gives:_ a non-sink `.stream()` consumer (reading the async-iterable directly, not via a `TraceSink`) can attribute each event to a run without external correlation, and could demultiplex if multiple runs' events were ever merged onto one stream.
+    - _Where it backfires:_ **(a) bloat on the hot path** — identity is ~64 bytes (3 hex ids) repeated on every event, and the `delta` event fires once per chunk (thousands for an LLM/SSE stream), so per-event ids multiply event size precisely where volume is highest and already-truncated payloads live; **(b) redundancy** — the ids are per-run-constant, so per-event is denormalised run data; **(c) no OTLP benefit** — the operator consumes via the OTLP sink, which already has full identity on ctx and builds the rich tree from ctx + sub-span structure, so per-event ids add nothing to the waterfall (the richness comes from **sub-spans**, not from stamping ids on each event); **(d) public-API churn** — `StitchEvent` is a public discriminated union, so 3 new fields hit all 8 variants, ~20 engine construction sites, and every consumer's exhaustive switch.
+    - _Resolution:_ run identity on **ctx** (sinks/OTLP — full richness) **+ on `start`** (non-sink stream consumers, 1:1 with the run, zero delta-path cost). Revisit stamping all-but-`delta` only if we later expose a merged multi-run stream.
+- **Q2 — Paginate pages as child runs? (resolved: consistent with retries, both traced.)** Pages are **not** child runs and retries are **not** child runs — both are **intra-run sub-spans** (Decision 2). Both are traced the same way, so an operator sees how many retries were made, how many pages were scanned, and **how each performed** (per-iteration latency/status). This is the review's explicit ask.
+- **Q3 — Trace the `cookieSession` login? (resolved: yes, as a child run.)** The login is routed through a traced path that tees to the seam's shared sink with `parentId` set — lighting up the `login → call` edge PR #94's own fixture implies. Concretely: a **traced `executeRaw` variant** so the login emits its own run span (its events no longer vanish).
+- **Q4 — `extends` derivation vs. runtime causality? (resolved: out of scope.)** This ADR provides **only runtime causality** (which run/sub-span spawned which). The static `extends` derivation (which stitch was composed from which fragment) is a different axis the collector can't see at runtime; if ever wanted it is a separate optional overlay (distinct edge style / DAG toggle), not part of this work.
 
 ## Consequences
 
--   The OTLP exporter becomes a real, rich span tree: shared `traceId`, populated `parentSpanId`, **per-attempt and per-page child spans** with timing/status, and child-run spans for logins/pipe steps. A strict, operator-facing upgrade to a shipped capability.
--   PR #94's DAG edges populate from real runtime causality (the collector uses `ctx.runId` for the node id, `ctx.parentId` for `dependsOn`, attempt/page counts as annotations), dropping its synthetic ids and FIFO heuristic.
--   #7's `pipe()` gets the parent/child identity its step→step edges need.
--   Cost: a ctx widening + a `start`-event field; a `RunContext` arg on the run path; a **traced `executeRaw` variant** (Q3); the OTLP sink rebuilt to assemble a tree with intra-run sub-spans; the engine signalling attempt/page span boundaries. All additive — the flat-stream behaviour and every existing sink that reads only `ctx.name` are unchanged.
+- The OTLP exporter becomes a real, rich span tree: shared `traceId`, populated `parentSpanId`, **per-attempt and per-page child spans** with timing/status, and child-run spans for logins/pipe steps. A strict, operator-facing upgrade to a shipped capability.
+- PR #94's DAG edges populate from real runtime causality (the collector uses `ctx.runId` for the node id, `ctx.parentId` for `dependsOn`, attempt/page counts as annotations), dropping its synthetic ids and FIFO heuristic.
+- #7's `pipe()` gets the parent/child identity its step→step edges need.
+- Cost: a ctx widening + a `start`-event field; a `RunContext` arg on the run path; a **traced `executeRaw` variant** (Q3); the OTLP sink rebuilt to assemble a tree with intra-run sub-spans; the engine signalling attempt/page span boundaries. All additive — the flat-stream behaviour and every existing sink that reads only `ctx.name` are unchanged.
 
 ## Alternatives considered
 
--   **Identity on every `StitchEvent` (as the default).** Rejected — see Q1: per-event bloat (esp. `delta`), redundancy, public-API churn, and zero OTLP benefit. Kept narrowly as the `start`-event stamp for non-sink consumers.
--   **Retries/pages as enriched span _events_ rather than child spans.** Rejected: a span event is a timestamp, not a duration — it can't show "how each attempt/page performed". Child sub-spans are the OTel-idiomatic way to surface per-iteration latency and status, which is exactly the review's ask.
--   **`AsyncLocalStorage` ambient run context.** Rejected: Node-only, breaks browser-first and the playground Worker. Explicit `RunContext` threading is portable and makes the parent/child relation visible at the call site.
--   **Caller-supplied run/correlation ids.** Rejected: ids must be engine-minted and unforgeable (mirrors the `StitchInput`-principal rejection in ADR 0002). Inbound `traceparent` continuation is a separate, opt-in future feature.
+- **Identity on every `StitchEvent` (as the default).** Rejected — see Q1: per-event bloat (esp. `delta`), redundancy, public-API churn, and zero OTLP benefit. Kept narrowly as the `start`-event stamp for non-sink consumers.
+- **Retries/pages as enriched span _events_ rather than child spans.** Rejected: a span event is a timestamp, not a duration — it can't show "how each attempt/page performed". Child sub-spans are the OTel-idiomatic way to surface per-iteration latency and status, which is exactly the review's ask.
+- **`AsyncLocalStorage` ambient run context.** Rejected: Node-only, breaks browser-first and the playground Worker. Explicit `RunContext` threading is portable and makes the parent/child relation visible at the call site.
+- **Caller-supplied run/correlation ids.** Rejected: ids must be engine-minted and unforgeable (mirrors the `StitchInput`-principal rejection in ADR 0002). Inbound `traceparent` continuation is a separate, opt-in future feature.
 
 ## Gates
 
--   **browser-first** — ids via `crypto.getRandomValues`/`Math.random` (the existing `otlp.ts#hex`), no `AsyncLocalStorage`, no Node-only API on the hot path.
--   **bundle-frugal** — a ctx widening, one `start` field, a small `RunContext`; the richer tree assembly lives in the **opt-in** OTLP sink / out-of-core playground collector, not on the `import { stitch }` hot path.
--   **contract-not-dependency** — the ids are strings on the run-scoped ctx (+ `start`); they round-trip as JSON, and no new vendor capability is introduced.
+- **browser-first** — ids via `crypto.getRandomValues`/`Math.random` (the existing `otlp.ts#hex`), no `AsyncLocalStorage`, no Node-only API on the hot path.
+- **bundle-frugal** — a ctx widening, one `start` field, a small `RunContext`; the richer tree assembly lives in the **opt-in** OTLP sink / out-of-core playground collector, not on the `import { stitch }` hot path.
+- **contract-not-dependency** — the ids are strings on the run-scoped ctx (+ `start`); they round-trip as JSON, and no new vendor capability is introduced.
 
 ## Staged implementation (proposed)
 

@@ -31,12 +31,14 @@ because `bodyType` is `'form'`.
 
 `bodyType` chooses how the call-time `body` is encoded (default `'json'`):
 
--   `json` — a JSON body with `Content-Type: application/json`. The default;
-    reach for it for ordinary REST payloads.
--   `form` — a URL-encoded `application/x-www-form-urlencoded` body, for APIs
-    that expect classic HTML-form fields (login forms, OAuth token exchanges).
--   `multipart` — multipart form data, for file uploads and mixed
-    field-plus-binary payloads; the boundary is set for you.
+- `json` — a JSON body with `Content-Type: application/json`. The default;
+  reach for it for ordinary REST payloads.
+- `form` — a URL-encoded `application/x-www-form-urlencoded` body, for APIs
+  that expect classic HTML-form fields (login forms, OAuth token exchanges).
+- `multipart` — multipart form data, for file uploads and mixed
+  field-plus-binary payloads; the boundary is set for you. Nested
+  objects/arrays serialize with bracket nesting by default; `multipart: 'dot'`
+  (≡ `multipart: { nesting: 'dot' }`) switches to dot-path field names.
 
 The body itself always comes from the call input (`await submit({ body })`),
 never from the config — so one stitch encodes whatever you pass it. See

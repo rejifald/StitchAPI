@@ -3,8 +3,9 @@
 // GENERICALLY — it no longer special-cases `kind === 'graphql'`. Proven below by the graphql
 // behaviour (unchanged) plus custom surfaces routed through the same engine. Plus a static
 // `headers` config field.
-import { apiKey, env, graphql, stitch } from '../src';
+import { graphql, stitch } from '../src';
 import type { Surface } from '../src';
+import { apiKey, env } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -38,7 +39,7 @@ describe('GraphQL kind', () => {
         const query = graphql({
             baseUrl: server.url,
             document: 'query($id: ID) { thing(id: $id) { name } }',
-            auth: apiKey({ header: 'apikey', value: env('GQL_KEY') }),
+            auth: apiKey({ name: 'apikey', value: env('GQL_KEY') }),
         });
 
         const out = await query({ variables: { id: 1 } });

@@ -11,8 +11,11 @@
 // - `injectStitchStream` — the streaming primitive: emits as `delta` chunks
 //                          arrive. This is the differentiator over plain
 //                          request/response query libraries.
-// - `queryOptions`       — an OPTIONAL TanStack Query adapter (returns a plain
-//                          POJO, so it needs no import of the Angular adapter).
+// - `stitchQueryOptions` — an OPTIONAL TanStack Query adapter, re-exported from
+//                          `@stitchapi/query-core` (returns a plain POJO, so it
+//                          needs no import of the Angular adapter; named with
+//                          the `stitch` prefix because TanStack exports its own
+//                          `queryOptions`, see ADR 0012).
 //
 // The observable is the bridge off the store; the signal is derived from it via
 // `toSignal`, so a single query feeds both. `state$` and the signals share one
@@ -36,7 +39,7 @@ import {
     type QueryOutput,
     type StitchLike,
     type StitchQuery,
-    type StitchQueryState,
+    type StitchQueryResult,
     type StitchQueryStatus,
     createStitchQuery,
 } from '@stitchapi/query-core';
@@ -50,8 +53,21 @@ export type {
     QueryOutput,
     StitchLike,
     StitchQuery,
-    StitchQueryState,
+    StitchQueryOptions,
+    StitchQueryResult,
     StitchQueryStatus,
+} from '@stitchapi/query-core';
+
+// The TanStack Query adapter and its key derivation live in
+// `@stitchapi/query-core` — ONE shared implementation across every framework
+// binding, so the key format (and its secret-redaction guarantees) cannot drift
+// between frameworks. Re-exported here so Angular apps import everything from
+// `@stitchapi/angular`.
+export {
+    deriveQueryKey,
+    keyInputFor,
+    nameOf,
+    stitchQueryOptions,
 } from '@stitchapi/query-core';
 
 // ---------------------------------------------------------------------------
@@ -59,11 +75,22 @@ export type {
 // ---------------------------------------------------------------------------
 
 /** A value, a `Signal` of it, or a zero-arg getter — Angular's idiom for "static
- * or reactive". Passing a signal/getter recreates the query (and re-fetches) when
- * the tracked value changes; a plain value is read once. */
-export type InjectInput<T> = T | Signal<T> | (() => T);
+ * or reactive" (the sibling of Vue's `MaybeRefOrGetter` and Solid's
+ * `MaybeAccessor`). Passing a signal/getter recreates the query (and re-fetches)
+ * when the tracked value changes; a plain value is read once. */
+export type MaybeSignal<T> = T | Signal<T> | (() => T);
 
-export interface InjectStitchOptions<T> extends CreateStitchQueryOptions<T> {
+/**
+ * Options accepted by {@link injectStitch} / {@link injectStitchStream}.
+ *
+ * The store's `streaming` flag is deliberately OMITTED: each injector hard-sets
+ * it (`injectStitch` → unary, `injectStitchStream` → streaming), so passing it
+ * would be silently ignored — the type forbids it instead.
+ */
+export interface InjectStitchOptions<T> extends Omit<
+    CreateStitchQueryOptions<T>,
+    'streaming'
+> {
     /** Injection context to use when `injectStitch` is called outside one (e.g. a
      * test, or a non-injection callback). Defaults to the ambient context. */
     injector?: Injector;
@@ -75,7 +102,7 @@ export interface InjectStitchOptions<T> extends CreateStitchQueryOptions<T> {
 export interface InjectStitchResult<T> {
     /** The whole snapshot as a signal — read `state().data` etc. in a template or
      * `computed`. */
-    readonly state: Signal<StitchQueryState<T>>;
+    readonly state: Signal<StitchQueryResult<T>>;
     /** The validated output (unary) or the latest streamed value (streaming). */
     readonly data: Signal<T | undefined>;
     /** The thrown reason on failure. */
@@ -94,7 +121,7 @@ export interface InjectStitchResult<T> {
     readonly isStreaming: Signal<boolean>;
     /** The same state as an observable — for the `async` pipe / RxJS consumers.
      * Multicast: it shares the one query execution with the signals above. */
-    readonly state$: Observable<StitchQueryState<T>>;
+    readonly state$: Observable<StitchQueryResult<T>>;
     /** Abort the in-flight run and re-run from scratch. */
     refetch: () => void;
     /** Abort the in-flight run, if any. */
@@ -105,89 +132,10 @@ export interface InjectStitchResult<T> {
 // Shared driver
 // ---------------------------------------------------------------------------
 
-// --- key derivation (shared logic; duplicated in @stitchapi/react) ----------
-// These helpers are intentionally copied verbatim from `@stitchapi/react`'s key
-// derivation: they are separate published packages, so a cross-package import
-// would add a runtime dependency. Keep the copies in lock-step.
-
-/** The `__config` slice a key derives from. Mirrors core's `nameOf`
- * (`name ?? path ?? 'stitch'`) plus a `url` fallback for URL-configured stitches. */
-type KeyConfig = { name?: string; path?: string; url?: string };
-
-/** A stable, human-meaningful name for the stitch. Mirrors core's `nameOf`
- * (`packages/core/src/engine.ts`) — `name ?? path ?? url ?? 'stitch'` — so two
- * DISTINCT nameless stitches (`/users/{id}` vs `/orders/{id}`) don't collapse to
- * the literal `'stitch'` and collide on one cache entry. */
-function nameOf(stitch: unknown): string {
-    const cfg = (stitch as { __config?: KeyConfig }).__config;
-    return cfg?.name ?? cfg?.path ?? cfg?.url ?? 'stitch';
-}
-
-// Header names whose VALUES are secrets — mirrors core's private `SECRET_HEADERS`
-// trace denylist (`packages/core/src/trace.ts`), which is not exported. We redact
-// the value (rather than dropping the header) so the key stays stable per token
-// AND callers who legitimately vary a response by a non-secret header (e.g.
-// `accept-language`) keep separate cache entries. Compared case-insensitively; the
-// `*-token` / `*-api-key` suffix rules catch vendor spellings without enumerating.
-const SECRET_HEADERS = new Set([
-    'authorization',
-    'proxy-authorization',
-    'cookie',
-    'set-cookie',
-    'x-api-key',
-    'x-auth-token',
-]);
-const REDACTED = '[redacted]';
-
-function isSecretHeader(name: string): boolean {
-    const k = name.toLowerCase();
-    return (
-        SECRET_HEADERS.has(k) || k.endsWith('-token') || k.endsWith('-api-key')
-    );
-}
-
-/**
- * Build the value that goes into a cache/query key from a stitch's per-call input.
- * Never puts the raw input in the key:
- *
- * - drops `signal` / `onProgress` — runtime-only, never-serialised (CONTRACT.md);
- *   `onProgress` in particular churns identity every render, which would refetch
- *   forever if it entered the key;
- * - redacts the VALUES of secret-bearing headers (`authorization`, `cookie`, …)
- *   so a bearer token can't leak into a persisted / devtools-visible key, while
- *   keeping non-secret headers so they still vary the cache;
- * - keeps every other field (`params` / `query` / `body` / `variables` / …) as-is.
- *
- * `null` / `undefined` inputs stay `null`; a primitive input is returned unchanged.
- */
-function keyInputFor(input: unknown): unknown {
-    if (input === null || input === undefined) return null;
-    if (typeof input !== 'object') return input;
-
-    const {
-        signal: _signal,
-        onProgress: _onProgress,
-        ...rest
-    } = input as {
-        signal?: unknown;
-        onProgress?: unknown;
-        headers?: Record<string, unknown>;
-    } & Record<string, unknown>;
-
-    if (rest.headers && typeof rest.headers === 'object') {
-        const headers: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(rest.headers)) {
-            headers[k] = isSecretHeader(k) ? REDACTED : v;
-        }
-        rest.headers = headers;
-    }
-    return rest;
-}
-
 // The store's seed value, surfaced before the first real snapshot (an instant).
 // It matches core's idle snapshot exactly so the signals are well-formed from the
 // start.
-const IDLE_STATE: StitchQueryState<unknown> = {
+const IDLE_STATE: StitchQueryResult<unknown> = {
     status: 'idle',
     data: undefined,
     error: undefined,
@@ -202,7 +150,7 @@ const IDLE_STATE: StitchQueryState<unknown> = {
  * A signal/getter becomes a `toObservable(computed(...))` that re-emits on change;
  * a plain value becomes a single-shot `of(value)`. */
 function inputObservable<I>(
-    input: InjectInput<I>,
+    input: MaybeSignal<I>,
     injector: Injector,
 ): Observable<I> {
     if (typeof input === 'function') {
@@ -216,23 +164,22 @@ function inputObservable<I>(
 
 function injectStitchInternal<T>(
     stitch: StitchLike<T, unknown>,
-    input: InjectInput<unknown>,
+    input: MaybeSignal<unknown>,
     options: InjectStitchOptions<T>,
-    stream: boolean,
+    streaming: boolean,
 ): InjectStitchResult<T> {
     if (!options.injector) assertInInjectionContext(injectStitch);
     const injector = options.injector ?? inject(Injector);
     const destroyRef = injector.get(DestroyRef);
 
     const { mode, enabled, onSuccess, onError } = options;
-    const coreOptions: CreateStitchQueryOptions<T> & { stream: boolean } =
-        compact({
-            stream,
-            mode,
-            enabled,
-            onSuccess,
-            onError,
-        });
+    const coreOptions: CreateStitchQueryOptions<T> = compact({
+        streaming,
+        mode,
+        enabled,
+        onSuccess,
+        onError,
+    });
 
     // The live query handle, captured for the imperative refetch/cancel. It is
     // reassigned whenever the input changes (switchMap tears down the old one).
@@ -243,7 +190,7 @@ function injectStitchInternal<T>(
         // store subscription and tears the handle down on unsubscribe.
         switchMap(
             (value) =>
-                new Observable<StitchQueryState<T>>((subscriber) => {
+                new Observable<StitchQueryResult<T>>((subscriber) => {
                     const handle = createStitchQuery<T, unknown>(
                         stitch,
                         value,
@@ -268,7 +215,7 @@ function injectStitchInternal<T>(
     );
 
     const state = toSignal(state$, {
-        initialValue: IDLE_STATE as StitchQueryState<T>,
+        initialValue: IDLE_STATE as StitchQueryResult<T>,
         injector,
     });
 
@@ -310,17 +257,17 @@ function injectStitchInternal<T>(
  */
 export function injectStitch<S extends StitchLike<unknown, never>>(
     stitch: S,
-    input: InjectInput<QueryInput<S>>,
+    input: MaybeSignal<QueryInput<S>>,
     options?: InjectStitchOptions<QueryOutput<S>>,
 ): InjectStitchResult<QueryOutput<S>>;
 export function injectStitch<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
-    input: InjectInput<Input>,
+    input: MaybeSignal<Input>,
     options?: InjectStitchOptions<T>,
 ): InjectStitchResult<T>;
 export function injectStitch<T>(
     stitch: StitchLike<T, unknown>,
-    input: InjectInput<unknown>,
+    input: MaybeSignal<unknown>,
     options: InjectStitchOptions<T> = {},
 ): InjectStitchResult<T> {
     return injectStitchInternal<T>(stitch, input, options, false);
@@ -345,75 +292,18 @@ export function injectStitch<T>(
  */
 export function injectStitchStream<S extends StitchLike<unknown, never>>(
     stitch: S,
-    input: InjectInput<QueryInput<S>>,
+    input: MaybeSignal<QueryInput<S>>,
     options?: InjectStitchOptions<QueryOutput<S>>,
 ): InjectStitchResult<QueryOutput<S>>;
 export function injectStitchStream<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
-    input: InjectInput<Input>,
+    input: MaybeSignal<Input>,
     options?: InjectStitchOptions<T>,
 ): InjectStitchResult<T>;
 export function injectStitchStream<T>(
     stitch: StitchLike<T, unknown>,
-    input: InjectInput<unknown>,
+    input: MaybeSignal<unknown>,
     options: InjectStitchOptions<T> = {},
 ): InjectStitchResult<T> {
     return injectStitchInternal<T>(stitch, input, options, true);
 }
-
-// ---------------------------------------------------------------------------
-// queryOptions — optional TanStack Query adapter
-// ---------------------------------------------------------------------------
-
-// IDENTICAL to the other bindings' `queryOptions` (no framework import) — the
-// POJO shape `@tanstack/angular-query-experimental`'s `injectQuery(() => ...)`
-// consumes is the same `{ queryKey, queryFn }` TanStack uses everywhere.
-
-/** The plain object {@link stitchQueryOptions} returns — structurally compatible with
- * TanStack Query's options without importing the library. */
-export interface StitchQueryOptions<T> {
-    queryKey: readonly unknown[];
-    queryFn: (ctx?: { signal?: AbortSignal }) => Promise<T>;
-}
-
-/**
- * Build a TanStack-Query-compatible options object for a stitch, WITHOUT a hard
- * dependency on `@tanstack/angular-query-experimental` — it just returns a POJO:
- *
- * ```ts
- * import { injectQuery } from '@tanstack/angular-query-experimental';
- * import { stitchQueryOptions } from '@stitchapi/angular';
- *
- * readonly user = injectQuery(() => stitchQueryOptions(getUser, { params: { id: this.id() } }));
- * ```
- *
- * The `queryFn` awaits the stitch (the validated output); the `queryKey` is a
- * stable name for the stitch plus a sanitised copy of the input (secret header
- * values redacted, runtime-only `signal`/`onProgress` dropped), so TanStack caches
- * per call without leaking a bearer token into the key or refetching every render.
- */
-export function stitchQueryOptions<S extends StitchLike<unknown, never>>(
-    stitch: S,
-    input: QueryInput<S>,
-): StitchQueryOptions<QueryOutput<S>>;
-export function stitchQueryOptions<T, Input = unknown>(
-    stitch: StitchLike<T, Input>,
-    input: Input,
-): StitchQueryOptions<T>;
-export function stitchQueryOptions<T>(
-    stitch: StitchLike<T, unknown>,
-    input: unknown,
-): StitchQueryOptions<T> {
-    return {
-        queryKey: [nameOf(stitch), keyInputFor(input)],
-        queryFn: () => Promise.resolve(stitch(input)),
-    };
-}
-
-/**
- * @deprecated Renamed to {@link stitchQueryOptions} — a bare `queryOptions` collides
- * with TanStack Query's own `queryOptions` export when both are imported. See
- * [ADR 0012](../../../docs/adr/0012-integration-symbol-naming.md). Kept through the
- * `1.0.0-rc` line and removed at the 1.0 GA cut.
- */
-export const queryOptions = stitchQueryOptions;

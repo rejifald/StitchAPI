@@ -1,8 +1,8 @@
 # ADR 0009 — The `postMessage` surface: typed iframe↔parent RPC + events
 
--   **Status:** Accepted
--   **Date:** 2026-06-17
--   **Tags:** surfaces, transport, postmessage, browser, iframe, messageport, events, security, browser-first
+- **Status:** Accepted
+- **Date:** 2026-06-17
+- **Tags:** surfaces, transport, postmessage, browser, iframe, messageport, events, security, browser-first
 
 > [!NOTE]
 >
@@ -28,10 +28,10 @@ The `Surface` model already has the two pieces this needs. `Surface.execute` ([A
 
 2.  **Four verbs, two surface ids.** A `PostMessageChannel` mints:
 
-    -   **`request(opts)`** — correlated request→response. A **buffered** surface (`id: 'postmessage'`) whose `execute` mints an id, posts `{ type, id, payload }`, registers a pending entry, and resolves when the matching `{ type: reply, id }` lands (`reply` defaults to `` `${type}-result` ``). The reply payload is the value; `output` validates it.
-    -   **`emit(opts)`** — fire-and-forget. The same buffered surface, but `execute` posts `{ type, payload }` (no id) and resolves immediately; result `void`.
-    -   **`events(opts)`** — inbound event subscription. A **streaming** surface (`id: 'postmessage-event'`) whose `execute` hands the engine a live `ReadableStream` the channel feeds; `await` resolves to the collected payload array, `.stream()` yields live deltas; `output` validates each payload (per-`delta`, [ADR 0005](./0005-surfaces-and-the-authoring-model.md) Addendum).
-    -   **`respond(type, handler, opts?)`** — the **receiving** side (e.g. an iframe answering a parent's `focus`). Origin-gated, validates the inbound payload against `input`, runs `handler`, validates the result against `output`, posts `{ type: reply, id, payload: result }`. It is the only verb that is **not** a stitch — it makes no outbound call, so it returns a plain unsubscribe.
+    - **`request(opts)`** — correlated request→response. A **buffered** surface (`id: 'postmessage'`) whose `execute` mints an id, posts `{ type, id, payload }`, registers a pending entry, and resolves when the matching `{ type: reply, id }` lands (`reply` defaults to `` `${type}-result` ``). The reply payload is the value; `output` validates it.
+    - **`emit(opts)`** — fire-and-forget. The same buffered surface, but `execute` posts `{ type, payload }` (no id) and resolves immediately; result `void`.
+    - **`events(opts)`** — inbound event subscription. A **streaming** surface (`id: 'postmessage-event'`) whose `execute` hands the engine a live `ReadableStream` the channel feeds; `await` resolves to the collected payload array, `.stream()` yields live deltas; `output` validates each payload (per-`delta`, [ADR 0005](./0005-surfaces-and-the-authoring-model.md) Addendum).
+    - **`respond(type, handler, opts?)`** — the **receiving** side (e.g. an iframe answering a parent's `focus`). Origin-gated, validates the inbound payload against `input`, runs `handler`, validates the result against `output`, posts `{ type: reply, id, payload: result }`. It is the only verb that is **not** a stitch — it makes no outbound call, so it returns a plain unsubscribe.
 
     The registry — the pending-request map, the responder map, the event-subscription set — lives **per channel**, behind a **single** demux listener attached once at construction (the decision: per-channel, not per-surface; one listener, not one per stitch). `close()` detaches it, rejects every pending request, and ends every event stream.
 
@@ -43,19 +43,19 @@ The `Surface` model already has the two pieces this needs. `Surface.execute` ([A
 
 ## How it holds the three gates
 
--   **browser-first** — the module uses only browser-native APIs; no `node:*`, no `Buffer`. It is pinned in the `browser-bundle.spec` matrix both as a `BROWSER_LEGIT` subpath and in the streaming-surface set (its `events` verb carries a `stream` hook), asserting it bundles for `"browser"` with no `node:*` and no `EventSource`.
--   **bundle-frugal** — reached only through the `stitchapi/postmessage` subpath; `import { stitch }` pulls in none of it (the engine reaches the surface via `cfg.kind` at runtime, never a static import).
--   **contract-not-dependency** — `kind` round-trips to its `id` string on `__config` ([ADR 0005](./0005-surfaces-and-the-authoring-model.md) Decision 11): `'postmessage'` for request/emit, `'postmessage-event'` for events, both valid JSON. The live `execute`/`stream` hooks and the target `Window` are redacted, never serialised. The non-serializable bits — a `Window` thunk, a `MessagePort` instance — are acknowledged **sugar** in the exact category the library already draws the line at (`transform`, `paginate.next`, `cache.key`, `pipe`'s step mapping): the channel's _binding_ is sugar; a stitch's _declaration_ (its `kind` id, `type`, schemas) serializes.
+- **browser-first** — the module uses only browser-native APIs; no `node:*`, no `Buffer`. It is pinned in the `browser-bundle.spec` matrix both as a `BROWSER_LEGIT` subpath and in the streaming-surface set (its `events` verb carries a `stream` hook), asserting it bundles for `"browser"` with no `node:*` and no `EventSource`.
+- **bundle-frugal** — reached only through the `stitchapi/postmessage` subpath; `import { stitch }` pulls in none of it (the engine reaches the surface via `cfg.kind` at runtime, never a static import).
+- **contract-not-dependency** — `kind` round-trips to its `id` string on `__config` ([ADR 0005](./0005-surfaces-and-the-authoring-model.md) Decision 11): `'postmessage'` for request/emit, `'postmessage-event'` for events, both valid JSON. The live `execute`/`stream` hooks and the target `Window` are redacted, never serialised. The non-serializable bits — a `Window` thunk, a `MessagePort` instance — are acknowledged **sugar** in the exact category the library already draws the line at (`transform`, `paginate.next`, `cache.key`, `pipe`'s step mapping): the channel's _binding_ is sugar; a stitch's _declaration_ (its `kind` id, `type`, schemas) serializes.
 
 ## Security model
 
 Origin handling is **structural, not advisory** — the bar that rejected host-inferred bearer tokens in #6 and that the `shell` surface set for command injection:
 
--   **The `Origin` type forbids `'*'`.** `Origin = ` `` `https://${string}` | `http://${string}` `` — `'*'` is not assignable to either arm, so a wildcard `targetOrigin` is a **compile error**, not a lint warning. The unsafe path is unspellable in typed code.
--   **`windowChannel` also throws at runtime on `'*'`** — defense in depth, so an `as any` cast past the type still fails fast at construction rather than leaking the first message.
--   **The gate runs before dispatch and before validation.** A message from a disallowed origin is dropped in step 1 of the demux — never correlated to a pending request, never handed to a responder, never validated, never delivered to an event stream. An attacker on the wrong origin learns nothing from timing or from a validation error, because neither runs.
--   **An empty `allowedOrigins` over an origin-bearing transport fails closed** (drops everything) — a misconfigured channel is silent, not promiscuous.
--   **`MessagePort` is exempt by construction.** A port is a private, already-handed-out capability with no origin; gating it would be theatre. The exemption is documented, not silent.
+- **The `Origin` type forbids `'*'`.** `Origin = ` `` `https://${string}` | `http://${string}` `` — `'*'` is not assignable to either arm, so a wildcard `targetOrigin` is a **compile error**, not a lint warning. The unsafe path is unspellable in typed code.
+- **`windowChannel` also throws at runtime on `'*'`** — defense in depth, so an `as any` cast past the type still fails fast at construction rather than leaking the first message.
+- **The gate runs before dispatch and before validation.** A message from a disallowed origin is dropped in step 1 of the demux — never correlated to a pending request, never handed to a responder, never validated, never delivered to an event stream. An attacker on the wrong origin learns nothing from timing or from a validation error, because neither runs.
+- **An empty `allowedOrigins` over an origin-bearing transport fails closed** (drops everything) — a misconfigured channel is silent, not promiscuous.
+- **`MessagePort` is exempt by construction.** A port is a private, already-handed-out capability with no origin; gating it would be theatre. The exemption is documented, not silent.
 
 A responder DROPS a payload that fails its `input` schema rather than replying with an error (a hostile peer learns nothing from the reply shape), and never posts a result that fails its `output` schema (an off-contract reply is suppressed, not sent).
 
@@ -67,25 +67,25 @@ Every verb is an ordinary stitch run, so each gets a run-identity span ([ADR 000
 
 Surfaced by the first real adoption (strimko's template-preview channel) — documented here so they are not a surprise:
 
--   **A stitch is a lazy result — drive it.** Every verb returns a stitch whose call yields a _cold_ `StitchResult`: the run (and thus the `postMessage`) happens only when the result is driven — `await` / `.then` / `.catch` / `.finally`. For `request`/`events` you naturally `await`/`.stream()`, so this is invisible; for fire-and-forget **`emit`** you must drive it explicitly — `void send(input).catch(() => {})` — or nothing is posted. The strimko host uses exactly this idiom for `template/update`.
--   **`events` validation terminates the stream.** `output` on `events` validates each payload per-`delta`, and a violation ends the subscription with a `drift` error — the same loud-not-silent contract as `sse`/`stream`. That is right for a coherent stream but surprising for a _discrete_ event bus, where one malformed message should not kill the channel. There, omit `output` and validate each payload in the consumer (drop the bad one, keep listening) — the pattern the strimko `template/content-height` and `template/update` subscriptions use. A built-in `onInvalid: 'drop'` mode for `events` is noted as future work.
+- **A stitch is a lazy result — drive it.** Every verb returns a stitch whose call yields a _cold_ `StitchResult`: the run (and thus the `postMessage`) happens only when the result is driven — `await` / `.then` / `.catch` / `.finally`. For `request`/`events` you naturally `await`/`.stream()`, so this is invisible; for fire-and-forget **`emit`** you must drive it explicitly — `void send(input).catch(() => {})` — or nothing is posted. The strimko host uses exactly this idiom for `template/update`.
+- **`events` validation terminates the stream.** `output` on `events` validates each payload per-`delta`, and a violation ends the subscription with a `drift` error — the same loud-not-silent contract as `sse`/`stream`. That is right for a coherent stream but surprising for a _discrete_ event bus, where one malformed message should not kill the channel. There, omit `output` and validate each payload in the consumer (drop the bad one, keep listening) — the pattern the strimko `template/content-height` and `template/update` subscriptions use. A built-in `onInvalid: 'drop'` mode for `events` is noted as future work.
 
 ## Packaging
 
--   New file `packages/core/src/postmessage.ts`; a `stitchapi/postmessage` subpath entry in `tsup.config.ts` and a `./postmessage` export block in `package.json` (browser/import/require), mirroring `./sse` exactly.
--   Browser-bundle matrix updated: `'src/postmessage.ts'` in `BROWSER_LEGIT` and in the streaming-surface `test.each`.
--   **Zero core-engine change.** The surface rides `execute`/`stream`/`contractValue` as-is; the absolute-URL guard is already bypassed for any surface carrying `execute` (the `postmessage:<type>` pseudo-endpoint passes), and the streaming path already drives `cfg.kind.execute` for a future non-HTTP streaming surface.
+- New file `packages/core/src/postmessage.ts`; a `stitchapi/postmessage` subpath entry in `tsup.config.ts` and a `./postmessage` export block in `package.json` (browser/import/require), mirroring `./sse` exactly.
+- Browser-bundle matrix updated: `'src/postmessage.ts'` in `BROWSER_LEGIT` and in the streaming-surface `test.each`.
+- **Zero core-engine change.** The surface rides `execute`/`stream`/`contractValue` as-is; the absolute-URL guard is already bypassed for any surface carrying `execute` (the `postmessage:<type>` pseudo-endpoint passes), and the streaming path already drives `cfg.kind.execute` for a future non-HTTP streaming surface.
 
 ## Alternatives considered
 
--   **Overload the user `adapter` instead of a surface.** Rejected for the same reason [ADR 0008](./0008-non-http-surfaces-and-pipe.md) rejected it for `shell`: `adapter` is the user's HTTP-client slot. A `postMessage` channel is a protocol with its own request shaping, correlation, and a stateful registry behind a single listener — that is a `Surface` identity (`buildRequest` + `execute`/`stream` bundled with the `id`), not a transport swap. Overloading `adapter` would also lose the per-channel registry and muddy redaction.
--   **A full RPC `serve`-style responder primitive.** `respond` is deliberately the **minimal** responder — register one handler per `type`, validate-in/validate-out, reply. A richer surface (a routed responder table, method namespaces, a `serve`-style declarative receiver, schema-negotiated handshakes) is **future work**; it is not needed to remove the three bugs in Context, and shipping the minimum keeps the first version reviewable. The channel abstraction leaves room for it (a responder registry already exists per channel).
--   **Use `EventSource`-style auto-reconnect / replay for `events`.** Out of scope, mirroring the `sse` decision: a dropped channel is the caller's to re-establish; buffering/replay is a separate concern.
--   **A single callable default export** (à la `sse(config)`). Rejected: `postMessage` has _four_ verbs (request/emit/events/respond) with no single "the call", and the transport+origin must be bound before any of them. The **channel factory is the entry point**; the builders and the two `Surface` identities are the named exports.
+- **Overload the user `adapter` instead of a surface.** Rejected for the same reason [ADR 0008](./0008-non-http-surfaces-and-pipe.md) rejected it for `shell`: `adapter` is the user's HTTP-client slot. A `postMessage` channel is a protocol with its own request shaping, correlation, and a stateful registry behind a single listener — that is a `Surface` identity (`buildRequest` + `execute`/`stream` bundled with the `id`), not a transport swap. Overloading `adapter` would also lose the per-channel registry and muddy redaction.
+- **A full RPC `serve`-style responder primitive.** `respond` is deliberately the **minimal** responder — register one handler per `type`, validate-in/validate-out, reply. A richer surface (a routed responder table, method namespaces, a `serve`-style declarative receiver, schema-negotiated handshakes) is **future work**; it is not needed to remove the three bugs in Context, and shipping the minimum keeps the first version reviewable. The channel abstraction leaves room for it (a responder registry already exists per channel).
+- **Use `EventSource`-style auto-reconnect / replay for `events`.** Out of scope, mirroring the `sse` decision: a dropped channel is the caller's to re-establish; buffering/replay is a separate concern.
+- **A single callable default export** (à la `sse(config)`). Rejected: `postMessage` has _four_ verbs (request/emit/events/respond) with no single "the call", and the transport+origin must be bound before any of them. The **channel factory is the entry point**; the builders and the two `Surface` identities are the named exports.
 
 ## Gates
 
--   **browser-first** — only browser-native APIs; pinned in the `browser-bundle.spec` matrix (both legit-subpath and streaming-surface), no `node:*`, no `EventSource`.
--   **bundle-frugal** — subpath-only; `import { stitch }` pulls in none of it.
--   **contract-not-dependency** — `kind` round-trips as its `id` (`'postmessage'` / `'postmessage-event'`); live hooks + the target `Window`/`MessagePort` are redacted sugar, the channel's binding being in the same category as `transform`/`pipe`.
--   **security** — origin is a first-class, non-`'*'` type **and** a runtime guard; the gate runs **before** correlation/validation/delivery; responders fail closed on bad input/output; `MessagePort` is exempt by construction with that exemption documented.
+- **browser-first** — only browser-native APIs; pinned in the `browser-bundle.spec` matrix (both legit-subpath and streaming-surface), no `node:*`, no `EventSource`.
+- **bundle-frugal** — subpath-only; `import { stitch }` pulls in none of it.
+- **contract-not-dependency** — `kind` round-trips as its `id` (`'postmessage'` / `'postmessage-event'`); live hooks + the target `Window`/`MessagePort` are redacted sugar, the channel's binding being in the same category as `transform`/`pipe`.
+- **security** — origin is a first-class, non-`'*'` type **and** a runtime guard; the gate runs **before** correlation/validation/delivery; responders fail closed on bad input/output; `MessagePort` is exempt by construction with that exemption documented.

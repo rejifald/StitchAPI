@@ -22,7 +22,7 @@ describe('toStitchSource — auth recognition (untested strategies)', () => {
             "basic({ user: env('API_USER'), pass: env('API_PASSWORD') })",
         );
         expect(source).toContain(
-            "import { stitch, basic, env } from 'stitchapi'",
+            "import { stitch } from 'stitchapi';\nimport { basic, env } from 'stitchapi/auth'",
         );
     });
 
@@ -37,7 +37,7 @@ describe('toStitchSource — auth recognition (untested strategies)', () => {
             "apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') })",
         );
         expect(source).toContain(
-            "import { stitch, apiKey, env } from 'stitchapi'",
+            "import { stitch } from 'stitchapi';\nimport { apiKey, env } from 'stitchapi/auth'",
         );
         // the non-auth query param survives; the auth one is removed from the call query.
         expect(source).toContain('page: 2');

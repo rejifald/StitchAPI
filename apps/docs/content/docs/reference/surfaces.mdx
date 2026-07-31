@@ -106,9 +106,10 @@ concurrency budget.
 
 A streaming surface has no single response body, so an `output` contract
 validates **each `delta` before it is emitted** — never the collected array. A
-value that fails a `critical`/schema check fails the stream and is never
-delivered; a `drift` `watch` path warns and the value still flows, so a
-`.stream()` consumer only ever sees values that passed the contract.
+value that fails the schema fails the stream and is never delivered; soft
+drift (a coerced or undeclared field) surfaces as a leveled `drift` finding
+and the value still flows, so a `.stream()` consumer only ever sees values
+that passed the contract.
 
 ```ts
 import { stream } from 'stitchapi/stream';
@@ -123,8 +124,7 @@ const logs = stream({
 
 For `sse` the contract describes the event's `data` payload, not the
 `{ event, data, id, retry }` envelope. `transform` and `pick` reshape a whole
-buffered body and aren't applied to the delta path, and drift **snapshots** are
-a whole-body concept — not taken per-`delta`.
+buffered body and aren't applied to the delta path.
 
 ## download
 

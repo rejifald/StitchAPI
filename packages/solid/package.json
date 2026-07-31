@@ -2,7 +2,7 @@
     "name": "@stitchapi/solid",
     "version": "1.0.0-rc.6",
     "type": "commonjs",
-    "description": "Solid bindings for StitchAPI — createStitch/createStitchStream primitives that reconcile a Solid store from the query-core reactive store. Streaming-first: re-render as `delta` chunks arrive. Plus an optional TanStack Query queryOptions helper.",
+    "description": "Solid bindings for StitchAPI — createStitch/createStitchStream primitives that reconcile a Solid store from the query-core reactive store. Streaming-first: re-render as `delta` chunks arrive. Plus an optional TanStack Query stitchQueryOptions helper.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
     "types": "lib/index.d.ts",
@@ -55,7 +55,7 @@
     "peerDependencies": {
         "@stitchapi/query-core": "^1.0.0-rc.2",
         "stitchapi": "^1.0.0-rc.1",
-        "solid-js": "^1.8.0",
+        "solid-js": "^1.9.14",
         "@tanstack/solid-query": "^5.0.0"
     },
     "peerDependenciesMeta": {
@@ -66,10 +66,10 @@
     "devDependencies": {
         "@stitchapi/query-core": "workspace:*",
         "@types/node": "^22.10.0",
-        "solid-js": "^1.8.0",
+        "solid-js": "^1.9.14",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",
-        "vitest": "^4.1.8"
+        "vitest": "^4.1.10"
     }
 }

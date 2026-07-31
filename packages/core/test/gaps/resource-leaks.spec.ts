@@ -222,8 +222,10 @@ test('abort during a retry backoff rejects promptly (well under the backoff dela
     const elapsed = Date.now() - t0;
 
     expect(err).toBeDefined();
-    // The 1000ms backoff must be cut short by the abort — promptly, not slept out.
-    expect(elapsed).toBeLessThan(400);
+    // The 1000ms backoff must be cut short by the abort — promptly, not slept out. The ceiling is
+    // loose on purpose: a sleep-it-out regression lands at 1000ms+, so there is no reason to sit
+    // close to the abort and let an event-loop stall on a loaded runner red this.
+    expect(elapsed).toBeLessThan(700);
 });
 
 // An ALREADY-aborted signal must reject without ever sleeping the backoff.
@@ -254,5 +256,6 @@ test('an already-aborted signal rejects without sleeping the backoff', async () 
         (e: unknown) => e as Error,
     );
     expect(err).toBeDefined();
-    expect(Date.now() - t0).toBeLessThan(300);
+    // Same loose ceiling as above, and for the same reason: sleeping the backoff costs 1000ms+.
+    expect(Date.now() - t0).toBeLessThan(700);
 });

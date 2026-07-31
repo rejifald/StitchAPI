@@ -52,6 +52,11 @@ export interface PinoSinkOptions {
      * `done` → `debug`. Default `true`. `start`/`done` sit at `debug` so a production
      * pino level (`info`) hides them by default; set `false` to drop the lifecycle
      * entirely and log only retries, drift findings, and errors.
+     *
+     * DELIBERATE DIVERGENCE (contract P8): `@stitchapi/sentry`'s same-named
+     * `lifecycle` defaults to `false`. Pino log lines are cheap and level-filtered,
+     * so the lifecycle is on by default here; Sentry breadcrumbs/events cost quota,
+     * so it is off by default there.
      */
     lifecycle?: boolean;
 }

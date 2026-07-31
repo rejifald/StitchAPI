@@ -617,8 +617,7 @@ async function runTests(): Promise<void> {
 
         // trace event content matches what a stitch() produced.
         const traceEv = events.find((e) => e.type === 'trace') as
-            | Extract<RunEvent, { type: 'trace' }>
-            | undefined;
+            Extract<RunEvent, { type: 'trace' }> | undefined;
         assert(
             'A1 trace event has id + stream chunk count',
             traceEv?.entry.id === 's1' && traceEv?.entry.stream?.chunks === 2,

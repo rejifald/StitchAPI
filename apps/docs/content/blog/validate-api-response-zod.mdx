@@ -84,9 +84,9 @@ One trap worth naming: a strict `output` schema seems like a good drift alarm, b
 
 For a true one-off — one endpoint, run once, no retries or auth in sight — `User.safeParse(await res.json())` is the right amount of ceremony. The schema doesn't change when you outgrow that; it just moves. The same Zod object goes on `output` and runs on every response instead of in a branch you re-type after each `fetch`, and that move pays off the moment any of these is true:
 
--   **A second call site appears.** The `res.ok` check, the parse, and the error wrapping stop being written once and start being copy-pasted — each free to drift. On a stitch they're declared once and uniform.
--   **The call gains a neighbor.** When validation sits next to `retry`, a `timeout`, or an auth boundary, declaring them together on one call beats bolting each around the `fetch` by hand.
--   **You want the request guarded too.** `safeParse` checks the response; `input` checks the request before it leaves the process — a boundary the manual pattern doesn't give you.
+- **A second call site appears.** The `res.ok` check, the parse, and the error wrapping stop being written once and start being copy-pasted — each free to drift. On a stitch they're declared once and uniform.
+- **The call gains a neighbor.** When validation sits next to `retry`, a `timeout`, or an auth boundary, declaring them together on one call beats bolting each around the `fetch` by hand.
+- **You want the request guarded too.** `safeParse` checks the response; `input` checks the request before it leaves the process — a boundary the manual pattern doesn't give you.
 
 The schema is the same Zod object either way. The only question is whether it runs as a step you repeat after each `fetch` or as a property of a call you declare once — and turning one into the other is a move you make when the second caller arrives, not a rewrite.
 

@@ -3,18 +3,13 @@ export { graphql } from './graphql';
 export { seam } from './seam';
 export { httpSurface, graphqlSurface } from './surface';
 export type { Surface, SurfaceOutcome } from './surface';
-export {
-    bearer,
-    apiKey,
-    basic,
-    cookieSession,
-    oauth2,
-    env,
-    optionalEnv,
-    secretsFile,
-    secretFrom,
-} from './auth';
-export type { SecretSource, AuthFailureResult, RefreshResult } from './auth';
+// The auth surface lives on `stitchapi/auth` (ADR 0021) — the strategy factories
+// (`bearer`/`apiKey`/`basic`/`oauth2`/`cookieSession`), the secret resolvers
+// (`env`/`optionalEnv`/`secretsFile`/`secretFrom`) and their option types. Deliberately NOT
+// re-exported here: a root re-export would put the factories back in this barrel and hand every
+// consumer oauth2's token cache and cookieSession's login state machine again, which is the whole
+// point of the split. `AuthStrategy`/`AuthContext`/`SecurityScheme` stay on the root — they type
+// `StitchConfig.auth` — via `export * from './types'`, and `/auth` re-exports them for authoring.
 export { fetchAdapter } from './http-adapter';
 export type { FetchAdapterOptions } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';
@@ -65,6 +60,10 @@ export { systemClock } from './util';
 // Exported so a peer package that takes a consumer-authored duration parses it the
 // same way core does, instead of mirroring the grammar and drifting from it.
 export { parseDuration } from './util';
+// Its size analogue: `4096`, `'64kb'`, `'1mb'` → bytes (powers of 1024). Same reason it is
+// public — a peer package with a `*Bytes` cap parses it the way core does. NOT for the
+// `Chars` family, which counts UTF-16 code units rather than bytes.
+export { parseBytes } from './util';
 // `compact({ ...obj, key: value })` — a shallow copy with `undefined`-valued keys removed, typed so
 // undefined-admitting keys come back optional. Pairs with `exactOptionalPropertyTypes`: it omits an
 // absent optional without the `...(key !== undefined ? { key } : {})` spread dance.

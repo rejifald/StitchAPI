@@ -64,13 +64,13 @@ const pet = await getPetById({ params: { petId: 1 } }); // typed as Pet
 
 ### Notes
 
--   **`types-only` is the default** (the lightest frontend tier): it emits TS types
-    and a typed `stitch<T>()` but **no runtime validator**, so response validation
-    and drift are off until the `valibot`/`zod` tiers ship. A notice tells you so.
--   **Auth** maps `securitySchemes` → `bearer` / `apiKey` / `basic` with `env()`
-    placeholders; the secret is never emitted. oauth2 is flagged for manual setup.
--   The generated client imports from `stitchapi` — add it to your project:
-    `npm i stitchapi`.
+- **`types-only` is the default** (the lightest frontend tier): it emits TS types
+  and a typed `stitch<T>()` but **no runtime validator**, so response validation
+  and drift are off until the `valibot`/`zod` tiers ship. A notice tells you so.
+- **Auth** maps `securitySchemes` → `bearer` / `apiKey` / `basic` with `env()`
+  placeholders; the secret is never emitted. oauth2 is flagged for manual setup.
+- The generated client imports from `stitchapi` — add it to your project:
+  `npm i stitchapi`.
 
 ## Library API
 
@@ -79,7 +79,7 @@ The generator is also a pure library:
 ```ts
 import { type OpenApiDoc, planGen } from '@stitchapi/openapi';
 
-const result = planGen(doc as OpenApiDoc, { tags: ['pet'] });
+const result = planGen(doc as OpenApiDoc, { tags: 'pet' }); // or tags: ['pet', 'store']
 for (const f of result.files) console.log(f.path, f.contents);
 ```
 

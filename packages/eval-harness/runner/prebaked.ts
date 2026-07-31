@@ -42,7 +42,7 @@ export async function run(fetchImpl: typeof fetch): Promise<User[]> {
         path: '/paged/users',
         adapter: fetchAdapter({ fetch: fetchImpl }),
         // Transient 429s before success — retry with backoff.
-        retry: { attempts: 4, on: [429, 503], backoff: 'fixed', baseMs: 0 },
+        retry: { attempts: 4, on: [429, 503], backoff: 'fixed', baseDelay: 0 },
         // Follow the cursor until nextCursor is null, aggregating items.
         paginate: {
             next: (prev) => {
@@ -50,7 +50,7 @@ export async function run(fetchImpl: typeof fetch): Promise<User[]> {
                 return cursor ? { query: { cursor } } : undefined;
             },
             items: (page) => (page as Page).items,
-            max: 20,
+            pages: 20,
         },
         // Validate every aggregated record is a real user.
         output: (v: unknown) => Array.isArray(v) && v.every(isUser),
@@ -60,7 +60,8 @@ export async function run(fetchImpl: typeof fetch): Promise<User[]> {
 `;
 
 const oauth2ClientCredentials = `
-import { stitch, fetchAdapter, bearer, optionalEnv } from 'stitchapi';
+import { stitch, fetchAdapter } from 'stitchapi';
+import { bearer, optionalEnv } from 'stitchapi/auth';
 
 export async function run(fetchImpl: typeof fetch): Promise<unknown> {
     // The credential is held by the stitch via bearer(); the caller never sees it.
@@ -87,7 +88,7 @@ export async function run(fetchImpl: typeof fetch): Promise<User> {
         path: '/graphql',
         adapter: fetchAdapter({ fetch: fetchImpl }),
         document: 'query { user { id name email } }',
-        // The graphql surface unwraps 'data' and treats a non-empty errors[] as a failure.
+        // The graphql surface picks from 'data' and treats a non-empty errors[] as a failure.
         pick: 'data.user',
         output: (v: unknown): v is User =>
             !!v && typeof v === 'object' &&

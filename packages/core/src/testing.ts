@@ -709,14 +709,12 @@ export async function verifySinkContract(
 ): Promise<ContractReport> {
     const sink = await makeSink();
     const ctx = { name: 'conformance' };
-    const rules: Rule[] = SINK_EVENT_FIXTURES.map(
-        (event): Rule => [
-            `handle: accepts a '${event.type}' event`,
-            () => {
-                sink.handle(event, ctx);
-            },
-        ],
-    );
+    const rules: Rule[] = SINK_EVENT_FIXTURES.map((event): Rule => [
+        `handle: accepts a '${event.type}' event`,
+        () => {
+            sink.handle(event, ctx);
+        },
+    ]);
     rules.push([
         'flush: optional flush() settles without throwing',
         async () => {
@@ -812,9 +810,7 @@ function callFingerprint(
         throw new Error(`${label}: fingerprint() must be synchronous`);
     }
     const r = result as
-        | { token?: unknown; strength?: unknown }
-        | null
-        | undefined;
+        { token?: unknown; strength?: unknown } | null | undefined;
     // `null` is the ABSTAIN sentinel, so the shape check below is a presence check on `token`
     // (missing/`undefined` fails, `null` passes) rather than a truthiness one.
     const token = r?.token;

@@ -12,7 +12,8 @@ the secret stays out of your code and out of the caller's hands.
 ## Example
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 
 const me = stitch({
     baseUrl: 'https://api.example.com',
@@ -58,7 +59,8 @@ header only when the token is present — otherwise the request goes out with no
 credential.
 
 ```ts twoslash
-import { bearer, optionalEnv, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, optionalEnv } from 'stitchapi/auth';
 
 // Attaches `Authorization: Bearer $GITHUB_TOKEN` when that var is set;
 // otherwise sends the request with no credential.

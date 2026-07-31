@@ -2,6 +2,14 @@
 // `.with()` partial application, all resolving to one canonical config. For a shared surface —
 // shared runtime + a trusted principal boundary — reach for `seam` (see seam.ts).
 import { compact } from './compact';
+import type {
+    Assert,
+    Covers,
+    FnBearingSlot,
+    RedactedIfFnSlot,
+    RedactedSlot,
+    ShorthandPair,
+} from './config-anatomy';
 import {
     ERROR_SOURCE,
     RAW_BODY,
@@ -22,6 +30,7 @@ import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
 import {
+    type CacheOptions,
     type CacheOutcome,
     type Clock,
     type DriftFinding,
@@ -35,6 +44,7 @@ import {
     type Inspection,
     type RedactedStitchConfig,
     type ResolvedStitchConfig,
+    type RetryOptions,
     type RunContext,
     type RunReport,
     type SafeResult,
@@ -76,11 +86,18 @@ function asConfig(f: Fragment): Partial<StitchConfig> {
     return f;
 }
 
+// A single fragment is shorthand for a one-element list (P7); `Stitch` is a function and a bare
+// partial is an object, so `Array.isArray` cleanly separates the two spellings.
+function fragmentList(ext: StitchConfig['extends']): Fragment[] {
+    if (ext === undefined) return [];
+    return Array.isArray(ext) ? ext : [ext];
+}
+
 function flatten(layers: Fragment[]): Partial<StitchConfig>[] {
     const out: Partial<StitchConfig>[] = [];
     for (const layer of layers) {
         const cfg = asConfig(layer);
-        if (cfg.extends) out.push(...flatten(cfg.extends));
+        if (cfg.extends) out.push(...flatten(fragmentList(cfg.extends)));
         const rest = { ...cfg };
         delete (rest as { extends?: unknown }).extends;
         out.push(rest);
@@ -138,34 +155,73 @@ function normalizeInput(
     return out;
 }
 
+// Every slot whose scalar shorthand folds into a dominant field, paired with that field. The pairs
+// are the config anatomy's, not a second copy of them: `satisfies` rejects a slot/field mismatch and
+// `_ShorthandsCovered` rejects an omission, naming the slot left out.
+const SHORTHAND_SLOTS = [
+    ['retry', 'attempts'],
+    ['timeout', 'total'],
+    ['cache', 'ttl'],
+    ['stream', 'decode'],
+    ['multipart', 'nesting'],
+    ['throttle', 'rate'],
+] as const satisfies readonly ShorthandPair[];
+// The walk carries a UNION of slots, so `envelope`'s per-slot generic inference cannot apply — bind
+// it once at the erased signature instead. No cast: the slot/field pairing is already proved above,
+// against the anatomy.
+const fold: (value: unknown, key: string) => unknown = envelope;
+export type _ShorthandsCovered = Assert<
+    Covers<ShorthandPair[0], (typeof SHORTHAND_SLOTS)[number][0]>
+>;
+
+// P7: one value reads as itself, not as a one-element list. An unset slot stays unset rather than
+// becoming `[]` — an empty `cache.methods` is not the same as an absent one, which falls back to
+// the `['GET','HEAD']` default.
+const listOf = (v: string | string[] | undefined): string[] | undefined =>
+    v === undefined ? undefined : typeof v === 'string' ? [v] : v;
+
 // Expand the scalar shorthands (`retry: 3`, `timeout: '5s'`, `cache: '1m'`) to their object form
 // IN PLACE, before the deep-merge, so a literal in one layer folds cleanly into an object in
 // another and the resolved config the engine reads is always the normalised shape.
 function expandShorthand(cfg: Partial<StitchConfig>): void {
     // P12/P14: each slot's dominant-field scalar folds into its envelope, so the opaque `{}` never
     // reaches the slot (P20) and the engine only ever sees the object form. One `envelope` call per
-    // slot — the slot and its dominant field, nothing else to keep in sync.
-    if (cfg.retry !== undefined) {
-        cfg.retry = envelope(cfg.retry, 'attempts');
-        // Nested fold (P24): `backoff` is itself a scalar-or-envelope slot, so the bare curve
-        // normalizes too — `__config` never carries the string form (P0).
-        if (cfg.retry.backoff !== undefined)
-            cfg.retry = {
-                ...cfg.retry,
-                backoff: envelope(cfg.retry.backoff, 'curve'),
-            };
+    // slot, driven off the anatomy — nothing here to keep in sync by hand.
+    const slots = cfg as Record<string, unknown>;
+    for (const [slot, field] of SHORTHAND_SLOTS) {
+        if (slots[slot] !== undefined) slots[slot] = fold(slots[slot], field);
     }
-    if (cfg.timeout !== undefined) cfg.timeout = envelope(cfg.timeout, 'total');
-    if (cfg.cache !== undefined) cfg.cache = envelope(cfg.cache, 'ttl');
-    if (cfg.stream !== undefined) cfg.stream = envelope(cfg.stream, 'decode');
-    if (cfg.multipart !== undefined)
-        cfg.multipart = envelope(cfg.multipart, 'nesting');
-    if (cfg.throttle !== undefined)
-        cfg.throttle = envelope(cfg.throttle, 'rate');
+    // Nested fold (P24): `backoff` is itself a scalar-or-envelope slot, so the bare curve
+    // normalizes too — `__config` never carries the string form (P0). Read back through the
+    // normalised shape the loop just wrote.
+    const retry = cfg.retry as RetryOptions | undefined;
+    if (retry?.backoff !== undefined)
+        cfg.retry = {
+            ...retry,
+            backoff: envelope(retry.backoff, 'curve'),
+        };
+    // P7: the cache's list fields take a bare string as the one-element list. Widened HERE, before
+    // the deep-merge, so a string in one layer and a list in another merge as one shape and the
+    // controller reads the settled `ResolvedCacheOptions` — always arrays, never re-normalising.
+    const cache = cfg.cache as CacheOptions | undefined;
+    if (cache !== undefined)
+        cfg.cache = {
+            ...cache,
+            ...compact({
+                vary: listOf(cache.vary),
+                methods: listOf(cache.methods),
+            }),
+        };
     // P13: `sse: true` enables reconnection with defaults; `false`/absent is off (the opaque
     // `sse: {}` is a type error at the slot, so the all-defaults case arrives here as `true`).
     if (cfg.sse === true) cfg.sse = { reconnect: true };
     else if (cfg.sse === false) delete cfg.sse;
+    // P15: the positional circuit names both required fields — `[5, '30s']` ≡
+    // `{ failures: 5, cooldown: '30s' }`.
+    if (Array.isArray(cfg.circuit)) {
+        const [failures, cooldown] = cfg.circuit;
+        cfg.circuit = { failures, cooldown };
+    }
     // P20: `idempotency: true` enables it with defaults; `false`/absent is off. Normalize the
     // boolean toggle to the object form the engine reads (the opaque `idempotency: {}` is a type
     // error at the slot, so the all-defaults case arrives here as `true`).
@@ -187,11 +243,13 @@ export function compose(config: Fragment): ResolvedStitchConfig {
         // Surface objects would corrupt their hooks/identity (ADR 0005 Decision 2).
         if (layer.kind) kind = layer.kind;
         // hooks/store/kind are accumulated above; strip them so deepMerge only folds the rest
-        // (exactOptionalPropertyTypes forbids spreading them back in as `undefined`).
+        // (exactOptionalPropertyTypes forbids spreading them back in as `undefined`). `auth` is
+        // stripped too and re-applied per layer below — it is the third atomic slot.
         const rest = { ...layer };
         delete rest.hooks;
         delete rest.store;
         delete rest.kind;
+        delete rest.auth;
         // Capture the raw `idempotency` toggle BEFORE `expandShorthand` normalizes it away — a
         // child `idempotency: false` must clear an inherited object (see the reconcile below), but
         // `expandShorthand` deletes `false` from this layer, so `deepMerge` would never see it and
@@ -215,6 +273,15 @@ export function compose(config: Fragment): ResolvedStitchConfig {
         // through the merge alone — reconcile it here, clearing the slot when this layer is the
         // last to set it and set it off.
         if (idempotencyToggle === false) delete merged.idempotency;
+        // Auth slot: atomic last-writer-wins, like the endpoint slot above — a strategy is a live
+        // object whose methods are OPTIONAL, so deep-merging two of them splices this layer's
+        // `apply` onto whichever of `shouldRefresh`/`refresh`/`scheme` only an earlier layer
+        // declares. A child `bearer` over an inherited `oauth2` answered a 401 by running oauth2's
+        // refresh — a real client_credentials token request to an endpoint the child never named —
+        // and published a blended `scheme` (`type: 'http'` carrying oauth2 `flows`), which is not a
+        // valid OpenAPI security scheme and reaches consumers through `__config.authScheme` and
+        // `stitch export --openapi`. One layer's strategy wins whole, or not at all.
+        if (layer.auth) merged.auth = layer.auth;
     }
     // The chained hooks / normalized input are the RESOLVED shapes (plain `Hooks`/`InputSchemas`),
     // past the authoring-side `AtLeastOne` gate (P20) — write them through the resolved view.
@@ -507,6 +574,16 @@ async function drainRun<T>(
     };
 }
 
+// P13/P20: the probe opts scalar — `true` ≡ `{ cache: true }` (honour the cache policy);
+// `false`/absent is the default fresh, cache-bypassing probe.
+function inspectOptions(
+    opts: boolean | InspectOptions | undefined,
+): InspectOptions | undefined {
+    if (opts === true) return { cache: true };
+    if (opts === false) return undefined;
+    return opts;
+}
+
 // ADR 0018: opt-in redaction of `raw` — applied AFTER findings are computed so the diff runs on the
 // unredacted body. `raw` is only non-null when a live request ran (streaming / cache hits stay
 // null, so redaction is a no-op on null).
@@ -684,35 +761,119 @@ export interface SharedRuntime {
     register?: (s: Stitch) => void;
 }
 
+// Return `slot` with every function-valued own field dropped (CONTRACT.md P0): a derivation fn —
+// `paginate.next`/`items`, a predicate `retry.on`/`throttle.on`, the `key`/`keyOf` on
+// `idempotency`/`cache` (canonical or @deprecated alias) — never reaches `__config`, while fn-free
+// data (`pages`, `attempts`, a `number[]` `on`, `ttl`) stays. A scalar-shorthand slot (`cache: '1m'`,
+// `retry: 3`) has no fields to strip and passes through untouched. Shallow (these slots carry their
+// functions at depth 1) and non-mutating — a fresh object is built, so `__rawConfig` is left intact.
+// Identity-typed: a fn-stripped slot still satisfies its own type (the dropped fields are optional),
+// so callers assign the result straight back with no cast. The single `as T` is contained here.
+function stripFns<T>(slot: T): T {
+    if (slot === null || typeof slot !== 'object' || Array.isArray(slot))
+        return slot;
+    return Object.fromEntries(
+        Object.entries(slot).filter(([, v]) => typeof v !== 'function'),
+    ) as T;
+}
+
+// Return `obj` without `keys`, built FRESH (so the source is never mutated) via an entry filter —
+// no `delete` operator, which the repo's strict config bans on computed keys (no-dynamic-delete).
+// The single `as` is contained here, mirroring `stripFns`.
+function omit<T extends object, K extends keyof T>(
+    obj: T,
+    ...keys: K[]
+): Omit<T, K> {
+    const drop = new Set<PropertyKey>(keys);
+    return Object.fromEntries(
+        Object.entries(obj).filter(([k]) => !drop.has(k)),
+    ) as Omit<T, K>;
+}
+
+// The three redaction key lists, each checked against the config anatomy: `satisfies` rejects a slot
+// the anatomy does not mark that way, and the `Covers` aliases reject an omission, naming the slot
+// that was left out. Adding a slot to `StitchConfig` and forgetting it here no longer compiles.
+const REDACTED_SLOTS = [
+    'store',
+    'auth',
+    'adapter',
+    'clock',
+    'kind',
+    'transform',
+    'hooks',
+    'trace',
+] as const satisfies readonly RedactedSlot[];
+const REDACTED_IF_FN_SLOTS = [
+    'url',
+    'baseUrl',
+    'acceptStatus',
+] as const satisfies readonly RedactedIfFnSlot[];
+const FN_BEARING_SLOTS = [
+    'paginate',
+    'retry',
+    'throttle',
+    'idempotency',
+    'cache',
+] as const satisfies readonly FnBearingSlot[];
+export type _RedactedCovered = Assert<
+    Covers<RedactedSlot, (typeof REDACTED_SLOTS)[number]>
+>;
+export type _RedactedIfFnCovered = Assert<
+    Covers<RedactedIfFnSlot, (typeof REDACTED_IF_FN_SLOTS)[number]>
+>;
+export type _FnBearingCovered = Assert<
+    Covers<FnBearingSlot, (typeof FN_BEARING_SLOTS)[number]>
+>;
+
 // `__config` is the PUBLIC view; strip the live secret-bearing handles so the running store,
-// credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest).
-// The full config lives on `__rawConfig` for fragment composition (see `asConfig`).
+// credential, and transport cannot be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest), and
+// strip EVERY function-valued field so it is plain JSON data (CONTRACT.md P0). The full config —
+// handles and function sugar alike — lives on `__rawConfig` for fragment composition (see `asConfig`).
 export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
-    // Split off the live `Surface` so the spread carries no `kind: Surface`; the rest still holds
-    // the live store/auth/adapter handles, stripped next.
-    const { kind, ...spread } = cfg;
-    const redacted = spread as RedactedStitchConfig & {
-        store?: unknown;
-        auth?: unknown;
-        adapter?: unknown;
-        clock?: unknown;
-    };
-    // Strip the live, secret-bearing handles so the running store, credential, and transport cannot
-    // be read back off a stitch (ADR 0002 §4/§6, exfil-at-rest). The full config lives on the
-    // non-enumerable `__rawConfig` for fragment composition (see `asConfig`).
-    delete redacted.store;
-    delete redacted.auth;
-    delete redacted.adapter;
-    delete redacted.clock;
+    // Build the public view FRESH (never mutating `cfg` — i.e. `__rawConfig`) by omitting, in one
+    // pass, everything that must not ride onto `__config` (CONTRACT.md P0):
+    //   • the live secret-bearing handles `store`/`auth`/`adapter`/`clock` (ADR 0002 §4/§6,
+    //     exfil-at-rest) and the live `Surface` `kind` (both re-projected to plain data below);
+    //   • the always-fn `transform` (a mapper) and `hooks` (an object of callbacks);
+    //   • whichever of `url`/`baseUrl`/`acceptStatus` are in their function form — a string endpoint
+    //     or a `number[]` status list stays, a thunk/predicate goes;
+    //   • `trace` — infrastructure, exactly like `store`/`adapter`/`clock`. Its full form is a live
+    //     `TraceSink` whose `handle`/`flush` are author closures (the same exfil-at-rest surface,
+    //     ADR 0002 §4/§6), and dropping the SLOT rather than fn-stripping the sink is what makes
+    //     that airtight: a sink implemented as a CLASS carries those methods on the prototype, where
+    //     an own-entry strip would not even see them, and a hollow `{}` would read as "tracing
+    //     configured with defaults". The shorthand `'console'` / `false` resolve to that same
+    //     handle, so they go with it — nothing reads `trace` off `__config`; the engine reads the
+    //     live sink off the runtime (`resolveTrace`).
+    // `omit` filters entries (no `delete` — the repo bans dynamic delete), so this replaces a column
+    // of per-field deletes with one drop-list — and the list is the anatomy's, so a new slot that
+    // must not reach `__config` is a compile error here rather than a silent leak.
+    const fnValued = REDACTED_IF_FN_SLOTS.filter(
+        (k) => typeof cfg[k] === 'function',
+    );
+    const redacted = omit(
+        cfg,
+        ...REDACTED_SLOTS,
+        ...fnValued,
+    ) as RedactedStitchConfig;
     // Project the auth's NON-SECRET scheme onto the public config — always re-derived from the live
-    // `auth`, never trusted from an externally-set `authScheme`. This is the public identity of a
-    // redacted capability: the auth round-trips as JSON (the contract gate) and feeds
-    // `export --openapi`'s `securitySchemes`, while the credential itself stays unreachable.
+    // `auth`, never trusted from an externally-set `authScheme`. The one remaining `delete` is a
+    // defensive reset of that (type-forbidden) stray before re-derivation; the scheme round-trips as
+    // JSON (the contract gate) and feeds `export --openapi`'s `securitySchemes`.
     delete redacted.authScheme;
     if (cfg.auth?.scheme) redacted.authScheme = cfg.auth.scheme;
     // Normalise the surface to its id string so __config round-trips as JSON (ADR 0005 Decision 11):
     // never expose the live Surface (its hooks don't serialise), only its identity.
-    if (kind) redacted.kind = kind.id;
+    if (cfg.kind) redacted.kind = cfg.kind.id;
+    // Each nested resilience slot keeps its fn-free data and drops its fn sugar (`paginate.next`/
+    // `items`, the predicate `retry.on`/`throttle.on`, and the `key`/`keyOf` on `idempotency`/`cache`
+    // — canonical or @deprecated alias, dropped by value so a rename can't rot it). `stripFns`
+    // rebuilds each slot FRESH, so `cfg` — i.e. `__rawConfig` — is never mutated. The engine reads all
+    // that sugar off `__rawConfig`; nothing reads it off `__config` (see e.g. `toOpenApi`).
+    const out = redacted as Record<string, unknown>;
+    for (const k of FN_BEARING_SLOTS) {
+        if (cfg[k] !== undefined) out[k] = stripFns(cfg[k]);
+    }
     return redacted;
 }
 
@@ -778,22 +939,31 @@ export function makeStitch<T = unknown>(
     const streamFn = (input?: StitchInput) =>
         streamWith(input ?? {}, newRunContext());
     // `.inspect()` (ADR 0016 / ADR 0018): one fresh root run with the raw body retained and the
-    // cache bypassed by default (`{ cache: true }` opts caching back in). Consumed by the
+    // cache bypassed by default (`true` / `{ cache: true }` opts caching back in). Consumed by the
     // never-throwing `consumeInspect`, which also applies opt-in redaction (ADR 0018).
-    const inspectFn = (input: StitchInput, opts?: InspectOptions) =>
-        consumeInspect<T>(
+    const inspectFn = (
+        input: StitchInput,
+        rawOpts?: boolean | InspectOptions,
+    ) => {
+        const opts = inspectOptions(rawOpts);
+        return consumeInspect<T>(
             streamWith(input, newRunContext(), {
                 retainRaw: true,
                 bypassCache: !opts?.cache,
             }),
             opts,
         );
+    };
     // `.report()` (ADR 0019): the same fresh, raw-retaining, cache-bypassing-by-default probe as
     // `.inspect()`, drained by `consumeReport` into a `RunReport` (the Inspection plus run
     // diagnostics). The config echo is the stitch's ALREADY-redacted `__config` — never `__rawConfig`.
     const reportConfig = redactConfig(cfg);
-    const reportFn = (input: StitchInput, opts?: InspectOptions) =>
-        consumeReport<T>(
+    const reportFn = (
+        input: StitchInput,
+        rawOpts?: boolean | InspectOptions,
+    ) => {
+        const opts = inspectOptions(rawOpts);
+        return consumeReport<T>(
             streamWith(input, newRunContext(), {
                 retainRaw: true,
                 bypassCache: !opts?.cache,
@@ -801,6 +971,7 @@ export function makeStitch<T = unknown>(
             reportConfig,
             opts,
         );
+    };
 
     const result = (input?: StitchInput): StitchResult<T> => {
         const make = () => streamFn(input);
@@ -847,9 +1018,9 @@ export function makeStitch<T = unknown>(
     stitchFn.stream = streamFn;
     stitchFn.safe = (input?: StitchInput) => consumeSafe<T>(streamFn(input));
     stitchFn.unwrap = (input?: StitchInput) => consume<T>(streamFn(input));
-    stitchFn.inspect = (input?: StitchInput, opts?: InspectOptions) =>
+    stitchFn.inspect = (input?: StitchInput, opts?: boolean | InspectOptions) =>
         inspectFn(input ?? {}, opts);
-    stitchFn.report = (input?: StitchInput, opts?: InspectOptions) =>
+    stitchFn.report = (input?: StitchInput, opts?: boolean | InspectOptions) =>
         reportFn(input ?? {}, opts);
     stitchFn.with = (partial: StitchInput) => {
         // bind partial input; the bound stitch reuses the same runtime (cookies/throttle persist)
@@ -871,9 +1042,11 @@ export function makeStitch<T = unknown>(
             consumeSafe<T>(streamFn(mergeInput(partial, input)));
         bound.unwrap = (input?: StitchInput) =>
             consume<T>(streamFn(mergeInput(partial, input)));
-        bound.inspect = (input?: StitchInput, opts?: InspectOptions) =>
-            inspectFn(mergeInput(partial, input), opts);
-        bound.report = (input?: StitchInput, opts?: InspectOptions) =>
+        bound.inspect = (
+            input?: StitchInput,
+            opts?: boolean | InspectOptions,
+        ) => inspectFn(mergeInput(partial, input), opts);
+        bound.report = (input?: StitchInput, opts?: boolean | InspectOptions) =>
             reportFn(mergeInput(partial, input), opts);
         bound.with = (more: StitchInput) =>
             stitchFn.with(mergeInput(partial, more));

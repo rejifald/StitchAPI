@@ -53,7 +53,8 @@ stitch from-curl 'curl https://api.acme.dev/v1/orders/4821 \
 ```
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 
 export const getOrders = stitch({
     baseUrl: 'https://api.acme.dev',
@@ -73,9 +74,9 @@ The literal `sk_live_a1b2c3d4e5f6` is gone. The recognised `Authorization: Beare
 
 The CLI recognises three credential shapes, each from the header (or query param) it actually appears in — `from-curl` reads the request it was given, not flags it was not:
 
--   **`Authorization: Bearer <token>`** → `auth: bearer(env('API_TOKEN'))`
--   **`Authorization: Basic <base64>`** → `auth: basic({ user: env('API_USER'), pass: env('API_PASSWORD') })`
--   **An `X-API-Key` header or an API-key query param** → `auth: apiKey({ value: env('API_KEY') })` for a header, or `auth: apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') })` for a query param
+- **`Authorization: Bearer <token>`** → `auth: bearer(env('API_TOKEN'))`
+- **`Authorization: Basic <base64>`** → `auth: basic({ user: env('API_USER'), pass: env('API_PASSWORD') })`
+- **An `X-API-Key` header or an API-key query param** → `auth: apiKey({ value: env('API_KEY') })` for a header, or `auth: apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') })` for a query param
 
 In every case the value is an `env(...)` placeholder, not the captured secret — `basic` and `apiKey` each take a single options object, so the generated call is the real API you would have written. (curl's `-u user:password` flag is a different story: `from-curl` does not parse it and warns it as an unknown flag. Basic auth is recognised from an `Authorization: Basic …` header, the form a browser's **Copy as cURL** actually emits.)
 
@@ -95,7 +96,8 @@ stitch from-curl 'curl https://api.acme.dev/v1/orders/4821' \
 What you get back is an ordinary stitch declaration, not a frozen artifact. The same fields you would reach for on any stitch are one edit away:
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
 
 // ---cut---
 export const getOrder = stitch({
@@ -119,7 +121,7 @@ stitchapi
 
 `stitch from-curl '<curl>'` is part of the core CLI. Paste a curl line and commit the result — the token stays in your shell.
 
--   [The CLI surface](/docs/surfaces/cli)
--   [Auth as a capability, not a credential](/docs/concepts/capability-not-credential)
--   [Stop writing fetch() in your agents](/blog/stop-writing-fetch-in-your-agents)
--   [Choosing an HTTP adapter](/blog/choosing-an-http-adapter)
+- [The CLI surface](/docs/surfaces/cli)
+- [Auth as a capability, not a credential](/docs/concepts/capability-not-credential)
+- [Stop writing fetch() in your agents](/blog/stop-writing-fetch-in-your-agents)
+- [Choosing an HTTP adapter](/blog/choosing-an-http-adapter)

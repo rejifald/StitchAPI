@@ -411,7 +411,7 @@ export const pages: Page[] = [
         path: 'guides/resilience/throttle',
         title: 'Throttle',
         description:
-            'Space requests by rate and cap concurrency, scoped per stitch or per host.',
+            'Space requests by rate and cap concurrency, pooled per stitch or per host.',
         kind: 'guide',
     },
     {

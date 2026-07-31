@@ -2,7 +2,7 @@
     "name": "@stitchapi/angular",
     "version": "1.0.0-rc.6",
     "type": "commonjs",
-    "description": "Angular bindings for StitchAPI — injectStitch/injectStitchStream expose a stitch's lifecycle as both signals and an RxJS observable over @stitchapi/query-core. Streaming-first: re-render as `delta` chunks arrive. Plus an optional TanStack Query queryOptions helper.",
+    "description": "Angular bindings for StitchAPI — injectStitch/injectStitchStream expose a stitch's lifecycle as both signals and an RxJS observable over @stitchapi/query-core. Streaming-first: re-render as `delta` chunks arrive. Plus an optional TanStack Query stitchQueryOptions helper.",
     "main": "lib/index.js",
     "module": "lib/index.mjs",
     "types": "lib/index.d.ts",
@@ -77,7 +77,7 @@
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",
-        "vitest": "^4.1.8",
-        "zone.js": "~0.15.0"
+        "vitest": "^4.1.10",
+        "zone.js": "~0.16.2"
     }
 }

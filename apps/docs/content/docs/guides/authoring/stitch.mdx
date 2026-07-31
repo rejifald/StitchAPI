@@ -36,12 +36,12 @@ const user = await createUser({ params: { id: 1 } });
 
 The handful of fields that shape every stitch:
 
--   **`baseUrl`** + **`path`** — the request target. `path` may contain `{param}`
-    slots and a `?query` string; in string form the whole string becomes `path`.
--   **`method`** — the HTTP verb. Defaults to `GET`.
--   **The input object** — `params`, `query`, `headers`, and `body` all travel in
-    one `StitchInput` you pass at call time: `await createUser({ params: { id: 1 } })`.
--   **The generic** — `stitch<T>(...)` types the awaited value `T`.
+- **`baseUrl`** + **`path`** — the request target. `path` may contain `{param}`
+  slots and a `?query` string; in string form the whole string becomes `path`.
+- **`method`** — the HTTP verb. Defaults to `GET`.
+- **The input object** — `params`, `query`, `headers`, and `body` all travel in
+  one `StitchInput` you pass at call time: `await createUser({ params: { id: 1 } })`.
+- **The generic** — `stitch<T>(...)` types the awaited value `T`.
 
 <Callout type="info">
     Auth, retry, and validation are configured on the same config object but

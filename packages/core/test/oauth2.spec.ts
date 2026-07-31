@@ -1,8 +1,9 @@
 // OAuth2 `client_credentials`: the strategy fetches a token from the token endpoint, caches
 // it in the StitchStore (TTL from `expires_in`), reuses it across calls, refreshes it before
 // expiry, and re-fetches when the resource server rejects it. The caller never sees the secret.
-import { env, memoryStore, oauth2, stitch } from '../src';
+import { memoryStore, stitch } from '../src';
 import type { Stitch, StitchStore } from '../src';
+import { env, oauth2 } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

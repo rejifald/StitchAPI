@@ -42,10 +42,10 @@ docs/sandbox/runtime/
 
 One knob — core's browser-isomorphism (GAP-AUDIT §1.5) retired the other two:
 
--   **alias** `stitchapi → packages/core/src/index.ts` so the bundle resolves
-    **without `pnpm install`** (zod is unused in the reachable graph — B1-SPIKE §1).
-    In R1's installed workspace this alias is unnecessary; point it at the published
-    entry instead.
+- **alias** `stitchapi → packages/core/src/index.ts` so the bundle resolves
+  **without `pnpm install`** (zod is unused in the reachable graph — B1-SPIKE §1).
+  In R1's installed workspace this alias is unnecessary; point it at the published
+  entry instead.
 
 `sideEffects:false` on `packages/core` drops `cli/serve/mcp/registry`.
 

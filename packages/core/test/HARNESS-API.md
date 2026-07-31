@@ -5,16 +5,8 @@ Public API of the prototype. See `test/smoke.spec.ts` for a working example.
 ## Imports
 
 ```ts
-import {
-    apiKey,
-    basic,
-    bearer,
-    cookieSession,
-    drift,
-    env,
-    seam,
-    stitch,
-} from '../src';
+import { drift, seam, stitch } from '../src';
+import { apiKey, basic, bearer, cookieSession, env } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -25,17 +17,17 @@ import { z } from 'zod';
 
 `config` fields (all optional except a target):
 
--   `name`, `method` (default GET), `baseUrl` (string | `() => string`), `path` (may include `{param}` and `?predefined=query`)
--   `input`: `{ params?, query?, body?, headers? }` — each a Zod/Standard-Schema validator
--   `output`: a schema **or** `drift(schema, opts)` — validated against the **picked** value
--   `pick`: dot-path string (e.g. `'data'`)
--   `auth`: an AuthStrategy (see below)
--   `retry`: `{ attempts (total incl. first, default 1), on: StatusMatch (default [429,502,503,504]), backoff: BackoffCurve | { curve, base, max }, respectRetryAfter }`
--   `throttle`: `{ rate: '2/s', concurrency: number, pool: 'stitch'|'host', delegate?: boolean, on?: StatusMatch }`
--   `timeout`: `{ total: number|string, perAttempt: number|string }` (ms or '30s')
--   `hooks`: `{ onRequest, onResponse, onError, onRetry }` — `(ctx) => void|Promise<void>`, `ctx = { name, attempt, req?, res?, error? }`
--   `extends`: `Array<fragment | stitch>`
--   `adapter`: inject a custom transport (not needed; the mock server gives real fetch)
+- `name`, `method` (default GET), `baseUrl` (string | `() => string`), `path` (may include `{param}` and `?predefined=query`)
+- `input`: `{ params?, query?, body?, headers? }` — each a Zod/Standard-Schema validator
+- `output`: a schema **or** `drift(schema, opts)` — validated against the **picked** value
+- `pick`: dot-path string (e.g. `'data'`)
+- `auth`: an AuthStrategy (see below)
+- `retry`: `{ attempts (total incl. first, default 1), on: StatusMatch (default [429,502,503,504]), backoff: BackoffCurve | { curve, base, max }, respectRetryAfter }`
+- `throttle`: `{ rate: '2/s', concurrency: number, pool: 'stitch'|'host', delegate?: boolean, on?: StatusMatch }`
+- `timeout`: `{ total: number|string, perAttempt: number|string }` (ms or '30s')
+- `hooks`: `{ onRequest, onResponse, onError, onRetry }` — `(ctx) => void|Promise<void>`, `ctx = { name, attempt, req?, res?, error? }`
+- `extends`: `Array<fragment | stitch>`
+- `adapter`: inject a custom transport (not needed; the mock server gives real fetch)
 
 ## Calling a stitch
 
@@ -49,12 +41,12 @@ const s2 = s.with({ query: { role: 'admin' } });   // partial application -> new
 
 ## Events (each also has `at: number`)
 
--   `{ type:'start', name, method, url, input }`
--   `{ type:'progress', phase:'auth'|'request'|'throttled'|'retry'|'paginate', attempt, detail?, waited? }`
--   `{ type:'drift', finding:{ level:'error'|'warn'|'info'|'verbose', path, change:'invalid'|'undeclared'|'coerced'|'defaulted', detail? } }`
--   `{ type:'result', data, status, attempts }`
--   `{ type:'error', name, message, status?, attempts }`
--   `{ type:'done', ok, elapsed, attempts }`
+- `{ type:'start', name, method, url, input }`
+- `{ type:'progress', phase:'auth'|'request'|'throttled'|'retry'|'paginate', attempt, detail?, waited? }`
+- `{ type:'drift', finding:{ level:'error'|'warn'|'info'|'verbose', path, change:'invalid'|'undeclared'|'coerced'|'defaulted', detail? } }`
+- `{ type:'result', data, status, attempts }`
+- `{ type:'error', name, message, status?, attempts }`
+- `{ type:'done', ok, elapsed, attempts }`
 
 ## Composition (all equivalent — one engine)
 
@@ -76,7 +68,7 @@ Drift is schema-anchored — no snapshot (ADR 0015). Each call validates the unw
 
 ## Auth
 
-`bearer(secret)`, `apiKey({ in?, name?, value })`, `basic({ user, pass })`, `cookieSession({ login: <stitch>, cookie: 'sid', loginInput?: () => StitchInput, refresh?: [401] })`. Secrets: `env('VAR')` / `secretsFile('name')` return `() => string` resolved at call time. `cookieSession` auto-logs-in when no cookie is stored, replays the captured cookie, and re-logs-in when a response status is matched by `refresh`.
+`bearer(secret)`, `apiKey({ name?, in?, value })` (`in: 'header' | 'query' | 'cookie'`, default `header`), `basic({ user, pass })`, `cookieSession({ login: <stitch>, cookie: 'sid', loginInput?: () => StitchInput, refresh?: [401] })`. Secrets: `env('VAR')` / `secretsFile('name')` return `() => string` resolved at call time. `cookieSession` auto-logs-in when no cookie is stored, replays the captured cookie, and re-logs-in when a response status is matched by `refresh`.
 
 ## Mock server
 
@@ -93,6 +85,6 @@ await server.close();
 
 ## Test conventions
 
--   Put `process.env.STITCH_TRACE_FILE = join(tmpdir(), 'stitch-<suite>-'+process.pid+'.jsonl')` at the **very top, before importing `../src`**, to capture/quiet the JSONL trace.
--   One `startMockServer()` per file in `beforeAll`; `server.reset()` in `beforeEach`; `server.close()` in `afterAll`.
--   Keep retries fast: `retry: { baseDelay: 5 }`. Backoff jitter is random — assert attempt COUNTS and event PRESENCE, not exact delays. Use `delay` to create timing for throttle/timeout assertions.
+- Put `process.env.STITCH_TRACE_FILE = join(tmpdir(), 'stitch-<suite>-'+process.pid+'.jsonl')` at the **very top, before importing `../src`**, to capture/quiet the JSONL trace.
+- One `startMockServer()` per file in `beforeAll`; `server.reset()` in `beforeEach`; `server.close()` in `afterAll`.
+- Keep retries fast: `retry: { baseDelay: 5 }`. Backoff jitter is random — assert attempt COUNTS and event PRESENCE, not exact delays. Use `delay` to create timing for throttle/timeout assertions.

@@ -25,9 +25,9 @@ The contrast is the whole point. **Discovery on demand, not a menu re-sent every
 
 StitchAPI exposes code mode over MCP as exactly three tools, no matter how many stitches sit behind them:
 
--   `run_stitch` — execute a stitch by name, passing `{ name, input }`
--   `list_stitches` — discover the available stitch names, methods, and paths, on demand
--   `describe_stitch` — pull one stitch's shape (its input slots, output, auth _scheme_, policies) only when the model is about to use it
+- `run_stitch` — execute a stitch by name, passing `{ name, input }`
+- `list_stitches` — discover the available stitch names, methods, and paths, on demand
+- `describe_stitch` — pull one stitch's shape (its input slots, output, auth _scheme_, policies) only when the model is about to use it
 
 The agent orients first, then runs by name. These are plain MCP tool calls — there's no per-endpoint schema being re-sent:
 
@@ -50,9 +50,9 @@ Map it back onto the two costs. The per-turn surface is **a constant three** —
 
 Code mode earns its keep on large catalogs and long loops. Below that, tool calling is the simpler thing, and overselling code mode helps no one:
 
--   **A small, fixed catalog.** Two or three endpoints, a single-shot call — there was never a fat menu to re-send. Two schemas sent once is cheaper than standing up an execution surface and asking the model to discover and name calls.
--   **You want a curated menu.** Sometimes the named-tool-per-action shape _is_ the interface you want the model to see: a small, deliberately authored set of tools beats "discover, then call." If a tight tool surface is the product, build it as tool calling.
--   **The model is weak at structured tool use.** Driving stitches by name — listing, describing, composing a call — asks more of the model than picking from a flat menu of typed tools. A model that struggles with that may do better with explicit per-endpoint schemas, paid-per-turn and all.
+- **A small, fixed catalog.** Two or three endpoints, a single-shot call — there was never a fat menu to re-send. Two schemas sent once is cheaper than standing up an execution surface and asking the model to discover and name calls.
+- **You want a curated menu.** Sometimes the named-tool-per-action shape _is_ the interface you want the model to see: a small, deliberately authored set of tools beats "discover, then call." If a tight tool surface is the product, build it as tool calling.
+- **The model is weak at structured tool use.** Driving stitches by name — listing, describing, composing a call — asks more of the model than picking from a flat menu of typed tools. A model that struggles with that may do better with explicit per-endpoint schemas, paid-per-turn and all.
 
 For the deeper opinion on the catalog-tax math and why the per-endpoint reflex compounds, see [Why your agent shouldn't get one tool per endpoint](/blog/one-tool-per-endpoint). The architectural cousin — when to stop running a separate MCP server for each service — is [You might not need an MCP server per integration](/blog/you-might-not-need-an-mcp-server-per-integration). And if you're picking an HTTP layer underneath all this, [axios alternatives in 2026](/blog/axios-alternatives) maps the field.
 

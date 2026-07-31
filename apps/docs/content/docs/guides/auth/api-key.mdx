@@ -1,6 +1,6 @@
 ---
 title: 'apiKey'
-description: 'Send an API key as a header or query parameter, resolved at call time.'
+description: 'Send an API key as a header, query parameter, or cookie, resolved at call time.'
 prerequisites:
     ['/docs/concepts/the-stitch', '/docs/concepts/capability-not-credential']
 ---
@@ -12,7 +12,8 @@ the secret.
 ## Example
 
 ```ts twoslash
-import { apiKey, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { apiKey, env } from 'stitchapi/auth';
 
 const search = stitch({
     baseUrl: 'https://api.example.com',
@@ -30,13 +31,16 @@ the capability boundary.
 [`env('API_KEY')`](/docs/guides/auth/secret-resolvers) so the secret is read at
 call time and never committed.
 
-`in` chooses where the key goes: `'header'` (the default) or `'query'`.
+`in` chooses where the key goes: `'header'` (the default), `'query'`, or
+`'cookie'`.
 
-`header` overrides the header name (default `x-api-key`, lowercased) when
-`in: 'header'`: pass `apiKey({ header: 'X-My-Key', value: env('API_KEY') })` to
-send the key under a custom header. The name goes on the wire **lowercased**
-(`x-my-key`) — case-insensitive per HTTP, but worth knowing if a fixture asserts
-the original casing. See [Migration notes](/docs/getting-started/migration-notes).
+`name` labels the key in every arm — the header name, the query-parameter name,
+or the cookie name. It defaults to `X-API-Key` for a header and `api_key` for a
+query parameter or cookie. For a custom header, pass
+`apiKey({ name: 'X-My-Key', value: env('API_KEY') })`. A header name goes on the
+wire **lowercased** (`x-my-key`) — case-insensitive per HTTP, but worth knowing
+if a fixture asserts the original casing. See
+[Migration notes](/docs/getting-started/migration-notes).
 
 ## In a query parameter
 
@@ -45,7 +49,8 @@ than a header. Set `in: 'query'`; the key is appended to the request URL at call
 time, URL-encoded, onto whatever query the endpoint already carries:
 
 ```ts twoslash
-import { apiKey, env, stitch } from 'stitchapi';
+import { stitch } from 'stitchapi';
+import { apiKey, env } from 'stitchapi/auth';
 
 const search = stitch({
     baseUrl: 'https://api.example.com',
@@ -68,6 +73,26 @@ Every call appends `&api_key=<resolved>` to the URL. `name` is the parameter nam
     `input.query`) it is redacted to `REDACTED`, exactly like
     `api_key`/`access_token`. None of that protects the upstream server's logs.
 </Callout>
+
+## In a cookie
+
+Some APIs read the key from a cookie. Set `in: 'cookie'`; the key is appended to
+the `Cookie` header as `name=<resolved>` at call time, merged with any cookie the
+request already carries:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+import { apiKey, env } from 'stitchapi/auth';
+
+const search = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/search',
+    auth: apiKey({ in: 'cookie', name: 'api_key', value: env('API_KEY') }),
+});
+```
+
+The `Cookie` header is on StitchAPI's trace denylist, so the key is redacted from
+sinks exactly like a header key — no separate scrubber registration is needed.
 
 See [Reference → Auth strategies](/docs/reference/auth-strategies) for every
 field.

@@ -4,9 +4,9 @@
 
 React Native bindings for [StitchAPI](https://stitchapi.dev). The `useStitch` / `useStitchStream` hooks are re-exported verbatim from [`@stitchapi/react`](../react) — they are pure `useSyncExternalStore` over the shared [`@stitchapi/query-core`](../query-core) store and run unchanged on React Native. What this package **adds** is the platform glue bare RN needs:
 
--   **`rnStreamAdapter`** — a streaming transport. RN's global `fetch` cannot stream (`response.body` is `undefined`, [facebook/react-native#27741](https://github.com/facebook/react-native/issues/27741)); this reads `XMLHttpRequest.responseText` incrementally and surfaces it as a `ReadableStream`, which is exactly what core's `sse` / `stream` decoders consume.
--   **`asyncStorageStore`** — a `StitchStore` over AsyncStorage, so login sessions, cookie jars, and tokens survive app restarts.
--   **`useAppActiveRefetch` / `useReconnectRefetch`** — refetch on app-foreground / on reconnect, the data lifecycle a mobile app expects.
+- **`rnStreamAdapter`** — a streaming transport. RN's global `fetch` cannot stream (`response.body` is `undefined`, [facebook/react-native#27741](https://github.com/facebook/react-native/issues/27741)); this reads `XMLHttpRequest.responseText` incrementally and surfaces it as a `ReadableStream`, which is exactly what core's `sse` / `stream` decoders consume.
+- **`asyncStorageStore`** — a `StitchStore` over AsyncStorage, so login sessions, cookie jars, and tokens survive app restarts.
+- **`useAppActiveRefetch` / `useReconnectRefetch`** — refetch on app-foreground / on reconnect, the data lifecycle a mobile app expects.
 
 > On **Expo**, use [`@stitchapi/expo`](../expo) instead — `expo/fetch` streams natively, so it needs no XHR shim or polyfills.
 
@@ -64,7 +64,7 @@ function Chat({ prompt }: { prompt: string }) {
 }
 ```
 
-`useStitch` / `useStitchStream` / `queryOptions` and their types are re-exported here, so you import everything from `@stitchapi/react-native`.
+`useStitch` / `useStitchStream` / `stitchQueryOptions` and their types are re-exported here, so you import everything from `@stitchapi/react-native`.
 
 ## Refetch on foreground / reconnect
 
@@ -79,16 +79,16 @@ import {
 function Inbox() {
     const q = useStitch(getInbox, {});
     useAppActiveRefetch(q); // refetch when the app returns to the foreground
-    useReconnectRefetch(q, { netInfo: NetInfo }); // refetch when connectivity returns
+    useReconnectRefetch(q, NetInfo); // refetch when connectivity returns
     // ...
 }
 ```
 
-Both subscriptions are also available as plain functions — `onAppActive(appState, cb)` and `onReconnect(netInfo, cb)` — for use outside React.
+`useReconnectRefetch` takes the NetInfo module positionally; pass the options envelope (`{ netInfo, enabled }`) when you also need `enabled`. Both subscriptions are also available as plain functions — `onAppActive(appState, cb)` and `onReconnect(netInfo, cb)` — for use outside React.
 
 ## The persistent store
 
-`asyncStorageStore(storage, options?)` accepts any client matching `{ getItem, setItem, removeItem }` (the community AsyncStorage module, an MMKV shim, a test double). Values ride in a JSON envelope with an absolute expiry (AsyncStorage has no native TTL); `increment` is serialized so concurrent increments stay atomic — the throttle counter behaves exactly as it does on Redis. Pass `keyPrefix` to namespace, `now` to inject a clock in tests.
+`asyncStorageStore(storage, options?)` accepts any client matching `{ getItem, setItem, removeItem }` (the community AsyncStorage module, an MMKV shim, a test double). Values ride in a JSON envelope with an absolute expiry (AsyncStorage has no native TTL); `increment` is serialized so concurrent increments stay atomic — the throttle counter behaves exactly as it does on Redis. Pass `keyPrefix` to namespace (default `'stitch:'` — AsyncStorage is the app's one shared bucket, so the store namespaces by default), `now` to inject a clock in tests.
 
 ## License
 

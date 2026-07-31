@@ -5,16 +5,14 @@
 // genuine Node value-add over the browser-first core — makes that principal handle **ambient**
 // through `AsyncLocalStorage`, so handlers/services read it with `currentStitch()` instead of
 // threading `request.stitch` everywhere.
-import {
-    type StitchErrorHandlerOptions,
-    stitchErrorHandler,
-} from './error-handler';
+import { type StitchErrorOptions, stitchErrorHandler } from './error-handler';
 import { type FastifyLoggerSinkOptions, fastifyLoggerSink } from './logger';
 
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
+    type AtLeastOne,
     type PrincipalSeam,
     type Seam,
     type SeamConfig,
@@ -25,8 +23,8 @@ import {
 // when a `principal` resolver is set, else the root seam (both create member stitches).
 export type FastifyRequestSeam = Seam | PrincipalSeam;
 
-/** Common options shared by both `StitchPluginOptions` variants. */
-interface StitchPluginCommon {
+/** Common options shared by both `FastifyStitchPluginOptions` variants. */
+interface FastifyStitchPluginCommon {
     /**
      * Derive the request's principal id (e.g. a tenant or user id) from the incoming request.
      * When set, each request gets a `seam.as(principal)` handle (a separate session/token over
@@ -36,17 +34,18 @@ interface StitchPluginCommon {
     principal?: (req: FastifyRequest) => string | undefined;
     /**
      * Bridge `fastify.log` (Fastify's built-in Pino logger) into the seam as its `TraceSink`,
-     * so stitch events flow through Fastify's logger. Default `true`. Ignored when a prebuilt
-     * `seam` is passed *and* it already has its own `trace` — a borrowed seam keeps its sink.
-     * Set `false` to leave tracing as the seam configured it (off by default in core).
+     * so stitch events flow through Fastify's logger. Default `true` (the bridge is on) — the
+     * cross-host canonical default. Ignored when a prebuilt `seam` is passed *and* it already
+     * has its own `trace` — a borrowed seam keeps its sink. Set `false` to leave tracing as
+     * the seam configured it (off by default in core).
      */
-    logger?: boolean | FastifyLoggerSinkOptions;
+    logger?: boolean | AtLeastOne<FastifyLoggerSinkOptions>;
     /**
      * Options for the error handler the plugin registers (see {@link stitchErrorHandler}).
      * Set to `false` to register **no** error handler (you wire your own). Default: register
      * with the `502`-by-default mapping.
      */
-    errorHandler?: StitchErrorHandlerOptions | false;
+    errorHandler?: StitchErrorOptions | false;
     /**
      * Close the seam on `onClose`. Defaults to `true` **only when the plugin built the seam**
      * (from `seamConfig`); a borrowed seam (passed via `seam`) is never closed by the plugin —
@@ -57,20 +56,19 @@ interface StitchPluginCommon {
 }
 
 /** Pass a prebuilt seam the app owns — the plugin borrows it and never closes it by default. */
-export interface StitchPluginSeamOptions extends StitchPluginCommon {
+export interface FastifyStitchPluginSeamOptions extends FastifyStitchPluginCommon {
     seam: Seam;
     seamConfig?: never;
 }
 
 /** Let the plugin build (and, by default, own + close) the seam from a {@link SeamConfig}. */
-export interface StitchPluginConfigOptions extends StitchPluginCommon {
+export interface FastifyStitchPluginConfigOptions extends FastifyStitchPluginCommon {
     seamConfig: SeamConfig;
     seam?: never;
 }
 
-export type StitchPluginOptions =
-    | StitchPluginSeamOptions
-    | StitchPluginConfigOptions;
+export type FastifyStitchPluginOptions =
+    FastifyStitchPluginSeamOptions | FastifyStitchPluginConfigOptions;
 
 // The ambient request-scoped host. `currentStitch()` reads it; the `onRequest` hook runs each
 // request inside `als.run(host, …)` so the value is the per-request principal handle.
@@ -80,8 +78,9 @@ const als = new AsyncLocalStorage<FastifyRequestSeam>();
  * The ambient request-scoped {@link FastifyRequestSeam} for the in-flight request — the principal-bound
  * `seam.as(principal)` handle (or the root seam when no principal resolver is set). Returns
  * `undefined` outside a request (no ambient context), so a caller can fall back to an explicit
- * seam. Backed by Node's {@link AsyncLocalStorage}: a value-add a Node integration offers that
- * the browser-first core cannot.
+ * seam. Never throws on a miss — `undefined` is the whole miss contract. Backed by Node's
+ * {@link AsyncLocalStorage}: a value-add a Node integration offers that the browser-first core
+ * cannot.
  *
  * ```ts
  * import { currentStitch } from '@stitchapi/fastify';
@@ -95,7 +94,7 @@ export function currentStitch(): FastifyRequestSeam | undefined {
     return als.getStore();
 }
 
-const pluginImpl: FastifyPluginAsync<StitchPluginOptions> = async (
+const pluginImpl: FastifyPluginAsync<FastifyStitchPluginOptions> = async (
     fastify,
     options,
 ) => {

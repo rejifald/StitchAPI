@@ -16,29 +16,29 @@ Phase 2/3.
 
 **DONE and runnable (verified in Node, this sign-off):**
 
--   The full **contract → simulator → browser-runner → dispatcher → UI-format → tests**
-    chain compiles and runs. All 10 test suites pass; all three source `tsc --noEmit`
-    type-checks exit 0 (exact output in §3).
--   The §9 behaviours are proven either **in Node** (the simulator handlers + the
-    isomorphic adapters + the integration suite) or **on the R1 `worker_threads`
-    harness** (real OS-thread isolation: terminate-kill, abort, no state bleed, console
-    capture, error containment). See §4.
--   The browser `stitch` build (B1) bundles **Node-free** and runs end-to-end against a
-    stub fetch (B1-README "Verification").
+- The full **contract → simulator → browser-runner → dispatcher → UI-format → tests**
+  chain compiles and runs. All 10 test suites pass; all three source `tsc --noEmit`
+  type-checks exit 0 (exact output in §3).
+- The §9 behaviours are proven either **in Node** (the simulator handlers + the
+  isomorphic adapters + the integration suite) or **on the R1 `worker_threads`
+  harness** (real OS-thread isolation: terminate-kill, abort, no state bleed, console
+  capture, error containment). See §4.
+- The browser `stitch` build (B1) bundles **Node-free** and runs end-to-end against a
+  stub fetch (B1-README "Verification").
 
 **Explicitly DEFERRED (not built / not proven here — be clear about this):**
 
--   **Real-browser proofs** of the browser-only invariants (CSP `connect-src`/`worker-src`/
-    `unsafe-eval` confinement, real Worker-global isolation, real `fetch`/non-HTTP egress
-    interception). These need a Playwright-class harness. SEC-04, SEC-10, SEC-11, SEC-12,
-    SEC-13.
--   **Live trace → Mermaid DAG** and **production token-by-token streaming** from a real
-    running snippet. The `onEvent` plumbing and the streaming accumulator exist and are
-    proven with the test/fake env, but the \*\*real B1 bundle must emit `StitchTraceEntry`
-    -   stream chunks from a running snippet in a browser Worker**, and `RunResult.trace` is
-        **not yet populated by the worker\*\* (§5).
--   **Phase-3 server tier (SR1):** not built. The dispatcher already routes Node-only
-    surfaces to it when present; until then they run browser-shimmed with a notice.
+- **Real-browser proofs** of the browser-only invariants (CSP `connect-src`/`worker-src`/
+  `unsafe-eval` confinement, real Worker-global isolation, real `fetch`/non-HTTP egress
+  interception). These need a Playwright-class harness. SEC-04, SEC-10, SEC-11, SEC-12,
+  SEC-13.
+- **Live trace → Mermaid DAG** and **production token-by-token streaming** from a real
+  running snippet. The `onEvent` plumbing and the streaming accumulator exist and are
+  proven with the test/fake env, but the \*\*real B1 bundle must emit `StitchTraceEntry`
+    - stream chunks from a running snippet in a browser Worker**, and `RunResult.trace` is
+      **not yet populated by the worker\*\* (§5).
+- **Phase-3 server tier (SR1):** not built. The dispatcher already routes Node-only
+  surfaces to it when present; until then they run browser-shimmed with a notice.
 
 > Bottom line: sandbox v1 is **integration-complete and green in Node/tsx**. It is **not
 > yet wired to a real browser**; that wiring (trace + streaming + CSP validation) is the
@@ -151,14 +151,14 @@ The `onEvent` plumbing (`worker-protocol.ts` `ProgressMessage`, the
 the UI streaming accumulator (`output-format.ts`) **exist and are proven with the
 test/fake env**. What is **not yet real**:
 
--   **`RunResult.trace` is not populated by the worker.** `ResultMessage`
-    (`worker-protocol.ts`) carries `logs / notices / value / error` — **no `trace`
-    field** — and `mapResult()` (`browser-runner.ts` ~L278–296) never sets
-    `RunResult.trace`. So the response-card trace + the build-stitch Mermaid DAG are
-    driven only by `onEvent`/the fake env, not by a worker-populated `trace`.
--   **The real B1 bundle must emit `StitchTraceEntry` + stream chunks** from a running
-    snippet inside a real browser Worker. Today that path is exercised by the InProc/Thread
-    worker harness, not by the bundled `stitch-browser.ts` running in a browser.
+- **`RunResult.trace` is not populated by the worker.** `ResultMessage`
+  (`worker-protocol.ts`) carries `logs / notices / value / error` — **no `trace`
+  field** — and `mapResult()` (`browser-runner.ts` ~L278–296) never sets
+  `RunResult.trace`. So the response-card trace + the build-stitch Mermaid DAG are
+  driven only by `onEvent`/the fake env, not by a worker-populated `trace`.
+- **The real B1 bundle must emit `StitchTraceEntry` + stream chunks** from a running
+  snippet inside a real browser Worker. Today that path is exercised by the InProc/Thread
+  worker harness, not by the bundled `stitch-browser.ts` running in a browser.
 
 **Phase-2 integration item (per A1's note):** add the additive `trace` to the wire
 `ResultMessage` and populate `RunResult.trace` from it, alongside the real-browser
@@ -170,14 +170,14 @@ Phase-2 spike.
 These are real-browser proofs that Node/tsx cannot make; all are listed
 browser-deferred in TEST-COVERAGE.md:
 
--   **SEC-04** — non-HTTP egress (`WebSocket`, `EventSource`, `sendBeacon`, remote
-    `import()`) unavailable. Needs real browser globals.
--   **SEC-10** — `connect-src` excludes wildcard egress. Needs real HTTP response headers.
--   **SEC-11** — `worker-src` restricts foreign Worker URLs. Needs a real CSP violation.
--   **SEC-12** — a direct bypass attempt is blocked by CSP, not silently sent. Needs the
-    real browser network layer.
--   **SEC-13** — `unsafe-eval` confined to the Worker context only. Needs per-context CSP
-    inspection.
+- **SEC-04** — non-HTTP egress (`WebSocket`, `EventSource`, `sendBeacon`, remote
+  `import()`) unavailable. Needs real browser globals.
+- **SEC-10** — `connect-src` excludes wildcard egress. Needs real HTTP response headers.
+- **SEC-11** — `worker-src` restricts foreign Worker URLs. Needs a real CSP violation.
+- **SEC-12** — a direct bypass attempt is blocked by CSP, not silently sent. Needs the
+  real browser network layer.
+- **SEC-13** — `unsafe-eval` confined to the Worker context only. Needs per-context CSP
+  inspection.
 
 Until the spike, the CSP intent (`connect-src 'self'`, `worker-src 'self' blob:`,
 Worker-only `unsafe-eval`) is **ratified** (checklist §2) but **not enforcement-proven**.

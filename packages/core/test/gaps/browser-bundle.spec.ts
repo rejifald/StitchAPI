@@ -40,14 +40,26 @@ function loadEsbuild(): { build: EsbuildBuild } {
 }
 
 // Bundle one entry for platform "browser". Never throws — esbuild's rejection is
-// folded into `errorTexts` so a test can assert on success OR on failure.
+// folded into `errorTexts` so a test can assert on success OR on failure. Pass `source` to bundle
+// a virtual entry instead of a file, for a case that has to span two entries (the zero-Node-globals
+// run below needs `stitch` from the root AND `basic` from `stitchapi/auth`).
 async function bundleForBrowser(
     entry: string,
     format: 'esm' | 'cjs' = 'esm',
+    source?: string,
 ): Promise<{ errorTexts: string[]; output: string }> {
     const { build } = loadEsbuild();
     return build({
-        entryPoints: [join(ROOT, entry)],
+        ...(source === undefined
+            ? { entryPoints: [join(ROOT, entry)] }
+            : {
+                  stdin: {
+                      contents: source,
+                      resolveDir: ROOT,
+                      sourcefile: entry,
+                      loader: 'ts' as const,
+                  },
+              }),
         bundle: true,
         platform: 'browser',
         format,
@@ -135,13 +147,18 @@ describe('browser bundle (GAP-AUDIT §1.5)', () => {
     // The mechanical "assert no shims" guard: bundle the root for the browser and run it in
     // a vm context that has ONLY real browser primitives — no process, no Buffer, no require —
     // then execute a stitch with basic() auth (the §1.5 regression site, which used Buffer).
+    // `basic` now lives on `stitchapi/auth` (ADR 0021), so the entry spans both modules — which
+    // also puts the auth module (the one that reaches `node:fs` for `secretsFile`) under this guard.
     test('the browser bundle executes a stitch with zero Node globals', async () => {
-        const { output } = await bundleForBrowser('src/index.ts', 'cjs');
+        const { output } = await bundleForBrowser(
+            'browser-entry.ts',
+            'cjs',
+            `export { stitch } from './src/index';\nexport { basic } from './src/auth';\n`,
+        );
         expect(output.length).toBeGreaterThan(0);
 
         let captured:
-            | { url: string; headers: Record<string, string> }
-            | undefined;
+            { url: string; headers: Record<string, string> } | undefined;
         const moduleObj: { exports: Record<string, unknown> } = { exports: {} };
         const sandbox: Record<string, unknown> = {
             module: moduleObj,

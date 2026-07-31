@@ -1,0 +1,54 @@
+name: Feature request
+description: Propose a capability StitchAPI doesn't have yet.
+labels: ['enhancement']
+body:
+    - type: markdown
+      attributes:
+          value: |
+              Lead with the problem rather than the API you have in mind — the shape usually
+              falls out of the constraint, and the problem is the part we can't guess.
+
+    - type: textarea
+      id: problem
+      attributes:
+          label: What problem are you solving?
+          description: What are you trying to do today, and where does it break down?
+          placeholder: |
+              I call an API that paginates with an opaque cursor in a response header, and
+              I end up hand-rolling the loop outside the stitch, which loses the trace.
+      validations:
+          required: true
+
+    - type: textarea
+      id: proposal
+      attributes:
+          label: What would it look like?
+          description: A sketch of the API, if you have one. Rough is fine.
+          render: ts
+      validations:
+          required: false
+
+    - type: dropdown
+      id: scope
+      attributes:
+          label: Where does it belong?
+          description: |
+              `stitchapi` core carries an enforced bundle-size budget, so a capability that
+              doesn't have to live there usually shouldn't. A companion package or a
+              subpath import costs nothing to anyone who doesn't import it.
+          options:
+              - Core (stitchapi) — it can't work anywhere else
+              - A subpath import of core
+              - An existing companion package (@stitchapi/*)
+              - A new companion package
+              - Not sure
+      validations:
+          required: true
+
+    - type: textarea
+      id: alternatives
+      attributes:
+          label: What have you tried?
+          description: Workarounds you're using now, or other libraries that solve this well.
+      validations:
+          required: false

@@ -36,7 +36,7 @@ export type StitchPlugin = Elysia<
     }
 >;
 
-export interface StitchPluginOptions {
+export interface ElysiaStitchPluginOptions {
     /**
      * The seam this plugin shares across requests. **Borrowed, not owned** — build it once at
      * startup and `seam.close()` it on shutdown yourself; the plugin never closes it (the seam
@@ -80,7 +80,7 @@ export interface StitchPluginOptions {
  *
  * The `stitch` context property is typed: a handler reads it off the destructured context.
  */
-export function stitch(options: StitchPluginOptions): StitchPlugin {
+export function stitch(options: ElysiaStitchPluginOptions): StitchPlugin {
     const { seam, principal, errorHandler } = options;
 
     // `.derive` runs per request and merges its return into the context. The principal lives in this

@@ -77,8 +77,7 @@ export function redactEventForTransport(event: StitchEvent): StitchEvent {
     // is kept. `variables` is a plain object; the cast restores its declared shape.
     const safeBody = redactSecretsDeep(event.input.body);
     const safeVariables = redactSecretsDeep(event.input.variables) as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
     return {
         ...event,
         url: scrubUrl(event.url),

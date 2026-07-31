@@ -27,6 +27,7 @@
         // before it builds). The published `exports` map still points at `lib/`.
         "baseUrl": ".",
         "paths": {
+            "stitchapi/auth": ["../core/src/auth.ts"],
             "stitchapi": ["../core/src/index.ts"]
         }
     },

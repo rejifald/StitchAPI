@@ -1,5 +1,6 @@
 // Set the trace file before importing ../src so the JSONL sink is captured/quiet.
-import { bearer, stitch } from '../src';
+import { stitch } from '../src';
+import { bearer } from '../src/auth';
 import { createMcpServer, serveStdio } from '../src/mcp';
 import type { JsonRpcMessage } from '../src/mcp';
 import { startMockServer } from './support/mock-server';
@@ -86,7 +87,7 @@ test('initialize advertises tools capability and server info', async () => {
     expect(result.serverInfo.version).toBe(PKG_VERSION);
 });
 
-test('an explicit info.version overrides the derived package version', async () => {
+test('an explicit server.version overrides the derived package version', async () => {
     const custom = createMcpServer({}, { version: '9.9.9-custom' });
     const res = await custom.handle(
         req('initialize', { protocolVersion: 'x' }),
@@ -94,6 +95,17 @@ test('an explicit info.version overrides the derived package version', async () 
     const result = res?.result as { serverInfo: { version: string } };
     expect(result.serverInfo.version).toBe('9.9.9-custom');
     expect(result.serverInfo.version).not.toBe(PKG_VERSION);
+});
+
+test('a bare string is shorthand for the server name (P14)', async () => {
+    const named = createMcpServer({}, 'orders-api');
+    const res = await named.handle(req('initialize', { protocolVersion: 'x' }));
+    const result = res?.result as {
+        serverInfo: { name: string; version: string };
+    };
+    expect(result.serverInfo.name).toBe('orders-api');
+    // The shorthand names ONLY the dominant field — version stays the derived default.
+    expect(result.serverInfo.version).toBe(PKG_VERSION);
 });
 
 test('tools/list returns the single code-mode tool (+ discovery + describe)', async () => {

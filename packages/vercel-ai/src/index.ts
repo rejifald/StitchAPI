@@ -113,6 +113,24 @@ export interface StitchToolOptions<Args, Input> {
 }
 
 /**
+ * A schema value accepted positionally by {@link stitchTool} — any object (a Zod
+ * schema, an AI SDK `Schema`, …) that does NOT carry an `inputSchema` key. An object
+ * that DOES carry one is read as the {@link StitchToolOptions} envelope instead;
+ * that key is what tells the two apart.
+ */
+export type StitchToolSchema = object & { inputSchema?: never };
+
+/** The envelope form is the one whose second argument carries an `inputSchema` key —
+ * a schema itself never does. */
+function isToolOptions(
+    value: StitchToolOptions<unknown, unknown> | StitchToolSchema,
+): value is StitchToolOptions<unknown, unknown> {
+    return (
+        typeof value === 'object' && value !== null && 'inputSchema' in value
+    );
+}
+
+/**
  * Wrap a stitch as a Vercel AI SDK tool. Drop it into a `tools` map:
  *
  * ```ts
@@ -133,6 +151,14 @@ export interface StitchToolOptions<Args, Input> {
  * });
  * ```
  *
+ * `inputSchema` is the one required field, so it gets a positional shorthand: when the
+ * model's args ARE the stitch input and no description is needed,
+ * `stitchTool(stitch, schema)` ≡ `stitchTool(stitch, { inputSchema: schema })`:
+ *
+ * ```ts
+ * tools: { getUser: stitchTool(getUser, z.object({ params: z.object({ id: z.string() }) })) }
+ * ```
+ *
  * Works with AI SDK v4 (reads `parameters`) and v5 (reads `inputSchema`) — the tool
  * carries both.
  */
@@ -147,10 +173,23 @@ export function stitchTool<T, Input = unknown, Args = Input>(
     stitch: StitchLike<T, Input>,
     options: StitchToolOptions<Args, Input>,
 ): StitchTool<Args, T>;
+export function stitchTool<S extends StitchLike<unknown, never>>(
+    stitch: S,
+    inputSchema: StitchToolSchema,
+): StitchTool<QueryInput<S>, QueryOutput<S>>;
+export function stitchTool<T, Input = unknown>(
+    stitch: StitchLike<T, Input>,
+    inputSchema: StitchToolSchema,
+): StitchTool<Input, T>;
 export function stitchTool<T>(
     stitch: StitchLike<T, unknown>,
-    options: StitchToolOptions<unknown, unknown>,
+    optionsOrSchema: StitchToolOptions<unknown, unknown> | StitchToolSchema,
 ): StitchTool<unknown, T> {
+    const options: StitchToolOptions<unknown, unknown> = isToolOptions(
+        optionsOrSchema,
+    )
+        ? optionsOrSchema
+        : { inputSchema: optionsOrSchema };
     // `compact` is the wrong tool here: `parameters`/`inputSchema` are required `unknown`
     // keys it would optionalize. Keep the explicit spread to omit only `description`.
     return {

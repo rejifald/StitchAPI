@@ -28,23 +28,23 @@ encapsulation and are visible app-wide.
 
 ## What it does
 
--   **Decorates the app** with the root `seam` at `fastify.stitch`.
--   **Binds a request-scoped principal.** With a `principal` resolver, every
-    request gets a `seam.as(principal)` handle — a separate session/token over the
-    **shared** store + throttle — on `request.stitch`. This is the trusted boundary
-    StitchAPI's seam exists for: the caller can never name another principal.
--   **Ambient principal via `AsyncLocalStorage`.** `currentStitch()` reads the
-    request's bound seam from Node's `AsyncLocalStorage`, so handlers and services
-    don't have to thread `request.stitch` through every call — a value-add a Node
-    integration can offer that the browser-first core cannot.
--   **Pino logger bridge.** `fastify.log` becomes the seam's `TraceSink`
-    (default on). It logs **only metadata** (name, method, scrubbed URL, status,
-    attempts, timing), never request/response bodies or headers, so it is safe on a
-    secret-bearing seam.
--   **SSE bridge.** `sendStitchSse(reply, stream)` streams a stitch's `.stream()`
-    output to a `text/event-stream` reply.
--   **Error bridge.** A thrown `StitchError` is mapped to an HTTP response
-    (`502` by default) so handlers need no try/catch.
+- **Decorates the app** with the root `seam` at `fastify.stitch`.
+- **Binds a request-scoped principal.** With a `principal` resolver, every
+  request gets a `seam.as(principal)` handle — a separate session/token over the
+  **shared** store + throttle — on `request.stitch`. This is the trusted boundary
+  StitchAPI's seam exists for: the caller can never name another principal.
+- **Ambient principal via `AsyncLocalStorage`.** `currentStitch()` reads the
+  request's bound seam from Node's `AsyncLocalStorage`, so handlers and services
+  don't have to thread `request.stitch` through every call — a value-add a Node
+  integration can offer that the browser-first core cannot.
+- **Pino logger bridge.** `fastify.log` becomes the seam's `TraceSink`
+  (default on). It logs **only metadata** (name, method, scrubbed URL, status,
+  attempts, timing), never request/response bodies or headers, so it is safe on a
+  secret-bearing seam.
+- **SSE bridge.** `streamStitchSse(reply, stream)` streams a stitch's `.stream()`
+  output to a `text/event-stream` reply.
+- **Error bridge.** A thrown `StitchError` is mapped to an HTTP response
+  (`502` by default) so handlers need no try/catch.
 
 ## Seam: build or borrow
 
@@ -90,10 +90,10 @@ back to an explicit seam.
 ## SSE streaming
 
 ```ts
-import { sendStitchSse } from '@stitchapi/fastify';
+import { streamStitchSse } from '@stitchapi/fastify';
 
 app.get('/chat', (req, reply) =>
-    sendStitchSse(reply, chat.stream({ query: { q: String(req.query.q) } }), {
+    streamStitchSse(reply, chat.stream({ query: { q: String(req.query.q) } }), {
         delta: (c) => c.text, // pull text out of a structured chunk
     }),
 );
@@ -110,7 +110,7 @@ status (`HTTP 401`) to the client. Pass `error` to opt in when the upstream
 messages are known safe to expose:
 
 ```ts
-sendStitchSse(reply, chat.stream({ query: { q: String(req.query.q) } }), {
+streamStitchSse(reply, chat.stream({ query: { q: String(req.query.q) } }), {
     error: (e) => e.message, // opt in to the raw upstream message
 });
 ```
@@ -155,7 +155,7 @@ events and log only retries, drift, and errors). A seam built with its own
 | -------------------- | -------- | ------------------------------------------------- |
 | `stitchPlugin`       | plugin   | `fastify.register(stitchPlugin, options)`         |
 | `currentStitch()`    | function | The request's ambient principal-bound seam        |
-| `sendStitchSse`      | function | Stream a stitch's `.stream()` to an SSE reply     |
+| `streamStitchSse`    | function | Stream a stitch's `.stream()` to an SSE reply     |
 | `stitchErrorHandler` | function | A `setErrorHandler`-compatible StitchError mapper |
 | `fastifyLoggerSink`  | function | `fastify.log` → seam `TraceSink` bridge           |
 | `isStitchError`      | function | Narrow an unknown error to a `StitchError`        |

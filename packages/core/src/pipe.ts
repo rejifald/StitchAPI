@@ -43,8 +43,9 @@ export interface Composable<Out> {
     readonly __composable: true;
 }
 
-/** A composition member: a single-endpoint {@link Stitch} or a nested {@link Composable}. */
-export type Node<O = unknown> = Stitch<O> | Composable<O>;
+// The runtime view of a composition member — the call-signature union the internals cast members
+// to. The PUBLIC member type is {@link Member} (the brand gate the combinator signatures use).
+type Node<O = unknown> = Stitch<O> | Composable<O>;
 
 // ---- abort plumbing (auto-cancel losers) ----------------------------------
 
@@ -176,14 +177,16 @@ async function runRace(
 // ---- types -----------------------------------------------------------------
 
 /**
- * The public member constraint: gate on the stitch / composable BRAND, not the call signature. A
+ * A composition member — a {@link Stitch} or a nested {@link Composable} — as the combinator
+ * signatures constrain it: gated on the stitch / composable BRAND, not the call signature. A
  * stitch's input is CONTRAVARIANT, so constraining on the call signature would (exactly like `pipe`
  * before #365) reject a stitch built from a templated URL — its narrow `TIn` is not assignable to the
  * bare `Stitch` default. Gating on `__stitch` / `__composable` accepts every real stitch or composable,
- * narrow input or not, while still rejecting a plain function. The internal {@link Node} keeps the call
- * signature — the runtime reaches members through a cast, not through this constraint.
+ * narrow input or not, while still rejecting a plain function. The runtime reaches members through a
+ * cast to their call-signature view, not through this constraint.
  */
-type Member = { readonly __stitch: true } | { readonly __composable: true };
+export type Member =
+    { readonly __stitch: true } | { readonly __composable: true };
 
 /**
  * A member's resolved output — `Awaited` of its call-signature return (a `StitchResult<O>` or a
