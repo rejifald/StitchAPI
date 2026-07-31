@@ -1,5 +1,46 @@
 {
     "generatedBy": "scripts/check-contract.mjs --update",
-    "count": 0,
-    "violations": []
+    "count": 5,
+    "violations": [
+        {
+            "rule": "R5",
+            "file": "packages/<multiple>",
+            "symbol": "UseStitchResult",
+            "detail": "exported by react, vue — must be unique-by-shape (P9/P16)",
+            "line": null,
+            "key": "R5|packages/<multiple>|UseStitchResult"
+        },
+        {
+            "rule": "R6",
+            "file": "packages/core/src/sse-emit.ts",
+            "symbol": "SseEmitOptions.delta",
+            "detail": "all-optional DeltaFrameOptions in the union — {} type-checks → AtLeastOne<DeltaFrameOptions> (P20)",
+            "line": 108,
+            "key": "R6|packages/core/src/sse-emit.ts|SseEmitOptions.delta"
+        },
+        {
+            "rule": "R6",
+            "file": "packages/core/src/sse-emit.ts",
+            "symbol": "SseEmitOptions.error",
+            "detail": "all-optional ErrorFrameOptions in the union — {} type-checks → AtLeastOne<ErrorFrameOptions> (P20)",
+            "line": 115,
+            "key": "R6|packages/core/src/sse-emit.ts|SseEmitOptions.error"
+        },
+        {
+            "rule": "R6",
+            "file": "packages/elysia/src/plugin.ts",
+            "symbol": "ElysiaStitchPluginOptions.errorHandler",
+            "detail": "all-optional StitchErrorOptions in the union — {} type-checks → AtLeastOne<StitchErrorOptions> (P20)",
+            "line": 59,
+            "key": "R6|packages/elysia/src/plugin.ts|ElysiaStitchPluginOptions.errorHandler"
+        },
+        {
+            "rule": "R6",
+            "file": "packages/fastify/src/plugin.ts",
+            "symbol": "FastifyStitchPluginCommon.errorHandler",
+            "detail": "all-optional StitchErrorOptions in the union — {} type-checks → AtLeastOne<StitchErrorOptions> (P20)",
+            "line": 47,
+            "key": "R6|packages/fastify/src/plugin.ts|FastifyStitchPluginCommon.errorHandler"
+        }
+    ]
 }

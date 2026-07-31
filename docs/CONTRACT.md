@@ -820,8 +820,10 @@ cut; the lint skips the deprecated members so each rename ratchets the baseline 
   (P17); **R3** function-typed `key` (P6); **R4** a `scope: 'stitch'|'host'` pool
   overload (P2); **R5** the same identifier exported by ≥2 published packages
   (P9/P16), against an allow-list of the blessed one-declaration-site re-exports and
-  identical-by-design host envelopes; **R6** a config capability slot — top-level or
-  nested — typed as a bare all-optional `*Options` bag that accepts `{}` (P20);
+  identical-by-design host envelopes; **R6** a consumer-input slot — top-level, nested,
+  or **inherited** — with an all-optional bag in **any arm** of its union, so `{}`
+  type-checks (P20); the bag is resolved across files within a package and against
+  core's, and through `extends` including a non-exported base;
   **R7** a `@deprecated` JSDoc **tag** on a published surface (at tag position inside
   a block comment — prose that merely names the marker is documentation, not a shim) —
   the surface is shim-free since the sweep, so a post-GA deprecation alias (mandated by
