@@ -1,14 +1,5 @@
 {
     "generatedBy": "scripts/check-contract.mjs --update",
-    "count": 1,
-    "violations": [
-        {
-            "rule": "R5",
-            "file": "packages/<multiple>",
-            "symbol": "UseStitchResult",
-            "detail": "exported by react, vue — must be unique-by-shape (P9/P16)",
-            "line": null,
-            "key": "R5|packages/<multiple>|UseStitchResult"
-        }
-    ]
+    "count": 0,
+    "violations": []
 }

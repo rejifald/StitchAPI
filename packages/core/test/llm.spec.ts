@@ -30,7 +30,7 @@ test('anthropic: builds the Messages API body (system out of messages) and parse
     const chat = llm({
         provider: anthropic,
         model: 'claude-opus-4-8',
-        maxTokens: 256,
+        tokens: 256,
         adapter,
     });
 
@@ -145,4 +145,34 @@ test('llm honours an explicit url over the provider default', async () => {
 
     await chat({ body: { messages: [{ role: 'user', content: 'hi' }] } });
     expect(calls[0]!.url).toBe('https://gateway.internal/llm');
+});
+
+test('a per-call `tokens` override reaches the wire as the vendor `max_tokens` (openai)', async () => {
+    // The house name is `tokens` (P4: a count cap is a bare plural noun); the vendor spelling
+    // lives only in `buildBody`. This pins BOTH ends of that mapping on the openai path — the
+    // anthropic one is covered above — and proves the call-level override still wins over the
+    // surface default after the rename.
+    const { adapter, calls } = captureAdapter({
+        choices: [{ message: { content: 'ok' } }],
+        model: 'gpt-4o',
+    });
+    const chat = llm({
+        provider: openai,
+        model: 'gpt-4o',
+        tokens: 16,
+        adapter,
+    });
+
+    await chat({
+        body: { messages: [{ role: 'user', content: 'hi' }], tokens: 512 },
+    });
+
+    const body = calls[0]!.body as { max_tokens?: number };
+    expect(body.max_tokens).toBe(512);
+});
+
+test('the old `maxTokens` spelling is gone (compile-time, P4)', () => {
+    // @ts-expect-error — renamed to `tokens`; no alias (pre-GA hard break, D5)
+    void llm({ provider: openai, model: 'gpt-4o', maxTokens: 16 });
+    expect(true).toBe(true);
 });
