@@ -23,6 +23,7 @@
 
         "baseUrl": ".",
         "paths": {
+            "stitchapi/auth": ["../core/src/auth.ts"],
             "stitchapi/testing": ["../core/src/testing.ts"],
             "stitchapi": ["../core/src/index.ts"]
         }
