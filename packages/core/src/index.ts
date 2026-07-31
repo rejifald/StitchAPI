@@ -60,6 +60,10 @@ export { systemClock } from './util';
 // Exported so a peer package that takes a consumer-authored duration parses it the
 // same way core does, instead of mirroring the grammar and drifting from it.
 export { parseDuration } from './util';
+// Its size analogue: `4096`, `'64kb'`, `'1mb'` → bytes (powers of 1024). Same reason it is
+// public — a peer package with a `*Bytes` cap parses it the way core does. NOT for the
+// `Chars` family, which counts UTF-16 code units rather than bytes.
+export { parseBytes } from './util';
 // `compact({ ...obj, key: value })` — a shallow copy with `undefined`-valued keys removed, typed so
 // undefined-admitting keys come back optional. Pairs with `exactOptionalPropertyTypes`: it omits an
 // absent optional without the `...(key !== undefined ? { key } : {})` spread dance.

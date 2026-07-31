@@ -19,6 +19,26 @@ npm release are grouped under the in-development version that introduced them.
   lets a peer package accept `number | string` without mirroring the grammar and drifting
   from it. Additive — nothing else changes.
 
+- **`parseBytes` is exported from `stitchapi`, and byte caps now take a size token.** The size
+  analogue of `parseDuration` (CONTRACT.md **P25**): `4096`, `'64kb'`, `'1mb'` → bytes, in
+  **powers of 1024** (`'1mb'` = 1_048_576 — the npm-`bytes` convention, and the base the house
+  defaults are already written in). `'kib'`/`'mib'`/`'gib'` are accepted spellings of the same
+  values; parsing is case-insensitive.
+
+    ```ts
+    serve(registry, { maxBodyBytes: 4 * 1024 * 1024 }); // still fine
+    serve(registry, { maxBodyBytes: '4mb' }); // now equivalent
+    ```
+
+    `ServeOptions.maxBodyBytes` is widened to `number | string` — purely additive, every
+    existing numeric cap keeps working. An unparseable token resolves to `undefined` and lands
+    on the default cap, so a typo can never widen the bound to "unbounded".
+
+    It does **not** apply to the `Chars` family (`stream.maxBufferChars`,
+    `trace.maxBodyChars`): those count UTF-16 code units of decoded text, where a byte token
+    would be a category error. That is the distinction the `Bytes`/`Chars` suffixes carry, so —
+    unlike durations under P17 — a size field keeps its unit suffix.
+
 ### Changed
 
 - **BREAKING — `stream.maxBufferBytes` is renamed to `maxBufferChars`.** The cap never

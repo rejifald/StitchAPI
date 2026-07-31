@@ -325,6 +325,43 @@ describe('serve caps the request body (413), so an unauthenticated server cannot
     });
 });
 
+describe('the body cap also accepts a size token (`parseBytes`)', () => {
+    // `'1kb'` must resolve to 1024 bytes. The probe body is ~1.1 KB — over a parsed `'1kb'`
+    // but far under the 2 MiB default, so a 413 here can only mean the token was honoured
+    // (an ignored/unparsed token would fall back to the default and answer 200).
+    let capped: ServeHandle;
+    beforeAll(async () => {
+        const ping = stitch({ baseUrl: api.url, path: '/ping' });
+        capped = await serve({ ping }, { port: 0, maxBodyBytes: '1kb' });
+    });
+    afterAll(async () => {
+        await capped.close();
+    });
+
+    test('a body over the token cap is rejected with 413', async () => {
+        api.route('GET', '/ping', { body: { ok: true } });
+        const res = await fetch(`${capped.url}/stitch/ping`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ query: { pad: 'y'.repeat(1100) } }),
+        });
+        expect(res.status).toBe(413);
+        await expect(res.json()).resolves.toMatchObject({
+            error: expect.stringContaining('1024'), // the parsed cap, in bytes
+        });
+    });
+
+    test('a body under the token cap still succeeds', async () => {
+        api.route('GET', '/ping', { body: { ok: true } });
+        const res = await fetch(`${capped.url}/stitch/ping`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ query: { pad: 'y'.repeat(100) } }),
+        });
+        expect(res.status).toBe(200);
+    });
+});
+
 // A fake `req`/`res` pair for driving `createServeHandler` without a socket, so a client
 // disconnect can be simulated deterministically by emitting 'close'.
 function fakeReqRes(body: string, headers: Record<string, string>) {

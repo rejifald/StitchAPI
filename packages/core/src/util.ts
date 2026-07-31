@@ -91,6 +91,33 @@ export function parseDuration(
     return n * (scale[m[2] ?? ''] ?? 1);
 }
 
+/**
+ * Parse a size into bytes — the size analogue of {@link parseDuration}. Grammar: a number
+ * (already bytes), a numeric string (`"4096"` → 4096), or `<number><unit>` with unit
+ * `b` | `kb` | `mb` | `gb` | `tb` (`"512b"`, `"64kb"`, `"1mb"`, `"1.5gb"`; case-insensitive,
+ * fractions allowed). Anything else → `undefined`.
+ *
+ * Units are **powers of 1024** — `"1mb"` is 1_048_576, the npm-`bytes` convention every
+ * Node config parser in the ecosystem already speaks (CONTRACT.md P22) and the base the
+ * house defaults are written in (`10 * 1024 * 1024`). The IEC spellings `kib` | `mib` |
+ * `gib` | `tib` are accepted for the same values, for callers who want the base explicit.
+ *
+ * Only for fields that count **bytes**. The `Chars` family (`stream.maxBufferChars`,
+ * `trace.maxBodyChars`) counts UTF-16 code units of decoded text, where a byte token would
+ * be a category error — that distinction is what the `Bytes`/`Chars` suffixes carry (P1).
+ */
+export function parseBytes(s: number | string | undefined): number | undefined {
+    if (s == null) return undefined;
+    if (typeof s === 'number') return s;
+    const m = /^(\d+(?:\.\d+)?)\s*(?:([kmgt])i?)?b$/i.exec(s.trim());
+    if (!m) return Number(s) || undefined;
+    // Index in `bkmgt` IS the power of 1024: `b`→0, `k`→1, `m`→2… The `i` spellings collapse
+    // onto the same index (`kib` and `kb` are both 1024). A cap is a whole number of bytes, so
+    // a fractional token floors — never rounds up past what the caller asked for.
+    const pow = 'bkmgt'.indexOf(m[2]?.toLowerCase() ?? 'b');
+    return Math.floor(parseFloat(m[1] ?? '') * 1024 ** pow);
+}
+
 /** "2/s" | "10/m" -> { count, per } (window length in ms). */
 export function parseRate(r: string): { count: number; per: number } {
     const m = /^(\d+)\s*\/\s*(ms|s|m)$/.exec(r.trim());

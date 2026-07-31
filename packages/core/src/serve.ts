@@ -11,6 +11,7 @@ import { compact } from './compact';
 import { type StitchRegistry, selectStitch } from './registry';
 import { redactEventForTransport } from './trace';
 import type { StitchEvent, StitchInput } from './types';
+import { parseBytes } from './util';
 
 import {
     type IncomingMessage,
@@ -27,8 +28,11 @@ export interface ServeOptions {
      * {@link MAX_REQUEST_BODY_BYTES}). `serve` is unauthenticated (loopback by default, but
      * `--host` lets an operator bind a wider interface), so this bounds the memory a single
      * request can buffer. Default {@link MAX_REQUEST_BODY_BYTES}.
+     *
+     * A raw byte count or a size token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024),
+     * parsed by the shared {@link parseBytes}.
      */
-    maxBodyBytes?: number;
+    maxBodyBytes?: number | string;
 }
 
 export interface ServeHandle {
@@ -41,9 +45,10 @@ export interface ServeHandle {
 // Default request-body cap. `serve` is unauthenticated (loopback by default; DESIGN.md §10), but
 // `cli.ts --host` lets an operator bind a wider interface, so an unbounded body would let a single
 // large/slow POST buffer the whole payload into memory → OOM. A few MB comfortably fits any real
-// stitch input (JSON params/query/headers/variables) while capping that exposure; the same 2 MB
-// order of magnitude as trace's body-truncation scale (`DEFAULT_MAX_BODY_BYTES`). Override per
-// server via {@link ServeOptions.maxBodyBytes}.
+// stitch input (JSON params/query/headers/variables) while capping that exposure. Unrelated to
+// trace's `DEFAULT_MAX_BODY_CHARS` (2048 code units) — that one truncates what gets *logged*,
+// this one bounds what a single request may *buffer*. Override per server via
+// {@link ServeOptions.maxBodyBytes}, as a byte count or a `'2mb'`-style token.
 export const MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024;
 
 // Thrown by `readBody` when the body exceeds the cap; the handler maps it to 413.
@@ -186,8 +191,11 @@ async function runJson(
 // defaults to {@link MAX_REQUEST_BODY_BYTES}.
 export function createServeHandler(
     registry: StitchRegistry,
-    { maxBodyBytes = MAX_REQUEST_BODY_BYTES }: { maxBodyBytes?: number } = {},
+    { maxBodyBytes }: { maxBodyBytes?: number | string } = {},
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+    // Parse the cap ONCE here, not per request. An unparseable token resolves to `undefined`
+    // and lands on the default cap — a typo can never widen this to "unbounded".
+    const limit = parseBytes(maxBodyBytes) ?? MAX_REQUEST_BODY_BYTES;
     return async (req, res) => {
         const url = new URL(req.url ?? '/', 'http://localhost');
         const path = url.pathname;
@@ -221,7 +229,7 @@ export function createServeHandler(
 
         let input: StitchInput;
         try {
-            input = parseInput(await readBody(req, maxBodyBytes));
+            input = parseInput(await readBody(req, limit));
         } catch (e) {
             if (e instanceof PayloadTooLargeError) {
                 sendJson(res, 413, { error: e.message });
