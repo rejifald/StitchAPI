@@ -222,6 +222,32 @@ describe('stitchOnError / stitchErrorResponse map a StitchError to HTTP', () => 
         await api.close();
     });
 
+    test('errorHandler:true registers the default mapping (the new P13 spelling, at runtime)', async () => {
+        // `true` never type-checked before, so this asserts the RUNTIME honours it — not just
+        // that the signature widened. It must behave exactly like omitting the key: register
+        // the 502-by-default mapping, NOT pass `true` through to `stitchOnError`.
+        const api = seam({ baseUrl: 'https://api.test' });
+        const app = new Elysia()
+            .use(stitch({ seam: api, errorHandler: true }))
+            .get('/boom', ({ stitch }) =>
+                stitch.stitch({
+                    path: '/missing',
+                    adapter: jsonAdapter(404, { error: 'not found' }),
+                })(),
+            );
+
+        const res = await app.handle(GET('/boom'));
+        expect(res.status).toBe(502);
+        await api.close();
+    });
+
+    test('the empty errorHandler bag is rejected (compile-time, P20)', () => {
+        const api = seam({ baseUrl: 'https://api.test' });
+        // @ts-expect-error — `{}` is not a valid bag: enable-with-defaults is `true` (P13/P20)
+        void stitch({ seam: api, errorHandler: {} });
+        expect(true).toBe(true);
+    });
+
     test('stitchErrorResponse returns undefined for a non-Stitch error (caller falls through)', async () => {
         expect(stitchErrorResponse(new Error('plain'))).toBeUndefined();
         const mapped = stitchErrorResponse(
