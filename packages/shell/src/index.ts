@@ -16,7 +16,7 @@
 //     into a child — pass exactly what's needed (incl. `PATH` for a bare command name, or use an
 //     absolute command path).
 import { execFile } from 'node:child_process';
-import { compact, stitch } from 'stitchapi';
+import { compact, parseBytes, stitch } from 'stitchapi';
 import type {
     AdapterRequest,
     AdapterResponse,
@@ -26,7 +26,9 @@ import type {
     Surface,
 } from 'stitchapi';
 
-/** The defaults bound to a shell surface (the static command + how to run it). */
+/** The defaults bound to a shell surface (the static command + how to run it). Sizes are
+ *  already resolved to bytes here — the `number | string` intake is parsed once, at
+ *  construction, so the hot path never re-parses a token. */
 interface ShellDefaults {
     command: string;
     cwd?: string;
@@ -116,8 +118,9 @@ function shellSurface(d: ShellDefaults): Surface {
  * `command` is required by design (CONTRACT.md P15) — the positional `shell(command, options?)`
  * shorthand names it, so the options bag there is `Omit<ShellOptions, 'command'>`.
  */
-export interface ShellOptions
-    extends Partial<Omit<StitchConfig, 'kind' | 'responseType'>> {
+export interface ShellOptions extends Partial<
+    Omit<StitchConfig, 'kind' | 'responseType'>
+> {
     /** The executable — STATIC, bound at construction, NEVER from call input. An absolute path
      *  needs no `PATH`; a bare name (`'git'`) needs `env: { PATH: process.env.PATH }`. */
     command: string;
@@ -130,8 +133,11 @@ export interface ShellOptions
      *  subprocess can yield: `'text'` (default — the value is the stdout string) or `'json'`
      *  (`JSON.parse` it, falling back to the raw text). Honoured by the shell surface directly. */
     responseType?: 'json' | 'text';
-    /** Max stdout/stderr bytes buffered (default 10 MiB); exceeding it fails the call. */
-    maxBufferBytes?: number;
+    /** Max stdout/stderr bytes buffered (default 10 MiB); exceeding it fails the call. A raw
+     *  byte count or a size token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024), parsed by
+     *  core's shared `parseBytes` (CONTRACT.md P25). An unparseable token falls back to the
+     *  default, never to "unbounded". */
+    maxBufferBytes?: number | string;
 }
 
 /**
@@ -168,7 +174,7 @@ export function shell<T = string>(
     const { command, cwd, env, maxBufferBytes, ...rest } = opts;
     const d: ShellDefaults = {
         command,
-        maxBufferBytes: maxBufferBytes ?? 10 * 1024 * 1024,
+        maxBufferBytes: parseBytes(maxBufferBytes) ?? 10 * 1024 * 1024,
     };
     if (cwd !== undefined) d.cwd = cwd;
     if (env !== undefined) d.env = env;

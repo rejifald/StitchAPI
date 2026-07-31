@@ -131,6 +131,31 @@ test('exceeding maxBufferBytes rejects as a transport error (not a 500 response)
     ).rejects.toThrow(/maxBuffer/i);
 });
 
+test('maxBufferBytes also takes a size token, and the token really caps at runtime', async () => {
+    // A widened TYPE is not a widened runtime, so this asserts the bound, not the signature.
+    // `'1kb'` must resolve to 1024 bytes: 4 KB of stdout is over a parsed `'1kb'` but far under
+    // the 10 MiB default, so a rejection here can ONLY mean the token was honoured (an ignored
+    // token would fall back to the default and resolve).
+    const tiny = shell(NODE, { maxBufferBytes: '1kb' });
+    await expect(
+        tiny({ body: ['-e', 'process.stdout.write("x".repeat(4096))'] }),
+    ).rejects.toThrow(/maxBuffer/i);
+
+    // Under the parsed cap, the same surface still works.
+    await expect(
+        tiny({ body: ['-e', 'process.stdout.write("x".repeat(100))'] }),
+    ).resolves.toBe('x'.repeat(100));
+});
+
+test('an unparseable size token lands on the default cap, not on 0/NaN', async () => {
+    // `parseBytes('one gigabyte')` → undefined → the 10 MiB default. A `NaN`/`0` cap would
+    // reject even this two-byte write; resolving proves the fallback is the real default.
+    const bad = shell(NODE, { maxBufferBytes: 'one gigabyte' });
+    await expect(
+        bad({ body: ['-e', 'process.stdout.write("ok")'] }),
+    ).resolves.toBe('ok');
+});
+
 test('old spellings are DELETED and the empty options bag is rejected (compile-time)', () => {
     // @ts-expect-error — `decode` was renamed to `responseType` (no alias)
     void shell({ command: NODE, decode: 'json' });

@@ -46,7 +46,8 @@ host-inferred bearer tokens in StitchAPI's auth:
 Two spellings: the positional shorthand `shell(command, options?)` names the required `command`, or
 pass the full `ShellOptions` envelope `shell({ command, … })`. The options are the optional `cwd` /
 `env` / `responseType` (`'text'` default, or `'json'` — the shared `StitchConfig` slot, narrowed) /
-`maxBufferBytes` (default 10 MiB), plus the usual `StitchConfig` keys (`retry`, `throttle`,
+`maxBufferBytes` (a byte count or a `'10mb'`-style token; default 10 MiB), plus the usual
+`StitchConfig` keys (`retry`, `throttle`,
 `timeout`, `circuit`, `trace`, …) — all applied by the engine around the subprocess. The positional
 options bag must set at least one field — all-defaults is spelled by omitting it, never `{}`.
 
