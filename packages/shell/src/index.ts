@@ -28,26 +28,28 @@ import type {
 
 /** The default cap on buffered stdout/stderr — Node's own `execFile` default is 1 MiB; a command
  *  run as a stitch is usually reporting, so the surface is more generous. */
-const DEFAULT_BUFFER_BYTES = 10 * 1024 * 1024;
+const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024;
 
-/** The defaults bound to a shell surface (the static command + how to run it). Both the
- *  `buffer` shorthand and its size token are already resolved here — the `number | string`
- *  intake is folded and parsed once, at construction, so the hot path never re-parses. */
+/** The defaults bound to a shell surface (the static command + how to run it) — the RESOLVED
+ *  view, not the authoring one: the `buffer` shorthand is folded and its size token parsed once,
+ *  at construction, so the hot path never re-parses. The fields that reach `execFile` keep that
+ *  call's spelling (`maxBuffer`, bytes) so the mapping is one-to-one and nothing here reads as a
+ *  second public name for the `buffer` envelope. */
 interface ShellDefaults {
     command: string;
     cwd?: string;
     env?: Record<string, string>;
     decode: 'text' | 'json';
-    bufferBytes: number;
+    maxBuffer: number;
 }
 
 // Fold the `buffer` slot's scalar shorthand — `'4mb'` ≡ `{ max: '4mb' }` (CONTRACT.md P12) — and
-// resolve it to a byte count. An unparseable token yields `undefined` from `parseBytes` and lands
-// on the default, so a typo can never widen the cap to "unbounded" (P25).
-function resolveBufferBytes(buffer: ShellOptions['buffer']): number {
+// resolve it to the byte count `execFile` wants. An unparseable token yields `undefined` from
+// `parseBytes` and lands on the default, so a typo can never widen the cap to "unbounded" (P25).
+function resolveMaxBuffer(buffer: ShellOptions['buffer']): number {
     const max =
         typeof buffer === 'object' && buffer !== null ? buffer.max : buffer;
-    return parseBytes(max) ?? DEFAULT_BUFFER_BYTES;
+    return parseBytes(max) ?? DEFAULT_MAX_BUFFER;
 }
 
 // Run the static command with the call's argv. The ONLY input is the argv array (`req.body`);
@@ -76,7 +78,7 @@ function runCommand(
                 cwd: d.cwd,
                 env: d.env ?? {}, // FAIL-CLOSED: no inherited process.env
                 signal: req.signal,
-                maxBuffer: d.bufferBytes,
+                maxBuffer: d.maxBuffer,
                 encoding: 'utf8',
             }),
             (err, stdout, stderr) => {
@@ -208,7 +210,7 @@ export function shell<T = string>(
     const d: ShellDefaults = {
         command,
         decode: decode ?? 'text',
-        bufferBytes: resolveBufferBytes(buffer),
+        maxBuffer: resolveMaxBuffer(buffer),
     };
     if (cwd !== undefined) d.cwd = cwd;
     if (env !== undefined) d.env = env;
