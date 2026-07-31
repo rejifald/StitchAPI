@@ -157,11 +157,14 @@ _Resolved (2026-07 sweep):_ the caps this rule called out are bare plural nouns 
 overhaul), `paginate.max`→`pages`, `deno-kv maxIncrRetries`→`retry.attempts`
 (see [§6](#6-migration-record-2026-07-08-hard-break-sweep)).
 
-_Still open:_ `LlmOptions.maxTokens` / `LlmRequest.maxTokens` (the `stitchapi/llm`
-subpath) — a **count** cap carrying a `max` prefix. It is **not** sheltered by
-[P22](#p22--a-standards-interop-contract-uses-the-standards-field-names): `LlmRequest` is
-the house-**normalised** shape, and each provider's `buildBody` emits the vendor's
-`max_tokens` separately. → `tokens`.
+The 2026-07-31 audit found one more the sweep had missed and it is now fixed too:
+`LlmOptions.maxTokens` / `LlmRequest.maxTokens` (the `stitchapi/llm` subpath)
+→ **`tokens`**. It was **not** sheltered by
+[P22](#p22--a-standards-interop-contract-uses-the-standards-field-names), which is where
+the first reading of it went wrong: `LlmRequest` is the house-**normalised** shape, and
+each provider's `buildBody` emits the vendor's `max_tokens` separately, at the wire. A
+standard's field name is owed to the standard's own message, not to the house type that
+feeds it.
 
 A `max*` spelling survives legitimately only on **resolved internals** — the reconnect
 policy in `engine.ts`, the local `maxEntries` in `cache.ts`, the `failureThreshold` local
@@ -664,8 +667,8 @@ widened first, and each finding is then fixed against a gate that holds it:
   compiled. **Fixed** (`AtLeastOne`, and `errorHandler` gained the `true` spelling).
 - **P9** — `UseStitchResult` declared incompatibly by react and vue. **Fixed** (the vue
   side is framework-qualified `VueUseStitchResult`).
-- **P4** — `maxTokens` (see the still-open note under
-  [P4](#p4--one-cap-vocabulary)). **Open.**
+- **P4** — `maxTokens` on the `stitchapi/llm` types. **Fixed**
+  ([P4](#p4--one-cap-vocabulary) → `tokens`; the wire keeps `max_tokens`).
 - **P16** — nest's SSE options carry the flat spellings the _Settled_ clause above forbids;
   solid and svelte accept a `streaming` they hard-set and ignore. **Open.**
 - **P14** — an anonymous inline shape on `SecurityScheme`'s oauth2 arm. **Open.**
