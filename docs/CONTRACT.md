@@ -509,6 +509,15 @@ unit, so an unsuffixed size ceiling **IS** bytes, and only the `Chars` family is
 A `Chars` cap therefore **MUST NOT** shed its suffix into a bare `max` — the marked member
 of a pair cannot be the one that goes unmarked.
 
+_The pair that proves it:_ `ServeOptions.maxBodyBytes` bounds what a single request may
+**buffer** (413 past it); `TraceOptions.maxBodyChars` bounds what a sink **logs**
+(truncated past it). Same noun, two dimensions, both top-level — the suffix is the only
+thing telling them apart. So neither may drop it, and neither may be folded into an
+envelope that would: an envelope is licensed where it names an unambiguous subject
+(`buffer` on a subprocess), **never** as a route around a live `Bytes`/`Chars` contrast.
+A later consistency sweep that "finishes the job" on these two would delete the
+distinction, not tidy it.
+
 _Why:_ every JS-native size API (`byteLength`, `Buffer.length`, `execFile`'s `maxBuffer`)
 is already bytes, so a bare number needs no unit; and 1024-based `kb`/`mb` is what the
 Node ecosystem's de-facto parser already means by those tokens
