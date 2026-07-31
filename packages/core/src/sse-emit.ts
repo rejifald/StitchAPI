@@ -11,7 +11,7 @@
 // Zero-dep and browser-safe (no `node:*`): pure types + string building, so it satisfies the same
 // three gates as its siblings and rides the `browser` export condition. Reached only through the
 // `sse-emit` subpath — `import { stitch }` pulls in none of it.
-import type { StitchEvent, StitchEventSource } from './types';
+import type { AtLeastOne, StitchEvent, StitchEventSource } from './types';
 import { envelope } from './util';
 
 /**
@@ -106,26 +106,26 @@ export interface SseEmitOptions {
      * (`delta: (c) => c.text`), or the full `{ data, event, id }` object to set the SSE
      * `event:` / `id:` lines too.
      */
-    delta?: DeltaShaper | DeltaFrameOptions;
+    delta?: DeltaShaper | AtLeastOne<DeltaFrameOptions>;
     /**
      * How the terminal error becomes the final frame. Pass a **function** as shorthand for
      * `{ data }` (`error: (e) => e.message`), or the full `{ data, event, observe }` object. By
      * default the client gets a generic `data: error` token — the raw message is withheld to avoid
      * disclosing internal topology.
      */
-    error?: ErrorShaper | ErrorFrameOptions;
+    error?: ErrorShaper | AtLeastOne<ErrorFrameOptions>;
 }
 
 // The bare function form of each frame option is the `data` shorthand — `envelope` folds it to
 // `{ data }`, passes a full object through, and turns the `= {}` default into an empty object.
 /** Fold the `delta` option's function shorthand (`(c) => …` ≡ `{ data: (c) => … }`). */
 export const resolveDelta = (
-    o: DeltaShaper | DeltaFrameOptions = {},
-): DeltaFrameOptions => envelope(o, 'data');
+    o?: DeltaShaper | AtLeastOne<DeltaFrameOptions>,
+): DeltaFrameOptions => envelope(o, 'data') ?? {};
 /** Fold the `error` option's function shorthand (`(e) => …` ≡ `{ data: (e) => … }`). */
 export const resolveError = (
-    o: ErrorShaper | ErrorFrameOptions = {},
-): ErrorFrameOptions => envelope(o, 'data');
+    o?: ErrorShaper | AtLeastOne<ErrorFrameOptions>,
+): ErrorFrameOptions => envelope(o, 'data') ?? {};
 
 /** The default `delta` mapping: a string chunk verbatim, anything else `JSON.stringify`-ed. */
 export function defaultData(chunk: unknown): string {

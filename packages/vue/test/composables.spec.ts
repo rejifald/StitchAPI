@@ -291,3 +291,18 @@ describe('stitchQueryOptions (re-exported from @stitchapi/query-core)', () => {
         expect(opts.queryKey[0]).toBe('stitch');
     });
 });
+
+describe('P9 — the result type is framework-qualified', () => {
+    test('the bare `UseStitchResult` is gone; react owns that name (compile-time)', () => {
+        // Vue wraps every state field in a `ComputedRef`, so its result is unassignable to
+        // react's raw `StitchQueryResult`-based one in either direction. Two exported
+        // declarations of one name with two shapes is the P9 clash the ratchet's R5 watches
+        // for, so the divergent side is prefixed — as with `SolidStitchStore`/`SvelteStitchStore`.
+        // Pinned as a compile error so the bare name cannot quietly return here.
+        // @ts-expect-error — vue's is `VueUseStitchResult`; the bare name is react's
+        const _check: import('../src').UseStitchResult<number> | undefined =
+            undefined;
+        void _check;
+        expect(true).toBe(true);
+    });
+});
