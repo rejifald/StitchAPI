@@ -141,17 +141,17 @@ function makeStore<T>(
 export function stitchStore<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: QueryInput<S>,
-    options?: CreateStitchQueryOptions<QueryOutput<S>>,
+    options?: Omit<CreateStitchQueryOptions<QueryOutput<S>>, 'streaming'>,
 ): SvelteStitchStore<QueryOutput<S>>;
 export function stitchStore<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: Input,
-    options?: CreateStitchQueryOptions<T>,
+    options?: Omit<CreateStitchQueryOptions<T>, 'streaming'>,
 ): SvelteStitchStore<T>;
 export function stitchStore<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
-    options: CreateStitchQueryOptions<T> = {},
+    options: Omit<CreateStitchQueryOptions<T>, 'streaming'> = {},
 ): SvelteStitchStore<T> {
     return makeStore<T>(stitch, input, { ...options, streaming: false });
 }
@@ -180,17 +180,17 @@ export function stitchStore<T>(
 export function stitchStreamStore<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: QueryInput<S>,
-    options?: CreateStitchQueryOptions<QueryOutput<S>>,
+    options?: Omit<CreateStitchQueryOptions<QueryOutput<S>>, 'streaming'>,
 ): SvelteStitchStore<QueryOutput<S>>;
 export function stitchStreamStore<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: Input,
-    options?: CreateStitchQueryOptions<T>,
+    options?: Omit<CreateStitchQueryOptions<T>, 'streaming'>,
 ): SvelteStitchStore<T>;
 export function stitchStreamStore<T>(
     stitch: StitchLike<T, unknown>,
     input: unknown,
-    options: CreateStitchQueryOptions<T> = {},
+    options: Omit<CreateStitchQueryOptions<T>, 'streaming'> = {},
 ): SvelteStitchStore<T> {
     return makeStore<T>(stitch, input, { ...options, streaming: true });
 }

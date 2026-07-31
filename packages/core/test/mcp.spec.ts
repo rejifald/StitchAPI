@@ -295,7 +295,7 @@ test('serveStdio speaks newline-delimited JSON-RPC (tools/list)', async () => {
     const input = new PassThrough();
     const output = new PassThrough();
     output.setEncoding('utf8');
-    const { close } = serveStdio({ ping }, { input, output });
+    const { close } = serveStdio({ ping }, { stdin: input, stdout: output });
     try {
         const pending = nextMessage(output);
         input.write(`${JSON.stringify(req('tools/list'))}\n`);
@@ -314,7 +314,7 @@ test('a run_stitch call over stdio returns the result', async () => {
     const input = new PassThrough();
     const output = new PassThrough();
     output.setEncoding('utf8');
-    const { close } = serveStdio({ ping }, { input, output });
+    const { close } = serveStdio({ ping }, { stdin: input, stdout: output });
     try {
         const pending = nextMessage(output);
         input.write(

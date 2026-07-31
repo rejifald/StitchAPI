@@ -290,8 +290,16 @@ export function createMcpServer(
 }
 
 export interface StdioOptions {
-    input?: Readable;
-    output?: Writable;
+    /** The stream JSON-RPC messages are read from. Default `process.stdin`.
+     *
+     *  Spelled `stdin`, not `input`: `input` is the request **schema** slot everywhere else on the
+     *  surface (`StitchConfig.input`, `InputSchemas`, postmessage's `RequestOptions`), and one word
+     *  may not mean two things (CONTRACT.md P2). `stdin` is also what Node and the MCP SDK's
+     *  `StdioServerTransport` call it, so P18 points the same way. */
+    stdin?: Readable;
+    /** The stream JSON-RPC responses are written to. Default `process.stdout`. See {@link
+     *  StdioOptions.stdin} for why it is not `output`. */
+    stdout?: Writable;
     /**
      * Identity this server reports (see {@link McpServerOptions}). A bare string is shorthand for
      * the name — `server: 'orders-api'` ≡ `server: { name: 'orders-api' }` (CONTRACT.md P14); the
@@ -301,16 +309,16 @@ export interface StdioOptions {
 }
 
 // Wire an McpServer to the stdio transport: read newline-delimited JSON-RPC from
-// `input`, write newline-delimited responses to `output`. Messages are processed in
+// `stdin`, write newline-delimited responses to `stdout`. Messages are processed in
 // order. Returns a handle that detaches the listener.
 export function serveStdio(
     registry: StitchRegistry,
     opts: StdioOptions = {},
 ): { server: McpServer; close: () => void } {
     const server = createMcpServer(registry, opts.server);
-    const input = opts.input ?? process.stdin;
-    const output = opts.output ?? process.stdout;
-    input.setEncoding('utf8');
+    const stdin = opts.stdin ?? process.stdin;
+    const stdout = opts.stdout ?? process.stdout;
+    stdin.setEncoding('utf8');
 
     let buffer = '';
     let chain: Promise<void> = Promise.resolve();
@@ -320,13 +328,13 @@ export function serveStdio(
         try {
             message = JSON.parse(line) as JsonRpcMessage;
         } catch {
-            output.write(
+            stdout.write(
                 `${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } })}\n`,
             );
             return;
         }
         const response = await server.handle(message);
-        if (response) output.write(`${JSON.stringify(response)}\n`);
+        if (response) stdout.write(`${JSON.stringify(response)}\n`);
     };
 
     const onData = (chunk: string): void => {
@@ -339,6 +347,6 @@ export function serveStdio(
         }
     };
 
-    input.on('data', onData);
-    return { server, close: () => input.off('data', onData) };
+    stdin.on('data', onData);
+    return { server, close: () => stdin.off('data', onData) };
 }
