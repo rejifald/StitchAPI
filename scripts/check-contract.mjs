@@ -315,7 +315,7 @@ const PREFIX_GROUP_ALLOW = new Map([
     // Off the published surface, or a derived/internal read-view rather than an authored config:
     [
         'ParsedRequest.body',
-        'body/bodyType is the CLI-internal from-curl parser type — CONTRACT.md P1 records it as explicitly off the published surface',
+        'body/bodyType (payload + discriminator tag, carve-out (b)) on the CLI-internal from-curl parser type — off the published surface; the P1 bodyKind→bodyType rename landed 2026-08-01',
     ],
     [
         'FingerprintInput.transform',

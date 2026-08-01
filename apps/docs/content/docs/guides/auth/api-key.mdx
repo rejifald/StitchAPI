@@ -18,7 +18,7 @@ import { apiKey, env } from 'stitchapi/auth';
 const search = stitch({
     baseUrl: 'https://api.example.com',
     path: '/search',
-    auth: apiKey({ value: env('API_KEY') }),
+    auth: apiKey({ secret: env('API_KEY') }),
 });
 ```
 
@@ -37,7 +37,7 @@ call time and never committed.
 `name` labels the key in every arm — the header name, the query-parameter name,
 or the cookie name. It defaults to `X-API-Key` for a header and `api_key` for a
 query parameter or cookie. For a custom header, pass
-`apiKey({ name: 'X-My-Key', value: env('API_KEY') })`. A header name goes on the
+`apiKey({ name: 'X-My-Key', secret: env('API_KEY') })`. A header name goes on the
 wire **lowercased** (`x-my-key`) — case-insensitive per HTTP, but worth knowing
 if a fixture asserts the original casing. See
 [Migration notes](/docs/getting-started/migration-notes).
@@ -55,7 +55,7 @@ import { apiKey, env } from 'stitchapi/auth';
 const search = stitch({
     baseUrl: 'https://api.example.com',
     path: '/search?type=full', // an existing query is preserved
-    auth: apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') }),
+    auth: apiKey({ in: 'query', name: 'api_key', secret: env('API_KEY') }),
 });
 ```
 
@@ -87,7 +87,7 @@ import { apiKey, env } from 'stitchapi/auth';
 const search = stitch({
     baseUrl: 'https://api.example.com',
     path: '/search',
-    auth: apiKey({ in: 'cookie', name: 'api_key', value: env('API_KEY') }),
+    auth: apiKey({ in: 'cookie', name: 'api_key', secret: env('API_KEY') }),
 });
 ```
 

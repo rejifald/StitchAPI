@@ -21,7 +21,7 @@
  * Default cap on the chars the `'json'` decoder will buffer for a single in-progress value before
  * it throws — characters of the DECODED text (UTF-16 code units), not bytes off the socket. ~8M:
  * generous for real records, but bounded so a malformed / never-closing value (e.g. an unterminated
- * `[`) can't grow the buffer without limit. Overridable per-stream via `stream.maxBufferChars`. The
+ * `[`) can't grow the buffer without limit. Overridable per-stream via `stream.buffer.chars`. The
  * engine (`runStreaming`) turns the throw into an `error` event.
  */
 export const JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS = 8 * 1024 * 1024;
@@ -89,7 +89,7 @@ export async function* jsonStream(
     const guard = (): void => {
         if (buf.length > maxBufferChars) {
             throw new Error(
-                `json decoder: in-progress value exceeded maxBufferChars (${String(
+                `json decoder: in-progress value exceeded the stream.buffer.chars cap (${String(
                     maxBufferChars,
                 )}); a malformed or never-closing value was streamed`,
             );

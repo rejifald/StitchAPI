@@ -41,7 +41,7 @@ describe("issue #147 — apiKey({ in: 'query' }) placement", () => {
         const call = stitch({
             baseUrl: server.url,
             path: '/q-none',
-            auth: apiKey({ in: 'query', value: 'sk-123' }),
+            auth: apiKey({ in: 'query', secret: 'sk-123' }),
         });
         await expect(call()).resolves.toEqual({ ok: true });
         // The default param name is 'api_key'.
@@ -57,7 +57,7 @@ describe("issue #147 — apiKey({ in: 'query' }) placement", () => {
         const call = stitch({
             baseUrl: server.url,
             path: '/q-some?page=2',
-            auth: apiKey({ in: 'query', name: 'token', value: 'sk-abc' }),
+            auth: apiKey({ in: 'query', name: 'token', secret: 'sk-abc' }),
         });
         await expect(call()).resolves.toEqual({ ok: true });
         const q = server.calls('/q-some')[0]?.query ?? {};
@@ -73,7 +73,7 @@ describe("issue #147 — apiKey({ in: 'query' }) placement", () => {
         const call = stitch({
             baseUrl: server.url,
             path: '/q-thunk',
-            auth: apiKey({ in: 'query', value }),
+            auth: apiKey({ in: 'query', secret: value }),
         });
         // Constructing the stitch must NOT have resolved the thunk yet.
         expect(n).toBe(0);
@@ -94,7 +94,7 @@ describe("issue #147 — apiKey({ in: 'query' }) placement", () => {
         const call = stitch({
             baseUrl: server.url,
             path: '/q-enc',
-            auth: apiKey({ in: 'query', value: raw }),
+            auth: apiKey({ in: 'query', secret: raw }),
         });
         await expect(call()).resolves.toEqual({ ok: true });
         // The server decodes the percent-encoded value back to the exact original — so each
@@ -129,7 +129,7 @@ describe("issue #147 — apiKey({ in: 'query' }) placement", () => {
             auth: apiKey({
                 in: 'query',
                 name: 'appkeyparam',
-                value: 'sk-leak',
+                secret: 'sk-leak',
             }),
             trace: fileSink(traceFile),
         });
@@ -156,7 +156,7 @@ describe("issue #147 — apiKey({ in: 'query' }) placement", () => {
         const call = stitch({
             baseUrl: server.url,
             path: '/hdr',
-            auth: apiKey({ value: 'sk-hdr' }),
+            auth: apiKey({ secret: 'sk-hdr' }),
         });
         await expect(call()).resolves.toEqual({ ok: true });
         const c = server.calls('/hdr')[0];

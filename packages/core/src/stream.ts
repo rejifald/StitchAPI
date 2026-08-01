@@ -69,10 +69,10 @@ async function* decodeStream(
     const stream = body as ReadableStream<Uint8Array>;
     const decode = cfg.stream?.decode ?? 'bytes';
 
-    // `maxBufferChars` caps a single un-terminated line for the line-based decoders too (an upstream
-    // that never sends a `\n` would otherwise grow memory without limit); a throw becomes an `error`
-    // event in the engine. Same default (~8 MB) / knob as the `'json'` decoder below.
-    const maxBufferChars = cfg.stream?.maxBufferChars;
+    // `stream.buffer.chars` caps a single un-terminated line for the line-based decoders too (an
+    // upstream that never sends a `\n` would otherwise grow memory without limit); a throw becomes
+    // an `error` event in the engine. Same default (~8 MB) / knob as the `'json'` decoder below.
+    const maxBufferChars = cfg.stream?.buffer?.chars;
     if (decode === 'lines') {
         yield* lineReader(stream, maxBufferChars);
         return;
@@ -87,9 +87,9 @@ async function* decodeStream(
     }
     if (decode === 'json') {
         // Structural, unframed streaming-JSON (issue #111): one delta per complete value / top-level
-        // array element. `maxBufferChars` (if set) bounds a single in-progress value; a throw on
-        // overflow / mid-value EOF becomes an `error` event in the engine.
-        yield* jsonStream(stream, cfg.stream?.maxBufferChars);
+        // array element. `stream.buffer.chars` (if set) bounds a single in-progress value; a throw
+        // on overflow / mid-value EOF becomes an `error` event in the engine.
+        yield* jsonStream(stream, cfg.stream?.buffer?.chars);
         return;
     }
     // 'bytes' (default): hand back raw chunks exactly as they arrive on the wire.

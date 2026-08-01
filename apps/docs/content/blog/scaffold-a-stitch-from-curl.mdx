@@ -76,7 +76,7 @@ The CLI recognises three credential shapes, each from the header (or query param
 
 - **`Authorization: Bearer <token>`** → `auth: bearer(env('API_TOKEN'))`
 - **`Authorization: Basic <base64>`** → `auth: basic({ user: env('API_USER'), pass: env('API_PASSWORD') })`
-- **An `X-API-Key` header or an API-key query param** → `auth: apiKey({ value: env('API_KEY') })` for a header, or `auth: apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') })` for a query param
+- **An `X-API-Key` header or an API-key query param** → `auth: apiKey({ secret: env('API_KEY') })` for a header, or `auth: apiKey({ in: 'query', name: 'api_key', secret: env('API_KEY') })` for a query param
 
 In every case the value is an `env(...)` placeholder, not the captured secret — `basic` and `apiKey` each take a single options object, so the generated call is the real API you would have written. (curl's `-u user:password` flag is a different story: `from-curl` does not parse it and warns it as an unknown flag. Basic auth is recognised from an `Authorization: Basic …` header, the form a browser's **Copy as cURL** actually emits.)
 

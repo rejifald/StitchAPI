@@ -102,8 +102,8 @@ export function parseDuration(
  * house defaults are written in (`10 * 1024 * 1024`). The IEC spellings `kib` | `mib` |
  * `gib` | `tib` are accepted for the same values, for callers who want the base explicit.
  *
- * Only for fields that count **bytes**. The `Chars` family (`stream.maxBufferChars`,
- * `trace.maxBodyChars`) counts UTF-16 code units of decoded text, where a byte token would
+ * Only for fields that count **bytes**. The `Chars` family (`stream.buffer.chars`,
+ * `trace.body.chars`) counts UTF-16 code units of decoded text, where a byte token would
  * be a category error — that distinction is what the `Bytes`/`Chars` suffixes carry (P1).
  */
 export function parseBytes(s: number | string | undefined): number | undefined {

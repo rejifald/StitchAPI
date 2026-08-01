@@ -10,7 +10,7 @@
 import { compact } from './compact';
 import { type StitchRegistry, selectStitch } from './registry';
 import { redactEventForTransport } from './trace';
-import type { StitchEvent, StitchInput } from './types';
+import type { AtLeastOne, StitchEvent, StitchInput } from './types';
 import { parseBytes } from './util';
 
 import {
@@ -24,15 +24,29 @@ export interface ServeOptions {
     port?: number; // default 8787; 0 picks an ephemeral port
     host?: string; // default 127.0.0.1
     /**
-     * Reject a request body larger than this many bytes with 413 (see
-     * {@link MAX_REQUEST_BODY_BYTES}). `serve` is unauthenticated (loopback by default, but
-     * `--host` lets an operator bind a wider interface), so this bounds the memory a single
-     * request can buffer. Default {@link MAX_REQUEST_BODY_BYTES}.
-     *
-     * A raw byte count or a size token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024),
-     * parsed by the shared {@link parseBytes}.
+     * How the request body is bounded — {@link ServeBodyOptions}, or its dominant field's scalar
+     * (CONTRACT.md P12): `body: '4mb'` ≡ `body: { max: '4mb' }`. `serve` is unauthenticated
+     * (loopback by default, but `--host` lets an operator bind a wider interface), so this bounds
+     * the memory a single request can buffer. Default {@link MAX_REQUEST_BODY_BYTES}.
      */
-    maxBodyBytes?: number | string;
+    body?: number | string | AtLeastOne<ServeBodyOptions>;
+}
+
+/**
+ * Bounds on what a single request may buffer. An envelope rather than a bare byte-cap key so the
+ * next request-body control lands inside it instead of adding a top-level word (P21). Inside it
+ * `max` needs no unit suffix: bytes are the house size unit (CONTRACT.md P25), and a request body
+ * off the socket is natively bytes — unlike the `chars` caps (`trace.body.chars`,
+ * `stream.buffer.chars`), which count UTF-16 code units of decoded text and take no size token.
+ */
+export interface ServeBodyOptions {
+    /**
+     * Ceiling on the buffered request body; past it the request is rejected with 413. A raw byte
+     * count or a size token — `4 * 1024 * 1024` or `'4mb'` (powers of 1024), parsed by the shared
+     * {@link parseBytes}. An unparseable token falls back to the default cap, never to
+     * "unbounded". Default {@link MAX_REQUEST_BODY_BYTES}.
+     */
+    max?: number | string;
 }
 
 export interface ServeHandle {
@@ -46,9 +60,9 @@ export interface ServeHandle {
 // `cli.ts --host` lets an operator bind a wider interface, so an unbounded body would let a single
 // large/slow POST buffer the whole payload into memory → OOM. A few MB comfortably fits any real
 // stitch input (JSON params/query/headers/variables) while capping that exposure. Unrelated to
-// trace's `DEFAULT_MAX_BODY_CHARS` (2048 code units) — that one truncates what gets *logged*,
-// this one bounds what a single request may *buffer*. Override per server via
-// {@link ServeOptions.maxBodyBytes}, as a byte count or a `'2mb'`-style token.
+// trace's `body.chars` cap (2048 code units) — that one truncates what gets *logged*, this one
+// bounds what a single request may *buffer*. Override per server via {@link ServeOptions.body},
+// as a byte count, a `'2mb'`-style token, or the `{ max }` envelope.
 export const MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024;
 
 // Thrown by `readBody` when the body exceeds the cap; the handler maps it to 413.
@@ -187,15 +201,17 @@ async function runJson(
 }
 
 // A framework-free request handler. Exposed so it can be mounted in an existing
-// server or driven directly in tests. `maxBodyBytes` caps the request body (413 past it);
-// defaults to {@link MAX_REQUEST_BODY_BYTES}.
+// server or driven directly in tests. `body` caps the request body (413 past it) — the
+// scalar or the `{ max }` envelope; defaults to {@link MAX_REQUEST_BODY_BYTES}.
 export function createServeHandler(
     registry: StitchRegistry,
-    { maxBodyBytes }: { maxBodyBytes?: number | string } = {},
+    { body }: { body?: ServeOptions['body'] } = {},
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-    // Parse the cap ONCE here, not per request. An unparseable token resolves to `undefined`
-    // and lands on the default cap — a typo can never widen this to "unbounded".
-    const limit = parseBytes(maxBodyBytes) ?? MAX_REQUEST_BODY_BYTES;
+    // Fold the P12 scalar and parse the cap ONCE here, not per request. An unparseable token
+    // resolves to `undefined` and lands on the default cap — a typo can never widen this to
+    // "unbounded".
+    const max = typeof body === 'object' ? body.max : body;
+    const limit = parseBytes(max) ?? MAX_REQUEST_BODY_BYTES;
     return async (req, res) => {
         const url = new URL(req.url ?? '/', 'http://localhost');
         const path = url.pathname;
@@ -269,10 +285,7 @@ export function serve(
     opts: ServeOptions = {},
 ): Promise<ServeHandle> {
     const host = opts.host ?? '127.0.0.1';
-    const handle = createServeHandler(
-        registry,
-        compact({ maxBodyBytes: opts.maxBodyBytes }),
-    );
+    const handle = createServeHandler(registry, compact({ body: opts.body }));
     const server = createServer((req, res) => {
         handle(req, res).catch((e: unknown) => {
             if (!res.headersSent)

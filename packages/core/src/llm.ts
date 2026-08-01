@@ -177,7 +177,7 @@ function llmConfig(config: LlmOptions): Partial<StitchConfig> {
  * const chat = llm({
  *     provider: anthropic,
  *     model: 'claude-opus-4-8',
- *     auth: apiKey({ name: 'x-api-key', value: env('ANTHROPIC_API_KEY') }),
+ *     auth: apiKey({ name: 'x-api-key', secret: env('ANTHROPIC_API_KEY') }),
  * });
  * const { text } = await chat({ body: { messages: [{ role: 'user', content: 'hi' }] } });
  * ```

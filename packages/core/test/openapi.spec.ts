@@ -349,7 +349,7 @@ describe('toOpenApi security schemes', () => {
             createThing: stitch({
                 method: 'POST',
                 url: 'https://api.example.com/things',
-                auth: apiKey({ name: 'X-My-Key', value: 'zzz-apikey-cred' }),
+                auth: apiKey({ name: 'X-My-Key', secret: 'zzz-apikey-cred' }),
             }),
             grant: stitch({
                 url: 'https://api.example.com/grant',
@@ -443,11 +443,11 @@ describe('toOpenApi security schemes', () => {
         const registry: StitchRegistry = {
             a: stitch({
                 url: 'https://api.example.com/a',
-                auth: apiKey({ name: 'X-Key-A', value: 'k' }),
+                auth: apiKey({ name: 'X-Key-A', secret: 'k' }),
             }),
             b: stitch({
                 url: 'https://api.example.com/b',
-                auth: apiKey({ name: 'X-Key-B', value: 'k' }),
+                auth: apiKey({ name: 'X-Key-B', secret: 'k' }),
             }),
         };
         const { document } = toOpenApi(registry);

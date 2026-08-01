@@ -45,7 +45,7 @@ import { anthropic, llm } from 'stitchapi/llm';
 const chat = llm({
     provider: anthropic,
     model: 'claude-opus-4-8',
-    auth: apiKey({ name: 'x-api-key', value: env('ANTHROPIC_API_KEY') }),
+    auth: apiKey({ name: 'x-api-key', secret: env('ANTHROPIC_API_KEY') }),
 });
 
 const { text } = await chat({
@@ -85,7 +85,7 @@ const { text } = await chat({
 });
 ```
 
-`openai` authenticates with `bearer(env('OPENAI_API_KEY'))`; `anthropic` authenticates with `apiKey({ name: 'x-api-key', value: env('ANTHROPIC_API_KEY') })`. The provider absorbs the wire difference — different URL, different header, different body and response shapes — and `result.text` is the same on both sides. The code that sends messages and reads the completion does not move.
+`openai` authenticates with `bearer(env('OPENAI_API_KEY'))`; `anthropic` authenticates with `apiKey({ name: 'x-api-key', secret: env('ANTHROPIC_API_KEY') })`. The provider absorbs the wire difference — different URL, different header, different body and response shapes — and `result.text` is the same on both sides. The code that sends messages and reads the completion does not move.
 
 When you need a provider that does not ship first-party, you implement the same contract the built-ins do. An `LlmProvider` declares its `id`, its full completions `url`, optional non-secret `headers`, an optional `defaultModel`, a `buildBody` that maps a normalised `LlmRequest` to that vendor's wire body, and a `parse` that lifts the response back into an `LlmResult`:
 
@@ -136,7 +136,7 @@ const fast = llm({
 const deep = llm({
     provider: anthropic,
     model: 'claude-opus-4-8',
-    auth: apiKey({ name: 'x-api-key', value: env('ANTHROPIC_API_KEY') }),
+    auth: apiKey({ name: 'x-api-key', secret: env('ANTHROPIC_API_KEY') }),
 });
 
 async function summarize(input: string, hard: boolean) {
@@ -162,7 +162,7 @@ import { anthropic, llm } from 'stitchapi/llm';
 const chat = llm({
     provider: anthropic,
     model: 'claude-opus-4-8',
-    auth: apiKey({ name: 'x-api-key', value: env('ANTHROPIC_API_KEY') }),
+    auth: apiKey({ name: 'x-api-key', secret: env('ANTHROPIC_API_KEY') }),
     retry: {
         attempts: 3,
         on: [429, 529],

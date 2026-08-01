@@ -216,13 +216,15 @@ describe('json-stream tokenizer: max-buffer guard + incomplete streams', () => {
         );
     });
 
-    test('a never-closing value throws once the buffer exceeds maxBufferChars', async () => {
+    test('a never-closing value throws once the buffer exceeds the buffer cap', async () => {
         // An open `[` whose content never closes; cap at 64 bytes so it trips quickly.
         const chunks = [
             enc.encode('['),
             ...Array.from({ length: 50 }, () => enc.encode('1234567890')),
         ];
-        await expect(decode(chunks, 64)).rejects.toThrow(/maxBufferChars/);
+        await expect(decode(chunks, 64)).rejects.toThrow(
+            /stream\.buffer\.chars/,
+        );
     });
 
     test('a stream that ends mid-value throws (complete-value semantics)', async () => {

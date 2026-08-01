@@ -54,15 +54,15 @@ describe('parseCurl', () => {
         expect(req.headers).toEqual([{ name: 'X-A', value: 'b' }]);
     });
 
-    test('-d JSON → bodyKind json; --data-urlencode → form', () => {
+    test('-d JSON → bodyType json; --data-urlencode → form', () => {
         const json = parseCurl(
             `curl -d '{"name":"Ada"}' https://api.example.com/users`,
         );
-        expect(json.bodyKind).toBe('json');
+        expect(json.bodyType).toBe('json');
         const form = parseCurl(
             'curl --data-urlencode q=ada https://api.example.com/s',
         );
-        expect(form.bodyKind).toBe('form');
+        expect(form.bodyType).toBe('form');
     });
 
     test('an unknown flag warns and does not crash', () => {
@@ -144,7 +144,7 @@ describe('toStitchSource', () => {
         expect(source).toContain('limit: 10');
     });
 
-    test('an x-api-key header → apiKey({ value: env(API_KEY) }), secret stripped', () => {
+    test('an x-api-key header → apiKey({ secret: env(API_KEY) }), secret stripped', () => {
         const key = 'apikey-zzz-1234567890';
         const { source } = toStitchSource(
             parseCurl(
@@ -152,7 +152,7 @@ describe('toStitchSource', () => {
             ),
         );
         expect(source).not.toContain(key);
-        expect(source).toContain("apiKey({ value: env('API_KEY') })");
+        expect(source).toContain("apiKey({ secret: env('API_KEY') })");
         expect(source).toContain(
             "import { stitch } from 'stitchapi';\nimport { apiKey, env } from 'stitchapi/auth'",
         );
@@ -207,7 +207,7 @@ describe('parseHar', () => {
         expect(req.url).toBe('https://api.example.com/items');
         // The HTTP/2 pseudo-header is dropped.
         expect(req.headers.some((h) => h.name.startsWith(':'))).toBe(false);
-        expect(req.bodyKind).toBe('json');
+        expect(req.bodyType).toBe('json');
         expect(req.body).toBe('{"sku":"abc"}');
     });
 

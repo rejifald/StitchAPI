@@ -185,10 +185,10 @@ describe('stream event spine (Decisions 5, 12)', () => {
         expect(ev.done?.ok).toBe(false);
     });
 
-    test('decode "json": a never-closing value past maxBufferChars surfaces an error event', async () => {
+    test('decode "json": a never-closing value past the buffer.chars cap surfaces an error event', async () => {
         const s = stream({
             url: 'https://x.test/overflow',
-            stream: { decode: 'json', maxBufferChars: 64 },
+            stream: { decode: 'json', buffer: { chars: 64 } },
             // an open object whose single string value never closes — the in-progress slice grows
             // without bound (nothing can be emitted/compacted), so the cap trips.
             adapter: streamAdapter(
@@ -198,7 +198,7 @@ describe('stream event spine (Decisions 5, 12)', () => {
 
         const ev = await collectEvents(s.stream());
         expect(ev.types).toContain('error');
-        expect(ev.error?.message).toMatch(/maxBufferChars/);
+        expect(ev.error?.message).toMatch(/stream\.buffer\.chars/);
         expect(ev.done?.ok).toBe(false);
     });
 });

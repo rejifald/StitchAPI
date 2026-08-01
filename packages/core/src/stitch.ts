@@ -55,6 +55,7 @@ import {
     type StitchInput,
     type StitchResult,
     type StitchStore,
+    type StreamOptions,
     type TraceSink,
     isStitch,
 } from './types';
@@ -199,6 +200,14 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
         cfg.retry = {
             ...retry,
             backoff: envelope(retry.backoff, 'curve'),
+        };
+    // Nested fold (P25): `stream.buffer` is a scalar-or-envelope slot too — the bare char count
+    // folds to `{ chars }`, so `__config` never carries the number form (P0).
+    const stream = cfg.stream as StreamOptions | undefined;
+    if (stream?.buffer !== undefined)
+        cfg.stream = {
+            ...stream,
+            buffer: envelope(stream.buffer, 'chars'),
         };
     // P7: the cache's list fields take a bare string as the one-element list. Widened HERE, before
     // the deep-merge, so a string in one layer and a list in another merge as one shape and the
@@ -346,7 +355,7 @@ function fileFromEnv(value: string | undefined): string | false {
     return value;
 }
 
-// `STITCH_TRACE_MAX_BODY` tunes JSONL body/result truncation: unset → the built-in
+// `STITCH_TRACE_MAX_BODY` tunes JSONL body/result truncation (the trace `body` slot): unset → the built-in
 // default cap; `full` → full capture (no truncation); a non-negative integer → that
 // character cap (`0` keeps only the marker). Anything else falls back to the default.
 function maxBodyFromEnv(value: string | undefined): number | false | undefined {
@@ -359,12 +368,15 @@ function maxBodyFromEnv(value: string | undefined): number | false | undefined {
 
 function getTrace(): TraceSink {
     const file = fileFromEnv(readEnv('STITCH_TRACE_FILE'));
-    const maxBodyChars = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
+    const maxBody = maxBodyFromEnv(readEnv('STITCH_TRACE_MAX_BODY'));
     const base = createTrace(
         compact({
             console: readEnv('STITCH_TRACE_CONSOLE') === '1',
             file,
-            maxBodyChars,
+            // `full` (no truncation) is the deliberate long spelling on the `body` slot —
+            // `body: false` means the opposite (marker only), so the env value maps to the
+            // envelope form, never the bare boolean.
+            body: maxBody === false ? { chars: false as const } : maxBody,
         }),
     );
     if (!exportsFromEnv(readEnv('STITCH_EXPORT')).includes('otlp')) return base;

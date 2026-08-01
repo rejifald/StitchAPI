@@ -147,17 +147,33 @@ export interface StreamOptions {
     /** Decoder for a `stream` surface body. Default `'bytes'` (total + lossless). */
     decode?: StreamDecode;
     /**
-     * Max characters a streaming decoder will buffer for a single un-terminated unit before throwing
-     * (the engine turns the throw into an `error` event). Counts characters of the DECODED text —
-     * UTF-16 code units, so an astral character costs 2 — not bytes off the socket. Guards every
-     * un-framed / never-closing case against growing client memory without limit (an OOM DoS):
+     * How the decoder's working buffer is bounded — {@link StreamBufferOptions}, or its dominant
+     * field's scalar (CONTRACT.md P12): `buffer: 4_000_000` ≡ `buffer: { chars: 4_000_000 }`.
+     * The same envelope word as `@stitchapi/shell`'s `buffer` slot (P16) — there the buffered
+     * thing is subprocess bytes, so its ceiling is `max` (a size); here it is DECODED TEXT, so the
+     * ceiling is `chars` (a count) and no byte token is accepted (P25: a chars cap never reads a
+     * `'1mb'`-style size).
+     */
+    buffer?: number | AtLeastOne<StreamBufferOptions>;
+}
+/**
+ * Bounds on what a streaming decoder may buffer. An envelope rather than a bare cap key so the
+ * next buffering control (an overflow policy, say) lands inside it instead of adding a top-level
+ * word (P21) — the same reasoning as `@stitchapi/shell`'s `ShellBufferOptions`.
+ */
+export interface StreamBufferOptions {
+    /**
+     * Max characters buffered for a single un-terminated unit before throwing (the engine turns
+     * the throw into an `error` event). Counts characters of the DECODED text — UTF-16 code
+     * units, so an astral character costs 2 — not bytes off the socket. Guards every un-framed /
+     * never-closing case against growing client memory without limit (an OOM DoS):
      *   - `'json'` — a single in-progress value (e.g. an unclosed `[`).
      *   - `'lines'` / `'ndjson'` — a single un-terminated line (a run of text with no `\n`).
      *   - the `sse` surface — one un-dispatched event's `data:` payload (a frame with no blank line).
      * Default ~8M characters (see `json-stream.ts`). Not meaningful for `decode: 'bytes'` (raw,
      * unbuffered).
      */
-    maxBufferChars?: number;
+    chars?: number;
 }
 /**
  * Tuning for resumable SSE reconnection (issue #71). When enabled, the engine reopens a dropped
@@ -516,14 +532,20 @@ export type SecurityScheme =
     | { type: 'apiKey'; in: 'header' | 'query' | 'cookie'; name: string }
     | {
           type: 'oauth2';
-          flows: {
-              clientCredentials?: {
-                  tokenUrl: string;
-                  scopes: Record<string, string>;
-                  refreshUrl?: string;
-              };
-          };
+          flows: { clientCredentials?: OAuth2ClientCredentialsFlow };
       };
+/**
+ * The client-credentials arm of a {@link SecurityScheme}'s `flows` — OpenAPI 3.1's "OAuth Flow
+ * Object", spelled exactly as the spec spells it (`tokenUrl`/`scopes`/`refreshUrl`, CONTRACT.md
+ * P22) so `stitch export --openapi` emits it as an identity mapping. Named and exported per P14 —
+ * the shape mirrors the standard, the name is ours. (`flows` itself stays inline: a single
+ * optional member is not a multi-field sub-object.)
+ */
+export interface OAuth2ClientCredentialsFlow {
+    tokenUrl: string;
+    scopes: Record<string, string>;
+    refreshUrl?: string;
+}
 export interface AuthStrategy {
     name?: string;
     /**
@@ -882,6 +904,11 @@ export interface StitchConfig {
 export type ResolvedCacheOptions = Omit<CacheOptions, 'vary' | 'methods'> & {
     vary?: string[];
     methods?: string[];
+};
+
+/** {@link StreamOptions} after {@link compose}: the `buffer` scalar is folded to `{ chars }`. */
+export type ResolvedStreamOptions = Omit<StreamOptions, 'buffer'> & {
+    buffer?: StreamBufferOptions;
 };
 
 /**

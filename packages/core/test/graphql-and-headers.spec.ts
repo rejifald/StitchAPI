@@ -39,7 +39,7 @@ describe('GraphQL kind', () => {
         const query = graphql({
             baseUrl: server.url,
             document: 'query($id: ID) { thing(id: $id) { name } }',
-            auth: apiKey({ name: 'apikey', value: env('GQL_KEY') }),
+            auth: apiKey({ name: 'apikey', secret: env('GQL_KEY') }),
         });
 
         const out = await query({ variables: { id: 1 } });

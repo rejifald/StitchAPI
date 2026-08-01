@@ -198,7 +198,10 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
 /**
  * Options for {@link apiKey}. `in` selects where the key goes and `name` labels it there — the same
  * two fields for every location (they no longer diverge by arm), so the shape maps 1:1 onto
- * OpenAPI's `apiKey` security scheme (`{ name, in }`, CONTRACT.md P22).
+ * OpenAPI's `apiKey` security scheme (`{ name, in }`, CONTRACT.md P22). The key itself is `secret`
+ * — NOT `value`, which P5 reserves surface-wide for the Standard-Schema success payload (the same
+ * overload that renamed `SchemaFingerprint.value` to `token`); OpenAPI's scheme carries no
+ * credential material, so there is no upstream spelling to mirror for it.
  *
  * Local (non-exported) — like {@link OAuth2Options}/{@link CookieSessionOptions}, the builder's
  * param type is not part of the package's public export surface (P16: none of the auth option
@@ -213,7 +216,7 @@ interface ApiKeyOptions {
      */
     name?: string;
     /** The key itself — a {@link Secret} resolved at call time; the caller never sees it. */
-    value: Secret;
+    secret: Secret;
 }
 
 /**
@@ -260,8 +263,17 @@ function setCookiePair(
  * and `cookie` arms write header names already on the trace denylist (`cookie` / `x-api-key`); and
  * the `query` arm registers its `name` with the URL-credential scrubber, so if the key surfaces in a
  * sink (an OTLP `url.full`, the structured `input.query`) it is REDACTED, like `api_key`/… are.
+ *
+ * `secret` is the envelope's one required field, so it names its own scalar shorthand
+ * (CONTRACT.md P15), matching {@link bearer}'s positional secret:
+ * `apiKey(env('API_KEY'))` ≡ `apiKey({ secret: env('API_KEY') })`.
  */
-export function apiKey(opts: ApiKeyOptions): AuthStrategy {
+export function apiKey(optsOrSecret: ApiKeyOptions | Secret): AuthStrategy {
+    // A `Secret` is a string or a thunk; the envelope is the one non-callable object form.
+    const opts: ApiKeyOptions =
+        typeof optsOrSecret === 'string' || typeof optsOrSecret === 'function'
+            ? { secret: optsOrSecret }
+            : optsOrSecret;
     if (opts.in === 'query') {
         const name = opts.name ?? 'api_key';
         // Teach the trace scrubber this param name carries a secret, so the key never reaches a
@@ -276,7 +288,7 @@ export function apiKey(opts: ApiKeyOptions): AuthStrategy {
                 // switches the leading `?` to `&` and preserves any trailing `#fragment`.
                 req.url = appendQueryString(
                     req.url,
-                    buildQuery({ [name]: resolve(opts.value) }),
+                    buildQuery({ [name]: resolve(opts.secret) }),
                 );
             },
         };
@@ -295,7 +307,7 @@ export function apiKey(opts: ApiKeyOptions): AuthStrategy {
                 req.headers['cookie'] = setCookiePair(
                     req.headers['cookie'],
                     name,
-                    resolve(opts.value),
+                    resolve(opts.secret),
                 );
             },
         };
@@ -306,7 +318,7 @@ export function apiKey(opts: ApiKeyOptions): AuthStrategy {
         name: 'apiKey',
         scheme: { type: 'apiKey', in: 'header', name: headerName },
         apply(req) {
-            req.headers[header] = resolve(opts.value);
+            req.headers[header] = resolve(opts.secret);
         },
     };
 }

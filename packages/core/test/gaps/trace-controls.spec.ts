@@ -189,9 +189,9 @@ test('STITCH_TRACE_MAX_BODY=full captures the whole body (no truncation)', async
     expect((result['data'] as { blob: string }).blob).toBe(BIG);
 });
 
-// (f) Opt-in full capture (code): fileSink(path, { maxBodyChars: false }) is the
+// (f) Opt-in full capture (code): fileSink(path, { body: { chars: false } }) is the
 // in-code equivalent of the env switch.
-test('fileSink({ maxBodyChars: false }) captures the whole body', async () => {
+test('fileSink({ body: { chars: false } }) captures the whole body', async () => {
     const traceFile = join(tmpdir(), `stitch-trace-cap-${process.pid}.jsonl`);
     rmSync(traceFile, { force: true });
     cleanupPaths.push(traceFile);
@@ -201,12 +201,35 @@ test('fileSink({ maxBodyChars: false }) captures the whole body', async () => {
         name: 'cap',
         baseUrl: server.url,
         path: '/cap',
-        trace: fileSink(traceFile, { maxBodyChars: false }),
+        trace: fileSink(traceFile, { body: { chars: false } }),
     });
     await expect(call()).resolves.toEqual({ blob: BIG });
 
     const result = readRecords(traceFile).find((r) => r['type'] === 'result')!;
     expect((result['data'] as { blob: string }).blob).toBe(BIG);
+});
+
+// (f2) The other end of the `body` slot: `body: false` means "never persist a payload" —
+// only the `{ truncated, chars, preview }` marker lands, with an empty preview. (Full
+// capture is the deliberate long spelling `{ chars: false }` above; the bare boolean is
+// the safe direction.)
+test('fileSink({ body: false }) persists only the marker, never the payload', async () => {
+    const traceFile = join(tmpdir(), `stitch-trace-off-${process.pid}.jsonl`);
+    rmSync(traceFile, { force: true });
+    cleanupPaths.push(traceFile);
+
+    server.route('GET', '/cap', { body: { blob: BIG } });
+    const call = stitch({
+        name: 'cap-off',
+        baseUrl: server.url,
+        path: '/cap',
+        trace: fileSink(traceFile, { body: false }),
+    });
+    await expect(call()).resolves.toEqual({ blob: BIG });
+
+    const result = readRecords(traceFile).find((r) => r['type'] === 'result')!;
+    expect(result['data']).toMatchObject({ truncated: true });
+    expect(readFileSync(traceFile, 'utf8')).not.toContain(BIG.slice(0, 64));
 });
 
 // (g) URL credential-scrub: a secret-bearing query param is REDACTED in the

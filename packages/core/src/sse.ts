@@ -107,7 +107,7 @@ function dispatchFrame(frame: SseFrame): SseEvent | undefined {
 // DoS). `lineReader` caps a single un-terminated LINE with the same knob; this caps the frame that
 // spans many terminated lines. Counted in characters of the decoded text, not bytes off the socket.
 // Same default (~8M chars) and thrown-error → `error` event contract as the
-// `'json'` decoder (`json-stream.ts` / `runStreaming`). Overridable per-stream via `stream.maxBufferChars`.
+// `'json'` decoder (`json-stream.ts` / `runStreaming`). Overridable per-stream via `stream.buffer.chars`.
 async function* parseEventStream(
     body: ReadableStream<Uint8Array>,
     maxBufferChars: number = JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS,
@@ -136,7 +136,7 @@ async function* parseEventStream(
                 frameChars += added.length + (before > 0 ? 1 : 0);
                 if (frameChars > maxBufferChars) {
                     throw new Error(
-                        `sse parser: un-dispatched event data exceeded maxBufferChars (${String(
+                        `sse parser: un-dispatched event data exceeded the stream.buffer.chars cap (${String(
                             maxBufferChars,
                         )}); a frame with no terminating blank line was streamed`,
                     );
@@ -159,7 +159,7 @@ export const sseSurface: Surface<StitchInput, SseEvent[]> = {
         if (body instanceof ReadableStream)
             yield* parseEventStream(
                 body as ReadableStream<Uint8Array>,
-                cfg.stream?.maxBufferChars,
+                cfg.stream?.buffer?.chars,
             );
     },
     contractValue: (chunk) => (chunk as SseEvent).data,

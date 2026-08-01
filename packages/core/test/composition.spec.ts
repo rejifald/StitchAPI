@@ -308,6 +308,15 @@ test('retry.backoff folds its bare curve into the envelope', () => {
             .retry,
     ).toEqual({ backoff: { base: 50, max: 500 } });
 
+    // P25: `stream.buffer` is the same nested scalar-or-envelope shape — the bare char count
+    // folds to `{ chars }`, and it must survive the outer `stream` scalar shorthand too.
+    expect(
+        compose({ path: '/x', stream: { decode: 'json', buffer: 64 } }).stream,
+    ).toEqual({ decode: 'json', buffer: { chars: 64 } });
+    expect(
+        compose({ path: '/x', stream: { buffer: { chars: 64 } } }).stream,
+    ).toEqual({ buffer: { chars: 64 } });
+
     // No `backoff` at all → the slot stays absent rather than gaining an empty envelope.
     expect(compose({ path: '/x', retry: 3 }).retry).toEqual({ attempts: 3 });
 });
