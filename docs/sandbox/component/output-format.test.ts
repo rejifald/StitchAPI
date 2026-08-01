@@ -79,13 +79,17 @@ import assert from 'node:assert/strict';
         },
     ];
     const result = traceToMermaid(trace);
-    assert.ok(
-        result.includes('u2["GET /users/2"]'),
-        'full url: node labelled GET /users/2',
-    );
-    assert.ok(
-        !result.includes('api.example.com'),
-        'full url: host stripped from label',
+    // Assert the EXTRACTED label, not a substring of the whole document. Exact equality
+    // proves both facts at once — the label is `METHOD + pathname`, and no host survived
+    // into it — where a `!includes(host)` pair proved the second only weakly. It also
+    // avoids substring-matching a hostname, which CodeQL flags as incomplete URL
+    // sanitization (`js/incomplete-url-substring-sanitization`): a fair complaint about
+    // the shape, since a host can appear anywhere in a URL.
+    const label = /u2\["([^"]*)"\]/.exec(result)?.[1];
+    assert.equal(
+        label,
+        'GET /users/2',
+        'full url: label is METHOD + pathname, host stripped',
     );
 }
 
