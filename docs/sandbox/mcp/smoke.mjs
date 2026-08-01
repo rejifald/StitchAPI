@@ -30,7 +30,7 @@ const messages = [
         params: {
             name: 'run_in_sandbox',
             arguments: {
-                code: "const u = stitch('https://demo.stitchapi.dev/users/2'); console.log(await u());",
+                code: "const u = stitch('https://api.example.com/users/2'); console.log(await u());",
             },
         },
     },

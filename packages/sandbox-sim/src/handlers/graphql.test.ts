@@ -32,7 +32,7 @@ function makeReq(
 ): SimRequest {
     return {
         method: 'POST',
-        url: new URL('https://demo.stitchapi.dev/graphql'),
+        url: new URL('https://api.example.com/graphql'),
         headers: new Headers({ 'content-type': 'application/json' }),
         body: { query, variables },
     };
@@ -82,7 +82,7 @@ async function main() {
         assert.equal(user.id, 1, 'resolved user id should be 1');
         assert.equal(user.name, 'Alice Liddell');
         assert.ok(typeof user.email === 'string', 'email should be a string');
-        assert.equal(user.email, 'alice@demo.stitchapi.dev');
+        assert.equal(user.email, 'alice@api.example.com');
     }
 
     // ------------------------------------------------------------------
@@ -166,7 +166,7 @@ async function main() {
     {
         const getReq: SimRequest = {
             method: 'GET',
-            url: new URL('https://demo.stitchapi.dev/graphql'),
+            url: new URL('https://api.example.com/graphql'),
             headers: new Headers(),
         };
         const claimed = graphqlHandlers.some((h) => h.match(getReq));

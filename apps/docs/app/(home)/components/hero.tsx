@@ -132,7 +132,7 @@ const User = z.object({ id: z.string(), name: z.string() });
 // [!code fold:end]
 // Declare once — types, validation, resilience.
 const getUser = stitch({
-  path: 'https://demo.stitchapi.dev/users/{id}',
+  path: 'https://api.example.com/users/{id}',
   output: User, // validator of your choice
   retry: 3,
   timeout: '5s',

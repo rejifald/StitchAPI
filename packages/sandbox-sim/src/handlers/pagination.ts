@@ -52,15 +52,15 @@ const FIRST_PAGE_KEY = '';
 const PAGES: Record<string, Page> = {
     [FIRST_PAGE_KEY]: {
         items: [
-            { id: 1, name: 'Alice Liddell', email: 'alice@demo.stitchapi.dev' },
-            { id: 2, name: 'Bob Hoskins', email: 'bob@demo.stitchapi.dev' },
+            { id: 1, name: 'Alice Liddell', email: 'alice@api.example.com' },
+            { id: 2, name: 'Bob Hoskins', email: 'bob@api.example.com' },
         ],
         nextCursor: 'p2',
     },
     p2: {
         items: [
-            { id: 3, name: 'Carol Danvers', email: 'carol@demo.stitchapi.dev' },
-            { id: 4, name: 'Dave Lister', email: 'dave@demo.stitchapi.dev' },
+            { id: 3, name: 'Carol Danvers', email: 'carol@api.example.com' },
+            { id: 4, name: 'Dave Lister', email: 'dave@api.example.com' },
         ],
         nextCursor: null,
     },

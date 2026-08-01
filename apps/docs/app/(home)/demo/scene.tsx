@@ -162,7 +162,7 @@ const { chunks, isStreaming } =
         label: 'Validation + drift',
         filename: 'user.ts',
         code: `const getUser = stitch({
-  baseUrl: 'https://demo.stitchapi.dev',
+  baseUrl: 'https://api.example.com',
   path: '/users/{id}',
   output: drift(User),
 });
@@ -208,7 +208,7 @@ const user = await getUser({
         // Mirrors the README hero example: pick peels the transport
         // envelope before validation, so callers get the value itself.
         code: `const getUser = stitch({
-  baseUrl: 'https://demo.stitchapi.dev',
+  baseUrl: 'https://api.example.com',
   path: '/users/{id}',
   output: User,
   pick: 'data', // peel the envelope
@@ -253,7 +253,7 @@ const user = await getUser({
         label: 'Resilience',
         filename: 'orders.ts',
         code: `const listOrders = stitch({
-  baseUrl: 'https://demo.stitchapi.dev',
+  baseUrl: 'https://api.example.com',
   path: '/orders',
   retry: { attempts: 3, on: [429, 502] },
   throttle: { rate: '10/s' },
@@ -298,7 +298,7 @@ const user = await getUser({
         // honestly cacheable without registering a zod fingerprinter —
         // omit both and the cache refuses (fail-closed).
         code: `const listNews = stitch({
-  baseUrl: 'https://demo.stitchapi.dev',
+  baseUrl: 'https://api.example.com',
   path: '/announcements',
   output: z.array(Announcement),
   cache: { ttl: '1h', version: 1 },
@@ -344,7 +344,7 @@ await listNews(); // cache — 0 ms`,
         // apiKey/basic) + managed oauth2()/cookieSession lifecycles;
         // secrets resolve at call time via env().
         code: `const getOrder = stitch({
-  baseUrl: 'https://demo.stitchapi.dev',
+  baseUrl: 'https://api.example.com',
   path: '/orders/{id}',
   auth: bearer(env('API_TOKEN')),
 });
@@ -390,7 +390,7 @@ await getOrder({ params: { id: '7' } });`,
         // trace sinks ('console' | fileSink | TraceSink), STITCH_TRACE_*
         // env opt-in, and the `stitch trace` JSONL summarizer.
         code: `const getUser = stitch({
-  baseUrl: 'https://demo.stitchapi.dev',
+  baseUrl: 'https://api.example.com',
   path: '/users/{id}',
   trace: 'console', // opt-in, per stitch
 });
@@ -484,7 +484,7 @@ const { text } = await ask({
         // cross-cutting config (SeamConfig) once; members inherit it and
         // share one runtime (throttle bucket, store, trace sink).
         code: `const api = seam({
-  baseUrl: 'https://demo.stitchapi.dev',
+  baseUrl: 'https://api.example.com',
   auth: bearer(env('API_TOKEN')),
   throttle: { rate: '10/s' },
 });
@@ -529,7 +529,7 @@ const listUsers = api.stitch({
         filename: 'agent.ts',
         code: `// One definition, four front doors
 const listUsers = stitch({
-  baseUrl: 'https://demo.stitchapi.dev',
+  baseUrl: 'https://api.example.com',
   path: '/users',
   output: z.array(User),
 });

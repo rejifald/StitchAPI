@@ -71,7 +71,7 @@ async function main(): Promise<void> {
     {
         const res = await dispatch(
             HANDLERS,
-            makeReq('https://demo.stitchapi.dev/hello'),
+            makeReq('https://api.example.com/hello'),
         );
         assert.equal(res.status, 200, 'T1: status should be 200');
         assert.deepEqual(
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
     {
         const res = await dispatch(
             HANDLERS,
-            makeReq('https://demo.stitchapi.dev/not-a-real-route'),
+            makeReq('https://api.example.com/not-a-real-route'),
         );
         assert.equal(res.status, 404, 'T2: unknown route should be 404');
         const body = res.body as Record<string, unknown>;
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
     {
         const res = await dispatch(
             HANDLERS,
-            makeReq('https://demo.stitchapi.dev/hello?__status=500'),
+            makeReq('https://api.example.com/hello?__status=500'),
         );
         assert.equal(res.status, 500, 'T3: status knob should override to 500');
         // body still comes from the handler
@@ -127,7 +127,7 @@ async function main(): Promise<void> {
     // -----------------------------------------------------------------------
     {
         resetFlaky();
-        const url = 'https://demo.stitchapi.dev/hello?__flaky=2';
+        const url = 'https://api.example.com/hello?__flaky=2';
 
         const r1 = await dispatch(HANDLERS, makeReq(url));
         assert.equal(r1.status, 503, 'T4: flaky attempt 1 should be 503');
@@ -156,7 +156,7 @@ async function main(): Promise<void> {
     {
         const res = await dispatch(
             HANDLERS,
-            makeReq('https://demo.stitchapi.dev/hello?__stream=sse'),
+            makeReq('https://api.example.com/hello?__stream=sse'),
         );
         assert.ok(res.stream !== undefined, 'T5: stream should be present');
         assert.equal(
@@ -211,7 +211,7 @@ async function main(): Promise<void> {
     // -----------------------------------------------------------------------
     {
         const fetchShim = createFetchShim(HANDLERS);
-        const res = await fetchShim('https://demo.stitchapi.dev/hello');
+        const res = await fetchShim('https://api.example.com/hello');
         assert.equal(
             res.status,
             200,
@@ -232,7 +232,7 @@ async function main(): Promise<void> {
     {
         const fetchShim = createFetchShim(HANDLERS);
         const res = await fetchShim(
-            'https://demo.stitchapi.dev/hello?__stream=sse',
+            'https://api.example.com/hello?__stream=sse',
         );
         assert.equal(res.status, 200, 'T8: streaming status 200');
         assert.ok(

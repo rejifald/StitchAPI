@@ -33,7 +33,7 @@ const RUN_IN_SANDBOX_TOOL = {
         'against a fake-API simulator (no real network, no credentials). The ' +
         'StitchAPI surface — `stitch`, auth helpers, etc. — is in scope, and the ' +
         "snippet's only `fetch` is the simulator; reach demo routes on " +
-        'demo.stitchapi.dev (e.g. /users, /users/2, /status/500). Top-level await ' +
+        'api.example.com (e.g. /users, /users/2, /status/500). Top-level await ' +
         'is allowed. Returns captured console logs, the resolved value, any error, ' +
         'and notices.',
     inputSchema: {

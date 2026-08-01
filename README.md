@@ -93,7 +93,7 @@ import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const getUser = stitch({
-    path: 'https://demo.stitchapi.dev/users/{id}',
+    path: 'https://api.example.com/users/{id}',
     output: z.object({ id: z.number(), name: z.string() }),
     pick: 'data',
 });
@@ -172,7 +172,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 npm install stitchapi@rc   # or: pnpm add stitchapi@rc · yarn add stitchapi@rc
 ```
 
-Validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator; none is bundled. The examples below use Zod for familiarity, and hit the live demo API at `demo.stitchapi.dev`.
+Validation is bring-your-own — pass a [Zod](https://zod.dev) schema or any [Standard Schema](https://standardschema.dev) validator; none is bundled. The examples below use Zod for familiarity, and `api.example.com` as an illustrative host — point them at your own API to run them, or try them as-is in the [playground](https://stitchapi.dev/#playground), which serves that host from an in-browser simulator.
 
 ## Quick start
 
@@ -181,7 +181,7 @@ The smallest stitch is a URL — declare once, call many times:
 ```ts
 import { stitch } from 'stitchapi';
 
-const getUsers = stitch('https://demo.stitchapi.dev/users');
+const getUsers = stitch('https://api.example.com/users');
 
 const users = await getUsers(); // GET, parsed JSON
 ```
@@ -189,17 +189,17 @@ const users = await getUsers(); // GET, parsed JSON
 Path params use [RFC 6570](https://datatracker.ietf.org/doc/html/rfc6570) URI templates; `params`, `query`, `headers`, and `body` all travel in one input object:
 
 ```ts
-const getUser = stitch('https://demo.stitchapi.dev/users/{id}');
+const getUser = stitch('https://api.example.com/users/{id}');
 
 await getUser({ params: { id: 1 }, query: { expand: 'roles' } });
-// → GET https://demo.stitchapi.dev/users/1?expand=roles
+// → GET https://api.example.com/users/1?expand=roles
 ```
 
 Reach for the full set of knobs only when you need them — they default off:
 
 ```ts
 const getUser = stitch({
-    path: 'https://demo.stitchapi.dev/users/{id}',
+    path: 'https://api.example.com/users/{id}',
     output: User, // a validator of your choice
     pick: 'data',
     retry: 3, // ≡ { attempts: 3 }
@@ -221,7 +221,7 @@ Everything reusable is a named value, and a stitch composes values — **no glob
 import { seam } from 'stitchapi';
 
 const api = seam({
-    baseUrl: 'https://demo.stitchapi.dev',
+    baseUrl: 'https://api.example.com',
     retry: { attempts: 3, on: [429, 503] },
     timeout: { total: '30s' },
 });
@@ -256,7 +256,7 @@ import { drift, stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const listOrders = stitch({
-    path: 'https://demo.stitchapi.dev/users/{id}/orders',
+    path: 'https://api.example.com/users/{id}/orders',
     pick: 'data',
     output: drift(
         z.array(z.object({ id: z.number(), total: z.number().optional() })),
@@ -276,7 +276,7 @@ The things every `src/api/` folder reinvents are configuration here — uniform 
 
 ```ts
 const listUsers = stitch({
-    baseUrl: 'https://demo.stitchapi.dev',
+    baseUrl: 'https://api.example.com',
     path: '/users',
     retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
     throttle: { rate: '1/s', concurrency: 2, pool: 'host' },
@@ -292,14 +292,14 @@ A read-through response cache with in-process request coalescing — **off by de
 
 ```ts
 const getUser = stitch({
-    path: 'https://demo.stitchapi.dev/users/{id}',
+    path: 'https://api.example.com/users/{id}',
     output: User,
     pick: 'data',
     cache: '5m',
 });
 
 const listAnnouncements = stitch({
-    path: 'https://demo.stitchapi.dev/announcements',
+    path: 'https://api.example.com/announcements',
     output: z.array(z.object({ id: z.number(), title: z.string() })),
     pick: 'data',
     cache: {
@@ -323,7 +323,7 @@ import { stitch } from 'stitchapi';
 import { bearer, env } from 'stitchapi/auth';
 
 const getUser = stitch({
-    path: 'https://demo.stitchapi.dev/users/{id}',
+    path: 'https://api.example.com/users/{id}',
     auth: bearer(env('API_TOKEN')), // resolved per call; the caller passes no secret
 });
 ```
@@ -367,7 +367,7 @@ A stitch is built to be invoked by an AI agent. Auth lives on the stitch, so an 
 Authoring is agent-friendly too — hand an agent one `curl`/HAR/doc example and it emits a stitch declaration, with a deterministic shortcut for the common case:
 
 ```bash
-$ stitch from-curl 'curl https://demo.stitchapi.dev/users/7 -H "authorization: Bearer …"'
+$ stitch from-curl 'curl https://api.example.com/users/7 -H "authorization: Bearer …"'
 # prints a ready-to-commit stitch: id-like segments lifted to {params}, secrets → env()
 ```
 

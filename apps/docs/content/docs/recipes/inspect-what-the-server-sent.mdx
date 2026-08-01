@@ -26,7 +26,7 @@ import { drift, stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const getUser = stitch({
-    baseUrl: 'https://demo.stitchapi.dev',
+    baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     pick: 'data',
     output: drift(
@@ -80,7 +80,7 @@ alone is hidden, so it cannot leak into a log by accident.
 import { stitch } from 'stitchapi';
 
 const getUser = stitch({
-    baseUrl: 'https://demo.stitchapi.dev',
+    baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     cache: { ttl: '60s' },
 });

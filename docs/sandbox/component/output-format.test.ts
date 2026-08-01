@@ -73,7 +73,7 @@ import assert from 'node:assert/strict';
             label: 'demo-api',
             request: {
                 method: 'GET',
-                url: 'https://demo.stitchapi.dev/users/2',
+                url: 'https://api.example.com/users/2',
             },
             response: { status: 200, ok: true, durationMs: 70 },
         },
@@ -84,7 +84,7 @@ import assert from 'node:assert/strict';
         'full url: node labelled GET /users/2',
     );
     assert.ok(
-        !result.includes('demo.stitchapi.dev'),
+        !result.includes('api.example.com'),
         'full url: host stripped from label',
     );
 }
@@ -114,20 +114,20 @@ import assert from 'node:assert/strict';
             label: 'demo-api',
             request: {
                 method: 'GET',
-                url: 'https://demo.stitchapi.dev/users/1',
+                url: 'https://api.example.com/users/1',
             },
         },
         {
             id: 'listUsers',
             label: 'demo-api',
-            request: { method: 'GET', url: 'https://demo.stitchapi.dev/users' },
+            request: { method: 'GET', url: 'https://api.example.com/users' },
         },
         {
             id: 'authMe',
             label: 'demo-api',
             request: {
                 method: 'GET',
-                url: 'https://demo.stitchapi.dev/auth/me',
+                url: 'https://api.example.com/auth/me',
             },
         },
     ];
@@ -646,7 +646,7 @@ import assert from 'node:assert/strict';
             label: 'fetchUser',
             request: {
                 method: 'GET',
-                url: 'https://demo.stitchapi.dev/users/1',
+                url: 'https://api.example.com/users/1',
             },
             response: { status: 200, ok: true, durationMs: 55 },
         },

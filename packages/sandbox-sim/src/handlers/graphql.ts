@@ -38,9 +38,9 @@ interface GqlUser {
 }
 
 const FIXTURE_USERS: GqlUser[] = [
-    { id: 1, name: 'Alice Liddell', email: 'alice@demo.stitchapi.dev' },
-    { id: 2, name: 'Bob Hoskins', email: 'bob@demo.stitchapi.dev' },
-    { id: 3, name: 'Carol Danvers', email: 'carol@demo.stitchapi.dev' },
+    { id: 1, name: 'Alice Liddell', email: 'alice@api.example.com' },
+    { id: 2, name: 'Bob Hoskins', email: 'bob@api.example.com' },
+    { id: 3, name: 'Carol Danvers', email: 'carol@api.example.com' },
 ];
 
 const DEFAULT_USER_ID = 1;

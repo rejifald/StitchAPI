@@ -97,11 +97,11 @@ import { cookieSession, env } from 'stitchapi/auth';
 
 const signIn = stitch({
     method: 'POST',
-    path: 'https://demo.stitchapi.dev/auth/sign-in',
+    path: 'https://api.example.com/auth/sign-in',
 });
 
 const listUsers = stitch({
-    path: 'https://demo.stitchapi.dev/users',
+    path: 'https://api.example.com/users',
     pick: 'data',
     auth: cookieSession({
         login: signIn,
@@ -285,7 +285,7 @@ prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
    relevance signal. No placeholders, no fragments.
 3. **Neutral naming.** No real third-party service names — use archetypes ("the
    SaaS", "the aggregator"). The canonical host is the first-party demo API
-   **`demo.stitchapi.dev`**, which the sandbox simulator serves so examples run.
+   **`api.example.com`**, which the sandbox simulator serves so examples run.
    (This is a locked project convention, not a docs-only rule.) Draw every example
    from the shared roster — see
    [The canonical example world](#the-canonical-example-world).
@@ -324,7 +324,7 @@ prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
 
 ## The canonical example world
 
-Every example everywhere draws from **one demo API** — `https://demo.stitchapi.dev`
+Every example everywhere draws from **one demo API** — `https://api.example.com`
 — and a fixed roster of named stitches. The host is **first-party and served by the
 sandbox simulator** (a fetch-shim that never touches the network), so the snippet a
 page shows is the snippet that _runs_ in the playground and the sandbox MCP. Reuse
@@ -348,7 +348,7 @@ const Order = z.object({ id: z.number(), total: z.number(), status: z.enum(['ope
 
 // The shared base every stitch extends — or a `seam`, when runtime state is shared.
 const api = seam({
-    baseUrl: 'https://demo.stitchapi.dev',
+    baseUrl: 'https://api.example.com',
     auth: bearer(env('API_TOKEN')),
     retry: { attempts: 3, on: [429, 503] },
 });
@@ -391,7 +391,7 @@ const listOrders = api.stitch({ path: '/users/{id}/orders', pick: 'data', output
 
 **Extending the roster.** Only when a feature needs a shape these can't show
 (e.g. a `multipart` upload, a binary `download`). Add the stitch to this section
-first — same base, same `demo.stitchapi.dev` — and add a matching handler to the
+first — same base, same `api.example.com` — and add a matching handler to the
 [sandbox simulator](../../docs/sandbox/contracts/sim.ts) so it still runs. A
 one-off domain invented inline is exactly what this section exists to stop.
 
@@ -492,7 +492,7 @@ and every one still type-checks (rule 1):
 ```ts twoslash tab="String form" tabGroup="definition-style"
 import { stitch } from 'stitchapi';
 
-const getUser = stitch('https://demo.stitchapi.dev/users/{id}');
+const getUser = stitch('https://api.example.com/users/{id}');
 ```
 
 ```ts twoslash tab="Config object" tabGroup="definition-style"
@@ -500,7 +500,7 @@ import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const getUser = stitch({
-    path: 'https://demo.stitchapi.dev/users/{id}',
+    path: 'https://api.example.com/users/{id}',
     output: z.object({ id: z.number(), name: z.string() }),
 });
 ```
@@ -521,7 +521,7 @@ and set `groupId` + `persist` so it persists like the fenced form:
     ```ts twoslash
     import { stitch } from 'stitchapi';
 
-    const getUser = stitch('https://demo.stitchapi.dev/users/{id}');
+    const getUser = stitch('https://api.example.com/users/{id}');
     const user = await getUser({ params: { id: 7 } });
     ```
 
@@ -695,7 +695,7 @@ without `See also` strands its reader. Dangling `/blog/<slug>` links fail it too
 - [ ] Equivalent forms (install, import, definition, consumption) are tabs with a
       canonical `tabGroup`, not prose alternatives.
 - [ ] No hand-written type tables; shapes come from `AutoTypeTable`.
-- [ ] Neutral names only; `demo.stitchapi.dev` for hosts. Examples come from the
+- [ ] Neutral names only; `api.example.com` for hosts. Examples come from the
       canonical roster (`getUser` / `listUsers` / `createUser` / `listOrders` /
       `events`), not a one-off domain.
 - [ ] Reads correctly in isolation (imagine it as a lone `llms.mdx`).
