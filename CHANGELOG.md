@@ -151,6 +151,16 @@ npm release are grouped under the in-development version that introduced them.
   optionalities. Widening, so existing call sites are unaffected; an implementor whose
   signature typed `ttl` as required should relax it and handle the absent case.
 
+- **Docs — every example points at `api.example.com`.** The README, the npm landing page
+  and the docs site advertised `demo.stitchapi.dev` as a **live** API across 153
+  references. It was not one: DNS resolved to Vercel with no deployment attached, and TLS
+  aborted before any response, so every copy-paste quickstart failed with an SSL error.
+
+    Samples now use `api.example.com` — which this repo already used 511 times as its
+    illustrative host, so this collapses two hosts into one rather than inventing a third.
+    The playground's simulator follows the rename, so the samples stay runnable there;
+    point them at your own API to run them anywhere else. No API change.
+
 - **BREAKING — the auth surface moved to the `stitchapi/auth` subpath** (ADR 0021). The
   strategies (`bearer`, `apiKey`, `basic`, `oauth2`, `cookieSession`, …) and their option
   types are no longer on the root barrel, so a project that never authenticates does not
