@@ -93,9 +93,9 @@ _Resolved (2026-07 sweep):_ the key-derivation functions in `IdempotencyOptions`
 `key` is a string everywhere; the GraphQL document string moved off `query` to
 **`document`**, leaving `query` to mean URL params only; `retry.on` and `throttle.on`
 share one shape and one meaning — the statuses that trigger that envelope's capability
-(`StatusMatch`, [P7](#p7--status-classification-parity)); `bodyKind` survives only on
-the CLI-internal `from-curl` parser type (`ParsedRequest`), off the published surface —
-every published field is `bodyType`.
+(`StatusMatch`, [P7](#p7--status-classification-parity)); `bodyKind` is gone — the
+2026-08-01 sweep renamed the last holdout, on the CLI-internal `from-curl` parser type
+(`ParsedRequest`), so `bodyType` is the one spelling everywhere, published or internal.
 
 ### P2 · Don't reuse one word for genuinely different concepts — rename one
 
@@ -190,7 +190,10 @@ success payload as **`data`** and its failure payload as **`error`**.
 
 _Resolved (2026-07 sweep):_ success is `data` on every runtime envelope that had
 drifted to `value` — `Inspection`, `StitchEvent.result`, `SurfaceOutcome`, `CacheHit`;
-`SchemaFingerprint.value`→`token`.
+`SchemaFingerprint.value`→`token`. _(2026-08-01:)_ `ApiKeyOptions.value`→**`secret`** —
+the credential field rode the reserved word too (the shape is inlined into `apiKey`'s
+emitted `.d.ts`, so it is published surface; OpenAPI's `apiKey` scheme carries no
+credential field, so no mirror was owed).
 
 ### P6 · `key` is a string; `keyOf` is a function
 
@@ -630,32 +633,34 @@ plugin-extension-hook bag, are all real shapes this rule does not reach.
 shared `parseBytes`, whose units are **powers of 1024** (`'1mb'` = 1_048_576). Every
 **emitted** size is a raw-byte `number`.
 
-Unlike a duration ([P17](#p17--one-canonical-duration-form)), a **top-level** size field
-**KEEPS** its unit suffix. `Ms` encodes a **scale**, which `'5s'` overrides — so the
-suffix becomes a lie and P17 drops it. `Bytes` encodes a **dimension**: octets, as opposed
-to the `Chars` family (`stream.maxBufferChars`, `trace.maxBodyChars`) that counts UTF-16
-code units of decoded text. `'1mb'` restates the scale, never the dimension, so the suffix
-stays true. That distinction is load-bearing per
-[P1](#p1--one-word-one-concept-one-value-space) — `Bytes` denotes bytes and cannot also
-denote code units — and a `Chars` field therefore **MUST NOT** take a byte token.
+**A size cap never rides a flat, suffixed top-level field — it lives inside the envelope
+that names its subject** (P12/P14/P24: `serve`'s `body`, trace's `body`, `stream`'s and
+shell's `buffer`). Inside the envelope the subject is named once, so the ceiling field
+carries only the **dimension**:
 
-**Inside a named envelope, the suffix is dropped.** When the envelope already names the one
-thing being measured, its ceiling is a bare **`max`** — there is only one thing there to
-measure (P1), and `max` bounds a **magnitude**, the case [P4](#p4--one-cap-vocabulary)
-leaves it. This is the size analogue of `BackoffOptions.max` (`{ curve, base, max }` under
-`backoff`), and it is where the unmarked default does the work: bytes are the house size
-unit, so an unsuffixed size ceiling **IS** bytes, and only the `Chars` family is marked.
-A `Chars` cap therefore **MUST NOT** shed its suffix into a bare `max` — the marked member
-of a pair cannot be the one that goes unmarked.
+- a **byte** ceiling is the bare **`max`** — the unmarked default does the work (bytes are
+  the house size unit, so an unsuffixed size ceiling **IS** bytes), `max` bounds a
+  **magnitude** (the case [P4](#p4--one-cap-vocabulary) leaves it, the size analogue of
+  `BackoffOptions.max`), and it accepts `number | string`;
+- a **character-count** ceiling is **`chars`** — a bare plural count noun (P4's own
+  `tokens` case: UTF-16 code units of decoded text are countable units) — and it **MUST
+  NOT** accept a byte token, so its type is `number` with **no string arm**. A `'64kb'`
+  on decoded text is a category error, and the grammar makes it a **compile** error.
 
-_The pair that proves it:_ `ServeOptions.maxBodyBytes` bounds what a single request may
-**buffer** (413 past it); `TraceOptions.maxBodyChars` bounds what a sink **logs**
-(truncated past it). Same noun, two dimensions, both top-level — the suffix is the only
-thing telling them apart. So neither may drop it, and neither may be folded into an
-envelope that would: an envelope is licensed where it names an unambiguous subject
-(`buffer` on a subprocess), **never** as a route around a live `Bytes`/`Chars` contrast.
-A later consistency sweep that "finishes the job" on these two would delete the
-distinction, not tidy it.
+The Bytes/Chars contrast is load-bearing per
+[P1](#p1--one-word-one-concept-one-value-space) — a byte cap and a code-unit cap are
+different value-spaces — and this rule carries it **twice**: in the inner field name
+(`max` vs `chars`) and in the type (`number | string` vs `number`). Both marks survive
+every fold; neither depends on a suffix a rename could shed.
+
+_History:_ until 2026-08-01 this section mandated the opposite for top-level fields —
+keep the `Bytes`/`Chars` suffix — defending the flat `ServeOptions.maxBodyBytes` /
+`TraceOptions.maxBodyChars` pair on the grounds that the suffix was the only thing
+telling the two dimensions apart. The amendment folded all three flat caps into
+envelopes ([§6](#6-migration-record-2026-07-08-hard-break-sweep)): `serve`'s
+`body: '2mb'` ≡ `{ max: '2mb' }`, trace's `body: 2048` ≡ `{ chars: 2048 }`, and
+`stream`'s `buffer: 4_000_000` ≡ `{ chars: 4_000_000 }`. The contrast the old clause
+protected did not dissolve — it moved into names and types, where the compiler holds it.
 
 _Why:_ every JS-native size API (`byteLength`, `Buffer.length`, `execFile`'s `maxBuffer`)
 is already bytes, so a bare number needs no unit; and 1024-based `kb`/`mb` is what the
@@ -665,11 +670,13 @@ base the house defaults are written in (`10 * 1024 * 1024`). An unparseable toke
 to `undefined` and lands on the field's default — a typo can never widen a cap to
 "unbounded".
 
-_Canonical case:_ `ServeOptions.maxBodyBytes` (top-level, so suffixed) and
-`@stitchapi/shell`'s `buffer` slot (`ShellBufferOptions.max`, under an envelope, plus its
-[P12](#p12--envelope--scalar-shorthand) shorthand `buffer: '2mb'`) each take
-`2 * 1024 * 1024` or `'2mb'`; `parseBytes` is exported from `stitchapi` so a peer package
-parses the grammar instead of mirroring it.
+_Canonical case:_ the two **byte** envelopes — `serve`'s `body`
+(`ServeBodyOptions.max`, shorthand `body: '2mb'`) and `@stitchapi/shell`'s `buffer`
+(`ShellBufferOptions.max`, shorthand `buffer: '2mb'`) — each take `2 * 1024 * 1024` or
+`'2mb'`; the two **chars** envelopes — trace's `body` (`TraceBodyOptions.chars`,
+shorthand `body: 2048`) and `stream`'s `buffer` (`StreamBufferOptions.chars`, shorthand
+`buffer: 4_000_000`) — take a bare count, never a token. `parseBytes` is exported from
+`stitchapi` so a peer package parses the grammar instead of mirroring it.
 
 ---
 
@@ -680,12 +687,12 @@ While the line is pre-GA, a rename may land as a hard break or under a `@depreca
 — [P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel) scopes the obligation to
 the GA channel. Severity = consumer blast radius.
 
-**Still open.** The row below is CLI-internal — `from-curl.ts` is imported by `cli.ts`
-alone, exported from no index and behind no subpath — but it is **not** the whole open
-set. A follow-up audit (2026-07-31) swept every principle against the published surface
-and found further violations that no rule in [§7](#7-enforcement) was tracking. A green
-baseline meant "nothing the rules can see", not "nothing there" — so the rules were
-widened first, and each finding is then fixed against a gate that holds it:
+**The open set is empty.** A follow-up audit (2026-07-31) swept every principle against
+the published surface and found violations no rule in [§7](#7-enforcement) was tracking —
+a green baseline meant "nothing the rules can see", not "nothing there" — so the rules
+were widened first, and each finding was fixed against a gate that holds it. A second
+exhaustive pass (2026-08-01) then verified every multi-word field name on the published
+surface — 249 of them — against P1/P4/P17/P18/P22/P24/P25 and closed what it found:
 
 - **P20** — four slots typed `Fn | Options` or `Options | false`, where `{}` still
   compiled. **Fixed** (`AtLeastOne`, and `errorHandler` gained the `true` spelling).
@@ -693,15 +700,36 @@ widened first, and each finding is then fixed against a gate that holds it:
   side is framework-qualified `VueUseStitchResult`).
 - **P4** — `maxTokens` on the `stitchapi/llm` types. **Fixed**
   ([P4](#p4--one-cap-vocabulary) → `tokens`; the wire keeps `max_tokens`).
-- **P16** — nest's SSE options carry the flat spellings the _Settled_ clause above forbids;
-  solid and svelte accept a `streaming` they hard-set and ignore. **Open.**
-- **P14** — an anonymous inline shape on `SecurityScheme`'s oauth2 arm. **Open.**
+- **P16** — nest's SSE options carried the flat spellings the _Settled_ clause above
+  forbids. **Fixed** (PR #574: all six hosts derive from core's one `SseEmitOptions`;
+  nest's extras were lifted into the shared envelope). Solid and svelte accepted a
+  `streaming` they hard-set and ignored. **Fixed** (PR #573: the flag is
+  `Omit`-ted from their option types, matching react/vue/angular).
+- **P14** — an anonymous inline shape on `SecurityScheme`'s oauth2 arm. **Fixed**
+  (2026-08-01: the flow shape is the named, exported `OAuth2ClientCredentialsFlow`;
+  every field keeps the OpenAPI/RFC spelling per P22 — the shape mirrors the standard,
+  the name is ours).
+- **P5 + P15** — `apiKey`'s credential field was `value`, the one word P5 reserves for
+  the Standard-Schema success payload (the `SchemaFingerprint.value`→`token` precedent;
+  the shape is inlined into `apiKey`'s emitted `.d.ts`, so it is published surface).
+  **Fixed** (2026-08-01: `apiKey({ secret })` — OpenAPI's `apiKey` scheme carries no
+  credential field, so there was no upstream spelling to mirror; and per P15 the one
+  required field names its scalar shorthand, `apiKey(env('X'))` ≡
+  `apiKey({ secret: env('X') })`, matching `bearer`'s positional secret).
+- **P1** — the CLI-internal `from-curl` parser's `bodyKind`. **Fixed** (2026-08-01:
+  `bodyType`, the one spelling every published field already used; CLI-internal, no
+  consumer impact).
+- **P25** — the flat, suffix-carrying size caps (`ServeOptions.maxBodyBytes`,
+  `TraceOptions.maxBodyChars`, `StreamOptions.maxBufferChars`). **Fixed** (2026-08-01:
+  folded into subject-named envelopes — `serve`'s `body` (`{ max }`), trace's `body`
+  (`{ chars }`), `stream`'s `buffer` (`{ chars }`) — under the amended
+  [P25](#p25--one-canonical-size-form), which now carries the Bytes/Chars contrast in
+  the inner field name and the type grammar instead of a top-level suffix. The trace
+  fold also closed a latent trap: full capture was the too-easy `maxBodyChars: false`;
+  it is now the deliberate `body: { chars: false }`, while `body: false` means the
+  intuitive "never persist a payload".)
 
-| Sev | Current                | Proposed   | Rule |
-| --- | ---------------------- | ---------- | ---- |
-| Low | `bodyKind` (from-curl) | `bodyType` | P1   |
-
-Everything else this table used to list has **shipped** and moved to the record below —
+Everything else this section once listed has **shipped** and moved to the record below —
 the cross-package `StitchStore`/`StitchLike`/`RequestSeam` clashes (qualified per-framework
 and per-ecosystem), `queryOptions`→`stitchQueryOptions`, `OAuth2Opts`/`CookieSessionOpts`,
 the anonymous `paginate` shape, the SSE helper, the error-options types, and
