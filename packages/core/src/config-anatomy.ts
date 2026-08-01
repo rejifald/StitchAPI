@@ -19,10 +19,10 @@ import type {
     InputSchemas,
     MultipartOptions,
     ResolvedCacheOptions,
+    ResolvedStreamOptions,
     RetryOptions,
     SseOptions,
     StitchConfig,
-    StreamOptions,
     ThrottleOptions,
     TimeoutOptions,
 } from './types';
@@ -235,7 +235,7 @@ export interface ResolvedNormalizations {
     idempotency?: IdempotencyOptions;
     throttle?: ThrottleOptions;
     circuit?: CircuitOptions;
-    stream?: StreamOptions;
+    stream?: ResolvedStreamOptions;
     multipart?: MultipartOptions;
     sse?: SseOptions;
     hooks?: Hooks;

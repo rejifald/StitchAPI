@@ -150,14 +150,14 @@ const sink = consoleSink();
 A file-only sink: append every event as JSONL to `path` (defaults to
 `~/.stitch/runs/proto.jsonl`). Writing to disk is a side effect, so you pass it
 explicitly — a stitch never opens a trace file on its own. An optional second
-argument tunes privacy: `maxBodyChars` (default `2048`; `false` for full capture)
+argument tunes privacy: `body` (a character cap, default `2048`; `{ chars: false }` for full capture)
 caps body/result [truncation](/docs/guides/observability/trace-sinks#body-truncation-and-full-capture),
 and `redactHeaders` widens the redaction denylist.
 
 ```ts twoslash
 import { fileSink } from 'stitchapi';
 
-const sink = fileSink('./runs/today.jsonl', { maxBodyChars: false });
+const sink = fileSink('./runs/today.jsonl', { body: { chars: false } });
 ```
 
 ### createTrace
@@ -165,7 +165,7 @@ const sink = fileSink('./runs/today.jsonl', { maxBodyChars: false });
 Build a zero-infra trace sink: a compact one-line-per-event summary on the
 console and/or an appended JSONL record per event. `console` defaults to `true`;
 `file` defaults to a path under `$HOME`, or `false` to disable the JSONL stream;
-`maxBodyChars` and `redactHeaders` tune the JSONL sink's
+`body` and `redactHeaders` tune the JSONL sink's
 [privacy defaults](/docs/guides/observability/trace-sinks#default-secret-redaction)
 (header/URL redaction and body truncation are always applied to the file stream).
 (This is the low-level builder behind `consoleSink`/`fileSink`; the off-by-default

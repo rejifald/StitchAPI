@@ -1,7 +1,13 @@
 // Zero-infra observability sink: append every StitchEvent as a JSONL record and,
 // optionally, print a compact colored one-line-per-event summary to stderr. No deps.
 import { compact } from './compact';
-import type { DriftLevel, StitchEvent, TraceContext, TraceSink } from './types';
+import type {
+    AtLeastOne,
+    DriftLevel,
+    StitchEvent,
+    TraceContext,
+    TraceSink,
+} from './types';
 import {
     dirnameOf,
     isSecretKey,
@@ -15,19 +21,38 @@ export interface TraceOptions {
     console?: boolean; // pretty one-line-per-event to stderr (default true)
     file?: string | false; // JSONL path; default `${process.env.HOME}/.stitch/runs/proto.jsonl`; false disables
     /**
-     * Max length (in characters of the JSON encoding) of the request body and the
-     * response value persisted to the JSONL sink. Anything larger is replaced with a
-     * `{ truncated, chars, preview }` marker, so a multi-MB response never bloats the
-     * log or persists a payload in full. Default {@link DEFAULT_MAX_BODY_CHARS}; pass
-     * `false` for full capture (the pre-1.0 behaviour); `0` keeps only the marker.
+     * How much of the request body / response value is persisted to the JSONL sink —
+     * {@link TraceBodyOptions}, or a shorthand (CONTRACT.md P12/P13):
+     *   - `body: 2048` ≡ `body: { chars: 2048 }` — truncate past that many characters; anything
+     *     larger is replaced with a `{ truncated, chars, preview }` marker, so a multi-MB
+     *     response never bloats the log or persists a payload in full;
+     *   - `body: false` — never persist a payload, keep only the marker;
+     *   - `body: { chars: false }` — full capture, no truncation. Deliberately the long
+     *     spelling: unbounded logs are the footgun, so opting in is explicit.
+     * Default {@link DEFAULT_MAX_BODY_CHARS} characters.
      */
-    maxBodyChars?: number | false;
+    body?: number | false | AtLeastOne<TraceBodyOptions>;
     /**
      * Extra header names (case-insensitive) to redact on top of the built-in
      * denylist. Additive — you can widen the denylist but never shrink it, so a
      * custom value can't accidentally un-redact `authorization`/`cookie`/…
      */
     redactHeaders?: readonly string[];
+}
+
+/**
+ * Bounds on what the JSONL sink persists of a body/result. An envelope rather than a bare cap key
+ * so the next persistence control lands inside it instead of adding a top-level word (P21). The
+ * ceiling is `chars`, not an unsuffixed `max`: it counts UTF-16 code units of the JSON encoding —
+ * decoded text, not bytes — so it takes no `'64kb'`-style size token (CONTRACT.md P25; the byte
+ * caps, `serve`'s `body.max` and shell's `buffer.max`, do).
+ */
+export interface TraceBodyOptions {
+    /**
+     * Character cap on a persisted body/result; `false` disables truncation entirely (full
+     * capture, the pre-1.0 behaviour); `0` keeps only the marker.
+     */
+    chars?: number | false;
 }
 
 // Header names whose values are secrets: redacted before any event leaves for a
@@ -97,8 +122,19 @@ export function redactEventForTransport(event: StitchEvent): StitchEvent {
 
 // Default body/result truncation cap: large enough to keep a small JSON response or
 // error body fully readable, small enough to bound on-disk growth and limit how much
-// payload is persisted by default. Opt into full capture with `maxBodyChars: false`.
+// payload is persisted by default. Opt into full capture with `body: { chars: false }`.
 const DEFAULT_MAX_BODY_CHARS = 2048;
+
+// Fold the `body` slot into the internal cap the sink enforces: a bare number is the P12 scalar
+// for `{ chars }`; `body: false` means "marker only" (the cap is 0 — never a payload); and
+// `{ chars: false }` is the deliberate long spelling for full capture (no truncation).
+// `AtLeastOne` over the one-field envelope guarantees `chars` is present in the object form.
+function resolveBodyCap(body: TraceOptions['body']): number | false {
+    if (body === undefined) return DEFAULT_MAX_BODY_CHARS;
+    if (body === false) return 0;
+    if (typeof body === 'number') return body;
+    return body.chars;
+}
 
 // Deep-clone `value`, replacing any object property whose key is in `denylist`
 // (lowercased secret header names) with '[REDACTED]'. Non-mutating: the engine keeps
@@ -449,7 +485,7 @@ export function createTrace(
         ...SECRET_HEADERS,
         ...(opts?.redactHeaders ?? []).map((h) => h.toLowerCase()),
     ]);
-    const maxBody = opts?.maxBodyChars ?? DEFAULT_MAX_BODY_CHARS;
+    const maxBody = resolveBodyCap(opts?.body);
 
     return {
         path,

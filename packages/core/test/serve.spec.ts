@@ -259,7 +259,7 @@ describe('serve caps the request body (413), so an unauthenticated server cannot
     let capped: ServeHandle;
     beforeAll(async () => {
         const ping = stitch({ baseUrl: api.url, path: '/ping' });
-        capped = await serve({ ping }, { port: 0, maxBodyBytes: CAP });
+        capped = await serve({ ping }, { port: 0, body: CAP });
     });
     afterAll(async () => {
         await capped.close();
@@ -332,7 +332,7 @@ describe('the body cap also accepts a size token (`parseBytes`)', () => {
     let capped: ServeHandle;
     beforeAll(async () => {
         const ping = stitch({ baseUrl: api.url, path: '/ping' });
-        capped = await serve({ ping }, { port: 0, maxBodyBytes: '1kb' });
+        capped = await serve({ ping }, { port: 0, body: { max: '1kb' } });
     });
     afterAll(async () => {
         await capped.close();

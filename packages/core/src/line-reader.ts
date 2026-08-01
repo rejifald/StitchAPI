@@ -18,7 +18,7 @@ import { JSON_STREAM_DEFAULT_MAX_BUFFER_CHARS } from './json-stream';
  * a descriptive Error instead. This mirrors the `'json'` decoder's per-value cap (`json-stream.ts`)
  * — same default (~8M chars), same "the engine turns the throw into an
  * `error` event" contract (`runStreaming`), so an abusive body fails the stream cleanly rather than
- * OOM-ing. Overridable per-stream via `stream.maxBufferChars`.
+ * OOM-ing. Overridable per-stream via `stream.buffer.chars`.
  *
  * On any completion — normal end OR an early generator `.return()` (a consumer `break`s without
  * aborting a signal) — the `finally` proactively `cancel()`s the underlying stream before releasing
@@ -38,7 +38,7 @@ export async function* lineReader(
     const guard = (): void => {
         if (buf.length > maxBufferChars) {
             throw new Error(
-                `line reader: un-terminated line exceeded maxBufferChars (${String(
+                `line reader: un-terminated line exceeded the stream.buffer.chars cap (${String(
                     maxBufferChars,
                 )}); a stream with no newline was sent`,
             );
