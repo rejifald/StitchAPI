@@ -151,6 +151,169 @@ npm release are grouped under the in-development version that introduced them.
   optionalities. Widening, so existing call sites are unaffected; an implementor whose
   signature typed `ttl` as required should relax it and handle the absent case.
 
+- **BREAKING — the auth surface moved to the `stitchapi/auth` subpath** (ADR 0021). The
+  strategies (`bearer`, `apiKey`, `basic`, `oauth2`, `cookieSession`, …) and their option
+  types are no longer on the root barrel, so a project that never authenticates does not
+  pay for them in its bundle.
+
+    ```diff
+    - import { stitch, bearer } from 'stitchapi';
+    + import { stitch } from 'stitchapi';
+    + import { bearer } from 'stitchapi/auth';
+    ```
+
+- **BREAKING — one word, one concept: five renames** (CONTRACT.md P1/P2). Each token
+  denoted two concepts or two value-spaces; the pre-GA window is the only place these are
+  free, so they land now rather than costing a deprecation cycle after 1.0.
+
+    ```diff
+    - cache: { ttl: '60s', scope: 'app' }          // vs OAuth2Options.scope, the permission string
+    + cache: { ttl: '60s', tenancy: 'app' }        // matches OAuth2/CookieSession's tenancy axis
+
+    - validator.source                             // vs Inspection.source, which is provenance
+    + validator.schema
+
+    - fingerprinter.supports = '^4'                // vs AdapterCapabilities.supports, a LIST
+    + fingerprinter.range = '^4'
+
+    - onProgress: (p) => p.phase === 'upload'      // a direction, not a phase
+    + onProgress: (p) => p.direction === 'upload'
+
+    - onAuthFailure: (info) => info.phase          // vs ProgressPhase on StitchEvent
+    + onAuthFailure: (info) => info.step
+    ```
+
+    `event.phase` on a `progress` event is **unchanged** — `ProgressPhase` keeps the word.
+
+    ⚠️ **`scope` → `tenancy` does not fail to compile.** `AtLeastOne<CacheOptions>` is a
+    union of intersections, and TypeScript's excess-property check does not fire through
+    it, so a leftover `scope: 'app'` is silently ignored and the entry falls back to
+    principal-scoped. Grep for it rather than trusting the build.
+
+- **BREAKING — `llm`'s token cap is `tokens`, not `maxTokens`** (P4: a count cap is a bare
+  plural noun). The wire is unchanged — each provider's `buildBody` still emits the
+  vendor's `max_tokens`; only the house name moved.
+
+    ```diff
+    - llm({ provider: openai, model, maxTokens: 512 })
+    + llm({ provider: openai, model, tokens: 512 })
+    ```
+
+- **BREAKING — vue's hook result is `VueUseStitchResult`** (P9). React and vue each
+  declared an exported `UseStitchResult<T>` with mutually unassignable shapes (raw values
+  vs `ComputedRef<…>`). The divergent side is framework-qualified, as with
+  `SolidStitchStore` / `SvelteStitchStore`; react keeps the bare name.
+
+- **BREAKING — `stitchapi/mcp`'s `StdioOptions` uses `stdin` / `stdout`** (P2). `input` and
+  `output` are the request **schema** slots everywhere else on the surface; here they are
+  Node streams. Node and the MCP SDK spell them `stdin`/`stdout`.
+
+    ```diff
+    - serveStdio(registry, { input: myReadable, output: myWritable })
+    + serveStdio(registry, { stdin: myReadable, stdout: myWritable })
+    ```
+
+- **BREAKING — `mockAdapter`'s `respond: {}` is now a compile error** (P20). The opaque
+  empty bag silently meant "default 200"; say so instead. A per-call **sequence** entry is
+  unaffected — inside an explicit list, a default slot is a positional statement.
+
+    ```diff
+    - mockAdapter({ respond: {} })
+    + mockAdapter({ respond: { status: 200 } })
+    ```
+
+- **BREAKING — solid and svelte no longer accept `streaming`** (P16). Both hard-set it, so
+  passing it did nothing; react/vue/angular already `Omit` it. Type-only — the value was
+  already ignored at runtime.
+
+- **Fixed — `AtLeastOne<T>` no longer leaks `| undefined`.** The mapped type was
+  homomorphic (`[P in K]` over `keyof T`), so it preserved the optionality of every source
+  property — and since the envelopes it wraps are all-optional by construction, indexing
+  `[K]` yielded `… | undefined`. `{}` was always correctly rejected, so P20 held, but the
+  stray `undefined` leaked into every consumer that narrowed one of these unions. Fixed
+  with `-?`, at the source, for every slot.
+
+- **BREAKING — `@stitchapi/shell`: positional command, `decode`, and a `buffer` envelope.**
+  The one required address goes first, as with `stitch(url)`; the byte cap is an envelope
+  with a scalar shorthand taking a raw count or a size token.
+
+    ```diff
+    - shell({ command: 'git', env: { PATH } })
+    + shell('git', { env: { PATH } })
+
+    - shell(NODE, { decode: 'json', maxBuffer: 4096 })
+    + shell(NODE, { decode: 'json', buffer: '4kb' })   // ≡ { buffer: { max: '4kb' } }
+    ```
+
+- **BREAKING — the `@deprecated` aliases from the rename waves are gone.** The pre-GA
+  window is for alias-free breaks (D5), and every shim shipped during the P3/P4/P17 sweeps
+  has been deleted. `R7` now fails the build if a `@deprecated` tag reaches a published
+  surface, so the surface stays shim-free.
+
+    ```diff
+    - retry: { baseMs: 100, maxMs: 10_000 }       // P17: ms is the house unit
+    + retry: { backoff: { base: 100, max: '10s' } }
+
+    - cookieSession({ ttlMs: 60_000 })
+    + cookieSession({ ttl: '1m' })
+
+    - circuit: { failureThreshold: 5, cooldownMs: 30_000 }
+    + circuit: { failures: 5, cooldown: '30s' }
+
+    - import type { CacheConfig, OAuth2Opts, SignV4Params } from 'stitchapi';
+    + import type { CacheOptions, OAuth2Options, SignV4Options } from 'stitchapi';
+
+    - cache: { maxEntries: 500 }                  // P4: a count cap is a bare plural noun
+    + cache: { entries: 500 }
+    ```
+
+- **BREAKING — top-level `rateLimit` is removed; it is a `throttle` mode.** `delegate` and
+  `on` became fields of the one envelope, so "delegate makes the rate inert" is legible
+  within a single object instead of a cross-key interaction (P14).
+
+    ```diff
+    - rateLimit: { delegate: true, on: [429] }
+    + throttle: { delegate: true, on: [429] }
+    ```
+
+- **BREAKING — the OTLP trace sink is `otlpSink`, not `otlpTrace`** (P16: every sink is
+  `*Sink`).
+
+    ```diff
+    - import { otlpTrace } from 'stitchapi';
+    + import { otlpSink } from 'stitchapi';
+    ```
+
+- **BREAKING — the bare `RequestSeam` alias is gone; the per-request seam is
+  ecosystem-qualified** (P9). Six hosts exported one name for six different shapes.
+
+    ```diff
+    - import type { RequestSeam } from '@stitchapi/express';
+    + import type { ExpressRequestSeam } from '@stitchapi/express';
+    ```
+
+    Likewise `ElysiaRequestSeam`, `FastifyRequestSeam`, `NestRequestSeam` — all extending
+    hono's `HonoRequestSeam`.
+
+- **BREAKING — `@stitchapi/sentry` folds `captureErrors`/`captureDrift` into one `capture`
+  envelope** (P24).
+
+    ```diff
+    - sentrySink({ captureErrors: true, captureDrift: false })
+    + sentrySink({ capture: { errors: true, drift: false } })
+    ```
+
+- **BREAKING — `@stitchapi/elysia`'s plugin option is `onError`, not `errorHandler`.** A
+  host adapter's slot for a framework hook takes that framework's word for it (P18):
+  Elysia registers via `.onError`, so the option matches. `@stitchapi/fastify` keeps
+  `errorHandler` because that is _its_ hook (`setErrorHandler`) — the two differ on
+  purpose, and the shape behind both is identical.
+
+    ```diff
+    - stitch({ seam, errorHandler: { status: (e) => e.status ?? 502 } })
+    + stitch({ seam, onError: { status: (e) => e.status ?? 502 } })
+    ```
+
 ## [1.0.0-rc.6] — 2026-07-23
 
 ### Changed

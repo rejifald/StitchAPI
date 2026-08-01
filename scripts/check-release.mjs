@@ -20,7 +20,11 @@
 //   3. publishConfig.access — every scoped (@stitchapi/*) package declares public access,
 //      or npm rejects the very first publish.
 //   4. dist-tag safety — a prerelease must never land on the `latest` tag.
-//   5. CHANGELOG entry — CHANGELOG.md has a heading for the version (--changelog mode).
+//   5. CHANGELOG entry — CHANGELOG.md has a heading for the version (--changelog mode),
+//      AND (advisory) every `type!:` breaking commit since the last release tag is
+//      described under it. A heading alone is a weak gate: renaming [Unreleased] to the
+//      release version satisfies it whatever is underneath, which is how breaks shipped
+//      undocumented. P19 wants a one-line migration each.
 //   6. release-tag match — a provided git tag equals v<version> (--release-tag mode).
 //   7. LICENSE + README presence — every publishable package ships a LICENSE (Apache-2.0
 //      §4 requires the license to accompany each distribution; npm auto-includes a
@@ -34,6 +38,7 @@
 //   --print-tag            print the dist-tag derived from the version, then exit 0
 //
 // Exit code is 1 if any check fails; warnings never fail the run.
+import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -98,6 +103,55 @@ const fail = (msg) => failures.push(msg);
 const warn = (msg) => warnings.push(msg);
 const ok = [];
 const pass = (msg) => ok.push(msg);
+
+// ---- CHANGELOG breaking-change coverage (check 5, advisory half) --------------
+// The text under one `## [version]` heading, up to the next one.
+function sectionFor(body, version) {
+    const lines = body.split('\n');
+    const start = lines.findIndex((l) =>
+        new RegExp(
+            `^##\\s*\\[?${version.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')}\\]?`,
+        ).test(l),
+    );
+    if (start === -1) return '';
+    const rest = lines.slice(start + 1);
+    const end = rest.findIndex((l) => /^##\s/.test(l));
+    return (end === -1 ? rest : rest.slice(0, end)).join('\n');
+}
+
+// Conventional-commit subjects marked breaking (`type(scope)!:`) since the previous
+// release tag. Returns [] when git is unavailable (a published tarball has no history),
+// which makes this check a no-op rather than a spurious failure.
+function breakingSubjects() {
+    try {
+        const since = execSync('git describe --tags --abbrev=0 2>/dev/null', {
+            cwd: ROOT,
+            encoding: 'utf8',
+        }).trim();
+        const range = since ? `${since}..HEAD` : 'HEAD';
+        return execSync(`git log --format=%s ${range}`, {
+            cwd: ROOT,
+            encoding: 'utf8',
+        })
+            .split('\n')
+            .filter((s) => /^[a-z]+(\([^)]*\))?!:/.test(s.trim()))
+            .map((s) => s.trim());
+    } catch {
+        return [];
+    }
+}
+
+// Is this commit plausibly described in the section? Matches on the distinctive
+// backticked identifiers in its subject — the tokens a migration line has to name.
+function mentions(section, subject) {
+    const idents = [...subject.matchAll(/`([^`]+)`/g)]
+        // A subject often names a FAMILY (`*Config`, `*Info`) rather than one symbol; match
+        // on the meaningful stem so `CacheConfig` in the entry satisfies `*Config` here.
+        .map((m) => m[1].replace(/^\*+/, ''))
+        .filter((id) => id.length > 2);
+    if (idents.length === 0) return true; // nothing specific to look for
+    return idents.some((id) => section.includes(id));
+}
 
 // 1. Version lockstep — now owned by yakir (yakir.json `release-version` tether, a
 // glob over every published packages/*/package.json #/version). It also covers the
@@ -179,10 +233,36 @@ if (opts.changelog && canonical) {
         `^##\\s*\\[?${canonical.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')}\\]?`,
         'm',
     );
-    if (heading.test(body)) {
-        pass(`CHANGELOG: entry present for ${canonical}`);
-    } else {
+    if (!heading.test(body)) {
         fail(`CHANGELOG.md is missing a "## [${canonical}]" entry`);
+    } else {
+        pass(`CHANGELOG: entry present for ${canonical}`);
+
+        // A heading alone is a weak gate: renaming `[Unreleased]` to the release version
+        // satisfies it no matter what is underneath. P19 requires a one-line migration per
+        // hard break, so also check that every BREAKING commit since the previous release
+        // heading is actually described. Advisory (a warning, not a failure) because the
+        // match is by subject keyword and a legitimately-reworded entry would otherwise
+        // block a publish — but it makes an undocumented break visible at release time
+        // instead of after it ships.
+        // Both sections: unreleased work is described under [Unreleased] until the
+        // release renames that heading to the version, so either placement counts.
+        const section =
+            sectionFor(body, canonical) + '\n' + sectionFor(body, 'Unreleased');
+        const undocumented = breakingSubjects().filter(
+            (s) => !mentions(section, s),
+        );
+        if (undocumented.length === 0) {
+            pass(
+                `CHANGELOG: every breaking commit since the last release is described`,
+            );
+        } else {
+            warn(
+                `CHANGELOG: ${undocumented.length} breaking commit(s) not obviously described ` +
+                    `under [${canonical}] — P19 wants a one-line migration each:\n` +
+                    undocumented.map((s) => `      • ${s}`).join('\n'),
+            );
+        }
     }
 }
 
