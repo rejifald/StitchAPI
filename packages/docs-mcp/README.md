@@ -2,6 +2,8 @@
 
 [![npm](https://img.shields.io/npm/v/@stitchapi/docs-mcp?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/docs-mcp)
 
+<a href="https://glama.ai/mcp/servers/@rejifald/StitchAPI"><img width="380" height="200" src="https://glama.ai/mcp/servers/@rejifald/StitchAPI/badge" alt="StitchAPI Docs — MCP server listed on Glama" /></a>
+
 **StitchAPI documentation search, running entirely on your machine.** The docs
 corpus and its semantic search index ship bundled inside this package — no
 network call per query, no query or doc content ever sent anywhere. This is
