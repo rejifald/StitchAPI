@@ -1,0 +1,21 @@
+{
+    "name": "stitchapi-get-users",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "description": "Live example: StitchAPI running against a self-contained fake API.",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "stitchapi": "latest",
+        "zod": "^3.23.8"
+    },
+    "devDependencies": {
+        "@types/node": "^20.14.0",
+        "typescript": "^5.5.4",
+        "vite": "^5.4.0"
+    }
+}

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>StitchAPI · Get Users</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            }
+            body {
+                margin: 0;
+                padding: 2rem;
+                max-width: 720px;
+                margin-inline: auto;
+            }
+            h1 {
+                font-size: 1.4rem;
+            }
+            .hint {
+                opacity: 0.7;
+                font-size: 0.9rem;
+            }
+            ul {
+                list-style: none;
+                padding: 0;
+            }
+            li {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                padding: 0.5rem 0;
+                border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+            }
+            li img {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+            }
+            .email {
+                opacity: 0.7;
+                font-size: 0.85rem;
+            }
+            pre {
+                background: color-mix(in srgb, currentColor 8%, transparent);
+                padding: 0.75rem;
+                border-radius: 8px;
+                overflow: auto;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>StitchAPI · Get Users</h1>
+        <p class="hint">
+            Data below is fetched with <code>stitchapi</code> from a fake API
+            that runs inside this sandbox (see <code>fake-api/</code>).
+        </p>
+        <div id="app">Loading…</div>
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>
