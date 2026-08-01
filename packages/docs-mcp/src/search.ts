@@ -111,22 +111,34 @@ export async function searchDocs(
     if (!term) return [];
 
     const db = await loadIndex();
+    // `undefined` means the optional `@huggingface/transformers` peer is not installed, so there is
+    // no query vector to search with. Degrade to BM25 over the same bundled index rather than
+    // failing: full-text still answers the question, just without the semantic half. Installing the
+    // peer restores hybrid scoring with no other change.
     const vector = await embedOne(term);
-    const params: SearchParams<AnyOrama> = {
-        mode: 'hybrid',
+    const common = {
         term,
-        vector: { value: vector, property: VECTOR_FIELD },
         properties: ['pageTitle', 'heading', 'text'],
-        hybridWeights,
         // Fresh object literal, not the interface value: named interfaces get
         // no implicit index signature (unlike the anonymous type this replaced),
         // so FieldBoost isn't directly assignable to Orama's
         // Partial<Record<string, number>>. Same fields, identity pass-through.
         boost: { ...boost },
-        similarity: 0,
-        includeVectors: false,
         limit,
     };
+    // `similarity` and `includeVectors` are vector-search knobs — Orama's `SearchParamsFullText`
+    // does not accept them, so they live in the hybrid arm rather than the shared half.
+    const params: SearchParams<AnyOrama> =
+        vector === undefined
+            ? { ...common, mode: 'fulltext' }
+            : {
+                  ...common,
+                  mode: 'hybrid',
+                  vector: { value: vector, property: VECTOR_FIELD },
+                  hybridWeights,
+                  similarity: 0,
+                  includeVectors: false,
+              };
     const results = await search(db, params);
 
     return results.hits.map((hit) => {
