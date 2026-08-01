@@ -1,0 +1,6 @@
+{
+  "model": "Xenova/all-MiniLM-L6-v2",
+  "dim": 384,
+  "pages": 109,
+  "chunks": 583
+}
