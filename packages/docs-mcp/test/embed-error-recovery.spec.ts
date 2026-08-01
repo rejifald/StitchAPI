@@ -43,7 +43,7 @@ describe('getEmbedder retry on failure', () => {
     });
 });
 
-describe('cacheRoot precedence (via env.cacheDir set on module load)', () => {
+describe('cacheRoot precedence (via env.cacheDir set on first getEmbedder)', () => {
     const ORIGINAL_ENV = { ...process.env };
 
     beforeEach(() => {
@@ -59,7 +59,8 @@ describe('cacheRoot precedence (via env.cacheDir set on module load)', () => {
     it('prefers XDG_CACHE_HOME when set', async () => {
         process.env['XDG_CACHE_HOME'] = '/xdg-cache';
         process.env['LOCALAPPDATA'] = '/local-appdata';
-        await import('../src/embed');
+        const { getEmbedder } = await import('../src/embed');
+        await getEmbedder();
         expect(env.cacheDir).toBe(
             join('/xdg-cache', 'stitchapi-docs-mcp', 'transformers'),
         );
@@ -67,14 +68,16 @@ describe('cacheRoot precedence (via env.cacheDir set on module load)', () => {
 
     it('falls back to LOCALAPPDATA when XDG_CACHE_HOME is unset', async () => {
         process.env['LOCALAPPDATA'] = '/local-appdata';
-        await import('../src/embed');
+        const { getEmbedder } = await import('../src/embed');
+        await getEmbedder();
         expect(env.cacheDir).toBe(
             join('/local-appdata', 'stitchapi-docs-mcp', 'transformers'),
         );
     });
 
     it('falls back to ~/.cache when neither is set', async () => {
-        await import('../src/embed');
+        const { getEmbedder } = await import('../src/embed');
+        await getEmbedder();
         expect(env.cacheDir).toBe(
             join(homedir(), '.cache', 'stitchapi-docs-mcp', 'transformers'),
         );
@@ -83,7 +86,8 @@ describe('cacheRoot precedence (via env.cacheDir set on module load)', () => {
     it('treats an empty-string XDG_CACHE_HOME as unset (falls through)', async () => {
         process.env['XDG_CACHE_HOME'] = '';
         process.env['LOCALAPPDATA'] = '/local-appdata';
-        await import('../src/embed');
+        const { getEmbedder } = await import('../src/embed');
+        await getEmbedder();
         expect(env.cacheDir).toBe(
             join('/local-appdata', 'stitchapi-docs-mcp', 'transformers'),
         );

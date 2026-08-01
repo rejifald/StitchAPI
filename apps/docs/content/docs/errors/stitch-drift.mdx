@@ -7,8 +7,16 @@ description: 'A required field was missing or incompatible, breaking the respons
 
 A call fails during validation with a `drift` finding that carries
 `level: 'error'` and `change: 'invalid'`. The finding names the offending
-`path` and the call surfaces a `StitchError` with code `STITCH_DRIFT` instead of
-a result.
+`path`, and the call throws a `StitchError` instead of returning a result.
+
+<Callout type="warn">
+    `STITCH_DRIFT` is this page's [catalog ID](/docs/errors), not a runtime
+    value — the thrown error has no `.code`. At runtime this failure is a
+    `StitchError` with the message `contract violation (drift)` and the upstream
+    `status` (a 2xx: the response arrived, the contract broke). The offending
+    `path` is on the `drift` event, not on the error — see [telling failures
+    apart](/docs/errors#telling-failures-apart-at-runtime).
+</Callout>
 
 <Callout type="info">
     Soft drift findings — `undeclared` (`info`), `coerced` (`warn`), `defaulted`
@@ -55,7 +63,7 @@ const user = stitch({
     path: '/user',
     output: drift(
         z.object({
-            // `id` is required — its absence or type mismatch throws STITCH_DRIFT.
+            // `id` is required — its absence or type mismatch throws.
             id: z.number(),
             // `displayName` is optional — its absence is tolerated, no error thrown.
             displayName: z.string().optional(),

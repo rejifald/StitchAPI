@@ -3,7 +3,7 @@
     "mcpName": "dev.stitchapi/docs",
     "version": "1.0.0-rc.6",
     "type": "commonjs",
-    "description": "StitchAPI documentation search, running locally over MCP stdio. Bundled docs, no network calls per query — the offline/air-gapped counterpart to the hosted stitchapi.dev/api/mcp server.",
+    "description": "StitchAPI documentation search, running locally over MCP stdio. Bundled docs, no network calls per query \u2014 the offline/air-gapped counterpart to the hosted stitchapi.dev/api/mcp server.",
     "bin": {
         "stitchapi-docs-mcp": "bin/docs-mcp"
     },
@@ -63,7 +63,6 @@
         "node": ">=18.18.0"
     },
     "dependencies": {
-        "@huggingface/transformers": "^4.2.0",
         "@modelcontextprotocol/sdk": "1.30.0",
         "@orama/orama": "3.1.18",
         "@orama/plugin-data-persistence": "3.1.18",
@@ -73,6 +72,15 @@
         "@types/node": "^22.10.0",
         "tsup": "^8.3.0",
         "typescript": "^5.9.3",
-        "vitest": "^4.1.10"
+        "vitest": "^4.1.10",
+        "@huggingface/transformers": "^4.2.0"
+    },
+    "peerDependencies": {
+        "@huggingface/transformers": "^4.2.0"
+    },
+    "peerDependenciesMeta": {
+        "@huggingface/transformers": {
+            "optional": true
+        }
     }
 }

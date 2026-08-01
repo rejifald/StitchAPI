@@ -16,11 +16,22 @@
 //   node scripts/check-contract.mjs --update    # rewrite the baseline to the current set
 //
 // Rules are intentionally HIGH-PRECISION source-text checks (no TS type info), so a flagged
-// line is a real violation, not a guess. Deferred to a type-aware phase (needs the TS
-// checker): shape-diffing (full P9), duration-type conformance, default-value inversion
-// (P8), and cross-FILE envelope resolution for R6 — the nested-toggle check only sees an
-// `*Options` bag declared in the SAME file, so an imported all-optional envelope at a
-// `boolean | X` slot is under-flagged, never guessed at.
+// line is a real violation, not a guess.
+//
+// R6 now resolves an envelope across FILES (per package, plus core, since a peer's config
+// types come from core) and through `extends` — including a NON-exported base, whose
+// members are just as writable by a consumer as declared ones. It also tests EVERY arm of
+// a member's union rather than a leading `boolean | X`: one assignable arm is what makes
+// `{}` legal, wherever it sits. A 2026-07-31 audit found four real P20 slots that the
+// narrower rule could not see — `Fn | Options` (sse-emit's `delta`/`error`),
+// `Options | false` (elysia/fastify `errorHandler`) and an inherited member.
+//
+// Still deferred to a type-aware phase (needs the TS checker): shape-diffing (full P9 —
+// R5's watch list is the by-name proxy), duration/size type conformance (P17/P25),
+// default-value inversion (P8), cross-PACKAGE parity of the same capability (P16), and
+// resolving a `type` ALIAS whose union admits an all-optional bag (so `MockRoute.respond:
+// MockResponder` is under-flagged — an alias is not an interface block). Under-flagging is
+// deliberate: a ratchet that guesses is a ratchet nobody trusts.
 import {
     existsSync,
     readFileSync,
@@ -80,9 +91,11 @@ const lineOf = (src, idx) => src.slice(0, idx).split('\n').length;
 const rel = (p) => relative(ROOT, p);
 
 // Brace-match an exported `interface Name { … }`; returns { name, body, index }.
-function interfaceBlocks(src) {
+function interfaceBlocks(src, { includeLocal = false } = {}) {
     const blocks = [];
-    const re = /\bexport\s+interface\s+([A-Za-z_]\w*)[^{]*\{/g;
+    const re = includeLocal
+        ? /\b(?:export\s+)?interface\s+([A-Za-z_]\w*)([^{]*)\{/g
+        : /\bexport\s+interface\s+([A-Za-z_]\w*)([^{]*)\{/g;
     let m;
     while ((m = re.exec(src))) {
         let depth = 0;
@@ -100,6 +113,12 @@ function interfaceBlocks(src) {
             body: src.slice(open + 1, j - 1),
             index: m.index,
             bodyStart: open + 1,
+            // Bases named in `extends A, B` — a member inherited from one of them is just as
+            // reachable to a consumer as a declared one, and the base is often NOT exported
+            // (fastify's `FastifyStitchPluginCommon`), so it must be resolvable by name.
+            bases: [...(m[2] ?? '').matchAll(/([A-Z]\w*)/g)]
+                .map((b) => b[1])
+                .filter((b) => b !== 'extends'),
         });
     }
     return blocks;
@@ -213,6 +232,12 @@ const isLike = (n) => /Like/.test(n);
 // full shape-diff is the deferred type-aware phase). Flagged when ≥2 packages export one.
 const UNIQUE_WATCH = new Set([
     'StitchStore',
+    // Declared (not re-exported) by BOTH react and vue from their sole public entry, with
+    // mutually unassignable shapes: react's `extends StitchQueryResult<T>` carries raw
+    // values, vue's wraps every state field in `ComputedRef<…>`. That is the exact case
+    // `SolidStitchStore`/`SvelteStitchStore` were framework-qualified to fix (ADR 0012
+    // rule 6), so the divergent side qualifies too → `VueUseStitchResult`.
+    'UseStitchResult',
     'StitchError',
     // De-listed names (post-sweep surface — each verified against the real ≥2-package
     // export map, one line of rationale each):
@@ -363,9 +388,56 @@ function collect() {
 
     const packages = publishedPackages();
     const exportsByName = new Map(); // identifier -> Set(dir)
+    const seenR6 = new Set(); // declaration sites already reported (see R6)
+
+    // PRE-PASS — every all-optional interface name, per package. R6 used to resolve only
+    // against declarations in the SAME file, so an envelope imported from a sibling module
+    // (elysia's `StitchErrorOptions`, declared in `./error.ts`) was invisible and the slot
+    // went unflagged. A peer package's config types also come from core, so each package
+    // resolves against its own names PLUS core's. Still name-based, not type-aware: two
+    // packages declaring the same name is itself a P9 finding (R5), not this rule's problem.
+    const allOptionalByPkg = new Map(); // dir -> Set(interface name)
+    const ifaceByPkg = new Map(); // dir -> Map(name -> block, incl. non-exported bases)
+    for (const { dir } of packages) {
+        const names = new Set();
+        const byName = new Map();
+        for (const file of tsFiles(join(PKGS, dir, 'src'))) {
+            const src = readFileSync(file, 'utf8');
+            for (const blk of interfaceBlocks(src, { includeLocal: true })) {
+                if (isAllOptional(blk.body)) names.add(blk.name);
+                byName.set(blk.name, { ...blk, file, src });
+            }
+        }
+        allOptionalByPkg.set(dir, names);
+        ifaceByPkg.set(dir, byName);
+    }
+    const coreAllOptional = allOptionalByPkg.get('core') ?? new Set();
+    const coreIfaces = ifaceByPkg.get('core') ?? new Map();
 
     for (const { dir } of packages) {
         const srcRoot = join(PKGS, dir, 'src');
+        const allOptional = new Set([
+            ...(allOptionalByPkg.get(dir) ?? []),
+            ...coreAllOptional,
+        ]);
+        const ifaces = new Map([
+            ...coreIfaces,
+            ...(ifaceByPkg.get(dir) ?? new Map()),
+        ]);
+        // An envelope plus every interface it extends, transitively — the members a consumer
+        // can actually write at that slot. `seen` guards a cyclic `extends`.
+        const withBases = (blk) => {
+            const out = [];
+            const seen = new Set();
+            const walk = (b) => {
+                if (!b || seen.has(b.name)) return;
+                seen.add(b.name);
+                out.push(b);
+                for (const base of b.bases ?? []) walk(ifaces.get(base));
+            };
+            walk(blk);
+            return out;
+        };
         for (const file of tsFiles(srcRoot)) {
             const src = readFileSync(file, 'utf8');
 
@@ -465,9 +537,6 @@ function collect() {
             //       all-optional bag, or typed as a bare all-optional `*Options` bag
             //       → fix: `boolean | AtLeastOne<X>` (the AtLeastOne wrapper naturally clears
             //       the finding — `AtLeastOne` is never an all-optional local interface).
-            const allOptional = new Set(
-                blocks.filter((b) => isAllOptional(b.body)).map((b) => b.name),
-            );
             const cfgBlock = blocks.find((b) => b.name === 'StitchConfig');
             if (cfgBlock) {
                 const fre = /(?:^|\n)\s*([A-Za-z_]\w*)\??:\s*([A-Z]\w*)\s*;/g;
@@ -483,41 +552,58 @@ function collect() {
                         );
                 }
             }
+            // (b) ANY member of an exported interface whose type has an all-optional bag in
+            // ANY arm of its union. The old check only matched a bare `X` or a leading
+            // `boolean | X`, which is not what makes `{}` legal — one assignable arm is, in
+            // any position. That blind spot hid `delta?: DeltaShaper | DeltaFrameOptions`
+            // (function first), `errorHandler?: StitchErrorOptions | false` (bag first,
+            // non-boolean second), and `respond?: MockResponder` on a non-`*Options` bag.
+            // `AtLeastOne<X>` is never an all-optional interface name, so the canonical fix
+            // clears the finding by construction.
             for (const blk of blocks) {
-                if (!/Options$/.test(blk.name)) continue;
-                // (b1) boolean-toggle member: `member?: boolean | X` with X all-optional here
-                const tre =
-                    /(?:^|\n)\s*(?:readonly\s+)?([A-Za-z_]\w*)\s*\??:\s*boolean\s*\|\s*([A-Z]\w*)\s*[;,\n]/g;
-                let t6;
-                while ((t6 = tre.exec(blk.body))) {
-                    if (
-                        allOptional.has(t6[2]) &&
-                        !deprecatedBefore(src, blk.bodyStart + t6.index)
-                    )
+                // Only CONSUMER-INPUT envelopes — P20 governs what a caller authors, not what
+                // the engine hands back. P3 already draws that line, so reuse it: `*Options`
+                // plus the blessed `*Config` authoring family. Scanning every exported
+                // interface instead floods the rule with resolved views
+                // (`ResolvedNormalizations`), spec mirrors (`OpenApiDocument`, JSON Schema's
+                // `SchemaNode`) and `*Like` duck-types (`PinoLoggerLike`) — none of which a
+                // consumer ever writes, all of which legitimately allow `{}`.
+                if (
+                    !/Options$/.test(blk.name) &&
+                    !SUFFIX_CARVEOUT.has(blk.name)
+                )
+                    continue;
+                if (isLike(blk.name)) continue; // P18 foreign duck-type
+                for (const owner of withBases(blk)) {
+                    const mre =
+                        /(?:^|\n)\s*(?:readonly\s+)?([A-Za-z_]\w*)\s*\??:\s*([^;\n]+);/g;
+                    let m6;
+                    while ((m6 = mre.exec(owner.body))) {
+                        // Arms of the union, minus generic payloads — `AtLeastOne<Foo>` must not
+                        // read as bare `Foo`, or the prescribed fix would flag itself.
+                        const arms = m6[2]
+                            .split('|')
+                            .map((a) => a.trim())
+                            .filter((a) => /^[A-Z]\w*$/.test(a));
+                        const bag = arms.find((a) => allOptional.has(a));
+                        if (!bag) continue;
+                        const at = owner.bodyStart + m6.index;
+                        if (deprecatedBefore(owner.src ?? src, at)) continue;
+                        // Report the DECLARATION site, not every descendant that inherits
+                        // it: `SseEmitOptions.delta` is ONE edit reachable through three
+                        // exported envelopes, and three findings for one fix would only
+                        // inflate the baseline.
+                        const site = `${owner.file ?? file}|${at}`;
+                        if (seenR6.has(site)) continue;
+                        seenR6.add(site);
                         add(
                             'R6',
-                            file,
-                            `${blk.name}.${t6[1]}`,
-                            `toggle admits all-optional ${t6[2]} — {} enables silently → boolean|AtLeastOne<${t6[2]}> (P20)`,
-                            lineOf(src, blk.bodyStart + t6.index),
+                            owner.file ?? file,
+                            `${owner.name}.${m6[1]}`,
+                            `all-optional ${bag} in the union — {} type-checks → AtLeastOne<${bag}> (P20)`,
+                            lineOf(owner.src ?? src, at),
                         );
-                }
-                // (b2) bare all-optional *Options member inside an *Options envelope
-                const bre =
-                    /(?:^|\n)\s*(?:readonly\s+)?([A-Za-z_]\w*)\s*\??:\s*([A-Z]\w*Options)\s*;/g;
-                let b6;
-                while ((b6 = bre.exec(blk.body))) {
-                    if (
-                        allOptional.has(b6[2]) &&
-                        !deprecatedBefore(src, blk.bodyStart + b6.index)
-                    )
-                        add(
-                            'R6',
-                            file,
-                            `${blk.name}.${b6[1]}`,
-                            `all-optional ${b6[2]} accepts {} → Scalar|AtLeastOne<${b6[2]}> (P20)`,
-                            lineOf(src, blk.bodyStart + b6.index),
-                        );
+                    }
                 }
             }
 

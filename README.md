@@ -18,34 +18,20 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/stitchapi"><img alt="npm version" src="https://img.shields.io/npm/v/stitchapi?color=2563EB&label=npm" /></a>
   <a href="https://www.npmjs.com/package/stitchapi?activeTab=dependencies"><img alt="Dependencies: 0" src="https://img.shields.io/badge/dependencies-0-brightgreen" /></a>
-  <img alt="npm bundle size (minified + gzipped)" src="https://img.shields.io/bundlephobia/minzip/stitchapi" />
   <img alt="Bundle: ~23 kB min+gzip" src="https://img.shields.io/badge/min%2Bgzip-~23%20kB-2563EB" />
-</p>
-
-<p align="center">
   <a href="https://scorecard.dev/viewer/?uri=github.com/rejifald/StitchAPI"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/rejifald/StitchAPI/badge" /></a>
   <a href="https://www.npmjs.com/package/stitchapi"><img alt="npm provenance: signed" src="https://img.shields.io/badge/provenance-signed-brightgreen" /></a>
-  <a href="SECURITY.md"><img alt="security policy" src="https://img.shields.io/badge/security-policy-2563EB" /></a>
 </p>
 
 <!-- yakir:readme-badges -->
 
 <p align="center">
-  <a href="https://stand-with-ukraine.pp.ua"><img alt="StandWithUkraine" src="https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg" /></a>
   <img alt="code health: 77 (B)" src="https://img.shields.io/badge/code_health-77_%28B%29-green" />
   <img alt="coverage: 90% lines · 78% branches" src="https://img.shields.io/badge/coverage-90%25_lines_%C2%B7_78%25_branches-green" />
-  <a href="LICENSE"><img alt="license: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
 </p>
 
 <!-- /yakir:readme-badges -->
-
-<p align="center">
-  <a href="https://glama.ai/mcp/servers/@rejifald/StitchAPI">
-    <img width="380" height="200" src="https://glama.ai/mcp/servers/@rejifald/StitchAPI/badge" alt="StitchAPI Docs — MCP server listed on Glama" />
-  </a>
-</p>
 
 <p align="center">
   <strong>Zero runtime dependencies · ~23&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~20&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
@@ -389,9 +375,9 @@ $ stitch from-curl 'curl https://demo.stitchapi.dev/users/7 -H "authorization: B
 
 ## Errors & pitfalls
 
-A failed stitch throws a `StitchError` — an `Error` subclass carrying `.status`, `.attempts`, and (for response failures) `.body` (the parsed error payload, on a non-enumerable channel that never reaches a trace sink) and `.url`. Prefer branching? `.safe()` resolves to `{ ok, data, error }`. Each failure mode has a stable code and a docs page:
+A failed stitch throws a `StitchError` — an `Error` subclass carrying `.status`, `.attempts`, and (for response failures) `.body` (the parsed error payload, on a non-enumerable channel that never reaches a trace sink) and `.url`. Prefer branching? `.safe()` resolves to `{ ok, data, error }`. Branch on `.status` and `.attempts` (plus `instanceof RateLimitError`) — the `STITCH_*` names below are **documentation IDs, not runtime values**, so there is no `error.code` to match on:
 
-| Code                  | When                                                              |
+| Catalog ID            | When                                                              |
 | --------------------- | ----------------------------------------------------------------- |
 | `STITCH_VALIDATION`   | a response failed its output schema                               |
 | `STITCH_DRIFT`        | a response drifted past the level you allowed                     |

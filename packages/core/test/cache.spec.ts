@@ -32,7 +32,7 @@ function fpSchema(
 // Reference strategy: distinct `__desc` → distinct token; ABSTAINS (value null) on `{ opaque }`.
 const testFingerprinter: SchemaFingerprinter = {
     vendor: 'test',
-    supports: '*',
+    range: '*',
     fingerprint(schema) {
         const desc = (schema as { __desc?: unknown }).__desc;
         if (desc && typeof desc === 'object' && 'opaque' in desc)
@@ -85,7 +85,7 @@ describe('cache — hit / miss', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         expect(await s()).toEqual({ n: 1 });
         expect(await s()).toEqual({ n: 1 }); // same value, no second origin call
@@ -98,7 +98,7 @@ describe('cache — hit / miss', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         await s({ query: { id: 1 } });
         await s({ query: { id: 2 } });
@@ -116,7 +116,7 @@ describe('cache — hit / miss', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app', vary: 'accept-language' },
+            cache: { ttl: '60s', tenancy: 'app', vary: 'accept-language' },
         });
         await s({ headers: { 'accept-language': 'en' } });
         await s({ headers: { 'accept-language': 'fr' } });
@@ -131,7 +131,7 @@ describe('cache — hit / miss', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: 30, scope: 'app' },
+            cache: { ttl: 30, tenancy: 'app' },
         });
         await s();
         await s();
@@ -148,7 +148,7 @@ describe('cache — hit / miss', () => {
             method: 'POST',
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         await s();
         await s();
@@ -163,7 +163,7 @@ describe('cache — in-process coalescing', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         const results = await Promise.all([s(), s(), s(), s(), s()]);
         for (const r of results) expect(r).toEqual({ n: 1 });
@@ -178,7 +178,7 @@ describe('cache — in-process coalescing', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         const settled = await Promise.allSettled([s(), s(), s()]);
         const rejected = settled.filter((r) => r.status === 'rejected');
@@ -192,7 +192,7 @@ describe('cache — in-process coalescing', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app', coalesce: false },
+            cache: { ttl: '60s', tenancy: 'app', coalesce: false },
         });
         await Promise.all([s(), s(), s()]); // not collapsed
         expect(calls()).toBe(3);
@@ -208,7 +208,7 @@ describe('cache — invalidation', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         await s({ query: { id: 1 } });
         await s({ query: { id: 2 } });
@@ -226,7 +226,7 @@ describe('cache — invalidation', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         await s({ query: { id: 1 } });
         await s({ query: { id: 2 } });
@@ -247,7 +247,7 @@ describe('cache — invalidation', () => {
         });
         const users = api.stitch({
             path: '/users',
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         await users();
         await users();
@@ -267,11 +267,11 @@ describe('cache — invalidation', () => {
         });
         const users = api.stitch({
             path: '/users',
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         const orders = api.stitch({
             path: '/orders',
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         await users();
         await orders();
@@ -289,7 +289,7 @@ describe('cache — invalidation', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         const k1 = await s.cache.keyOf({ query: { id: 1 } });
         const k2 = await s.cache.keyOf({ query: { id: 1 } });
@@ -307,7 +307,7 @@ describe('cache — LRU bound', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app', entries: 2 },
+            cache: { ttl: '60s', tenancy: 'app', entries: 2 },
         });
         await s({ query: { id: 1 } }); // 1
         await s({ query: { id: 2 } }); // 2
@@ -348,7 +348,7 @@ describe('cache — LRU bound', () => {
                 adapter,
                 trace: false,
                 store: rejectingOnEvict,
-                cache: { ttl: '60s', scope: 'app', entries: 1 },
+                cache: { ttl: '60s', tenancy: 'app', entries: 1 },
             });
             // entries:1 → the second distinct key evicts the first via `store.set(oldest, undefined)`.
             await expect(s({ query: { id: 1 } })).resolves.toEqual({ n: 1 });
@@ -370,7 +370,7 @@ describe('cache — sensitive bypass', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
             sensitive: true,
         });
         await Promise.all([s(), s()]); // not coalesced
@@ -388,7 +388,7 @@ describe('cache — scope isolation', () => {
             adapter,
             trace: false,
         });
-        const def = { path: '/me', cache: { ttl: '60s' } }; // default scope: 'principal'
+        const def = { path: '/me', cache: { ttl: '60s' } }; // default tenancy: 'principal'
         const alice = api.as('alice').stitch(def);
         const bob = api.as('bob').stitch(def);
 
@@ -410,7 +410,7 @@ describe('cache — scope isolation', () => {
         });
         const def = {
             path: '/pub',
-            cache: { ttl: '60s', scope: 'app' as const },
+            cache: { ttl: '60s', tenancy: 'app' as const },
         };
         const alice = api.as('alice').stitch(def);
         const bob = api.as('bob').stitch(def);
@@ -441,7 +441,7 @@ describe('cache — re-validate on hit vs version fast path', () => {
             trace: false as const,
             cache: {
                 ttl: '60s',
-                scope: 'app' as const,
+                tenancy: 'app' as const,
                 onUnfingerprintable: 'revalidate' as const,
             },
         };
@@ -471,7 +471,7 @@ describe('cache — re-validate on hit vs version fast path', () => {
             adapter,
             store,
             trace: false as const,
-            cache: { ttl: '60s', scope: 'app' as const, version: '1' },
+            cache: { ttl: '60s', tenancy: 'app' as const, version: '1' },
         };
         const writer = stitch(base);
         const reader = stitch({
@@ -498,7 +498,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         expect(await s()).toEqual({ n: 1 });
         const trace = await cacheTrace(s.stream());
@@ -517,7 +517,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             adapter,
             store,
             trace: false as const,
-            cache: { ttl: '60s', scope: 'app' as const },
+            cache: { ttl: '60s', tenancy: 'app' as const },
         };
         const v1 = stitch({ ...base, output: fpSchema('v1') });
         expect(await v1()).toEqual({ n: 1 });
@@ -541,7 +541,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             url: URL,
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
             output: fpSchema({ opaque: true }),
         });
         const trace = await cacheTrace(s.stream());
@@ -560,7 +560,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             trace: false,
             cache: {
                 ttl: '60s',
-                scope: 'app',
+                tenancy: 'app',
                 onUnfingerprintable: 'revalidate',
             },
             output: fpSchema({ opaque: true }), // abstains → policy 'revalidate'
@@ -578,7 +578,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             name: 'tx',
             adapter: refused.adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
             transform: (b) => b, // opaque closure, no transformVersion/trustTransform → refuse
         });
         const trace = await cacheTrace(r.stream());
@@ -593,7 +593,7 @@ describe('cache — schema fingerprint fold (ADR 0004)', () => {
             name: 'txv',
             adapter: versioned.adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app', transformVersion: '1' },
+            cache: { ttl: '60s', tenancy: 'app', transformVersion: '1' },
             transform: (b) => b, // now sound (version named) → fast
         });
         await v();
@@ -612,7 +612,7 @@ describe('cache — GraphQL opt-in', () => {
             document: '{ me { id } }',
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app', methods: ['POST'] },
+            cache: { ttl: '60s', tenancy: 'app', methods: ['POST'] },
         });
         expect(await q()).toEqual({ me: { id: 1 } });
         await q();
@@ -628,7 +628,7 @@ describe('cache — GraphQL opt-in', () => {
             document: '{ me { id } }',
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app', methods: 'POST' },
+            cache: { ttl: '60s', tenancy: 'app', methods: 'POST' },
         });
         expect(await q()).toEqual({ me: { id: 1 } });
         await q();
@@ -644,7 +644,7 @@ describe('cache — GraphQL opt-in', () => {
             document: '{ me { id } }',
             adapter,
             trace: false,
-            cache: { ttl: '60s', scope: 'app' }, // default methods GET/HEAD → POST excluded
+            cache: { ttl: '60s', tenancy: 'app' }, // default methods GET/HEAD → POST excluded
         });
         await q();
         await q();
@@ -660,7 +660,7 @@ describe('cache — non-storable pass-through', () => {
             adapter,
             responseType: 'arrayBuffer',
             trace: false,
-            cache: { ttl: '60s', scope: 'app' },
+            cache: { ttl: '60s', tenancy: 'app' },
         });
         let bypass = false;
         for await (const ev of s.stream()) {

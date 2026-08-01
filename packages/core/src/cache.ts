@@ -111,7 +111,7 @@ function varyHeaderObject(
 }
 
 /** The resolved request the key is derived from. `principal` here is already scope-resolved
- *  (absent under `scope: 'app'`). */
+ *  (absent under `tenancy: 'app'`). */
 export interface RequestDescriptor {
     method: string;
     url: string;
@@ -363,7 +363,7 @@ export interface CacheControllerOptions {
 export function createCache(opts: CacheControllerOptions): CacheController {
     const { config, store, stitchId } = opts;
     const ttlMs = parseDuration(config.ttl) ?? 0;
-    const scope = config.scope ?? 'principal';
+    const tenancy = config.tenancy ?? 'principal';
     const methods = (config.methods ?? ['GET', 'HEAD']).map((m) =>
         m.toUpperCase(),
     );
@@ -395,7 +395,7 @@ export function createCache(opts: CacheControllerOptions): CacheController {
     // 'cluster' is reserved for the deferred cross-process protocol; v1 degrades it to process.
     const coalesce: 'process' | false =
         config.coalesce === false ? false : 'process';
-    const principalForScope = scope === 'app' ? undefined : opts.principal;
+    const principalForScope = tenancy === 'app' ? undefined : opts.principal;
     const coalescer = new InflightCoalescer<CacheHit>();
     // In-process LRU of keys THIS process has written; insertion order = recency (Map preserves
     // it; a re-touch deletes+re-sets to move the key to the most-recent end).

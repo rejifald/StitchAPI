@@ -120,10 +120,10 @@ adapter's `supports` omits `'uploadProgress'` (only `fetch`, among the built-ins
 sink, pointing you at `xhrAdapter`:
 
 > onProgress is set with a request body, but fetchAdapter cannot report upload
-> progress — only 'phase: download' events fire. Use xhrAdapter() to draw an
+> progress — only 'direction: download' events fire. Use xhrAdapter() to draw an
 > upload progress bar.
 
-It is a **note, not an error**: `fetch` still reports `phase: 'download'`
+It is a **note, not an error**: `fetch` still reports `direction: 'download'`
 progress, so a download bar on a `POST` keeps working — only the upload phase is
 dark. To see the note, attach any `trace` sink (e.g. `consoleSink`); to act on it,
 switch the call to `xhrAdapter()`.

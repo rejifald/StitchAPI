@@ -69,8 +69,11 @@ export interface SchemaFingerprint {
 export interface SchemaFingerprinter {
     /** The `~standard.vendor` this strategy handles, e.g. `'zod'`. */
     readonly vendor: string;
-    /** The validator major-version range it is proven against, e.g. `'^4'`. */
-    readonly supports: string;
+    /** The validator major-version range it is proven against, e.g. `'^4'`. Named `range`, not
+     *  `supports`: `AdapterCapabilities.supports` is a LIST of capabilities, and one word may not
+     *  carry two value-spaces across the surface (CONTRACT.md P1) — least of all on two seams a
+     *  third party implements (P21). */
+    readonly range: string;
     fingerprint(schema: StandardSchemaV1): SchemaFingerprint;
 }
 

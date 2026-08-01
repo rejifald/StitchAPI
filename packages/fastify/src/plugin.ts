@@ -42,10 +42,16 @@ interface FastifyStitchPluginCommon {
     logger?: boolean | AtLeastOne<FastifyLoggerSinkOptions>;
     /**
      * Options for the error handler the plugin registers (see {@link stitchErrorHandler}).
-     * Set to `false` to register **no** error handler (you wire your own). Default: register
-     * with the `502`-by-default mapping.
+     * `false` registers **no** error handler (you wire your own); `true` (the default) registers
+     * the `502`-by-default mapping. The object form must set at least one field — enable-with-
+     * defaults is spelled `true`, never `{}` (CONTRACT.md P13/P20), matching `logger` above.
+     *
+     * Named for **Fastify's own hook**, per CONTRACT.md P18: a host adapter's slot for a framework
+     * hook takes that framework's word for it. Fastify registers via `setErrorHandler`, so the
+     * option is `errorHandler`; `@stitchapi/elysia` registers via `.onError`, so its option is
+     * `onError`. The two differ on purpose — each reads as the framework its user already knows.
      */
-    errorHandler?: StitchErrorOptions | false;
+    errorHandler?: boolean | AtLeastOne<StitchErrorOptions>;
     /**
      * Close the seam on `onClose`. Defaults to `true` **only when the plugin built the seam**
      * (from `seamConfig`); a borrowed seam (passed via `seam`) is never closed by the plugin —
@@ -144,7 +150,13 @@ const pluginImpl: FastifyPluginAsync<FastifyStitchPluginOptions> = async (
 
     // Map StitchErrors to HTTP responses (unless the app opted out).
     if (options.errorHandler !== false) {
-        fastify.setErrorHandler(stitchErrorHandler(options.errorHandler ?? {}));
+        fastify.setErrorHandler(
+            stitchErrorHandler(
+                typeof options.errorHandler === 'object'
+                    ? options.errorHandler
+                    : {},
+            ),
+        );
     }
 
     // Tear down a seam we own when the Fastify instance closes.

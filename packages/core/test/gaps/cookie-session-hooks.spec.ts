@@ -164,7 +164,7 @@ test("onAuthFailure fires category 'unauthenticated' when the login returns 401 
     await expect(data()).rejects.toThrow();
 
     expect(failures).toEqual([
-        { phase: 'apply', status: 401, category: 'unauthenticated' },
+        { step: 'apply', status: 401, category: 'unauthenticated' },
     ]);
     // onRefresh still fired, reporting the failed outcome.
     expect(refreshes).toEqual([{ ok: false, status: 401 }]);
@@ -201,7 +201,7 @@ test("onAuthFailure fires category 'rate-limited' + retryAfter when the login re
 
     expect(failures).toEqual([
         {
-            phase: 'apply',
+            step: 'apply',
             status: 429,
             category: 'rate-limited',
             retryAfter: 7000,
@@ -243,7 +243,7 @@ test("onAuthFailure fires category 'network' + error when the login stitch throw
 
     expect(failures).toHaveLength(1);
     const f = failures[0]!;
-    expect(f.phase).toBe('apply');
+    expect(f.step).toBe('apply');
     expect(f.category).toBe('network');
     expect(f.status).toBeUndefined(); // no response, so no status
     expect(f.error).toBeInstanceOf(Error); // the thrown transport error rides along

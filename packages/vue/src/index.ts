@@ -64,8 +64,14 @@ export {
  * What `useStitch` / `useStitchStream` return: each reactive state field as its
  * own `ComputedRef` (so the object stays destructurable WITHOUT losing
  * reactivity, the Vue idiom) plus the imperative `refetch` / `cancel` handles.
+ *
+ * **Framework-qualified** (CONTRACT.md P9, ADR 0012 rule 6). React's `useStitch` returns a
+ * `UseStitchResult` carrying the RAW `StitchQueryResult` fields; wrapping each one in a
+ * `ComputedRef` makes this shape unassignable to that one in either direction, so the two
+ * cannot share a name — exactly the case `SolidStitchStore` / `SvelteStitchStore` are
+ * qualified for. The divergent side takes the prefix; react keeps the bare name.
  */
-export interface UseStitchResult<T> {
+export interface VueUseStitchResult<T> {
     readonly status: ComputedRef<StitchQueryResult<T>['status']>;
     /** The validated output (unary) or the latest streamed value (streaming). */
     readonly data: ComputedRef<T | undefined>;
@@ -124,7 +130,7 @@ function useStitchInternal<T>(
     input: MaybeRefOrGetter<unknown>,
     options: MaybeRefOrGetter<UseStitchOptions<T>>,
     streaming: boolean,
-): UseStitchResult<T> {
+): VueUseStitchResult<T> {
     // The single reactive cell every consumer reads through. The core hands out a
     // NEW frozen snapshot only on a real change, so swapping the ref is cheap and
     // never tears. `shallowRef` is deliberate: the snapshot is already immutable,
@@ -243,17 +249,17 @@ export function useStitch<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: MaybeRefOrGetter<QueryInput<S>>,
     options?: MaybeRefOrGetter<UseStitchOptions<QueryOutput<S>>>,
-): UseStitchResult<QueryOutput<S>>;
+): VueUseStitchResult<QueryOutput<S>>;
 export function useStitch<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: MaybeRefOrGetter<Input>,
     options?: MaybeRefOrGetter<UseStitchOptions<T>>,
-): UseStitchResult<T>;
+): VueUseStitchResult<T>;
 export function useStitch<T>(
     stitch: StitchLike<T, unknown>,
     input: MaybeRefOrGetter<unknown>,
     options: MaybeRefOrGetter<UseStitchOptions<T>> = {},
-): UseStitchResult<T> {
+): VueUseStitchResult<T> {
     return useStitchInternal<T>(stitch, input, options, false);
 }
 
@@ -281,16 +287,16 @@ export function useStitchStream<S extends StitchLike<unknown, never>>(
     stitch: S,
     input: MaybeRefOrGetter<QueryInput<S>>,
     options?: MaybeRefOrGetter<UseStitchOptions<QueryOutput<S>>>,
-): UseStitchResult<QueryOutput<S>>;
+): VueUseStitchResult<QueryOutput<S>>;
 export function useStitchStream<T, Input = unknown>(
     stitch: StitchLike<T, Input>,
     input: MaybeRefOrGetter<Input>,
     options?: MaybeRefOrGetter<UseStitchOptions<T>>,
-): UseStitchResult<T>;
+): VueUseStitchResult<T>;
 export function useStitchStream<T>(
     stitch: StitchLike<T, unknown>,
     input: MaybeRefOrGetter<unknown>,
     options: MaybeRefOrGetter<UseStitchOptions<T>> = {},
-): UseStitchResult<T> {
+): VueUseStitchResult<T> {
     return useStitchInternal<T>(stitch, input, options, true);
 }

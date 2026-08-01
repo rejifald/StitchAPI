@@ -143,7 +143,7 @@ function describeRoot(schema: unknown): string {
  */
 export const typeboxFingerprinter: SchemaFingerprinter = {
     vendor: 'typebox',
-    supports: '^0.34.0',
+    range: '^0.34.0',
     fingerprint(schema) {
         try {
             // `tbfp1` tags the descriptor format: bump it to force a one-time,

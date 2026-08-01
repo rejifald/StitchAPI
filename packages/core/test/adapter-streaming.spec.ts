@@ -75,7 +75,7 @@ describe('fetchAdapter streaming (ADR 0005 Decision 9)', () => {
         // buffered path: the body is still decoded to JSON
         expect(res.body).toEqual(payload);
         expect(events.length).toBeGreaterThan(0);
-        expect(events.every((e) => e.phase === 'download')).toBe(true);
+        expect(events.every((e) => e.direction === 'download')).toBe(true);
         const last = events[events.length - 1];
         expect(last?.loaded).toBe(len);
         expect(last?.total).toBe(len);
@@ -94,7 +94,7 @@ describe('fetchAdapter streaming (ADR 0005 Decision 9)', () => {
 
         expect(events.length).toBeGreaterThan(0);
         const last = events[events.length - 1];
-        expect(last?.phase).toBe('download');
+        expect(last?.direction).toBe('download');
         expect(last?.loaded).toBeGreaterThan(0);
         expect(last?.total).toBeUndefined(); // omitted, never guessed
     });

@@ -965,7 +965,7 @@ function outputSchemaSource(cfg: ResolvedStitchConfig): unknown {
     // an always-true one against the `'drift'` literal.
     const isDrift = (out as { __kind?: unknown }).__kind === 'drift';
     const validator = isDrift ? (out as DriftSpec).schema : out;
-    return (validator as { source?: unknown }).source ?? validator;
+    return (validator as { schema?: unknown }).schema ?? validator;
 }
 
 // The resolved request the cache key is derived from. The principal it scopes by is sourced from
@@ -1014,7 +1014,7 @@ const cacheEvt = (detail: string): StitchEvent => ({
 
 // A buffered upload bar that never moves is the quiet trap behind the adapter seam: a call passes
 // `onProgress` with a body expecting bytes-sent, but the default `fetch` reports only
-// `phase: 'download'` — the upload phase stays dark, no error, no events. When the active adapter
+// `direction: 'download'` — the upload phase stays dark, no error, no events. When the active adapter
 // declares its capabilities and `'uploadProgress'` is NOT among them (ADR 0005 Decision 9), say so
 // once — an `info` event pointing at xhrAdapter — instead of no-op'ing. Deliberately a teaching
 // note, not a throw: a body with `onProgress` can also legitimately want DOWNLOAD progress on a
@@ -1034,7 +1034,7 @@ function uploadProgressWarning(
         topic: 'adapter.upload-progress-unsupported',
         detail:
             `onProgress is set with a request body, but ${cap.name ?? 'the active adapter'} cannot ` +
-            `report upload progress — only 'phase: download' events fire. Use xhrAdapter() to draw ` +
+            `report upload progress — only 'direction: download' events fire. Use xhrAdapter() to draw ` +
             `an upload progress bar.`,
         at: now(),
     };

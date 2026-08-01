@@ -153,7 +153,7 @@ test('default .inspect() neither reads nor writes the cache (repeatable)', async
         url: URL,
         adapter,
         trace: false,
-        cache: { ttl: '60s', scope: 'app' },
+        cache: { ttl: '60s', tenancy: 'app' },
     });
     // Two inspects → two live origin calls: it never serves a prior entry (no read) ...
     await s.inspect();
@@ -177,7 +177,7 @@ test('{ cache: true }: a cache hit yields value but raw null', async () => {
         url: URL,
         adapter,
         trace: false,
-        cache: { ttl: '60s', scope: 'app' },
+        cache: { ttl: '60s', tenancy: 'app' },
     });
     expect(await s()).toEqual({ n: 1 }); // warm the cache
     expect(calls()).toBe(1);
@@ -196,7 +196,7 @@ test('the bare `true` is the `{ cache: true }` probe (P13)', async () => {
         url: URL,
         adapter,
         trace: false,
-        cache: { ttl: '60s', scope: 'app' },
+        cache: { ttl: '60s', tenancy: 'app' },
     });
     expect(await s()).toEqual({ n: 1 }); // warm the cache
     expect(calls()).toBe(1);
