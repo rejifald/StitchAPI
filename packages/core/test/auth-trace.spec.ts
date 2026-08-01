@@ -1,4 +1,5 @@
-import { cookieSession, env, stitch } from '../src';
+import { env, stitch } from '../src';
+import { cookieSession } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

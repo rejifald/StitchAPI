@@ -16,7 +16,8 @@ limiter before you write a single row.
 One way: declare all four concerns on a single stitch and `await` it once.
 
 ```ts twoslash
-import { env, oauth2, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { oauth2 } from 'stitchapi/auth';
 
 const mirror = stitch({
     baseUrl: 'https://api.example.com',

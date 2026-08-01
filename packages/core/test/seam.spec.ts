@@ -3,8 +3,9 @@
 // each principal its own session (no bleed) while sharing that bucket; `cookieSession` fails
 // closed when no principal is bound; per-stitch throttle can only TIGHTEN, never escape the seam;
 // secrets stay off `__config`; and `flush()`/`close()` drive the shared lifecycle.
-import { bearer, cookieSession, memoryStore, seam, stitch } from '../src';
+import { memoryStore, seam, stitch } from '../src';
 import type { StitchStore } from '../src';
+import { bearer, cookieSession } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

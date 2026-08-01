@@ -41,7 +41,8 @@ The sharp edges are all in `queryFn`. The `as User` is a lie the compiler can't 
 Declare the call once as a stitch, then hand the stitch to `queryFn`:
 
 ```tsx twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const getUser = stitch<{ id: string; name: string }>({

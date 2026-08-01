@@ -3,13 +3,7 @@
 // The OTLP sink reads them to build a real span tree (shared traceId, parentSpanId) instead of
 // minting per-start and guessing by name; a child run inherits the parent's traceId and points
 // parentSpanId at the parent's spanId. Ids are engine-minted, never caller-supplied (ADR 0002 §2).
-import {
-    cookieSession,
-    multiplex,
-    otlpTrace,
-    stitch,
-    toOtlpJson,
-} from '../src';
+import { multiplex, otlpTrace, stitch, toOtlpJson } from '../src';
 import type {
     OtelSpan,
     SpanExporter,
@@ -17,6 +11,7 @@ import type {
     TraceContext,
     TraceSink,
 } from '../src';
+import { cookieSession } from '../src/auth';
 import { newRunContext } from '../src/util';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';

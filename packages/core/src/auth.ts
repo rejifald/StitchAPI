@@ -1,6 +1,18 @@
-// Auth strategies + secret resolvers. The key idea: the stitch holds the credential,
-// resolved at call time — the caller (an agent) never sees it. `cookieSession` performs
-// a login (another stitch) and manages the cookie jar, refreshing on a 401 wall.
+// Auth strategies. The key idea: the stitch holds the credential, resolved at call time — the
+// caller (an agent) never sees it. `cookieSession` performs a login (another stitch) and manages
+// the cookie jar, refreshing on a 401 wall.
+//
+// The credential primitives these build on (`Secret`, `env`, `optionalEnv`, `secretsFile`,
+// `secretFrom`) live in `./bindings`: they are config bindings, not auth, and other consumers take
+// them without ever building an `AuthStrategy` (`@stitchapi/aws-sigv4` signs with `Secret`s; a
+// thunk is equally at home in a header or a body). Keeping them separate is what lets these
+// factories move to their own subpath without dragging the credential primitive along.
+import {
+    type OptionalSecret,
+    type Secret,
+    isOptionalSecret,
+    resolveSecret,
+} from './bindings';
 import { compact } from './compact';
 import { fetchAdapter } from './http-adapter';
 import { parseRetryAfter } from './resilience';
@@ -16,31 +28,10 @@ import type {
 import {
     appendQueryString,
     buildQuery,
-    nodeFs,
     now,
     parseDuration,
-    readEnv,
     registerSecretQueryKey,
 } from './util';
-
-export type Secret = string | (() => string);
-const resolve = (s: Secret): string => (typeof s === 'function' ? s() : s);
-
-/**
- * A resolver that may yield no value: `bearer` attaches the header only when it resolves to a
- * value, and otherwise skips it (announcing the miss) instead of failing. Produced by
- * {@link optionalEnv}, and branded so `bearer` can tell it apart from a required {@link Secret} —
- * which also keeps it, at the type level, out of the strategies that demand a credential
- * (`apiKey`, `basic`, `oauth2`).
- */
-export interface OptionalSecret {
-    (): string | undefined;
-    readonly __optional: true;
-    /** Human-readable source (e.g. `env var GITHUB_TOKEN`), used in the announced `info` event. */
-    readonly label: string;
-}
-const isOptional = (s: Secret | OptionalSecret): s is OptionalSecret =>
-    typeof s === 'function' && '__optional' in s;
 
 /**
  * Base64-encode a UTF-8 string without Node's `Buffer`, so HTTP Basic credentials work in a
@@ -55,99 +46,6 @@ function base64(s: string): string {
     return btoa(bin);
 }
 
-/**
- * Resolve a REQUIRED secret from an environment variable at call time. An exported-but-empty var
- * (`MY_TOKEN=`) counts as missing and throws — mirroring {@link optionalEnv}, which treats `''` as
- * absent — so a blank credential can never silently ride along. For the may-or-may-not-be-set case,
- * use {@link optionalEnv}.
- */
-export function env(name: string): () => string {
-    return () => {
-        const v = readEnv(name);
-        if (v == null || v === '')
-            throw new Error(
-                `missing env var ${name}. Fix: set it in the environment, or use optionalEnv()/secretFrom() if it's optional.`,
-            );
-        return v;
-    };
-}
-
-/** A source `secretFrom` pulls a named value from: an object with a `get(name)` method
- *  (e.g. a NestJS ConfigService or a secrets-manager client) or a plain `(name) => value` fn. */
-export type SecretSource =
-    | { get(name: string): string | undefined }
-    | ((name: string) => string | undefined);
-
-/**
- * Resolve a REQUIRED secret from an arbitrary injected `source` at call time — for DI'd apps that
- * supply config WITHOUT touching `process.env` (a ConfigService, a secrets-manager client, a
- * validated config object). Throws if the source yields no value (unset or empty), mirroring
- * {@link env}. Compose with `bearer`/`apiKey`/`basic`/`oauth2` exactly like `env()`:
- * `bearer(secretFrom(configService, 'GITHUB_TOKEN'))`.
- */
-export function secretFrom(source: SecretSource, name: string): () => string {
-    return () => {
-        const v =
-            typeof source === 'function' ? source(name) : source.get(name);
-        if (v == null || v === '')
-            throw new Error(
-                `missing secret ${name}. Fix: set it in the environment, or use optionalEnv()/secretFrom() if it's optional.`,
-            );
-        return v;
-    };
-}
-
-/**
- * Like {@link env}, but OPTIONAL: resolves the variable's value, or *absent* (`undefined`) when it
- * is unset or empty — it never throws. Pass it to {@link bearer} to attach the credential only when
- * present, otherwise send the request unauthenticated (announced in the trace):
- * `bearer(optionalEnv('GITHUB_TOKEN'))`. For local/dev runs, notebooks, and agent loops where a
- * token may or may not be exported; when the call must be authenticated, use the throwing
- * `bearer(env('GITHUB_TOKEN'))`. In a browser bundle (no process environment) it resolves absent,
- * so `bearer` simply attaches nothing.
- */
-export function optionalEnv(name: string): OptionalSecret {
-    // An exported-but-empty var (`MY_TOKEN=`) counts as absent — never send `Bearer ` with no token.
-    const read = (): string | undefined => {
-        const v = readEnv(name);
-        return v == null || v === '' ? undefined : v;
-    };
-    return Object.assign(read, {
-        __optional: true as const,
-        label: `env var ${name}`,
-    });
-}
-
-/**
- * Read a named secret from `~/.stitch/secrets.json` (plaintext JSON — keep
- * the file private); falls back to the env var of the same name if the file
- * is absent or does not contain the key; throws if neither is available.
- *
- * WARNING: the secrets file is unencrypted plaintext JSON. Restrict its
- * permissions (`chmod 600 ~/.stitch/secrets.json`) and never commit it.
- */
-export function secretsFile(name: string): () => string {
-    return () => {
-        try {
-            // No node:fs (browser): skip the file, fall through to the env var.
-            const fs = nodeFs();
-            const file = `${readEnv('HOME')}/.stitch/secrets.json`;
-            if (fs?.existsSync(file)) {
-                const obj = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<
-                    string,
-                    unknown
-                >;
-                if (obj[name] != null) return String(obj[name]);
-            }
-        } catch {
-            /* fall through */
-        }
-        const v = readEnv(name);
-        if (v == null) throw new Error(`missing secret ${name}`);
-        return v;
-    };
-}
-
 export function bearer(token: Secret | OptionalSecret): AuthStrategy {
     return {
         name: 'bearer',
@@ -156,7 +54,7 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
             // An optional secret (e.g. optionalEnv): attach the header only when it resolves to a
             // value; otherwise skip it and announce the miss — never a silent no-op. A required
             // Secret keeps the original behavior exactly (resolve, attach; env() throws if unset).
-            if (isOptional(token)) {
+            if (isOptionalSecret(token)) {
                 const value = token();
                 if (value == null || value === '') {
                     ctx.emit(
@@ -169,7 +67,7 @@ export function bearer(token: Secret | OptionalSecret): AuthStrategy {
                 req.headers['authorization'] = `Bearer ${value}`;
                 return;
             }
-            req.headers['authorization'] = `Bearer ${resolve(token)}`;
+            req.headers['authorization'] = `Bearer ${resolveSecret(token)}`;
         },
     };
 }
@@ -210,7 +108,7 @@ export function apiKey(
                 // switches the leading `?` to `&` and preserves any trailing `#fragment`.
                 req.url = appendQueryString(
                     req.url,
-                    buildQuery({ [name]: resolve(opts.value) }),
+                    buildQuery({ [name]: resolveSecret(opts.value) }),
                 );
             },
         };
@@ -221,7 +119,7 @@ export function apiKey(
         name: 'apiKey',
         scheme: { type: 'apiKey', in: 'header', name: headerName },
         apply(req) {
-            req.headers[header] = resolve(opts.value);
+            req.headers[header] = resolveSecret(opts.value);
         },
     };
 }
@@ -231,7 +129,9 @@ export function basic(opts: { user: Secret; pass: Secret }): AuthStrategy {
         name: 'basic',
         scheme: { type: 'http', scheme: 'basic' },
         apply(req) {
-            const token = base64(`${resolve(opts.user)}:${resolve(opts.pass)}`);
+            const token = base64(
+                `${resolveSecret(opts.user)}:${resolveSecret(opts.pass)}`,
+            );
             req.headers['authorization'] = `Basic ${token}`;
         },
     };
@@ -375,13 +275,13 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
             // client_secret_basic: credentials ride in an HTTP Basic header (set last, so a
             // caller-supplied header can't clobber it) and stay OUT of the body.
             const creds = base64(
-                `${resolve(opts.clientId)}:${resolve(opts.clientSecret)}`,
+                `${resolveSecret(opts.clientId)}:${resolveSecret(opts.clientSecret)}`,
             );
             headers['authorization'] = `Basic ${creds}`;
         } else {
             // client_secret_post: credentials in the form body, applied last so `params` can't shadow them.
-            body['client_id'] = resolve(opts.clientId);
-            body['client_secret'] = resolve(opts.clientSecret);
+            body['client_id'] = resolveSecret(opts.clientId);
+            body['client_secret'] = resolveSecret(opts.clientSecret);
         }
 
         const res = await adapter({

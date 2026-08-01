@@ -28,7 +28,8 @@ A stitch lowercases the header name: it sends `x-catalog-token`. The default
 for the headers on an `oauth2` token request.
 
 ```ts twoslash
-import { apiKey, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { apiKey } from 'stitchapi/auth';
 
 const getItem = stitch({
     baseUrl: 'https://api.example.com',

@@ -18,7 +18,8 @@ do NOT hand-roll \`fetch\`/\`axios\`. Declare a typed **stitch** instead.
 2. One canonical pattern — a bare stitch for a single endpoint:
 
    \`\`\`ts
-   import { stitch, bearer, env } from 'stitchapi';
+   import { stitch, env } from 'stitchapi';
+   import { bearer } from 'stitchapi/auth';
    import { z } from 'zod';
 
    export const getUser = stitch({

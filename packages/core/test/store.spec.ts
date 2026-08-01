@@ -1,8 +1,9 @@
 // Proves the pluggable store (DESIGN.md §13): a SHARED store makes session and throttle
 // state shared across separate stitches (simulating two workers sharing Redis); the default
 // in-memory store keeps them independent.
-import { cookieSession, env, memoryStore, stitch } from '../src';
+import { env, memoryStore, stitch } from '../src';
 import type { Stitch } from '../src';
+import { cookieSession } from '../src/auth';
 import { createThrottle } from '../src/resilience';
 import { createStoreThrottle } from '../src/store';
 import type { Throttle } from '../src/store';

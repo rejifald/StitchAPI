@@ -192,7 +192,9 @@ describe('planGen — naming, typing, auth, notice', () => {
         const r = planGen(doc, { all: true });
         const c = file(r, 'client.ts');
         expect(c).toMatch(/auth: bearer\(env\('API_TOKEN'\)\)/);
-        expect(c).toMatch(/import \{ seam, bearer, env \}/);
+        // The strategy rides `stitchapi/auth`, not the root — an auth-free client pulls none.
+        expect(c).toMatch(/import \{ seam, env \} from 'stitchapi';/);
+        expect(c).toMatch(/import \{ bearer \} from 'stitchapi\/auth';/);
     });
 
     test('types-only emits the validation-off notice', () => {

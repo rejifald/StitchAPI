@@ -102,7 +102,7 @@ describe('toStitchSource', () => {
         expect(source).toContain("bearer(env('API_TOKEN'))");
         // The import line carries exactly the symbols used.
         expect(source).toContain(
-            "import { stitch, bearer, env } from 'stitchapi'",
+            "import { stitch, env } from 'stitchapi';\nimport { bearer } from 'stitchapi/auth';",
         );
         // The Authorization header is consumed by auth, not echoed into static headers.
         expect(source).not.toMatch(/headers:\s*{[^}]*authorization/i);
@@ -154,7 +154,7 @@ describe('toStitchSource', () => {
         expect(source).not.toContain(key);
         expect(source).toContain("apiKey({ value: env('API_KEY') })");
         expect(source).toContain(
-            "import { stitch, apiKey, env } from 'stitchapi'",
+            "import { stitch, env } from 'stitchapi';\nimport { apiKey } from 'stitchapi/auth';",
         );
     });
 

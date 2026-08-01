@@ -95,7 +95,8 @@ import {
     type KVNamespaceLike,
     cloudflareKvStore,
 } from '@stitchapi/cloudflare-kv';
-import { cookieSession, seam } from 'stitchapi';
+import { seam } from 'stitchapi';
+import { cookieSession } from 'stitchapi/auth';
 import { z } from 'zod';
 
 export default {

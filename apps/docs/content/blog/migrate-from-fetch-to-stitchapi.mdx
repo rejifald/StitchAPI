@@ -40,7 +40,8 @@ Each fix is a known recipe — a retry loop, an `AbortController`, a schema pars
 A stitch is the same request expressed as a declaration: the URL, the auth, the resilience policy, and the response shape are fields, and the engine applies them on every call.
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({
@@ -89,7 +90,8 @@ The `fetch` version tangles policy into the call: the retry loop, the abort plum
 **Declare the shared parts once, not per call.** When a second and third endpoint hit the same host with the same auth and retry, a [`seam`](/docs/guides/authoring/seam) holds that base and every stitch inherits it:
 
 ```ts twoslash
-import { bearer, env, seam } from 'stitchapi';
+import { env, seam } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({ id: z.string(), name: z.string() });
@@ -109,7 +111,8 @@ const listOrders = api.stitch({ path: '/orders', output: Orders });
 
 ```ts twoslash
 import { useQuery } from '@tanstack/react-query';
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const getUser = stitch({

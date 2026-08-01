@@ -1,6 +1,7 @@
 // Pins docs/GAP-AUDIT.md §1.8: keychain() was a plaintext-JSON spike — renamed to secretsFile()
 // (the deprecated `keychain` alias has since been removed entirely).
-import { basic, secretsFile, stitch } from '../../src';
+import { secretsFile, stitch } from '../../src';
+import { basic } from '../../src/auth';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
 

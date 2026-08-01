@@ -469,7 +469,8 @@ Auth is a field on the stitch (or on a fragment it extends) — never global. Se
 Header strategies — `bearer`, `apiKey` (default header `x-api-key`), `basic`:
 
 ```ts
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',
@@ -480,7 +481,8 @@ const getUser = stitch({
 **OAuth2 client credentials** — `oauth2()` POSTs the token endpoint (form-encoded `client_credentials` grant), caches the access token in the [store](#pluggable-state-store) with the TTL from `expires_in`, refreshes it `refreshSkewMs` (default 30s) before expiry, and attaches it as `Authorization: Bearer …`. A rejected token (status in `refreshOn`, default `[401]`) forces a fresh fetch and an uncounted re-run of the attempt:
 
 ```ts
-import { env, oauth2, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { oauth2 } from 'stitchapi/auth';
 
 const listOrders = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}/orders',
@@ -498,7 +500,8 @@ Give two stitches the same `key` plus a shared [store](#pluggable-state-store) a
 **Cookie sessions** — the marquee case: `cookieSession` runs a login (itself a stitch), captures the cookie from `Set-Cookie`, replays it on every call, and re-logs-in when the wall returns:
 
 ```ts
-import { cookieSession, env, secretsFile, stitch } from 'stitchapi';
+import { env, secretsFile, stitch } from 'stitchapi';
+import { cookieSession } from 'stitchapi/auth';
 
 const signIn = stitch({
     method: 'POST',
@@ -715,7 +718,8 @@ const { blob, filename } = await getReport({
 Two non-HTTP surfaces speak the same engine. `llm` is a chat-completion over a provider _contract_ — the first-party `anthropic` and `openai` mappings are plain config, no SDK dependency, and the credential is the stitch's own `auth`:
 
 ```ts
-import { apiKey, env } from 'stitchapi';
+import { env } from 'stitchapi';
+import { apiKey } from 'stitchapi/auth';
 import { anthropic, llm } from 'stitchapi/llm';
 
 const chat = llm({

@@ -1,6 +1,7 @@
 // Closes two gaps dogfooding surfaced: request body encoding (form / multipart, not just
 // JSON) and content-aware auth refresh (a 200 that is actually a login page = a soft wall).
-import { cookieSession, env, stitch } from '../src';
+import { env, stitch } from '../src';
+import { cookieSession } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

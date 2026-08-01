@@ -103,7 +103,8 @@ This is where caching meets [auth as a boundary](/docs/concepts/capability-not-c
 When a response genuinely is the same for everyone — a public feed, a shared catalog — you opt out with `scope: 'app'` and the entry is shared across principals. That's a deliberate widening of the blast radius, and reading it in the declaration says exactly that: this data is not user-specific.
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 
 // ---cut---
 // Principal-scoped (default): each user gets their own entry.

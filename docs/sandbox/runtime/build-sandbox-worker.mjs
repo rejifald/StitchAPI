@@ -41,6 +41,17 @@ const OUT =
     resolve(repoRoot, 'apps/docs/public/sandbox/sandbox-worker.mjs');
 const CORE =
     process.env.CORE ?? resolve(repoRoot, 'packages/core/src/index.ts');
+// Core's subpath entries need their own aliases: `CORE` points at a FILE, so esbuild cannot
+// resolve `stitchapi/auth` through it (it would look for `…/index.ts/auth`). Each subpath the
+// sandbox shims import gets mapped to its own source module, the same publish-free trick.
+const CORE_SUBPATHS = Object.fromEntries(
+    ['auth', 'bindings'].map((name) => [
+        `stitchapi/${name}`,
+        process.env.CORE
+            ? resolve(process.env.CORE, '..', `${name}.ts`)
+            : resolve(repoRoot, `packages/core/src/${name}.ts`),
+    ]),
+);
 // Alias every workspace `@stitchapi/*` playground package to its SOURCE: its
 // published entry is a built `lib/` the docs `build:sandbox` flow never builds, so
 // resolving src keeps the worker build publish-free (the same trick as `stitchapi`
@@ -105,6 +116,7 @@ await esbuild.build({
     // shims are required — this is the only alias the bundle needs.
     alias: {
         stitchapi: CORE,
+        ...CORE_SUBPATHS,
         ...WORKSPACE_ALIASES,
     },
     logLevel: 'info',

@@ -44,10 +44,16 @@ function loadEsbuild(): { build: EsbuildBuild } {
 async function bundleForBrowser(
     entry: string,
     format: 'esm' | 'cjs' = 'esm',
+    // Inline entry source, for the cases that must pull from MORE than one entry in a single
+    // runnable bundle (the root barrel plus `src/auth.ts`, now that auth is subpath-only).
+    // Relative specifiers inside it resolve from the package root.
+    inline?: string,
 ): Promise<{ errorTexts: string[]; output: string }> {
     const { build } = loadEsbuild();
     return build({
-        entryPoints: [join(ROOT, entry)],
+        ...(inline
+            ? { stdin: { contents: inline, resolveDir: ROOT, loader: 'ts' } }
+            : { entryPoints: [join(ROOT, entry)] }),
         bundle: true,
         platform: 'browser',
         format,
@@ -92,6 +98,11 @@ const BROWSER_LEGIT = [
     'src/fingerprint.ts',
     'src/xhr-adapter.ts',
     'src/testing.ts',
+    // Split out of the root barrel, so each now needs its own pin: `basic()` base64-encodes
+    // without Buffer (the §1.5 regression site) and `secretsFile()` reaches node:fs only through
+    // the guarded `nodeFs()`, which resolves absent in a browser build.
+    'src/auth.ts',
+    'src/bindings.ts',
 ];
 
 // Server-tier subpaths: genuinely Node-coupled (node:http / stdio / node:fs) and
@@ -135,7 +146,13 @@ describe('browser bundle (GAP-AUDIT §1.5)', () => {
     // a vm context that has ONLY real browser primitives — no process, no Buffer, no require —
     // then execute a stitch with basic() auth (the §1.5 regression site, which used Buffer).
     test('the browser bundle executes a stitch with zero Node globals', async () => {
-        const { output } = await bundleForBrowser('src/index.ts', 'cjs');
+        // `basic` is subpath-only now, so the runnable bundle pulls the root barrel AND
+        // `src/auth.ts` — the same two imports a browser consumer would write.
+        const { output } = await bundleForBrowser(
+            'src/index.ts',
+            'cjs',
+            "export { stitch } from './src/index';\nexport { basic } from './src/auth';",
+        );
         expect(output.length).toBeGreaterThan(0);
 
         let captured:

@@ -35,7 +35,8 @@ For a soft 200 wall, add `refreshWhen` so a login page served with `200`
 triggers a re-login instead of passing as data:
 
 ```ts twoslash
-import { cookieSession, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { cookieSession } from 'stitchapi/auth';
 
 const login = stitch({
     method: 'POST',

@@ -53,7 +53,8 @@ stitch from-curl 'curl https://api.acme.dev/v1/orders/4821 \
 ```
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 
 export const getOrders = stitch({
     baseUrl: 'https://api.acme.dev',
@@ -95,7 +96,8 @@ stitch from-curl 'curl https://api.acme.dev/v1/orders/4821' \
 What you get back is an ordinary stitch declaration, not a frozen artifact. The same fields you would reach for on any stitch are one edit away:
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 
 // ---cut---
 export const getOrder = stitch({

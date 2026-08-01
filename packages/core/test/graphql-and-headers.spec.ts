@@ -3,8 +3,9 @@
 // GENERICALLY — it no longer special-cases `kind === 'graphql'`. Proven below by the graphql
 // behaviour (unchanged) plus custom surfaces routed through the same engine. Plus a static
 // `headers` config field.
-import { apiKey, env, graphql, stitch } from '../src';
+import { env, graphql, stitch } from '../src';
 import type { Surface } from '../src';
+import { apiKey } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

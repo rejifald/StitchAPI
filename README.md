@@ -323,7 +323,8 @@ Caching is sound by construction: a stitch with an `output` schema caches only w
 Auth is a field on the stitch — never global. Secrets resolve **at call time** (`env()`, `secretsFile()`), the declaration is committable, and the caller gets data without ever seeing the credential:
 
 ```ts
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 
 const getUser = stitch({
     path: 'https://demo.stitchapi.dev/users/{id}',

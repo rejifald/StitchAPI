@@ -32,7 +32,7 @@ sink) and a default seam carrying your `SeamConfig` defaults (`baseUrl`, `header
 
 ```ts
 import { StitchModule, fromNestConfig } from '@stitchapi/nest';
-import { bearer } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 
 @Module({
     imports: [

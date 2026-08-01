@@ -38,7 +38,8 @@ Nothing here is wrong, but nothing here is reusable. You chose `res.text()` by h
 The same job as a declaration. Each field replaces a piece of that glue:
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 import { z } from 'zod';
 
 declare function parseCsv(raw: string): unknown; // your CSV parser
@@ -70,7 +71,8 @@ const rows = await getRevenueReport({ params: { month: '2026-06' } });
 For binary you set `responseType` and skip `transform` if the bytes are the deliverable:
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 
 // ---cut---
 const invoicePdf = stitch({
@@ -164,7 +166,8 @@ The left column is glue you rewrite per endpoint. The right column is configurat
 Reading HTML or bytes does not put you on a side path. The same configuration that surrounds a JSON call surrounds this one — auth, retry, timeout, and trace apply regardless of the body format, because the body format is one field:
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 import { z } from 'zod';
 
 declare function scrapePage(html: string): { title: string };

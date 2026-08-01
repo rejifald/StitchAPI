@@ -1,9 +1,10 @@
-// secretsFile() fallback-ladder branches (src/auth.ts) that gaps/secrets-file-rename.spec.ts leaves
-// open. That suite covers "file has the key → from file" and "file absent → env". The remaining
-// rungs go untested:
+// secretsFile() fallback-ladder branches (src/bindings.ts) that gaps/secrets-file-rename.spec.ts
+// leaves open. That suite covers "file has the key → from file" and "file absent → env". The
+// remaining rungs go untested:
 //   - the file EXISTS but lacks the requested key → fall back to the env var;
 //   - neither the file nor the env has it → throw "missing secret";
-//   - a non-string value in the file is coerced via String();
+//   - a scalar (non-string) value in the file is coerced via String();
+//   - a NON-scalar value is refused rather than stringified to '[object Object]';
 //   - malformed JSON is swallowed (try/catch) and the env var is used.
 import { secretsFile } from '../src';
 
@@ -75,6 +76,31 @@ describe('secretsFile() fallback ladder', () => {
         Reflect.deleteProperty(process.env, 'PORT');
         try {
             expect(secretsFile('PORT')()).toBe('8080');
+        } finally {
+            cleanup();
+        }
+    });
+
+    test('refuses a non-scalar file value instead of sending "[object Object]"', () => {
+        const [home, cleanup] = tempHome('{ "MY_SECRET": { "nested": "x" } }');
+        process.env['HOME'] = home;
+        process.env['MY_SECRET'] = 'from-env';
+        try {
+            // Falls through to the env var; the object never becomes the credential.
+            expect(secretsFile('MY_SECRET')()).toBe('from-env');
+        } finally {
+            cleanup();
+        }
+    });
+
+    test('a non-scalar file value with no env var throws rather than authenticating with garbage', () => {
+        const [home, cleanup] = tempHome('{ "MY_SECRET": ["a", "b"] }');
+        process.env['HOME'] = home;
+        Reflect.deleteProperty(process.env, 'MY_SECRET');
+        try {
+            expect(() => secretsFile('MY_SECRET')()).toThrow(
+                /missing secret MY_SECRET/,
+            );
         } finally {
             cleanup();
         }

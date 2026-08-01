@@ -28,6 +28,16 @@ export default defineConfig([
             'src/testing.ts',
             'src/fingerprint.ts',
             'src/cache.ts',
+            // config bindings (Secret + the call-time resolvers) → stitchapi/bindings. Its own
+            // entry so integration packages can depend on the credential primitive WITHOUT the
+            // auth strategies, and so the strategies can move off the root entry.
+            'src/bindings.ts',
+            // the auth strategies → stitchapi/auth. Subpath-ONLY (not re-exported from the root),
+            // so a consumer that never authenticates never pays for oauth2/cookieSession — the
+            // same treatment cache/fingerprint/postmessage and the non-http surfaces already get.
+            // `AuthStrategy` itself stays on the root (it is a type in types.ts, so it costs
+            // nothing and BYO strategies still typecheck against it without this subpath).
+            'src/auth.ts',
             // surfaces (ADR 0005 Decision 10) — subpath-only; the root entry bundles http alone
             'src/graphql.ts',
             'src/sse.ts',

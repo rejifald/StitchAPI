@@ -132,7 +132,8 @@ export type LlmOptions = Partial<StitchConfig> & {
  * @example
  * ```ts
  * import { llm, anthropic } from 'stitchapi/llm';
- * import { apiKey, env } from 'stitchapi';
+ * import { env } from 'stitchapi';
+ * import { apiKey } from 'stitchapi/auth';
  *
  * const chat = llm({
  *     provider: anthropic,

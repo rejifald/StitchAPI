@@ -948,15 +948,23 @@ function renderAuth(auth: AuthEmit): string {
     }
 }
 
-// The import line: only the symbols the emitted code actually uses (stitch always; an auth helper
-// when present; env when auth is present; z is imported separately under --zod).
+// The import line(s): only the symbols the emitted code actually uses (stitch always; `env` when
+// auth is present; z is imported separately under --zod). The auth STRATEGY comes from the
+// `stitchapi/auth` subpath rather than the root, so a scaffolded client without auth never pulls
+// the strategies in — which is the whole reason they live behind a subpath.
 function buildImport(auth: AuthEmit | undefined): string {
     const named = ['stitch'];
-    if (auth) {
-        if (auth.kind === 'bearer') named.push('bearer');
-        else if (auth.kind === 'apiKey') named.push('apiKey');
-        else named.push('basic');
-        named.push('env');
-    }
-    return `import { ${named.join(', ')} } from 'stitchapi';`;
+    if (!auth) return `import { ${named.join(', ')} } from 'stitchapi';`;
+
+    named.push('env');
+    const strategy =
+        auth.kind === 'bearer'
+            ? 'bearer'
+            : auth.kind === 'apiKey'
+              ? 'apiKey'
+              : 'basic';
+    return [
+        `import { ${named.join(', ')} } from 'stitchapi';`,
+        `import { ${strategy} } from 'stitchapi/auth';`,
+    ].join('\n');
 }

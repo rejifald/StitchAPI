@@ -2,7 +2,8 @@
 // header placement staying the backward-compatible default. Covers: append onto a URL with no
 // query AND one that already has a query string, call-time resolution (the thunk is read per
 // call, not at construction), URL-encoding, and trace redaction of the configured param name.
-import { apiKey, fileSink, stitch } from '../../src';
+import { fileSink, stitch } from '../../src';
+import { apiKey } from '../../src/auth';
 import { scrubUrl } from '../../src/util';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';

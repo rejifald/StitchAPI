@@ -25,7 +25,8 @@ which is exactly the contract `queryFn` wants, so there is no glue code.
 
 ```ts
 // stitches.ts — your declarations live here
-import { bearer, env, seam } from 'stitchapi';
+import { env, seam } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const api = seam({

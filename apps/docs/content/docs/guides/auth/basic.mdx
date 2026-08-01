@@ -12,7 +12,8 @@ resolved at call time so the caller never holds the credential.
 ## Example
 
 ```ts twoslash
-import { basic, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { basic } from 'stitchapi/auth';
 
 const report = stitch({
     baseUrl: 'https://api.example.com',

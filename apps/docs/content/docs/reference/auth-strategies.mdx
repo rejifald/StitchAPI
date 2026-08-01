@@ -7,12 +7,25 @@ The signatures for every auth strategy and secret resolver. Each strategy holds
 the credential and resolves it at call time, so the caller never sees it. The
 guides under [Auth](/docs/guides/auth/secret-resolvers) show how to use them.
 
+The five strategies come from the **`stitchapi/auth`** subpath, so a project that
+never authenticates does not carry the OAuth2 token dance or the cookie jar in its
+bundle. The secret resolvers stay on the root `stitchapi` — they are not
+auth-specific, and `@stitchapi/aws-sigv4` takes the same `Secret` values without
+ever building a strategy. A typical call site imports from both:
+
+```ts twoslash
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
+```
+
+Writing your own strategy needs neither: `AuthStrategy` is a type on the root.
+
 ## bearer
 
 Attaches `Authorization: Bearer <token>`.
 
 ```ts twoslash
-import { bearer } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 ```
 
 ## apiKey
@@ -22,7 +35,7 @@ a URL query parameter (`api_key` by default), resolved and URL-encoded at call
 time.
 
 ```ts twoslash
-import { apiKey } from 'stitchapi';
+import { apiKey } from 'stitchapi/auth';
 ```
 
 ## basic
@@ -30,7 +43,7 @@ import { apiKey } from 'stitchapi';
 Base64-encodes `user:pass` into `Authorization: Basic …`.
 
 ```ts twoslash
-import { basic } from 'stitchapi';
+import { basic } from 'stitchapi/auth';
 ```
 
 ## cookieSession
@@ -92,7 +105,8 @@ function; a missing or empty value throws, mirroring [`env`](#env). Compose it
 with any strategy exactly like `env()`.
 
 ```ts twoslash
-import { bearer, secretFrom } from 'stitchapi';
+import { secretFrom } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 
 // Any object with a `get(name)` method — e.g. a NestJS ConfigService.
 declare const configService: { get(name: string): string | undefined };

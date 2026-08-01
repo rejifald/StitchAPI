@@ -14,8 +14,9 @@
 //
 // These tests FAIL before the fix (the second, redirect-target request still carries the
 // credential) and PASS after. A same-origin companion asserts we don't OVER-strip.
-import { apiKey, axiosAdapter, env, fetchAdapter, stitch } from '../../src';
+import { axiosAdapter, env, fetchAdapter, stitch } from '../../src';
 import type { AxiosLikeConfig, AxiosLikeResponse } from '../../src';
+import { apiKey } from '../../src/auth';
 import { headersForRedirect } from '../../src/http-adapter';
 
 import { tmpdir } from 'node:os';

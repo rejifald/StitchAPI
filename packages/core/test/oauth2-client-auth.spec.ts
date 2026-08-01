@@ -2,8 +2,9 @@
 // Default 'post' (client_secret_post) keeps id/secret in the form body; 'basic'
 // (client_secret_basic) moves them into an HTTP Basic header — what providers like Kyivstar SMS
 // require. Also covers the token-request escape hatches: `audience`, `params`, and `headers`.
-import { env, oauth2, stitch } from '../src';
+import { env, stitch } from '../src';
 import type { Stitch } from '../src';
+import { oauth2 } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

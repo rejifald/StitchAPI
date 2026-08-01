@@ -3,21 +3,18 @@ export { graphql } from './graphql';
 export { seam } from './seam';
 export { httpSurface, graphqlSurface } from './surface';
 export type { Surface, SurfaceOutcome } from './surface';
-export {
-    bearer,
-    apiKey,
-    basic,
-    cookieSession,
-    oauth2,
-    env,
-    optionalEnv,
-    secretsFile,
-    secretFrom,
-} from './auth';
-export type { SecretSource, AuthFailureResult, RefreshResult } from './auth';
-// CONTRACT.md P3 — deprecated alias re-export, removed at GA.
-// eslint-disable-next-line @typescript-eslint/no-deprecated -- intentional back-compat re-export of the @deprecated `AuthFailureInfo` (now `AuthFailureResult`) until the GA cut
-export type { AuthFailureInfo } from './auth';
+// The auth STRATEGIES (`bearer`/`apiKey`/`basic`/`oauth2`/`cookieSession`) are deliberately NOT
+// re-exported here — they live behind `stitchapi/auth`, so a consumer that never authenticates
+// never pays for the oauth2 token dance or the cookieSession jar. This is the same treatment
+// cache/fingerprint/postmessage and the non-http surfaces already get. What stays on the root is
+// the part that costs nothing and that BYO strategies need: the `AuthStrategy` interface itself
+// (a type, exported via `export * from './types'` below).
+//
+// Config bindings (`stitchapi/bindings`) DO stay on the root: they have always been root exports,
+// they are not auth-specific (a `Secret` thunk is equally at home in a header or a body), and a
+// declarative credential is orthogonal to which strategy consumes it.
+export { env, optionalEnv, secretsFile, secretFrom } from './bindings';
+export type { SecretSource } from './bindings';
 export { fetchAdapter } from './http-adapter';
 export type { FetchAdapterOptions } from './http-adapter';
 export { axiosAdapter } from './axios-adapter';

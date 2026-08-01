@@ -362,7 +362,8 @@ const listUsers = stitch({
 більше немає — бо життєвим циклом токена володіє стратегія, а не ви:
 
 ```ts twoslash
-import { bearer, drift, env, stitch } from 'stitchapi';
+import { drift, env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({
@@ -388,7 +389,8 @@ auth зливою повторних запитів, живе всередині
 тротлінгу, `store`, sink трейсів):
 
 ```ts twoslash
-import { bearer, drift, env, seam } from 'stitchapi';
+import { drift, env, seam } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const User = z.object({

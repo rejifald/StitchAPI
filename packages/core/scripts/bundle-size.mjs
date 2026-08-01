@@ -120,11 +120,19 @@ const KB = 1024;
 // / ~0.28 KB gzip. The step restores the same tight ~0.2 KB headroom the gate is meant to hold. The
 // cost buys closing a HIGH credential-exfiltration hole — a deliberate trade the maintainer signs off
 // on by merging (see PR body for the exact before/after/Δ).
+//
+// The whole-entry budget RATCHETS DOWN 24.80 → 22.80 (measured 22.59): the five auth strategies
+// moved off the root barrel to the `stitchapi/auth` subpath, taking the oauth2 token dance and the
+// cookieSession jar with them (−2.03 KB gzip). `import { stitch }` is unchanged at ~19.83, which is
+// the proof the split was about the barrel and not the hot path — tree-shaking already kept auth
+// out of that scenario; what it could NOT do was keep it out of a `require('stitchapi')` or a
+// bundler that gives up on the barrel. Budget lowered rather than banked, per the note above:
+// headroom that is not ratcheted away just gets spent.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 24.8 * KB,
+        budget: 22.8 * KB,
     },
     {
         name: 'import { stitch }',

@@ -18,7 +18,8 @@ One way: declare the auth on the stitch itself. Callers get a callable; the
 secret stays behind it.
 
 ```ts twoslash
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 
 const getInvoice = stitch({
     baseUrl: 'https://api.example.com',

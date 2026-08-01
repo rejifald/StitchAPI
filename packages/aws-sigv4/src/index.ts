@@ -12,19 +12,20 @@
 // `node:crypto`'s `webcrypto`. The low-level `signRequestV4` is exported too, so it
 // can be unit-tested against the official AWS test vectors.
 import type { AuthStrategy } from 'stitchapi';
+import { type Secret, resolveSecret } from 'stitchapi/bindings';
 
 // ---------------------------------------------------------------------------
 // Secret
 // ---------------------------------------------------------------------------
 
 /** A credential value — a string or a zero-arg getter resolved at call time (so an
- * `env()`-style thunk reads per call and the agent never sees the value). Mirrors
- * core's `Secret`. */
-export type Secret = string | (() => string);
-
-function resolveSecret(secret: Secret): string {
-    return typeof secret === 'function' ? secret() : secret;
-}
+ * `env()`-style thunk reads per call and the agent never sees the value).
+ *
+ * Re-exported from `stitchapi/bindings`, core's config-binding subpath. This was previously a
+ * hand-copied duplicate of core's `Secret` (plus its own `resolveSecret`) because the primitive
+ * was only reachable through the auth module; the subpath exists so signing can take a credential
+ * without importing an auth strategy, and so the two definitions can no longer drift apart. */
+export type { Secret };
 
 // ---------------------------------------------------------------------------
 // Web Crypto (edge-safe, with a node:crypto fallback for Node < 20)

@@ -11,11 +11,9 @@ const FUNCTIONS = [
     'drift',
     'graphql',
     'seam',
-    'bearer',
-    'apiKey',
-    'basic',
-    'cookieSession',
-    'oauth2',
+    // NOTE: bearer/apiKey/basic/cookieSession/oauth2 are deliberately NOT here — they are
+    // subpath-only (`stitchapi/auth`), pinned by auth-subpath.spec.ts. The binding resolvers below
+    // DO stay on the root: they are not auth-specific.
     'env',
     'optionalEnv',
     'secretsFile',

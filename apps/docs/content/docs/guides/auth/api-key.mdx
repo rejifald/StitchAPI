@@ -12,7 +12,8 @@ the secret.
 ## Example
 
 ```ts twoslash
-import { apiKey, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { apiKey } from 'stitchapi/auth';
 
 const search = stitch({
     baseUrl: 'https://api.example.com',
@@ -45,7 +46,8 @@ than a header. Set `in: 'query'`; the key is appended to the request URL at call
 time, URL-encoded, onto whatever query the endpoint already carries:
 
 ```ts twoslash
-import { apiKey, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { apiKey } from 'stitchapi/auth';
 
 const search = stitch({
     baseUrl: 'https://api.example.com',

@@ -5,8 +5,9 @@
 // the shared runtime without the *authority* to tear that runtime down. `seam.as(id)` therefore
 // returns a lifecycle-free `PrincipalSeam` (no `flush` / `close` / `invalidate`); only the root
 // seam can tear down (or cache-bust) the runtime every other principal shares.
-import { cookieSession, memoryStore, seam, stitch } from '../src';
+import { memoryStore, seam, stitch } from '../src';
 import type { Seam, StitchStore } from '../src';
+import { cookieSession } from '../src/auth';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 

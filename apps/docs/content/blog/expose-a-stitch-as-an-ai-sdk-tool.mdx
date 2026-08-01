@@ -18,7 +18,8 @@ That's exactly the shape `@stitchapi/vercel-ai` gives you. You define a stitch o
 The tool is the thin part. The substance is the stitch: a single endpoint declared with a typed input, a validated output, and whatever resilience that integration needs. Here's a stitch for a small internal "lookup" API, with auth, validation, and a few resilience knobs already on it:
 
 ```ts twoslash tab="StitchAPI" tabGroup="approach"
-import { bearer, env, stitch } from 'stitchapi';
+import { env, stitch } from 'stitchapi';
+import { bearer } from 'stitchapi/auth';
 import { z } from 'zod';
 
 const Order = z.object({

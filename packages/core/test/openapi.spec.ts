@@ -3,7 +3,8 @@
 // parameters parsed from the RFC 6570 URL template, and the PRESENCE of a request body / response
 // as empty `{}` schemas. Field-level JSON Schema and security are deferred. The pure `toOpenApi`
 // is asserted directly; the `export` command is driven through `main` with an injected loader.
-import { apiKey, basic, bearer, cookieSession, oauth2, stitch } from '../src';
+import { stitch } from '../src';
+import { apiKey, basic, bearer, cookieSession, oauth2 } from '../src/auth';
 import { main } from '../src/cli';
 import { toOpenApi } from '../src/openapi';
 import type { StitchRegistry } from '../src/registry';
