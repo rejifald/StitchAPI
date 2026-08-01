@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/deno-kv",
-    "version": "1.0.0-rc.6",
+    "version": "1.0.0-rc.7",
     "type": "commonjs",
     "description": "Deno KV-backed StitchStore for StitchAPI — distributed throttle + shared sessions/tokens with atomic increment. Bring your own Deno.Kv handle.",
     "main": "lib/index.js",
