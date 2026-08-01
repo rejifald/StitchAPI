@@ -1,0 +1,136 @@
+---
+title: The Web Ecosystem Is Missing a Layer
+description: Every boundary a web app crosses has a tier of tooling that owns it — the screen, inbound requests, the database, untrusted input — except the one where your app calls someone else's. Why that cell stayed empty, and what shape fills it.
+author: Oleksandr Zhuravlov
+date: '2026-08-01'
+tags: [architecture, comparison, fetch, http, typescript]
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+Every boundary a web app crosses has a tier of the ecosystem devoted to it — except the one where your app calls someone else's.
+
+Read a `package.json` as a map of seams. Each dependency sits where your code meets something outside it, and each of those seams grew a category of tool that owns it:
+
+| The boundary                      | The tier that owns it       |
+| --------------------------------- | --------------------------- |
+| Your app ↔ the screen             | React, Vue, Svelte, Solid   |
+| Your app ↔ inbound requests       | Fastify, Hono, Nest, Elysia |
+| Your app ↔ the database           | Prisma, Drizzle, Kysely     |
+| Your app ↔ untrusted input        | Zod, Valibot, ArkType       |
+| Your app ↔ its own cache          | TanStack Query, SWR         |
+| Your app ↔ the bundle             | Vite, esbuild, Rollup       |
+| **Your app ↔ someone else's app** | **`fetch`**                 |
+
+Every row but the last names a tier that sits _above_ a transport and owns the meaning of what crosses. The last row names the transport.
+
+That is the anomaly, and it shows up fastest if you transpose it onto another row. Nobody would accept a raw TCP socket as the answer for the database boundary. It's the correct pipe and the wrong layer — the tier that owns that seam is the thing above the socket that knows about connections, types, and migrations. Outbound HTTP is the only boundary left in the stack where the ecosystem still answers with the pipe.
+
+## The layer isn't missing — it's diffused
+
+A missing tier doesn't leave a hole. It leaves the same code, written by hand, forty times, in the space between call sites. Every codebase that talks to three APIs has a version of this:
+
+```ts twoslash
+// @noErrors
+// Two local helpers: `withRetry` is imported at 6 of the 14 call sites,
+// and token refresh is reimplemented in two other modules besides this one.
+import { getToken } from './auth/token';
+import { withRetry } from './utils/retry';
+
+export async function getOrder(id: string) {
+    const ctl = new AbortController();
+    setTimeout(() => ctl.abort(), 5_000); // the one call somebody bounded
+
+    const res = await withRetry(() =>
+        fetch(`https://api.example.com/orders/${id}`, {
+            headers: { Authorization: `Bearer ${getToken()}` },
+            signal: ctl.signal,
+        }),
+    );
+
+    await sleep(200); // added the Tuesday the provider started 429ing
+    return (await res.json()) as OrderResponse; // a claim, checked by nobody
+}
+```
+
+That _is_ the tier. It already lives in your repository, with no name, no shared defaults, and no single seam to test. From the inside, a missing layer doesn't look like an absence. It looks like duplication nobody has a word for.
+
+## Why this cell outlived every other one
+
+**`fetch` returns something, so the job looks finished.** A `Response` comes back, `.json()` resolves, and nothing in the editor is red. What's absent — a bounded timeout, a retry that respects `Retry-After`, a check that the JSON still has the shape you assumed last quarter, one limiter shared across the twelve call sites hitting that host — is absent at 3am, not at the keyboard. A gap that only fails in production never registers as a gap in the toolchain.
+
+**The space got filled twice, from both sides, by things that aren't it.** From below, HTTP clients: axios, ky, got. They are good transports — interceptors, a saner API, better defaults than 2015's `fetch` — and they improve the pipe, then stop where the pipe stops. The body still arrives as `any`, and [everything you'd want above it stays yours to write](/blog/axios-alternatives). From above, codegen: openapi-typescript, Orval, Kubb. These aim squarely at the missing layer and reach it whenever the preconditions hold — a published spec, accurate, current, covering the surface you call. Where that's true, codegen is the better tool and this post isn't arguing otherwise. It just isn't true for the internal service documented by a README, the partner API whose docs are one curl example, or the endpoint whose spec was accurate two releases ago ([what codegen buys, and where it runs out](/blog/stitch-vs-codegen-api-clients)). Between the two, the cell looked occupied.
+
+**It's the only boundary where you don't own the other end.** Your database schema is in your repository. Your route handlers are in your repository. Your component props are in your repository. Every other tier can _enforce_ its contract because both sides ship together — rename the column and the migration and the query break in the same commit.
+
+The API you call ships on someone else's schedule, from someone else's repository, with no obligation to tell you. Nothing can be enforced across that line. It can only be observed as it arrives.
+
+That one asymmetry disqualifies both moves every other tier makes. **Generating from the contract** assumes a contract exists and is truthful — the two things a stranger's API never guarantees. **Checking at compile time** assumes the thing being checked changes when you compile — and a response shape changes while your source sits perfectly still, so nothing recompiles, nothing goes red, and the first runtime to see the new shape is production ([the bug you ship, not the one you catch](/blog/schema-drift-is-a-production-bug)).
+
+So the tier that fills this cell has to work under rules no tier above it lives with. It looks unlike the libraries already in your `package.json` for a structural reason, not a stylistic one.
+
+## The shape the boundary dictates
+
+Take the asymmetry seriously and the design stops being a matter of taste. Five properties fall out of it:
+
+**Runtime, not compile time.** The contract belongs to a stranger, so verification happens when the bytes land — validate every live response against the schema you declared, and surface the difference as [a leveled drift signal](/docs/guides/validation/drift) instead of an `undefined` three layers downstream.
+
+**Per endpoint, not per app.** You cross this boundary to a dozen different strangers with a dozen different rate limits, auth schemes, and error conventions. There is no global configuration that is correct for all of them, so [the unit is one endpoint](/docs/concepts/the-stitch) and nothing is inherited implicitly.
+
+**Spec-less, not spec-first.** The long tail — the internal service, the partner API, the endpoint a teammate shipped last week — publishes a URL and, on a good day, an example response. That has to be enough input, because it's frequently all there is.
+
+**Above the transport, not instead of it.** The transport tier is solved and not the problem — so the layer sits on top of whatever you already use, through [a pluggable adapter](/blog/choosing-an-http-adapter), and never asks you to swap your HTTP client to adopt it.
+
+**In-process, not a service.** This is a layer in your application, and layers don't come with a deployment. Composition is code you write and diff, not a graph in someone's editor — which is a different job from [what a hosted workflow platform does well](/blog/runtime-stitching-vs-workflow-platforms).
+
+That list isn't a feature set. It's the shortest description of something that can sit on a boundary you don't control.
+
+## One crossing, named
+
+Here is the diffusion from earlier, collected into a single declaration. Retry, throttle, layered timeouts, a circuit breaker, auth, shape-checking, and drift stop being seven helpers in six files and become fields on the call they apply to:
+
+```ts twoslash
+import { drift, stitch } from 'stitchapi';
+import { bearer, env } from 'stitchapi/auth';
+import { z } from 'zod';
+
+const getOrder = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/orders/{id}',
+    auth: bearer(env('ORDERS_TOKEN')),
+    pick: 'data',
+    output: drift(z.object({ id: z.number(), total: z.number() })),
+    retry: { attempts: 3, on: [429, 503], respectRetryAfter: true },
+    throttle: { rate: '10/s', pool: 'host' },
+    timeout: { total: '10s', perAttempt: '3s' },
+    circuit: [5, '30s'],
+});
+
+const order = await getOrder({ params: { id: 42 } });
+//    ^?
+```
+
+Three things about that declaration matter more than any single field.
+
+It's **one value in one file** — so it diffs in a pull request, reverts with `git revert`, and can be read start to finish to know exactly what the call does. No ambient default is reaching in from somewhere else.
+
+The token never leaves it. `bearer(env('ORDERS_TOKEN'))` resolves at call time inside the stitch; the caller receives a function it can invoke and no credential it could log, forward, or leak — [a capability, not a credential](/blog/auth-as-a-capability-not-a-credential). That distinction costs nothing when the caller is your own code and becomes the whole design when the caller is an agent.
+
+And `throttle`'s `pool: 'host'` is doing something no per-call-site helper can: sharing one limiter across every stitch pointed at that host, so the twelve call sites cooperate instead of racing each other into a 429 ([budget the calls before the provider does](/blog/proactive-throttling-vs-reactive-429s)).
+
+## What it isn't
+
+The layer is defined as much by what it declines to be, and each refusal points at a tier that already works:
+
+- **Not an HTTP client.** `fetch` and axios are the substrate underneath, chosen by adapter. A stitch is the layer above; adopting it doesn't replace the transport you already picked.
+- **Not a generated client.** No spec is required and nothing is committed or regenerated — the declaration _is_ the runtime, which is what lets it reach APIs that never published a spec.
+- **Not a data-fetching library.** TanStack Query and SWR own view state — caching, invalidation, suspense. A stitch is [the dependable callable you hand them as the `queryFn`](/blog/stitch-as-react-query-queryfn); it owns the call, not your cache-in-UI.
+- **Not a workflow engine or iPaaS.** No orchestration, no queues, no visual builder, nothing to deploy. Multi-step composition is plain TypeScript.
+- **Not one MCP server per integration.** The same declaration is [one code-mode tool an agent drives](/blog/you-might-not-need-an-mcp-server-per-integration) rather than a server per API and a tool per endpoint.
+
+What's left after those five subtractions is narrow on purpose: zero runtime dependencies, ~23 kB min+gzip for the whole entry and ~20 kB for a typical `import { stitch }`, running wherever your code already runs — Node, serverless, the edge, the browser.
+
+## You already have this layer
+
+The question was never whether your codebase gets an outbound-API tier. It has one. It's the `withRetry` in `utils`, the `as` cast in the service, the `sleep` in the pagination loop, and the token refresh that lives in three places and agrees in two. That code is the layer, at full maintenance cost and without the three things a named tier pays you back: one place to change a policy, defaults every call site inherits, and [a seam you can test without the network](/blog/test-api-code-without-the-network).
+
+Naming it is the only decision on the table, and it isn't a migration. Pick the endpoint that already hurts — the flaky one, the rate-limited one, the one whose shape changed under you last quarter — and [declare that one next to the `fetch` you already have](/blog/adopt-stitchapi-without-a-rewrite). Nothing else in the file has to move. The rest of the boundary converges when you're ready, one endpoint at a time, because [the unit was one endpoint from the start](/blog/migrate-from-fetch-to-stitchapi).
