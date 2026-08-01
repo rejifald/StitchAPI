@@ -50,7 +50,7 @@ function canonical(value: unknown): string {
 // Reference strategy: canonicalise + hash the descriptor; abstain on `opaque`.
 const refFingerprinter: SchemaFingerprinter = {
     vendor: 'test',
-    supports: '*',
+    range: '*',
     fingerprint(schema) {
         const desc = (schema as { __desc?: unknown }).__desc;
         if (desc && typeof desc === 'object' && 'opaque' in desc) {
@@ -93,7 +93,7 @@ describe('registry', () => {
     it('last registration for a vendor wins', () => {
         const other: SchemaFingerprinter = {
             vendor: 'test',
-            supports: '*',
+            range: '*',
             fingerprint: () => ({ token: 'x', strength: 'strong' }),
         };
         registerFingerprinter(refFingerprinter);
@@ -314,7 +314,7 @@ describe('verifyFingerprintContract', () => {
     it('a constant-token strategy fails distinct + abstain, as a report', () => {
         const broken: SchemaFingerprinter = {
             vendor: 'test',
-            supports: '*',
+            range: '*',
             fingerprint: () => ({ token: 'CONST', strength: 'strong' }),
         };
         const report = verifyFingerprintContract(broken, goodFixtures);
@@ -335,7 +335,7 @@ describe('verifyFingerprintContract', () => {
         // Deliberately violates the synchronous contract (cast through unknown).
         const asyncFp = {
             vendor: 'test',
-            supports: '*',
+            range: '*',
             fingerprint: () =>
                 Promise.resolve({ token: 'x', strength: 'strong' }),
         } as unknown as SchemaFingerprinter;

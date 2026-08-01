@@ -101,14 +101,14 @@ describe('xhrAdapter (ADR 0005 Decision 9)', () => {
             headers: { 'content-type': 'application/json' },
             body: { ok: true },
         });
-        const phases = events.map((e) => e.phase);
+        const phases = events.map((e) => e.direction);
         expect(phases).toContain('upload');
         expect(phases).toContain('download');
         expect(phases.indexOf('upload')).toBeLessThan(
             phases.indexOf('download'),
         );
         // upload progress carries byte counts (the whole point of this adapter)
-        expect(events.find((e) => e.phase === 'upload')).toMatchObject({
+        expect(events.find((e) => e.direction === 'upload')).toMatchObject({
             loaded: 5,
             total: 10,
         });

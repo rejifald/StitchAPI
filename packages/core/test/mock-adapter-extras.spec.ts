@@ -85,7 +85,9 @@ describe('mockAdapter spy', () => {
     });
 
     test('lastRequest() is undefined before any call', () => {
-        expect(mockAdapter({ respond: {} }).lastRequest()).toBeUndefined();
+        expect(
+            mockAdapter({ respond: { status: 200 } }).lastRequest(),
+        ).toBeUndefined();
     });
 
     test('reset() clears the log and restarts each route counter', async () => {

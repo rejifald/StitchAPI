@@ -75,7 +75,7 @@ never crashes the call.
   `'unauthenticated'` (a `refresh` status, e.g. `401` — bad/expired creds),
   `'rate-limited'` (`429`, with `retryAfter` parsed from `Retry-After`),
   `'network'` (the login threw before any response — with the thrown `error`),
-  or `'unknown'`. `info.phase` is `'apply'` for a cold session or `'refresh'`
+  or `'unknown'`. `info.step` is `'apply'` for a cold session or `'refresh'`
   for a wall that was hit mid-stream.
 
 ```ts twoslash

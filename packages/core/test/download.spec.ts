@@ -151,8 +151,8 @@ describe('filename parsing (Decision 8)', () => {
 describe('byte progress (Decision 9, threaded per-call)', () => {
     test('input.onProgress is threaded into the request and fired', async () => {
         const adapter: Adapter = (req) => {
-            req.onProgress?.({ phase: 'download', loaded: 5, total: 10 });
-            req.onProgress?.({ phase: 'download', loaded: 10, total: 10 });
+            req.onProgress?.({ direction: 'download', loaded: 5, total: 10 });
+            req.onProgress?.({ direction: 'download', loaded: 10, total: 10 });
             return Promise.resolve({
                 status: 200,
                 headers: {},
@@ -168,8 +168,8 @@ describe('byte progress (Decision 9, threaded per-call)', () => {
             },
         });
         expect(seen).toEqual([
-            { phase: 'download', loaded: 5, total: 10 },
-            { phase: 'download', loaded: 10, total: 10 },
+            { direction: 'download', loaded: 5, total: 10 },
+            { direction: 'download', loaded: 10, total: 10 },
         ]);
     });
 });
@@ -241,7 +241,7 @@ describe('download over real fetch + mock server (browser-first)', () => {
         );
         // progress fired for the download phase
         expect(seen.length).toBeGreaterThan(0);
-        expect(seen.every((p) => p.phase === 'download')).toBe(true);
+        expect(seen.every((p) => p.direction === 'download')).toBe(true);
         expect(server.calls('/file')[0]?.method).toBe('GET');
     });
 

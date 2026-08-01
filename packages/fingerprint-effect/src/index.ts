@@ -147,7 +147,7 @@ function describeAst(ast: AnyAst): string {
  */
 export const effectFingerprinter: SchemaFingerprinter = {
     vendor: 'effect',
-    supports: '^3.0.0',
+    range: '^3.0.0',
     fingerprint(schema) {
         try {
             const ast = (schema as { ast?: unknown }).ast;

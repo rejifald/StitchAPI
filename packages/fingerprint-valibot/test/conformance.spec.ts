@@ -205,7 +205,7 @@ describe('@stitchapi/fingerprint-valibot', () => {
 
     it('declares the valibot vendor and a supported range', () => {
         expect(valibotFingerprinter.vendor).toBe('valibot');
-        expect(valibotFingerprinter.supports).toBe('^1.0.0');
+        expect(valibotFingerprinter.range).toBe('^1.0.0');
     });
 
     it('abstains (null) on an opaque check but fingerprints its base shape', () => {

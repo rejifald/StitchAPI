@@ -205,7 +205,7 @@ test('redact: true leaves raw null on a streaming surface (no-op)', async () => 
         url: URL,
         adapter,
         trace: false,
-        cache: { ttl: '60s', scope: 'app' },
+        cache: { ttl: '60s', tenancy: 'app' },
     });
     await s(); // warm the cache
     const r = await s.inspect(undefined, { cache: true, redact: true });
