@@ -201,7 +201,7 @@ export interface SseOptions {
  * sent, `'download'` as the response body arrives. `total` is the content length when known.
  */
 export interface AdapterProgress {
-    phase: 'upload' | 'download';
+    direction: 'upload' | 'download';
     loaded: number;
     total?: number;
 }
@@ -222,8 +222,8 @@ export interface AdapterRequest {
      */
     stream?: boolean;
     /**
-     * Byte-progress callback (ADR 0005 Decision 9). Fires with `phase: 'download'` as the
-     * response is read, and `phase: 'upload'` as the request body is sent (upload progress needs
+     * Byte-progress callback (ADR 0005 Decision 9). Fires with `direction: 'download'` as the
+     * response is read, and `direction: 'upload'` as the request body is sent (upload progress needs
      * `xhrAdapter` — `fetch` cannot report it). Orthogonal to {@link AdapterRequest.stream}.
      */
     onProgress?: (progress: AdapterProgress) => void;
@@ -246,10 +246,10 @@ export interface AdapterResponse {
  *
  * -   `'stream'` — honours {@link AdapterRequest.stream}, handing back a live `ReadableStream`
  *     instead of rejecting it. `fetch` only among the built-ins (`xhr`/axios buffer and reject it).
- * -   `'uploadProgress'` — reports `phase: 'upload'` byte progress through
+ * -   `'uploadProgress'` — reports `direction: 'upload'` byte progress through
  *     {@link AdapterRequest.onProgress}. `xhr` and axios can; `fetch` cannot (it leaves the upload
  *     phase silent).
- * -   `'downloadProgress'` — reports `phase: 'download'` byte progress through
+ * -   `'downloadProgress'` — reports `direction: 'download'` byte progress through
  *     {@link AdapterRequest.onProgress} as the response arrives. `fetch`, `xhr`, and axios all can.
  */
 export type AdapterCapability =
@@ -258,7 +258,7 @@ export type AdapterCapability =
  * What a transport supports, declared on the adapter itself (ADR 0005 Decision 9). An adapter is
  * still just a function — this is an OPTIONAL hint hung off it. A descriptor lists the features the
  * transport HAS in `supports`; anything not listed, it can't do. Built-in adapters declare one so
- * the engine can turn a silent no-op into a teaching note: a call that asks for `phase: 'upload'`
+ * the engine can turn a silent no-op into a teaching note: a call that asks for `direction: 'upload'`
  * progress on a transport whose `supports` omits `'uploadProgress'` (`fetch`, axios) gets an `info`
  * event pointing at `xhrAdapter`, instead of an upload bar that never moves. A custom adapter that
  * declares nothing is treated as unknown — no checks, the open contract stands.
@@ -409,8 +409,13 @@ export interface CacheOptions {
      * Whose responses an entry may be served to. `'principal'` (default, **fail-closed**) folds
      * the bound principal into the key so user A can never be served user B's cached response;
      * `'app'` shares one entry across callers — correct only for public, unauthenticated data.
+     *
+     * Spelled `tenancy`, matching `OAuth2Options.tenancy` / `CookieSessionOptions.tenancy` — the
+     * identical `'principal' | 'app'` axis. It was `scope`, which P2 already freed for the OAuth
+     * permission string (`OAuth2Options.scope`); the cache slot was the last holdout, so one word
+     * still meant two things.
      */
-    scope?: 'principal' | 'app';
+    tenancy?: 'principal' | 'app';
     /**
      * Request header(s) whose values vary the response and so must be part of the key (e.g.
      * `'accept-language'` or a list). An explicit allowlist **overrides** the default of honouring

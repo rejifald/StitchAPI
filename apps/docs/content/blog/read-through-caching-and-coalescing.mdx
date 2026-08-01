@@ -79,7 +79,7 @@ const listAnnouncements = stitch({
     pick: 'data',
     cache: {
         ttl: '1h',
-        scope: 'app', // shared across principals — see below
+        tenancy: 'app', // shared across principals — see below
         vary: ['accept-language'], // fold a header into the key
         entries: 500,
     },
@@ -100,7 +100,7 @@ Why it's the default and not an option you remember to set: the dangerous failur
 
 This is where caching meets [auth as a boundary](/docs/concepts/capability-not-credential). A stitch already knows the identity it acts as — that's what the `auth` strategy resolves at call time — and the cache reuses that same notion of principal to scope the key. So the credential never reaches the caller _and_ the cached response inherits the same boundary: the cache can't become a side channel that leaks across the identity wall auth was there to enforce.
 
-When a response genuinely is the same for everyone — a public feed, a shared catalog — you opt out with `scope: 'app'` and the entry is shared across principals. That's a deliberate widening of the blast radius, and reading it in the declaration says exactly that: this data is not user-specific.
+When a response genuinely is the same for everyone — a public feed, a shared catalog — you opt out with `tenancy: 'app'` and the entry is shared across principals. That's a deliberate widening of the blast radius, and reading it in the declaration says exactly that: this data is not user-specific.
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -117,7 +117,7 @@ const getProfile = stitch({
 // App-scoped: genuinely shared, identical for everyone.
 const getStatusPage = stitch({
     path: 'https://api.example.com/status',
-    cache: { ttl: '10s', scope: 'app' },
+    cache: { ttl: '10s', tenancy: 'app' },
 });
 ```
 
@@ -127,7 +127,7 @@ Caching is only correct for **idempotent reads**: a request you could make twice
 
 - **Writes are out.** A `POST` that creates an order or charges a card is not a read; there's no "same answer" to reuse. (For a _retried_ write settling once instead of twice, the tool is [idempotency keys](/docs/guides/resilience/idempotency) — a different mechanism entirely.)
 - **Per-request-varying reads are out.** A response that legitimately changes every call — a fresh nonce, a timestamp, a random pick — gains nothing from a cache and risks serving something stale.
-- **Anything you can't safely share across the chosen scope.** If a response is user-specific it must stay principal-scoped; widening it to `scope: 'app'` to "improve the hit rate" is the exact move that turns a cache into a leak.
+- **Anything you can't safely share across the chosen scope.** If a response is user-specific it must stay principal-scoped; widening it to `tenancy: 'app'` to "improve the hit rate" is the exact move that turns a cache into a leak.
 
 There's a guardrail in the shape layer too: a stitch with an `output` schema caches only when that schema can be fingerprinted (or you pin a `version`). If it can't establish the shape it's storing, it **refuses to cache** rather than serve a value that no longer matches its contract. Data you never want at rest can be marked `sensitive: true` to opt out entirely.
 

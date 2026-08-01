@@ -292,7 +292,7 @@ function describe(schema: unknown): string {
  */
 export const zodFingerprinter: SchemaFingerprinter = {
     vendor: 'zod',
-    supports: '^3.24.0 || ^4.0.0',
+    range: '^3.24.0 || ^4.0.0',
     fingerprint(schema) {
         try {
             // `zfp1` tags the descriptor format: bump it to force a one-time,

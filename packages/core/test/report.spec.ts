@@ -85,7 +85,7 @@ test('source: a cache hit is "cache" with raw null', async () => {
         url: URL,
         adapter,
         trace: false,
-        cache: { ttl: '60s', scope: 'app' },
+        cache: { ttl: '60s', tenancy: 'app' },
     });
     expect(await s()).toEqual({ n: 1 }); // warm the cache
     expect(calls()).toBe(1);
@@ -172,7 +172,7 @@ test('report: cache is "bypass" by default on a cached stitch', async () => {
         url: URL,
         adapter,
         trace: false,
-        cache: { ttl: '60s', scope: 'app' },
+        cache: { ttl: '60s', tenancy: 'app' },
     });
     const r = await s.report(); // default → bypassCache
     expect(r.cache).toBe('bypass');
@@ -189,7 +189,7 @@ test('report: cache is "miss" then "hit" with { cache: true }', async () => {
         url: URL,
         adapter,
         trace: false,
-        cache: { ttl: '60s', scope: 'app' },
+        cache: { ttl: '60s', tenancy: 'app' },
     });
     const miss = await s.report(undefined, { cache: true }); // cold cache → miss
     expect(miss.cache).toBe('miss');

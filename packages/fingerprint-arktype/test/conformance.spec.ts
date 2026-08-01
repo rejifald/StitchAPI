@@ -151,7 +151,7 @@ describe('@stitchapi/fingerprint-arktype', () => {
 
     it('declares the arktype vendor and a supported range', () => {
         expect(arktypeFingerprinter.vendor).toBe('arktype');
-        expect(arktypeFingerprinter.supports).toBe('^2.0.0');
+        expect(arktypeFingerprinter.range).toBe('^2.0.0');
     });
 
     it('abstains (null) on an opaque morph but fingerprints its base shape', () => {

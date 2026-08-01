@@ -72,7 +72,7 @@ export interface OpenApiExportOptions {
      * response BODY schemas come from the stitch's `input.body` / `output` schemas, and the
      * `params` / `query` object schemas are converted then DECOMPOSED into a JSON Schema per
      * URL-template parameter (instead of `{}`). It receives the raw schema (a `Validator`'s
-     * `.source`) plus the slot and the detected Standard Schema `vendor`; return a JSON Schema
+     * `.schema`) plus the slot and the detected Standard Schema `vendor`; return a JSON Schema
      * object, or `undefined` to fall back to `{}`. For `params` / `query` the converter is called
      * once on the whole object schema; its `properties[name]` becomes each parameter's schema.
      */
@@ -95,9 +95,9 @@ const EMPTY_SCHEMA: Record<string, unknown> = {};
 
 // A Validator carries its raw schema on a non-enumerable `.source` (validator.ts); pull it out so a
 // converter can turn it into JSON Schema. Anything else (a DriftSpec, a sourceless validator) → none.
-function sourceOf(slot: unknown): unknown {
-    return slot && typeof slot === 'object' && 'source' in slot
-        ? (slot as { source?: unknown }).source
+function schemaOf(slot: unknown): unknown {
+    return slot && typeof slot === 'object' && 'schema' in slot
+        ? (slot as { schema?: unknown }).schema
         : undefined;
 }
 
@@ -110,7 +110,7 @@ function bodySchema(
     convert: OpenApiExportOptions['toJsonSchema'],
 ): Record<string, unknown> {
     if (!convert) return EMPTY_SCHEMA;
-    const source = sourceOf(slot);
+    const source = schemaOf(slot);
     if (source === undefined) return EMPTY_SCHEMA;
     const vendor = isStandardSchema(source)
         ? source['~standard'].vendor
@@ -129,7 +129,7 @@ function decomposeParamObject(
 ): { properties: Record<string, unknown>; required: Set<string> } {
     const empty = { properties: {}, required: new Set<string>() };
     if (!convert) return empty;
-    const source = sourceOf(slot);
+    const source = schemaOf(slot);
     if (source === undefined) return empty;
     const vendor = isStandardSchema(source)
         ? source['~standard'].vendor

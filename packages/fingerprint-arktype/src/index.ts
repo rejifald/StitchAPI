@@ -114,7 +114,7 @@ function describe(schema: unknown): string {
  */
 export const arktypeFingerprinter: SchemaFingerprinter = {
     vendor: 'arktype',
-    supports: '^2.0.0',
+    range: '^2.0.0',
     fingerprint(schema) {
         try {
             // `afp1` tags the descriptor format: bump it to force a one-time,

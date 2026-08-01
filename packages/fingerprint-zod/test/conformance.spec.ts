@@ -169,7 +169,7 @@ describe('@stitchapi/fingerprint-zod', () => {
 
     it('declares the zod vendor and a supported range', () => {
         expect(zodFingerprinter.vendor).toBe('zod');
-        expect(zodFingerprinter.supports).toContain('3.24');
+        expect(zodFingerprinter.range).toContain('3.24');
     });
 
     it('abstains (null) on an opaque refine but fingerprints its base shape', () => {

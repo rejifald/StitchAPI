@@ -70,13 +70,13 @@ A multipart **file part** in the body can be a `Blob` (a `File` is a `Blob`), a 
 
 ```ts twoslash
 type AdapterProgress = {
-    phase: 'upload' | 'download';
+    direction: 'upload' | 'download';
     loaded: number;
     total?: number;
 };
 ```
 
-`loaded` is the number of bytes transferred so far; `total` is the full size when the transport knows it. Tag by `phase` so you only move the upload bar while the request body is going out:
+`loaded` is the number of bytes transferred so far; `total` is the full size when the transport knows it. Tag by `direction` so you only move the upload bar while the request body is going out:
 
 ```ts twoslash
 import { stitch, xhrAdapter } from 'stitchapi';
@@ -98,7 +98,7 @@ async function send(file: File, onPct: (pct: number) => void) {
     const result = await uploadVideo({
         body: { file },
         onProgress: (p) => {
-            if (p.phase === 'upload') {
+            if (p.direction === 'upload') {
                 onPct(Math.round((p.loaded / (p.total ?? 1)) * 100));
             }
         },
@@ -163,15 +163,15 @@ uploadVideo({ body: { file }, onProgress, signal: controller.signal });
 
 ## Upload progress, not just any progress
 
-The `phase` tag exists because progress runs **both directions**:
+The `direction` tag exists because progress runs **both directions**:
 
-| Axis        | `phase: 'upload'`              | `phase: 'download'`             |
+| Axis        | `direction: 'upload'`          | `direction: 'download'`         |
 | ----------- | ------------------------------ | ------------------------------- |
 | Measures    | bytes of the request body sent | bytes of the response body read |
 | Transport   | needs `xhrAdapter()`           | works on `fetchAdapter()` too   |
 | Typical use | a file/video upload bar        | a large-download bar            |
 
-Download progress is the easier half — `fetchAdapter()`, the default transport, reports it by reading the response stream — so if you only need a download bar you do not have to switch adapters at all. The reason this article reaches for `xhrAdapter()` is the upload direction, which `fetch` cannot measure at all. Filter on `p.phase === 'upload'` and the same callback ignores the download tail.
+Download progress is the easier half — `fetchAdapter()`, the default transport, reports it by reading the response stream — so if you only need a download bar you do not have to switch adapters at all. The reason this article reaches for `xhrAdapter()` is the upload direction, which `fetch` cannot measure at all. Filter on `p.direction === 'upload'` and the same callback ignores the download tail.
 
 This stays inside the stitch contract, not beside it. `auth` still resolves the token at call time; `timeout` still bounds the call (a generous `'2m'` here, because a large upload is slow, not stuck); `output` still validates the response, so a corrupt or unexpected body throws a `StitchError` carrying the offending `.body` instead of slipping through as `any`. You traded the transport, not the guarantees.
 

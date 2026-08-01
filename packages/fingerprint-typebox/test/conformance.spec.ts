@@ -216,7 +216,7 @@ describe('@stitchapi/fingerprint-typebox', () => {
 
     it('declares the typebox vendor and a supported range', () => {
         expect(typeboxFingerprinter.vendor).toBe('typebox');
-        expect(typeboxFingerprinter.supports).toContain('0.34');
+        expect(typeboxFingerprinter.range).toContain('0.34');
     });
 
     it('abstains (null) on an opaque transform but fingerprints its base shape', () => {
