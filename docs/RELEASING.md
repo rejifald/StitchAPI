@@ -12,22 +12,16 @@ enforcement.
 ## What gets published
 
 `pnpm -r publish` pushes every **non-private** workspace package, in **lockstep**
-at a single version:
-
-| Package                          | Notes                            |
-| -------------------------------- | -------------------------------- |
-| `stitchapi`                      | core library (unscoped, public)  |
-| `@stitchapi/fingerprint-arktype` | cache-fingerprint vendor adapter |
-| `@stitchapi/fingerprint-effect`  | cache-fingerprint vendor adapter |
-| `@stitchapi/fingerprint-typebox` | cache-fingerprint vendor adapter |
-| `@stitchapi/fingerprint-valibot` | cache-fingerprint vendor adapter |
-| `@stitchapi/fingerprint-zod`     | cache-fingerprint vendor adapter |
-| `@stitchapi/nest`                | NestJS integration               |
-| `@stitchapi/redis`               | Redis-backed store               |
-| `@stitchapi/shell`               | shell surface                    |
+at a single version — **33 packages** at the time of writing: `stitchapi` (the
+core library, unscoped) plus the `@stitchapi/*` companions (framework and host
+integrations, stores, fingerprint vendor adapters, the shell surface, tooling
+like `@stitchapi/openapi` and `@stitchapi/docs-mcp`). The authoritative list is
+the manifest set itself — every `packages/*/package.json` without
+`"private": true` — which is exactly what `check:release` walks, so a package
+added tomorrow is covered without editing this page.
 
 **Never published** (`"private": true`): `@stitchapi/completions-plugin`,
-`@stitchapi/sandbox-sim`, `@stitchapi/docs`.
+`@stitchapi/sandbox-sim`, `@stitchapi/eval-harness`, `@stitchapi/docs`.
 
 ## Versioning
 
@@ -77,9 +71,10 @@ Flags: `--print-tag` (print the derived dist-tag and exit), `--changelog`,
 ## Cut a release — checklist
 
 1. [ ] Branch off `main` (a fresh worktree, per [`CLAUDE.md`](../CLAUDE.md)).
-2. [ ] Set the new `version` in **all 9** publishable `packages/*/package.json`
-       (lockstep). For a **major** bump, also widen each companion's `stitchapi`
-       peer range to `^<new-major>.0.0`.
+2. [ ] Set the new `version` in **every** publishable `packages/*/package.json`
+       (lockstep — 33 packages at the time of writing; `check:release` fails if
+       one is missed). For a **major** bump, also widen each companion's
+       `stitchapi` peer range to `^<new-major>.0.0`.
 3. [ ] Update [`CHANGELOG.md`](../CHANGELOG.md): rename `## [Unreleased]` to
        `## [X.Y.Z] — <YYYY-MM-DD>`, add a fresh empty `## [Unreleased]` above it,
        and update the compare links at the bottom.

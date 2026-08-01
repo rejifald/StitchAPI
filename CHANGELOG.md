@@ -11,6 +11,8 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+## [1.0.0-rc.7] — 2026-08-01
+
 ### Added
 
 - **`parseDuration` is now exported from `stitchapi`.** The one shared duration parser
@@ -26,39 +28,96 @@ npm release are grouped under the in-development version that introduced them.
   values; parsing is case-insensitive.
 
     ```ts
-    serve(registry, { maxBodyBytes: 4 * 1024 * 1024 }); // still fine
-    serve(registry, { maxBodyBytes: '4mb' }); // now equivalent
+    serve(registry, { body: 4 * 1024 * 1024 }); // a raw byte count
+    serve(registry, { body: '4mb' }); // equivalent
     ```
 
-    `ServeOptions.maxBodyBytes` is widened to `number | string` — purely additive, every
-    existing numeric cap keeps working. An unparseable token resolves to `undefined` and lands
-    on the default cap, so a typo can never widen the bound to "unbounded".
+    Every byte cap accepts `number | string`. An unparseable token resolves to `undefined`
+    and lands on the field's default cap, so a typo can never widen the bound to "unbounded".
 
-    It does **not** apply to the `Chars` family (`stream.maxBufferChars`,
-    `trace.maxBodyChars`): those count UTF-16 code units of decoded text, where a byte token
-    would be a category error. That is the distinction the `Bytes`/`Chars` suffixes carry, so —
-    unlike durations under P17 — a size field keeps its unit suffix.
+    It does **not** apply to the char-count caps (`stream.buffer.chars`,
+    `trace.body.chars`): those count UTF-16 code units of decoded text, where a byte token
+    would be a category error — which is why their type has no string arm at all (see the
+    size-envelope entry below).
+
+- **`apiKey` takes its secret positionally — `apiKey(env('API_KEY'))`.** Per CONTRACT.md
+  P15 the envelope's one required field names its own scalar shorthand, matching
+  `bearer`'s positional secret: `apiKey(env('X'))` ≡ `apiKey({ secret: env('X') })`. The
+  envelope form remains for `in` / `name` customization.
+
+- **`SecurityScheme`'s oauth2 flow shape is named: `OAuth2ClientCredentialsFlow`** (P14).
+  A type-only extraction of the previously anonymous `flows.clientCredentials` object —
+  structurally identical, so nothing breaks; the fields keep the OpenAPI/RFC spellings
+  (`tokenUrl` / `scopes` / `refreshUrl`, P22). The shape is now importable and extendable.
 
 ### Changed
 
-- **BREAKING — `stream.maxBufferBytes` is renamed to `maxBufferChars`.** The cap never
-  counted bytes. Every guard it feeds compares `.length` on a string the `TextDecoder` has
-  already produced (`line-reader.ts`, `json-stream.ts`, `sse.ts`), so it measures characters
-  of the decoded text — UTF-16 code units — not bytes off the socket:
+- **BREAKING — the flat size caps are envelopes: `serve`'s `body`, trace's `body`, and
+  `stream`'s `buffer`** (CONTRACT.md **P25**, amended). Each names its subject once and
+  takes its dominant field's scalar as shorthand (P12):
+
+    ```ts
+    // before                                      // after
+    serve(registry, { maxBodyBytes: '4mb' });      serve(registry, { body: '4mb' });
+    trace: fileSink(path, { maxBodyChars: 4096 })  trace: fileSink(path, { body: 4096 })
+    stream: { maxBufferChars: 8_000_000 }          stream: { buffer: 8_000_000 }
+    ```
+
+    Byte ceilings are a bare `max` inside their envelope and accept `number | string` size
+    tokens; char-count ceilings are `chars` and accept `number` only — the `Bytes`/`Chars`
+    distinction the old suffixes spelled is now carried by the field names and enforced by
+    the type grammar. The envelope word `buffer` matches `@stitchapi/shell`'s existing
+    `buffer` slot (P16). New exported envelopes: `ServeBodyOptions`, `TraceBodyOptions`,
+    `StreamBufferOptions`.
+
+    **Watch the trace `false`.** Full capture (no truncation) was the one-word
+    `maxBodyChars: false`; it is now the deliberate long spelling
+    `body: { chars: false }`. The bare `body: false` means the opposite — never persist a
+    payload, keep only the `{ truncated, chars, preview }` marker. The
+    `STITCH_TRACE_MAX_BODY` env variable's semantics are unchanged (`full` still means
+    full capture). No `@deprecated` aliases (P19, `rc` channel).
+
+- **BREAKING — `apiKey`'s credential field is `secret`, not `value`** (P5). `value` is
+  reserved surface-wide for the Standard-Schema success payload — the same overload that
+  renamed `SchemaFingerprint.value` to `token` — and `ApiKeyOptions` is inlined into
+  `apiKey`'s emitted `.d.ts`, so the field is published surface. OpenAPI's `apiKey`
+  security scheme carries no credential field, so no upstream spelling was owed (P22
+  covers only `name` / `in`):
+
+    ```ts
+    // before
+    auth: apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') });
+    // after
+    auth: apiKey({ in: 'query', name: 'api_key', secret: env('API_KEY') });
+    // header default, with the new positional shorthand:
+    auth: apiKey(env('API_KEY'));
+    ```
+
+    The `stitch gen openapi` and from-curl scaffolders emit the new spelling. No
+    `@deprecated` alias (P19, `rc` channel).
+
+- **BREAKING — `stream.maxBufferBytes` never counted bytes; the cap is now the `buffer`
+  envelope's `chars`.** Every guard it feeds compares `.length` on a string the `TextDecoder`
+  has already produced (`line-reader.ts`, `json-stream.ts`, `sse.ts`), so it measures
+  characters of the decoded text — UTF-16 code units — not bytes off the socket:
 
     ```ts
     // before
     stream: { decode: 'json', maxBufferBytes: 8 * 1024 * 1024 }
     // after
-    stream: { decode: 'json', maxBufferChars: 8 * 1024 * 1024 }
+    stream: { decode: 'json', buffer: { chars: 8 * 1024 * 1024 } }
+    // or the scalar shorthand for the dominant field:
+    stream: { decode: 'json', buffer: 8 * 1024 * 1024 }
     ```
 
     Default and behaviour are unchanged; the name, its JSDoc, and the thrown error text
-    (`… exceeded maxBufferChars (…)`) are all that move. The old name mattered because it
-    understated the guard it exists to be: 8M code units of CJK is ~24 MB of UTF-8 on the wire
-    and ~16 MB of string memory, so an OOM bound that read as "8 MB" was 2–3× looser than it
-    looked. Per P1, `Bytes` already denotes bytes elsewhere on the surface (`ServeOptions.maxBodyBytes`,
-    byte progress) and cannot also denote code units.
+    (`… exceeded the stream.buffer.chars cap (…)`) are all that move. The old name mattered
+    because it understated the guard it exists to be: 8M code units of CJK is ~24 MB of UTF-8
+    on the wire and ~16 MB of string memory, so an OOM bound that read as "8 MB" was 2–3×
+    looser than it looked. Per P1, `Bytes` denotes bytes elsewhere on the surface and cannot
+    also denote code units — and the new type (`number`, no string arm) makes a `'8mb'` token
+    on decoded text a compile error. See the size-envelope entry below for the envelope shape
+    shared with `serve` and `trace`.
 
     No `@deprecated` alias: P19 scopes that obligation to the GA channel and this lands on `rc`.
 
@@ -620,7 +679,8 @@ causality push:
 - **Playground:** the browser Worker runner, handler registration, incremental
   streaming, and the trace → Mermaid DAG wiring.
 
-[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.6...HEAD
+[Unreleased]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.7...HEAD
+[1.0.0-rc.7]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/rejifald/StitchAPI/compare/v1.0.0-rc.3...v1.0.0-rc.4

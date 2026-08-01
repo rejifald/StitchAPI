@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/fastify",
-    "version": "1.0.0-rc.6",
+    "version": "1.0.0-rc.7",
     "type": "commonjs",
     "description": "Fastify plugin for StitchAPI — decorate the app/request with a seam, request-scoped principal (AsyncLocalStorage), and SSE + error + Pino-logger bridges.",
     "main": "lib/index.js",

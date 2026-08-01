@@ -1,6 +1,6 @@
 {
     "name": "@stitchapi/fingerprint-zod",
-    "version": "1.0.0-rc.6",
+    "version": "1.0.0-rc.7",
     "type": "commonjs",
     "description": "Stable Standard Schema fingerprint strategy for Zod — StitchAPI ADR 0004 cache invalidation.",
     "main": "lib/index.js",
