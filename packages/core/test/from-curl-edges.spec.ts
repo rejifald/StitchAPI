@@ -34,7 +34,7 @@ describe('toStitchSource — auth recognition (untested strategies)', () => {
         );
         expect(source).not.toContain('secret-123');
         expect(source).toContain(
-            "apiKey({ in: 'query', name: 'api_key', value: env('API_KEY') })",
+            "apiKey({ in: 'query', name: 'api_key', secret: env('API_KEY') })",
         );
         expect(source).toContain(
             "import { stitch } from 'stitchapi';\nimport { apiKey, env } from 'stitchapi/auth'",
@@ -52,7 +52,7 @@ describe('toStitchSource — auth recognition (untested strategies)', () => {
         );
         expect(source).not.toContain('tok-xyz');
         expect(source).toContain(
-            "apiKey({ in: 'query', name: 'access_token', value: env('API_KEY') })",
+            "apiKey({ in: 'query', name: 'access_token', secret: env('API_KEY') })",
         );
     });
 });
@@ -135,7 +135,7 @@ describe('parseHar — body kind and entry selection', () => {
                 },
             }),
         );
-        expect(req.bodyKind).toBe('form');
+        expect(req.bodyType).toBe('form');
         expect(req.body).toBe('a=1&b=2');
     });
 

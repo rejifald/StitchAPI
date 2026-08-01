@@ -488,7 +488,7 @@ from-curl:
   Deterministically turns ONE example into a ready-to-paste \`export const … = stitch({…})\` plus a
   matching call. URL origin → baseUrl, the rest → path with id-like segments lifted into {param}
   slots (each lift is warned). A captured credential is NEVER emitted — recognised auth becomes
-  \`bearer(env('API_TOKEN'))\` / \`apiKey({ value: env('API_KEY') })\` / \`basic({ … })\`. Without --zod
+  \`bearer(env('API_TOKEN'))\` / \`apiKey({ secret: env('API_KEY') })\` / \`basic({ … })\`. Without --zod
   no output schema is emitted, just a comment to add one.
 
 init (alias: rules):

@@ -947,7 +947,7 @@ function deriveAuth(
                 : '';
         const nm = scheme.name ? `name: ${q(scheme.name)}, ` : '';
         return {
-            expr: `apiKey({ ${where}${nm}value: env('API_KEY') })`,
+            expr: `apiKey({ ${where}${nm}secret: env('API_KEY') })`,
             authImports: ['apiKey', 'env'],
         };
     }

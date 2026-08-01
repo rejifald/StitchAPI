@@ -86,7 +86,7 @@ import { apiKey, env } from 'stitchapi/auth';
 const getItem = stitch({
     baseUrl: 'https://api.example.com',
     path: '/items/{id}',
-    auth: apiKey({ name: 'X-Catalog-Token', value: env('CATALOG_TOKEN') }),
+    auth: apiKey({ name: 'X-Catalog-Token', secret: env('CATALOG_TOKEN') }),
 });
 // On the wire, the request header is `x-catalog-token`, not `X-Catalog-Token`.
 ```

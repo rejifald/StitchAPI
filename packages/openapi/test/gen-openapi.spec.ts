@@ -251,7 +251,7 @@ describe('planGen — naming, typing, auth, notice', () => {
         const r = planGen(apiKeyDoc('header'), { all: true });
         const c = file(r, 'client.ts') ?? '';
         expect(c).toMatch(
-            /auth: apiKey\(\{ name: 'X-API-Key', value: env\('API_KEY'\) \}\)/,
+            /auth: apiKey\(\{ name: 'X-API-Key', secret: env\('API_KEY'\) \}\)/,
         );
         expect(c).not.toMatch(/apiKey\(\{ in:/);
         expect(r.warnings.join('\n')).not.toMatch(/not auto-mapped/);
@@ -260,7 +260,7 @@ describe('planGen — naming, typing, auth, notice', () => {
     test("apiKey in query → `in: 'query'` discriminant emitted", () => {
         const r = planGen(apiKeyDoc('query'), { all: true });
         expect(file(r, 'client.ts') ?? '').toMatch(
-            /auth: apiKey\(\{ in: 'query', name: 'X-API-Key', value: env\('API_KEY'\) \}\)/,
+            /auth: apiKey\(\{ in: 'query', name: 'X-API-Key', secret: env\('API_KEY'\) \}\)/,
         );
     });
 
@@ -270,7 +270,7 @@ describe('planGen — naming, typing, auth, notice', () => {
         const r = planGen(apiKeyDoc('cookie'), { all: true });
         const c = file(r, 'client.ts') ?? '';
         expect(c).toMatch(
-            /auth: apiKey\(\{ in: 'cookie', name: 'X-API-Key', value: env\('API_KEY'\) \}\)/,
+            /auth: apiKey\(\{ in: 'cookie', name: 'X-API-Key', secret: env\('API_KEY'\) \}\)/,
         );
         expect(r.warnings.join('\n')).not.toMatch(/not auto-mapped/);
     });

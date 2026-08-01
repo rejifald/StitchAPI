@@ -128,7 +128,7 @@ describe('fetchAdapter — cross-origin redirect must not forward auth/custom he
         const call = stitch({
             url: 'https://api.trusted.com/thing',
             method: 'GET',
-            auth: apiKey({ value: env('REDIRECT_TEST_KEY') }),
+            auth: apiKey({ secret: env('REDIRECT_TEST_KEY') }),
             adapter: fetchAdapter({ fetch: spy }),
         });
         await call();

@@ -24,7 +24,7 @@ describe('apiKey — location model (header / query / cookie)', () => {
         const s = stitch({
             baseUrl: server.url,
             path: '/thing',
-            auth: apiKey({ name: 'X-My-Key', value: 'tok' }),
+            auth: apiKey({ name: 'X-My-Key', secret: 'tok' }),
         });
         await s();
         expect(server.calls('/thing')[0]?.headers['x-my-key']).toBe('tok');
@@ -35,10 +35,33 @@ describe('apiKey — location model (header / query / cookie)', () => {
         const s = stitch({
             baseUrl: server.url,
             path: '/thing',
-            auth: apiKey({ value: 'tok' }),
+            auth: apiKey({ secret: 'tok' }),
         });
         await s();
         expect(server.calls('/thing')[0]?.headers['x-api-key']).toBe('tok');
+    });
+
+    test('the P15 scalar shorthand: apiKey(secret) ≡ apiKey({ secret })', async () => {
+        server.route('GET', '/thing', { body: { ok: true } });
+        // A bare string and a thunk are both Secrets — the two non-envelope spellings.
+        const literal = stitch({
+            baseUrl: server.url,
+            path: '/thing',
+            auth: apiKey('tok-literal'),
+        });
+        await literal();
+        expect(server.calls('/thing')[0]?.headers['x-api-key']).toBe(
+            'tok-literal',
+        );
+        const thunked = stitch({
+            baseUrl: server.url,
+            path: '/thing',
+            auth: apiKey(() => 'tok-thunk'),
+        });
+        await thunked();
+        expect(server.calls('/thing')[1]?.headers['x-api-key']).toBe(
+            'tok-thunk',
+        );
     });
 
     test("in: 'query' appends the named param to the URL", async () => {
@@ -46,7 +69,7 @@ describe('apiKey — location model (header / query / cookie)', () => {
         const s = stitch({
             baseUrl: server.url,
             path: '/thing',
-            auth: apiKey({ in: 'query', name: 'access_token', value: 'tok' }),
+            auth: apiKey({ in: 'query', name: 'access_token', secret: 'tok' }),
         });
         await s();
         expect(server.calls('/thing')[0]?.query['access_token']).toBe('tok');
@@ -57,7 +80,7 @@ describe('apiKey — location model (header / query / cookie)', () => {
         const s = stitch({
             baseUrl: server.url,
             path: '/thing',
-            auth: apiKey({ in: 'cookie', name: 'sid', value: 'tok' }),
+            auth: apiKey({ in: 'cookie', name: 'sid', secret: 'tok' }),
         });
         await s();
         const call = server.calls('/thing')[0];
@@ -71,7 +94,7 @@ describe('apiKey — location model (header / query / cookie)', () => {
             baseUrl: server.url,
             path: '/thing',
             headers: { cookie: 'theme=dark' },
-            auth: apiKey({ in: 'cookie', name: 'sid', value: 'tok' }),
+            auth: apiKey({ in: 'cookie', name: 'sid', secret: 'tok' }),
         });
         await s();
         const call = server.calls('/thing')[0];
@@ -85,7 +108,7 @@ describe('apiKey — location model (header / query / cookie)', () => {
             baseUrl: server.url,
             path: '/thing',
             headers: { cookie: 'sid=stale; theme=dark' },
-            auth: apiKey({ in: 'cookie', name: 'sid', value: 'fresh' }),
+            auth: apiKey({ in: 'cookie', name: 'sid', secret: 'fresh' }),
         });
         await s();
         const call = server.calls('/thing')[0];

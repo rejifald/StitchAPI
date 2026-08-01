@@ -70,7 +70,7 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
             method: 'POST',
             baseUrl: server.url,
             path: '/graphql',
-            auth: apiKey({ name: 'apikey', value: env('METADATA_API_KEY') }),
+            auth: apiKey({ name: 'apikey', secret: env('METADATA_API_KEY') }),
             retry: {
                 attempts: 5,
                 on: [429, 500, 502, 503],
@@ -95,7 +95,7 @@ describe('GraphQL-over-HTTP API (ApiKey header, 1 req/s bucket, retry on 429/5xx
             method: 'POST',
             baseUrl: server.url,
             path: '/graphql',
-            auth: apiKey({ name: 'apikey', value: () => 'sk' }),
+            auth: apiKey({ name: 'apikey', secret: () => 'sk' }),
             throttle: { rate: '1/s' },
         });
         const start = Date.now();
@@ -251,7 +251,7 @@ describe('Diverse co-located auth (three providers, three header formats)', () =
             path: '/system',
             auth: apiKey({
                 name: 'authorization',
-                value: () => `MediaToken token="${env('MEDIA_A_TOKEN')()}"`,
+                secret: () => `MediaToken token="${env('MEDIA_A_TOKEN')()}"`,
             }),
         });
         const mediaB = stitch({
@@ -259,7 +259,7 @@ describe('Diverse co-located auth (three providers, three header formats)', () =
             path: '/node',
             auth: apiKey({
                 name: 'x-media-token',
-                value: env('MEDIA_B_TOKEN'),
+                secret: env('MEDIA_B_TOKEN'),
             }),
             hooks: {
                 onRequest: ({ req }) =>
