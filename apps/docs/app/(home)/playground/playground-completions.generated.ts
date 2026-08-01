@@ -81,7 +81,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "input",
             type: "property",
             detail: "InputSchemas",
-            info: "Schemas validating params, query, body, and headers before the request.",
+            info: "Schemas validating params, query, body, headers, and (GraphQL) variables before the request.",
         },
         {
             label: "output",
