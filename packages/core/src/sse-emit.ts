@@ -39,8 +39,11 @@ export function toIterable<T>(
 /** The terminal `error` event a stitch stream emits — carries `message`, `status`, `attempts`. */
 export type StitchErrorEvent = Extract<StitchEvent, { type: 'error' }>;
 
-/** Shape a `delta` chunk into the SSE frame `data`. */
-export type DeltaShaper = (chunk: unknown) => string;
+/** Shape a `delta` chunk into the SSE frame `data`. Receives the zero-based frame index alongside
+ *  the chunk, so a shaper can number, batch or checkpoint without keeping its own counter. A
+ *  one-argument shaper stays valid — JS ignores extra arguments and TS accepts the narrower
+ *  signature — so `data: (c) => c.text` needs no change. */
+export type DeltaShaper = (chunk: unknown, index: number) => string;
 /** Shape a terminal `error` event into the SSE frame `data`. */
 export type ErrorShaper = (event: StitchErrorEvent) => string;
 
@@ -52,15 +55,17 @@ export interface DeltaFrameOptions {
     /**
      * Map a `delta` chunk to the SSE frame `data`. Default: the chunk itself (a string is sent
      * as-is; anything else is `JSON.stringify`-ed — see {@link defaultData}). Pull the text out of
-     * a structured chunk with, e.g., `(c) => c.choices[0].delta.content ?? ''`.
+     * a structured chunk with, e.g., `(c) => c.choices[0].delta.content ?? ''`. Receives the
+     * zero-based frame index as a second argument.
      */
     data?: DeltaShaper;
     /**
      * Emit an `event:` line per frame (the SSE event name). Default: none (an unnamed `message`
-     * event, which `EventSource.onmessage` receives). Set it to label the stream's messages on the
-     * client (`event: 'token'`).
+     * event, which `EventSource.onmessage` receives). A fixed string labels every message
+     * (`event: 'token'`); a **function** names them per chunk — e.g. routing tool-calls and text
+     * to different client handlers off one stream.
      */
-    event?: string;
+    event?: string | ((chunk: unknown, index: number) => string);
     /**
      * Provide an `id:` line per frame (the SSE last-event id), e.g. for resumable streams. Receives
      * the chunk and the zero-based frame index.
@@ -181,7 +186,24 @@ export function deltaFrame(
     index: number,
     delta: DeltaFrameOptions,
 ): string {
-    const raw = delta.data?.(chunk) ?? defaultData(chunk);
+    const raw = delta.data?.(chunk, index) ?? defaultData(chunk);
     const id = delta.id ? delta.id(chunk, index) : undefined;
-    return sseFrame(raw, delta.event, id);
+    return sseFrame(raw, deltaEvent(chunk, index, delta), id);
+}
+
+/**
+ * Resolve {@link DeltaFrameOptions.event} for one frame: a fixed name passes through, a function
+ * is called with the chunk and its index, and `undefined` stays `undefined` (an unnamed `message`
+ * event). Exported because the STRUCTURED emitters — Hono's `writeSSE`, Nest's `MessageEvent` —
+ * build their own frame objects instead of going through {@link deltaFrame}, and must not each
+ * re-implement the function-form check.
+ */
+export function deltaEvent(
+    chunk: unknown,
+    index: number,
+    delta: DeltaFrameOptions,
+): string | undefined {
+    return typeof delta.event === 'function'
+        ? delta.event(chunk, index)
+        : delta.event;
 }

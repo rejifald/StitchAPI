@@ -42,7 +42,7 @@ const echo: SimHandler = {
 };
 
 const HANDLERS: SimHandler[] = [echo];
-const ECHO = 'https://demo.stitchapi.dev/echo';
+const ECHO = 'https://api.example.com/echo';
 
 async function main(): Promise<void> {
     // T1: a lowercase init.method is upper-cased, a plain-object header reaches

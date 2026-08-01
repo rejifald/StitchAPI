@@ -25,7 +25,7 @@ const User = z.object({
 
 // One seam: the shared base every member inherits, and the runtime they share.
 const api = seam({
-    baseUrl: 'https://demo.stitchapi.dev',
+    baseUrl: 'https://api.example.com',
     auth: bearer(env('API_TOKEN')),
     retry: { attempts: 3, on: [429, 503] },
 });

@@ -18,6 +18,7 @@ import {
     type StitchErrorEvent,
     type StitchEventSource,
     defaultData,
+    deltaEvent,
     resolveDelta,
     resolveError,
     toErrorEvent,
@@ -81,8 +82,11 @@ export function streamStitchSse<T>(
                 const { value: event, done } = await iterator.next();
                 if (done) break;
                 if (event.type === 'delta') {
-                    const message: SSEMessage = { data: toData(event.chunk) };
-                    if (delta.event !== undefined) message.event = delta.event;
+                    const message: SSEMessage = {
+                        data: toData(event.chunk, index),
+                    };
+                    const name = deltaEvent(event.chunk, index, delta);
+                    if (name !== undefined) message.event = name;
                     if (delta.id) message.id = delta.id(event.chunk, index);
                     index += 1;
                     await stream.writeSSE(message);

@@ -18,7 +18,7 @@ test.describe('playground sandbox trace', () => {
             // Run a plain-JS snippet (the worker does not transpile) that makes a
             // real stitch call against the in-Worker sandbox simulator.
             const js =
-                "const r = await stitch('https://demo.stitchapi.dev/users/2')(); return r;";
+                "const r = await stitch('https://api.example.com/users/2')(); return r;";
             const worker = new Worker('/sandbox/sandbox-worker.mjs', {
                 type: 'module',
             });

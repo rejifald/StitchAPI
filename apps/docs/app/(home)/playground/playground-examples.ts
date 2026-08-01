@@ -17,7 +17,7 @@ export interface PlaygroundExample {
 const COMPLETE_EXAMPLE = `// StitchAPI - the whole library in one runnable file.
 //
 // This runs in a sandboxed Web Worker against an in-browser fake API
-// (demo.stitchapi.dev). No real network, nothing installed. It's the
+// (api.example.com). No real network, nothing installed. It's the
 // *complete* example on purpose: keep what you need, delete the rest -
 // every numbered block stands on its own. (Use the Simple tab above for
 // the bare minimum.)
@@ -27,7 +27,7 @@ const COMPLETE_EXAMPLE = `// StitchAPI - the whole library in one runnable file.
 //     full resilience policy - all described in a single object.
 const api = stitch({
   name: 'demo-api',
-  baseUrl: 'https://demo.stitchapi.dev',
+  baseUrl: 'https://api.example.com',
   headers: { accept: 'application/json' },
   auth: bearer('demo-token'), // sent as Authorization: Bearer ... on every call
   retry: {
@@ -95,9 +95,9 @@ console.log('done:', { users: recovered.length });
 `;
 
 const SIMPLE_EXAMPLE = `// The simplest call: give stitch a URL, await typed data back.
-// Runs against the in-browser fake API (demo.stitchapi.dev) - no real network.
+// Runs against the in-browser fake API (api.example.com) - no real network.
 // Switch to the Complete tab above to see the full library in action.
-const getUser = stitch('https://demo.stitchapi.dev/users/2');
+const getUser = stitch('https://api.example.com/users/2');
 const res = await getUser();
 console.log(res);
 `;
@@ -110,7 +110,7 @@ import { stitch } from 'stitchapi';
 import { z } from 'zod';
 
 const getUser = stitch({
-  baseUrl: 'https://demo.stitchapi.dev',
+  baseUrl: 'https://api.example.com',
   path: '/users/{id}',
   pick: 'data', // pull the user out of the { data: ... } envelope
   // Pass a Zod schema (or any Standard Schema) directly.
