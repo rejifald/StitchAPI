@@ -247,8 +247,11 @@ const UNIQUE_WATCH = new Set([
     //    the stream-less adapters (swr/rtk-query/vercel-ai), which never call `.stream()`.
     //  - StreamableStitchLike: rtk-query's streaming tier of the same blessed family.
     //  - StreamStitchSseOptions + StitchErrorOptions: intentionally IDENTICAL option
-    //    envelopes declared per host adapter (elysia/hono/express/fastify/nest/next) —
-    //    one structural contract, same-name-same-shape by design (P9).
+    //    envelopes per host adapter (elysia/hono/express/fastify/nest/next) — one
+    //    structural contract, same-name-same-shape by design (P9). StreamStitchSseOptions
+    //    is identical BY CONSTRUCTION: every host derives it from core's single
+    //    `SseEmitOptions` (five `extends`, nest aliases), so the de-listing rests on a
+    //    shared declaration rather than on six shapes that happen to agree today.
     //  - StitchEventSource: core-owned; host adapters re-export core's type verbatim.
     //  - StitchQueryOptions / stitchQueryOptions / deriveQueryKey / nameOf / keyInputFor
     //    (and the rest of the query family): query-core-owned canonicals re-exported

@@ -252,8 +252,12 @@ stream-less adapters (swr / rtk-query / vercel-ai) use an intentional MINIMAL
 await-only `(input?) => PromiseLike<T>` — they never call `.stream()`. A real stitch
 satisfies both tiers. `StreamableStitchLike` is rtk-query's streaming tier of the same
 family; swr's `QueryOutput`/`QueryInput` inference helpers are also surfaced by
-vercel-ai. `StreamStitchSseOptions` / `StitchErrorOptions` are intentionally
-**identical** envelopes declared per host adapter — same name, same shape, by design;
+vercel-ai. `StreamStitchSseOptions` / `StitchErrorOptions` are intentionally **identical** per host
+adapter — and `StreamStitchSseOptions` is identical _by construction_: all six hosts now
+derive it from core's one `SseEmitOptions` (five `extends` it, nest aliases it), rather
+than each declaring a shape that merely happens to match. Nest was the exception until it
+was folded in; its two extras (a frame `index` on `delta.data`, a function form of
+`delta.event`) were lifted INTO the shared envelope so every host gained them;
 `StitchEventSource` is core-owned and re-exported verbatim.
 
 ### P10 · Error-class taxonomy parity
