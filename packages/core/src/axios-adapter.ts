@@ -79,18 +79,18 @@ export function axiosAdapter(
         }
 
         // Byte progress: axios reports both phases natively, so translate its progress events into
-        // the adapter's `{ phase, loaded, total? }` shape and wire them only when the call asked.
+        // the adapter's `{ direction, loaded, total? }` shape and wire them only when the call asked.
         const onProgress = req.onProgress;
         const progress = (
-            phase: AdapterProgress['phase'],
+            direction: AdapterProgress['direction'],
         ): ((e: AxiosLikeProgressEvent) => void) | undefined => {
             if (onProgress === undefined) return undefined;
             const cb = onProgress;
             return (e) => {
                 cb(
                     e.total !== undefined
-                        ? { phase, loaded: e.loaded, total: e.total }
-                        : { phase, loaded: e.loaded },
+                        ? { direction, loaded: e.loaded, total: e.total }
+                        : { direction, loaded: e.loaded },
                 );
             };
         };

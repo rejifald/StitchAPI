@@ -10,13 +10,14 @@
 //                                # refresh the snapshot from fallow + coverage, then rewrite
 //
 // The README carries a generated badge row between yakir region markers
-// `<!-- yakir:readme-badges -->` / `<!-- /yakir:readme-badges -->`: the
-// StandWithUkraine badge plus three self-describing metric badges (code health,
-// test coverage, license). Each metric badge is a static shields.io URL with the
-// value baked into the URL — nothing phones home; the number, already public in
-// this file, is all that travels (GitHub's camo proxies the image).
+// `<!-- yakir:readme-badges -->` / `<!-- /yakir:readme-badges -->`: two
+// self-describing metric badges (code health, test coverage). Each is a static
+// shields.io URL with the value baked into the URL — nothing phones home; the
+// number, already public in this file, is all that travels (GitHub's camo
+// proxies the image). The row is metrics only: badges that assert a fact GitHub
+// already renders (license, security policy) were dropped as noise.
 //
-// Two of the three metrics come from heavy tools whose output is gitignored:
+// Both metrics come from heavy tools whose output is gitignored:
 //   • code health — fallow's maintainability score (`.metrics/fallow.json`,
 //     written by `fallow --format json --score`).
 //   • coverage    — Vitest line/branch totals (`packages/<pkg>/coverage/
@@ -24,8 +25,7 @@
 // `--refresh` snapshots both into the committed `scripts/readme-metrics.snapshot.json`
 // so the yakir drift check (which runs `--emit` and compares to the committed region)
 // never has to run a tool: `--emit` renders from the snapshot. Refresh the numbers
-// with `pnpm metrics` (runs fallow + coverage, then `--refresh`). The license is a
-// static fact read straight from the root package.json.
+// with `pnpm metrics` (runs fallow + coverage, then `--refresh`).
 //
 // The block is `<p align="center">` HTML (one badge per line) to match the rest
 // of the README hero and stay prettier-stable: prettier does not reflow these
@@ -107,9 +107,6 @@ function groupFor(dir) {
     return 'other';
 }
 
-const STAND_WITH_UKRAINE =
-    '<a href="https://stand-with-ukraine.pp.ua"><img alt="StandWithUkraine" src="https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg" /></a>';
-
 // --- shields.io static-badge encoding ---------------------------------------
 // Field separator is `-`, so a literal `-` becomes `--` and `_` becomes `__`; a
 // space becomes `_`. Parens are percent-encoded so they can't be mistaken for
@@ -155,11 +152,6 @@ function coverageColor(pct) {
 // --- snapshot ---------------------------------------------------------------
 function readSnapshot() {
     return JSON.parse(readFileSync(snapshotPath, 'utf8'));
-}
-
-function readLicense() {
-    return JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'))
-        .license;
 }
 
 /**
@@ -239,9 +231,7 @@ function refreshSnapshot() {
 /** The inner badge row (no markers) — what `--emit readme-badges` prints and yakir compares. */
 function badgesRow(snapshot) {
     const { health, coverage } = snapshot;
-    const license = readLicense();
     const badges = [
-        STAND_WITH_UKRAINE,
         `<img alt="code health: ${health.score} (${health.grade})" src="${badgeUrl(
             'code health',
             `${health.score} (${health.grade})`,
@@ -256,11 +246,6 @@ function badgesRow(snapshot) {
             )}% branches`,
             coverageColor(coverage.lines),
         )}" />`,
-        `<a href="LICENSE"><img alt="license: ${license}" src="${badgeUrl(
-            'license',
-            license,
-            'blue',
-        )}" /></a>`,
     ];
     return `<p align="center">\n  ${badges.join('\n  ')}\n</p>`;
 }

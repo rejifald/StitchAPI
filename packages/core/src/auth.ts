@@ -600,8 +600,11 @@ export function oauth2(opts: OAuth2Options): AuthStrategy {
  * hands the host a categorised outcome instead. Surfaced via {@link CookieSessionOptions.onAuthFailure}.
  */
 export interface AuthFailureResult {
-    /** `'apply'` = cold session had no stored cookie; `'refresh'` = a 401-style wall was hit. */
-    phase: 'apply' | 'refresh';
+    /** Which half of the auth attempt failed: `'apply'` = cold session had no stored cookie;
+     *  `'refresh'` = a 401-style wall was hit. Spelled `step`, not `phase`, because `phase` is
+     *  the request-lifecycle enum on `StitchEvent` (`ProgressPhase`) — one word may not carry two
+     *  value-spaces (CONTRACT.md P1). Transfer direction is the third, and is now `direction`. */
+    step: 'apply' | 'refresh';
     /** The login response status when the login responded at all (absent when it threw). */
     status?: number;
     /** `Retry-After` parsed to ms when the login was rate-limited (status 429). */
@@ -754,7 +757,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
     // rate-limited (back off per `Retry-After`); a status matched by `refresh` (e.g. 401) means the
     // creds were rejected; anything else — including a soft 200 wall that set no cookie — is `unknown`.
     const classify = (
-        phase: 'apply' | 'refresh',
+        step: 'apply' | 'refresh',
         status: number,
         headers: Record<string, string>,
     ): AuthFailureResult => {
@@ -762,15 +765,15 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
             // Omit `retryAfter` entirely when the header is absent/unparseable —
             // `exactOptionalPropertyTypes` forbids setting an optional prop to `undefined`.
             return compact({
-                phase,
+                step,
                 status,
                 category: 'rate-limited',
                 retryAfter: parseRetryAfter(headers['retry-after']),
             });
         }
         if (refreshMatch(status))
-            return { phase, status, category: 'unauthenticated' };
-        return { phase, status, category: 'unknown' };
+            return { step, status, category: 'unauthenticated' };
+        return { step, status, category: 'unknown' };
     };
 
     // Announce one login attempt's outcome to the host. `onRefresh` fires for EVERY attempt; on a
@@ -803,7 +806,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
         ctx: AuthContext,
         key: string,
         principal: string | undefined,
-        phase: 'apply' | 'refresh',
+        step: 'apply' | 'refresh',
     ) => {
         ctx.emit('auth', 'login');
         // `__raw` runs the login once and returns its raw AdapterResponse (headers and all);
@@ -835,8 +838,8 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
             const status = typeof e.status === 'number' ? e.status : undefined;
             const failure: AuthFailureResult =
                 status === undefined
-                    ? { phase, category: 'network', error }
-                    : classify(phase, status, e.response?.headers ?? {});
+                    ? { step, category: 'network', error }
+                    : classify(step, status, e.response?.headers ?? {});
             await report(ctx, false, status, failure);
             // Re-throw so the caller sees the original error exactly as before these hooks existed.
             throw error;
@@ -868,7 +871,7 @@ export function cookieSession(opts: CookieSessionOptions): AuthStrategy {
             ctx,
             captured,
             status,
-            captured ? undefined : classify(phase, status, res.headers),
+            captured ? undefined : classify(step, status, res.headers),
         );
     };
 

@@ -2,6 +2,8 @@
 
 [![npm](https://img.shields.io/npm/v/@stitchapi/docs-mcp?color=2563EB&label=npm)](https://www.npmjs.com/package/@stitchapi/docs-mcp)
 
+<a href="https://glama.ai/mcp/servers/@rejifald/StitchAPI"><img width="380" height="200" src="https://glama.ai/mcp/servers/@rejifald/StitchAPI/badge" alt="StitchAPI Docs — MCP server listed on Glama" /></a>
+
 **StitchAPI documentation search, running entirely on your machine.** The docs
 corpus and its semantic search index ship bundled inside this package — no
 network call per query, no query or doc content ever sent anywhere. This is
@@ -31,10 +33,11 @@ package exists for the cases where that's not an option:
 
 - **No third-party network dependency.** Every `search_docs`/`get_doc` call
   runs against the bundled index and the bundled Markdown — nothing you
-  search for, and nothing in your docs, is ever transmitted. The only
-  network activity is a one-time download of the embedding model
-  (`Xenova/all-MiniLM-L6-v2`, via `transformers.js`) into a local OS cache
-  directory on first use; every call after that is fully offline.
+  search for, and nothing in your docs, is ever transmitted. With the
+  optional embedder installed (see below), the only network activity is a
+  one-time download of the model (`Xenova/all-MiniLM-L6-v2`, via
+  `transformers.js`) into a local OS cache directory on first use; every call
+  after that is fully offline. Without it, there is no network activity at all.
 - **Air-gapped / strict egress environments.** Since content is bundled at
   publish time (not fetched at runtime), the only network dependency at all
   is the ordinary `npm install` / `npx` resolution — the same as any npm
@@ -47,12 +50,32 @@ package exists for the cases where that's not an option:
 
 Identical contract to the hosted server:
 
-- **`search_docs({ query, limit? })`** — hybrid (BM25 + vector) search over
-  the docs. Returns the most relevant sections as `{ title, url, excerpt,
-score }` — never full pages.
+- **`search_docs({ query, limit? })`** — search over the docs. Returns the most
+  relevant sections as `{ title, url, excerpt, score }` — never full pages.
+  **Hybrid (BM25 + vector)** when the optional embedder is installed, **BM25**
+  otherwise; same tool, same result shape, same bundled index either way.
 - **`get_doc({ url?, slug? })`** — fetches a full page as Markdown, given
   either a `url` (as returned by `search_docs`) or a bare `slug` like
   `"guides/resilience/throttle"`.
+
+### Semantic search is opt-in
+
+The vector half needs `@huggingface/transformers`, which is declared as an
+**optional peer** rather than a dependency. A plain install therefore pulls
+nothing extra and reports **zero advisories** — that package's transitive tree
+carries several that no dependency range here can move (it pins
+`onnxruntime-node` exactly, which requires `adm-zip ^0.5.16`, disjoint from the
+patched `0.6.0`; and it wants `sharp ^0.34.5`, disjoint from `0.35.x`).
+
+Turn it on when you want semantic retrieval and accept that tree:
+
+```bash
+npm i @huggingface/transformers
+```
+
+Nothing else changes — the server detects it at first search and upgrades from
+BM25 to hybrid on its own. If the package is present but broken, that is
+surfaced as an error rather than silently downgraded.
 
 ## Keeping docs fresh
 
@@ -108,10 +131,14 @@ intentional.
 
 ## Dependency advisories
 
-This package has real runtime dependencies (core `stitchapi` has none), so
-`npm audit` has something to report here. Each open finding was triaged against
-the code that actually runs — a stdio server that embeds text locally and reads
-a docs index bundled at publish time — and none of them is reachable:
+**A default install reports none.** `npm i @stitchapi/docs-mcp` resolves clean —
+verified against a real consumer tree, not just this workspace's lockfile, since
+the repo's root `pnpm.overrides` would otherwise mask exactly these findings.
+
+The notes below apply **only if you opt into `@huggingface/transformers`**, which
+brings its own transitive tree. Each was triaged against the code that actually
+runs — a stdio server that embeds text locally and reads a docs index bundled at
+publish time — and none is reachable:
 
 - **`sharp`** (inherited libvips CVEs) — statically imported by
   `@huggingface/transformers`, so it loads, but this package only runs text
@@ -129,7 +156,8 @@ a docs index bundled at publish time — and none of them is reachable:
   the validator on `elicitation/create` responses. This server registers two
   tools and never elicits.
 - **`@hono/node-server`** — the SDK's HTTP transport only. This server speaks
-  stdio, so it is never loaded.
+  stdio, so it is never loaded. (Without the optional embedder in the tree it
+  now resolves to the patched 2.x anyway.)
 
 If you find a way to actually reach one of these, please report it — see
 [SECURITY.md](../../SECURITY.md).

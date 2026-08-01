@@ -65,7 +65,17 @@ function access<T>(value: MaybeAccessor<T>): T {
     return typeof value === 'function' ? (value as () => T)() : value;
 }
 
-export interface CreateStitchOptions<T> extends CreateStitchQueryOptions<T> {}
+/**
+ * Options accepted by {@link createStitch} / {@link createStitchStream}.
+ *
+ * The store's `streaming` flag is deliberately OMITTED: each primitive hard-sets it
+ * (`createStitch` → unary, `createStitchStream` → streaming), so passing it would be
+ * silently ignored — the type forbids it instead. Matches react/vue/angular (CONTRACT.md P16).
+ */
+export interface CreateStitchOptions<T> extends Omit<
+    CreateStitchQueryOptions<T>,
+    'streaming'
+> {}
 
 // ---------------------------------------------------------------------------
 // Shared driver

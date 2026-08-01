@@ -86,22 +86,22 @@ export function xhrAdapter(XHR?: XhrLikeCtor): Adapter {
                     onProgress(
                         e.lengthComputable
                             ? {
-                                  phase: 'upload',
+                                  direction: 'upload',
                                   loaded: e.loaded,
                                   total: e.total,
                               }
-                            : { phase: 'upload', loaded: e.loaded },
+                            : { direction: 'upload', loaded: e.loaded },
                     );
                 };
                 xhr.onprogress = (e) => {
                     onProgress(
                         e.lengthComputable
                             ? {
-                                  phase: 'download',
+                                  direction: 'download',
                                   loaded: e.loaded,
                                   total: e.total,
                               }
-                            : { phase: 'download', loaded: e.loaded },
+                            : { direction: 'download', loaded: e.loaded },
                     );
                 };
             }
@@ -150,7 +150,7 @@ export function xhrAdapter(XHR?: XhrLikeCtor): Adapter {
         });
     };
     // The one reason xhr exists over fetch: `xhr.upload` reports bytes SENT, so it is a built-in
-    // that can drive an upload progress bar. It also reports `phase: 'download'` progress via
+    // that can drive an upload progress bar. It also reports `direction: 'download'` progress via
     // `xhr.onprogress`. It is buffered-only — it rejects `stream`, so `supports` carries both
     // progress phases but not `'stream'`.
     xhrAdapterRequest.capabilities = {

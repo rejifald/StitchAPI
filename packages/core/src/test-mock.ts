@@ -5,7 +5,12 @@
 // runner or a browser. For deep transport semantics over a real socket the lib still uses the node
 // mock server internally; this is the published, isomorphic counterpart.
 import { streamOf } from './test-stream';
-import type { Adapter, AdapterRequest, AdapterResponse } from './types';
+import type {
+    Adapter,
+    AdapterRequest,
+    AdapterResponse,
+    AtLeastOne,
+} from './types';
 import { parseDuration } from './util';
 
 /** One canned response. Omitted fields default sensibly (`status` 200, empty headers). */
@@ -37,9 +42,14 @@ export interface MockCall {
     req: AdapterRequest;
 }
 
-/** A route's response: one fixed reply, a per-call sequence (last entry repeats), or a function. */
+/** A route's response: one fixed reply, a per-call sequence (last entry repeats), or a function.
+ *
+ *  The single-reply form is `AtLeastOne<MockResponse>`, so the opaque `respond: {}` is a compile
+ *  error (CONTRACT.md P20) — say `{ status: 200 }` if that is what you mean. A responder FUNCTION
+ *  may still return a bare `MockResponse` (computed, not authored), and a SEQUENCE entry stays
+ *  plain: inside an explicit list, a default-200 slot is a positional statement, not an opaque bag. */
 export type MockResponder =
-    | MockResponse
+    | AtLeastOne<MockResponse>
     | MockResponse[]
     | ((call: MockCall) => MockResponse | Promise<MockResponse>);
 

@@ -25,7 +25,7 @@ function setup(): {
     const input = new PassThrough();
     const output = new PassThrough();
     output.setEncoding('utf8');
-    const { close } = serveStdio({}, { input, output });
+    const { close } = serveStdio({}, { stdin: input, stdout: output });
     return { input, output, close };
 }
 

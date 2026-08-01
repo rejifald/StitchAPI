@@ -93,9 +93,9 @@ describe('toValidator: source attachment (ADR 0004)', () => {
     test('attaches the raw schema as a NON-enumerable `source`', () => {
         const zodLike = { safeParse: () => ({ success: true, data: 1 }) };
         const v = toValidator(zodLike)!;
-        expect(v.source).toBe(zodLike); // readable for cache fingerprinting
-        expect(Object.keys(v)).not.toContain('source'); // never enumerated
-        expect(Object.getOwnPropertyDescriptor(v, 'source')?.enumerable).toBe(
+        expect(v.schema).toBe(zodLike); // readable for cache fingerprinting
+        expect(Object.keys(v)).not.toContain('schema'); // never enumerated
+        expect(Object.getOwnPropertyDescriptor(v, 'schema')?.enumerable).toBe(
             false,
         );
     });

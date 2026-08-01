@@ -19,15 +19,20 @@ export interface Validator<T = unknown> {
      * fingerprint the output contract (ADR 0004): the wrapper itself hides the original
      * `~standard.vendor` the fingerprint strategy dispatches on. Non-enumerable, so it never lands
      * in `__config`, JSON, or trace payloads.
+     *
+     * Named `schema`, not `source`: `Inspection.source` is data PROVENANCE
+     * (`'live' | 'cache' | 'stream'`), and one word may not carry two concepts and two
+     * value-spaces across the surface (CONTRACT.md P1). Both are exported from the `stitchapi`
+     * root barrel, so the collision was reachable in a single import.
      */
-    readonly source?: unknown;
+    readonly schema?: unknown;
 }
 
 // Attach the raw schema to a wrapper non-enumerably, so the cache can fingerprint the output
 // contract (ADR 0004) without the schema leaking through enumerable copies into `__config`/traces.
-function withSource(validator: Validator, source: unknown): Validator {
-    return Object.defineProperty(validator, 'source', {
-        value: source,
+function withSchema(validator: Validator, schema: unknown): Validator {
+    return Object.defineProperty(validator, 'schema', {
+        value: schema,
         enumerable: false,
     });
 }
@@ -53,7 +58,7 @@ export function toValidator(schema: unknown): Validator | undefined {
     const zodLike = schema as { safeParse?: (v: unknown) => ZodResult };
     const { safeParse } = zodLike;
     if (typeof safeParse === 'function') {
-        return withSource(
+        return withSchema(
             {
                 async validate(value) {
                     const r = safeParse(value);
@@ -73,7 +78,7 @@ export function toValidator(schema: unknown): Validator | undefined {
 
     // Standard Schema
     if (isStandardSchema(schema)) {
-        return withSource(
+        return withSchema(
             {
                 async validate(value) {
                     const r = await schema['~standard'].validate(value);
@@ -100,7 +105,7 @@ export function toValidator(schema: unknown): Validator | undefined {
     // Plain predicate: (value: unknown) => boolean
     if (typeof schema === 'function') {
         const predicate = schema as (v: unknown) => boolean;
-        return withSource(
+        return withSchema(
             {
                 async validate(value) {
                     if (predicate(value)) return { ok: true, value };
