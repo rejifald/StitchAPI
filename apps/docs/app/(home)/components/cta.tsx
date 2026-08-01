@@ -1,5 +1,6 @@
 import { BrandBackdrop } from './brand-backdrop';
 import { PrimaryButton } from './primitives';
+import { StarButton } from './star-cta';
 
 import { gitConfig, npmUrl } from '@/lib/shared';
 
@@ -24,6 +25,7 @@ export function Cta() {
                         Start the quickstart
                         <ArrowRight className="size-4" />
                     </PrimaryButton>
+                    <StarButton />
                 </div>
             </div>
         </section>
