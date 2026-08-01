@@ -52,6 +52,12 @@ jobs:
             - run: pnpm check:format
             - run: pnpm check:lint
             - run: pnpm check:types
+            # The tsd assertion suite — inference expectations (`expectType`,
+            # `@ts-expect-error`) that `check:types` does NOT cover, because tsc only
+            # proves the code compiles, not that a stitch still INFERS the output type a
+            # consumer relies on. It ran on the pre-push hook but never in CI, so a push
+            # with `--no-verify` could land an inference regression unseen.
+            - run: pnpm check:types-d
             - run: pnpm test
             - run: pnpm check:exports
             # attw on every COMPANION too (core is covered by check:exports above). Uses core's

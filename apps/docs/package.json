@@ -8,7 +8,7 @@
         "dev": "pnpm run build:typed-deps && pnpm run build:sandbox && pnpm run build:media && next dev",
         "build": "pnpm run build:typed-deps && pnpm run build:sandbox && pnpm run build:media && node scripts/prebuild-search-index.mjs && next build",
         "start": "next start",
-        "check:types": "pnpm run build:typed-deps && fumadocs-mdx && next typegen && tsc --noEmit",
+        "check:types": "pnpm run build:typed-deps && next typegen && fumadocs-mdx && tsc --noEmit",
         "check:lint": "eslint .",
         "gen:docs": "node scripts/generate-skeleton.mjs",
         "gen:completions": "node scripts/gen-stitch-completions.mjs",
