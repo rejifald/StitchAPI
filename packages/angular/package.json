@@ -68,7 +68,7 @@
         "@angular/common": "^20.3.25",
         "@angular/compiler": "^20.3.25",
         "@angular/core": "^20.3.25",
-        "@angular/platform-browser": "^19.2.0",
+        "@angular/platform-browser": "^22.0.8",
         "@angular/platform-browser-dynamic": "^19.2.0",
         "@stitchapi/query-core": "workspace:*",
         "@types/node": "^22.10.0",
