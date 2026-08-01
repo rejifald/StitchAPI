@@ -3,7 +3,12 @@
 // compile error. The `AtLeastOne` narrowing forced the fold's default from a `= {}` parameter
 // default to a `?? {}` after the fold, so these assert the RESOLVED value at each spelling —
 // a narrowed type is not a changed runtime, and the no-argument path is the one that moved.
-import { resolveDelta, resolveError } from '../src/sse-emit';
+import {
+    deltaEvent,
+    deltaFrame,
+    resolveDelta,
+    resolveError,
+} from '../src/sse-emit';
 
 test('no argument still resolves to the empty frame (the default moved, the behaviour did not)', () => {
     expect(resolveDelta()).toEqual({});
@@ -43,4 +48,44 @@ test('the empty bag is rejected (compile-time, P20)', () => {
     // @ts-expect-error — same for the terminal error frame
     void resolveError({});
     expect(true).toBe(true);
+});
+
+// The two capabilities lifted out of @stitchapi/nest into the shared envelope (P16), so all six
+// hosts gained them. Asserted on core's own frame builder, because that is what the raw-writer
+// hosts (express/fastify/elysia/next) go through — and `deltaEvent` is what the structured
+// emitters (hono's writeSSE, nest's MessageEvent) call instead.
+describe('delta frames: index + function-form event', () => {
+    test('data receives the zero-based frame index', () => {
+        const delta = { data: (c: unknown, i: number) => `${String(c)}#${i}` };
+        expect(deltaFrame('a', 0, delta)).toContain('data: a#0');
+        expect(deltaFrame('b', 1, delta)).toContain('data: b#1');
+    });
+
+    test('a one-argument shaper still works — widening the signature broke nothing', () => {
+        const delta = { data: (c: unknown) => String(c).toUpperCase() };
+        expect(deltaFrame('a', 7, delta)).toContain('data: A');
+    });
+
+    test('event may be a function of the chunk, naming each frame', () => {
+        const delta = {
+            event: (c: unknown) => (c as { kind: string }).kind,
+            data: (c: unknown) => (c as { text: string }).text,
+        };
+        expect(deltaFrame({ kind: 'token', text: 'a' }, 0, delta)).toContain(
+            'event: token',
+        );
+        expect(deltaFrame({ kind: 'usage', text: 'b' }, 1, delta)).toContain(
+            'event: usage',
+        );
+    });
+
+    test('a fixed event string still labels every frame', () => {
+        expect(deltaFrame('a', 0, { event: 'tick' })).toContain('event: tick');
+    });
+
+    test('deltaEvent resolves both forms and passes undefined through', () => {
+        expect(deltaEvent('a', 0, {})).toBeUndefined();
+        expect(deltaEvent('a', 0, { event: 'tick' })).toBe('tick');
+        expect(deltaEvent('a', 3, { event: (_c, i) => `f${i}` })).toBe('f3');
+    });
 });
