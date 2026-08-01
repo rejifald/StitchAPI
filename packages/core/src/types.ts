@@ -22,7 +22,12 @@ import type { Validator } from './validator';
  * (`true`), never the opaque `{}` (CONTRACT.md P20).
  */
 export type AtLeastOne<T, K extends keyof T = keyof T> = {
-    [P in K]: Required<Pick<T, P>> & Partial<Omit<T, P>>;
+    // `-?` is load-bearing. This mapped type is HOMOMORPHIC (`P in K` where `K extends keyof T`),
+    // so without it the `?` of every source property is preserved — and since the envelopes this
+    // wraps are all-optional by construction, indexing `[K]` then yields `… | undefined`. The
+    // resulting type still rejects `{}`, so P20 held, but the stray `undefined` leaked into every
+    // consumer that narrowed one of these unions (it surfaced on `MockResponder`).
+    [P in K]-?: Required<Pick<T, P>> & Partial<Omit<T, P>>;
 }[K];
 
 export interface StitchInput {
