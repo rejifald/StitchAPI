@@ -24,7 +24,7 @@ import type { TraceSink } from 'stitchapi';
  *     bearer, apiKey, basic, oauth2,
  *     fetchAdapter, memoryStore, multiplex, toOtlpJson, + all types
  *   Node-only, runs SHIMMED here (with a RunNotice):
- *     keychain, env            → ./shims/node-surfaces  (demo values)
+ *     env                      → ./shims/node-surfaces  (demo values)
  *     cookieSession            → ./shims/node-surfaces  (in-memory jar)
  *     createTrace              → shimmed below          (JSONL is a no-op)
  *     otlpSink, otlpHttpExporter → ./shims/otlp-browser (no-op exporter, no egress)
@@ -67,7 +67,7 @@ export type {
 export type * from 'stitchapi';
 
 /* ---- Node-only surfaces, shimmed (emit a RunNotice) ---------------------- */
-export { keychain, env, cookieSession } from './shims/node-surfaces';
+export { env, cookieSession } from './shims/node-surfaces';
 export {
     otlpSink,
     otlpHttpExporter,

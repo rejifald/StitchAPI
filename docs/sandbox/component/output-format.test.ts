@@ -450,18 +450,18 @@ import assert from 'node:assert/strict';
     const notices: RunNotice[] = [
         {
             kind: 'shim',
-            surface: 'keychain',
-            message: 'keychain is simulated in the browser sandbox',
+            surface: 'env',
+            message: 'env is simulated in the browser sandbox',
         },
     ];
     const result = summarizeNotices(notices);
     assert.equal(result.length, 1, 'summarizeNotices: shim notice → one entry');
     assert.ok(
-        result[0].includes('`keychain` shimmed'),
+        result[0].includes('`env` shimmed'),
         'summarizeNotices: shim surface named',
     );
     assert.ok(
-        result[0].includes('keychain is simulated'),
+        result[0].includes('env is simulated'),
         'summarizeNotices: shim message included',
     );
 }
@@ -672,14 +672,14 @@ import assert from 'node:assert/strict';
         type: 'notice',
         notice: {
             kind: 'shim',
-            surface: 'keychain',
-            message: 'keychain is simulated in the browser sandbox',
+            surface: 'env',
+            message: 'env is simulated in the browser sandbox',
         },
     };
     const v5 = applyEvent(v4, noticeEvent);
     assert.equal(v5.notices.length, 1, 'A2 notice: one notice accumulated');
     assert.ok(
-        v5.notices[0].includes('`keychain` shimmed'),
+        v5.notices[0].includes('`env` shimmed'),
         'A2 notice: shim surface formatted',
     );
 

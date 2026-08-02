@@ -94,7 +94,7 @@ export interface RunError {
  */
 export interface RunNotice {
     kind: 'shim' | 'info';
-    /** The stitch surface this concerns, when applicable (e.g. 'keychain'). */
+    /** The stitch surface this concerns, when applicable (e.g. 'env'). */
     surface?: string;
     message: string;
 }
@@ -111,7 +111,7 @@ export interface RunResult {
     /** Structured stitch() calls for the rich output panel, if any. */
     trace?: StitchTraceEntry[];
     /**
-     * Non-fatal notices (e.g. "ran `keychain` shimmed"). Additive — ratified
+     * Non-fatal notices (e.g. "ran `env` shimmed"). Additive — ratified
      * C1/C2, Wave 0. Absent/empty when there's nothing to surface.
      */
     notices?: RunNotice[];

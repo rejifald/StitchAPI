@@ -8,7 +8,7 @@
  *   - `tier:'server'` AND `opts.server` present → delegate to the server runner.
  *   - `tier:'server'` AND NO `opts.server` (pre-Phase-3) → delegate to the BROWSER
  *     runner AND ensure a `{kind:'shim'}` RunNotice is surfaced for each Node-only
- *     surface, so the UI shows "ran `keychain` shimmed" (SANDBOX.md §3; SEC-46).
+ *     surface, so the UI shows "ran `env` shimmed" (SANDBOX.md §3; SEC-46).
  *     The browser runner already drains B1 shim notices; we only ADD a notice for a
  *     surface that was routed-but-not-already-noticed (no double-add).
  *   - `tier:'browser'` → delegate to the browser runner.

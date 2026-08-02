@@ -57,7 +57,7 @@ const passthroughTranspile = (async (code: string) => ({ js: code })) as never;
 
 /**
  * A minimal fake `WorkerEnv`. `stitchBuild` carries a couple of fake surfaces;
- * `drainNotices` returns whatever the fake `keychain` emitted this run (and is
+ * `drainNotices` returns whatever the fake `env` emitted this run (and is
  * reset per run, proving the drain-and-clear contract).
  */
 function makeFakeEnv(): WorkerEnv {
@@ -69,11 +69,11 @@ function makeFakeEnv(): WorkerEnv {
     return {
         stitchBuild: {
             stitch: (url: string) => Promise.resolve({ ok: true, url }),
-            keychain: (name: string) => {
+            env: (name: string) => {
                 pending.push({
                     kind: 'shim',
-                    surface: 'keychain',
-                    message: `running shimmed — \`keychain\` is simulated`,
+                    surface: 'env',
+                    message: `running shimmed — \`env\` is simulated`,
                 });
                 return `demo-${name}-secret`;
             },
@@ -92,7 +92,7 @@ function makeFakeEnv(): WorkerEnv {
 /**
  * A1 progress-emitting fake env. Its `stitch` simulates a streamed call: it
  * emits a completed `trace` then two stream `chunk` events (in order) via the
- * progress sink the worker body wires through `bindProgress`. `keychain` emits
+ * progress sink the worker body wires through `bindProgress`. `env` emits
  * a `notice` event AND buffers the same notice for the final-result drain, so
  * the test can prove the progressive `notice` reconciles with `RunResult.notices`.
  * The shapes mirror the frozen `RunEvent` union (runner.ts).
@@ -123,11 +123,11 @@ function makeProgressEnv(): WorkerEnv {
                 sink?.({ type: 'chunk', traceId, text: 'lo' });
                 return Promise.resolve({ ok: true, url, body: 'Hello' });
             },
-            keychain: (name: string) => {
+            env: (name: string) => {
                 const notice = {
                     kind: 'shim' as const,
-                    surface: 'keychain',
-                    message: `running shimmed — \`keychain\` is simulated`,
+                    surface: 'env',
+                    message: `running shimmed — \`env\` is simulated`,
                 };
                 pending.push(notice);
                 sink?.({ type: 'notice', notice });
@@ -215,7 +215,7 @@ parentPort.on('message', async (msg) => {
     process: { env: {}, platform: 'browser', versions: {} },
     crypto: { randomUUID: () => 'uuid-0000' },
     stitch: (url) => Promise.resolve({ ok: true, url }),
-    keychain: (name) => { notices.push({ kind: 'shim', surface: 'keychain', message: 'shimmed' }); return 'demo-' + name + '-secret'; },
+    env: (name) => { notices.push({ kind: 'shim', surface: 'env', message: 'shimmed' }); return 'demo-' + name + '-secret'; },
     window: undefined, self: undefined, globalThis: undefined, document: undefined, require: undefined,
   };
   const names = Object.keys(scope);
@@ -481,7 +481,7 @@ async function runTests(): Promise<void> {
             workerFactory: () => new InProcWorker(makeFakeEnv()),
         });
         const result = await runner.run({
-            code: `const s = keychain('GH_TOKEN'); console.log(s); return s;`,
+            code: `const s = env('GH_TOKEN'); console.log(s); return s;`,
         });
         assert(
             'SEC-33 demo value returned',
@@ -494,8 +494,8 @@ async function runTests(): Promise<void> {
             result.notices,
         );
         assert(
-            "SEC-33 notice surface === 'keychain', kind 'shim'",
-            result.notices?.[0]?.surface === 'keychain' &&
+            "SEC-33 notice surface === 'env', kind 'shim'",
+            result.notices?.[0]?.surface === 'env' &&
                 result.notices?.[0]?.kind === 'shim',
             result.notices,
         );
@@ -576,12 +576,12 @@ async function runTests(): Promise<void> {
             workerFactory: () => new InProcWorker(makeProgressEnv()),
         });
         const result = await runner.run({
-            // log → (stitch emits trace+2 chunks) → log → keychain emits notice.
+            // log → (stitch emits trace+2 chunks) → log → env emits notice.
             code:
                 `console.log('start');` +
                 `const r = await stitch('https://demo/x');` +
                 `console.log('mid');` +
-                `const s = keychain('GH_TOKEN');` +
+                `const s = env('GH_TOKEN');` +
                 `return r;`,
             onEvent: (e) => events.push(e),
         });
@@ -673,7 +673,7 @@ async function runTests(): Promise<void> {
             `console.log('start');` +
             `const r = await stitch('https://demo/x');` +
             `console.log('mid');` +
-            `const s = keychain('GH_TOKEN');` +
+            `const s = env('GH_TOKEN');` +
             `return r;`;
         const withEvents: RunEvent[] = [];
         const runnerA = makeBrowserWorkerRunner({

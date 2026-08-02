@@ -14,7 +14,7 @@
  * `define:process` build knob anymore — this value reaches the runtime by injection,
  * not by bundle-time inlining.
  *
- * Demo secret values for `env()`/`keychain()` are NOT injected here — the browser
+ * Demo secret values for `env()` are NOT injected here — the browser
  * entry overrides those surfaces with notice-emitting shims (node-surfaces.ts),
  * which is the documented browser policy (REQUIREMENTS §6).
  */

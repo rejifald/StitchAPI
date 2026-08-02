@@ -3,12 +3,11 @@
  *
  * These are the surfaces in NODE_ONLY_SURFACES (contracts/dispatch.ts) that CAN
  * still run shimmed in the browser (unlike cli/serve/mcp). The browser entry
- * re-exports THESE in place of core's `keychain`/`env`/`cookieSession`. Each emits
+ * re-exports THESE in place of core's `env`/`cookieSession`. Each emits
  * a `RunNotice { kind:'shim', surface, … }` (SANDBOX §3/§5.7) so R1/the UI can show
- * "ran `keychain` shimmed".
+ * "ran `env` shimmed".
  *
  * Policy (REQUIREMENTS §6, SANDBOX §3/§5.7):
- *   - keychain(name) → documented DEMO value (never touches a real keychain/fs).
  *   - env(name)      → documented DEMO value (never reads real env).
  *   - cookieSession  → core's pure-JS strategy is fine; the only Node bit is the
  *     `node:fs` co-import in auth.ts, already neutralised by the fs alias. The jar
@@ -32,21 +31,6 @@ type AuthStrategy = ReturnType<typeof coreCookieSession>;
  */
 function demoSecretFor(name: string): string {
     return `demo-${name}-secret`;
-}
-
-/**
- * Browser `keychain`: returns a documented demo value instead of reading the OS
- * keychain / `~/.stitch/secrets.json`. Emits a shim notice on first resolution.
- */
-export function keychain(name: string): () => string {
-    return () => {
-        emitShimNotice(
-            'keychain',
-            `keychain('${name}') is simulated in the browser sandbox — returning a demo value, ` +
-                `not a real secret. Use the server tier (or a proxy) for real keychain access.`,
-        );
-        return demoSecretFor(name);
-    };
 }
 
 /**
