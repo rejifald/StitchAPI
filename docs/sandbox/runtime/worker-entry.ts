@@ -66,7 +66,7 @@ export interface WorkerEnv {
      * The browser `stitch` build exports (B1 `stitch-browser.ts`), bound into
      * the snippet scope as `stitch` plus its named exports under a single
      * namespace object. Provided as a record so the worker can spread the names
-     * the snippet expects (`stitch`, `bearer`, `keychain`, …).
+     * the snippet expects (`stitch`, `bearer`, `env`, …).
      */
     stitchBuild: Record<string, unknown>;
     /**
@@ -317,7 +317,7 @@ export async function runSnippetInWorker(
     // can reach by identifier; everything else is whatever the worker bundle's
     // own (locked-down) global scope provides — never the host's.
     const scope: Record<string, unknown> = {
-        // The whole stitch build, name by name (stitch, bearer, keychain, …).
+        // The whole stitch build, name by name (stitch, bearer, env, …).
         ...env.stitchBuild,
         // Hard overrides — these win even if a same-named export existed.
         console,

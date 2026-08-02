@@ -9,10 +9,10 @@
  *
  * ─── The conservative contract (SEC-46..48) ────────────────────────────────────
  *   - A CLEAR reference to a Node-only surface (called identifier, imported binding
- *     from `stitchapi`, or a member access `x.keychain`) →
+ *     from `stitchapi`, or a member access `x.env`) →
  *     `tier:'server'` with the matched identifiers in `nodeOnlyHits`.
  *   - AMBIGUOUS / DYNAMIC access that cannot be statically resolved (computed member
- *     `core['key'+'chain']`, `eval`, a re-aliased import we cannot follow) →
+ *     `core['e'+'nv']`, `eval`, a re-aliased import we cannot follow) →
  *     `ambiguous:true` and the SAFE DEFAULT `tier:'browser'`. We never route code we
  *     cannot resolve to the isolate — over-shimming (a false positive) is acceptable;
  *     a false `server` route on unresolved code is the one unsafe direction.
@@ -168,9 +168,9 @@ function isNodeOnly(name: string): name is NodeOnlySurface {
 /**
  * Collect Node-only identifiers that are *clearly* referenced in the (de-strung)
  * source as one of:
- *   - a named import from a stitch module:  import { keychain } from 'stitchapi'
- *   - a called identifier:                  keychain(...)
- *   - a member access:                      core.keychain / x.env
+ *   - a named import from a stitch module:  import { env } from 'stitchapi'
+ *   - a called identifier:                  env(...)
+ *   - a member access:                      core.env / x.serve
  *   - a bare word boundary occurrence       (catch-all; only over-shims)
  */
 function collectHits(clean: string): string[] {
@@ -189,7 +189,7 @@ function collectHits(clean: string): string[] {
         const module = m[2];
         if (!STITCH_MODULES.has(module)) continue;
         for (const part of clause.split(',')) {
-            // handle `keychain as kc` — the imported (original) name is what matters.
+            // handle `env as e` — the imported (original) name is what matters.
             // Split on a single `\s+` and take the first token (the original name);
             // `/\s+as\s+/` would backtrack quadratically on a run of spaces with no `as`.
             const original = part.trim().split(/\s+/)[0];

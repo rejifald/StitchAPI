@@ -374,32 +374,29 @@ async function main(): Promise<void> {
         },
     );
 
-    // 15. dispatch routing: scanSurface on a keychain(...) snippet → server tier / browser-shim path
-    await check(
-        'scanSurface: keychain(...) snippet → tier:server (SEC-46)',
-        () => {
-            const code = `const val = keychain('MY_SECRET');`;
-            const scan = scanSurface(code);
-            assert(
-                scan.tier === 'server',
-                `Expected tier:server, got ${scan.tier}`,
-            );
-            assert(
-                scan.ambiguous === false,
-                `Expected ambiguous:false, got ${String(scan.ambiguous)}`,
-            );
-            assert(
-                scan.nodeOnlyHits.includes('keychain'),
-                `Expected keychain in nodeOnlyHits, got ${JSON.stringify(scan.nodeOnlyHits)}`,
-            );
-        },
-    );
+    // 15. dispatch routing: scanSurface on an env(...) snippet → server tier / browser-shim path
+    await check('scanSurface: env(...) snippet → tier:server (SEC-46)', () => {
+        const code = `const val = env('MY_SECRET');`;
+        const scan = scanSurface(code);
+        assert(
+            scan.tier === 'server',
+            `Expected tier:server, got ${scan.tier}`,
+        );
+        assert(
+            scan.ambiguous === false,
+            `Expected ambiguous:false, got ${String(scan.ambiguous)}`,
+        );
+        assert(
+            scan.nodeOnlyHits.includes('env'),
+            `Expected env in nodeOnlyHits, got ${JSON.stringify(scan.nodeOnlyHits)}`,
+        );
+    });
 
-    // 16. dispatch routing: ambiguous core['key'+'chain'] → ambiguous:true + browser
+    // 16. dispatch routing: ambiguous core['e'+'nv'] → ambiguous:true + browser
     await check(
-        "scanSurface: core['key'+'chain'] → ambiguous+browser (SEC-47)",
+        "scanSurface: core['e'+'nv'] → ambiguous+browser (SEC-47)",
         () => {
-            const code = `const k = core['key' + 'chain'];`;
+            const code = `const k = core['e' + 'nv'];`;
             const scan = scanSurface(code);
             assert(
                 scan.ambiguous === true,

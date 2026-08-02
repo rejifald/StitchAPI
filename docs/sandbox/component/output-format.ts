@@ -164,8 +164,8 @@ export function formatValue(value: unknown): string {
 /**
  * Turn `RunNotice[]` into human-readable strings for the notices strip.
  * Examples:
- *   { kind: 'shim', surface: 'keychain', message: '…' }
- *     → "ran `keychain` shimmed — keychain is simulated in the browser sandbox"
+ *   { kind: 'shim', surface: 'env', message: '…' }
+ *     → "ran `env` shimmed — env is simulated in the browser sandbox"
  *   { kind: 'info', message: '…' }
  *     → the raw message
  */

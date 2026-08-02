@@ -58,7 +58,6 @@ export interface DispatchOpts {
  * Frozen. `as const` makes it a readonly tuple of string literals.
  */
 export const NODE_ONLY_SURFACES = [
-    'keychain',
     'env',
     'cookieSession',
     'createTrace',

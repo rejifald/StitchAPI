@@ -108,17 +108,17 @@ check('each NODE_ONLY_SURFACES identifier → server + hit', () => {
 // Named import from a stitch module is detected.
 check('imported Node-only binding from stitchapi → server', () => {
     const scan = scanSurface(
-        `import { keychain } from 'stitchapi';\nawait keychain().get('k');`,
+        `import { env } from 'stitchapi';\nconst v = env('HOME')();`,
     );
     assert.equal(scan.tier, 'server');
-    assert.ok(scan.nodeOnlyHits.includes('keychain'));
+    assert.ok(scan.nodeOnlyHits.includes('env'));
 });
 
 // Member access on a core handle is detected.
-check('member access core.env → server', () => {
-    const scan = scanSurface(`const v = core.env('HOME');`);
+check('member access core.cookieSession → server', () => {
+    const scan = scanSurface(`const s = core.cookieSession({ login });`);
     assert.equal(scan.tier, 'server');
-    assert.ok(scan.nodeOnlyHits.includes('env'));
+    assert.ok(scan.nodeOnlyHits.includes('cookieSession'));
 });
 
 // Clean, browser-safe snippet → browser, no hits, not ambiguous.
@@ -133,8 +133,8 @@ check('clean fetch-only snippet → browser', () => {
 });
 
 // SEC-47: computed/dynamic access → ambiguous:true + browser safe default.
-check('computed access core["key"+"chain"] → ambiguous + browser', () => {
-    const scan = scanSurface(`const k = core['key' + 'chain'];`);
+check('computed access core["e"+"nv"] → ambiguous + browser', () => {
+    const scan = scanSurface(`const k = core['e' + 'nv'];`);
     assert.equal(scan.ambiguous, true);
     assert.equal(scan.tier, 'browser');
 });
@@ -144,13 +144,13 @@ check(
     'clear hit + ambiguity → reports hit but routes browser (precedence)',
     () => {
         const scan = scanSurface(
-            `import { keychain } from 'stitchapi';\n` +
-                `keychain();\nconst k = core['ot' + 'lpTrace'];`,
+            `import { env } from 'stitchapi';\n` +
+                `env();\nconst k = core['ot' + 'lpTrace'];`,
         );
         assert.equal(scan.ambiguous, true);
         assert.equal(scan.tier, 'browser', 'safe default governs the tier');
         assert.ok(
-            scan.nodeOnlyHits.includes('keychain'),
+            scan.nodeOnlyHits.includes('env'),
             'hits are still reported alongside ambiguity',
         );
     },
@@ -160,8 +160,8 @@ check(
 // browser. Exercise a spread of dynamic forms.
 check('SEC-47: ambiguous never routes to server', () => {
     const dynamicSnippets = [
-        `core['key'+'chain']()`,
-        `eval('keychain()')`,
+        `core['e'+'nv']()`,
+        `eval('env()')`,
         `new Function('return env')()`,
         `const m = require(someVar);`,
         `const d = await import(modPath);`,
@@ -178,7 +178,7 @@ check('SEC-47: ambiguous never routes to server', () => {
 // SEC-48: surface name inside a string/comment is NOT a hit (no false server).
 check('SEC-48: surface in string/comment is not a hit', () => {
     const scan = scanSurface(
-        `// keychain is mentioned here\nconst s = "use env for config";\nconsole.log('serve');`,
+        `// cookieSession is mentioned here\nconst s = "use env for config";\nconsole.log('serve');`,
     );
     assert.equal(scan.tier, 'browser');
     assert.deepEqual(scan.nodeOnlyHits, []);
@@ -213,7 +213,7 @@ check('server-tier snippet with server runner routes to server', async () => {
     const browser = makeFake('browser', () => okResult());
     const server = makeFake('server', () => okResult());
     const d = dispatchRunner({ browser, server });
-    await d.run({ code: `keychain().get('k');` });
+    await d.run({ code: `env('HOME')();` });
     assert.equal(server.calls.length, 1, 'server runner called');
     assert.equal(browser.calls.length, 0, 'browser runner not called');
 });
@@ -224,12 +224,12 @@ check(
     async () => {
         const browser = makeFake('browser', () => okResult());
         const d = dispatchRunner({ browser }); // no server
-        const res = await d.run({ code: `keychain().get('k');` });
+        const res = await d.run({ code: `env('HOME')();` });
         assert.equal(browser.calls.length, 1, 'ran on browser');
         const shim = (res.notices ?? []).find(
-            (n) => n.kind === 'shim' && n.surface === 'keychain',
+            (n) => n.kind === 'shim' && n.surface === 'env',
         );
-        assert.ok(shim, 'a shim notice for keychain is surfaced');
+        assert.ok(shim, 'a shim notice for env is surfaced');
     },
 );
 
@@ -242,21 +242,17 @@ check(
             okResult([
                 {
                     kind: 'shim',
-                    surface: 'keychain',
-                    message: 'ran keychain shimmed (from B1)',
+                    surface: 'env',
+                    message: 'ran env shimmed (from B1)',
                 },
             ]),
         );
         const d = dispatchRunner({ browser });
-        const res = await d.run({ code: `keychain();` });
-        const keychainNotices = (res.notices ?? []).filter(
-            (n) => n.surface === 'keychain',
+        const res = await d.run({ code: `env();` });
+        const envNotices = (res.notices ?? []).filter(
+            (n) => n.surface === 'env',
         );
-        assert.equal(
-            keychainNotices.length,
-            1,
-            'exactly one keychain shim notice',
-        );
+        assert.equal(envNotices.length, 1, 'exactly one env shim notice');
     },
 );
 

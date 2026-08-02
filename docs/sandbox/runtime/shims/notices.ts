@@ -2,7 +2,7 @@
  * Shim-notice collection channel — B1 (browser `stitch` build).
  *
  * When a Node-only surface runs shimmed in the browser, the runner (R1) must show
- * a "ran `keychain` shimmed" notice (SANDBOX §3, §5.7; runner contract `RunNotice`).
+ * a "ran `env` shimmed" notice (SANDBOX §3, §5.7; runner contract `RunNotice`).
  * The shimmed surfaces in stitch-browser.ts emit a `RunNotice { kind:'shim', … }`
  * here; the runner drains them with `drainNotices()` after a run and puts them on
  * `RunResult.notices`.
