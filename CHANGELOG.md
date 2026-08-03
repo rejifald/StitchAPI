@@ -11,6 +11,34 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The config guards now read the composed config, so `extends` counts.** `wire.multipart` and
+  `document`/`operationName` are gated on an enabler — a multipart body, the graphql surface — and
+  both guards previously inspected only the config LITERAL. A config that inherited its enabler
+  through `extends` was therefore rejected outright:
+
+    ```ts
+    const gqlBase = { kind: graphqlSurface, baseUrl };
+    stitch({ extends: [gqlBase], document: `query { me { id } }` }); // was a type error
+    ```
+
+    Both now walk the same layer list `InputOf` uses (`Layers`), so an enabler from any layer
+    counts. There is deliberately one flattener rather than a second copy — a private one would
+    drift on depth budget and fragment normalisation, and the guards would disagree with `InputOf`
+    about what a config is.
+
+    The scan is **existential** ("is the enabler set anywhere?") rather than last-wins. Resolving an
+    override chain at the type level is easy to get subtly wrong, and the two failure directions are
+    not symmetric: a false positive rejects working code loudly, a false negative merely fails to
+    catch something the compiler never caught before. Scanning existentially can only produce the
+    second.
+
+    Two limits are inherited from `Layers` and unchanged: an `extends` list widened to `Frag[]` (a
+    `const` binding without `as const`) and the P7 single-fragment spelling (`extends: frag`) both
+    read as empty, because the flattener destructures a tuple. `InputOf` has read `extends` that way
+    since #76. Both are pinned as tsd expectations.
+
 ### Changed
 
 - **`document` and `operationName` now require the graphql surface at compile time.** Both are

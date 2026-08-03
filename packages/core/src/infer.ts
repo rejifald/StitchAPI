@@ -145,8 +145,33 @@ type Flatten<
  * The full ordered layer list for a config `C` (the config itself last). `C` is fed through the
  * same `ExpandFrag` so its own `extends` is expanded ahead of it — identical to `flatten([config])`
  * at runtime. The result is base→child, so a left-to-right fold gives last-wins semantics.
+ *
+ * Exported so the config GUARDS in `types.ts` read the composed config rather than the literal —
+ * without them, a slot supplied through `extends` is invisible and a valid config is rejected.
+ * There is deliberately one flattener: a second copy would drift from this one's depth budget and
+ * `AsFrag` normalisation, and the guards would disagree with `InputOf` about what a config even is.
  */
-type Layers<C> = ExpandFrag<C, FragDepth>;
+export type Layers<C> = ExpandFrag<C, FragDepth>;
+
+/**
+ * True when ANY layer satisfies `Shape`. The guards ask two questions of a composed config — "is
+ * this slot set anywhere?" and "is its enabler set anywhere?" — and both are existential, so a
+ * left-to-right scan is enough; neither needs last-wins resolution.
+ *
+ * Existential rather than last-wins is a deliberate, documented bias. Resolving an override chain
+ * at the type level (a later layer setting `wire.body` back to `'json'`) is both hard and easy to
+ * get subtly wrong, and the two failure directions are not symmetric: a false POSITIVE rejects
+ * working code loudly, a false NEGATIVE merely fails to catch something the compiler never caught
+ * before. Scanning existentially can only ever produce the second.
+ */
+export type AnyLayer<
+    Ls extends readonly unknown[],
+    Shape,
+> = Ls extends readonly [infer H, ...infer T]
+    ? [H] extends [Shape]
+        ? true
+        : AnyLayer<T, Shape>
+    : false;
 
 /**
  * Fold the layer list to the merged `output` slot: the LAST layer that declares `output` wins the

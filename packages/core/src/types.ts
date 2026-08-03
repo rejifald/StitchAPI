@@ -6,8 +6,10 @@ import type {
     ResolvedNormalizations,
 } from './config-anatomy';
 import type {
+    AnyLayer,
     Args,
     InputOf,
+    Layers,
     RelaxKeys,
     ResolveOutput,
     SchemaLike,
@@ -211,18 +213,32 @@ export interface ConfigError<Message extends string> {
  * has no options at all, and `form` has none of its own, since array serialisation
  * ({@link WireOptions.array}) is shared with the query string — so a three-arm union would carry
  * two empty arms and duplicate a query concern.
+ *
+ * Reads the COMPOSED config via {@link Layers}, so an enabler inherited through `extends` counts —
+ * `stitch({ extends: [{ wire: { body: 'multipart' } }], wire: { multipart: 'dot' } })` is legal.
+ *
+ * RESIDUAL LIMITS, shared with {@link GraphqlOnlyOnGraphqlSurface}:
+ * - Fail-open: the error is surfaced by intersecting onto the config LITERAL, so a violation
+ *   living entirely in a fragment — the offending slot in one layer, no enabler in any — is not
+ *   reported. The literal-level case, which is the one people write, still errors precisely.
+ * - Fail-open: a fragment typed as `Partial<StitchConfig>` rather than inferred from its literal
+ *   has optional properties, which satisfy neither probe, so it reads as supplying nothing.
+ * - Fail-CLOSED, and inherited from {@link Layers} rather than added here: the flattener
+ *   destructures a tuple, so an `extends` list TypeScript widened to `Frag[]` (what a `const`
+ *   binding does without `as const`) reads as empty, as does the P7 single-fragment spelling
+ *   (`extends: frag`). `InputOf` has read `extends` the same way since #76. Widening it is a
+ *   change to call-argument inference for every consumer, not a guard change.
  */
-export type MultipartOnlyOnMultipartBody<C> = C extends {
-    wire: { multipart: unknown };
-}
-    ? C extends { wire: { body: 'multipart' } }
-        ? unknown
-        : {
-              wire?: {
-                  multipart?: ConfigError<'`wire.multipart` requires `wire.body: "multipart"` — it is ignored on a json or form body'>;
-              };
-          }
-    : unknown;
+export type MultipartOnlyOnMultipartBody<C> =
+    AnyLayer<Layers<C>, { wire: { multipart: unknown } }> extends true
+        ? AnyLayer<Layers<C>, { wire: { body: 'multipart' } }> extends true
+            ? unknown
+            : {
+                  wire?: {
+                      multipart?: ConfigError<'`wire.multipart` requires `wire.body: "multipart"` — it is ignored on a json or form body'>;
+                  };
+              }
+        : unknown;
 /**
  * Compile-time guard: `document` and `operationName` are read ONLY by the graphql surface's
  * `buildRequest` (`surface.ts`), so authoring either without selecting that surface is silently
@@ -233,22 +249,24 @@ export type MultipartOnlyOnMultipartBody<C> = C extends {
  * Applied to `stitch` / `Seam.stitch` only. `graphql()` and `Seam.graphql()` select the surface
  * themselves and REQUIRE `document`, so the guard would be wrong there.
  *
- * KNOWN LIMIT — shared with {@link MultipartOnlyOnMultipartBody}: the check reads the config
- * LITERAL, not the composed result, so a surface inherited through `extends` is invisible to it.
- * `stitch({ extends: [gqlBase], document })` is rejected even though `gqlBase` supplies `kind`.
- * Spell the surface on the layer that carries the document, or use `graphql()`. Widening this to
- * walk `extends` means duplicating `InputOf`'s fragment flattening in a second place; the
- * false-positive is loud and has an obvious fix, so it is left stated rather than solved.
+ * Reads the COMPOSED config via {@link Layers}, so a surface inherited through `extends` counts —
+ * `stitch({ extends: [gqlBase], document })` is legal when `gqlBase` supplies `kind`.
  */
-export type GraphqlOnlyOnGraphqlSurface<C> = C extends
-    { document: unknown } | { operationName: unknown }
-    ? C extends { kind: { id: 'graphql' } }
+export type GraphqlOnlyOnGraphqlSurface<C> =
+    AnyLayer<Layers<C>, { document: unknown }> extends true
+        ? GraphqlSurfaceSomewhere<C>
+        : AnyLayer<Layers<C>, { operationName: unknown }> extends true
+          ? GraphqlSurfaceSomewhere<C>
+          : unknown;
+
+/** Shared tail of {@link GraphqlOnlyOnGraphqlSurface}: allow iff some layer selects the surface. */
+type GraphqlSurfaceSomewhere<C> =
+    AnyLayer<Layers<C>, { kind: { id: 'graphql' } }> extends true
         ? unknown
         : {
               document?: ConfigError<'`document` requires the graphql surface — use `graphql({ … })`, or set `kind: graphqlSurface`. It is ignored on every other surface'>;
               operationName?: ConfigError<'`operationName` requires the graphql surface — use `graphql({ … })`, or set `kind: graphqlSurface`. It is ignored on every other surface'>;
-          }
-    : unknown;
+          };
 /**
  * How the `stream` surface decodes each chunk of a live response body (ADR 0005 Decision 5).
  * - `'bytes'` (default) — raw `Uint8Array` chunks, lossless, no encoding assumed.
