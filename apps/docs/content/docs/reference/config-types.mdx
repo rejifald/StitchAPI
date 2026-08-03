@@ -14,9 +14,21 @@ import type { StitchConfig } from 'stitchapi';
 
 <AutoTypeTable path="../../packages/core/src/types.ts" name="StitchConfig" />
 
-### arrayFormat
+### wire
 
-Controls how arrays are serialised in the query string. The default (`'indices'`) matches `qs` behaviour.
+Every wire-format choice lives in one envelope, grouped by category rather than by
+request/response phase:
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="WireOptions" />
+
+No single field dominates, so `wire` takes no scalar shorthand — like `input`, it is
+always the object form, and the opaque `wire: {}` is rejected.
+
+#### wire.array
+
+Controls how arrays are serialised on **both** `application/x-www-form-urlencoded`
+surfaces — the query string and a `wire: { body: 'form' }` request body. They run the same
+walker, so one setting governs both. The default (`'indices'`) matches `qs` behaviour.
 
 | Value                 | Wire format                 |
 | --------------------- | --------------------------- |
@@ -26,10 +38,38 @@ Controls how arrays are serialised in the query string. The default (`'indices'`
 
 ```ts
 // repeat — Laravel, Rails, and many PHP frameworks expect this
-const getUsers = stitch({ baseUrl, path: '/users', arrayFormat: 'repeat' });
+const getUsers = stitch({ baseUrl, path: '/users', wire: { array: 'repeat' } });
 await getUsers({ query: { ids: [1, 2] } });
 // → GET /users?ids=1&ids=2
+
+// the same setting shapes a form body
+const search = stitch({
+    method: 'POST',
+    baseUrl,
+    path: '/search',
+    wire: { body: 'form', array: 'repeat' },
+});
+await search({ body: { ids: [1, 2] } });
+// → POST /search   ids=1&ids=2
 ```
+
+Nested objects always expand `qs`-style to `a[b]=c` on both surfaces — `wire.array`
+selects the array axis only:
+
+```ts
+await search({ body: { page: { size: 10 } } });
+// → POST /search   page%5Bsize%5D=10
+```
+
+<Callout type="info">
+    The two surfaces differ in one detail: a space is `%20` in a query string
+    and `+` in a form body. Both are valid urlencoded and both round-trip.
+</Callout>
+
+A `wire: { body: 'multipart' }` body has its own grammar and is **not** governed by
+`wire.array` — use `wire.multipart`'s `nesting` instead. Setting
+`multipart` without `wire: { body: 'multipart' }` is a type error, since the slot would
+otherwise be silently ignored.
 
 ## Option shapes
 

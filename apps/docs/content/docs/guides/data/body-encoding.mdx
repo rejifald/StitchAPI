@@ -4,7 +4,7 @@ description: 'Send request bodies as json, form, or multipart.'
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
-Set `bodyType` when an API expects a request body in a particular wire format —
+Set `wire.body` when an API expects a request body in a particular wire format —
 JSON, URL-encoded form, or multipart form data — and you want the stitch to
 serialize the `body` you pass at call time into that shape.
 
@@ -17,7 +17,7 @@ const submit = stitch({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/submit',
-    bodyType: 'form',
+    wire: { body: 'form' },
 });
 
 await submit({ body: { name: 'mango', qty: 3 } });
@@ -25,20 +25,38 @@ await submit({ body: { name: 'mango', qty: 3 } });
 
 The body travels in the call input, not the config: `submit` encodes
 `{ name: 'mango', qty: 3 }` as an `application/x-www-form-urlencoded` body
-because `bodyType` is `'form'`.
+because `wire.body` is `'form'`.
 
 ## Options
 
-`bodyType` chooses how the call-time `body` is encoded (default `'json'`):
+`wire.body` chooses how the call-time `body` is encoded (default `'json'`):
 
 - `json` — a JSON body with `Content-Type: application/json`. The default;
   reach for it for ordinary REST payloads.
 - `form` — a URL-encoded `application/x-www-form-urlencoded` body, for APIs
   that expect classic HTML-form fields (login forms, OAuth token exchanges).
+  Nested objects and arrays serialize exactly as they do in a query string —
+  same walker, same [`wire.array`](/docs/reference/config-types#wirearray):
+
+    ```ts
+    await submit({ body: { ids: [1, 2], page: { size: 10 } } });
+    // → ids%5B0%5D=1&ids%5B1%5D=2&page%5Bsize%5D=10
+    ```
+
 - `multipart` — multipart form data, for file uploads and mixed
   field-plus-binary payloads; the boundary is set for you. Nested
   objects/arrays serialize with bracket nesting by default; `multipart: 'dot'`
   (≡ `multipart: { nesting: 'dot' }`) switches to dot-path field names.
+  Multipart has its own grammar, so `wire.array` does not apply to it — and
+  `multipart` may only be set alongside `wire: { body: 'multipart' }`, since the slot
+  is ignored on any other body.
+
+<Callout type="info">
+    Body encoding is **not** a surface — it composes with one. `wire.body` says
+    how the request payload is framed; a [surface](/docs/reference/surfaces)
+    says what kind of interaction the call is (REST, GraphQL, SSE, a stream, a
+    download). The two are separate axes, so they are separate fields.
+</Callout>
 
 The body itself always comes from the call input (`await submit({ body })`),
 never from the config — so one stitch encodes whatever you pass it. See
@@ -47,7 +65,7 @@ never from the config — so one stitch encodes whatever you pass it. See
 <Callout type="warn">
     **Anti-pattern:** don't hand-serialize the body before you pass it —
     stringifying the value yourself and handing the stitch a pre-encoded string
-    double-encodes it, because `bodyType` already serializes the value into the
+    double-encodes it, because `wire.body` already serializes the value into the
     wire format you chose; pass the plain object and let the stitch encode it
     once. See [stitch()](/docs/guides/authoring/stitch).
 </Callout>

@@ -161,6 +161,18 @@ const KB = 1024;
 // moves ~25 → ~23 kB. The new third scenario budgets the subpath itself: pay for the whole auth
 // surface only if you `export *` from it; a real call site imports one strategy (`bearer` + `env`
 // is 0.39 KB gzip, `oauth2` + `env` 3.22 KB).
+// `import { stitch }` 20.25→20.30 KB for the shared urlencoded walker. Measured 20.27 against a
+// `main` at 20.23 — the slice is +0.04, and `main` had only 0.02 KB of headroom left, so this
+// overflows by 0.02. The bytes are ADR 0005 Decision 6 finally applied to the `form` arm: the query
+// string and a `wire.body: 'form'` body now share ONE flattener (`flattenParams`), where the form
+// arm previously did its own top-level `String(v)` pass and turned a nested object into
+// `[object Object]` on the wire. It cannot move behind a subpath — `buildQuery` runs on every
+// request the engine assembles, and the nested `wire.multipart` fold runs in `compose`, which every
+// stitch runs. The alternative is not "smaller" but "a form body silently corrupts nested data".
+// `buildQuery` was rewritten to concatenate instead of map+join to pay part of it back (−0.02 KB
+// minified, 0.00 gzip). Whole entry is unchanged at 22.86 (0.04 left) and needs no bump. This is a
+// MINIMUM step (0.03 KB headroom), matching #477/#524's tight ceilings rather than restoring the
+// ~0.2 KB this gate usually holds.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
@@ -173,7 +185,7 @@ const SCENARIOS = [
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 20.25 * KB,
+        budget: 20.3 * KB,
         advertised: true,
     },
     {

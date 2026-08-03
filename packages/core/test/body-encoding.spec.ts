@@ -31,7 +31,7 @@ describe('Body encoding', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/login',
-            bodyType: 'form',
+            wire: { body: 'form' },
         });
 
         await login({ body: { username: 'admin', password: 'p@ss & word' } });
@@ -51,7 +51,7 @@ describe('Body encoding', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/upload',
-            bodyType: 'multipart',
+            wire: { body: 'multipart' },
         });
 
         const bytes = new Uint8Array([1, 2, 3, 4]);
@@ -111,7 +111,7 @@ describe('cookieSession content-aware refresh (soft wall)', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/auth',
-            bodyType: 'form',
+            wire: { body: 'form' },
         });
         const data = stitch({
             baseUrl: server.url,

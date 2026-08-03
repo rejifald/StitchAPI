@@ -17,9 +17,9 @@ import type {
     Hooks,
     IdempotencyOptions,
     InputSchemas,
-    MultipartOptions,
     ResolvedCacheOptions,
     ResolvedStreamOptions,
+    ResolvedWireOptions,
     RetryOptions,
     SseOptions,
     StitchConfig,
@@ -99,11 +99,13 @@ export interface StitchConfigAnatomy {
     name: object;
     kind: { dropped: 'redact'; project: true };
     method: object;
-    bodyType: object;
-    multipart: { shorthand: 'nesting' };
+    // One slot for every wire-format choice (body encoding, response decoding, urlencoded array
+    // serialisation, multipart nesting). `wire.multipart`'s scalar shorthand folds NESTED, like
+    // `retry.backoff` — not at the top level — so `wire` declares no `shorthand` of its own but is
+    // still `normalized`, and `ResolvedWireOptions` re-declares it with `multipart` in object form.
+    wire: { normalized: true };
     stream: { shorthand: 'decode' };
     sse: { toggle: true };
-    responseType: object;
     url: { dropped: 'redact-if-fn' };
     baseUrl: { dropped: 'redact-if-fn' };
     path: object;
@@ -124,7 +126,6 @@ export interface StitchConfigAnatomy {
     idempotency: { toggle: true; fns: true };
     cache: { shorthand: 'ttl'; fns: true; stage: 8; policy: true };
     sensitive: object;
-    arrayFormat: object;
     hooks: { dropped: 'redact'; normalized: true };
     extends: { dropped: 'compose' };
     adapter: { dropped: 'redact' };
@@ -236,7 +237,7 @@ export interface ResolvedNormalizations {
     throttle?: ThrottleOptions;
     circuit?: CircuitOptions;
     stream?: ResolvedStreamOptions;
-    multipart?: MultipartOptions;
+    wire?: ResolvedWireOptions;
     sse?: SseOptions;
     hooks?: Hooks;
     input?: InputSchemas;

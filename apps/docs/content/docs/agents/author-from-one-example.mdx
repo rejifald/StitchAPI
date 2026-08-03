@@ -102,9 +102,9 @@ The same mapping rules drive both `stitch from-curl` and a hand-authored stitch:
   credential is replaced with an `env('NAME')` placeholder and never written into
   the source. Other headers become static `headers` (transport noise like
   `host`, `cookie`, and `content-length` is dropped).
-- **A request body → `bodyType` + an example.** A JSON `-d` payload becomes
-  `bodyType: 'json'`, a form one (`k=v&…` or `--data-urlencode`) becomes
-  `bodyType: 'form'`, and a body implies `POST` unless `-G` folds the data into
+- **A request body → `wire.body` + an example.** A JSON `-d` payload becomes
+  `wire: { body: 'json' }`, a form one (`k=v&…` or `--data-urlencode`) becomes
+  `wire: { body: 'form' }`, and a body implies `POST` unless `-G` folds the data into
   the query.
 - **An example response → an `output` schema.** `from-curl` emits none by
   default (one example cannot prove the shape); add one with `--zod --response`,

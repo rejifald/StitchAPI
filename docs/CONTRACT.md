@@ -600,13 +600,58 @@ _Carve-outs:_
   6749's `clientId`/`clientSecret`/`clientAuth`, the XHR `responseType`/`responseText` pair (and
   its React Native mirror), RTK Query's lifecycle names (`cacheDataLoaded`/`cacheEntryRemoved`),
   and Orama's own index-document schema (`DocSearchHit.pageUrl`/`pageTitle`) — all exempt.
+
+    **The exemption binds the layer that meets the standard, not every layer above it**
+    ([P22](#p22--a-standards-interop-contract-uses-the-standards-field-names): follow the standard
+    that governs **each** layer, and convert at the edge). Where a mirror field also appears on an
+    authoring surface, only the boundary contract is pinned; the authoring surface is house
+    vocabulary and **MAY** fold, provided the engine converts before the value reaches the
+    boundary.
+
+    _Applied (2026-08-03):_ `AdapterRequest.responseType` is the XHR/fetch-facing contract and
+    keeps the XHR spelling permanently — an `xhr` adapter assigns it straight through. The
+    authoring slot folded into the `wire` envelope as **`wire.response`**, and the engine maps it
+    onto `AdapterRequest.responseType` when it builds the request. Note the protected **pair** is
+    XHR's `responseType`/`responseText`: StitchAPI has no `responseText`, so the fold this
+    carve-out guards against (`response: { type, text }`) was never live here. What the carve-out
+    still forbids is renaming the **transport** field, which this change does not do.
+
 - **(b) A single-field group collapses per P12 instead of nesting.** When only **one** member of
   the pair is a genuine option and the other is a discriminator/tag describing it (not an
   independent knob), the pair **stays flat** — nesting would turn a scalar-plus-tag into a
-  needless envelope for zero added configurability.
+  needless envelope for zero added configurability. **A flat pair kept under (b) MUST make the
+  dead combinations unrepresentable**, via the mutual-exclusion shape R8 already recognises
+  (`X?: never`, or a `ConfigError<…>` brand where a bare `never` would collapse the whole config
+  and report every unrelated field). Staying flat is a licence to skip the envelope, never a
+  licence to let a tag/option pairing typecheck when the option is inert.
 - **(c) Conventional prefixes are not groups:** `on*` handlers, `is*` guards, and a percentile
   family (`p50`/`p95`/`p99`) share a prefix by naming convention, not by being facets of one
   capability.
+
+_Canonical case for (b) (2026-08-03):_ `WireOptions.body` + `multipart`. The three body encodings
+are **not symmetric**, so no per-encoding sub-envelope is licensed inside `wire`: `json` has no
+options at all, `multipart`'s `nesting` is genuinely private to it, and `form` has none of its own
+— array serialisation is `wire.array`, **shared with the query string**, because both emit
+`application/x-www-form-urlencoded` and run one walker. A three-arm union under `wire.body` would
+therefore carry two empty arms and duplicate a query-string concern. The pair stays flat _within_
+the envelope, and `MultipartOnlyOnMultipartBody` makes `wire.multipart` unsatisfiable unless
+`wire.body` is `'multipart'` — so `wire: { body: 'json', multipart: 'dot' }` is a compile error
+rather than silently inert config.
+
+Applied on every surface that authors a stitch (`stitch`, `graphql`, `Seam.stitch`,
+`Seam.graphql` — both the inferring and the fallback overload, or a rejected config falls through
+to the loose one and typechecks after all). **`seam()` itself is exempt and stays non-generic:**
+capturing its argument type would suppress excess-property checking, which is the only thing
+keeping `input`/`output` off a seam fragment (`SeamConfig` Omits both). That structural guarantee
+outranks catching an inert `multipart` on the fragment, which every member surface still catches.
+
+_Why `wire` is an envelope and `request`/`response` would not be_ ([P25](#p25--one-canonical-size-form)'s
+"an envelope is licensed where it names an unambiguous subject"): `wire` groups by **category** —
+every member is a wire-format choice — so the name is exhaustive over its contents. A phase
+envelope would not be: `request` would hold two of the ~15 request-shaping slots while `headers`,
+`method`, `body`, and `params` stayed outside, so the name would promise more than it holds.
+Grouping by category also gives `wire.array` a truthful home, which no body-scoped container
+could: it governs the query string and the form body alike.
 
 _Canonical case (converted 2026-07-08):_ `OAuth2Options.refresh` and
 `CookieSessionOptions.refresh` fold what were `refreshOn`+`refreshSkew` and `refreshOn`+

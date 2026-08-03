@@ -7,7 +7,7 @@ tags: [non-json, csv, html, responsetype, typescript]
 prerequisites: ['/docs/concepts/the-stitch']
 ---
 
-The report endpoint returns CSV. The scraping target returns HTML. The files service hands back a PDF or a zip. Your client was built for JSON, so each of these becomes a one-off: a manual fetch, a `res.text()` here and a `res.arrayBuffer()` there, a parser bolted on, and a return type of `any` that lies to everyone downstream. A stitch reads those bodies too — `responseType` picks how the body is decoded, `transform` reshapes it, and an `output` schema validates the shape you actually use.
+The report endpoint returns CSV. The scraping target returns HTML. The files service hands back a PDF or a zip. Your client was built for JSON, so each of these becomes a one-off: a manual fetch, a `res.text()` here and a `res.arrayBuffer()` there, a parser bolted on, and a return type of `any` that lies to everyone downstream. A stitch reads those bodies too — `wire.response` picks how the body is decoded, `transform` reshapes it, and an `output` schema validates the shape you actually use.
 
 ## The honest before
 
@@ -46,7 +46,7 @@ declare function parseCsv(raw: string): unknown; // your CSV parser
 // ---cut---
 const getRevenueReport = stitch({
     url: 'https://api.example.com/reports/{month}.csv',
-    responseType: 'text', // decode the body as a string, not guessed JSON
+    wire: { response: 'text' }, // decode the body as a string, not guessed JSON
     transform: (raw) => parseCsv(raw as string), // your CSV parser
     output: z.array(z.object({ sku: z.string(), revenue: z.number() })),
     auth: bearer(env('API_TOKEN')),
@@ -57,18 +57,18 @@ const rows = await getRevenueReport({ params: { month: '2026-06' } });
 // rows: { sku: string; revenue: number }[]
 ```
 
-`responseType: 'text'` forces the body to be decoded as a string instead of guessed by content-type. `transform` runs your CSV parser over that raw string. `output` validates the parsed rows, so `rows` is fully typed and coerced — `revenue` is a number, not the string the CSV held. `auth` resolves the token at call time, so the caller never holds it. `retry: 3` makes a transient 503 the stitch's problem, not yours. The next CSV endpoint is another five-line declaration, not another copy of the hand-rolled fetch-and-parse block.
+`wire: { response: 'text' }` forces the body to be decoded as a string instead of guessed by content-type. `transform` runs your CSV parser over that raw string. `output` validates the parsed rows, so `rows` is fully typed and coerced — `revenue` is a number, not the string the CSV held. `auth` resolves the token at call time, so the caller never holds it. `retry: 3` makes a transient 503 the stitch's problem, not yours. The next CSV endpoint is another five-line declaration, not another copy of the hand-rolled fetch-and-parse block.
 
-## responseType: pick the decode, or let it pick
+## wire.response: pick the decode, or let it pick
 
-`responseType` is one of four values, and the default is auto:
+`wire.response` is one of four values, and the default is auto:
 
 - **default (omitted)** — JSON when the content-type says so, else text. This is the right choice for ordinary JSON APIs; you never set it.
 - **`'text'`** — force a string. Use it for HTML, CSV, or plain text, where content-type sniffing might guess wrong or the parser you want runs on the raw string.
 - **`'arrayBuffer'`** — force bytes as an `ArrayBuffer`. Use it for binary: an image, a PDF, a zip.
 - **`'blob'`** — force a `Blob`, the better shape when you hand bytes to a browser API.
 
-For binary you set `responseType` and skip `transform` if the bytes are the deliverable:
+For binary you set `wire.response` and skip `transform` if the bytes are the deliverable:
 
 ```ts twoslash
 import { stitch } from 'stitchapi';
@@ -77,7 +77,7 @@ import { bearer, env } from 'stitchapi/auth';
 // ---cut---
 const invoicePdf = stitch({
     url: 'https://api.example.com/invoices/{id}.pdf',
-    responseType: 'arrayBuffer',
+    wire: { response: 'arrayBuffer' },
     auth: bearer(env('API_TOKEN')),
 });
 
@@ -85,9 +85,9 @@ const bytes = await invoicePdf({ params: { id: 'inv_2026_06' } });
 // static type: unknown (no output schema); an ArrayBuffer at runtime
 ```
 
-Output inference reads the `output` schema, never `responseType`, so a stitch with no `output` is `Stitch<unknown>` — the value is an `ArrayBuffer` at runtime, but the type system does not know that. Add an `output` validator or an explicit generic when you want the static type to say `ArrayBuffer`.
+Output inference reads the `output` schema, never `wire.response`, so a stitch with no `output` is `Stitch<unknown>` — the value is an `ArrayBuffer` at runtime, but the type system does not know that. Add an `output` validator or an explicit generic when you want the static type to say `ArrayBuffer`.
 
-Setting `responseType` is the difference between a body the engine guessed at and a body decoded the way the endpoint actually answers.
+Setting `wire.response` is the difference between a body the engine guessed at and a body decoded the way the endpoint actually answers.
 
 ## transform: reshape the raw body before validation
 
@@ -106,7 +106,7 @@ declare function scrapeArticle(html: string): {
 // ---cut---
 const fetchArticle = stitch({
     url: 'https://example.com/articles/{slug}',
-    responseType: 'text', // an HTML string
+    wire: { response: 'text' }, // an HTML string
     transform: (html) => scrapeArticle(html as string), // your scraper -> object
     output: z.object({
         title: z.string(),
@@ -121,7 +121,7 @@ const article = await fetchArticle({ params: { slug: 'stitching-apis' } });
 
 It is the seam where you turn a non-JSON payload into the structured value your code wants — parse a CSV string into rows, scrape an HTML string into fields, decode bytes into a record. Pair it with `output` and the transformed shape is what gets validated and typed, not the raw string.
 
-The endpoint returns HTML. `responseType: 'text'` hands `transform` a string, your scraper turns it into an object, and `output` proves that object has the three fields you claimed. Downstream code sees a typed article, never a tag soup.
+The endpoint returns HTML. `wire: { response: 'text' }` hands `transform` a string, your scraper turns it into an object, and `output` proves that object has the three fields you claimed. Downstream code sees a typed article, never a tag soup.
 
 ## Parsing is bring-your-own — on purpose
 
@@ -140,7 +140,7 @@ const td = new Turndown();
 
 const fetchAsMarkdown = stitch({
     url: 'https://example.com/docs/{slug}',
-    responseType: 'text',
+    wire: { response: 'text' },
     transform: (html) => td.turndown(html as string),
     output: z.string(),
 });
@@ -154,7 +154,7 @@ The left column is glue you rewrite per endpoint. The right column is configurat
 
 | Axis          | By hand                                           | A stitch                                |
 | ------------- | ------------------------------------------------- | --------------------------------------- |
-| Decode        | `res.text()` / `res.arrayBuffer()` picked by hand | `responseType` names the decode         |
+| Decode        | `res.text()` / `res.arrayBuffer()` picked by hand | `wire.response` names the decode        |
 | Reshape       | parser called inline, ad hoc                      | `transform` is the declared seam        |
 | Return type   | whatever the parser returns (`any`)               | `output` validates and types the result |
 | Resilience    | hand-rolled retry loop                            | `retry` / `timeout` are fields          |
@@ -175,7 +175,7 @@ const PageSchema = z.object({ title: z.string() });
 // ---cut---
 const fetchPage = stitch({
     url: 'https://example.com/pages/{slug}',
-    responseType: 'text',
+    wire: { response: 'text' },
     transform: (html) => scrapePage(html as string),
     output: PageSchema,
     auth: bearer(env('API_TOKEN')),
@@ -185,11 +185,11 @@ const fetchPage = stitch({
 });
 ```
 
-A scalar JSON call is one line — `stitch({ url })`, and the auto `responseType` returns parsed JSON. A non-JSON call is the same declaration with the decode named and a converter wired in, and it gains resilience and validation by adding fields, never by rewriting the call. The endpoint that answers CSV today and JSON tomorrow stays one declaration; you change `responseType` and the `transform`, and every caller reads it the same way.
+A scalar JSON call is one line — `stitch({ url })`, and the auto `wire.response` returns parsed JSON. A non-JSON call is the same declaration with the decode named and a converter wired in, and it gains resilience and validation by adding fields, never by rewriting the call. The endpoint that answers CSV today and JSON tomorrow stays one declaration; you change `wire.response` and the `transform`, and every caller reads it the same way.
 
 ## Try it
 
-Declare a stitch with `responseType: 'text'`, run your own parser in `transform`, and validate the result with an `output` schema — a typed function over any non-JSON endpoint.
+Declare a stitch with `wire: { response: 'text' }`, run your own parser in `transform`, and validate the result with an `output` schema — a typed function over any non-JSON endpoint.
 
 ```package-install
 stitchapi

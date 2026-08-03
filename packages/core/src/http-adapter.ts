@@ -7,6 +7,7 @@ import type {
     MultipartNesting,
     ResponseType,
 } from './types';
+import { flattenParams } from './util';
 
 /** Options for {@link fetchAdapter}: thread a per-stitch undici dispatcher and/or
  *  override the global `fetch` — without StitchAPI ever importing undici (zero deps). */
@@ -325,11 +326,16 @@ export function encodeRequestBody(req: AdapterRequest): {
     if (req.body === undefined || req.body === null) return { body: undefined };
     if (typeof req.body === 'string') return { body: req.body };
     if (req.bodyType === 'form') {
+        // Same walker the query string uses, so one `arrayFormat` governs both urlencoded
+        // surfaces and a nested object no longer stringifies to `[object Object]`
+        // (ADR 0005 Decision 6, extended to the form arm). `URLSearchParams` does the
+        // encoding, which keeps a space spelled `+` here as it always has been.
         const params = new URLSearchParams();
-        for (const [k, v] of Object.entries(
+        for (const [k, v] of flattenParams(
             req.body as Record<string, unknown>,
+            req.arrayFormat,
         )) {
-            if (v !== undefined && v !== null) params.append(k, String(v));
+            params.append(k, v);
         }
         return {
             body: params.toString(),
