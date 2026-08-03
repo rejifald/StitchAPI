@@ -224,6 +224,32 @@ export type MultipartOnlyOnMultipartBody<C> = C extends {
           }
     : unknown;
 /**
+ * Compile-time guard: `document` and `operationName` are read ONLY by the graphql surface's
+ * `buildRequest` (`surface.ts`), so authoring either without selecting that surface is silently
+ * dead config — the document is dropped and a plain request goes out. Intersecting a config with
+ * this makes the offending slot unsatisfiable in exactly that case (CONTRACT.md P24 carve-out (b),
+ * which requires a flat group to make its dead combinations unrepresentable).
+ *
+ * Applied to `stitch` / `Seam.stitch` only. `graphql()` and `Seam.graphql()` select the surface
+ * themselves and REQUIRE `document`, so the guard would be wrong there.
+ *
+ * KNOWN LIMIT — shared with {@link MultipartOnlyOnMultipartBody}: the check reads the config
+ * LITERAL, not the composed result, so a surface inherited through `extends` is invisible to it.
+ * `stitch({ extends: [gqlBase], document })` is rejected even though `gqlBase` supplies `kind`.
+ * Spell the surface on the layer that carries the document, or use `graphql()`. Widening this to
+ * walk `extends` means duplicating `InputOf`'s fragment flattening in a second place; the
+ * false-positive is loud and has an obvious fix, so it is left stated rather than solved.
+ */
+export type GraphqlOnlyOnGraphqlSurface<C> = C extends
+    { document: unknown } | { operationName: unknown }
+    ? C extends { kind: { id: 'graphql' } }
+        ? unknown
+        : {
+              document?: ConfigError<'`document` requires the graphql surface — use `graphql({ … })`, or set `kind: graphqlSurface`. It is ignored on every other surface'>;
+              operationName?: ConfigError<'`operationName` requires the graphql surface — use `graphql({ … })`, or set `kind: graphqlSurface`. It is ignored on every other surface'>;
+          }
+    : unknown;
+/**
  * How the `stream` surface decodes each chunk of a live response body (ADR 0005 Decision 5).
  * - `'bytes'` (default) — raw `Uint8Array` chunks, lossless, no encoding assumed.
  * - `'lines'` — UTF-8, split on `\n`; each `delta` chunk is a `string`.
@@ -1401,7 +1427,9 @@ export interface Seam {
         TExplicit = never,
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C & MultipartOnlyOnMultipartBody<C>,
+        config: C &
+            MultipartOnlyOnMultipartBody<C> &
+            GraphqlOnlyOnGraphqlSurface<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see
@@ -1413,7 +1441,9 @@ export interface Seam {
         const C extends string | Partial<StitchConfig> =
             string | Partial<StitchConfig>,
     >(
-        config: C & MultipartOnlyOnMultipartBody<C>,
+        config: C &
+            MultipartOnlyOnMultipartBody<C> &
+            GraphqlOnlyOnGraphqlSurface<C>,
     ): Stitch<T>;
     /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, picks `data`). */
     graphql<
