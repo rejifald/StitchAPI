@@ -66,7 +66,7 @@ describe('Pluggable store — sessions', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/login',
-            bodyType: 'form',
+            wire: { body: 'form' },
         });
         const store = memoryStore();
 
@@ -119,7 +119,7 @@ describe('Pluggable store — sessions', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/login',
-            bodyType: 'form',
+            wire: { body: 'form' },
         });
 
         const a = stitch({

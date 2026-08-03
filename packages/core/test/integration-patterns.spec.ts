@@ -124,7 +124,7 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/auth/login',
-            bodyType: 'form',
+            wire: { body: 'form' },
         });
         const resources = stitch({
             baseUrl: server.url,
@@ -176,7 +176,7 @@ describe('HTML scrape provider — silent markup breakage becomes a loud drift e
             method: 'POST',
             baseUrl: server.url,
             path: '/login',
-            bodyType: 'form',
+            wire: { body: 'form' },
         });
         const search = stitch({
             baseUrl: server.url,
