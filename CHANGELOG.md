@@ -13,6 +13,38 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **`document` and `operationName` now require the graphql surface at compile time.** Both are
+  read only by the graphql surface's `buildRequest`, so authoring either on any other surface
+  was silently dead config — the document was dropped and a plain request went out with none of
+  it:
+
+    ```ts
+    // before: typechecked, and quietly sent {"hello":"world"} with no GraphQL at all
+    stitch({
+        method: 'POST',
+        baseUrl,
+        path: '/probe',
+        document: 'query Me { me { id } }',
+    });
+    ```
+
+    It is now a type error naming the offending field. `graphql()` and `Seam.graphql()` are
+    unaffected — they select the surface themselves and require `document`. The generic spelling
+    still works with the surface named: `stitch({ kind: graphqlSurface, document })`.
+
+    This is CONTRACT.md P24 carve-out (b) applied — a flat group must make its dead combinations
+    unrepresentable — using the same `ConfigError` brand as the `wire.multipart` guard, so the
+    error names the field instead of collapsing the config to `never`.
+
+    **Known limit,** shared with the `wire.multipart` guard: the check reads the config literal,
+    not the composed result, so a surface inherited through `extends` is invisible to it.
+    `stitch({ extends: [gqlBase], document })` is rejected even though `gqlBase` supplies `kind`
+    — spell the surface on the layer carrying the document, or use `graphql()`. Pinned as a tsd
+    expectation so it is a decision on record, not a surprise.
+
+    `graphqlSurface`'s exported type pins `id` to its `'graphql'` literal rather than widening to
+    `Surface`'s `string`, which is what makes the surface visible to the guard.
+
 - **BREAKING — every wire-format field moves into one `wire` envelope.** `bodyType`,
   `responseType`, `arrayFormat`, and `multipart` were four flat top-level slots describing one
   category, so they fold into a named envelope (CONTRACT.md P24):

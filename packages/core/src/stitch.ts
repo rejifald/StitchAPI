@@ -36,6 +36,7 @@ import {
     type DriftFinding,
     type DriftOptions,
     type DriftSpec,
+    type GraphqlOnlyOnGraphqlSurface,
     type HookContext,
     type Hooks,
     type IdempotencyOptions,
@@ -1123,7 +1124,9 @@ export interface StitchFn {
         TExplicit = never,
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C & MultipartOnlyOnMultipartBody<C>,
+        config: C &
+            MultipartOnlyOnMultipartBody<C> &
+            GraphqlOnlyOnGraphqlSurface<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Non-inferring fallback: a bare path string, or any argument whose static type is the union
@@ -1141,7 +1144,9 @@ export interface StitchFn {
         const C extends string | Partial<StitchConfig> =
             string | Partial<StitchConfig>,
     >(
-        config: C & MultipartOnlyOnMultipartBody<C>,
+        config: C &
+            MultipartOnlyOnMultipartBody<C> &
+            GraphqlOnlyOnGraphqlSurface<C>,
     ): Stitch<T>;
 }
 
