@@ -39,7 +39,7 @@ const loginStitch = () =>
         method: 'POST',
         baseUrl: server.url,
         path: '/login',
-        bodyType: 'form',
+        wire: { body: 'form' },
     });
 
 test('cookie: "*" captures and replays every cookie the login set', async () => {
