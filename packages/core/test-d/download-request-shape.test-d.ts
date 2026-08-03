@@ -14,7 +14,15 @@
 // to reject `wire.response` without closing the rest of `wire`, so the envelope's other members are
 // asserted still-authorable below. (`AdapterRequest` keeps the flat `responseType` — that is the
 // transport contract one layer down, and no guard here touches it.)
-import { seam, stitch } from '../src';
+//
+// A THIRD field is claimed by the same surface and pinned here with them: `kind`. The `download()`
+// preset builds `{ ...config, kind: downloadSurface }`, spreading the caller's `kind` in and
+// overwriting it, so authoring one on the preset is dead config in exactly the same way. It gets a
+// SEPARATE guard (`NoKindOnDownload`) rather than a third arm of `NoRequestShapeOnDownload`, because
+// that type is shared with `RequestShapeFixedByDownload` — the generic `stitch({ kind })` path,
+// where `kind` is not dead but is the thing selecting the surface. Both halves of that split are
+// asserted below: rejected on the preset, still legal as the selector.
+import { graphqlSurface, seam, stitch } from '../src';
 import type { Stitch, StitchConfig } from '../src';
 import { download, downloadSurface } from '../src/download';
 import type { DownloadResult } from '../src/download';
@@ -69,15 +77,64 @@ download.stitch({ url: URL_ });
 expectError(download.stitch({ url: URL_, method: 'POST' }));
 expectError(download.stitch({ url: URL_, wire: { response: 'text' } }));
 
+// ── Illegal: `kind` on the `download()` preset ──────────────────────────────
+// Positive control: the preset says nothing about the surface, which is the ordinary spelling and
+// the one every other case in this file uses. Asserted here too so each rejection below is
+// attributable to `NoKindOnDownload` and not to the surrounding config.
+download({ url: URL_ });
+
+// The hole itself: the preset spreads the caller's `kind` in and overwrites it one line later, so
+// this compiled and silently produced a DOWNLOAD, not a graphql stitch.
+expectError(download({ url: URL_, kind: graphqlSurface }));
+
+// Not special to a different surface — the redundant spelling is rejected too. Same reasoning as
+// `method: 'GET'` above: the slot is never read, and letting through the exact value the preset
+// forces would imply that it is.
+expectError(download({ url: URL_, kind: downloadSurface }));
+
+// A legal sibling in the same literal does not launder it.
+expectError(
+    download({
+        url: URL_,
+        headers: { 'x-api-key': 'k' },
+        kind: graphqlSurface,
+    }),
+);
+
+// Both guard families at once — they intersect, so neither masks the other.
+expectError(download({ url: URL_, kind: graphqlSurface, method: 'POST' }));
+
+// `download.stitch` is the same function, so it inherits this guard as well.
+expectError(download.stitch({ url: URL_, kind: graphqlSurface }));
+
+// A config built up as a BINDING, not an inline literal, is still rejected — and that is the one
+// place this guard is strictly stronger than the `Partial<Omit<StitchConfig, 'kind'>>` spelling
+// `LlmOptions` uses. That one leans on excess-property checking, which only fires on a fresh object
+// literal at the call site; a `ConfigError` intersection is a real assignability failure and does
+// not care how the argument was spelled. Worth pinning, because it is the reason the two surfaces
+// close the same hole two different ways rather than by oversight.
+const preBuilt = { url: URL_, kind: graphqlSurface };
+expectError(download(preBuilt));
+
 // ── Illegal: the same config reached through the generic `stitch({ kind })` ──
 // Positive control first: the identical config MINUS the guarded field must typecheck, so each
 // rejection below is attributable to the guard and not to the `kind` pairing itself.
+//
+// These lines are ALSO the load-bearing control for `NoKindOnDownload`. On this path `kind` is not
+// dead config — it is the only thing selecting the surface — so the guard must NOT reach here. That
+// is why it is a separate type from `NoRequestShapeOnDownload` (which IS shared with
+// `RequestShapeFixedByDownload` and so does run on this path). Folding the two together would turn
+// every line below into an error, which is the regression these controls exist to catch.
 stitch({ url: URL_, kind: downloadSurface });
 stitch({ url: URL_, kind: downloadSurface, wire: { array: 'repeat' } });
 expectError(stitch({ url: URL_, kind: downloadSurface, method: 'POST' }));
 expectError(
     stitch({ url: URL_, kind: downloadSurface, wire: { response: 'text' } }),
 );
+
+// And `kind` on the generic path stays live for every OTHER surface too — the preset guard is
+// scoped to the preset, not to the field.
+stitch({ url: URL_, kind: graphqlSurface, document: 'query Q { a }' });
 
 // ── Legal: `method` / `wire.response` on any NON-download surface are untouched ──
 // This is also the documented escape hatch for "POST, then take the bytes as a Blob".
@@ -93,16 +150,21 @@ stitch({ path: '/things', method: 'PUT', wire: { response: 'arrayBuffer' } });
 // ── The guard binds every surface that authors a download stitch (CONTRACT.md P16) ──
 const api = seam({ baseUrl: 'https://files.example.com' });
 
-// `download.bind(seam).stitch` — positive control, then the two rejections.
+// `download.bind(seam).stitch` — positive control, then the rejections. The bound member is
+// implemented loose and `as`-cast to `DownloadSeamApi['stitch']`, so it carries whatever guards that
+// member type declares; these lines are what prove the cast did not drop them.
 const bound = download.bind(api);
 bound.stitch({ path: '/report.pdf' });
 expectError(bound.stitch({ path: '/report.pdf', method: 'POST' }));
 expectError(bound.stitch({ path: '/report.pdf', wire: { response: 'text' } }));
+expectError(bound.stitch({ path: '/report.pdf', kind: graphqlSurface }));
+expectError(bound.stitch({ path: '/report.pdf', kind: downloadSurface }));
 
 // `download.bind(options)` builds its own seam and must guard identically.
 const owned = download.bind({ baseUrl: 'https://files.example.com' });
 owned.stitch({ path: '/report.pdf' });
 expectError(owned.stitch({ path: '/report.pdf', method: 'POST' }));
+expectError(owned.stitch({ path: '/report.pdf', kind: graphqlSurface }));
 
 // A seam member reaching the surface through `kind` is guarded too.
 api.stitch({ path: '/report.pdf', kind: downloadSurface });
@@ -175,6 +237,28 @@ stitch({ extends: widened, method: 'POST' });
 // reported, because the error is surfaced by intersecting onto the config LITERAL. Documented on
 // `MultipartOnlyOnMultipartBody` as the first residual limit; pinned here so it stays deliberate.
 stitch({ extends: [{ method: 'POST' }], kind: downloadSurface, url: URL_ });
+
+// `NoKindOnDownload` fails open the same way and for the same reason. `kind` is the OFFENDING slot
+// on the preset rather than an enabler, so every `Layers` limit costs a missed rejection, never a
+// false one — the direction #597 biases toward. A `kind` supplied only through a fragment therefore
+// still compiles; the literal-level spelling, which is the one people write, errors precisely above.
+const gqlFrag = { kind: graphqlSurface };
+download({ extends: [gqlFrag], url: URL_ });
+
+// The tuple-destructuring limits reach it identically: neither spelling is seen by the flattener.
+download({ extends: gqlFrag, url: URL_ });
+
+const widenedGql = [gqlFrag]; // inferred `Frag[]`, not `[Frag]`
+download({ extends: widenedGql, url: URL_ });
+
+// But a fragment does NOT launder a literal `kind` — the composed read finds the slot on the layer
+// that carries the error, so this is still rejected.
+expectError(
+    download({
+        extends: [{ baseUrl: 'https://f.test' }],
+        kind: graphqlSurface,
+    }),
+);
 
 // ── The non-inferring fallback must not launder a rejected config ───────────
 // A bare path string still reaches the loose overload unharmed.

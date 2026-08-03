@@ -14,6 +14,7 @@ import { makeStitch } from './stitch';
 import { verdictOf } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
+    type NoKindOnDownload,
     type NoRequestShapeOnDownload,
     type NoUnknownConfigKeys,
     type NoUnknownNestedKeys,
@@ -137,7 +138,8 @@ export interface DownloadSeamApi {
         config: C &
             NoUnknownConfigKeys<C> &
             NoUnknownNestedKeys<C> &
-            NoRequestShapeOnDownload<C>,
+            NoRequestShapeOnDownload<C> &
+            NoKindOnDownload<C>,
     ) => Stitch<DownloadResult, InputOf<C>>;
     readonly seam: Seam;
 }
@@ -152,12 +154,16 @@ export interface DownloadSeamApi {
 const downloadStitch = <
     const C extends Partial<StitchConfig> = Partial<StitchConfig>,
 >(
-    // The surface is download by construction here, so the guard applies unconditionally rather
-    // than keying off `kind` the way `stitch`'s `RequestShapeFixedByDownload` must.
+    // The surface is download by construction here, so the guards apply unconditionally rather
+    // than keying off `kind` the way `stitch`'s `RequestShapeFixedByDownload` must. `kind` is that
+    // construction — spread in from `config` and overwritten on the next line — so authoring one is
+    // dead config, and `NoKindOnDownload` is separate from its sibling precisely because the
+    // `stitch({ kind: downloadSurface })` path that shares the sibling needs `kind` to be legal.
     config: C &
         NoUnknownConfigKeys<C> &
         NoUnknownNestedKeys<C> &
-        NoRequestShapeOnDownload<C>,
+        NoRequestShapeOnDownload<C> &
+        NoKindOnDownload<C>,
 ): Stitch<DownloadResult, InputOf<C>> =>
     makeStitch<DownloadResult>({
         ...config,
@@ -167,10 +173,12 @@ const downloadStitch = <
 // Bind download members to a seam through the seam's surface-agnostic `stitch({ kind })`.
 function bindSeam(s: Seam): DownloadSeamApi {
     // Implemented loose and `as`-cast to the declared member type — the `Seam['graphql']` idiom in
-    // seam.ts. A generic impl whose parameter is `C & NoRequestShapeOnDownload<C>` cannot be checked
+    // seam.ts. A generic impl whose parameter carries the same guard intersection cannot be checked
     // against a member of that same shape: TypeScript instantiates the impl's `C` with the target's
-    // whole intersection, so the two `InputOf<C>` return types stop matching. Sound — the runtime is
-    // one `s.stitch` call, and the type tests pin every concrete config.
+    // whole intersection, so the two `InputOf<C>` return types stop matching. The cast is also what
+    // gives this member the guards for free — they live on `DownloadSeamApi['stitch']`, which is the
+    // type callers see. Sound — the runtime is one `s.stitch` call, and the type tests pin every
+    // concrete config.
     const stitch = ((config: Partial<StitchConfig>) =>
         s.stitch<DownloadResult>({
             ...config,
