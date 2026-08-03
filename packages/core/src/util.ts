@@ -427,14 +427,16 @@ export function flattenParams(
     return out;
 }
 
+// Built by concatenation rather than map+join: `flattenParams` already defaults `arrayFormat`, and
+// the entry bundle is budget-gated, so the closure and the intermediate array both come out.
 export function buildQuery(
     q: Record<string, unknown> | undefined,
-    arrayFormat: ArrayFormat = 'indices',
+    arrayFormat?: ArrayFormat,
 ): string {
-    const parts = flattenParams(q, arrayFormat).map(
-        ([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`,
-    );
-    return parts.length ? `?${parts.join('&')}` : '';
+    let qs = '';
+    for (const [k, v] of flattenParams(q, arrayFormat))
+        qs += `${qs ? '&' : '?'}${encodeURIComponent(k)}=${encodeURIComponent(v)}`;
+    return qs;
 }
 
 function appendParam(
