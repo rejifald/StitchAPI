@@ -20,7 +20,7 @@ const uploadVideo = stitch({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/videos',
-    bodyType: 'multipart',
+    wire: { body: 'multipart' },
     adapter: xhrAdapter(),
 });
 
