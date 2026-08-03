@@ -30,6 +30,7 @@ import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
 import {
+    type BodyTypeFixedByGraphql,
     type CacheOptions,
     type CacheOutcome,
     type Clock,
@@ -42,6 +43,7 @@ import {
     type InputSchemas,
     type InspectOptions,
     type Inspection,
+    type NoBodyTypeOnGraphql,
     type RedactedStitchConfig,
     type ResolvedStitchConfig,
     type RetryOptions,
@@ -1113,14 +1115,26 @@ export interface StitchFn {
         TExplicit = never,
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C,
+        config: C & BodyTypeFixedByGraphql<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Non-inferring fallback: a bare path string, or any argument whose static type is the union
      * `string | Partial<StitchConfig>` (e.g. a wrapper that forwards either spelling). Neither can
      * match the inferring overload above, so the result is `Stitch<unknown>` — override with `<T>`.
+     *
+     * `C` is captured here ONLY to re-apply {@link BodyTypeFixedByGraphql}; the result stays
+     * `Stitch<T>`. Without it a config rejected by the inferring overload would silently fall
+     * through to this one and typecheck after all. On a genuinely loose
+     * `string | Partial<StitchConfig>` argument the guard distributes over the union and both arms
+     * resolve to `unknown`, so this stays the same escape hatch it has always been.
      */
-    <T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
+    <
+        T = unknown,
+        const C extends string | Partial<StitchConfig> =
+            string | Partial<StitchConfig>,
+    >(
+        config: C & BodyTypeFixedByGraphql<C>,
+    ): Stitch<T>;
 }
 
 // The impl is the loose `<T>(config) => Stitch<T>`; the rich `InputOf<C>` lives only in the
@@ -1154,7 +1168,11 @@ export function graphql<
     } = Partial<StitchConfig> & {
         document: string;
     },
->(config: C): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
+>(
+    // The surface is graphql by construction here, so the guard applies unconditionally rather
+    // than keying off `kind` the way `stitch`'s `BodyTypeFixedByGraphql` must.
+    config: C & NoBodyTypeOnGraphql<C>,
+): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the
     // convenience without clobbering an explicit endpoint). Method/body shaping is the surface's.
     const endpointless = config.url === undefined && config.path === undefined;

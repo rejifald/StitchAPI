@@ -11,6 +11,46 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING — `bodyType` on a `graphql` stitch is now a compile error.** The `graphql`
+  surface builds its own request body — a JSON `{ query, variables, operationName? }`
+  envelope — so a `bodyType` authored alongside it was never read:
+  `graphql({ …, bodyType: 'multipart' })` typechecked and silently sent JSON. A surface owns
+  its shaping (ADR 0005 Decision 1), so the field is not a knob there, and it now says so at
+  the authoring site rather than discarding the value:
+
+    ```ts
+    graphql({ baseUrl, document, bodyType: 'multipart' });
+    //                            ^ the `graphql` surface always sends a JSON
+    //                              `{ query, variables }` body — `bodyType` is ignored
+    ```
+
+    The guard binds every surface that authors a graphql stitch — `graphql()`,
+    `graphql.bind(seam).stitch`, `seam.graphql()`, and `stitch({ kind: graphqlSurface })`
+    (both the inferring and the fallback overload, or a rejected config would fall through
+    to the loose one and typecheck after all). It also makes `multipart` unreachable on
+    graphql for free: `MultipartOnlyOnMultipartBody` already requires `bodyType: 'multipart'`
+    before `multipart` is legal, and that is exactly the spelling this rejects.
+
+    **Migration:** delete the field — there is no replacement and nothing to preserve, because
+    it never did anything. No runtime behaviour changed: the surface sent a JSON body before
+    and still does, so only configs that were already inert stop compiling. Breaking solely in
+    the sense that a build which previously passed can now fail.
+
+### Notes
+
+- **GraphQL file uploads remain unsupported, now explicitly.** `bodyType: 'multipart'` was
+  the closest thing to a spelling for them, and it never worked: a GraphQL upload is not the
+  JSON body multipart-encoded, it is the
+  [GraphQL multipart request spec](https://github.com/jaydenseric/graphql-multipart-request-spec)'s
+  separate `operations` / `map` / file-part envelope, which the surface does not implement.
+  Rejecting the flag keeps the gap honest instead of silently sending JSON. To upload
+  alongside a GraphQL API today, POST the file with a plain `stitch({ bodyType: 'multipart' })`
+  and pass the resulting handle as a GraphQL variable. See ADR 0005 Decision 1's addendum for
+  why this was deferred and what implementing it would take; relaxing the guard later is
+  non-breaking.
+
 ## [1.0.0-rc.7] — 2026-08-01
 
 ### Added

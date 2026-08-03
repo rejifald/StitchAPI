@@ -133,6 +133,47 @@ export interface MultipartOptions {
     nesting?: MultipartNesting;
 }
 /**
+ * Carries a human-readable explanation into a type error. Intersecting an offending slot with this
+ * makes the slot unsatisfiable — so the config is still rejected — while keeping the message
+ * legible: TypeScript prints the brand, and the brand IS the sentence. A bare `?: never` rejects
+ * just as hard but reduces the whole surrounding object to `never`, which reports every unrelated
+ * property as an error and never names the real one.
+ */
+export interface ConfigError<Message extends string> {
+    readonly __stitchConfigError: Message;
+}
+/**
+ * Compile-time guard: the `graphql` surface OWNS its body encoding. Its `buildRequest` packs
+ * `{ query, variables, operationName? }` and sends it as JSON unconditionally (ADR 0005 Decision 1
+ * — a surface owns *shaping*), so a {@link StitchConfig.bodyType} authored alongside it is never
+ * read. Intersecting a graphql config with this makes the `bodyType` slot unsatisfiable, turning
+ * the dead pairing into a compile error at the authoring site.
+ *
+ * This also makes {@link StitchConfig.multipart} unreachable on graphql without a second guard:
+ * `MultipartOnlyOnMultipartBody` already requires `bodyType: 'multipart'` before `multipart` is
+ * legal, and that spelling is exactly what this rejects. One guard closes both dead pairings.
+ *
+ * `bodyType: 'multipart'` is the interesting arm — a GraphQL file upload is a real thing, but it
+ * is NOT "the JSON body, multipart-encoded". It is the separate `operations`/`map`/file-part
+ * envelope of the GraphQL multipart request spec, which this surface does not implement. Rejecting
+ * the spelling is what keeps that gap honest instead of silently sending a JSON body; supporting
+ * uploads later means teaching `graphqlSurface.buildRequest` the envelope and relaxing this guard,
+ * which is a non-breaking change.
+ */
+export type NoBodyTypeOnGraphql<C> = C extends { bodyType: unknown }
+    ? {
+          bodyType?: ConfigError<'the `graphql` surface always sends a JSON `{ query, variables }` body — `bodyType` is ignored (GraphQL file uploads need the multipart request spec, which this surface does not implement)'>;
+      }
+    : unknown;
+/**
+ * {@link NoBodyTypeOnGraphql}, applied where graphql is only one possible `kind` — the generic
+ * `stitch({ kind: graphqlSurface, … })` path. Keys off the surface's literal `id`, which is why
+ * `graphqlSurface` is declared with `id: 'graphql'` rather than the widened `string` of `Surface`.
+ */
+export type BodyTypeFixedByGraphql<C> = C extends { kind: { id: 'graphql' } }
+    ? NoBodyTypeOnGraphql<C>
+    : unknown;
+/**
  * How the `stream` surface decodes each chunk of a live response body (ADR 0005 Decision 5).
  * - `'bytes'` (default) — raw `Uint8Array` chunks, lossless, no encoding assumed.
  * - `'lines'` — UTF-8, split on `\n`; each `delta` chunk is a `string`.
@@ -1310,10 +1351,20 @@ export interface Seam {
         TExplicit = never,
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C,
+        config: C & BodyTypeFixedByGraphql<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
-    /** Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see {@link StitchFn}). */
-    stitch<T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
+    /**
+     * Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see
+     * {@link StitchFn}). `C` is captured only to re-apply {@link BodyTypeFixedByGraphql} — see
+     * {@link StitchFn}'s fallback for why.
+     */
+    stitch<
+        T = unknown,
+        const C extends string | Partial<StitchConfig> =
+            string | Partial<StitchConfig>,
+    >(
+        config: C & BodyTypeFixedByGraphql<C>,
+    ): Stitch<T>;
     /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, picks `data`). */
     graphql<
         TExplicit = never,
@@ -1323,7 +1374,7 @@ export interface Seam {
             document: string;
         },
     >(
-        config: C,
+        config: C & NoBodyTypeOnGraphql<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Derive a principal-bound {@link PrincipalSeam} reusing the same shared runtime, but whose

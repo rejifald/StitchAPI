@@ -114,8 +114,17 @@ export const httpSurface: Surface = { id: 'http' };
  * and a name (`\w+`), so a field/type that merely starts with a keyword can't match; anonymous
  * documents (`{ ... }`, or `query ($id: ID) { ... }` with no name) yield no key. Set
  * `cfg.operationName` to override (a multi-operation document, or `''` to suppress).
+ *
+ * The body encoding is the surface's, not the caller's: `bodyType` is FIXED at `'json'` here, and
+ * `NoBodyTypeOnGraphql` makes authoring one a compile error so the override is never silent. A
+ * GraphQL file upload is therefore out of reach today — it needs the `operations`/`map`/file-part
+ * envelope of the GraphQL multipart request spec, not this JSON body multipart-encoded, so it
+ * would be a new shape for `buildRequest` to learn rather than a `bodyType` a caller can pass.
+ *
+ * The literal `id: 'graphql'` (rather than `Surface`'s widened `string`) is load-bearing: it is
+ * what lets `BodyTypeFixedByGraphql` recognise this surface in `stitch({ kind: graphqlSurface })`.
  */
-export const graphqlSurface: Surface = {
+export const graphqlSurface: Surface & { readonly id: 'graphql' } = {
     id: 'graphql',
     buildRequest: (cfg, input, base) => {
         const document = cfg.document ?? '';

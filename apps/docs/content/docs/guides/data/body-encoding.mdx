@@ -44,6 +44,18 @@ The body itself always comes from the call input (`await submit({ body })`),
 never from the config — so one stitch encodes whatever you pass it. See
 [Guide → stitch()](/docs/guides/authoring/stitch) for the full configuration.
 
+<Callout type="info">
+    **`bodyType` is an `http`-surface option.** The `graphql` surface builds its
+    own body — a JSON `{ query, variables }` envelope — so setting `bodyType`
+    alongside it is a compile error rather than a silently ignored field. GraphQL
+    file uploads are a separate wire format (the [GraphQL multipart request
+    spec](https://github.com/jaydenseric/graphql-multipart-request-spec)'s
+    `operations`/`map`/file-part envelope), not this JSON body re-encoded as
+    multipart, and are **not supported today**. To upload alongside a GraphQL
+    API, POST the file to a plain `http` stitch and pass the resulting handle as
+    a variable. See [Request surfaces](/docs/reference/surfaces).
+</Callout>
+
 <Callout type="warn">
     **Anti-pattern:** don't hand-serialize the body before you pass it —
     stringifying the value yourself and handing the stitch a pre-encoded string

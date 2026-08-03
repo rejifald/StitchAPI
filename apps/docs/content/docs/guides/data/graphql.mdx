@@ -49,6 +49,23 @@ different field or the raw envelope.
     [STITCH_GRAPHQL](/docs/errors/stitch-graphql).
 </Callout>
 
+### File uploads are not supported
+
+The surface builds the request body itself, so `bodyType` is **not** a field a
+GraphQL stitch accepts — authoring one is a compile error rather than a silently
+ignored setting.
+
+That includes `bodyType: 'multipart'`. A GraphQL file upload is not "the JSON
+body, multipart-encoded" — it is a distinct wire format, the [GraphQL multipart
+request spec](https://github.com/jaydenseric/graphql-multipart-request-spec),
+which frames the call as an `operations` part, a `map` part, and one part per
+file. This surface does not implement that envelope. Until it does, upload the
+file with a plain [`stitch()`](/docs/guides/authoring/stitch) using
+`bodyType: 'multipart'` and pass the returned identifier as a GraphQL variable —
+which is also what [Apollo's own upload
+guidance](https://www.apollographql.com/blog/file-upload-best-practices)
+recommends over in-band multipart uploads.
+
 For the full set of fields a stitch accepts, see
 [Reference → Config types](/docs/reference/config-types).
 
