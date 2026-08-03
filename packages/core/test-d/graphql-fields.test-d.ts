@@ -62,9 +62,34 @@ expectError(
 // A member stitch is guarded the same way — only `.graphql()` selects the surface.
 expectError(api.stitch({ path: '/users', document: 'query Me { me { id } }' }));
 
-// ── KNOWN LIMIT: the guard reads the config literal, not the composed result ──
-// A surface inherited through `extends` is invisible to it, so this is a FALSE POSITIVE. Pinned so
-// the limitation is a decision on record rather than a surprise — if `extends` walking is ever
-// added, this expectation flips and the test names the place to update.
+// ── The guard reads the COMPOSED config, so `extends` counts ────────────────
+// This used to be a false positive: the surface came from a fragment, the guard only saw the
+// literal, and a valid config was rejected. It now walks the layer list.
 const gqlBase = { kind: graphqlSurface, baseUrl: 'https://api.example.com' };
-expectError(stitch({ extends: [gqlBase], document: 'query Me { me { id } }' }));
+stitch({ extends: [gqlBase], document: 'query Me { me { id } }' });
+stitch({ extends: [gqlBase], document: 'query A { a }', operationName: 'A' });
+
+// Nested one level down: the flattener recurses, so the surface is still found.
+stitch({
+    extends: [{ extends: [gqlBase], headers: { 'x-a': '1' } }],
+    document: 'query Me { me { id } }',
+});
+
+// ── Inherited from `Layers`, not introduced here ────────────────────────────
+// The flattener destructures a TUPLE (`readonly [H, ...T]`), so an `extends` list that TypeScript
+// widened to `Frag[]` — which is what a `const` binding does without `as const` — reads as empty,
+// and so does the P7 single-fragment spelling (`extends: frag`, not a list). `InputOf` has read
+// `extends` this way since #76; every existing test in `extends-inference.test-d.ts` uses an inline
+// array literal, which stays a tuple. Both cases fail CLOSED here (a valid config is rejected), so
+// they are pinned rather than left to surprise someone. Fixing them means widening `Flatten`, which
+// changes call-argument inference for every consumer — deliberately out of scope for a guard change.
+expectError(stitch({ extends: gqlBase, document: 'query Me { me { id } }' }));
+
+const widened = [gqlBase]; // inferred `Frag[]`, not `[Frag]`
+expectError(stitch({ extends: widened, document: 'query Me { me { id } }' }));
+
+// …but a fragment chain that never selects the surface is still rejected.
+const httpBase = { baseUrl: 'https://api.example.com', path: '/users' };
+expectError(
+    stitch({ extends: [httpBase], document: 'query Me { me { id } }' }),
+);

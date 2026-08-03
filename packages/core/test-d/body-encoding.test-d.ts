@@ -108,5 +108,30 @@ expectError(
     }),
 );
 
+// ── The guard reads the COMPOSED config, so `extends` counts ────────────────
+// This used to be a false positive: the body encoding came from a fragment, the guard only saw the
+// literal, and a valid config was rejected. It now walks the layer list.
+const multipartBase = {
+    baseUrl: 'https://api.example.com',
+    wire: { body: 'multipart' as const },
+};
+stitch({ extends: [multipartBase], path: '/u', wire: { multipart: 'dot' } });
+
+// Inherited from `Layers`, not introduced here: the P7 single-fragment spelling is not a tuple, so
+// the flattener reads it as empty and the enabler goes unseen. Fails closed; see
+// `graphql-fields.test-d.ts` for the full note.
+expectError(
+    stitch({ extends: multipartBase, path: '/u', wire: { multipart: 'dot' } }),
+);
+
+// …but a fragment chain that never sets a multipart body is still rejected.
+const jsonBase = {
+    baseUrl: 'https://api.example.com',
+    wire: { body: 'json' as const },
+};
+expectError(
+    stitch({ extends: [jsonBase], path: '/u', wire: { multipart: 'dot' } }),
+);
+
 // A bare path string still reaches the non-inferring fallback unharmed.
 expectType<Stitch<unknown>>(stitch('/plain'));
