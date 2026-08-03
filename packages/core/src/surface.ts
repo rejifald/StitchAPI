@@ -115,7 +115,11 @@ export const httpSurface: Surface = { id: 'http' };
  * documents (`{ ... }`, or `query ($id: ID) { ... }` with no name) yield no key. Set
  * `cfg.operationName` to override (a multi-operation document, or `''` to suppress).
  */
-export const graphqlSurface: Surface = {
+// The `id` is pinned to its literal rather than widened to `Surface`'s `string`, so
+// `GraphqlOnlyOnGraphqlSurface` can tell at the type level whether a config selected this surface.
+// Widening it would make `document`/`operationName` unguardable on the generic `stitch({ kind })`
+// spelling.
+export const graphqlSurface: Surface & { readonly id: 'graphql' } = {
     id: 'graphql',
     buildRequest: (cfg, input, base) => {
         const document = cfg.document ?? '';

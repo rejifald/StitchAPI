@@ -1,6 +1,24 @@
 # Git hooks — same gates as CI (.github/workflows/verify.yml).
 # Activated by `lefthook install`, run automatically via the root package.json
 # "prepare" script on `pnpm install`.
+
+# Every `run:` below starts with `{setup}`, which sources tools/hook-env.sh.
+#
+# Git hooks run in a non-interactive shell that reads no shell rc, so a PATH
+# built by nvm/fnm/asdf or by corepack's shims is absent and every `pnpm ...`
+# job dies with `sh: pnpm: command not found` — from a checkout where pnpm works
+# fine in the terminal. GUI git clients, editor commit UIs, and agent sessions
+# hit this; a plain `git commit` from a configured terminal does not, which is
+# why it looks intermittent. hook-env.sh puts those locations back.
+#
+# It rides a template rather than lefthook's own top-level `rc:` key because as
+# of lefthook 2.1.10 `rc:` is accepted by the config schema but never sourced for
+# `jobs` — verified by probe, so don't "simplify" this back to `rc:` without
+# re-testing. Machine-specific tweaks belong in ~/.lefthookrc, which
+# hook-env.sh sources when present.
+templates:
+    setup: '. ./tools/hook-env.sh &&'
+
 pre-commit:
     parallel: false
     jobs:
@@ -12,7 +30,7 @@ pre-commit:
         # apps/docs/scripts/gen-stitch-completions.mjs.
         - name: completions
           glob: 'packages/core/src/**/*.ts'
-          run: pnpm --filter @stitchapi/docs run gen:completions && git add "apps/docs/app/(home)/playground/playground-completions.generated.ts"
+          run: '{setup} pnpm --filter @stitchapi/docs run gen:completions && git add "apps/docs/app/(home)/playground/playground-completions.generated.ts"'
         # Drift gate (github.com/rejifald/yakir). Pre-commit runs the TOKEN tier
         # only — literal facts read straight from files, needing no build: the
         # version lockstep + README quotes, the engines.node floor, and the license,
@@ -23,7 +41,7 @@ pre-commit:
         # baseline yakir.lock.
         - name: yakir
           glob: '{README.md,packages/core/README.md,packages/*/package.json,yakir.json,yakir.lock}'
-          run: npx --yes ./tools/yakir.tgz check --tier token
+          run: '{setup} npx --yes ./tools/yakir.tgz check --tier token'
         # The README badge/table drift guard is now yakir tethers (readme-badges,
         # readme-packages, core-integrations) — executable tier, so enforced at
         # pre-push and in drift.yml, not here. Refresh the numbers with `pnpm metrics`.
@@ -32,13 +50,13 @@ pre-commit:
           # extension Prettier handles here so committed files are never left unformatted
           # (notably .mdx, which the docs are written in).
           glob: '**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,mdx,yml,yaml,css}'
-          run: pnpm exec prettier --write {staged_files}
+          run: '{setup} pnpm exec prettier --write {staged_files}'
           stage_fixed: true
         - name: lint
           glob: '**/*.ts'
-          run: pnpm check:lint
+          run: '{setup} pnpm check:lint'
         - name: typecheck
-          run: pnpm check:types
+          run: '{setup} pnpm check:types'
 
 pre-push:
     parallel: false
@@ -49,36 +67,36 @@ pre-push:
     # including ones an earlier commit landed unformatted.
     jobs:
         - name: format
-          run: pnpm check:format
+          run: '{setup} pnpm check:format'
         - name: lint
-          run: pnpm check:lint
+          run: '{setup} pnpm check:lint'
         # API meta-contract ratchet (docs/CONTRACT.md). Cheap source scan, fail-fast before
         # the expensive test/build jobs. Mirrors CI's check:contract step.
         - name: contract
-          run: pnpm check:contract
+          run: '{setup} pnpm check:contract'
         # Demo-media drift gate (docs/media/README.md): a branch that edits the
         # demo scene or its generator must also regenerate the committed README
         # webp pair. Cheap path diff; STITCH_MEDIA_STALE_OK=1 defers.
         - name: media-fresh
-          run: pnpm check:media-fresh
+          run: '{setup} pnpm check:media-fresh'
         - name: typecheck
-          run: pnpm check:types
+          run: '{setup} pnpm check:types'
         # Type-level tests (tsd) for the inferred public API — builds the package's d.ts and
         # asserts `stitch({ output: schema })` resolves to the right `Stitch<T>`.
         - name: typecheck-d
-          run: pnpm check:types-d
+          run: '{setup} pnpm check:types-d'
         - name: test
-          run: pnpm test
+          run: '{setup} pnpm test'
         - name: exports
-          run: pnpm check:exports
+          run: '{setup} pnpm check:exports'
         # Render gate — see verify.yml. `tsc` never renders a page, so building the
         # docs app is what actually exercises AutoTypeTable and MDX components.
         - name: build-docs
-          run: pnpm --filter @stitchapi/docs build
+          run: '{setup} pnpm --filter @stitchapi/docs build'
         # Full yakir drift check, MEASURED. Pre-commit runs the token tier only
         # (no build), so the executable-tier `bundle-advertised-size` tether — which
         # runs bundle-size.mjs against built lib — is enforced here and in CI. Build
         # core so the measurement is real, then assert every advertised `~NN kB`
         # quote matches it, catching the stale-but-consistent case before the push.
         - name: yakir
-          run: pnpm --filter stitchapi build && npx --yes ./tools/yakir.tgz check
+          run: '{setup} pnpm --filter stitchapi build && npx --yes ./tools/yakir.tgz check'
