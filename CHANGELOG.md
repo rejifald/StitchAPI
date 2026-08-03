@@ -129,6 +129,42 @@ npm release are grouped under the in-development version that introduced them.
     and still does, so only configs that were already inert stop compiling. Breaking solely in
     the sense that a build which previously passed can now fail.
 
+- **BREAKING — `method` / `wire.response` on a `download` stitch, and `method` / `wire.body`
+  on an `llm` stitch, are now compile errors.** The same sweep, applied to the other two
+  surfaces whose `buildRequest` overwrites a caller-authorable field.
+  `downloadSurface.buildRequest` hardcodes `method: 'GET'` and a blob response; the live `llm`
+  surface hardcodes `method: 'POST'` and a JSON body. All four were silently discarded:
+
+    ```ts
+    download({ url, method: 'POST' });
+    //              ^ the `download` surface always issues a GET — `method` is ignored
+    llm({ provider, model, wire: { body: 'form' } });
+    //                             ^ the `llm` surface always sends a JSON body built by the
+    //                               provider — `wire.body` is ignored
+    ```
+
+    For `download` the guard binds `download()`, `download.stitch`, `download.bind(…).stitch`,
+    and `stitch({ kind: downloadSurface })` on both overloads. For `llm` it binds `llm()`,
+    `llm.stitch`, and `llm.bind(…).stitch` — but deliberately **not**
+    `stitch({ kind: llmSurface })`: the exported `llmSurface` is only the redaction identity
+    and carries no `buildRequest`, so `method` really is honoured on that path.
+
+    Note that these guards read the **authoring** spelling. `AdapterRequest` still carries flat
+    `responseType` / `bodyType`, and that is exactly what both `buildRequest` implementations
+    set — the guards close the config surface above them, not the transport contract below.
+
+    Like the other config guards, these read the **composed** config (`Layers`), so an `extends`
+    fragment that selects the download surface is seen and the same rejections apply through it.
+    `RequestShapeFixedByDownload` shares `WireBodyFixedByGraphql`'s inhibitor polarity described
+    above, and so its fail-CLOSED case too: inheriting the download surface then overriding `kind`
+    away from it still rejects. Same tradeoff, same reasoning, also pinned in tsd.
+
+    **Migration:** delete the field. As with graphql, no runtime behaviour changed — only
+    configs that were already inert stop compiling. If you were reaching for
+    `download({ method: 'POST' })` to download the result of a POST, that request is a plain
+    `stitch({ method: 'POST', wire: { response: 'blob' } })`; the only thing it gives up is the
+    `Content-Disposition` filename parsing.
+
 ### Fixed
 
 - **The config guards now read the composed config, so `extends` counts.** `wire.multipart` and
@@ -187,6 +223,15 @@ npm release are grouped under the in-development version that introduced them.
     body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
 
 ### Notes
+
+- **`sse`, `stream`, and `postmessage` were checked in the same pass and deliberately left
+  alone.** `sse` and `stream` have no `buildRequest`, so their `method` is genuinely honoured;
+  their `wire.response` is inert, but because the _engine_ sets `stream: true` and the adapter
+  returns the live body before consulting it — one rule about the streaming path that applies
+  to any surface with a `stream` hook, third-party ones included, rather than a per-surface
+  override. `postmessage` ignores most HTTP knobs, but through a custom `execute` that replaces
+  the transport outright; the honest fix there is narrowing what its option types admit, which
+  is a larger separable change. See ADR 0005 Decision 1's addendum.
 
 - **GraphQL file uploads remain unsupported, now explicitly.** `wire.body: 'multipart'` was
   the closest thing to a spelling for them, and it never worked: a GraphQL upload is not the

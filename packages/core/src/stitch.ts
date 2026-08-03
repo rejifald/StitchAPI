@@ -46,6 +46,7 @@ import {
     type MultipartOnlyOnMultipartBody,
     type NoWireBodyOnGraphql,
     type RedactedStitchConfig,
+    type RequestShapeFixedByDownload,
     type ResolvedStitchConfig,
     type RetryOptions,
     type RunContext,
@@ -1129,19 +1130,21 @@ export interface StitchFn {
         config: C &
             MultipartOnlyOnMultipartBody<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
-            WireBodyFixedByGraphql<C>,
+            WireBodyFixedByGraphql<C> &
+            RequestShapeFixedByDownload<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Non-inferring fallback: a bare path string, or any argument whose static type is the union
      * `string | Partial<StitchConfig>` (e.g. a wrapper that forwards either spelling). Neither can
      * match the inferring overload above, so the result is `Stitch<unknown>` — override with `<T>`.
      *
-     * `C` is captured here ONLY to re-apply {@link MultipartOnlyOnMultipartBody},
-     * {@link GraphqlOnlyOnGraphqlSurface}, and {@link WireBodyFixedByGraphql}; the result stays
+     * `C` is captured here ONLY to re-apply the dead-config guards
+     * ({@link MultipartOnlyOnMultipartBody}, {@link GraphqlOnlyOnGraphqlSurface},
+     * {@link WireBodyFixedByGraphql}, {@link RequestShapeFixedByDownload}); the result stays
      * `Stitch<T>`. Without it a config rejected by the inferring overload would silently fall
      * through to this one and typecheck after all. On a genuinely loose
-     * `string | Partial<StitchConfig>` argument the guard distributes over the union and both arms
-     * resolve to `unknown`, so this stays the same escape hatch it has always been.
+     * `string | Partial<StitchConfig>` argument the guards distribute over the union and every arm
+     * resolves to `unknown`, so this stays the same escape hatch it has always been.
      */
     <
         T = unknown,
@@ -1151,7 +1154,8 @@ export interface StitchFn {
         config: C &
             MultipartOnlyOnMultipartBody<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
-            WireBodyFixedByGraphql<C>,
+            WireBodyFixedByGraphql<C> &
+            RequestShapeFixedByDownload<C>,
     ): Stitch<T>;
 }
 

@@ -15,6 +15,7 @@ import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
+    type NoRequestShapeOnLlm,
     type Seam,
     type SeamOptions,
     type Stitch,
@@ -113,6 +114,15 @@ export const llmSurface: Surface = { id: 'llm' };
 
 // The live llm surface for one provider + defaults: pack the request via `provider.buildBody` as a
 // JSON POST (provider headers under the user's), and `interpret` lifts the result via `provider.parse`.
+//
+// `method` and the body encoding are the surface's, not the caller's — `NoRequestShapeOnLlm` makes
+// authoring `method` or `wire.body` a compile error so the override is never silent. `headers` and
+// `wire.response` are NOT overridden (base headers win over the provider's; the response decoding
+// is untouched), so they stay live knobs.
+//
+// The flat `bodyType: 'json'` below is the `AdapterRequest` spelling, one layer under the authoring
+// config: that transport contract keeps the flat wire-format fields (CONTRACT.md P22), and the
+// engine converts `wire` into them when it builds the request.
 function makeLlmSurface(d: LlmDefaults): Surface<StitchInput, LlmResult> {
     const { provider } = d;
     return {
@@ -182,13 +192,21 @@ function llmConfig(config: LlmOptions): Partial<StitchConfig> {
  * const { text } = await chat({ body: { messages: [{ role: 'user', content: 'hi' }] } });
  * ```
  */
-const llmStitch = (config: LlmOptions): Stitch<LlmResult> =>
-    makeStitch<LlmResult>(llmConfig(config));
+const llmStitch = (
+    // The live (overriding) surface is built by construction here, so the guard applies
+    // unconditionally — no `kind`-keyed sibling, because the exported `llmSurface` is only the
+    // identity and carries no `buildRequest`, so `method` IS live on `stitch({ kind: llmSurface })`.
+    // The parameter stays non-generic on purpose: that is what keeps excess-property checking, which
+    // is what rejects the removed `maxTokens` spelling (P4).
+    config: LlmOptions & NoRequestShapeOnLlm,
+): Stitch<LlmResult> => makeStitch<LlmResult>(llmConfig(config));
 
 /** llm members bound to a seam. `stitch(config)` creates an llm member of `seam`; `seam` is the
  *  underlying handle for lifecycle/principal (`.as`/`.flush`/`.close`). */
 export interface LlmSeamApi {
-    readonly stitch: (config: LlmOptions) => Stitch<LlmResult>;
+    readonly stitch: (
+        config: LlmOptions & NoRequestShapeOnLlm,
+    ) => Stitch<LlmResult>;
     readonly seam: Seam;
 }
 
@@ -196,7 +214,8 @@ export interface LlmSeamApi {
 // Decision 3) — no per-surface seam method; one shared runtime / principal boundary.
 function bindSeam(s: Seam): LlmSeamApi {
     return {
-        stitch: (config: LlmOptions) => s.stitch<LlmResult>(llmConfig(config)),
+        stitch: (config: LlmOptions & NoRequestShapeOnLlm) =>
+            s.stitch<LlmResult>(llmConfig(config)),
         seam: s,
     };
 }
