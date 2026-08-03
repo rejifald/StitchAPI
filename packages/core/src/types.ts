@@ -6,8 +6,10 @@ import type {
     ResolvedNormalizations,
 } from './config-anatomy';
 import type {
+    AnyLayer,
     Args,
     InputOf,
+    Layers,
     RelaxKeys,
     ResolveOutput,
     SchemaLike,
@@ -211,18 +213,60 @@ export interface ConfigError<Message extends string> {
  * has no options at all, and `form` has none of its own, since array serialisation
  * ({@link WireOptions.array}) is shared with the query string — so a three-arm union would carry
  * two empty arms and duplicate a query concern.
+ *
+ * Reads the COMPOSED config via {@link Layers}, so an enabler inherited through `extends` counts —
+ * `stitch({ extends: [{ wire: { body: 'multipart' } }], wire: { multipart: 'dot' } })` is legal.
+ *
+ * RESIDUAL LIMITS, shared with {@link GraphqlOnlyOnGraphqlSurface}:
+ * - Fail-open: the error is surfaced by intersecting onto the config LITERAL, so a violation
+ *   living entirely in a fragment — the offending slot in one layer, no enabler in any — is not
+ *   reported. The literal-level case, which is the one people write, still errors precisely.
+ * - Fail-open: a fragment typed as `Partial<StitchConfig>` rather than inferred from its literal
+ *   has optional properties, which satisfy neither probe, so it reads as supplying nothing.
+ * - Fail-CLOSED, and inherited from {@link Layers} rather than added here: the flattener
+ *   destructures a tuple, so an `extends` list TypeScript widened to `Frag[]` (what a `const`
+ *   binding does without `as const`) reads as empty, as does the P7 single-fragment spelling
+ *   (`extends: frag`). `InputOf` has read `extends` the same way since #76. Widening it is a
+ *   change to call-argument inference for every consumer, not a guard change.
  */
-export type MultipartOnlyOnMultipartBody<C> = C extends {
-    wire: { multipart: unknown };
-}
-    ? C extends { wire: { body: 'multipart' } }
+export type MultipartOnlyOnMultipartBody<C> =
+    AnyLayer<Layers<C>, { wire: { multipart: unknown } }> extends true
+        ? AnyLayer<Layers<C>, { wire: { body: 'multipart' } }> extends true
+            ? unknown
+            : {
+                  wire?: {
+                      multipart?: ConfigError<'`wire.multipart` requires `wire.body: "multipart"` — it is ignored on a json or form body'>;
+                  };
+              }
+        : unknown;
+/**
+ * Compile-time guard: `document` and `operationName` are read ONLY by the graphql surface's
+ * `buildRequest` (`surface.ts`), so authoring either without selecting that surface is silently
+ * dead config — the document is dropped and a plain request goes out. Intersecting a config with
+ * this makes the offending slot unsatisfiable in exactly that case (CONTRACT.md P24 carve-out (b),
+ * which requires a flat group to make its dead combinations unrepresentable).
+ *
+ * Applied to `stitch` / `Seam.stitch` only. `graphql()` and `Seam.graphql()` select the surface
+ * themselves and REQUIRE `document`, so the guard would be wrong there.
+ *
+ * Reads the COMPOSED config via {@link Layers}, so a surface inherited through `extends` counts —
+ * `stitch({ extends: [gqlBase], document })` is legal when `gqlBase` supplies `kind`.
+ */
+export type GraphqlOnlyOnGraphqlSurface<C> =
+    AnyLayer<Layers<C>, { document: unknown }> extends true
+        ? GraphqlSurfaceSomewhere<C>
+        : AnyLayer<Layers<C>, { operationName: unknown }> extends true
+          ? GraphqlSurfaceSomewhere<C>
+          : unknown;
+
+/** Shared tail of {@link GraphqlOnlyOnGraphqlSurface}: allow iff some layer selects the surface. */
+type GraphqlSurfaceSomewhere<C> =
+    AnyLayer<Layers<C>, { kind: { id: 'graphql' } }> extends true
         ? unknown
         : {
-              wire?: {
-                  multipart?: ConfigError<'`wire.multipart` requires `wire.body: "multipart"` — it is ignored on a json or form body'>;
-              };
-          }
-    : unknown;
+              document?: ConfigError<'`document` requires the graphql surface — use `graphql({ … })`, or set `kind: graphqlSurface`. It is ignored on every other surface'>;
+              operationName?: ConfigError<'`operationName` requires the graphql surface — use `graphql({ … })`, or set `kind: graphqlSurface`. It is ignored on every other surface'>;
+          };
 /**
  * Compile-time guard: the `graphql` surface OWNS its body encoding. Its `buildRequest` packs
  * `{ query, variables, operationName? }` and sends it as JSON unconditionally (ADR 0005 Decision 1
@@ -244,22 +288,32 @@ export type MultipartOnlyOnMultipartBody<C> = C extends {
  *
  * Only the AUTHORING slot moves under `wire` — `graphqlSurface.buildRequest` still emits a flat
  * `bodyType: 'json'` on the `AdapterRequest` it returns, because that contract is unchanged (P22).
+ *
+ * Reads the COMPOSED config via {@link Layers}, like every other guard here — see
+ * {@link MultipartOnlyOnMultipartBody} for the shared residual limits.
  */
-export type NoBodyTypeOnGraphql<C> = C extends { wire: { body: unknown } }
-    ? {
-          wire?: {
-              body?: ConfigError<'the `graphql` surface always sends a JSON `{ query, variables }` body — `wire.body` is ignored (GraphQL file uploads need the multipart request spec, which this surface does not implement)'>;
-          };
-      }
-    : unknown;
+export type NoBodyTypeOnGraphql<C> =
+    AnyLayer<Layers<C>, { wire: { body: unknown } }> extends true
+        ? {
+              wire?: {
+                  body?: ConfigError<'the `graphql` surface always sends a JSON `{ query, variables }` body — `wire.body` is ignored (GraphQL file uploads need the multipart request spec, which this surface does not implement)'>;
+              };
+          }
+        : unknown;
 /**
  * {@link NoBodyTypeOnGraphql}, applied where graphql is only one possible `kind` — the generic
  * `stitch({ kind: graphqlSurface, … })` path. Keys off the surface's literal `id`, which is why
  * `graphqlSurface` is declared with `id: 'graphql'` rather than the widened `string` of `Surface`.
+ *
+ * Reads the COMPOSED config, so a surface inherited through `extends` counts — the same rule
+ * {@link GraphqlOnlyOnGraphqlSurface} applies to `document`. The two are complements on one
+ * surface: that one requires graphql before `document` is legal, this one forbids `wire.body`
+ * once graphql is selected.
  */
-export type BodyTypeFixedByGraphql<C> = C extends { kind: { id: 'graphql' } }
-    ? NoBodyTypeOnGraphql<C>
-    : unknown;
+export type BodyTypeFixedByGraphql<C> =
+    AnyLayer<Layers<C>, { kind: { id: 'graphql' } }> extends true
+        ? NoBodyTypeOnGraphql<C>
+        : unknown;
 /**
  * Compile-time guard: the `download` surface OWNS the request shape its result depends on. Its
  * `buildRequest` forces `method: 'GET'` and a blob response unconditionally (ADR 0005 Decision 1 —
@@ -285,13 +339,21 @@ export type BodyTypeFixedByGraphql<C> = C extends { kind: { id: 'graphql' } }
  * Only the AUTHORING slot moves under `wire`. `downloadSurface.buildRequest` still returns a flat
  * `responseType: 'blob'` on its `AdapterRequest`, which is the transport contract and is unchanged
  * (P22 — the XHR spelling belongs to the layer that meets XHR).
+ *
+ * Reads the COMPOSED config via {@link Layers}, so a `method` or `wire.response` inherited through
+ * `extends` is seen. {@link AnyLayer} takes each depth's shape as-is, which is why the flat and
+ * nested probes read the same way despite sitting at different depths. Residual limits are shared
+ * with {@link MultipartOnlyOnMultipartBody} and documented there.
  */
-export type NoRequestShapeOnDownload<C> = (C extends { method: unknown }
+export type NoRequestShapeOnDownload<C> = (AnyLayer<
+    Layers<C>,
+    { method: unknown }
+> extends true
     ? {
           method?: ConfigError<'the `download` surface always issues a GET — `method` is ignored (for a POST that returns a file, use a plain `stitch()` with `wire: { response: "blob" }`)'>;
       }
     : unknown) &
-    (C extends { wire: { response: unknown } }
+    (AnyLayer<Layers<C>, { wire: { response: unknown } }> extends true
         ? {
               wire?: {
                   response?: ConfigError<'the `download` surface always reads the body as a Blob — `wire.response` is ignored (it is what makes the result `{ blob, filename }`; use a plain `stitch()` to choose another response type)'>;
@@ -302,12 +364,14 @@ export type NoRequestShapeOnDownload<C> = (C extends { method: unknown }
  * {@link NoRequestShapeOnDownload}, applied where download is only one possible `kind` — the generic
  * `stitch({ kind: downloadSurface, … })` path. Keys off the surface's literal `id`, which is why
  * `downloadSurface` is declared with `id: 'download'` rather than the widened `string` of `Surface`.
+ *
+ * Reads the COMPOSED config, so `stitch({ extends: [dlBase], method: 'POST' })` is rejected when
+ * `dlBase` supplies `kind: downloadSurface` — the surface is found through the fragment.
  */
-export type RequestShapeFixedByDownload<C> = C extends {
-    kind: { id: 'download' };
-}
-    ? NoRequestShapeOnDownload<C>
-    : unknown;
+export type RequestShapeFixedByDownload<C> =
+    AnyLayer<Layers<C>, { kind: { id: 'download' } }> extends true
+        ? NoRequestShapeOnDownload<C>
+        : unknown;
 /**
  * Compile-time guard: the `llm` surface OWNS how it frames a chat completion. The live surface's
  * `buildRequest` forces `method: 'POST'` and a JSON body unconditionally and replaces the body with
@@ -341,6 +405,17 @@ export type RequestShapeFixedByDownload<C> = C extends {
  *
  * Only the AUTHORING slot moves under `wire`. `makeLlmSurface`'s `buildRequest` still sets a flat
  * `bodyType: 'json'` on its `AdapterRequest`, which is the transport contract and is unchanged.
+ *
+ * NOT converted to the {@link AnyLayer}/{@link Layers} composed read its siblings use, and there is
+ * nothing here to convert: those guards are conditionals over a captured `C`, and the layer walk is
+ * what lets them ask "is this slot set ANYWHERE in the chain?". This one has no `C` — the parameter
+ * is non-generic, for the excess-property reason above — so it intersects UNCONDITIONALLY and
+ * rejects the literal slot every time, which is strictly stronger than a conditional at the literal
+ * level. What it cannot do is see a violation living entirely inside an `extends` fragment
+ * (`llm({ provider, extends: [{ wire: { body: 'form' } }] })` compiles). That is the SAME fail-open
+ * the composed guards document as their first residual limit — the literal-level case, which is
+ * the one people write, errors precisely — so converting would buy nothing and cost the
+ * `maxTokens` guarantee. Pinned as a tsd expectation so it stays a decision on record.
  */
 export interface NoRequestShapeOnLlm {
     method?: ConfigError<'the `llm` surface always POSTs to the provider — `method` is ignored'>;
@@ -448,8 +523,8 @@ export interface AdapterRequest {
     /**
      * Array serialisation for the urlencoded body; only read when `bodyType: 'form'` (the query
      * string is already serialised into `url` by the time a request reaches the transport).
-     * Defaults to `'indices'` — the same default the query string uses, so one
-     * {@link StitchConfig.arrayFormat} means one thing on both urlencoded surfaces.
+     * Defaults to `'indices'` — the same default the query string uses, so one authored
+     * {@link WireOptions.array} means one thing on both urlencoded surfaces.
      */
     arrayFormat?: ArrayFormat;
     responseType?: ResponseType;
@@ -1464,7 +1539,7 @@ export interface StitchStore {
  * that are intrinsically **per-endpoint**: the address (`path` / `url` / `method` / `document`)
  * and the request/response shape (`name` / `input` / `output` / `kind`). Everything cross-cutting
  * — `baseUrl`, `headers`, `auth`, `retry`, `throttle`, `timeout`, `circuit`, `idempotency`,
- * `paginate`, `pick`, `transform`, `arrayFormat`, `hooks`, `trace`, `store`, `cache`, `adapter`
+ * `paginate`, `pick`, `transform`, `wire`, `hooks`, `trace`, `store`, `cache`, `adapter`
  * — belongs here, so the type itself answers "what belongs at the seam". Members set the endpoint
  * keys.
  */
@@ -1528,14 +1603,16 @@ export interface Seam {
     >(
         config: C &
             MultipartOnlyOnMultipartBody<C> &
+            GraphqlOnlyOnGraphqlSurface<C> &
             BodyTypeFixedByGraphql<C> &
             RequestShapeFixedByDownload<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see
      * {@link StitchFn}). `C` is captured only to re-apply the dead-config guards
-     * ({@link MultipartOnlyOnMultipartBody}, {@link BodyTypeFixedByGraphql},
-     * {@link RequestShapeFixedByDownload}) — see {@link StitchFn}'s fallback for why.
+     * ({@link MultipartOnlyOnMultipartBody}, {@link GraphqlOnlyOnGraphqlSurface},
+     * {@link BodyTypeFixedByGraphql}, {@link RequestShapeFixedByDownload}) — see
+     * {@link StitchFn}'s fallback for why.
      */
     stitch<
         T = unknown,
@@ -1544,6 +1621,7 @@ export interface Seam {
     >(
         config: C &
             MultipartOnlyOnMultipartBody<C> &
+            GraphqlOnlyOnGraphqlSurface<C> &
             BodyTypeFixedByGraphql<C> &
             RequestShapeFixedByDownload<C>,
     ): Stitch<T>;

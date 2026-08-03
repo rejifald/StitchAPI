@@ -1,0 +1,108 @@
+---
+title: 'axiosAdapter'
+description: 'Route a stitch through an axios instance you already configured, keeping its agent, proxy, and interceptors.'
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+Reach for `axiosAdapter(client, defaults?)` when an axios instance is already
+configured the way your platform demands — an `httpsAgent`, a proxy, an
+interceptor stack a team depends on — and you want a stitch's types, validation,
+retry, and auth on top of it without re-creating that setup.
+
+## Example
+
+```ts twoslash
+// @noErrors
+import axios from 'axios';
+import { axiosAdapter, stitch } from 'stitchapi';
+
+const client = axios.create({ proxy: false, timeout: 10_000 });
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    adapter: axiosAdapter(client),
+});
+```
+
+## Options
+
+You pass the client; StitchAPI never imports axios. The runtime stays
+zero-dependency and the instance stays yours — the adapter borrows it for the
+round trip. Anything satisfying `AxiosLike` works, which the real `axios` export
+and any `axios.create()` instance do structurally, so no cast is needed:
+
+```ts twoslash
+import { type AxiosLike, axiosAdapter, stitch } from 'stitchapi';
+
+// Your real axios instance is structurally an AxiosLike.
+declare const axios: AxiosLike;
+
+const listUsers = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    pick: 'data',
+    adapter: axiosAdapter(axios),
+});
+```
+
+The second argument is a defaults object — `{ httpsAgent, proxy, timeout }` and
+anything else axios accepts — merged under every request and overridden by
+per-call values. It is the axios equivalent of
+[`fetchAdapter`'s `dispatcher`](/docs/guides/transport/fetch-adapter): where the
+fetch transport threads an undici `Agent`, this one hands your agent to axios.
+
+Body encoding and response parsing come from the same helpers `fetchAdapter`
+uses, so json, form, and multipart go out byte-identical and the response decodes
+the same way. The adapter asks the client for an `arraybuffer` and sets
+`validateStatus: () => true`, so a non-2xx never throws inside axios — the stitch
+decides what a status means.
+
+### Buffered-only, but progress still works
+
+`axiosAdapter` throws on a `stream` or `sse` surface, because axios buffers the
+whole body before handing it over. That failure is loud at the call rather than a
+silent hang; an endpoint that needs to stream rides
+[`fetchAdapter`](/docs/guides/transport/fetch-adapter) instead, and the two can
+sit side by side in the same codebase.
+
+Byte progress does survive: the adapter wires axios's native `onUploadProgress`
+and `onDownloadProgress` into the stitch's `onProgress`, so both phases report and
+an upload bar works without leaving the instance you trust. That needs an axios
+new enough to honor those callbacks (v1+); an older client simply never fires
+them.
+
+<Callout type="warn">
+    **Anti-pattern:** don't reach for `axiosAdapter` on an endpoint you plan to
+    stream — it rejects the call outright. Declare that one stitch with
+    `fetchAdapter()` and leave the rest on axios; the transport is per-stitch,
+    so the two coexist.
+</Callout>
+
+### Redirects don't leak credentials
+
+axios follows 3xx hops through follow-redirects, which strips `authorization` and
+`cookie` cross-origin but forwards custom headers — so an `x-api-key` or an
+`x-amz-*` set by an auth strategy would reach an unintended host. The adapter
+installs a `beforeRedirect` hook that applies the same policy `fetchAdapter`
+enforces: a hop leaving the original origin keeps only the CORS-safelisted headers
+and drops every credential, while same-origin hops pass through untouched.
+
+## See also
+
+<Cards>
+    <Card title="The adapter seam" href="/docs/guides/transport/adapters" />
+    <Card title="fetchAdapter" href="/docs/guides/transport/fetch-adapter" />
+    <Card
+        title="Writing an adapter"
+        href="/docs/guides/transport/custom-adapter"
+    />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card
+        title="Reference: Helpers"
+        href="/docs/reference/helpers#axiosadapter"
+    />
+</Cards>

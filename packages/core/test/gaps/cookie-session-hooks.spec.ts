@@ -50,8 +50,43 @@ const loginStitch = (baseUrl: string) =>
         method: 'POST',
         baseUrl,
         path: '/login',
-        bodyType: 'form',
+        wire: { body: 'form' },
     });
+
+// REGRESSION GUARD. Every cookie-session login stitch in the suite declares a urlencoded body, and
+// none of them asserted the content-type — so when the `wire` fold left these `bodyType: 'form'`
+// spellings behind, the field was silently ignored, the logins started POSTing JSON, and the whole
+// suite stayed green. `stitch`'s `const C` generic suppresses excess-property checking, so nothing
+// in `tsc` could catch it either. One assertion on the login's actual content-type makes the next
+// such rename fail loudly instead of quietly.
+test('a cookie-session login really posts urlencoded, not JSON', async () => {
+    server.route('POST', '/login', {
+        setCookie: { name: 'sid', value: 'ABC' },
+        body: { ok: true },
+    });
+    server.route('GET', '/data', {
+        requireCookie: { name: 'sid' },
+        body: { ok: true },
+    });
+
+    await stitch({
+        baseUrl: server.url,
+        path: '/data',
+        auth: cookieSession({
+            login: loginStitch(server.url),
+            cookie: 'sid',
+            loginInput,
+            key: 'csh-contenttype',
+            tenancy: 'app', // standalone shared session; no principal to bind here
+        }),
+    })();
+
+    const login = server.calls('/login')[0];
+    expect(login?.headers['content-type']).toMatch(
+        /application\/x-www-form-urlencoded/,
+    );
+    expect(String(login?.body)).not.toContain('{');
+});
 
 test('onRefresh fires with { ok: true, status: 200 } after a successful cold login', async () => {
     server.route('POST', '/login', {
@@ -87,6 +122,11 @@ test('onRefresh fires with { ok: true, status: 200 } after a successful cold log
 
     expect(refreshes).toEqual([{ ok: true, status: 200 }]);
     expect(failures).toEqual([]); // a successful login never reports a failure
+    // The login posts a urlencoded body — pinned so a lost `wire.body` silently falls back to
+    // JSON without a single test noticing.
+    expect(server.calls('/login')[0]?.headers['content-type']).toMatch(
+        /application\/x-www-form-urlencoded/,
+    );
 });
 
 test('onRefresh fires ONCE (not per-waiter) under concurrent cold callers sharing one login', async () => {

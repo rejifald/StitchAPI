@@ -103,6 +103,21 @@ const raw = stitch({
 });
 expectType<Stitch<unknown>>(raw);
 
+// ── NOT converted to the composed `Layers` read, deliberately ───────────────
+// Its siblings walk `Layers<C>` (#597) so an enabler inherited through `extends` counts. This guard
+// has no `C` to walk — the parameter is non-generic, which is what preserves the excess-property
+// checking asserted below — so it intersects unconditionally. At the LITERAL level that is strictly
+// stronger than a conditional: every spelling above is rejected without needing a layer scan.
+//
+// The cost is one fail-open, and it is the same one the composed guards list as their first
+// residual limit: a violation living entirely inside a fragment is not reported. Pinned here so it
+// is a decision on record rather than a surprise.
+llm({
+    provider: openai,
+    model: 'gpt-4o',
+    extends: [{ wire: { body: 'form' } }],
+});
+
 // ── Excess-property checking is preserved (P4) ──────────────────────────────
 // `llm()`'s parameter is deliberately non-generic; that is what keeps a fresh object literal subject
 // to excess-property checks, which is what makes the removed `maxTokens` spelling an error. A

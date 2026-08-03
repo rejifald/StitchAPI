@@ -13,6 +13,38 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **`document` and `operationName` now require the graphql surface at compile time.** Both are
+  read only by the graphql surface's `buildRequest`, so authoring either on any other surface
+  was silently dead config — the document was dropped and a plain request went out with none of
+  it:
+
+    ```ts
+    // before: typechecked, and quietly sent {"hello":"world"} with no GraphQL at all
+    stitch({
+        method: 'POST',
+        baseUrl,
+        path: '/probe',
+        document: 'query Me { me { id } }',
+    });
+    ```
+
+    It is now a type error naming the offending field. `graphql()` and `Seam.graphql()` are
+    unaffected — they select the surface themselves and require `document`. The generic spelling
+    still works with the surface named: `stitch({ kind: graphqlSurface, document })`.
+
+    This is CONTRACT.md P24 carve-out (b) applied — a flat group must make its dead combinations
+    unrepresentable — using the same `ConfigError` brand as the `wire.multipart` guard, so the
+    error names the field instead of collapsing the config to `never`.
+
+    **Known limit,** shared with the `wire.multipart` guard: the check reads the config literal,
+    not the composed result, so a surface inherited through `extends` is invisible to it.
+    `stitch({ extends: [gqlBase], document })` is rejected even though `gqlBase` supplies `kind`
+    — spell the surface on the layer carrying the document, or use `graphql()`. Pinned as a tsd
+    expectation so it is a decision on record, not a surprise.
+
+    `graphqlSurface`'s exported type pins `id` to its `'graphql'` literal rather than widening to
+    `Surface`'s `string`, which is what makes the surface visible to the guard.
+
 - **BREAKING — every wire-format field moves into one `wire` envelope.** `bodyType`,
   `responseType`, `arrayFormat`, and `multipart` were four flat top-level slots describing one
   category, so they fold into a named envelope (CONTRACT.md P24):
@@ -53,6 +85,13 @@ npm release are grouped under the in-development version that introduced them.
   only on a multipart body, so pairing it with `'json'`/`'form'` — or with no body encoding at
   all — was silently inert config that typechecked. It is now a type error naming the offending
   field, on `stitch`, `graphql`, `Seam.stitch`, and `Seam.graphql`.
+
+- **`@stitchapi/shell` omits the whole `wire` envelope from `ShellOptions`.** A subprocess has no
+  HTTP wire format: its `body` is argv rather than an encoded payload, and how stdout becomes a
+  value is spelled `decode`. The surface already omitted the flat `responseType` for that reason,
+  so it omits the envelope that field moved into — dropped whole rather than by its `response`
+  member, since filtering one member would leave the other three inherited, typechecking and
+  doing nothing. `shell({ wire: … })` is now a type error.
 
 - **BREAKING — `wire.body` on a `graphql` stitch is now a compile error.** The `graphql`
   surface builds its own request body — a JSON `{ query, variables, operationName? }`
@@ -103,6 +142,9 @@ npm release are grouped under the in-development version that introduced them.
     `responseType` / `bodyType`, and that is exactly what both `buildRequest` implementations
     set — the guards close the config surface above them, not the transport contract below.
 
+    Like the two guards below, these read the **composed** config, so an `extends` fragment that
+    selects the download surface is seen and the same rejections apply through it.
+
     **Migration:** delete the field. As with graphql, no runtime behaviour changed — only
     configs that were already inert stop compiling. If you were reaching for
     `download({ method: 'POST' })` to download the result of a POST, that request is a plain
@@ -110,6 +152,32 @@ npm release are grouped under the in-development version that introduced them.
     `Content-Disposition` filename parsing.
 
 ### Fixed
+
+- **The config guards now read the composed config, so `extends` counts.** `wire.multipart` and
+  `document`/`operationName` are gated on an enabler — a multipart body, the graphql surface — and
+  both guards previously inspected only the config LITERAL. A config that inherited its enabler
+  through `extends` was therefore rejected outright:
+
+    ```ts
+    const gqlBase = { kind: graphqlSurface, baseUrl };
+    stitch({ extends: [gqlBase], document: `query { me { id } }` }); // was a type error
+    ```
+
+    Both now walk the same layer list `InputOf` uses (`Layers`), so an enabler from any layer
+    counts. There is deliberately one flattener rather than a second copy — a private one would
+    drift on depth budget and fragment normalisation, and the guards would disagree with `InputOf`
+    about what a config is.
+
+    The scan is **existential** ("is the enabler set anywhere?") rather than last-wins. Resolving an
+    override chain at the type level is easy to get subtly wrong, and the two failure directions are
+    not symmetric: a false positive rejects working code loudly, a false negative merely fails to
+    catch something the compiler never caught before. Scanning existentially can only produce the
+    second.
+
+    Two limits are inherited from `Layers` and unchanged: an `extends` list widened to `Frag[]` (a
+    `const` binding without `as const`) and the P7 single-fragment spelling (`extends: frag`) both
+    read as empty, because the flattener destructures a tuple. `InputOf` has read `extends` that way
+    since #76. Both are pinned as tsd expectations.
 
 - **A `wire: { body: 'form' }` body no longer mangles nested objects and arrays.** ADR 0005
   Decision 6 named this bug — a nested value becoming `[object Object]` — and fixed it for

@@ -119,6 +119,48 @@ expectError(
 // A seam member on the default (http) surface still takes any request shape.
 api.stitch({ path: '/upload', method: 'POST', wire: { response: 'text' } });
 
+// ── The guard reads the COMPOSED config, so `extends` counts ────────────────
+// `RequestShapeFixedByDownload` walks `Layers<C>` like every other config guard (#597), so the
+// surface can arrive through a fragment and the rejection still applies.
+const dlBase = { kind: downloadSurface, baseUrl: 'https://files.example.com' };
+
+// Positive control: the fragment selects the surface, the literal says nothing about the shape.
+stitch({ extends: [dlBase], path: '/report.pdf' });
+
+expectError(stitch({ extends: [dlBase], method: 'POST' }));
+expectError(stitch({ extends: [dlBase], wire: { response: 'text' } }));
+
+// Nested one level down: the flattener recurses, so the surface is still found.
+expectError(
+    stitch({
+        extends: [{ extends: [dlBase], headers: { 'x-a': '1' } }],
+        method: 'POST',
+    }),
+);
+
+// A fragment chain that never selects download leaves both fields live, as before.
+stitch({ extends: [{ baseUrl: 'https://api.example.com' }], method: 'POST' });
+
+// ── Inherited from `Layers`, not introduced here — and fail-OPEN, not fail-closed ──
+// Same two limits `graphql-fields.test-d.ts` pins: the flattener destructures a TUPLE, so an
+// `extends` widened to `Frag[]` (what a `const` binding does without `as const`) reads as empty,
+// as does the P7 single-fragment spelling (`extends: frag`, not a list).
+//
+// The DIRECTION is inverted here, and that is the point of pinning it separately. For
+// `GraphqlOnlyOnGraphqlSurface` the surface is the ENABLER, so an unseen layer rejects valid code
+// (fail-closed, loud). For this guard the surface is the TRIGGER, so an unseen layer merely fails
+// to reject dead config (fail-open, silent) — which is the direction #597 deliberately biases
+// toward. Both spellings therefore still typecheck; they are not `expectError`.
+stitch({ extends: dlBase, method: 'POST' });
+
+const widened = [dlBase]; // inferred `Frag[]`, not `[Frag]`
+stitch({ extends: widened, method: 'POST' });
+
+// Same fail-open, different cause: a violation living ENTIRELY in a fragment is not reported,
+// because the error is surfaced by intersecting onto the config LITERAL. Documented on
+// `MultipartOnlyOnMultipartBody` as the first residual limit; pinned here so it stays deliberate.
+stitch({ extends: [{ method: 'POST' }], kind: downloadSurface, url: URL_ });
+
 // ── The non-inferring fallback must not launder a rejected config ───────────
 // A bare path string still reaches the loose overload unharmed.
 expectType<Stitch<unknown>>(stitch('/plain'));

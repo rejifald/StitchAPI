@@ -150,13 +150,19 @@ export interface ShellBufferOptions {
  * `command` is required by design (CONTRACT.md P15) — the positional `shell(command, options?)`
  * shorthand names it, so the options bag there is `Omit<ShellOptions, 'command'>`.
  *
- * `responseType` is omitted from the inherited keys: a subprocess has no HTTP response, so how
- * stdout becomes a value is spelled once, as `decode` — the house word for "turn raw output into
- * values" (core spells the streaming decoder `stream.decode`). Passing the HTTP-shaped slot to a
- * shell used to type-check and do nothing; now it does not type-check.
+ * The whole `wire` envelope is omitted from the inherited keys: it describes the HTTP wire format
+ * — request body encoding, urlencoded array serialisation, multipart nesting, response reading —
+ * and a subprocess has none of it. Its `body` is argv, not an encoded payload, and how stdout
+ * becomes a value is spelled once, as `decode` — the house word for "turn raw output into values"
+ * (core spells the streaming decoder `stream.decode`). Passing an HTTP-shaped slot to a shell used
+ * to type-check and do nothing; now it does not type-check.
+ *
+ * The envelope is dropped whole rather than by its `response` field: once the four flat slots
+ * folded into one word (CONTRACT.md P24), filtering a single field inside it would leave the other
+ * three inherited — type-checking and doing nothing, which is the exact hole this closes.
  */
 export interface ShellOptions extends Partial<
-    Omit<StitchConfig, 'kind' | 'responseType'>
+    Omit<StitchConfig, 'kind' | 'wire'>
 > {
     /** The executable — STATIC, bound at construction, NEVER from call input. An absolute path
      *  needs no `PATH`; a bare name (`'git'`) needs `env: { PATH: process.env.PATH }`. */

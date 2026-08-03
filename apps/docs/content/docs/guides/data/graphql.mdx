@@ -30,6 +30,25 @@ const data = await getUser({ variables: { id: '1' } });
 `method: 'POST'`, and `pick: 'data'` for you. You supply the GraphQL document
 as `document`, plus a `baseUrl`/`path` pointing at the endpoint.
 
+<Callout type="info">
+    `document` and `operationName` are read **only** by the graphql surface, so
+    they are a type error on any other one — a plain `stitch({ document })`
+    would otherwise drop the document silently and send an ordinary request.
+    Reach for `graphql()` (or `seam.graphql()`), which selects the surface for
+    you; the generic spelling works too if you name it yourself:
+
+    ```ts
+    import { graphqlSurface, stitch } from 'stitchapi';
+
+    stitch({ baseUrl, kind: graphqlSurface, document: `query { me { id } }` });
+    ```
+
+    The check reads the config you write, not the composed result — so a
+    surface inherited through `extends` is not seen. Put `kind` on the same
+    layer as the document, or use `graphql()`.
+
+</Callout>
+
 Pass GraphQL variables through the input's `variables` field at call time —
 `getUser({ variables: { id: '1' } })` — so one stitch serves every set of
 arguments. Because `pick` defaults to `'data'`, the resolved value is the

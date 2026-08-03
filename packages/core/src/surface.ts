@@ -126,9 +126,11 @@ export const httpSurface: Surface = { id: 'http' };
  * config: that transport contract keeps the flat wire-format fields (CONTRACT.md P22), and the
  * engine converts `wire` into them when it builds the request.
  *
- * The literal `id: 'graphql'` (rather than `Surface`'s widened `string`) is load-bearing: it is
- * what lets `BodyTypeFixedByGraphql` recognise this surface in `stitch({ kind: graphqlSurface })`.
  */
+// The `id` is pinned to its literal rather than widened to `Surface`'s `string`, so
+// `GraphqlOnlyOnGraphqlSurface` and `BodyTypeFixedByGraphql` can tell at the type level whether a
+// config selected this surface. Widening it would make `document`/`operationName`/`wire.body`
+// unguardable on the generic `stitch({ kind })` spelling.
 export const graphqlSurface: Surface & { readonly id: 'graphql' } = {
     id: 'graphql',
     buildRequest: (cfg, input, base) => {

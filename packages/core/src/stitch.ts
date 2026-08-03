@@ -37,6 +37,7 @@ import {
     type DriftFinding,
     type DriftOptions,
     type DriftSpec,
+    type GraphqlOnlyOnGraphqlSurface,
     type HookContext,
     type Hooks,
     type IdempotencyOptions,
@@ -1128,6 +1129,7 @@ export interface StitchFn {
     >(
         config: C &
             MultipartOnlyOnMultipartBody<C> &
+            GraphqlOnlyOnGraphqlSurface<C> &
             BodyTypeFixedByGraphql<C> &
             RequestShapeFixedByDownload<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
@@ -1137,12 +1139,12 @@ export interface StitchFn {
      * match the inferring overload above, so the result is `Stitch<unknown>` — override with `<T>`.
      *
      * `C` is captured here ONLY to re-apply the dead-config guards
-     * ({@link MultipartOnlyOnMultipartBody}, {@link BodyTypeFixedByGraphql},
-     * {@link RequestShapeFixedByDownload}); the result stays `Stitch<T>`. Without it a config
-     * rejected by the inferring overload would silently fall through to this one and typecheck
-     * after all. On a genuinely loose `string | Partial<StitchConfig>` argument the guards
-     * distribute over the union and every arm resolves to `unknown`, so this stays the same escape
-     * hatch it has always been.
+     * ({@link MultipartOnlyOnMultipartBody}, {@link GraphqlOnlyOnGraphqlSurface},
+     * {@link BodyTypeFixedByGraphql}, {@link RequestShapeFixedByDownload}); the result stays
+     * `Stitch<T>`. Without it a config rejected by the inferring overload would silently fall
+     * through to this one and typecheck after all. On a genuinely loose
+     * `string | Partial<StitchConfig>` argument the guards distribute over the union and every arm
+     * resolves to `unknown`, so this stays the same escape hatch it has always been.
      */
     <
         T = unknown,
@@ -1151,6 +1153,7 @@ export interface StitchFn {
     >(
         config: C &
             MultipartOnlyOnMultipartBody<C> &
+            GraphqlOnlyOnGraphqlSurface<C> &
             BodyTypeFixedByGraphql<C> &
             RequestShapeFixedByDownload<C>,
     ): Stitch<T>;

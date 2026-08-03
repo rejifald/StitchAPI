@@ -78,6 +78,7 @@ export const sections: Section[] = [
     { path: 'guides/auth', title: 'Auth' },
     { path: 'guides/resilience', title: 'Resilience' },
     { path: 'guides/data', title: 'Data shaping' },
+    { path: 'guides/transport', title: 'Transport & adapters' },
     { path: 'guides/validation', title: 'Validation & drift' },
     { path: 'guides/observability', title: 'Observability' },
     { path: 'guides/state', title: 'State & stores' },
@@ -482,6 +483,43 @@ export const pages: Page[] = [
         title: 'GraphQL',
         description:
             'Call a GraphQL endpoint with variables, pick data, and treat a 200 carrying errors as a failure.',
+        kind: 'guide',
+    },
+
+    // ── Guides · Transport & adapters ───────────────────────────────────────
+    {
+        path: 'guides/transport/adapters',
+        title: 'The adapter seam',
+        description:
+            'Swap the transport a stitch calls through — fetch, axios, xhr, or your own — without changing what the stitch promises its caller.',
+        kind: 'guide',
+    },
+    {
+        path: 'guides/transport/fetch-adapter',
+        title: 'fetchAdapter',
+        description:
+            'The default fetch-backed transport, and the undici dispatcher option that threads a proxy, a custom CA, or a bound interface through one stitch.',
+        kind: 'guide',
+    },
+    {
+        path: 'guides/transport/axios-adapter',
+        title: 'axiosAdapter',
+        description:
+            'Route a stitch through an axios instance you already configured, keeping its agent, proxy, and interceptors.',
+        kind: 'guide',
+    },
+    {
+        path: 'guides/transport/xhr-adapter',
+        title: 'xhrAdapter',
+        description:
+            'Draw an upload progress bar in the browser with an XMLHttpRequest-backed transport, which reports the bytes sent that fetch cannot.',
+        kind: 'guide',
+    },
+    {
+        path: 'guides/transport/custom-adapter',
+        title: 'Writing an adapter',
+        description:
+            "Implement the one-function Adapter contract to carry a stitch over a transport StitchAPI doesn't ship, and declare what it supports.",
         kind: 'guide',
     },
 

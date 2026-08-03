@@ -124,6 +124,41 @@ expectError(bound.stitch({ document: DOC, wire: { body: 'multipart' } }));
 // A seam member on the default (http) surface still takes any body encoding.
 api.stitch({ path: '/upload', method: 'POST', wire: { body: 'multipart' } });
 
+// ── The guard reads the COMPOSED config, so `extends` counts ────────────────
+// `BodyTypeFixedByGraphql` walks `Layers<C>` like every other config guard (#597). It is the
+// complement of `GraphqlOnlyOnGraphqlSurface` on the same surface: that one requires graphql
+// before `document` is legal, this one forbids `wire.body` once graphql is selected.
+const gqlBase = { kind: graphqlSurface, baseUrl: 'https://api.example.com' };
+
+// Positive control: the fragment selects the surface, the literal says nothing about the encoding.
+stitch({ extends: [gqlBase], document: DOC });
+
+expectError(
+    stitch({ extends: [gqlBase], document: DOC, wire: { body: 'form' } }),
+);
+
+// Nested one level down: the flattener recurses, so the surface is still found.
+expectError(
+    stitch({
+        extends: [{ extends: [gqlBase], headers: { 'x-a': '1' } }],
+        document: DOC,
+        wire: { body: 'form' },
+    }),
+);
+
+// ── Inherited from `Layers`, and fail-OPEN here ─────────────────────────────
+// The tuple-destructuring limit `graphql-fields.test-d.ts` pins fails CLOSED there (the surface is
+// the enabler, so an unseen layer rejects valid code) but OPEN here (the surface is the trigger, so
+// an unseen layer only fails to catch dead config). Both spellings still typecheck.
+//
+// To isolate THIS guard the surface must live ONLY in the unseen fragment — naming `kind` on the
+// literal would fire the guard from there and prove nothing about the layer walk.
+const widened = [gqlBase]; // inferred `Frag[]`, not `[Frag]`
+stitch({ extends: widened, wire: { body: 'form' } });
+
+// Same, via the P7 single-fragment spelling.
+stitch({ extends: gqlBase, wire: { body: 'form' } });
+
 // ── The non-inferring fallback must not launder a rejected config ───────────
 // A bare path string still reaches the loose overload unharmed.
 expectType<Stitch<unknown>>(stitch('/plain'));
