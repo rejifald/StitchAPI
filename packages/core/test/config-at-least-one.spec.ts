@@ -24,8 +24,17 @@ test('the opaque `{}` is rejected at each Scalar|AtLeastOne slot (P20)', () => {
         stitch({
             baseUrl: 'https://x',
             path: '/y',
-            // @ts-expect-error — `multipart: {}` is rejected; use `'dot'` or set `nesting`.
-            multipart: {},
+            wire: {
+                body: 'multipart',
+                // @ts-expect-error — `multipart: {}` is rejected; use `'dot'` or set `nesting`.
+                multipart: {},
+            },
+        }),
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            // @ts-expect-error — the opaque `wire: {}` is rejected; set at least one field (P20).
+            wire: {},
         }),
         stitch({
             baseUrl: 'https://x',
@@ -82,7 +91,15 @@ test('the opaque `{}` is rejected at each Scalar|AtLeastOne slot (P20)', () => {
 
 test('the scalar / ≥1-field forms are accepted at each slot (P12/P13/P20)', () => {
     const accepted = () => [
-        stitch({ baseUrl: 'https://x', path: '/y', multipart: 'dot' }),
+        // `bodyType: 'multipart'` is required alongside `multipart` — the slot is read only on a
+        // multipart body, so the pairing is enforced statically. The shorthand under test is the
+        // bare `'dot'` string standing in for `{ nesting: 'dot' }` (P12).
+        stitch({
+            baseUrl: 'https://x',
+            path: '/y',
+            bodyType: 'multipart',
+            multipart: 'dot',
+        }),
         stitch({ baseUrl: 'https://x', path: '/y', stream: 'ndjson' }),
         stitch({ baseUrl: 'https://x', path: '/y', sse: true }),
         stitch({ baseUrl: 'https://x', path: '/y', sse: { reconnect: true } }),

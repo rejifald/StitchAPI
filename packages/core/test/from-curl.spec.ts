@@ -108,27 +108,27 @@ describe('toStitchSource', () => {
         expect(source).not.toMatch(/headers:\s*{[^}]*authorization/i);
     });
 
-    test('a POST JSON body sets method + bodyType json and shows the example', () => {
+    test('a POST JSON body sets method + a json wire body and shows the example', () => {
         const { source } = toStitchSource(
             parseCurl(
                 `curl -d '{"name":"Ada","age":36}' https://api.example.com/users`,
             ),
         );
         expect(source).toContain("method: 'POST'");
-        expect(source).toContain("bodyType: 'json'");
+        expect(source).toContain("wire: { body: 'json' }");
         expect(source).toContain('body: {');
         expect(source).toContain("name: 'Ada'");
         expect(source).toContain('age: 36');
     });
 
-    test('a form -d sets bodyType form and a parsed-pairs body', () => {
+    test('a form -d sets a form wire body and a parsed-pairs body', () => {
         const { source } = toStitchSource(
             parseCurl(
                 'curl -d name=Ada -d city=Kyiv https://api.example.com/u',
             ),
         );
         expect(source).toContain("method: 'POST'");
-        expect(source).toContain("bodyType: 'form'");
+        expect(source).toContain("wire: { body: 'form' }");
         expect(source).toContain("name: 'Ada'");
         expect(source).toContain("city: 'Kyiv'");
     });
@@ -137,7 +137,7 @@ describe('toStitchSource', () => {
         const { source } = toStitchSource(
             parseCurl('curl -G -d q=ada -d limit=10 https://api.example.com/s'),
         );
-        expect(source).not.toContain('bodyType');
+        expect(source).not.toContain('wire:');
         expect(source).not.toContain('body:');
         expect(source).toContain('query: {');
         expect(source).toContain("q: 'ada'");
@@ -215,7 +215,7 @@ describe('parseHar', () => {
         const { source } = toStitchSource(parseHar(har));
         expect(source).not.toContain('har-tok');
         expect(source).toContain("bearer(env('API_TOKEN'))");
-        expect(source).toContain("bodyType: 'json'");
+        expect(source).toContain("wire: { body: 'json' }");
     });
 
     test('an empty HAR warns instead of throwing', () => {

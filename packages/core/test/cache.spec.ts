@@ -658,7 +658,7 @@ describe('cache — non-storable pass-through', () => {
         const s = stitch({
             url: URL,
             adapter,
-            responseType: 'arrayBuffer',
+            wire: { response: 'arrayBuffer' },
             trace: false,
             cache: { ttl: '60s', tenancy: 'app' },
         });

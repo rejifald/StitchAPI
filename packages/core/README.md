@@ -505,7 +505,7 @@ const signIn = stitch({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/auth/sign-in',
-    bodyType: 'form',
+    wire: { body: 'form' },
 });
 
 const listUsers = stitch({
@@ -570,20 +570,20 @@ You opt into a real store only when you scale out — progressive disclosure, ap
 
 ## Request body encoding
 
-`bodyType` selects the request encoding — `'json'` (default), `'form'`, or `'multipart'`:
+`wire.body` selects the request encoding — `'json'` (default), `'form'`, or `'multipart'`:
 
 ```ts
 const submit = stitch({
     method: 'POST',
     path: 'https://api.example.com/form',
-    bodyType: 'form', // application/x-www-form-urlencoded
+    wire: { body: 'form' }, // application/x-www-form-urlencoded
 });
 await submit({ body: { a: 1, b: 'x y' } });
 
 const upload = stitch({
     method: 'POST',
     path: 'https://api.example.com/upload',
-    bodyType: 'multipart', // multipart/form-data
+    wire: { body: 'multipart' }, // multipart/form-data
 });
 await upload({
     // a { value, filename } field becomes a named file part

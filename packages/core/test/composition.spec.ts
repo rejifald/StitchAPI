@@ -321,18 +321,22 @@ test('retry.backoff folds its bare curve into the envelope', () => {
     expect(compose({ path: '/x', retry: 3 }).retry).toEqual({ attempts: 3 });
 });
 
-// 6a) P20/P12/P13: the stream/multipart dominant-field scalars and the `sse` toggle fold to their
-// envelope at compose time (the opaque `{}` is rejected at the slot, so all-defaults arrives as the
-// scalar). `sse: false` clears the slot.
-test('stream/multipart scalars and the sse toggle expand to option objects', () => {
+// 6a) P20/P12/P13: the stream dominant-field scalar and the `sse` toggle fold to their envelope at
+// compose time (the opaque `{}` is rejected at the slot, so all-defaults arrives as the scalar).
+// `wire.multipart` folds one level DOWN — `wire` itself has no dominant field, so it takes no
+// scalar of its own (P14); only its `multipart` member does. `sse: false` clears the slot.
+test('stream/wire.multipart scalars and the sse toggle expand to option objects', () => {
     const resolved = compose({
         path: 'https://api.example.com/x',
         stream: 'ndjson',
-        multipart: 'dot',
+        wire: { body: 'multipart', multipart: 'dot' },
         sse: true,
     });
     expect(resolved.stream).toEqual({ decode: 'ndjson' });
-    expect(resolved.multipart).toEqual({ nesting: 'dot' });
+    expect(resolved.wire).toEqual({
+        body: 'multipart',
+        multipart: { nesting: 'dot' },
+    });
     expect(resolved.sse).toEqual({ reconnect: true });
 
     expect(compose({ path: '/x', sse: false }).sse).toBeUndefined();

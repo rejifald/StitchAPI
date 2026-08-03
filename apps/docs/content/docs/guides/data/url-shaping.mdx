@@ -77,14 +77,31 @@ await search({ query: { filter: { type: 'admin' }, ids: [1, 2] } });
 ```
 
 Array encoding is configurable with
-[`arrayFormat`](/docs/reference/config-types) — `indices` (the default shown
+[`wire.array`](/docs/reference/config-types) — `indices` (the default shown
 above), `brackets`, or `repeat`.
+
+The same walker and the same `wire.array` shape a `wire: { body: 'form' }` request
+body, so an urlencoded body nests and serializes exactly like the query string:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const create = stitch({
+    method: 'POST',
+    url: 'https://api.example.com/users',
+    wire: { body: 'form' },
+});
+
+await create({ body: { filter: { type: 'admin' }, ids: [1, 2] } });
+// → filter[type]=admin&ids[0]=1&ids[1]=2
+```
 
 > [!NOTE]
 >
-> Values are percent-encoded with `encodeURIComponent`, so a space in a query
-> value goes on the wire as `%20`, not `+` like `URLSearchParams`. Both decode to
-> a space server-side; see
+> Query values are percent-encoded with `encodeURIComponent`, so a space in a
+> query value goes on the wire as `%20`, not `+` like `URLSearchParams`. A form
+> **body** keeps `+`, which is what urlencoded bodies have always used. Both
+> decode to a space server-side; see
 > [Migration notes](/docs/getting-started/migration-notes) if a byte-for-byte
 > fixture trips on it.
 

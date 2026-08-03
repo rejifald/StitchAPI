@@ -201,7 +201,7 @@ function buildRequest(
     const query = { ...predefined, ...(input.query ?? {}) };
     const url = appendQueryString(
         joinUrl(base, path),
-        buildQuery(query, cfg.arrayFormat),
+        buildQuery(query, cfg.wire?.array),
     );
     // A relative endpoint can't be fetched by the default transport — fail with a clear config
     // error here instead of a cryptic "Failed to parse URL" from fetch. A custom `adapter` OR a
@@ -234,9 +234,15 @@ function buildRequest(
         method,
         headers,
         body: input.body,
-        bodyType: cfg.bodyType,
-        multipart: cfg.multipart,
-        responseType: cfg.responseType,
+        // The `wire` envelope is the AUTHORING shape; `AdapterRequest` stays flat, and
+        // `responseType` keeps the XHR/fetch spelling at that boundary (CONTRACT.md P22 — follow
+        // the standard that governs each layer, and convert at the edge). This IS that edge.
+        bodyType: cfg.wire?.body,
+        multipart: cfg.wire?.multipart,
+        // Read by the transport only for a `'form'` body; the query string was already serialised
+        // into `url` above, by the same walker and the same `wire.array`.
+        arrayFormat: cfg.wire?.array,
+        responseType: cfg.wire?.response,
     });
     // Per-call execution controls (ADR 0005 Decisions 8-9): cancellation + byte progress, threaded
     // BEFORE the surface shapes the request so a surface that spreads `base` (e.g. `download`)

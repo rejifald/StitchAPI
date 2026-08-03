@@ -10,7 +10,7 @@
 // CLI-only: imported solely by cli.ts, never by src/index.ts — so it (and its parser) never enter
 // the core or browser bundle. Types come from ./types only; core stays zero-dep and
 // validator-agnostic (the optional `output:` schema is GENERATED TEXT, not an imported validator).
-import type { StitchConfig } from './types';
+import type { BodyEncoding } from './types';
 
 // ---- parsed request -------------------------------------------------------
 
@@ -758,7 +758,7 @@ function analyzeRequest(req: ParsedRequest): AnalyzedRequest {
     }
 
     // Static headers: drop auth/transport/implied-content-type noise.
-    const bodyType: StitchConfig['bodyType'] | undefined =
+    const bodyType: BodyEncoding | undefined =
         !req.asQuery && req.body
             ? req.bodyType === 'form'
                 ? 'form'
@@ -845,8 +845,9 @@ function renderConfig(
     }
 
     // Request body (only when NOT folded to query). JSON → an example object; form → a note.
+    // Emits the `wire` envelope, which is the authoring shape (CONTRACT.md P24).
     if (a.bodyType && req.body) {
-        lines.push(`    bodyType: ${quote(a.bodyType)},`);
+        lines.push(`    wire: { body: ${quote(a.bodyType)} },`);
     }
 
     // Output schema: default = a comment; with --zod = a generated schema string from --response.

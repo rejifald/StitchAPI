@@ -1,5 +1,5 @@
 // Small dependency-free helpers shared across the prototype.
-import type { Clock, RunContext } from './types';
+import type { ArrayFormat, Clock, RunContext } from './types';
 
 export const now = (): number => Date.now();
 
@@ -398,57 +398,72 @@ export function expandPath(
     );
 }
 
-// ---- Query strings --------------------------------------------------------
-// Build a query string from a possibly-nested object, `qs`-style: nested objects
-// expand to `a[b]=c`, and both the bracketed key and the value are percent-encoded
-// (so `a[b]` goes on the wire as `a%5Bb%5D`, which servers decode back to `a[b]`).
-// `null`/`undefined` are skipped; empty objects/arrays add nothing.
+// ---- urlencoded serialisation ---------------------------------------------
+// One walker flattens a possibly-nested object into `application/x-www-form-urlencoded`
+// key/value pairs, `qs`-style: nested objects expand to `a[b]=c`. `null`/`undefined` are
+// skipped; empty objects/arrays add nothing. Shared by BOTH urlencoded surfaces — the query
+// string (`buildQuery`) and the `bodyType: 'form'` request body (`encodeRequestBody`) — so one
+// `arrayFormat` governs both (ADR 0005 Decision 6, extended to the form arm).
+//
 // Array serialisation is controlled by `arrayFormat` (default 'indices'):
-//   'indices'  → a%5B0%5D=x&a%5B1%5D=y  (numeric subscripts)
-//   'brackets' → a%5B%5D=x&a%5B%5D=y    (empty bracket suffix, no index)
-//   'repeat'   → a=x&a=y                 (bare repeated keys, no brackets)
-export type ArrayFormat = 'indices' | 'brackets' | 'repeat';
+//   'indices'  → a[0]=x&a[1]=y  (numeric subscripts)
+//   'brackets' → a[]=x&a[]=y    (empty bracket suffix, no index)
+//   'repeat'   → a=x&a=y        (bare repeated keys, no brackets)
 
-export function buildQuery(
-    q: Record<string, unknown> | undefined,
+/**
+ * Flatten a possibly-nested object into DECODED `[key, value]` pairs. Percent-encoding is the
+ * caller's job, because the two urlencoded surfaces spell a space differently: the query string
+ * uses `encodeURIComponent` (`%20`), a form body uses `URLSearchParams` (`+`). Both are valid and
+ * both round-trip, so each keeps the spelling it already had on the wire.
+ */
+export function flattenParams(
+    obj: Record<string, unknown> | undefined,
     arrayFormat: ArrayFormat = 'indices',
-): string {
-    if (!q) return '';
-    const parts: string[] = [];
-    for (const [k, v] of Object.entries(q))
-        appendQueryParam(k, v, parts, arrayFormat);
-    return parts.length ? `?${parts.join('&')}` : '';
+): [string, string][] {
+    if (!obj) return [];
+    const out: [string, string][] = [];
+    for (const [k, v] of Object.entries(obj))
+        appendParam(k, v, out, arrayFormat);
+    return out;
 }
 
-function appendQueryParam(
+// Built by concatenation rather than map+join: `flattenParams` already defaults `arrayFormat`, and
+// the entry bundle is budget-gated, so the closure and the intermediate array both come out.
+export function buildQuery(
+    q: Record<string, unknown> | undefined,
+    arrayFormat?: ArrayFormat,
+): string {
+    let qs = '';
+    for (const [k, v] of flattenParams(q, arrayFormat))
+        qs += `${qs ? '&' : '?'}${encodeURIComponent(k)}=${encodeURIComponent(v)}`;
+    return qs;
+}
+
+function appendParam(
     key: string,
     value: unknown,
-    out: string[],
+    out: [string, string][],
     arrayFormat: ArrayFormat,
 ): void {
     if (value === undefined || value === null) return;
     if (Array.isArray(value)) {
         value.forEach((item, i) => {
             if (arrayFormat === 'repeat') {
-                appendQueryParam(key, item, out, arrayFormat);
+                appendParam(key, item, out, arrayFormat);
             } else if (arrayFormat === 'brackets') {
-                appendQueryParam(`${key}[]`, item, out, arrayFormat);
+                appendParam(`${key}[]`, item, out, arrayFormat);
             } else {
                 // 'indices' — default
-                appendQueryParam(`${key}[${i}]`, item, out, arrayFormat);
+                appendParam(`${key}[${i}]`, item, out, arrayFormat);
             }
         });
     } else if (value instanceof Date) {
-        out.push(
-            `${encodeURIComponent(key)}=${encodeURIComponent(value.toISOString())}`,
-        );
+        out.push([key, value.toISOString()]);
     } else if (typeof value === 'object') {
         for (const [k, v] of Object.entries(value as Record<string, unknown>))
-            appendQueryParam(`${key}[${k}]`, v, out, arrayFormat);
+            appendParam(`${key}[${k}]`, v, out, arrayFormat);
     } else {
-        out.push(
-            `${encodeURIComponent(key)}=${encodeURIComponent(stringifyLeaf(value))}`,
-        );
+        out.push([key, stringifyLeaf(value)]);
     }
 }
 

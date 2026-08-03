@@ -36,7 +36,7 @@ You can animate a CSS bar to 90% and freeze it there, but that is theater. The b
 
 ## Declare the upload as a stitch
 
-A stitch turns one endpoint into a typed function you call with `await`. Swap the default transport for `xhrAdapter()` and set `bodyType: 'multipart'`, and you get upload-progress reporting with the rest of the stitch contract intact:
+A stitch turns one endpoint into a typed function you call with `await`. Swap the default transport for `xhrAdapter()` and set `wire: { body: 'multipart' }`, and you get upload-progress reporting with the rest of the stitch contract intact:
 
 ```ts twoslash
 import { stitch, xhrAdapter } from 'stitchapi';
@@ -47,7 +47,7 @@ const uploadVideo = stitch<{ id: string; url: string }>({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/videos',
-    bodyType: 'multipart',
+    wire: { body: 'multipart' },
     adapter: xhrAdapter(),
     auth: bearer(env('API_TOKEN')),
     timeout: '2m',
@@ -58,7 +58,7 @@ const uploadVideo = stitch<{ id: string; url: string }>({
 Each field replaces glue you would otherwise write:
 
 - `adapter: xhrAdapter()` routes the request through `XMLHttpRequest` instead of the default `fetchAdapter()`, so `xhr.upload` is available to report bytes sent. It is **browser-only** (it needs `XMLHttpRequest`) and **buffered**, not streaming — it reads the whole response into memory, and rejects a `stream` request. Upload progress is its reason to exist.
-- `bodyType: 'multipart'` encodes the body as `multipart/form-data` and sets the boundary header for you.
+- `wire: { body: 'multipart' }` encodes the body as `multipart/form-data` and sets the boundary header for you.
 - `auth: bearer(env('API_TOKEN'))` resolves the token at call time and sets the `Authorization` header; the caller never holds the secret.
 - `output` validates the JSON the server returns, so a successful `await` hands back a typed `{ id, url }` — not `unknown`.
 
@@ -87,7 +87,7 @@ const uploadVideo = stitch<{ id: string; url: string }>({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/videos',
-    bodyType: 'multipart',
+    wire: { body: 'multipart' },
     adapter: xhrAdapter(),
     auth: bearer(env('API_TOKEN')),
     timeout: '2m',
@@ -146,7 +146,7 @@ const uploadVideo = stitch<{ id: string; url: string }>({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/videos',
-    bodyType: 'multipart',
+    wire: { body: 'multipart' },
     adapter: xhrAdapter(),
     auth: bearer(env('API_TOKEN')),
     timeout: '2m',
