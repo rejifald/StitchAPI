@@ -93,6 +93,42 @@ npm release are grouped under the in-development version that introduced them.
   member, since filtering one member would leave the other three inherited, typechecking and
   doing nothing. `shell({ wire: … })` is now a type error.
 
+- **BREAKING — `wire.body` on a `graphql` stitch is now a compile error.** The `graphql`
+  surface builds its own request body — a JSON `{ query, variables, operationName? }`
+  envelope — so a `wire.body` authored alongside it was never read:
+  `graphql({ …, wire: { body: 'multipart' } })` typechecked and silently sent JSON. A surface
+  owns its shaping (ADR 0005 Decision 1), so the field is not a knob there, and it now says so
+  at the authoring site rather than discarding the value:
+
+    ```ts
+    graphql({ baseUrl, document, wire: { body: 'multipart' } });
+    //                                   ^ the `graphql` surface always sends a JSON
+    //                                     `{ query, variables }` body — `wire.body` is ignored
+    ```
+
+    The guard binds every surface that authors a graphql stitch — `graphql()`,
+    `graphql.bind(seam).stitch`, `seam.graphql()`, and `stitch({ kind: graphqlSurface })`
+    (both the inferring and the fallback overload, or a rejected config would fall through
+    to the loose one and typecheck after all). It also makes `wire.multipart` unreachable on
+    graphql for free: `MultipartOnlyOnMultipartBody` already requires `wire.body: 'multipart'`
+    before `wire.multipart` is legal, and that is exactly the spelling this rejects. The
+    sibling slots stay legal — `wire.response` and `wire.array` are not body encodings.
+
+    Like the other config guards, it reads the **composed** config (`Layers`), so a surface
+    inherited through `extends` counts: `stitch({ extends: [gqlBase], wire: { body: 'form' } })`
+    is rejected when `gqlBase` supplies `kind`. Note the polarity, which is the reverse of the
+    sibling guards: finding the surface makes a config illegal rather than legal, so the
+    existential scan can fail CLOSED here — a config that inherits graphql and then overrides
+    `kind` back to a non-graphql surface is rejected despite its `wire.body` being live. That is
+    a perverse config with an obvious workaround, and distinguishing it would need the last-wins
+    resolution the existential scan exists to avoid; it is pinned as a tsd expectation so the
+    tradeoff is on record.
+
+    **Migration:** delete the field — there is no replacement and nothing to preserve, because
+    it never did anything. No runtime behaviour changed: the surface sent a JSON body before
+    and still does, so only configs that were already inert stop compiling. Breaking solely in
+    the sense that a build which previously passed can now fail.
+
 ### Fixed
 
 - **The config guards now read the composed config, so `extends` counts.** `wire.multipart` and
@@ -149,6 +185,19 @@ npm release are grouped under the in-development version that introduced them.
     undocumented and untested; set `wire.array` explicitly to pick a different shape. Nested
     objects have no migration concern — `[object Object]` was never usable. A space in a form
     body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
+
+### Notes
+
+- **GraphQL file uploads remain unsupported, now explicitly.** `wire.body: 'multipart'` was
+  the closest thing to a spelling for them, and it never worked: a GraphQL upload is not the
+  JSON body multipart-encoded, it is the
+  [GraphQL multipart request spec](https://github.com/jaydenseric/graphql-multipart-request-spec)'s
+  separate `operations` / `map` / file-part envelope, which the surface does not implement.
+  Rejecting the flag keeps the gap honest instead of silently sending JSON. To upload
+  alongside a GraphQL API today, POST the file with a plain
+  `stitch({ wire: { body: 'multipart' } })` and pass the resulting handle as a GraphQL
+  variable. See ADR 0005 Decision 1's addendum for why this was deferred and what implementing
+  it would take; relaxing the guard later is non-breaking.
 
 ## [1.0.0-rc.7] — 2026-08-01
 

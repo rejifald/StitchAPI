@@ -44,6 +44,7 @@ import {
     type InspectOptions,
     type Inspection,
     type MultipartOnlyOnMultipartBody,
+    type NoWireBodyOnGraphql,
     type RedactedStitchConfig,
     type ResolvedStitchConfig,
     type RetryOptions,
@@ -59,6 +60,7 @@ import {
     type StitchStore,
     type StreamOptions,
     type TraceSink,
+    type WireBodyFixedByGraphql,
     type WireOptions,
     isStitch,
 } from './types';
@@ -1126,14 +1128,16 @@ export interface StitchFn {
     >(
         config: C &
             MultipartOnlyOnMultipartBody<C> &
-            GraphqlOnlyOnGraphqlSurface<C>,
+            GraphqlOnlyOnGraphqlSurface<C> &
+            WireBodyFixedByGraphql<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Non-inferring fallback: a bare path string, or any argument whose static type is the union
      * `string | Partial<StitchConfig>` (e.g. a wrapper that forwards either spelling). Neither can
      * match the inferring overload above, so the result is `Stitch<unknown>` — override with `<T>`.
      *
-     * `C` is captured here ONLY to re-apply {@link MultipartOnlyOnMultipartBody}; the result stays
+     * `C` is captured here ONLY to re-apply {@link MultipartOnlyOnMultipartBody},
+     * {@link GraphqlOnlyOnGraphqlSurface}, and {@link WireBodyFixedByGraphql}; the result stays
      * `Stitch<T>`. Without it a config rejected by the inferring overload would silently fall
      * through to this one and typecheck after all. On a genuinely loose
      * `string | Partial<StitchConfig>` argument the guard distributes over the union and both arms
@@ -1146,7 +1150,8 @@ export interface StitchFn {
     >(
         config: C &
             MultipartOnlyOnMultipartBody<C> &
-            GraphqlOnlyOnGraphqlSurface<C>,
+            GraphqlOnlyOnGraphqlSurface<C> &
+            WireBodyFixedByGraphql<C>,
     ): Stitch<T>;
 }
 
@@ -1182,7 +1187,9 @@ export function graphql<
         document: string;
     },
 >(
-    config: C & MultipartOnlyOnMultipartBody<C>,
+    // The surface is graphql by construction here, so the graphql guard applies unconditionally
+    // rather than keying off `kind` the way `stitch`'s `WireBodyFixedByGraphql` must.
+    config: C & MultipartOnlyOnMultipartBody<C> & NoWireBodyOnGraphql<C>,
 ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the
     // convenience without clobbering an explicit endpoint). Method/body shaping is the surface's.
