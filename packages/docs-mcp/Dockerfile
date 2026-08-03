@@ -14,7 +14,7 @@
 # Build (from repo root):  docker build -f packages/docs-mcp/Dockerfile -t stitchapi-docs-mcp .
 # Run:                     docker run -i stitchapi-docs-mcp
 
-FROM node:25-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS builder
+FROM node:26-slim@sha256:deae974a69e140f44f434ab29cb519fb5f8fe250fd364b8ca446bd0761acdc6a AS builder
 WORKDIR /repo
 
 RUN corepack enable
@@ -42,7 +42,7 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @stitchapi/docs-mcp build
 
 # ---------------------------------------------------------------------------
-FROM node:25-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS runtime
+FROM node:26-slim@sha256:deae974a69e140f44f434ab29cb519fb5f8fe250fd364b8ca446bd0761acdc6a AS runtime
 WORKDIR /app
 
 COPY --from=builder /repo/packages/docs-mcp/package.json ./
