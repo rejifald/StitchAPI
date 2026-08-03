@@ -25,7 +25,10 @@ StitchAPI is streaming-first, but bare RN's global `fetch` **cannot stream**:
 RN's `XMLHttpRequest`, however, exposes `responseText` incrementally as bytes
 arrive. `rnStreamAdapter` wraps that growing text in a real `ReadableStream`, which
 is exactly what core's [`sse`](/docs/reference/surfaces) / `stream` decoders consume
-— while non-streaming requests delegate to core's buffered `xhrAdapter`.
+— while non-streaming requests delegate to core's buffered
+[`xhrAdapter`](/docs/guides/transport/xhr-adapter). The `adapter` field it plugs
+into is the same [transport seam](/docs/guides/transport/adapters) every stitch
+has, so nothing above it changes.
 
 ## Example
 
@@ -133,5 +136,6 @@ It is proven against the same `verifyStoreContract` kit every
     />
     <Card title="React" href="/docs/integrations/react" />
     <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="The adapter seam" href="/docs/guides/transport/adapters" />
     <Card title="Pluggable store" href="/docs/guides/state/pluggable-store" />
 </Cards>

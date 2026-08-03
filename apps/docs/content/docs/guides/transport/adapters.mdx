@@ -1,0 +1,121 @@
+---
+title: 'The adapter seam'
+description: 'Swap the transport a stitch calls through — fetch, axios, xhr, or your own — without changing what the stitch promises its caller.'
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
+---
+
+Set `adapter` when the default `fetch` can't carry a call the way you need it
+carried — to stream a response, to draw an upload bar, or to ride an HTTP client
+your platform already configured — and the stitch's types, validation, retry, and
+auth keep running on top unchanged.
+
+The adapter is the layer a stitch hands the round trip to: take a request, return
+a response. **A swapped transport, not a rewritten call** — it changes how the
+bytes move, never what the stitch promises its caller.
+
+## Example
+
+```ts twoslash
+import { stitch, xhrAdapter } from 'stitchapi';
+
+// No `adapter` field — the stitch already runs on fetchAdapter().
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+});
+
+// One field moves the same declaration onto XMLHttpRequest, for the bytes-sent
+// progress `fetch` cannot report.
+const createUser = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    adapter: xhrAdapter(),
+});
+```
+
+## Options
+
+`adapter` takes an `Adapter`: one function, `(req) => Promise<AdapterResponse>`.
+Leave the field off and the engine wires `fetchAdapter()`, so a stitch runs on
+`fetch` without ever naming it.
+
+Three transports ship in core, and a fourth in `stitchapi/testing`:
+
+- [`fetchAdapter`](/docs/guides/transport/fetch-adapter) — the default. The only
+  built-in that streams, and the one that takes an undici dispatcher for a proxy
+  or a custom CA.
+- [`axiosAdapter`](/docs/guides/transport/axios-adapter) — routes through an axios
+  instance you supply, keeping its agent, proxy, and interceptors.
+- [`xhrAdapter`](/docs/guides/transport/xhr-adapter) — `XMLHttpRequest` in the
+  browser, for upload progress.
+- [`mockAdapter`](/docs/guides/testing/mocking) — canned responses, so a test
+  drives the real engine with no network.
+
+One rule separates a transport from the engine above it: **an adapter never
+throws on a non-2xx status.** A 500 comes back as `{ status: 500, ... }`; only a
+network failure or an abort rejects. The stitch decides what a status _means_ —
+whether 503 retries, whether 404 is an error or an empty result — so policy stays
+in the declaration and the transport stays a pipe.
+[Writing an adapter](/docs/guides/transport/custom-adapter) covers the rest of
+the contract.
+
+Every built-in shares one body-encoding and one response-decoding helper, so json,
+form, and multipart bodies go out identically and the same content-type detection
+reads the response back. Swapping the transport changes what the transport _can
+do_, not how a request is sent or a response is parsed.
+
+### What a transport can't do
+
+An adapter declares the optional features it `supports` — `'stream'`,
+`'uploadProgress'`, `'downloadProgress'` — so the engine answers for it instead of
+going quiet. Point a buffered-only transport at a `stream` or `sse` surface and it
+throws at the call. Ask one that can't report bytes sent for upload progress and
+an `info` event comes through your trace sink:
+
+```
+adapter.upload-progress-unsupported — onProgress is set with a request body, but
+fetchAdapter cannot report upload progress — only 'direction: download' events fire.
+Use xhrAdapter() to draw an upload progress bar.
+```
+
+<Callout type="warn">
+    **Anti-pattern:** don't wire `onProgress` to an upload bar and leave the
+    call on the default `fetch` — it reports the download phase only, so the bar
+    sits at zero until the response lands. Put the uploading stitch on `adapter:
+    xhrAdapter()` or `axiosAdapter(client)`, which read `xhr.upload` and axios's
+    `onUploadProgress` respectively.
+</Callout>
+
+Declaring capabilities is opt-in: an adapter that declares nothing is treated as
+unknown, and no checks run against it. See
+[Reference → Helpers](/docs/reference/helpers#adapter-capabilities) for the
+descriptor shape and the per-adapter support matrix.
+
+## Which transport
+
+| You need                                       | Reach for                      | Because                                                                                                           |
+| ---------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| To start                                       | `fetchAdapter()` — implicit    | It's the default; there's no field to write.                                                                      |
+| A `stream` or `sse` surface                    | `fetchAdapter()`               | The only built-in that hands back a live `ReadableStream`.                                                        |
+| An upload progress bar                         | `xhrAdapter()`                 | `xhr.upload` reports bytes sent; `fetch` leaves them silent.                                                      |
+| A proxy, a custom CA, a bound interface        | `fetchAdapter({ dispatcher })` | Threads an undici `Agent` through one stitch.                                                                     |
+| An axios instance your platform already trusts | `axiosAdapter(client)`         | Keeps its agent, proxy, and interceptor stack intact.                                                             |
+| Streaming in bare React Native                 | `rnStreamAdapter()`            | RN's `fetch` leaves `response.body` undefined. From [`@stitchapi/react-native`](/docs/integrations/react-native). |
+| Canned responses in a test                     | `mockAdapter([...])`           | The real engine runs; only the network goes away. From `stitchapi/testing`.                                       |
+| A transport core doesn't ship                  | a function of your own         | The contract _is_ the extension point.                                                                            |
+
+## See also
+
+<Cards>
+    <Card title="fetchAdapter" href="/docs/guides/transport/fetch-adapter" />
+    <Card title="axiosAdapter" href="/docs/guides/transport/axios-adapter" />
+    <Card title="xhrAdapter" href="/docs/guides/transport/xhr-adapter" />
+    <Card
+        title="Writing an adapter"
+        href="/docs/guides/transport/custom-adapter"
+    />
+    <Card title="Testing" href="/docs/guides/testing/mocking" />
+    <Card title="React Native" href="/docs/integrations/react-native" />
+    <Card title="Reference: Helpers" href="/docs/reference/helpers" />
+</Cards>
