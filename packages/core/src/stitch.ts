@@ -30,7 +30,6 @@ import { createStoreThrottle, memoryStore } from './store';
 import { graphqlSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
 import {
-    type BodyTypeFixedByGraphql,
     type CacheOptions,
     type CacheOutcome,
     type Clock,
@@ -45,7 +44,7 @@ import {
     type InspectOptions,
     type Inspection,
     type MultipartOnlyOnMultipartBody,
-    type NoBodyTypeOnGraphql,
+    type NoWireBodyOnGraphql,
     type RedactedStitchConfig,
     type RequestShapeFixedByDownload,
     type ResolvedStitchConfig,
@@ -62,6 +61,7 @@ import {
     type StitchStore,
     type StreamOptions,
     type TraceSink,
+    type WireBodyFixedByGraphql,
     type WireOptions,
     isStitch,
 } from './types';
@@ -1130,7 +1130,7 @@ export interface StitchFn {
         config: C &
             MultipartOnlyOnMultipartBody<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
-            BodyTypeFixedByGraphql<C> &
+            WireBodyFixedByGraphql<C> &
             RequestShapeFixedByDownload<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
@@ -1140,7 +1140,7 @@ export interface StitchFn {
      *
      * `C` is captured here ONLY to re-apply the dead-config guards
      * ({@link MultipartOnlyOnMultipartBody}, {@link GraphqlOnlyOnGraphqlSurface},
-     * {@link BodyTypeFixedByGraphql}, {@link RequestShapeFixedByDownload}); the result stays
+     * {@link WireBodyFixedByGraphql}, {@link RequestShapeFixedByDownload}); the result stays
      * `Stitch<T>`. Without it a config rejected by the inferring overload would silently fall
      * through to this one and typecheck after all. On a genuinely loose
      * `string | Partial<StitchConfig>` argument the guards distribute over the union and every arm
@@ -1154,7 +1154,7 @@ export interface StitchFn {
         config: C &
             MultipartOnlyOnMultipartBody<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
-            BodyTypeFixedByGraphql<C> &
+            WireBodyFixedByGraphql<C> &
             RequestShapeFixedByDownload<C>,
     ): Stitch<T>;
 }
@@ -1191,9 +1191,9 @@ export function graphql<
         document: string;
     },
 >(
-    // The surface is graphql by construction here, so the guard applies unconditionally rather
-    // than keying off `kind` the way `stitch`'s `BodyTypeFixedByGraphql` must.
-    config: C & MultipartOnlyOnMultipartBody<C> & NoBodyTypeOnGraphql<C>,
+    // The surface is graphql by construction here, so the graphql guard applies unconditionally
+    // rather than keying off `kind` the way `stitch`'s `WireBodyFixedByGraphql` must.
+    config: C & MultipartOnlyOnMultipartBody<C> & NoWireBodyOnGraphql<C>,
 ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the
     // convenience without clobbering an explicit endpoint). Method/body shaping is the surface's.

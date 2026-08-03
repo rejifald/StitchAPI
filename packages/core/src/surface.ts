@@ -115,22 +115,17 @@ export const httpSurface: Surface = { id: 'http' };
  * documents (`{ ... }`, or `query ($id: ID) { ... }` with no name) yield no key. Set
  * `cfg.operationName` to override (a multi-operation document, or `''` to suppress).
  *
- * The body encoding is the surface's, not the caller's: the request is FIXED at JSON here, and
- * `NoBodyTypeOnGraphql` makes authoring a `wire.body` a compile error so the override is never
- * silent. A GraphQL file upload is therefore out of reach today — it needs the
- * `operations`/`map`/file-part envelope of the GraphQL multipart request spec, not this JSON body
- * multipart-encoded, so it would be a new shape for `buildRequest` to learn rather than a
- * `wire.body` a caller can pass.
- *
- * The flat `bodyType: 'json'` below is the `AdapterRequest` spelling, one layer under the authoring
- * config: that transport contract keeps the flat wire-format fields (CONTRACT.md P22), and the
- * engine converts `wire` into them when it builds the request.
- *
+ * The body encoding is the surface's, not the caller's: the `AdapterRequest`'s flat `bodyType` is
+ * FIXED at `'json'` below (the transport spelling — P22), and `NoWireBodyOnGraphql` makes authoring
+ * the config-level `wire.body` a compile error so the override is never silent. A GraphQL file
+ * upload is therefore out of reach today — it needs the `operations`/`map`/file-part envelope of
+ * the GraphQL multipart request spec, not this JSON body multipart-encoded, so it would be a new
+ * shape for `buildRequest` to learn rather than an encoding a caller can pass.
  */
 // The `id` is pinned to its literal rather than widened to `Surface`'s `string`, so
-// `GraphqlOnlyOnGraphqlSurface` and `BodyTypeFixedByGraphql` can tell at the type level whether a
-// config selected this surface. Widening it would make `document`/`operationName`/`wire.body`
-// unguardable on the generic `stitch({ kind })` spelling.
+// `GraphqlOnlyOnGraphqlSurface` and `WireBodyFixedByGraphql` can tell at the type level whether a
+// config selected this surface. Widening it would make `document`/`operationName` unguardable, and
+// `wire.body` unrejectable, on the generic `stitch({ kind })` spelling.
 export const graphqlSurface: Surface & { readonly id: 'graphql' } = {
     id: 'graphql',
     buildRequest: (cfg, input, base) => {

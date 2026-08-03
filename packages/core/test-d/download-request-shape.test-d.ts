@@ -18,6 +18,7 @@ import { seam, stitch } from '../src';
 import type { Stitch, StitchConfig } from '../src';
 import { download, downloadSurface } from '../src/download';
 import type { DownloadResult } from '../src/download';
+import { httpSurface } from '../src/surface';
 
 import { expectError, expectType } from 'tsd';
 
@@ -141,23 +142,37 @@ expectError(
 // A fragment chain that never selects download leaves both fields live, as before.
 stitch({ extends: [{ baseUrl: 'https://api.example.com' }], method: 'POST' });
 
-// ── Inherited from `Layers`, not introduced here — and fail-OPEN, not fail-closed ──
-// Same two limits `graphql-fields.test-d.ts` pins: the flattener destructures a TUPLE, so an
-// `extends` widened to `Frag[]` (what a `const` binding does without `as const`) reads as empty,
-// as does the P7 single-fragment spelling (`extends: frag`, not a list).
+// ── POLARITY: the surface probe is an INHIBITOR, so it can fail CLOSED ──────
+// Identical to `WireBodyFixedByGraphql`'s documented tradeoff, for the identical reason. For
+// `MultipartOnlyOnMultipartBody` and `GraphqlOnlyOnGraphqlSurface`, finding the enabler on some
+// layer makes a config LEGAL, so `AnyLayer`'s existential scan can only fail open. Here, finding
+// the download surface makes a config ILLEGAL, so the same scan fails CLOSED: inherit download,
+// override `kind` back to something else, and the `method` is live but still rejected.
 //
-// The DIRECTION is inverted here, and that is the point of pinning it separately. For
-// `GraphqlOnlyOnGraphqlSurface` the surface is the ENABLER, so an unseen layer rejects valid code
-// (fail-closed, loud). For this guard the surface is the TRIGGER, so an unseen layer merely fails
-// to reject dead config (fail-open, silent) — which is the direction #597 deliberately biases
-// toward. Both spellings therefore still typecheck; they are not `expectError`.
+// Accepted rather than resolved — distinguishing it needs the last-wins resolution the existential
+// scan exists to avoid, and the config it costs is perverse with an obvious workaround.
+expectError(stitch({ extends: [dlBase], kind: httpSurface, method: 'POST' }));
+
+// Positive control: the same override WITHOUT the guarded field typechecks, proving the rejection
+// above is this guard's and not the `kind` override's.
+stitch({ extends: [dlBase], kind: httpSurface, path: '/x' });
+
+// ── Inherited from `Layers`, not introduced here — and fail-OPEN here ───────
+// The same two limits `graphql-body-encoding.test-d.ts` pins: the flattener destructures a TUPLE,
+// so an `extends` widened to `Frag[]` (what a `const` binding does without `as const`) reads as
+// empty, as does the P7 single-fragment spelling (`extends: frag`, not a list).
+//
+// These fail OPEN rather than closed, which is the opposite of the polarity case just above and
+// worth keeping straight: there the flattener SEES a layer whose surface no longer applies; here it
+// sees no layers at all, so the trigger is never found and the guard simply does not fire. Both
+// spellings therefore still typecheck; they are not `expectError`.
 stitch({ extends: dlBase, method: 'POST' });
 
 const widened = [dlBase]; // inferred `Frag[]`, not `[Frag]`
 stitch({ extends: widened, method: 'POST' });
 
-// Same fail-open, different cause: a violation living ENTIRELY in a fragment is not reported,
-// because the error is surfaced by intersecting onto the config LITERAL. Documented on
+// A third fail-open, different cause again: a violation living ENTIRELY in a fragment is not
+// reported, because the error is surfaced by intersecting onto the config LITERAL. Documented on
 // `MultipartOnlyOnMultipartBody` as the first residual limit; pinned here so it stays deliberate.
 stitch({ extends: [{ method: 'POST' }], kind: downloadSurface, url: URL_ });
 

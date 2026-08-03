@@ -111,7 +111,18 @@ npm release are grouped under the in-development version that introduced them.
     (both the inferring and the fallback overload, or a rejected config would fall through
     to the loose one and typecheck after all). It also makes `wire.multipart` unreachable on
     graphql for free: `MultipartOnlyOnMultipartBody` already requires `wire.body: 'multipart'`
-    before `wire.multipart` is legal, and that is exactly the spelling this rejects.
+    before `wire.multipart` is legal, and that is exactly the spelling this rejects. The
+    sibling slots stay legal — `wire.response` and `wire.array` are not body encodings.
+
+    Like the other config guards, it reads the **composed** config (`Layers`), so a surface
+    inherited through `extends` counts: `stitch({ extends: [gqlBase], wire: { body: 'form' } })`
+    is rejected when `gqlBase` supplies `kind`. Note the polarity, which is the reverse of the
+    sibling guards: finding the surface makes a config illegal rather than legal, so the
+    existential scan can fail CLOSED here — a config that inherits graphql and then overrides
+    `kind` back to a non-graphql surface is rejected despite its `wire.body` being live. That is
+    a perverse config with an obvious workaround, and distinguishing it would need the last-wins
+    resolution the existential scan exists to avoid; it is pinned as a tsd expectation so the
+    tradeoff is on record.
 
     **Migration:** delete the field — there is no replacement and nothing to preserve, because
     it never did anything. No runtime behaviour changed: the surface sent a JSON body before
@@ -142,8 +153,11 @@ npm release are grouped under the in-development version that introduced them.
     `responseType` / `bodyType`, and that is exactly what both `buildRequest` implementations
     set — the guards close the config surface above them, not the transport contract below.
 
-    Like the two guards below, these read the **composed** config, so an `extends` fragment that
-    selects the download surface is seen and the same rejections apply through it.
+    Like the other config guards, these read the **composed** config (`Layers`), so an `extends`
+    fragment that selects the download surface is seen and the same rejections apply through it.
+    `RequestShapeFixedByDownload` shares `WireBodyFixedByGraphql`'s inhibitor polarity described
+    above, and so its fail-CLOSED case too: inheriting the download surface then overriding `kind`
+    away from it still rejects. Same tradeoff, same reasoning, also pinned in tsd.
 
     **Migration:** delete the field. As with graphql, no runtime behaviour changed — only
     configs that were already inert stop compiling. If you were reaching for

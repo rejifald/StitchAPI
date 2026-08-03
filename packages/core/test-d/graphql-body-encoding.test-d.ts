@@ -7,13 +7,11 @@
 // JSON body multipart-encoded. The surface does not implement that envelope, and rejecting the
 // spelling is what keeps the gap honest rather than silently sending JSON.
 //
-// This file covers the SURFACE guard (`wire.body` is dead on graphql). The sibling
-// `body-encoding.test-d.ts` covers the surface-agnostic one (`wire.multipart` needs
-// `wire.body: 'multipart'`); the two intersect on graphql, which is what makes `wire.multipart`
-// unreachable there for free.
+// Only `wire.body` is claimed. The sibling wire slots are not body encodings, so they stay legal
+// (`wire.response`, `wire.array`) — see the section at the end.
 import { graphql, seam, stitch } from '../src';
 import type { Stitch } from '../src';
-import { graphqlSurface } from '../src/surface';
+import { graphqlSurface, httpSurface } from '../src/surface';
 
 import { expectError, expectType } from 'tsd';
 
@@ -23,15 +21,13 @@ const DOC = 'query Me { me { id } }';
 const me = graphql({ baseUrl: 'https://api.example.com', document: DOC });
 expectType<Stitch<unknown>>(me);
 
-// Every other config key is unaffected — only `wire.body` is claimed by the surface, so the rest of
-// the envelope stays authorable.
+// Every other config key is unaffected — only `wire.body` is claimed by the surface.
 graphql({
     baseUrl: 'https://api.example.com',
     document: DOC,
     method: 'POST',
     operationName: 'Me',
     headers: { 'x-api-key': 'k' },
-    wire: { response: 'text', array: 'repeat' },
 });
 
 // ── Illegal: `wire.body` on the `graphql()` preset ──────────────────────────
@@ -62,12 +58,14 @@ expectError(
     }),
 );
 
-// A live sibling in the same envelope does not launder the rejected member.
+// One guard closes both dead pairings. `MultipartOnlyOnMultipartBody` already requires
+// `wire.body: 'multipart'` before `wire.multipart` is legal, and that spelling is exactly what
+// this rejects — so `wire.multipart` is unreachable on graphql from either direction.
 expectError(
     graphql({
         baseUrl: 'https://api.example.com',
         document: DOC,
-        wire: { body: 'form', response: 'text' },
+        wire: { body: 'multipart', multipart: 'dot' },
     }),
 );
 
@@ -78,12 +76,6 @@ stitch({
     baseUrl: 'https://api.example.com',
     kind: graphqlSurface,
     document: DOC,
-});
-stitch({
-    baseUrl: 'https://api.example.com',
-    kind: graphqlSurface,
-    document: DOC,
-    wire: { response: 'text' },
 });
 expectError(
     stitch({
@@ -124,40 +116,95 @@ expectError(bound.stitch({ document: DOC, wire: { body: 'multipart' } }));
 // A seam member on the default (http) surface still takes any body encoding.
 api.stitch({ path: '/upload', method: 'POST', wire: { body: 'multipart' } });
 
+// ── Legal: the sibling wire slots, which are not body encodings ─────────────
+// The surface fixes the BODY only. `wire.response` reads the response, and `wire.array` governs
+// the query string, so neither is dead config on graphql and neither is claimed by the guard.
+graphql({
+    baseUrl: 'https://api.example.com',
+    document: DOC,
+    wire: { response: 'text' },
+});
+graphql({
+    baseUrl: 'https://api.example.com',
+    document: DOC,
+    wire: { array: 'repeat' },
+});
+graphql({
+    baseUrl: 'https://api.example.com',
+    document: DOC,
+    wire: { response: 'text', array: 'repeat' },
+});
+
 // ── The guard reads the COMPOSED config, so `extends` counts ────────────────
-// `BodyTypeFixedByGraphql` walks `Layers<C>` like every other config guard (#597). It is the
-// complement of `GraphqlOnlyOnGraphqlSurface` on the same surface: that one requires graphql
-// before `document` is legal, this one forbids `wire.body` once graphql is selected.
+// This used to be a false NEGATIVE: the surface came from a fragment, the guard only saw the
+// literal, and dead config sailed through. It now walks the same layer list `InputOf` uses.
 const gqlBase = { kind: graphqlSurface, baseUrl: 'https://api.example.com' };
-
-// Positive control: the fragment selects the surface, the literal says nothing about the encoding.
-stitch({ extends: [gqlBase], document: DOC });
-
-expectError(
-    stitch({ extends: [gqlBase], document: DOC, wire: { body: 'form' } }),
-);
+expectError(stitch({ extends: [gqlBase], wire: { body: 'form' } }));
 
 // Nested one level down: the flattener recurses, so the surface is still found.
 expectError(
     stitch({
         extends: [{ extends: [gqlBase], headers: { 'x-a': '1' } }],
-        document: DOC,
+        wire: { body: 'multipart' },
+    }),
+);
+
+// Positive control: the same fragment chain without a `wire.body` is legal, so the rejections
+// above are attributable to the guard rather than to `extends` itself.
+stitch({ extends: [gqlBase], document: DOC });
+// …and the sibling wire slots stay legal through `extends` too.
+stitch({ extends: [gqlBase], document: DOC, wire: { response: 'text' } });
+
+// A fragment chain that never selects graphql leaves `wire.body` alone.
+const httpBase = { baseUrl: 'https://api.example.com', path: '/upload' };
+stitch({ extends: [httpBase], method: 'POST', wire: { body: 'multipart' } });
+
+// ── POLARITY LIMIT: this guard's surface probe is an INHIBITOR ──────────────
+// `AnyLayer` is existential by design, which is fail-OPEN for the sibling guards (finding the
+// enabler makes a config legal). Here finding the surface makes a config ILLEGAL, so the same scan
+// is fail-CLOSED: a config that inherits graphql and then overrides `kind` back to a non-graphql
+// surface has a LIVE `wire.body` and is nevertheless rejected. Distinguishing it needs last-wins
+// resolution of `kind` — the complexity the existential scan exists to avoid — and the config it
+// costs is a perverse one (inherit a GraphQL base, then make it not GraphQL) with an obvious
+// workaround. Pinned so the tradeoff is visible rather than latent.
+//
+// Positive control first: the identical override chain MINUS `wire.body` typechecks, so the
+// rejection below is attributable to this guard and not to overriding `kind` through `extends`.
+stitch({ extends: [gqlBase], kind: httpSurface, path: '/x' });
+expectError(
+    stitch({
+        extends: [gqlBase],
+        kind: httpSurface,
         wire: { body: 'form' },
     }),
 );
 
-// ── Inherited from `Layers`, and fail-OPEN here ─────────────────────────────
-// The tuple-destructuring limit `graphql-fields.test-d.ts` pins fails CLOSED there (the surface is
-// the enabler, so an unseen layer rejects valid code) but OPEN here (the surface is the trigger, so
-// an unseen layer only fails to catch dead config). Both spellings still typecheck.
-//
-// To isolate THIS guard the surface must live ONLY in the unseen fragment — naming `kind` on the
-// literal would fire the guard from there and prove nothing about the layer walk.
+// ── Inherited from `Layers`, not introduced here ────────────────────────────
+// The flattener destructures a TUPLE, so an `extends` list widened to `Frag[]` (what a `const`
+// binding does without `as const`) reads as empty, as does the P7 single-fragment spelling
+// (`extends: frag`). `InputOf` has read `extends` this way since #76. Note these fail OPEN for this
+// guard — the inverse of how they fail for `GraphqlOnlyOnGraphqlSurface`, and for the same polarity
+// reason: an unreadable `extends` means the surface is not found, so dead config is ACCEPTED rather
+// than a valid config rejected. Pinned as plain calls: they typecheck, and should not.
+stitch({ extends: gqlBase, wire: { body: 'form' } });
+
 const widened = [gqlBase]; // inferred `Frag[]`, not `[Frag]`
 stitch({ extends: widened, wire: { body: 'form' } });
 
-// Same, via the P7 single-fragment spelling.
-stitch({ extends: gqlBase, wire: { body: 'form' } });
+// The same fail-open applies to a fragment typed as `Partial<StitchConfig>` rather than inferred
+// from its literal: optional properties satisfy no probe, so it reads as supplying nothing.
+declare const opaque: Partial<import('../src').StitchConfig>;
+stitch({ extends: [opaque], wire: { body: 'form' } });
+
+// ── `NoWireBodyOnGraphql` fails open when the slot lives only in a fragment ──
+// The error is surfaced by intersecting onto the config LITERAL, so a `wire.body` supplied entirely
+// by a fragment is not reported (shared with `MultipartOnlyOnMultipartBody`). The literal-level
+// case — the one people actually write — still errors precisely, as asserted far above.
+graphql({
+    baseUrl: 'https://api.example.com',
+    document: DOC,
+    extends: [{ wire: { body: 'form' } }],
+});
 
 // ── The non-inferring fallback must not launder a rejected config ───────────
 // A bare path string still reaches the loose overload unharmed.
