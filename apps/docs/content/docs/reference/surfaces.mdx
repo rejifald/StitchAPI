@@ -54,6 +54,12 @@ const getThing = graphql({
 const thing = await getThing({ variables: { id: 1 } });
 ```
 
+The surface owns the body encoding, so `wire.body` is not accepted here — setting
+one is a compile error. File uploads need the [GraphQL multipart request
+spec](https://github.com/jaydenseric/graphql-multipart-request-spec) envelope,
+which this surface does not implement; see
+[Guide → GraphQL](/docs/guides/data/graphql#file-uploads-are-not-supported).
+
 ## sse
 
 `sse` parses the `text/event-stream` wire format over `fetch` + Web Streams —
