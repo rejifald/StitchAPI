@@ -34,7 +34,7 @@ test('responseType: "arrayBuffer" round-trips raw bytes (hash matches)', async (
     const download = stitch({
         baseUrl: server.url,
         path: '/blob',
-        responseType: 'arrayBuffer',
+        wire: { response: 'arrayBuffer' },
     });
 
     const ab = (await download()) as ArrayBuffer;
@@ -47,7 +47,7 @@ test('responseType: "blob" round-trips raw bytes (hash matches)', async () => {
     const download = stitch({
         baseUrl: server.url,
         path: '/blob',
-        responseType: 'blob',
+        wire: { response: 'blob' },
     });
 
     const blob = (await download()) as Blob;
@@ -61,7 +61,7 @@ test('responseType: "text" returns the raw decoded string', async () => {
     const read = stitch({
         baseUrl: server.url,
         path: '/text',
-        responseType: 'text',
+        wire: { response: 'text' },
     });
 
     await expect(read()).resolves.toBe(text);
@@ -75,7 +75,7 @@ test('responseType: "json" forces parsing regardless of content-type', async () 
     const f = stitch({
         baseUrl: server.url,
         path: '/forced',
-        responseType: 'json',
+        wire: { response: 'json' },
     });
 
     await expect(f()).resolves.toEqual({ forced: true });

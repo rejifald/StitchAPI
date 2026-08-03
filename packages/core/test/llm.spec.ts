@@ -177,19 +177,32 @@ test('the old `maxTokens` spelling is gone (compile-time, P4)', () => {
     expect(true).toBe(true);
 });
 
-test('the surface owns method + bodyType (compile-time, ADR 0005 D1)', () => {
+test('the surface owns method + wire.body (compile-time, ADR 0005 D1)', () => {
     // @ts-expect-error — `buildRequest` always POSTs; `method` is dead config
     void llm({ provider: openai, model: 'gpt-4o', method: 'PUT' });
-    // @ts-expect-error — the provider builds a JSON body; `bodyType` is dead config
-    void llm({ provider: openai, model: 'gpt-4o', bodyType: 'multipart' });
+    void llm({
+        provider: openai,
+        model: 'gpt-4o',
+        // The directive sits against the property, not the call: the guard rejects the nested
+        // `wire.body` slot, so that is the line TypeScript reports.
+        // @ts-expect-error — the provider builds a JSON body; `wire.body` is dead config
+        wire: { body: 'multipart' },
+    });
+    // The guard closes one member of the envelope, not the envelope: `wire.response` is untouched
+    // by `buildRequest` and stays a live knob, so this must NOT be an error.
+    void llm({ provider: openai, model: 'gpt-4o', wire: { response: 'text' } });
     expect(true).toBe(true);
 });
 
 // The guards above are compile-time only: a config rebuilt at runtime (a deserialised `__config`,
-// plain JS) can still carry either field, so the override has to stay deterministic. `responseType`
-// rides along as the control — `buildRequest` does NOT touch it, so it must survive untouched, which
-// is why it is not guarded.
-test('forces POST + json over whatever a runtime config carries; responseType survives', async () => {
+// plain JS) can still carry either field, so the override has to stay deterministic. The response
+// decoding rides along as the control — `buildRequest` does NOT touch it, so it must survive
+// untouched, which is why it is not guarded.
+//
+// The dead config is authored as `wire.body`; the assertions read the FLAT `bodyType` /
+// `responseType`, because `AdapterRequest` keeps the transport spelling and the engine converts on
+// the way down (CONTRACT.md P22).
+test('forces POST + json over whatever a runtime config carries; the response decoding survives', async () => {
     const { adapter, calls } = captureAdapter({
         choices: [{ message: { content: 'hi' } }],
     });
@@ -198,8 +211,7 @@ test('forces POST + json over whatever a runtime config carries; responseType su
         model: 'gpt-4o',
         adapter,
         method: 'PUT',
-        bodyType: 'form',
-        responseType: 'text',
+        wire: { body: 'form', response: 'text' },
     } as unknown as Parameters<typeof llm>[0];
 
     await llm(rebuilt)({

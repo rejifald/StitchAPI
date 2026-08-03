@@ -54,8 +54,9 @@ const getThing = graphql({
 const thing = await getThing({ variables: { id: 1 } });
 ```
 
-The surface owns the body encoding, so `bodyType` is not accepted here — setting
-one is a compile error. File uploads need the [GraphQL multipart request
+The surface owns the body encoding, so `wire.body` is not accepted here — setting
+one is a compile error. The rest of the `wire` envelope still applies. File
+uploads need the [GraphQL multipart request
 spec](https://github.com/jaydenseric/graphql-multipart-request-spec) envelope,
 which this surface does not implement; see
 [Guide → GraphQL](/docs/guides/data/graphql#file-uploads-are-not-supported).
@@ -155,19 +156,22 @@ const { blob, filename } = await getReport({
     name="DownloadResult"
 />
 
-The surface owns the request shape, so `method` and `responseType` are not
+The surface owns the request shape, so `method` and `wire.response` are not
 accepted here — setting either is a compile error rather than a silently ignored
 value. To download the result of a `POST`, use a plain
-[`stitch()`](/docs/guides/authoring/stitch) with `responseType: 'blob'`; the only
-thing you give up is the `Content-Disposition` filename parsing.
+[`stitch()`](/docs/guides/authoring/stitch) with `wire: { response: 'blob' }`;
+the only thing you give up is the `Content-Disposition` filename parsing.
 
 ```ts
 // ✗ dead config — the surface always issues a GET and always reads a Blob
 download({ url, method: 'POST' });
 
 // ✓ the same request, on the surface that actually honours it
-stitch({ url, method: 'POST', responseType: 'blob' });
+stitch({ url, method: 'POST', wire: { response: 'blob' } });
 ```
+
+Only that one member of the envelope is closed: `wire.array` and the rest stay
+authorable on a download stitch.
 
 ## Both spellings, one engine
 

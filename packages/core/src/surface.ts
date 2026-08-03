@@ -115,11 +115,16 @@ export const httpSurface: Surface = { id: 'http' };
  * documents (`{ ... }`, or `query ($id: ID) { ... }` with no name) yield no key. Set
  * `cfg.operationName` to override (a multi-operation document, or `''` to suppress).
  *
- * The body encoding is the surface's, not the caller's: `bodyType` is FIXED at `'json'` here, and
- * `NoBodyTypeOnGraphql` makes authoring one a compile error so the override is never silent. A
- * GraphQL file upload is therefore out of reach today — it needs the `operations`/`map`/file-part
- * envelope of the GraphQL multipart request spec, not this JSON body multipart-encoded, so it
- * would be a new shape for `buildRequest` to learn rather than a `bodyType` a caller can pass.
+ * The body encoding is the surface's, not the caller's: the request is FIXED at JSON here, and
+ * `NoBodyTypeOnGraphql` makes authoring a `wire.body` a compile error so the override is never
+ * silent. A GraphQL file upload is therefore out of reach today — it needs the
+ * `operations`/`map`/file-part envelope of the GraphQL multipart request spec, not this JSON body
+ * multipart-encoded, so it would be a new shape for `buildRequest` to learn rather than a
+ * `wire.body` a caller can pass.
+ *
+ * The flat `bodyType: 'json'` below is the `AdapterRequest` spelling, one layer under the authoring
+ * config: that transport contract keeps the flat wire-format fields (CONTRACT.md P22), and the
+ * engine converts `wire` into them when it builds the request.
  *
  * The literal `id: 'graphql'` (rather than `Surface`'s widened `string`) is load-bearing: it is
  * what lets `BodyTypeFixedByGraphql` recognise this surface in `stitch({ kind: graphqlSurface })`.

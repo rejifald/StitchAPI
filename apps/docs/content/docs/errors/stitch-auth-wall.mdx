@@ -52,7 +52,7 @@ const login = stitch({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/login',
-    bodyType: 'form',
+    wire: { body: 'form' },
 });
 
 const me = stitch({

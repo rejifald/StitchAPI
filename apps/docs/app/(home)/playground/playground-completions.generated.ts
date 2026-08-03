@@ -24,16 +24,10 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             info: "HTTP method; defaults to `GET`.",
         },
         {
-            label: "bodyType",
+            label: "wire",
             type: "property",
-            detail: "'json' | 'form' | 'multipart'",
-            info: "Request body encoding. Default `'json'`.",
-        },
-        {
-            label: "multipart",
-            type: "property",
-            detail: "MultipartNesting | AtLeastOne<MultipartOptions>",
-            info: "Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`. A bare  string is shorthand for the object form — `multipart: 'dot'` ≡ `multipart: { nesting: 'dot' }` (CONTRACT.md P12); the opaque `multipart: {}` is rejected (P20).",
+            detail: "AtLeastOne<WireOptions>",
+            info: "Wire-format options — request body encoding, response decoding, and urlencoded array serialisation, grouped by category rather than by request/response phase (CONTRACT.md P24). The opaque `wire: {}` is rejected (P20); no field dominates, so there is no scalar shorthand (P14), exactly as with .",
         },
         {
             label: "stream",
@@ -46,12 +40,6 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             type: "property",
             detail: "boolean | AtLeastOne<SseOptions>",
             info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse` block the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.delay` / the `retry` policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse` surface reads it. `true` is shorthand for `{ reconnect: true }` (CONTRACT.md P13); the object form must set at least one field (P20).",
-        },
-        {
-            label: "responseType",
-            type: "property",
-            detail: "ResponseType",
-            info: "How to read the response body. Default: auto by content-type.",
         },
         {
             label: "url",
@@ -172,12 +160,6 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             type: "property",
             detail: "boolean",
             info: "Opt this stitch out of the cache **and** coalescing entirely — never stored, always a live call. The honest \"do not persist this response\" hatch for one-time tokens or compliance- bound data; the opaque key + principal scope already cover leak-protection, so the default `false` is not fail-open. Only meaningful alongside a `cache` block.",
-        },
-        {
-            label: "arrayFormat",
-            type: "property",
-            detail: "'indices' | 'brackets' | 'repeat'",
-            info: "How arrays are serialised in the query string. - `'indices'` (default) — `ids%5B0%5D=1&ids%5B1%5D=2` - `'brackets'`          — `ids%5B%5D=1&ids%5B%5D=2` - `'repeat'`            — `ids=1&ids=2`",
         },
         {
             label: "hooks",

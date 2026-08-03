@@ -1,11 +1,13 @@
 // The `llm` surface owns how it frames a chat completion: the live surface's `buildRequest` always
-// forces `method: 'POST'` and `bodyType: 'json'` and replaces the body with `provider.buildBody(...)`
-// (ADR 0005 Decision 1 — a surface owns *shaping*), so either field authored on an `llm()` config is
-// never read. Same class as the graphql `bodyType` guard and the download `method` one; this surface
-// just fixes one of each.
+// forces `method: 'POST'` and a JSON body and replaces it with `provider.buildBody(...)` (ADR 0005
+// Decision 1 — a surface owns *shaping*), so either field authored on an `llm()` config is never
+// read. Same class as the graphql `wire.body` guard and the download `method` one; this surface just
+// fixes one of each.
 //
-// `responseType` is the control throughout: `buildRequest` leaves it alone, so it is a LIVE knob here
-// and must keep typechecking. A guard that rejected it would be rejecting config that is honoured.
+// `wire.response` is the control throughout: `buildRequest` leaves it alone, so it is a LIVE knob
+// here and must keep typechecking. A guard that rejected it would be rejecting config that is
+// honoured — and since `wire.body` and `wire.response` now live in the SAME envelope, that control
+// is also what proves the guard closes one member rather than the whole of `wire`.
 import { seam, stitch } from '../src';
 import type { Stitch } from '../src';
 import { llm, openai } from '../src/llm';
@@ -18,15 +20,18 @@ import { expectError, expectType } from 'tsd';
 const chat = llm({ provider: openai, model: 'gpt-4o' });
 expectType<Stitch<LlmResult>>(chat);
 
-// Every other config key is unaffected — including `responseType`, which the surface does not touch.
+// Every other config key is unaffected — including `wire.response`, which the surface never touches.
 llm({
     provider: openai,
     model: 'gpt-4o',
-    responseType: 'json',
+    wire: { response: 'json' },
     headers: { 'x-trace': '1' },
     timeout: 60_000,
     retry: 2,
 });
+
+// Other members of the same envelope are equally live.
+llm({ provider: openai, model: 'gpt-4o', wire: { array: 'repeat' } });
 
 // ── Illegal: `method` on the `llm()` preset ─────────────────────────────────
 expectError(llm({ provider: openai, model: 'gpt-4o', method: 'PUT' }));
@@ -34,19 +39,30 @@ expectError(llm({ provider: openai, model: 'gpt-4o', method: 'PUT' }));
 // Even the verb the surface actually sends is rejected — it is the surface's to decide.
 expectError(llm({ provider: openai, model: 'gpt-4o', method: 'POST' }));
 
-// ── Illegal: `bodyType` on the `llm()` preset ───────────────────────────────
-expectError(llm({ provider: openai, model: 'gpt-4o', bodyType: 'multipart' }));
-expectError(llm({ provider: openai, model: 'gpt-4o', bodyType: 'form' }));
-expectError(llm({ provider: openai, model: 'gpt-4o', bodyType: 'json' }));
+// ── Illegal: `wire.body` on the `llm()` preset ──────────────────────────────
+expectError(
+    llm({ provider: openai, model: 'gpt-4o', wire: { body: 'multipart' } }),
+);
+expectError(llm({ provider: openai, model: 'gpt-4o', wire: { body: 'form' } }));
+expectError(llm({ provider: openai, model: 'gpt-4o', wire: { body: 'json' } }));
 
-// `multipart` comes along for free: `MultipartOnlyOnMultipartBody` requires `bodyType: 'multipart'`
-// before `multipart` is legal, and that spelling is exactly what the guard above rejects.
+// A live sibling in the same envelope does not launder the rejected member.
 expectError(
     llm({
         provider: openai,
         model: 'gpt-4o',
-        bodyType: 'multipart',
-        multipart: 'dot',
+        wire: { body: 'form', response: 'json' },
+    }),
+);
+
+// `wire.multipart` comes along for free: `MultipartOnlyOnMultipartBody` requires
+// `wire.body: 'multipart'` before it is legal, and that spelling is exactly what the guard above
+// rejects.
+expectError(
+    llm({
+        provider: openai,
+        model: 'gpt-4o',
+        wire: { body: 'multipart', multipart: 'dot' },
     }),
 );
 
@@ -59,10 +75,14 @@ const api = seam({ baseUrl: 'https://api.openai.com' });
 const bound = llm.bind(api);
 
 bound.stitch({ provider: openai, model: 'gpt-4o' });
-bound.stitch({ provider: openai, model: 'gpt-4o', responseType: 'json' });
+bound.stitch({ provider: openai, model: 'gpt-4o', wire: { response: 'json' } });
 expectError(bound.stitch({ provider: openai, model: 'gpt-4o', method: 'PUT' }));
 expectError(
-    bound.stitch({ provider: openai, model: 'gpt-4o', bodyType: 'form' }),
+    bound.stitch({
+        provider: openai,
+        model: 'gpt-4o',
+        wire: { body: 'form' },
+    }),
 );
 
 // `llm.bind(options)` builds its own seam and must guard identically.
@@ -79,7 +99,7 @@ const raw = stitch({
     url: 'https://api.openai.com/v1/chat/completions',
     kind: llmSurface,
     method: 'POST',
-    bodyType: 'json',
+    wire: { body: 'json' },
 });
 expectType<Stitch<unknown>>(raw);
 
@@ -89,3 +109,7 @@ expectType<Stitch<unknown>>(raw);
 // generic parameter — the shape the graphql/download guards need — would silently lose this.
 expectError(llm({ provider: openai, model: 'gpt-4o', maxTokens: 16 }));
 expectError(llm({ provider: openai, model: 'gpt-4o', notAField: true }));
+
+// The same check reaches INTO the envelope: `wire` is a closed shape too, so the pre-`wire` flat
+// spellings are excess properties now rather than silently-ignored ones.
+expectError(llm({ provider: openai, model: 'gpt-4o', wire: { type: 'json' } }));

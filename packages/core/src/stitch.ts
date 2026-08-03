@@ -43,6 +43,7 @@ import {
     type InputSchemas,
     type InspectOptions,
     type Inspection,
+    type MultipartOnlyOnMultipartBody,
     type NoBodyTypeOnGraphql,
     type RedactedStitchConfig,
     type RequestShapeFixedByDownload,
@@ -60,6 +61,7 @@ import {
     type StitchStore,
     type StreamOptions,
     type TraceSink,
+    type WireOptions,
     isStitch,
 } from './types';
 import {
@@ -167,7 +169,6 @@ const SHORTHAND_SLOTS = [
     ['timeout', 'total'],
     ['cache', 'ttl'],
     ['stream', 'decode'],
-    ['multipart', 'nesting'],
     ['throttle', 'rate'],
 ] as const satisfies readonly ShorthandPair[];
 // The walk carries a UNION of slots, so `envelope`'s per-slot generic inference cannot apply — bind
@@ -195,6 +196,15 @@ function expandShorthand(cfg: Partial<StitchConfig>): void {
     for (const [slot, field] of SHORTHAND_SLOTS) {
         if (slots[slot] !== undefined) slots[slot] = fold(slots[slot], field);
     }
+    // Nested fold (P12): `wire.multipart` is a scalar-or-envelope slot one level down, so the bare
+    // nesting string folds to `{ nesting }` and `__config` never carries the string form (P0).
+    // `wire` itself has no dominant field, so it takes no shorthand of its own (P14).
+    const wire = cfg.wire as WireOptions | undefined;
+    if (wire?.multipart !== undefined)
+        cfg.wire = {
+            ...wire,
+            multipart: envelope(wire.multipart, 'nesting'),
+        };
     // Nested fold (P24): `backoff` is itself a scalar-or-envelope slot, so the bare curve
     // normalizes too — `__config` never carries the string form (P0). Read back through the
     // normalised shape the loop just wrote.
@@ -1116,26 +1126,33 @@ export interface StitchFn {
         TExplicit = never,
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C & BodyTypeFixedByGraphql<C> & RequestShapeFixedByDownload<C>,
+        config: C &
+            MultipartOnlyOnMultipartBody<C> &
+            BodyTypeFixedByGraphql<C> &
+            RequestShapeFixedByDownload<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Non-inferring fallback: a bare path string, or any argument whose static type is the union
      * `string | Partial<StitchConfig>` (e.g. a wrapper that forwards either spelling). Neither can
      * match the inferring overload above, so the result is `Stitch<unknown>` — override with `<T>`.
      *
-     * `C` is captured here ONLY to re-apply the surface-owns-this guards
-     * ({@link BodyTypeFixedByGraphql}, {@link RequestShapeFixedByDownload}); the result stays
-     * `Stitch<T>`. Without it a config rejected by the inferring overload would silently fall
-     * through to this one and typecheck after all. On a genuinely loose
-     * `string | Partial<StitchConfig>` argument the guards distribute over the union and every arm
-     * resolves to `unknown`, so this stays the same escape hatch it has always been.
+     * `C` is captured here ONLY to re-apply the dead-config guards
+     * ({@link MultipartOnlyOnMultipartBody}, {@link BodyTypeFixedByGraphql},
+     * {@link RequestShapeFixedByDownload}); the result stays `Stitch<T>`. Without it a config
+     * rejected by the inferring overload would silently fall through to this one and typecheck
+     * after all. On a genuinely loose `string | Partial<StitchConfig>` argument the guards
+     * distribute over the union and every arm resolves to `unknown`, so this stays the same escape
+     * hatch it has always been.
      */
     <
         T = unknown,
         const C extends string | Partial<StitchConfig> =
             string | Partial<StitchConfig>,
     >(
-        config: C & BodyTypeFixedByGraphql<C> & RequestShapeFixedByDownload<C>,
+        config: C &
+            MultipartOnlyOnMultipartBody<C> &
+            BodyTypeFixedByGraphql<C> &
+            RequestShapeFixedByDownload<C>,
     ): Stitch<T>;
 }
 
@@ -1173,7 +1190,7 @@ export function graphql<
 >(
     // The surface is graphql by construction here, so the guard applies unconditionally rather
     // than keying off `kind` the way `stitch`'s `BodyTypeFixedByGraphql` must.
-    config: C & NoBodyTypeOnGraphql<C>,
+    config: C & MultipartOnlyOnMultipartBody<C> & NoBodyTypeOnGraphql<C>,
 ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the
     // convenience without clobbering an explicit endpoint). Method/body shaping is the surface's.

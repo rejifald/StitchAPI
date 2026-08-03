@@ -133,6 +133,61 @@ export interface MultipartOptions {
     nesting?: MultipartNesting;
 }
 /**
+ * How arrays are serialised on the two `application/x-www-form-urlencoded` surfaces — the query
+ * string and a `wire.body: 'form'` body. Both run the same walker, so one {@link WireOptions.array}
+ * governs both. Nested objects always expand `qs`-style to `a[b]=c`; this selects only the array
+ * axis.
+ */
+export type ArrayFormat = 'indices' | 'brackets' | 'repeat';
+/** Request body wire format. Default `'json'`. */
+export type BodyEncoding = 'json' | 'form' | 'multipart';
+/**
+ * Wire-format options — how values are framed on their way out and read on their way back
+ * (CONTRACT.md P24 carve-out (a)/(b)). The envelope groups by **category**, not by request/response
+ * phase: every member is a wire-format choice, so the name is exhaustive over its contents. A phase
+ * envelope could not be — `request` would hold two of the ~15 request-shaping slots while
+ * `headers`, `method`, and `body` stayed outside — and no body-scoped container could hold
+ * {@link WireOptions.array} truthfully, since it governs the query string as well as the body.
+ *
+ * Parallels {@link InputSchemas}: `input: { body: schema }` is the body's contract,
+ * `wire: { body: 'form' }` is its encoding. Like `input`, no single field dominates, so there is no
+ * P12 scalar shorthand — and the opaque `wire: {}` is rejected (P20).
+ */
+export interface WireOptions {
+    /**
+     * Request body encoding. Default `'json'`.
+     * - `'json'` — `JSON.stringify`, `Content-Type: application/json`.
+     * - `'form'` — `application/x-www-form-urlencoded`; nests `qs`-style and honours
+     *   {@link WireOptions.array}.
+     * - `'multipart'` — `multipart/form-data`; the boundary is set by the transport, and nesting is
+     *   governed by {@link WireOptions.multipart} rather than by `array`.
+     */
+    body?: BodyEncoding;
+    /**
+     * How the response body is read. Maps onto `AdapterRequest.responseType`, which keeps the
+     * XHR/fetch spelling at the transport boundary (P22 — follow the standard that governs each
+     * layer, and convert at the edge).
+     */
+    response?: ResponseType;
+    /**
+     * Array serialisation on BOTH urlencoded surfaces — the query string and a `body: 'form'` body,
+     * which run the same walker (ADR 0005 Decision 6). Nested objects always expand `qs`-style to
+     * `a[b]=c`; this selects the array axis only. Default `'indices'`.
+     *
+     * The two surfaces differ only in how a space is spelled — `%20` in a query string
+     * (`encodeURIComponent`), `+` in a form body (`URLSearchParams`). Both round-trip.
+     */
+    array?: ArrayFormat;
+    /**
+     * Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become
+     * field names. Only meaningful with `body: 'multipart'`, and a compile error otherwise
+     * ({@link MultipartOnlyOnMultipartBody}). Default nesting `'bracket'`. A bare
+     * {@link MultipartNesting} string is shorthand for the object form — `multipart: 'dot'` ≡
+     * `multipart: { nesting: 'dot' }` (P12); the opaque `multipart: {}` is rejected (P20).
+     */
+    multipart?: MultipartNesting | AtLeastOne<MultipartOptions>;
+}
+/**
  * Carries a human-readable explanation into a type error. Intersecting an offending slot with this
  * makes the slot unsatisfiable — so the config is still rejected — while keeping the message
  * legible: TypeScript prints the brand, and the brand IS the sentence. A bare `?: never` rejects
@@ -143,26 +198,58 @@ export interface ConfigError<Message extends string> {
     readonly __stitchConfigError: Message;
 }
 /**
+ * Compile-time guard: {@link WireOptions.multipart} is read ONLY when `wire.body` is
+ * `'multipart'`, so pairing it with a `json`/`form` body (or omitting `body`, which defaults to
+ * `json`) is silently dead config. Intersecting a config with this makes the nested `multipart`
+ * slot unsatisfiable in exactly those cases, turning the dead pairing into a compile error at the
+ * authoring site.
+ *
+ * This is the mutual-exclusion shape CONTRACT.md's R8 allow-list recognises (a pair made exclusive
+ * through the type system rather than through nesting), and it is why `wire.body` + `wire.multipart`
+ * stay flat WITHIN the envelope rather than splitting into a per-encoding union: the illegal
+ * combinations are unrepresentable without it. The three body encodings are not symmetric — `json`
+ * has no options at all, and `form` has none of its own, since array serialisation
+ * ({@link WireOptions.array}) is shared with the query string — so a three-arm union would carry
+ * two empty arms and duplicate a query concern.
+ */
+export type MultipartOnlyOnMultipartBody<C> = C extends {
+    wire: { multipart: unknown };
+}
+    ? C extends { wire: { body: 'multipart' } }
+        ? unknown
+        : {
+              wire?: {
+                  multipart?: ConfigError<'`wire.multipart` requires `wire.body: "multipart"` — it is ignored on a json or form body'>;
+              };
+          }
+    : unknown;
+/**
  * Compile-time guard: the `graphql` surface OWNS its body encoding. Its `buildRequest` packs
  * `{ query, variables, operationName? }` and sends it as JSON unconditionally (ADR 0005 Decision 1
- * — a surface owns *shaping*), so a {@link StitchConfig.bodyType} authored alongside it is never
- * read. Intersecting a graphql config with this makes the `bodyType` slot unsatisfiable, turning
- * the dead pairing into a compile error at the authoring site.
+ * — a surface owns *shaping*), so a {@link WireOptions.body} authored alongside it is never read.
+ * Intersecting a graphql config with this makes the `wire.body` slot unsatisfiable, turning the
+ * dead pairing into a compile error at the authoring site.
  *
- * This also makes {@link StitchConfig.multipart} unreachable on graphql without a second guard:
- * `MultipartOnlyOnMultipartBody` already requires `bodyType: 'multipart'` before `multipart` is
- * legal, and that spelling is exactly what this rejects. One guard closes both dead pairings.
+ * This also makes {@link WireOptions.multipart} unreachable on graphql without a second guard:
+ * {@link MultipartOnlyOnMultipartBody} already requires `wire.body: 'multipart'` before
+ * `wire.multipart` is legal, and that spelling is exactly what this rejects. One guard closes both
+ * dead pairings.
  *
- * `bodyType: 'multipart'` is the interesting arm — a GraphQL file upload is a real thing, but it
+ * `wire.body: 'multipart'` is the interesting arm — a GraphQL file upload is a real thing, but it
  * is NOT "the JSON body, multipart-encoded". It is the separate `operations`/`map`/file-part
  * envelope of the GraphQL multipart request spec, which this surface does not implement. Rejecting
  * the spelling is what keeps that gap honest instead of silently sending a JSON body; supporting
  * uploads later means teaching `graphqlSurface.buildRequest` the envelope and relaxing this guard,
  * which is a non-breaking change.
+ *
+ * Only the AUTHORING slot moves under `wire` — `graphqlSurface.buildRequest` still emits a flat
+ * `bodyType: 'json'` on the `AdapterRequest` it returns, because that contract is unchanged (P22).
  */
-export type NoBodyTypeOnGraphql<C> = C extends { bodyType: unknown }
+export type NoBodyTypeOnGraphql<C> = C extends { wire: { body: unknown } }
     ? {
-          bodyType?: ConfigError<'the `graphql` surface always sends a JSON `{ query, variables }` body — `bodyType` is ignored (GraphQL file uploads need the multipart request spec, which this surface does not implement)'>;
+          wire?: {
+              body?: ConfigError<'the `graphql` surface always sends a JSON `{ query, variables }` body — `wire.body` is ignored (GraphQL file uploads need the multipart request spec, which this surface does not implement)'>;
+          };
       }
     : unknown;
 /**
@@ -175,28 +262,40 @@ export type BodyTypeFixedByGraphql<C> = C extends { kind: { id: 'graphql' } }
     : unknown;
 /**
  * Compile-time guard: the `download` surface OWNS the request shape its result depends on. Its
- * `buildRequest` forces `method: 'GET'` and `responseType: 'blob'` unconditionally (ADR 0005
- * Decision 1 — a surface owns *shaping*), so either field authored alongside it is never read.
- * Intersecting a download config with this makes the offending slot unsatisfiable, turning the dead
- * pairing into a compile error at the authoring site.
+ * `buildRequest` forces `method: 'GET'` and a blob response unconditionally (ADR 0005 Decision 1 —
+ * a surface owns *shaping*), so either field authored alongside it is never read. Intersecting a
+ * download config with this makes the offending slot unsatisfiable, turning the dead pairing into a
+ * compile error at the authoring site.
+ *
+ * The two halves sit at different depths because the fields do: `method` is still a flat
+ * {@link StitchConfig} slot, while the response decoding moved into the `wire` envelope as
+ * {@link WireOptions.response}. The guard mirrors the authoring shape, so the nested arm rejects
+ * `wire.response` without collapsing the rest of `wire` — `wire.array` and `wire.multipart` are
+ * untouched and stay authorable on a download stitch.
  *
  * Both fields are load-bearing for what `download` promises, which is why neither is a knob:
- * `responseType: 'blob'` is what makes the buffered body a `Blob` at all — the surface's `interpret`
- * casts `res.body` to one and hands back `{ blob, filename }`, so any other response type would make
- * that cast a lie. The `GET` is the weaker of the two (a POST-then-download is a real pattern), but
- * honouring `method` alone would still leave the surface's own name for it — `download` — describing
- * only half the request. Either way the escape hatch is the same and costs one line: a plain
- * `stitch()` with `responseType: 'blob'`, which gives up only the `Content-Disposition` filename
- * parsing. Relaxing `method` later is non-breaking.
+ * `wire.response: 'blob'` is what makes the buffered body a `Blob` at all — the surface's
+ * `interpret` casts `res.body` to one and hands back `{ blob, filename }`, so any other response
+ * type would make that cast a lie. The `GET` is the weaker of the two (a POST-then-download is a
+ * real pattern), but honouring `method` alone would still leave the surface's own name for it —
+ * `download` — describing only half the request. Either way the escape hatch is the same and costs
+ * one line: a plain `stitch()` with `wire: { response: 'blob' }`, which gives up only the
+ * `Content-Disposition` filename parsing. Relaxing `method` later is non-breaking.
+ *
+ * Only the AUTHORING slot moves under `wire`. `downloadSurface.buildRequest` still returns a flat
+ * `responseType: 'blob'` on its `AdapterRequest`, which is the transport contract and is unchanged
+ * (P22 — the XHR spelling belongs to the layer that meets XHR).
  */
 export type NoRequestShapeOnDownload<C> = (C extends { method: unknown }
     ? {
-          method?: ConfigError<'the `download` surface always issues a GET — `method` is ignored (for a POST that returns a file, use a plain `stitch()` with `responseType: "blob"`)'>;
+          method?: ConfigError<'the `download` surface always issues a GET — `method` is ignored (for a POST that returns a file, use a plain `stitch()` with `wire: { response: "blob" }`)'>;
       }
     : unknown) &
-    (C extends { responseType: unknown }
+    (C extends { wire: { response: unknown } }
         ? {
-              responseType?: ConfigError<'the `download` surface always reads the body as a Blob — `responseType` is ignored (it is what makes the result `{ blob, filename }`; use a plain `stitch()` to choose another response type)'>;
+              wire?: {
+                  response?: ConfigError<'the `download` surface always reads the body as a Blob — `wire.response` is ignored (it is what makes the result `{ blob, filename }`; use a plain `stitch()` to choose another response type)'>;
+              };
           }
         : unknown);
 /**
@@ -211,15 +310,17 @@ export type RequestShapeFixedByDownload<C> = C extends {
     : unknown;
 /**
  * Compile-time guard: the `llm` surface OWNS how it frames a chat completion. The live surface's
- * `buildRequest` forces `method: 'POST'` and `bodyType: 'json'` unconditionally and replaces the
- * body with `provider.buildBody(...)`, so either field authored on an `llm()` config is never read.
- * Same class as {@link NoBodyTypeOnGraphql} (`bodyType`) and {@link NoRequestShapeOnDownload}
+ * `buildRequest` forces `method: 'POST'` and a JSON body unconditionally and replaces the body with
+ * `provider.buildBody(...)`, so either field authored on an `llm()` config is never read. Same
+ * class as {@link NoBodyTypeOnGraphql} (`wire.body`) and {@link NoRequestShapeOnDownload}
  * (`method`) — this surface simply fixes one of each.
  *
- * As on graphql, this makes {@link StitchConfig.multipart} unreachable for free:
- * `MultipartOnlyOnMultipartBody` requires `bodyType: 'multipart'` first, and that spelling is
- * exactly what this rejects. `responseType` is deliberately NOT guarded — `buildRequest` leaves it
- * alone, so it still reaches the adapter and is a live knob here.
+ * As on graphql, this makes {@link WireOptions.multipart} unreachable for free:
+ * {@link MultipartOnlyOnMultipartBody} requires `wire.body: 'multipart'` first, and that spelling
+ * is exactly what this rejects. {@link WireOptions.response} is deliberately NOT guarded —
+ * `buildRequest` leaves it alone, so it still reaches the adapter and is a live knob here. That is
+ * also why the `wire` arm names `body` alone rather than replacing the envelope: the other three
+ * members stay authorable.
  *
  * There is no `…FixedByLlm<C>` sibling keyed off `kind`, and that asymmetry is deliberate: the
  * exported `llmSurface` is only the redaction/inspection IDENTITY (ADR 0005 Decision 11) and carries
@@ -237,10 +338,15 @@ export type RequestShapeFixedByDownload<C> = C extends {
  * is load-bearing here: it is what makes the removed `maxTokens` spelling a compile error (P4,
  * pinned by a test in llm.spec.ts). Making the parameter generic to fit the conditional idiom would
  * have silently traded that guarantee away for this one.
+ *
+ * Only the AUTHORING slot moves under `wire`. `makeLlmSurface`'s `buildRequest` still sets a flat
+ * `bodyType: 'json'` on its `AdapterRequest`, which is the transport contract and is unchanged.
  */
 export interface NoRequestShapeOnLlm {
     method?: ConfigError<'the `llm` surface always POSTs to the provider — `method` is ignored'>;
-    bodyType?: ConfigError<'the `llm` surface always sends a JSON body built by the provider — `bodyType` is ignored'>;
+    wire?: {
+        body?: ConfigError<'the `llm` surface always sends a JSON body built by the provider — `wire.body` is ignored'>;
+    };
 }
 /**
  * How the `stream` surface decodes each chunk of a live response body (ADR 0005 Decision 5).
@@ -339,6 +445,13 @@ export interface AdapterRequest {
     bodyType?: 'json' | 'form' | 'multipart';
     /** Multipart serialisation options (nesting); only read when `bodyType: 'multipart'`. */
     multipart?: MultipartOptions;
+    /**
+     * Array serialisation for the urlencoded body; only read when `bodyType: 'form'` (the query
+     * string is already serialised into `url` by the time a request reaches the transport).
+     * Defaults to `'indices'` — the same default the query string uses, so one
+     * {@link StitchConfig.arrayFormat} means one thing on both urlencoded surfaces.
+     */
+    arrayFormat?: ArrayFormat;
     responseType?: ResponseType;
     /**
      * Ask the transport NOT to buffer/parse the response — hand back the live body instead
@@ -828,16 +941,13 @@ export interface StitchConfig {
     kind?: Surface;
     /** HTTP method; defaults to `GET`. */
     method?: string;
-    /** Request body encoding. Default `'json'`. */
-    bodyType?: 'json' | 'form' | 'multipart';
     /**
-     * Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become
-     * field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`. A
-     * bare {@link MultipartNesting} string is shorthand for the object form —
-     * `multipart: 'dot'` ≡ `multipart: { nesting: 'dot' }` (CONTRACT.md P12); the opaque
-     * `multipart: {}` is rejected (P20).
+     * Wire-format options — request body encoding, response decoding, and urlencoded array
+     * serialisation, grouped by category rather than by request/response phase (CONTRACT.md P24).
+     * The opaque `wire: {}` is rejected (P20); no field dominates, so there is no scalar shorthand
+     * (P14), exactly as with {@link StitchConfig.input}.
      */
-    multipart?: MultipartNesting | AtLeastOne<MultipartOptions>;
+    wire?: AtLeastOne<WireOptions>;
     /**
      * Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body
      * (`'bytes'` default / `'lines'` / `'ndjson'` / `'json'`). `'json'` is the structural,
@@ -858,8 +968,6 @@ export interface StitchConfig {
      * object form must set at least one field (P20).
      */
     sse?: boolean | AtLeastOne<SseOptions>;
-    /** How to read the response body. Default: auto by content-type. */
-    responseType?: ResponseType;
     /**
      * Full request endpoint as one string — the atomic spelling, when a stitch is exactly one
      * endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware
@@ -970,13 +1078,6 @@ export interface StitchConfig {
      * `false` is not fail-open. Only meaningful alongside a `cache` block.
      */
     sensitive?: boolean;
-    /**
-     * How arrays are serialised in the query string.
-     * - `'indices'` (default) — `ids%5B0%5D=1&ids%5B1%5D=2`
-     * - `'brackets'`          — `ids%5B%5D=1&ids%5B%5D=2`
-     * - `'repeat'`            — `ids=1&ids=2`
-     */
-    arrayFormat?: 'indices' | 'brackets' | 'repeat';
     /** Request/response/error/retry lifecycle hooks. At least one — the opaque `hooks: {}` is rejected (CONTRACT.md P20). */
     hooks?: AtLeastOne<Hooks>;
     /**
@@ -1019,6 +1120,11 @@ export type ResolvedCacheOptions = Omit<CacheOptions, 'vary' | 'methods'> & {
 /** {@link StreamOptions} after {@link compose}: the `buffer` scalar is folded to `{ chars }`. */
 export type ResolvedStreamOptions = Omit<StreamOptions, 'buffer'> & {
     buffer?: StreamBufferOptions;
+};
+
+/** {@link WireOptions} after {@link compose}: the `multipart` scalar is folded to `{ nesting }`. */
+export type ResolvedWireOptions = Omit<WireOptions, 'multipart'> & {
+    multipart?: MultipartOptions;
 };
 
 /**
@@ -1420,20 +1526,26 @@ export interface Seam {
         TExplicit = never,
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C & BodyTypeFixedByGraphql<C> & RequestShapeFixedByDownload<C>,
+        config: C &
+            MultipartOnlyOnMultipartBody<C> &
+            BodyTypeFixedByGraphql<C> &
+            RequestShapeFixedByDownload<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see
-     * {@link StitchFn}). `C` is captured only to re-apply the surface-owns-this guards
-     * ({@link BodyTypeFixedByGraphql}, {@link RequestShapeFixedByDownload}) — see
-     * {@link StitchFn}'s fallback for why.
+     * {@link StitchFn}). `C` is captured only to re-apply the dead-config guards
+     * ({@link MultipartOnlyOnMultipartBody}, {@link BodyTypeFixedByGraphql},
+     * {@link RequestShapeFixedByDownload}) — see {@link StitchFn}'s fallback for why.
      */
     stitch<
         T = unknown,
         const C extends string | Partial<StitchConfig> =
             string | Partial<StitchConfig>,
     >(
-        config: C & BodyTypeFixedByGraphql<C> & RequestShapeFixedByDownload<C>,
+        config: C &
+            MultipartOnlyOnMultipartBody<C> &
+            BodyTypeFixedByGraphql<C> &
+            RequestShapeFixedByDownload<C>,
     ): Stitch<T>;
     /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, picks `data`). */
     graphql<
@@ -1444,7 +1556,7 @@ export interface Seam {
             document: string;
         },
     >(
-        config: C & NoBodyTypeOnGraphql<C>,
+        config: C & MultipartOnlyOnMultipartBody<C> & NoBodyTypeOnGraphql<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Derive a principal-bound {@link PrincipalSeam} reusing the same shared runtime, but whose

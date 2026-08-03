@@ -51,18 +51,20 @@ different field or the raw envelope.
 
 ### File uploads are not supported
 
-The surface builds the request body itself, so `bodyType` is **not** a field a
+The surface builds the request body itself, so `wire.body` is **not** a field a
 GraphQL stitch accepts — authoring one is a compile error rather than a silently
-ignored setting.
+ignored setting. The rest of the envelope still applies: `wire.response` and
+`wire.array` are yours.
 
-That includes `bodyType: 'multipart'`. A GraphQL file upload is not "the JSON
-body, multipart-encoded" — it is a distinct wire format, the [GraphQL multipart
-request spec](https://github.com/jaydenseric/graphql-multipart-request-spec),
-which frames the call as an `operations` part, a `map` part, and one part per
-file. This surface does not implement that envelope. Until it does, upload the
-file with a plain [`stitch()`](/docs/guides/authoring/stitch) using
-`bodyType: 'multipart'` and pass the returned identifier as a GraphQL variable —
-which is also what [Apollo's own upload
+That includes `wire: { body: 'multipart' }`. A GraphQL file upload is not "the
+JSON body, multipart-encoded" — it is a distinct wire format, the [GraphQL
+multipart request
+spec](https://github.com/jaydenseric/graphql-multipart-request-spec), which
+frames the call as an `operations` part, a `map` part, and one part per file.
+This surface does not implement that envelope. Until it does, upload the file
+with a plain [`stitch()`](/docs/guides/authoring/stitch) using
+`wire: { body: 'multipart' }` and pass the returned identifier as a GraphQL
+variable — which is also what [Apollo's own upload
 guidance](https://www.apollographql.com/blog/file-upload-best-practices)
 recommends over in-band multipart uploads.
 

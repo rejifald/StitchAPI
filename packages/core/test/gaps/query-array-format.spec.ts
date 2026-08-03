@@ -67,7 +67,7 @@ describe('GAP-AUDIT §2.8 — configurable query array serialization', () => {
         const s = stitch({
             baseUrl: server.url,
             path: '/array-repeat',
-            arrayFormat: 'repeat',
+            wire: { array: 'repeat' },
         });
         const url = await captureStartUrl(s({ query: { ids: [1, 2] } }));
         const search = new URLSearchParams(new URL(url).search);
@@ -87,7 +87,7 @@ describe('GAP-AUDIT §2.8 — configurable query array serialization', () => {
         const s = stitch({
             baseUrl: server.url,
             path: '/array-brackets',
-            arrayFormat: 'brackets',
+            wire: { array: 'brackets' },
         });
         const url = await captureStartUrl(s({ query: { ids: [1, 2] } }));
         const search = new URLSearchParams(new URL(url).search);

@@ -13,43 +13,84 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
-- **BREAKING — `bodyType` on a `graphql` stitch is now a compile error.** The `graphql`
-  surface builds its own request body — a JSON `{ query, variables, operationName? }`
-  envelope — so a `bodyType` authored alongside it was never read:
-  `graphql({ …, bodyType: 'multipart' })` typechecked and silently sent JSON. A surface owns
-  its shaping (ADR 0005 Decision 1), so the field is not a knob there, and it now says so at
-  the authoring site rather than discarding the value:
+- **BREAKING — every wire-format field moves into one `wire` envelope.** `bodyType`,
+  `responseType`, `arrayFormat`, and `multipart` were four flat top-level slots describing one
+  category, so they fold into a named envelope (CONTRACT.md P24):
 
     ```ts
-    graphql({ baseUrl, document, bodyType: 'multipart' });
-    //                            ^ the `graphql` surface always sends a JSON
-    //                              `{ query, variables }` body — `bodyType` is ignored
+    // before                          // after
+    bodyType: 'form',                  wire: { body: 'form' },
+    responseType: 'blob',              wire: { response: 'blob' },
+    arrayFormat: 'repeat',             wire: { array: 'repeat' },
+    bodyType: 'multipart',             wire: { body: 'multipart', multipart: 'dot' },
+    multipart: 'dot',
+    ```
+
+    The envelope groups by **category**, not by request/response phase — every member is a
+    wire-format choice, so the name is exhaustive over its contents. A `request`/`response`
+    split could not be: `request` would hold two of the ~15 request-shaping slots while
+    `headers`, `method`, and `body` stayed outside. Category grouping is also what lets
+    `wire.array` sit truthfully in one place, since it governs the query string **and** a form
+    body alike, and no body-scoped container could say that.
+
+    No field dominates, so there is no scalar shorthand — `wire` is always the object form,
+    like `input` (P14), and the opaque `wire: {}` is rejected (P20). `wire.multipart` keeps its
+    own scalar shorthand one level down: `multipart: 'dot'` ≡ `{ nesting: 'dot' }` (P12).
+
+    `AdapterRequest` is **unchanged** — it keeps flat `bodyType` / `responseType` /
+    `arrayFormat` / `multipart`, and the engine converts when it builds the request. That is
+    deliberate: `responseType` is the XHR/fetch spelling at the transport boundary, and P22
+    says to follow the standard that governs each layer and convert at the edge. Custom
+    adapters need no changes.
+
+    **Migration gotcha:** a stale `bodyType:` at a call site does **not** produce a compile
+    error — `stitch`'s `const C extends Partial<StitchConfig>` generic captures the argument
+    type, which suppresses excess-property checking, so the field is silently ignored and the
+    body falls back to JSON. Grep for `bodyType:`, `responseType:`, and `arrayFormat:` rather
+    than relying on the typechecker.
+
+- **`wire.multipart` now requires `wire.body: 'multipart'` at compile time.** The slot is read
+  only on a multipart body, so pairing it with `'json'`/`'form'` — or with no body encoding at
+  all — was silently inert config that typechecked. It is now a type error naming the offending
+  field, on `stitch`, `graphql`, `Seam.stitch`, and `Seam.graphql`.
+
+- **BREAKING — `wire.body` on a `graphql` stitch is now a compile error.** The `graphql`
+  surface builds its own request body — a JSON `{ query, variables, operationName? }`
+  envelope — so a `wire.body` authored alongside it was never read:
+  `graphql({ …, wire: { body: 'multipart' } })` typechecked and silently sent JSON. A surface
+  owns its shaping (ADR 0005 Decision 1), so the field is not a knob there, and it now says so
+  at the authoring site rather than discarding the value:
+
+    ```ts
+    graphql({ baseUrl, document, wire: { body: 'multipart' } });
+    //                                   ^ the `graphql` surface always sends a JSON
+    //                                     `{ query, variables }` body — `wire.body` is ignored
     ```
 
     The guard binds every surface that authors a graphql stitch — `graphql()`,
     `graphql.bind(seam).stitch`, `seam.graphql()`, and `stitch({ kind: graphqlSurface })`
     (both the inferring and the fallback overload, or a rejected config would fall through
-    to the loose one and typecheck after all). It also makes `multipart` unreachable on
-    graphql for free: `MultipartOnlyOnMultipartBody` already requires `bodyType: 'multipart'`
-    before `multipart` is legal, and that is exactly the spelling this rejects.
+    to the loose one and typecheck after all). It also makes `wire.multipart` unreachable on
+    graphql for free: `MultipartOnlyOnMultipartBody` already requires `wire.body: 'multipart'`
+    before `wire.multipart` is legal, and that is exactly the spelling this rejects.
 
     **Migration:** delete the field — there is no replacement and nothing to preserve, because
     it never did anything. No runtime behaviour changed: the surface sent a JSON body before
     and still does, so only configs that were already inert stop compiling. Breaking solely in
     the sense that a build which previously passed can now fail.
 
-- **BREAKING — `method` / `responseType` on a `download` stitch, and `method` / `bodyType` on
-  an `llm` stitch, are now compile errors.** The same sweep, applied to the other two surfaces
-  whose `buildRequest` overwrites a caller-authorable field. `downloadSurface.buildRequest`
-  hardcodes `method: 'GET'` and `responseType: 'blob'`; the live `llm` surface hardcodes
-  `method: 'POST'` and `bodyType: 'json'`. All four were silently discarded:
+- **BREAKING — `method` / `wire.response` on a `download` stitch, and `method` / `wire.body`
+  on an `llm` stitch, are now compile errors.** The same sweep, applied to the other two
+  surfaces whose `buildRequest` overwrites a caller-authorable field.
+  `downloadSurface.buildRequest` hardcodes `method: 'GET'` and a blob response; the live `llm`
+  surface hardcodes `method: 'POST'` and a JSON body. All four were silently discarded:
 
     ```ts
     download({ url, method: 'POST' });
     //              ^ the `download` surface always issues a GET — `method` is ignored
-    llm({ provider, model, bodyType: 'form' });
-    //                     ^ the `llm` surface always sends a JSON body built by the
-    //                       provider — `bodyType` is ignored
+    llm({ provider, model, wire: { body: 'form' } });
+    //                             ^ the `llm` surface always sends a JSON body built by the
+    //                               provider — `wire.body` is ignored
     ```
 
     For `download` the guard binds `download()`, `download.stitch`, `download.bind(…).stitch`,
@@ -58,33 +99,68 @@ npm release are grouped under the in-development version that introduced them.
     `stitch({ kind: llmSurface })`: the exported `llmSurface` is only the redaction identity
     and carries no `buildRequest`, so `method` really is honoured on that path.
 
+    Note that these guards read the **authoring** spelling. `AdapterRequest` still carries flat
+    `responseType` / `bodyType`, and that is exactly what both `buildRequest` implementations
+    set — the guards close the config surface above them, not the transport contract below.
+
     **Migration:** delete the field. As with graphql, no runtime behaviour changed — only
     configs that were already inert stop compiling. If you were reaching for
     `download({ method: 'POST' })` to download the result of a POST, that request is a plain
-    `stitch({ method: 'POST', responseType: 'blob' })`; the only thing it gives up is the
+    `stitch({ method: 'POST', wire: { response: 'blob' } })`; the only thing it gives up is the
     `Content-Disposition` filename parsing.
+
+### Fixed
+
+- **A `wire: { body: 'form' }` body no longer mangles nested objects and arrays.** ADR 0005
+  Decision 6 named this bug — a nested value becoming `[object Object]` — and fixed it for
+  `multipart` via `multipart.nesting`, but the urlencoded `form` arm was left on the broken
+  path with no escape hatch: it flattened top-level keys with `String(v)`, so
+  `{ page: { size: 10 } }` went on the wire as `page=%5Bobject+Object%5D` and
+  `{ ids: [1, 2] }` was comma-joined regardless of the array format.
+
+    Both `application/x-www-form-urlencoded` surfaces — the query string and a form body —
+    now run **one** walker, so a single `wire.array` governs both and nesting expands
+    `qs`-style on each:
+
+    ```ts
+    const search = stitch({
+        method: 'POST',
+        baseUrl,
+        path: '/search',
+        wire: { body: 'form' },
+    });
+    await search({ body: { ids: [1, 2], page: { size: 10 } } });
+    // before → ids=1%2C2&page=%5Bobject+Object%5D
+    // after  → ids%5B0%5D=1&ids%5B1%5D=2&page%5Bsize%5D=10
+    ```
+
+    **Wire-visible for form bodies carrying arrays.** They now default to `'indices'`,
+    matching the query string, where previously they were comma-joined. The old behaviour was
+    undocumented and untested; set `wire.array` explicitly to pick a different shape. Nested
+    objects have no migration concern — `[object Object]` was never usable. A space in a form
+    body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
 
 ### Notes
 
 - **`sse`, `stream`, and `postmessage` were checked in the same pass and deliberately left
   alone.** `sse` and `stream` have no `buildRequest`, so their `method` is genuinely honoured;
-  their `responseType` is inert, but because the _engine_ sets `stream: true` and the adapter
+  their `wire.response` is inert, but because the _engine_ sets `stream: true` and the adapter
   returns the live body before consulting it — one rule about the streaming path that applies
   to any surface with a `stream` hook, third-party ones included, rather than a per-surface
   override. `postmessage` ignores most HTTP knobs, but through a custom `execute` that replaces
   the transport outright; the honest fix there is narrowing what its option types admit, which
   is a larger separable change. See ADR 0005 Decision 1's addendum.
 
-- **GraphQL file uploads remain unsupported, now explicitly.** `bodyType: 'multipart'` was
+- **GraphQL file uploads remain unsupported, now explicitly.** `wire.body: 'multipart'` was
   the closest thing to a spelling for them, and it never worked: a GraphQL upload is not the
   JSON body multipart-encoded, it is the
   [GraphQL multipart request spec](https://github.com/jaydenseric/graphql-multipart-request-spec)'s
   separate `operations` / `map` / file-part envelope, which the surface does not implement.
   Rejecting the flag keeps the gap honest instead of silently sending JSON. To upload
-  alongside a GraphQL API today, POST the file with a plain `stitch({ bodyType: 'multipart' })`
-  and pass the resulting handle as a GraphQL variable. See ADR 0005 Decision 1's addendum for
-  why this was deferred and what implementing it would take; relaxing the guard later is
-  non-breaking.
+  alongside a GraphQL API today, POST the file with a plain
+  `stitch({ wire: { body: 'multipart' } })` and pass the resulting handle as a GraphQL
+  variable. See ADR 0005 Decision 1's addendum for why this was deferred and what implementing
+  it would take; relaxing the guard later is non-breaking.
 
 ## [1.0.0-rc.7] — 2026-08-01
 

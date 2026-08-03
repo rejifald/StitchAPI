@@ -20,9 +20,9 @@ import { compact } from './compact';
 import type { StitchRegistry } from './registry';
 import { isStandardSchema } from './standard-schema';
 import type {
+    BodyEncoding,
     RedactedStitchConfig,
     SecurityScheme,
-    StitchConfig,
 } from './types';
 import { scrubUrl } from './util';
 
@@ -171,10 +171,7 @@ function fillParamSchemas(
     }
 }
 
-const BODY_CONTENT_TYPE: Record<
-    NonNullable<StitchConfig['bodyType']>,
-    string
-> = {
+const BODY_CONTENT_TYPE: Record<BodyEncoding, string> = {
     json: 'application/json',
     form: 'application/x-www-form-urlencoded',
     multipart: 'multipart/form-data',
@@ -282,7 +279,7 @@ function buildOperation(
     // `__config.kind` is the surface id string (graphql posts a `{ query, variables }` body).
     const isGraphql = cfg.kind === 'graphql';
     if (cfg.input?.body != null || isGraphql) {
-        const contentType = BODY_CONTENT_TYPE[cfg.bodyType ?? 'json'];
+        const contentType = BODY_CONTENT_TYPE[cfg.wire?.body ?? 'json'];
         op.requestBody = {
             content: {
                 [contentType]: {

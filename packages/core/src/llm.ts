@@ -115,10 +115,14 @@ export const llmSurface: Surface = { id: 'llm' };
 // The live llm surface for one provider + defaults: pack the request via `provider.buildBody` as a
 // JSON POST (provider headers under the user's), and `interpret` lifts the result via `provider.parse`.
 //
-// `method` and `bodyType` are the surface's, not the caller's — `NoRequestShapeOnLlm` makes
-// authoring either a compile error so the override is never silent. `headers` and `responseType`
-// are NOT overridden (base headers win over the provider's; `responseType` is untouched), so they
-// stay live knobs.
+// `method` and the body encoding are the surface's, not the caller's — `NoRequestShapeOnLlm` makes
+// authoring `method` or `wire.body` a compile error so the override is never silent. `headers` and
+// `wire.response` are NOT overridden (base headers win over the provider's; the response decoding
+// is untouched), so they stay live knobs.
+//
+// The flat `bodyType: 'json'` below is the `AdapterRequest` spelling, one layer under the authoring
+// config: that transport contract keeps the flat wire-format fields (CONTRACT.md P22), and the
+// engine converts `wire` into them when it builds the request.
 function makeLlmSurface(d: LlmDefaults): Surface<StitchInput, LlmResult> {
     const { provider } = d;
     return {

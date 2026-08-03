@@ -65,17 +65,23 @@ describe('download surface identity (Decisions 8, 11)', () => {
 
 describe('download shaping (Decision 8)', () => {
     // The surface OWNS the request shape — `NoRequestShapeOnDownload` makes authoring `method` or
-    // `responseType` alongside it a compile error (see download-request-shape.test-d.ts). That guard
+    // `wire.response` alongside it a compile error (see download-request-shape.test-d.ts). That guard
     // is compile-time ONLY, so a config reconstructed at runtime — a deserialised `__config`,
     // `fromCurl`, plain JS with no types at all — can still carry either field. The override must
     // therefore stay deterministic rather than drifting into "sometimes the caller's", which is what
     // the `Partial<StitchConfig>` laundering below models: it is the shape the guard cannot see.
-    test('forces GET + responseType "blob" over whatever a runtime config carries', async () => {
-        for (const dead of [
-            { method: 'POST' },
-            { responseType: 'text' as const },
-            { method: 'PUT', responseType: 'arrayBuffer' as const },
-        ]) {
+    //
+    // Note the two spellings in play. The dead config is authored as `wire.response` (the config
+    // layer, where the guard lives); the assertion reads `adapter.last?.responseType`, because
+    // `AdapterRequest` keeps the flat wire-format fields and the engine converts on the way down.
+    // The surface then overwrites that flat field in `buildRequest`.
+    const deadShapes: Partial<StitchConfig>[] = [
+        { method: 'POST' },
+        { wire: { response: 'text' } },
+        { method: 'PUT', wire: { response: 'arrayBuffer' } },
+    ];
+    test('forces GET + a blob response over whatever a runtime config carries', async () => {
+        for (const dead of deadShapes) {
             const adapter = blobAdapter('x');
             const rebuilt: Partial<StitchConfig> = {
                 url: 'https://x.test/f',
@@ -88,7 +94,7 @@ describe('download shaping (Decision 8)', () => {
         }
     });
 
-    test('forces GET + responseType "blob" with no request shape on the config at all', async () => {
+    test('forces GET + a blob response with no request shape on the config at all', async () => {
         const adapter = blobAdapter('x');
         await download({ url: 'https://x.test/f', adapter })();
         expect(adapter.last?.method).toBe('GET');

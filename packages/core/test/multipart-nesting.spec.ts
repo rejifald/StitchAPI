@@ -29,7 +29,7 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/upload',
-            bodyType: 'multipart',
+            wire: { body: 'multipart' },
         });
 
         await upload({
@@ -59,8 +59,7 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/u',
-            bodyType: 'multipart',
-            multipart: { nesting: 'dot' },
+            wire: { body: 'multipart', multipart: { nesting: 'dot' } },
         });
 
         await upload({ body: { user: { name: 'Ada', roles: ['x'] } } });
@@ -77,8 +76,7 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/u',
-            bodyType: 'multipart',
-            multipart: { nesting: 'json' },
+            wire: { body: 'multipart', multipart: { nesting: 'json' } },
         });
 
         await upload({
@@ -106,8 +104,7 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/u',
-            bodyType: 'multipart',
-            multipart: { nesting: 'none' },
+            wire: { body: 'multipart', multipart: { nesting: 'none' } },
         });
 
         await upload({ body: { user: { name: 'Ada' }, category: 'movies' } });
@@ -127,7 +124,7 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/u',
-            bodyType: 'multipart',
+            wire: { body: 'multipart' },
         });
 
         await upload({
@@ -157,7 +154,7 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/u',
-            bodyType: 'multipart',
+            wire: { body: 'multipart' },
         });
 
         await upload({ body: { amount: { value: 100, currency: 'USD' } } });
@@ -179,7 +176,7 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/u',
-            bodyType: 'multipart',
+            wire: { body: 'multipart' },
         });
 
         await upload({ body: { doc: { value: bytes, filename: 'a.bin' } } });
@@ -198,7 +195,7 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
             method: 'POST',
             baseUrl: server.url,
             path: '/u',
-            bodyType: 'multipart',
+            wire: { body: 'multipart' },
         });
 
         await upload({ body: { note: { value: 'hello', filename: 'n.txt' } } });
@@ -217,15 +214,17 @@ describe('multipart nesting (ADR 0005 Decision 6)', () => {
             method: 'POST',
             baseUrl: 'https://example.test',
             path: '/u',
-            bodyType: 'multipart',
-            multipart: { nesting: 'dot' },
+            wire: { body: 'multipart', multipart: { nesting: 'dot' } },
         });
 
         const json = JSON.parse(JSON.stringify(upload.__config)) as {
-            bodyType?: string;
-            multipart?: { nesting?: string };
+            wire?: { body?: string; multipart?: { nesting?: string } };
         };
-        expect(json.bodyType).toBe('multipart');
-        expect(json.multipart).toEqual({ nesting: 'dot' });
+        // The whole `wire` envelope is plain JSON — it survives the round-trip intact, with
+        // `multipart` in its normalised object form (the P12 scalar never reaches `__config`).
+        expect(json.wire).toEqual({
+            body: 'multipart',
+            multipart: { nesting: 'dot' },
+        });
     });
 });

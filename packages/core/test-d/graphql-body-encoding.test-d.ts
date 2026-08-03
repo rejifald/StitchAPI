@@ -1,11 +1,16 @@
 // The `graphql` surface owns its body encoding: `buildRequest` always sends a JSON
 // `{ query, variables, operationName? }` body (ADR 0005 Decision 1 — a surface owns *shaping*), so
-// a `bodyType` authored alongside it is never read. That is dead config, so it must not typecheck.
+// a `wire.body` authored alongside it is never read. That is dead config, so it must not typecheck.
 //
-// `bodyType: 'multipart'` is the arm worth naming: a GraphQL file upload is a real thing, but it
+// `wire.body: 'multipart'` is the arm worth naming: a GraphQL file upload is a real thing, but it
 // is the `operations`/`map`/file-part envelope of the GraphQL multipart request spec — NOT this
 // JSON body multipart-encoded. The surface does not implement that envelope, and rejecting the
 // spelling is what keeps the gap honest rather than silently sending JSON.
+//
+// This file covers the SURFACE guard (`wire.body` is dead on graphql). The sibling
+// `body-encoding.test-d.ts` covers the surface-agnostic one (`wire.multipart` needs
+// `wire.body: 'multipart'`); the two intersect on graphql, which is what makes `wire.multipart`
+// unreachable there for free.
 import { graphql, seam, stitch } from '../src';
 import type { Stitch } from '../src';
 import { graphqlSurface } from '../src/surface';
@@ -18,21 +23,23 @@ const DOC = 'query Me { me { id } }';
 const me = graphql({ baseUrl: 'https://api.example.com', document: DOC });
 expectType<Stitch<unknown>>(me);
 
-// Every other config key is unaffected — only `bodyType` is claimed by the surface.
+// Every other config key is unaffected — only `wire.body` is claimed by the surface, so the rest of
+// the envelope stays authorable.
 graphql({
     baseUrl: 'https://api.example.com',
     document: DOC,
     method: 'POST',
     operationName: 'Me',
     headers: { 'x-api-key': 'k' },
+    wire: { response: 'text', array: 'repeat' },
 });
 
-// ── Illegal: `bodyType` on the `graphql()` preset ───────────────────────────
+// ── Illegal: `wire.body` on the `graphql()` preset ──────────────────────────
 expectError(
     graphql({
         baseUrl: 'https://api.example.com',
         document: DOC,
-        bodyType: 'multipart',
+        wire: { body: 'multipart' },
     }),
 );
 
@@ -41,43 +48,58 @@ expectError(
     graphql({
         baseUrl: 'https://api.example.com',
         document: DOC,
-        bodyType: 'form',
+        wire: { body: 'form' },
     }),
 );
 
 // Even the value the surface actually sends is rejected: it is the surface's to decide, and
-// letting `bodyType: 'json'` through would imply the slot is read (it is not).
+// letting `wire.body: 'json'` through would imply the slot is read (it is not).
 expectError(
     graphql({
         baseUrl: 'https://api.example.com',
         document: DOC,
-        bodyType: 'json',
+        wire: { body: 'json' },
+    }),
+);
+
+// A live sibling in the same envelope does not launder the rejected member.
+expectError(
+    graphql({
+        baseUrl: 'https://api.example.com',
+        document: DOC,
+        wire: { body: 'form', response: 'text' },
     }),
 );
 
 // ── Illegal: the same config reached through the generic `stitch({ kind })` ──
-// Positive control first: the identical config MINUS `bodyType` must typecheck, so the rejection
+// Positive control first: the identical config MINUS `wire.body` must typecheck, so the rejection
 // below is attributable to the guard and not to the `kind`/`document` pairing itself.
 stitch({
     baseUrl: 'https://api.example.com',
     kind: graphqlSurface,
     document: DOC,
 });
+stitch({
+    baseUrl: 'https://api.example.com',
+    kind: graphqlSurface,
+    document: DOC,
+    wire: { response: 'text' },
+});
 expectError(
     stitch({
         baseUrl: 'https://api.example.com',
         kind: graphqlSurface,
         document: DOC,
-        bodyType: 'multipart',
+        wire: { body: 'multipart' },
     }),
 );
 
-// ── Legal: `bodyType` on any NON-graphql surface is untouched by this guard ──
+// ── Legal: `wire.body` on any NON-graphql surface is untouched by this guard ──
 const upload = stitch({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/upload',
-    bodyType: 'multipart',
+    wire: { body: 'multipart' },
 });
 expectType<Stitch<unknown>>(upload);
 
@@ -85,22 +107,22 @@ stitch({
     method: 'POST',
     baseUrl: 'https://api.example.com',
     path: '/x',
-    bodyType: 'form',
+    wire: { body: 'form' },
 });
 
 // ── The guard binds every surface that authors a graphql stitch (CONTRACT.md P16) ──
 const api = seam({ baseUrl: 'https://api.example.com' });
 
 api.graphql({ document: DOC });
-expectError(api.graphql({ document: DOC, bodyType: 'multipart' }));
+expectError(api.graphql({ document: DOC, wire: { body: 'multipart' } }));
 
 // `graphql.bind(seam).stitch` is `Seam['graphql']`, so it inherits the same guard.
 const bound = graphql.bind(api);
 bound.stitch({ document: DOC });
-expectError(bound.stitch({ document: DOC, bodyType: 'multipart' }));
+expectError(bound.stitch({ document: DOC, wire: { body: 'multipart' } }));
 
 // A seam member on the default (http) surface still takes any body encoding.
-api.stitch({ path: '/upload', method: 'POST', bodyType: 'multipart' });
+api.stitch({ path: '/upload', method: 'POST', wire: { body: 'multipart' } });
 
 // ── The non-inferring fallback must not launder a rejected config ───────────
 // A bare path string still reaches the loose overload unharmed.

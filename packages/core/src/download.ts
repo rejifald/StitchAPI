@@ -77,12 +77,17 @@ function filenameFromUrl(url: string | undefined): string | undefined {
  * The download surface. No `stream` hook → it is a BUFFERED surface (rides the normal engine path,
  * not concurrency-exempt). `buildRequest` forces a blob GET; `interpret` names the buffered Blob.
  *
- * The request shape is the surface's, not the caller's: `method` is FIXED at `GET` and
- * `responseType` at `'blob'`, and `NoRequestShapeOnDownload` makes authoring either a compile error
- * so the override is never silent. `responseType` is the load-bearing one — `interpret` casts
- * `res.body` to a `Blob`, so any other response type would make that cast a lie. To download the
- * result of a POST, use a plain `stitch()` with `responseType: 'blob'`; the only thing given up is
- * the `Content-Disposition` filename parsing.
+ * The request shape is the surface's, not the caller's: `method` is FIXED at `GET` and the response
+ * is always read as a blob, and `NoRequestShapeOnDownload` makes authoring either a compile error
+ * so the override is never silent. The response decoding is the load-bearing one — `interpret`
+ * casts `res.body` to a `Blob`, so any other response type would make that cast a lie. To download
+ * the result of a POST, use a plain `stitch()` with `wire: { response: 'blob' }`; the only thing
+ * given up is the `Content-Disposition` filename parsing.
+ *
+ * Note the two spellings below are two LAYERS, not a leftover rename. `buildRequest` returns an
+ * `AdapterRequest`, whose wire-format fields are still flat (`responseType`) because that contract
+ * keeps the XHR/fetch vocabulary at the boundary that meets it (CONTRACT.md P22). The guard reads
+ * the AUTHORING config one layer up, where the same choice is spelled `wire.response`.
  *
  * The literal `id: 'download'` (rather than `Surface`'s widened `string`) is load-bearing: it is
  * what lets `RequestShapeFixedByDownload` recognise this surface in `stitch({ kind: downloadSurface })`.

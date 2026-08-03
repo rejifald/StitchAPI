@@ -50,13 +50,17 @@ describe('graphqlSurface.buildRequest', () => {
         expect(req.headers).toEqual({ 'x-base': '1' });
     });
 
-    // The surface OWNS the body encoding — `NoBodyTypeOnGraphql` makes authoring a `bodyType`
+    // The surface OWNS the body encoding — `NoBodyTypeOnGraphql` makes authoring a `wire.body`
     // alongside `kind: graphql` a compile error, but that guard is compile-time only: a config
     // reconstructed at runtime (a deserialised `__config`, `fromCurl`, plain JS) can still carry
     // one. The override must therefore stay deterministic rather than drifting into "sometimes the
     // caller's". `multipart` is the arm worth naming: a GraphQL upload needs the GraphQL multipart
     // request spec's operations/map/file-part envelope, which this surface does not implement, so
     // honouring the flag here would emit a body no GraphQL server accepts.
+    //
+    // The flat `bodyType` below is deliberate and is NOT a stale spelling: `buildRequest`'s third
+    // parameter is an `AdapterRequest`, the transport contract, which keeps the flat wire-format
+    // fields. Only the authoring config above it moved into `wire` (CONTRACT.md P22).
     test('forces bodyType json, overriding whatever the base request carried', () => {
         for (const bodyType of ['multipart', 'form', 'json'] as const) {
             const req = graphqlSurface.buildRequest!(
