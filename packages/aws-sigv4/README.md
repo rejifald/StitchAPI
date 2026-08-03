@@ -47,11 +47,11 @@ The `x-amz-content-sha256` header is set automatically:
 - **String body** → its SHA-256 (exact bytes).
 - **Non-string body** → `UNSIGNED-PAYLOAD` (safe over HTTPS, and what S3 and many services accept).
 
-Set `signBody: true` to hash the body instead. The hash is taken over the exact bytes the transport sends, chosen by the stitch's `bodyType`:
+Set `signBody: true` to hash the body instead. The hash is taken over the exact bytes the transport sends, chosen by the stitch's `wire.body`:
 
-- **JSON** (`bodyType: 'json'` or unset) → `JSON.stringify(body)`.
-- **Form** (`bodyType: 'form'`) → its `application/x-www-form-urlencoded` encoding (e.g. the query-protocol bodies SQS, SNS, and STS use).
-- **Multipart** (`bodyType: 'multipart'`) → **cannot be payload-signed**: the transport generates a non-deterministic boundary, so the hash could never match the bytes sent. `signBody: true` with a multipart body **throws** — leave it unset to send `UNSIGNED-PAYLOAD`, or pass a pre-serialised string body to sign it.
+- **JSON** (`wire: { body: 'json' }` or unset) → `JSON.stringify(body)`.
+- **Form** (`wire: { body: 'form' }`) → its `application/x-www-form-urlencoded` encoding (e.g. the query-protocol bodies SQS, SNS, and STS use).
+- **Multipart** (`wire: { body: 'multipart' }`) → **cannot be payload-signed**: the transport generates a non-deterministic boundary, so the hash could never match the bytes sent. `signBody: true` with a multipart body **throws** — leave it unset to send `UNSIGNED-PAYLOAD`, or pass a pre-serialised string body to sign it.
 
 ## Low-level signer
 

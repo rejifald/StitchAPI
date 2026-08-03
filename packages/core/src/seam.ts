@@ -218,6 +218,11 @@ function rootHandle(shared: SharedSeam): Seam {
  * auth, sink) and, optionally, a hardened `secretStore` for the vault. Members are created with
  * `.stitch()` / `.graphql()`; bind a principal with `.as(id)`; flush/close via the lifecycle.
  */
+// NOTE: deliberately NOT generic. `MultipartOnlyOnMultipartBody` needs to capture the argument
+// type, and capturing it here would suppress excess-property checking on the object literal — which
+// is the ONLY thing enforcing that a seam fragment cannot declare `input`/`output` (`SeamConfig`
+// Omits both; see `extends-inference.test-d.ts` §8). That structural guarantee is worth more than
+// catching a dead `multipart` on the seam fragment, which every member surface still catches.
 export function seam(options: SeamOptions = {}): Seam {
     const { secretStore, ...rest } = options;
     const fragment = rest as Partial<StitchConfig>;

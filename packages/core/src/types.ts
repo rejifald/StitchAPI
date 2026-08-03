@@ -133,6 +133,97 @@ export interface MultipartOptions {
     nesting?: MultipartNesting;
 }
 /**
+ * How arrays are serialised on the two `application/x-www-form-urlencoded` surfaces — the query
+ * string and a `wire.body: 'form'` body. Both run the same walker, so one {@link WireOptions.array}
+ * governs both. Nested objects always expand `qs`-style to `a[b]=c`; this selects only the array
+ * axis.
+ */
+export type ArrayFormat = 'indices' | 'brackets' | 'repeat';
+/** Request body wire format. Default `'json'`. */
+export type BodyEncoding = 'json' | 'form' | 'multipart';
+/**
+ * Wire-format options — how values are framed on their way out and read on their way back
+ * (CONTRACT.md P24 carve-out (a)/(b)). The envelope groups by **category**, not by request/response
+ * phase: every member is a wire-format choice, so the name is exhaustive over its contents. A phase
+ * envelope could not be — `request` would hold two of the ~15 request-shaping slots while
+ * `headers`, `method`, and `body` stayed outside — and no body-scoped container could hold
+ * {@link WireOptions.array} truthfully, since it governs the query string as well as the body.
+ *
+ * Parallels {@link InputSchemas}: `input: { body: schema }` is the body's contract,
+ * `wire: { body: 'form' }` is its encoding. Like `input`, no single field dominates, so there is no
+ * P12 scalar shorthand — and the opaque `wire: {}` is rejected (P20).
+ */
+export interface WireOptions {
+    /**
+     * Request body encoding. Default `'json'`.
+     * - `'json'` — `JSON.stringify`, `Content-Type: application/json`.
+     * - `'form'` — `application/x-www-form-urlencoded`; nests `qs`-style and honours
+     *   {@link WireOptions.array}.
+     * - `'multipart'` — `multipart/form-data`; the boundary is set by the transport, and nesting is
+     *   governed by {@link WireOptions.multipart} rather than by `array`.
+     */
+    body?: BodyEncoding;
+    /**
+     * How the response body is read. Maps onto `AdapterRequest.responseType`, which keeps the
+     * XHR/fetch spelling at the transport boundary (P22 — follow the standard that governs each
+     * layer, and convert at the edge).
+     */
+    response?: ResponseType;
+    /**
+     * Array serialisation on BOTH urlencoded surfaces — the query string and a `body: 'form'` body,
+     * which run the same walker (ADR 0005 Decision 6). Nested objects always expand `qs`-style to
+     * `a[b]=c`; this selects the array axis only. Default `'indices'`.
+     *
+     * The two surfaces differ only in how a space is spelled — `%20` in a query string
+     * (`encodeURIComponent`), `+` in a form body (`URLSearchParams`). Both round-trip.
+     */
+    array?: ArrayFormat;
+    /**
+     * Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become
+     * field names. Only meaningful with `body: 'multipart'`, and a compile error otherwise
+     * ({@link MultipartOnlyOnMultipartBody}). Default nesting `'bracket'`. A bare
+     * {@link MultipartNesting} string is shorthand for the object form — `multipart: 'dot'` ≡
+     * `multipart: { nesting: 'dot' }` (P12); the opaque `multipart: {}` is rejected (P20).
+     */
+    multipart?: MultipartNesting | AtLeastOne<MultipartOptions>;
+}
+/**
+ * Carries a human-readable explanation into a type error. Intersecting an offending slot with this
+ * makes the slot unsatisfiable — so the config is still rejected — while keeping the message
+ * legible: TypeScript prints the brand, and the brand IS the sentence. A bare `?: never` rejects
+ * just as hard but reduces the whole surrounding object to `never`, which reports every unrelated
+ * property as an error and never names the real one.
+ */
+export interface ConfigError<Message extends string> {
+    readonly __stitchConfigError: Message;
+}
+/**
+ * Compile-time guard: {@link WireOptions.multipart} is read ONLY when `wire.body` is
+ * `'multipart'`, so pairing it with a `json`/`form` body (or omitting `body`, which defaults to
+ * `json`) is silently dead config. Intersecting a config with this makes the nested `multipart`
+ * slot unsatisfiable in exactly those cases, turning the dead pairing into a compile error at the
+ * authoring site.
+ *
+ * This is the mutual-exclusion shape CONTRACT.md's R8 allow-list recognises (a pair made exclusive
+ * through the type system rather than through nesting), and it is why `wire.body` + `wire.multipart`
+ * stay flat WITHIN the envelope rather than splitting into a per-encoding union: the illegal
+ * combinations are unrepresentable without it. The three body encodings are not symmetric — `json`
+ * has no options at all, and `form` has none of its own, since array serialisation
+ * ({@link WireOptions.array}) is shared with the query string — so a three-arm union would carry
+ * two empty arms and duplicate a query concern.
+ */
+export type MultipartOnlyOnMultipartBody<C> = C extends {
+    wire: { multipart: unknown };
+}
+    ? C extends { wire: { body: 'multipart' } }
+        ? unknown
+        : {
+              wire?: {
+                  multipart?: ConfigError<'`wire.multipart` requires `wire.body: "multipart"` — it is ignored on a json or form body'>;
+              };
+          }
+    : unknown;
+/**
  * How the `stream` surface decodes each chunk of a live response body (ADR 0005 Decision 5).
  * - `'bytes'` (default) — raw `Uint8Array` chunks, lossless, no encoding assumed.
  * - `'lines'` — UTF-8, split on `\n`; each `delta` chunk is a `string`.
@@ -229,6 +320,13 @@ export interface AdapterRequest {
     bodyType?: 'json' | 'form' | 'multipart';
     /** Multipart serialisation options (nesting); only read when `bodyType: 'multipart'`. */
     multipart?: MultipartOptions;
+    /**
+     * Array serialisation for the urlencoded body; only read when `bodyType: 'form'` (the query
+     * string is already serialised into `url` by the time a request reaches the transport).
+     * Defaults to `'indices'` — the same default the query string uses, so one
+     * {@link StitchConfig.arrayFormat} means one thing on both urlencoded surfaces.
+     */
+    arrayFormat?: ArrayFormat;
     responseType?: ResponseType;
     /**
      * Ask the transport NOT to buffer/parse the response — hand back the live body instead
@@ -718,16 +816,13 @@ export interface StitchConfig {
     kind?: Surface;
     /** HTTP method; defaults to `GET`. */
     method?: string;
-    /** Request body encoding. Default `'json'`. */
-    bodyType?: 'json' | 'form' | 'multipart';
     /**
-     * Multipart serialisation options (ADR 0005 Decision 6) — how nested objects/arrays become
-     * field names. Only meaningful with `bodyType: 'multipart'`. Default nesting `'bracket'`. A
-     * bare {@link MultipartNesting} string is shorthand for the object form —
-     * `multipart: 'dot'` ≡ `multipart: { nesting: 'dot' }` (CONTRACT.md P12); the opaque
-     * `multipart: {}` is rejected (P20).
+     * Wire-format options — request body encoding, response decoding, and urlencoded array
+     * serialisation, grouped by category rather than by request/response phase (CONTRACT.md P24).
+     * The opaque `wire: {}` is rejected (P20); no field dominates, so there is no scalar shorthand
+     * (P14), exactly as with {@link StitchConfig.input}.
      */
-    multipart?: MultipartNesting | AtLeastOne<MultipartOptions>;
+    wire?: AtLeastOne<WireOptions>;
     /**
      * Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body
      * (`'bytes'` default / `'lines'` / `'ndjson'` / `'json'`). `'json'` is the structural,
@@ -748,8 +843,6 @@ export interface StitchConfig {
      * object form must set at least one field (P20).
      */
     sse?: boolean | AtLeastOne<SseOptions>;
-    /** How to read the response body. Default: auto by content-type. */
-    responseType?: ResponseType;
     /**
      * Full request endpoint as one string — the atomic spelling, when a stitch is exactly one
      * endpoint with no base to share. Templated (`{param}`, incl. the host) and `?query`-aware
@@ -860,13 +953,6 @@ export interface StitchConfig {
      * `false` is not fail-open. Only meaningful alongside a `cache` block.
      */
     sensitive?: boolean;
-    /**
-     * How arrays are serialised in the query string.
-     * - `'indices'` (default) — `ids%5B0%5D=1&ids%5B1%5D=2`
-     * - `'brackets'`          — `ids%5B%5D=1&ids%5B%5D=2`
-     * - `'repeat'`            — `ids=1&ids=2`
-     */
-    arrayFormat?: 'indices' | 'brackets' | 'repeat';
     /** Request/response/error/retry lifecycle hooks. At least one — the opaque `hooks: {}` is rejected (CONTRACT.md P20). */
     hooks?: AtLeastOne<Hooks>;
     /**
@@ -909,6 +995,11 @@ export type ResolvedCacheOptions = Omit<CacheOptions, 'vary' | 'methods'> & {
 /** {@link StreamOptions} after {@link compose}: the `buffer` scalar is folded to `{ chars }`. */
 export type ResolvedStreamOptions = Omit<StreamOptions, 'buffer'> & {
     buffer?: StreamBufferOptions;
+};
+
+/** {@link WireOptions} after {@link compose}: the `multipart` scalar is folded to `{ nesting }`. */
+export type ResolvedWireOptions = Omit<WireOptions, 'multipart'> & {
+    multipart?: MultipartOptions;
 };
 
 /**
@@ -1310,10 +1401,20 @@ export interface Seam {
         TExplicit = never,
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C,
+        config: C & MultipartOnlyOnMultipartBody<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
-    /** Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see {@link StitchFn}). */
-    stitch<T = unknown>(config: string | Partial<StitchConfig>): Stitch<T>;
+    /**
+     * Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see
+     * {@link StitchFn}). `C` is captured only to re-apply
+     * {@link MultipartOnlyOnMultipartBody} — see {@link StitchFn}'s fallback for why.
+     */
+    stitch<
+        T = unknown,
+        const C extends string | Partial<StitchConfig> =
+            string | Partial<StitchConfig>,
+    >(
+        config: C & MultipartOnlyOnMultipartBody<C>,
+    ): Stitch<T>;
     /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, picks `data`). */
     graphql<
         TExplicit = never,
@@ -1323,7 +1424,7 @@ export interface Seam {
             document: string;
         },
     >(
-        config: C,
+        config: C & MultipartOnlyOnMultipartBody<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Derive a principal-bound {@link PrincipalSeam} reusing the same shared runtime, but whose
