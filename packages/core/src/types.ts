@@ -174,6 +174,75 @@ export type BodyTypeFixedByGraphql<C> = C extends { kind: { id: 'graphql' } }
     ? NoBodyTypeOnGraphql<C>
     : unknown;
 /**
+ * Compile-time guard: the `download` surface OWNS the request shape its result depends on. Its
+ * `buildRequest` forces `method: 'GET'` and `responseType: 'blob'` unconditionally (ADR 0005
+ * Decision 1 — a surface owns *shaping*), so either field authored alongside it is never read.
+ * Intersecting a download config with this makes the offending slot unsatisfiable, turning the dead
+ * pairing into a compile error at the authoring site.
+ *
+ * Both fields are load-bearing for what `download` promises, which is why neither is a knob:
+ * `responseType: 'blob'` is what makes the buffered body a `Blob` at all — the surface's `interpret`
+ * casts `res.body` to one and hands back `{ blob, filename }`, so any other response type would make
+ * that cast a lie. The `GET` is the weaker of the two (a POST-then-download is a real pattern), but
+ * honouring `method` alone would still leave the surface's own name for it — `download` — describing
+ * only half the request. Either way the escape hatch is the same and costs one line: a plain
+ * `stitch()` with `responseType: 'blob'`, which gives up only the `Content-Disposition` filename
+ * parsing. Relaxing `method` later is non-breaking.
+ */
+export type NoRequestShapeOnDownload<C> = (C extends { method: unknown }
+    ? {
+          method?: ConfigError<'the `download` surface always issues a GET — `method` is ignored (for a POST that returns a file, use a plain `stitch()` with `responseType: "blob"`)'>;
+      }
+    : unknown) &
+    (C extends { responseType: unknown }
+        ? {
+              responseType?: ConfigError<'the `download` surface always reads the body as a Blob — `responseType` is ignored (it is what makes the result `{ blob, filename }`; use a plain `stitch()` to choose another response type)'>;
+          }
+        : unknown);
+/**
+ * {@link NoRequestShapeOnDownload}, applied where download is only one possible `kind` — the generic
+ * `stitch({ kind: downloadSurface, … })` path. Keys off the surface's literal `id`, which is why
+ * `downloadSurface` is declared with `id: 'download'` rather than the widened `string` of `Surface`.
+ */
+export type RequestShapeFixedByDownload<C> = C extends {
+    kind: { id: 'download' };
+}
+    ? NoRequestShapeOnDownload<C>
+    : unknown;
+/**
+ * Compile-time guard: the `llm` surface OWNS how it frames a chat completion. The live surface's
+ * `buildRequest` forces `method: 'POST'` and `bodyType: 'json'` unconditionally and replaces the
+ * body with `provider.buildBody(...)`, so either field authored on an `llm()` config is never read.
+ * Same class as {@link NoBodyTypeOnGraphql} (`bodyType`) and {@link NoRequestShapeOnDownload}
+ * (`method`) — this surface simply fixes one of each.
+ *
+ * As on graphql, this makes {@link StitchConfig.multipart} unreachable for free:
+ * `MultipartOnlyOnMultipartBody` requires `bodyType: 'multipart'` first, and that spelling is
+ * exactly what this rejects. `responseType` is deliberately NOT guarded — `buildRequest` leaves it
+ * alone, so it still reaches the adapter and is a live knob here.
+ *
+ * There is no `…FixedByLlm<C>` sibling keyed off `kind`, and that asymmetry is deliberate: the
+ * exported `llmSurface` is only the redaction/inspection IDENTITY (ADR 0005 Decision 11) and carries
+ * no `buildRequest`. A `stitch({ kind: llmSurface, method: 'PUT' })` therefore keeps its `PUT` — the
+ * field is live on that path, and guarding it off the `id` would reject config that is honoured. The
+ * overriding surface is built per stitch by `makeLlmSurface`, reachable only through `llm()` /
+ * `llm.bind(seam).stitch`, which is exactly where this guard is applied.
+ *
+ * Unlike its graphql/download siblings this is a plain object type, not a conditional over `C`, and
+ * that difference is load-bearing rather than cosmetic. Those two guard authoring helpers that
+ * capture a `const C` to infer the call-argument type from `config.input` (`InputOf<C>`), so the
+ * guard has to be conditional to stay a no-op on the configs it does not touch. `llm()` infers
+ * nothing — it returns a flat `Stitch<LlmResult>` — so its parameter can stay NON-generic, and
+ * keeping it that way is what preserves excess-property checking on the object literal. That check
+ * is load-bearing here: it is what makes the removed `maxTokens` spelling a compile error (P4,
+ * pinned by a test in llm.spec.ts). Making the parameter generic to fit the conditional idiom would
+ * have silently traded that guarantee away for this one.
+ */
+export interface NoRequestShapeOnLlm {
+    method?: ConfigError<'the `llm` surface always POSTs to the provider — `method` is ignored'>;
+    bodyType?: ConfigError<'the `llm` surface always sends a JSON body built by the provider — `bodyType` is ignored'>;
+}
+/**
  * How the `stream` surface decodes each chunk of a live response body (ADR 0005 Decision 5).
  * - `'bytes'` (default) — raw `Uint8Array` chunks, lossless, no encoding assumed.
  * - `'lines'` — UTF-8, split on `\n`; each `delta` chunk is a `string`.
@@ -1351,11 +1420,12 @@ export interface Seam {
         TExplicit = never,
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C & BodyTypeFixedByGraphql<C>,
+        config: C & BodyTypeFixedByGraphql<C> & RequestShapeFixedByDownload<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**
      * Non-inferring fallback: a path string or a `string | Partial<StitchConfig>` value (see
-     * {@link StitchFn}). `C` is captured only to re-apply {@link BodyTypeFixedByGraphql} — see
+     * {@link StitchFn}). `C` is captured only to re-apply the surface-owns-this guards
+     * ({@link BodyTypeFixedByGraphql}, {@link RequestShapeFixedByDownload}) — see
      * {@link StitchFn}'s fallback for why.
      */
     stitch<
@@ -1363,7 +1433,7 @@ export interface Seam {
         const C extends string | Partial<StitchConfig> =
             string | Partial<StitchConfig>,
     >(
-        config: C & BodyTypeFixedByGraphql<C>,
+        config: C & BodyTypeFixedByGraphql<C> & RequestShapeFixedByDownload<C>,
     ): Stitch<T>;
     /** GraphQL-over-HTTP member stitch (POST `{ query, variables }`, picks `data`). */
     graphql<

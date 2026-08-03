@@ -38,7 +38,42 @@ npm release are grouped under the in-development version that introduced them.
     and still does, so only configs that were already inert stop compiling. Breaking solely in
     the sense that a build which previously passed can now fail.
 
+- **BREAKING — `method` / `responseType` on a `download` stitch, and `method` / `bodyType` on
+  an `llm` stitch, are now compile errors.** The same sweep, applied to the other two surfaces
+  whose `buildRequest` overwrites a caller-authorable field. `downloadSurface.buildRequest`
+  hardcodes `method: 'GET'` and `responseType: 'blob'`; the live `llm` surface hardcodes
+  `method: 'POST'` and `bodyType: 'json'`. All four were silently discarded:
+
+    ```ts
+    download({ url, method: 'POST' });
+    //              ^ the `download` surface always issues a GET — `method` is ignored
+    llm({ provider, model, bodyType: 'form' });
+    //                     ^ the `llm` surface always sends a JSON body built by the
+    //                       provider — `bodyType` is ignored
+    ```
+
+    For `download` the guard binds `download()`, `download.stitch`, `download.bind(…).stitch`,
+    and `stitch({ kind: downloadSurface })` on both overloads. For `llm` it binds `llm()`,
+    `llm.stitch`, and `llm.bind(…).stitch` — but deliberately **not**
+    `stitch({ kind: llmSurface })`: the exported `llmSurface` is only the redaction identity
+    and carries no `buildRequest`, so `method` really is honoured on that path.
+
+    **Migration:** delete the field. As with graphql, no runtime behaviour changed — only
+    configs that were already inert stop compiling. If you were reaching for
+    `download({ method: 'POST' })` to download the result of a POST, that request is a plain
+    `stitch({ method: 'POST', responseType: 'blob' })`; the only thing it gives up is the
+    `Content-Disposition` filename parsing.
+
 ### Notes
+
+- **`sse`, `stream`, and `postmessage` were checked in the same pass and deliberately left
+  alone.** `sse` and `stream` have no `buildRequest`, so their `method` is genuinely honoured;
+  their `responseType` is inert, but because the _engine_ sets `stream: true` and the adapter
+  returns the live body before consulting it — one rule about the streaming path that applies
+  to any surface with a `stream` hook, third-party ones included, rather than a per-surface
+  override. `postmessage` ignores most HTTP knobs, but through a custom `execute` that replaces
+  the transport outright; the honest fix there is narrowing what its option types admit, which
+  is a larger separable change. See ADR 0005 Decision 1's addendum.
 
 - **GraphQL file uploads remain unsupported, now explicitly.** `bodyType: 'multipart'` was
   the closest thing to a spelling for them, and it never worked: a GraphQL upload is not the

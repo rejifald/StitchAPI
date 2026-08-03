@@ -176,3 +176,37 @@ test('the old `maxTokens` spelling is gone (compile-time, P4)', () => {
     void llm({ provider: openai, model: 'gpt-4o', maxTokens: 16 });
     expect(true).toBe(true);
 });
+
+test('the surface owns method + bodyType (compile-time, ADR 0005 D1)', () => {
+    // @ts-expect-error — `buildRequest` always POSTs; `method` is dead config
+    void llm({ provider: openai, model: 'gpt-4o', method: 'PUT' });
+    // @ts-expect-error — the provider builds a JSON body; `bodyType` is dead config
+    void llm({ provider: openai, model: 'gpt-4o', bodyType: 'multipart' });
+    expect(true).toBe(true);
+});
+
+// The guards above are compile-time only: a config rebuilt at runtime (a deserialised `__config`,
+// plain JS) can still carry either field, so the override has to stay deterministic. `responseType`
+// rides along as the control — `buildRequest` does NOT touch it, so it must survive untouched, which
+// is why it is not guarded.
+test('forces POST + json over whatever a runtime config carries; responseType survives', async () => {
+    const { adapter, calls } = captureAdapter({
+        choices: [{ message: { content: 'hi' } }],
+    });
+    const rebuilt = {
+        provider: openai,
+        model: 'gpt-4o',
+        adapter,
+        method: 'PUT',
+        bodyType: 'form',
+        responseType: 'text',
+    } as unknown as Parameters<typeof llm>[0];
+
+    await llm(rebuilt)({
+        body: { messages: [{ role: 'user', content: 'x' }] },
+    });
+
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.bodyType).toBe('json');
+    expect(calls[0]!.responseType).toBe('text');
+});

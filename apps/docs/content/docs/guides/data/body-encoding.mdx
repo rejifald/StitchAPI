@@ -54,6 +54,11 @@ never from the config — so one stitch encodes whatever you pass it. See
     multipart, and are **not supported today**. To upload alongside a GraphQL
     API, POST the file to a plain `http` stitch and pass the resulting handle as
     a variable. See [Request surfaces](/docs/reference/surfaces).
+
+    The same applies to `llm`, which POSTs a provider-shaped JSON body: `method`
+    and `bodyType` are both compile errors on an `llm()` config. (`responseType`
+    is not — that one the surface leaves alone, so it still works.)
+
 </Callout>
 
 <Callout type="warn">

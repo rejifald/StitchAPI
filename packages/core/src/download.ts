@@ -13,6 +13,7 @@ import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
+    type NoRequestShapeOnDownload,
     type Seam,
     type SeamOptions,
     type Stitch,
@@ -75,8 +76,20 @@ function filenameFromUrl(url: string | undefined): string | undefined {
 /**
  * The download surface. No `stream` hook → it is a BUFFERED surface (rides the normal engine path,
  * not concurrency-exempt). `buildRequest` forces a blob GET; `interpret` names the buffered Blob.
+ *
+ * The request shape is the surface's, not the caller's: `method` is FIXED at `GET` and
+ * `responseType` at `'blob'`, and `NoRequestShapeOnDownload` makes authoring either a compile error
+ * so the override is never silent. `responseType` is the load-bearing one — `interpret` casts
+ * `res.body` to a `Blob`, so any other response type would make that cast a lie. To download the
+ * result of a POST, use a plain `stitch()` with `responseType: 'blob'`; the only thing given up is
+ * the `Content-Disposition` filename parsing.
+ *
+ * The literal `id: 'download'` (rather than `Surface`'s widened `string`) is load-bearing: it is
+ * what lets `RequestShapeFixedByDownload` recognise this surface in `stitch({ kind: downloadSurface })`.
  */
-export const downloadSurface: Surface<StitchInput, DownloadResult> = {
+export const downloadSurface: Surface<StitchInput, DownloadResult> & {
+    readonly id: 'download';
+} = {
     id: 'download',
     buildRequest: (_cfg, _input, base) => ({
         ...base,
@@ -99,7 +112,7 @@ export interface DownloadSeamApi {
     readonly stitch: <
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C,
+        config: C & NoRequestShapeOnDownload<C>,
     ) => Stitch<DownloadResult, InputOf<C>>;
     readonly seam: Seam;
 }
@@ -114,7 +127,9 @@ export interface DownloadSeamApi {
 const downloadStitch = <
     const C extends Partial<StitchConfig> = Partial<StitchConfig>,
 >(
-    config: C,
+    // The surface is download by construction here, so the guard applies unconditionally rather
+    // than keying off `kind` the way `stitch`'s `RequestShapeFixedByDownload` must.
+    config: C & NoRequestShapeOnDownload<C>,
 ): Stitch<DownloadResult, InputOf<C>> =>
     makeStitch<DownloadResult>({
         ...config,
@@ -123,15 +138,16 @@ const downloadStitch = <
 
 // Bind download members to a seam through the seam's surface-agnostic `stitch({ kind })`.
 function bindSeam(s: Seam): DownloadSeamApi {
-    const stitch = <
-        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
-    >(
-        config: C,
-    ): Stitch<DownloadResult, InputOf<C>> =>
+    // Implemented loose and `as`-cast to the declared member type — the `Seam['graphql']` idiom in
+    // seam.ts. A generic impl whose parameter is `C & NoRequestShapeOnDownload<C>` cannot be checked
+    // against a member of that same shape: TypeScript instantiates the impl's `C` with the target's
+    // whole intersection, so the two `InputOf<C>` return types stop matching. Sound — the runtime is
+    // one `s.stitch` call, and the type tests pin every concrete config.
+    const stitch = ((config: Partial<StitchConfig>) =>
         s.stitch<DownloadResult>({
             ...config,
             kind: downloadSurface,
-        }) as unknown as Stitch<DownloadResult, InputOf<C>>;
+        })) as DownloadSeamApi['stitch'];
     return { stitch, seam: s };
 }
 
