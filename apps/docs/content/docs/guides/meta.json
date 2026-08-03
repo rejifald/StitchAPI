@@ -6,6 +6,7 @@
         "auth",
         "resilience",
         "data",
+        "transport",
         "validation",
         "observability",
         "state",

@@ -1,0 +1,101 @@
+---
+title: 'fetchAdapter'
+description: 'The default fetch-backed transport, and the undici dispatcher option that threads a proxy, a custom CA, or a bound interface through one stitch.'
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+`fetchAdapter()` is the transport every stitch gets when you leave `adapter` off —
+name it explicitly when you need to thread infrastructure through the call, such
+as a proxy, a corporate CA, or a `fetch` of your own.
+
+## Example
+
+```ts twoslash
+import { fetchAdapter, stitch } from 'stitchapi';
+
+// Your real `new Agent(...)` from undici — structurally an unknown dispatcher
+// here, so nothing imports undici inside StitchAPI or this snippet.
+declare const agent: unknown;
+
+const listOrders = stitch({
+    baseUrl: 'https://internal.example.com',
+    path: '/users/{id}/orders',
+    adapter: fetchAdapter({ dispatcher: agent }),
+});
+```
+
+## Options
+
+`dispatcher` takes an undici `Agent` and passes it straight to Node's `fetch` as
+the non-standard `dispatcher` init option — a proxy, a custom CA bundle, a bound
+network interface, a tuned connection pool. StitchAPI never imports undici, so the
+runtime stays zero-dependency and you bring the `Agent`. It is per-stitch, not
+global: one stitch can sit behind the proxy while its neighbors go direct.
+
+`fetch` overrides the global implementation, for a custom runtime or a test that
+wants a stand-in without touching `globalThis`.
+
+```ts twoslash
+import { fetchAdapter, stitch } from 'stitchapi';
+
+declare const fetchImpl: typeof fetch;
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    adapter: fetchAdapter({ fetch: fetchImpl }),
+});
+```
+
+With no options, `fetchAdapter()` behaves exactly as the implicit default does —
+no `dispatcher` is set and the global `fetch` runs. Both fields are optional and
+independent.
+
+### The one that streams
+
+`fetch` is the only built-in transport that hands back a live
+`ReadableStream<Uint8Array>`, so the `stream` and `sse` surfaces ride it and
+nothing else. `axiosAdapter` and `xhrAdapter` buffer the whole body and throw when
+a stitch asks them to stream. It also reports `direction: 'download'` byte
+progress while reading a buffered body, which is what drives a download bar.
+
+<Callout type="warn">
+    **Anti-pattern:** don't pass `onProgress` for an **upload** bar on this
+    adapter — `fetch` cannot report bytes sent, so only download events fire and
+    the bar sits at zero. The engine emits an
+    `adapter.upload-progress-unsupported` `info` event rather than leaving you
+    to guess; move that stitch to
+    [`xhrAdapter()`](/docs/guides/transport/xhr-adapter).
+</Callout>
+
+### Redirects don't leak credentials
+
+Auth strategies put credentials in request headers — `apiKey` sets `x-api-key`,
+`awsSigV4` sets `authorization` plus `x-amz-*`. The platform's default redirect
+policy re-sends every header to the target, and undici strips only
+`authorization` and `cookie` on a cross-origin hop, which would forward a custom
+auth header to an unintended host.
+
+So `fetchAdapter` sends with `redirect: 'manual'` and follows redirects itself,
+capped at 20 hops. A same-origin hop keeps its headers; a hop that leaves the
+original origin keeps only the CORS-safelisted subset — `accept`,
+`accept-language`, `content-language`, `content-type` — and drops the rest. That
+is the browser's own redirect model, reconstructed on Node where the platform
+doesn't apply it. In a browser, `redirect: 'manual'` yields an opaque response JS
+can't follow, so the adapter hands it back and CORS enforces the same guarantee.
+
+## See also
+
+<Cards>
+    <Card title="The adapter seam" href="/docs/guides/transport/adapters" />
+    <Card title="axiosAdapter" href="/docs/guides/transport/axios-adapter" />
+    <Card title="xhrAdapter" href="/docs/guides/transport/xhr-adapter" />
+    <Card
+        title="Capability, not credential"
+        href="/docs/concepts/capability-not-credential"
+    />
+    <Card
+        title="Reference: Helpers"
+        href="/docs/reference/helpers#fetchadapter"
+    />
+</Cards>

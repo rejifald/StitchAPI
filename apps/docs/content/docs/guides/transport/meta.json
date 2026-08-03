@@ -1,0 +1,10 @@
+{
+    "title": "Transport & adapters",
+    "pages": [
+        "adapters",
+        "fetch-adapter",
+        "axios-adapter",
+        "xhr-adapter",
+        "custom-adapter"
+    ]
+}
