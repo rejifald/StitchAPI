@@ -68,6 +68,11 @@ test('cookie: "*" captures and replays every cookie the login set', async () => 
 
     await expect(data()).resolves.toEqual({ ok: true });
     expect(server.callCount('/login')).toBe(1);
+    // The login posts a urlencoded body — pinned so a lost `wire.body` silently falls back to
+    // JSON without a single test noticing.
+    expect(server.calls('/login')[0]?.headers['content-type']).toMatch(
+        /application\/x-www-form-urlencoded/,
+    );
 
     const req = server.calls('/data')[0]!;
     expect(req.cookies['sid']).toBe('ABC'); // both cookies from the jar replay together

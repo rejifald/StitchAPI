@@ -184,6 +184,11 @@ test('old spellings are DELETED and the empty bags are rejected (compile-time)',
     void shell({ command: NODE, maxBuffer: 4 });
     // @ts-expect-error — the HTTP-shaped slot is off this surface; the shell's word is `decode`
     void shell(NODE, { responseType: 'json' });
+    // The same slot in its CURRENT spelling: `responseType` moved into the `wire` envelope, and
+    // the whole envelope is off this surface — so the rejection has to follow it there, not just
+    // guard the retired flat name above.
+    // @ts-expect-error — `wire` is the HTTP wire format; a subprocess has none of it
+    void shell(NODE, { wire: { response: 'json' } });
     // @ts-expect-error — a subprocess yields text or JSON, nothing else
     void shell(NODE, { decode: 'blob' });
     // @ts-expect-error — the buffer envelope must set a field (P20): pass a scalar or omit it

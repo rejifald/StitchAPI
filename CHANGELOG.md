@@ -86,6 +86,13 @@ npm release are grouped under the in-development version that introduced them.
   all — was silently inert config that typechecked. It is now a type error naming the offending
   field, on `stitch`, `graphql`, `Seam.stitch`, and `Seam.graphql`.
 
+- **`@stitchapi/shell` omits the whole `wire` envelope from `ShellOptions`.** A subprocess has no
+  HTTP wire format: its `body` is argv rather than an encoded payload, and how stdout becomes a
+  value is spelled `decode`. The surface already omitted the flat `responseType` for that reason,
+  so it omits the envelope that field moved into — dropped whole rather than by its `response`
+  member, since filtering one member would leave the other three inherited, typechecking and
+  doing nothing. `shell({ wire: … })` is now a type error.
+
 ### Fixed
 
 - **A `wire: { body: 'form' }` body no longer mangles nested objects and arrays.** ADR 0005

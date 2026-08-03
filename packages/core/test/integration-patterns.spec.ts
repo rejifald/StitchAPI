@@ -146,6 +146,11 @@ describe('Session-cookie admin API (auto re-login on 403)', () => {
         const out = await resources(); // caller passes NO credentials
         expect(out).toEqual([{ id: 'abc', state: 'active' }]);
         expect(server.callCount('/auth/login')).toBe(2); // initial auto-login + refresh after 403
+        // The login posts a urlencoded body — pinned so a lost `wire.body` silently falls back
+        // to JSON without a single test noticing.
+        expect(server.calls('/auth/login')[0]?.headers['content-type']).toMatch(
+            /application\/x-www-form-urlencoded/,
+        );
         expect(server.callCount('/resources')).toBe(2);
         expect(server.calls('/resources').at(-1)?.cookies['SID']).toBe(
             'SID-OK',

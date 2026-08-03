@@ -98,6 +98,11 @@ describe('Pluggable store — sessions', () => {
         expect(await a()).toEqual({ r: 'a' });
         expect(await b()).toEqual({ r: 'b' });
         expect(server.callCount('/login')).toBe(1); // ONE login, reused via the shared store
+        // The login posts a urlencoded body — pinned so a lost `wire.body` silently falls back
+        // to JSON without a single test noticing.
+        expect(server.calls('/login')[0]?.headers['content-type']).toMatch(
+            /application\/x-www-form-urlencoded/,
+        );
     });
 
     test('default (separate) stores → each stitch logs in independently', async () => {

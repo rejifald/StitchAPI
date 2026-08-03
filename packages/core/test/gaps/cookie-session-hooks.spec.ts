@@ -122,6 +122,11 @@ test('onRefresh fires with { ok: true, status: 200 } after a successful cold log
 
     expect(refreshes).toEqual([{ ok: true, status: 200 }]);
     expect(failures).toEqual([]); // a successful login never reports a failure
+    // The login posts a urlencoded body — pinned so a lost `wire.body` silently falls back to
+    // JSON without a single test noticing.
+    expect(server.calls('/login')[0]?.headers['content-type']).toMatch(
+        /application\/x-www-form-urlencoded/,
+    );
 });
 
 test('onRefresh fires ONCE (not per-waiter) under concurrent cold callers sharing one login', async () => {
