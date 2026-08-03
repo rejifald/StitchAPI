@@ -1,0 +1,100 @@
+---
+title: 'xhrAdapter'
+description: 'Draw an upload progress bar in the browser with an XMLHttpRequest-backed transport, which reports the bytes sent that fetch cannot.'
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+Reach for `xhrAdapter()` when a browser upload needs a progress bar: `fetch`
+cannot report how many bytes have left the machine, and `xhr.upload` can, so this
+is the transport that makes a 50MB `POST` look like something other than a frozen
+page.
+
+## Example
+
+```ts twoslash
+// [!code fold:start]
+import { stitch, xhrAdapter } from 'stitchapi';
+
+// [!code fold:end]
+const uploadVideo = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/videos',
+    bodyType: 'multipart',
+    adapter: xhrAdapter(),
+});
+
+declare const file: File;
+
+await uploadVideo({
+    body: { file },
+    // `onProgress` is per-call, not config — a different bar per upload.
+    onProgress: (p) => {
+        if (p.direction === 'upload') {
+            console.log(`${p.loaded} / ${p.total ?? '?'} bytes sent`);
+        }
+    },
+});
+```
+
+## Options
+
+`xhrAdapter(XHR?)` defaults to `globalThis.XMLHttpRequest`, so in a browser you
+call it with no arguments. Pass a constructor to run it anywhere else — a
+polyfill in a non-browser runtime, or a fake that records what a test sent. Off a
+browser with no constructor supplied, the call rejects with a message naming the
+fix rather than failing on an undefined global.
+
+```ts twoslash
+import { type XhrLikeCtor, stitch, xhrAdapter } from 'stitchapi';
+
+// A polyfill or a test double — anything matching the XhrLike shape.
+declare const FakeXHR: XhrLikeCtor;
+
+const createUser = stitch({
+    method: 'POST',
+    baseUrl: 'https://api.example.com',
+    path: '/users',
+    adapter: xhrAdapter(FakeXHR),
+});
+```
+
+Both progress phases report. `xhr.upload.onprogress` drives
+`direction: 'upload'`, `xhr.onprogress` drives `direction: 'download'`, and each
+carries `loaded` plus a `total` when the length is known. Body encoding and
+response decoding reuse the same helpers `fetchAdapter` does, so a multipart body
+goes out byte-identical on either transport.
+
+<Callout type="warn">
+    **Anti-pattern:** don't reach for `xhrAdapter` on a `stream` or `sse`
+    surface — it is buffered-only and rejects the call.
+    [`fetchAdapter`](/docs/guides/transport/fetch-adapter) is the built-in that
+    streams; the transport is per-stitch, so the uploading stitch can stay on
+    `xhr` while the streaming one runs on `fetch`.
+</Callout>
+
+An `AbortSignal` passed on the call aborts the request in flight. A signal that
+is _already_ aborted rejects before `send()`, because calling `abort()` ahead of
+`send()` fires no abort event and the cancelled request would otherwise go out
+anyway.
+
+### No redirect guard needed here
+
+The fetch and axios transports rebuild a cross-origin credential strip by hand.
+This one doesn't need it: the browser follows redirects internally and re-applies
+CORS to the resulting request, so a custom header like `x-api-key` or `x-amz-*`
+is only sent after the target host opts in through a preflight. JS can't read the
+`Location` or intercept the hop, so there is nothing left to strip.
+
+## See also
+
+<Cards>
+    <Card title="The adapter seam" href="/docs/guides/transport/adapters" />
+    <Card title="fetchAdapter" href="/docs/guides/transport/fetch-adapter" />
+    <Card title="Body encoding" href="/docs/guides/data/body-encoding" />
+    <Card title="React Native" href="/docs/integrations/react-native" />
+    <Card
+        title="Reference: Helpers"
+        href="/docs/reference/helpers#xhradapter"
+    />
+</Cards>

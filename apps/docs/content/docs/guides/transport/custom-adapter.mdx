@@ -1,0 +1,118 @@
+---
+title: 'Writing an adapter'
+description: "Implement the one-function Adapter contract to carry a stitch over a transport StitchAPI doesn't ship, and declare what it supports."
+prerequisites: ['/docs/concepts/the-stitch', '/docs/concepts/the-seam']
+---
+
+Write your own `Adapter` when the bytes need to move a way the built-ins don't
+cover — over a platform HTTP client, through an instrumentation layer, or across a
+transport that isn't HTTP at all. The contract is one function, so most custom
+adapters are a thin wrapper rather than a rewrite.
+
+## Example
+
+A timing wrapper around another adapter — it delegates the round trip and adds
+nothing to the request:
+
+```ts twoslash
+import { type Adapter, fetchAdapter, stitch } from 'stitchapi';
+
+const timed =
+    (inner: Adapter): Adapter =>
+    async (req) => {
+        const started = performance.now();
+        const res = await inner(req);
+        console.log(
+            `${req.method} ${req.url} → ${res.status}`,
+            performance.now() - started,
+        );
+        return res;
+    };
+
+const getUser = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/users/{id}',
+    adapter: timed(fetchAdapter()),
+});
+```
+
+## Options
+
+An adapter is `(req: AdapterRequest) => Promise<AdapterResponse>` — a plain
+function, so nothing needs to be registered or subclassed. Four rules make it a
+transport the engine can drive:
+
+- **Never throw on a non-2xx status.** A 500 resolves as
+  `{ status: 500, headers, body }`. Only a genuine network failure or an abort
+  rejects. The stitch owns what a status means — whether 503 retries, whether 404
+  is an error or an empty result — so a throwing transport takes that decision
+  away from the declaration.
+- **Lowercase the response header names.** Readers above you look them up in that
+  case.
+- **Honor `req.signal`.** Abort the in-flight request when it fires, and reject if
+  it is already aborted.
+- **Reject `req.stream` if you can't stream.** Failing loudly at the call beats
+  buffering a stream the caller expected to consume incrementally.
+
+`req` carries what the transport needs and nothing about policy:
+`{ url, method, headers, body?, bodyType?, multipart?, responseType?, stream?, onProgress?, signal? }`.
+The response is `{ status, headers, body, url? }`, where `body` is the parsed
+value — or a `ReadableStream<Uint8Array>` when `stream` was set. See
+[Reference → Config types](/docs/reference/config-types) for the full shapes.
+
+### Declare what it supports
+
+Hang a `capabilities` descriptor off the function and the engine can answer for
+your transport instead of going quiet — a call asking for upload progress on an
+adapter that can't report it gets an `info` event rather than a bar that never
+moves.
+
+```ts twoslash
+import type { Adapter } from 'stitchapi';
+
+declare const send: Adapter;
+// ---cut---
+const myAdapter: Adapter = send;
+
+myAdapter.capabilities = {
+    name: 'myAdapter',
+    supports: ['downloadProgress'], // anything not listed, it can't do
+};
+```
+
+Declaring is opt-in. An adapter that declares nothing is treated as unknown and no
+checks run against it, so the plain one-function form stays valid.
+
+<Callout type="warn">
+    **Anti-pattern:** don't reach for a custom adapter to add retries, timeouts,
+    auth headers, or logging of the event stream — a stitch already declares
+    those as fields, and burying them in a transport hides them from the
+    declaration, the trace, and every other surface. Write one when the
+    _transport_ differs; use [retry](/docs/guides/resilience/retry),
+    [timeout](/docs/guides/resilience/timeout),
+    [auth](/docs/guides/auth/bearer), and [trace
+    sinks](/docs/guides/observability/trace-sinks) for the rest.
+</Callout>
+
+### Prove it against the contract
+
+`verifyAdapterContract(adapter, baseUrl)` from `stitchapi/testing` runs your
+transport against a fixture host and checks the rules above: status passthrough
+for 200/404/500, request delivery, lowercased response headers, text and JSON
+decoding, and both abort paths. Mount `adapterContractFixture` on any server —
+`node:http`, hono, a service worker — and point the verifier at it. See
+[Conformance kits](/docs/reference/conformance-kits) for the fixture and the
+report shape.
+
+## See also
+
+<Cards>
+    <Card title="The adapter seam" href="/docs/guides/transport/adapters" />
+    <Card
+        title="Reference: Conformance kits"
+        href="/docs/reference/conformance-kits"
+    />
+    <Card title="Testing" href="/docs/guides/testing/mocking" />
+    <Card title="The seam" href="/docs/concepts/the-seam" />
+    <Card title="Reference: Helpers" href="/docs/reference/helpers" />
+</Cards>

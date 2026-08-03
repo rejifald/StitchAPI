@@ -23,8 +23,8 @@ in any test runner.
 
 ## Testing a stitch definition — `mockAdapter`
 
-The transport is a [seam](/docs/concepts/the-stitch): a stitch sends through its
-`adapter`, defaulting to `fetch`. Pass a mock adapter instead and the rest of
+The transport is a [seam](/docs/guides/transport/adapters): a stitch sends through
+its `adapter`, defaulting to `fetch`. Pass a mock adapter instead and the rest of
 the engine runs for real — URL building, retry, timeout, validation, the event
 stream. Injecting an adapter beats monkeypatching global `fetch`: it is scoped
 to the stitch under test, typed, and comes with a request spy.
@@ -330,6 +330,7 @@ inject a clock; you can also supply your own object implementing `Clock`.
 
 <Cards>
     <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card title="The adapter seam" href="/docs/guides/transport/adapters" />
     <Card title="Conformance kits" href="/docs/reference/conformance-kits" />
     <Card title="Retry & backoff" href="/docs/guides/resilience/retry" />
     <Card title="NestJS" href="/docs/integrations/nestjs" />
