@@ -349,8 +349,8 @@ export interface AdapterRequest {
     /**
      * Array serialisation for the urlencoded body; only read when `bodyType: 'form'` (the query
      * string is already serialised into `url` by the time a request reaches the transport).
-     * Defaults to `'indices'` — the same default the query string uses, so one
-     * {@link StitchConfig.arrayFormat} means one thing on both urlencoded surfaces.
+     * Defaults to `'indices'` — the same default the query string uses, so one authored
+     * {@link WireOptions.array} means one thing on both urlencoded surfaces.
      */
     arrayFormat?: ArrayFormat;
     responseType?: ResponseType;
@@ -1365,7 +1365,7 @@ export interface StitchStore {
  * that are intrinsically **per-endpoint**: the address (`path` / `url` / `method` / `document`)
  * and the request/response shape (`name` / `input` / `output` / `kind`). Everything cross-cutting
  * — `baseUrl`, `headers`, `auth`, `retry`, `throttle`, `timeout`, `circuit`, `idempotency`,
- * `paginate`, `pick`, `transform`, `arrayFormat`, `hooks`, `trace`, `store`, `cache`, `adapter`
+ * `paginate`, `pick`, `transform`, `wire`, `hooks`, `trace`, `store`, `cache`, `adapter`
  * — belongs here, so the type itself answers "what belongs at the seam". Members set the endpoint
  * keys.
  */
