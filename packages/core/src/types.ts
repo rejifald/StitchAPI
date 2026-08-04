@@ -962,8 +962,17 @@ export interface BackoffOptions {
     max?: number | string;
 }
 export interface RetryOptions {
-    attempts?: number; // total attempts incl. the first (default 1 = no retry)
-    on?: StatusMatch; // status(es) (or a predicate) that trigger a retry (default [429,502,503,504])
+    /**
+     * **Total** attempts including the first call, so `attempts: 3` means up to two retries.
+     * Default `1`, which disables retry.
+     */
+    attempts?: number;
+    /**
+     * Status(es) — or a predicate `(status) => boolean` — that trigger a retry. A bare number is
+     * shorthand for a one-element list (`on: 429` ≡ `on: [429]`). Default `[429, 502, 503, 504]`,
+     * the usual transient set.
+     */
+    on?: StatusMatch;
     /**
      * Backoff policy. A bare curve is the P12 shorthand for `{ curve }`
      * (`backoff: 'fixed'` ≡ `backoff: { curve: 'fixed' }`); the envelope adds `base`/`max`.
@@ -983,7 +992,13 @@ export interface RetryOptions {
     respect?: boolean;
 }
 export interface ThrottleOptions {
-    rate?: string; // "2/s"
+    /**
+     * Target pace as a `"count/interval"` string — `'2/s'`, `'5/s'`. A minimum spacing between
+     * successive calls, not a token bucket. The dominant field: a bare string is the P12 shorthand
+     * for `{ rate }` (`throttle: '2/s'` ≡ `throttle: { rate: '2/s' }`).
+     */
+    rate?: string;
+    /** Cap on simultaneous in-flight calls. Independent of `rate` — either may be set on its own. */
     concurrency?: number;
     /**
      * Where the limiter's counter is pooled: `'stitch'` (default) keeps a per-stitch
@@ -1009,7 +1024,17 @@ export interface AcquireOptions {
     rateOnly?: boolean;
 }
 export interface TimeoutOptions {
+    /**
+     * Bounds the **entire call** across every retry, including the backoff waits between them —
+     * `10_000`, `'10s'`. The dominant field: a bare number or duration string is the P12 shorthand
+     * for `{ total }` (`timeout: '5s'` ≡ `timeout: { total: '5s' }`).
+     */
     total?: number | string;
+    /**
+     * Bounds each individual attempt — `3000`, `'3s'`. With `retry` enabled this alone does NOT cap
+     * the call: N attempts plus their backoff waits can overrun it many times over. Pair it with
+     * `total` for a real deadline.
+     */
     perAttempt?: number | string;
 }
 export interface CircuitOptions {
@@ -1053,7 +1078,11 @@ export interface CircuitOptions {
  * default HTTP surface and are silenced by `warn: false`.
  */
 export interface IdempotencyOptions {
-    header?: string; // header name (default 'Idempotency-Key')
+    /**
+     * Header name the key rides on. Default `'Idempotency-Key'`; set it when a server expects a
+     * vendor spelling (e.g. `'X-Idempotency-Key'`).
+     */
+    header?: string;
     /** Derive a stable key per logical call (default: a random uuid). CONTRACT.md P6: `key` is a string; a derivation fn is `keyOf`. */
     keyOf?: (input: StitchInput) => string;
     /** false silences the "idempotency without retry" / "idempotency on a read" construction nudge. */
