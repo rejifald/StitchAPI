@@ -28,6 +28,11 @@ const FUNCTIONS = [
     'compile',
     'isStitch',
     'isSeam',
+    // The status verdict (ADR 0022 Decision 2) — public because a surface author must compose it:
+    // an `interpret` hook replaces the default rather than layering on it. `httpFailure` is the
+    // reusable half (the verdict, no success value); `httpInterpret` is the http surface's own hook.
+    'httpFailure',
+    'httpInterpret',
 ] as const;
 
 // The auth surface moved to its own subpath (ADR 0021). Pinned in BOTH directions: present on

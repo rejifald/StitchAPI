@@ -1,6 +1,6 @@
 // CONTRACT.md P0 regression: the enumerable `__config` is plain JSON data. Every function-valued
 // field an author can write — endpoint thunks, `transform`, `paginate.next`/`items`, `hooks.*`, the
-// predicate forms of `acceptStatus`/`retry.on`/`throttle.on`, `idempotency.keyOf`, `cache.keyOf`,
+// predicate forms of `verdict.accept`/`retry.on`/`throttle.on`, `idempotency.keyOf`, `cache.keyOf`,
 // and a live `TraceSink` — must be stripped by redaction; the engine reads that sugar off the
 // non-enumerable `__rawConfig`.
 // This guards two things at once: the exfil-at-rest surface (a public config view must not carry
@@ -63,6 +63,10 @@ const FN_BEARING_SAMPLES: Record<FnBearingSlot, object> = {
         vary: ['accept'],
         methods: ['GET'],
     },
+    // ADR 0022 Decision 3: `acceptStatus`'s predicate form moved one level down into this envelope,
+    // so it strips nested now — like `retry.on` / `throttle.on`, the other `StatusMatch` slots. The
+    // data member `flag` must SURVIVE the strip alongside it.
+    verdict: { accept: (status: number) => status === 404, flag: 'meta.ok' },
 };
 
 // Every slot the anatomy drops OUTRIGHT — live handles and always-fns — minus the two it re-projects
@@ -89,7 +93,6 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
     const laden = stitch({
         name: 'p0-fn-laden',
         url: () => 'https://api.example.test/items',
-        acceptStatus: (status: number) => status === 404,
         ...FN_BEARING_SAMPLES,
         ...HANDLE_SAMPLES,
     } as Partial<StitchConfig>);
@@ -112,7 +115,10 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
         expect(cfg.paginate).not.toHaveProperty('next');
         expect(cfg.paginate).not.toHaveProperty('items');
         expect(cfg.paginate?.pages).toBe(3);
-        expect(cfg.acceptStatus).toBeUndefined(); // the predicate form is redacted
+        // The accept predicate is stripped one level down, and the sibling data member survives —
+        // the whole point of `fns` over `redact-if-fn` (ADR 0022 Decision 3).
+        expect(cfg.verdict).not.toHaveProperty('accept');
+        expect(cfg.verdict?.flag).toBe('meta.ok');
         expect(cfg.retry).not.toHaveProperty('on'); // the predicate `on` is redacted
         expect(cfg.retry?.attempts).toBe(2);
         expect(cfg.throttle).not.toHaveProperty('on');
@@ -216,7 +222,7 @@ describe('CONTRACT.md P0 — __config is plain JSON data', () => {
         expect(typeof raw.transform).toBe('function');
         expect(typeof raw.paginate?.next).toBe('function');
         expect(typeof raw.hooks?.onRequest).toBe('function');
-        expect(typeof raw.acceptStatus).toBe('function');
+        expect(typeof raw.verdict?.accept).toBe('function');
         expect(fnPaths(raw.cache)).toContain('$.keyOf'); // the cache derivation fn is retained raw
         expect(fnPaths(raw.trace)).toContain('$.handle'); // the live sink is retained raw
         // Neither meta property is enumerable — a spread / JSON view of the stitch leaks nothing.

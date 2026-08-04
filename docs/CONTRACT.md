@@ -213,8 +213,8 @@ exported **`StatusMatch`** (`number | number[] | ((status: number) => boolean)`)
 list-shaped field whose single-value case is common **MUST** accept **`T | T[]`** and
 normalize internally.
 
-_Resolved (2026-07 sweep):_ `acceptStatus`, `retry.on`, `throttle.on`, and auth
-`refreshOn` all take `StatusMatch` (so `acceptStatus: 404` is legal); `DriftOptions.ignore`
+_Resolved (2026-07 sweep):_ `verdict.accept`, `retry.on`, `throttle.on`, and auth
+`refreshOn` all take `StatusMatch` (so `verdict: { accept: 404 }` is legal); `DriftOptions.ignore`
 and `cache.vary` accept `string | string[]`, matching `DriftOptions.severity`'s
 existing `'warn' ≡ ['warn']` widening.
 
@@ -807,7 +807,7 @@ shape, not as today's surface: nothing on the surface carries an alias.
   field. (`CircuitOptions.failureThreshold`→`failures` is deferred to the P17 CircuitOptions
   overhaul, where its required-ness + `cooldownMs`/`halfOpenAfterMs` are handled together.)
 - **P7** the exported `StatusMatch` (`number | number[] | (status) => boolean`) is the one shape
-  for every status-classification slot: `RetryOptions.on`, `throttle.on`, `StitchConfig.acceptStatus`,
+  for every status-classification slot: `RetryOptions.on`, `throttle.on`, `VerdictOptions.accept`,
   and the auth strategies' `refreshOn` (oauth2 + cookieSession). A bare status is shorthand for its
   one-element list (`404` ≡ `[404]`); additive widening, no alias. Every reader normalizes through the
   shared `acceptsStatus` matcher, hoisted from the engine into `resilience.ts` so `auth` shares it. The

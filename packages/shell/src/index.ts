@@ -55,7 +55,7 @@ function resolveMaxBuffer(buffer: ShellOptions['buffer']): number {
 // Run the static command with the call's argv. The ONLY input is the argv array (`req.body`);
 // every element must already be a string (the array boundary + `execFile` make injection
 // structurally impossible). A non-zero exit maps to status 500 with `{ exitCode, stdout, stderr }`
-// so it surfaces as a StitchError (or an accepted result via `acceptStatus`); a spawn failure
+// so it surfaces as a StitchError (or an accepted result via `verdict.accept`); a spawn failure
 // (ENOENT) or an abort rejects, so the resilience chain sees a transport error.
 function runCommand(
     d: ShellDefaults,

@@ -11,6 +11,7 @@
 import type { InputOf } from './infer';
 import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
+import { httpFailure } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
     type NoRequestShapeOnDownload,
@@ -102,7 +103,13 @@ export const downloadSurface: Surface<StitchInput, DownloadResult> & {
         method: 'GET',
         responseType: 'blob',
     }),
-    interpret: (res): SurfaceOutcome<DownloadResult> => {
+    // A 500 is a failure BEFORE it is a downloaded Blob (ADR 0022 Decision 4). This hook returned
+    // `{ ok: true }` UNCONDITIONALLY, correct only because the engine guaranteed it never saw a
+    // non-2xx; step 3 removes that guarantee, and without the composed verdict an error page would
+    // be handed back as the downloaded file.
+    interpret: (res, cfg): SurfaceOutcome<DownloadResult> => {
+        const failure = httpFailure(res, cfg);
+        if (failure) return failure;
         const data: DownloadResult = { blob: res.body as Blob };
         const filename =
             filenameFromDisposition(res.headers['content-disposition']) ??

@@ -35,7 +35,7 @@ try {
     caller — it rides a non-enumerable channel and is **never** written to a trace
     sink, so an `{ error: "…" }` payload can't leak into a JSONL/console log. If a
     non-2xx is actually expected control flow (a `404` you fall back from), see
-    [`acceptStatus`](/docs/guides/resilience/accept-status) — it returns the body
+    [`verdict.accept`](/docs/guides/resilience/verdict) — it returns the body
     as a normal result instead of throwing.
 </Callout>
 

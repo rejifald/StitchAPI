@@ -7,9 +7,15 @@
 //                  and normalises the live Surface `kind` to its id string; the rest survives.
 import { systemClock } from '../src';
 import { redactConfig, resolveTrace } from '../src/stitch';
+import { httpSurface } from '../src/surface';
 import type { ResolvedStitchConfig, TraceSink } from '../src/types';
 
-const asResolved = (o: Record<string, unknown>): ResolvedStitchConfig => o;
+// `kind` is required on a resolved config (ADR 0022 Decision 2), so a hand-built fixture carries the
+// default surface unless a case overrides it — the cast keeps the rest of the shape loose.
+const asResolved = (o: Record<string, unknown>): ResolvedStitchConfig => ({
+    kind: httpSurface,
+    ...o,
+});
 
 describe('resolveTrace', () => {
     test('returns a provided sink by reference', () => {
@@ -63,11 +69,17 @@ describe('redactConfig', () => {
         expect(redacted.path).toBe('/x');
     });
 
-    test('omits authScheme and kind when there is no auth / no surface', () => {
+    test('omits authScheme when there is no auth, and always emits the surface id', () => {
+        // `kind` is no longer optional on a resolved config: `compose` selects `httpSurface` when
+        // it is omitted (ADR 0022 Decision 2), so redaction always has an id to project.
         const redacted = redactConfig(
-            asResolved({ baseUrl: 'https://api.test', path: '/y' }),
+            asResolved({
+                baseUrl: 'https://api.test',
+                path: '/y',
+                kind: httpSurface,
+            }),
         );
         expect('authScheme' in redacted).toBe(false);
-        expect('kind' in redacted).toBe(false);
+        expect(redacted.kind).toBe('http');
     });
 });

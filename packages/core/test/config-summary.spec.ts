@@ -47,12 +47,22 @@ describe('endpointLabel', () => {
 });
 
 describe('pipelineStages', () => {
-    it('a bare config is just call -> endpoint -> result', () => {
+    // Stage 4 is unconditional since ADR 0022 Decision 2 — `http` used to be the one surface with no
+    // interpretation to render, and that omission is why the outcome ladder was hard to discover
+    // (#529). Every stitch now shows the stage that decides what its response means.
+    it('a bare config is call -> endpoint -> interpret -> result', () => {
         expect(pipelineStages(cfg({ url: 'https://x/y' }))).toEqual([
             'call',
             'GET https://x/y',
+            'http interpret',
             'result',
         ]);
+    });
+
+    it('a non-http surface names itself at the same stage', () => {
+        expect(
+            pipelineStages(cfg({ url: 'https://x/y', kind: 'graphql' })),
+        ).toContain('graphql interpret');
     });
 
     it('detailed mode chains every configured stage in engine order, with counts', () => {
@@ -75,6 +85,7 @@ describe('pipelineStages', () => {
             'throttle',
             'POST https://api.example.com/widgets',
             'retry ×3',
+            'http interpret',
             'paginate (max 7)',
             'pick: data',
             'validate',
@@ -93,6 +104,7 @@ describe('pipelineStages', () => {
             'call',
             'GET https://x/y',
             'retry',
+            'http interpret',
             'paginate',
             'result',
         ]);
@@ -118,5 +130,57 @@ describe('pipelineStages', () => {
         expect(
             pipelineStages(cfg({ url: 'https://x', kind: 'graphql' })),
         ).toEqual(['call', 'GET https://x', 'graphql interpret', 'result']);
+    });
+});
+
+// ADR 0022 Decision 2/3 — `verdict` is stage 4's declarative input, so it ANNOTATES the
+// interpret stage rather than floating as its own unnamed entry. Before this ADR the slot carried
+// no stage at all: it did a pipeline stage's job and was invisible in the pipeline.
+describe('stage 4 renders the interpret stage and its accept rule', () => {
+    it('annotates the stage when verdict.accept is a list', () => {
+        expect(
+            pipelineStages(
+                cfg({ url: 'https://x/y', verdict: { accept: [404, 410] } }),
+            ),
+        ).toContain('http interpret (accept 404, 410)');
+    });
+
+    it('annotates the stage when verdict.accept is a bare number', () => {
+        expect(
+            pipelineStages(
+                cfg({ url: 'https://x/y', verdict: { accept: 404 } }),
+            ),
+        ).toContain('http interpret (accept 404)');
+    });
+
+    it('renders the stage exactly once either way', () => {
+        const withAccept = pipelineStages(
+            cfg({ url: 'https://x/y', verdict: { accept: [404] } }),
+        );
+        const without = pipelineStages(cfg({ url: 'https://x/y' }));
+        expect(withAccept.filter((s) => s.includes('interpret'))).toHaveLength(
+            1,
+        );
+        expect(without.filter((s) => s.includes('interpret'))).toHaveLength(1);
+    });
+
+    it('keeps the stage in engine order — after retry, before pick', () => {
+        expect(
+            pipelineStages(
+                cfg({
+                    url: 'https://x/y',
+                    retry: { attempts: 2 },
+                    verdict: { accept: [404] },
+                    pick: 'data',
+                }),
+            ),
+        ).toEqual([
+            'call',
+            'GET https://x/y',
+            'retry',
+            'http interpret (accept 404)',
+            'pick: data',
+            'result',
+        ]);
     });
 });

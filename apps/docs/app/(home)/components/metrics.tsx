@@ -10,7 +10,7 @@ const metrics = [
         body: 'The whole stitchapi entry, tree-shaken — and it is an enforced budget in CI, not an aspiration.',
     },
     {
-        value: '~20 kB',
+        value: '~21 kB',
         unit: 'import { stitch }',
         body: 'Pay only for what you import: every surface beyond http lives behind its own subpath, so the core trims down.',
     },

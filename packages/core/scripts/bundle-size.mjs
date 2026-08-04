@@ -173,19 +173,44 @@ const KB = 1024;
 // minified, 0.00 gzip). Whole entry is unchanged at 22.86 (0.04 left) and needs no bump. This is a
 // MINIMUM step (0.03 KB headroom), matching #477/#524's tight ceilings rather than restoring the
 // ~0.2 KB this gate usually holds.
+// Budgets raised for ADR 0022 — response classification becomes one decision (22.90→23.30 /
+// 20.30→20.70 KB; measured 23.14 / 20.55 against a `main` at 22.85 / 20.27, so the whole ADR is
+// +0.29 / +0.28). The engine used to decide what a response WAS in two places at two times: a status
+// check inside the attempt loop that could retry or throw but never saw the body, and a surface's
+// `interpret` that saw the body but ran after the loop had finished. Neither could see what the
+// other saw, and `httpSurface` — the surface almost every stitch uses — had no interpretation of its
+// own at all, which is why its policy had nowhere to live and became a flat root `acceptStatus`.
+//
+// What the bytes buy, all of it on the core path and none of it movable behind a subpath (the
+// attempt loop runs on every request):
+//   • `httpFailure` / `httpInterpret` / `interpretOf` — the verdict as named, composable functions
+//     instead of two unnamed engine branches, with an omitted `kind` resolving to `httpSurface` so
+//     the engine holds no default of its own;
+//   • `interpret` moved INSIDE the attempt loop, plus the routing that keeps `circuit` tracking
+//     transport health rather than the surface's verdict;
+//   • the `SurfaceOutcome` retry arm (#529) — a surface that read the body can ask for another
+//     attempt, sharing the `retry.attempts` budget;
+//   • `verdict.flag` — its three-state read and the `info` drift finding an inert flag emits.
+//
+// The split between `httpFailure` (the verdict) and `httpInterpret` (that, then the http surface's
+// own "body is the value") is load-bearing, not cosmetic: a shared function that also asserted
+// `data: res.body` would impose a response format on `download` (`{ blob, filename }`) and `llm`
+// (the provider's parsed completion), forcing every composing surface to build a success value and
+// immediately discard it. Headroom lands at 0.16 / 0.15 — the tight step #477/#524 took, not the
+// ~0.2 KB this gate usually restores.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 22.9 * KB,
+        budget: 23.3 * KB,
         advertised: true,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 20.3 * KB,
+        budget: 20.7 * KB,
         advertised: true,
     },
     {

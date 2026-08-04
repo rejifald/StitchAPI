@@ -56,7 +56,7 @@ interface SlotFacts {
      * - `'redact'` — never on `__config`: a live handle (`store`/`adapter`/`clock`/`trace`), an
      *   always-fn (`transform`/`hooks`), or re-projected as data (`kind`/`auth`).
      * - `'redact-if-fn'` — a data-or-handle slot: the data form survives, the function form is
-     *   dropped (a string `url`, a `number[]` `acceptStatus`).
+     *   dropped (a string `url`, a thunk `baseUrl`).
      * - `'compose'` — consumed earlier, by `flatten`, and never reaches a resolved config at all.
      */
     dropped?: 'redact' | 'redact-if-fn' | 'compose';
@@ -119,7 +119,13 @@ export interface StitchConfigAnatomy {
     paginate: { fns: true; stage: 5 };
     auth: { dropped: 'redact'; project: true };
     retry: { shorthand: 'attempts'; fns: true; stage: 3; policy: true };
-    acceptStatus: { dropped: 'redact-if-fn' };
+    // Stage 4 is the surface's `interpret`, and this slot is its declarative input (ADR 0022
+    // Decision 3). The flat `acceptStatus` it replaces carried NO stage — the tell that it did a
+    // pipeline stage's job while being invisible in the pipeline, which is the diagnosis that ADR
+    // opens with. `fns` rather than `redact-if-fn`: the predicate form now sits one level down at
+    // `verdict.accept`, so it strips nested, exactly like `retry.on` / `throttle.on` — the two other
+    // slots whose fn sugar is a `StatusMatch`.
+    verdict: { fns: true; stage: 4 };
     throttle: { shorthand: 'rate'; fns: true; stage: 1; policy: true };
     timeout: { shorthand: 'total'; policy: true };
     circuit: { normalized: true };

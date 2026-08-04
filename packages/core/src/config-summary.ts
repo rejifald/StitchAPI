@@ -52,6 +52,26 @@ const STAGES = [
                 ? `paginate (max ${cfg.paginate?.pages ?? 50})`
                 : 'paginate',
     },
+    // Stage 4 — the surface's `interpret` (ADR 0022 Decision 2). This slot is that stage's
+    // declarative input, so it ANNOTATES the stage rather than adding a second entry beside it;
+    // `pipelineStages` renders the bare `<kind> interpret` when it is unset. A predicate is stripped
+    // from the redacted view (`redact-if-fn`), so only the data forms can reach the label.
+    {
+        slot: 'verdict',
+        at: 4,
+        label: (cfg) => {
+            const kind = cfg.kind ?? 'http';
+            const { accept, flag } = cfg.verdict ?? {};
+            const parts = [
+                accept !== undefined &&
+                    `accept ${Array.isArray(accept) ? accept.join(', ') : String(accept)}`,
+                flag !== undefined && `flag ${flag}`,
+            ].filter(Boolean);
+            return parts.length
+                ? `${kind} interpret (${parts.join('; ')})`
+                : `${kind} interpret`;
+        },
+    },
     { slot: 'pick', at: 6, label: (cfg) => `pick: ${cfg.pick}` },
     { slot: 'output', at: 7, label: () => 'validate' },
     { slot: 'cache', at: 8, label: () => 'cache' },
@@ -70,12 +90,19 @@ export function pipelineStages(
     const kind = cfg.kind ?? 'http'; // __config.kind is the surface id string
     // The unconditional positions on the anatomy's shared number line, then every configured slot at
     // its own. One sort puts them in engine order — no hand-maintained sequence of pushes.
+    //
+    // Stage 4 is UNCONDITIONAL since ADR 0022 Decision 2: `http` used to be excluded because it had
+    // no interpretation of its own to render, and that omission is exactly why the ladder was hard
+    // to discover (#529). Every stitch now interprets through a named surface hook, so every
+    // pipeline read-out shows the stage that decides what the response means.
     const at: [number, string][] = [
         [0, 'call'],
         [2, endpointLabel(cfg)],
         [9, 'result'],
     ];
-    if (kind !== 'http') at.push([4, `${kind} interpret`]);
+    // The bare stage-4 label. When `verdict` IS configured its STAGES entry renders the annotated
+    // form instead, so the stage appears exactly once either way.
+    if (cfg.verdict === undefined) at.push([4, `${kind} interpret`]);
     for (const stage of STAGES) {
         if (cfg[stage.slot])
             at.push([stage.at, stage.label(cfg, opts.detailed ?? false)]);

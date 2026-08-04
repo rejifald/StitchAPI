@@ -1,7 +1,12 @@
 export { stitch, drift } from './stitch';
 export { graphql } from './graphql';
 export { seam } from './seam';
-export { httpSurface, graphqlSurface } from './surface';
+export {
+    httpSurface,
+    graphqlSurface,
+    httpInterpret,
+    httpFailure,
+} from './surface';
 export type { Surface, SurfaceOutcome } from './surface';
 // The auth surface lives on `stitchapi/auth` (ADR 0021) — the strategy factories
 // (`bearer`/`apiKey`/`basic`/`oauth2`/`cookieSession`), the secret resolvers

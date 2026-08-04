@@ -27,7 +27,7 @@ import type { InferOutput, InputOf, ResolveOutput } from './infer';
 import { otlpSink } from './otlp';
 import { RateLimitError, createThrottle } from './resilience';
 import { createStoreThrottle, memoryStore } from './store';
-import { graphqlSurface } from './surface';
+import { graphqlSurface, httpSurface } from './surface';
 import { consoleSink, createTrace, exportsFromEnv, multiplex } from './trace';
 import {
     type CacheOptions,
@@ -36,6 +36,7 @@ import {
     type DriftFinding,
     type DriftOptions,
     type DriftSpec,
+    type FlagPathInOutput,
     type GraphqlOnlyOnGraphqlSurface,
     type HookContext,
     type Hooks,
@@ -313,7 +314,11 @@ export function compose(config: Fragment): ResolvedStitchConfig {
     const hooks = chainHooks(hookLayers);
     if (hooks) resolved.hooks = hooks;
     if (store) merged.store = store;
-    if (kind) merged.kind = kind;
+    // An omitted `kind` resolves to `httpSurface` (ADR 0022 Decision 2). Before this, `http` was the
+    // only surface with no interpretation of its own — the default lived as an unnamed branch in the
+    // engine, which is why `acceptStatus` had nowhere to live and became a flat root slot. Selecting
+    // the surface here means the engine never has to know what "no surface" means.
+    merged.kind = kind ?? httpSurface;
     const output = normalizeOutput(merged.output);
     if (output !== undefined) merged.output = output;
     const input = normalizeInput(merged.input);
@@ -334,7 +339,9 @@ export function compose(config: Fragment): ResolvedStitchConfig {
 //      to dedupe — hence a hint, not an error. A *derived* `keyOf` dedupes resubmissions on its own.)
 function warnIdempotency(cfg: ResolvedStitchConfig): void {
     const idem = cfg.idempotency;
-    if (!idem || idem.warn === false || cfg.kind) return;
+    // `cfg.kind` is always set now (it defaults to `httpSurface`), so the "a surface owns its own
+    // method semantics" skip has to ask which surface — not whether there is one.
+    if (!idem || idem.warn === false || cfg.kind.id !== 'http') return;
     const name = cfg.name ?? cfg.path ?? 'stitch';
     const method = (cfg.method ?? 'GET').toUpperCase();
     if (method === 'GET' || method === 'HEAD') {
@@ -833,7 +840,6 @@ const REDACTED_SLOTS = [
 const REDACTED_IF_FN_SLOTS = [
     'url',
     'baseUrl',
-    'acceptStatus',
 ] as const satisfies readonly RedactedIfFnSlot[];
 const FN_BEARING_SLOTS = [
     'paginate',
@@ -841,6 +847,9 @@ const FN_BEARING_SLOTS = [
     'throttle',
     'idempotency',
     'cache',
+    // ADR 0022 Decision 3: `acceptStatus`'s predicate form moved one level down, to `verdict.accept`,
+    // so the strip is nested now — the same treatment `retry.on` / `throttle.on` already get.
+    'verdict',
 ] as const satisfies readonly FnBearingSlot[];
 export type _RedactedCovered = Assert<
     Covers<RedactedSlot, (typeof REDACTED_SLOTS)[number]>
@@ -862,8 +871,9 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     //   • the live secret-bearing handles `store`/`auth`/`adapter`/`clock` (ADR 0002 §4/§6,
     //     exfil-at-rest) and the live `Surface` `kind` (both re-projected to plain data below);
     //   • the always-fn `transform` (a mapper) and `hooks` (an object of callbacks);
-    //   • whichever of `url`/`baseUrl`/`acceptStatus` are in their function form — a string endpoint
-    //     or a `number[]` status list stays, a thunk/predicate goes;
+    //   • whichever of `url`/`baseUrl` are in their function form — a string endpoint stays, a thunk
+    //     goes (`verdict.accept`'s predicate form is stripped one level down, with the other
+    //     fn-bearing envelopes);
     //   • `trace` — infrastructure, exactly like `store`/`adapter`/`clock`. Its full form is a live
     //     `TraceSink` whose `handle`/`flush` are author closures (the same exfil-at-rest surface,
     //     ADR 0002 §4/§6), and dropping the SLOT rather than fn-stripping the sink is what makes
@@ -891,7 +901,7 @@ export function redactConfig(cfg: ResolvedStitchConfig): RedactedStitchConfig {
     if (cfg.auth?.scheme) redacted.authScheme = cfg.auth.scheme;
     // Normalise the surface to its id string so __config round-trips as JSON (ADR 0005 Decision 11):
     // never expose the live Surface (its hooks don't serialise), only its identity.
-    if (cfg.kind) redacted.kind = cfg.kind.id;
+    redacted.kind = cfg.kind.id;
     // Each nested resilience slot keeps its fn-free data and drops its fn sugar (`paginate.next`/
     // `items`, the predicate `retry.on`/`throttle.on`, and the `key`/`keyOf` on `idempotency`/`cache`
     // — canonical or @deprecated alias, dropped by value so a rename can't rot it). `stripFns`
@@ -1131,6 +1141,7 @@ export interface StitchFn {
         config: C &
             NoUnknownConfigKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
+            FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
             WireBodyFixedByGraphql<C> &
             RequestShapeFixedByDownload<C>,
@@ -1157,6 +1168,7 @@ export interface StitchFn {
         config: C &
             NoUnknownConfigKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
+            FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
             WireBodyFixedByGraphql<C> &
             RequestShapeFixedByDownload<C>,
@@ -1200,6 +1212,7 @@ export function graphql<
     config: C &
         NoUnknownConfigKeys<C> &
         MultipartOnlyOnMultipartBody<C> &
+        FlagPathInOutput<C> &
         NoWireBodyOnGraphql<C>,
 ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>> {
     // Default the endpoint to `/graphql` only when neither `url` nor `path` is given (preserves the

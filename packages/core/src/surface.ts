@@ -8,17 +8,32 @@
 // are the contract later stages fill in (Stage 4 moves graphql's shaping/interpretation here;
 // Stage 5 the streaming `stream` hook). Until then the engine keys its built-in graphql handling
 // on `kind.id`.
+import { acceptsStatus } from './resilience';
 import type {
     Adapter,
     AdapterRequest,
     AdapterResponse,
+    DriftFinding,
     ResolvedStitchConfig,
     StitchInput,
 } from './types';
+import { getPath } from './util';
 
-/** The result a surface's {@link Surface.interpret} produces from a buffered response. The success arm carries `data` (CONTRACT.md P5). */
+/**
+ * The result a surface's {@link Surface.interpret} produces from a buffered response. The success
+ * arm carries `data` (CONTRACT.md P5).
+ *
+ * The middle arm is the BODY-AWARE RETRY (ADR 0022 Decision 5, issue #529): a surface that has read
+ * the body can ask for another attempt — a `200` carrying `{ status: 'PENDING' }`, an in-payload
+ * rate limit, a `{ ok: false, code: 'TRY_AGAIN' }` envelope. It is expressible only because
+ * `interpret` now runs INSIDE the attempt loop (Decision 1); before that there was no loop left to
+ * re-enter. It shares the `retry.attempts` budget, and `after` (ms) is honoured the way
+ * `Retry-After` is. Exhausting the budget surfaces the outcome as an ordinary failure.
+ */
 export type SurfaceOutcome<T = unknown> =
-    { ok: true; data: T } | { ok: false; message: string; status?: number };
+    | { ok: true; data: T }
+    | { ok: false; retry: true; message: string; after?: number }
+    | { ok: false; message: string; status?: number };
 
 /**
  * A pluggable request style. `TInput` is the call-argument type a typed surface narrows to;
@@ -98,8 +113,115 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
     readonly __input?: (input: TInput) => void;
 }
 
-/** The default surface: a plain JSON-over-HTTP call. Selected whenever `kind` is omitted. */
-export const httpSurface: Surface = { id: 'http' };
+/**
+ * The STATUS VERDICT alone (ADR 0022 Decision 2): the failure a response's status implies, or
+ * `undefined` when the status is acceptable — a 2xx/3xx, or a status the caller declared NORMAL via
+ * `verdict.accept` (issue #155, CONTRACT.md P7).
+ *
+ * It deliberately says nothing about the SUCCESS value, because that is not knowable from a status:
+ * `http` yields the raw body, `download` a `{ blob, filename }`, `llm` the provider's parsed
+ * completion. Only the failure arm is universal — every surface agrees a `500` is a `500` — so only
+ * the failure arm lives here. A surface composes it in front of its own body rules and never has to
+ * build, then discard, a success value it does not mean:
+ *
+ * ```ts
+ * interpret: (res, cfg) => httpFailure(res, cfg) ?? { ok: true, data: myOwnValue(res) };
+ * ```
+ *
+ * Exported because a surface author needs it: an `interpret` hook REPLACES the default rather than
+ * layering on it, so a surface with its own body rules must compose this to keep the status verdict.
+ * The built-in `graphql` and `download` hooks adopt it in ADR 0022 step 2; today they are still
+ * shielded by the engine's guarantee that a non-2xx never reaches them, which step 3 removes.
+ */
+export const httpFailure = (
+    res: AdapterResponse,
+    cfg: ResolvedStitchConfig,
+): Extract<SurfaceOutcome, { ok: false }> | undefined => {
+    if (res.status >= 400 && !acceptsStatus(cfg.verdict?.accept)(res.status))
+        return { ok: false, message: `HTTP ${res.status}`, status: res.status };
+    // `verdict.flag` — a body flag that is EXPLICITLY falsy on failure. Three-state and only one
+    // state is a verdict: `undefined` (absent) and `null` are SILENCE, so the status verdict above
+    // stands and an `info` drift finding records that the flag was not there. Only a present, falsy
+    // value fails the call. `accept` can only turn a failure into a success; `flag` only a success
+    // into a failure — neither invents a verdict from absence.
+    const path = cfg.verdict?.flag;
+    if (path !== undefined) {
+        const value = getPath(res.body, path);
+        if (value !== undefined && value !== null && isFalsy(value))
+            return {
+                ok: false,
+                message: `verdict.flag \`${path}\` is ${JSON.stringify(value)}`,
+                status: res.status,
+            };
+    }
+    return undefined;
+};
+
+// Read falsiness off an `unknown` WITHOUT letting the narrowing eat it. After `!== undefined &&
+// !== null` TypeScript narrows `unknown` to `{}`, whose type-level truthiness is always true — so an
+// inline `!value` is reported as dead code even though `false` / `0` / `''` / `NaN` all reach it at
+// runtime. Taking the value back as `unknown` here keeps the check honest and the intent legible.
+const isFalsy = (value: unknown): boolean => !value;
+
+/**
+ * The `info` drift finding for a `verdict.flag` that resolved to nothing (ADR 0022 Decision 3).
+ *
+ * A silently inert `flag` — a typo, or an API that quietly dropped its envelope — must not fail the
+ * call, but it must not be invisible either. This is what makes that trade honest: the diagnostic
+ * shows up in `.inspect()` and the drift report while the call resolves. Findings are diagnostic,
+ * never control flow (ADR 0015/0016), which is exactly the property being relied on here.
+ *
+ * It reuses the `undeclared` change kind rather than minting one: the condition IS "the response did
+ * not declare this path", and a new kind would widen `SoftDriftChange`, the per-kind severity map
+ * and its documented defaults for a diagnostic that reads the same either way.
+ */
+export const flagFinding = (
+    res: AdapterResponse,
+    cfg: ResolvedStitchConfig,
+): DriftFinding | undefined => {
+    const path = cfg.verdict?.flag;
+    if (path === undefined) return undefined;
+    const value = getPath(res.body, path);
+    if (value !== undefined && value !== null) return undefined;
+    return {
+        level: 'info',
+        path,
+        change: 'undeclared',
+        detail:
+            `verdict.flag \`${path}\` is ${value === null ? 'null' : 'absent'} — no signal, so the ` +
+            `status verdict stands. Check the path, or declare the field in \`output\` if it is guaranteed.`,
+    };
+};
+
+/**
+ * The http surface's `interpret` (ADR 0022 Decision 2) — the status verdict, then "the body is the
+ * value". That second half is the HTTP SURFACE'S OWN choice of result, not a shared assumption:
+ * a surface that means something else composes {@link httpFailure} instead of this.
+ */
+export const httpInterpret = (
+    res: AdapterResponse,
+    cfg: ResolvedStitchConfig,
+): SurfaceOutcome => httpFailure(res, cfg) ?? { ok: true, data: res.body };
+
+/**
+ * The default surface: a plain JSON-over-HTTP call. Selected whenever `kind` is omitted — `compose`
+ * resolves the slot to this, so it is a real selection rather than an engine branch (ADR 0022
+ * Decision 2).
+ */
+export const httpSurface: Surface = { id: 'http', interpret: httpInterpret };
+
+/**
+ * The interpretation a surface actually runs: its own hook, or the http surface's when it declares
+ * none (`sse`, `stream`, `postmessage`, `shell` — surfaces whose job is transport or decoding, not
+ * deciding what a response means).
+ *
+ * That inheritance rule lives HERE, in the surface model, rather than as a `??` in the engine. The
+ * engine asking "does this surface interpret? if not, here is what I think a response means" is the
+ * exact shape ADR 0022 set out to remove: it put the http default in the one place that is not a
+ * surface, which is why it had no name and its config slot had no stage.
+ */
+export const interpretOf = (kind: Surface): NonNullable<Surface['interpret']> =>
+    kind.interpret ?? httpInterpret;
 
 /**
  * GraphQL-over-HTTP. Its behaviour lives entirely in these hooks (ADR 0005 Stage 4): `buildRequest`
@@ -148,7 +270,13 @@ export const graphqlSurface: Surface & { readonly id: 'graphql' } = {
             },
         };
     },
-    interpret: (res) => {
+    // A 500 is a failure BEFORE it is a graphql payload (ADR 0022 Decision 4). This hook used to be
+    // correct only because the engine guaranteed it never saw a non-2xx; step 3 removes that
+    // guarantee, and without the composed verdict an error page would be read for `errors`, found
+    // to have none, and returned as a successful GraphQL response.
+    interpret: (res, cfg) => {
+        const failure = httpFailure(res, cfg);
+        if (failure) return failure;
         const errs = (
             res.body as { errors?: { message?: string }[] } | null | undefined
         )?.errors;

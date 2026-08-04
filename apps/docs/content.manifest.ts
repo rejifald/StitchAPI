@@ -402,10 +402,10 @@ export const pages: Page[] = [
         kind: 'guide',
     },
     {
-        path: 'guides/resilience/accept-status',
-        title: 'Accept status',
+        path: 'guides/resilience/verdict',
+        title: 'Verdict',
         description:
-            'Declare statuses that are a normal result, not an error — an accepted non-2xx flows through transform/pick/validate instead of throwing.',
+            'Declare what counts as success — accept a non-2xx as a normal result, or fail a 200 whose body says it failed.',
         kind: 'guide',
     },
     {

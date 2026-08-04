@@ -13,6 +13,51 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **`acceptStatus` folds into a `verdict` envelope, and response classification becomes one
+  decision.** ([ADR 0022](docs/adr/0022-response-classification-merges-at-interpret.md)) The engine
+  used to decide what a response _was_ in two places at two times: a status check inside the attempt
+  loop that could retry or throw but never saw the body, and a surface's `interpret` that saw the
+  body but ran after the loop had finished — so it could only say ok/not-ok, and never saw a status
+  the first phase had already thrown on.
+
+    `interpret` now runs **inside** the attempt loop, as the terminal verdict of each attempt, on
+    every response including non-2xx. `httpSurface` gains a real `interpret` (it was the one surface
+    with none, which is why its policy had nowhere to live), an omitted `kind` resolves to it, and
+    the exported `httpFailure` / `httpInterpret` make the status verdict a named, composable
+    function instead of an engine branch.
+
+    At the authoring site, the flat `acceptStatus` slot becomes `verdict`:
+
+    ```ts
+    // before
+    acceptStatus: [404],
+    // after
+    verdict: { accept: [404] },
+    ```
+
+    `verdict.flag` is the new second member — a dot-path to a body flag that is explicitly falsy on
+    failure, for the `{ ok: false, code }` envelopes older APIs answer `200` with. It is three-state
+    and only one state is a verdict: a present-but-falsy value fails the call; `null` and an absent
+    path are **silence** (the status verdict stands, plus an `info` drift finding), so an API that
+    quietly drops its envelope cannot start failing every call.
+
+    **Migration has no compile-time safety net** — `stitch`'s generic captures the argument type,
+    which suppresses excess-property checking, so a stale `acceptStatus:` is silently ignored and the
+    status quietly starts throwing again. Grep for `acceptStatus:`; do not trust `tsc`.
+
+    Also breaking for **surface authors**: an `interpret` hook now runs on responses it was
+    previously guaranteed never to see, with no compile-time signal (the signature is unchanged).
+    Compose `httpFailure` in front of your own rules, as the built-in `graphql` / `download` / `llm`
+    hooks now do, or a `500` will be read as a successful payload. `SurfaceOutcome` also gains a
+    retry arm (`{ ok: false, retry: true, message, after? }`), so a surface that has read the body
+    can ask for another attempt within the `retry.attempts` budget — closing
+    [#529](https://github.com/rejifald/StitchAPI/issues/529).
+
+    Two smaller visible changes: `__config.kind` now reads `'http'` on a plain stitch instead of
+    being absent (the default surface is selected, not implied), and the pipeline read-out
+    (`stitch diagram`, the MCP teaching list) gains an `interpret` stage for **every** stitch — the
+    discoverability gap #529 opened with.
+
 - **`document` and `operationName` now require the graphql surface at compile time.** Both are
   read only by the graphql surface's `buildRequest`, so authoring either on any other surface
   was silently dead config — the document was dropped and a plain request went out with none of
