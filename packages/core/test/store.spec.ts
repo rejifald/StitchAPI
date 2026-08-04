@@ -2,11 +2,12 @@
 // state shared across separate stitches (simulating two workers sharing Redis); the default
 // in-memory store keeps them independent.
 import { memoryStore, stitch } from '../src';
-import type { Stitch } from '../src';
+import type { Clock, Stitch } from '../src';
 import { cookieSession, env } from '../src/auth';
 import { createThrottle } from '../src/resilience';
 import { createStoreThrottle } from '../src/store';
 import type { Throttle } from '../src/store';
+import { manualClock } from '../src/test-clock';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -260,5 +261,133 @@ describe('Pluggable store — throttle', () => {
             expect((ats[n - 1] ?? 0) - (ats[n - 2] ?? 0)).toBeGreaterThan(120);
             expect((ats[n - 2] ?? 0) - (ats[n - 3] ?? 0)).toBeGreaterThan(120);
         }
+    });
+
+    // The even-spacing fix above covered the steady state; this is the COLD START. A process
+    // joining mid-window claims slots whose scheduled times have already elapsed, and granting
+    // each on claim drained them in one tick — a burst that scaled with the WINDOW rather than
+    // the declared rate. `'2/s'` and `'120/m'` are both a 500ms spacing, but a one-minute window
+    // left up to 119 elapsed slots to drain against one for `'2/s'`. It is a rolling deploy, a
+    // new worker, a lambda — not the sustained-overload edge `createStoreThrottle` documents.
+    test('a store-backed throttle does not burst when a process joins mid-window', async () => {
+        // 59.5s is mid-window for BOTH rates: '2/s' is 500ms into its window, '120/m' 59.5s into
+        // its own — so the two differ only in how much elapsed slack the window holds.
+        const grants = async (
+            make: (c: Clock) => Throttle,
+        ): Promise<number[]> => {
+            const clock = manualClock(59_500);
+            const t = make(clock);
+            const at: number[] = [];
+            const all = Promise.all(
+                Array.from({ length: 5 }, () =>
+                    t.acquire('k').then(() => {
+                        at.push(clock.now());
+                    }),
+                ),
+            );
+            await clock.advance(60_000);
+            await all;
+            return at;
+        };
+
+        const perSecond = await grants((c) =>
+            createStoreThrottle({ rate: '2/s' }, memoryStore(), c),
+        );
+        const perMinute = await grants((c) =>
+            createStoreThrottle({ rate: '120/m' }, memoryStore(), c),
+        );
+        // The widened denominator (ADR 0023 Decision 3) gives the same 500ms spacing a third
+        // spelling, over a 500ms window — the shortest of the three, against the minute-long one
+        // above. If the window length still leaked into behaviour, these two would disagree.
+        const perHalfSecond = await grants((c) =>
+            createStoreThrottle({ rate: '1/500ms' }, memoryStore(), c),
+        );
+        const inProcess = await grants((c) =>
+            createThrottle({ rate: '2/s' }, c),
+        );
+
+        // No two grants closer than the declared 500ms — the burst is gone. Before the fix
+        // '120/m' granted all five at once (59500 ×5) and '2/s' granted two.
+        for (const at of [perSecond, perMinute, perHalfSecond])
+            for (let i = 1; i < at.length; i++)
+                expect((at[i] ?? 0) - (at[i - 1] ?? 0)).toBe(500);
+
+        // And the window length no longer changes the answer: one declared spacing, one limiter,
+        // store-backed or not, however the ratio is spelled. `'2/s'`, `'120/m'` and `'1/500ms'`
+        // span windows from half a second to a minute and are byte-identical.
+        expect(perMinute).toEqual(perSecond);
+        expect(perHalfSecond).toEqual(perSecond);
+        expect(perSecond).toEqual(inProcess);
+        expect(perSecond).toEqual([59_500, 60_000, 60_500, 61_000, 61_500]);
+    });
+
+    // The companion to the test above. That fix's bound is PER-PROCESS, so this pins what it does
+    // and does not buy a FLEET: two `createStoreThrottle` instances over one store stand in for
+    // two workers sharing Redis. The mid-window residue is a known, deferred gap — pinned here so
+    // it is a decision on the record rather than a surprise, and so the fleet-wide GCRA cell
+    // `createStoreThrottle` defers has a test to break when it lands.
+    test('a fleet over one store: the shared budget holds at a window boundary; mid-window the residue is bounded by process count', async () => {
+        const fleet = async (
+            rate: string,
+            procs: number,
+            each: number,
+            start: number,
+        ): Promise<{ p: number; t: number }[]> => {
+            const clock = manualClock(start);
+            const store = memoryStore();
+            const ts = Array.from({ length: procs }, () =>
+                createStoreThrottle({ rate }, store, clock),
+            );
+            const at: { p: number; t: number }[] = [];
+            const all: Promise<void>[] = [];
+            // Round-robin, so slot allocation interleaves the way concurrent workers would.
+            for (let i = 0; i < each; i++)
+                for (let p = 0; p < procs; p++)
+                    all.push(
+                        ts[p]!.acquire('k').then(() => {
+                            at.push({ p, t: clock.now() });
+                        }),
+                    );
+            await clock.advance(180_000);
+            await Promise.all(all);
+            return at;
+        };
+
+        // 1. AT a window boundary every slot is still in the future, so the shared counter binds
+        //    and two processes draw from ONE budget: 500ms apart fleet-wide, not 500ms apart each.
+        //    This is what the store is for, and the property a per-process cursor could most
+        //    easily have broken.
+        const atBoundary = await fleet('2/s', 2, 3, 0);
+        expect(atBoundary.map((x) => x.t)).toEqual([
+            0, 500, 1000, 1500, 2000, 2500,
+        ]);
+
+        // 2. MID-window, every slot up to `now` is already stale, and a stale slot cannot pace
+        //    anybody — only each process's own cursor can.
+        const midWindow = await fleet('120/m', 2, 3, 59_500);
+
+        //    a. Each process still honours the declared spacing internally. That is the invariant
+        //       the cursor buys, and the one that was violated outright before it.
+        for (const p of [0, 1]) {
+            const mine = midWindow.filter((x) => x.p === p).map((x) => x.t);
+            for (let i = 1; i < mine.length; i++)
+                expect((mine[i] ?? 0) - (mine[i - 1] ?? 0)).toBe(500);
+        }
+
+        //    b. So the instantaneous burst is bounded by the PROCESS COUNT rather than by how many
+        //       slots the window had left unclaimed. One process used to drain all of them into a
+        //       single instant; two processes now put exactly two calls there.
+        const perInstant = new Map<number, number>();
+        for (const { t } of midWindow)
+            perInstant.set(t, (perInstant.get(t) ?? 0) + 1);
+        expect(Math.max(...perInstant.values())).toBe(2);
+
+        //    c. And here is the residue itself, asserted rather than described: through the stale
+        //       prefix the fleet emits at 2× the declared rate (N× for N workers), recovering only
+        //       once the slots catch up with the clock. Closing this needs the fleet-wide GCRA
+        //       cell — when that lands, THIS is the assertion that should fail.
+        expect(midWindow.map((x) => x.t)).toEqual([
+            59_500, 59_500, 60_000, 60_000, 60_500, 60_500,
+        ]);
     });
 });

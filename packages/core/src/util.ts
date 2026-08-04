@@ -119,11 +119,32 @@ export function parseBytes(s: number | string | undefined): number | undefined {
 }
 
 /**
+ * `setTimeout` clamps any delay past the 32-bit signed ceiling to **1ms**, so a spacing beyond
+ * this cannot be honoured — the limiter would run *unlimited* instead of very slowly. Rejected
+ * at the grammar (see {@link parseRate}) rather than clamped: clamping would silently pace
+ * FASTER than asked, which is the direction that hurts.
+ */
+const MAX_SPACING = 2_147_483_647;
+
+/**
  * Parse a rate into `{ count, per }` — the number of grants and the window length in ms.
- * Grammar: `<count>/<unit>` with an INTEGER count and unit `ms` | `s` | `m` (`"2/s"`, `"10/m"`,
- * `"1/ms"`; whitespace around the slash is tolerated). The third house token grammar, alongside
- * {@link parseDuration} and {@link parseBytes}, and exported for the same reason: a peer package
- * that takes an authored rate parses it the way core does instead of mirroring the grammar.
+ * Grammar: `<count>/<duration>` with a POSITIVE INTEGER count and a {@link parseDuration} token
+ * for the denominator, where a **bare unit is its one-unit token** (`"2/s"` ≡ `"2/1s"`); so
+ * `"2/s"`, `"10/m"`, `"1000/h"`, `"100/15m"` and `"2/500ms"` all parse, and whitespace around
+ * the slash is tolerated. The third house token grammar, alongside {@link parseDuration} and
+ * {@link parseBytes}, and exported for the same reason: a peer package that takes an authored
+ * rate parses it the way core does instead of mirroring it.
+ *
+ * The denominator is a duration, so it uses the one house duration grammar (CONTRACT.md P17)
+ * rather than a scale table of its own — which is what the old `ms|s|m` was, a hand-copied
+ * subset that left the value space with holes. An ordinary 1000/hour quota is a 3600ms spacing,
+ * and before ADR 0023 Decision 3 **no legal token denoted it**: `60000/count = 3600` needs a
+ * fractional count, and counts are integers.
+ *
+ * **`"2/500ms"` ≡ `"4/s"` ≡ `"240/m"`, and that is the design, not an approximation.** A rate
+ * declares a minimum spacing, not a bucket — there is no capacity parameter for the window
+ * length to set — so any two rates with the same ratio ARE the same limiter, in-process and
+ * store-backed alike. Pinned across three window lengths in `store.spec.ts`.
  *
  * **Unlike those two, an unparseable token THROWS rather than resolving to `undefined`.** The
  * divergence is deliberate, and it runs in the same direction as their fallback rather than
@@ -135,15 +156,57 @@ export function parseBytes(s: number | string | undefined): number | undefined {
  * fail in opposite directions. Both callers guard with a presence check, so an omitted `rate`
  * never reaches here — only a non-empty token that could not be read.
  *
+ * **Failing loud is necessary and was not sufficient.** Three values sit inside what a looser
+ * grammar would ACCEPT and each would silently mean *no limit at all* — the unbounded quiet
+ * path reached through the accepting branch rather than the rejecting one — so each is rejected
+ * explicitly:
+ * - a **zero count** (`"0/s"`, once legal under `\d+`) → spacing `per / 0` = `Infinity`, which
+ *   `setTimeout` clamps to 1ms: it read as "block everything" under an injected {@link Clock},
+ *   where the test suite sees it, and was unlimited on the system clock;
+ * - a **non-positive or non-finite window** (`"2/0s"`, `"2/-500"`) → `parseDuration` returns a
+ *   real `0` / `-500` for those rather than `undefined`, and both limiters read `spacing <= 0`
+ *   as "no pacing configured";
+ * - a spacing past {@link MAX_SPACING} (`"1/30d"`) → the same `setTimeout` clamp as the first.
+ *
  * A rate is a string and only a string (no `number | string` widening): it is two quantities,
  * not a magnitude, so a bare `2` would have to invent a default window to denote anything. See
  * CONTRACT.md P17/P25, which widen a magnitude that already carries a house unit — this has none.
  */
 export function parseRate(r: string): { count: number; per: number } {
-    const m = /^(\d+)\s*\/\s*(ms|s|m)$/.exec(r.trim());
-    if (!m) throw new Error(`bad rate: ${r}`);
-    const per = m[2] === 'ms' ? 1 : m[2] === 's' ? 1000 : 60000;
-    return { count: parseInt(m[1] ?? '', 10), per };
+    // Split on the first slash by hand rather than matching the whole token in one regex. A
+    // single pattern for both halves wants `\s*\/\s*(.+)$`, whose trailing `\s*` and `.+` both
+    // match a space — the overlap `js/polynomial-redos` flags on caller-supplied input.
+    //
+    // That alert is a pattern match, not a measured blowup: `(.+)$` succeeds as soon as one
+    // character remains, so the engine never enumerates the splits, and the one-regex form
+    // measured LINEAR on every shape tried (including the `'1/' + ' '.repeat(n)` the alert
+    // names). It is replaced rather than dismissed because the hand-rolled form is structurally
+    // free of the pattern and no harder to read — the same trade {@link stripTrailingSlashes}
+    // takes one function below, where the quadratic behaviour IS real. Each half is now checked
+    // by an anchored pattern over a bounded slice with nothing to backtrack across; `indexOf` +
+    // `slice` are linear, and `parseDuration` owns the denominator.
+    const t = r.trim();
+    const slash = t.indexOf('/');
+    if (slash === -1) throw new Error(`bad rate: ${r}`);
+    const head = t.slice(0, slash).trim();
+    if (!/^[1-9]\d*$/.test(head)) throw new Error(`bad rate: ${r}`);
+    const count = parseInt(head, 10);
+    const denom = t.slice(slash + 1).trim();
+    // A bare unit is the one-unit token: `'s'` ≡ `'1s'`. Anything else goes to `parseDuration`
+    // as written, so `'500ms'`, `'15m'` and the raw-ms `'500'` all mean what they mean everywhere.
+    const per = parseDuration(
+        /^(?:ms|s|m|h|d)$/.test(denom) ? `1${denom}` : denom,
+    );
+    // `parseDuration` resolves a bad token to `undefined`, but also parses `'0s'` to a real 0 and
+    // `'-500'` through its numeric-string arm — both of which would disable pacing rather than
+    // fail, so the window is checked here rather than trusted.
+    if (per === undefined || !Number.isFinite(per) || per <= 0)
+        throw new Error(`bad rate: ${r}`);
+    if (per / count > MAX_SPACING)
+        throw new Error(
+            `bad rate: ${r} — a spacing of ${per / count}ms is past the ${MAX_SPACING}ms timer ceiling`,
+        );
+    return { count, per };
 }
 
 /**

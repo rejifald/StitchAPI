@@ -121,6 +121,80 @@ describe('parseRate', () => {
     it('throws on a malformed rate', () => {
         expect(() => parseRate('fast')).toThrow(/bad rate/);
     });
+
+    // The denominator is a full `parseDuration` token (ADR 0023 Decision 3). These two are the
+    // motivating cases: neither has ANY spelling in the old `<count>/<ms|s|m>` grammar, because
+    // both need a fractional count over a bare unit (1000/h is 16.67/m) and counts are integers.
+    it('takes a full duration token as the denominator', () => {
+        expect(parseRate('1000/h')).toEqual({ count: 1000, per: 3_600_000 });
+        expect(parseRate('100/15m')).toEqual({ count: 100, per: 900_000 });
+        expect(parseRate('2/500ms')).toEqual({ count: 2, per: 500 });
+        expect(parseRate('1/2d')).toEqual({ count: 1, per: 172_800_000 });
+        // A raw-ms numeric denominator is a duration too, per the one shared grammar.
+        expect(parseRate('2/500')).toEqual({ count: 2, per: 500 });
+    });
+
+    it('reads a bare unit as one of that unit', () => {
+        expect(parseRate('2/s')).toEqual(parseRate('2/1s'));
+        expect(parseRate('1/h')).toEqual({ count: 1, per: 3_600_000 });
+        expect(parseRate('1/d')).toEqual({ count: 1, per: 86_400_000 });
+    });
+
+    // `'2/500ms'` and `'4/s'` are the same limiter, and that is the design: a rate declares a
+    // spacing, not a bucket, so there is no capacity for the window length to set.
+    it('collapses equal ratios to one spacing', () => {
+        const spacing = (r: string) => {
+            const { count, per } = parseRate(r);
+            return per / count;
+        };
+        expect(spacing('2/500ms')).toBe(250);
+        expect(spacing('4/s')).toBe(250);
+        expect(spacing('240/m')).toBe(250);
+        expect(spacing('1000/h')).toBe(3600);
+    });
+
+    // A window that is zero, negative, or unreadable would leave `spacing <= 0`, which both
+    // limiters treat as "no pacing configured" — the same silent-unlimited failure as `'0/s'`.
+    // `parseDuration` reads `'0s'` as a real 0 and `'-500'` through its numeric arm, so neither
+    // arrives as `undefined` and both are checked explicitly.
+    it('rejects a non-positive or unreadable window', () => {
+        expect(() => parseRate('2/0s')).toThrow(/bad rate/);
+        expect(() => parseRate('2/0')).toThrow(/bad rate/);
+        expect(() => parseRate('2/-500')).toThrow(/bad rate/);
+        expect(() => parseRate('2/-5s')).toThrow(/bad rate/);
+        expect(() => parseRate('2/abc')).toThrow(/bad rate/);
+        expect(() => parseRate('2/')).toThrow(/bad rate/);
+        expect(() => parseRate('/s')).toThrow(/bad rate/);
+        expect(() => parseRate('2/2/s')).toThrow(/bad rate/);
+        expect(() => parseRate('2/Infinity')).toThrow(/bad rate/);
+    });
+
+    // The top of the range fails the same way `'0/s'` does at the bottom: `setTimeout` clamps a
+    // delay past 2^31-1 to 1ms, so the limiter would run unlimited rather than very slowly.
+    // Rejected rather than clamped — clamping would pace FASTER than asked.
+    it('rejects a spacing past the timer ceiling, and names it', () => {
+        expect(() => parseRate('1/30d')).toThrow(/timer ceiling/);
+        expect(() => parseRate('1/25d')).toThrow(/bad rate/);
+        expect(parseRate('1/24d')).toEqual({ count: 1, per: 2_073_600_000 });
+        // A big enough count brings the same window back under the ceiling.
+        expect(parseRate('2/30d')).toEqual({ count: 2, per: 2_592_000_000 });
+    });
+
+    // `'0/s'` used to parse to a spacing of Infinity. Under an injected clock that reads as "block
+    // everything"; on the system clock `setTimeout` clamps the wait to 1ms and it is no limit at
+    // all — a config that validates, tests as a hard stop, and ships as unlimited.
+    it('rejects a zero count rather than parsing it to an infinite spacing', () => {
+        expect(() => parseRate('0/s')).toThrow(/bad rate/);
+        expect(() => parseRate('0/ms')).toThrow(/bad rate/);
+        expect(() => parseRate('0/m')).toThrow(/bad rate/);
+        expect(() => parseRate('00/s')).toThrow(/bad rate/);
+        expect(() => parseRate(' 0 / s ')).toThrow(/bad rate/);
+    });
+
+    it('still rejects fractional and negative counts', () => {
+        expect(() => parseRate('0.5/s')).toThrow(/bad rate/);
+        expect(() => parseRate('-1/s')).toThrow(/bad rate/);
+    });
 });
 
 describe('stripTrailingSlashes', () => {

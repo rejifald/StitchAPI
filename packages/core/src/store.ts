@@ -116,6 +116,18 @@ export interface Throttle {
  * boundary). A SHARED store paces calls across the whole fleet; concurrency stays in-process (a
  * distributed semaphore needs leases — out of scope here).
  *
+ * That slot schedule is a **floor**, applied on top of a per-key local pacing cursor — the same one
+ * {@link createThrottle} keeps. Without the cursor a process joining mid-window would claim slots
+ * whose scheduled times have already elapsed and grant them all at once (see `acquire`), which is
+ * why two rates declaring one spacing (`'2/s'`, `'120/m'`) are the same limiter here as well as
+ * in-process. Each grant is `max(now, cursor, slot)`.
+ *
+ * The cursor bounds a burst PER PROCESS, which is the limit of what it can do without a new store
+ * primitive: a slot already in the past paces nobody, so N workers that all start mid-window emit
+ * at N× the declared rate until the slots catch up with the clock. Starting at a window boundary
+ * (or once caught up) the slots are in the future and the fleet paces on one shared budget. Pinned
+ * both ways in `store.spec.ts`, so the gap is a decision on the record, not a surprise.
+ *
  * The counter is per-window, so under SUSTAINED overload (offered load above the limit across
  * multiple windows) pacing is approximate at window edges: backlog scheduled on one window's
  * counter can overlap the next window's fresh counter. Exact continuous GCRA across processes would
@@ -135,6 +147,7 @@ export function createStoreThrottle(
             inFlight: number;
             waiters: (() => void)[];
             lastWindow?: number; // windowStart of the last `rl:` key this throttle minted
+            nextGrantAt?: number; // earliest THIS process may take another rate grant
         }
     >();
 
@@ -191,8 +204,27 @@ export function createStoreThrottle(
                 `rl:${key}:${windowStart}`,
                 rate.per + 100,
             );
-            const grantAt = windowStart + (n - 1) * spacing;
-            const wait = grantAt - clock.now();
+            // The slot is a FLOOR on the grant, not the grant time itself. A process that joins
+            // mid-window finds every slot up to `n` already scheduled in the PAST, and granting
+            // each of those the moment it is claimed drains them in one tick — a burst of up to
+            // `count-1` calls with no spacing at all, scaling with the window length: `'2/s'` and
+            // `'120/m'` declare the same 500ms spacing, but one leaves a single elapsed slot to
+            // drain and the other leaves 119. That is a cold start (a rolling deploy, a new
+            // worker, a lambda), not the sustained-overload edge described above.
+            // So pace on the same local cursor the in-process limiter keeps and take the LATER of
+            // the two: the shared counter still allocates slots across the fleet, while no single
+            // process ever grants two calls closer than `spacing`. The bound is PER-PROCESS, and
+            // that is the whole of what it buys — a stale slot paces nobody, so while the stale
+            // prefix lasts only each process's own cursor holds the line and N workers emit at N×
+            // the declared rate. At a window boundary the slots are in the future and the fleet
+            // does pace on one budget; closing the mid-window case needs the GCRA cell below.
+            const at = Math.max(
+                clock.now(),
+                s.nextGrantAt ?? 0,
+                windowStart + (n - 1) * spacing,
+            );
+            s.nextGrantAt = at + spacing;
+            const wait = at - clock.now();
             if (wait > 0) {
                 await clock.sleep(wait);
                 waited += wait;
@@ -210,7 +242,10 @@ export function createStoreThrottle(
         else if (s.inFlight > 0) s.inFlight--;
         // Drop a fully-idle key's state so the `local` Map doesn't accumulate one entry per
         // ever-seen key. Keep it only while it still carries window bookkeeping (`lastWindow`),
-        // which a rate-paced key needs to clean up its `rl:` key on the next rollover.
+        // which a rate-paced key needs to clean up its `rl:` key on the next rollover. That
+        // condition also keeps the pacing cursor (`nextGrantAt`) alive for the life of a
+        // rate-paced key — dropping one mid-pace would reset it and let the next acquire burst,
+        // the same trap `createThrottle.release` guards against explicitly.
         if (
             s.inFlight === 0 &&
             s.waiters.length === 0 &&
