@@ -173,10 +173,14 @@ const poller: Surface = {
     interpret: (res, cfg) =>
         verdictOf(res, cfg) ??
         ((res.body as { status?: string }).status === 'PENDING'
-            ? { ok: false, retry: true, message: 'PENDING', after: 1_000 }
+            ? { ok: false, retry: true, message: 'PENDING', after: '1s' }
             : { ok: true, data: res.body }),
 };
 ```
+
+`after` is how long to wait before the next attempt, in the same duration form as
+every other authored duration — `1_000` or `'1s'`. Omit it and the configured
+`backoff` curve paces the wait instead.
 
 A body-driven retry shares the `retry.attempts` budget and reuses the run's
 `Idempotency-Key`, so replaying a write is as safe as a status-driven retry.

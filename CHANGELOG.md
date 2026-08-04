@@ -53,6 +53,21 @@ npm release are grouped under the in-development version that introduced them.
     parking the call, and the wait ends early on the request's `AbortSignal`. A stitch with `retry`
     and no `timeout.total` waits as long as the server asks.
 
+- **`SurfaceOutcome`'s retry arm takes the canonical duration form: `after` widens to
+  `number | string`.** It was raw ms only, so `after: '5s'` — the spelling every other authored
+  duration in the library accepts — did not typecheck, and the value is now run through the shared
+  `parseDuration` rather than used raw. `after` is authored by a surface, and `Surface` is a public
+  extension seam ([P21](docs/CONTRACT.md)), so
+  [P17](docs/CONTRACT.md#p17--one-canonical-duration-form)'s consumer-authored rule applies to it:
+  raw ms **or** a token like `'5s'`, through the one shared parser.
+
+    Worth knowing if you had cast around the old type: an unparsed token reached `setTimeout`, which
+    coerces it to `NaN` and fires immediately — so the wait collapsed to ~0 instead of failing.
+    Covered now by a test that asserts the elapsed floor, which fails at 14ms without the parse.
+
+    Widening only, so per [P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)
+    this is non-breaking and needs no alias — every existing `after: 1_000` keeps working unchanged.
+
 - **`acceptStatus` folds into a `verdict` envelope, and response classification becomes one
   decision.** ([ADR 0022](docs/adr/0022-response-classification-merges-at-interpret.md)) The engine
   used to decide what a response _was_ in two places at two times: a status check inside the attempt

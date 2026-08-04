@@ -226,6 +226,43 @@ describe('the SurfaceOutcome retry arm (Decision 5)', () => {
         expect(server.callCount('/stuck')).toBe(2);
     });
 
+    // `after` is authored by a surface, so it takes the house duration form (P17) — not raw ms
+    // only. The token has to be PARSED, not coerced: an unparsed `'700ms'` reaches `sleepWithin`
+    // as a string and `remaining <= ms` compares false, so the wait silently collapses to ~0.
+    test('after accepts a duration token, not just raw ms', async () => {
+        const slowPoller: Surface = {
+            id: 'slow-poller',
+            interpret: (res) => {
+                const body = res.body as { status?: string };
+                return body.status === 'PENDING'
+                    ? {
+                          ok: false,
+                          retry: true,
+                          message: 'PENDING',
+                          after: '700ms',
+                      }
+                    : { ok: true, data: body };
+            },
+        };
+        server.route('GET', '/slow-job', {
+            statuses: [200, 200],
+            body: [{ status: 'PENDING' }, { status: 'READY' }],
+        });
+        const call = stitch({
+            baseUrl: server.url,
+            path: '/slow-job',
+            kind: slowPoller,
+            // A 1ms fixed backoff is what a NON-parsing engine would fall back to, so the
+            // elapsed floor below fails if `after` is dropped instead of parsed.
+            retry: { attempts: 2, backoff: { curve: 'fixed', base: 1 } },
+        });
+
+        const t0 = Date.now();
+        await expect(call()).resolves.toEqual({ status: 'READY' });
+        expect(Date.now() - t0).toBeGreaterThanOrEqual(600);
+        expect(server.callCount('/slow-job')).toBe(2);
+    }, 15000);
+
     test('with no retry config it is a single attempt and an ordinary failure', async () => {
         server.route('GET', '/once', { body: { status: 'PENDING' } });
         const err = await rejectionOf(
