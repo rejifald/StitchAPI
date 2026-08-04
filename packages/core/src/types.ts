@@ -993,11 +993,19 @@ export interface RetryOptions {
 }
 export interface ThrottleOptions {
     /**
-     * Target pace as a `"count/interval"` string — `'2/s'`, `'10/m'`, `'1/ms'`. A minimum spacing
-     * between successive calls (`interval / count`, applied before any request leaves), not a token
-     * bucket. The dominant field: a bare string is the P12 shorthand for `{ rate }`
-     * (`throttle: '2/s'` ≡ `throttle: { rate: '2/s' }`). The grammar is `<count>/<unit>` with an
-     * INTEGER count and unit `ms` | `s` | `m`, read by the shared {@link parseRate}.
+     * Target pace as a `"count/interval"` string — `'2/s'`, `'1000/h'`, `'100/15m'`, `'2/500ms'`.
+     * A minimum spacing between successive calls (`interval / count`, applied before any request
+     * leaves), not a token bucket. The dominant field: a bare string is the P12 shorthand for
+     * `{ rate }` (`throttle: '2/s'` ≡ `throttle: { rate: '2/s' }`). The grammar is
+     * `<count>/<duration>` with a POSITIVE INTEGER count and any {@link parseDuration} token for
+     * the denominator, where a bare unit means one of that unit (`'2/s'` ≡ `'2/1s'`) — read by
+     * the shared {@link parseRate}.
+     *
+     * Because it paces rather than buckets, the only thing it reads is the **ratio**: `'2/500ms'`,
+     * `'4/s'` and `'240/m'` all declare a 250ms gap and are the same limiter, in-process and
+     * store-backed alike. Window length is a way of spelling the ratio, not a burst allowance —
+     * there is no capacity for a longer window to grant. Where a real quota needs spending the
+     * way the vendor accounts for it, hand the backoff to an outer gate with `delegate`.
      *
      * A **string and only a string**, deliberately. A duration or a byte cap also accepts a bare
      * number because each is a magnitude over a house unit — ms, bytes — so `5_000` and `4096`
@@ -1007,6 +1015,8 @@ export interface ThrottleOptions {
      *
      * An unparseable token **throws** at construction rather than falling back to "no limit" —
      * the one place a house parser fails loud, for the reason spelled out on {@link parseRate}.
+     * That covers both degenerate ends of the range too, since each would also mean no limit: a
+     * zero count, and a spacing past the ~24.8-day timer ceiling.
      */
     rate?: string;
     /** Cap on simultaneous in-flight calls. Independent of `rate` — either may be set on its own. */

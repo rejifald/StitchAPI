@@ -34,12 +34,13 @@ const MS_SCALE: Record<(typeof MS_UNITS)[number], number> = {
     d: 86_400_000,
 };
 
-const RATE_UNITS = ['ms', 's', 'm'] as const;
-const RATE_WINDOW: Record<(typeof RATE_UNITS)[number], number> = {
-    ms: 1,
-    s: 1000,
-    m: 60_000,
-};
+// A rate's denominator IS a duration (ADR 0023 Decision 3), so it has no scale table of its own —
+// it reuses MS_SCALE above. The separate three-entry RATE_WINDOW this replaced was the hand-copied
+// subset that left the value space with holes (no token denoted a 1000/hour quota's 3600ms spacing).
+//
+// `setTimeout` clamps a delay past the 32-bit signed ceiling to 1ms, so a spacing beyond it would
+// run UNLIMITED. Restated here rather than imported, per this file's rule.
+const MAX_SPACING = 2_147_483_647;
 
 // `1000 * 1024**4` is ~1.1e15, comfortably inside Number.MAX_SAFE_INTEGER, so every exact
 // equality below stays exact — a wider magnitude would be testing float rounding, not parsing.
@@ -192,15 +193,42 @@ describe('parseDuration (property)', () => {
 });
 
 describe('parseRate (property)', () => {
-    it('splits a rate into its count and window length', () => {
+    // A bare unit is its one-unit token, over the SAME unit set as `parseDuration` — `'2/h'` and
+    // `'2/d'` are the units the old three-entry grammar could not spell.
+    it('reads a bare unit as one of that unit, across every duration unit', () => {
         fc.assert(
             fc.property(
                 fc.integer({ min: 1, max: 10_000 }),
-                fc.constantFrom(...RATE_UNITS),
+                fc.constantFrom(...MS_UNITS),
                 (count, unit) => {
                     expect(parseRate(`${count}/${unit}`)).toEqual({
                         count,
-                        per: RATE_WINDOW[unit],
+                        per: MS_SCALE[unit],
+                    });
+                    // …and the bare unit is exactly the 1-unit token, not a near-miss of it.
+                    expect(parseRate(`${count}/1${unit}`)).toEqual(
+                        parseRate(`${count}/${unit}`),
+                    );
+                },
+            ),
+        );
+    });
+
+    // The denominator is a full duration token, which is what makes '1000/h' and '100/15m'
+    // expressible at all — neither has ANY spelling in the old grammar (both need a fractional
+    // count over a bare unit, and counts are integers).
+    it('scales a multi-unit denominator by its documented window', () => {
+        fc.assert(
+            fc.property(
+                fc.integer({ min: 1, max: 10_000 }),
+                fc.integer({ min: 1, max: 1000 }),
+                fc.constantFrom(...MS_UNITS),
+                (count, n, unit) => {
+                    const per = n * MS_SCALE[unit];
+                    fc.pre(per / count <= MAX_SPACING); // past the ceiling is its own property below
+                    expect(parseRate(`${count}/${n}${unit}`)).toEqual({
+                        count,
+                        per,
                     });
                 },
             ),
@@ -211,7 +239,7 @@ describe('parseRate (property)', () => {
         fc.assert(
             fc.property(
                 fc.integer({ min: 1, max: 10_000 }),
-                fc.constantFrom(...RATE_UNITS),
+                fc.constantFrom(...MS_UNITS),
                 (count, unit) => {
                     expect(parseRate(`  ${count} / ${unit}  `)).toEqual(
                         parseRate(`${count}/${unit}`),
@@ -221,31 +249,43 @@ describe('parseRate (property)', () => {
         );
     });
 
-    it('throws on anything outside the grammar', () => {
+    // The claim Decision 3 rests on: the denominator's grammar IS `parseDuration`'s, so a
+    // denominator that parser rejects (or reads as non-positive) is a rate this one rejects.
+    // Using `parseDuration` here is the property, not a mirror of `parseRate`'s own arithmetic —
+    // it asserts the two agree, which is the whole point of deleting the second scale table.
+    it('rejects exactly the denominators parseDuration will not read as a positive window', () => {
         fc.assert(
             fc.property(
                 fc
                     .string()
+                    // Bare units are the documented exception — `'s'` means `'1s'`, and
+                    // `parseDuration('s')` alone is undefined.
                     .filter(
-                        (s) => !/^[1-9]\d*\s*\/\s*(ms|s|m)$/.test(s.trim()),
-                    ),
-                (bad) => {
-                    expect(() => parseRate(bad)).toThrow(/bad rate/);
+                        (d) =>
+                            !(MS_UNITS as readonly string[]).includes(d.trim()),
+                    )
+                    .filter((d) => {
+                        const per = parseDuration(d.trim());
+                        return (
+                            per === undefined ||
+                            !Number.isFinite(per) ||
+                            per <= 0
+                        );
+                    }),
+                (d) => {
+                    expect(() => parseRate(`1/${d}`)).toThrow(/bad rate/);
                 },
             ),
         );
     });
 
-    // A zero count parses to a spacing of `per / 0` = Infinity, which `setTimeout` clamps to 1ms —
-    // "block everything" under an injected clock, NO limit at all on the system clock. Rejected at
-    // the grammar, for every spelling of zero and every unit.
-    it('rejects a zero count', () => {
+    it('throws on a count that is not a positive integer', () => {
         fc.assert(
             fc.property(
-                fc.constantFrom('0', '00', '000'),
-                fc.constantFrom(...RATE_UNITS),
-                (zero, unit) => {
-                    expect(() => parseRate(`${zero}/${unit}`)).toThrow(
+                fc.constantFrom('0', '00', '0.5', '-1', '1.5', '', ' ', 'x'),
+                fc.constantFrom(...MS_UNITS),
+                (count, unit) => {
+                    expect(() => parseRate(`${count}/${unit}`)).toThrow(
                         /bad rate/,
                     );
                 },
@@ -253,16 +293,42 @@ describe('parseRate (property)', () => {
         );
     });
 
+    // Both ends of the spacing range fail the same way and so are rejected the same way: a zero
+    // count gives Infinity, a window past the ceiling gives a delay `setTimeout` clamps to 1ms.
+    // Either would run the limiter UNLIMITED — the one outcome a limiter must never have.
+    it('throws on a spacing past the timer ceiling', () => {
+        fc.assert(
+            fc.property(
+                fc.integer({ min: 1, max: 100 }),
+                fc.integer({ min: 25, max: 10_000 }),
+                (count, days) => {
+                    const per = days * MS_SCALE.d;
+                    fc.pre(per / count > MAX_SPACING);
+                    expect(() => parseRate(`${count}/${days}d`)).toThrow(
+                        /bad rate/,
+                    );
+                },
+            ),
+        );
+        // …and the largest spacing that CAN be honoured still parses, so the bound is the timer's
+        // and not an off-by-one of our own.
+        expect(parseRate('1/24d')).toEqual({ count: 1, per: 24 * MS_SCALE.d });
+    });
+
     // The only thing either limiter consumes is `per / count`, so any two rates with the same
-    // ratio ARE the same limiter — the property that lets the grammar stay a ratio.
-    it('equal ratios parse to equal spacing', () => {
+    // ratio ARE the same limiter. With the denominator widened this is now sayable three ways,
+    // and `'2/500ms'` ≡ `'4/s'` is the case the ADR argued is the design rather than a collapse.
+    it('equal ratios parse to equal spacing, however they are spelled', () => {
         fc.assert(
             fc.property(fc.integer({ min: 1, max: 1000 }), (n) => {
-                const perSecond = parseRate(`${n}/s`);
-                const perMinute = parseRate(`${n * 60}/m`);
-                expect(perMinute.per / perMinute.count).toBe(
-                    perSecond.per / perSecond.count,
-                );
+                const spacing = (r: string) => {
+                    const { count, per } = parseRate(r);
+                    return per / count;
+                };
+                expect(spacing(`${n * 60}/m`)).toBe(spacing(`${n}/s`));
+                expect(spacing(`${n}/1000ms`)).toBe(spacing(`${n}/s`));
+                expect(spacing(`${n * 2}/2s`)).toBe(spacing(`${n}/s`));
+                expect(spacing(`${n * 3600}/h`)).toBe(spacing(`${n}/s`));
             }),
         );
     });

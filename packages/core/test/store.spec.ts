@@ -296,19 +296,27 @@ describe('Pluggable store — throttle', () => {
         const perMinute = await grants((c) =>
             createStoreThrottle({ rate: '120/m' }, memoryStore(), c),
         );
+        // The widened denominator (ADR 0023 Decision 3) gives the same 500ms spacing a third
+        // spelling, over a 500ms window — the shortest of the three, against the minute-long one
+        // above. If the window length still leaked into behaviour, these two would disagree.
+        const perHalfSecond = await grants((c) =>
+            createStoreThrottle({ rate: '1/500ms' }, memoryStore(), c),
+        );
         const inProcess = await grants((c) =>
             createThrottle({ rate: '2/s' }, c),
         );
 
         // No two grants closer than the declared 500ms — the burst is gone. Before the fix
         // '120/m' granted all five at once (59500 ×5) and '2/s' granted two.
-        for (const at of [perSecond, perMinute])
+        for (const at of [perSecond, perMinute, perHalfSecond])
             for (let i = 1; i < at.length; i++)
                 expect((at[i] ?? 0) - (at[i - 1] ?? 0)).toBe(500);
 
         // And the window length no longer changes the answer: one declared spacing, one limiter,
-        // store-backed or not.
+        // store-backed or not, however the ratio is spelled. `'2/s'`, `'120/m'` and `'1/500ms'`
+        // span windows from half a second to a minute and are byte-identical.
         expect(perMinute).toEqual(perSecond);
+        expect(perHalfSecond).toEqual(perSecond);
         expect(perSecond).toEqual(inProcess);
         expect(perSecond).toEqual([59_500, 60_000, 60_500, 61_000, 61_500]);
     });

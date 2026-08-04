@@ -29,8 +29,39 @@ silently stalled.
 
 `rate` is a string like `"5/s"` — a minimum spacing between successive calls,
 not a token bucket. `concurrency` caps simultaneous in-flight calls; either may
-be set on its own. When rate is all you need, the scalar form reads best:
-`throttle: '2/s'` ≡ `throttle: { rate: '2/s' }`.
+be set on its own.
+
+### The rate grammar
+
+A rate is `<count>/<duration>`. The count is a whole number; the denominator is
+any [duration token](/docs/reference/config-types), and a bare unit means one of
+that unit — so `'2/s'` is `'2/1s'`.
+
+| Rate        | Means              | Spacing |
+| ----------- | ------------------ | ------- |
+| `'2/s'`     | 2 per second       | 500ms   |
+| `'1000/h'`  | 1000 per hour      | 3600ms  |
+| `'100/15m'` | 100 per 15 minutes | 9000ms  |
+| `'2/500ms'` | 2 per half-second  | 250ms   |
+
+Write the limit the way your vendor publishes it. A quota of "1000 requests per
+hour" is `'1000/h'` — you don't have to convert it to a per-minute count, and
+you couldn't do so exactly anyway (it's 16.67/m).
+
+<Callout type="info">
+    **A rate is a ratio, so equal ratios are the same limiter.** `'2/500ms'`,
+    `'4/s'` and `'240/m'` all declare a 250ms gap and behave identically — the
+    window length is a way of spelling the ratio, not a burst allowance. Because
+    this is a pacer rather than a token bucket, there is no capacity for a
+    longer window to grant: calls are spaced, never released in a burst. If you
+    need to spend a real quota the way the vendor accounts for it, hand the
+    backoff to an outer gate with `delegate` instead.
+</Callout>
+
+A rate that can't be honored is rejected when the stitch is built, rather than
+silently ignored — a dropped rate is an unlimited one. That covers the obvious
+typos (`'fast'`, `'2/nope'`) and both degenerate ends: a zero count (`'0/s'`),
+and a spacing longer than the ~24.8-day timer ceiling (`'1/30d'`).
 
 When the rate is all you need, pass it directly — a bare string is shorthand for
 `rate`, exactly like `timeout: '5s'` is shorthand for `timeout: { total: '5s' }`:
