@@ -20,6 +20,7 @@ import { makeStitch } from './stitch';
 import type { Surface } from './surface';
 import {
     type AdapterResponse,
+    type NoUnknownConfigKeys,
     type ResolvedStitchConfig,
     type Seam,
     type SeamOptions,
@@ -120,7 +121,7 @@ export interface StreamSeamApi {
     readonly stitch: <
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C,
+        config: C & NoUnknownConfigKeys<C>,
     ) => Stitch<StreamElement<C>[], InputOf<C>>;
     readonly seam: Seam;
 }
@@ -136,7 +137,7 @@ export interface StreamSeamApi {
 const streamStitch = <
     const C extends Partial<StitchConfig> = Partial<StitchConfig>,
 >(
-    config: C,
+    config: C & NoUnknownConfigKeys<C>,
 ): Stitch<StreamElement<C>[], InputOf<C>> =>
     makeStitch<unknown[]>({
         ...config,
@@ -145,15 +146,17 @@ const streamStitch = <
 
 // Bind stream members to a seam through the seam's surface-agnostic `stitch({ kind })` (Decision 3).
 function bindSeam(s: Seam): StreamSeamApi {
-    const stitch = <
-        const C extends Partial<StitchConfig> = Partial<StitchConfig>,
-    >(
-        config: C,
-    ): Stitch<StreamElement<C>[], InputOf<C>> =>
+    // Implemented loose and `as`-cast to the declared member type — the same idiom as
+    // `download.ts`'s binder, for the same reason: a generic impl whose parameter is
+    // `C & NoUnknownConfigKeys<C>` cannot be checked against a member of that same shape, because
+    // TypeScript instantiates the impl's `C` with the target's whole intersection and the two
+    // `InputOf<C>` return types stop matching. Sound — the runtime is one `s.stitch` call, and the
+    // type tests pin every concrete config.
+    const stitch = ((config: Partial<StitchConfig>) =>
         s.stitch<unknown[]>({
             ...config,
             kind: streamSurface,
-        }) as unknown as Stitch<StreamElement<C>[], InputOf<C>>;
+        })) as StreamSeamApi['stitch'];
     return { stitch, seam: s };
 }
 
