@@ -280,7 +280,7 @@ const listUsers = stitch({
     path: '/users',
     retry: { attempts: 4, on: [429, 502, 503] },
     throttle: { rate: '1/s', concurrency: 2, pool: 'host' },
-    timeout: { total: '30s', perAttempt: '10s' },
+    timeout: { total: '30s', each: '10s' },
 });
 ```
 

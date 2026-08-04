@@ -51,7 +51,7 @@ order:
 1. **throttle** — wait for a concurrency / rate slot
 2. **`auth.apply`** — credentials are stamped onto the request
 3. **`onRequest`** — the request is fully shaped (auth headers included)
-4. **the network call** (bounded by `timeout.perAttempt`)
+4. **the network call** (bounded by `timeout.each`)
 5. on a thrown transport error → **`onError`**, then if another attempt remains →
    **`onRetry`** → backoff → next attempt
 6. on a response → **`onResponse`**

@@ -24,7 +24,7 @@ import { z } from 'zod';
 - `auth`: an AuthStrategy (see below)
 - `retry`: `{ attempts (total incl. first, default 1), on: StatusMatch (default [429,502,503,504]), backoff: BackoffCurve | { curve, base, max }, respect (honor Retry-After, default true) }`
 - `throttle`: `{ rate: '2/s', concurrency: number, pool: 'stitch'|'host', delegate?: boolean, on?: StatusMatch }`
-- `timeout`: `{ total: number|string, perAttempt: number|string }` (ms or '30s')
+- `timeout`: `{ total: number|string, each: number|string }` (ms or '30s')
 - `hooks`: `{ onRequest, onResponse, onError, onRetry }` — `(ctx) => void|Promise<void>`, `ctx = { name, attempt, req?, res?, error? }`
 - `extends`: `Array<fragment | stitch>`
 - `adapter`: inject a custom transport (not needed; the mock server gives real fetch)

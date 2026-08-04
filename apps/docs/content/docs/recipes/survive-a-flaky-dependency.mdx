@@ -21,7 +21,7 @@ import { stitch } from 'stitchapi';
 const orders = stitch({
     baseUrl: 'https://api.example.com',
     path: '/orders',
-    timeout: { total: '10s', perAttempt: '3s' },
+    timeout: { total: '10s', each: '3s' },
     retry: { attempts: 3, on: [429, 503], backoff: 'expo-jitter' },
     circuit: { failures: 5, cooldown: 30_000 },
 });

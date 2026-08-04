@@ -157,7 +157,7 @@ test('a transport error yields a StitchError with body and url undefined', async
     const call = stitch({
         baseUrl: 'http://127.0.0.1:1',
         path: '/nope',
-        timeout: { perAttempt: '500ms' },
+        timeout: { each: '500ms' },
     });
 
     const err = await rejectionOf(call());

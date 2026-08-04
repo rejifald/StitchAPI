@@ -54,7 +54,7 @@ beforeEach(() => {
         pick: 'data',
         auth: bearer('s3cr3t-token'),
         retry: { attempts: 3 },
-        timeout: { perAttempt: 1000 },
+        timeout: { each: 1000 },
         input: { params: asValidator(z.object({ id: z.number() })) },
         output: asValidator(z.object({ id: z.number() })),
     });

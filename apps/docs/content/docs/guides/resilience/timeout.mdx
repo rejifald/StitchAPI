@@ -16,7 +16,7 @@ import { stitch } from 'stitchapi';
 const report = stitch({
     baseUrl: 'https://api.example.com',
     path: '/report',
-    timeout: { total: '10s', perAttempt: '3s' },
+    timeout: { total: '10s', each: '3s' },
 });
 ```
 
@@ -25,25 +25,24 @@ at most 10 seconds; whichever fires first aborts the request.
 
 ## Options
 
-`total` bounds the entire call across every retry; `perAttempt` bounds each
-individual attempt on its own. Both accept either a number of milliseconds
-(`3000`) or a duration string (`'3s'`), so `total: '10s'` and `total: 10000` are
-equivalent.
+The two fields name the two scopes: `total` bounds the entire call across every
+retry, `each` bounds a single attempt on its own. Both accept either a number of
+milliseconds (`3000`) or a duration string (`'3s'`), so `total: '10s'` and
+`total: 10000` are equivalent.
 
 The deadline is backed by a real `AbortSignal`: when it elapses the stitch
 aborts the underlying request — the connection is actually cancelled, not just
 ignored — and the call fails with a timeout.
 
-With [retry](/docs/guides/resilience/retry), the two timeouts compose: each try
-is gated by `perAttempt`, while `total` caps the sum of all tries plus their
-backoff waits, so a long enough `total` is what lets a slow attempt be retried at
-all.
+With [retry](/docs/guides/resilience/retry), the two timeouts compose: `each`
+gates one try, while `total` caps the sum of all tries plus their backoff waits,
+so a long enough `total` is what lets a slow attempt be retried at all.
 
 <Callout type="warn">
-    **Anti-pattern:** with retry enabled, don't rely on `perAttempt` alone to
-    bound how long the caller waits; it caps each individual try, not the call,
-    so several retries plus their backoff waits can block the caller far past
-    your intended deadline — set `total` to cap the whole call instead. See
+    **Anti-pattern:** with retry enabled, don't rely on `each` alone to bound
+    how long the caller waits — it bounds one try, not the call, so several
+    retries plus their backoff waits can block the caller far past your intended
+    deadline. Set `total` to cap the whole call instead. See
     [Retry](/docs/guides/resilience/retry).
 </Callout>
 

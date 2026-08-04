@@ -610,7 +610,7 @@ async function* attemptLoop(
     const max = cfg.retry?.attempts ?? 1;
     // P7: `retry.on` accepts a status list OR a predicate — normalize to one matcher.
     const retryMatch = acceptsStatus(cfg.retry?.on ?? [429, 502, 503, 504]);
-    const perAttemptMs = parseDuration(cfg.timeout?.perAttempt);
+    const eachMs = parseDuration(cfg.timeout?.each);
     const key = hostKey(baseReq, cfg);
     let refreshed = false;
     // Delegate-backoff mode (issue #145, folded into `throttle` — P14): the host owns the gate. We
@@ -655,9 +655,9 @@ async function* attemptLoop(
             // Clamp this attempt's abort to whatever is left of the total budget.
             const attemptMs =
                 budget == null
-                    ? perAttemptMs
+                    ? eachMs
                     : Math.min(
-                          perAttemptMs ?? Infinity,
+                          eachMs ?? Infinity,
                           Math.max(0, budget.deadline - now()),
                       );
             // A surface may REPLACE the transport (ADR 0008): `cfg.kind.execute` runs here instead

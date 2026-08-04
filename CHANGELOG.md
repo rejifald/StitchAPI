@@ -143,6 +143,33 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `timeout.perAttempt` is renamed to `timeout.each`.**
+  ([CONTRACT.md P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space) +
+  [P4](docs/CONTRACT.md#p4--one-cap-vocabulary)) `timeout` already names the subject, so by
+  [P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope)/[P25](docs/CONTRACT.md#p25--one-canonical-size-form)
+  the member owes only its **scope** — and the opposite number of `total` is a scope, not an
+  attempt counter. `each` is the one-word token P1 prefers and the natural pair for `total`.
+
+    Migration — rename the key, nothing else:
+
+    ```ts
+    // before
+    timeout: { total: '10s', perAttempt: '3s' },
+    // after
+    timeout: { total: '10s', each: '3s' },
+    ```
+
+    **Behaviour is unchanged**, including how the two compose: each attempt is clamped to
+    `min(each, remaining total)`, so `total` still bounds the whole call across every retry and its
+    backoff waits. `tsc` catches the migration — `NoUnknownNestedKeys` rejects a leftover
+    `perAttempt` at the `timeout:` slot by name. Hard break, no alias
+    ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel).
+
+    _Why not `timeout.attempt`:_ P4 reserves singular `attempt` for the current attempt index —
+    the engine emits it on every `progress` event — and plural `attempts` for the running count.
+    Taking it here would have made one word mean both an index and a duration, which is the P1/P2
+    collision the rename exists to avoid.
+
 - **BREAKING CHANGE: `cache.transformVersion` + `cache.trustTransform` fold into one
   `cache.transform` envelope.**
   ([CONTRACT.md P24](docs/CONTRACT.md#p24--a-shared-field-name-prefix-in-a-house-contract-is-an-envelope))
