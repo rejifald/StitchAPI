@@ -71,7 +71,7 @@
         "@types/react": "^19.2.16",
         "@types/react-dom": "^19.2.3",
         "esbuild": "^0.28.1",
-        "eslint": "^9.39.4",
+        "eslint": "^10.8.0",
         "eslint-config-next": "16.2.12",
         "fastify": "^5.10.0",
         "hono": "^4.12.32",
