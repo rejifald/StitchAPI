@@ -1,6 +1,6 @@
 ---
 title: 'Config types'
-description: 'StitchConfig and the retry, throttle, timeout, auth, validation, and drift option shapes.'
+description: 'StitchConfig and every nested option shape — wire, retry, backoff, throttle, timeout, circuit, verdict, idempotency, cache, paginate, and drift.'
 ---
 
 The configuration object accepted by `stitch()`. Every field is optional; a
@@ -66,19 +66,38 @@ await search({ body: { page: { size: 10 } } });
     and `+` in a form body. Both are valid urlencoded and both round-trip.
 </Callout>
 
+#### wire.multipart
+
 A `wire: { body: 'multipart' }` body has its own grammar and is **not** governed by
 `wire.array` — use `wire.multipart`'s `nesting` instead. Setting
 `multipart` without `wire: { body: 'multipart' }` is a type error, since the slot would
 otherwise be silently ignored.
 
+<AutoTypeTable
+    path="../../packages/core/src/types.ts"
+    name="MultipartOptions"
+/>
+
+A bare `MultipartNesting` string is shorthand for the object form —
+`multipart: 'dot'` ≡ `multipart: { nesting: 'dot' }`; the opaque `multipart: {}` is
+rejected.
+
 ## Option shapes
 
-The resilience, validation, and drift fields above are themselves typed shapes.
-Each is documented from the source so it can never drift from the runtime.
+The resilience, verdict, idempotency, cache, pagination, and drift fields above are
+themselves typed shapes. Each is documented from the source so it can never drift from
+the runtime.
 
 ### RetryOptions
 
 <AutoTypeTable path="../../packages/core/src/types.ts" name="RetryOptions" />
+
+#### BackoffOptions
+
+The shape behind `retry.backoff`. A bare curve is the shorthand for `{ curve }` —
+`backoff: 'fixed'` ≡ `backoff: { curve: 'fixed' }`; the envelope adds `base` and `max`.
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="BackoffOptions" />
 
 ### ThrottleOptions
 
@@ -91,6 +110,38 @@ Each is documented from the source so it can never drift from the runtime.
 ### CircuitOptions
 
 <AutoTypeTable path="../../packages/core/src/types.ts" name="CircuitOptions" />
+
+### VerdictOptions
+
+The shape behind `verdict` — what counts as success. Both members move the verdict in
+exactly one direction: `accept` can only turn a failure into a success, `flag` only a
+success into a failure. Neither invents a verdict from absence.
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="VerdictOptions" />
+
+### IdempotencyOptions
+
+The shape behind `idempotency`. `true` is shorthand for the defaults — a random uuid
+minted once per logical call and reused across that call's retries.
+
+<AutoTypeTable
+    path="../../packages/core/src/types.ts"
+    name="IdempotencyOptions"
+/>
+
+### CacheOptions
+
+The shape behind `cache`. Off unless set; the key is **derived** from the resolved
+request, so it cannot drift from what it names.
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="CacheOptions" />
+
+### PaginateOptions
+
+The shape behind `paginate`. `next` drives the loop; auth, retry, and throttle apply to
+every page.
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="PaginateOptions" />
 
 ### DriftOptions
 
