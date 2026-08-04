@@ -21,6 +21,7 @@ import type { Surface } from './surface';
 import {
     type AdapterResponse,
     type NoUnknownConfigKeys,
+    type NoUnknownNestedKeys,
     type ResolvedStitchConfig,
     type Seam,
     type SeamOptions,
@@ -121,7 +122,7 @@ export interface StreamSeamApi {
     readonly stitch: <
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C & NoUnknownConfigKeys<C>,
+        config: C & NoUnknownConfigKeys<C> & NoUnknownNestedKeys<C>,
     ) => Stitch<StreamElement<C>[], InputOf<C>>;
     readonly seam: Seam;
 }
@@ -137,7 +138,7 @@ export interface StreamSeamApi {
 const streamStitch = <
     const C extends Partial<StitchConfig> = Partial<StitchConfig>,
 >(
-    config: C & NoUnknownConfigKeys<C>,
+    config: C & NoUnknownConfigKeys<C> & NoUnknownNestedKeys<C>,
 ): Stitch<StreamElement<C>[], InputOf<C>> =>
     makeStitch<unknown[]>({
         ...config,

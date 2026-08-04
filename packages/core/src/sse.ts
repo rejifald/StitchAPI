@@ -18,6 +18,7 @@ import type { Surface } from './surface';
 import {
     type AdapterResponse,
     type NoUnknownConfigKeys,
+    type NoUnknownNestedKeys,
     type ResolvedStitchConfig,
     type Seam,
     type SeamOptions,
@@ -181,7 +182,7 @@ export interface SseSeamApi {
     readonly stitch: <
         const C extends Partial<StitchConfig> = Partial<StitchConfig>,
     >(
-        config: C & NoUnknownConfigKeys<C>,
+        config: C & NoUnknownConfigKeys<C> & NoUnknownNestedKeys<C>,
     ) => Stitch<SseEvent<OutputOf<C>>[], InputOf<C>>;
     readonly seam: Seam;
 }
@@ -197,7 +198,7 @@ export interface SseSeamApi {
 const sseStitch = <
     const C extends Partial<StitchConfig> = Partial<StitchConfig>,
 >(
-    config: C & NoUnknownConfigKeys<C>,
+    config: C & NoUnknownConfigKeys<C> & NoUnknownNestedKeys<C>,
 ): Stitch<SseEvent<OutputOf<C>>[], InputOf<C>> =>
     makeStitch<SseEvent[]>({
         ...config,

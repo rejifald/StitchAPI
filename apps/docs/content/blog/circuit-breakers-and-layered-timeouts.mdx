@@ -64,7 +64,7 @@ const orders = stitch({
 });
 ```
 
-After five consecutive failures the breaker opens; for the next 30 seconds calls to `orders()` fast-fail instead of hitting the host. Then one trial call decides whether to close it or wait out another cooldown. (`halfOpenAfter` lets you probe on a different clock than the fast-fail window, if you want them decoupled.)
+After five consecutive failures the breaker opens; for the next 30 seconds calls to `orders()` fast-fail instead of hitting the host. Then one trial call decides whether to close it or wait out another cooldown. (The `cooldown` is the whole boundary — fast-fail and probe aren't separate clocks you can stagger, because a call is either rejected or let through.)
 
 When the breaker is open, the call surfaces a `STITCH_CIRCUIT_OPEN` error — a distinct, catchable signal that means "I didn't even try, the dependency is presumed down," which is exactly the case your fallback logic wants to branch on.
 

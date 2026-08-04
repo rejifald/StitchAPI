@@ -108,13 +108,120 @@ const boundStream = stream.bind(api);
 boundStream.stitch({ path: '/chunks' });
 expectError(boundStream.stitch({ path: '/chunks', totallyMadeUpProperty: 1 }));
 
-// ── Nested envelopes and inline fragments were already covered by EPC ───────
-// These are checked against their DECLARED types (`AtLeastOne<WireOptions>`,
-// `Partial<StitchConfig> | Stitch`) rather than against the inferred `C`, so freshness survives and
-// ordinary excess-property checking fires. Pinned so it stays true — it is the reason
-// `NoUnknownConfigKeys` deliberately does NOT walk `Layers<C>`, which keeps its `tsc` cost to one
-// `keyof` and one `Exclude` per call site.
+// ── Nested envelopes: `NoUnknownNestedKeys`, and why EPC was never covering them ──
+// This block used to assert that nested envelopes "were already covered by EPC", on the reasoning
+// that `wire` is checked against its DECLARED `AtLeastOne<WireOptions>` and so stays fresh. That
+// reasoning was wrong, and the two cases pinning it were passing for a different reason: NEITHER
+// carried a valid sibling, so both were rejected by weak-type detection (and by `AtLeastOne`, which
+// an all-unknown object cannot satisfy) — exactly the attribution error the preamble above warns
+// about. `const C` is inferred from the WHOLE config object, so the envelope is no longer fresh
+// either; EPC is suppressed at every depth, not just at the root.
+//
+// Add one valid sibling and the pre-guard behaviour was total silence:
+//   stitch({ circuit: { failures: 1, cooldown: '30s', totalNonsense: 1 } })   // no error
+// `NoUnknownNestedKeys` closes that, naming the ENVELOPE's own type in the message so the report
+// reads against the vocabulary the key was misspelled against.
 expectError(stitch({ path: '/things', wire: { bogusNested: 1 } }));
+expectError(
+    stitch({ path: '/things', wire: { array: 'repeat', bogusNested: 1 } }),
+);
+expectError(
+    stitch({
+        path: '/things',
+        circuit: { failures: 1, cooldown: '30s', totalNonsense: 1 },
+    }),
+);
+expectError(stitch({ path: '/things', retry: { attempts: 2, nonsense: 1 } }));
+expectError(
+    stitch({ path: '/things', timeout: { total: '5s', perAttemptMs: 1 } }),
+);
+expectError(stitch({ path: '/things', cache: { ttl: '1m', bogusCache: 1 } }));
+expectError(
+    stitch({ path: '/things', verdict: { accept: [404], bogusVerdict: 1 } }),
+);
+
+// Two levels down — the depth CONTRACT.md §6 actually renamed at (`baseMs`→`base`,
+// `maxMs`→`max` inside `retry.backoff`, P4/P17). A one-level walk would have left those silent.
+expectError(
+    stitch({
+        path: '/things',
+        retry: { attempts: 2, backoff: { curve: 'fixed', baseMs: 100 } },
+    }),
+);
+expectError(
+    stitch({
+        path: '/things',
+        wire: { body: 'multipart', multipart: { nesting: 'dot', bogus: 1 } },
+    }),
+);
+expectError(
+    stitch({ path: '/things', sse: { reconnect: { attempts: 2, bogus: 1 } } }),
+);
+expectError(
+    stitch({
+        path: '/things',
+        stream: { decode: 'lines', buffer: { chars: 10, bogus: 1 } },
+    }),
+);
+
+// HOISTED, one level down — the case EPC could never have caught even in principle, and the one
+// that makes a nested rename safe repo-wide rather than only at inline call sites.
+const hoistedNested = {
+    path: '/things',
+    circuit: { failures: 1, cooldown: '30s', totalNonsense: 1 },
+};
+expectError(stitch(hoistedNested));
+
+// Positive controls — every scalar/positional shorthand must survive the walk. A guard that read
+// `keyof` on these would report `circuit: [5, '30s']` as 30-odd unknown array keys, and reject the
+// `retry: 3` / `stream: 'ndjson'` / `sse: true` spellings outright (P12/P13/P15).
+stitch({ path: '/things', circuit: [5, '30s'] });
+stitch({ path: '/things', retry: 3 });
+stitch({ path: '/things', timeout: '5s' });
+stitch({ path: '/things', throttle: '2/s' });
+stitch({ path: '/things', stream: 'ndjson' });
+stitch({ path: '/things', sse: true });
+stitch({ path: '/things', cache: '1m' });
+stitch({ path: '/things', retry: { attempts: 2, backoff: 'fixed' } });
+stitch({ path: '/things', wire: { body: 'multipart', multipart: 'dot' } });
+stitch({ path: '/things', hooks: { onRequest: () => {} } });
+stitch({ path: '/things', paginate: { next: () => undefined, pages: 3 } });
+
+// And a FOREIGN object in a slot the walk must not descend into: `output` takes a `SchemaLike`,
+// whose Zod arm is the phantom `{ _output: unknown }`. A schema carries dozens of keys beyond it,
+// so a walk derived from `StitchConfig[K]` rather than from the house-envelope table would report
+// `safeParse` as a misspelling and break every config that validates anything.
+stitch({
+    path: '/things',
+    output: (v: unknown): v is string => typeof v === 'string',
+});
+stitch({ path: '/things', input: { body: (v: unknown) => v != null } });
+
+// The nested guard binds every authoring surface, not just `stitch`.
+expectError(
+    api.stitch({ path: '/things', retry: { attempts: 2, nonsense: 1 } }),
+);
+expectError(sse({ path: '/events', retry: { attempts: 2, nonsense: 1 } }));
+expectError(stream({ path: '/chunks', retry: { attempts: 2, nonsense: 1 } }));
+expectError(download({ url: URL_, retry: { attempts: 2, nonsense: 1 } }));
+expectError(
+    llm({
+        provider: anthropic,
+        model: 'm',
+        retry: { attempts: 2, nonsense: 1 },
+    }),
+);
+
+// ── RESIDUAL LIMIT (fail-open): `extends` fragments are still the `Layers` axis ──
+// The guard reads the literal's OWN slots, so a fragment's keys — at any depth — are not its
+// business. An inline fragment carrying a valid sibling is therefore NOT rejected: `C` is inferred
+// from the whole config, so the fragment is not fresh either, and weak-type detection is satisfied
+// by the real key. Deliberate, hence not `expectError` — catching it needs the `Layers<C>` walk
+// `NoUnknownConfigKeys`'s JSDoc declines, and the fragment's declaration site is where it belongs.
+stitch({
+    path: '/things',
+    extends: [{ baseUrl: 'https://api.example.com', bogusInFragment: 1 }],
+});
 expectError(stitch({ path: '/things', extends: [{ bogusInFragment: 1 }] }));
 
 // A BOUND fragment carrying ONLY unknown keys is rejected too, though by a third mechanism again —
@@ -223,3 +330,7 @@ expectError(ch.events('tick', { retry: 2, bogusPmKey: 1 }));
 // belongs to `RequestOptions` only, and authoring it on `emit`/`events` is dead config.
 expectError(ch.emit('fire', { retry: 2, reply: 'pong' }));
 expectError(ch.events('tick', { retry: 2, reply: 'pong' }));
+
+// The three bags embed `Partial<Omit<StitchConfig, …>>`, so they carry the same house envelopes and
+// take the nested guard too.
+expectError(ch.request('ping', { retry: { attempts: 2, nonsense: 1 } }));
