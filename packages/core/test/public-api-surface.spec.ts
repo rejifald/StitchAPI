@@ -28,6 +28,15 @@ const FUNCTIONS = [
     'compile',
     'isStitch',
     'isSeam',
+    // The three house token grammars (CONTRACT.md P17/P25). Each is public for one reason — a peer
+    // package that takes an authored duration / size / rate parses it the way core does instead of
+    // mirroring the grammar and drifting from it — and that reason only holds while they stay on
+    // the barrel, which nothing pinned until now. `parseRate` joined them in the same pass that
+    // wrote the reason into P17/P25; the other two had been exported on that argument for releases
+    // without a test holding them there.
+    'parseDuration',
+    'parseBytes',
+    'parseRate',
     // The verdict (ADR 0022 Decision 2), public because a surface author must compose it: an
     // `interpret` hook REPLACES the default rather than layering on it, so a surface with its own
     // body rules needs this to keep the caller's `verdict` config working. The one composition

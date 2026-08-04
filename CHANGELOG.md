@@ -11,6 +11,28 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Added
+
+- **`parseRate` is exported from `stitchapi`, completing the house token grammars.**
+  [P17](docs/CONTRACT.md#p17--one-canonical-duration-form) and
+  [P25](docs/CONTRACT.md#p25--one-canonical-size-form) both make "one shared parser" part of the
+  rule, and P25 spells out why it is public: so a peer package parses the grammar instead of
+  mirroring it and drifting from it. `parseDuration` and `parseBytes` were already exported on that
+  argument; `parseRate` — `'2/s'`, `'10/m'` → `{ count, per }` — was the third grammar and was
+  module-private, so a peer building a distributed limiter had to re-derive it. All three are now
+  pinned by the public-surface test, which held none of them before.
+
+    Its JSDoc now also states the two things about a rate that were previously unwritten. It is a
+    **string and only a string** — no `number | string` widening — because a rate is two quantities
+    rather than a magnitude over a house unit, so a bare `2` would have to invent a default window to
+    denote anything, and that invisible default is what P15/P20 exist to reject. And it **throws** on
+    a bad token where the other two fall back to the field's default: for a cap the fallback is the
+    safe failure, but `undefined` for a rate means _no limit at all_, so falling back would let a typo
+    silently remove the limit rather than narrow it. Same goal as P25's "a typo can never widen a cap
+    to unbounded", opposite mechanism, because the two value-spaces fail in opposite directions.
+
+    No behaviour change — the parser, its grammar, and its throw are exactly as they were.
+
 ### Changed
 
 - **`retry.respectRetryAfter` becomes `retry.respect`, and a `Retry-After` header is now honored by

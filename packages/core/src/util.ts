@@ -118,7 +118,27 @@ export function parseBytes(s: number | string | undefined): number | undefined {
     return Math.floor(parseFloat(m[1] ?? '') * 1024 ** pow);
 }
 
-/** "2/s" | "10/m" -> { count, per } (window length in ms). */
+/**
+ * Parse a rate into `{ count, per }` — the number of grants and the window length in ms.
+ * Grammar: `<count>/<unit>` with an INTEGER count and unit `ms` | `s` | `m` (`"2/s"`, `"10/m"`,
+ * `"1/ms"`; whitespace around the slash is tolerated). The third house token grammar, alongside
+ * {@link parseDuration} and {@link parseBytes}, and exported for the same reason: a peer package
+ * that takes an authored rate parses it the way core does instead of mirroring the grammar.
+ *
+ * **Unlike those two, an unparseable token THROWS rather than resolving to `undefined`.** The
+ * divergence is deliberate, and it runs in the same direction as their fallback rather than
+ * against it. For a cap, falling back to the field's default is the SAFE failure — the ceiling
+ * stays where it was, which is why CONTRACT.md P25 can say a typo never widens a cap to
+ * "unbounded". A rate has no safe fallback: `undefined` here means *no rate limit at all*, so
+ * the quiet path is the unbounded one, and a fallback would let a typo silently REMOVE the
+ * limit instead of narrowing it. Same goal, opposite mechanism, because the two value-spaces
+ * fail in opposite directions. Both callers guard with a presence check, so an omitted `rate`
+ * never reaches here — only a non-empty token that could not be read.
+ *
+ * A rate is a string and only a string (no `number | string` widening): it is two quantities,
+ * not a magnitude, so a bare `2` would have to invent a default window to denote anything. See
+ * CONTRACT.md P17/P25, which widen a magnitude that already carries a house unit — this has none.
+ */
 export function parseRate(r: string): { count: number; per: number } {
     const m = /^(\d+)\s*\/\s*(ms|s|m)$/.exec(r.trim());
     if (!m) throw new Error(`bad rate: ${r}`);

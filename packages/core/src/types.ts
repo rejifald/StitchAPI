@@ -871,7 +871,21 @@ export interface RetryOptions {
     respect?: boolean;
 }
 export interface ThrottleOptions {
-    rate?: string; // "2/s"
+    /**
+     * Self-pacing target — `'2/s'`, `'10/m'`, `'1/ms'`. The grammar is `<count>/<unit>` with an
+     * INTEGER count and unit `ms` | `s` | `m`, read by the shared {@link parseRate}; calls are
+     * spaced `window / count` apart before any request leaves.
+     *
+     * A **string and only a string**, deliberately. A duration or a byte cap also accepts a bare
+     * number because each is a magnitude over a house unit — ms, bytes — so `5_000` and `4096`
+     * already denote something (CONTRACT.md P17/P25). A rate is two quantities, so a bare `2`
+     * would have to invent a default window to mean anything, and that invisible default is what
+     * P15/P20 exist to reject. `'2/s'` is not the sugar form of a number here; it IS the value.
+     *
+     * An unparseable token **throws** at construction rather than falling back to "no limit" —
+     * the one place a house parser fails loud, for the reason spelled out on {@link parseRate}.
+     */
+    rate?: string;
     concurrency?: number;
     /**
      * Where the limiter's counter is pooled: `'stitch'` (default) keeps a per-stitch
