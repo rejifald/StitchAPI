@@ -2011,6 +2011,44 @@ export interface StitchStore {
     /** Atomically increment a counter. Absent `ttl` means no window — the counter never expires. */
     increment(key: string, ttl?: number): Promise<number>;
     /**
+     * Atomically reserve the next slot on a shared **pacing cursor** and resolve to the instant
+     * reserved (epoch ms). One read-compute-write, indivisible across every process on the store:
+     *
+     * ```
+     * at = max(now, cell ?? 0);   cell = at + spacing;   return at
+     * ```
+     *
+     * This is the GCRA cell (ADR 0024). `increment` can only allocate *positions*; turning a
+     * position into a time needs an origin, and any origin a caller can compute is either
+     * per-process (so N workers each pace independently) or fixed to a window (so a worker joining
+     * mid-window inherits slots that already elapsed). A cursor has neither problem: it carries
+     * continuously, it is shared, and `max(now, …)` resets it after idle.
+     *
+     * **Optional**, and a store is a first-class citizen without it. `createStoreThrottle` falls
+     * back to `increment` plus a per-process cursor, which paces each process correctly and lets a
+     * fleet drift to N× mid-window (ADR 0023). Two reasons it is not required: an
+     * eventually-consistent backend (Cloudflare KV) has no atomic read-compute-write to build it
+     * from, and `StitchStore` is a contract **consumers implement**, where adding a required member
+     * is a hard break in any channel
+     * ([CONTRACT.md P19](../../../docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)).
+     *
+     * `now` is the CALLER's clock, not the store's, so the cursor stays deterministic under an
+     * injected {@link Clock} (ADR 0010) and a store never needs a clock of its own.
+     *
+     * **`ttl` refreshes on every call**, unlike {@link StitchStore.increment}'s — whose expiry is
+     * bound to the creating increment precisely so a busy fixed window cannot slide forever. The
+     * opposite is right here: a cursor is continuous, so letting it lapse mid-pace would reset the
+     * schedule and allow the burst it exists to prevent. Absent `ttl` means it never expires.
+     * Losing the cell is always *safe* — `max(now, …)` restarts pacing from the present, exactly
+     * like a cold start — it just forgets any grants already queued past `now`.
+     */
+    reserve?(
+        key: string,
+        spacing: number,
+        now: number,
+        ttl?: number,
+    ): Promise<number>;
+    /**
      * Release any resources (connections, timers) the store holds. Optional — the in-memory
      * default clears its map. A seam's `close()` calls this as the last lifecycle step.
      */

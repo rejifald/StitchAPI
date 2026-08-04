@@ -172,6 +172,11 @@ The two shapes this ADR declined to pick between, kept for the (b) migration:
   extension the JSDoc already flags as "deliberately deferred". Correct, and a
   contract change ([P21](../CONTRACT.md#p21--every-contract-has-an-extension-seam)
   makes room for it, but it is every implementor's problem, so it is a real cost).
+  **(b) has since shipped too, as an OPTIONAL verb —
+  [ADR 0024](./0024-the-fleet-wide-pacing-cell.md).** Optional is what made the
+  implementor cost payable: a store without it keeps the (a) path unchanged, so the
+  residue below is now the documented behaviour of a store that cannot offer a cell
+  rather than the behaviour of every store.
 
 Whichever lands, the regression test is the measurement above: **total admitted over
 a multi-window interval, against budget, for two spellings of one rate** — not just

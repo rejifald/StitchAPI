@@ -72,7 +72,36 @@ class FakeRedisEngine {
         this.data.set(key, { value: String(v), expiresAt: e.expiresAt });
         return v;
     }
+
+    // The GCRA pacing-cursor script (ADR 0024), same atomicity argument as `incrScript`: no
+    // await between the read and the write, so nothing can interleave — as on the server.
+    // Mirrors the Lua in two details that matter:
+    //   • the expiry is REWRITTEN every call (the Lua's PEXPIRE is unconditional), where the
+    //     counter above preserves the creating increment's — a window must not slide, a cursor
+    //     must not lapse;
+    //   • it returns a STRING, because the real script does `tostring` to keep a fractional
+    //     spacing off the RESP integer reply's truncation.
+    reserveScript(
+        key: string,
+        spacing: number,
+        at: number,
+        ttlMs: number,
+    ): string {
+        const e = this.live(key);
+        const cell = e ? Number(e.value) : 0;
+        const grantAt = Math.max(at, cell);
+        this.data.set(key, {
+            value: String(grantAt + spacing),
+            expiresAt: ttlMs > 0 ? Date.now() + ttlMs : Infinity,
+        });
+        return String(grantAt);
+    }
 }
+
+// Which script the caller sent. The facades below take the script TEXT, exactly as a real client
+// does, so the fake routes on it rather than assuming every `eval` is the counter — which is what
+// it used to do, and why a second script silently read as an increment.
+const isIncr = (script: unknown): boolean => String(script).includes('INCR');
 
 // --- client-shaped facades over one engine --------------------------------
 
@@ -94,9 +123,18 @@ function ioredisFacade(engine: FakeRedisEngine): IoredisLike {
             engine.del(key);
             return 1;
         },
-        async eval(_script, _numKeys, ...args) {
-            const [key, ttlMs] = args;
-            return engine.incrScript(String(key), Number(ttlMs));
+        async eval(script, _numKeys, ...args) {
+            if (isIncr(script)) {
+                const [key, ttlMs] = args;
+                return engine.incrScript(String(key), Number(ttlMs));
+            }
+            const [key, spacing, at, ttlMs] = args;
+            return engine.reserveScript(
+                String(key),
+                Number(spacing),
+                Number(at),
+                Number(ttlMs),
+            );
         },
         async quit() {
             return 'OK';
@@ -117,10 +155,17 @@ function nodeRedisFacade(engine: FakeRedisEngine): NodeRedisLike {
             engine.del(key);
             return 1;
         },
-        async eval(_script, options) {
+        async eval(script, options) {
             const key = options.keys[0] ?? '';
-            const ttlMs = Number(options.arguments[0]);
-            return engine.incrScript(key, ttlMs);
+            if (isIncr(script))
+                return engine.incrScript(key, Number(options.arguments[0]));
+            const [spacing, at, ttlMs] = options.arguments;
+            return engine.reserveScript(
+                key,
+                Number(spacing),
+                Number(at),
+                Number(ttlMs),
+            );
         },
         async quit() {
             return 'OK';
@@ -152,10 +197,16 @@ function upstashFacade(engine: FakeRedisEngine): UpstashLike {
             engine.del(key);
             return 1;
         },
-        async eval(_script, keys, args) {
+        async eval(script, keys, args) {
             const key = keys[0] ?? '';
-            const ttlMs = Number(args[0]);
-            return engine.incrScript(key, ttlMs);
+            if (isIncr(script)) return engine.incrScript(key, Number(args[0]));
+            const [spacing, at, ttlMs] = args;
+            return engine.reserveScript(
+                key,
+                Number(spacing),
+                Number(at),
+                Number(ttlMs),
+            );
         },
     };
 }

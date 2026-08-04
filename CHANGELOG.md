@@ -13,6 +13,44 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Added
 
+- **A fleet sharing a store now paces on ONE schedule, wherever in a window its workers start.**
+  ([ADR 0024](docs/adr/0024-the-fleet-wide-pacing-cell.md)) [ADR 0023](docs/adr/0023-a-rate-is-a-minimum-spacing.md)
+  fixed the store-backed throttle's cold-start burst with a per-process pacing cursor and recorded
+  what that could not buy: a slot already in the past paces nobody, so N workers that all start
+  mid-window emit at **N× the declared rate** until the slots catch up with the clock. Two workers
+  measured 2×, three measured 3×.
+
+    The reason a counter could never close it is worth stating, because it looks like it should:
+    a counter allocates _positions_, and turning a position into a _time_ needs an origin. Every
+    origin a caller can compute is either per-process (so each worker paces only itself) or fixed to
+    a window (so a worker joining mid-window inherits slots that already elapsed). Both were tried,
+    in that order, and each fix exposed the other.
+
+    A **cursor** needs no origin — it is already an instant, it carries continuously, and
+    `max(now, cell)` resets it after idle. So `StitchStore` gains one optional verb:
+
+    ```ts
+    reserve?(key: string, spacing: number, now: number, ttl?: number): Promise<number>;
+    // atomically: at = max(now, cell ?? 0);  cell = at + spacing;  return at
+    ```
+
+    Implemented by `memoryStore` (the default), `@stitchapi/redis` (one Lua `EVAL`) and
+    `@stitchapi/deno-kv` (its existing compare-and-set loop). **Nothing to configure** — the throttle
+    uses the cell when the store has it.
+
+    **Optional on purpose, and the fallback is not deprecated.** `@stitchapi/cloudflare-kv` is
+    eventually consistent and has no atomic read-compute-write to build a cell from, so it keeps the
+    ADR 0023 path — whose residues stay pinned in the test suite against a store with the verb
+    deliberately withheld. `StitchStore` is also a contract _you_ implement, where adding a required
+    member is a hard break in any channel
+    ([P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)), so optional is
+    the only additive shape. **Existing custom stores need no changes.**
+
+    If you do implement it, `verifyStoreContract` now checks it — but only when present, so
+    omitting it is not a contract failure. The rule that matters is the atomicity one: 20 concurrent
+    reservations must come back as 20 distinct, evenly spaced instants, because a non-atomic cell
+    hands several callers the same instant, which is the exact burst the verb exists to remove.
+
 - **`parseRate` is exported from `stitchapi`, completing the house token grammars.**
   [P17](docs/CONTRACT.md#p17--one-canonical-duration-form) and
   [P25](docs/CONTRACT.md#p25--one-canonical-size-form) both make "one shared parser" part of the

@@ -312,6 +312,38 @@ export function denoKvStore(
                 `@stitchapi/deno-kv: increment(${key}) lost ${attempts} compare-and-set races`,
             );
         },
+        async reserve(key, spacing, at, ttl) {
+            // The GCRA pacing cursor (ADR 0024), on the same compare-and-set loop `increment`
+            // uses: read the cell and its versionstamp, commit `max(now, cell) + spacing` guarded
+            // by a `check` on that versionstamp, retry if another isolate committed first. That
+            // guard is what makes the cell atomic FLEET-wide rather than per-isolate.
+            //
+            // Simpler than `increment` above, and for the reason that made that one complicated:
+            // Deno KV's `set` replaces the whole entry INCLUDING its expiry, which forced the
+            // `{ n, deadline }` envelope there to stop a fixed window sliding on every write.
+            // A cursor is supposed to slide — its TTL refreshes on every reservation — so the
+            // replace-everything behaviour is exactly what is wanted and a bare number suffices.
+            const kk = k(key);
+            for (let attempt = 1; attempt <= attempts; attempt++) {
+                const entry = await kv.get(kk);
+                const cell = typeof entry.value === 'number' ? entry.value : 0;
+                const grantAt = Math.max(at, cell);
+                const options =
+                    ttl != null && ttl > 0 ? { expireIn: ttl } : undefined;
+                const res = await kv
+                    .atomic()
+                    .check({ key: kk, versionstamp: entry.versionstamp })
+                    .set(kk, grantAt + spacing, options)
+                    .commit();
+                if (res.ok) return grantAt;
+                if (backoff && attempt < attempts) {
+                    await sleep(backoffDelay(backoff, attempt, base, max));
+                }
+            }
+            throw new Error(
+                `@stitchapi/deno-kv: reserve(${key}) lost ${attempts} compare-and-set races`,
+            );
+        },
     };
     if (kv.close) {
         const close = kv.close.bind(kv);

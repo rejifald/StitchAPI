@@ -2,7 +2,7 @@
 // state shared across separate stitches (simulating two workers sharing Redis); the default
 // in-memory store keeps them independent.
 import { memoryStore, stitch } from '../src';
-import type { Clock, Stitch } from '../src';
+import type { Clock, Stitch, StitchStore } from '../src';
 import { cookieSession, env } from '../src/auth';
 import { createThrottle } from '../src/resilience';
 import { createStoreThrottle } from '../src/store';
@@ -326,15 +326,28 @@ describe('Pluggable store — throttle', () => {
     // two workers sharing Redis. The mid-window residue is a known, deferred gap — pinned here so
     // it is a decision on the record rather than a surprise, and so the fleet-wide GCRA cell
     // `createStoreThrottle` defers has a test to break when it lands.
-    test('a fleet over one store: the shared budget holds at a window boundary; mid-window the residue is bounded by process count', async () => {
+    // A store with the ADR 0024 pacing cursor withheld — every other verb intact. The fallback
+    // path is not dead code: an eventually-consistent backend (Cloudflare KV) has no atomic
+    // read-compute-write to build a cell from, so this is the only path it can take, and its
+    // residues stay pinned rather than described.
+    const withoutReserve = (): StitchStore => {
+        const s = memoryStore();
+        return {
+            get: (k) => s.get(k),
+            set: (k, v, ttl) => s.set(k, v, ttl),
+            increment: (k, ttl) => s.increment(k, ttl),
+        };
+    };
+
+    test('a fleet over one store paces on ONE schedule, wherever in a window it starts', async () => {
         const fleet = async (
             rate: string,
             procs: number,
             each: number,
             start: number,
+            store: StitchStore = memoryStore(),
         ): Promise<{ p: number; t: number }[]> => {
             const clock = manualClock(start);
-            const store = memoryStore();
             const ts = Array.from({ length: procs }, () =>
                 createStoreThrottle({ rate }, store, clock),
             );
@@ -353,41 +366,50 @@ describe('Pluggable store — throttle', () => {
             return at;
         };
 
-        // 1. AT a window boundary every slot is still in the future, so the shared counter binds
-        //    and two processes draw from ONE budget: 500ms apart fleet-wide, not 500ms apart each.
-        //    This is what the store is for, and the property a per-process cursor could most
-        //    easily have broken.
-        const atBoundary = await fleet('2/s', 2, 3, 0);
-        expect(atBoundary.map((x) => x.t)).toEqual([
+        // 1. AT a window boundary: two processes draw from ONE budget — 500ms apart fleet-wide,
+        //    not 500ms apart each. This always held; the counter's slots were in the future here,
+        //    so even the fallback paced the fleet correctly.
+        expect((await fleet('2/s', 2, 3, 0)).map((x) => x.t)).toEqual([
             0, 500, 1000, 1500, 2000, 2500,
         ]);
 
-        // 2. MID-window, every slot up to `now` is already stale, and a stale slot cannot pace
-        //    anybody — only each process's own cursor can.
+        // 2. MID-window is the case the counter could not reach: every slot up to `now` is already
+        //    stale, and a stale slot paces nobody. The cursor is not a schedule of positions, so
+        //    there is no "stale prefix" to inherit — `max(now, cell)` starts from the present and
+        //    every process advances the same cell. Same 500ms fleet-wide, from a standing start
+        //    59.5s into a one-minute window.
         const midWindow = await fleet('120/m', 2, 3, 59_500);
+        expect(midWindow.map((x) => x.t)).toEqual([
+            59_500, 60_000, 60_500, 61_000, 61_500, 62_000,
+        ]);
 
-        //    a. Each process still honours the declared spacing internally. That is the invariant
-        //       the cursor buys, and the one that was violated outright before it.
-        for (const p of [0, 1]) {
-            const mine = midWindow.filter((x) => x.p === p).map((x) => x.t);
-            for (let i = 1; i < mine.length; i++)
-                expect((mine[i] ?? 0) - (mine[i - 1] ?? 0)).toBe(500);
-        }
-
-        //    b. So the instantaneous burst is bounded by the PROCESS COUNT rather than by how many
-        //       slots the window had left unclaimed. One process used to drain all of them into a
-        //       single instant; two processes now put exactly two calls there.
+        // 3. No instant carries more than one grant — the fleet-wide invariant, where the fallback
+        //    could only bound a burst by the process count.
         const perInstant = new Map<number, number>();
         for (const { t } of midWindow)
             perInstant.set(t, (perInstant.get(t) ?? 0) + 1);
-        expect(Math.max(...perInstant.values())).toBe(2);
+        expect(Math.max(...perInstant.values())).toBe(1);
 
-        //    c. And here is the residue itself, asserted rather than described: through the stale
-        //       prefix the fleet emits at 2× the declared rate (N× for N workers), recovering only
-        //       once the slots catch up with the clock. Closing this needs the fleet-wide GCRA
-        //       cell — when that lands, THIS is the assertion that should fail.
-        expect(midWindow.map((x) => x.t)).toEqual([
+        // 4. Three workers, same story: the fleet emits every 500ms regardless of how many
+        //    processes share the cell. Under the fallback this was 3× the declared rate.
+        expect((await fleet('120/m', 3, 2, 59_500)).map((x) => x.t)).toEqual([
+            59_500, 60_000, 60_500, 61_000, 61_500, 62_000,
+        ]);
+
+        // 5. And the FALLBACK still behaves as documented, pinned against a store with `reserve`
+        //    withheld — this is the path an eventually-consistent backend takes, so its residue is
+        //    a live property, not history. Mid-window the fleet emits at N× the declared rate,
+        //    recovering once the slots catch up with the clock.
+        const noCell = await fleet('120/m', 2, 3, 59_500, withoutReserve());
+        expect(noCell.map((x) => x.t)).toEqual([
             59_500, 59_500, 60_000, 60_000, 60_500, 60_500,
         ]);
+        // Each process still honours the declared spacing internally — the bound the local cursor
+        // buys, and the reason the residue is N× rather than unbounded.
+        for (const p of [0, 1]) {
+            const mine = noCell.filter((x) => x.p === p).map((x) => x.t);
+            for (let i = 1; i < mine.length; i++)
+                expect((mine[i] ?? 0) - (mine[i - 1] ?? 0)).toBe(500);
+        }
     });
 });

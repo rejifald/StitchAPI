@@ -216,19 +216,50 @@ const KB = 1024;
 // #477/#524 took. `main` had run down to 0.02 / 0.007, which is why a +0.03 KB fix tripped the gate
 // at all; the step is sized to the headroom the gate is meant to hold rather than to this change,
 // so the next small core-path fix is not gated on a budget PR of its own.
+// Budgets raised for ADR 0024 — the fleet-wide GCRA cell (23.50→23.70 / 20.90→21.10 KB; measured
+// 23.52 / 20.95, so the capability is +0.24 / +0.26 against a `main` at 23.28 / 20.69). ADR 0023
+// closed the cold-start burst with a PER-PROCESS pacing cursor and recorded what that could not
+// buy: a stale slot paces nobody, so N workers sharing a store still emit at N× the declared rate
+// until the slots catch up. This is the primitive that closes it — `StitchStore.reserve`, one
+// atomic read-compute-write over a shared cursor, implemented by `memoryStore`, `@stitchapi/redis`
+// (Lua) and `@stitchapi/deno-kv` (compare-and-set).
+//
+// What the bytes buy, on the core path because `memoryStore` is the DEFAULT store:
+//   • `memoryStore.reserve` — the reference cell, and the one every in-process test paces on;
+//   • the second pacing path in `createStoreThrottle`, selected when the backend has the verb;
+//   • `vaultView` forwarding it only when the backend really has it, so a seam's namespaced view
+//     reports the backend's true capability instead of making every store look GCRA-capable.
+//
+// It cannot move behind a subpath: this is the throttle, which `stitch()` reaches whenever a
+// `store` is configured, and the fallback has to stay reachable from the same call site for a
+// backend that cannot offer a cell (Cloudflare KV is eventually consistent — no atomic
+// read-compute-write to build one from). Nor can the two pacing paths share their wait/sleep
+// tail: factoring it into one async helper MEASURED WORSE (+0.06 KB, the closure and its extra
+// promise costing more than the duplicated four lines), so the repetition stays on purpose.
+//
+// The conventional 0.2 KB step rather than a minimum one — this is a new capability with a new
+// store verb behind it, not a fix squeezing past a ceiling, and #620 had just restored the same
+// step. Headroom lands at 0.17 / 0.15.
+//
+// The ADVERTISED figure moves with it: the whole entry crosses a rounding boundary at 23.53 KB, so
+// every site quoting it goes ~23 → ~24 kB (`import { stitch }` stays ~21). Eight sites, propagated
+// under the `bundle-advertised-size` drift tether — both READMEs, the installation and principles
+// pages, the home-page metrics component, and the docs' own source blurb. Recorded here because
+// this is the number the project advertises, and a budget raise that quietly left the docs
+// claiming the old one would be the exact drift that tether exists to catch.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 23.5 * KB,
+        budget: 23.7 * KB,
         advertised: true,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 20.9 * KB,
+        budget: 21.1 * KB,
         advertised: true,
     },
     {

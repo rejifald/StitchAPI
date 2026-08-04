@@ -382,14 +382,21 @@ describe('Decision 12 — streaming is concurrency-exempt but rate-charged', () 
         expect(r.waited).toBe(0);
     });
 
-    test('createStoreThrottle: rateOnly skips concurrency but DOES charge the rate window', async () => {
+    test('createStoreThrottle: rateOnly skips concurrency but DOES charge the rate gate', async () => {
         const store = memoryStore();
         const t = createStoreThrottle({ concurrency: 1, rate: '100/s' }, store);
+        // Both opens are charged (Decision 12: the rate gate bills at open). Asserted through the
+        // limiter rather than its bookkeeping: three rate-only acquires must take two full
+        // spacings to get through, which is what "charged" means to a caller. The previous version
+        // read the per-window counter key directly, which pinned the fallback's internal
+        // representation — with a `reserve`-capable store the same charges land on the ADR 0024
+        // cursor and no counter key exists at all, so it broke without the behaviour changing.
+        const start = now();
         await t.acquire('svc', { rateOnly: true });
         await t.acquire('svc', { rateOnly: true });
-        // The per-window rate counter records BOTH opens (Decision 12: charge the rate gate at open).
-        const windowStart = Math.floor(now() / 1000) * 1000;
-        expect(await store.get(`rl:svc:${windowStart}`)).toBe(2);
+        await t.acquire('svc', { rateOnly: true });
+        // spacing is 10ms at 100/s; the first is free, so three acquires span ~20ms.
+        expect(now() - start).toBeGreaterThanOrEqual(15);
     });
 
     test('chainThrottle forwards rateOnly to every gate (seam bucket + member)', async () => {
