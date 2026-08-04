@@ -261,4 +261,76 @@ describe('Pluggable store — throttle', () => {
             expect((ats[n - 2] ?? 0) - (ats[n - 3] ?? 0)).toBeGreaterThan(120);
         }
     });
+
+    // ADR 0023. The test above fires every acquire AT ONCE and asserts on the TAIL, which is
+    // where the bug it was written for lived. Both defects fixed here hid in what it does not
+    // look at: the head of the schedule, and arrivals spread over more than one window. The
+    // acceptance criterion is therefore total admitted against budget — the only measure that
+    // catches a limiter letting calls through early rather than bunching them late.
+    test('the same rate spelled two ways admits the same number of calls', async () => {
+        // '2/s' and '120/m' are one rate: spacing 500ms either way. They differ only in `per`,
+        // which used to set the counter's window AND the schedule origin — so `'120/m'` admitted
+        // ~10x its budget (a full minute of credit on a cold key) and `'2/s'` ~3x (a fresh
+        // origin every second, run through the previous second's pending grants).
+        const DURATION = 4000;
+        const BUDGET = 8; // 4s at 2/s
+        const admitted = async (rate: string): Promise<number> => {
+            const t = createStoreThrottle({ rate }, memoryStore());
+            const start = Date.now();
+            let granted = 0;
+            const inflight: Promise<void>[] = [];
+            // Spread arrivals so they land across SEVERAL windows — all-at-once puts every
+            // caller on one counter and cannot see a rollover at all.
+            while (Date.now() - start < DURATION) {
+                inflight.push(
+                    t.acquire('k').then(() => {
+                        if (Date.now() - start <= DURATION) granted++;
+                    }),
+                );
+                await new Promise((r) => setTimeout(r, 50));
+            }
+            await Promise.race([
+                Promise.all(inflight),
+                new Promise((r) => setTimeout(r, 50)),
+            ]);
+            return granted;
+        };
+
+        const [short, long] = await Promise.all([
+            admitted('2/s'),
+            admitted('120/m'),
+        ]);
+        // Bounds are deliberately loose against real timers on a loaded CI box, and still nowhere
+        // near the defect: it admitted 24 and 79 against this budget of 8, so a ceiling of 10
+        // catches both with room to spare while absorbing a couple of calls' worth of drift.
+        // A slow machine can only push grants LATER, i.e. below the ceiling, so this edge is safe.
+        expect(short).toBeLessThanOrEqual(BUDGET + 2);
+        expect(long).toBeLessThanOrEqual(BUDGET + 2);
+        // And the two spellings agree, which is the property `per` leaking into grant times broke
+        // — they differed by 55 (24 vs 79) before, so ±2 is a real assertion, not a formality.
+        expect(Math.abs(short - long)).toBeLessThanOrEqual(2);
+    }, 30000);
+
+    test('a cold key does not open with a burst, however long its window', async () => {
+        // The opening burst was `count` slots — every slot already elapsed in the window before
+        // the first call. `count` scales with `per`, so a long window bursted harder: '600/m'
+        // released the whole batch at once while '10/s', the same rate, released 1-3. Both must
+        // now admit exactly one call without waiting. (Spacing 100ms so 20 calls cost ~2s.)
+        const openingBurst = async (rate: string): Promise<number> => {
+            const t = createStoreThrottle({ rate }, memoryStore());
+            const start = Date.now();
+            const at = await Promise.all(
+                Array.from({ length: 20 }, async () => {
+                    await t.acquire('k');
+                    return Date.now() - start;
+                }),
+            );
+            return at.filter((ms) => ms < 50).length; // half a spacing
+        };
+
+        // ≤2 rather than exactly 1, for the same CI-drift reason: the defect released the entire
+        // batch of 20 at once, so this still fails loudly if the anchor regresses.
+        expect(await openingBurst('10/s')).toBeLessThanOrEqual(2);
+        expect(await openingBurst('600/m')).toBeLessThanOrEqual(2);
+    }, 30000);
 });

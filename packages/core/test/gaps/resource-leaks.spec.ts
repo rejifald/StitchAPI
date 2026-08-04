@@ -67,9 +67,17 @@ test('store throttle: old rate-window keys do not accumulate over many windows',
     // Many distinct windows were touched over the run...
     const rlSeen = [...seen].filter((k) => k.startsWith('rl:seamA:'));
     expect(rlSeen.length).toBeGreaterThan(1);
-    // ...but only the CURRENT window's key should still be live (the rollover deletes the prior).
-    const rlLive = [...liveKeys].filter((k) => k.startsWith('rl:seamA:'));
-    expect(rlLive.length).toBeLessThanOrEqual(1);
+    // ...but only the CURRENT window should still be live (the rollover deletes the prior).
+    // Counted in WINDOWS, not keys: a window is represented by more than one key — the counter
+    // plus the origin its grants are measured from (ADR 0023) — and the invariant this guards is
+    // that a rolled-over window leaves nothing behind, not how many keys one window happens to
+    // use. Counting keys would have made adding the origin look like a leak.
+    const liveWindows = new Set(
+        [...liveKeys]
+            .filter((k) => k.startsWith('rl:seamA:'))
+            .map((k) => k.replace(/:t0$/, '')),
+    );
+    expect(liveWindows.size).toBeLessThanOrEqual(1);
 });
 
 // ── 1a'. memoryStore sweeps expired entries on write (no unbounded growth) ───

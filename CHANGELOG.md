@@ -320,6 +320,39 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **A store-backed `throttle` now actually enforces its rate, and two spellings of one rate
+  behave the same.** ([ADR 0023](docs/adr/0023-a-rate-is-a-minimum-spacing.md)) `'2/s'` and
+  `'120/m'` are the same rate — 500ms between calls either way — and under a shared store they
+  were not the same request. Against a budget of 8 calls, the store-backed limiter admitted **24**
+  for `'2/s'` and **79** for `'120/m'`; the in-process limiter admitted exactly 8 for both.
+
+    Two separate defects, with opposite skews. Grants were scheduled from the window's
+    epoch-aligned start, so a key first seen part-way through a window was credited with every slot
+    that had already elapsed — those grants sit in the past and all fire at once, an opening burst
+    of `count`, which is worst for a **long** window (`'120/m'` released a whole batch of 20
+    immediately; `'2/s'` released 1). And a window rollover restarted the schedule at `now`, running
+    the new window's slots through grants still pending past the boundary — worst for a **short**
+    window. Slots are now measured from the window's first arrival, published in the store by
+    whichever caller the atomic increment hands `n === 1`, and the schedule carries across a
+    rollover. Both spellings now sit exactly at budget, and the opening burst is one call.
+
+    This is the fixed-window burst the even-spacing design was introduced to prevent; the claim
+    held _within_ a window, and failed for a key that starts mid-window — which is every key in a
+    freshly started process. The existing test could not see it: it fires every acquire at once and
+    asserts on the tail of the schedule, where the overflow grants genuinely are spaced correctly.
+    The regression test is now total admitted against budget, for both spellings, plus the opening
+    burst — and each of the two fixes was reverted independently to confirm it is load-bearing.
+
+    Still not exact continuous GCRA across processes: the per-window counter reset and the
+    process-local schedule head are both approximations. Closing them needs an atomic
+    read-compute-write of a timestamp in the store, which the `StitchStore` contract does not offer
+    (its `increment` TTL is deliberately bound to the creating increment and never extended), so it
+    stays deferred — now with a clearer price.
+
+    **BREAKING CHANGE:** no API changes, but a store-backed `throttle` that was silently admitting
+    several times its configured rate will now hold the rate you asked for. If throughput drops after
+    upgrading, the limiter was over-admitting before and the new number is the one you configured.
+
 - **`Surface.resumeRetry` takes the canonical duration form too: its return widens to
   `number | string`.** The sibling of the `SurfaceOutcome.after` fix below, found by sweeping the
   surface under the new [P17](docs/CONTRACT.md#p17--one-canonical-duration-form)/[P25](docs/CONTRACT.md#p25--one-canonical-size-form)

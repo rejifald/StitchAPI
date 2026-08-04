@@ -1,6 +1,6 @@
 # ADR 0023 — A rate is a minimum spacing, not a window budget; the two limiters must agree before the grammar grows
 
-- **Status:** Proposed (2026-08-04). Nothing here is implemented. Opened by the question "does the P17/P25 `number | string` widening extend to a rate?" ([#618](https://github.com/rejifald/StitchAPI/pull/618)); the answer is no, but establishing why surfaced a live defect in the store-backed limiter that this ADR treats as the blocking issue. Touches the pluggable store ([DESIGN.md §13](../DESIGN.md), which has no ADR of its own) and builds on [ADR 0010](./0010-injectable-clock.md) (the injectable `Clock`, whose tags already include `throttle` — the fix's tests need it).
+- **Status:** Accepted (2026-08-04). **Decisions 1, 2 and 4 are implemented**; Decision 2 resolved to shape (a) once implementing it priced (b) properly, and its two sub-fixes ship with the measurement as their regression test. Decision 3 (the frozen grammar) and Decision 5 (recording the non-widening in P17/P25) are pending and unblocked. Opened by the question "does the P17/P25 `number | string` widening extend to a rate?" ([#618](https://github.com/rejifald/StitchAPI/pull/618)); the answer is no, but establishing why surfaced a live defect in the store-backed limiter that this ADR treats as the blocking issue. Touches the pluggable store ([DESIGN.md §13](../DESIGN.md), which has no ADR of its own) and builds on [ADR 0010](./0010-injectable-clock.md) (the injectable `Clock`, whose tags already include `throttle` — the fix's tests need it).
 - **Date:** 2026-08-04
 - **Tags:** resilience, throttle, store, api-surface, correctness, P1, P12, P16, P17, P25
 
@@ -135,13 +135,11 @@ so that `'1/s'` and `'60/m'` are once again the same request. The window is an
 implementation device for sharing a counter across processes; it must not leak into
 observable behaviour.
 
-Two shapes are plausible and this ADR does **not** pick between them — that belongs
-in the fix, with tests:
+Two shapes were plausible:
 
-- **(a) Clamp the credit.** Keep the per-window counter, but schedule the Nth grant
-  from `max(windowStart, firstSeenInWindow)` rather than `windowStart`, so a cold
-  key cannot claim elapsed time it was not present for. Smallest change; keeps the
-  existing store contract; still approximate across boundaries.
+- **(a) Clamp the credit.** Keep the per-window counter, but stop measuring slots from
+  `windowStart`, so a cold key cannot claim elapsed time it was not present for.
+  Smallest change; keeps the existing store contract.
 - **(b) Store the timestamp.** Hold `nextGrantAt` in the store rather than a counter,
   which is exact GCRA and spelling-independent by construction. This needs an atomic
   read-compute-write the `StitchStore` contract does not currently offer — the
@@ -149,11 +147,52 @@ in the fix, with tests:
   contract change ([P21](../CONTRACT.md#p21--every-contract-has-an-extension-seam)
   makes room for it, but it is every implementor's problem, so it is a real cost).
 
-Whichever lands, the regression test is the measurement above: **total admitted over
-a multi-window interval, against budget, for two spellings of one rate** — not just
-the spacing of the tail.
+**Resolved to (a).** Implementing it turned up a constraint that raises (b)'s price
+beyond what this ADR first estimated: the store contract **requires** `increment`'s
+TTL to be bound to the creating increment and never extended — spelled out on
+`RedisDriver` and enforced in the Lua (`if v == 1 and ttl > 0 then PEXPIRE`), because
+_"a busy rate window would slide forever and never reset"_. So the counter's reset is
+the only idle-reset mechanism available, which rules out the obvious cheap route to
+(b) — a long-lived counter whose TTL tracks the schedule head — and leaves (b) needing a
+genuine new atomic primitive rather than a clever use of the existing one.
 
-### 3. The grammar stays frozen until Decision 2 ships
+(a) landed as two changes, because measurement showed **two** defects, not one, with
+opposite skews:
+
+1. **Slots are measured from the window's first arrival**, published in the store by
+   whichever caller the atomic increment hands `n === 1` — shared, so every caller in
+   the window agrees. (Measuring from a _process-local_ first-seen, as this ADR first
+   sketched, is wrong: a process joining a window late would schedule from its own
+   arrival against a counter the fleet had already advanced, and over-pace badly.)
+   This is the cold-key defect, worst for a **long** window.
+2. **The schedule carries across a rollover** — a new window's origin is
+   `max(now, head)`, where `head` is the latest grant this process has placed.
+   Without it a rollover restarts the slots at `now`, running them through grants
+   still pending past the boundary. This is the residual defect, worst for a **short**
+   window, and it is why fixing only (1) left `'2/s'` still admitting ~3× budget while
+   `'120/m'` became exact. `head` is process-local, which is exact for one process and
+   safe in a fleet — a process knows a subset of the fleet's grants, so its head can
+   only lag, and a lagging carry over-admits slightly rather than over-pacing anyone.
+
+Measured after the fix, same method as above — both spellings, in-process and store,
+now sit at the budget of 8, and the cold-key opening burst is 1 of 20 for both:
+
+| Rate      | Store, before | Store, after |
+| --------- | ------------- | ------------ |
+| `'2/s'`   | 25, 23        | 8, 8         |
+| `'120/m'` | 79, 79        | 8, 8         |
+
+The regression test is that measurement — **total admitted over a multi-window
+interval, against budget, for two spellings of one rate** — plus the opening burst,
+not the spacing of the tail. Each of the two changes was reverted independently with
+the tests in place to confirm each is load-bearing: reverting (1) fails both tests,
+reverting (2) fails the sustained one.
+
+This is **not** exact continuous GCRA across processes. The per-window counter reset
+and the process-local head are both still approximations, and closing them is still
+(b), still deferred, now with a clearer price tag.
+
+### 3. The grammar stayed frozen until Decision 2 shipped — it now has
 
 `<count>/<unit>` with `unit ∈ {ms, s, m}` is unchanged for now. The gap is real —
 `'1000/h'` is an ordinary API quota and cannot be written today, and the reachable
@@ -168,9 +207,10 @@ every extension makes the current defect worse rather than better:
   [P16](../CONTRACT.md#p16--cross-surface--cross-package-parity) parity break
   manufactured on purpose.
 
-Once Decision 2 lands, `per` no longer affects behaviour, and both extensions become
-pure notation over the one scalar — at which point they are cheap and this ADR
-recommends taking them. Ordering, not rejection.
+Both objections above are now **historical**: Decision 2 has landed, `per` no longer
+reaches a grant time, and both extensions are pure notation over the one scalar. This
+ADR recommends taking them — it was ordering, not rejection — as a follow-up that ships
+the grammar and the guides together. The freeze stays only until someone writes it.
 
 ### 4. `rate` stays a flat string; it does not become an envelope
 
@@ -257,10 +297,10 @@ the opposite of a fix, reached by treating "consistent" as the goal instead of
 
 ## Open questions
 
-1. **Decision 2(a) or 2(b)?** Deliberately left to the fix. (b) is correct and costs a
-   `StitchStore` contract extension every implementor must satisfy; (a) is
-   proportionate and stays approximate at boundaries. The measurement above is the
-   acceptance criterion either way.
+1. ~~**Decision 2(a) or 2(b)?**~~ **Resolved: (a)** — see Decision 2. Implementing it
+   also priced (b) properly: the contract's creation-bound `increment` TTL means (b)
+   needs a genuinely new atomic store primitive, not a clever use of the existing one.
+   (b) remains the only route to exact cross-process GCRA and stays deferred.
 2. **Should the defect ship as a fix or a breaking change?** It tightens a limiter, so
    callers relying on today's over-admission would see fewer calls get through. That is
    a bug fix by any reading, but on the `rc` channel it is worth a CHANGELOG note under

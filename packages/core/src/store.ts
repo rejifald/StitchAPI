@@ -110,17 +110,29 @@ export interface Throttle {
 
 /**
  * Store-backed throttle. Rate is paced by EVEN-SPACED grants over an atomic per-window counter in
- * the store: the Nth grant in a window is scheduled at `windowStart + (N-1)·(per/count)` — the
- * same cadence as the in-process limiter ({@link createThrottle}), so attaching a store no longer
- * silently switches pacing to bursty fixed-window (the spacing even carries across the window
- * boundary). A SHARED store paces calls across the whole fleet; concurrency stays in-process (a
- * distributed semaphore needs leases — out of scope here).
+ * the store: the Nth grant is scheduled one `per/count` after the (N-1)th — the same cadence as
+ * the in-process limiter ({@link createThrottle}), so attaching a store does not switch pacing to
+ * bursty fixed-window. A SHARED store paces calls across the whole fleet; concurrency stays
+ * in-process (a distributed semaphore needs leases — out of scope here).
  *
- * The counter is per-window, so under SUSTAINED overload (offered load above the limit across
- * multiple windows) pacing is approximate at window edges: backlog scheduled on one window's
- * counter can overlap the next window's fresh counter. Exact continuous GCRA across processes would
- * need an atomic read-compute-write of a timestamp (a Lua cell or a new atomic store primitive) — a
- * `StitchStore` contract extension, deliberately deferred.
+ * Two things keep `per` out of the grant times, so that every spelling of one rate behaves the
+ * same way (ADR 0023 — `'2/s'` and `'120/m'` are the same request, and used not to be):
+ *
+ * - Slots are measured from the window's **first arrival**, published in the store by whichever
+ *   caller the atomic increment hands `n === 1`. Anchoring on the epoch-aligned `windowStart`
+ *   instead gave a cold key every slot that had already elapsed before anyone called — an opening
+ *   burst of `count`, so a long window bursted harder.
+ * - The schedule **carries across a rollover**: a new window's origin is `max(now, head)`, where
+ *   `head` is the latest grant this process has already placed. Restarting at `now` would run the
+ *   new window's slots through grants still pending past the boundary, and the residue scaled with
+ *   how often the counter rolled — worst for a SHORT window, the opposite skew to the first defect.
+ *
+ * `head` is process-local, which is exactly right for the single-process case and safe in a fleet:
+ * a process knows only a subset of the fleet's grants, so its head can only lag the true one, and
+ * a lagging carry over-admits slightly rather than over-pacing anyone. That residue, and the
+ * per-window counter reset behind it, are why this is still not exact continuous GCRA across
+ * processes — which needs an atomic read-compute-write of a timestamp (a Lua cell or a new atomic
+ * store primitive), a `StitchStore` contract extension that stays deliberately deferred.
  */
 export function createStoreThrottle(
     opts: ThrottleOptions | undefined,
@@ -135,6 +147,7 @@ export function createStoreThrottle(
             inFlight: number;
             waiters: (() => void)[];
             lastWindow?: number; // windowStart of the last `rl:` key this throttle minted
+            head?: number; // latest grant time this process has scheduled, + one spacing
         }
     >();
 
@@ -173,25 +186,63 @@ export function createStoreThrottle(
         }
         if (rate) {
             // Even-spaced pacing over the shared counter (mirrors createThrottle's `spacing`):
-            // the atomic increment hands each caller a unique slot N in the window, and slot N is
-            // scheduled at windowStart + (N-1)·spacing. Slot count+1 lands exactly at the next
-            // windowStart, so grants stay one `spacing` apart across the boundary — no fixed-window
-            // burst. No re-check loop: each caller owns a distinct, non-colliding slot.
+            // the atomic increment hands each caller a unique slot N, and slot N is scheduled one
+            // `spacing` after slot N-1. No re-check loop: each caller owns a distinct,
+            // non-colliding slot.
+            //
+            // The slots are measured from the window's FIRST ARRIVAL, not from its epoch-aligned
+            // start (ADR 0023). Anchoring on `windowStart` credited a key with every slot that had
+            // already elapsed before anyone called: those grants sit in the past, so they all fire
+            // at once, and the size of that opening burst is `count` — which scales with `per`. It
+            // made two spellings of ONE rate behave differently (`'120/m'` admitted ~10x what
+            // `'2/s'` did) and let a cold key emit a full window's budget instantly, the exact
+            // fixed-window burst the even spacing exists to prevent. `per` now sets only how often
+            // the shared counter rolls over; it is not an input to any grant time.
             const spacing = rate.per / rate.count; // ms between grants
             const windowStart = Math.floor(clock.now() / rate.per) * rate.per;
+            const counterKey = `rl:${key}:${windowStart}`;
+            const originKey = `${counterKey}:t0`;
             // Track the window we minted a key for; when it rolls over, DELETE the previous
-            // window's `rl:` key eagerly instead of waiting for its TTL to expire (the store's
+            // window's `rl:` keys eagerly instead of waiting for their TTL to expire (the store's
             // own sweep is opportunistic). Without this, a long-lived rate-limited seam leaves a
             // dead key per window in the backend until something else happens to evict it.
             const s = stateFor(key);
-            if (s.lastWindow !== undefined && s.lastWindow < windowStart)
-                await store.set(`rl:${key}:${s.lastWindow}`, undefined);
+            if (s.lastWindow !== undefined && s.lastWindow < windowStart) {
+                const stale = `rl:${key}:${s.lastWindow}`;
+                await store.set(stale, undefined);
+                await store.set(`${stale}:t0`, undefined);
+            }
             s.lastWindow = windowStart;
-            const n = await store.increment(
-                `rl:${key}:${windowStart}`,
-                rate.per + 100,
-            );
-            const grantAt = windowStart + (n - 1) * spacing;
+            const ttl = rate.per + 100;
+            const n = await store.increment(counterKey, ttl);
+            // Slot 1 IS the first arrival, and the atomic increment makes exactly one caller per
+            // window see `n === 1` across the whole fleet — so that caller publishes the origin
+            // every other caller in the window measures from. A reader that misses it (it raced
+            // the write, or the key lapsed) falls back to its own clock: that can only push a
+            // grant LATER than the true schedule, never earlier, so the failure mode is a touch
+            // of over-pacing rather than a burst.
+            const at = clock.now();
+            let origin = at;
+            if (n === 1) {
+                // Rolling over. The counter resets, but the SCHEDULE must not: grants already
+                // placed beyond this boundary are still pending, and restarting from `now` would
+                // run the new window's slots straight through them — the residual over-admission
+                // that survived anchoring on first arrival (it scales with how often the counter
+                // rolls, so it hit a short `per` hardest: `'2/s'` admitted ~3x its budget under
+                // overload while `'120/m'`, the same rate, was exact). Carrying this process's own
+                // schedule head across the boundary makes a single process exact and, in a fleet,
+                // strictly better than not carrying: a process only ever knows a SUBSET of the
+                // fleet's grants, so its head can only lag the true one — the residue shrinks
+                // toward the shared-counter behaviour instead of over-pacing anyone. A head left
+                // over from an idle stretch is already in the past and `max` discards it.
+                origin = Math.max(at, s.head ?? at);
+                await store.set(originKey, origin, ttl);
+            } else {
+                const published = await store.get(originKey);
+                if (typeof published === 'number') origin = published;
+            }
+            const grantAt = origin + (n - 1) * spacing;
+            s.head = Math.max(s.head ?? 0, grantAt + spacing);
             const wait = grantAt - clock.now();
             if (wait > 0) {
                 await clock.sleep(wait);
@@ -210,11 +261,16 @@ export function createStoreThrottle(
         else if (s.inFlight > 0) s.inFlight--;
         // Drop a fully-idle key's state so the `local` Map doesn't accumulate one entry per
         // ever-seen key. Keep it only while it still carries window bookkeeping (`lastWindow`),
-        // which a rate-paced key needs to clean up its `rl:` key on the next rollover.
+        // which a rate-paced key needs to clean up its `rl:` key on the next rollover, or a
+        // schedule head that has not yet lapsed — dropping THAT would forget the grants already
+        // placed past the next boundary and let the following window restart on top of them,
+        // which is the burst the carry exists to prevent. Same rule the in-process limiter
+        // applies to its own `nextGrantAt`: a still-pacing key outlives its last release.
         if (
             s.inFlight === 0 &&
             s.waiters.length === 0 &&
-            s.lastWindow === undefined
+            s.lastWindow === undefined &&
+            (s.head ?? 0) <= clock.now()
         )
             local.delete(key);
     }
