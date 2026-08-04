@@ -1546,26 +1546,32 @@ export interface Stitch<TOut = unknown, TIn = StitchInput> {
     report(
         ...args: [...Args<TIn>, opts?: boolean | AtLeastOne<InspectOptions>]
     ): Promise<RunReport<TOut>>;
+    // WHY THIS SLOT IS UNGUARDED — implementer detail, deliberately a line comment rather than
+    // JSDoc: the docs playground surfaces a member's JSDoc verbatim as autocomplete help
+    // (apps/docs/app/(home)/playground/playground-completions.generated.ts), where a wall of
+    // declaration-emit reasoning is noise for the reader hovering `.with`. The user-facing caveat
+    // stays in the JSDoc below; the mechanism lives here.
+    //
+    // `const P` is inferred from the argument exactly as on the config surfaces, so
+    // excess-property checking is suppressed the same way and `NoUnknownKeys` would be the fix —
+    // but this is the only signature whose RETURN type reads `keyof P`, and
+    // `keyof (P & NoUnknownKeys<P, …>)` does not reduce to `keyof P` while `P` is unresolved.
+    // Intersecting the parameter therefore rewrites `RelaxKeys<TIn, keyof P>` into a deferred union
+    // that `tsup`'s declaration rollup emits in a different form than source — so `lib`'s `Stitch`
+    // stops being structurally identical to `src`'s, and every `S extends Stitch<unknown>`
+    // constraint in the package breaks (`streaming-inference.test-d.ts` catches it immediately).
+    //
+    // The F-bounded spelling that would keep the parameter bare —
+    // `P extends Partial<TIn> & NoUnknownKeys<P, TIn, …>` — is a circular constraint (TS2313).
+    // Guarding this slot means degrading the public `Stitch` type for every consumer, which costs
+    // more than the hole it closes; the config surfaces have no such coupling and are all guarded.
     /**
      * Bind part of the call input, returning a stitch whose remaining input is relaxed by the keys
      * just supplied.
      *
-     * KNOWN LIMIT — this is the one authoring surface {@link NoUnknownKeys} deliberately does NOT
-     * guard, and the exception is structural rather than a matter of taste. `const P` is inferred
-     * from the argument here exactly as on the config surfaces, so excess-property checking is
-     * suppressed the same way and `.with({ params, parms })` binds nothing silently (weak-type
-     * detection catches only the case with no valid sibling key). But this signature is the only one
-     * whose RETURN type reads `keyof P`, and `keyof (P & NoUnknownKeys<P, …>)` does not reduce to
-     * `keyof P` while `P` is unresolved. Intersecting the parameter therefore rewrites
-     * `RelaxKeys<TIn, keyof P>` into a deferred union that `tsup`'s declaration rollup emits in a
-     * different form than source — so `lib`'s `Stitch` stops being structurally identical to
-     * `src`'s, and every `S extends Stitch<unknown>` constraint in the package breaks
-     * (`streaming-inference.test-d.ts` catches it immediately).
-     *
-     * The F-bounded spelling that would keep the parameter bare —
-     * `P extends Partial<TIn> & NoUnknownKeys<P, TIn, …>` — is a circular constraint (TS2313).
-     * Guarding this slot means degrading the public `Stitch` type for every consumer, which costs
-     * more than the hole it closes; the config surfaces have no such coupling and are all guarded.
+     * Unlike the config surfaces, a MISSPELLED input key here is not a compile error — it binds
+     * nothing, silently (`.with({ params, parms })` keeps the `params` and drops the typo). Spell
+     * the slots as `StitchInput` declares them.
      */
     with<const P extends Partial<TIn>>(
         partial: P,
