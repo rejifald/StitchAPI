@@ -55,7 +55,7 @@ export const getOrders = stitch({
     auth: bearer(env('API_TOKEN')), // resolved at call time; the caller never sees it
     output: z.array(z.object({ id: z.number(), total: z.number() })),
     pick: 'data',
-    retry: { attempts: 3, on: [429, 503], respectRetryAfter: true },
+    retry: { attempts: 3, on: [429, 503] },
     throttle: { rate: '10/s', concurrency: 4, pool: 'host' },
     timeout: { total: '10s' },
 });

@@ -22,7 +22,7 @@ import { z } from 'zod';
 - `output`: a schema **or** `drift(schema, opts)` — validated against the **picked** value
 - `pick`: dot-path string (e.g. `'data'`)
 - `auth`: an AuthStrategy (see below)
-- `retry`: `{ attempts (total incl. first, default 1), on: StatusMatch (default [429,502,503,504]), backoff: BackoffCurve | { curve, base, max }, respectRetryAfter }`
+- `retry`: `{ attempts (total incl. first, default 1), on: StatusMatch (default [429,502,503,504]), backoff: BackoffCurve | { curve, base, max }, respect (honor Retry-After, default true) }`
 - `throttle`: `{ rate: '2/s', concurrency: number, pool: 'stitch'|'host', delegate?: boolean, on?: StatusMatch }`
 - `timeout`: `{ total: number|string, perAttempt: number|string }` (ms or '30s')
 - `hooks`: `{ onRequest, onResponse, onError, onRetry }` — `(ctx) => void|Promise<void>`, `ctx = { name, attempt, req?, res?, error? }`

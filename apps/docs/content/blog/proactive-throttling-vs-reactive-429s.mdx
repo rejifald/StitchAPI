@@ -94,15 +94,15 @@ const search = stitch({
     // Proactive: stay under the limit so most 429s never happen.
     throttle: { rate: '5/s', concurrency: 2, pool: 'host' },
     // Reactive: if one slips through anyway, back off and honor Retry-After.
-    retry: { attempts: 3, on: [429, 503], respectRetryAfter: true },
+    retry: { attempts: 3, on: [429, 503] },
 });
 ```
 
-The two cover different failure shapes. The throttle handles the limit _you know about_ — the documented account ceiling you can pace yourself under. The retry handles the limit _you don't_: a burst from another process sharing the same token, a provider that tightened its limit without telling you, a transient `503` that has nothing to do with rate at all. When a `429` does land, `respectRetryAfter` defers to the server's `Retry-After` header instead of guessing. Throttle reduces how often you reach for the net; the net is still there for when you do.
+The two cover different failure shapes. The throttle handles the limit _you know about_ — the documented account ceiling you can pace yourself under. The retry handles the limit _you don't_: a burst from another process sharing the same token, a provider that tightened its limit without telling you, a transient `503` that has nothing to do with rate at all. When a `429` does land, the retry defers to the server's `Retry-After` header instead of guessing. Throttle reduces how often you reach for the net; the net is still there for when you do.
 
 ## Start reactive — turn on `throttle` when you brush the ceiling
 
-The reactive `429`/retry path is the sensible floor. At low volume you'll never come close to a provider's limit, and `retry` with `respectRetryAfter` handles the occasional burst cleanly. Start there.
+The reactive `429`/retry path is the sensible floor. At low volume you'll never come close to a provider's limit, and `retry` — which honors `Retry-After` out of the box — handles the occasional burst cleanly. Start there.
 
 Flip on `throttle` — a single field on the same stitch — when:
 

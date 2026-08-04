@@ -202,7 +202,7 @@ This is a concrete cookie wall (`GET /api/websites` needs a `session_token` cook
 ## 6. Resilience — retry, throttle, timeout
 
 ```ts
-retry:    { attempts: 3, backoff: 'expo-jitter', on: [429, 503], respectRetryAfter: true },
+retry:    { attempts: 3, backoff: 'expo-jitter', on: [429, 503] },
 throttle: { rate: '1/s', concurrency: 2, pool: 'host' },   // proactive limiter
 timeout:  { total: '30s', perAttempt: '10s' },
 ```

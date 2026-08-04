@@ -857,7 +857,18 @@ export interface RetryOptions {
      * (`backoff: 'fixed'` ≡ `backoff: { curve: 'fixed' }`); the envelope adds `base`/`max`.
      */
     backoff?: BackoffCurve | AtLeastOne<BackoffOptions>;
-    respectRetryAfter?: boolean;
+    /**
+     * Respect a `Retry-After` header on the failing response — delta-seconds OR an HTTP-date —
+     * using the server's stated wait in place of the computed `backoff`. **Default `true`**: the
+     * default `on` set (`[429, 502, 503, 504]`) is the statuses RFC 9110 defines the header for, so
+     * ignoring it means guessing at a number the server already told us. Set `false` to force the
+     * computed curve regardless.
+     *
+     * There is deliberately NO ceiling on the honored wait — `timeout.total` already bounds every
+     * sleep in the attempt loop (one patience budget, not two), and the wait aborts with the
+     * request signal. A stitch with no `timeout.total` waits as long as the server asks.
+     */
+    respect?: boolean;
 }
 export interface ThrottleOptions {
     rate?: string; // "2/s"

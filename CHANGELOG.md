@@ -13,6 +13,46 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **`retry.respectRetryAfter` becomes `retry.respect`, and a `Retry-After` header is now honored by
+  default.** The flag was opt-in, which meant the default retry behaviour ignored a number the
+  server had explicitly provided in favour of a guessed backoff curve — on exactly the statuses the
+  header exists for, since `retry.on` already defaults to `[429, 502, 503, 504]`. Every code example
+  in this repository turned it on; the delegate-backoff path already parsed the header with no flag
+  at all; and the delegate-backoff guide already described honoring it as baseline behaviour. The
+  default was the outlier, not the preference.
+
+    ```ts
+    // before — every example in the docs looked like this
+    retry: { attempts: 4, on: [429, 502, 503], respectRetryAfter: true },
+    // after — that is now the default
+    retry: { attempts: 4, on: [429, 502, 503] },
+    // opt out and force the computed curve
+    retry: { attempts: 4, on: [429, 502, 503], respect: false },
+    ```
+
+    The name loses its suffix because the envelope already supplies it: inside `retry`, the only
+    thing there is to respect is the server's `Retry-After`. It stays a plain boolean, so it can
+    never be misread as carrying a duration — and it is spelled differently from
+    `RateLimitError.retryAfter` on purpose. That field's job is to **carry** the header's parsed
+    value in ms ([P22](docs/CONTRACT.md#p22--a-standards-interop-contract-uses-the-standards-field-names),
+    so it keeps the standard's name); this one is a house policy about whether to obey it. One token
+    for both would put a magnitude and a boolean in one word — the collision
+    [P2](docs/CONTRACT.md#p2--dont-reuse-one-word-for-genuinely-different-concepts--rename-one)
+    renamed `reconnect.backoff` to avoid.
+
+    **`tsc` catches the migration**: `NoUnknownConfigKeys` rejects a stale `respectRetryAfter:` by
+    name. That is why this ships as a rename rather than a silent default flip — a change to how
+    long your process sleeps should fail loudly, not quietly start behaving differently. Per
+    [P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel) this is a hard
+    break on the `rc` channel, with no `@deprecated` alias.
+
+    **There is deliberately no ceiling on an honored `Retry-After`.** `timeout.total` is already the
+    one place a caller declares how long they are willing to wait, and it already bounds every
+    backoff sleep in the attempt loop — a second limit inside `retry` would be two patience budgets
+    for one question. A long `Retry-After` under a total budget fails with the timeout instead of
+    parking the call, and the wait ends early on the request's `AbortSignal`. A stitch with `retry`
+    and no `timeout.total` waits as long as the server asks.
+
 - **`acceptStatus` folds into a `verdict` envelope, and response classification becomes one
   decision.** ([ADR 0022](docs/adr/0022-response-classification-merges-at-interpret.md)) The engine
   used to decide what a response _was_ in two places at two times: a status check inside the attempt

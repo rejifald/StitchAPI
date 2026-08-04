@@ -167,7 +167,6 @@ const chat = llm({
         attempts: 3,
         on: [429, 529],
         backoff: 'expo-jitter',
-        respectRetryAfter: true,
     },
     throttle: { rate: '5/s', concurrency: 2, pool: 'host' },
     timeout: { total: '60s' },

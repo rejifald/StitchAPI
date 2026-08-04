@@ -24,7 +24,6 @@ const getUser = stitch({
         attempts: 3,
         on: [429, 503],
         backoff: 'expo-jitter',
-        respectRetryAfter: true,
     },
 });
 
@@ -37,8 +36,9 @@ const user = await getUser({ params: { id: 1 } });
 `attempts` is the **total** number of tries including the first, so `3` means up
 to two retries. `on` is the set of status codes that trigger a retry.
 `backoff: 'expo-jitter'` doubles the wait each attempt and spreads it randomly to
-avoid thundering herds. `respectRetryAfter` honors a `Retry-After` header when the
-server tells you when to come back. Each retry rides the
+avoid thundering herds — though when the server sends a `Retry-After` header, that
+wait wins over the computed one, which is the default (`respect: false` opts out).
+Each retry rides the
 [event stream](/docs/concepts/event-stream) as a `progress` event (phase
 `retry`), so you can [watch it happen](/docs/recipes/watch-a-call-as-it-happens).
 When the dependency is not just flaky but failing, compose retry with a

@@ -741,9 +741,14 @@ async function* attemptLoop(
             }
 
             if (retryMatch(res.status) && attempt < max) {
-                const ra = cfg.retry?.respectRetryAfter
-                    ? parseRetryAfter(res.headers['retry-after'], rt.clock)
-                    : undefined;
+                // `!== false`, not a truthy check: `retry.respect` defaults ON. The server's stated
+                // wait beats a curve we guessed, and the default `on` set is exactly the statuses
+                // the header exists for. Only an explicit `false` forces the computed backoff.
+                // Unbounded by design — `sleepWithin` already caps every wait at `timeout.total`.
+                const ra =
+                    cfg.retry?.respect !== false
+                        ? parseRetryAfter(res.headers['retry-after'], rt.clock)
+                        : undefined;
                 yield {
                     type: 'progress',
                     phase: 'retry',
