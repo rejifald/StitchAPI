@@ -35,6 +35,7 @@ import type {
     AdapterRequest,
     AdapterResponse,
     NoUnknownKeys,
+    NoUnknownNestedKeys,
     Stitch,
     StitchConfig,
 } from './types';
@@ -192,7 +193,9 @@ export interface PostMessageChannel {
      */
     request<const C extends RequestOptions = RequestOptions>(
         type: string,
-        opts?: C & NoUnknownKeys<C, RequestOptions, 'RequestOptions'>,
+        opts?: C &
+            NoUnknownKeys<C, RequestOptions, 'RequestOptions'> &
+            NoUnknownNestedKeys<C>,
     ): Stitch<OutputOf<C>, InputOf<C>>;
     /**
      * Fire-and-forget send (no reply awaited): post `{ type, payload }` and resolve immediately. A
@@ -206,7 +209,9 @@ export interface PostMessageChannel {
      */
     emit<const C extends EmitOptions = EmitOptions>(
         type: string,
-        opts?: C & NoUnknownKeys<C, EmitOptions, 'EmitOptions'>,
+        opts?: C &
+            NoUnknownKeys<C, EmitOptions, 'EmitOptions'> &
+            NoUnknownNestedKeys<C>,
     ): Stitch<void, InputOf<C>>;
     /**
      * Subscribe to inbound events of `opts.type`. A STREAMING surface (id `'postmessage-event'`):
@@ -219,7 +224,9 @@ export interface PostMessageChannel {
      */
     events<const C extends EventsOptions = EventsOptions>(
         type: string,
-        opts?: C & NoUnknownKeys<C, EventsOptions, 'EventsOptions'>,
+        opts?: C &
+            NoUnknownKeys<C, EventsOptions, 'EventsOptions'> &
+            NoUnknownNestedKeys<C>,
     ): Stitch<OutputOf<C>[], InputOf<C>>;
     /**
      * Register a handler that ANSWERS inbound requests of `type` (the receiving side — e.g. an

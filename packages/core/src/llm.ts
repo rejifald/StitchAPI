@@ -19,6 +19,7 @@ import type { Surface, SurfaceOutcome } from './surface';
 import {
     type NoRequestShapeOnLlm,
     type NoUnknownKeys,
+    type NoUnknownNestedKeys,
     type Seam,
     type SeamOptions,
     type Stitch,
@@ -204,6 +205,7 @@ const llmStitch = <const C extends LlmOptions = LlmOptions>(
     // identity and carries no `buildRequest`, so `method` IS live on `stitch({ kind: llmSurface })`.
     config: C &
         NoUnknownKeys<C, LlmOptions, 'LlmOptions'> &
+        NoUnknownNestedKeys<C> &
         NoRequestShapeOnLlm,
 ): Stitch<LlmResult, InputOf<C>> =>
     // The `as` retypes the loose `makeStitch` result to the declared `InputOf<C>` call-arg type —
@@ -221,6 +223,7 @@ export interface LlmSeamApi {
     readonly stitch: <const C extends LlmOptions = LlmOptions>(
         config: C &
             NoUnknownKeys<C, LlmOptions, 'LlmOptions'> &
+            NoUnknownNestedKeys<C> &
             NoRequestShapeOnLlm,
     ) => Stitch<LlmResult, InputOf<C>>;
     readonly seam: Seam;

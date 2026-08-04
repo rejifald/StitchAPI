@@ -342,10 +342,11 @@ describe('the open → half-open boundary is `cooldown`, and only `cooldown`', (
         expect(opts.cooldown).toBe('30s');
     });
 
-    // The removal is NOT caught at the `circuit:` slot, only on a direct annotation as above:
-    // `NoUnknownKeys` guards top-level `StitchConfig` keys, and a nested envelope inside an
-    // inferred `const C` gets no excess-property check (`retry: { nonsense }` compiles too). So a
-    // stale config would silently get a DIFFERENT boundary. The nudge is what makes it loud.
+    // The `circuit:` slot rejects it too, since `NoUnknownNestedKeys` began descending into the
+    // house envelopes — when this test was written only the direct annotation above was guarded,
+    // and a stale key at the slot compiled clean. The runtime nudge is now the SECOND line of
+    // defence rather than the only one: it still fires for JS callers and for anyone who silences
+    // the error, which is exactly what the suppression below stands in for.
     test('a stale `halfOpenAfter` warns at construction rather than changing timing in silence', () => {
         const warn = vi
             .spyOn(console, 'warn')
@@ -355,8 +356,8 @@ describe('the open → half-open boundary is `cooldown`, and only `cooldown`', (
                 name: 'orders',
                 baseUrl: 'https://api.test',
                 path: '/svc',
-                // No `@ts-expect-error` here on purpose — this compiles CLEAN, which is the gap
-                // the nudge covers. If a future EPC fix makes this line an error, delete the test.
+                // @ts-expect-error — rejected at the slot now; suppressed so the RUNTIME nudge
+                // below is still exercised on the shape a JS caller can still hand us.
                 circuit: { failures: 1, cooldown: '30s', halfOpenAfter: '60s' },
             });
             expect(warn).toHaveBeenCalledTimes(1);
