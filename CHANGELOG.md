@@ -13,6 +13,30 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `circuit.halfOpenAfter` is removed — `cooldown` is the one open→half-open
+  boundary.** ([CONTRACT.md P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space)) The two
+  fields named the same instant: `createCircuit` resolved `halfOpenAfter ?? cooldown` into a single
+  value, and `phase()` — the only place the open/half-open boundary is decided — compared against
+  that one value. So `cooldown` had no effect of its own once `halfOpenAfter` was set, and the
+  "probe on a different clock than the fast-fail window" the docs described was never possible: a
+  call is either rejected or admitted, so there is no third phase for a second timer to gate.
+
+    Migration — fold the value you cared about into `cooldown`:
+
+    ```ts
+    // before
+    circuit: { failures: 5, cooldown: '30s', halfOpenAfter: '60s' },
+    // after — '60s' was the effective boundary, so it is the cooldown
+    circuit: { failures: 5, cooldown: '60s' },
+    ```
+
+    **Check your configs by hand.** This one does not fail the build: `NoUnknownKeys` guards
+    top-level `StitchConfig` keys, and a nested envelope inside an inferred config literal gets no
+    excess-property check, so a leftover `halfOpenAfter` still typechecks — and the breaker silently
+    switches to the `cooldown` boundary, which is a real timing change wherever the two differed.
+    `stitch()` now logs a one-time construction warning naming the stitch and the boundary it
+    actually gets. A direct `const o: CircuitOptions = { … }` annotation does still error.
+
 - **`retry.respectRetryAfter` becomes `retry.respect`, and a `Retry-After` header is now honored by
   default.** The flag was opt-in, which meant the default retry behaviour ignored a number the
   server had explicitly provided in favour of a guessed backoff curve — on exactly the statuses the

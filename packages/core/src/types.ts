@@ -909,12 +909,12 @@ export interface CircuitOptions {
      */
     failures?: number;
     /**
-     * Fast-fail window after opening, before a half-open trial — `30_000`, `'30s'`. Required by
-     * design (P15); `createCircuit` throws when it is missing.
+     * Fast-fail window after opening — `30_000`, `'30s'`. When it elapses the breaker goes
+     * half-open and admits one trial call, so this is the **single** open→half-open boundary:
+     * fast-fail and probe cannot run on different clocks, because a call is either rejected or
+     * admitted (CONTRACT.md P1). Required by design (P15); `createCircuit` throws when missing.
      */
     cooldown?: number | string;
-    /** When to allow a half-open trial — `60_000`, `'1m'`. Default: `cooldown`. */
-    halfOpenAfter?: number | string;
     /** Store namespace to share a breaker across stitches (default: stitch/host key). */
     key?: string;
 }
