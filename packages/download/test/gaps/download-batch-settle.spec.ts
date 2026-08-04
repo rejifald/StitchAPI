@@ -51,7 +51,7 @@ test('downloadAll settles per item and never rejects — a 404 + a RST are isola
             server.route('GET', it.path, {
                 statuses: [200],
                 rawBody: `ok${it.path}`,
-                ttfbDelayMs: 40,
+                ttfbDelay: 40,
             });
         else if (it.kind === 'notfound')
             server.route('GET', it.path, {

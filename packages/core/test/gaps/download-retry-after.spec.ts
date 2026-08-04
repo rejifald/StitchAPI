@@ -1,8 +1,13 @@
 // Pins X10 (S3): a 429 carrying `Retry-After` is honored on the DOWNLOAD path — the retry waits EXACTLY
 // the Retry-After delta before re-attempting, then succeeds. Driven on a `manualClock` so the wait is
 // virtual-time-exact (deterministic, zero wall-clock): the retry is gated until the clock is advanced
-// past the delta. 429 ∈ the default retry set; `respectRetryAfter` routes the wait through the header
+// past the delta. 429 ∈ the default retry set; `retry.respect` routes the wait through the header
 // value instead of the computed backoff (resilience.ts `parseRetryAfter`).
+//
+// `respect: true` is spelled out even though #608 made it the DEFAULT: this test's subject IS that
+// routing, so pinning it explicitly keeps the spec honest if the default ever moves again — and it
+// reads as the declaration under test rather than an inherited one. The negative case (`respect:
+// false` forcing the computed curve) is core's to cover, not the download surface's.
 import { download } from '../../src/download';
 import type { DownloadResult } from '../../src/download';
 import { manualClock } from '../../src/test-clock';
@@ -46,7 +51,7 @@ test('a 429 Retry-After is honored on the download path — the retry waits the 
     const getLimited = download({
         baseUrl: server.url,
         path: '/limited',
-        retry: { attempts: 2, respectRetryAfter: true }, // 429 ∈ default on
+        retry: { attempts: 2, respect: true }, // 429 ∈ default on
         clock,
     });
 

@@ -43,7 +43,7 @@ test('a dead stall trips the idle timeout and is cut ALONE — siblings finish w
     server.route('GET', '/well-0', {
         statuses: [200],
         rawBody: 'well-0-body',
-        ttfbDelayMs: 30,
+        ttfbDelay: 30,
     });
     server.route('GET', '/stalls', {
         statuses: [200],
@@ -54,12 +54,12 @@ test('a dead stall trips the idle timeout and is cut ALONE — siblings finish w
     server.route('GET', '/well-1', {
         statuses: [200],
         rawBody: 'well-1-body',
-        ttfbDelayMs: 30,
+        ttfbDelay: 30,
     });
     server.route('GET', '/well-2', {
         statuses: [200],
         rawBody: 'well-2-body',
-        ttfbDelayMs: 30,
+        ttfbDelay: 30,
     });
 
     // The stall sits second → admitted in the first wave (K=2) alongside a healthy item; it then pins
@@ -103,7 +103,7 @@ test('a slow-but-alive stream SURVIVES an idle timeout that a dead stall trips',
         statuses: [200],
         rawBody: 'x'.repeat(60),
         chunkBytes: 10,
-        chunkDelayMs: 40,
+        chunkDelay: 40,
     });
     // stall: write 8, then hold forever → no progress for > 120ms → trips.
     server.route('GET', '/stall', {

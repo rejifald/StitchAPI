@@ -1,5 +1,5 @@
 /**
- * Aborted into an item when a caller cancels it (`cancel` / `cancelAll`). The batch surfaces the item
+ * Aborted into an item when a caller cancels it (`cancel`). The batch surfaces the item
  * as `status: 'cancelled'` — cancellation is not a failure, so it carries no classification.
  */
 export class DownloadCancelledError extends Error {

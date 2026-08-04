@@ -32,7 +32,7 @@ test('a transient 503 is retried and the whole file re-downloaded (no Range), re
     const getFlaky = download({
         baseUrl: server.url,
         path: '/flaky',
-        retry: { attempts: 2, backoff: 'fixed', baseMs: 10 }, // 503 ∈ default on; prompt backoff
+        retry: { attempts: 2, backoff: { curve: 'fixed', base: 10 } }, // 503 ∈ default on; prompt backoff
     });
 
     const out = await getFlaky();

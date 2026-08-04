@@ -93,7 +93,7 @@ test('downloadAll rolls per-item progress into a correct aggregate across concur
             statuses: [200],
             rawBody: 'x'.repeat(n),
             chunkBytes: 100,
-            chunkDelayMs: 5,
+            chunkDelay: 5,
         });
 
     let last: BatchProgress | undefined;

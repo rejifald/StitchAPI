@@ -32,7 +32,7 @@ test('by DEFAULT, duplicate URLs are INDEPENDENT fetches — two requests on the
     server.route('GET', '/dup', {
         statuses: [200],
         rawBody: 'dup-body',
-        ttfbDelayMs: 40, // hold both slots open together so a dedupe (if any) would collapse them
+        ttfbDelay: 40, // hold both slots open together so a dedupe (if any) would collapse them
     });
     const url = `${server.url}/dup`;
 
@@ -51,7 +51,7 @@ test('dedupe:true collapses concurrent duplicate URLs onto ONE in-flight request
     server.route('GET', '/dup', {
         statuses: [200],
         rawBody: 'dup-body',
-        ttfbDelayMs: 40,
+        ttfbDelay: 40,
     });
     const url = `${server.url}/dup`;
 

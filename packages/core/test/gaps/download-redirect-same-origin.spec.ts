@@ -11,7 +11,7 @@
 //
 // Real-timer, loose bounds (a socket test): the hop is local and prompt. The server is closed in
 // afterAll.
-import { apiKey, env } from '../../src';
+import { apiKey, env } from '../../src/auth';
 import { download } from '../../src/download';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
@@ -55,7 +55,7 @@ test('a same-origin redirect KEEPS x-api-key / authorization / x-amz-* on the se
     const getFile = download({
         baseUrl: server.url,
         path: '/entry',
-        auth: apiKey({ value: env('SAMEORIGIN_REDIRECT_KEY') }),
+        auth: apiKey({ secret: env('SAMEORIGIN_REDIRECT_KEY') }),
         headers: {
             authorization: AWS_AUTH,
             'x-amz-date': '20260706T000000Z',

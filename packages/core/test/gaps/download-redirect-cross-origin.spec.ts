@@ -18,7 +18,7 @@
 //
 // Real-timer, loose bounds (a socket test): the hop is local and prompt; the only time assertion is a
 // wide ceiling proving it never hangs. Both servers are closed in afterAll.
-import { apiKey, env } from '../../src';
+import { apiKey, env } from '../../src/auth';
 import { download } from '../../src/download';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer, ReqInfo } from '../support/mock-server';
@@ -78,7 +78,7 @@ test('a cross-origin redirect drops x-api-key / authorization / x-amz-* before t
         path: '/signed',
         // apiKey() writes `x-api-key`; the SigV4-style headers are set directly (awsSigV4 isn't a
         // public export) — together they cover the full credential/custom-header set the strip must drop.
-        auth: apiKey({ value: env('XORIGIN_REDIRECT_KEY') }),
+        auth: apiKey({ secret: env('XORIGIN_REDIRECT_KEY') }),
         headers: {
             authorization: AWS_AUTH,
             'x-amz-date': '20260706T000000Z',

@@ -50,7 +50,11 @@ test('500 IS retried when opted in via retry.on', async () => {
     const getErr = download({
         baseUrl: server.url,
         path: '/err',
-        retry: { attempts: 2, on: [500], backoff: 'fixed', baseMs: 10 },
+        retry: {
+            attempts: 2,
+            on: [500],
+            backoff: { curve: 'fixed', base: 10 },
+        },
     });
 
     const out = await getErr();
