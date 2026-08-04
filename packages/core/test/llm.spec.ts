@@ -5,6 +5,7 @@
 import type { Adapter, AdapterRequest } from '../src';
 import { anthropic, llm, openai } from '../src/llm';
 import type { LlmProvider } from '../src/llm';
+import { seam } from '../src/seam';
 
 function captureAdapter(response: unknown): {
     adapter: Adapter;
@@ -144,6 +145,26 @@ test('llm honours an explicit url over the provider default', async () => {
     });
 
     await chat({ body: { messages: [{ role: 'user', content: 'hi' }] } });
+    expect(calls[0]!.url).toBe('https://gateway.internal/llm');
+});
+
+// The binder is implemented loose and `as`-cast to `LlmSeamApi['stitch']` (the `download.ts` idiom,
+// needed once the member carries `NoUnknownKeys<C, …>`), so its declared type cannot vouch for the
+// runtime wiring — the cast is exactly what the compiler stops checking. This pins that a bound
+// member still resolves through the seam's baseUrl and reaches the provider mapping.
+test('llm.bind(existingSeam).stitch(...) creates an llm member of that seam', async () => {
+    const { adapter, calls } = captureAdapter({ content: [{ text: 'bound' }] });
+    const api = seam({ baseUrl: 'https://gateway.internal', adapter });
+    const chat = llm.bind(api).stitch({
+        provider: anthropic,
+        model: 'claude-opus-4-8',
+        path: '/llm',
+    });
+
+    const { text } = await chat({
+        body: { messages: [{ role: 'user', content: 'hi' }] },
+    });
+    expect(text).toBe('bound');
     expect(calls[0]!.url).toBe('https://gateway.internal/llm');
 });
 

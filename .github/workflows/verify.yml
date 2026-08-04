@@ -71,6 +71,12 @@ jobs:
             # shorthand/duration violation in the published surface, baselined against
             # scripts/contract-violations.baseline.json. Tool-free source scan — no build.
             - run: pnpm check:contract
+            # Unknown-key guard ratchet: every authoring surface that infers `const C` from an
+            # option-bag argument must intersect `NoUnknownKeys`, or be baselined with a reason
+            # in scripts/unknown-keys.baseline.json. Without the guard, that inference suppresses
+            # excess-property checking, so a misspelled or REMOVED slot typechecks and is
+            # silently dropped — which is what makes a slot rename unsafe. Source scan — no build.
+            - run: pnpm check:unknown-keys
             # Release coherence: version lockstep + prerelease-aware peer ranges +
             # scoped publishConfig.access, LICENSE/README presence, so a bad bump fails
             # the PR, not the publish.

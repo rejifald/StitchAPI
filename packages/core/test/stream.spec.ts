@@ -5,6 +5,7 @@
 // charges the rate gate at open. Streams are driven by a fake adapter over Web Streams, so chunk
 // boundaries are fully controlled (no socket).
 import { createThrottle } from '../src/resilience';
+import { seam } from '../src/seam';
 import { chainThrottle, createStoreThrottle, memoryStore } from '../src/store';
 import { stream, streamSurface } from '../src/stream';
 import { now } from '../src/util';
@@ -33,6 +34,20 @@ describe('stream surface identity (Decisions 5, 11)', () => {
             kind?: unknown;
         };
         expect(json.kind).toBe('stream');
+    });
+
+    // The binder is implemented loose and `as`-cast to `StreamSeamApi['stitch']` (the `download.ts`
+    // idiom), so its declared member type cannot vouch for the runtime wiring — the cast is exactly
+    // what the compiler stops checking. This pins that a bound member still resolves through the
+    // seam's baseUrl and streams, which is the sse binder's counterpart test.
+    test('stream.bind(existingSeam).stitch(...) creates a stream member of that seam', async () => {
+        const api = seam({ baseUrl: 'https://x.test' });
+        const chunks = stream.bind(api).stitch({
+            path: '/s',
+            stream: 'lines',
+            adapter: streamAdapter(streamOf(['a\nb\n'])),
+        });
+        expect(await chunks()).toEqual(['a', 'b']);
     });
 });
 

@@ -34,6 +34,7 @@ import type { Surface } from './surface';
 import type {
     AdapterRequest,
     AdapterResponse,
+    NoUnknownKeys,
     Stitch,
     StitchConfig,
 } from './types';
@@ -191,7 +192,7 @@ export interface PostMessageChannel {
      */
     request<const C extends RequestOptions = RequestOptions>(
         type: string,
-        opts?: C,
+        opts?: C & NoUnknownKeys<C, RequestOptions, 'RequestOptions'>,
     ): Stitch<OutputOf<C>, InputOf<C>>;
     /**
      * Fire-and-forget send (no reply awaited): post `{ type, payload }` and resolve immediately. A
@@ -205,7 +206,7 @@ export interface PostMessageChannel {
      */
     emit<const C extends EmitOptions = EmitOptions>(
         type: string,
-        opts?: C,
+        opts?: C & NoUnknownKeys<C, EmitOptions, 'EmitOptions'>,
     ): Stitch<void, InputOf<C>>;
     /**
      * Subscribe to inbound events of `opts.type`. A STREAMING surface (id `'postmessage-event'`):
@@ -218,7 +219,7 @@ export interface PostMessageChannel {
      */
     events<const C extends EventsOptions = EventsOptions>(
         type: string,
-        opts?: C,
+        opts?: C & NoUnknownKeys<C, EventsOptions, 'EventsOptions'>,
     ): Stitch<OutputOf<C>[], InputOf<C>>;
     /**
      * Register a handler that ANSWERS inbound requests of `type` (the receiving side — e.g. an
@@ -761,5 +762,16 @@ function makeChannel(
         return Promise.resolve();
     }
 
-    return { request, emit, events, respond, close };
+    // The three guarded members are `as`-cast to their declared types — the `download.ts` binder
+    // idiom. A generic impl whose parameter carries `NoUnknownKeys<C, …>` cannot be checked against
+    // a member of that same shape: TypeScript instantiates the impl's `C` with the target's whole
+    // intersection, so the two `InputOf<C>` return types stop matching. `respond`/`close` stay
+    // unguarded and fully checked.
+    return {
+        request: request as PostMessageChannel['request'],
+        emit: emit as PostMessageChannel['emit'],
+        events: events as PostMessageChannel['events'],
+        respond,
+        close,
+    };
 }
