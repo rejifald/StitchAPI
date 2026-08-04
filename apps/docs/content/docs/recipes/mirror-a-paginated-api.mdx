@@ -32,7 +32,6 @@ const mirror = stitch({
         attempts: 4,
         on: [429, 503],
         backoff: 'expo-jitter',
-        respectRetryAfter: true,
     },
     throttle: { rate: '5/s', concurrency: 2, pool: 'host' },
     paginate: {

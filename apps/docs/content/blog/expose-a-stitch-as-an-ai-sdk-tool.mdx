@@ -36,7 +36,7 @@ export const getOrder = stitch({
     // The credential resolves at call time and never reaches the caller.
     auth: bearer(env('ORDERS_API_TOKEN')),
     // Resilience is declared once, here — not in the tool, not in the agent.
-    retry: { attempts: 3, on: [429, 503], respectRetryAfter: true },
+    retry: { attempts: 3, on: [429, 503] },
     throttle: { rate: '10/s', concurrency: 4, pool: 'host' },
     timeout: { total: '5s' },
     cache: '30s',

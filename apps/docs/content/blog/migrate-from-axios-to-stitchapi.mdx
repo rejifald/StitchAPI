@@ -86,7 +86,6 @@ const getUser = stitch({
         attempts: 4,
         on: [429, 502, 503, 504],
         backoff: 'expo-jitter',
-        respectRetryAfter: true,
     },
     timeout: { total: '30s', perAttempt: '10s' },
     pick: 'data', // the API wraps payloads in { data }
@@ -104,7 +103,7 @@ const user = await getUser({ params: { id } }); // typed · validated · retried
 | ------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | request interceptor adding `Authorization`  | attaches a token per request  | `auth: bearer(env('API_TOKEN'))` — secret resolves at call time, caller never holds it ([bearer](/docs/guides/auth/bearer))       |
 | 401 response interceptor → refresh + replay | re-login on expiry            | `auth: oauth2(...)` or `cookieSession(...)` — auto re-login on expiry, no hand-rolled replay ([oauth2](/docs/guides/auth/oauth2)) |
-| retry interceptor with backoff              | re-issues on 429/502/503/504  | `retry: { attempts, on, backoff: 'expo-jitter', respectRetryAfter: true }` ([retry](/docs/guides/resilience/retry))               |
+| retry interceptor with backoff              | re-issues on 429/502/503/504  | `retry: { attempts, on, backoff: 'expo-jitter' }` ([retry](/docs/guides/resilience/retry))                                        |
 | `baseURL`                                   | one host for many calls       | `baseUrl` on the stitch, or once on a `seam()` ([seam](/docs/guides/authoring/seam))                                              |
 | `validateStatus`                            | decide what status throws     | the engine never throws on a non-2xx by itself — you declare which statuses `retry`, and a `StitchError` carries the rest         |
 | `transformResponse` + `as User`             | reshape, then assert the type | `pick` plus an `output` schema (wrap in `drift()` to flag shape changes) ([drift](/docs/guides/validation/drift))                 |
@@ -128,7 +127,7 @@ const getUser = stitch({
     path: '/users/{id}',
     adapter: axiosAdapter(client, { timeout: 10_000 }), // defaults merge under every request
     auth: bearer(env('API_TOKEN')),
-    retry: { attempts: 4, on: [429, 502, 503, 504], respectRetryAfter: true },
+    retry: { attempts: 4, on: [429, 502, 503, 504] },
     output: User,
 });
 ```
@@ -151,7 +150,7 @@ const getUser = stitch({
     baseUrl: 'https://api.example.com',
     path: '/users/{id}',
     auth: bearer(env('API_TOKEN')),
-    retry: { attempts: 4, on: [429, 502, 503, 504], respectRetryAfter: true },
+    retry: { attempts: 4, on: [429, 502, 503, 504] },
     output: User,
 }); // no adapter → fetchAdapter() · zero runtime deps
 ```
@@ -178,7 +177,7 @@ const api = seam({
         clientId: env('CLIENT_ID'),
         clientSecret: env('CLIENT_SECRET'),
     }),
-    retry: { attempts: 4, on: [429, 502, 503, 504], respectRetryAfter: true },
+    retry: { attempts: 4, on: [429, 502, 503, 504] },
 });
 
 const getUser = api.stitch({ path: '/users/{id}', output: User });

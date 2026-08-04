@@ -78,7 +78,7 @@ import { stitch } from 'stitchapi';
 const getQuote = stitch({
     baseUrl: 'https://api.example.com',
     path: '/quote/{symbol}',
-    retry: { attempts: 3, on: [429, 502, 503], respectRetryAfter: true },
+    retry: { attempts: 3, on: [429, 502, 503] },
     timeout: { total: '10s', perAttempt: '3s' },
     circuit: { failures: 5, cooldown: 30_000 },
 });

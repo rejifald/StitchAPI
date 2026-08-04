@@ -20,7 +20,6 @@ const getUser = stitch({
         attempts: 3,
         on: [429, 503],
         backoff: { curve: 'expo-jitter', base: 200 },
-        respectRetryAfter: true,
     },
 });
 ```
@@ -49,9 +48,21 @@ spreads it randomly up to that exponential value to avoid thundering herds, and
 `'fixed'` waits a constant `base` every time. Every computed delay is clamped to
 `max`.
 
-`respectRetryAfter` honors a `Retry-After` header on the failing response —
-delta-seconds or an HTTP-date — using it in place of the computed backoff when
-the server tells you when to come back.
+`respect` honors a `Retry-After` header on the failing response — delta-seconds
+or an HTTP-date — using it in place of the computed backoff. **It defaults to
+`true`**: the statuses `on` retries by default are the ones RFC 9110 defines the
+header for, so when the server tells you when to come back, guessing at a curve
+instead is strictly worse information. Set `respect: false` to force the computed
+curve regardless.
+
+There is deliberately no ceiling on an honored `Retry-After`. A server asking for
+five minutes gets five minutes, because the place to say how long you're willing
+to wait is [`timeout.total`](/docs/guides/resilience/timeout) — one patience
+budget for the whole call, not a second one hidden in `retry`. It already bounds
+every backoff sleep, so a long `Retry-After` under a total budget fails with the
+timeout rather than parking the call; the wait also ends early if the caller's
+`AbortSignal` fires. A stitch with `retry` and **no** `timeout.total` will wait
+as long as the server asks.
 
 Each retry surfaces as a `progress` event (phase `retry`) on the
 [event stream](/docs/concepts/event-stream), so a trace sees every wait and

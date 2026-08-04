@@ -75,8 +75,10 @@ test('rejects with status 503 after exhausting all retry attempts', async () => 
     expect(server.callCount('/down')).toBe(3);
 });
 
-// ── 3. Respects Retry-After ────────────────────────────────────────────────
-test('honors the Retry-After header instead of the short backoff', async () => {
+// ── 3. Respects Retry-After BY DEFAULT ─────────────────────────────────────
+// `retry.respect` defaults ON, so this config never names it. The 5ms backoff is what a
+// non-respecting engine would wait, which is what makes the elapsed assertion discriminating.
+test('honors the Retry-After header with no opt-in, over the short backoff', async () => {
     server.route('GET', '/limited', {
         statuses: [429, 200],
         retryAfterSeconds: 1,
@@ -85,12 +87,7 @@ test('honors the Retry-After header instead of the short backoff', async () => {
     const call = stitch({
         baseUrl: server.url,
         path: '/limited',
-        retry: {
-            attempts: 2,
-            on: [429],
-            respectRetryAfter: true,
-            backoff: { base: 5 },
-        },
+        retry: { attempts: 2, on: [429], backoff: { base: 5 } },
     });
 
     const t0 = Date.now();
@@ -99,6 +96,58 @@ test('honors the Retry-After header instead of the short backoff', async () => {
 
     // Retry-After: 1 (second) must dominate the 5ms backoff.
     expect(elapsed).toBeGreaterThanOrEqual(900);
+}, 15000);
+
+// ── 3b. `respect: false` forces the computed curve ─────────────────────────
+test('respect:false ignores Retry-After and uses the computed backoff', async () => {
+    server.route('GET', '/limited-off', {
+        statuses: [429, 200],
+        retryAfterSeconds: 1,
+        body: { ok: true },
+    });
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/limited-off',
+        retry: {
+            attempts: 2,
+            on: [429],
+            respect: false,
+            backoff: { curve: 'fixed', base: 5 },
+        },
+    });
+
+    const t0 = Date.now();
+    await expect(call()).resolves.toEqual({ ok: true });
+    const elapsed = Date.now() - t0;
+
+    // The 5ms fixed backoff wins — nowhere near the 1s the server asked for.
+    expect(elapsed).toBeLessThan(500);
+    expect(server.callCount('/limited-off')).toBe(2);
+}, 15000);
+
+// ── 3c. `timeout.total` is the bound on a long Retry-After ─────────────────
+// There is no ceiling ON the honored wait by design (one patience budget, not two). A server
+// asking for 30s does not park the call for 30s when the caller declared a total budget — the
+// shared deadline cuts the sleep short and fails with the timeout, not a 30s stall.
+test('timeout.total bounds a long Retry-After instead of waiting it out', async () => {
+    server.route('GET', '/parked', {
+        statuses: [429, 200],
+        retryAfterSeconds: 30,
+        body: { ok: true },
+    });
+    const call = stitch({
+        baseUrl: server.url,
+        path: '/parked',
+        retry: { attempts: 2, on: [429], backoff: { base: 5 } },
+        timeout: { total: '300ms' },
+    });
+
+    const t0 = Date.now();
+    await expect(call()).rejects.toThrow(/timed out/);
+    const elapsed = Date.now() - t0;
+
+    expect(elapsed).toBeLessThan(3_000); // NOT the 30s the server asked for
+    expect(server.callCount('/parked')).toBe(1); // never got to the second attempt
 }, 15000);
 
 // ── 4. Throttle rate spacing ───────────────────────────────────────────────

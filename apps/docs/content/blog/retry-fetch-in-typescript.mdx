@@ -112,14 +112,13 @@ const getUser = stitch({
         attempts: 3,
         on: [429, 503],
         backoff: { curve: 'expo-jitter', base: 200 },
-        respectRetryAfter: true,
     },
 });
 
 const user = await getUser({ params: { id: '42' } }); // retried, backed off, Retry-After honored
 ```
 
-Every pitfall above is now a named field. `attempts` is the **total** number of tries including the first, so `attempts: 3` means up to two retries. `on` lists the status codes that trigger a retry — defaulting to the transient set `[429, 502, 503, 504]`, which is what keeps a dead `4xx` from being retried at all. `backoff: 'expo-jitter'` doubles the delay each attempt and spreads it randomly to break up the herd, paced from `backoff.base` and clamped to `backoff.max`; `'expo'` and `'fixed'` are there when you want a different curve. And `respectRetryAfter: true` uses the server's `Retry-After` header in place of the computed backoff when the response carries one.
+Every pitfall above is now a named field. `attempts` is the **total** number of tries including the first, so `attempts: 3` means up to two retries. `on` lists the status codes that trigger a retry — defaulting to the transient set `[429, 502, 503, 504]`, which is what keeps a dead `4xx` from being retried at all. `backoff: 'expo-jitter'` doubles the delay each attempt and spreads it randomly to break up the herd, paced from `backoff.base` and clamped to `backoff.max`; `'expo'` and `'fixed'` are there when you want a different curve. And when the response carries a `Retry-After` header, the server's number is used in place of the computed backoff — the default, since it beats guessing; `respect: false` turns it off.
 
 The non-idempotent-write pitfall doesn't vanish — nothing can make a blind `POST` retry safe — but it stops being a silent default. Adding `retry` to a write is a deliberate line you write, and the [retry guide](/docs/guides/resilience/retry) flags it: pair it with an idempotency key so the server collapses the duplicate, or leave retry off. The policy is declared where you can see it, not buried in a shared helper three files away.
 
