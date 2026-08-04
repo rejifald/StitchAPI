@@ -337,12 +337,39 @@ export function compose(config: Fragment): ResolvedStitchConfig {
 //      replays it; with no `retry` it usually has nothing to collapse. (Not useless in every case —
 //      a proxy/transport resending the request below the stitch carries the same key for a server
 //      to dedupe — hence a hint, not an error. A *derived* `keyOf` dedupes resubmissions on its own.)
-function warnIdempotency(cfg: ResolvedStitchConfig): void {
+//
+// It also carries the transitional nudge for the REMOVED `circuit.halfOpenAfter` (CONTRACT.md P1;
+// a P19 hard break on the `rc` channel, so there is no alias to fall back to). That field always
+// named the SAME instant as `cooldown` — `phase()` compared against `halfOpenAfter ?? cooldown` —
+// so the two could never run on different clocks the way the docs claimed. Dropping it moves the
+// boundary to `cooldown`, a REAL timing change for any config that set the two to different
+// values, and nothing else would say so: `NoUnknownKeys` guards TOP-LEVEL slots only, and a nested
+// envelope inside an inferred `const C` gets no excess-property check either (verified:
+// `retry: { nonsense }` compiles too), so a stale `halfOpenAfter` typechecks clean. Delete at 1.0 GA.
+//
+// It shares THIS function rather than declaring its own (it did, in #610) purely to pay for the
+// `tripped` flag this commit adds to `CircuitRecord`: the two changes together put
+// `import { stitch }` 0.01 KB over its gzip budget. Merging the two nudges buys back one function
+// declaration, one call site, and one duplicated `name` — enough to land both without raising a
+// gate the repo deliberately keeps tight. Behaviour is unchanged: the circuit nudge runs before the
+// idempotency guard, so it still fires for every surface, not just `http`.
+function warnConstruction(cfg: ResolvedStitchConfig): void {
+    const name = cfg.name ?? cfg.path ?? 'stitch';
+    // `halfOpenAfter` is off the type now, so it is read back at its former `number | string`
+    // shape — the only values a stale config can be carrying.
+    const circuit = cfg.circuit as
+        | { cooldown?: number | string; halfOpenAfter?: number | string }
+        | undefined;
+    if (circuit?.halfOpenAfter !== undefined)
+        console.warn(
+            `stitchapi: \`${name}\` sets \`circuit.halfOpenAfter\`, which was removed — it goes ` +
+                `half-open after \`cooldown\` (${String(circuit.cooldown)}) now. Move the value ` +
+                `you want to \`cooldown\`.`,
+        );
     const idem = cfg.idempotency;
     // `cfg.kind` is always set now (it defaults to `httpSurface`), so the "a surface owns its own
     // method semantics" skip has to ask which surface — not whether there is one.
     if (!idem || idem.warn === false || cfg.kind.id !== 'http') return;
-    const name = cfg.name ?? cfg.path ?? 'stitch';
     const method = (cfg.method ?? 'GET').toUpperCase();
     if (method === 'GET' || method === 'HEAD') {
         console.warn(
@@ -357,30 +384,6 @@ function warnIdempotency(cfg: ResolvedStitchConfig): void {
     console.warn(
         `stitchapi: \`${name}\` has \`idempotency\` with a random key and no \`retry\`, so it ` +
             `only dedupes its own retries — add \`retry\`, or set \`idempotency.keyOf\`.`,
-    );
-}
-
-// Construction-time nudge for the REMOVED `circuit.halfOpenAfter` (CONTRACT.md P1; a P19 hard
-// break on the `rc` channel, so there is no alias to fall back to). It always named the SAME
-// instant as `cooldown`: `phase()` is the one place the open/half-open boundary is decided and it
-// compared against `halfOpenAfter ?? cooldown`, so the two could never run on different clocks the
-// way the docs claimed. Dropping it moves that boundary to `cooldown`, which is a REAL timing
-// change for any config that set the two to different values — and nothing else would say so.
-// `NoUnknownKeys` guards TOP-LEVEL slots only, and a nested envelope inside an inferred `const C`
-// gets no excess-property check either (verified: `retry: { nonsense }` compiles too), so a stale
-// `halfOpenAfter` typechecks clean. This warning is the only signal it gets. Delete at 1.0 GA.
-function warnHalfOpenAfter(cfg: ResolvedStitchConfig): void {
-    // `halfOpenAfter` is off the type now, so it is read back at its former `number | string`
-    // shape — the only values a stale config can be carrying.
-    const circuit = cfg.circuit as
-        | { cooldown?: number | string; halfOpenAfter?: number | string }
-        | undefined;
-    if (circuit?.halfOpenAfter === undefined) return;
-    const name = cfg.name ?? cfg.path ?? 'stitch';
-    console.warn(
-        `stitchapi: \`${name}\` sets \`circuit.halfOpenAfter\`, which was removed — it goes ` +
-            `half-open after \`cooldown\` (${String(circuit.cooldown)}) now. Move the value ` +
-            `you want to \`cooldown\`.`,
     );
 }
 
@@ -970,8 +973,7 @@ export function makeStitch<T = unknown>(
     shared?: SharedRuntime,
 ): Stitch<T> {
     const cfg = compose(config);
-    warnIdempotency(cfg);
-    warnHalfOpenAfter(cfg);
+    warnConstruction(cfg);
     // A seam injects shared instances; a standalone stitch builds its own (unchanged behaviour:
     // a store-backed throttle only when a `store` is configured, else the in-process limiter).
     const store = shared?.store ?? cfg.store ?? memoryStore();
