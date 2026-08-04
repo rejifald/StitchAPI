@@ -8,7 +8,7 @@
         "test": "tsx src/dispatch.test.ts && tsx src/adapters/fetch-shim.test.ts && tsx src/handlers/streaming-llm.test.ts && tsx src/handlers/registration.test.ts && tsx src/handlers/auth-resilience.test.ts && tsx src/handlers/errors-status.test.ts && tsx src/handlers/events.test.ts && tsx src/handlers/graphql.test.ts && tsx src/handlers/pagination.test.ts"
     },
     "devDependencies": {
-        "@types/node": "^22.10.0",
+        "@types/node": "^26.1.2",
         "tsx": "^4.23.1",
         "typescript": "^5.9.3"
     },

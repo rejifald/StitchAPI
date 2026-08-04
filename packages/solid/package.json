@@ -65,7 +65,7 @@
     },
     "devDependencies": {
         "@stitchapi/query-core": "workspace:*",
-        "@types/node": "^22.10.0",
+        "@types/node": "^26.1.2",
         "solid-js": "^1.9.14",
         "stitchapi": "workspace:*",
         "tsup": "^8.3.0",

@@ -69,7 +69,7 @@
     "devDependencies": {
         "@stitchapi/query-core": "workspace:*",
         "@testing-library/react": "^16.1.0",
-        "@types/node": "^22.10.0",
+        "@types/node": "^26.1.2",
         "@types/react": "^19.0.0",
         "jsdom": "^25.0.1",
         "react": "^19.2.8",

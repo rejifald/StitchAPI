@@ -67,7 +67,7 @@
         "@tailwindcss/postcss": "^4.3.3",
         "@tanstack/react-query": "^5.101.4",
         "@types/mdx": "^2.0.13",
-        "@types/node": "^25.9.1",
+        "@types/node": "^26.1.2",
         "@types/react": "^19.2.16",
         "@types/react-dom": "^19.2.3",
         "esbuild": "^0.28.1",
