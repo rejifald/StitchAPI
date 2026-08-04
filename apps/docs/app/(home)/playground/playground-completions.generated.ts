@@ -15,7 +15,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "kind",
             type: "property",
             detail: "Surface",
-            info: "Request style — a  plugin (ADR 0005 Decisions 1-2). Omitted = the built-in `http` surface. The public `__config` exposes only the surface's `id` string (so a stitch's declaration round-trips as JSON — Decision 11); the live object stays on `__rawConfig`.",
+            info: "Request style — a Surface plugin (ADR 0005 Decisions 1-2). Omitted = the built-in `http` surface. The public `__config` exposes only the surface's `id` string (so a stitch's declaration round-trips as JSON — Decision 11); the live object stays on `__rawConfig`.",
         },
         {
             label: "method",
@@ -27,19 +27,19 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "wire",
             type: "property",
             detail: "AtLeastOne<WireOptions>",
-            info: "Wire-format options — request body encoding, response decoding, and urlencoded array serialisation, grouped by category rather than by request/response phase (CONTRACT.md P24). The opaque `wire: {}` is rejected (P20); no field dominates, so there is no scalar shorthand (P14), exactly as with .",
+            info: "Wire-format options — request body encoding, response decoding, and urlencoded array serialisation, grouped by category rather than by request/response phase (CONTRACT.md P24). The opaque `wire: {}` is rejected (P20); no field dominates, so there is no scalar shorthand (P14), exactly as with StitchConfig.input.",
         },
         {
             label: "stream",
             type: "property",
             detail: "StreamDecode | AtLeastOne<StreamOptions>",
-            info: "Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body (`'bytes'` default / `'lines'` / `'ndjson'` / `'json'`). `'json'` is the structural, unframed streaming-JSON decoder (issue #111): one `delta` per complete value / top-level array element, tolerant of internal newlines and concatenated values. Only meaningful for the `stream` surface. A bare  string is shorthand for the object form — `stream: 'ndjson'` ≡ `stream: { decode: 'ndjson' }` (CONTRACT.md P12); the opaque `stream: {}` is rejected (P20).",
+            info: "Streaming options (ADR 0005 Decision 5) — how a `stream` surface decodes the live body (`'bytes'` default / `'lines'` / `'ndjson'` / `'json'`). `'json'` is the structural, unframed streaming-JSON decoder (issue #111): one `delta` per complete value / top-level array element, tolerant of internal newlines and concatenated values. Only meaningful for the `stream` surface. A bare StreamDecode string is shorthand for the object form — `stream: 'ndjson'` ≡ `stream: { decode: 'ndjson' }` (CONTRACT.md P12); the opaque `stream: {}` is rejected (P20).",
         },
         {
             label: "sse",
             type: "property",
             detail: "boolean | AtLeastOne<SseOptions>",
-            info: "Resumable-SSE options (issue #71) — sibling to , but for the `sse` surface. **Off by default**: with no `sse` block the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.delay` / the `retry` policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse` surface reads it. `true` is shorthand for `{ reconnect: true }` (CONTRACT.md P13); the object form must set at least one field (P20).",
+            info: "Resumable-SSE options (issue #71) — sibling to StitchConfig.stream, but for the `sse` surface. **Off by default**: with no `sse` block the engine opens the live body once (today's behaviour). When enabled, a dropped stream reconnects, replaying the last `id:` as `Last-Event-ID` and honouring a server `retry:` (else `reconnect.delay` / the `retry` policy), capped at `reconnect.attempts`. Plain JSON (the contract gate). Only the `sse` surface reads it. `true` is shorthand for `{ reconnect: true }` (CONTRACT.md P13); the object form must set at least one field (P20).",
         },
         {
             label: "url",
@@ -87,7 +87,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "output",
             type: "property",
             detail: "SchemaLike | DriftSpec",
-            info: "Response schema, or a  for leveled drift detection. Accepts any — a raw Zod schema, any Standard Schema (Valibot, ArkType), or a `(value) => boolean` predicate — directly; the stitch infers its result type from it (see `InferOutput`), so a hand-written generic is rarely needed.",
+            info: "Response schema, or a DriftSpec for leveled drift detection. Accepts any SchemaLike — a raw Zod schema, any Standard Schema (Valibot, ArkType), or a `(value) => boolean` predicate — directly; the stitch infers its result type from it (see `InferOutput`), so a hand-written generic is rarely needed.",
         },
         {
             label: "pick",
@@ -123,7 +123,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "acceptStatus",
             type: "property",
             detail: "StatusMatch",
-            info: "Status(es) that are a NORMAL result rather than an error — a number, a list, or a predicate (CONTRACT.md P7). An accepted non-2xx flows through interpret → transform → pick → validate exactly like a 2xx (the response body becomes the result), instead of throwing a . Use this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a `catch`. `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts are exhausted, then accepted (returned) on the final attempt. Orthogonal to `throttle.delegate`, which surfaces a  on rate-limit statuses earlier.",
+            info: "Status(es) that are a NORMAL result rather than an error — a number, a list, or a predicate (CONTRACT.md P7). An accepted non-2xx flows through interpret → transform → pick → validate exactly like a 2xx (the response body becomes the result), instead of throwing a StitchError. Use this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a `catch`. `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts are exhausted, then accepted (returned) on the final attempt. Orthogonal to `throttle.delegate`, which surfaces a RateLimitError on rate-limit statuses earlier.",
         },
         {
             label: "throttle",
@@ -195,7 +195,7 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             label: "trace",
             type: "property",
             detail: "TraceSink | 'console' | false",
-            info: "Observability sink — **off by default**, because a stitch's only effect on the world is its call. Opt in with `'console'` (the colored stderr stream), a sink from `fileSink(path)` / `createTrace(...)` for JSONL on disk, or any custom . `false` forces it off even when the `STITCH_TRACE_*` env vars are set. Unset falls back to the env-driven sink, which is itself silent unless `STITCH_TRACE_CONSOLE` / `STITCH_TRACE_FILE` / `STITCH_EXPORT` opt in.",
+            info: "Observability sink — **off by default**, because a stitch's only effect on the world is its call. Opt in with `'console'` (the colored stderr stream), a sink from `fileSink(path)` / `createTrace(...)` for JSONL on disk, or any custom TraceSink. `false` forces it off even when the `STITCH_TRACE_*` env vars are set. Unset falls back to the env-driven sink, which is itself silent unless `STITCH_TRACE_CONSOLE` / `STITCH_TRACE_FILE` / `STITCH_EXPORT` opt in.",
         },
     ]
 };
@@ -224,19 +224,19 @@ export const PLAYGROUND_INSTANCE_COMPLETIONS: Record<string, Completion[]> = {
             label: "inspect",
             type: "method",
             detail: "(...args: [...Args<TIn>, opts?: boolean | AtLeastOne<InspectOptions>]) => Promise<Inspection<TOut>>",
-            info: "Probe a fresh call and return an  — `{ data, raw, findings, status, error }` — **without throwing** (ADR 0016). Use it after the fact to ask \"the schema coerced/stripped this; what did the server actually send?\": `raw` is the pre-validation body, `findings` the soft + hard drift between it and `data`. `.inspect()` **always hits the network and bypasses the cache by default**, so it is a fresh probe — *not* an observer of what your cached `await` call did. Pass `true` (≡ `{ cache: true }`) to honour the cache policy (then `raw` is `null` on a hit). On a streaming surface `raw` is `null` too (no single buffered body). ⚠️ `raw` is unredacted and non-enumerable — read `wrapper.raw` deliberately; never log the whole wrapper.",
+            info: "Probe a fresh call and return an Inspection — `{ data, raw, findings, status, error }` — **without throwing** (ADR 0016). Use it after the fact to ask \"the schema coerced/stripped this; what did the server actually send?\": `raw` is the pre-validation body, `findings` the soft + hard drift between it and `data`. `.inspect()` **always hits the network and bypasses the cache by default**, so it is a fresh probe — *not* an observer of what your cached `await` call did. Pass `true` (≡ `{ cache: true }`) to honour the cache policy (then `raw` is `null` on a hit). On a streaming surface `raw` is `null` too (no single buffered body). ⚠️ `raw` is unredacted and non-enumerable — read `wrapper.raw` deliberately; never log the whole wrapper.",
         },
         {
             label: "report",
             type: "method",
             detail: "(...args: [...Args<TIn>, opts?: boolean | AtLeastOne<InspectOptions>]) => Promise<RunReport<TOut>>",
-            info: "Probe a fresh call and return a  — an  (`{ data, raw, findings, status, error, source }`) **plus** run diagnostics: `attempts`, `timing` (`{ elapsed, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome (ADR 0019). Like `.inspect()` it **never throws** (a hard contract violation comes back with `error` set and the diagnostics populated) and is a **network probe**: it always hits the network and **bypasses the cache by default** — pass `true` (≡ `{ cache: true }`) to honour the cache policy (then `cache` reports the real `hit`/`miss` and `raw` is `null`/`source` is `'cache'` on a hit). Use `.report()` to ask \"how did this run go?\"; `.inspect()` stays the minimal \"raw + drift\" probe. ⚠️ `raw` is inherited unredacted and non-enumerable — the rest of the report is safe to log.",
+            info: "Probe a fresh call and return a RunReport — an Inspection (`{ data, raw, findings, status, error, source }`) **plus** run diagnostics: `attempts`, `timing` (`{ elapsed, waited? }`), the resolved+redacted `config`, and the fine-grained `cache` outcome (ADR 0019). Like `.inspect()` it **never throws** (a hard contract violation comes back with `error` set and the diagnostics populated) and is a **network probe**: it always hits the network and **bypasses the cache by default** — pass `true` (≡ `{ cache: true }`) to honour the cache policy (then `cache` reports the real `hit`/`miss` and `raw` is `null`/`source` is `'cache'` on a hit). Use `.report()` to ask \"how did this run go?\"; `.inspect()` stays the minimal \"raw + drift\" probe. ⚠️ `raw` is inherited unredacted and non-enumerable — the rest of the report is safe to log.",
         },
         {
             label: "with",
             type: "method",
             detail: "(partial: P) => Stitch<TOut, RelaxKeys<TIn, keyof P>>",
-            info: "Bind part of the call input, returning a stitch whose remaining input is relaxed by the keys just supplied. Unlike the config surfaces, a MISSPELLED input key here is not a compile error — it binds nothing, silently (`.with({ params, parms })` keeps the `params` and drops the typo). Spell the slots as `StitchInput` declares them.",
+            info: "Bind part of the call input, returning a stitch whose remaining input is relaxed by the keys just supplied. Unlike the config surfaces, a MISSPELLED input key here is not a compile error — it binds nothing, silently (`.with({ params, parms })` keeps the `params` and drops the typo). Spell the slots as StitchInput declares them.",
         },
         {
             label: "invalidate",
