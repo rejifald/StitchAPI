@@ -360,6 +360,30 @@ function warnIdempotency(cfg: ResolvedStitchConfig): void {
     );
 }
 
+// Construction-time nudge for the REMOVED `circuit.halfOpenAfter` (CONTRACT.md P1; a P19 hard
+// break on the `rc` channel, so there is no alias to fall back to). It always named the SAME
+// instant as `cooldown`: `phase()` is the one place the open/half-open boundary is decided and it
+// compared against `halfOpenAfter ?? cooldown`, so the two could never run on different clocks the
+// way the docs claimed. Dropping it moves that boundary to `cooldown`, which is a REAL timing
+// change for any config that set the two to different values — and nothing else would say so.
+// `NoUnknownKeys` guards TOP-LEVEL slots only, and a nested envelope inside an inferred `const C`
+// gets no excess-property check either (verified: `retry: { nonsense }` compiles too), so a stale
+// `halfOpenAfter` typechecks clean. This warning is the only signal it gets. Delete at 1.0 GA.
+function warnHalfOpenAfter(cfg: ResolvedStitchConfig): void {
+    // `halfOpenAfter` is off the type now, so it is read back at its former `number | string`
+    // shape — the only values a stale config can be carrying.
+    const circuit = cfg.circuit as
+        | { cooldown?: number | string; halfOpenAfter?: number | string }
+        | undefined;
+    if (circuit?.halfOpenAfter === undefined) return;
+    const name = cfg.name ?? cfg.path ?? 'stitch';
+    console.warn(
+        `stitchapi: \`${name}\` sets \`circuit.halfOpenAfter\`, which was removed — it goes ` +
+            `half-open after \`cooldown\` (${String(circuit.cooldown)}) now. Move the value ` +
+            `you want to \`cooldown\`.`,
+    );
+}
+
 // ---- the trace sink — off by default (a stitch's only effect is its call) ------
 // Nothing is printed or written unless you opt in: STITCH_TRACE_CONSOLE=1 streams a
 // colored line per event to stderr, STITCH_TRACE_FILE=<path> appends JSONL, and
@@ -947,6 +971,7 @@ export function makeStitch<T = unknown>(
 ): Stitch<T> {
     const cfg = compose(config);
     warnIdempotency(cfg);
+    warnHalfOpenAfter(cfg);
     // A seam injects shared instances; a standalone stitch builds its own (unchanged behaviour:
     // a store-backed throttle only when a `store` is configured, else the in-process limiter).
     const store = shared?.store ?? cfg.store ?? memoryStore();

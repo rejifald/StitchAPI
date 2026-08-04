@@ -403,9 +403,11 @@ on a field that takes `'5s'` would be a lie). On outputs, one uniform de-suffixe
 vocabulary beats a split convention; the JSDoc carries the unit.
 
 _Resolved (2026-07 sweep, inputs — widened + de-suffixed):_ `RetryOptions.baseDelay`/
-`maxDelay` (were `baseMs`/`maxMs`), `CircuitOptions.cooldown`/`halfOpenAfter`,
-`ReconnectOptions.backoff`, `OAuth2Options.refreshSkew`, `CookieSessionOptions.ttl`,
-store-contract `ttl` — all `number | string` via the one shared `parseDuration`.
+`maxDelay` (were `baseMs`/`maxMs`), `CircuitOptions.cooldown` (its `halfOpenAfter`
+sibling was widened here too, then **removed** in the 2026-08-04 P1 fix below —
+the two named one instant), `ReconnectOptions.backoff`, `OAuth2Options.refreshSkew`,
+`CookieSessionOptions.ttl`, store-contract `ttl` — all `number | string` via the one
+shared `parseDuration`.
 _Resolved (2026-07 sweep, emitted — de-suffixed):_ `StitchEvent` `waited`,
 `retryAfter`, the `done` event's `elapsed` (was `ms`), `MockResponse.delay`;
 `SseEvent.retry` stays (already bare; it mirrors the SSE `retry:` wire field).
@@ -764,6 +766,31 @@ surface — 249 of them — against P1/P4/P17/P18/P22/P24/P25 and closed what it
 - **P1** — the CLI-internal `from-curl` parser's `bodyKind`. **Fixed** (2026-08-01:
   `bodyType`, the one spelling every published field already used; CLI-internal, no
   consumer impact).
+- **P1 (two names, one instant)** — `CircuitOptions.halfOpenAfter` was a second name for
+  `cooldown`. The audits above swept for one word meaning two concepts; this is the
+  converse — one concept wearing two words — and no rule in [§7](#7-enforcement) can see
+  it, because both spellings are individually fine. `createCircuit` resolved
+  `halfOpenAfter ?? cooldown` into a single local and `phase()` — the **only** place the
+  open/half-open boundary is decided — compared against that one value, so `cooldown` had
+  no effect of its own once `halfOpenAfter` was set. **Fixed** (2026-08-04:
+  `halfOpenAfter` removed; `cooldown` is the one boundary. Hard break, no alias
+  ([P19](#p19--the-alias-obligation-is-scoped-to-the-ga-channel), `rc` channel).)
+  `cooldown` is the survivor on three counts: it is the one-word token P1 prefers, it is
+  the spelling [P15](#p15--required-fields-are-deliberate-and-get-a-namedpositional-shorthand--not-silent-defaults)
+  names as required-by-design, and it is the second slot of the `[failures, cooldown]`
+  tuple ([P20](#p20--no-empty-object-config-enable-with-defaults-is-a-scalar)).
+  _They could not have been made independent instead:_ a call is either rejected or
+  admitted, so a phase between "fast-failing" and "probing" would have to behave exactly
+  like `open` or exactly like `closed`. The decoupling the docs advertised had nowhere to
+  live. _Why it survived the sweeps:_ nothing tested the transition — `halfOpenAfter`
+  appeared in no test in `packages/core/test`, so no assertion ever depended on which
+  field moved the boundary. The gap is closed by a millisecond-exact `manualClock` test in
+  `circuit-breaker.spec.ts`. _Not statically enforceable at the slot:_ `NoUnknownKeys`
+  guards top-level `StitchConfig` keys only, and a nested envelope inside an inferred
+  `const C` gets no excess-property check either, so a stale `halfOpenAfter` still
+  typechecks and would silently take the `cooldown` boundary instead — a real timing
+  change. A construction-time nudge in `makeStitch` says so out loud; it is runtime-only
+  (no `@deprecated` tag, so **R7** stays clean) and is deleted at 1.0 GA.
 - **P25** — the flat, suffix-carrying size caps (`ServeOptions.maxBodyBytes`,
   `TraceOptions.maxBodyChars`, `StreamOptions.maxBufferChars`). **Fixed** (2026-08-01:
   folded into subject-named envelopes — `serve`'s `body` (`{ max }`), trace's `body`

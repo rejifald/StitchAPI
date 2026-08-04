@@ -40,8 +40,10 @@ events with phase `circuit`. The positional form names both knobs at once:
 the count of consecutive failures that trips the breaker open, and `cooldown`
 is the fast-fail window after opening, before a half-open trial is allowed.
 
-`halfOpenAfter` controls when the half-open trial is permitted (default
-`cooldown`), letting you fast-fail and probe on different clocks.
+`cooldown` is the **only** knob on that boundary: the instant the fast-fail
+window ends is the instant the trial is admitted. There is no separate probe
+timer, because a call is either rejected or let through — a phase between the
+two would have to behave exactly like one of them.
 
 `key` is a store namespace: give two stitches the same `key` plus a shared
 [`store`](/docs/guides/state/pluggable-store) to share one breaker, so a failing

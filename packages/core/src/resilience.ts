@@ -311,6 +311,12 @@ interface CircuitRecord {
  * a success closes it, another failure re-opens it. State lives in the StitchStore, so a shared
  * store gives a breaker shared across workers (DESIGN.md §13).
  *
+ * `cooldown` is the ONE boundary between open and half-open: the instant the fast-fail window
+ * ends is the instant the trial is admitted. Do not add a second timer to "decouple" them — a
+ * call is either rejected or admitted, so a phase between the two would have to behave exactly
+ * like `open` (reject) or exactly like `closed` (admit freely), and a knob with no observable
+ * effect is the bug, not the feature. (This is why `halfOpenAfter` was removed; CONTRACT.md P1.)
+ *
  * `failures` and `cooldown` are required by design (CONTRACT.md P15); this throws when either is
  * missing.
  */
@@ -330,7 +336,6 @@ export function createCircuit(
         throw new Error(
             'circuit requires `failures` and `cooldown`. Fix: set both, e.g. `circuit: { failures: 5, cooldown: "30s" }` or `circuit: [5, "30s"]`.',
         );
-    const halfOpenAfter = parseDuration(opts.halfOpenAfter) ?? cooldown;
     const nsKey = 'circuit:' + (opts.key ?? fallbackKey);
 
     const read = async (): Promise<CircuitRecord> =>
@@ -344,9 +349,7 @@ export function createCircuit(
         async phase(): Promise<CircuitPhase> {
             const r = await read();
             if (r.openedAt === 0) return 'closed';
-            return clock.now() - r.openedAt >= halfOpenAfter
-                ? 'half-open'
-                : 'open';
+            return clock.now() - r.openedAt >= cooldown ? 'half-open' : 'open';
         },
         // A success closes the breaker and clears the failure count.
         async onSuccess(): Promise<void> {
