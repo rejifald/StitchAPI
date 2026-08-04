@@ -90,6 +90,37 @@ npm release are grouped under the in-development version that introduced them.
     reservations must come back as 20 distinct, evenly spaced instants, because a non-atomic cell
     hands several callers the same instant, which is the exact burst the verb exists to remove.
 
+- **`throttle.rate`'s denominator is now a full duration token — `'1000/h'`, `'100/15m'`,
+  `'2/500ms'`.** ([ADR 0023](docs/adr/0023-a-rate-is-a-minimum-spacing.md)
+  Decision 3) The grammar is `<count>/<duration>`, where the denominator is parsed by the one
+  shared `parseDuration` and a bare unit means one of that unit (`'2/s'` ≡ `'2/1s'`). Every
+  existing rate keeps parsing to exactly what it did — the new grammar is a strict superset.
+
+    The old `<count>/<ms|s|m>` was a hand-copied subset of `parseDuration`'s scale table, and the
+    truncation left **holes in the value space**: an ordinary 1000/hour quota is a 3600ms spacing,
+    and no legal token denoted it (`60000/count = 3600` needs a fractional count, and counts are
+    integers). The nearest spellings were `'16/m'` — 960/h, abandoning 4% of the quota — and
+    `'17/m'` — 1020/h, i.e. the 429s the throttle was added to prevent. `'100/15m'` was in a hole
+    too. You can now transcribe the limit your vendor publishes instead of converting it to a
+    number the grammar can hold.
+
+    **Equal ratios are one limiter, and that is the design:** `'2/500ms'`, `'4/s'` and `'240/m'`
+    all declare a 250ms gap and behave identically, in-process and store-backed alike. `rate` is a
+    pacer, not a token bucket — there is no capacity for a longer window to grant — so the window
+    length is a way of spelling the ratio, not a burst allowance. Pinned across three window
+    lengths in `store.spec.ts` rather than left as a doc sentence.
+
+    Two values are rejected that the widening would otherwise have admitted, both for the reason
+    `'0/s'` was rejected below — each would have meant _no limit at all_: a **non-positive window**
+    (`'2/0s'`, `'2/-500'` — `parseDuration` returns those as a real `0` / `-500`, not `undefined`,
+    so `spacing` would land at ≤ 0, which both limiters read as "no pacing configured"), and a
+    **spacing past the ~24.8-day timer ceiling** (`'1/30d'` — `setTimeout` clamps any delay past
+    2³¹−1 to 1ms). The ceiling rejects rather than clamps: clamping would silently pace _faster_
+    than asked.
+
+    `ThrottleOptions.rate` also gained TSDoc, so it stops rendering with a blank description on the
+    reference page.
+
 - **`parseRate` is exported from `stitchapi`, completing the house token grammars.**
   [P17](docs/CONTRACT.md#p17--one-canonical-duration-form) and
   [P25](docs/CONTRACT.md#p25--one-canonical-size-form) both make "one shared parser" part of the
@@ -460,39 +491,6 @@ npm release are grouped under the in-development version that introduced them.
 
     **Migration:** delete the field. No runtime behaviour changed — the stitch was already a
     download. To actually get another surface, use a plain `stitch({ kind })`.
-
-### Added
-
-- **`throttle.rate`'s denominator is now a full duration token — `'1000/h'`, `'100/15m'`,
-  `'2/500ms'`.** ([ADR 0023](docs/adr/0023-a-rate-is-a-minimum-spacing.md)
-  Decision 3) The grammar is `<count>/<duration>`, where the denominator is parsed by the one
-  shared `parseDuration` and a bare unit means one of that unit (`'2/s'` ≡ `'2/1s'`). Every
-  existing rate keeps parsing to exactly what it did — the new grammar is a strict superset.
-
-    The old `<count>/<ms|s|m>` was a hand-copied subset of `parseDuration`'s scale table, and the
-    truncation left **holes in the value space**: an ordinary 1000/hour quota is a 3600ms spacing,
-    and no legal token denoted it (`60000/count = 3600` needs a fractional count, and counts are
-    integers). The nearest spellings were `'16/m'` — 960/h, abandoning 4% of the quota — and
-    `'17/m'` — 1020/h, i.e. the 429s the throttle was added to prevent. `'100/15m'` was in a hole
-    too. You can now transcribe the limit your vendor publishes instead of converting it to a
-    number the grammar can hold.
-
-    **Equal ratios are one limiter, and that is the design:** `'2/500ms'`, `'4/s'` and `'240/m'`
-    all declare a 250ms gap and behave identically, in-process and store-backed alike. `rate` is a
-    pacer, not a token bucket — there is no capacity for a longer window to grant — so the window
-    length is a way of spelling the ratio, not a burst allowance. Pinned across three window
-    lengths in `store.spec.ts` rather than left as a doc sentence.
-
-    Two values are rejected that the widening would otherwise have admitted, both for the reason
-    `'0/s'` was rejected below — each would have meant _no limit at all_: a **non-positive window**
-    (`'2/0s'`, `'2/-500'` — `parseDuration` returns those as a real `0` / `-500`, not `undefined`,
-    so `spacing` would land at ≤ 0, which both limiters read as "no pacing configured"), and a
-    **spacing past the ~24.8-day timer ceiling** (`'1/30d'` — `setTimeout` clamps any delay past
-    2³¹−1 to 1ms). The ceiling rejects rather than clamps: clamping would silently pace _faster_
-    than asked.
-
-    `ThrottleOptions.rate` also gained TSDoc, so it stops rendering with a blank description on the
-    reference page.
 
 ### Fixed
 
