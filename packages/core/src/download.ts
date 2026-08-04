@@ -27,7 +27,15 @@ import {
 
 /** What a `download` stitch resolves to: the buffered body and its parsed filename (when known). */
 export interface DownloadResult {
+    /**
+     * The whole response body, buffered. Saving it is the caller's choice — the surface never
+     * writes to disk, which is what keeps it browser-first.
+     */
     blob: Blob;
+    /**
+     * Name parsed from `Content-Disposition` (`filename*` preferred over `filename`), falling back
+     * to the response URL's last path segment. Absent when neither yields one.
+     */
     filename?: string;
 }
 

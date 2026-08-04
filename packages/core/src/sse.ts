@@ -40,9 +40,16 @@ import {
  * (the `sse` surface's `contractValue` points per-`delta` validation at `.data`).
  */
 export interface SseEvent<T = unknown> {
+    /** The event type, from an `event:` field. Present only when the event carried one. */
     event?: string;
+    /** The `data:` payload — JSON-parsed when it parses, else the raw string. */
     data: T;
+    /**
+     * The last-event id, from an `id:` field. Present only when the event carried one; it is what
+     * the engine replays as `Last-Event-ID` when {@link SseOptions.reconnect} is on.
+     */
     id?: string;
+    /** The server's reconnect hint in ms, from a `retry:` field. Present only when the event carried one. */
     retry?: number;
 }
 

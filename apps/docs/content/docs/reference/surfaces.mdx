@@ -80,6 +80,29 @@ for await (const ev of ticks.stream()) {
 
 <AutoTypeTable path="../../packages/core/src/sse.ts" name="SseEvent" />
 
+### Resumable SSE — sse.reconnect
+
+**Off by default**: with no `sse.reconnect` the engine opens the body exactly once. Turn
+it on and a dropped stream is reopened, replaying the last seen `id:` as the
+`Last-Event-ID` request header so the stream continues from where it broke.
+
+```ts
+const ticks = sse({
+    url: 'https://api.example.com/ticks',
+    sse: { reconnect: { attempts: 5, delay: '2s' } },
+});
+```
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="SseOptions" />
+
+`reconnect: true` is shorthand for the defaults; the object form tunes the cap and the
+fallback delay. A server-sent `retry:` on the dropped connection always wins over both.
+
+<AutoTypeTable
+    path="../../packages/core/src/types.ts"
+    name="ReconnectOptions"
+/>
+
 ## stream
 
 `stream` is the raw streaming sibling — it hands back the response body decoded
@@ -102,6 +125,21 @@ for await (const ev of logs.stream()) {
 ```
 
 <AutoTypeTable path="../../packages/core/src/types.ts" name="StreamOptions" />
+
+### stream.buffer
+
+Bounds what the decoder may hold for a single un-terminated unit — an unclosed JSON
+value, a line with no `\n`, or an SSE frame with no blank line — so a never-closing
+stream can't grow client memory without limit. The scalar is shorthand for the dominant
+field: `buffer: 4_000_000` ≡ `buffer: { chars: 4_000_000 }`.
+
+<AutoTypeTable
+    path="../../packages/core/src/types.ts"
+    name="StreamBufferOptions"
+/>
+
+The cap counts characters of the **decoded text**, not bytes off the socket, so it is not
+meaningful for `decode: 'bytes'` (raw and unbuffered).
 
 Streaming members open on the same auth/retry/throttle spine, with one twist:
 opening a stream **charges the rate limiter once** but **never holds a
@@ -154,6 +192,16 @@ const { blob, filename } = await getReport({
     path="../../packages/core/src/download.ts"
     name="DownloadResult"
 />
+
+### onProgress
+
+The per-call `onProgress` callback above receives one of these per tick. It is per-call,
+not config — a different bar per download:
+
+<AutoTypeTable path="../../packages/core/src/types.ts" name="AdapterProgress" />
+
+Which phases report depends on the adapter — see
+[Guide → Adapters](/docs/guides/transport/adapters).
 
 The surface owns the request shape, so `method` and `wire.response` are not
 accepted here — setting either is a compile error rather than a silently ignored

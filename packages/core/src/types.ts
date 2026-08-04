@@ -843,6 +843,11 @@ export interface ReconnectOptions {
  * on this; other surfaces ignore it.
  */
 export interface SseOptions {
+    /**
+     * Reopen a dropped `text/event-stream` body and resume from the last seen `id:`. `true` enables
+     * it with defaults; the object form tunes the attempt cap and fallback delay (the opaque `{}` is
+     * rejected — P20). Omitted means off: the engine opens the body exactly once.
+     */
     reconnect?: boolean | AtLeastOne<ReconnectOptions>;
 }
 /**
@@ -851,8 +856,14 @@ export interface SseOptions {
  * sent, `'download'` as the response body arrives. `total` is the content length when known.
  */
 export interface AdapterProgress {
+    /**
+     * Which phase this tick reports: `'upload'` as the request body is sent, `'download'` as the
+     * response body arrives. Not every adapter reports both — see the transport guides.
+     */
     direction: 'upload' | 'download';
+    /** Bytes transferred so far in this direction. */
     loaded: number;
+    /** Total bytes, when the content length is known. Absent for a chunked or unknown-length body. */
     total?: number;
 }
 export interface AdapterRequest {
