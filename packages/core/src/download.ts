@@ -11,7 +11,7 @@
 import type { InputOf } from './infer';
 import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
-import { httpFailure } from './surface';
+import { verdictOf } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
     type NoRequestShapeOnDownload,
@@ -108,7 +108,7 @@ export const downloadSurface: Surface<StitchInput, DownloadResult> & {
     // non-2xx; step 3 removes that guarantee, and without the composed verdict an error page would
     // be handed back as the downloaded file.
     interpret: (res, cfg): SurfaceOutcome<DownloadResult> => {
-        const failure = httpFailure(res, cfg);
+        const failure = verdictOf(res, cfg);
         if (failure) return failure;
         const data: DownloadResult = { blob: res.body as Blob };
         const filename =

@@ -3,10 +3,10 @@
 // each surface exposes monomorphic `.stitch()` / `.bind()` helpers. The seam stays
 // surface-agnostic. graphql's behaviour still rides the engine's id-keyed handling here (it
 // moves behind the surface hooks in Stage 4).
-import { graphql, httpFailure, httpSurface, seam, stitch } from '../src';
+import { graphql, httpSurface, seam, stitch, verdictOf } from '../src';
 import type { Surface, SurfaceOutcome } from '../src/surface';
 // `httpInterpret` / `interpretOf` are deliberately NOT on the barrel — one composition point is
-// public (`httpFailure`), and public-api-surface.spec.ts pins their absence. Reach the module
+// public (`verdictOf`), and public-api-surface.spec.ts pins their absence. Reach the module
 // directly here, the way the engine does.
 import { graphqlSurface, httpInterpret, interpretOf } from '../src/surface';
 import type {
@@ -76,17 +76,17 @@ describe('the status verdict (ADR 0022 Decision 2)', () => {
     const cfgOf = (accept?: StatusMatch): ResolvedStitchConfig =>
         ({ verdict: { accept } }) as ResolvedStitchConfig;
 
-    describe('httpFailure — the verdict, with NO claim about the success value', () => {
+    describe('verdictOf — the verdict, with NO claim about the success value', () => {
         test('an acceptable status yields no failure at all', () => {
-            expect(httpFailure(resOf(200), cfgOf())).toBeUndefined();
+            expect(verdictOf(resOf(200), cfgOf())).toBeUndefined();
         });
 
         test('the verdict turns at 400, not at 300 — a 3xx is acceptable', () => {
-            expect(httpFailure(resOf(304, null), cfgOf())).toBeUndefined();
+            expect(verdictOf(resOf(304, null), cfgOf())).toBeUndefined();
         });
 
         test('a non-2xx is a failure carrying the status and the HTTP message', () => {
-            expect(httpFailure(resOf(500), cfgOf())).toEqual({
+            expect(verdictOf(resOf(500), cfgOf())).toEqual({
                 ok: false,
                 message: 'HTTP 500',
                 status: 500,
@@ -94,27 +94,27 @@ describe('the status verdict (ADR 0022 Decision 2)', () => {
         });
 
         test('verdict.accept clears the failure for a declared status (#155)', () => {
-            expect(httpFailure(resOf(404), cfgOf([404]))).toBeUndefined();
+            expect(verdictOf(resOf(404), cfgOf([404]))).toBeUndefined();
         });
 
         test('verdict.accept is additive — an undeclared status still fails', () => {
-            expect(httpFailure(resOf(403), cfgOf([404]))).toMatchObject({
+            expect(verdictOf(resOf(403), cfgOf([404]))).toMatchObject({
                 ok: false,
                 status: 403,
             });
         });
 
         test('every StatusMatch spelling is honoured (P7: bare number, list, predicate)', () => {
-            expect(httpFailure(resOf(404), cfgOf(404))).toBeUndefined();
-            expect(httpFailure(resOf(404), cfgOf([400, 404]))).toBeUndefined();
+            expect(verdictOf(resOf(404), cfgOf(404))).toBeUndefined();
+            expect(verdictOf(resOf(404), cfgOf([400, 404]))).toBeUndefined();
             expect(
-                httpFailure(
+                verdictOf(
                     resOf(404),
                     cfgOf((s) => s < 500),
                 ),
             ).toBeUndefined();
             expect(
-                httpFailure(
+                verdictOf(
                     resOf(500),
                     cfgOf((s) => s < 500),
                 ),
@@ -126,13 +126,13 @@ describe('the status verdict (ADR 0022 Decision 2)', () => {
         // `{ blob, filename }` and `llm` means the provider's parsed completion; neither is `res.body`.
         test('it never manufactures a success value — a surface composes its own', () => {
             const cfg = cfgOf();
-            expect(httpFailure(resOf(200, { raw: true }), cfg)).toBeUndefined();
+            expect(verdictOf(resOf(200, { raw: true }), cfg)).toBeUndefined();
 
             const ownValue = { blob: 'BLOB', filename: 'a.txt' };
             const interpret = (
                 res: AdapterResponse,
             ): SurfaceOutcome<typeof ownValue> =>
-                httpFailure(res, cfg) ?? { ok: true, data: ownValue };
+                verdictOf(res, cfg) ?? { ok: true, data: ownValue };
 
             expect(interpret(resOf(200, { raw: true }))).toEqual({
                 ok: true,
@@ -170,7 +170,7 @@ describe('the status verdict (ADR 0022 Decision 2)', () => {
                 (
                     httpSurface as { interpret?: Surface['interpret'] }
                 ).interpret = (res, cfg) =>
-                    httpFailure(res, cfg) ?? { ok: true, data: 'REPLACED' };
+                    verdictOf(res, cfg) ?? { ok: true, data: 'REPLACED' };
                 const call = stitch({ baseUrl: server.url, path: '/plain' });
                 await expect(call()).resolves.toBe('REPLACED');
             } finally {
@@ -195,9 +195,9 @@ describe('the status verdict (ADR 0022 Decision 2)', () => {
             ).toEqual({ ok: true, data: { error: 'gone' } });
         });
 
-        test('a failure is exactly what httpFailure rendered', () => {
+        test('a failure is exactly what verdictOf rendered', () => {
             expect(httpInterpret(resOf(500), cfgOf())).toEqual(
-                httpFailure(resOf(500), cfgOf()),
+                verdictOf(resOf(500), cfgOf()),
             );
         });
 

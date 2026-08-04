@@ -808,7 +808,7 @@ async function* attemptLoop(
             //
             // `classifyStatus` — the STATUS, not the full verdict — because the question here is
             // "did the transport report a failure?", and only the status answers that. Asking the
-            // body-aware `httpFailure` would route a falsy `verdict.flag` on a healthy `200` as a
+            // body-aware `verdictOf` would route a falsy `verdict.flag` on a healthy `200` as a
             // transport failure and open the circuit on it, which is the same mistake as tripping
             // the breaker on graphql's `errors`. It honours `verdict.accept`, so a declared 404 the
             // surface later rejects on body grounds stays off the circuit too.
@@ -1355,7 +1355,7 @@ async function* runStreaming(
         // same function since ADR 0022 Decision 2. A rejected status is TERMINAL (not reconnected):
         // the server actively refused, replaying it would loop.
         //
-        // `classifyStatus`, not the surface's `interpret` and not the body-aware `httpFailure`: at
+        // `classifyStatus`, not the surface's `interpret` and not the body-aware `verdictOf`: at
         // open time there is no buffered body to rule on — only the status is known — so the retry
         // arm and `verdict.flag` cannot apply here. The signature says so, rather than leaving it to
         // a comment. That is a documented limit of the streaming path, not an oversight.

@@ -23,7 +23,7 @@ npm release are grouped under the in-development version that introduced them.
     `interpret` now runs **inside** the attempt loop, as the terminal verdict of each attempt, on
     every response including non-2xx. `httpSurface` gains a real `interpret` (it was the one surface
     with none, which is why its policy had nowhere to live), an omitted `kind` resolves to it, and
-    the verdict becomes a named, composable function instead of an engine branch. **`httpFailure`**
+    the verdict becomes a named, composable function instead of an engine branch. **`verdictOf`**
     is the one new public export — the whole declarative verdict, what a surface composes in front
     of its own body rules. (It has two internal siblings at narrower and wider scope; the barrel
     deliberately carries one, so there is a single composition point rather than three names for
@@ -44,13 +44,16 @@ npm release are grouped under the in-development version that introduced them.
     path are **silence** (the status verdict stands, plus an `info` drift finding), so an API that
     quietly drops its envelope cannot start failing every call.
 
-    **Migration has no compile-time safety net** — `stitch`'s generic captures the argument type,
-    which suppresses excess-property checking, so a stale `acceptStatus:` is silently ignored and the
-    status quietly starts throwing again. Grep for `acceptStatus:`; do not trust `tsc`.
+    **`tsc` catches the migration.** A stale `acceptStatus:` is a compile error naming the slot —
+    on a config literal, on a hoisted `const`, and through an `extends` fragment. That is thanks to
+    the `NoUnknownConfigKeys` guard landing alongside this change; it reads `keyof C` rather than
+    relying on excess-property checking, which `stitch`'s `const C extends Partial<StitchConfig>`
+    generic suppresses. Without it the stale slot would have been silently ignored and the status
+    would have quietly started throwing again.
 
     Also breaking for **surface authors**: an `interpret` hook now runs on responses it was
     previously guaranteed never to see, with no compile-time signal (the signature is unchanged).
-    Compose `httpFailure` in front of your own rules, as the built-in `graphql` / `download` / `llm`
+    Compose `verdictOf` in front of your own rules, as the built-in `graphql` / `download` / `llm`
     hooks now do, or a `500` will be read as a successful payload. `SurfaceOutcome` also gains a
     retry arm (`{ ok: false, retry: true, message, after? }`), so a surface that has read the body
     can ask for another attempt within the `retry.attempts` budget — closing

@@ -2,13 +2,13 @@ export { stitch, drift } from './stitch';
 export { graphql } from './graphql';
 export { seam } from './seam';
 // One decision, three scopes — but only ONE of them is a contract with anybody outside this
-// package. `httpFailure` is what a surface author composes in front of their own body rules
+// package. `verdictOf` is what a surface author composes in front of their own body rules
 // (ADR 0022 Decision 4), so it is public. `classifyStatus` (the status alone) answers the engine's
 // transport-health question at two internal call sites, and `httpInterpret` is the http surface's
 // own hook — reachable as `httpSurface.interpret` by anyone who genuinely wants it. Exporting
 // either would put three names on the barrel for one decision and invite a surface author to
 // compose the wrong one; the flag-failed-200 circuit bug was exactly that mistake made internally.
-export { httpSurface, graphqlSurface, httpFailure } from './surface';
+export { httpSurface, graphqlSurface, verdictOf } from './surface';
 export type { Surface, SurfaceOutcome } from './surface';
 // The auth surface lives on `stitchapi/auth` (ADR 0021) — the strategy factories
 // (`bearer`/`apiKey`/`basic`/`oauth2`/`cookieSession`), the secret resolvers

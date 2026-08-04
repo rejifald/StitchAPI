@@ -147,7 +147,7 @@ export const classifyStatus = (
  * config is honoured on YOUR surface exactly as it is on `http`:
  *
  * ```ts
- * interpret: (res, cfg) => httpFailure(res, cfg) ?? { ok: true, data: myOwnValue(res) };
+ * interpret: (res, cfg) => verdictOf(res, cfg) ?? { ok: true, data: myOwnValue(res) };
  * ```
  *
  * `flag` is a body flag that is EXPLICITLY falsy on failure. Three-state, and only one state is a
@@ -158,8 +158,13 @@ export const classifyStatus = (
  *
  * Exported because a surface author needs it: an `interpret` hook REPLACES the default rather than
  * layering on it, so a surface with its own body rules must compose this to keep the verdict.
+ *
+ * Named for what it PRODUCES, and paired with the config slot that feeds it: `verdict` is the
+ * declaration, `verdictOf(res, cfg)` is that declaration applied to a response. Note the return is
+ * `undefined` when there is no failure — the name reads as though a verdict always comes back, so
+ * the `??` at the call site is doing real work, and the type makes a misread a compile error.
  */
-export const httpFailure = (
+export const verdictOf = (
     res: AdapterResponse,
     cfg: ResolvedStitchConfig,
 ): Extract<SurfaceOutcome, { ok: false }> | undefined => {
@@ -217,12 +222,12 @@ export const flagFinding = (
 /**
  * The http surface's `interpret` (ADR 0022 Decision 2) — the status verdict, then "the body is the
  * value". That second half is the HTTP SURFACE'S OWN choice of result, not a shared assumption:
- * a surface that means something else composes {@link httpFailure} instead of this.
+ * a surface that means something else composes {@link verdictOf} instead of this.
  */
 export const httpInterpret = (
     res: AdapterResponse,
     cfg: ResolvedStitchConfig,
-): SurfaceOutcome => httpFailure(res, cfg) ?? { ok: true, data: res.body };
+): SurfaceOutcome => verdictOf(res, cfg) ?? { ok: true, data: res.body };
 
 /**
  * The default surface: a plain JSON-over-HTTP call. Selected whenever `kind` is omitted — `compose`
@@ -296,7 +301,7 @@ export const graphqlSurface: Surface & { readonly id: 'graphql' } = {
     // guarantee, and without the composed verdict an error page would be read for `errors`, found
     // to have none, and returned as a successful GraphQL response.
     interpret: (res, cfg) => {
-        const failure = httpFailure(res, cfg);
+        const failure = verdictOf(res, cfg);
         if (failure) return failure;
         const errs = (
             res.body as { errors?: { message?: string }[] } | null | undefined

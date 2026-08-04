@@ -32,7 +32,7 @@ const FUNCTIONS = [
     // `interpret` hook REPLACES the default rather than layering on it, so a surface with its own
     // body rules needs this to keep the caller's `verdict` config working. The one composition
     // point — its narrower and wider siblings are pinned ABSENT below.
-    'httpFailure',
+    'verdictOf',
 ] as const;
 
 // The other two scopes of the same decision, pinned ABSENT from the root. `classifyStatus` (the

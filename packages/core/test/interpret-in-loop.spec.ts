@@ -5,7 +5,7 @@
 // this file pins what the reordering BUYS, and the invariant it must not break.
 import { type StitchError, type StitchEvent, stitch } from '../src';
 import type { Surface } from '../src/surface';
-import { httpFailure } from '../src/surface';
+import { verdictOf } from '../src/surface';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
 
@@ -40,7 +40,7 @@ describe('a surface’s interpret now SEES every response (Decision 1)', () => {
             id: 'spy',
             interpret: (res, cfg) => {
                 seen.push(res.status);
-                return httpFailure(res, cfg) ?? { ok: true, data: res.body };
+                return verdictOf(res, cfg) ?? { ok: true, data: res.body };
             },
         };
 
@@ -448,7 +448,7 @@ describe('an inert verdict.flag is reported as an info finding', () => {
 // A `200` whose BODY flag says failure is an application-level rejection of a healthy transport —
 // the same category as graphql's 200-with-`errors`, and it must be routed the same way. It is a
 // separate test because the two reach the verdict by different members (`verdict.flag` vs the
-// surface's own rules), and the engine asks `classifyStatus` — not the body-aware `httpFailure` —
+// surface's own rules), and the engine asks `classifyStatus` — not the body-aware `verdictOf` —
 // precisely so they cannot diverge.
 describe('a flag-failed 200 is an application rejection, not a transport failure', () => {
     test('it does NOT open the circuit', async () => {

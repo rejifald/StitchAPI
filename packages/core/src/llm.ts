@@ -14,7 +14,7 @@ import { compact } from './compact';
 import type { InputOf } from './infer';
 import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
-import { httpFailure } from './surface';
+import { verdictOf } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
     type NoRequestShapeOnLlm,
@@ -142,7 +142,7 @@ function makeLlmSurface(d: LlmDefaults): Surface<StitchInput, LlmResult> {
         // non-2xx never reaches here. A provider's "200 with an error envelope" is still `parse`'s
         // to handle.
         interpret: (res, cfg): SurfaceOutcome<LlmResult> => {
-            const failure = httpFailure(res, cfg);
+            const failure = verdictOf(res, cfg);
             if (failure) return failure;
             return { ok: true, data: provider.parse(res.body) };
         },

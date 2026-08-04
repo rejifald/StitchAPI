@@ -162,16 +162,16 @@ final request URL on the awaited / `.safe()` path.
 `verdict` is the declarative half. When the rule is genuinely code — "a `200` whose
 `status` field is `PENDING` should be re-attempted" — the stage has a functional seam
 too: a [surface](/docs/reference/surfaces)'s `interpret` hook, which can also
-ask for another attempt. Compose `httpFailure` in front of your own rules so a `500`
+ask for another attempt. Compose `verdictOf` in front of your own rules so a `500`
 stays a `500`:
 
 ```ts twoslash
-import { type Surface, httpFailure } from 'stitchapi';
+import { type Surface, verdictOf } from 'stitchapi';
 
 const poller: Surface = {
     id: 'poller',
     interpret: (res, cfg) =>
-        httpFailure(res, cfg) ??
+        verdictOf(res, cfg) ??
         ((res.body as { status?: string }).status === 'PENDING'
             ? { ok: false, retry: true, message: 'PENDING', after: 1_000 }
             : { ok: true, data: res.body }),
