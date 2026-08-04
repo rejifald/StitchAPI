@@ -23,10 +23,11 @@ npm release are grouped under the in-development version that introduced them.
     `interpret` now runs **inside** the attempt loop, as the terminal verdict of each attempt, on
     every response including non-2xx. `httpSurface` gains a real `interpret` (it was the one surface
     with none, which is why its policy had nowhere to live), an omitted `kind` resolves to it, and
-    three exports make the verdict named and composable instead of an engine branch —
-    `classifyStatus` (the status alone, for callers that need transport health: the circuit routing
-    and the streaming gate), `httpFailure` (the whole declarative verdict, what a surface composes),
-    and `httpInterpret` (that plus the http surface's own "the body is the value").
+    the verdict becomes a named, composable function instead of an engine branch. **`httpFailure`**
+    is the one new public export — the whole declarative verdict, what a surface composes in front
+    of its own body rules. (It has two internal siblings at narrower and wider scope; the barrel
+    deliberately carries one, so there is a single composition point rather than three names for
+    one decision.)
 
     At the authoring site, the flat `acceptStatus` slot becomes `verdict`:
 

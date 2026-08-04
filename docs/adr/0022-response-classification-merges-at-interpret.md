@@ -601,18 +601,24 @@ redaction — `verdict.accept`'s predicate form is `redact-if-fn`, exactly as
 _All five are resolved as implemented. The reasoning is kept so the choices are not
 relitigated; only Q1's naming half stays genuinely open._
 
-1. **The three exports' names.** _Bundle half settled; naming half still open._
+1. **`httpFailure`'s name.** _Everything else about Q1 is settled._
    [ADR 0012](./0012-integration-symbol-naming.md) governs cross-package symbol
-   naming, and these are new public exports a surface author must import. They are
-   three scopes of one decision: `classifyStatus` (the status alone),
-   `httpFailure` (the whole declarative verdict), `httpInterpret` (that plus the http
-   surface's own value). `httpInterpret` pairs with `httpSurface`; `httpFailure` says
-   what it returns rather than what it is asked (`isAcceptable`, `rejectByStatus`).
-   All live in `surface.ts`, already on the root barrel that `@stitchapi/shell`
-   imports from, so nothing drags the engine in. A rename is cheap until a
-   third-party surface composes them.
+   naming, and this is the one new public export a surface author imports. It says
+   what it returns (a failure, or nothing) rather than what it is asked
+   (`isAcceptable`, `rejectByStatus`). It lives in `surface.ts`, already on the root
+   barrel that `@stitchapi/shell` imports from, so nothing drags the engine in. A
+   rename is cheap until a third-party surface composes it.
 
-    `classifyStatus` rather than a bare `classify` is deliberate: _Alternative C_
+    **Only one of the three scopes is public**, and that is the answer to "don't they
+    all serve the same purpose?" — they do, which is exactly why the barrel carries
+    one. `classifyStatus` answers the engine's transport-health question at two
+    internal call sites and has no surface-author use; `httpInterpret` is the http
+    surface's own hook, reachable as `httpSurface.interpret`. Three names for one
+    decision on the barrel invites composing the wrong one, which is precisely the
+    mistake that first routed a flag-failed `200` through the circuit's
+    transport-failure path. `public-api-surface.spec.ts` pins the absence of both.
+
+    `classifyStatus` rather than a bare `classify` is deliberate even internally: _Alternative C_
     rejected `classify` for the config callback because it "implies sorting a response
     into one of many tiers", and a bare `classify` would still promise that while
     returning two states. Qualifying it with what it classifies — a **status** — makes

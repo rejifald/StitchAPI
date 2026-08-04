@@ -3,16 +3,12 @@
 // each surface exposes monomorphic `.stitch()` / `.bind()` helpers. The seam stays
 // surface-agnostic. graphql's behaviour still rides the engine's id-keyed handling here (it
 // moves behind the surface hooks in Stage 4).
-import {
-    graphql,
-    httpFailure,
-    httpInterpret,
-    httpSurface,
-    seam,
-    stitch,
-} from '../src';
+import { graphql, httpFailure, httpSurface, seam, stitch } from '../src';
 import type { Surface, SurfaceOutcome } from '../src/surface';
-import { graphqlSurface, interpretOf } from '../src/surface';
+// `httpInterpret` / `interpretOf` are deliberately NOT on the barrel — one composition point is
+// public (`httpFailure`), and public-api-surface.spec.ts pins their absence. Reach the module
+// directly here, the way the engine does.
+import { graphqlSurface, httpInterpret, interpretOf } from '../src/surface';
 import type {
     AdapterResponse,
     ResolvedStitchConfig,

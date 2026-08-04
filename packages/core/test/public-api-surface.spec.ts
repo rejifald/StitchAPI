@@ -29,13 +29,18 @@ const FUNCTIONS = [
     'isStitch',
     'isSeam',
     // The verdict (ADR 0022 Decision 2), public because a surface author must compose it: an
-    // `interpret` hook replaces the default rather than layering on it. Three names, three scopes —
-    // `classifyStatus` asks only about the STATUS (transport health), `httpFailure` is the whole
-    // declarative verdict a surface composes, `httpInterpret` adds the http surface's own value.
-    'classifyStatus',
+    // `interpret` hook REPLACES the default rather than layering on it, so a surface with its own
+    // body rules needs this to keep the caller's `verdict` config working. The one composition
+    // point — its narrower and wider siblings are pinned ABSENT below.
     'httpFailure',
-    'httpInterpret',
 ] as const;
+
+// The other two scopes of the same decision, pinned ABSENT from the root. `classifyStatus` (the
+// status alone) answers the engine's transport-health question and has no surface-author use;
+// `httpInterpret` is the http surface's own hook, reachable as `httpSurface.interpret`. Three names
+// on the barrel for one decision invites composing the wrong one — which is precisely the mistake
+// that put a flag-failed `200` through the circuit's transport-failure path.
+const INTERNAL_VERDICT_SCOPES = ['classifyStatus', 'httpInterpret'] as const;
 
 // The auth surface moved to its own subpath (ADR 0021). Pinned in BOTH directions: present on
 // `stitchapi/auth`, and ABSENT from the root — a re-export there would quietly put oauth2 and
@@ -55,6 +60,17 @@ const AUTH_FUNCTIONS = [
 describe('public API surface (src/index.ts)', () => {
     test.each(FUNCTIONS)('exports %s as a function', (name) => {
         expect(typeof (api as Record<string, unknown>)[name]).toBe('function');
+    });
+
+    test.each(INTERNAL_VERDICT_SCOPES)(
+        'does NOT export %s — one composition point, not three',
+        (name) => {
+            expect(name in (api as Record<string, unknown>)).toBe(false);
+        },
+    );
+
+    test('httpInterpret stays reachable as the http surface’s own hook', () => {
+        expect(typeof api.httpSurface.interpret).toBe('function');
     });
 
     test.each(AUTH_FUNCTIONS)('does NOT re-export %s from the root', (name) => {
