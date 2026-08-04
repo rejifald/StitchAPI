@@ -153,6 +153,14 @@ jobs:
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter stitchapi build
             - run: pnpm --filter @stitchapi/sandbox test:smoke
+            # The `stitch-sandbox` bin (docs/sandbox/package.json #/bin): `test:mcp` runs
+            # `build:mcp` and then spawns the BUILT dist/mcp.mjs over stdio JSON-RPC, so it
+            # is the only check that proves the bundle actually IMPORTS. Nothing else covers
+            # it — the bundle is git-ignored and built by no other job — which is how it
+            # shipped broken: the build had no `__PKG_VERSION__` define, so core's src/mcp.ts
+            # kept the placeholder and the bin died at import. Its own build step; does not
+            # need the `stitchapi build` above (it aliases `stitchapi` → core src).
+            - run: pnpm --filter @stitchapi/sandbox test:mcp
 
     # `stitch mcp` over a real subprocess (packages/core/test/mcp-e2e.spec.ts): spawns the built
     # `bin/stitch mcp` and drives a full agent conversation (initialize → tools/list → run_stitch)
