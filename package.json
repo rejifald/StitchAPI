@@ -23,6 +23,7 @@
         "check:docs-links": "node scripts/check-docs-links.mjs",
         "check:contract": "node scripts/check-contract.mjs",
         "check:unknown-keys": "node scripts/check-unknown-keys.mjs",
+        "check:changelog": "node scripts/check-changelog.mjs",
         "check:format": "prettier --check .",
         "check:media-fresh": "node scripts/check-media-freshness.mjs",
         "check:release": "node scripts/check-release.mjs",
