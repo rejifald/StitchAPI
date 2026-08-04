@@ -41,11 +41,19 @@ the in-process limiter uses, so attaching a store doesn't turn a smooth limit in
 boundary bursts. (Concurrency stays in-process; only the rate limit is distributed.)
 
 <Callout type="info">
-    Even-spacing holds for load up to the limit. Under _sustained_ overload —
-    more than the budget, for longer than one window — distributed pacing is
-    approximate at the window edges: a per-window counter can't carry a
-    continuous backlog across processes the way the single-process limiter does.
-    The budget itself still holds.
+    **How exact the fleet-wide pacing is depends on your store.** A store with a
+    pacing cell — `memoryStore`, `@stitchapi/redis`, `@stitchapi/deno-kv` — paces
+    the whole fleet on one continuous cursor, so every worker draws from one
+    schedule no matter when it starts.
+
+    A store without one (`@stitchapi/cloudflare-kv`, which is eventually
+    consistent and has no atomic read-compute-write to build a cell from) falls
+    back to a shared counter plus a per-worker cursor. That holds the budget at a
+    window boundary and keeps each worker's own pacing exact, but a fleet that
+    starts _mid-window_ runs at up to `rate × workers` until the schedule catches
+    up with the clock. Nothing to configure either way — the throttle uses the
+    cell when the store has it.
+
 </Callout>
 
 `pool` decides what shares a budget: `'stitch'` (the default) gives each stitch

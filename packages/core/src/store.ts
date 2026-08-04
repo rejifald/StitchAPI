@@ -55,6 +55,22 @@ export function memoryStore(): StitchStore {
             });
             return n;
         },
+        // The GCRA pacing cursor (ADR 0024). Atomic for free: one JS thread, and nothing is
+        // awaited between the read and the write. Note the TTL is REFRESHED here, the opposite of
+        // `increment` above — a window must not slide, a cursor must not lapse mid-pace.
+        async reserve(key, spacing, at, ttl) {
+            const e = data.get(key);
+            // `e &&` narrows for the compiler where `live(e)` alone cannot (the check is behind a
+            // helper), which keeps this off the non-null-assertion suppression budget.
+            const cell = e && live(e) ? (e.value as number) : 0;
+            const grantAt = Math.max(at, cell);
+            sweepExpired();
+            data.set(key, {
+                value: grantAt + spacing,
+                expires: ttl ? now() + ttl : 0,
+            });
+            return grantAt;
+        },
         // Lifecycle: drop everything. For the in-memory store this is all the state there is.
         async close() {
             data.clear();
@@ -74,6 +90,13 @@ export function vaultView(store: StitchStore, prefix = 'vault:'): StitchStore {
         set: (key, value, ttl) => store.set(prefix + key, value, ttl),
         increment: (key, ttl) => store.increment(prefix + key, ttl),
     };
+    // Forward the optional pacing cursor only when the backend has one, so the view reports the
+    // backend's real capability: a lens that always exposed `reserve` would make every store look
+    // GCRA-capable and silently break the fallback the absence is meant to select.
+    const reserve = store.reserve?.bind(store);
+    if (reserve)
+        view.reserve = (key, spacing, at, ttl) =>
+            reserve(prefix + key, spacing, at, ttl);
     // Delegate lifecycle to the backend (bind keeps `this` for stores that need it).
     if (store.close) view.close = store.close.bind(store);
     return view;
@@ -122,17 +145,24 @@ export interface Throttle {
  * why two rates declaring one spacing (`'2/s'`, `'120/m'`) are the same limiter here as well as
  * in-process. Each grant is `max(now, cursor, slot)`.
  *
- * The cursor bounds a burst PER PROCESS, which is the limit of what it can do without a new store
- * primitive: a slot already in the past paces nobody, so N workers that all start mid-window emit
- * at N× the declared rate until the slots catch up with the clock. Starting at a window boundary
- * (or once caught up) the slots are in the future and the fleet paces on one shared budget. Pinned
- * both ways in `store.spec.ts`, so the gap is a decision on the record, not a surprise.
+ * **All of that is the fallback.** When the store implements {@link StitchStore.reserve} — the GCRA
+ * cell of ADR 0024, one atomic read-compute-write over a shared pacing cursor — the counter, the
+ * window and the local cursor are all bypassed, and the fleet paces on one continuous schedule:
+ * exact `spacing` between grants across every process, wherever in a window they start. `reserve`
+ * is implemented by `memoryStore`, `@stitchapi/redis` and `@stitchapi/deno-kv`.
  *
- * The counter is per-window, so under SUSTAINED overload (offered load above the limit across
- * multiple windows) pacing is approximate at window edges: backlog scheduled on one window's
- * counter can overlap the next window's fresh counter. Exact continuous GCRA across processes would
- * need an atomic read-compute-write of a timestamp (a Lua cell or a new atomic store primitive) — a
- * `StitchStore` contract extension, deliberately deferred.
+ * Without it, the local cursor bounds a burst PER PROCESS and that is the whole of what it buys: a
+ * slot already in the past paces nobody, so N workers that all start mid-window emit at N× the
+ * declared rate until the slots catch up with the clock. Starting at a window boundary (or once
+ * caught up) the slots are in the future and the fleet paces on one shared budget. The counter is
+ * also per-window, so under SUSTAINED overload pacing is approximate at window edges: backlog
+ * scheduled on one window's counter can overlap the next window's fresh counter. Both residues are
+ * pinned in `store.spec.ts` against a store with `reserve` deliberately withheld, so the fallback
+ * stays a decision on the record rather than a surprise — and both are what the cell removes.
+ *
+ * The fallback is not deprecated and is not going away: an eventually-consistent backend
+ * (Cloudflare KV) has no atomic read-compute-write to build a cell from, so this path is the only
+ * one it can take.
  */
 export function createStoreThrottle(
     opts: ThrottleOptions | undefined,
@@ -185,12 +215,39 @@ export function createStoreThrottle(
             if (blocked) waited = clock.now() - blockStart;
         }
         if (rate) {
+            const spacing = rate.per / rate.count; // ms between grants
+            if (store.reserve) {
+                // The GCRA cell (ADR 0024). One atomic read-compute-write over a shared cursor
+                // gives the fleet what neither half of the fallback below can: the cursor carries
+                // continuously (so no window boundary to restart at) and it is shared (so a worker
+                // joining mid-window paces against every other worker, not just itself). Every
+                // process reads one line of state, so there is no origin to agree on and no stale
+                // slot to inherit — the two shapes the counter-based schedule kept tripping over.
+                // TTL is a full window past the last reservation: `per >= spacing` always, so it
+                // outlives any gap short enough to still need pacing, and a key idle longer than
+                // that should restart from the present anyway.
+                const at = await store.reserve(
+                    `rl:${key}`,
+                    spacing,
+                    clock.now(),
+                    rate.per + 100,
+                );
+                const wait = at - clock.now();
+                if (wait > 0) {
+                    await clock.sleep(wait);
+                    waited += wait;
+                }
+                return { waited };
+            }
+            // Fallback for a store with no `reserve` — an eventually-consistent backend, or any
+            // implementation predating ADR 0024. Correct per process and bounded, but a fleet
+            // drifts to N× mid-window; the comments below are the full account of why.
+            //
             // Even-spaced pacing over the shared counter (mirrors createThrottle's `spacing`):
             // the atomic increment hands each caller a unique slot N in the window, and slot N is
             // scheduled at windowStart + (N-1)·spacing. Slot count+1 lands exactly at the next
             // windowStart, so grants stay one `spacing` apart across the boundary — no fixed-window
             // burst. No re-check loop: each caller owns a distinct, non-colliding slot.
-            const spacing = rate.per / rate.count; // ms between grants
             const windowStart = Math.floor(clock.now() / rate.per) * rate.per;
             // Track the window we minted a key for; when it rolls over, DELETE the previous
             // window's `rl:` key eagerly instead of waiting for its TTL to expire (the store's
@@ -217,7 +274,8 @@ export function createStoreThrottle(
             // that is the whole of what it buys — a stale slot paces nobody, so while the stale
             // prefix lasts only each process's own cursor holds the line and N workers emit at N×
             // the declared rate. At a window boundary the slots are in the future and the fleet
-            // does pace on one budget; closing the mid-window case needs the GCRA cell below.
+            // does pace on one budget. That residue is what `store.reserve` closes above, which is
+            // why this path runs only when the backend cannot offer the cell.
             const at = Math.max(
                 clock.now(),
                 s.nextGrantAt ?? 0,

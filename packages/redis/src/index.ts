@@ -53,6 +53,21 @@ export interface RedisDriver {
      * `ttl` = no expiry.
      */
     increment(key: string, ttl?: number): Promise<number>;
+    /**
+     * Atomically advance a pacing cursor and resolve to the instant reserved — the GCRA cell
+     * backing {@link StitchStore.reserve} (ADR 0024). `at = max(now, cell); cell = at + spacing`,
+     * in ONE server-side step; `ttl` (ms) refreshes on every call, unlike `increment`'s.
+     *
+     * Optional: the three bundled adapters implement it with a Lua `EVAL`, and a custom driver
+     * that omits it still satisfies this interface — `redisStore` then exposes no `reserve`, and
+     * the throttle takes its per-process fallback.
+     */
+    reserve?(
+        key: string,
+        spacing: number,
+        now: number,
+        ttl?: number,
+    ): Promise<number>;
     /** Release the connection (optional — `redisStore().close()` delegates here). */
     close?(): Promise<void>;
 }
@@ -68,6 +83,27 @@ const INCR_SCRIPT = `local v = redis.call('INCR', KEYS[1])
 local ttl = tonumber(ARGV[1]) or 0
 if v == 1 and ttl > 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
 return v`;
+
+// The GCRA pacing cursor (ADR 0024) as one server-side script, which is what makes it atomic
+// across the whole fleet: read the cell, take the later of it and the caller's `now`, write the
+// next free instant back. Two differences from INCR_SCRIPT above, both deliberate:
+//
+//   • the PEXPIRE is UNconditional — a window must not slide (hence `v == 1` there), but a cursor
+//     must not lapse mid-pace, so every reservation refreshes it;
+//   • it returns a STRING. Lua numbers are doubles, but the RESP integer reply truncates, and a
+//     spacing of `per/count` is routinely fractional (`'3/s'` is 333.33ms). Returning `tostring`
+//     and parsing with `Number` keeps the fraction, so a fleet does not drift a millisecond per
+//     grant against the in-process limiter.
+//
+// `GET` on a missing key is Lua `false`, and `tonumber(false)` is nil, so `or 0` seeds a cold cell.
+const RESERVE_SCRIPT = `local spacing = tonumber(ARGV[1])
+local at = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3]) or 0
+local cell = tonumber(redis.call('GET', KEYS[1])) or 0
+if cell > at then at = cell end
+redis.call('SET', KEYS[1], at + spacing)
+if ttl > 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
+return tostring(at)`;
 
 // ---------------------------------------------------------------------------
 // driver adapters (ioredis / node-redis)
@@ -157,6 +193,18 @@ export function fromIoredis(client: IoredisLike): RedisDriver {
             // ioredis: eval(script, numKeys, ...keysThenArgs). 0 = no window.
             return Number(await client.eval(INCR_SCRIPT, 1, key, ttl ?? 0));
         },
+        async reserve(key, spacing, at, ttl) {
+            return Number(
+                await client.eval(
+                    RESERVE_SCRIPT,
+                    1,
+                    key,
+                    spacing,
+                    at,
+                    ttl ?? 0,
+                ),
+            );
+        },
         async close() {
             await client.quit?.();
         },
@@ -193,6 +241,14 @@ export function fromNodeRedis(client: NodeRedisLike): RedisDriver {
                 await client.eval(INCR_SCRIPT, {
                     keys: [key],
                     arguments: [String(ttl ?? 0)],
+                }),
+            );
+        },
+        async reserve(key, spacing, at, ttl) {
+            return Number(
+                await client.eval(RESERVE_SCRIPT, {
+                    keys: [key],
+                    arguments: [String(spacing), String(at), String(ttl ?? 0)],
                 }),
             );
         },
@@ -244,6 +300,15 @@ export function fromUpstash(client: UpstashLike): RedisDriver {
             // Upstash: eval(script, keys[], args[]); ARGV are strings. '0' = no window.
             return Number(
                 await client.eval(INCR_SCRIPT, [key], [String(ttl ?? 0)]),
+            );
+        },
+        async reserve(key, spacing, at, ttl) {
+            return Number(
+                await client.eval(
+                    RESERVE_SCRIPT,
+                    [key],
+                    [String(spacing), String(at), String(ttl ?? 0)],
+                ),
             );
         },
     };
@@ -309,6 +374,14 @@ export function redisStore(
             return driver.increment(k(key), ttl);
         },
     };
+    // Only when the driver actually has the cell — a custom driver predating ADR 0024 must report
+    // its real capability, so the throttle selects the per-process fallback rather than calling a
+    // method that is not there.
+    if (driver.reserve) {
+        const reserve = driver.reserve.bind(driver);
+        store.reserve = (key, spacing, at, ttl) =>
+            reserve(k(key), spacing, at, ttl);
+    }
     if (driver.close) {
         const close = driver.close.bind(driver);
         store.close = async (): Promise<void> => {

@@ -348,6 +348,87 @@ export async function verifyStoreContract(
             },
         ],
     ];
+
+    // `reserve` is OPTIONAL (ADR 0024) — an eventually-consistent backend has no atomic
+    // read-compute-write to build the cell from, and a store without it is fully supported. So
+    // these rules are ADDED only when the store claims the verb: a store that omits it is not
+    // failing the contract, but one that ships it must mean the same thing by it as everyone else,
+    // or the fleet-wide pacing it unlocks is worse than the fallback it replaced.
+    if (store.reserve) {
+        const reserve = store.reserve.bind(store);
+        rules.push(
+            [
+                'reserve: a cold cursor grants at the instant asked for',
+                async () => {
+                    const at = await reserve(k('cold'), 1_000, 10_000, 60_000);
+                    if (at !== 10_000)
+                        throw new Error(
+                            `expected a cold cursor to grant at now (10000), got ${show(at)}`,
+                        );
+                },
+            ],
+            [
+                'reserve: successive grants advance by exactly one spacing',
+                async () => {
+                    const key = k('seq');
+                    const first = await reserve(key, 500, 1_000, 60_000);
+                    const second = await reserve(key, 500, 1_000, 60_000);
+                    const third = await reserve(key, 500, 1_000, 60_000);
+                    expectDeepEqual(
+                        [first, second, third],
+                        [1_000, 1_500, 2_000],
+                        'three grants on one cursor, same `now`',
+                    );
+                },
+            ],
+            [
+                'reserve: a `now` past the cursor moves it forward (idle reset)',
+                async () => {
+                    const key = k('idle');
+                    await reserve(key, 500, 1_000, 60_000); // cell → 1500
+                    const after = await reserve(key, 500, 9_000, 60_000);
+                    if (after !== 9_000)
+                        throw new Error(
+                            `expected max(now, cell) = 9000 after an idle gap, got ${show(after)}`,
+                        );
+                },
+            ],
+            [
+                'reserve: 20 concurrent grants are 20 distinct, evenly spaced instants',
+                async () => {
+                    // The atomicity rule, and the whole reason the verb exists: a non-atomic
+                    // read-compute-write hands several callers the SAME instant, which is exactly
+                    // the fleet-wide burst the cell is meant to remove.
+                    const results = await Promise.all(
+                        Array.from({ length: 20 }, () =>
+                            reserve(k('atomic-cursor'), 100, 5_000, 60_000),
+                        ),
+                    );
+                    const sorted = [...results].sort((a, b) => a - b);
+                    const wanted = Array.from(
+                        { length: 20 },
+                        (_, i) => 5_000 + i * 100,
+                    );
+                    expectDeepEqual(
+                        sorted,
+                        wanted,
+                        'sorted results of 20 concurrent reservations (a non-atomic cell collides)',
+                    );
+                },
+            ],
+            [
+                'reserve: cursors are isolated by key',
+                async () => {
+                    await reserve(k('cur-a'), 500, 1_000, 60_000);
+                    const b = await reserve(k('cur-b'), 500, 1_000, 60_000);
+                    if (b !== 1_000)
+                        throw new Error(
+                            `a reservation on cur-a leaked into cur-b: expected 1000, got ${show(b)}`,
+                        );
+                },
+            ],
+        );
+    }
     return runRules('store', rules);
 }
 
