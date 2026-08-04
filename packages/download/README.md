@@ -5,11 +5,11 @@ Batch downloader / manager for [StitchAPI](https://stitchapi.dev), built on core
 niceties a single `download()` call can't: FIFO admission, per-item settling, cancellation, aggregate
 progress + ETA, a forward-progress **idle timeout**, and opt-in same-URL **dedupe**.
 
--   **Zero runtime dependencies.** `stitchapi` is a peer dep; nothing else ships.
--   **Browser-first.** The surface returns `Blob`s and never touches disk — the same code runs in Node
-    and the browser.
--   **Rides core's resilience.** Every item is a real `download()` stitch, so retry / throttle / timeout
-    / circuit / auth all apply per item — this package only orchestrates the batch.
+- **Zero runtime dependencies.** `stitchapi` is a peer dep; nothing else ships.
+- **Browser-first.** The surface returns `Blob`s and never touches disk — the same code runs in Node
+  and the browser.
+- **Rides core's resilience.** Every item is a real `download()` stitch, so retry / throttle / timeout
+  / circuit / auth all apply per item — this package only orchestrates the batch.
 
 ```bash
 pnpm add @stitchapi/download@rc stitchapi@rc
@@ -56,7 +56,7 @@ downloadAll([{ path: '/a' }, { path: '/b', retry: { attempts: 5 } }], {
 const batch = downloadAll(items, { concurrency: 2 });
 batch.cancel(id); // cancel ONE — in-flight aborts and its slot goes to the next queued item;
 //   a still-queued item just drops (no slot freed, next item not skipped)
-batch.cancelAll(); // cancel everything — in-flight abort, queue drains
+batch.cancel(); // omit the id to cancel EVERYTHING — in-flight abort, queue drains
 batch.snapshot(); // { progress, items:[{ id, phase, status? }] } — live
 ```
 
@@ -92,9 +92,9 @@ downloadAll(urls, { idleTimeout: 10_000 }); // abort an item after 10s of NO new
 
 ## Error classification
 
-The engine drops the underlying transport `cause` before a caller sees it, so an `ECONNRESET` looks
-like any other `fetch failed`. This package captures the raw error per item (via a `hooks.onError`
-seam) and classifies the rejection:
+A bare `fetch failed` says nothing about whether retrying is worth it. This package captures the raw
+transport error per item (via a `hooks.onError` seam, which also catches a thrown non-`Error`) and
+classifies the rejection:
 
 ```ts
 { id, status: 'rejected', reason /* StitchError */, retryable: true, code: 'UND_ERR_SOCKET' }

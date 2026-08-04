@@ -51,10 +51,16 @@ function statusFromMessage(msg: string | undefined): number | undefined {
 /**
  * Classify a failed download as retryable-vs-terminal with a best-effort machine `code`.
  *
- * `raw` is the UNTOUCHED transport error captured via `download()`'s `hooks.onError` — the engine
- * drops the transport `.cause` before the awaited caller sees it (the download-reset-midbody finding),
- * so `raw` is the authoritative source for a transport code. `reason` (the flattened
- * {@link StitchError}) carries the HTTP `status` when the failure came from a response.
+ * Two sources, deliberately, and the order matters. `raw` is the UNTOUCHED transport error captured
+ * via `download()`'s `hooks.onError`; `reason` is the flattened {@link StitchError}, which carries the
+ * HTTP `status` when the failure came from a response.
+ *
+ * `raw` is read FIRST because it is the error itself rather than a rebuild of it. The fallback to
+ * `causeCode(reason)` is no longer the dead branch it was when this was written: core's cause-carry
+ * (#450, shipped alongside this package) pins the transport error on the error event's non-enumerable
+ * channel, so `reason.cause` now reaches an awaited / `.safe()` caller with its `.code` intact. The
+ * hook seam is kept because it is strictly wider — it also catches a thrown non-`Error`, which has no
+ * `cause` chain to walk.
  */
 export function classifyFailure(
     reason: StitchError,

@@ -11,12 +11,13 @@ import type {
  *
  * Items start in FIFO order as slots free; each settles on its own — the batch NEVER rejects, so await
  * it for the per-item results in enqueue order (`Promise.allSettled`-shaped, plus `cancelled`). The
- * handle also cancels one item or all, and reports a live {@link DownloadBatch.snapshot} with aggregate
- * progress + ETA.
+ * handle also cancels — one item, or the whole batch — and reports a live
+ * {@link DownloadBatch.snapshot} with aggregate progress + ETA.
  *
  * ```ts
  * const batch = downloadAll(urls, { concurrency: 4, onProgress: p => render(p) });
  * batch.cancel(id);            // cancel one → its slot goes to the next queued item
+ * batch.cancel();              // cancel everything — in-flight abort, queue drains
  * const results = await batch; // ItemResult[] — never throws
  * ```
  */
@@ -32,9 +33,6 @@ export function downloadAll(
         then: done.then.bind(done),
         cancel: (id) => {
             manager.cancel(id);
-        },
-        cancelAll: () => {
-            manager.cancelAll();
         },
         snapshot: () => manager.snapshot(),
     };

@@ -10,9 +10,9 @@
 // hit twice (the 503 then the 302). No `src/` change is involved; the strip is inherited from
 // fetchAdapter, the retry from the engine.
 //
-// Real-timer, loose bounds (a socket test): a tiny `baseDelay` keeps the single backoff negligible;
+// Real-timer, loose bounds (a socket test): a tiny `backoff.base` keeps the single backoff negligible;
 // the only time assertion is a wide ceiling. Both servers are closed in afterAll.
-import { apiKey, env } from '../../src';
+import { apiKey, env } from '../../src/auth';
 import { download } from '../../src/download';
 import { startMockServer } from '../support/mock-server';
 import type { MockServer } from '../support/mock-server';
@@ -60,14 +60,14 @@ test('the strip holds when the RETRIED attempt is the one that redirects cross-o
     const getAsset = download({
         baseUrl: a.url,
         path: '/flaky',
-        auth: apiKey({ value: env('RETRY_REDIRECT_KEY') }),
+        auth: apiKey({ secret: env('RETRY_REDIRECT_KEY') }),
         headers: {
             authorization: AWS_AUTH,
             'x-amz-date': '20260706T000000Z',
             'x-amz-content-sha256': 'abc123def456',
         },
         // Allow one retry so the 503 is not terminal; a tiny backoff keeps the test fast.
-        retry: { attempts: 2, on: [503], baseDelay: 5 },
+        retry: { attempts: 2, on: [503], backoff: { base: 5 } },
         timeout: 5000,
     });
 

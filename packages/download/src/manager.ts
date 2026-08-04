@@ -16,7 +16,7 @@ import { systemClock } from 'stitchapi';
 import type {
     AdapterProgress,
     Clock,
-    Hooks,
+    HookContext,
     StitchConfig,
     StitchInput,
 } from 'stitchapi';
@@ -87,7 +87,7 @@ export class DownloadManager {
                     'abort',
                     () => {
                         this.#signalAborted = true;
-                        this.cancelAll();
+                        this.#cancelAll();
                     },
                     { once: true },
                 );
@@ -112,8 +112,16 @@ export class DownloadManager {
         return handle.external;
     }
 
-    /** Cancel one item. In-flight → abort (its slot goes to the next queued item); queued → drop. */
-    cancel(id: DownloadId): void {
+    /**
+     * Cancel one item, or — with `id` omitted — every item. In-flight → abort (its slot goes to the
+     * next queued item); queued → drop. One member rather than a `cancel`/`cancelAll` pair, matching
+     * {@link DownloadBatch.cancel}; see its doc for why the scope is an argument (P24/R8).
+     */
+    cancel(id?: DownloadId): void {
+        if (id === undefined) {
+            this.#cancelAll();
+            return;
+        }
         if (this.#results.has(id)) return;
         const phase = this.#phase.get(id);
         if (phase === undefined) return; // unknown id
@@ -131,8 +139,11 @@ export class DownloadManager {
         }
     }
 
-    /** Cancel every item — in-flight abort, queue drains. Pooled (`pool:'host'`) budget returns clean. */
-    cancelAll(): void {
+    // The whole-batch arm of `cancel()`, kept as a private method rather than inlined: the abort
+    // listener in the constructor reaches it too, and `cancel()`'s own early-outs (`#results`,
+    // unknown id) are per-item guards that would be wrong to run over the batch.
+    // Pooled (`pool:'host'`) budget returns clean.
+    #cancelAll(): void {
         // Queued items hold no slot — settle them straight away.
         const queued = this.#queue.splice(0, this.#queue.length);
         for (const item of queued) {
@@ -255,7 +266,7 @@ export class DownloadManager {
             const input: StitchInput = {
                 signal: ctrl.signal,
                 onProgress: (p: AdapterProgress) => {
-                    if (p.phase === 'download')
+                    if (p.direction === 'download')
                         this.#onItemProgress(item.id, p);
                 },
             };
@@ -290,10 +301,15 @@ export class DownloadManager {
     #configFor(item: QueueItem, active: Active): Partial<StitchConfig> {
         const userOnError =
             item.config.hooks?.onError ?? this.#defaults.hooks?.onError;
-        const hooks: Hooks = {
+        // Deliberately UNANNOTATED. The `hooks` config slot is `AtLeastOne<Hooks>` (P20, #507):
+        // an all-optional `Hooks` annotation no longer satisfies it, because nothing in that type
+        // proves a key is present. The inferred type does — `onError` is assigned right here, so it
+        // comes back REQUIRED and the slot is met by construction rather than by assertion. The cost
+        // is the inline callback losing its contextual parameter type, hence the explicit `ctx`.
+        const hooks = {
             ...this.#defaults.hooks,
             ...item.config.hooks,
-            onError: (ctx) => {
+            onError: (ctx: HookContext) => {
                 active.raw = ctx.error;
                 return userOnError?.(ctx);
             },

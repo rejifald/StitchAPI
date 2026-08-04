@@ -6,7 +6,7 @@
 //   • CANCEL-ALL → every in-flight aborts, the queue drains (P12), and the pooled `pool:'host'` budget
 //     is left CLEAN — a later batch to the same host isn't starved (P13).
 //
-// Real-timer, LOOSE bounds (a socket test): a long `ttfbDelayMs` holds the "in-flight" item so the
+// Real-timer, LOOSE bounds (a socket test): a long `ttfbDelay` holds the "in-flight" item so the
 // cancel lands while it is genuinely active; no wall-clock duration is asserted. Held sockets are
 // force-destroyed at teardown.
 import { downloadAll } from '../../src';
@@ -41,7 +41,7 @@ test('cancel ONE in-flight item — only it aborts; its slot returns to the queu
     server.route('GET', '/a', {
         statuses: [200],
         rawBody: 'a-body',
-        ttfbDelayMs: 2000,
+        ttfbDelay: 2000,
     });
     server.route('GET', '/b', { statuses: [200], rawBody: 'b-body' });
     server.route('GET', '/c', { statuses: [200], rawBody: 'c-body' });
@@ -79,7 +79,7 @@ test('cancel a QUEUED item — frees no slot, never hits the wire, does not skip
     server.route('GET', '/a', {
         statuses: [200],
         rawBody: 'a-body',
-        ttfbDelayMs: 60,
+        ttfbDelay: 60,
     });
     server.route('GET', '/b', { statuses: [200], rawBody: 'b-body' });
     server.route('GET', '/c', { statuses: [200], rawBody: 'c-body' });
@@ -117,7 +117,7 @@ test('CANCEL-ALL aborts every in-flight + drains the queue; the host pool is lef
         server.route('GET', p, {
             statuses: [200],
             rawBody: `body${p}`,
-            ttfbDelayMs: 500, // all hold, so 2 are in-flight and 2 are queued when we cancel
+            ttfbDelay: 500, // all hold, so 2 are in-flight and 2 are queued when we cancel
         });
 
     const batch = downloadAll(
@@ -132,7 +132,7 @@ test('CANCEL-ALL aborts every in-flight + drains the queue; the host pool is lef
         },
     );
 
-    batch.cancelAll();
+    batch.cancel();
     const results = await batch;
     // Every item cancelled (2 in-flight aborted + 2 queued drained), promptly — no hang.
     expect(results.every((r) => r.status === 'cancelled')).toBe(true);
@@ -145,7 +145,7 @@ test('CANCEL-ALL aborts every in-flight + drains the queue; the host pool is lef
         server.route('GET', p, {
             statuses: [200],
             rawBody: `body${p}`,
-            ttfbDelayMs: 120,
+            ttfbDelay: 120,
         });
 
     const results2 = await downloadAll(

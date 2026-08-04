@@ -81,7 +81,7 @@ test('a healthy-but-slow (steadily progressing) download is killed by the same w
     // reject. This is the evidence that a *progressing* transfer — not a dead one — was killed by the
     // wall-clock timeout, which is exactly the finding an idle/forward-progress timeout would fix.
     expect(seen.length).toBeGreaterThan(1);
-    expect(seen.every((p) => p.phase === 'download')).toBe(true);
+    expect(seen.every((p) => p.direction === 'download')).toBe(true);
     const loaded = seen.map((p) => p.loaded);
     const lastLoaded = loaded[loaded.length - 1] ?? 0;
     const firstLoaded = loaded[0] ?? 0;

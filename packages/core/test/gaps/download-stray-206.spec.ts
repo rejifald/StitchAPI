@@ -43,3 +43,26 @@ test('a stray 206 (no Range was sent) is rejected, not accepted as a complete Bl
     // And it really did answer 206 to a range-less request (guards the fixture itself).
     expect(server.calls('/partial')[0]?.headers['range']).toBeUndefined();
 });
+
+// The opt-out, and the reason the rule reads `verdict.accept` at all (ADR 0022). `classifyStatus`
+// consults `accept` only at `>= 400`, so a sub-400 status never reaches it — which means without an
+// explicit read in `interpret`, a caller who declared `206` NORMAL would still be rejected. That
+// would be the surface OVERRIDING a declaration rather than ruling where the caller made none, and
+// nothing else on the config surface behaves that way. A caller talking to a proxy that always
+// answers 206 gets the documented escape hatch; everyone else keeps the safe default above.
+test('`verdict.accept` opts a caller back into a 206 — a declaration the surface must not override', async () => {
+    server.route('GET', '/partial-ok', {
+        statuses: [206],
+        rawBody: 'PARTIAL',
+        headers: { 'content-range': 'bytes 0-6/1024' },
+    });
+
+    const getPartial = download({
+        baseUrl: server.url,
+        path: '/partial-ok',
+        verdict: { accept: 206 },
+    });
+
+    const out = await getPartial();
+    expect(await out.blob.text()).toBe('PARTIAL');
+});

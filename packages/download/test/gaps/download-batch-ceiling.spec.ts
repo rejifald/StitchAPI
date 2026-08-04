@@ -4,7 +4,7 @@
 // DEFERRED proving per-item order to this package ("proving per-item order needs the batch API's stable
 // item identity + start events, which don't exist yet") — `onItemStart` is that event.
 //
-// Real-timer, LOOSE bounds (a socket test): each route holds its admitted slot with `ttfbDelayMs` so the
+// Real-timer, LOOSE bounds (a socket test): each route holds its admitted slot with `ttfbDelay` so the
 // K requests overlap on the wire long enough for the server's `maxOpen` probe to see the peak; no
 // wall-clock gap is asserted, only a COUNT + an order. Held sockets are force-destroyed at teardown.
 import { downloadAll } from '../../src';
@@ -41,7 +41,7 @@ test('the batch caps the wire at `concurrency` and admits queued items in FIFO o
         server.route('GET', p, {
             statuses: [200],
             rawBody: `body${p}`,
-            ttfbDelayMs: 120, // hold each admitted slot open long enough to observe the peak overlap
+            ttfbDelay: 120, // hold each admitted slot open long enough to observe the peak overlap
         });
 
     const started: number[] = [];

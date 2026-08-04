@@ -13,8 +13,7 @@ export type DownloadId = string | number;
  * need to tell them apart.
  */
 export type DownloadRequest =
-    | string
-    | (Partial<StitchConfig> & { id?: DownloadId });
+    string | (Partial<StitchConfig> & { id?: DownloadId });
 
 /** Per-item byte progress. `total` is present only when the server declared a `Content-Length`. */
 export interface ItemProgress {
@@ -125,10 +124,19 @@ export interface DownloadHandle {
 export interface DownloadBatch extends PromiseLike<ItemResult[]> {
     /** The per-item results, in enqueue order. Same as awaiting the batch. */
     readonly done: Promise<ItemResult[]>;
-    /** Cancel one item — in-flight aborts (its slot goes to the next queued item); a queued item just drops. */
-    cancel(id: DownloadId): void;
-    /** Cancel every item — in-flight abort, queue drains. */
-    cancelAll(): void;
+    /**
+     * Cancel one item, or — with `id` omitted — every item.
+     *
+     * One member rather than a `cancel`/`cancelAll` pair: two flat members sharing a leading word
+     * are one capability spelled twice (CONTRACT.md P24/R8). Cancelling is that capability and the
+     * id is its scope, so the scope belongs in the argument. P24's envelope prescription is for
+     * option FIELDS; for a verb, the optional parameter is the collapse — an envelope would be
+     * `cancel.one(id)`/`cancel.all()`, which is the same pair one level deeper.
+     *
+     * In-flight items abort (each freed slot goes to the next queued item); queued items just drop.
+     * Either way the item settles as `cancelled` — the batch still never rejects.
+     */
+    cancel(id?: DownloadId): void;
     /** A live snapshot of per-item phase + aggregate progress. */
     snapshot(): BatchSnapshot;
 }
