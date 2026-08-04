@@ -198,19 +198,41 @@ const KB = 1024;
 // (the provider's parsed completion), forcing every composing surface to build a success value and
 // immediately discard it. Headroom lands at 0.16 / 0.15 — the tight step #477/#524 took, not the
 // ~0.2 KB this gate usually restores.
+// Budgets raised for ADR 0023 — the store-backed throttle enforces its rate (23.30→23.45 /
+// 20.70→20.85 KB; measured 23.39 / 20.79, so the fix is +0.09 on both). A store-backed `throttle`
+// was admitting several times its configured rate: grants were scheduled from the window's
+// epoch-aligned start, so a key first seen mid-window was credited with every slot that had already
+// elapsed and released them at once. Against a budget of 8 calls it admitted 24 for `'2/s'` and 79
+// for `'120/m'` — the same rate, differing only in how it was spelled.
+//
+// What the bytes buy, none of it movable behind a subpath (`memoryStore` is the DEFAULT store, so
+// this path is in `import { stitch }` whether or not a consumer configures one):
+//   • the shared per-window origin — one store `set` on the caller the atomic increment hands
+//     `n === 1`, one `get` for everyone else — so slots are measured from the window's first
+//     arrival rather than its epoch boundary;
+//   • the schedule carry across a rollover (`max(now, head)` plus the local head it reads), which
+//     is the mirror-image defect: without it a short window restarts its slots on top of grants
+//     still pending past the boundary, and `'2/s'` stayed at ~3x budget while `'120/m'` went exact.
+//
+// Both are load-bearing and were reverted independently to prove it. The alternative is not
+// "smaller" but "a rate limiter that does not limit", which is the one thing this capability is
+// for. Trimming was considered and there is nothing to take: minification renames the locals, so
+// the cost is the logic itself, and dropping either half restores a measured defect. Headroom
+// lands at 0.06 / 0.06 — the tight step #477/#524/#606 took, not the ~0.2 KB this gate usually
+// restores.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 23.3 * KB,
+        budget: 23.45 * KB,
         advertised: true,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 20.7 * KB,
+        budget: 20.85 * KB,
         advertised: true,
     },
     {
