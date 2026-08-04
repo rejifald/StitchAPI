@@ -290,10 +290,13 @@ export interface ConfigError<Message extends string> {
  * guard is `unknown` and intersects away.
  *
  * Cheaper than the sibling guards on purpose: one `keyof` and one `Exclude` per call site, with no
- * {@link Layers} walk. Unknown keys are a per-layer spelling concern, not a cross-layer pairing, and
- * an INLINE `extends` fragment is a fresh literal checked against the declared
- * `Partial<StitchConfig> | Stitch` — so it still gets ordinary excess-property checking and needs no
- * help from here.
+ * {@link Layers} walk. Unknown keys are a per-layer spelling concern, not a cross-layer pairing, so
+ * a fragment reached through `extends` is not this guard's business — see the residual limit below,
+ * which is the honest version of a claim this comment used to make.
+ *
+ * Scoped to the TOP level. The same suppression applies at every depth — `const C` is inferred from
+ * the whole config object, so a nested envelope is no longer a fresh literal either — and that layer
+ * is {@link NoUnknownNestedKeys}'s job, on the house envelopes it lists.
  *
  * STRONGER than excess-property checking in one respect, and the reason a rename is now caught
  * repo-wide: EPC only fires on a fresh literal, so a config hoisted into a `const` binding escapes
@@ -303,11 +306,13 @@ export interface ConfigError<Message extends string> {
  * intersected parameter degrade the public `Stitch` type. The reasoning is recorded on `with` itself.
  *
  * RESIDUAL LIMITS:
- * - Fail-open: an unknown key inside an `extends` fragment that is a `const` BINDING and also carries
- *   at least one real slot is not reported — the binding is not fresh so EPC does not fire, the real
- *   slot satisfies weak-type detection so that does not either, and this guard reads only the
- *   literal's own keys. A bound fragment of ONLY unknown keys IS still rejected, by weak-type
- *   detection. Both pinned in `unknown-config-keys.test-d.ts`.
+ * - Fail-open: an unknown key inside an `extends` fragment carrying at least one real slot is not
+ *   reported — INLINE or hoisted. This comment used to say the inline case was covered by EPC on the
+ *   declared `Partial<StitchConfig> | Stitch`; it is not, for the same reason the top level is not.
+ *   `C` is inferred from the whole config, so the fragment is not fresh either, and the real slot
+ *   satisfies weak-type detection. A fragment of ONLY unknown keys IS still rejected, by weak-type
+ *   detection. Both pinned in `unknown-config-keys.test-d.ts`. Closing it needs the {@link Layers}
+ *   walk this guard declines; the fragment's own declaration site is the natural place to type it.
  * - Fail-open by design: a config whose static type is already `Partial<StitchConfig>` (or the loose
  *   `string | Partial<StitchConfig>` escape hatch) has no unknown keys to find. Its declaration site
  *   is where the spelling was checked, and that site had EPC.
@@ -335,6 +340,113 @@ export type NoUnknownConfigKeys<C> = NoUnknownKeys<
     StitchConfig,
     'StitchConfig'
 >;
+/**
+ * The HOUSE envelopes {@link NoUnknownNestedKeys} descends into, as
+ * `slot: [bag, its exported name, its own children]`.
+ *
+ * Explicit rather than derived from `StitchConfig[K]`, and that is a CORRECTNESS requirement, not a
+ * cost tweak: several slots hold FOREIGN objects whose extra keys are the point. `output` takes a
+ * `SchemaLike`, whose Zod arm is the phantom `{ _output: unknown }` — a real `z.object(…)` carries
+ * ~40 keys beyond it, so a derived walk reports `safeParse` as a misspelling and every schema in
+ * every config stops compiling. Same for `adapter` / `store` / `clock` / `trace` / `kind` / `auth`:
+ * pluggable seams (P21), where an unknown key is an implementation detail, not a typo.
+ */
+interface NestedEnvelopes {
+    wire: [
+        WireOptions,
+        'WireOptions',
+        { multipart: [MultipartOptions, 'MultipartOptions', object] },
+    ];
+    stream: [
+        StreamOptions,
+        'StreamOptions',
+        { buffer: [StreamBufferOptions, 'StreamBufferOptions', object] },
+    ];
+    sse: [
+        SseOptions,
+        'SseOptions',
+        { reconnect: [ReconnectOptions, 'ReconnectOptions', object] },
+    ];
+    retry: [
+        RetryOptions,
+        'RetryOptions',
+        { backoff: [BackoffOptions, 'BackoffOptions', object] },
+    ];
+    input: [InputSchemas, 'InputSchemas', object];
+    verdict: [VerdictOptions, 'VerdictOptions', object];
+    throttle: [ThrottleOptions, 'ThrottleOptions', object];
+    timeout: [TimeoutOptions, 'TimeoutOptions', object];
+    circuit: [CircuitOptions, 'CircuitOptions', object];
+    idempotency: [IdempotencyOptions, 'IdempotencyOptions', object];
+    cache: [CacheOptions, 'CacheOptions', object];
+    hooks: [Hooks, 'Hooks', object];
+    paginate: [PaginateOptions, 'PaginateOptions', object];
+}
+/**
+ * One envelope's worth of {@link NoUnknownNestedKeys}: brand the unknown keys of `V` against
+ * `Allowed`, then recurse into whichever of `V`'s keys name a child envelope.
+ *
+ * The array/function arm is what keeps the scalar and positional shorthands legal — `retry: 3`
+ * never reaches the object arm, and `circuit: [5, '30s']` is an ARRAY, whose `keyof` is
+ * `length`/`push`/… and would otherwise read as 30-odd unknown keys.
+ */
+type EnvelopeGuard<V, E> = E extends [
+    infer Allowed,
+    infer What extends string,
+    infer Kids,
+]
+    ? V extends readonly unknown[] | ((...args: never[]) => unknown)
+        ? unknown
+        : V extends object
+          ? ([Exclude<keyof V, keyof Allowed>] extends [never]
+                ? unknown
+                : {
+                      [
+                          K in Exclude<keyof V, keyof Allowed>
+                      ]: ConfigError<`\`${Extract<K, string>}\` is not a ${What} slot — check the spelling`>;
+                  }) & {
+                [K in keyof V & keyof Kids]?: EnvelopeGuard<V[K], Kids[K]>;
+            }
+          : unknown
+    : unknown;
+/**
+ * Compile-time guard: the same rejection {@link NoUnknownKeys} gives a config's TOP-LEVEL keys,
+ * one and two layers down, for the house envelopes listed in {@link NestedEnvelopes}.
+ *
+ * Needed for the same reason and by the same mechanism: `const C` is inferred from the WHOLE config
+ * object, so the envelope is no longer a fresh literal by the time it is compared against
+ * `AtLeastOne<CircuitOptions>` — excess-property checking is suppressed at every depth, not just at
+ * the root. `stitch({ circuit: { failures: 1, cooldown: '30s', totalNonsense: 1 } })` type-checks
+ * without this, and so does every call site still authoring a REMOVED nested slot. The gap read as
+ * closed for a long time because the type test pinning it carried no valid sibling, so weak-type
+ * detection did the rejecting and got the credit — see `unknown-config-keys.test-d.ts`.
+ *
+ * The key set is `keyof NestedEnvelopes`, NOT `keyof C & keyof NestedEnvelopes`, and that is
+ * load-bearing rather than stylistic. Keying it on `C` makes the guard's own SHAPE depend on the
+ * type still being inferred, which defers the parameter type past the point where a
+ * context-sensitive argument draws its contextual type: the callback slots — `adapter: (req) => …`,
+ * `transform: (b) => …` — lose theirs and report TS7006 `implicitly has an 'any' type`. Six sites
+ * in the suite caught it. The fixed key set costs one `K extends keyof C` per envelope and keeps
+ * inference intact.
+ *
+ * RESIDUAL LIMITS:
+ * - Scoped to the {@link NestedEnvelopes} table, which is explicit BY NECESSITY: `output` holds a
+ *   {@link SchemaLike}, and a walk derived from `StitchConfig[K]` reports `safeParse` on a real
+ *   `z.object(…)` as a misspelling. Unknown-key rejection is correct only for closed house
+ *   vocabularies, never for the pluggable seams. `scripts/check-unknown-keys.mjs` fails the build
+ *   when a new house envelope is added without a table entry.
+ * - Fail-open through `extends`, exactly as {@link NoUnknownKeys} is: this reads the literal's own
+ *   slots, so a fragment's nested keys are the `Layers` axis and not its business.
+ * - Fail-open on an already-typed envelope: `circuit: someCircuitOptions` has no unknown keys left
+ *   to find, and that binding's declaration site had ordinary excess-property checking.
+ */
+export type NoUnknownNestedKeys<C> = C extends string
+    ? unknown
+    : {
+          [K in keyof NestedEnvelopes]?: K extends keyof C
+              ? EnvelopeGuard<C[K], NestedEnvelopes[K]>
+              : unknown;
+      };
 /**
  * Compile-time guard: {@link WireOptions.multipart} is read ONLY when `wire.body` is
  * `'multipart'`, so pairing it with a `json`/`form` body (or omitting `body`, which defaults to
@@ -850,8 +962,17 @@ export interface BackoffOptions {
     max?: number | string;
 }
 export interface RetryOptions {
-    attempts?: number; // total attempts incl. the first (default 1 = no retry)
-    on?: StatusMatch; // status(es) (or a predicate) that trigger a retry (default [429,502,503,504])
+    /**
+     * **Total** attempts including the first call, so `attempts: 3` means up to two retries.
+     * Default `1`, which disables retry.
+     */
+    attempts?: number;
+    /**
+     * Status(es) — or a predicate `(status) => boolean` — that trigger a retry. A bare number is
+     * shorthand for a one-element list (`on: 429` ≡ `on: [429]`). Default `[429, 502, 503, 504]`,
+     * the usual transient set.
+     */
+    on?: StatusMatch;
     /**
      * Backoff policy. A bare curve is the P12 shorthand for `{ curve }`
      * (`backoff: 'fixed'` ≡ `backoff: { curve: 'fixed' }`); the envelope adds `base`/`max`.
@@ -872,9 +993,11 @@ export interface RetryOptions {
 }
 export interface ThrottleOptions {
     /**
-     * Self-pacing target — `'2/s'`, `'10/m'`, `'1/ms'`. The grammar is `<count>/<unit>` with an
-     * INTEGER count and unit `ms` | `s` | `m`, read by the shared {@link parseRate}; calls are
-     * spaced `window / count` apart before any request leaves.
+     * Target pace as a `"count/interval"` string — `'2/s'`, `'10/m'`, `'1/ms'`. A minimum spacing
+     * between successive calls (`interval / count`, applied before any request leaves), not a token
+     * bucket. The dominant field: a bare string is the P12 shorthand for `{ rate }`
+     * (`throttle: '2/s'` ≡ `throttle: { rate: '2/s' }`). The grammar is `<count>/<unit>` with an
+     * INTEGER count and unit `ms` | `s` | `m`, read by the shared {@link parseRate}.
      *
      * A **string and only a string**, deliberately. A duration or a byte cap also accepts a bare
      * number because each is a magnitude over a house unit — ms, bytes — so `5_000` and `4096`
@@ -886,6 +1009,7 @@ export interface ThrottleOptions {
      * the one place a house parser fails loud, for the reason spelled out on {@link parseRate}.
      */
     rate?: string;
+    /** Cap on simultaneous in-flight calls. Independent of `rate` — either may be set on its own. */
     concurrency?: number;
     /**
      * Where the limiter's counter is pooled: `'stitch'` (default) keeps a per-stitch
@@ -911,7 +1035,17 @@ export interface AcquireOptions {
     rateOnly?: boolean;
 }
 export interface TimeoutOptions {
+    /**
+     * Bounds the **entire call** across every retry, including the backoff waits between them —
+     * `10_000`, `'10s'`. The dominant field: a bare number or duration string is the P12 shorthand
+     * for `{ total }` (`timeout: '5s'` ≡ `timeout: { total: '5s' }`).
+     */
     total?: number | string;
+    /**
+     * Bounds each individual attempt — `3000`, `'3s'`. With `retry` enabled this alone does NOT cap
+     * the call: N attempts plus their backoff waits can overrun it many times over. Pair it with
+     * `total` for a real deadline.
+     */
     perAttempt?: number | string;
 }
 export interface CircuitOptions {
@@ -923,12 +1057,12 @@ export interface CircuitOptions {
      */
     failures?: number;
     /**
-     * Fast-fail window after opening, before a half-open trial — `30_000`, `'30s'`. Required by
-     * design (P15); `createCircuit` throws when it is missing.
+     * Fast-fail window after opening — `30_000`, `'30s'`. When it elapses the breaker goes
+     * half-open and admits one trial call, so this is the **single** open→half-open boundary:
+     * fast-fail and probe cannot run on different clocks, because a call is either rejected or
+     * admitted (CONTRACT.md P1). Required by design (P15); `createCircuit` throws when missing.
      */
     cooldown?: number | string;
-    /** When to allow a half-open trial — `60_000`, `'1m'`. Default: `cooldown`. */
-    halfOpenAfter?: number | string;
     /** Store namespace to share a breaker across stitches (default: stitch/host key). */
     key?: string;
 }
@@ -955,7 +1089,11 @@ export interface CircuitOptions {
  * default HTTP surface and are silenced by `warn: false`.
  */
 export interface IdempotencyOptions {
-    header?: string; // header name (default 'Idempotency-Key')
+    /**
+     * Header name the key rides on. Default `'Idempotency-Key'`; set it when a server expects a
+     * vendor spelling (e.g. `'X-Idempotency-Key'`).
+     */
+    header?: string;
     /** Derive a stable key per logical call (default: a random uuid). CONTRACT.md P6: `key` is a string; a derivation fn is `keyOf`. */
     keyOf?: (input: StitchInput) => string;
     /** false silences the "idempotency without retry" / "idempotency on a read" construction nudge. */
@@ -1886,6 +2024,7 @@ export interface Seam {
     >(
         config: C &
             NoUnknownConfigKeys<C> &
+            NoUnknownNestedKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
             FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
@@ -1906,6 +2045,7 @@ export interface Seam {
     >(
         config: C &
             NoUnknownConfigKeys<C> &
+            NoUnknownNestedKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
             FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
@@ -1923,6 +2063,7 @@ export interface Seam {
     >(
         config: C &
             NoUnknownConfigKeys<C> &
+            NoUnknownNestedKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
             FlagPathInOutput<C> &
             NoWireBodyOnGraphql<C>,

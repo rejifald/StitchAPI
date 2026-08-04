@@ -1,5 +1,8 @@
 // Conformance proof for the Zod fingerprint strategy, run against BOTH Zod
-// majors: the default `zod` import (v3 `_def`) and `zod/v4` (v4 `_zod.def`).
+// majors: `zod/v3` (v3 `_def`) and `zod/v4` (v4 `_zod.def`). Both subpaths are
+// pinned explicitly rather than reading v3 off the bare `zod` specifier — that
+// one tracks whichever major is installed (v3 on zod 3.25, v4 on zod 4), which
+// would quietly collapse both halves of this suite onto the same major.
 import { zodFingerprinter } from '../src';
 
 import {
@@ -8,7 +11,7 @@ import {
 } from 'stitchapi/testing';
 import type { FingerprintFixtures } from 'stitchapi/testing';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import { z } from 'zod/v3';
 import * as z4 from 'zod/v4';
 
 const fixtures: FingerprintFixtures = {

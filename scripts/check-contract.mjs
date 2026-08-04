@@ -376,7 +376,6 @@ const WIDENED_MEMBER = new Set([
     'base', // BackoffOptions — first-step delay
     'cooldown', // CircuitOptions — fast-fail window
     'delay', // ReconnectOptions / MockResponse
-    'halfOpenAfter', // CircuitOptions — half-open trial
     'interval', // any polling cadence
     'max', // BackoffOptions (delay ceiling) | ServeBodyOptions/ShellBufferOptions (byte cap)
     'perAttempt', // TimeoutOptions

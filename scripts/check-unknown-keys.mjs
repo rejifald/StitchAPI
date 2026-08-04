@@ -14,10 +14,17 @@
 // the parameter with `NoUnknownKeys<C, Allowed, What>` (packages/core/src/types.ts), which maps
 // `Exclude<keyof C, keyof Allowed>` onto a `ConfigError` brand naming the key.
 //
-// This gate is the RATCHET that keeps it closed: every generic-inferred option bag must either
-// carry a guard or be listed in scripts/unknown-keys.baseline.json WITH A REASON. A new unguarded
-// surface fails the build, so the decision is made deliberately rather than by omission — the same
-// shape as the API meta-contract ratchet in check-contract.mjs.
+// This gate is the RATCHET that keeps it closed, in two rules — the same shape as the API
+// meta-contract ratchet in check-contract.mjs, where a decision must be made deliberately rather
+// than by omission. Both record their exceptions in scripts/unknown-keys.baseline.json WITH A
+// REASON:
+//
+//   RULE 1 (surfaces) — every generic-inferred option bag must carry a guard or be baselined.
+//   RULE 2 (nested)   — every house envelope reachable from a guarded bag (`StitchConfig` and
+//                       the four that intersect it) must appear in the `NestedEnvelopes` table in
+//                       packages/core/src/types.ts, or be baselined.
+//                       The suppression is depth-independent, but the FIX cannot be: see the
+//                       rule-2 block below for why the table is explicit rather than derived.
 //
 //   pnpm check:unknown-keys                        # check the working tree (CI/hook mode)
 //   node scripts/check-unknown-keys.mjs --list     # print every site, guarded and not
@@ -180,9 +187,211 @@ function collect() {
     return sites.sort((a, b) => a.key.localeCompare(b.key));
 }
 
+// ---- rule 2: nested house envelopes ---------------------------------------
+// Same bug class, one layer down, and the one that stayed open longest because it LOOKED closed.
+// `const C` is inferred from the whole config object, so a nested envelope is no more a fresh
+// literal than the root is — excess-property checking is suppressed at every depth:
+//
+//     stitch({ circuit: { failures: 1, cooldown: '30s', totalNonsense: 1 } })   // no error
+//
+// (The type test that used to "pin" nested coverage passed only because its case carried no valid
+// sibling, so weak-type detection rejected it — an attribution error, not coverage.)
+//
+// `NoUnknownNestedKeys` closes it over an EXPLICIT table, `NestedEnvelopes` in types.ts. Explicit
+// because a walk derived from `StitchConfig[K]` is not merely more expensive but WRONG: `output`
+// takes a `SchemaLike`, whose Zod arm is the phantom `{ _output: unknown }`, so a derived walk
+// reports `safeParse` on a real `z.object(…)` as a misspelling. Same for the pluggable seams
+// (`adapter`/`store`/`clock`/`trace`/`kind`/`auth`), where unknown keys are the extension point.
+//
+// A hand-maintained table goes stale by omission, which is exactly what a ratchet is for: this rule
+// walks `StitchConfig` and every interface the table already covers, and flags any field that names
+// a house option bag but has no table entry.
+const CORE_TYPES = join(ROOT, 'packages', 'core', 'src', 'types.ts');
+
+// A house envelope by NAME. Deliberately suffix-based, like the rules above: it admits exactly the
+// `…Options` / `…Schemas` bags this repo authors and never matches the duck-typed slots
+// (`SchemaLike`, `Adapter`, `Clock`, `StitchStore`, `TraceSink`, `AuthStrategy`, `Surface`,
+// `DriftSpec`), which must NOT be walked. `Hooks` predates the suffix system and is listed by hand.
+const ENVELOPE_NAME = /\b([A-Z]\w*(?:Options|Schemas))\b/g;
+const EXTRA_ENVELOPES = new Set(['Hooks']);
+
+const stripComments = (s) =>
+    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+// Split `s` on `sep` seen at nesting depth 0. `=>` is masked first: its `>` would otherwise read as
+// a closing bracket and drive the depth negative on every function-valued field (`keyOf`, `next`).
+function splitTop(s, sep) {
+    const text = s.replace(/=>/g, '__');
+    const out = [];
+    let depth = 0;
+    let cur = '';
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if ('<([{'.includes(ch)) depth++;
+        else if ('>)]}'.includes(ch)) depth--;
+        if (ch === sep && depth === 0) {
+            out.push(cur);
+            cur = '';
+        } else cur += s[i];
+    }
+    out.push(cur);
+    return out.map((p) => p.trim()).filter(Boolean);
+}
+
+function interfaceBody(text, name) {
+    const re = new RegExp(
+        String.raw`(?:export\s+)?interface\s+${name}\s*(?:extends[^{]+)?\{`,
+    );
+    const m = re.exec(text);
+    if (!m) return null;
+    let depth = 1;
+    let i = m.index + m[0].length;
+    for (; i < text.length && depth > 0; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') depth--;
+    }
+    return text.slice(m.index + m[0].length, i - 1);
+}
+
+const fieldsOf = (body, sep = ';') =>
+    splitTop(body, sep)
+        .map((f) => /^(\w+)\??\s*:\s*([\s\S]+)$/.exec(f))
+        .filter(Boolean)
+        .map((m) => ({ name: m[1], type: norm(m[2]) }));
+
+// `[Bag, 'Bag', object]` or `[Bag, 'Bag', { slot: [...] }]` → { type, children }.
+function parseNode(txt) {
+    const parts = splitTop(
+        txt.trim().replace(/^\[/, '').replace(/\]$/, ''),
+        ',',
+    );
+    const kidsTxt = parts.slice(2).join(',').trim();
+    const children = {};
+    if (kidsTxt.startsWith('{'))
+        for (const f of fieldsOf(kidsTxt.slice(1, -1), ','))
+            children[f.name] = parseNode(f.type);
+    return { type: parts[0], children };
+}
+
+// The declared members of `name`, whichever form it takes: an `interface`, or a `type` alias whose
+// right-hand side intersects an object literal (`type LlmOptions = Partial<Omit<StitchConfig, …>> &
+// { provider: … }`). For the alias form only the LITERAL members are returned — the
+// `Partial<StitchConfig>` half is reached by walking `StitchConfig` itself, so returning it again
+// would double-report every envelope against a second owner.
+function declBody(text, name) {
+    const iface = interfaceBody(text, name);
+    if (iface !== null) return iface;
+    const m = new RegExp(String.raw`type\s+${name}\s*=`).exec(text);
+    if (!m) return null;
+    const { text: rhs } = spanTo(text, m.index + m[0].length, ';', 20000);
+    let body = '';
+    for (let i = 0; i < rhs.length; i++) {
+        if (rhs[i] !== '{') continue;
+        let depth = 1;
+        let j = i + 1;
+        for (; j < rhs.length && depth > 0; j++) {
+            if (rhs[j] === '{') depth++;
+            else if (rhs[j] === '}') depth--;
+        }
+        body += rhs.slice(i + 1, j - 1) + ';';
+        i = j - 1;
+    }
+    return body || null;
+}
+
+// The bag types every guarded/baselined surface infers into — `Partial<StitchConfig>`,
+// `LlmOptions`, `RequestOptions`… Each is a ROOT the nested walk must start from: they intersect
+// `Partial<Omit<StitchConfig, …>>` and then ADD their own fields, and a house envelope added there
+// would be just as unguarded as one added to `StitchConfig`, but invisible to a StitchConfig-only
+// walk. Type parameters (`Partial<TIn>`) are not resolvable to a declaration and are skipped.
+function rootBagsFrom(sites) {
+    const names = new Set(['StitchConfig']);
+    for (const s of sites)
+        for (const m of s.constraint.matchAll(
+            /\b([A-Z]\w*(?:Config|Options))\b/g,
+        ))
+            names.add(m[1]);
+    return [...names];
+}
+
+function collectNested(rule1Sites) {
+    const raw = readFileSync(CORE_TYPES, 'utf8');
+    const text = stripComments(raw);
+    const table = interfaceBody(text, 'NestedEnvelopes');
+    if (!table)
+        return {
+            sites: [],
+            error: 'NestedEnvelopes table not found in packages/core/src/types.ts',
+        };
+
+    const root = {};
+    for (const f of fieldsOf(table)) root[f.name] = parseNode(f.type);
+
+    // Every scanned source, so a root bag declared outside types.ts (`LlmOptions` in llm.ts, the
+    // postmessage bags in postmessage.ts) resolves.
+    const corpus = SCAN_ROOTS.flatMap((r) => walk(join(ROOT, r))).map((f) => ({
+        file: relative(ROOT, f).split('\\').join('/'),
+        raw: readFileSync(f, 'utf8'),
+    }));
+    const findDecl = (name) => {
+        for (const c of corpus) {
+            const body = declBody(stripComments(c.raw), name);
+            if (body !== null) return { body, file: c.file, raw: c.raw };
+        }
+        return null;
+    };
+
+    const sites = [];
+    const seen = new Set();
+    // Each root bag against the table, then each covered envelope against its own children.
+    const queue = rootBagsFrom(rule1Sites).map((owner) => ({
+        owner,
+        node: { children: root },
+        path: '',
+    }));
+    while (queue.length) {
+        const { owner, node, path } = queue.shift();
+        if (seen.has(owner)) continue;
+        seen.add(owner);
+        const decl = findDecl(owner);
+        if (!decl) continue;
+        const body = decl.body;
+        for (const field of fieldsOf(body)) {
+            const bags = [...field.type.matchAll(ENVELOPE_NAME)]
+                .map((m) => m[1])
+                .concat(
+                    [...EXTRA_ENVELOPES].filter((n) =>
+                        new RegExp(String.raw`\b${n}\b`).test(field.type),
+                    ),
+                );
+            if (!bags.length) continue;
+            // Key by OWNER too: the same slot name on two roots is two places to keep in sync, and
+            // a baseline entry for one must not silently discharge the other.
+            const at = path
+                ? `${path}.${field.name}`
+                : `${owner}.${field.name}`;
+            const child = node.children[field.name];
+            sites.push({
+                key: at,
+                owner,
+                slot: field.name,
+                bag: bags[0],
+                file: decl.file,
+                line: lineOf(decl.raw, decl.raw.indexOf(owner)),
+                covered: Boolean(child),
+            });
+            if (child) queue.push({ owner: child.type, node: child, path: at });
+        }
+    }
+    return { sites: sites.sort((a, b) => a.key.localeCompare(b.key)) };
+}
+
 // ---- ratchet --------------------------------------------------------------
 const args = new Set(process.argv.slice(2));
 const sites = collect();
+const nested = collectNested(sites);
+const nestedUncovered = (nested.sites ?? []).filter((s) => !s.covered);
+const nestedCovered = (nested.sites ?? []).filter((s) => s.covered);
 const unguarded = sites.filter((s) => !s.guarded);
 const guarded = sites.filter((s) => s.guarded);
 
@@ -198,6 +407,16 @@ if (args.has('--list')) {
             `  · ${s.file}:${s.line}  ${s.param}: <${s.typeParam} extends ${s.constraint}>`,
         );
     console.log(`\nTotal: ${sites.length} generic-inferred option bags.`);
+
+    console.log(`\nNESTED — IN THE TABLE (${nestedCovered.length}):`);
+    for (const s of nestedCovered)
+        console.log(`  ✓ ${s.key}  → ${s.bag}  (on ${s.owner})`);
+    console.log(`\nNESTED — NOT IN THE TABLE (${nestedUncovered.length}):`);
+    for (const s of nestedUncovered)
+        console.log(`  · ${s.key}  → ${s.bag}  (on ${s.owner})`);
+    console.log(
+        `\nTotal: ${(nested.sites ?? []).length} house-envelope slots reachable from a guarded bag.`,
+    );
     process.exit(0);
 }
 
@@ -207,6 +426,9 @@ if (args.has('--update')) {
         : { allowed: [] };
     const reasons = new Map(
         (prior.allowed ?? []).map((a) => [a.key, a.reason]),
+    );
+    const nestedReasons = new Map(
+        (prior.allowedNested ?? []).map((a) => [a.key, a.reason]),
     );
     writeFileSync(
         BASELINE,
@@ -222,13 +444,24 @@ if (args.has('--update')) {
                         reasons.get(s.key) ??
                         'TODO: state why this bag is safe unguarded, or guard it.',
                 })),
+                nestedNote:
+                    'House-envelope slots reachable from a guarded option bag that are deliberately ABSENT from the `NestedEnvelopes` table in packages/core/src/types.ts, and so get no nested unknown-key rejection. Same rule: every entry needs a `reason`.',
+                nestedCount: nestedUncovered.length,
+                allowedNested: nestedUncovered.map((s) => ({
+                    key: s.key,
+                    bag: s.bag,
+                    reason:
+                        nestedReasons.get(s.key) ??
+                        'TODO: add this slot to `NestedEnvelopes`, or state why it must stay open.',
+                })),
             },
             null,
             4,
         ) + '\n',
     );
     console.log(
-        `✓ Baseline rewritten: ${unguarded.length} allowed unguarded site(s).`,
+        `✓ Baseline rewritten: ${unguarded.length} allowed unguarded site(s), ` +
+            `${nestedUncovered.length} allowed un-tabled nested slot(s).`,
     );
     process.exit(0);
 }
@@ -287,7 +520,65 @@ if (added.length) {
     process.exit(1);
 }
 
+// ---- rule 2 gate ----------------------------------------------------------
+if (nested.error) {
+    console.error(`\n✗ ${nested.error}`);
+    console.error(
+        '  The nested rule reads that table to know which envelopes are covered. If it was ' +
+            'renamed, update CORE_TYPES/`NestedEnvelopes` here to match.',
+    );
+    process.exit(1);
+}
+
+const allowedNested = new Map(
+    (baseline.allowedNested ?? []).map((a) => [a.key, a.reason]),
+);
+const nestedAdded = nestedUncovered.filter((s) => !allowedNested.has(s.key));
+const nestedStale = [...allowedNested.keys()].filter(
+    (k) => !nestedUncovered.some((s) => s.key === k),
+);
+const nestedUnreasoned = [...allowedNested.entries()].filter(
+    ([, reason]) => !reason || /^TODO/i.test(reason),
+);
+
+if (nestedStale.length) {
+    console.log(
+        `\n✓ ${nestedStale.length} nested baseline entr(ies) now covered by the table — shrink it ` +
+            'with `node scripts/check-unknown-keys.mjs --update`:',
+    );
+    for (const k of nestedStale.sort()) console.log(`    ${k}`);
+}
+
+if (nestedUnreasoned.length) {
+    console.error(
+        `\n✗ ${nestedUnreasoned.length} nested baseline entr(ies) have no reason recorded:`,
+    );
+    for (const [k] of nestedUnreasoned) console.error(`    ${k}`);
+    process.exit(1);
+}
+
+if (nestedAdded.length) {
+    console.error(
+        `\n✗ ${nestedAdded.length} house-envelope slot(s) reachable from a guarded option bag with no ` +
+            '`NestedEnvelopes` entry — a misspelled or removed key inside them will typecheck and ' +
+            'be silently dropped:',
+    );
+    for (const s of nestedAdded)
+        console.error(`    ${s.key}  → ${s.bag}  (on ${s.owner})`);
+    console.error(
+        '\n  Add the slot to `NestedEnvelopes` (packages/core/src/types.ts) as ' +
+            "`slot: [Bag, 'Bag', object]` — or, if the bag is deliberately open (a pluggable seam, " +
+            'a foreign object), baseline it with `node scripts/check-unknown-keys.mjs --update` and ' +
+            'record a reason.',
+    );
+    process.exit(1);
+}
+
 console.log(
     `✓ Unknown-key guards: ${guarded.length} guarded, ` +
         `${allowed.size} allowed unguarded (baselined).`,
+);
+console.log(
+    `✓ Nested house envelopes: ${nestedCovered.length} in the table, ` +
+        `${allowedNested.size} allowed un-tabled (baselined).`,
 );

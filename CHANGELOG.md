@@ -35,6 +35,30 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Changed
 
+- **BREAKING CHANGE: `circuit.halfOpenAfter` is removed — `cooldown` is the one open→half-open
+  boundary.** ([CONTRACT.md P1](docs/CONTRACT.md#p1--one-word-one-concept-one-value-space)) The two
+  fields named the same instant: `createCircuit` resolved `halfOpenAfter ?? cooldown` into a single
+  value, and `phase()` — the only place the open/half-open boundary is decided — compared against
+  that one value. So `cooldown` had no effect of its own once `halfOpenAfter` was set, and the
+  "probe on a different clock than the fast-fail window" the docs described was never possible: a
+  call is either rejected or admitted, so there is no third phase for a second timer to gate.
+
+    Migration — fold the value you cared about into `cooldown`:
+
+    ```ts
+    // before
+    circuit: { failures: 5, cooldown: '30s', halfOpenAfter: '60s' },
+    // after — '60s' was the effective boundary, so it is the cooldown
+    circuit: { failures: 5, cooldown: '60s' },
+    ```
+
+    **`tsc` catches the migration** — but only as of the nested-key fix released alongside this
+    entry. When this change first landed a leftover `halfOpenAfter` still typechecked at the
+    `circuit:` slot, and the breaker silently switched to the `cooldown` boundary; `stitch()`
+    therefore logs a one-time construction warning naming the stitch and the boundary it actually
+    gets. With `NoUnknownNestedKeys` in place the slot rejects the key by name, and that warning is
+    now a backstop for JS callers rather than your only signal.
+
 - **`retry.respectRetryAfter` becomes `retry.respect`, and a `Retry-After` header is now honored by
   default.** The flag was opt-in, which meant the default retry behaviour ignored a number the
   server had explicitly provided in favour of a guessed backoff curve — on exactly the statuses the
@@ -309,6 +333,80 @@ npm release are grouped under the in-development version that introduced them.
 
     Widening only, so per [P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)
     it is non-breaking and needs no alias — every existing surface returning raw ms is unaffected.
+
+- **The same net now covers NESTED envelopes — `circuit`, `retry`, `wire`, and the rest — so a
+  nested rename is mechanical too.** The guard below was scoped to a config's top-level keys on the
+  reasoning that an envelope is checked against its _declared_ `AtLeastOne<CircuitOptions>` and so
+  stays a fresh literal. It does not. `const C` is inferred from the **whole** config object, so
+  excess-property checking is suppressed at every depth, not just at the root:
+
+    ```ts
+    // before: typechecked, and `totalNonsense` was silently dropped
+    stitch({
+        path: '/x',
+        circuit: { failures: 1, cooldown: '30s', totalNonsense: 1 },
+    });
+    // before: typechecked — the `retry.backoff` rename in rc.5 had no compile-time net either
+    stitch({
+        path: '/x',
+        retry: { attempts: 2, backoff: { curve: 'fixed', baseMs: 100 } },
+    });
+    ```
+
+    Both are now type errors naming the key **and the envelope it was misspelled against**, so the
+    report reads against the right vocabulary:
+
+    ```
+    `totalNonsense` is not a CircuitOptions slot — check the spelling
+    ```
+
+    **Why this looked closed for so long.** The type test pinning nested coverage carried _no valid
+    sibling_, so weak-type detection did the rejecting and got the credit — the exact attribution
+    error the same test file's preamble warns about. Add one valid sibling and the rejection
+    vanished. The two assertions are rewritten, and every new one carries a sibling.
+
+    **The first thing it caught was a stale key this repository had already shipped past.**
+    `halfOpenAfter`'s removal (above) was written around this hole — it reasoned that a leftover
+    spelling could not be flagged statically, so it added a construction-time warning instead. It
+    then left a stale `circuit: { …, halfOpenAfter: '60s' }` behind in `circuit-breaker.spec.ts`,
+    where nothing was watching: not the type tests, not the suite, not review. Turning the guard on
+    failed the build on it within one CI run. That is the whole argument for the guard, made
+    against real history rather than a constructed example — the class is not that people misspell
+    keys, it is that a **removal** leaves working-looking call sites behind and nothing says so.
+
+    Covers 17 slots across two levels: the 13 envelopes plus `wire.multipart`, `retry.backoff`,
+    `stream.buffer`, `sse.reconnect`. The second level is not hypothetical — rc.5's
+    `baseMs`→`base` / `maxMs`→`max` renames happened there.
+
+    **The table is explicit, not derived, and that is a correctness requirement rather than a cost
+    tweak.** A walk derived from `StitchConfig[K]` descends into `output`, whose `SchemaLike` Zod arm
+    is the phantom `{ _output: unknown }`; a real `z.object(…)` carries dozens of keys beyond it, so
+    every config that validates anything would fail with `safeParse` reported as a misspelling. The
+    same holds for each pluggable seam (`adapter` / `store` / `clock` / `trace` / `kind` / `auth`),
+    where an unknown key _is_ the extension point. Unknown-key rejection is correct only for closed
+    house vocabularies.
+
+    **Cost, measured** on core's 625-call-site typecheck project: +7% types, +12% instantiations,
+    and no measurable check-time change (~1.1s either way). The docs' twoslash build, every
+    downstream package, and the runtime bundle are unchanged. One subtlety is load-bearing: the
+    guard maps over the table's **fixed** key set rather than `keyof C & keyof NestedEnvelopes`.
+    Keying it on `C` makes the parameter type depend on the type being inferred, which costs
+    contextual typing for callback slots (`adapter`, `transform`) and produces spurious
+    `implicitly has an 'any' type` errors.
+
+    **Still fail-open through `extends`,** at every depth — that is the cross-layer `Layers` axis,
+    and a fragment's own declaration site is where its spelling is checked. The `NoUnknownKeys`
+    JSDoc previously claimed an _inline_ fragment was covered by excess-property checking; it is
+    not, for the same reason the root is not, and the limit is now recorded honestly and pinned.
+
+    The ratchet grew a **second rule** to keep the table from going stale by omission: it walks every
+    root bag rule 1 found (`StitchConfig` plus the four that intersect it) and every interface the
+    table covers, failing on any field naming a house `…Options` / `…Schemas` bag with no entry, at
+    any depth. The rest of the class was **swept rather than assumed** — every other
+    envelope-consuming surface takes its bag as a direct annotation and keeps ordinary
+    excess-property checking, verified by probe (with a valid sibling present) on `seam`, `serve`,
+    `createTrace`, `mockAdapter`, `oauth2`, `serveStdio`, `deltaFrame`, and `@stitchapi/shell`'s
+    nested `buffer` envelope.
 
 - **An unknown config key is now a type error, so removing or renaming a slot has a compile-time
   safety net.** The authoring overloads infer `const C` from the config argument — that is what lets
