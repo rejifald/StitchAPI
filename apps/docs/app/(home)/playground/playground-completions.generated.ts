@@ -120,10 +120,10 @@ export const PLAYGROUND_COMPLETIONS: Record<string, Completion[]> = {
             info: "Retry-and-backoff policy. A bare number is shorthand for the attempt count — `retry: 3` ≡ `retry: { attempts: 3 }`; the opaque `retry: {}` is rejected (CONTRACT.md P20).",
         },
         {
-            label: "acceptStatus",
+            label: "verdict",
             type: "property",
-            detail: "StatusMatch",
-            info: "Status(es) that are a NORMAL result rather than an error — a number, a list, or a predicate (CONTRACT.md P7). An accepted non-2xx flows through interpret → transform → pick → validate exactly like a 2xx (the response body becomes the result), instead of throwing a StitchError. Use this when an endpoint treats e.g. `404`/`400` as expected control flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a `catch`. `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts are exhausted, then accepted (returned) on the final attempt. Orthogonal to `throttle.delegate`, which surfaces a RateLimitError on rate-limit statuses earlier.",
+            detail: "AtLeastOne<VerdictOptions>",
+            info: "What counts as success — the declarative input to stage 4, the surface's `interpret` (ADR 0022). `accept` takes a non-2xx as a normal result; `flag` fails a `200` whose body explicitly says it failed. The opaque `verdict: {}` is rejected (P20).",
         },
         {
             label: "throttle",

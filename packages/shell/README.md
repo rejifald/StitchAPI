@@ -38,7 +38,7 @@ host-inferred bearer tokens in StitchAPI's auth:
 
 - Exit `0` → the value is `stdout` (a `string`; pass `decode: 'json'` to `JSON.parse` it).
 - A non-zero exit → a `StitchError` (status `500`) whose `.body` is `{ exitCode, stdout, stderr }`
-  (or accept it as a normal result with `acceptStatus`).
+  (or accept it as a normal result with `verdict: { accept: … }`).
 - A timeout / caller `AbortSignal` aborts the subprocess (it runs inside the resilience chain).
 
 ## Options

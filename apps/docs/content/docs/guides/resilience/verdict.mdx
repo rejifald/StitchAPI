@@ -1,0 +1,182 @@
+---
+title: 'Verdict'
+description: 'Declare what counts as success — accept a non-2xx as a normal result, or fail a 200 whose body says it failed.'
+prerequisites: ['/docs/concepts/the-stitch']
+---
+
+Every call ends with one decision: **is this response a result, or an error?** The
+stitch calls that decision the **verdict**, and `verdict` is where you configure it.
+
+By default every `status >= 400` is a failure: the stitch throws a
+[`StitchError`](/docs/errors), so a `404` you _expected_ — a resource that's gone,
+where you fall back to a broader call — has to be handled in a `catch`. That turns
+ordinary control flow into exception handling.
+
+## Where it runs
+
+The verdict is rendered at **stage 4 of the pipeline**, by the surface's `interpret`
+hook. `verdict` is the declarative input that hook reads:
+
+```
+call → throttle → request → retry → interpret → paginate → pick → validate → cache → result
+                                        ▲
+                                  the verdict, from `verdict`
+```
+
+That is why it is one envelope rather than a loose status option: it names a stage,
+and its members are the inputs to that stage's decision. `stitch diagram` and the
+MCP teaching list both render it, so the decision is visible rather than implied.
+
+## `accept` — a non-2xx that is a normal result
+
+An accepted status no longer throws: its response body becomes the result and flows
+through the same pipeline a `2xx` does — `interpret` → `transform` → `pick` →
+`output` validation — so the happy path stays on the happy path.
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const lookup = stitch<{ id: string } | { missing: true }>({
+    baseUrl: 'https://api.example.com',
+    path: '/items/{id}',
+    verdict: { accept: [404] }, // a 404 is "not found", not a thrown error
+    transform: (body) =>
+        // Reshape the 404 payload into a sentinel your code can branch on.
+        body && typeof body === 'object' && 'id' in body
+            ? body
+            : { missing: true },
+});
+
+const item = await lookup({ params: { id: 'abc' } });
+if ('missing' in item) {
+    // fall back to a broader call — no try/catch needed
+}
+```
+
+A `404` here **resolves** with the response body instead of rejecting. Everything
+else (`401`, `500`, …) still throws a `StitchError` exactly as before — `accept` is
+additive, never a blanket "ignore failures".
+
+### A number, a list, or a predicate
+
+`accept` is a `StatusMatch`: a single status, a number list, or a predicate
+`(status) => boolean`. A bare number is shorthand for its one-element list
+(`accept: 404` ≡ `accept: [404]`). Use a predicate to accept a range:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const probe = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/probe',
+    // accept every 4xx as a result; a 5xx still throws
+    verdict: { accept: (status) => status >= 400 && status < 500 },
+});
+```
+
+## `flag` — a 200 whose body says it failed
+
+Some APIs — older ones especially — answer `200 OK` and put the real outcome in the
+payload: `{ ok: false, code: 'RATE_LIMITED' }`. `flag` is a dot-path (the same shape
+as [`pick`](/docs/guides/data/pick)) to a field that is **explicitly falsy on
+failure**:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const call = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/legacy',
+    verdict: { flag: 'meta.success' }, // a 200 with meta.success: false is a failure
+});
+```
+
+`accept` and `flag` move the verdict in exactly one direction each — `accept` can
+only turn a failure into a success, `flag` only a success into a failure. Neither
+invents a verdict from absence.
+
+### It has to _say_ failure
+
+`flag` is three-state, and only one state is a verdict:
+
+| at the path                       | verdict                                             |
+| --------------------------------- | --------------------------------------------------- |
+| present, truthy                   | success — the flag confirms it                      |
+| present, falsy (`false` `0` `''`) | **failure** — the flag says so. The feature.        |
+| `null`                            | **no signal**                                       |
+| absent (`undefined`)              | **no signal** — falls through to the status verdict |
+
+A missing path cannot manufacture a failure, and a `200` carrying no flag is still a
+`200`. That matters because a server sends what it sends: the same endpoint returns
+`{ meta: { success: true }, data }` on Tuesday and a bare `{ data }` on Wednesday — a
+different version, a cache tier, a partial rollout. This library exists to survive
+that, so it must not be the thing that breaks on it.
+
+`null` sits with absence rather than with `false` on the same reasoning: APIs spell
+"not applicable" and "unknown" as `null` constantly, and JS truthiness would read
+that as a declaration of failure it never made.
+
+A path that resolves to nothing still emits an `info`
+[drift finding](/docs/guides/validation/drift), so a typo — or an API that quietly
+dropped its envelope — shows up in `.inspect()` and the drift report without anyone's
+call failing.
+
+<Callout type="info">
+    If the envelope is genuinely guaranteed, declare the field in `output` and
+    let validation enforce it. That is what the schema is for, it produces a
+    real error with a real path, and it means `flag` needs no strict mode.
+</Callout>
+
+## Interaction with retry
+
+`retry.on` **wins while attempts remain**. A status listed in _both_
+[`retry.on`](/docs/guides/resilience/retry) and `verdict.accept` is retried until
+attempts are exhausted, then **accepted** (returned) on the final attempt — so you
+can retry a flaky `503` a few times and still treat a persistent one as a result
+rather than an error:
+
+```ts twoslash
+import { stitch } from 'stitchapi';
+
+const call = stitch({
+    baseUrl: 'https://api.example.com',
+    path: '/maybe',
+    retry: { attempts: 3, on: [503] }, // retry a 503 up to 3 times…
+    verdict: { accept: [503] }, // …then accept it on the final attempt
+});
+```
+
+`verdict` is orthogonal to
+[`throttle.delegate`](/docs/guides/resilience/delegate-backoff), which surfaces a
+`RateLimitError` on rate-limit statuses earlier and is unaffected by this option.
+
+## When you still want the error body
+
+If a non-2xx is a _genuine_ failure but you need the API's error payload — its
+`{ error: "…" }` body — don't reach for `verdict`. Let it throw and read
+[`StitchError.body`](/docs/errors) (and `.url`), which carry the parsed payload and
+final request URL on the awaited / `.safe()` path.
+
+## Beyond configuration
+
+`verdict` is the declarative half. When the rule is genuinely code — "a `200` whose
+`status` field is `PENDING` should be re-attempted" — the stage has a functional seam
+too: a [surface](/docs/reference/surfaces)'s `interpret` hook, which can also
+ask for another attempt. Compose `verdictOf` in front of your own rules so a `500`
+stays a `500`:
+
+```ts twoslash
+import { type Surface, verdictOf } from 'stitchapi';
+
+const poller: Surface = {
+    id: 'poller',
+    interpret: (res, cfg) =>
+        verdictOf(res, cfg) ??
+        ((res.body as { status?: string }).status === 'PENDING'
+            ? { ok: false, retry: true, message: 'PENDING', after: 1_000 }
+            : { ok: true, data: res.body }),
+};
+```
+
+A body-driven retry shares the `retry.attempts` budget and reuses the run's
+`Idempotency-Key`, so replaying a write is as safe as a status-driven retry.

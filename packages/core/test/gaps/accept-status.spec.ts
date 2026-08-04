@@ -1,4 +1,4 @@
-// Pins issue #155 part A: `acceptStatus` — declare statuses (a number list or a predicate) that are
+// Pins issue #155 part A: `verdict.accept` — declare statuses (a number list or a predicate) that are
 // a NORMAL result rather than an error. An accepted non-2xx returns its body and flows through the
 // SAME success pipeline a 2xx does (interpret → transform → unwrap → validate) instead of throwing.
 // `retry.on` still wins while attempts remain (retried, then accepted on the final attempt); the
@@ -38,9 +38,9 @@ async function rejectionOf(call: PromiseLike<unknown>): Promise<StitchError> {
 }
 
 // ── A. an accepted 404 RESOLVES with the 404 body (no throw) ──
-// `acceptStatus: [404]` turns a 404 into a normal result: the awaited path resolves to the response
+// `verdict: { accept: [404] }` turns a 404 into a normal result: the awaited path resolves to the response
 // body — exactly the "resource-gone → fall back" control flow that today runs through a `catch`.
-test('acceptStatus: [404] resolves with the 404 body instead of throwing', async () => {
+test('verdict.accept: [404] resolves with the 404 body instead of throwing', async () => {
     server.route('GET', '/missing', {
         statuses: [404],
         body: { error: 'not_found', code: 'gone' },
@@ -48,16 +48,16 @@ test('acceptStatus: [404] resolves with the 404 body instead of throwing', async
     const call = stitch<{ error: string; code: string }>({
         baseUrl: server.url,
         path: '/missing',
-        acceptStatus: [404],
+        verdict: { accept: [404] },
     });
 
     await expect(call()).resolves.toEqual({ error: 'not_found', code: 'gone' });
 });
 
 // ── A′. P7: a BARE number is shorthand for the one-element list ──
-// `acceptStatus: 404` ≡ `acceptStatus: [404]` (the `StatusMatch` widening, CONTRACT.md P7). The
+// `verdict: { accept: 404 }` ≡ `verdict: { accept: [404] }` (the `StatusMatch` widening, CONTRACT.md P7). The
 // scalar spelling flows through the same accept path — no `[…]` wrapper required.
-test('acceptStatus: 404 (bare number) resolves like the one-element list', async () => {
+test('verdict.accept: 404 (bare number) resolves like the one-element list', async () => {
     server.route('GET', '/missing-bare', {
         statuses: [404],
         body: { error: 'not_found', code: 'gone' },
@@ -65,7 +65,7 @@ test('acceptStatus: 404 (bare number) resolves like the one-element list', async
     const call = stitch<{ error: string; code: string }>({
         baseUrl: server.url,
         path: '/missing-bare',
-        acceptStatus: 404,
+        verdict: { accept: 404 },
     });
 
     await expect(call()).resolves.toEqual({ error: 'not_found', code: 'gone' });
@@ -83,7 +83,7 @@ test('an accepted non-2xx still runs transform, unwrap, and output validation', 
     const call = stitch<{ id: number; label: string }>({
         baseUrl: server.url,
         path: '/accepted-pipeline',
-        acceptStatus: [404],
+        verdict: { accept: [404] },
         pick: 'data',
         transform: (body) => {
             const b = body as { data: { id: number; name: string } };
@@ -99,8 +99,8 @@ test('an accepted non-2xx still runs transform, unwrap, and output validation', 
 });
 
 // ── C. a predicate accepts a 400 but still throws on a 500 ──
-// `acceptStatus: (s) => s < 500` — a 400 is accepted (resolves), a 500 is not (still a StitchError).
-test('acceptStatus predicate accepts a 400 and still throws on a 500', async () => {
+// `verdict: { accept: (s) => s < 500 }` — a 400 is accepted (resolves), a 500 is not (still a StitchError).
+test('verdict.accept predicate accepts a 400 and still throws on a 500', async () => {
     server.route('GET', '/bad-request', {
         statuses: [400],
         body: { error: 'bad_input' },
@@ -114,14 +114,14 @@ test('acceptStatus predicate accepts a 400 and still throws on a 500', async () 
     const ok = stitch<{ error: string }>({
         baseUrl: server.url,
         path: '/bad-request',
-        acceptStatus: accept4xx,
+        verdict: { accept: accept4xx },
     });
     await expect(ok()).resolves.toEqual({ error: 'bad_input' });
 
     const bad = stitch({
         baseUrl: server.url,
         path: '/server-error',
-        acceptStatus: accept4xx,
+        verdict: { accept: accept4xx },
     });
     const err = await rejectionOf(bad());
     expect(err.name).toBe('StitchError');
@@ -129,11 +129,11 @@ test('acceptStatus predicate accepts a 400 and still throws on a 500', async () 
 });
 
 // ── D. retry.on wins while attempts remain, then accept on the final attempt ──
-// A status in BOTH `retry.on` and `acceptStatus` is RETRIED until attempts are exhausted, then
+// A status in BOTH `retry.on` and `verdict.accept` is RETRIED until attempts are exhausted, then
 // ACCEPTED (returned) on the final attempt. Here two 503s then a third 503: with retry.attempts: 3
 // the first two are retried, the third (final attempt) is accepted and its body resolves — proving
 // the accept check sits AFTER the retry-on-status path (3 requests, no throw).
-test('a status in both retry.on and acceptStatus is retried, then accepted on the final attempt', async () => {
+test('a status in both retry.on and verdict.accept is retried, then accepted on the final attempt', async () => {
     server.route('GET', '/retry-then-accept', {
         statuses: [503, 503, 503],
         body: [{ try: 1 }, { try: 2 }, { ok: true, last: true }],
@@ -142,7 +142,7 @@ test('a status in both retry.on and acceptStatus is retried, then accepted on th
         baseUrl: server.url,
         path: '/retry-then-accept',
         retry: { attempts: 3, on: [503], backoff: { curve: 'fixed', base: 1 } },
-        acceptStatus: [503],
+        verdict: { accept: [503] },
     });
 
     await expect(call()).resolves.toEqual({ ok: true, last: true });
@@ -150,10 +150,10 @@ test('a status in both retry.on and acceptStatus is retried, then accepted on th
     expect(server.callCount('/retry-then-accept')).toBe(3);
 });
 
-// ── E. acceptStatus is honoured on the streaming path too ──
+// ── E. verdict.accept is honoured on the streaming path too ──
 // Streaming shares the same per-stitch policy: an accepted non-2xx streams its live body as `delta`
 // chunks and terminates as a success (a `result`, `done.ok: true`) rather than an `error` event.
-test('acceptStatus lets a streaming surface accept a non-2xx and stream its body', async () => {
+test('verdict.accept lets a streaming surface accept a non-2xx and stream its body', async () => {
     server.route('GET', '/accept-stream', {
         statuses: [404],
         stream: { chunks: ['hello ', 'world'] },
@@ -162,7 +162,7 @@ test('acceptStatus lets a streaming surface accept a non-2xx and stream its body
     const call = stitch({
         baseUrl: server.url,
         path: '/accept-stream',
-        acceptStatus: [404],
+        verdict: { accept: [404] },
         kind: {
             id: 'text-stream',
             // Minimal text-stream surface: decode each Uint8Array chunk to a string `delta`.
@@ -191,9 +191,9 @@ test('acceptStatus lets a streaming surface accept a non-2xx and stream its body
     expect(deltas.join('')).toBe('hello world');
 });
 
-// ── F. a non-accepted status under acceptStatus still throws ──
-// Sanity: acceptStatus is additive — a status NOT in the list/predicate keeps the ordinary failure.
-test('a status outside acceptStatus still throws a StitchError', async () => {
+// ── F. a non-accepted status under verdict.accept still throws ──
+// Sanity: verdict.accept is additive — a status NOT in the list/predicate keeps the ordinary failure.
+test('a status outside verdict.accept still throws a StitchError', async () => {
     server.route('GET', '/still-throws', {
         statuses: [403],
         body: { error: 'forbidden' },
@@ -201,7 +201,7 @@ test('a status outside acceptStatus still throws a StitchError', async () => {
     const call = stitch({
         baseUrl: server.url,
         path: '/still-throws',
-        acceptStatus: [404], // 403 is NOT accepted
+        verdict: { accept: [404] }, // 403 is NOT accepted
     });
 
     const err = await rejectionOf(call());

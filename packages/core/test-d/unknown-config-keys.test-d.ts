@@ -40,7 +40,7 @@ const URL_ = 'https://api.example.com/things';
 // If the guard were over-eager these would fail, and each rejection below would be unattributable.
 stitch({ path: '/things', timeout: 500, retry: 2, headers: { a: '1' } });
 stitch({ url: URL_, wire: { array: 'repeat' }, cache: '1m' });
-stitch({ path: '/things', acceptStatus: [404] });
+stitch({ path: '/things', verdict: { accept: [404] } });
 stitch({ extends: [{ baseUrl: 'https://api.example.com' }], path: '/things' });
 
 // ── Illegal: a key that is not a `StitchConfig` slot ────────────────────────
@@ -50,10 +50,13 @@ expectError(stitch({ path: '/things', totallyMadeUpProperty: 123 }));
 expectError(stitch({ path: '/things', timeut: 500 }));
 expectError(stitch({ path: '/things', retires: 2 }));
 
-// The #600 migration case: a slot folded into an envelope leaves the flat spelling dead. This is the
-// shape that had no compile-time net before — `acceptStatus` stays legal above, so what is pinned
-// here is that ANY not-a-slot spelling is rejected, which is what makes such a rename mechanical.
-expectError(stitch({ path: '/things', acceptStatusOld: [404] }));
+// The #600 migration case, now the REAL one: ADR 0022 folded `acceptStatus` into the `verdict`
+// envelope (legal spelling above), leaving the flat slot dead. That rename shipped documented as
+// having NO compile-time net — the `const C extends Partial<StitchConfig>` generic suppresses
+// excess-property checking, so a stale `acceptStatus:` was silently ignored and the status quietly
+// started throwing again. This guard reads `keyof C` instead, so it catches exactly that, and the
+// migration stops depending on a repo-wide grep.
+expectError(stitch({ path: '/things', acceptStatus: [404] }));
 
 // ── STRONGER than excess-property checking: a hoisted config is caught too ──
 // EPC only fires on a FRESH literal, so lifting the same object into a `const` escapes it entirely.

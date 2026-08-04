@@ -10,7 +10,9 @@ import { streamOf } from './support/streams';
 async function parse(chunks: string[]): Promise<SseEvent[]> {
     const res = { status: 200, headers: {}, body: streamOf(chunks) };
     const out: SseEvent[] = [];
-    for await (const ev of sseSurface.stream!(res, {}))
+    // `kind` is required on a resolved config (ADR 0022 Decision 2 — an omitted surface resolves to
+    // `httpSurface`); here the surface under test is the honest value.
+    for await (const ev of sseSurface.stream!(res, { kind: sseSurface }))
         out.push(ev as SseEvent);
     return out;
 }

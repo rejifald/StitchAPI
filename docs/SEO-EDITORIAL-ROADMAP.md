@@ -124,7 +124,7 @@ above: rank for the generic problem, teach it honestly, then show the one-line s
 | Visualize your stitches as a diagram                        | 4      | "visualize api calls"                                 | `stitch diagram` / `toMermaid` call graph                                     |
 
 Lower priority / niche (capture only if a search angle emerges): the `shell` surface
-(run a command as a stitch), `delegate` backoff and `acceptStatus` as standalone
+(run a command as a stitch), `delegate` backoff and `verdict` as standalone
 resilience guides, and typed iframe↔parent RPC (`stitchapi/postmessage`, ADR 0009).
 
 ## Notes & guardrails

@@ -2,7 +2,7 @@
     "title": "Resilience",
     "pages": [
         "retry",
-        "accept-status",
+        "verdict",
         "throttle",
         "timeout",
         "circuit-breaker",

@@ -8,6 +8,7 @@ import type {
 import type {
     AnyLayer,
     Args,
+    InferOutput,
     InputOf,
     Layers,
     RelaxKeys,
@@ -155,6 +156,68 @@ export type BodyEncoding = 'json' | 'form' | 'multipart';
  * `wire: { body: 'form' }` is its encoding. Like `input`, no single field dominates, so there is no
  * P12 scalar shorthand — and the opaque `wire: {}` is rejected (P20).
  */
+/**
+ * What counts as success — the declarative input to **stage 4, the surface's `interpret`**
+ * (ADR 0022 Decision 3). `interpret` renders the verdict; this is what it reads.
+ *
+ * It replaces the flat `acceptStatus` root slot, which had no stage in the config anatomy while
+ * every other pipeline slot did — the tell that it was doing a pipeline stage's job while being
+ * invisible in the pipeline. Both members are plain JSON (P0), and both move the verdict in exactly
+ * ONE direction: `accept` can only turn a failure into a success, `flag` only a success into a
+ * failure. Neither invents a verdict from absence. That symmetry is what makes the envelope
+ * teachable, and it is the same discipline `acceptStatus` already documented — additive, never a
+ * blanket "ignore failures".
+ *
+ * No P12 scalar shorthand: `verdict: [404]` would not tell a reader what the list means (`wire` and
+ * `input` set the same precedent), and the opaque `verdict: {}` is rejected (P20).
+ */
+export interface VerdictOptions {
+    /**
+     * Status(es) that are a NORMAL result rather than an error — a number, a list, or a predicate
+     * (CONTRACT.md P7). An accepted non-2xx flows through interpret → transform → pick → validate
+     * exactly like a 2xx (the response body becomes the result), instead of throwing a
+     * {@link StitchError}. Use this when an endpoint treats e.g. `404`/`400` as expected control
+     * flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a
+     * `catch`.
+     *
+     * `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts
+     * are exhausted, then accepted (returned) on the final attempt. Orthogonal to
+     * `throttle.delegate`, which surfaces a {@link RateLimitError} on rate-limit statuses earlier.
+     */
+    accept?: StatusMatch;
+    /**
+     * Dot-path to a body flag that is EXPLICITLY falsy on failure — the `{ ok: false, code }`
+     * envelope common in older APIs, turned into declarative data instead of a hand-authored
+     * surface. Same shape as `pick`.
+     *
+     * **Three-state, and only one state is a verdict:**
+     *
+     * | at the path                       | verdict                                             |
+     * | --------------------------------- | --------------------------------------------------- |
+     * | present, truthy                   | success — the flag confirms it                      |
+     * | present, falsy (`false` `0` `''`) | **failure** — the flag says so. The feature.        |
+     * | `null`                            | **no signal** — see below                           |
+     * | absent (`undefined`)              | **no signal** — falls through to the status verdict |
+     *
+     * So it can only ever turn a would-be success into a failure **when it explicitly says so**. It
+     * cannot manufacture a failure out of silence, and a `200` carrying no flag is still a `200`.
+     * That matters because a server sends what it sends: the same endpoint returns
+     * `{ meta: { success: true }, data }` on Tuesday and a bare `{ data }` on Wednesday — a
+     * different version, a cache tier, a partial rollout. This library exists to survive that.
+     *
+     * `null` sits with absence rather than with `false` because APIs spell "not applicable" and
+     * "unknown" as `null` constantly, and JS truthiness would read that as a declaration of failure
+     * it never made.
+     *
+     * An absent path still emits an `info` **drift finding** (ADR 0015/0016) alongside `undeclared`,
+     * so a typo — or an API that quietly dropped its envelope — shows up in `.inspect()` and the
+     * drift report without anyone's call failing. If the envelope is genuinely guaranteed, declare
+     * the field in `output` and let validation enforce it: that is what the schema is for, it
+     * produces a real error with a real path, and it means `flag` needs no strict mode.
+     */
+    flag?: string;
+}
+
 export interface WireOptions {
     /**
      * Request body encoding. Default `'json'`.
@@ -302,6 +365,75 @@ export type NoUnknownConfigKeys<C> = NoUnknownKeys<
  *   (`extends: frag`). `InputOf` has read `extends` the same way since #76. Widening it is a
  *   change to call-argument inference for every consumer, not a guard change.
  */
+/**
+ * Every dot-path contained in `T`, to a bounded depth (ADR 0022 Decision 3 / Q5).
+ *
+ * The depth cap is not a convenience — it is what keeps this affordable. An uncapped "every path in
+ * `T`" union is a known `tsc` blow-up on deep or self-referential response types, and this repo
+ * typechecks the docs' twoslash blocks on every run. Four levels covers the realistic envelope
+ * (`meta.success`, `result.status.code`); past that the guard yields `string` and stops constraining
+ * rather than costing seconds.
+ *
+ * Arrays are indexed through their ELEMENT (`items.id`, not `items.0.id`) — a flag lives on a
+ * record, not at a numeric index — which also stops a tuple from fanning the union out by length.
+ */
+type PathsIn<
+    T,
+    Depth extends readonly unknown[] = [],
+> = Depth['length'] extends 4
+    ? never
+    : T extends readonly (infer E)[]
+      ? PathsIn<E, [...Depth, unknown]>
+      : T extends object
+        ? {
+              [K in keyof T & string]:
+                  K | `${K}.${PathsIn<T[K], [...Depth, unknown]> & string}`;
+          }[keyof T & string]
+        : never;
+
+/**
+ * Compile-time guard: {@link VerdictOptions.flag} is a dot-path into the RESPONSE BODY, and a typo
+ * (`meta.succes`) is the realistic failure. It is also silent — the path resolves to `undefined`,
+ * which `flag` reads as "no signal", so the flag is inert and every response quietly stops being
+ * checked. The `output` schema already describes the response, so the authoring site can catch it.
+ *
+ * **The rule is containment, not position.** The path must exist SOMEWHERE in the inferred type, not
+ * at a fixed place — and that looseness is required for soundness, not convenience, because `output`
+ * describes a DIFFERENT value than `flag` indexes:
+ *
+ * ```
+ * interpret (stage 4) → transform → pick (stage 6) → output validation (stage 7)
+ *       ▲                                                    ▲
+ *    flag reads the RAW body here        output describes the value AFTER both
+ * ```
+ *
+ * With no `transform` and no `pick` the two coincide. With `pick: 'data.items'`, `output` describes
+ * a narrow slice and a perfectly valid `flag: 'meta.success'` sits outside it. With `transform` the
+ * relationship is an arbitrary function and nothing can be concluded — so the constraint applies
+ * only when `output` is a schema and `transform` is absent, and relaxes to `string` otherwise. Same
+ * conditional-guard shape as {@link MultipartOnlyOnMultipartBody}.
+ *
+ * Runtime cannot help here and that is a hard constraint, not an omission: after `compose()` the
+ * schemas are opaque Standard Schema validators, and core is zero-dep, so nothing can walk one. This
+ * is an authoring-time check only — which is why an inert `flag` still emits an `info` drift finding.
+ */
+export type FlagPathInOutput<C> = C extends {
+    verdict: { flag: infer F };
+    output: infer S;
+}
+    ? C extends { transform: unknown }
+        ? unknown // transform makes the relationship arbitrary — nothing can be concluded
+        : [PathsIn<InferOutput<S>>] extends [never]
+          ? unknown // the schema yielded no walkable shape (an opaque validator) — stay out of the way
+          : F extends PathsIn<InferOutput<S>>
+            ? unknown
+            : {
+                  verdict?: {
+                      flag?: ConfigError<'`verdict.flag` is a dot-path that does not exist in the `output` type — check for a typo. The path may sit anywhere in the type; it is only constrained when `output` is a schema and `transform` is absent'>;
+                  };
+              }
+    : unknown;
+
 export type MultipartOnlyOnMultipartBody<C> =
     AnyLayer<Layers<C>, { wire: { multipart: unknown } }> extends true
         ? AnyLayer<Layers<C>, { wire: { body: 'multipart' } }> extends true
@@ -1197,18 +1329,11 @@ export interface StitchConfig {
      */
     retry?: number | AtLeastOne<RetryOptions>;
     /**
-     * Status(es) that are a NORMAL result rather than an error — a number, a list, or a predicate
-     * (CONTRACT.md P7). An accepted non-2xx flows through interpret → transform → pick → validate
-     * exactly like a 2xx (the response body becomes the result), instead of throwing a
-     * {@link StitchError}. Use this when an endpoint treats e.g. `404`/`400` as expected control
-     * flow (resource-gone → fall back to a broader call) so the happy path no longer runs through a
-     * `catch`.
-     *
-     * `retry.on` still wins while attempts remain: a status listed in BOTH is retried until attempts
-     * are exhausted, then accepted (returned) on the final attempt. Orthogonal to
-     * `throttle.delegate`, which surfaces a {@link RateLimitError} on rate-limit statuses earlier.
+     * What counts as success — the declarative input to stage 4, the surface's `interpret`
+     * (ADR 0022). `accept` takes a non-2xx as a normal result; `flag` fails a `200` whose body
+     * explicitly says it failed. The opaque `verdict: {}` is rejected (P20).
      */
-    acceptStatus?: StatusMatch;
+    verdict?: AtLeastOne<VerdictOptions>;
     /**
      * Rate and concurrency limits. A bare rate string is shorthand —
      * `throttle: '2/s'` ≡ `throttle: { rate: '2/s' }` (CONTRACT.md P12); the opaque `throttle: {}`
@@ -1310,8 +1435,15 @@ export type ResolvedWireOptions = Omit<WireOptions, 'multipart'> & {
  * become their chained/normalized object, and every `T | T[]` list field is an array. This is the
  * shape the engine and {@link redactConfig} read — never the loose authoring union.
  */
-export type ResolvedStitchConfig = Omit<StitchConfig, NormalizedSlot> &
-    ResolvedNormalizations;
+export type ResolvedStitchConfig = Omit<StitchConfig, NormalizedSlot | 'kind'> &
+    ResolvedNormalizations & {
+        /**
+         * ALWAYS present after `compose` — an omitted `kind` resolves to `httpSurface` (ADR 0022
+         * Decision 2). The engine therefore has no "no surface" branch and no interpretation of its
+         * own: it asks the selected surface, and for a plain stitch that surface is `http`.
+         */
+        kind: Surface;
+    };
 
 /**
  * The PUBLIC, redacted projection of a {@link StitchConfig} that a stitch exposes as `__config`
@@ -1730,6 +1862,7 @@ export interface Seam {
         config: C &
             NoUnknownConfigKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
+            FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
             WireBodyFixedByGraphql<C> &
             RequestShapeFixedByDownload<C>,
@@ -1749,6 +1882,7 @@ export interface Seam {
         config: C &
             NoUnknownConfigKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
+            FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
             WireBodyFixedByGraphql<C> &
             RequestShapeFixedByDownload<C>,
@@ -1765,6 +1899,7 @@ export interface Seam {
         config: C &
             NoUnknownConfigKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
+            FlagPathInOutput<C> &
             NoWireBodyOnGraphql<C>,
     ): Stitch<ResolveOutput<TExplicit, C>, InputOf<C>>;
     /**

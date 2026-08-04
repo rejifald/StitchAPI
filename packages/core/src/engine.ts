@@ -20,6 +20,7 @@ import {
     withTimeout,
 } from './resilience';
 import { vaultView } from './store';
+import { classifyStatus, flagFinding, interpretOf } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import type {
     AcquireOptions,
@@ -210,7 +211,7 @@ function buildRequest(
     // guards the default HTTP transport.
     if (
         cfg.adapter === undefined &&
-        cfg.kind?.execute === undefined &&
+        cfg.kind.execute === undefined &&
         !/^https?:\/\//i.test(url)
     ) {
         // A relative `url` set alongside a `baseUrl` is the common footgun: `url` is the whole
@@ -251,7 +252,7 @@ function buildRequest(
     if (input.onProgress) req.onProgress = input.onProgress;
     // The surface shapes the request (graphql packs { query, variables } + forces POST, …);
     // absent, the http identity above stands.
-    if (cfg.kind?.buildRequest) req = cfg.kind.buildRequest(cfg, input, req);
+    if (cfg.kind.buildRequest) req = cfg.kind.buildRequest(cfg, input, req);
     // Idempotency runs AFTER surface shaping so a surface that forces a write still gets a key.
     applyIdempotency(cfg, input, req.method, req.headers);
     return req;
@@ -584,13 +585,27 @@ async function drainErrorBody(body: unknown): Promise<unknown> {
     }
 }
 
+/**
+ * What an attempt settles on: the raw response (still needed for its status/headers/url — the
+ * result event, the cache entry's `vary`, the paginator's `lastStatus`) together with the surface's
+ * verdict on it. Since ADR 0022 Decision 1 the verdict is rendered INSIDE the loop, so a surface
+ * can see a non-2xx and — from step 4 — ask for another attempt.
+ *
+ * A `!ok` outcome here is always an APPLICATION-level rejection of a well-formed response: a
+ * transport-level failure threw instead, back at the terminal-verdict site.
+ */
+interface AttemptResult {
+    res: AdapterResponse;
+    outcome: SurfaceOutcome;
+}
+
 async function* attemptLoop(
     rt: Runtime,
     baseReq: AdapterRequest,
     state: RunState,
     run: RunContext,
     budget?: TotalBudget,
-): AsyncGenerator<StitchEvent, AdapterResponse> {
+): AsyncGenerator<StitchEvent, AttemptResult> {
     const { cfg } = rt;
     const max = cfg.retry?.attempts ?? 1;
     // P7: `retry.on` accepts a status list OR a predicate — normalize to one matcher.
@@ -605,11 +620,6 @@ async function* attemptLoop(
     // non-rate-limit failures — is unchanged.
     const delegate = cfg.throttle?.delegate === true;
     const rlMatch = acceptsStatus(cfg.throttle?.on ?? [429]);
-    // acceptStatus (issue #155): statuses the caller declares NORMAL — an accepted non-2xx returns
-    // `res` like a 2xx (flowing through interpret → transform → pick → validate) instead of
-    // throwing. Checked at the `>= 400` site, i.e. AFTER the retry-on-status path, so `retry.on`
-    // still wins while attempts remain (retried, then accepted on the final attempt).
-    const accepts = acceptsStatus(cfg.acceptStatus);
 
     for (let attempt = 1; attempt <= max; attempt++) {
         state.attempts = attempt;
@@ -653,7 +663,7 @@ async function* attemptLoop(
             // A surface may REPLACE the transport (ADR 0008): `cfg.kind.execute` runs here instead
             // of the HTTP adapter, still inside the resilience chain (retry/throttle/circuit/
             // timeout/trace/auth all wrap it). Absent, the ordinary HTTP adapter runs.
-            const transport = cfg.kind?.execute ?? rt.adapter;
+            const transport = cfg.kind.execute ?? rt.adapter;
             let res: AdapterResponse;
             try {
                 res = await withTimeout(
@@ -751,8 +761,59 @@ async function* attemptLoop(
                 continue;
             }
 
-            if (res.status >= 400 && !accepts(res.status)) {
-                const e = new Error(`HTTP ${res.status}`) as Error & {
+            // ── THE TERMINAL VERDICT (ADR 0022 Decision 1) ────────────────────────────────────
+            // The surface interprets EVERY response here, including the non-2xx the engine used to
+            // throw on before any hook could see it. It sits after the retry-on-status path, so
+            // `retry.on` still wins while attempts remain (retried, then accepted on the final
+            // attempt — case D of accept-status.spec.ts), and it runs once per attempt rather than
+            // once per run only because steps 2–4 above `continue` before reaching it.
+            const outcome = interpretOf(cfg.kind)(res, cfg);
+
+            // The BODY-AWARE RETRY (ADR 0022 Decision 5, issue #529). A surface that read the body
+            // can ask for another attempt — a `200` carrying `{ status: 'PENDING' }`, an in-payload
+            // rate limit. It shares `retry.attempts` (one budget is easier to reason about than
+            // two), so `attempt < max` is the same condition the status-driven path above uses, and
+            // exhausting it falls through to the ordinary failure handling below.
+            //
+            // The `retry` detail is distinguishable from the status path's `status NNN` so a trace
+            // consumer can tell a body-driven re-attempt from a status-driven one.
+            if (!outcome.ok && 'retry' in outcome && attempt < max) {
+                yield {
+                    type: 'progress',
+                    phase: 'retry',
+                    attempt,
+                    detail: `interpret: ${outcome.message}`,
+                    at: now(),
+                };
+                await cfg.hooks?.onRetry?.({ name: nameOf(cfg), attempt, res });
+                await sleepWithin(
+                    outcome.after ?? backoffDelay(attempt + 1, cfg.retry),
+                    budget,
+                    baseReq.signal,
+                    rt.clock,
+                );
+                continue;
+            }
+
+            // A failed verdict routes on WHAT failed, which is what keeps `circuit` behaviour
+            // unchanged (this ADR promises it does not move). The circuit tracks TRANSPORT health:
+            //
+            //   • the status itself failed → throw, exactly as before. The throw carries `.response`
+            //     so `StitchError` keeps its `body`/`url`, and it propagates through
+            //     `attemptWithCircuit`, which records a circuit failure.
+            //   • a well-formed response the SURFACE rejected (graphql's 200-with-`errors`) → return
+            //     the outcome. An application-level rejection is not a host-health signal, and one
+            //     bad query must not open the circuit for every other call to that host. This is the
+            //     behaviour today's ordering produced by accident; routing here makes it deliberate.
+            //
+            // `classifyStatus` — the STATUS, not the full verdict — because the question here is
+            // "did the transport report a failure?", and only the status answers that. Asking the
+            // body-aware `verdictOf` would route a falsy `verdict.flag` on a healthy `200` as a
+            // transport failure and open the circuit on it, which is the same mistake as tripping
+            // the breaker on graphql's `errors`. It honours `verdict.accept`, so a declared 404 the
+            // surface later rejects on body grounds stays off the circuit too.
+            if (!outcome.ok && classifyStatus(res.status, cfg)) {
+                const e = new Error(outcome.message) as Error & {
                     status: number;
                     response: AdapterResponse;
                 };
@@ -760,8 +821,7 @@ async function* attemptLoop(
                 e.response = res;
                 throw e;
             }
-            // A 2xx, or an accepted non-2xx: return it so it flows through the success pipeline.
-            return res;
+            return { res, outcome };
         } finally {
             // No release in delegate mode — we never acquired a slot (the host owns the gate).
             if (!delegate) rt.throttle.release(key);
@@ -780,7 +840,7 @@ async function* attemptWithCircuit(
     state: RunState,
     run: RunContext,
     budget?: TotalBudget,
-): AsyncGenerator<StitchEvent, AdapterResponse> {
+): AsyncGenerator<StitchEvent, AttemptResult> {
     const { cfg } = rt;
     if (!cfg.circuit) {
         return yield* attemptLoop(rt, baseReq, state, run, budget);
@@ -802,9 +862,11 @@ async function* attemptWithCircuit(
         throw new CircuitOpenError(); // fast-fail: do NOT touch the network
     }
     try {
-        const res = yield* attemptLoop(rt, baseReq, state, run, budget);
+        // A surface's application-level rejection reaches here as a returned `!ok` outcome, not a
+        // throw, so it records a circuit SUCCESS — the transport is healthy, the payload is not.
+        const settled = yield* attemptLoop(rt, baseReq, state, run, budget);
         await circuit.onSuccess();
-        return res;
+        return settled;
     } catch (e) {
         if (!(e instanceof CircuitOpenError)) {
             const opened = await circuit.onFailure();
@@ -868,8 +930,17 @@ async function* paginated(
     for (;;) {
         const req = buildRequest(cfg, pageInput);
         let res: AdapterResponse;
+        let outcome: SurfaceOutcome;
         try {
-            res = yield* attemptWithCircuit(rt, req, state, run, budget);
+            // Each page is interpreted inside its own attempt loop now (ADR 0022 Decision 1) rather
+            // than here — same as the non-paginated path.
+            ({ res, outcome } = yield* attemptWithCircuit(
+                rt,
+                req,
+                state,
+                run,
+                budget,
+            ));
         } catch (e) {
             yield errEvt(e, name, state.attempts);
             yield doneEvt(false, t0, state.attempts);
@@ -877,9 +948,6 @@ async function* paginated(
         }
         lastStatus = res.status;
 
-        // The surface interprets each page (graphql's "200-with-`errors`" failure) — same as the
-        // non-paginated path.
-        const outcome = interpretResponse(cfg, res);
         if (!outcome.ok) {
             yield surfaceErrEvt(outcome, name, state.attempts);
             yield doneEvt(false, t0, state.attempts);
@@ -1032,7 +1100,7 @@ function uploadProgressWarning(
     input: StitchInput,
 ): StitchEvent | undefined {
     if (!input.onProgress || input.body === undefined) return undefined;
-    if (rt.cfg.kind?.execute) return undefined; // surface replaces the transport (shell/llm/pipe)
+    if (rt.cfg.kind.execute) return undefined; // surface replaces the transport (shell/llm/pipe)
     const cap = rt.adapter.capabilities;
     if (!cap || cap.supports.includes('uploadProgress')) return undefined;
     return {
@@ -1058,18 +1126,11 @@ const resultEvt = (
     at: now(),
 });
 
-// Interpret a buffered response into a result value via the surface's `interpret` hook (graphql's
-// "200-with-`errors`" failure lives there). No surface / no hook → the body is the value.
-function interpretResponse(
-    cfg: ResolvedStitchConfig,
-    res: AdapterResponse,
-): SurfaceOutcome {
-    return cfg.kind?.interpret
-        ? cfg.kind.interpret(res, cfg)
-        : { ok: true, data: res.body };
-}
-
-// Build the `error` event for a surface that interpreted the response as a failure.
+// Ask the SELECTED surface what the response means (graphql's "200-with-`errors`" failure lives in
+// its hook; a plain stitch resolves `kind` to `httpSurface`, whose hook is `httpInterpret`). The
+// Build the `error` event for a surface that interpreted the response as a failure. Reached by the
+// retry arm too, once its attempts are spent — it carries no `status` (it is a body verdict, not a
+// transport one), so the event simply omits the field.
 function surfaceErrEvt(
     outcome: Extract<SurfaceOutcome, { ok: false }>,
     name: string,
@@ -1082,7 +1143,8 @@ function surfaceErrEvt(
         attempts,
         at: now(),
     };
-    if (outcome.status !== undefined) evt.status = outcome.status;
+    const status = 'status' in outcome ? outcome.status : undefined;
+    if (status !== undefined) evt.status = status;
     return evt;
 }
 
@@ -1100,17 +1162,24 @@ async function* runFrom(
 ): AsyncGenerator<StitchEvent, RunOutcome> {
     const { cfg } = rt;
     let res: AdapterResponse;
+    let outcome: SurfaceOutcome;
     try {
-        res = yield* attemptWithCircuit(rt, baseReq, state, run, budget);
+        // The surface's verdict is rendered inside the attempt loop now (ADR 0022 Decision 1), so
+        // it arrives already settled. A `!ok` here is an application-level rejection of a
+        // well-formed response (graphql's "200-with-`errors`"); a transport failure threw instead.
+        ({ res, outcome } = yield* attemptWithCircuit(
+            rt,
+            baseReq,
+            state,
+            run,
+            budget,
+        ));
     } catch (e) {
         yield errEvt(e, name, state.attempts);
         yield doneEvt(false, t0, state.attempts);
         return { ok: false };
     }
 
-    // The surface interprets the response (graphql's "200-with-`errors`-is-a-failure" lives in
-    // its interpret hook); with no hook the body is the value. Then transform → pick → validate.
-    const outcome = interpretResponse(cfg, res);
     if (!outcome.ok) {
         yield surfaceErrEvt(outcome, name, state.attempts);
         yield doneEvt(false, t0, state.attempts);
@@ -1122,7 +1191,15 @@ async function* runFrom(
     // The pre-validation body — the left side of 0015's `diff(raw, validated)`, the coordinate space a
     // finding's `path` is anchored to. `.inspect()` (ADR 0016) surfaces it; otherwise it's discarded.
     const rawBody = value;
-    const { value: validated, findings } = await validateOutput(cfg, value);
+    const { value: validated, findings: outputFindings } = await validateOutput(
+        cfg,
+        value,
+    );
+    // A `verdict.flag` that resolved to nothing is diagnosed, never enforced (ADR 0022 Decision 3).
+    // It reads the RAW response body, not `value` — the flag indexes what the server sent, before
+    // transform/pick reshaped it.
+    const flagged = flagFinding(res, cfg);
+    const findings = flagged ? [flagged, ...outputFindings] : outputFindings;
     let fatal = false;
     for (const finding of findings) {
         yield { type: 'drift', finding, at: now() };
@@ -1170,7 +1247,7 @@ async function* runStreaming(
 ): AsyncGenerator<StitchEvent, void> {
     const { cfg } = rt;
     const surface = cfg.kind;
-    if (!surface?.stream) return; // unreachable: only entered for a streaming surface
+    if (!surface.stream) return; // unreachable: only entered for a streaming surface
     // Bind the surface's hooks as non-optional locals up front: TS reverts the `surface` narrowing
     // inside the open closure below (a nested async generator), so capturing the hooks here — past
     // the guard, where `surface.stream` is present — keeps the closure free of re-narrowing noise.
@@ -1262,7 +1339,7 @@ async function* runStreaming(
             yield { type: 'progress', phase: 'request', attempt, at: now() };
             // A surface that replaces the transport (ADR 0008) runs here too, so a future non-HTTP
             // streaming surface gets the same treatment as the buffered path.
-            res = await (cfg.kind?.execute ?? rt.adapter)(req);
+            res = await (cfg.kind.execute ?? rt.adapter)(req);
             await cfg.hooks?.onResponse?.({ name, attempt, res });
         } catch (e) {
             await cfg.hooks?.onError?.({ name, attempt, error: e });
@@ -1273,10 +1350,16 @@ async function* runStreaming(
             return 'error';
         }
 
-        // acceptStatus (issue #155): an accepted non-2xx streams its live body like a 2xx instead of
-        // failing — same per-stitch policy the buffered/paginated `attemptLoop` honours. A rejected
-        // status is TERMINAL (not reconnected): the server actively refused, replaying it would loop.
-        if (res.status >= 400 && !acceptsStatus(cfg.acceptStatus)(res.status)) {
+        // verdict.accept (issue #155): an accepted non-2xx streams its live body like a 2xx instead of
+        // failing — same per-stitch policy the buffered/paginated `attemptLoop` honours, through the
+        // same function since ADR 0022 Decision 2. A rejected status is TERMINAL (not reconnected):
+        // the server actively refused, replaying it would loop.
+        //
+        // `classifyStatus`, not the surface's `interpret` and not the body-aware `verdictOf`: at
+        // open time there is no buffered body to rule on — only the status is known — so the retry
+        // arm and `verdict.flag` cannot apply here. The signature says so, rather than leaving it to
+        // a comment. That is a documented limit of the streaming path, not an oversight.
+        if (classifyStatus(res.status, cfg)) {
             // The error response carries the parsed payload, not a live stream — drain the unread
             // body (a small `{ error: "…" }`, not a real stream the caller wants) so
             // StitchError.body is the PARSED payload, matching the buffered path. Pin it (with
@@ -1317,7 +1400,7 @@ async function* runStreaming(
                 if (ret !== undefined) lastRetryMs = ret;
 
                 if (cfg.output) {
-                    const target = cfg.kind?.contractValue
+                    const target = cfg.kind.contractValue
                         ? cfg.kind.contractValue(chunk)
                         : chunk;
                     let fatal = false;
@@ -1605,7 +1688,7 @@ export async function* execute(
     // Streaming surfaces (sse/stream) take a dedicated path: open the live body and emit `delta`
     // chunks (Decisions 4-5). Streaming bypasses pagination and the cache, and is exempt from the
     // concurrency bucket (Decision 12). Checked before both so neither can wrap a live stream.
-    if (cfg.kind?.stream) {
+    if (cfg.kind.stream) {
         yield* runStreaming(rt, input, name, state, t0, run, budget);
         return;
     }
@@ -1690,7 +1773,9 @@ export async function executeRaw(
     );
     let step = await gen.next();
     while (!step.done) step = await gen.next();
-    return step.value;
+    // The RAW response is the point here (a login's Set-Cookie headers), so the surface's verdict
+    // is discarded — a failing status still threw inside the loop, exactly as before.
+    return step.value.res;
 }
 
 /**
@@ -1725,7 +1810,7 @@ export async function executeRawTraced(
             sink.handle(step.value, ctx);
             step = await gen.next();
         }
-        const res = step.value;
+        const { res } = step.value;
         // Status only — a login response body is sensitive; the span needs only its outcome.
         sink.handle(resultEvt(undefined, res.status, state.attempts), ctx);
         sink.handle(doneEvt(true, t0, state.attempts), ctx);

@@ -1,6 +1,6 @@
 # ADR 0022 — Response classification is one decision in two phases; merge them at `interpret`
 
-- **Status:** Proposed (2026-08-03). Resolves [#529](https://github.com/rejifald/StitchAPI/issues/529) and keeps [#155](https://github.com/rejifald/StitchAPI/issues/155) whole. Builds on [ADR 0005](./0005-surfaces-and-the-authoring-model.md) Decision 3 (the `Surface` seam) and [ADR 0008](./0008-non-http-surfaces-and-pipe.md) Decision 1 (`execute` inside the resilience chain).
+- **Status:** Accepted and implemented (2026-08-04) — all six rollout steps in this PR. Resolves [#529](https://github.com/rejifald/StitchAPI/issues/529) and keeps [#155](https://github.com/rejifald/StitchAPI/issues/155) whole. Builds on [ADR 0005](./0005-surfaces-and-the-authoring-model.md) Decision 3 (the `Surface` seam) and [ADR 0008](./0008-non-http-surfaces-and-pipe.md) Decision 1 (`execute` inside the resilience chain). All five open questions resolved as implemented.
 - **Date:** 2026-08-03
 - **Tags:** engine, surfaces, resilience, api-surface, P0, P7, P14, P21, P24, breaking, P19-pre-GA
 
@@ -115,26 +115,101 @@ than once only when `interpret` _itself_ asks for another attempt (step 6), whic
 is new capability, opted into by the surface. This is the cost #529 flagged as
 needing scoping — under this ordering it largely does not materialise.
 
-### 2. `httpSurface` gains a real `interpret`, exported as `httpInterpret`
+### 2. `httpSurface` gains a real `interpret`, over an exported `verdictOf`
 
 The status verdict stops being an engine branch and becomes a named, exported,
-composable function:
+composable function. It is split in two, because **a status implies a failure but
+never a success value**:
 
 ```ts
+// The STATUS alone — transport health. Takes a number, not a response.
+export const classifyStatus = (
+    status: number,
+    cfg: ResolvedStitchConfig,
+): Extract<SurfaceOutcome, { ok: false }> | undefined =>
+    status < 400 || acceptsStatus(cfg.verdict?.accept)(status)
+        ? undefined
+        : { ok: false, message: `HTTP ${status}`, status };
+
+// The whole declarative verdict — the status, then `verdict.flag`. What a surface composes.
+// Says nothing about what a success CONTAINS; that is not knowable from a verdict.
+export const verdictOf = (
+    res: AdapterResponse,
+    cfg: ResolvedStitchConfig,
+): Extract<SurfaceOutcome, { ok: false }> | undefined =>
+    classifyStatus(res.status, cfg) ?? flagFailure(res, cfg);
+
+// The http surface's own interpretation: the verdict, then ITS choice of result.
 export const httpInterpret = (
     res: AdapterResponse,
     cfg: ResolvedStitchConfig,
-): SurfaceOutcome =>
-    res.status < 400 || acceptsStatus(cfg.verdict?.accept)(res.status)
-        ? { ok: true, data: res.body }
-        : { ok: false, message: `HTTP ${res.status}`, status: res.status };
+): SurfaceOutcome => verdictOf(res, cfg) ?? { ok: true, data: res.body };
 
 export const httpSurface: Surface = { id: 'http', interpret: httpInterpret };
 ```
 
+#### Why the status is its own function
+
+`classifyStatus` takes a bare `number` because two callers need **only transport
+health**, and asking them the fuller question is a bug rather than a nicety:
+
+- **the ladder's circuit routing.** A `200` the surface rejected — graphql's
+  `errors`, a falsy `verdict.flag` — is an application-level rejection of a healthy
+  transport. Routing it through the body-aware verdict opens the breaker on it, so
+  one bad payload takes down every call to that host.
+- **the streaming gate.** At open time there is no buffered body to rule on. Only the
+  status is known, so only the status can be asked, and the signature says so instead
+  of a comment promising it.
+
+This was found the hard way: the first cut asked `verdictOf` at the routing site,
+and a `verdict.flag` failure on a `200` tripped the circuit. The narrow signature is
+what makes that class of mistake unrepresentable.
+
+The split is what makes the function genuinely composable. Every surface agrees a
+`500` is a `500`; **none of them agree on what a `200` yields** — `http` means the
+raw body, `download` a `{ blob, filename }`, `llm` the provider's parsed
+completion, `shell` a decoded stdout. Folding `data: res.body` into the shared
+function would make it assert a response format on behalf of surfaces that mean
+something else, so each composing surface would have to build that success value
+and immediately discard it. Only the failure arm is universal, so only the failure
+arm is shared.
+
 `interpret` already receives `(res, cfg)`, so this needs no new plumbing. Stage 4
 stops being conditional on `kind !== 'http'` in the pipeline read-out — the http
 surface now has an interpretation worth rendering.
+
+#### The default has to be SELECTED, not fallen back to
+
+Giving `httpSurface` a hook is not enough on its own, and it is worth being precise
+about why: **nothing selects `httpSurface` today.** `compose` leaves `kind` unset
+when the caller omits it, so `cfg.kind` is `undefined` for the surface almost every
+stitch uses, and the engine supplies the interpretation itself:
+
+```ts
+cfg.kind?.interpret
+    ? cfg.kind.interpret(res, cfg)
+    : { ok: true, data: res.body };
+```
+
+Hanging `interpret` off `httpSurface` while that line stands makes the hook
+**decorative** — it names the default without moving it, and the engine still holds
+an opinion about what a response means. So `compose` resolves the slot instead:
+
+```ts
+merged.kind = kind ?? httpSurface; // an omitted surface IS the http surface
+```
+
+`ResolvedStitchConfig.kind` becomes required, the engine's call site collapses to
+`interpretOf(cfg.kind)(res, cfg)`, and the "no hook ⇒ inherit http's
+interpretation" rule (`sse`, `stream`, `postmessage`, `shell` — surfaces whose job
+is transport or decoding, not deciding what a response means) lives in the surface
+model rather than as a `??` in the engine. There is then no branch anywhere that
+decides what a response means outside a surface, which is the whole of _Context_'s
+root cause.
+
+The visible cost is one key: `__config.kind` reads `'http'` for a plain stitch
+instead of being absent. That is a P0-visible shape change, and it is the honest
+one — the surface was always there; only its name was missing.
 
 ### 3. `acceptStatus` folds into a `verdict` envelope
 
@@ -165,9 +240,15 @@ export interface VerdictOptions {
 second member, and it is what makes the envelope's name exhaustive over its
 contents rather than an envelope of one: it turns the third body-aware case #529
 enumerates — "a `200` envelope with `{ ok: false, code: … }` (common in older
-APIs)" — into **declarative data** that `httpInterpret` reads, instead of requiring
+APIs)" — into **declarative data** that `verdictOf` reads, instead of requiring
 a hand-authored surface. Data, so P0 and the introspection story hold; a dot-path,
 so it is the same shape as `pick`.
+
+`flag` lives in `verdictOf` rather than in `httpInterpret`'s http-specific half
+because it is the caller's declaration, not the surface's: a stitch that sets
+`verdict: { flag }` means it on whatever surface it selected. It reads the raw body
+to render a **failure**, which is the arm every surface shares — and it never
+constructs a success value, so the split holds.
 
 #### Why `verdict` and not `interpret`
 
@@ -297,7 +378,7 @@ means. `wire` and `input` set the same precedent. The cost is that #155's one-li
 gains one level of nesting — the only consumer-visible regression in this ADR, and
 a mechanical migration.
 
-### 4. Every built-in surface composes `httpInterpret`
+### 4. Every built-in surface composes `verdictOf`
 
 This is load-bearing, not tidiness. Today `graphqlSurface.interpret`
 ([`surface.ts:144`](../../packages/core/src/surface.ts)) reads `body.errors` and
@@ -308,12 +389,15 @@ see a non-2xx.** Step 1 removes that guarantee. Without composition, a `500` wou
 be interpreted as a successful GraphQL response, or wrapped as a downloaded Blob.
 
 ```ts
-interpret: (res, cfg) => {
-    const base = httpInterpret(res, cfg);
-    if (!base.ok) return base; // a 500 is a failure before it is a graphql payload
-    /* …the surface's own body rules… */
-},
+// a 500 is a failure before it is a graphql payload / a downloaded Blob
+interpret: (res, cfg) =>
+    verdictOf(res, cfg) ?? { ok: true, data: /* …the surface's own value… */ },
 ```
+
+`verdictOf`, not `httpInterpret`: the composing surface wants the verdict and
+supplies its own success value, so nothing it does not mean is ever constructed.
+`??` rather than an `if (!base.ok) return base` guard falls out of the verdict
+being absent-or-failure instead of an outcome that always has an arm.
 
 `shell` and `sse` declare no `interpret` today and inherit `httpInterpret` by
 falling through to the http default, so their behaviour is unchanged — including
@@ -454,19 +538,35 @@ the surface reads it through the `cfg` argument `interpret` already receives.
 mechanical and greppable. `__config` changes shape at that key, so anything
 snapshotting it re-baselines. Everything else at the authoring site is untouched.
 
+**`__config.kind` is always present.** A plain stitch reports `kind: 'http'` where
+the key used to be absent (Decision 2 — the default surface is selected rather than
+implied). No authoring change, but it is a second reason a `__config` snapshot
+re-baselines, and any consumer using `'kind' in cfg` / `cfg.kind ?? 'http'` as a
+proxy for "is this a plain HTTP stitch" should compare the id instead.
+`RedactedStitchConfig.kind` stays optional in the types — a present string still
+satisfies it — so no consumer breaks at compile time.
+
 > [!WARNING]
 >
-> The migration has **no compile-time safety net**, for the same reason #591's did
-> not: `stitch`'s `const C extends Partial<StitchConfig>` generic captures the
-> argument type, which suppresses excess-property checking, so a stale
-> `acceptStatus:` is silently ignored and the status quietly starts throwing again.
-> Grep for `acceptStatus:`; do not trust `tsc`. #591 found 2 files by typechecking
-> and 30 by running the suite.
+> **This was drafted as a migration with no compile-time safety net, and
+> [#601](https://github.com/rejifald/StitchAPI/pull/601) removed that problem while
+> this ADR was in flight.** The original reasoning still explains the hazard:
+> `stitch`'s `const C extends Partial<StitchConfig>` generic captures the argument
+> type, which suppresses excess-property checking, so a stale `acceptStatus:` would
+> be silently ignored and the status would quietly start throwing again — the shape
+> that made #591 find 2 files by typechecking and 30 by running the suite.
+>
+> `NoUnknownConfigKeys` reads `keyof C` rather than relying on excess-property
+> checking, so a stale `acceptStatus:` is now a **compile error naming the slot** —
+> verified on the config literal, on a hoisted `const` (which EPC misses entirely),
+> and through an `extends` fragment. #601's own type test anticipated this rename and
+> now pins the real spelling. The grep below is kept as a belt-and-braces gate, not
+> because `tsc` cannot be trusted.
 
 **Surface authors are broken, deliberately.** An `interpret` hook now runs on
 responses it was previously guaranteed never to see. The two built-in hooks
 (`graphql`, `download`) are fixed by Decision 4; any third-party surface must
-compose `httpInterpret` or handle non-2xx itself. This is a real break with no
+compose `verdictOf` or handle non-2xx itself. This is a real break with no
 compile-time signal — the hook's signature is unchanged — so it needs a release
 note, not just a changelog line.
 
@@ -477,9 +577,11 @@ discoverability fix #529 asked for, delivered as a rendered stage rather than a
 config reshuffle.
 
 **The streaming path is unified too.** The hard-coded gate at
-[`engine.ts:1279`](../../packages/core/src/engine.ts) calls `httpInterpret` instead
+[`engine.ts:1279`](../../packages/core/src/engine.ts) calls `classifyStatus` instead
 of reading the status rule directly, so streaming keeps today's behaviour (including
-case E of the spec file) through the same function as the buffered path. The retry
+case E of the spec file) through the same function as the buffered path — and it is
+the status-only half it wants, since a live body has neither an interpreted value nor
+a `verdict.flag` to read at open time. The retry
 arm does not apply there — there is no buffered body to rule on at open time — and
 that stays a documented limit rather than an open question.
 
@@ -491,40 +593,80 @@ redaction — `verdict.accept`'s predicate form is `redact-if-fn`, exactly as
 
 ### Blast radius (verified against `d687afb`)
 
-| area     | sites                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| engine   | [`engine.ts:612`, `:754`](../../packages/core/src/engine.ts) (the ladder + the throw), `:882` / `:1113` (both `interpretResponse` call sites move into the loop), `:1063`–`1069` (the hard-coded default goes), `:1276`–`1279` (streaming gate delegates)                                                                                                                                                                                                                                                                   |
-| surfaces | [`surface.ts:100`](../../packages/core/src/surface.ts) (`httpSurface` gains `interpret`), `:144` (graphql composes), [`download.ts:86`](../../packages/core/src/download.ts) (composes), `SurfaceOutcome` at `surface.ts:20` (the retry arm)                                                                                                                                                                                                                                                                                |
-| the fold | [`types.ts:956`](../../packages/core/src/types.ts) (`acceptStatus` → `VerdictOptions`, exported per P14), [`stitch.ts:832`, `:861`](../../packages/core/src/stitch.ts) (`REDACTED_IF_FN_SLOTS` — the fn-strip moves one level down, into the envelope)                                                                                                                                                                                                                                                                      |
-| anatomy  | [`config-anatomy.ts:122`](../../packages/core/src/config-anatomy.ts) (`acceptStatus` → `verdict: { stage: 4; dropped: 'redact-if-fn' }`), [`config-summary.ts:78`](../../packages/core/src/config-summary.ts) (stage 4 unconditional)                                                                                                                                                                                                                                                                                       |
-| tests    | [`accept-status.spec.ts`](../../packages/core/test/gaps/accept-status.spec.ts) — all 6 cases must pass with **only the slot spelling changed**; that is the regression gate for the reordering. [`contract-p0.spec.ts:92`, `:115`, `:219`](../../packages/core/test/contract-p0.spec.ts) (nested predicate). New cases for the retry arm, `verdict.flag`, and graphql/download meeting a `500`                                                                                                                              |
-| docs     | [`accept-status.mdx`](../../apps/docs/content/docs/guides/resilience/accept-status.mdx) (rename + pipeline framing), [`errors/index.mdx:38`](../../apps/docs/content/docs/errors/index.mdx), a surface-authoring note on `httpInterpret`, ADR 0005 Decision 3's `interpret` description, the playground completions (regenerated)                                                                                                                                                                                           |
-| tethers  | [`CONTRACT.md:216`–`217`, `:810`](../CONTRACT.md) (P7's _Resolved_ list), [`README.md:287`](../../README.md), [`packages/core/README.md:422`, `:425`](../../packages/core/README.md), [`packages/shell/README.md:41`](../../packages/shell/README.md), [ADR 0008 Decision 4](./0008-non-http-surfaces-and-pipe.md), [`shell/src/index.ts:58`](../../packages/shell/src/index.ts), [`llm.ts:127`](../../packages/core/src/llm.ts), [`resilience.ts:22`](../../packages/core/src/resilience.ts) — all comment/prose spellings |
+| area      | sites                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| engine    | [`engine.ts:612`, `:754`](../../packages/core/src/engine.ts) (the ladder + the throw), `:882` / `:1113` (both `interpretResponse` call sites move into the loop), `:1063`–`1069` (the hard-coded default goes), `:1276`–`1279` (streaming gate delegates)                                                                                                                                                                                                                                                                   |
+| surfaces  | [`surface.ts:100`](../../packages/core/src/surface.ts) (`verdictOf`/`httpInterpret`/`interpretOf`; `httpSurface` gains `interpret`), `:144` (graphql composes), [`download.ts:86`](../../packages/core/src/download.ts) (composes), `SurfaceOutcome` at `surface.ts:20` (the retry arm)                                                                                                                                                                                                                                     |
+| selection | [`stitch.ts:315`](../../packages/core/src/stitch.ts) (`compose` resolves an omitted `kind` to `httpSurface`), `:336` (the idempotency nudge asks WHICH surface, not whether there is one), `:893` (redaction always projects the id), [`types.ts:1240`](../../packages/core/src/types.ts) (`ResolvedStitchConfig.kind` becomes required)                                                                                                                                                                                    |
+| the fold  | [`types.ts:956`](../../packages/core/src/types.ts) (`acceptStatus` → `VerdictOptions`, exported per P14), [`stitch.ts:832`, `:861`](../../packages/core/src/stitch.ts) (`REDACTED_IF_FN_SLOTS` — the fn-strip moves one level down, into the envelope)                                                                                                                                                                                                                                                                      |
+| anatomy   | [`config-anatomy.ts:122`](../../packages/core/src/config-anatomy.ts) (`acceptStatus` → `verdict: { stage: 4; dropped: 'redact-if-fn' }`), [`config-summary.ts:78`](../../packages/core/src/config-summary.ts) (stage 4 unconditional)                                                                                                                                                                                                                                                                                       |
+| tests     | [`accept-status.spec.ts`](../../packages/core/test/gaps/accept-status.spec.ts) — all 6 cases must pass with **only the slot spelling changed**; that is the regression gate for the reordering. [`contract-p0.spec.ts:92`, `:115`, `:219`](../../packages/core/test/contract-p0.spec.ts) (nested predicate). New cases for the retry arm, `verdict.flag`, and graphql/download meeting a `500`                                                                                                                              |
+| docs      | [`accept-status.mdx`](../../apps/docs/content/docs/guides/resilience/accept-status.mdx) (rename + pipeline framing), [`errors/index.mdx:38`](../../apps/docs/content/docs/errors/index.mdx), a surface-authoring note on `verdictOf`/`httpInterpret`, ADR 0005 Decision 3's `interpret` description, the playground completions (regenerated)                                                                                                                                                                               |
+| tethers   | [`CONTRACT.md:216`–`217`, `:810`](../CONTRACT.md) (P7's _Resolved_ list), [`README.md:287`](../../README.md), [`packages/core/README.md:422`, `:425`](../../packages/core/README.md), [`packages/shell/README.md:41`](../../packages/shell/README.md), [ADR 0008 Decision 4](./0008-non-http-surfaces-and-pipe.md), [`shell/src/index.ts:58`](../../packages/shell/src/index.ts), [`llm.ts:127`](../../packages/core/src/llm.ts), [`resilience.ts:22`](../../packages/core/src/resilience.ts) — all comment/prose spellings |
 
 ## Open questions
 
-1. **`httpInterpret`'s name and home.** [ADR 0012](./0012-integration-symbol-naming.md)
-   governs cross-package symbol naming, and this is a new public export a surface
-   author must import. `httpInterpret` pairs with `httpSurface`; `interpretByStatus`
-   says what it does. It also has to be reachable from `@stitchapi/shell` and any
-   third-party surface without dragging the engine in — a bundle question ADR 0021
-   just fought.
-2. **Does the body-driven retry share `retry.attempts`?** Decision 5 says yes, on
-   the grounds that one budget is easier to reason about than two. The counter is
-   that a polling `PENDING` loop and a flaky-`503` loop are different failure
-   modes and a caller may want to bound them separately.
-3. **Which event does step 6 emit?** The existing `progress`/`retry` event with
-   `detail: 'status …'` does not describe a body-driven retry. A distinguishable
-   `detail` is probably enough; a new phase is the alternative.
-4. **Idempotency.** A body-driven retry replays a write. The status-driven path has
-   the `idempotency` guard; step 6 should be held to the same rule, and that should
-   be stated rather than inherited by accident.
-5. **What does the `flag` path constraint cost `tsc`?** A recursive "every dot-path
-   in `T`" union is a known blow-up on deep or self-referential response types, and
-   this repo typechecks the docs' twoslash blocks on every run. It needs a depth cap
-   (and a measured `check:types` before and after), or the constraint degrades to a
-   leaf-name check — still enough to catch `meta.succes`, at a fraction of the
-   instantiation cost. Measure before choosing.
+_All five are resolved as implemented. The reasoning is kept so the choices are not
+relitigated._
+
+1. **The public export's name.** _Resolved: `verdictOf`._
+   [ADR 0012](./0012-integration-symbol-naming.md) governs cross-package symbol
+   naming, and this is the one new public export a surface author imports. It is
+   named for **what it produces**, and it pairs with the config slot that feeds it —
+   `verdict` is the declaration, `verdictOf(res, cfg)` is that declaration applied to
+   a response. Decision 3 already fixed the pair as _`interpret` renders the
+   `verdict`_; this closes it at the call site.
+
+    `httpFailure` was the working name and is the one thing lost: it advertised the
+    `Failure | undefined` return, where `verdictOf` reads as though a verdict always
+    comes back. The `??` at every call site carries that instead —
+    `verdictOf(res, cfg) ?? { ok: true, data: mine }` — and the type makes a misread a
+    compile error rather than a runtime surprise. Alternatives weighed and dropped:
+    `isAcceptable` / `rejectByStatus` name the question rather than the answer, and
+    the `http` prefix was misleading once the function also read `verdict.flag` off
+    the body.
+
+    It lives in `surface.ts`, already on the root barrel that `@stitchapi/shell`
+    imports from, so nothing drags the engine in.
+
+    **Only one of the three scopes is public**, and that is the answer to "don't they
+    all serve the same purpose?" — they do, which is exactly why the barrel carries
+    one. `classifyStatus` answers the engine's transport-health question at two
+    internal call sites and has no surface-author use; `httpInterpret` is the http
+    surface's own hook, reachable as `httpSurface.interpret`. Three names for one
+    decision on the barrel invites composing the wrong one, which is precisely the
+    mistake that first routed a flag-failed `200` through the circuit's
+    transport-failure path. `public-api-surface.spec.ts` pins the absence of both.
+
+    `classifyStatus` rather than a bare `classify` is deliberate even internally: _Alternative C_
+    rejected `classify` for the config callback because it "implies sorting a response
+    into one of many tiers", and a bare `classify` would still promise that while
+    returning two states. Qualifying it with what it classifies — a **status** — makes
+    the two-tier reading the honest one, and keeps the rejected callback's name free.
+
+2. **Does the body-driven retry share `retry.attempts`?** _Resolved: yes._ One budget
+   is easier to reason about than two, and the counter — that a polling `PENDING`
+   loop and a flaky-`503` loop are different failure modes — is better answered by
+   the surface returning `after` than by a second attempt cap. Revisit if a caller
+   is found needing to bound them separately.
+3. **Which event does the body-driven retry emit?** _Resolved: the existing
+   `progress`/`retry` event, with a distinguishable `detail`._ A status-driven retry
+   reads `status 503`; a body-driven one reads `interpret: <message>`, so a trace
+   consumer can tell them apart without a new phase to teach.
+4. **Idempotency.** _Resolved: held to the same rule, by construction._ The key is
+   stamped once in `buildRequest` and every attempt is a `cloneReq` of that request,
+   so a body-driven retry replays the identical `Idempotency-Key` exactly as a
+   status-driven one does. Nothing was needed to make this true — but it is now
+   pinned by a test rather than left to be inherited by accident.
+5. **What does the `flag` path constraint cost `tsc`?** _Resolved: ~1%, so the full
+   containment check stands rather than degrading to a leaf-name check._ `PathsIn`
+   carries a **depth cap of 4** and indexes arrays through their element type (so a
+   tuple cannot fan the union out by length). Measured on `pnpm check:types`
+   (workspace-wide, including the docs twoslash pass — the deepest inferred types in
+   the repo), three runs each: **14.93 / 14.94 / 15.00 s before, 15.14 / 15.09 /
+   15.12 s after** — about +0.16 s. Four levels covers the realistic envelope
+   (`meta.success`, `result.status.code`); past that the guard yields `string` and
+   stops constraining rather than costing seconds.
 
 _Settled while drafting, recorded so the reasoning is not relitigated:_ the
 envelope is `verdict`, not `interpret` (P1 value-space — see Decision 3) and not
@@ -553,24 +695,37 @@ than a rename, and it closes a #529 case declaratively.
 - `check:contract` baseline 0; `pnpm -r check:types` incl. docs twoslash;
   `check:types-d`; core `test`; `build:typed-deps`; `check:size` (a new export on
   the lean path).
-- A repo-wide `grep -rn 'acceptStatus:'` returning nothing — the migration has no
-  typechecker behind it (see the warning in _Consequences_).
+- A repo-wide `grep -rn 'acceptStatus:'` returning nothing. Belt-and-braces since
+  #601: `NoUnknownConfigKeys` makes the stale spelling a compile error, so `tsc`
+  catches it too (see the note in _Consequences_).
 - **`check:types` wall-clock measured before and after the `flag` constraint**, on
   the docs twoslash pass (the deepest inferred types in the repo). A `.d.ts` type
   test pinning both directions: a good path compiles, `meta.succes` is a
   `ConfigError`, and `flag` stays `string` when `transform` is set or `output` is
   absent.
 
-## Rollout — one PR per step, stop between
+## Rollout — six steps
+
+> [!NOTE]
+>
+> Drafted as one PR per step, stopping between. Landed as **one PR carrying all six**,
+> at the maintainer's direction. The step boundaries were still worked and verified in
+> order — the whole suite was green at each one, and step 3 (the reordering) was gated
+> on `accept-status.spec.ts` before anything after it was written — so the sequencing
+> below is a description of how the change was built, not a plan.
 
 Decisions 1–2 (the engine) and Decision 3 (the fold) are independent. The engine
 lands first so the risky step is measured against a fixture nobody has touched.
 
-1. **`httpInterpret` + `httpSurface.interpret`, engine still authoritative.** Extract
-   the status verdict into the exported function and have the engine's hard-coded
-   branch call it. Pure refactor, zero behaviour change, whole suite green.
-2. **Compose it into `graphql` and `download`.** Still no reordering — they simply
-   gain a guard that cannot fire yet. Add the `500` tests now, so step 3 lands with
+1. **`verdictOf` + `httpInterpret` + a SELECTED `httpSurface`, engine still
+   authoritative.** Extract the status verdict into the exported functions; have the
+   engine's hard-coded branch call `verdictOf` (the ladder returns `res` itself, so
+   it wants the verdict, not a value); and resolve an omitted `kind` to `httpSurface`
+   in `compose` so the engine's interpretation branch goes away rather than being
+   renamed. Behaviour-neutral on every call path; the one visible change is
+   `__config.kind: 'http'` on a plain stitch.
+2. **Compose `verdictOf` into `graphql` and `download`.** Still no reordering —
+   they simply gain a guard that cannot fire yet. Add the `500` tests now, so step 3 lands with
    its safety net already in place.
 3. **Move `interpret` into the loop** (Decision 1) and delete the hard-coded throw.
    The risky step, landing alone, gated on `accept-status.spec.ts` passing
@@ -581,7 +736,9 @@ lands first so the risky step is measured against a fixture nobody has touched.
    `verdict.flag` with its three-state runtime semantics (explicit falsy only;
    absent and `null` are silence + an `info` finding) but typed
    as a plain `string`. Mechanical, wide, and deliberately last, so a repo-wide
-   rename never shares a diff with a semantic change.
+   rename never shares a diff with a semantic change. The predicate's fn-strip moves
+   with it: `verdict` joins the `fns` (nested-strip) slots beside `retry` / `throttle`
+   rather than staying a top-level `redact-if-fn`.
 6. **The `flag` path constraint** — the `InferOutput`-derived narrowing and its
    `ConfigError` brand, landing alone because it is the only step whose cost is
    measured in `tsc` seconds rather than bytes (Q5). Behaviour is already correct
@@ -589,7 +746,7 @@ lands first so the risky step is measured against a fixture nobody has touched.
 
 ## Revisit if
 
-- A surface author is found composing `httpInterpret` in every hook with no
+- A surface author is found composing `verdictOf` in every hook with no
   exceptions — then the composition should be the engine's default and the hook
   should be a narrower "additional rules" seam, not a full replacement.
 - Q2 resolves toward separate budgets, which would make the body-driven retry a

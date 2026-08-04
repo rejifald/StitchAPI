@@ -27,8 +27,12 @@ async function parse(
     const res = { status: 200, headers: {}, body: streamOf(chunks) };
     const out: SseEvent[] = [];
     // `stream` is defined on a streaming surface; tests may assert non-null. Only `stream.buffer.chars`
-    // is read off `cfg`, so this partial config (a resolved config's fields are all optional) suffices.
-    for await (const ev of sseSurface.stream!(res, cfg))
+    // is read off `cfg`, so this partial config suffices — save for `kind`, which is REQUIRED on a
+    // resolved config now that an omitted surface resolves to `httpSurface` (ADR 0022 Decision 2).
+    for await (const ev of sseSurface.stream!(res, {
+        ...cfg,
+        kind: sseSurface,
+    }))
         out.push(ev as SseEvent);
     return out;
 }

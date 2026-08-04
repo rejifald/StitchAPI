@@ -14,6 +14,7 @@ import { compact } from './compact';
 import type { InputOf } from './infer';
 import { seam as makeSeam } from './seam';
 import { makeStitch } from './stitch';
+import { verdictOf } from './surface';
 import type { Surface, SurfaceOutcome } from './surface';
 import {
     type NoRequestShapeOnLlm,
@@ -136,12 +137,15 @@ function makeLlmSurface(d: LlmDefaults): Surface<StitchInput, LlmResult> {
             body: provider.buildBody(toRequest(d, input)),
             headers: { ...(provider.headers ?? {}), ...base.headers },
         }),
-        // The engine has already thrown on a non-2xx (unless `acceptStatus`), so `parse` sees a
-        // successful body. A provider's "200 with an error envelope" can be handled in its `parse`.
-        interpret: (res): SurfaceOutcome<LlmResult> => ({
-            ok: true,
-            data: provider.parse(res.body),
-        }),
+        // A 500 is a failure BEFORE it is a completion (ADR 0022 Decision 4) — the composed verdict
+        // is what keeps `parse` seeing a successful body now that the engine no longer guarantees a
+        // non-2xx never reaches here. A provider's "200 with an error envelope" is still `parse`'s
+        // to handle.
+        interpret: (res, cfg): SurfaceOutcome<LlmResult> => {
+            const failure = verdictOf(res, cfg);
+            if (failure) return failure;
+            return { ok: true, data: provider.parse(res.body) };
+        },
     };
 }
 

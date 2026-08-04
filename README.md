@@ -34,7 +34,7 @@
 <!-- /yakir:readme-badges -->
 
 <p align="center">
-  <strong>Zero runtime dependencies · ~23&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~20&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
+  <strong>Zero runtime dependencies · ~23&nbsp;kB min+gzip</strong> — a typical <code>import { stitch }</code> tree-shakes to ~21&nbsp;kB, and with no transitive tree there is nothing else to install or audit. The size is an <a href="packages/core/scripts/bundle-size.mjs">enforced budget in CI</a>, not an aspiration.
 </p>
 
 <p align="center">
@@ -164,7 +164,7 @@ No server, no codegen, no config files, no implicit inheritance — **only expli
 - **Pluggable state store** — throttle counters and sessions behind a 3-method store; swap in Redis/Postgres to go distributed.
 - **Zero-infra observability** — tracing is **off by default**; opt in per stitch or via `STITCH_TRACE_*` env vars. No collector, no dashboard.
 - **Four front doors, one definition** — in-process function, CLI (`stitch run`), HTTP (`stitch serve`), and MCP (`stitch mcp`).
-- **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~23 kB min+gzip** for the whole entry, **~20 kB** for a typical `import { stitch }`.
+- **Zero runtime dependencies** — `"dependencies": {}`, built on global `fetch`, tree-shakeable; **~23 kB min+gzip** for the whole entry, **~21 kB** for a typical `import { stitch }`.
 
 ## Install
 
@@ -284,7 +284,7 @@ const listUsers = stitch({
 });
 ```
 
-`throttle` is proactive (keeps you under a limit before it bites; `pool: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`acceptStatus`** treats a non-2xx (e.g. `404`) as a normal result instead of a throw. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry).
+`throttle` is proactive (keeps you under a limit before it bites; `pool: 'host'` shares a limiter across stitches), `retry` is reactive (backoff + `Retry-After`), and `timeout` aborts with a real `AbortSignal`. Three more knobs round it out: **`circuit`** fast-fails a dependency that's already down, **`idempotency`** injects a stable `Idempotency-Key` on writes, and **`verdict`** declares what counts as success — `accept` treats a non-2xx (e.g. `404`) as a normal result instead of a throw, `flag` fails a `200` whose body says it failed. Full guide: [Resilience](https://stitchapi.dev/docs/guides/resilience/retry).
 
 ## Caching
 

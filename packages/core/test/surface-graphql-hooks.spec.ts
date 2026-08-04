@@ -15,9 +15,11 @@ import type {
     StitchInput,
 } from '../src/types';
 
+// `kind` is required on a resolved config (ADR 0022 Decision 2 — an omitted surface resolves to
+// `httpSurface`); these hooks are graphql's, so that is the honest surface to carry.
 const cfg = (
     o: { document?: string; method?: string; operationName?: string } = {},
-): ResolvedStitchConfig => o;
+): ResolvedStitchConfig => ({ ...o, kind: graphqlSurface });
 
 const base: AdapterRequest = {
     url: 'https://api.test/graphql',
