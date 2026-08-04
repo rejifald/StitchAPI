@@ -1,5 +1,9 @@
 {
     "title": "Scenarios",
     "icon": "Map",
-    "pages": ["oauth2-refresh-token-rotation", "cost-based-rate-limits"]
+    "pages": [
+        "oauth2-refresh-token-rotation",
+        "cost-based-rate-limits",
+        "batch-partial-failure"
+    ]
 }

@@ -26,4 +26,9 @@ real runtime, not by reading the source.
         href="/docs/scenarios/cost-based-rate-limits"
         description="Shopify bills per query cost, answers 200 OK when you overspend, and puts the wait in the body — so status-code retry never fires."
     />
+    <Card
+        title="Batch writes that fail one item at a time"
+        href="/docs/scenarios/batch-partial-failure"
+        description="7 of your 100 items didn't land. Retrying the request re-writes the 93 that did — so the retry unit has to be the body, not the call."
+    />
 </Cards>
