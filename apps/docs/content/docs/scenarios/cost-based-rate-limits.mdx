@@ -1,0 +1,135 @@
+---
+title: 'Rate limits priced in query cost'
+description: 'Shopify bills per query cost, answers 200 OK when you overspend, and puts the wait in the body. Why status-code retry and rate-per-second both miss, and what does work.'
+prerequisites: ['/docs/guides/data/graphql', '/docs/guides/resilience/retry']
+---
+
+## The problem
+
+Shopify's GraphQL Admin API meters a **1,000-point bucket refilling at 50 points/second**,
+and each query has its own price — 11 points for one, 900 for another. Four properties each
+defeat a different standard tool:
+
+1. **The unit is cost, not requests.** No single requests-per-second is correct for both an
+   11-point query and a 900-point one.
+2. **Overspending answers `200 OK`.** The failure arrives in the body as a `THROTTLED` entry
+   in `errors[]` — never a `429`. Retry policies keyed on status see success.
+3. **The wait is arithmetic, not a guess.** Every response carries
+   `extensions.cost.throttleStatus`; the correct wait is
+   `(requestedQueryCost − currentlyAvailable) / restoreRate`. A backoff curve over-waits when
+   the bucket is full and under-waits when it is empty.
+4. **The bucket belongs to the shop, not to you.** Another app draining it moves your
+   headroom between two of your own requests
+   ([shopify-api-js#602](https://github.com/Shopify/shopify-api-js/issues/602)), so a
+   local ledger can never be authoritative — it must be overwritten from every response.
+
+## The common solutions
+
+| Approach                                      | Where it breaks                                                                                |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Retry on 429 + exponential backoff            | Never fires. The response is a `200`, and the THROTTLED envelope is returned as data.          |
+| Body-sniffing retry, then exponential backoff | Fires correctly, then ignores the arithmetic the server already supplied.                      |
+| Compute the wait from `throttleStatus`        | Correct — but needs `extensions`, which GraphQL clients discard when they unwrap `data`.       |
+| Local cost ledger, pause below a threshold    | Paces your own traffic; blind to other apps on the same shop.                                  |
+| Fixed rate limiter (`N/sec`)                  | Wrong unit. Sized for the worst query it wastes the quota; sized for the average it throttles. |
+| Single-worker global queue                    | Correct and common. Costs concurrency and a piece of infrastructure.                           |
+
+## What StitchAPI does
+
+Not `retry`, and not `throttle` — measured, both miss, and the section below says exactly how.
+The seam that fits is a **custom [surface](/docs/reference/surfaces)**: `interpret` sees every
+response body before the engine decides anything, and the `SurfaceOutcome` it returns can ask
+for a retry **after a wait you computed**.
+
+```ts
+import { graphqlSurface, verdictOf } from 'stitchapi';
+import type { Surface, SurfaceOutcome } from 'stitchapi';
+
+export function shopifyCostSurface(ledger: CostLedger): Surface {
+    return {
+        id: 'graphql',
+        buildRequest: graphqlSurface.buildRequest,
+        interpret: (res, cfg): SurfaceOutcome => {
+            const failure = verdictOf(res, cfg);
+            if (failure) return failure;
+
+            // EVERY response updates the budget — successes carry throttleStatus too,
+            // and the server's number is authoritative because the bucket is shared.
+            const cost = costOfBody(res.body);
+            if (cost) ledger.record(cost);
+
+            // The 200-with-THROTTLED, and the wait the server's own arithmetic dictates.
+            if (isThrottled(res.body) && cost)
+                return {
+                    ok: false,
+                    retry: true,
+                    message: `THROTTLED — need ${cost.requestedQueryCost}`,
+                    after: deficitWaitMs(cost), // ← (requested − available) / restoreRate
+                };
+
+            return (
+                graphqlSurface.interpret?.(res, cfg) ?? {
+                    ok: true,
+                    data: res.body,
+                }
+            );
+        },
+    };
+}
+```
+
+Pair it with an `onRequest` hook that pauses while the ledger says the next query is
+unaffordable, and the reactive half only handles what the proactive half cannot predict —
+another app draining the shop.
+
+**Measured:** the computed wait was honored exactly (**6000 ms**, succeeding on attempt 2,
+where the built-in curve waited 100 ms and failed all three attempts). Against a neighbour
+emptying the bucket before every single call, **8/8 queries succeeded**, absorbing 8
+throttles. The whole thing is **73 lines**.
+
+## StitchAPI vs the common solution
+
+The retry loop stays the engine's. Because the cost logic lives in `interpret` rather than in
+a wrapper around the call, `timeout.total` still bounds the whole thing, the circuit breaker
+still counts failures, and every wait shows up as a `retry` progress event on the
+[event stream](/docs/concepts/event-stream). The obvious alternative — wrapping the adapter —
+was measured going blind: a call that made 2 requests and slept 6 seconds reported
+`attempts: 1` and emitted **zero** retry events.
+
+## What StitchAPI does not solve here
+
+1. **`retry.on` cannot see the body.** The predicate receives exactly one argument, the status
+   number. A 200-with-THROTTLED is invisible to every built-in retry policy.
+2. **`retry.on: 200` retries your successes.** The status matcher runs before `interpret` and
+   cannot tell the two apart — measured 3× the requests and 3× the points for one result.
+3. **`backoff` has no function form.** A wait computed from the payload cannot enter through
+   it. Cast past the type error and it is **silently ignored**, degrading to the default curve.
+4. **`retry.respect` reads a `Retry-After` header** that Shopify never sends.
+5. **`throttle.rate` cannot express cost.** Requests-per-interval only, minimum spacing, no
+   burst. Approximating the 1,000-point bucket took **18 s** for work the bucket absorbs
+   instantly — and with mixed costs no single spacing is correct for both.
+6. **`throttle.delegate` is status-keyed.** The escape hatch the throttle docs point at for
+   vendor-accounted quotas does not reach a body-reported one.
+7. **A rejected body never reaches the caller.** On a surface failure the `StitchError` has no
+   `body`, the error event has no field for one, and `.inspect().raw` is `null`. Whatever you
+   need from the body must be captured inside `interpret` or `hooks.onResponse`.
+8. **`interpret` is synchronous.** A _distributed_ cost ledger cannot live in the seam that
+   otherwise solves this — single process only.
+
+<Callout type="error">
+    **Do not reach for `verdict.flag` here.** It is the one built-in that reads
+    the body for a verdict, so it is the natural guess — and on a throttled
+    Shopify response it is **inert**: the payload has no `data` key, an absent
+    path is "no signal", the 200 stands, and the call returns **`ok: true` with
+    the THROTTLED envelope as your data**. Silent, and it looks like a
+    successful sync.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
+    <Card title="GraphQL" href="/docs/guides/data/graphql" />
+    <Card title="Retry &amp; backoff" href="/docs/guides/resilience/retry" />
+    <Card title="Throttle" href="/docs/guides/resilience/throttle" />
+</Cards>
