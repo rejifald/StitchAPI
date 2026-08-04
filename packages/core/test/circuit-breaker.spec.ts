@@ -4,7 +4,7 @@
 import { memoryStore, stitch } from '../src';
 import type { StitchEvent } from '../src';
 import { createCircuit } from '../src/resilience';
-import { manualClock } from '../src/testing';
+import { manualClock, mockAdapter } from '../src/testing';
 import type { CircuitOptions } from '../src/types';
 import { startMockServer } from './support/mock-server';
 import type { MockServer } from './support/mock-server';
@@ -128,6 +128,101 @@ test('cooldown accepts a duration string (P17 widening)', async () => {
     expect(server.callCount('/svc')).toBe(1);
 });
 
+// The stored record keeps "has it tripped" as its own flag instead of overloading a timestamp
+// value. The regression: `openedAt: 0` used to double as the closed sentinel, so a breaker that
+// opened at clock time 0 read back as CLOSED and never fast-failed. Unreachable on the system clock
+// (epoch 0 is 1970) but the default seed of `manualClock()` (ADR 0010) — i.e. it broke exactly the
+// tool the repo ships for testing time-driven behaviour, which is why no clock seeding is needed
+// anywhere in this file.
+describe('a breaker driven by a default-seeded manualClock (ADR 0010)', () => {
+    test('trips at clock time 0, fast-fails, and recovers after the cooldown', async () => {
+        const clock = manualClock(); // starts at 0 — the old closed sentinel
+        const api = mockAdapter({
+            match: '/svc',
+            // 2 failures trip it; the half-open trial (the only later request that reaches the
+            // adapter) gets the 200.
+            respond: [{ status: 500 }, { status: 500 }, { body: { ok: true } }],
+        });
+        const call = stitch({
+            baseUrl: 'https://api.test',
+            path: '/svc',
+            adapter: api,
+            circuit: { failures: 2, cooldown: 30_000 },
+            clock,
+        });
+
+        // Two failures at virtual time 0 open the breaker — it records `openedAt: 0`.
+        await expect(call()).rejects.toBeDefined();
+        await expect(call()).rejects.toBeDefined();
+        expect(api.callCount()).toBe(2);
+
+        // OPEN → fast-fail (503) without touching the adapter. Before the fix this call sailed
+        // through to the transport, because `openedAt: 0` read back as closed.
+        await expect(call()).rejects.toMatchObject({ status: 503 });
+        expect(api.callCount()).toBe(2);
+
+        // The cooldown is measured FROM 0, so advancing past it goes half-open: the trial reaches
+        // the adapter and closes the breaker.
+        await clock.advance(30_000);
+        await expect(call()).resolves.toEqual({ ok: true });
+        expect(api.callCount()).toBe(3);
+    });
+});
+
+// The record lives in the StitchStore, so with a shared/durable store (redis, deno-kv,
+// cloudflare-kv) it outlives a deploy: the new code has to read records written by the old shape,
+// which carried no `tripped` flag and meant "closed" by `openedAt: 0`. A legacy record is
+// recognizable structurally (no flag), so folding it in can never swallow a genuine `openedAt: 0`.
+describe('records written before the `tripped` flag existed', () => {
+    const legacyStore = async (record: unknown) => {
+        const store = memoryStore();
+        await store.set('circuit:legacy', record); // `circuit.key` pins the namespaced key
+        return store;
+    };
+    const failing = () =>
+        mockAdapter({ match: '/svc', respond: { status: 500 } });
+    const callWith = (
+        store: Awaited<ReturnType<typeof legacyStore>>,
+        api: ReturnType<typeof failing>,
+    ) =>
+        stitch({
+            baseUrl: 'https://api.test',
+            path: '/svc',
+            adapter: api,
+            circuit: { key: 'legacy', failures: 3, cooldown: 30_000 },
+            store,
+            clock: manualClock(1_000),
+        });
+
+    test('a legacy CLOSED record (openedAt: 0) still reads as closed, keeping its failure count', async () => {
+        const api = failing();
+        const call = callWith(
+            await legacyStore({ failures: 2, openedAt: 0 }),
+            api,
+        );
+
+        // Closed with 2 of 3 failures banked: this call must REACH the adapter (a record misread as
+        // open would fast-fail here) and be the 3rd failure that opens the breaker.
+        await expect(call()).rejects.not.toMatchObject({ status: 503 });
+        expect(api.callCount()).toBe(1);
+
+        await expect(call()).rejects.toMatchObject({ status: 503 });
+        expect(api.callCount()).toBe(1); // now open — no network
+    });
+
+    test('a legacy OPEN record (openedAt: a real timestamp) still reads as open', async () => {
+        const api = failing();
+        // Opened at the clock's current time, so the cooldown has not elapsed.
+        const call = callWith(
+            await legacyStore({ failures: 3, openedAt: 1_000 }),
+            api,
+        );
+
+        await expect(call()).rejects.toMatchObject({ status: 503 });
+        expect(api.callCount()).toBe(0); // fast-failed on the legacy record alone
+    });
+});
+
 test('throws when neither failures nor cooldown is set (required-by-design, P15)', async () => {
     const call = stitch({
         baseUrl: server.url,
@@ -145,13 +240,8 @@ test('throws when neither failures nor cooldown is set (required-by-design, P15)
 // removed per CONTRACT.md P1) sat on the surface unnoticed, defaulting to `cooldown` and doing
 // nothing else. Driving time directly (rather than sleeping) is what makes the instant assertable.
 describe('the open → half-open boundary is `cooldown`, and only `cooldown`', () => {
-    // Seeded non-zero on purpose: the stored record uses `openedAt: 0` as its "closed" sentinel,
-    // so a breaker that opened at exactly epoch-ms 0 would read back as closed. Unreachable on the
-    // system clock (epoch 0 is 1970); reachable on a `manualClock()`, which seeds at 0.
-    const at = (seed = 1_000_000) => manualClock(seed);
-
     test('stays open until `cooldown` elapses, then goes half-open on the exact ms', async () => {
-        const clock = at();
+        const clock = manualClock();
         const c = createCircuit(
             { failures: 2, cooldown: '30s' },
             memoryStore(),
@@ -176,7 +266,7 @@ describe('the open → half-open boundary is `cooldown`, and only `cooldown`', (
     });
 
     test('a failed trial re-opens and arms a fresh cooldown from that instant', async () => {
-        const clock = at();
+        const clock = manualClock();
         const c = createCircuit(
             { failures: 1, cooldown: 30_000 },
             memoryStore(),
@@ -199,7 +289,7 @@ describe('the open → half-open boundary is `cooldown`, and only `cooldown`', (
     });
 
     test('a successful trial closes the breaker and clears the count', async () => {
-        const clock = at();
+        const clock = manualClock();
         const c = createCircuit(
             { failures: 1, cooldown: 30_000 },
             memoryStore(),
@@ -222,7 +312,7 @@ describe('the open → half-open boundary is `cooldown`, and only `cooldown`', (
         // Same failure history, same clock, different `cooldown` → different instant. This is the
         // assertion the old `halfOpenAfter` could never make: it varied while the phase did not.
         const phaseAt = async (cooldown: number | string, elapsed: number) => {
-            const clock = at();
+            const clock = manualClock();
             const c = createCircuit(
                 { failures: 1, cooldown },
                 memoryStore(),

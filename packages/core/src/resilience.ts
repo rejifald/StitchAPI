@@ -300,9 +300,23 @@ export class RateLimitError extends Error {
 }
 
 export type CircuitPhase = 'closed' | 'open' | 'half-open';
+/**
+ * The breaker state persisted at `circuit:<key>` in the {@link StitchStore}. A shared/durable store
+ * (redis, deno-kv, cloudflare-kv) makes this record outlive the process, so the shape has to stay
+ * legible across a deploy in BOTH directions — see `read` in {@link createCircuit}.
+ */
 interface CircuitRecord {
     failures: number; // consecutive failures
-    openedAt: number; // epoch ms the breaker opened; 0 = closed
+    /**
+     * Whether the breaker has tripped — the closed/not-closed bit. True across both the `open` and
+     * `half-open` phases; the cooldown decides which of the two. Kept SEPARATE from `openedAt`
+     * because no timestamp value can also mean "closed": `0` is a legitimate opening time on an
+     * injected clock (a default-seeded `manualClock()` starts there — ADR 0010), and overloading it
+     * as the closed sentinel made such a breaker read back as closed and never fast-fail.
+     */
+    tripped: boolean;
+    /** Epoch ms (on the injected clock) the breaker tripped — the start of the cooldown window. Meaningful only while `tripped`. */
+    openedAt: number;
 }
 
 /**
@@ -338,34 +352,54 @@ export function createCircuit(
         );
     const nsKey = 'circuit:' + (opts.key ?? fallbackKey);
 
-    const read = async (): Promise<CircuitRecord> =>
-        ((await store.get(nsKey)) as CircuitRecord | undefined) ?? {
-            failures: 0,
-            openedAt: 0,
+    // Normalize whatever the store hands back — including a record written before `tripped`
+    // existed, which encoded "closed" as `openedAt: 0`. Such a record is recognizable by the
+    // MISSING flag, not by a value, so reading it the old way can never swallow a genuine
+    // `openedAt: 0`. Compatibility runs the other way too, for the window in a rolling deploy where
+    // an old instance still reads this key: closing writes `openedAt: 0` rather than dropping the
+    // field, so old code sees `tripped: false` ⇒ `openedAt === 0` ⇒ closed, and `tripped: true`
+    // ⇒ a real timestamp ⇒ open.
+    const read = async (): Promise<CircuitRecord> => {
+        const r = (await store.get(nsKey)) as
+            Partial<CircuitRecord> | undefined;
+        const openedAt = r?.openedAt ?? 0;
+        return {
+            failures: r?.failures ?? 0,
+            tripped: r?.tripped ?? openedAt !== 0,
+            openedAt,
         };
+    };
 
     return {
         // Current phase given the clock: closed, open (fast-fail), or half-open (one trial).
         async phase(): Promise<CircuitPhase> {
             const r = await read();
-            if (r.openedAt === 0) return 'closed';
+            if (!r.tripped) return 'closed';
             return clock.now() - r.openedAt >= cooldown ? 'half-open' : 'open';
         },
         // A success closes the breaker and clears the failure count.
         async onSuccess(): Promise<void> {
-            await store.set(nsKey, { failures: 0, openedAt: 0 });
+            await store.set(nsKey, {
+                failures: 0,
+                tripped: false,
+                openedAt: 0,
+            });
         },
         // A failure increments the count; returns true iff THIS failure opened the breaker.
         async onFailure(): Promise<boolean> {
             const r = await read();
             const failures = r.failures + 1;
-            const wasOpen = r.openedAt !== 0;
+            const wasOpen = r.tripped;
             if (wasOpen || failures >= failureThreshold) {
                 // (re)open — arm a fresh cooldown window.
-                await store.set(nsKey, { failures, openedAt: clock.now() });
+                await store.set(nsKey, {
+                    failures,
+                    tripped: true,
+                    openedAt: clock.now(),
+                });
                 return !wasOpen; // "newly opened" only when it had been closed
             }
-            await store.set(nsKey, { failures, openedAt: 0 });
+            await store.set(nsKey, { failures, tripped: false, openedAt: 0 });
             return false;
         },
     };
