@@ -147,6 +147,13 @@
     --brand-soft: color-mix(in srgb, var(--brand) 14%, transparent);
     --brand-softer: color-mix(in srgb, var(--brand) 7%, transparent);
     --brand-line: color-mix(in srgb, var(--brand) 38%, transparent);
+
+    /* Opaque twin of --brand-soft: the same tint, pre-composited over the page
+       background instead of left translucent. Over --bg the two render the same
+       color, so this is a drop-in for sticky/fixed chrome (the release banner)
+       where a translucent fill would let the content scrolling underneath bleed
+       straight through. Keep the percentage in lockstep with --brand-soft. */
+    --brand-soft-solid: color-mix(in srgb, var(--brand) 14%, var(--bg));
     --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
     --accent-line: color-mix(in srgb, var(--accent) 42%, transparent);
     --ok-soft: color-mix(in srgb, var(--ok) 15%, transparent);

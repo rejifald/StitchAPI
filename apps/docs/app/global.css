@@ -13,6 +13,7 @@
     --color-stitch: var(--stitch);
     --color-stitch-strong: var(--stitch-strong);
     --color-stitch-soft: var(--stitch-soft);
+    --color-stitch-soft-solid: var(--stitch-soft-solid);
     --color-stitch-border: var(--stitch-border);
 
     /* Complementary amber accent — use sparingly. */
@@ -43,6 +44,7 @@
     --stitch: var(--brand);
     --stitch-strong: var(--brand-strong);
     --stitch-soft: var(--brand-soft);
+    --stitch-soft-solid: var(--brand-soft-solid);
     --stitch-border: var(--brand-line);
 }
 
