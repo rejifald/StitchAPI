@@ -30,12 +30,12 @@ npm release are grouped under the in-development version that introduced them.
     circuit: { failures: 5, cooldown: '60s' },
     ```
 
-    **Check your configs by hand.** This one does not fail the build: `NoUnknownKeys` guards
-    top-level `StitchConfig` keys, and a nested envelope inside an inferred config literal gets no
-    excess-property check, so a leftover `halfOpenAfter` still typechecks — and the breaker silently
-    switches to the `cooldown` boundary, which is a real timing change wherever the two differed.
-    `stitch()` now logs a one-time construction warning naming the stitch and the boundary it
-    actually gets. A direct `const o: CircuitOptions = { … }` annotation does still error.
+    **`tsc` catches the migration** — but only as of the nested-key fix released alongside this
+    entry. When this change first landed a leftover `halfOpenAfter` still typechecked at the
+    `circuit:` slot, and the breaker silently switched to the `cooldown` boundary; `stitch()`
+    therefore logs a one-time construction warning naming the stitch and the boundary it actually
+    gets. With `NoUnknownNestedKeys` in place the slot rejects the key by name, and that warning is
+    now a backstop for JS callers rather than your only signal.
 
 - **`retry.respectRetryAfter` becomes `retry.respect`, and a `Retry-After` header is now honored by
   default.** The flag was opt-in, which meant the default retry behaviour ignored a number the
@@ -297,6 +297,71 @@ npm release are grouped under the in-development version that introduced them.
     `Content-Disposition` filename parsing.
 
 ### Fixed
+
+- **The same net now covers NESTED envelopes — `circuit`, `retry`, `wire`, and the rest — so a
+  nested rename is mechanical too.** The guard below was scoped to a config's top-level keys on the
+  reasoning that an envelope is checked against its _declared_ `AtLeastOne<CircuitOptions>` and so
+  stays a fresh literal. It does not. `const C` is inferred from the **whole** config object, so
+  excess-property checking is suppressed at every depth, not just at the root:
+
+    ```ts
+    // before: typechecked, and `totalNonsense` was silently dropped
+    stitch({
+        path: '/x',
+        circuit: { failures: 1, cooldown: '30s', totalNonsense: 1 },
+    });
+    // before: typechecked — the `retry.backoff` rename in rc.5 had no compile-time net either
+    stitch({
+        path: '/x',
+        retry: { attempts: 2, backoff: { curve: 'fixed', baseMs: 100 } },
+    });
+    ```
+
+    Both are now type errors naming the key **and the envelope it was misspelled against**, so the
+    report reads against the right vocabulary:
+
+    ```
+    `totalNonsense` is not a CircuitOptions slot — check the spelling
+    ```
+
+    **Why this looked closed for so long.** The type test pinning nested coverage carried _no valid
+    sibling_, so weak-type detection did the rejecting and got the credit — the exact attribution
+    error the same test file's preamble warns about. Add one valid sibling and the rejection
+    vanished. The two assertions are rewritten, and every new one carries a sibling.
+
+    Covers 17 slots across two levels: the 13 envelopes plus `wire.multipart`, `retry.backoff`,
+    `stream.buffer`, `sse.reconnect`. The second level is not hypothetical — rc.5's
+    `baseMs`→`base` / `maxMs`→`max` renames happened there.
+
+    **The table is explicit, not derived, and that is a correctness requirement rather than a cost
+    tweak.** A walk derived from `StitchConfig[K]` descends into `output`, whose `SchemaLike` Zod arm
+    is the phantom `{ _output: unknown }`; a real `z.object(…)` carries dozens of keys beyond it, so
+    every config that validates anything would fail with `safeParse` reported as a misspelling. The
+    same holds for each pluggable seam (`adapter` / `store` / `clock` / `trace` / `kind` / `auth`),
+    where an unknown key _is_ the extension point. Unknown-key rejection is correct only for closed
+    house vocabularies.
+
+    **Cost, measured** on core's 625-call-site typecheck project: +7% types, +12% instantiations,
+    and no measurable check-time change (~1.1s either way). The docs' twoslash build, every
+    downstream package, and the runtime bundle are unchanged. One subtlety is load-bearing: the
+    guard maps over the table's **fixed** key set rather than `keyof C & keyof NestedEnvelopes`.
+    Keying it on `C` makes the parameter type depend on the type being inferred, which costs
+    contextual typing for callback slots (`adapter`, `transform`) and produces spurious
+    `implicitly has an 'any' type` errors.
+
+    **Still fail-open through `extends`,** at every depth — that is the cross-layer `Layers` axis,
+    and a fragment's own declaration site is where its spelling is checked. The `NoUnknownKeys`
+    JSDoc previously claimed an _inline_ fragment was covered by excess-property checking; it is
+    not, for the same reason the root is not, and the limit is now recorded honestly and pinned.
+
+    The ratchet grew a **second rule** to keep the table from going stale by omission: it walks every
+    root bag rule 1 found (`StitchConfig` plus the four that intersect it) and every interface the
+    table covers, failing on any field naming a house `…Options` / `…Schemas` bag with no entry, at
+    any depth. The rest of the class was **swept rather than assumed** — every other
+    envelope-consuming surface takes its bag as a direct annotation and keeps ordinary
+    excess-property checking, verified by probe (with a valid sibling present) on `seam`, `serve`,
+    `createTrace`, `mockAdapter`, `oauth2`, `serveStdio`, `deltaFrame`, and `@stitchapi/shell`'s
+    nested `buffer` envelope.
 
 - **An unknown config key is now a type error, so removing or renaming a slot has a compile-time
   safety net.** The authoring overloads infer `const C` from the config argument — that is what lets

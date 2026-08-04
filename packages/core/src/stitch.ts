@@ -46,6 +46,7 @@ import {
     type Inspection,
     type MultipartOnlyOnMultipartBody,
     type NoUnknownConfigKeys,
+    type NoUnknownNestedKeys,
     type NoWireBodyOnGraphql,
     type RedactedStitchConfig,
     type RequestShapeFixedByDownload,
@@ -343,9 +344,11 @@ export function compose(config: Fragment): ResolvedStitchConfig {
 // named the SAME instant as `cooldown` — `phase()` compared against `halfOpenAfter ?? cooldown` —
 // so the two could never run on different clocks the way the docs claimed. Dropping it moves the
 // boundary to `cooldown`, a REAL timing change for any config that set the two to different
-// values, and nothing else would say so: `NoUnknownKeys` guards TOP-LEVEL slots only, and a nested
-// envelope inside an inferred `const C` gets no excess-property check either (verified:
-// `retry: { nonsense }` compiles too), so a stale `halfOpenAfter` typechecks clean. Delete at 1.0 GA.
+// values. It shipped because nothing ELSE would say so: `NoUnknownKeys` guarded TOP-LEVEL slots
+// only, so a stale `halfOpenAfter` typechecked clean at the `circuit:` slot. {@link
+// NoUnknownNestedKeys} has since closed that, and the key is now a compile error naming itself —
+// so this is a backstop for callers `tsc` never sees (plain JS, a silenced error), not the only
+// signal. Keep it cheap; delete at 1.0 GA.
 //
 // It shares THIS function rather than declaring its own (it did, in #610) purely to pay for the
 // `tripped` flag this commit adds to `CircuitRecord`: the two changes together put
@@ -1167,6 +1170,7 @@ export interface StitchFn {
     >(
         config: C &
             NoUnknownConfigKeys<C> &
+            NoUnknownNestedKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
             FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
@@ -1194,6 +1198,7 @@ export interface StitchFn {
     >(
         config: C &
             NoUnknownConfigKeys<C> &
+            NoUnknownNestedKeys<C> &
             MultipartOnlyOnMultipartBody<C> &
             FlagPathInOutput<C> &
             GraphqlOnlyOnGraphqlSurface<C> &
@@ -1238,6 +1243,7 @@ export function graphql<
     // rather than keying off `kind` the way `stitch`'s `WireBodyFixedByGraphql` must.
     config: C &
         NoUnknownConfigKeys<C> &
+        NoUnknownNestedKeys<C> &
         MultipartOnlyOnMultipartBody<C> &
         FlagPathInOutput<C> &
         NoWireBodyOnGraphql<C>,

@@ -785,12 +785,15 @@ surface — 249 of them — against P1/P4/P17/P18/P22/P24/P25 and closed what it
   live. _Why it survived the sweeps:_ nothing tested the transition — `halfOpenAfter`
   appeared in no test in `packages/core/test`, so no assertion ever depended on which
   field moved the boundary. The gap is closed by a millisecond-exact `manualClock` test in
-  `circuit-breaker.spec.ts`. _Not statically enforceable at the slot:_ `NoUnknownKeys`
-  guards top-level `StitchConfig` keys only, and a nested envelope inside an inferred
-  `const C` gets no excess-property check either, so a stale `halfOpenAfter` still
-  typechecks and would silently take the `cooldown` boundary instead — a real timing
-  change. A construction-time nudge in `makeStitch` says so out loud; it is runtime-only
-  (no `@deprecated` tag, so **R7** stays clean) and is deleted at 1.0 GA.
+  `circuit-breaker.spec.ts`. _Not statically enforceable at the slot — at the time:_
+  `NoUnknownKeys` guarded top-level `StitchConfig` keys only, and a nested envelope inside
+  an inferred `const C` got no excess-property check either, so a stale `halfOpenAfter`
+  typechecked clean and would silently take the `cooldown` boundary instead — a real timing
+  change. A construction-time nudge in `makeStitch` was the only signal. **That gap is since
+  closed** — the `NoUnknownNestedKeys` entry below descends into the house envelopes, so
+  `circuit: { …, halfOpenAfter }` is a compile error naming the key, and the nudge is now a
+  second line of defence for JS callers rather than the only one. It stays runtime-only (no
+  `@deprecated` tag, so **R7** stays clean) and is deleted at 1.0 GA.
 - **P25** — the flat, suffix-carrying size caps (`ServeOptions.maxBodyBytes`,
   `TraceOptions.maxBodyChars`, `StreamOptions.maxBufferChars`). **Fixed** (2026-08-01:
   folded into subject-named envelopes — `serve`'s `body` (`{ max }`), trace's `body`
@@ -1047,6 +1050,52 @@ is to intersect the parameter with `NoUnknownKeys<C, Allowed, What>`, which maps
   degrades the published `Stitch` type. The reasoning is recorded on the signature and in
   the baseline.
 - `test/` and `test-d/` are skipped — they author bad configs on purpose.
+
+**Rule 2 — nested envelopes.** The suppression is **depth-independent**: `const C` is
+inferred from the whole config object, so `wire` / `retry` / `circuit` are no more fresh
+literals than the root is, and `stitch({ circuit: { failures: 1, cooldown: '30s',
+totalNonsense: 1 } })` type-checked silently. This was long believed covered — the type test
+pinning it carried **no valid sibling**, so weak-type detection rejected it and the
+rejection was misattributed to excess-property checking. `NoUnknownNestedKeys` closes it,
+and the second rule keeps its table honest.
+
+- The table (`NestedEnvelopes`, in [`types.ts`](../packages/core/src/types.ts)) is
+  **explicit, not derived** — and that is a correctness requirement, not a cost tweak. A
+  walk derived from `StitchConfig[K]` would descend into `output`, whose `SchemaLike` Zod
+  arm is the phantom `{ _output: unknown }`; a real `z.object(…)` carries dozens of keys
+  beyond it, so every schema in every config would fail with `safeParse` reported as a
+  misspelling. The same holds for each pluggable seam ([P21](#p21--every-contract-has-an-extension-seam))
+  — `adapter` / `store` / `clock` / `trace` / `kind` / `auth` — where an unknown key is the
+  extension point. Unknown-key rejection is correct **only** for closed house vocabularies.
+- Because a hand-maintained table goes stale by omission, the rule walks **every root bag
+  rule 1 found** — `StitchConfig` plus the four that intersect it (`LlmOptions`,
+  `RequestOptions`, `EmitOptions`, `EventsOptions`, each of which adds its own fields) — and
+  every interface the table already covers, then fails on any field naming a `…Options` /
+  `…Schemas` bag (plus `Hooks`) that has no entry, at **any** depth. It currently covers 17
+  slots: 13 envelopes plus `wire.multipart`, `retry.backoff`, `stream.buffer`,
+  `sse.reconnect`. That second level is not hypothetical: `retry.backoff`'s `baseMs`→`base`
+  / `maxMs`→`max` renames in [§6](#6-migration-record-2026-07-08-hard-break-sweep) happened
+  there.
+- **The class is confined to those root bags, and that was swept rather than assumed.** Every
+  other envelope-consuming surface in the repo takes its bag as a _direct annotation_, which
+  keeps ordinary excess-property checking at every depth. Verified by probe with a valid
+  sibling present (so each rejection is attributable to EPC, not to weak-type detection) on
+  `seam`, `serve`, `createTrace`, `mockAdapter`, `oauth2`, `serveStdio`, `deltaFrame`, and —
+  outside core — `@stitchapi/shell`'s nested `buffer` envelope. All reject.
+- **Measured cost**, on `packages/core`'s 625-call-site typecheck project: +7% types
+  (73.5k→78.6k), +12% instantiations (241k→270k), and **no measurable check-time change**
+  (~1.1s either way). The docs' twoslash build and every downstream package typecheck
+  unchanged; the runtime bundle is untouched. The guard maps over the table's **fixed** key
+  set rather than
+  `keyof C & keyof NestedEnvelopes`; keying it on `keyof C` makes the parameter type depend
+  on the type being inferred, which costs contextual typing for callback slots (`adapter`,
+  `transform`) and produces spurious `implicitly has an 'any' type` errors.
+- Still **fail-open** for `extends` fragments, at every depth — that is the cross-layer
+  (`Layers`) axis, and closing it needs the walk the guard deliberately declines. A
+  fragment's own declaration site is where its spelling is checked. The `NoUnknownKeys`
+  JSDoc used to claim an _inline_ fragment was covered by excess-property checking; it is
+  not, for the same reason the root is not, and that residual limit is now recorded honestly
+  there and pinned in `unknown-config-keys.test-d.ts`.
 
 ---
 
