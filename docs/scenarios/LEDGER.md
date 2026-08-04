@@ -16,20 +16,32 @@ Issue drafts are **not filed** — they accumulate here for review when the loop
 | 1   | OAuth2 rotating refresh tokens under concurrent calls | `oauth2-refresh-token-rotation` | achievable with user code | [page shipped](../../apps/docs/content/docs/scenarios/oauth2-refresh-token-rotation.mdx) + 1 issue draft (`params` footgun)    |
 | 2   | Cost-based rate limits reported in the response body  | `cost-based-rate-limits`        | achievable with user code | [page shipped](../../apps/docs/content/docs/scenarios/cost-based-rate-limits.mdx) + 1 issue draft (3 body-verdict footguns)    |
 | 3   | Batch writes with per-item partial failure            | `batch-partial-failure`         | achievable with user code | [page shipped](../../apps/docs/content/docs/scenarios/batch-partial-failure.mdx) + 1 issue draft (`paginate` silent data loss) |
+| 4   | Async job triangle — submit, poll, download           | `async-job-polling`             | achievable with user code | [page shipped](../../apps/docs/content/docs/scenarios/async-job-polling.mdx) + 1 issue draft (clock + diagnostic side effects) |
 
 ## Open issue drafts
 
 Not filed — review these when the loop stops.
 
-| Draft                                                                              | Severity                        | Ask                                                                                                                           |
-| ---------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| [`oauth2-params-rotation-footgun`](issue-drafts/oauth2-params-rotation-footgun.md) | high                            | `params` can express a rotating grant that succeeds once, then revokes the account                                            |
-| [`body-verdict-footguns`](issue-drafts/body-verdict-footguns.md)                   | high                            | `verdict.flag` returns `ok: true` on an error envelope; `.safe()` drops `RateLimitError.body`; `backoff` fn silently vanishes |
-| [`paginate-silent-data-loss`](issue-drafts/paginate-silent-data-loss.md)           | **high — a bug, not a footgun** | a zero-item page ends `paginate` with `ok: true` and the remainder unfetched; "finished" and "gave up" are the same value     |
+| Draft                                                                                    | Severity                        | Ask                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`oauth2-params-rotation-footgun`](issue-drafts/oauth2-params-rotation-footgun.md)       | high                            | `params` can express a rotating grant that succeeds once, then revokes the account                                                                                                               |
+| [`body-verdict-footguns`](issue-drafts/body-verdict-footguns.md)                         | high                            | `verdict.flag` returns `ok: true` on an error envelope; `.safe()` drops `RateLimitError.body`; `backoff` fn silently vanishes                                                                    |
+| [`paginate-silent-data-loss`](issue-drafts/paginate-silent-data-loss.md)                 | **high — a bug, not a footgun** | a zero-item page ends `paginate` with `ok: true` and the remainder unfetched; "finished" and "gave up" are the same value                                                                        |
+| [`clock-and-diagnostic-side-effects`](issue-drafts/clock-and-diagnostic-side-effects.md) | **high ×2**                     | `timeout.total` is wall-clock while its sleeps use the injected clock, so a `manualClock` test of it passes vacuously; `.inspect()`/`.report()` re-issue the request and duplicated a job submit |
 
-### Pattern across the pass
+### Patterns across the pass
 
-All three scenarios came out **achievable, but only off the documented path** — the built-in
-that the docs point at missed, and a less-obvious seam carried it. Worth deciding whether that
-is a signposting problem (three pages of "if X, reach for Y") or a sign the built-ins are
-scoped one notch too narrow.
+**1. Achievable, but only off the documented path — 4 for 4.** Every scenario so far was
+solvable, and in none of them did the built-in the docs point at carry it. `throttle` sends
+you to `delegate` (status-keyed, wrong); `paginate` looks like the loop and is a trap twice
+over; `retry.respect` is inert on the body path. The recurring answer is a custom `Surface`
+plus a hook. Worth deciding: is this signposting — an "if the failure signal is in the body,
+write a surface" pointer from each guide — or are the built-ins scoped one notch too narrow?
+
+**2. `verdictOf` is mandatory by convention, not by construction.** All four surfaces written
+in this pass had to remember to compose it first, and the one proof that omitted it returned a
+404 as `ok: true`. A correctness requirement currently enforced by documentation.
+
+**3. My pre-verification hypotheses were wrong in every single scenario** — usually about
+which primitive would carry it. That is the strongest argument for the executable-proof bar:
+a docs-and-source audit would have shipped four wrong pages.

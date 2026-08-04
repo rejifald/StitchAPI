@@ -31,4 +31,9 @@ real runtime, not by reading the source.
         href="/docs/scenarios/batch-partial-failure"
         description="7 of your 100 items didn't land. Retrying the request re-writes the 93 that did — so the retry unit has to be the body, not the call."
     />
+    <Card
+        title="Submit, poll, download — the async job triangle"
+        href="/docs/scenarios/async-job-polling"
+        description="A 202 with a Location header, a status endpoint that reports failure at HTTP 200, and a single-use result URL — and you have to pick which guarantee you keep."
+    />
 </Cards>

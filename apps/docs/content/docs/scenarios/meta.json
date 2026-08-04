@@ -4,6 +4,7 @@
     "pages": [
         "oauth2-refresh-token-rotation",
         "cost-based-rate-limits",
-        "batch-partial-failure"
+        "batch-partial-failure",
+        "async-job-polling"
     ]
 }
