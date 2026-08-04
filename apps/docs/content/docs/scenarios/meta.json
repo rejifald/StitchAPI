@@ -5,6 +5,7 @@
         "oauth2-refresh-token-rotation",
         "cost-based-rate-limits",
         "batch-partial-failure",
-        "async-job-polling"
+        "async-job-polling",
+        "mid-stream-failure"
     ]
 }

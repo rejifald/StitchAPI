@@ -1,0 +1,148 @@
+---
+title: 'A stream that fails after 800 tokens'
+description: 'The 200 was spent on the first token, so the failure arrives in-band or not at all. When a stream can be resumed this is one flag; when it cannot — every LLM API — that same flag replays the whole answer.'
+prerequisites: ['/docs/reference/surfaces', '/docs/concepts/event-stream']
+---
+
+## The problem
+
+You stream a completion to a user. Eight hundred tokens in, it stops. The request did not
+fail — `200 OK` went out with the _first_ token, and the status line was spent before anything
+went wrong. Every later failure has to arrive **in-band**, as an SSE frame, or as nothing at
+all when the socket simply drops.
+
+Three consequences, all awkward:
+
+- **Retrying is not neutral.** Replaying re-runs the model — you pay for the first 800 tokens
+  _and_ their replacement — and it duplicates content the consumer has already accumulated.
+  The user watches the answer restart.
+- **"Ended" and "ended early" are the same shape.** A complete OpenAI stream is terminated by
+  `[DONE]`. A truncated one just stops. Nothing else distinguishes them.
+- **Resumption mostly isn't offered.** SSE's `Last-Event-ID` needs the server to put `id:` on
+  every frame. OpenAI-style completion chunks carry none, so the standard mechanism does not
+  apply to the most common streaming API there is.
+
+## The common solutions
+
+| Approach                            | Where it breaks                                                                            |
+| ----------------------------------- | ------------------------------------------------------------------------------------------ |
+| Retry the whole request             | Pays twice, re-runs the model, duplicates content in any accumulator. The answer restarts. |
+| Never retry a stream                | Safe and common. Turns every transient blip into a visible failure.                        |
+| Resume via `Last-Event-ID`          | The correct mechanism — and unavailable on LLM APIs, which emit no `id:`.                  |
+| Continuation prompt                 | The pragmatic LLM answer. Costs another call, and the seam shows in the output.            |
+| Buffer everything, emit at `[DONE]` | Makes truncation detectable and retry safe — and discards the entire point of streaming.   |
+| Check the sentinel                  | Necessary in all of the above. Cheap, and routinely forgotten.                             |
+
+## What StitchAPI does
+
+**If your stream is resumable, this is one flag and it is correct.** A feed that emits `id:`
+on every frame, dropped after 2 of 5 tokens, with `sse: { reconnect: true }`:
+
+```ts
+const feed = sse({ url: 'https://api.example.com/events', reconnect: true });
+```
+
+Measured: the consumer saw `ABCDE` — five deltas, **zero duplication** — and the reopened
+request carried exactly the right header, `Last-Event-ID` moving `(none) → t2`, where `t2` was
+the last id delivered before the drop. Server pacing is honoured too: a `retry: 9000` frame
+produced 9000 ms gaps, overriding the authored `reconnect.delay`.
+
+<Callout type="error">
+    **Do not enable `reconnect` on an LLM stream.** With no `id:` to resume
+    from, every reopen is a request for the *whole completion*. Measured on a
+    stream that **completed cleanly**: 4 opens, 4 `[DONE]` sentinels, and the
+    text `ABCDEABCDEABCDEABCDE` delivered to the consumer as one uninterrupted
+    stream — ending `done(ok: true)`. `sse: true` is the same flag. See [what
+    does not work](#what-stitchapi-does-not-solve-here) below.
+</Callout>
+
+For the LLM case the answer is **two seams**: `Surface.execute` for connect-only retry, and
+the surface's `stream` hook to require the sentinel and reject in-band error frames.
+
+```ts
+// Retry the CONNECT phase only — the one replay that is unambiguously safe.
+execute: async (req, ctx) => {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await ctx.adapter(req);
+        } catch (err) {
+            if (attempt >= connectAttempts) throw err;
+            await ctx.sleep(backoff(attempt)); // no bytes have flowed yet
+        }
+    }
+},
+
+// Require the sentinel: truncation is the ABSENCE of a frame, so nothing
+// per-frame can catch it.
+stream: async function* (res, cfg) {
+    let sawDone = false;
+    for await (const frame of sseSurface.stream(res, cfg)) {
+        if (isErrorFrame(frame)) throw new Error(`provider error frame: ${messageOf(frame)}`);
+        if (isDone(frame)) { sawDone = true; continue; }
+        yield frame;
+    }
+    if (!sawDone) throw new Error('stream truncated: no [DONE] sentinel');
+},
+```
+
+**Measured across six shapes:** a complete answer delivered once; a healed connect retried at
+the connect phase only (3 opens, `ABCDE` once); a mid-body drop keeping `ABC`; a truncation
+caught as `stream truncated: no [DONE] sentinel` with the partial kept; an in-band error frame
+surfaced with the bad frame **withheld** from the consumer; and a dead server failing after 4
+connect attempts rather than resolving empty.
+
+## StitchAPI vs the common solution
+
+Unusually for this section, **the StitchAPI version is smaller** — 62 lines against 83 for the
+hand-rolled twin, which has to bring its own SSE parser. Both produce byte-identical results
+and identical open counts on all six shapes, so the machinery isn't buying behaviour; it's
+buying the spine: one `start` / `delta`×N / `error` / `done` trace under one traceId, and
+`auth`, `headers`, `throttle` and `timeout` staying configuration instead of growing the
+hand-rolled file.
+
+## What StitchAPI does not solve here
+
+1. **`retry` does not run on a streaming stitch at all.** Measured: `retry: { attempts: 4 }`
+   against an always-503 server made **4 requests on a buffered stitch and 1 on an `sse` one**,
+   with `error.attempts: 1`. The safe replay — the connect phase, before any byte — is the one
+   case `retry` cannot cover.
+2. **`retry.attempts` is inert but `retry.backoff` is live**, as the _reconnect_ curve. One
+   name, two fates: `retry: { attempts: 1 }` still produced 4 opens.
+3. **Connect-phase and body-phase policy are not separately addressable.** One flag governs
+   both. `reconnect.onlyOnDrop`, `reconnect.requireToken` and `retry.phase` are all absent
+   (machine-checked).
+4. **`interpret` and `verdict.flag` are dead code on streaming surfaces.** A custom surface's
+   `interpret` ran **zero** times — `runStreaming` calls only `classifyStatus`. They typecheck
+   and do nothing.
+5. **`hooks.onError` never fires for a post-200 stream failure.** Measured hook sequence on a
+   mid-body drop: `[onRequest, onResponse]`, while the run failed. Any hook-based error
+   pipeline is blind to this entire scenario. `onResponse` also fires _before_ a single frame
+   is parsed — `ctx.res.body` is a live `ReadableStream`.
+6. **Truncation is undetectable by any built-in.** A truncated stream and a complete one
+   produce the same terminal spine — `result, done(ok: true)`. `output` can't express it
+   either: a schema demanding the sentinel rejects delta 1 instead.
+7. **The partial survives only on `.stream()`.** `.safe().data` is `null`; the thrown
+   `StitchError` has `body`, `data`, `partial` and `chunks` all `undefined`; and `.inspect()` —
+   whose whole job is "what did the server actually send?" — returns `data: null`, `raw: null`,
+   `status: 0`. The engine is holding the answer one line above the `return` that discards it.
+8. **The reconnect loop sits above every surface hook**, so no surface can defend against the
+   replay in the callout above — that decision is made in `runStreaming`, before any hook runs.
+
+<Callout type="warn">
+    **Default reconnect backoff is roughly 50 ms** (`expo-jitter` off base 100), so a dropped
+    stream replays within a tenth of a second unless you author a `retry.backoff`. And
+    `verdict: { accept: [503] }` combined with `reconnect` resolves a permanently-failing
+    server **successfully** with `data: []`.
+</Callout>
+
+## See also
+
+<Cards>
+    <Card title="Request surfaces" href="/docs/reference/surfaces" />
+    <Card title="The event stream" href="/docs/concepts/event-stream" />
+    <Card
+        title="Submit, poll, download"
+        href="/docs/scenarios/async-job-polling"
+    />
+    <Card title="Validation" href="/docs/guides/validation/validation" />
+</Cards>
