@@ -1405,7 +1405,10 @@ async function* runStreaming(
                 // later drop resumes from here. Unchanged when the surface isn't resumable (no hook).
                 const tok = resumeToken?.(chunk);
                 if (tok !== undefined) lastToken = tok;
-                const ret = resumeRetry?.(chunk);
+                // Parsed, not read raw: the hook takes the canonical duration form (P17), so a
+                // surface may return `'1.5s'`. An unparseable token parses to `undefined` and
+                // leaves the previous value standing — the same fall-through `after` gets (#609).
+                const ret = parseDuration(resumeRetry?.(chunk));
                 if (ret !== undefined) lastRetryMs = ret;
 
                 if (cfg.output) {

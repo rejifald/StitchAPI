@@ -71,6 +71,11 @@ export { parseDuration } from './util';
 // public — a peer package with a `*Bytes` cap parses it the way core does. NOT for the
 // `Chars` family, which counts UTF-16 code units rather than bytes.
 export { parseBytes } from './util';
+// The third house token grammar: `'2/s'`, `'10/m'` → `{ count, per }` (window length in ms).
+// Public for the same reason as the two above — a peer package with an authored rate (a
+// distributed limiter) parses it the way core does. It THROWS on a bad token where those two
+// fall back, because `undefined` for a rate means "unlimited": see its JSDoc.
+export { parseRate } from './util';
 // `compact({ ...obj, key: value })` — a shallow copy with `undefined`-valued keys removed, typed so
 // undefined-admitting keys come back optional. Pairs with `exactOptionalPropertyTypes`: it omits an
 // absent optional without the `...(key !== undefined ? { key } : {})` spread dance.

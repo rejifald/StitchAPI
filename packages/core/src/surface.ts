@@ -87,12 +87,18 @@ export interface Surface<TInput = StitchInput, TResult = unknown> {
      */
     readonly resumeToken?: (chunk: unknown) => string | undefined;
     /**
-     * Read the server-suggested reconnect backoff (ms) off an emitted `delta` chunk (issue #71). The
+     * Read the server-suggested reconnect backoff off an emitted `delta` chunk (issue #71). The
      * engine tracks the latest value and uses it as the reconnect delay, falling back to the
-     * stitch's `reconnect.backoff` / `retry` policy when no value was seen on the dropped
+     * stitch's `reconnect.delay` / `retry` policy when no value was seen on the dropped
      * connection. `sse` returns the event's `retry` field. Omitted ⇒ always use the fallback backoff.
+     *
+     * Takes the one canonical duration form (`1500`, `'1.5s'`; CONTRACT.md P17) — a surface AUTHORS
+     * this return, so it is a consumer-authored position exactly like {@link SurfaceOutcome}'s
+     * `after`, which it neighbours at the same sleep site. The engine parses it; an unparseable
+     * token yields no value and falls through to the fallback backoff, so a typo can never collapse
+     * the wait to zero.
      */
-    readonly resumeRetry?: (chunk: unknown) => number | undefined;
+    readonly resumeRetry?: (chunk: unknown) => number | string | undefined;
     /**
      * Inject a resume token into the NEXT request before it is reopened (issue #71) — mutates `req`
      * in place. `sse` sets the `Last-Event-ID` header. Paired with {@link Surface.resumeToken}; both

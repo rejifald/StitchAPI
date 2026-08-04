@@ -11,6 +11,28 @@ npm release are grouped under the in-development version that introduced them.
 
 ## [Unreleased]
 
+### Added
+
+- **`parseRate` is exported from `stitchapi`, completing the house token grammars.**
+  [P17](docs/CONTRACT.md#p17--one-canonical-duration-form) and
+  [P25](docs/CONTRACT.md#p25--one-canonical-size-form) both make "one shared parser" part of the
+  rule, and P25 spells out why it is public: so a peer package parses the grammar instead of
+  mirroring it and drifting from it. `parseDuration` and `parseBytes` were already exported on that
+  argument; `parseRate` — `'2/s'`, `'10/m'` → `{ count, per }` — was the third grammar and was
+  module-private, so a peer building a distributed limiter had to re-derive it. All three are now
+  pinned by the public-surface test, which held none of them before.
+
+    Its JSDoc now also states the two things about a rate that were previously unwritten. It is a
+    **string and only a string** — no `number | string` widening — because a rate is two quantities
+    rather than a magnitude over a house unit, so a bare `2` would have to invent a default window to
+    denote anything, and that invisible default is what P15/P20 exist to reject. And it **throws** on
+    a bad token where the other two fall back to the field's default: for a cap the fallback is the
+    safe failure, but `undefined` for a rate means _no limit at all_, so falling back would let a typo
+    silently remove the limit rather than narrow it. Same goal as P25's "a typo can never widen a cap
+    to unbounded", opposite mechanism, because the two value-spaces fail in opposite directions.
+
+    No behaviour change — the parser, its grammar, and its throw are exactly as they were.
+
 ### Changed
 
 - **BREAKING CHANGE: `circuit.halfOpenAfter` is removed — `cooldown` is the one open→half-open
@@ -298,6 +320,20 @@ npm release are grouped under the in-development version that introduced them.
 
 ### Fixed
 
+- **`Surface.resumeRetry` takes the canonical duration form too: its return widens to
+  `number | string`.** The sibling of the `SurfaceOutcome.after` fix below, found by sweeping the
+  surface under the new [P17](docs/CONTRACT.md#p17--one-canonical-duration-form)/[P25](docs/CONTRACT.md#p25--one-canonical-size-form)
+  widening clause and its **R9** gate (see _Notes_). `resumeRetry` reads the server-suggested
+  reconnect backoff off an emitted `delta`; it was raw ms only, and — like `after` before #609 — the
+  value was read straight into the reconnect wait, so a token returned through a cast reached
+  `setTimeout`, coerced to `NaN`, and fired immediately, collapsing the wait to ~0 with no error.
+  It is now parsed by the shared `parseDuration`, and an unparseable token falls through to the
+  configured `reconnect.delay` rather than to zero. Verified by reverting the parse with the tests
+  in place: 6ms elapsed against a 110ms floor.
+
+    Widening only, so per [P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)
+    it is non-breaking and needs no alias — every existing surface returning raw ms is unaffected.
+
 - **The same net now covers NESTED envelopes — `circuit`, `retry`, `wire`, and the rest — so a
   nested rename is mechanical too.** The guard below was scoped to a config's top-level keys on the
   reasoning that an envelope is checked against its _declared_ `AtLeastOne<CircuitOptions>` and so
@@ -530,6 +566,24 @@ npm release are grouped under the in-development version that introduced them.
     body is still `+`-encoded, and the query string still uses `%20`, exactly as before.
 
 ### Notes
+
+- **The duration/size rule is now stated over the value rather than the slot, and gated.**
+  [P17](docs/CONTRACT.md#p17--one-canonical-duration-form) and
+  [P25](docs/CONTRACT.md#p25--one-canonical-size-form) already required every consumer-authored
+  duration and byte cap to accept `number | string`, but framed it as a property of end-user
+  **config** — which is why the 2026-07 sweep skipped `SurfaceOutcome.after` (authored by a
+  `Surface`, not an end user) and it shipped taking raw ms. Both rules now read forwards as one
+  test — **if a position accepts a duration or a byte size at all, it must also accept a
+  `string`** — over all four authoring positions: an `*Options` field, a tuple element of a
+  positional shorthand, a function parameter, and the return value of a hook you implement on an
+  extension seam. The complement is stated just as firmly: a duration or size the library
+  **produces** stays a bare ms/byte `number`, and a `chars` code-unit cap must **not** grow a
+  string arm, since a size token on decoded text is a category error.
+
+    Lint **R9** in `check:contract` enforces both directions, and both halves of the rule are held:
+    R9 pins the type, while the requirement that the value actually reach `parseDuration`/`parseBytes`
+    is pinned by test — a widened type over an unparsed read site is the silent-collapse bug, which is
+    worse than never widening at all. Nothing else on the published surface needed changing.
 
 - **`sse`, `stream`, and `postmessage` were checked in the same pass and deliberately left
   alone.** `sse` and `stream` have no `buildRequest`, so their `method` is genuinely honoured;

@@ -26,12 +26,20 @@
 // narrower rule could not see — `Fn | Options` (sse-emit's `delta`/`error`),
 // `Options | false` (elysia/fastify `errorHandler`) and an inherited member.
 //
+// R9 covers the AUTHORED half of duration/size conformance (P17/P25) without type info, by
+// pairing a closed member vocabulary with P3's `*Options` = consumer-input signal. What it
+// cannot see is the other half of that rule — whether the widened value actually reaches
+// `parseDuration`/`parseBytes` before a sleep or comparison. A type that says `number | string`
+// over an unparsed read site is the silent-collapse bug (#609), and catching it needs dataflow,
+// not source text. The parse is pinned behaviourally instead, by tests that assert an elapsed
+// floor and fail in milliseconds without it (`sse-reconnect.spec.ts`, `interpret-in-loop.spec.ts`).
+//
 // Still deferred to a type-aware phase (needs the TS checker): shape-diffing (full P9 —
-// R5's watch list is the by-name proxy), duration/size type conformance (P17/P25),
-// default-value inversion (P8), cross-PACKAGE parity of the same capability (P16), and
-// resolving a `type` ALIAS whose union admits an all-optional bag (so `MockRoute.respond:
-// MockResponder` is under-flagged — an alias is not an interface block). Under-flagging is
-// deliberate: a ratchet that guesses is a ratchet nobody trusts.
+// R5's watch list is the by-name proxy), default-value inversion (P8), cross-PACKAGE parity
+// of the same capability (P16), and resolving a `type` ALIAS whose union admits an
+// all-optional bag (so `MockRoute.respond: MockResponder` is under-flagged — an alias is not
+// an interface block; the same blind spot puts `SurfaceOutcome.after`, a union member, out of
+// R9's reach). Under-flagging is deliberate: a ratchet that guesses is a ratchet nobody trusts.
 import {
     existsSync,
     readFileSync,
@@ -351,6 +359,96 @@ const PREFIX_GROUP_ALLOW = new Map([
     ],
 ]);
 
+// P17/P25 — the house duration + byte-size member vocabulary. A value a consumer AUTHORS in one
+// of these positions must take `number | string` ("if it accepts a duration/size at all, it also
+// accepts a string"); a bare `number` is the violation R9 reports.
+//
+// A CLOSED, curated list, derived from the two parsers' call sites rather than from a name PATTERN,
+// because the failure mode to avoid is flagging a COUNT: P4 spells every count as a bare plural
+// (`attempts`, `entries`, `pages`, `failures`, `concurrency`, `tokens`) and P25 spells a code-unit
+// cap `chars` — all of which MUST stay bare `number`, and none of which appear below. `base`/`max`
+// are safe to list precisely because P4 reserves `max` for a MAGNITUDE ceiling and forbids it on a
+// count, so every `max` on an authoring surface is a duration or a byte size, whichever its
+// envelope names — and both dimensions take the same widening, so the rule never has to tell them
+// apart. Adding a name here is a contract decision; adding a regex would be a guess.
+const WIDENED_MEMBER = new Set([
+    'after', // SurfaceOutcome's body-aware retry wait (ADR 0022 D5)
+    'base', // BackoffOptions — first-step delay
+    'cooldown', // CircuitOptions — fast-fail window
+    'delay', // ReconnectOptions / MockResponse
+    'interval', // any polling cadence
+    'max', // BackoffOptions (delay ceiling) | ServeBodyOptions/ShellBufferOptions (byte cap)
+    'perAttempt', // TimeoutOptions
+    'resumeRetry', // Surface — the server-suggested reconnect backoff (returned by the seam)
+    'since', // CLI/query time window
+    'skew', // OAuth2RefreshOptions — refresh lead time
+    'timeout',
+    'total', // TimeoutOptions — whole-call deadline
+    'ttl', // CacheOptions / CookieSessionOptions / verifyStoreContract's knob
+]);
+
+// The counterpoint (P25): a CODE-UNIT cap is not a size in P25's sense, so it must NOT grow a
+// string arm — `'64kb'` on decoded text is a category error the type is supposed to reject. R9
+// checks this direction too, so the Bytes/Chars contrast is gated from both sides.
+const COUNT_MEMBER = new Set(['chars']);
+
+// Where a consumer AUTHORS a value. `*Options` IS the consumer-input envelope by P3, which is what
+// makes R9 high-precision without type info: the produced shapes (`*Result`, `*Response`,
+// `*Event`, and the resolved internals) are excluded BY NAME, so P17/P25's emitted complement —
+// a raw-ms/raw-byte `number` that MUST NOT take a string — can never be flagged. Plus the
+// consumer-implemented seams (P21), where the authored value is a RETURN rather than a field:
+// that is the position the 2026-07 sweep missed, since its checklist was end-user config.
+const AUTHORED_SEAM = new Set([
+    'Surface',
+    'Adapter',
+    'TraceSink',
+    'AuthStrategy',
+]);
+const isAuthoringSurface = (name) =>
+    /Options$/.test(name) || AUTHORED_SEAM.has(name);
+
+// Depth of `idx` within `body`, counting only braces/parens/brackets — NOT angle brackets, whose
+// `>` also closes an arrow (`=> number`) and would truncate a function-typed member's type.
+function depthAt(body, idx) {
+    let d = 0;
+    for (let i = 0; i < idx; i++) {
+        const ch = body[i];
+        if (ch === '{' || ch === '(' || ch === '[') d++;
+        else if (ch === '}' || ch === ')' || ch === ']') d--;
+    }
+    return d;
+}
+
+// Top-level members WITH their declared type text — the shape R9 needs, where the other member
+// rules only need a name. The type runs from the `:` to the terminating `;` at the member's own
+// depth, so a union wrapped across lines reads as one type.
+function topLevelMembersTyped(body) {
+    const out = [];
+    const re =
+        /(?:^|\n)[ \t]*(?:readonly[ \t]+)?([A-Za-z_]\w*)[ \t]*\??[ \t]*:/g;
+    let m;
+    while ((m = re.exec(body))) {
+        const nameAt = m.index + m[0].indexOf(m[1]);
+        if (depthAt(body, nameAt) !== 0) continue; // a member of a NESTED object-literal type
+        let d = 0;
+        let j = re.lastIndex;
+        for (; j < body.length; j++) {
+            const ch = body[j];
+            if (ch === '{' || ch === '(' || ch === '[') d++;
+            else if (ch === '}' || ch === ')' || ch === ']') {
+                if (d === 0) break;
+                d--;
+            } else if (ch === ';' && d === 0) break;
+        }
+        out.push({
+            name: m[1],
+            type: body.slice(re.lastIndex, j).trim(),
+            index: nameAt,
+        });
+    }
+    return out;
+}
+
 // Top-level (depth-0) field/method names of an interface body, in source order, deduped by name
 // (an overloaded method — `set(...)` declared twice — is one field, not two).
 function topLevelFieldNames(body) {
@@ -527,6 +625,43 @@ function collect() {
                         `pool axis named scope → rename pool (P2)`,
                         lineOf(src, blk.bodyStart + scopeM.index),
                     );
+                }
+                // R9 — a duration/byte-size a consumer AUTHORS that does not take the canonical
+                // `number | string` (P17/P25: "if it accepts a duration or a size at all, it must
+                // also accept a string"). Scoped to the authoring surfaces above, so the emitted
+                // complement — which must stay a bare ms/byte `number` — is out of range by
+                // construction rather than by guesswork. The reverse direction is checked too: a
+                // `chars` code-unit cap that grew a string arm is the same rule's category error.
+                if (isAuthoringSurface(blk.name)) {
+                    for (const { name, type, index } of topLevelMembersTyped(
+                        blk.body,
+                    )) {
+                        if (deprecatedBefore(src, blk.bodyStart + index))
+                            continue;
+                        const at = lineOf(src, blk.bodyStart + index);
+                        const takesNumber = /\bnumber\b/.test(type);
+                        const takesString = /\bstring\b/.test(type);
+                        if (
+                            WIDENED_MEMBER.has(name) &&
+                            takesNumber &&
+                            !takesString
+                        )
+                            add(
+                                'R9',
+                                file,
+                                `${blk.name}.${name}`,
+                                `authored duration/size takes number only → widen to number | string and read it through parseDuration/parseBytes (P17/P25)`,
+                                at,
+                            );
+                        if (COUNT_MEMBER.has(name) && takesString)
+                            add(
+                                'R9',
+                                file,
+                                `${blk.name}.${name}`,
+                                `code-unit cap takes a string → a size token on decoded text is a category error; keep it a bare number (P25)`,
+                                at,
+                            );
+                    }
                 }
             }
 

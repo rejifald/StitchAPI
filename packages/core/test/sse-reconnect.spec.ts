@@ -4,6 +4,8 @@
 // default — these specs prove both the unchanged default and the opt-in reconnect loop, driving
 // timing the way the repo's other backoff tests do: small distinct delays + real elapsed bounds
 // (no fake timers anywhere in this package).
+import { stitch } from '../src';
+import type { Surface } from '../src';
 import { sse, sseSurface } from '../src/sse';
 import type { Adapter, AdapterRequest, StitchEvent } from '../src/types';
 import { asValidator } from './support/schema';
@@ -203,6 +205,56 @@ describe('sse reconnect delay: server retry: vs fallback (issue #71)', () => {
         const elapsed = Date.now() - t0;
         expect(out.reconnects[0]?.waited).toBe(70);
         expect(elapsed).toBeGreaterThanOrEqual(60);
+        expect(out.doneOk).toBe(true);
+    });
+});
+
+describe('a surface may return the canonical duration form from resumeRetry (P17)', () => {
+    // `resumeRetry` is a value the SURFACE AUTHOR writes, so P17's consumer-authored widening
+    // reaches it — the same call `SurfaceOutcome.after` got in #609, feeding the same sleep site.
+    // Before the widening a token reached `sleepWithin` raw, where `setTimeout('120ms')` coerces
+    // to NaN and fires immediately: the wait collapsed to ~0 with no error to see.
+    const returning = (retry: number | string | undefined): Surface => ({
+        ...sseSurface,
+        resumeRetry: () => retry,
+    });
+
+    test('a duration token paces the reconnect exactly as the raw ms does', async () => {
+        const { adapter } = scriptedAdapter([
+            () => streamOf(['id: 1\ndata: a\n\n']),
+        ]);
+        const s = stitch({
+            kind: returning('120ms'),
+            url: 'https://x.test/e',
+            sse: { reconnect: { attempts: 1, delay: 1 } },
+            adapter,
+        });
+
+        const t0 = Date.now();
+        const out = await drainAll(s.stream());
+        const elapsed = Date.now() - t0;
+        // Parsed: neither NaN (the silent collapse) nor the 1ms fallback (the token ignored).
+        expect(out.reconnects[0]?.waited).toBe(120);
+        expect(elapsed).toBeGreaterThanOrEqual(110);
+        expect(out.doneOk).toBe(true);
+    });
+
+    test('an unparseable token falls through to the fallback instead of collapsing the wait', async () => {
+        const { adapter } = scriptedAdapter([
+            () => streamOf(['id: 1\ndata: a\n\n']),
+        ]);
+        const s = stitch({
+            kind: returning('soon'),
+            url: 'https://x.test/e',
+            sse: { reconnect: { attempts: 1, delay: 90 } },
+            adapter,
+        });
+
+        const t0 = Date.now();
+        const out = await drainAll(s.stream());
+        const elapsed = Date.now() - t0;
+        expect(out.reconnects[0]?.waited).toBe(90); // reconnect.delay, untouched by the junk
+        expect(elapsed).toBeGreaterThanOrEqual(80);
         expect(out.doneOk).toBe(true);
     });
 });

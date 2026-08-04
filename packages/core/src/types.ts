@@ -993,9 +993,20 @@ export interface RetryOptions {
 }
 export interface ThrottleOptions {
     /**
-     * Target pace as a `"count/interval"` string — `'2/s'`, `'5/s'`. A minimum spacing between
-     * successive calls, not a token bucket. The dominant field: a bare string is the P12 shorthand
-     * for `{ rate }` (`throttle: '2/s'` ≡ `throttle: { rate: '2/s' }`).
+     * Target pace as a `"count/interval"` string — `'2/s'`, `'10/m'`, `'1/ms'`. A minimum spacing
+     * between successive calls (`interval / count`, applied before any request leaves), not a token
+     * bucket. The dominant field: a bare string is the P12 shorthand for `{ rate }`
+     * (`throttle: '2/s'` ≡ `throttle: { rate: '2/s' }`). The grammar is `<count>/<unit>` with an
+     * INTEGER count and unit `ms` | `s` | `m`, read by the shared {@link parseRate}.
+     *
+     * A **string and only a string**, deliberately. A duration or a byte cap also accepts a bare
+     * number because each is a magnitude over a house unit — ms, bytes — so `5_000` and `4096`
+     * already denote something (CONTRACT.md P17/P25). A rate is two quantities, so a bare `2`
+     * would have to invent a default window to mean anything, and that invisible default is what
+     * P15/P20 exist to reject. `'2/s'` is not the sugar form of a number here; it IS the value.
+     *
+     * An unparseable token **throws** at construction rather than falling back to "no limit" —
+     * the one place a house parser fails loud, for the reason spelled out on {@link parseRate}.
      */
     rate?: string;
     /** Cap on simultaneous in-flight calls. Independent of `rate` — either may be set on its own. */
