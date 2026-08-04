@@ -159,9 +159,12 @@ export default function Layout({ children }: LayoutProps<'/'>) {
                         options: { api: '/api/search-docs' },
                     }}
                 >
+                    {/* The banner is sticky and docs content scrolls underneath
+                        it, so its fill has to be opaque — the translucent
+                        `bg-stitch-soft` tint let the page show through. */}
                     <Banner
                         variant="normal"
-                        className="gap-2 border-b border-stitch-border bg-stitch-soft text-fd-foreground"
+                        className="gap-2 border-b border-stitch-border bg-stitch-soft-solid text-fd-foreground"
                     >
                         <Construction
                             className="size-4 shrink-0 text-stitch-strong"
