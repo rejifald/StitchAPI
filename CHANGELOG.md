@@ -318,6 +318,43 @@ npm release are grouped under the in-development version that introduced them.
     `stitch({ method: 'POST', wire: { response: 'blob' } })`; the only thing it gives up is the
     `Content-Disposition` filename parsing.
 
+- **BREAKING — `kind` on a `download()` preset stitch is now a compile error.** The last field
+  in the same class, and the one the sweep above left behind. Both preset paths build their
+  config as `{ ...config, kind: downloadSurface }` — spreading the caller's `kind` in, then
+  overwriting it on the next line — so authoring one selected nothing:
+
+    ```ts
+    download({ url, kind: graphqlSurface });
+    //              ^ the `download` preset always selects the download surface — `kind` is
+    //                ignored. Before: compiled, and quietly returned a DOWNLOAD stitch.
+    ```
+
+    The guard binds `download()`, `download.stitch`, and `download.bind(…).stitch`, and
+    deliberately **not** `stitch({ kind: downloadSurface })` — on the generic path `kind` is not
+    dead config, it is the only thing selecting the surface, so guarding it there would reject
+    correct code. That is why this is a separate `NoKindOnDownload` rather than a third arm of
+    the `method` / `wire.response` guard, which the generic path shares.
+
+    The redundant `kind: downloadSurface` is rejected on the preset too, for the same reason
+    `method: 'GET'` is: the slot is never read, and letting through the exact value the preset
+    forces would imply that it is.
+
+    This closes on `download` the hole `llm` never had — `LlmOptions` is
+    `Partial<Omit<StitchConfig, 'kind'>>`, and that structural spelling works there only because
+    `llm()`'s parameter is non-generic, so excess-property checking catches a stray `kind`. The
+    preset captures a `const C` to infer its call argument from `config.input`, and a generic
+    constraint does no excess-property checking (the same migration gotcha the `wire` envelope
+    documents above), so `Omit` would be satisfied by a config carrying the extra key. Hence a
+    `ConfigError` guard here and a structural `Omit` there, for one rule.
+
+    Reads the **composed** config like its siblings, and fails **open**: `kind` is the offending
+    slot rather than an enabler here, so a layer the flattener cannot see costs a missed
+    rejection, never a false one. A `kind` supplied only through an `extends` fragment still
+    compiles; the literal spelling errors precisely. Pinned as tsd expectations.
+
+    **Migration:** delete the field. No runtime behaviour changed — the stitch was already a
+    download. To actually get another surface, use a plain `stitch({ kind })`.
+
 ### Added
 
 - **`throttle.rate`'s denominator is now a full duration token — `'1000/h'`, `'100/15m'`,

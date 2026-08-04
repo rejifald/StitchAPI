@@ -715,6 +715,48 @@ export type RequestShapeFixedByDownload<C> =
         ? NoRequestShapeOnDownload<C>
         : unknown;
 /**
+ * Compile-time guard: the `download()` PRESET selects the surface itself — both authoring paths
+ * build their config as `{ ...config, kind: downloadSurface }`, spreading the caller's `kind` in and
+ * overwriting it on the next line. A `kind` authored on the preset is therefore never read: the
+ * stitch is a download either way, and a caller who wrote `kind: graphqlSurface` silently got a
+ * download. Same class as {@link NoRequestShapeOnDownload} (`method`, `wire.response`) and
+ * {@link NoBodyTypeOnGraphql} (`wire.body`) — a field the surface claims, rejected at the authoring
+ * site rather than ignored at runtime.
+ *
+ * DELIBERATELY SEPARATE from {@link NoRequestShapeOnDownload} rather than a third arm of it, and the
+ * split is load-bearing. That type is shared with {@link RequestShapeFixedByDownload}, which guards
+ * the generic `stitch({ kind: downloadSurface, … })` path — and on THAT path `kind` is not dead
+ * config, it is the very thing selecting the surface. Folding this in would make the guard reject
+ * the config that triggers it, so the two must not share a type.
+ *
+ * Applied ONLY where the preset fixes the surface by construction: `download()` / `download.stitch`
+ * and `DownloadSeamApi['stitch']` (which `bindSeam`'s member is cast to, so it inherits this). The
+ * probe is `{ kind: unknown }`, not keyed to a surface id, so even the redundant
+ * `kind: downloadSurface` is rejected — the same reasoning that makes `method: 'GET'` an error on a
+ * surface that sends exactly that. Authoring the slot implies it is read; it is not.
+ *
+ * The asymmetry with `llm` is a difference in parameter shape, not intent. `LlmOptions` (llm.ts)
+ * closes the identical hole structurally — `Partial<Omit<StitchConfig, 'kind'>>` — and that works
+ * because `llm()`'s parameter is deliberately NON-generic, so excess-property checking on the object
+ * literal turns a stray `kind` into an error. This preset captures a `const C` to infer its
+ * call-argument type from `config.input` (`InputOf<C>`), and a generic CONSTRAINT does not do
+ * excess-property checking — `Omit` would simply be satisfied by a config carrying extra keys. Hence
+ * a `ConfigError` guard here and a structural `Omit` there, for one rule.
+ *
+ * Reads the COMPOSED config via {@link Layers}, like every other guard here. The fail direction is
+ * INVERTED relative to {@link GraphqlOnlyOnGraphqlSurface}: `kind` is the OFFENDING slot here, not
+ * the enabler, so a layer the flattener cannot see (an `extends` widened to `Frag[]`, the P7
+ * single-fragment spelling) merely fails to reject dead config rather than rejecting valid code —
+ * fail-OPEN, the direction #597 biases toward. Residual limits are otherwise shared with
+ * {@link MultipartOnlyOnMultipartBody} and documented there.
+ */
+export type NoKindOnDownload<C> =
+    AnyLayer<Layers<C>, { kind: unknown }> extends true
+        ? {
+              kind?: ConfigError<'the `download` preset always selects the download surface — `kind` is ignored (use a plain `stitch({ kind })` to choose another surface)'>;
+          }
+        : unknown;
+/**
  * Compile-time guard: the `llm` surface OWNS how it frames a chat completion. The live surface's
  * `buildRequest` forces `method: 'POST'` and a JSON body unconditionally and replaces the body with
  * `provider.buildBody(...)`, so either field authored on an `llm()` config is never read. Same
