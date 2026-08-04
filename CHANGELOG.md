@@ -329,6 +329,15 @@ npm release are grouped under the in-development version that introduced them.
     error the same test file's preamble warns about. Add one valid sibling and the rejection
     vanished. The two assertions are rewritten, and every new one carries a sibling.
 
+    **The first thing it caught was a stale key this repository had already shipped past.**
+    `halfOpenAfter`'s removal (above) was written around this hole — it reasoned that a leftover
+    spelling could not be flagged statically, so it added a construction-time warning instead. It
+    then left a stale `circuit: { …, halfOpenAfter: '60s' }` behind in `circuit-breaker.spec.ts`,
+    where nothing was watching: not the type tests, not the suite, not review. Turning the guard on
+    failed the build on it within one CI run. That is the whole argument for the guard, made
+    against real history rather than a constructed example — the class is not that people misspell
+    keys, it is that a **removal** leaves working-looking call sites behind and nothing says so.
+
     Covers 17 slots across two levels: the 13 envelopes plus `wire.multipart`, `retry.backoff`,
     `stream.buffer`, `sse.reconnect`. The second level is not hypothetical — rc.5's
     `baseMs`→`base` / `maxMs`→`max` renames happened there.
