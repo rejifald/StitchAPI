@@ -195,7 +195,7 @@ describe('parseRate (property)', () => {
     it('splits a rate into its count and window length', () => {
         fc.assert(
             fc.property(
-                fc.integer({ min: 0, max: 10_000 }),
+                fc.integer({ min: 1, max: 10_000 }),
                 fc.constantFrom(...RATE_UNITS),
                 (count, unit) => {
                     expect(parseRate(`${count}/${unit}`)).toEqual({
@@ -210,7 +210,7 @@ describe('parseRate (property)', () => {
     it('tolerates whitespace around the separator', () => {
         fc.assert(
             fc.property(
-                fc.integer({ min: 0, max: 10_000 }),
+                fc.integer({ min: 1, max: 10_000 }),
                 fc.constantFrom(...RATE_UNITS),
                 (count, unit) => {
                     expect(parseRate(`  ${count} / ${unit}  `)).toEqual(
@@ -226,11 +226,44 @@ describe('parseRate (property)', () => {
             fc.property(
                 fc
                     .string()
-                    .filter((s) => !/^\d+\s*\/\s*(ms|s|m)$/.test(s.trim())),
+                    .filter(
+                        (s) => !/^[1-9]\d*\s*\/\s*(ms|s|m)$/.test(s.trim()),
+                    ),
                 (bad) => {
                     expect(() => parseRate(bad)).toThrow(/bad rate/);
                 },
             ),
+        );
+    });
+
+    // A zero count parses to a spacing of `per / 0` = Infinity, which `setTimeout` clamps to 1ms —
+    // "block everything" under an injected clock, NO limit at all on the system clock. Rejected at
+    // the grammar, for every spelling of zero and every unit.
+    it('rejects a zero count', () => {
+        fc.assert(
+            fc.property(
+                fc.constantFrom('0', '00', '000'),
+                fc.constantFrom(...RATE_UNITS),
+                (zero, unit) => {
+                    expect(() => parseRate(`${zero}/${unit}`)).toThrow(
+                        /bad rate/,
+                    );
+                },
+            ),
+        );
+    });
+
+    // The only thing either limiter consumes is `per / count`, so any two rates with the same
+    // ratio ARE the same limiter — the property that lets the grammar stay a ratio.
+    it('equal ratios parse to equal spacing', () => {
+        fc.assert(
+            fc.property(fc.integer({ min: 1, max: 1000 }), (n) => {
+                const perSecond = parseRate(`${n}/s`);
+                const perMinute = parseRate(`${n * 60}/m`);
+                expect(perMinute.per / perMinute.count).toBe(
+                    perSecond.per / perSecond.count,
+                );
+            }),
         );
     });
 });

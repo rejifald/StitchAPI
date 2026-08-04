@@ -120,10 +120,10 @@ export function parseBytes(s: number | string | undefined): number | undefined {
 
 /**
  * Parse a rate into `{ count, per }` — the number of grants and the window length in ms.
- * Grammar: `<count>/<unit>` with an INTEGER count and unit `ms` | `s` | `m` (`"2/s"`, `"10/m"`,
- * `"1/ms"`; whitespace around the slash is tolerated). The third house token grammar, alongside
- * {@link parseDuration} and {@link parseBytes}, and exported for the same reason: a peer package
- * that takes an authored rate parses it the way core does instead of mirroring the grammar.
+ * Grammar: `<count>/<unit>` with a POSITIVE INTEGER count and unit `ms` | `s` | `m` (`"2/s"`,
+ * `"10/m"`, `"1/ms"`; whitespace around the slash is tolerated). The third house token grammar,
+ * alongside {@link parseDuration} and {@link parseBytes}, and exported for the same reason: a
+ * peer package that takes an authored rate parses it the way core does instead of mirroring it.
  *
  * **Unlike those two, an unparseable token THROWS rather than resolving to `undefined`.** The
  * divergence is deliberate, and it runs in the same direction as their fallback rather than
@@ -135,12 +135,20 @@ export function parseBytes(s: number | string | undefined): number | undefined {
  * fail in opposite directions. Both callers guard with a presence check, so an omitted `rate`
  * never reaches here — only a non-empty token that could not be read.
  *
+ * **Failing loud is necessary and was not sufficient**, which is why the count is `[1-9]\d*`
+ * rather than `\d+`. `"0/s"` used to be *accepted*, and yielded a spacing of `per / 0` =
+ * `Infinity`, which `setTimeout` clamps to **1ms** — so it read as "block everything" under an
+ * injected {@link Clock}, where the test suite sees it, and was no limit at all on the system
+ * clock. The unbounded quiet path this function throws to prevent was reachable through the
+ * **accepting** branch, not the rejecting one. A zero count has no safe reading to keep either:
+ * a limiter is not how you stop calling a stitch.
+ *
  * A rate is a string and only a string (no `number | string` widening): it is two quantities,
  * not a magnitude, so a bare `2` would have to invent a default window to denote anything. See
  * CONTRACT.md P17/P25, which widen a magnitude that already carries a house unit — this has none.
  */
 export function parseRate(r: string): { count: number; per: number } {
-    const m = /^(\d+)\s*\/\s*(ms|s|m)$/.exec(r.trim());
+    const m = /^([1-9]\d*)\s*\/\s*(ms|s|m)$/.exec(r.trim());
     if (!m) throw new Error(`bad rate: ${r}`);
     const per = m[2] === 'ms' ? 1 : m[2] === 's' ? 1000 : 60000;
     return { count: parseInt(m[1] ?? '', 10), per };

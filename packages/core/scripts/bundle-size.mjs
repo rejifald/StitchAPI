@@ -198,19 +198,37 @@ const KB = 1024;
 // (the provider's parsed completion), forcing every composing surface to build a success value and
 // immediately discard it. Headroom lands at 0.16 / 0.15 — the tight step #477/#524 took, not the
 // ~0.2 KB this gate usually restores.
+//
+// Budgets raised for the store-backed throttle's cold-start burst fix — ADR 0023 Decision 2
+// (23.30→23.50 / 20.70→20.90 KB; measured 23.31 / 20.72 against a `main` at 23.28 / 20.69, so the
+// fix itself is +0.03 / +0.03). The distributed limiter granted every already-elapsed slot the
+// moment it was claimed, so a process joining mid-window drained the window's unclaimed slots in
+// one tick — a burst that scaled with the window length rather than the declared rate ('120/m'
+// granted five concurrent calls at one instant where '2/s', the same 500ms spacing, granted two).
+// The bytes are one `Math.max` over a per-key `nextGrantAt` cursor and its assignment, making each
+// grant `max(now, cursor, slot)`.
+//
+// It cannot move behind a subpath: `createStoreThrottle` is reached from `stitch()` whenever a
+// `store` is configured, so it is on the core path by construction — the same reason the rc.1
+// raise above cites for the throttle's idle-state reclamation.
+//
+// Headroom lands at 0.19 / 0.18 — the ~0.2 KB this gate usually restores, not the tight step
+// #477/#524 took. `main` had run down to 0.02 / 0.007, which is why a +0.03 KB fix tripped the gate
+// at all; the step is sized to the headroom the gate is meant to hold rather than to this change,
+// so the next small core-path fix is not gated on a budget PR of its own.
 // `advertised: true` means the READMEs/docs quote this scenario's rounded gzip kB — see the
 // `--json` note below for why that flag, not the row's presence, drives the drift tether.
 const SCENARIOS = [
     {
         name: 'stitchapi — whole entry',
         code: `export * from './index.mjs';`,
-        budget: 23.3 * KB,
+        budget: 23.5 * KB,
         advertised: true,
     },
     {
         name: 'import { stitch }',
         code: `export { stitch } from './index.mjs';`,
-        budget: 20.7 * KB,
+        budget: 20.9 * KB,
         advertised: true,
     },
     {

@@ -121,6 +121,22 @@ describe('parseRate', () => {
     it('throws on a malformed rate', () => {
         expect(() => parseRate('fast')).toThrow(/bad rate/);
     });
+
+    // `'0/s'` used to parse to a spacing of Infinity. Under an injected clock that reads as "block
+    // everything"; on the system clock `setTimeout` clamps the wait to 1ms and it is no limit at
+    // all — a config that validates, tests as a hard stop, and ships as unlimited.
+    it('rejects a zero count rather than parsing it to an infinite spacing', () => {
+        expect(() => parseRate('0/s')).toThrow(/bad rate/);
+        expect(() => parseRate('0/ms')).toThrow(/bad rate/);
+        expect(() => parseRate('0/m')).toThrow(/bad rate/);
+        expect(() => parseRate('00/s')).toThrow(/bad rate/);
+        expect(() => parseRate(' 0 / s ')).toThrow(/bad rate/);
+    });
+
+    it('still rejects fractional and negative counts', () => {
+        expect(() => parseRate('0.5/s')).toThrow(/bad rate/);
+        expect(() => parseRate('-1/s')).toThrow(/bad rate/);
+    });
 });
 
 describe('stripTrailingSlashes', () => {

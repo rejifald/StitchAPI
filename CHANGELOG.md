@@ -334,6 +334,47 @@ npm release are grouped under the in-development version that introduced them.
     Widening only, so per [P19](docs/CONTRACT.md#p19--the-alias-obligation-is-scoped-to-the-ga-channel)
     it is non-breaking and needs no alias — every existing surface returning raw ms is unaffected.
 
+- **A store-backed throttle no longer bursts when a process joins mid-window.**
+  ([ADR 0023](docs/adr/0023-a-rate-is-a-minimum-spacing.md) Decision 2) The
+  distributed limiter schedules the Nth slot of a window at `windowStart + (N-1)·spacing`. A
+  process starting partway through a window claims slots whose scheduled times have **already
+  elapsed**, and each was granted the moment it was claimed — draining every elapsed slot in one
+  tick. The burst scaled with the **window**, not the declared rate: `'2/s'` and `'120/m'` both
+  declare a 500ms spacing, but the one-minute window left up to 119 elapsed slots to drain against
+  one for `'2/s'`. Measured mid-window, `'120/m'` granted five concurrent calls at the same
+  instant where `'2/s'` granted two.
+
+    This is a cold start — a rolling deploy, an autoscaler adding a worker, a lambda — not the
+    sustained-overload window edge `createStoreThrottle` already documented as approximate. The
+    slot schedule is now a **floor** applied on top of the same per-key pacing cursor the
+    in-process limiter keeps, so each grant is `max(now, cursor, slot)`: the shared counter still
+    allocates slots across the fleet, while no single process grants two calls closer than
+    `spacing`. A store-backed `'2/s'` and `'120/m'` now produce byte-identical grant sequences,
+    matching the in-process limiter. No config changes; a throttle that was silently bursting
+    starts pacing.
+
+    **The bound is per-process, and that is the limit of what it buys a fleet.** A slot already in
+    the past paces nobody, so while the stale prefix lasts only each worker's own cursor holds the
+    line and N workers emit at N× the declared rate — what the cursor converts is the _shape_, from
+    one worker draining every unclaimed slot into a single instant, to N calls per instant spread
+    at `spacing`. Starting at a window boundary (or once the slots catch up) the fleet does pace on
+    one shared budget. Both halves are pinned in `store.spec.ts`; closing the mid-window case needs
+    the atomic GCRA cell `store.ts` names and defers, and the residue assertion is written to fail
+    when it lands.
+
+- **`throttle.rate: '0/s'` is rejected instead of parsing to "no limit at all".**
+  ([ADR 0023](docs/adr/0023-a-rate-is-a-minimum-spacing.md) Decision 1)
+  `parseRate`'s count was `\d+`, so a zero count parsed and produced a spacing of `per / 0` =
+  `Infinity`. Under an injected `Clock` that reads as "block everything" — which is what the test
+  suite saw — but `setTimeout` clamps any delay past 2^31−1 to **1ms**, so on the system clock the
+  second acquire was granted after ~1ms and the throttle was unlimited, announced only by a Node
+  `TimeoutOverflowWarning` on every wait. A config that validated clean, tested as a hard stop,
+  and shipped as no limit.
+
+    The count is now `[1-9]\d*` and `'0/s'` throws `bad rate` at stitch/seam **construction**,
+    where every other malformed rate already threw. There is no safe reading being taken away: a
+    limiter is not how you stop calling a stitch.
+
 - **The same net now covers NESTED envelopes — `circuit`, `retry`, `wire`, and the rest — so a
   nested rename is mechanical too.** The guard below was scoped to a config's top-level keys on the
   reasoning that an envelope is checked against its _declared_ `AtLeastOne<CircuitOptions>` and so
