@@ -55,8 +55,8 @@ pinoSink(pino(), { lifecycle: false });
 This package **imports no logger** — it runs on a small structural
 `PinoLoggerLike` surface (`{ error, warn, info, debug, trace }`, plus an optional
 `child`). A real `pino()` instance, a `logger.child({ requestId })`, and a plain
-test double all satisfy it. `pino` is the single (peer) dependency, accepting both
-v8 and v9.
+test double all satisfy it. `pino` is the single (peer) dependency, accepting
+v8, v9, and v10.
 
 ## Security — metadata only, by design
 
